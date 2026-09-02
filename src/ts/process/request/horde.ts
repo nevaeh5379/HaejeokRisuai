@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   STABLE_HORDE_TEXT_ASYNC_URL,
@@ -45,12 +46,12 @@ export async function requestHorde(
     prompt: prompt,
     params: {
       n: 1,
-      max_context_length: db.maxContext + 100,
-      max_length: db.maxResponse,
+      max_context_length: presetStore.state.maxContext + 100,
+      max_length: presetStore.state.maxResponse,
       singleline: false,
-      temperature: db.temperature / 100,
-      top_k: db.top_k,
-      top_p: db.top_p,
+      temperature: presetStore.state.temperature / 100,
+      top_k: presetStore.state.top_k,
+      top_p: presetStore.state.top_p,
     },
     trusted_workers: false,
     workerslow_workers: true,

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 
 import { getUserName } from "src/ts/util";
@@ -9,8 +10,8 @@ export function stringlizeNAIChat(
   continued: boolean,
 ) {
   const db = settingsStore.state;
-  let seperator = db.NAIsettings.seperator.replaceAll("\\n", "\n") || "\n";
-  let starter = db.NAIsettings.starter.replaceAll("\\n", "\n") || "⁂";
+  let seperator = presetStore.state.NAIsettings.seperator.replaceAll("\\n", "\n") || "\n";
+  let starter = presetStore.state.NAIsettings.starter.replaceAll("\\n", "\n") || "⁂";
   let resultString: string[] = [];
 
   for (const form of formated) {
@@ -25,17 +26,17 @@ export function stringlizeNAIChat(
         resultString.push(form.content);
       }
     } else if (form.name || form.role === "assistant") {
-      if (!db.NAIappendName) {
+      if (!presetStore.state.NAIappendName) {
         resultString.push(form.content);
       } else {
         resultString.push((form.name ?? char) + ": " + form.content);
       }
     } else if (form.role === "user") {
       let res = "";
-      if (db.NAIadventure) {
+      if (presetStore.state.NAIadventure) {
         res += "> ";
       }
-      if (db.NAIappendName) {
+      if (presetStore.state.NAIappendName) {
         res += getUserName() + ": ";
       }
       res += form.content;

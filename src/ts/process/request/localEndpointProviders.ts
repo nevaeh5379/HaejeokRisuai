@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
@@ -30,8 +31,8 @@ export async function requestOobaLegacy(
   const currentChar = resolveRequestCharacter(arg);
   const useStreaming = arg.useStreaming;
   const abortSignal = arg.abortSignal;
-  let streamUrl = db.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream");
-  let blockingUrl = db.textgenWebUIBlockingURL.replace(
+  let streamUrl = presetStore.state.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream");
+  let blockingUrl = presetStore.state.textgenWebUIBlockingURL.replace(
     /\/api.*/,
     "/api/v1/generate",
   );
@@ -41,8 +42,8 @@ export async function requestOobaLegacy(
     chatTarget: arg.triggerTarget,
   });
   let stopStrings = getStopStrings(false);
-  if (db.localStopStrings) {
-    stopStrings = db.localStopStrings.map((v) => {
+  if (presetStore.state.localStopStrings) {
+    stopStrings = presetStore.state.localStopStrings.map((v) => {
       return risuChatParser(
         v.replace(/\\n/g, "\n"),
         resolveRequestParserContext(arg),
@@ -51,26 +52,26 @@ export async function requestOobaLegacy(
   }
 
   bodyTemplate = {
-    max_new_tokens: db.maxResponse,
-    do_sample: db.ooba.do_sample,
-    temperature: db.temperature / 100,
-    top_p: db.ooba.top_p,
-    typical_p: db.ooba.typical_p,
-    repetition_penalty: db.ooba.repetition_penalty,
-    encoder_repetition_penalty: db.ooba.encoder_repetition_penalty,
-    top_k: db.ooba.top_k,
-    min_length: db.ooba.min_length,
-    no_repeat_ngram_size: db.ooba.no_repeat_ngram_size,
-    num_beams: db.ooba.num_beams,
-    penalty_alpha: db.ooba.penalty_alpha,
-    length_penalty: db.ooba.length_penalty,
+    max_new_tokens: presetStore.state.maxResponse,
+    do_sample: presetStore.state.ooba.do_sample,
+    temperature: presetStore.state.temperature / 100,
+    top_p: presetStore.state.ooba.top_p,
+    typical_p: presetStore.state.ooba.typical_p,
+    repetition_penalty: presetStore.state.ooba.repetition_penalty,
+    encoder_repetition_penalty: presetStore.state.ooba.encoder_repetition_penalty,
+    top_k: presetStore.state.ooba.top_k,
+    min_length: presetStore.state.ooba.min_length,
+    no_repeat_ngram_size: presetStore.state.ooba.no_repeat_ngram_size,
+    num_beams: presetStore.state.ooba.num_beams,
+    penalty_alpha: presetStore.state.ooba.penalty_alpha,
+    length_penalty: presetStore.state.ooba.length_penalty,
     early_stopping: false,
     truncation_length: maxTokens,
-    ban_eos_token: db.ooba.ban_eos_token,
+    ban_eos_token: presetStore.state.ooba.ban_eos_token,
     stopping_strings: stopStrings,
     seed: -1,
-    add_bos_token: db.ooba.add_bos_token,
-    topP: db.top_p,
+    add_bos_token: presetStore.state.ooba.add_bos_token,
+    topP: presetStore.state.top_p,
     prompt: prompt,
   };
 
@@ -197,8 +198,8 @@ export async function requestOoba(
     chatTarget: arg.triggerTarget,
   });
   let stopStrings = getStopStrings(false);
-  if (db.localStopStrings) {
-    stopStrings = db.localStopStrings.map((v) => {
+  if (presetStore.state.localStopStrings) {
+    stopStrings = presetStore.state.localStopStrings.map((v) => {
       return risuChatParser(
         v.replace(/\\n/g, "\n"),
         resolveRequestParserContext(arg),
@@ -207,20 +208,20 @@ export async function requestOoba(
   }
   let bodyTemplate: Record<string, any> = {
     prompt: prompt,
-    presence_penalty: arg.PresensePenalty || db.PresensePenalty / 100,
-    frequency_penalty: arg.frequencyPenalty || db.frequencyPenalty / 100,
+    presence_penalty: arg.PresensePenalty || presetStore.state.PresensePenalty / 100,
+    frequency_penalty: arg.frequencyPenalty || presetStore.state.frequencyPenalty / 100,
     logit_bias: {},
     max_tokens: maxTokens,
     stop: stopStrings,
     temperature: temperature,
-    top_p: db.top_p,
+    top_p: presetStore.state.top_p,
   };
 
-  const url = new URL(db.textgenWebUIBlockingURL);
+  const url = new URL(presetStore.state.textgenWebUIBlockingURL);
   url.pathname = "/v1/completions";
   const urlStr = url.toString();
 
-  const OobaBodyTemplate = db.reverseProxyOobaArgs;
+  const OobaBodyTemplate = presetStore.state.reverseProxyOobaArgs;
   const keys = Object.keys(OobaBodyTemplate);
   for (const key of keys) {
     if (
@@ -285,7 +286,7 @@ export async function requestKobold(
     currentChar,
     chatTarget: arg.triggerTarget,
   });
-  const url = new URL(db.koboldURL);
+  const url = new URL(presetStore.state.koboldURL);
   if (url.pathname.length < 3) {
     url.pathname = "api/v1/generate";
   }
@@ -294,7 +295,7 @@ export async function requestKobold(
     {
       prompt: prompt,
       max_length: maxTokens,
-      max_context_length: db.maxContext,
+      max_context_length: presetStore.state.maxContext,
       n: 1,
     },
     ["temperature", "top_p", "repetition_penalty", "top_k", "top_a"],

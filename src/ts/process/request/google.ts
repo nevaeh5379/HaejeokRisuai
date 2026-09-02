@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   GOOGLE_GENERATION_PARAMETER_RENAMES,
@@ -410,7 +411,7 @@ export async function requestGoogleCloudVertex(
     }
   }
 
-  if (db.jsonSchemaEnabled || arg.schema) {
+  if (presetStore.state.jsonSchemaEnabled || arg.schema) {
     body.generation_config.response_mime_type = "application/json";
     body.generation_config.response_schema = getGeneralJSONSchema(
       arg.schema,
@@ -530,7 +531,7 @@ async function requestGoogle(
     rDatas: { text: string; thought?: boolean }[],
   ) => {
     const shouldExtractJson =
-      arg.extractJson && (db.jsonSchemaEnabled || arg.schema);
+      arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema);
     return formatGoogleTextResponse(rDatas, {
       transformText: shouldExtractJson
         ? (text) => extractJSON(text, arg.extractJson, resolveRequestParserContext(arg))
@@ -1029,7 +1030,7 @@ function wrapToolStream(
 
         value = initStreamState(value);
 
-        if (arg.extractJson && (db.jsonSchemaEnabled || arg.schema)) {
+        if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
           value["0"] = extractJSON(value["0"], arg.extractJson, resolveRequestParserContext(arg));
         }
 

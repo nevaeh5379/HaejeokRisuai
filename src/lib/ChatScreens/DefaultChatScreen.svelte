@@ -40,7 +40,7 @@
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
-    
+
     interface Props {
         openModuleList?: boolean;
         openChatList?: boolean;
@@ -283,7 +283,7 @@
                 }
 
                 element.scrollIntoView({behavior: "instant", block: "start"})
-                
+
                 // Small delay and scroll again to ensure position is correct after any final layout adjustments
                 await sleep(50)
                 element.scrollIntoView({behavior: "instant", block: "start"})
@@ -704,7 +704,7 @@
         }
     }
 
-    
+
 </script>
 
 
@@ -714,7 +714,7 @@
 <div class="w-full h-full relative" style={customStyle} onclick={() => {
     openMenu = false
 }}>
-    
+
     {#if showNewMessageButton}
         {#if (settingsStore.state.newMessageButtonStyle === 'bottom-center' || !settingsStore.state.newMessageButtonStyle)}
             <button class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
@@ -1032,7 +1032,7 @@
 
             {#if settingsStore.state.useAutoSuggestions}
                 <Suggestion messageInput={(msg)=>messageInput=(
-                    (settingsStore.state.subModel === "textgen_webui" || settingsStore.state.subModel === "mancer" || settingsStore.state.subModel.startsWith('local_')) && settingsStore.state.autoSuggestClean
+                    (presetStore.state.subModel === "textgen_webui" || presetStore.state.subModel === "mancer" || presetStore.state.subModel.startsWith('local_')) && presetStore.state.autoSuggestClean
                     ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
                     : msg
                 )} {send}/>
@@ -1068,7 +1068,7 @@
                     </Button>
                 </button>
             {/if}
-            
+
             <Chats
                 bind:this={chatsInstance}
                 messages={currentChat}
@@ -1178,7 +1178,7 @@
                         </div>
                     {/if}
 
-                    
+
                     <!-- svelte-ignore block_empty -->
                     {#if characterStore.characters[selectedCharacterIndex].ttsMode === 'webspeech' || characterStore.characters[selectedCharacterIndex].ttsMode === 'elevenlab'}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
@@ -1213,7 +1213,7 @@
                         </div>
                     {/if}
 
-                    
+
                     {#if settingsStore.state.enableRisuaiProTools}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
                             easyPanelStore.open = !easyPanelStore.open
@@ -1256,7 +1256,7 @@
                             </div>
                         {/if}
                     {/if}
-                    
+
                     {#if settingsStore.state.translator !== ''}
                         <div class={"flex items-center cursor-pointer "+ (settingsStore.state.useAutoTranslateInput ? 'text-green-500':'lg:hover:text-green-500')} onclick={() => {
                             settingsStore.state.useAutoTranslateInput = !settingsStore.state.useAutoTranslateInput
@@ -1264,9 +1264,9 @@
                             <GlobeIcon />
                             <span class="ml-2">{language.autoTranslateInput}</span>
                         </div>
-                        
+
                     {/if}
-            
+
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
                         screenShot()
                     }}>
@@ -1379,7 +1379,7 @@
     }
 
     @keyframes spin {
-        
+
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
     }

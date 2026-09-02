@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import type { botPreset } from "../../storage/database/schema";
+import type { botPreset, DatabaseSettings } from "../../storage/database/schema";
 import { presetTemplate } from "../../storage/presets/presetDefaults";
 import type {
   BotPresetSummary,
@@ -9,7 +9,9 @@ import type {
 import { safeStructuredClone } from "../../polyfill";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { BoundedCache } from "../../memory/boundedCache";
-import type { InitializableStore } from "./storeContracts";
+import type { FlushableStore, InitializableStore } from "./storeContracts";
+import { StoreCommitQueue } from "./storeCommitQueue";
+import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 
 export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -20,10 +22,28 @@ export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
  */
 const PRESET_CACHE_MAX_ENTRIES = 6;
 
-class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
+class PresetStore
+  implements InitializableStore<[storage: ISqlStorage]>, FlushableStore
+{
   private storage: ISqlStorage | null = null;
-  private activePresetProvider: (() => StoredBotPreset | undefined) | null =
+  private activePresetSerializer: (() => StoredBotPreset | undefined) | null =
     null;
+  private activeObserverDispose: (() => void) | null = null;
+  private activeDirty = false;
+  private persistedActiveFingerprint = "";
+  private readonly commitQueue = new StoreCommitQueue();
+  private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
+  readonly state = new Proxy({} as DatabaseSettings, {
+    get: (_target, prop) => Reflect.get(this.stateData, prop),
+    set: (_target, prop, value) => Reflect.set(this.stateData, prop, value),
+    deleteProperty: (_target, prop) => Reflect.deleteProperty(this.stateData, prop),
+    has: (_target, prop) => Reflect.has(this.stateData, prop),
+    ownKeys: () => Reflect.ownKeys(this.stateData),
+    getOwnPropertyDescriptor: (_target, prop) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(this.stateData, prop);
+      return descriptor ? { ...descriptor, configurable: true } : undefined;
+    },
+  });
   summaries = $state<BotPresetSummary[]>([]);
   activeId = $state("");
   private presetCache = new BoundedCache<string, StoredBotPreset>({
@@ -58,18 +78,87 @@ class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
     return index < 0 ? 0 : index;
   }
   get activePreset(): StoredBotPreset | undefined {
-    return this.activePresetProvider?.() ?? this.cache.get(this.activeId);
+    return this.activePresetSerializer?.() ?? this.cache.get(this.activeId);
   }
 
   /**
-   * Makes the live SettingsStore configuration the canonical active preset.
-   * Only inactive preset documents remain cached after this boundary is bound.
+   * Installs PresetStore's canonical active state. Only inactive preset
+   * documents remain in the bounded cache.
    */
-  bindActivePresetProvider(
-    provider: () => StoredBotPreset | undefined,
+  bindActivePresetState(
+    initialState: DatabaseSettings,
+    serialize: () => StoredBotPreset | undefined,
   ): void {
-    this.activePresetProvider = provider;
+    this.activeObserverDispose?.();
+    this.commitQueue.cancel();
+    this.stateData = safeStructuredClone(initialState);
+    this.activePresetSerializer = serialize;
     this.cache.delete(this.activeId);
+    this.activeDirty = false;
+    this.persistedActiveFingerprint = snapshotFingerprint(serialize());
+    let initial = true;
+    this.activeObserverDispose = $effect.root(() => {
+      $effect(() => {
+        const active = serialize();
+        trackDeep(active);
+        const fingerprint = snapshotFingerprint($state.snapshot(active));
+        if (initial) {
+          initial = false;
+          return;
+        }
+        if (fingerprint === this.persistedActiveFingerprint) return;
+        this.activeDirty = true;
+        this.commitQueue.schedule(() => this.flush(), 300);
+      });
+    });
+  }
+
+  replaceActivePresetState(nextState: DatabaseSettings): void {
+    if (!this.activePresetSerializer)
+      throw new Error("Active preset state is not initialized");
+    this.bindActivePresetState(nextState, this.activePresetSerializer);
+  }
+
+  getStateRecord(): DatabaseSettings {
+    return this.stateData;
+  }
+
+  /** Persist the canonical live active preset, including immediate mutations. */
+  async flush(): Promise<void> {
+    this.commitQueue.cancel();
+    const active = this.activePresetSerializer?.();
+    if (!active) {
+      this.activeDirty = false;
+      return;
+    }
+    const snapshot = safeStructuredClone(active);
+    const fingerprint = snapshotFingerprint(snapshot);
+    if (!this.activeDirty && fingerprint === this.persistedActiveFingerprint)
+      return;
+
+    this.activeDirty = false;
+    try {
+      await this.commitQueue.enqueue(() => this.savePreset(snapshot));
+      this.persistedActiveFingerprint = fingerprint;
+    } catch (error) {
+      this.activeDirty = true;
+      throw error;
+    }
+
+    const latestFingerprint = snapshotFingerprint(this.activePresetSerializer?.());
+    if (latestFingerprint !== this.persistedActiveFingerprint) {
+      this.activeDirty = true;
+      this.commitQueue.schedule(() => this.flush(), 300);
+    }
+  }
+
+  hasPendingWrites(): boolean {
+    if (this.activeDirty) return true;
+    const active = this.activePresetSerializer?.();
+    return (
+      !!active &&
+      snapshotFingerprint(active) !== this.persistedActiveFingerprint
+    );
   }
 
   get activePresetMetadata(): BotPresetSummary | undefined {
@@ -129,8 +218,8 @@ class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
 
   async load(id: string, force = false): Promise<StoredBotPreset> {
     if (!this.storage) throw new Error("Preset store is not initialized");
-    if (id === this.activeId && this.activePresetProvider) {
-      const active = this.activePresetProvider();
+    if (id === this.activeId && this.activePresetSerializer) {
+      const active = this.activePresetSerializer();
       if (active) return active;
     }
     if (!force && this.cache.has(id)) return this.cache.get(id)!;
@@ -182,14 +271,14 @@ class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
       messages: [],
       messageManifests: [],
     });
-    if (id === this.activeId && this.activePresetProvider) {
+    if (id === this.activeId && this.activePresetSerializer) {
       this.cache.delete(id);
     } else {
       this.cache.set(id, { ...data, id });
     }
     this.summaries = await this.storage.listBotPresets();
   }
-  async setActiveId(id: string, persist = true): Promise<void> {
+  private async setActiveId(id: string, persist = true): Promise<void> {
     if (!this.storage || !this.summaries.some((preset) => preset.id === id))
       throw new Error("Active bot preset does not exist");
     this.activeId = id;
@@ -197,7 +286,7 @@ class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
     this.error = null;
     try {
       await this.load(id);
-      if (this.activePresetProvider) this.cache.delete(id);
+      if (this.activePresetSerializer) this.cache.delete(id);
       if (persist)
         await commitSqlChanges(this.storage, {
           baseRevision: this.storage.getRevision(),
@@ -217,10 +306,9 @@ class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
       throw error;
     }
   }
-  async setActiveIndex(index: number): Promise<void> {
-    const summary = this.summaries[index];
-    if (!summary) throw new Error("Preset index is out of range");
-    await this.setActiveId(summary.id);
+  async activate(id: string, nextState: DatabaseSettings): Promise<void> {
+    await this.setActiveId(id);
+    this.replaceActivePresetState(nextState);
   }
   async reorder(ids: string[]): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
@@ -304,8 +392,14 @@ class PresetStore implements InitializableStore<[storage: ISqlStorage]> {
   }
 
   resetForTesting(): void {
+    this.activeObserverDispose?.();
+    this.activeObserverDispose = null;
+    this.commitQueue.reset();
     this.storage = null;
-    this.activePresetProvider = null;
+    this.activePresetSerializer = null;
+    this.stateData = {} as DatabaseSettings;
+    this.activeDirty = false;
+    this.persistedActiveFingerprint = "";
     this.summaries = [];
     this.activeId = "";
     this.presetCache.clear();

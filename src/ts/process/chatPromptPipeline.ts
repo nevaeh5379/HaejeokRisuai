@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type { character, Chat, groupChat, MessagePresetInfo } from "../storage/database/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
@@ -92,7 +93,7 @@ async function buildHistoryStage(
     currentChat: options.currentChat,
     usingPromptTemplate: sections.usingPromptTemplate,
     tokenizer: options.tokenizer,
-    currentTokens: settingsStore.state.maxResponse + 50 + estimate.tokens,
+    currentTokens: presetStore.state.maxResponse + 50 + estimate.tokens,
     lorePrompt: sections.lorepmt,
     resolvePosition: sections.resolvePosition,
     findCharacter: options.findCharacter,
@@ -229,7 +230,7 @@ export async function buildGenerationPrompt(
     ok: true as const,
     formated,
     biases: buildPromptBiases(
-      settingsStore.state.bias.concat(options.currentChar.bias),
+      presetStore.state.bias.concat(options.currentChar.bias),
       (text) =>
         risuChatParser(text, {
           chara: options.currentChar,

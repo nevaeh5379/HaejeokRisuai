@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { risuChatParser } from "src/ts/parser/parser.svelte";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
@@ -143,8 +144,8 @@ export function getOpenAIJSONSchema(
   const db = settingsStore.state;
   return {
     name: "format",
-    strict: db.strictJsonSchema,
-    schema: convertInterfaceToSchema(schema ?? db.jsonSchema, context),
+    strict: presetStore.state.strictJsonSchema,
+    schema: convertInterfaceToSchema(schema ?? presetStore.state.jsonSchema, context),
   };
 }
 
@@ -168,7 +169,7 @@ export function getGeneralJSONSchema(
     return data;
   }
 
-  const d = convertInterfaceToSchema(schema ?? db.jsonSchema, context);
+  const d = convertInterfaceToSchema(schema ?? presetStore.state.jsonSchema, context);
   return process(d);
 }
 

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
@@ -51,7 +52,7 @@ export function stringlizeChatOba(
   const db = settingsStore.state;
   let resultString: string[] = [];
   let { systemPrefix, userPrefix, assistantPrefix, seperator } =
-    db.ooba.formating;
+    presetStore.state.ooba.formating;
   systemPrefix = systemPrefix ?? "";
   userPrefix = userPrefix ?? "";
   assistantPrefix = assistantPrefix ?? "";
@@ -82,7 +83,7 @@ export function stringlizeChatOba(
       prefix = appendWhitespace(systemPrefix, seperator);
       name = "";
     }
-    if (db.ooba.formating.useName) {
+    if (presetStore.state.ooba.formating.useName) {
       console.log(name);
       resultString.push(prefix + name + form.content);
     } else {
@@ -90,12 +91,12 @@ export function stringlizeChatOba(
     }
   }
   if (!continued) {
-    if (db.ooba.formating.useName) {
+    if (presetStore.state.ooba.formating.useName) {
       if (suggesting) {
         resultString.push(
           appendWhitespace(assistantPrefix, seperator) +
             `${getUserName(chatTarget)}:\n` +
-            db.autoSuggestPrefix,
+            presetStore.state.autoSuggestPrefix,
         );
       } else {
         resultString.push(assistantPrefix + `${characterName}:`);
@@ -105,7 +106,7 @@ export function stringlizeChatOba(
         resultString.push(
           appendWhitespace(assistantPrefix, seperator) +
             `\n` +
-            db.autoSuggestPrefix,
+            presetStore.state.autoSuggestPrefix,
         );
       } else {
         resultString.push(assistantPrefix);
@@ -122,7 +123,7 @@ function toTitleCase(s: string) {
 }
 export function getStopStrings(suggesting: boolean = false) {
   const db = settingsStore.state;
-  let { userPrefix, seperator } = db.ooba.formating;
+  let { userPrefix, seperator } = presetStore.state.ooba.formating;
   if (!seperator) {
     seperator = "\n";
   }

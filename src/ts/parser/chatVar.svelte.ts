@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { parseKeyValue } from "../util";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import {
@@ -20,7 +21,7 @@ export function getChatVar(key: string, target?: ChatExecutionTarget): string {
   const state = chat.scriptstate["$" + key];
   if (state === undefined || state === null) {
     const defaultVariables = parseKeyValue(char.defaultVariables).concat(
-      parseKeyValue(settingsStore.state.templateDefaultVariables),
+      parseKeyValue(presetStore.state.templateDefaultVariables),
     );
     const findResult = defaultVariables.find((f) => {
       return f[0] === key;

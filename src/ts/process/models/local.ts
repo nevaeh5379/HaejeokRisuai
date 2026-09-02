@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { invoke } from "@tauri-apps/api/core";
 import * as path from "@tauri-apps/api/path";
@@ -88,7 +89,7 @@ async function getLocalKey(retry = true) {
 export async function tokenizeGGUFModel(prompt: string): Promise<number[]> {
   const key = await getLocalKey();
   const db = settingsStore.state;
-  const modelPath = db.aiModel.replace("local_", "");
+  const modelPath = presetStore.state.aiModel.replace("local_", "");
   const b = await fetch("http://localhost:10026/llamacpp/tokenize", {
     method: "POST",
     headers: {
@@ -97,7 +98,7 @@ export async function tokenizeGGUFModel(prompt: string): Promise<number[]> {
     },
     body: JSON.stringify({
       prompt: prompt,
-      n_ctx: db.maxContext,
+      n_ctx: presetStore.state.maxContext,
       model_path: modelPath,
     }),
   });

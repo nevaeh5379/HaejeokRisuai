@@ -12,6 +12,7 @@ export function createDatabaseSnapshot(): Database {
   const activePersona = personaStore.activePersona;
   const target = {
     ...settings,
+    ...presetStore.getStateRecord(),
     ...(activePersona
       ? {
           username: activePersona.name,

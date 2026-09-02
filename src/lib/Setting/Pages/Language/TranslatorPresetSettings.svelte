@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { DownloadIcon, HardDriveUploadIcon, PencilIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { DownloadIcon, HardDriveUploadIcon, PencilIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import Help from "src/lib/Others/Help.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
@@ -165,8 +167,8 @@
         min={0}
         max={2048}
         marginBottom={true}
-        bind:value={() => preset.maxResponse, (value) => {
-            preset.maxResponse = value;
+        bind:value={() => presetStore.state.maxResponse, (value) => {
+            presetStore.state.maxResponse = value;
             syncCurrentTranslatorPreset();
         }}
     />

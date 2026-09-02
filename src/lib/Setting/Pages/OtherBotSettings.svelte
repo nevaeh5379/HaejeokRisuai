@@ -1,5 +1,7 @@
 <script lang="ts">
-    import Check from "src/lib/UI/GUI/CheckInput.svelte";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
     import { selectSingleFile } from "src/ts/util";
@@ -72,13 +74,13 @@
     });
 
     async function getMaxMemoryRatio(): Promise<number> {
-        const promptTemplateToken = await tokenizePreset(settingsStore.state.promptTemplate);
+        const promptTemplateToken = await tokenizePreset(presetStore.state.promptTemplate);
         const char = characterStore.characters[$selectedCharID];
         const charToken = await getCharToken(char);
         const maxLoreToken = char.loreSettings?.tokenBudget ?? settingsStore.state.loreBookToken;
-        const maxResponse = settingsStore.state.maxResponse;
+        const maxResponse = presetStore.state.maxResponse;
         const requiredToken = promptTemplateToken + charToken.persistant + Math.min(charToken.dynamic, maxLoreToken) + maxResponse * 3;
-        const maxContext = settingsStore.state.maxContext;
+        const maxContext = presetStore.state.maxContext;
 
         if (maxContext === 0) {
             return 0;
@@ -418,7 +420,7 @@
                                 settingsStore.state.NAIImgConfig.vibe_model_selection = 'v4full';
                             } else if (settingsStore.state.NAIImgModel.includes('nai-diffusion-4-curated')) {
                                 settingsStore.state.NAIImgConfig.vibe_model_selection = 'v4curated';
-                            } else if (settingsStore.state.NAIImgModel.includes('nai-diffusion-4-5-full')) { 
+                            } else if (settingsStore.state.NAIImgModel.includes('nai-diffusion-4-5-full')) {
                                 settingsStore.state.NAIImgConfig.vibe_model_selection = 'v4-5full';
                             } else if (settingsStore.state.NAIImgModel.includes('nai-diffusion-4-5-curated')) {
                                 settingsStore.state.NAIImgConfig.vibe_model_selection = 'v4-5curated';
@@ -453,7 +455,7 @@
                 </button>
 
                 {#if settingsStore.state.NAIImgConfig.vibe_data}
-                    <button 
+                    <button
                         onclick={() => {
                             settingsStore.state.NAIImgConfig.vibe_data = undefined;
                             settingsStore.state.NAIImgConfig.vibe_model_selection = undefined;
@@ -509,9 +511,9 @@
                 {/if}
             {/if}
 
-            {#if settingsStore.state.NAIImgConfig.reference_mode === 'character' && 
+            {#if settingsStore.state.NAIImgConfig.reference_mode === 'character' &&
                 (settingsStore.state.NAIImgModel === 'nai-diffusion-4-5-full' || settingsStore.state.NAIImgModel === 'nai-diffusion-4-5-curated')}
-                
+
                 <div class="relative">
                     <button class="mb-2" onclick={async () => {
                         const img = await selectSingleFile([
@@ -523,9 +525,9 @@
                         if(!img){
                             return null
                         }
-                        
+
                         const imageData = img.data;
-                        
+
                         settingsStore.state.NAIImgConfig.character_base64image = Buffer.from(imageData).toString('base64');
                         const saveId = await saveAsset(imageData)
                         settingsStore.state.NAIImgConfig.character_image = saveId
@@ -547,7 +549,7 @@
                     </button>
 
                     {#if settingsStore.state.NAIImgConfig.character_image && settingsStore.state.NAIImgConfig.character_image !== ''}
-                        <button 
+                        <button
                             onclick={() => {
                                 settingsStore.state.NAIImgConfig.character_image = undefined;
                                 settingsStore.state.NAIImgConfig.character_base64image = undefined;
@@ -558,15 +560,15 @@
                         </button>
                     {/if}
                 </div>
-                
+
                 <span class="text-textcolor2 text-xs mb-2 block">Leave blank to use the character's default image.</span>
 
                 <Check className="mb-4" bind:check={settingsStore.state.NAIImgConfig.style_aware} name="Style Aware"/>
 
             {/if}
 
-            
-            
+
+
 
             {#if (settingsStore.state.NAIImgModel === 'nai-diffusion-3' || settingsStore.state.NAIImgModel === 'nai-diffusion-furry-3' || settingsStore.state.NAIImgModel === 'nai-diffusion-2')
             && settingsStore.state.NAIImgConfig.sampler !== 'ddim_v3'}
@@ -577,7 +579,7 @@
                 <Check bind:check={settingsStore.state.NAIImgConfig.sm_dyn} name='Use DYN'/>
             {/if}
 
-            {#if settingsStore.state.NAIImgModel === 'nai-diffusion-4-5-full' || settingsStore.state.NAIImgModel === 'nai-diffusion-4-5-curated' 
+            {#if settingsStore.state.NAIImgModel === 'nai-diffusion-4-5-full' || settingsStore.state.NAIImgModel === 'nai-diffusion-4-5-curated'
             || settingsStore.state.NAIImgModel === 'nai-diffusion-4-full' || settingsStore.state.NAIImgModel === 'nai-diffusion-4-curated-preview'
             || settingsStore.state.NAIImgModel === 'nai-diffusion-3' || settingsStore.state.NAIImgModel === 'nai-diffusion-furry-3'}
                 <Check bind:check={settingsStore.state.NAIImgConfig.variety_plus} name="Variety+"/>
@@ -591,9 +593,9 @@
             || settingsStore.state.NAIImgModel === 'nai-diffusion-4-curated-preview'}
                 <Check bind:check={settingsStore.state.NAIImgConfig.legacy_uc} name='Use legacy uc'/>
             {/if}
-                
+
             <Check className="mt-4 mb-4" bind:check={settingsStore.state.NAII2I} name="Enable I2I"/>
-            
+
             {#if settingsStore.state.NAII2I}
                 <div class="relative">
                     <button class="mb-2" onclick={async () => {
@@ -626,7 +628,7 @@
                     </button>
 
                     {#if settingsStore.state.NAIImgConfig.image && settingsStore.state.NAIImgConfig.image !== ''}
-                        <button 
+                        <button
                             onclick={() => {
                                 settingsStore.state.NAIImgConfig.image = undefined;
                                 settingsStore.state.NAIImgConfig.base64image = undefined;
@@ -649,8 +651,8 @@
             {/if}
         {/if}
 
-         
-        
+
+
         {#if settingsStore.state.sdProvider === 'dalle'}
             <span class="text-textcolor">OpenAI API Key</span>
             <TextInput size="sm" marginBottom placeholder="sk-..." bind:value={settingsStore.state.openAIKey}/>
@@ -764,7 +766,7 @@
         {#if settingsStore.state.sdProvider === 'Imagen'}
             <span class="text-textcolor mt-2">GoogleAI API Key</span>
             <TextInput marginBottom={true} size={"sm"} placeholder="..." hideText={settingsStore.state.hideApiKey} bind:value={settingsStore.state.google.accessToken}/>
-            
+
             <span class="text-textcolor">Model</span>
             <SelectInput className="mb-4" bind:value={settingsStore.state.ImagenModel}>
                 <OptionInput value="imagen-4.0-generate-001" >Imagen 4</OptionInput>
@@ -1134,7 +1136,7 @@
                 <button class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer" onclick={async() => {
                     try {
                         const presets = settingsStore.state.hypaV3Presets
-                        
+
                         if(presets.length === 0){
                             alertError("There must be least one preset.")
                             return
@@ -1147,7 +1149,7 @@
                             ver: 1,
                             data: preset
                         }), 'utf-8')
-                        
+
                         await downloadFile(`hypaV3_export_${preset.name}.json`, bytesExport)
                         alertNormal(language.successExport)
                     } catch (error) {
@@ -1172,7 +1174,7 @@
                             objImport.data.settings || {}
                         );
                         const presets = settingsStore.state.hypaV3Presets
-                        
+
                         presets.push(newPreset)
                         settingsStore.state.hypaV3Presets = presets
                         settingsStore.state.hypaV3PresetId = settingsStore.state.hypaV3Presets.length - 1

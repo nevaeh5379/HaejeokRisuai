@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { fade, fly } from "svelte/transition";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { fade, fly } from "svelte/transition";
     import { onMount } from "svelte";
     import IrisImage from "../../etc/Airisu.webp";
     import { irisStore } from "src/ts/stores.svelte";
@@ -64,9 +66,9 @@
     // User input state
     let userInput = $state("");
     let userInputEl = $state<HTMLInputElement | null>(null);
-    
+
     let isUnsupportedModel = $derived.by(() => {
-        const currentModel = (settingsStore.state.seperateModelsForAxModels ? settingsStore.state.seperateModels.otherAx : '') || settingsStore.state.subModel;
+        const currentModel = (presetStore.state.seperateModelsForAxModels ? presetStore.state.seperateModels.otherAx : '') || presetStore.state.subModel;
         const modelInfo = getModelInfo(currentModel);
         return !(
             modelInfo.format === LLMFormat.Anthropic ||
@@ -158,7 +160,7 @@
 
     function saveDialogue() {
         forageInstance.setItem("current_dialogue", safeStructuredClone(dialogue)).catch((e) => {
-            
+
             console.warn("Failed to save dialogue to localforage.", e);
         });
     }
@@ -256,7 +258,7 @@
             startTyping(dialogue[currentIndex].text);
         });
 
-        
+
 
     });
 

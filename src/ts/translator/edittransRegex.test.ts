@@ -6,6 +6,9 @@ const database = vi.hoisted(() => ({ presetRegex: [] as customscript[] }));
 vi.mock("../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: database },
 }));
+vi.mock("../stores/domain/presetStore.svelte", () => ({
+  presetStore: { state: database },
+}));
 
 vi.mock("../process/modules", () => ({
   getModuleRegexScripts: () => [] as customscript[],

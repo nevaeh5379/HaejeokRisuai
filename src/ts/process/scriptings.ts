@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { resolveChatTarget, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { asBuffer } from "src/ts/util";
@@ -968,7 +969,7 @@ export async function runScripted(
         const fullLoreBooks = (
           await loadLoreBookV3Prompt(ScriptingEngineState.chatTarget)
         ).actives;
-        const maxContext = db.maxContext - reserve;
+        const maxContext = presetStore.state.maxContext - reserve;
         if (maxContext < 0) {
           return JSON.stringify([]);
         }

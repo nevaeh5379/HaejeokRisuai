@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { type memoryVector, HypaProcesser, similarity } from "./hypamemory";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
@@ -112,7 +113,7 @@ export async function hypaMemoryV3(
         room: { id: room.id, hypaV3Data: room.hypaV3Data },
         character: { id: char.chaId, name: char.name, type: char.type },
         config: {
-          maxResponse: db.maxResponse,
+          maxResponse: presetStore.state.maxResponse,
           hypaModel: db.hypaModel,
           supaMemoryKey: db.supaMemoryKey,
           customEmbedding: {
@@ -194,7 +195,7 @@ async function hypaMemoryV3MainExp(
   }
 
   // Initial token correction
-  currentTokens -= db.maxResponse;
+  currentTokens -= presetStore.state.maxResponse;
 
   // Load existing hypa data if available
   const data: HypaV3Data = room.hypaV3Data
@@ -716,17 +717,17 @@ async function hypaMemoryV3MainExp(
                 await keywordEngine.addDocuments(
                   Array.from(processor.vectors.values())
                 );
-        
+
                 const batchkeywordResults = [];
                 for (const query of queries) {
                   batchkeywordResults.push(await keywordEngine.search(query));
                 }
-        
+
                 const batchHybridResults = [];
                 for (let i = 0; i < queries.length; i++) {
                   const [semanticResults] = batchScoredResults[i];
                   const keywordResults = batchkeywordResults[i];
-        
+
                   batchHybridResults.push(
                     simpleRRF<EmbeddingResult<Summary>>([
                       semanticResults,
@@ -974,7 +975,7 @@ async function hypaMemoryV3Main(
   }
 
   // Initial token correction
-  currentTokens -= db.maxResponse;
+  currentTokens -= presetStore.state.maxResponse;
 
   // Load existing hypa data if available
   const data: HypaV3Data = room.hypaV3Data
@@ -1722,7 +1723,7 @@ export async function summarize(
     },
   ];
 
-  console.log(logPrefix, `Using ax model ${db.subModel} for summarization.`);
+  console.log(logPrefix, `Using ax model ${presetStore.state.subModel} for summarization.`);
 
   const response = await requestChatData(
     {

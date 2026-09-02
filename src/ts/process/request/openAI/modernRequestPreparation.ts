@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   applyOpenAIPostParameterBodyPolicies,
@@ -60,14 +61,14 @@ export async function prepareModernOpenAIRequest(
   const db = settingsStore.state;
   const aiModel = arg.aiModel;
   const modeOverride = getProviderModeOverride(
-    db.seperateModelsForAxModels,
-    db.providerModelOverrides,
+    presetStore.state.seperateModelsForAxModels,
+    presetStore.state.providerModelOverrides,
     arg.mode,
   );
 
   let openRouterRequestModel = resolveProviderRoleModelForMode(
-    db.openrouterRequestModel,
-    db.openrouterSubRequestModel,
+    presetStore.state.openrouterRequestModel,
+    presetStore.state.openrouterSubRequestModel,
     arg.mode,
     modeOverride?.openrouterRequestModel,
   );
@@ -115,7 +116,7 @@ export async function prepareModernOpenAIRequest(
     ),
     generationSeed: db.generationSeed,
     responseJsonSchema:
-      (db.jsonSchemaEnabled || arg.schema) &&
+      (presetStore.state.jsonSchemaEnabled || arg.schema) &&
       !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)
         ? getOpenAIJSONSchema(arg.schema, resolveRequestParserContext(arg))
         : undefined,
@@ -123,9 +124,9 @@ export async function prepareModernOpenAIRequest(
     aiModel,
     openRouterFallback: db.openrouterFallback,
     openRouterMiddleOut: db.openrouterMiddleOut,
-    openRouterProvider: db.openrouterProvider,
+    openRouterProvider: presetStore.state.openrouterProvider,
     instructPrompt:
-      aiModel === "openrouter" && db.useInstructPrompt
+      aiModel === "openrouter" && presetStore.state.useInstructPrompt
         ? applyChatTemplate(arg.formated, {
             currentChar: resolveRequestCharacter(arg),
             chatTarget: arg.triggerTarget,
@@ -142,8 +143,8 @@ export async function prepareModernOpenAIRequest(
     deepSeekThinkingToggle: arg.modelInfo.flags.includes(
       LLMFlags.deepSeekThinkingToggle,
     ),
-    deepSeekThinkingType: db.deepseekThinkingType,
-    deepSeekReasoningEffort: db.deepseekReasoningEffort,
+    deepSeekThinkingType: presetStore.state.deepseekThinkingType,
+    deepSeekReasoningEffort: presetStore.state.deepseekReasoningEffort,
     toolDefinitions: hasTools
       ? arg.tools.map((tool) => ({
           type: "function",
@@ -156,14 +157,14 @@ export async function prepareModernOpenAIRequest(
       : undefined,
     reverseProxyOobaMode:
       aiModel === "reverse_proxy" && db.reverseProxyOobaMode,
-    reverseProxyOobaArgs: db.reverseProxyOobaArgs,
+    reverseProxyOobaArgs: presetStore.state.reverseProxyOobaArgs,
     removeLogitBiasForInlay:
       supportsInlayImage() &&
       !(
         aiModel.startsWith("gpt") ||
         (aiModel === "reverse_proxy" &&
-          (db.proxyRequestModel?.startsWith("gpt") ||
-            (db.proxyRequestModel === "custom" &&
+          (presetStore.state.proxyRequestModel?.startsWith("gpt") ||
+            (presetStore.state.proxyRequestModel === "custom" &&
               (arg.modelInfo.internalID ?? "").startsWith("gpt"))))
       ),
     multiGen: arg.multiGen,
@@ -200,7 +201,7 @@ export async function prepareModernOpenAIRequest(
     key: arg.key,
     openAIKey: db.openAIKey,
     nanoGPTKey: db.nanogptKey,
-    proxyKey: db.proxyKey,
+    proxyKey: presetStore.state.proxyKey,
     openRouterKey: db.openrouterKey,
     keyIdentifier: arg.modelInfo?.keyIdentifier,
     keyByIdentifier: db.OaiCompAPIKeys,

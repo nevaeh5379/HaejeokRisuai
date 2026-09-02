@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
 import { risuEscape, risuUnescape } from "../../parser/parser.svelte";
@@ -44,7 +45,7 @@ export async function requestChatData(
       fallbackModels: fallBackModels,
       requestRetries: db.requestRetrys,
       antiServerOverloads: db.antiServerOverloads,
-      fallbackWhenBlankResponse: db.fallbackWhenBlankResponse,
+      fallbackWhenBlankResponse: presetStore.state.fallbackWhenBlankResponse,
       bannedCharacterSets: db.banCharacterset,
     },
     {

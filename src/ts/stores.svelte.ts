@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { writable } from "svelte/store";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
@@ -317,7 +318,7 @@ $effect.root(() => {
       ]?.modules?.length ?? 0;
     characterStore.characters?.[characterStore.selectedId]?.hideChatIcon;
     characterStore.characters?.[characterStore.selectedId]?.backgroundHTML;
-    settingsStore.state.moduleIntergration;
+    presetStore.state.moduleIntergration;
     if (enabledModuleCount > 0 || chatModuleCount > 0) {
       void import("./process/modules").then(({ moduleUpdate }) =>
         moduleUpdate(),

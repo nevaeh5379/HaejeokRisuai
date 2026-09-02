@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { language } from 'src/lang';
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { language } from 'src/lang';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import Accordion from 'src/lib/UI/Accordion.svelte';
     import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte';
@@ -14,11 +16,11 @@
 </script>
 
 <Accordion name={language.seperateParameters} styled>
-    <CheckInput bind:check={settingsStore.state.seperateParametersEnabled} name={language.seperateParametersEnabled} />
-    {#if settingsStore.state.seperateParametersEnabled}
-        {#each Object.keys(settingsStore.state.seperateParameters) as param}
+    <CheckInput bind:check={presetStore.state.seperateParametersEnabled} name={language.seperateParametersEnabled} />
+    {#if presetStore.state.seperateParametersEnabled}
+        {#each Object.keys(presetStore.state.seperateParameters) as param}
             <Accordion name={language[paramLabels[param]] ?? param} styled>
-                <AllSeperateParameters bind:value={settingsStore.state.seperateParameters[param]} paramKey={param} />
+                <AllSeperateParameters bind:value={presetStore.state.seperateParameters[param]} paramKey={param} />
             </Accordion>
         {/each}
     {/if}

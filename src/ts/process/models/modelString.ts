@@ -1,16 +1,17 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 
 
 export function getGenerationModelString(name?: string) {
   const db = settingsStore.state;
-  switch (name ?? db.aiModel) {
+  switch (name ?? presetStore.state.aiModel) {
     case "reverse_proxy":
       return (
         "custom-" +
-        (db.reverseProxyOobaMode ? "ooba" : db.customProxyRequestModel)
+        (db.reverseProxyOobaMode ? "ooba" : presetStore.state.customProxyRequestModel)
       );
     case "openrouter":
-      return "openrouter-" + db.openrouterRequestModel;
+      return "openrouter-" + presetStore.state.openrouterRequestModel;
     case "nanogpt": {
       const modelLabel = db.nanogptRequestModelName || db.nanogptRequestModel;
       return (
@@ -28,6 +29,6 @@ export function getGenerationModelString(name?: string) {
       return `Ollama ${name === "ollama-cloud" ? "Cloud" : "Local"} ${modelLabel}`;
     }
     default:
-      return name ?? db.aiModel;
+      return name ?? presetStore.state.aiModel;
   }
 }

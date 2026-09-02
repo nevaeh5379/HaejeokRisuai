@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";
 import { globalFetch } from "../../globalApi.svelte";
@@ -70,10 +71,10 @@ export async function requestNovelAI(
   const { variant, body: requestBody } = buildNovelAIRequest({
     prompt,
     modelId: aiModel ?? "",
-    adventureMode: db.NAIadventure,
+    adventureMode: presetStore.state.NAIadventure,
     temperature,
     maxTokens,
-    settings: db.NAIsettings,
+    settings: presetStore.state.NAIsettings,
     logitBiasExp: logit_bias_exp,
   });
   let body = requestBody;

@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { language } from "src/lang";
 import { languageEnglish } from "src/lang/en";
 import { get } from "svelte/store";
@@ -87,8 +88,8 @@ manualEntries.push(
 function currentContext(): SettingContext {
   return {
     db: settingsStore.state as any,
-    modelInfo: getModelInfo(settingsStore.state.aiModel),
-    subModelInfo: getModelInfo(settingsStore.state.subModel),
+    modelInfo: getModelInfo(presetStore.state.aiModel),
+    subModelInfo: getModelInfo(presetStore.state.subModel),
   };
 }
 

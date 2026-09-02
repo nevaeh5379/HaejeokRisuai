@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { language } from "src/lang";
+
+  import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import { language } from "src/lang";
 
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
@@ -210,7 +212,7 @@
                     <button class={(enabledModules.includes(rmodule.id)) ?
                             "mr-2 cursor-pointer text-blue-500" :
                             rmodule.namespace &&
-                            settingsStore.state.moduleIntergration?.split(',').map((s: string) => s.trim()).includes(rmodule.namespace) ?
+                            presetStore.state.moduleIntergration?.split(',').map((s: string) => s.trim()).includes(rmodule.namespace) ?
                             "text-amber-500 hover:text-green-500 mr-2 cursor-pointer" :
                             "text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                         } use:tooltip={language.enableGlobal} onclick={async (e) => {

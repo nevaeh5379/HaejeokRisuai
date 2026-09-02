@@ -40,7 +40,7 @@
     let activePersonaName = $derived(personaStore.activePersona?.name ?? 'User');
     let currentPresetName = $derived(
         presetStore.summaries?.[presetStore.activeIndex]?.name ||
-        settingsStore.state.aiModel ||
+        presetStore.state.aiModel ||
         'Default Model'
     );
 
@@ -481,7 +481,7 @@
         <!-- Quick Persona & Model Cards -->
         <div class="mt-4 pt-3 border-t border-darkborderc/60 flex flex-col gap-2">
             <span class="text-[11px] font-semibold text-textcolor2 px-1 uppercase tracking-wider">Quick Switcher</span>
-            
+
             <!-- Persona Card -->
             <button
                 onclick={() => { openPersonaList.set(true); }}

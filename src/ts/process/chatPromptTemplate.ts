@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type { character, MessagePresetInfo } from "../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -166,7 +167,7 @@ function renderChatCard(card: PromptItemChat, context: RenderContext): RenderedC
     generationOverride(
       context.generation,
       "promptSettings",
-      settingsStore.state.promptSettings,
+      presetStore.state.promptSettings,
     ).sendChatAsSystem &&
     !card.chatAsOriginalOnSystem
   ) {
@@ -262,7 +263,7 @@ function renderPostEverythingCard(context: RenderContext): RenderedCard {
   const promptSettings = generationOverride(
     context.generation,
     "promptSettings",
-    settingsStore.state.promptSettings,
+    presetStore.state.promptSettings,
   );
   if (context.usingPromptTemplate && promptSettings.postEndInnerFormat) {
     prompts.push({
@@ -335,10 +336,10 @@ export async function estimatePromptTemplateTokens(options: {
 
 function mergePrompts(target: OpenAIChat[], prompts: OpenAIChat[]) {
   const mergeSystem =
-    settingsStore.state.aiModel.startsWith("gpt") ||
-    settingsStore.state.aiModel.startsWith("claude") ||
-    settingsStore.state.aiModel === "openrouter" ||
-    settingsStore.state.aiModel === "reverse_proxy";
+    presetStore.state.aiModel.startsWith("gpt") ||
+    presetStore.state.aiModel.startsWith("claude") ||
+    presetStore.state.aiModel === "openrouter" ||
+    presetStore.state.aiModel === "reverse_proxy";
 
   for (const chat of prompts) {
     if (!chat.content.trim() && !chat.multimodals?.length) continue;
@@ -378,7 +379,7 @@ function applyCachePoint(
 
 function shouldAppendContinuePrompt(continued?: boolean) {
   if (!continued) return false;
-  const model = settingsStore.state.aiModel;
+  const model = presetStore.state.aiModel;
   return (
     model.startsWith("claude") ||
     model.startsWith("gpt") ||
@@ -439,7 +440,7 @@ function renderLegacyPromptOrder(options: FormatPromptOptions, formated: OpenAIC
     generationOverride(
       options.context.generation,
       "formatingOrder",
-      settingsStore.state.formatingOrder,
+      presetStore.state.formatingOrder,
     ),
   ) ?? [];
   formatOrder.push("postEverything");

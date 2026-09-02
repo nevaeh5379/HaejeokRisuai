@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { v4 } from "uuid";
 import type { character } from "../storage/database/schema";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
@@ -17,8 +18,8 @@ export function createLocalChatGenerationRuntime(
   return {
     tokenizeChatsDetailed: (chats) => tokenizer.tokenizeChatsDetailed(chats),
     getGenerationSettings: () => ({
-      maxResponseTokens: settingsStore.state.maxResponse,
-      imageResponse: settingsStore.state.outputImageModal,
+      maxResponseTokens: presetStore.state.maxResponse,
+      imageResponse: presetStore.state.outputImageModal,
       rememberToolUsage: settingsStore.state.rememberToolUsage,
     }),
     createGenerationId: v4,

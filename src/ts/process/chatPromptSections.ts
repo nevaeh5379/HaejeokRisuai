@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type { character, Chat, groupChat } from "../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -62,7 +63,7 @@ function getUtilityBotTemplate(): PromptItem[] {
 
 function resolvePromptTemplate(currentChar: character, generation?: ChatGenerationOverrides) {
   let promptTemplate = safeStructuredClone(
-    generationOverride(generation, "promptTemplate", settingsStore.state.promptTemplate),
+    generationOverride(generation, "promptTemplate", presetStore.state.promptTemplate),
   );
   const usingPromptTemplate = !!promptTemplate;
   if (promptTemplate) ensurePostEverythingCard(promptTemplate);
@@ -71,7 +72,7 @@ function resolvePromptTemplate(currentChar: character, generation?: ChatGenerati
     currentChar.utilityBot &&
     !(
       usingPromptTemplate &&
-      generationOverride(generation, "promptSettings", settingsStore.state.promptSettings).utilOverride
+      generationOverride(generation, "promptSettings", presetStore.state.promptSettings).utilOverride
     )
   ) {
     promptTemplate = getUtilityBotTemplate();
@@ -102,7 +103,7 @@ function buildLegacyMainPrompts(
   const baseMainPrompt = generationOverride(
     generation,
     "mainPrompt",
-    settingsStore.state.mainPrompt,
+    presetStore.state.mainPrompt,
   );
   const mainPrompt =
     currentChar.systemPrompt?.replaceAll("{{original}}", baseMainPrompt) ||
@@ -110,7 +111,7 @@ function buildLegacyMainPrompts(
   const promptPreprocess = generationOverride(
     generation,
     "promptPreprocess",
-    settingsStore.state.promptPreprocess,
+    presetStore.state.promptPreprocess,
   );
   const additionalPrompt =
     settingsStore.state.additionalPrompt && promptPreprocess
@@ -132,7 +133,7 @@ function buildLegacyMainPrompts(
     sections.jailbreak.push(
       ...parseLegacyPrompt(
         risuChatParser(
-          generationOverride(generation, "jailbreak", settingsStore.state.jailbreak),
+          generationOverride(generation, "jailbreak", presetStore.state.jailbreak),
           {
             chara: currentChar,
             chatTarget: target,
@@ -152,7 +153,7 @@ function buildLegacyGlobalNote(
   const baseGlobalNote = generationOverride(
     generation,
     "globalNote",
-    settingsStore.state.globalNote,
+    presetStore.state.globalNote,
   );
   const globalNote =
     currentChar.replaceGlobalNote?.replaceAll(
@@ -200,7 +201,7 @@ function buildAuthorAndControlPrompts(
   const promptSettings = generationOverride(
     generation,
     "promptSettings",
-    settingsStore.state.promptSettings,
+    presetStore.state.promptSettings,
   );
   if (
     settingsStore.state.chainOfThought &&
@@ -223,7 +224,7 @@ async function buildDescriptionText(
   const promptPreprocess = generationOverride(
     generation,
     "promptPreprocess",
-    settingsStore.state.promptPreprocess,
+    presetStore.state.promptPreprocess,
   );
   let description = risuChatParser(
     (promptPreprocess ? settingsStore.state.descriptionPrefix : "") + currentChar.desc,

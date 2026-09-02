@@ -1,3 +1,4 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { language } from "../../../lang";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
@@ -29,7 +30,7 @@ export async function requestPlugin(
     const bias = arg.biasString;
     const model = isV3Model
       ? arg.aiModel.replace("pluginmodel:::", "")
-      : db.currentPluginProvider;
+      : presetStore.state.currentPluginProvider;
     const v2Function = pluginV2.providers.get(model);
 
     if (arg.previewBody) {
@@ -70,10 +71,10 @@ export async function requestPlugin(
       : await pluginProcess({
           bias: bias,
           prompt_chat: formated,
-          temperature: db.temperature / 100,
+          temperature: presetStore.state.temperature / 100,
           max_tokens: maxTokens,
-          presence_penalty: db.PresensePenalty / 100,
-          frequency_penalty: db.frequencyPenalty / 100,
+          presence_penalty: presetStore.state.PresensePenalty / 100,
+          frequency_penalty: presetStore.state.frequencyPenalty / 100,
         });
 
     if (!d) {
@@ -119,7 +120,7 @@ export async function requestPlugin(
     return {
       type: "fail",
       result:
-        `Plugin Error from ${db.currentPluginProvider}: ` +
+        `Plugin Error from ${presetStore.state.currentPluginProvider}: ` +
         JSON.stringify(error),
       model: responseModel,
     };
@@ -152,10 +153,10 @@ export async function requestWebLLM(
   const transformersParams = {
     temperature: temperature,
     max_new_tokens: maxTokens,
-    top_k: db.ooba.top_k,
-    top_p: db.ooba.top_p,
-    repetition_penalty: db.ooba.repetition_penalty,
-    typical_p: db.ooba.typical_p,
+    top_k: presetStore.state.ooba.top_k,
+    top_p: presetStore.state.ooba.top_p,
+    repetition_penalty: presetStore.state.ooba.repetition_penalty,
+    typical_p: presetStore.state.ooba.typical_p,
   } as any;
 
   const finalParams = applyAdditionalParameters(
