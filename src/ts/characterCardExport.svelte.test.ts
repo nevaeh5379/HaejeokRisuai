@@ -13,7 +13,7 @@ vi.mock("./alert", () => ({
   alertNormal: vi.fn(),
   alertSelect: vi.fn(),
   alertStore: { set: vi.fn() },
-  alertCardExport: () => alertCardExportMock(),
+  alertCardExport: (...args: unknown[]) => alertCardExportMock(...args),
 }));
 
 vi.mock("./globalApi.svelte", async (importOriginal) => {
@@ -52,7 +52,12 @@ vi.mock("./media", () => ({
 }));
 
 import { VirtualWriter } from "./globalApi.svelte";
-import { createBaseV3, exportChar, exportCharacterCard } from "./characterCards";
+import {
+  createBaseV3,
+  exportChar,
+  exportCharacterCard,
+  filterLorebooksForExport,
+} from "./characterCards";
 
 describe("createBaseV3 asset packaging", () => {
   it("includes main icon asset even when emotionImages is undefined", () => {
@@ -89,6 +94,34 @@ describe("createBaseV3 asset packaging", () => {
     );
     expect(mainIcon).toBeDefined();
     expect(mainIcon?.uri).toBe("ccdefault:");
+  });
+});
+
+describe("filterLorebooksForExport", () => {
+  const lorebooks = [
+    { comment: "Keep A", key: "a" },
+    { comment: "Exclude B", key: "b" },
+    { comment: "Keep C", key: "c" },
+  ] as unknown as character["globalLore"];
+
+  it("keeps all lorebooks by default and returns a new array", () => {
+    const result = filterLorebooksForExport(lorebooks, undefined);
+
+    expect(result).toEqual(lorebooks);
+    expect(result).not.toBe(lorebooks);
+  });
+
+  it("removes only the selected lorebook indices", () => {
+    const result = filterLorebooksForExport(lorebooks, [1]);
+
+    expect(result.map((lore) => lore.comment)).toEqual(["Keep A", "Keep C"]);
+    expect(lorebooks).toHaveLength(3);
+  });
+
+  it("ignores invalid exclusion indices", () => {
+    const result = filterLorebooksForExport(lorebooks, [-1, 99, 1.5]);
+
+    expect(result).toEqual(lorebooks);
   });
 });
 
@@ -174,6 +207,9 @@ describe("character export with shallow details", () => {
     expect(storedChar.desc).toBe("A rich detailed character description");
     expect(storedChar.personality).toBe("Kind and curious");
     expect(storedChar.firstMessage).toBe("Hello, traveler!");
+    expect(alertCardExportMock).toHaveBeenCalledWith("", [
+      ["0", "Ancient Library"],
+    ]);
   });
 
   it("aborts exportCharacterCard when shallow hydration does not load details", async () => {

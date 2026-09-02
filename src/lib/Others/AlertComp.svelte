@@ -78,6 +78,7 @@
     let input = $state('')
     let cardExportType = $state('realm')
     let cardExportType2 = $state('')
+    let excludedLorebookIndices: Set<number> = $state(new Set())
     let cardLicense = $state('')
     let generationInfoMenuIndex = $state(0)
     let expandedLogs: Set<number> = $state(new Set())
@@ -141,6 +142,7 @@
         if($alertStore.type !== 'cardexport'){
             cardExportType = 'realm'
             cardExportType2 = ''
+            excludedLorebookIndices = new Set()
             cardLicense = ''
         }
         if($alertStore.type !== 'requestlogs'){
@@ -154,6 +156,25 @@
             void loadTranslatedTrace();
         }
     });
+
+    function setLorebookIncluded(index: number, included: boolean) {
+        const next = new Set(excludedLorebookIndices)
+        if (included) {
+            next.delete(index)
+        } else {
+            next.add(index)
+        }
+        excludedLorebookIndices = next
+    }
+
+    function setAllLorebooksIncluded(included: boolean) {
+        if (included) {
+            excludedLorebookIndices = new Set()
+            return
+        }
+        const lorebooks = $alertStore.datalist ?? []
+        excludedLorebookIndices = new Set(lorebooks.map(([index]) => Number(index)))
+    }
 
     async function loadTranslatedTrace() {
         if (isTranslating || translatedStackTrace || stackTraceTranslationFailed || !$alertStore.stackTrace) return;
@@ -897,7 +918,8 @@
                         type: 'none',
                         msg: JSON.stringify({
                             type: 'cancel',
-                            type2: cardExportType2
+                            type2: cardExportType2,
+                            excludedLorebookIndices: [...excludedLorebookIndices].sort((a, b) => a - b)
                         })
                     })
                 }}>
@@ -952,12 +974,42 @@
                     <OptionInput value="json">JSON</OptionInput>
                 </SelectInput>
             {/if}
+            {#if $alertStore.submsg === '' && (cardExportType === '' || cardExportType === 'ccv2')}
+                {@const exportLorebooks = $alertStore.datalist ?? []}
+                {#if exportLorebooks.length > 0}
+                    <div class="mt-4 flex items-center justify-between gap-2">
+                        <span class="text-textcolor font-semibold">Lorebooks</span>
+                        <div class="flex gap-2 text-xs">
+                            <button class="text-textcolor2 hover:text-green-500" onclick={() => setAllLorebooksIncluded(true)}>Include all</button>
+                            <button class="text-textcolor2 hover:text-red-500" onclick={() => setAllLorebooksIncluded(false)}>Exclude all</button>
+                        </div>
+                    </div>
+                    <span class="text-textcolor2 text-sm mt-1">Uncheck lorebooks you do not want to include in this export.</span>
+                    <div class="mt-2 max-h-60 overflow-y-auto rounded-lg border border-darkborderc bg-bgcolor/30 p-2 flex flex-col gap-1">
+                        {#each exportLorebooks as [indexValue, label]}
+                            {@const index = Number(indexValue)}
+                            <label class="flex items-center gap-2 rounded px-2 py-2 hover:bg-bgcolor cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    class="accent-green-500 shrink-0"
+                                    checked={!excludedLorebookIndices.has(index)}
+                                    onchange={(event) => setLorebookIncluded(index, event.currentTarget.checked)}
+                                />
+                                <span class="text-textcolor truncate" title={label}>
+                                    {label}
+                                </span>
+                            </label>
+                        {/each}
+                    </div>
+                {/if}
+            {/if}
             <Button className="mt-4" onclick={() => {
                 alertStore.set({
                     type: 'none',
                     msg: JSON.stringify({
                         type: cardExportType,
-                        type2: cardExportType2
+                        type2: cardExportType2,
+                        excludedLorebookIndices: [...excludedLorebookIndices].sort((a, b) => a - b)
                     })
                 })
             }}>{cardExportType === 'realm' ? language.shareCloud : language.export}</Button>
