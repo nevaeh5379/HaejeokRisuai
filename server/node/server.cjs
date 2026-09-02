@@ -4439,6 +4439,25 @@ app.get('/api/database-v2/chats/:chatId/branches', authenticatedRouteLimiter, as
     }
 });
 
+app.get('/api/database-v2/chats/:chatId/branches/graph', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
+        return;
+    }
+    try {
+        await sendCompressedJson(req, res, {
+            graph: await postgresStorage.loadChatBranchGraph(req.params.chatId),
+        });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_branch_request' });
+            return;
+        }
+        next(error);
+    }
+});
+
 app.get('/api/database-v2/chats/:chatId/branches/:branchId/messages', authenticatedRouteLimiter, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!postgresStorage.enabled) {
@@ -4451,7 +4470,7 @@ app.get('/api/database-v2/chats/:chatId/branches/:branchId/messages', authentica
             req.params.branchId,
             {
                 messageLimit: normalizePageInteger(req.query.limit, undefined),
-                mode: req.query.mode === 'generation' ? 'generation' : 'full',
+                mode: req.query.mode === 'generation' || req.query.mode === 'graph' ? req.query.mode : 'full',
             },
         );
         await sendCompressedJson(req, res, { messages });

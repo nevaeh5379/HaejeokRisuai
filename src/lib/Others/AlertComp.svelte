@@ -42,6 +42,7 @@
     let stackTraceTranslationFailed = $state(false);
     let isTranslating = $state(false);
     let persistedBranchGraphChat = $state<Chat | null>(null);
+    let branchGraphLoading = $state(false);
     let branchGraphLoadGeneration = 0;
     let osLabel = $state(getFallbackOSLabel());
     const displayedStackTrace = $derived(translatedStackTrace || $alertStore.stackTrace || '');
@@ -223,6 +224,7 @@
         const generation = ++branchGraphLoadGeneration
         if(type !== 'branches'){
             persistedBranchGraphChat = null
+            branchGraphLoading = false
             return
         }
         void (async () => {
@@ -231,17 +233,43 @@
             if(chat.branchState){
                 throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
             }
+
+            // Open immediately with the already-hydrated active timeline. The full
+            // persistent graph replaces this snapshot as soon as branch reads finish.
+            persistedBranchGraphChat = { ...chat, branchState: undefined }
+            branchGraphLoading = true
+
             const storage = await getSqlBranchStorage()
-            const summaries = await storage.listChatBranches(chat.id)
-            const activeBranchId = chat.activeBranchId
-                ?? summaries.find((branch) => branch.reason === 'root')?.id
-            const branches = []
-            for(const summary of summaries){
-                const messages = await storage.loadBranchMessages(chat.id, summary.id)
+            const snapshot = await storage.loadChatBranchGraph(chat.id)
+            const activeBranchId = snapshot.activeBranchId
+                ?? chat.activeBranchId
+                ?? snapshot.branches.find((branch) => branch.reason === 'root')?.id
+            const messageById = new Map(
+                snapshot.messages
+                    .filter((message) => Boolean(message.chatId))
+                    .map((message) => [message.chatId!, message]),
+            )
+            const parentById = new Map(
+                snapshot.links.map((link) => [link.messageId, link.parentMessageId]),
+            )
+            const timelineForHead = (headMessageId?: string) => {
+                const reversed = []
+                const seen = new Set<string>()
+                let messageId = headMessageId
+                while(messageId && !seen.has(messageId)){
+                    seen.add(messageId)
+                    const message = messageById.get(messageId)
+                    if(message) reversed.push(message)
+                    messageId = parentById.get(messageId)
+                }
+                return reversed.reverse()
+            }
+            const branches = snapshot.branches.map((summary) => {
+                const messages = timelineForHead(summary.headMessageId)
                 const branchMessageIndex = summary.forkMessageId
                     ? messages.findIndex((message) => message.chatId === summary.forkMessageId)
                     : -1
-                branches.push({
+                return {
                     id: summary.id,
                     parentBranchId: summary.parentBranchId,
                     branchMessageId: summary.forkMessageId,
@@ -249,8 +277,8 @@
                     reason: summary.reason,
                     createdAt: summary.createdAt,
                     messages,
-                })
-            }
+                }
+            })
             if(generation !== branchGraphLoadGeneration || $alertStore.type !== 'branches') return
             const activeMessages = branches.find((branch) => branch.id === activeBranchId)?.messages
                 ?? chat.message
@@ -264,7 +292,13 @@
                     branches,
                 } : undefined,
             }
-        })()
+            branchGraphLoading = false
+        })().catch((error) => {
+            // Keep the immediate snapshot non-interactive when the persistent
+            // graph could not be loaded; closing the modal resets this state.
+            if(generation === branchGraphLoadGeneration) branchGraphLoading = true
+            console.error('[BranchGraph] Failed to load persistent graph', error)
+        })
     })
 </script>
 

@@ -6,11 +6,12 @@ let storageSingleton: ISqlStorage | null = null;
 
 export type SqlBranchStorage = ISqlStorage & Required<Pick<
   ISqlStorage,
-  "listChatBranches" | "loadBranchMessages" | "createChatBranch" | "activateChatBranch"
+  "listChatBranches" | "loadChatBranchGraph" | "loadBranchMessages" | "createChatBranch" | "activateChatBranch"
 >>;
 
 const REQUIRED_BRANCH_STORAGE_METHODS = [
   "listChatBranches",
+  "loadChatBranchGraph",
   "loadBranchMessages",
   "createChatBranch",
   "activateChatBranch",

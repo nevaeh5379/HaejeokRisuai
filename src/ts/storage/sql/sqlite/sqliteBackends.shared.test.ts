@@ -491,6 +491,41 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("loads the branch graph as unique core messages without extension hydration", async () => {
+    const { storage, database, queryLog } = makeFreshHarness(make);
+    await seed(storage);
+    const [root] = await storage.listChatBranches!("chat-1");
+    await storage.createChatBranch!({
+      id: "reroll-graph",
+      chatId: "chat-1",
+      parentBranchId: root.id,
+      forkMessageId: "m1",
+      reason: "reroll",
+      createdAt: 200,
+    });
+    const append = createEmptySqlCommit(storage.getRevision(), "graph-message");
+    append.messages.push({
+      id: "m-alt-graph",
+      chatId: "chat-1",
+      position: 1,
+      data: makeMessage("m-alt-graph", "char", "graph alternative"),
+    });
+    await storage.commit(append);
+
+    queryLog.clear();
+    const graph = await storage.loadChatBranchGraph!("chat-1");
+    expect(graph.branches).toHaveLength(2);
+    expect(graph.activeBranchId).toBe("reroll-graph");
+    expect(new Set(graph.messages.map((message) => message.chatId))).toEqual(
+      new Set(["m1", "m2", "m-alt-graph"]),
+    );
+    expect(graph.links).toHaveLength(3);
+    expect(graph.messages.find((message) => message.chatId === "m1")?.generationInfo?.model).toBe("test-model");
+    expect(graph.messages.every((message) => message.promptInfo === undefined)).toBe(true);
+    expect(queryLog.touching("message_extension_nodes")).toBeLessThanOrEqual(1);
+    database.close();
+  });
+
   it("switches persistent branches without rewriting existing messages", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     await seed(storage);

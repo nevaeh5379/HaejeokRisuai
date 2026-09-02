@@ -2064,24 +2064,28 @@ class PostgresStorage extends SqlStorageBase {
         if (ids.length === 0) {
             return { messages: [], offset, total, hasMore: offset > 0 };
         }
-        const includeMetadata = options.mode !== 'generation';
-        const results = [await client.query(
-            'SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key',
-            [chatId, ids]
-        )];
-        if (includeMetadata) {
-            results.push(
-                await client.query('SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids]),
-                await client.query('SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids]),
-                await client.query('SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids]),
-                await client.query('SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])
-            );
+        let attributes = [];
+        let generations = [];
+        let promptInfos = [];
+        let promptToggles = [];
+        let promptItems = [];
+        if (options.mode === 'graph') {
+            generations = (await client.query(
+                'SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])',
+                [chatId, ids]
+            )).rows;
+        } else {
+            attributes = (await client.query(
+                'SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key',
+                [chatId, ids]
+            )).rows;
+            if (options.mode !== 'generation') {
+                generations = (await client.query('SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids])).rows;
+                promptInfos = (await client.query('SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])', [chatId, ids])).rows;
+                promptToggles = (await client.query('SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])).rows;
+                promptItems = (await client.query('SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position', [chatId, ids])).rows;
+            }
         }
-        const attributes = results[0]?.rows ?? [];
-        const generations = results[1]?.rows ?? [];
-        const promptInfos = results[2]?.rows ?? [];
-        const promptToggles = results[3]?.rows ?? [];
-        const promptItems = results[4]?.rows ?? [];
         const relations = {
             attributes: groupMessageRows(attributes),
             generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
@@ -2227,6 +2231,71 @@ class PostgresStorage extends SqlStorageBase {
                 reason: row.reason,
                 createdAt: Number(row.created_at) || 0,
             }));
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async loadChatBranchGraph(chatId) {
+        this.assertEnabled();
+        assertId(chatId, 'chatId');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await this.ensureChatBranchGraph(client, chatId);
+            const branchResult = await client.query(
+                `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+                        branch.head_message_id, branch.reason, branch.created_at,
+                        active.branch_id AS active_branch_id
+                   FROM chat.branches branch
+              LEFT JOIN chat.active_branches active ON active.chat_id = branch.chat_id
+                  WHERE branch.chat_id = $1
+               ORDER BY branch.created_at, branch.id`,
+                [chatId]
+            );
+            const graphRows = await client.query(
+                `SELECT messages.*, links.parent_message_id, links.origin_branch_id,
+                        generation.model AS graph_generation_model
+                   FROM chat.message_branch_links links
+                   JOIN chat.messages messages
+                     ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+              LEFT JOIN chat.message_generation generation
+                     ON generation.chat_id = messages.chat_id AND generation.message_id = messages.id
+                  WHERE links.chat_id = $1
+               ORDER BY messages.position, messages.id`,
+                [chatId]
+            );
+            await client.query('COMMIT');
+            const branches = branchResult.rows.map((row) => ({
+                id: row.id,
+                chatId: row.chat_id,
+                parentBranchId: row.parent_branch_id ?? undefined,
+                forkMessageId: row.fork_message_id ?? undefined,
+                headMessageId: row.head_message_id ?? undefined,
+                reason: row.reason,
+                createdAt: Number(row.created_at) || 0,
+            }));
+            const messages = graphRows.rows.map((row) => {
+                const message = rebuildMessage(row);
+                if (row.graph_generation_model != null) {
+                    message.generationInfo = { model: row.graph_generation_model };
+                }
+                return message;
+            });
+            const links = graphRows.rows.map((row) => ({
+                messageId: row.id,
+                parentMessageId: row.parent_message_id ?? undefined,
+                originBranchId: row.origin_branch_id,
+            }));
+            return {
+                branches,
+                activeBranchId: branchResult.rows[0]?.active_branch_id ?? undefined,
+                messages,
+                links,
+            };
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
             throw error;

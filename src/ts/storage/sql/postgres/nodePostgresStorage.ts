@@ -8,6 +8,7 @@ import type {
   SqlDatabaseSnapshotResult,
   SqlRecentChatMetadata,
   SqlChatBranchSummary,
+  SqlChatBranchGraphData,
   SqlCreateChatBranchInput,
   BotPresetSummary,
   StoredBotPreset,
@@ -1174,17 +1175,38 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     return body.branches ?? [];
   }
 
+  async loadChatBranchGraph(chatId: string): Promise<SqlChatBranchGraphData> {
+    if (!(await this.ensureEnabled())) {
+      return { branches: [], messages: [], links: [] };
+    }
+    const response = await fetch(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/graph`,
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "SQL chat branch graph load failed");
+    }
+    const body: { graph?: SqlChatBranchGraphData } = await response.json();
+    return body.graph ?? { branches: [], messages: [], links: [] };
+  }
+
   async loadBranchMessages(
     chatId: string,
     branchId: string,
-    options: { messageLimit?: number; mode?: "full" | "generation" } = {},
+    options: { messageLimit?: number; mode?: "full" | "generation" | "graph" } = {},
   ): Promise<Message[]> {
     if (!(await this.ensureEnabled())) return [];
     const params = new URLSearchParams();
     if (options.messageLimit !== undefined) {
       params.set("limit", String(options.messageLimit));
     }
-    if (options.mode === "generation") params.set("mode", "generation");
+    if (options.mode === "generation" || options.mode === "graph") {
+      params.set("mode", options.mode);
+    }
     const search = params.size > 0 ? `?${params}` : "";
     const response = await fetch(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/messages${search}`,

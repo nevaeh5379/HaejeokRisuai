@@ -70,6 +70,19 @@ export interface SqlChatBranchSummary {
   createdAt: number;
 }
 
+export interface SqlChatBranchGraphLink {
+  messageId: string;
+  parentMessageId?: string;
+  originBranchId: string;
+}
+
+export interface SqlChatBranchGraphData {
+  branches: SqlChatBranchSummary[];
+  activeBranchId?: string;
+  messages: Message[];
+  links: SqlChatBranchGraphLink[];
+}
+
 export interface SqlCreateChatBranchInput {
   id: string;
   chatId: string;
@@ -198,10 +211,11 @@ export interface ISqlStorage {
    * legacy in-memory branchState path.
    */
   listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
+  loadChatBranchGraph?(chatId: string): Promise<SqlChatBranchGraphData>;
   loadBranchMessages?(
     chatId: string,
     branchId: string,
-    options?: { messageLimit?: number; mode?: "full" | "generation" },
+    options?: { messageLimit?: number; mode?: "full" | "generation" | "graph" },
   ): Promise<Message[]>;
   createChatBranch?(
     input: SqlCreateChatBranchInput,

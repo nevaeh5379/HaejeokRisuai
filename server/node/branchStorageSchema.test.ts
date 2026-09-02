@@ -76,6 +76,24 @@ describe("legacy branch migration wiring", () => {
     })
   }
 
+  for (const [label, file] of [
+    ["PostgreSQL", "postgresStorage.cjs"],
+    ["Azure SQL", "azureStorage.cjs"],
+    ["Oracle", "oracleStorage.cjs"],
+  ] as const) {
+    it(`${label} exposes a single-read branch graph loader`, () => {
+      const source = read(file)
+      expect(source).toContain("async loadChatBranchGraph")
+      expect(source).toContain("graph_generation_model")
+    })
+  }
+
+  it("exposes the branch graph batch endpoint", () => {
+    const source = read("server.cjs")
+    expect(source).toContain("/api/database-v2/chats/:chatId/branches/graph")
+    expect(source).toContain("loadChatBranchGraph(req.params.chatId)")
+  })
+
   it("does not synthesize a PostgreSQL root when any branch already exists", () => {
     const source = read("postgresStorage.cjs")
     expect(source).toMatch(/NOT EXISTS \([\s\S]{0,160}FROM chat\.branches existing WHERE existing\.chat_id = chats\.id/)

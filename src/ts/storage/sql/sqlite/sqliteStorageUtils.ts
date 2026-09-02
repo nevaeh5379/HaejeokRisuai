@@ -220,7 +220,7 @@ export function buildCharacterAssetFieldsQuery(characterId: string): {
 
 // ── Shared message batch query (web / tauri / capacitor) ─────────────
 
-export type MessageLoadMode = "full" | "generation";
+export type MessageLoadMode = "full" | "generation" | "graph";
 
 /**
  * Builds the batched message read: one query that joins message core rows
@@ -280,6 +280,9 @@ excluded(chat_id, message_id, node_id) AS (
    )`
       : "";
   const metadataBind = mode === "generation" ? [chatId] : [];
+  const extensionJoin = mode === "graph"
+    ? "LEFT JOIN message_extension_nodes n ON 0"
+    : "LEFT JOIN message_extension_nodes n ON n.chat_id = selected.chat_id AND n.message_id = selected.id";
 
   return {
     sql: `WITH selected AS (${selectedSql})${withExcluded}
@@ -294,10 +297,53 @@ excluded(chat_id, message_id, node_id) AS (
           n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
           n.number_value, n.boolean_value
    FROM selected
-   LEFT JOIN message_extension_nodes n
-     ON n.chat_id = selected.chat_id AND n.message_id = selected.id${metadataFilter}
+   ${extensionJoin}${metadataFilter}
    ORDER BY selected.position, n.node_id`,
     bind: [...bind, ...metadataBind],
+  };
+}
+
+export function rebuildBranchGraphMessages(
+  rows: Record<string, unknown>[],
+): Message[] {
+  const comments = new Map<string, boolean>();
+  for (const row of rows) {
+    if (row.graph_is_comment == null) continue;
+    comments.set(String(row.message_id), Boolean(row.graph_is_comment));
+  }
+  const messages = rebuildMessageRows(rows);
+  for (const message of messages) {
+    if (message.chatId && comments.has(message.chatId)) {
+      message.isComment = comments.get(message.chatId)!;
+    }
+  }
+  return messages;
+}
+
+/** Lightweight unique-message read used by the branch graph modal. */
+export function buildBranchGraphRowsQuery(chatId: string): { sql: string; bind: unknown[] } {
+  return {
+    sql: `SELECT messages.id AS message_id, messages.position AS message_position,
+                 messages.role AS message_role, messages.content_text AS message_content_text,
+                 messages.content_encoded AS message_content_encoded,
+                 messages.sender_name AS message_sender_name, messages.sent_time AS message_sent_time,
+                 messages.generation_model AS message_generation_model,
+                 messages.input_tokens AS message_input_tokens,
+                 messages.output_tokens AS message_output_tokens,
+                 comment_node.boolean_value AS graph_is_comment,
+                 links.parent_message_id AS graph_parent_message_id,
+                 links.origin_branch_id AS graph_origin_branch_id
+            FROM message_branch_links links
+            JOIN messages
+              ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+       LEFT JOIN message_extension_nodes comment_node
+              ON comment_node.chat_id = messages.chat_id
+             AND comment_node.message_id = messages.id
+             AND comment_node.parent_node_id = 0
+             AND comment_node.object_key = 'isComment'
+           WHERE links.chat_id = ?
+        ORDER BY messages.position, messages.id`,
+    bind: [chatId],
   };
 }
 
@@ -335,6 +381,41 @@ export function buildBranchMessageRowsQuery(
       ? " ORDER BY branch_path.depth DESC LIMIT ? OFFSET ?"
       : "";
 
+  if (mode === "graph") {
+    return {
+      sql: `WITH RECURSIVE branch_path(message_id, depth) AS (
+  ${branchSeed}
+  UNION ALL
+  SELECT links.parent_message_id, path.depth + 1
+    FROM branch_path path
+    JOIN message_branch_links links
+      ON links.chat_id = ? AND links.message_id = path.message_id
+   WHERE links.parent_message_id IS NOT NULL${recursionLimit}
+),
+selected AS (
+  SELECT messages.*, branch_path.depth
+    FROM branch_path
+    JOIN messages
+      ON messages.chat_id = ? AND messages.id = branch_path.message_id
+   ${selectedPage}
+)
+SELECT selected.id AS message_id, selected.position AS message_position,
+       selected.role AS message_role, selected.content_text AS message_content_text,
+       selected.content_encoded AS message_content_encoded,
+       selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
+       selected.generation_model AS message_generation_model,
+       selected.input_tokens AS message_input_tokens,
+       selected.output_tokens AS message_output_tokens
+  FROM selected
+ ORDER BY selected.depth DESC`,
+      bind: [
+        ...bind,
+        chatId,
+        ...(selectedPage ? [limit, rootOffset] : []),
+      ],
+    };
+  }
+
   const withExcluded =
     mode === "generation"
       ? `,
@@ -360,6 +441,7 @@ excluded(chat_id, message_id, node_id) AS (
         AND excluded.node_id = n.node_id
    )`
       : "";
+  const extensionJoin = "LEFT JOIN message_extension_nodes n ON n.chat_id = selected.chat_id AND n.message_id = selected.id";
   return {
     sql: `WITH RECURSIVE branch_path(message_id, depth) AS (
   ${branchSeed}
@@ -388,8 +470,7 @@ selected AS (
           n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
           n.number_value, n.boolean_value
      FROM selected
-     LEFT JOIN message_extension_nodes n
-       ON n.chat_id = selected.chat_id AND n.message_id = selected.id${metadataFilter}
+     ${extensionJoin}${metadataFilter}
     ORDER BY selected.depth DESC, n.node_id`,
     bind: [
       ...bind,

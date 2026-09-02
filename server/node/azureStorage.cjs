@@ -1268,23 +1268,28 @@ class AzureStorage extends SqlStorageBase {
             return await request.query(query);
         };
         const relationJoin = `INNER JOIN OPENJSON(@branchMessageIds) WITH (id NVARCHAR(450) '$') ids ON ids.id = source.message_id`;
-        const queries = [
-            relationQuery(`SELECT source.* FROM [chat].[message_attributes] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.[key]`),
-        ];
-        if (options.mode !== 'generation') {
-            queries.push(
-                relationQuery(`SELECT source.* FROM [chat].[message_generation] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`),
-                relationQuery(`SELECT source.* FROM [chat].[message_prompt_info] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`),
-                relationQuery(`SELECT source.* FROM [chat].[message_prompt_toggles] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.position`),
-                relationQuery(`SELECT source.* FROM [chat].[message_prompt_items] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.position`)
-            );
+        let attributes = [];
+        let generations = [];
+        let promptInfos = [];
+        let promptToggles = [];
+        let promptItems = [];
+        if (options.mode === 'graph') {
+            generations = (await relationQuery(`SELECT source.* FROM [chat].[message_generation] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`)).recordset ?? [];
+        } else {
+            attributes = (await relationQuery(`SELECT source.* FROM [chat].[message_attributes] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.[key]`)).recordset ?? [];
+            if (options.mode !== 'generation') {
+                const results = await Promise.all([
+                    relationQuery(`SELECT source.* FROM [chat].[message_generation] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`),
+                    relationQuery(`SELECT source.* FROM [chat].[message_prompt_info] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`),
+                    relationQuery(`SELECT source.* FROM [chat].[message_prompt_toggles] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.position`),
+                    relationQuery(`SELECT source.* FROM [chat].[message_prompt_items] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.position`),
+                ]);
+                generations = results[0]?.recordset ?? [];
+                promptInfos = results[1]?.recordset ?? [];
+                promptToggles = results[2]?.recordset ?? [];
+                promptItems = results[3]?.recordset ?? [];
+            }
         }
-        const results = await Promise.all(queries);
-        const attributes = results[0]?.recordset ?? [];
-        const generations = results[1]?.recordset ?? [];
-        const promptInfos = results[2]?.recordset ?? [];
-        const promptToggles = results[3]?.recordset ?? [];
-        const promptItems = results[4]?.recordset ?? [];
         const relations = {
             attributes: groupMessageRows(attributes),
             generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
@@ -1379,6 +1384,66 @@ class AzureStorage extends SqlStorageBase {
             reason: row.reason,
             createdAt: Number(row.created_at) || 0,
         }));
+    }
+
+    async loadChatBranchGraph(chatId) {
+        assertId(chatId, 'chatId');
+        const pool = await this.getPool();
+        await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+
+        const branchReq = pool.request();
+        branchReq.input('graphChatId', sql.NVarChar(450), chatId);
+        const branchResult = await branchReq.query(`
+            SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+                   branch.head_message_id, branch.reason, branch.created_at,
+                   active.branch_id AS active_branch_id
+              FROM [chat].[branches] branch
+         LEFT JOIN [chat].[active_branches] active ON active.chat_id = branch.chat_id
+             WHERE branch.chat_id = @graphChatId
+          ORDER BY branch.created_at, branch.id
+        `);
+
+        const graphReq = pool.request();
+        graphReq.input('graphChatId', sql.NVarChar(450), chatId);
+        const graphResult = await graphReq.query(`
+            SELECT messages.*, links.parent_message_id, links.origin_branch_id,
+                   generation.model AS graph_generation_model
+              FROM [chat].[message_branch_links] links
+              JOIN [chat].[messages] messages
+                ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+         LEFT JOIN [chat].[message_generation] generation
+                ON generation.chat_id = messages.chat_id AND generation.message_id = messages.id
+             WHERE links.chat_id = @graphChatId
+          ORDER BY messages.position, messages.id
+        `);
+
+        const branches = branchResult.recordset.map((row) => ({
+            id: row.id,
+            chatId: row.chat_id,
+            parentBranchId: row.parent_branch_id ?? undefined,
+            forkMessageId: row.fork_message_id ?? undefined,
+            headMessageId: row.head_message_id ?? undefined,
+            reason: row.reason,
+            createdAt: Number(row.created_at) || 0,
+        }));
+        const messages = graphResult.recordset.map((row) => {
+            const message = rebuildMessage(row);
+            if (row.graph_generation_model != null) {
+                message.generationInfo = { model: row.graph_generation_model };
+            }
+            return message;
+        });
+        const links = graphResult.recordset.map((row) => ({
+            messageId: row.id,
+            parentMessageId: row.parent_message_id ?? undefined,
+            originBranchId: row.origin_branch_id,
+        }));
+        return {
+            branches,
+            activeBranchId: branchResult.recordset[0]?.active_branch_id ?? undefined,
+            messages,
+            links,
+        };
     }
 
     async loadBranchMessages(chatId, branchId, options = {}) {

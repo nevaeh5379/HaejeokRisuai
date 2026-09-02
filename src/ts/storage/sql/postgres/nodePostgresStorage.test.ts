@@ -751,6 +751,27 @@ describe("NodePostgresStorage browser client", () => {
     expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: "POST" });
   });
 
+  it("loads the persistent branch graph through one batch endpoint", async () => {
+    const graph = {
+      branches: [{ id: "root", chatId: "chat-123", reason: "root", createdAt: 0, headMessageId: "msg-1" }],
+      activeBranchId: "root",
+      messages: [{ chatId: "msg-1", role: "user", data: "hello" }],
+      links: [{ messageId: "msg-1", originBranchId: "root" }],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ graph }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    await expect(storage.loadChatBranchGraph("chat-123")).resolves.toEqual(graph);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/chats/chat-123/branches/graph",
+    );
+  });
+
   it("loads character details on demand", async () => {
     const fetchMock = vi
       .fn()

@@ -55,12 +55,14 @@ import {
 } from "../sqlDeferredSettings";
 import {
   AsyncSerialQueue,
+  buildBranchGraphRowsQuery,
   buildBranchMessageCountQuery,
   buildBranchMessageRowsQuery,
   buildCharacterAssetFieldsQuery,
   buildMessageRowsQuery,
   normalizeSqliteLimit,
   normalizeSqlitePageEnd,
+  rebuildBranchGraphMessages,
   rebuildMessageRows,
   type SqliteTransactionStatement,
 } from "./sqliteStorageUtils";
@@ -1098,10 +1100,35 @@ export abstract class NativeSqliteStorageBase {
     return rows.map(mapSqliteChatBranchRow);
   }
 
+  async loadChatBranchGraph(chatId: string) {
+    await this.ensureBranchGraph(chatId);
+    const branchRows = await this.selectRows<SqliteChatBranchRow & { active_branch_id?: string }>(
+      `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+              branch.head_message_id, branch.reason, branch.created_at,
+              active.branch_id AS active_branch_id
+         FROM chat_branches branch
+    LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
+        WHERE branch.chat_id = ? ORDER BY branch.created_at, branch.id`,
+      [chatId],
+    );
+    const graphQuery = buildBranchGraphRowsQuery(chatId);
+    const graphRows = await this.selectRows<Record<string, unknown>>(graphQuery.sql, graphQuery.bind);
+    return {
+      branches: branchRows.map(mapSqliteChatBranchRow),
+      activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
+      messages: rebuildBranchGraphMessages(graphRows),
+      links: graphRows.map((row) => ({
+        messageId: String(row.message_id),
+        parentMessageId: row.graph_parent_message_id == null ? undefined : String(row.graph_parent_message_id),
+        originBranchId: String(row.graph_origin_branch_id),
+      })),
+    };
+  }
+
   async loadBranchMessages(
     chatId: string,
     branchId: string,
-    options?: { messageLimit?: number; mode?: "full" | "generation" },
+    options?: { messageLimit?: number; mode?: "full" | "generation" | "graph" },
   ): Promise<Message[]> {
     await this.ensureBranchGraph(chatId);
     const limit =
@@ -1112,7 +1139,7 @@ export abstract class NativeSqliteStorageBase {
       chatId,
       branchId,
       limit,
-      options?.mode === "generation" ? "generation" : "full",
+      options?.mode === "generation" ? "generation" : options?.mode === "graph" ? "graph" : "full",
     );
     return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
   }
