@@ -1147,11 +1147,14 @@ export class WebSqliteStorage implements ISqlStorage {
          FROM chats ch
          JOIN characters c ON c.id = ch.character_id
     LEFT JOIN messages m ON m.chat_id = ch.id
-       AND m.position = COALESCE((
-              SELECT MAX(m2.position) FROM messages m2 WHERE m2.chat_id = ch.id
-            ), -1)
+       AND m.id = (
+              SELECT m2.id FROM messages m2
+               WHERE m2.chat_id = ch.id
+               ORDER BY m2.position DESC, m2.sent_time DESC, m2.id DESC
+               LIMIT 1
+            )
         WHERE c.trash_time IS NULL
-        ORDER BY ch.last_message_time DESC
+        ORDER BY COALESCE(ch.last_message_time, c.last_interaction_time, 0) DESC, ch.id
         LIMIT ?`,
       [normalizedLimit],
     );

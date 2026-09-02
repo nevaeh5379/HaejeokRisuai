@@ -720,6 +720,7 @@ class OracleStorage extends SqlStorageBase {
                 console.log('[Oracle startup] 5/8 and 6/8 existing storage schema is current; schema apply skipped.');
             }
             await this.runStartupStep('6b/8 ensure persistent chat branch schema', () => this.ensureBranchSchema(testConn));
+            await this.runStartupStep('6c/8 ensure chat last-message invariant', () => this.ensureLastMessageTimeInvariant(testConn));
             await this.runStartupStep('7/8 ensure asset catalog schema', () => this.ensureAssetCatalogSchema(testConn));
             await testConn.close();
 
@@ -743,6 +744,30 @@ class OracleStorage extends SqlStorageBase {
             try { await pool.close(0); } catch (e) {}
             throw error;
         }
+    }
+
+    async ensureLastMessageTimeInvariant(connection) {
+        const existing = await connection.execute(
+            `SELECT trigger_name FROM user_triggers WHERE trigger_name = 'CHAT_MESSAGES_LAST_MESSAGE_TIME'`,
+            [], { outFormat: oracledb.OUT_FORMAT_OBJECT }
+        );
+        if (!existing.rows?.length) {
+            await connection.execute(`
+                UPDATE chat_chats ch
+                   SET last_message_time = (
+                       SELECT m.sent_time
+                         FROM chat_messages m
+                        WHERE m.chat_id = ch.id
+                        ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
+                        FETCH FIRST 1 ROW ONLY
+                   ), updated_at = SYSTIMESTAMP
+            `);
+        }
+        const triggerSql = await fs.readFile(
+            path.join(__dirname, 'oracle-last-message-time.sql'),
+            'utf8'
+        );
+        await this.applySchema(connection, triggerSql);
     }
 
     async ensureBranchSchema(connection) {
@@ -2427,6 +2452,10 @@ class OracleStorage extends SqlStorageBase {
                     `Oracle data changed in another session (server revision ${currentRevision}). Reload before saving again.`);
             }
             const nextRevision = currentRevision + 1;
+            const affectedMessageChatIds = new Set([
+                ...(payload.messages || []).map((item) => item.chatId),
+                ...(payload.messageDeletes || []).map((item) => item.chatId),
+            ]);
             await beginAuditRevision(conn, {
                 storageRevision: nextRevision,
                 databaseInitialized: true,
@@ -2685,7 +2714,7 @@ class OracleStorage extends SqlStorageBase {
             // 채팅 upsert
             onProgress?.({ stage: 'chats', message: `채팅 목록 저장 중... (${payload.chats.length}개)`, percent: 45 });
             const splitChats = payload.chats.map(splitChat);
-            const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'];
+            const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id'];
             if (splitChats.length > 0) {
                 const updateCols = chatColumns.slice(1);
                 const upsertSql = `BEGIN
@@ -2802,6 +2831,21 @@ class OracleStorage extends SqlStorageBase {
                             del.ids.map((id) => [del.chatId, id]));
                     }
                 }
+            }
+
+            if (affectedMessageChatIds.size > 0) {
+                await conn.executeMany(
+                    `UPDATE chat_chats ch
+                        SET last_message_time = (
+                            SELECT m.sent_time
+                              FROM chat_messages m
+                             WHERE m.chat_id = :1
+                             ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
+                             FETCH FIRST 1 ROW ONLY
+                        ), updated_at = SYSTIMESTAMP
+                      WHERE ch.id = :1`,
+                    Array.from(affectedMessageChatIds).map((id) => [id])
+                );
             }
 
             // revision 갱신
@@ -3052,14 +3096,15 @@ class OracleStorage extends SqlStorageBase {
                         ch.name AS chat_name,
                         ch.folder_id,
                         ch.last_message_time,
-                        m.content_text AS last_message_text
+                        (SELECT m.content_text
+                           FROM chat_messages m
+                          WHERE m.chat_id = ch.id
+                          ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
+                          FETCH FIRST 1 ROW ONLY) AS last_message_text
                    FROM chat_chats ch
                    JOIN character_characters c ON c.id = ch.character_id
-                   LEFT JOIN chat_messages m
-                     ON m.chat_id = ch.id
-                    AND m.position = (SELECT NVL(MAX(m2.position), -1) FROM chat_messages m2 WHERE m2.chat_id = ch.id)
                   WHERE c.trash_time IS NULL
-                  ORDER BY ch.last_message_time DESC NULLS LAST
+                  ORDER BY NVL(ch.last_message_time, NVL(c.last_interaction_time, 0)) DESC, ch.id
                   FETCH FIRST :limit ROWS ONLY`,
                 [limit], { clobColumns: ['character_image', 'last_message_text'] });
             return rows.map((row) => ({
