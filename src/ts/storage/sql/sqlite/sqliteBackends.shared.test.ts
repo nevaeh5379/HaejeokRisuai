@@ -465,6 +465,70 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("keeps last_message_time in sync across append, update, and delete", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    const readLastTime = () =>
+      (database.prepare("SELECT last_message_time FROM chats WHERE id = 'chat-1'").get() as { last_message_time: number | null }).last_message_time;
+
+    expect(readLastTime()).toBe(2000);
+
+    const metadataOnly = createEmptySqlCommit(storage.getRevision(), "chat-metadata-only");
+    metadataOnly.chats.push({
+      id: "chat-1",
+      characterId: "char-1",
+      position: 0,
+      data: { name: "Renamed", note: "notes", folderId: null, lastDate: null },
+    });
+    await storage.commit(metadataOnly);
+    expect(readLastTime()).toBe(2000);
+
+    const append = createEmptySqlCommit(storage.getRevision(), "append-latest");
+    append.messages.push({
+      id: "m3-latest", chatId: "chat-1", position: 2,
+      data: makeMessage("m3-latest", "char", "latest", { time: 3000 }),
+    });
+    await storage.commit(append);
+    expect(readLastTime()).toBe(3000);
+
+    const update = createEmptySqlCommit(storage.getRevision(), "update-latest");
+    update.messages.push({
+      id: "m3-latest", chatId: "chat-1", position: 2,
+      data: makeMessage("m3-latest", "char", "edited", { time: 1500 }),
+    });
+    await storage.commit(update);
+    expect(readLastTime()).toBe(1500);
+
+    const deletion = createEmptySqlCommit(storage.getRevision(), "delete-latest");
+    deletion.messageDeletes.push({ chatId: "chat-1", ids: ["m3-latest"] });
+    await storage.commit(deletion);
+    expect(readLastTime()).toBe(2000);
+
+    const deleteAll = createEmptySqlCommit(storage.getRevision(), "delete-all");
+    deleteAll.messageDeletes.push({ chatId: "chat-1", ids: ["m1", "m2"] });
+    await storage.commit(deleteAll);
+    expect(readLastTime()).toBeNull();
+    database.close();
+  });
+
+  it("applies the legacy timestamp fallback before the recent-chat LIMIT", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    database.exec("UPDATE characters SET last_interaction_time = CASE id WHEN 'char-2' THEN 999999 ELSE 1 END");
+    database.exec("UPDATE chats SET last_message_time = NULL");
+    for (let i = 0; i < 55; i++) {
+      database.prepare("INSERT INTO chats (id, character_id, position, name) VALUES (?, 'char-1', ?, ?)")
+        .run(`legacy-${i}`, i + 2, `Legacy ${i}`);
+    }
+    database.exec("INSERT INTO chats (id, character_id, position, name) VALUES ('recent-char-2', 'char-2', 0, 'Recent')");
+
+    const recent = await storage.listRecentChats!(50);
+    expect(recent).toHaveLength(50);
+    expect(recent.some((row) => row.chatId === "recent-char-2")).toBe(true);
+    expect(recent[0]?.chatId).toBe("recent-char-2");
+    database.close();
+  });
+
   it("deletes a parent message safely when its own branch-link row is missing", async () => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);

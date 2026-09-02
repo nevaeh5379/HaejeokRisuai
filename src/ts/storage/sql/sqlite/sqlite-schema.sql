@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS system_storage_meta (
 INSERT OR IGNORE INTO system_storage_meta (singleton, schema_version, schema_layout)
 VALUES (1, 3, 'relational-schema-v3');
 
+CREATE TABLE IF NOT EXISTS system_write_guards (
+    key TEXT PRIMARY KEY, suppressed INTEGER NOT NULL DEFAULT 0 CHECK (suppressed IN (0, 1))
+);
+INSERT OR IGNORE INTO system_write_guards (key, suppressed) VALUES ('last_message_time', 0);
+
 CREATE TABLE IF NOT EXISTS bot_presets (
     preset_id TEXT PRIMARY KEY,
     position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
@@ -154,6 +159,61 @@ CREATE INDEX IF NOT EXISTS messages_chat_position_idx ON messages (chat_id, posi
 -- chat body twice and can dominate Android SQLite restore time.
 DROP INDEX IF EXISTS messages_content_idx;
 CREATE INDEX IF NOT EXISTS messages_model_idx ON messages (generation_model);
+
+-- last_message_time is derived from the final message ordering. These triggers
+-- are a defensive guard for direct SQL writes; normal app commits suppress them
+-- and recompute once per affected chat at the end of the transaction.
+DROP TRIGGER IF EXISTS messages_last_message_time_after_insert;
+DROP TRIGGER IF EXISTS messages_last_message_time_after_update;
+DROP TRIGGER IF EXISTS messages_last_message_time_after_delete;
+
+CREATE TRIGGER messages_last_message_time_after_insert
+AFTER INSERT ON messages
+WHEN COALESCE((
+    SELECT suppressed FROM system_write_guards WHERE key = 'last_message_time'
+), 0) = 0
+BEGIN
+    UPDATE chats
+       SET last_message_time = (
+           SELECT sent_time FROM messages
+            WHERE chat_id = NEW.chat_id
+            ORDER BY position DESC, sent_time DESC, id DESC
+            LIMIT 1
+       ), updated_at = datetime('now')
+     WHERE id = NEW.chat_id;
+END;
+
+CREATE TRIGGER messages_last_message_time_after_update
+AFTER UPDATE OF chat_id, position, sent_time ON messages
+WHEN COALESCE((
+    SELECT suppressed FROM system_write_guards WHERE key = 'last_message_time'
+), 0) = 0
+BEGIN
+    UPDATE chats
+       SET last_message_time = (
+           SELECT sent_time FROM messages
+            WHERE chat_id = chats.id
+            ORDER BY position DESC, sent_time DESC, id DESC
+            LIMIT 1
+       ), updated_at = datetime('now')
+     WHERE id IN (OLD.chat_id, NEW.chat_id);
+END;
+
+CREATE TRIGGER messages_last_message_time_after_delete
+AFTER DELETE ON messages
+WHEN COALESCE((
+    SELECT suppressed FROM system_write_guards WHERE key = 'last_message_time'
+), 0) = 0
+BEGIN
+    UPDATE chats
+       SET last_message_time = (
+           SELECT sent_time FROM messages
+            WHERE chat_id = OLD.chat_id
+            ORDER BY position DESC, sent_time DESC, id DESC
+            LIMIT 1
+       ), updated_at = datetime('now')
+     WHERE id = OLD.chat_id;
+END;
 
 CREATE TABLE IF NOT EXISTS message_extension_nodes (
     chat_id TEXT NOT NULL, message_id TEXT NOT NULL,

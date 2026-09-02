@@ -27,6 +27,11 @@
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import { isSqlitePragmaStatement, splitSqliteStatements } from "../sqliteSchemaStatements";
+import {
+  SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
+  SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
+} from "../sqliteLastMessageTime";
 import {
   rebuildRelationalValue,
   decodedText,
@@ -365,6 +370,10 @@ async function handleInit(): Promise<{
         );
       }
     }
+    const hadLastMessageTimeTrigger = Boolean(selectOneInternal(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+      [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
+    ));
     // Apply schema — use multiple exec calls instead of one big exec to avoid
     // "Column index out of range" issues in SQLite WASM's exec() with complex
     // multi-statement SQL containing PRAGMAs.
@@ -382,14 +391,21 @@ async function handleInit(): Promise<{
     // SQLite's normal cache-spill safety behavior.
     db.exec("PRAGMA cache_size = -16384;");
     db.exec("PRAGMA foreign_keys = ON;");
-    // Execute the rest of the schema (CREATE TABLE / INDEX statements)
-    const schemaStatements = sqliteSchemaSql
-      .split(/;\s*\n/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !/^PRAGMA\b/i.test(s));
+    // Execute the rest of the schema one complete SQLite statement at a time.
+    const schemaStatements = splitSqliteStatements(sqliteSchemaSql)
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0 && !isSqlitePragmaStatement(statement));
     for (const stmt of schemaStatements) {
-      db.exec(stmt + ";");
+      db.exec(stmt);
     }
+    const lastMessageTrigger = selectOneInternal(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+      [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
+    );
+    if (!lastMessageTrigger) {
+      throw new Error("SQLite last_message_time trigger was not installed by the schema");
+    }
+    if (!hadLastMessageTimeTrigger) db.exec(SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL);
     const rows = selectRowsInternal(
       "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
     ).rows;

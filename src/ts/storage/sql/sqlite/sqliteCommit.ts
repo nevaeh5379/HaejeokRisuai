@@ -433,6 +433,11 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
   for (const deletion of commit.messageDeletes ?? []) {
     if (deletion.ids.length > 0) total += deletion.ids.length * 4 + 1;
   }
+  const affectedMessageChatIds = new Set([
+    ...commit.messages.map((entry) => entry.chatId),
+    ...(commit.messageDeletes ?? []).map((entry) => entry.chatId),
+  ]);
+  if (affectedMessageChatIds.size > 0) total += affectedMessageChatIds.size + 2;
 
   return total;
 }
@@ -442,6 +447,18 @@ export async function applySqliteCommit(
   execute: SqliteExecute,
 ): Promise<void> {
   const replacingEntities = commit.action === "replace-entities";
+  const affectedMessageChatIds = new Set<string>();
+  for (const entry of commit.messages) affectedMessageChatIds.add(entry.chatId);
+  for (const deletion of commit.messageDeletes ?? []) {
+    affectedMessageChatIds.add(deletion.chatId);
+  }
+
+  if (affectedMessageChatIds.size > 0) {
+    await execute(
+      "UPDATE system_write_guards SET suppressed = 1 WHERE key = 'last_message_time'",
+    );
+  }
+
   if (commit.replaceAll) {
     await execute("DELETE FROM plugin_custom_storage");
     await execute("DELETE FROM bot_presets");
@@ -472,10 +489,10 @@ export async function applySqliteCommit(
     const data = entry.data as Record<string, unknown>;
     await execute(
       `INSERT INTO chats
-            (id, character_id, position, name, note, folder_id, last_message_time, messages_loaded, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now')) ON CONFLICT(id) DO UPDATE SET
+            (id, character_id, position, name, note, folder_id, messages_loaded, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now')) ON CONFLICT(id) DO UPDATE SET
             character_id=excluded.character_id, position=excluded.position, name=excluded.name,
-            note=excluded.note, folder_id=excluded.folder_id, last_message_time=excluded.last_message_time,
+            note=excluded.note, folder_id=excluded.folder_id,
             updated_at=datetime('now')`,
       [
         entry.id,
@@ -484,7 +501,6 @@ export async function applySqliteCommit(
         data.name ?? "",
         data.note ?? "",
         data.folderId ?? null,
-        data.lastDate ?? null,
       ],
     );
     const rootBranchId = `${entry.id}:root`;
@@ -621,6 +637,31 @@ export async function applySqliteCommit(
         [deletion.chatId, ...deletion.ids],
       );
     }
+
+  // last_message_time is a denormalized query accelerator. Recompute it from
+  // the final message state once per affected chat so updates and deletions can
+  // move the timestamp backwards as well as forwards. Database triggers mirror
+  // this invariant as a defensive guard for writes that bypass this commit path.
+  for (const chatId of affectedMessageChatIds) {
+    await execute(
+      `UPDATE chats
+          SET last_message_time = (
+            SELECT sent_time
+              FROM messages
+             WHERE chat_id = ?
+             ORDER BY position DESC, sent_time DESC, id DESC
+             LIMIT 1
+          ),
+              updated_at = datetime('now')
+        WHERE id = ?`,
+      [chatId, chatId],
+    );
+  }
+  if (affectedMessageChatIds.size > 0) {
+    await execute(
+      "UPDATE system_write_guards SET suppressed = 0 WHERE key = 'last_message_time'",
+    );
+  }
 }
 
 async function applyCharacters(commit: SqlCommit, execute: SqliteExecute, replacingEntities: boolean) {

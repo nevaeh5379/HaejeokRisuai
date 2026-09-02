@@ -432,6 +432,7 @@ class AzureStorage extends SqlStorageBase {
         const schemaSql = await this.runStartupStep('4/7 load bundled storage schema', () => fs.readFile(this.schemaPath, 'utf8'));
         const req = pool.request();
         await this.runStartupStep('5/7 apply storage schema', () => req.batch(schemaSql));
+        await this.runStartupStep('5b/7 ensure chat last-message invariant', () => this.ensureLastMessageTimeInvariant(pool));
 
         // Ensure storage_meta exists
         const metaRes = await this.runStartupStep('6/7 ensure storage metadata row', () => pool.request().query(
@@ -453,6 +454,31 @@ class AzureStorage extends SqlStorageBase {
                 'Reset the configured development database explicitly before retrying.'
             );
         }
+    }
+
+    async ensureLastMessageTimeInvariant(pool) {
+        const existing = (await pool.request().query(
+            "SELECT OBJECT_ID(N'[chat].[messages_last_message_time]', N'TR') AS trigger_id"
+        )).recordset[0]?.trigger_id;
+        if (!existing) {
+            await pool.request().query(`
+                UPDATE ch
+                   SET last_message_time = latest.sent_time,
+                       updated_at = SYSDATETIMEOFFSET()
+                  FROM [chat].[chats] ch
+                  OUTER APPLY (
+                      SELECT TOP (1) m.sent_time
+                        FROM [chat].[messages] m
+                       WHERE m.chat_id = ch.id
+                       ORDER BY m.position DESC, m.sent_time DESC, m.id DESC
+                  ) latest;
+            `);
+        }
+        const triggerSql = await fs.readFile(
+            path.join(__dirname, 'azure-last-message-time.sql'),
+            'utf8'
+        );
+        await pool.request().batch(triggerSql);
     }
 
     async getState() {
@@ -1674,6 +1700,10 @@ class AzureStorage extends SqlStorageBase {
             }
 
             const nextRevision = currentRevision + 1;
+            const affectedMessageChatIds = new Set([
+                ...(payload.messages || []).map((item) => item.chatId),
+                ...(payload.messageDeletes || []).map((item) => item.chatId),
+            ]);
 
             // 2. Create revision row
             const revReq = tx.request();
@@ -2047,12 +2077,12 @@ class AzureStorage extends SqlStorageBase {
                     const chatScalarCols = [
                         'id', 'character_id', 'position', 'name', 'note', 'sd_data',
                         'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode',
-                        'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time',
+                        'bound_persona_id', 'first_message_index', 'folder_id',
                     ];
                     const chatScalarTypes = [
                         'nvarchar(450)', 'nvarchar(450)', 'int', 'nvarchar(max)', 'nvarchar(max)', 'nvarchar(max)',
                         'nvarchar(max)', 'nvarchar(max)', 'bit', 'nvarchar(128)',
-                        'nvarchar(450)', 'int', 'nvarchar(450)', 'bigint',
+                        'nvarchar(450)', 'int', 'nvarchar(450)',
                     ];
 
                     await bulkInsert(tx, 'chat.chats', chatScalarCols, chatScalarTypes, splitFull.map((c) => c.core), ['id']);
@@ -2107,11 +2137,11 @@ class AzureStorage extends SqlStorageBase {
                     const splitShallow = shallowPayloadChats.map(splitChat);
                     const shallowCols = [
                         'id', 'character_id', 'position', 'name', 'note',
-                        'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time',
+                        'bound_persona_id', 'first_message_index', 'folder_id',
                     ];
                     const shallowTypes = [
                         'nvarchar(450)', 'nvarchar(450)', 'int', 'nvarchar(max)', 'nvarchar(max)',
-                        'nvarchar(450)', 'int', 'nvarchar(450)', 'bigint',
+                        'nvarchar(450)', 'int', 'nvarchar(450)',
                     ];
                     await bulkInsert(tx, 'chat.chats', shallowCols, shallowTypes, splitShallow.map((c) => c.core), ['id']);
                 }
@@ -2176,6 +2206,27 @@ class AzureStorage extends SqlStorageBase {
                     chat_id: m.core.chat_id, message_id: m.core.id, position: row.position, payload: JSON.stringify(row.payload),
                 })));
                 await bulkInsert(tx, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['nvarchar(450)', 'nvarchar(450)', 'int', 'nvarchar(max)'], msgPromptItemRows);
+            }
+
+            if (affectedMessageChatIds.size > 0) {
+                const lastTimeReq = tx.request();
+                lastTimeReq.input('last_time_chat_ids', sql.NVarChar(sql.MAX), JSON.stringify(Array.from(affectedMessageChatIds)));
+                await lastTimeReq.query(`
+                    ;WITH affected AS (
+                        SELECT [value] AS chat_id FROM OPENJSON(@last_time_chat_ids)
+                    )
+                    UPDATE ch
+                       SET last_message_time = latest.sent_time,
+                           updated_at = SYSDATETIMEOFFSET()
+                      FROM [chat].[chats] ch
+                      JOIN affected a ON a.chat_id = ch.id
+                      OUTER APPLY (
+                          SELECT TOP (1) m.sent_time
+                            FROM [chat].[messages] m
+                           WHERE m.chat_id = ch.id
+                           ORDER BY m.position DESC, m.sent_time DESC, m.id DESC
+                      ) latest;
+                `);
             }
 
             // 7. Update storage meta revision

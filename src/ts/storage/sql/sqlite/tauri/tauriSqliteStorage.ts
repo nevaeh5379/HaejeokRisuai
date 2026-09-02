@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import { splitSqliteStatements } from "../sqliteSchemaStatements";
 import { SqlRevisionConflictError } from "../../sqlCommit";
 import type { SqliteTransactionStatement } from "../sqliteStorageUtils";
 
@@ -54,7 +55,9 @@ export class TauriSqliteStorage extends NativeSqliteStorageBase
 
   protected async applySchema(): Promise<void> {
     if (!this.db) throw new Error("Database not opened");
-    await this.db.execute(sqliteSchemaSql);
+    for (const statement of splitSqliteStatements(sqliteSchemaSql)) {
+      await this.db.execute(statement);
+    }
   }
 
   protected async cleanupBackend(): Promise<void> {

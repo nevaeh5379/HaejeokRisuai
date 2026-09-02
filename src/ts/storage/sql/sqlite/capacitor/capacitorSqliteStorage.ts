@@ -2,6 +2,7 @@ import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import { isSqlitePragmaStatement, splitSqliteStatements } from "../sqliteSchemaStatements";
 import {
   buildSqlReplaceRootCommit,
   iterateSqlReplaceEntityCommits,
@@ -21,11 +22,9 @@ import {
 // The Android native backend applies connection-local PRAGMAs itself. Keep
 // those out of the shared DDL script and send the remaining statements through
 // the same native transaction API used by normal commits.
-const capacitorSchemaStatements = sqliteSchemaSql
-  .replace(/^\s*PRAGMA\s+(?:journal_mode|foreign_keys)\s*=.*?;\s*$/gim, "")
-  .split(/;\s*(?:\r?\n|$)/)
+const capacitorSchemaStatements = splitSqliteStatements(sqliteSchemaSql)
   .map((statement) => statement.trim())
-  .filter(Boolean);
+  .filter((statement) => statement.length > 0 && !isSqlitePragmaStatement(statement));
 
 /**
  * Capacitor native SQLite storage backend for Android/iOS builds.

@@ -49,6 +49,10 @@ import {
 } from "./relationalNodeCodec";
 import { applySqliteCommit, writeSqliteColdStorage } from "./sqliteCommit";
 import {
+  SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
+  SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
+} from "./sqliteLastMessageTime";
+import {
   DEFERRED_STARTUP_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
   LEGACY_PERSONA_MIRROR_KEYS,
@@ -136,13 +140,17 @@ export abstract class NativeSqliteStorageBase {
       this.lastInitError = null;
       await this.openBackend();
       const existingSchema = await this.validateExistingSchema();
-      if (existingSchema) {
-        this.revision = existingSchema.revision;
-      } else {
-        await this.applySchema();
-        await this.loadRevisionFromMeta();
-      }
+      const hadLastMessageTimeTrigger = existingSchema
+        ? await this.hasLastMessageTimeTrigger()
+        : false;
+      if (existingSchema) this.revision = existingSchema.revision;
+      // The schema is intentionally idempotent. Reapply it on startup so
+      // additive DDL such as triggers reaches existing relational-schema-v3
+      // databases without forcing a destructive schema-version migration.
+      await this.applySchema();
+      if (!existingSchema) await this.loadRevisionFromMeta();
       await this.ensurePerformanceIndexes();
+      await this.ensureLastMessageTimeInvariant(hadLastMessageTimeTrigger);
       this._enabled = true;
       this.initialized = true;
       return true;
@@ -219,6 +227,27 @@ export abstract class NativeSqliteStorageBase {
       },
       ...SQLITE_BRANCH_SCHEMA_STATEMENTS,
     ]);
+  }
+
+  private async hasLastMessageTimeTrigger(): Promise<boolean> {
+    const existing = await this.selectRows<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+      [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
+    );
+    return existing.length > 0;
+  }
+
+  private async ensureLastMessageTimeInvariant(
+    existedBeforeSchemaApply: boolean,
+  ): Promise<void> {
+    if (!(await this.hasLastMessageTimeTrigger())) {
+      throw new Error("SQLite last_message_time trigger was not installed by the schema");
+    }
+    if (!existedBeforeSchemaApply) {
+      await this.executeNativeTransaction(null, [
+        { sql: SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL, bind: [] },
+      ]);
+    }
   }
 
   private buildSettingRowsQuery(
@@ -1244,13 +1273,13 @@ export abstract class NativeSqliteStorageBase {
                 SELECT m.content_text
                   FROM messages m
                  WHERE m.chat_id = ch.id
-                 ORDER BY m.position DESC
+                 ORDER BY m.position DESC, m.sent_time DESC, m.id DESC
                  LIMIT 1
               ), '') AS last_message_text
          FROM chats ch
          JOIN characters c ON c.id = ch.character_id
         WHERE c.trash_time IS NULL
-        ORDER BY ch.last_message_time DESC
+        ORDER BY COALESCE(ch.last_message_time, c.last_interaction_time, 0) DESC, ch.id
         LIMIT ?`,
       [normalizedLimit],
     );

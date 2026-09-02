@@ -410,6 +410,7 @@ class PostgresStorage extends SqlStorageBase {
                 this.invalidateBootstrapCache();
             }
             await this.verifyPostgresSchema(query);
+            await this.ensureLastMessageTimeInvariant(query);
         })();
         this.schemaRecoveryPromise = recovery;
         try {
@@ -428,6 +429,34 @@ class PostgresStorage extends SqlStorageBase {
             return;
         }
         await this.verifyPostgresSchema(query);
+    }
+
+    async ensureLastMessageTimeInvariant(query) {
+        const triggerName = 'messages_last_message_time_after_insert';
+        const existing = await query(
+            `SELECT 1 FROM pg_trigger
+              WHERE tgrelid = 'chat.messages'::regclass
+                AND tgname = $1
+                AND NOT tgisinternal`,
+            [triggerName]
+        );
+        if (existing.rows.length === 0) {
+            await query(`
+                UPDATE chat.chats AS ch
+                   SET last_message_time = (
+                       SELECT m.sent_time
+                         FROM chat.messages AS m
+                        WHERE m.chat_id = ch.id
+                        ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
+                        LIMIT 1
+                   ), updated_at = NOW()
+            `);
+        }
+        const triggerSql = await fs.readFile(
+            path.join(__dirname, 'postgres-last-message-time.sql'),
+            'utf8'
+        );
+        await query(triggerSql);
     }
 
     installPoolSchemaRecovery(pool) {
@@ -477,6 +506,10 @@ class PostgresStorage extends SqlStorageBase {
                 () => this.loadPostgresSchemaSql()
             );
             await this.runStartupStep('5/6 apply storage schema', () => pool.query(schemaSql));
+            await this.runStartupStep(
+                '5b/6 ensure chat last-message invariant',
+                () => this.ensureLastMessageTimeInvariant(pool.query.bind(pool))
+            );
             await this.runStartupStep(
                 '6/6 verify applied storage schema',
                 () => this.verifyPostgresSchema(pool.query.bind(pool))
@@ -3132,9 +3165,9 @@ class PostgresStorage extends SqlStorageBase {
 
             onProgress?.({ stage: 'chats', message: `Syncing chats (${payload.chats.length})`, count: payload.chats.length });
             const splitChats = payload.chats.map(splitChat);
-            const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id', 'last_message_time'];
+            const chatColumns = ['id', 'character_id', 'position', 'name', 'note', 'sd_data', 'supa_memory_data', 'last_memory', 'is_streaming', 'streaming_optimization_mode', 'bound_persona_id', 'first_message_index', 'folder_id'];
             await bulkInsert(client, 'chat.chats', chatColumns,
-                ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text', 'integer', 'text', 'bigint'],
+                ['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'text', 'boolean', 'text', 'text', 'integer', 'text'],
                 splitChats.map((item) => item.core),
                 buildUpsertClause('chat.chats', ['id'], chatColumns.slice(1), true));
 
@@ -3185,6 +3218,10 @@ class PostgresStorage extends SqlStorageBase {
 
             onProgress?.({ stage: 'messages', message: `Syncing messages (${payload.messages.length})`, count: payload.messages.length });
             const splitMessages = payload.messages.map(splitMessage);
+            const affectedMessageChatIds = new Set([
+                ...splitMessages.map((item) => item.core.chat_id),
+                ...(payload.messageDeletes || []).map((item) => item.chatId),
+            ]);
             await this.ensureChatBranchGraphs(client, splitMessages.map((item) => item.core.chat_id));
             const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
             await bulkInsert(client, 'chat.messages', messageColumns,
@@ -3292,6 +3329,20 @@ class PostgresStorage extends SqlStorageBase {
                     }
                 }
             }
+            if (affectedMessageChatIds.size > 0) {
+                await client.query(
+                    `UPDATE chat.chats AS ch
+                        SET last_message_time = (
+                            SELECT m.sent_time
+                              FROM chat.messages AS m
+                             WHERE m.chat_id = ch.id
+                             ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
+                             LIMIT 1
+                        ), updated_at = NOW()
+                      WHERE ch.id = ANY($1::text[])`,
+                    [Array.from(affectedMessageChatIds)]
+                );
+            }
 
             onProgress?.({ stage: 'finalizing', message: 'Updating metadata and committing' });
             await client.query(
@@ -3339,16 +3390,15 @@ class PostgresStorage extends SqlStorageBase {
                     ch.name AS chat_name,
                     ch.folder_id,
                     ch.last_message_time,
-                    m.content_text AS last_message_text
+                    (SELECT m.content_text
+                       FROM chat.messages AS m
+                      WHERE m.chat_id = ch.id
+                      ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
+                      LIMIT 1) AS last_message_text
                FROM chat.chats AS ch
                JOIN character.characters AS c ON c.id = ch.character_id
-               LEFT JOIN chat.messages AS m
-                 ON m.chat_id = ch.id
-                AND m.position = COALESCE((
-                      SELECT MAX(m2.position) FROM chat.messages AS m2 WHERE m2.chat_id = ch.id
-                    ), -1)
               WHERE c.trash_time IS NULL
-              ORDER BY ch.last_message_time DESC NULLS LAST
+              ORDER BY COALESCE(ch.last_message_time, c.last_interaction_time, 0) DESC, ch.id
               LIMIT $1`,
             [limit]
         );

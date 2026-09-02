@@ -22,4 +22,13 @@ describe('relational schema metadata and setting trees', () => {
         expect(schema('oracle-schema.sql')).toMatch(/plugin_custom_storage[\s\S]{0,250}value JSON NOT NULL/i)
         expect(schema('azure-schema.sql')).toMatch(/plugin_custom_storage[\s\S]{0,350}ISJSON\(value\) = 1/i)
     })
+    it('keeps last-message trigger DDL in SQL resources', () => {
+        expect(schema('postgres-last-message-time.sql')).toMatch(/CREATE TRIGGER messages_last_message_time_after_insert/i)
+        expect(schema('postgres-last-message-time.sql')).toMatch(/REFERENCING NEW TABLE AS new_rows/i)
+        expect(schema('azure-last-message-time.sql')).toMatch(/CREATE OR ALTER TRIGGER \[chat\]\.\[messages_last_message_time\]/i)
+        expect(schema('azure-last-message-time.sql')).toMatch(/SELECT chat_id FROM inserted[\s\S]*SELECT chat_id FROM deleted/i)
+        expect(schema('oracle-last-message-time.sql')).toMatch(/COMPOUND TRIGGER/i)
+        expect(schema('oracle-last-message-time.sql')).toMatch(/AFTER STATEMENT IS/i)
+    })
+
 })
