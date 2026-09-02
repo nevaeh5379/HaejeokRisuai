@@ -56,6 +56,16 @@ describe("WebSqliteStorage", () => {
         ('chat-1', 'm1', 0, 'user', 'one'),
         ('chat-1', 'm2', 1, 'char', 'two'),
         ('chat-1', 'm3', 2, 'user', 'three');
+      INSERT INTO chat_branches
+        (chat_id, id, head_message_id, reason, created_at)
+        VALUES ('chat-1', 'root-1', 'm3', 'root', 0);
+      INSERT INTO chat_active_branches (chat_id, branch_id)
+        VALUES ('chat-1', 'root-1');
+      INSERT INTO message_branch_links
+        (chat_id, message_id, parent_message_id, origin_branch_id) VALUES
+        ('chat-1', 'm1', NULL, 'root-1'),
+        ('chat-1', 'm2', 'm1', 'root-1'),
+        ('chat-1', 'm3', 'm2', 'root-1');
     `);
     const chat = await storage.loadChat("chat-1", { messageLimit: 0 });
     expect(chat?.messageOffset).toBe(2);
@@ -73,6 +83,16 @@ describe("WebSqliteStorage", () => {
         ('chat-1', 'm1', 0, 'user', 'one'),
         ('chat-1', 'm2', 1, 'char', 'two'),
         ('chat-1', 'm3', 2, 'user', 'three');
+      INSERT INTO chat_branches
+        (chat_id, id, head_message_id, reason, created_at)
+        VALUES ('chat-1', 'root-1', 'm3', 'root', 0);
+      INSERT INTO chat_active_branches (chat_id, branch_id)
+        VALUES ('chat-1', 'root-1');
+      INSERT INTO message_branch_links
+        (chat_id, message_id, parent_message_id, origin_branch_id) VALUES
+        ('chat-1', 'm1', NULL, 'root-1'),
+        ('chat-1', 'm2', 'm1', 'root-1'),
+        ('chat-1', 'm3', 'm2', 'root-1');
     `);
     const rpc = (storage as any).rpc;
     const batchSpy = vi.spyOn(rpc, "selectBatch");

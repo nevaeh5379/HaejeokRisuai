@@ -57,6 +57,28 @@ export interface SqlMessagePage {
   hasMore: boolean;
 }
 
+export type SqlChatBranchReason = "root" | "manual" | "reroll";
+
+/** Lightweight branch metadata. Branch messages are loaded separately. */
+export interface SqlChatBranchSummary {
+  id: string;
+  chatId: string;
+  parentBranchId?: string;
+  forkMessageId?: string;
+  headMessageId?: string;
+  reason: SqlChatBranchReason;
+  createdAt: number;
+}
+
+export interface SqlCreateChatBranchInput {
+  id: string;
+  chatId: string;
+  parentBranchId?: string;
+  forkMessageId?: string;
+  reason: Exclude<SqlChatBranchReason, "root">;
+  createdAt: number;
+}
+
 export interface SqlCharacterMetadata {
   chaId: string;
   name: string;
@@ -169,6 +191,21 @@ export interface ISqlStorage {
     before: number | undefined,
     limit: number,
   ): Promise<SqlMessagePage>;
+  /**
+   * Persistent branch graph APIs. Kept optional while remote SQL servers roll
+   * out the same protocol; callers must use the legacy compatibility path
+   * when a backend does not expose them yet.
+   */
+  listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
+  loadBranchMessages?(
+    chatId: string,
+    branchId: string,
+    options?: { messageLimit?: number; mode?: "full" | "generation" },
+  ): Promise<Message[]>;
+  createChatBranch?(
+    input: SqlCreateChatBranchInput,
+  ): Promise<SqlChatBranchSummary>;
+  activateChatBranch?(chatId: string, branchId: string): Promise<void>;
   /** Lightweight recent-chat feed; avoids hydrating character/chat trees. */
   listRecentChats?(limit?: number): Promise<SqlRecentChatMetadata[]>;
 

@@ -1263,6 +1263,8 @@ export interface Chat {
   folderId?: string;
   /** @deprecated Session-level branching from the first implementation. */
   branch?: ChatBranchInfo;
+  /** Active pointer for the persistent parent-linked branch graph. */
+  activeBranchId?: string;
   branchState?: ChatBranchState;
   lastDate?: number;
   bookmarks?: string[];

@@ -414,6 +414,55 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(negative?.message).toHaveLength(1);
     database.close();
   });
+
+  it("switches persistent branches without rewriting existing messages", async () => {
+    const { storage, database, queryLog } = makeFreshHarness(make);
+    await seed(storage);
+    expect(storage.listChatBranches).toBeTypeOf("function");
+    expect(storage.createChatBranch).toBeTypeOf("function");
+    expect(storage.activateChatBranch).toBeTypeOf("function");
+    expect(storage.loadBranchMessages).toBeTypeOf("function");
+
+    const [root] = await storage.listChatBranches!("chat-1");
+    expect(root).toMatchObject({ reason: "root", headMessageId: "m2" });
+    await storage.createChatBranch!({
+      id: "reroll-1",
+      chatId: "chat-1",
+      parentBranchId: root.id,
+      forkMessageId: "m1",
+      reason: "reroll",
+      createdAt: 123,
+    });
+
+    queryLog.clear();
+    const append = createEmptySqlCommit(storage.getRevision(), "message");
+    append.messages.push({
+      id: "m-alt",
+      chatId: "chat-1",
+      position: 1,
+      data: makeMessage("m-alt", "char", "alternative"),
+    });
+    await storage.commit(append);
+
+    expect((await storage.loadChatMessages("chat-1")).map((m) => m.data)).toEqual([
+      "one",
+      "alternative",
+    ]);
+    expect(
+      (await storage.loadBranchMessages!("chat-1", root.id)).map((m) => m.data),
+    ).toEqual(["one", "two"]);
+    expect(
+      queryLog.where(
+        (sql) => /(?:INSERT INTO|UPDATE) messages\b/i.test(sql),
+      ),
+      "reroll append must write only the new message row",
+    ).toHaveLength(1);
+
+    await storage.activateChatBranch!("chat-1", root.id);
+    const switched = await storage.loadChat("chat-1");
+    expect(switched?.message.map((m) => m.data)).toEqual(["one", "two"]);
+    database.close();
+  });
 });
 
 // ── Generation-mode contract (metadata-stripped message loads) ───────

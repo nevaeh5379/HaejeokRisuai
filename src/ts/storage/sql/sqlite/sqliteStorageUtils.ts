@@ -300,3 +300,130 @@ excluded(chat_id, message_id, node_id) AS (
     bind: [...bind, ...metadataBind],
   };
 }
+
+/**
+ * Reads one persisted branch by walking from its head to the root. Unlike the
+ * legacy position query this never touches messages that belong only to an
+ * inactive branch.
+ */
+export function buildBranchMessageRowsQuery(
+  chatId: string,
+  branchId: string | undefined,
+  limit: number | undefined,
+  mode: MessageLoadMode = "full",
+  rootOffset?: number,
+): { sql: string; bind: unknown[] } {
+  const recursionLimit =
+    limit === undefined || rootOffset !== undefined
+      ? ""
+      : " AND path.depth + 1 < ?";
+  const branchSeed = branchId === undefined
+    ? `SELECT branch.head_message_id, 0
+         FROM chat_branches branch
+         JOIN chat_active_branches active
+           ON active.chat_id = branch.chat_id AND active.branch_id = branch.id
+        WHERE branch.chat_id = ?`
+    : `SELECT head_message_id, 0
+         FROM chat_branches
+        WHERE chat_id = ? AND id = ?`;
+  const bind: unknown[] = branchId === undefined
+    ? [chatId, chatId]
+    : [chatId, branchId, chatId];
+  if (limit !== undefined && rootOffset === undefined) bind.push(limit);
+  const selectedPage =
+    limit !== undefined && rootOffset !== undefined
+      ? " ORDER BY branch_path.depth DESC LIMIT ? OFFSET ?"
+      : "";
+
+  const withExcluded =
+    mode === "generation"
+      ? `,
+excluded(chat_id, message_id, node_id) AS (
+  SELECT chat_id, message_id, node_id
+    FROM message_extension_nodes
+   WHERE chat_id = ?
+     AND parent_node_id = 0
+     AND object_key IN ('promptInfo', 'generationInfo')
+  UNION ALL
+  SELECT child.chat_id, child.message_id, child.node_id
+    FROM message_extension_nodes child
+    JOIN excluded ON child.chat_id = excluded.chat_id
+       AND child.message_id = excluded.message_id
+       AND child.parent_node_id = excluded.node_id
+)`
+      : "";
+  const metadataFilter =
+    mode === "generation"
+      ? ` WHERE n.node_id IS NULL OR n.node_id = 0 OR NOT EXISTS (
+     SELECT 1 FROM excluded
+      WHERE excluded.message_id = n.message_id
+        AND excluded.node_id = n.node_id
+   )`
+      : "";
+  return {
+    sql: `WITH RECURSIVE branch_path(message_id, depth) AS (
+  ${branchSeed}
+  UNION ALL
+  SELECT links.parent_message_id, path.depth + 1
+    FROM branch_path path
+    JOIN message_branch_links links
+      ON links.chat_id = ? AND links.message_id = path.message_id
+   WHERE links.parent_message_id IS NOT NULL${recursionLimit}
+),
+selected AS (
+  SELECT messages.*, branch_path.depth
+    FROM branch_path
+    JOIN messages
+      ON messages.chat_id = ? AND messages.id = branch_path.message_id
+   ${selectedPage}
+)${withExcluded}
+   SELECT selected.id AS message_id, selected.position AS message_position,
+          selected.role AS message_role, selected.content_text AS message_content_text,
+          selected.content_encoded AS message_content_encoded,
+          selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
+          selected.generation_model AS message_generation_model,
+          selected.input_tokens AS message_input_tokens,
+          selected.output_tokens AS message_output_tokens,
+          n.node_id, n.parent_node_id, n.node_order, n.object_key,
+          n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
+          n.number_value, n.boolean_value
+     FROM selected
+     LEFT JOIN message_extension_nodes n
+       ON n.chat_id = selected.chat_id AND n.message_id = selected.id${metadataFilter}
+    ORDER BY selected.depth DESC, n.node_id`,
+    bind: [
+      ...bind,
+      chatId,
+      ...(selectedPage ? [limit, rootOffset] : []),
+      ...(mode === "generation" ? [chatId] : []),
+    ],
+  };
+}
+
+export function buildBranchMessageCountQuery(
+  chatId: string,
+  branchId?: string,
+): { sql: string; bind: unknown[] } {
+  const branchSeed = branchId === undefined
+    ? `SELECT branch.head_message_id
+         FROM chat_branches branch
+         JOIN chat_active_branches active
+           ON active.chat_id = branch.chat_id AND active.branch_id = branch.id
+        WHERE branch.chat_id = ?`
+    : "SELECT head_message_id FROM chat_branches WHERE chat_id = ? AND id = ?";
+  return {
+    sql: `WITH RECURSIVE branch_path(message_id) AS (
+  ${branchSeed}
+  UNION ALL
+  SELECT links.parent_message_id
+    FROM branch_path path
+    JOIN message_branch_links links
+      ON links.chat_id = ? AND links.message_id = path.message_id
+   WHERE links.parent_message_id IS NOT NULL
+)
+SELECT COUNT(message_id) AS total FROM branch_path`,
+    bind: branchId === undefined
+      ? [chatId, chatId]
+      : [chatId, branchId, chatId],
+  };
+}

@@ -28,6 +28,8 @@
     import BranchGraphModal from "./BranchGraphModal.svelte";
     import { appVer } from "../../ts/appVersion";
     import { translateStackTrace } from "../../ts/sourcemap";
+    import { getSqlStorage } from "src/ts/storage/sql/sqlStorageFactory";
+    import type { Chat } from "src/ts/storage/database/schema";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import {
         HAEJEOK_PRIVACY_URL,
@@ -40,6 +42,8 @@
     let translatedStackTrace = $state('');
     let stackTraceTranslationFailed = $state(false);
     let isTranslating = $state(false);
+    let persistedBranchGraphChat = $state<Chat | null>(null);
+    let branchGraphLoadGeneration = 0;
     let osLabel = $state(getFallbackOSLabel());
     const displayedStackTrace = $derived(translatedStackTrace || $alertStore.stackTrace || '');
     const risuVersion = appVer;
@@ -184,6 +188,22 @@
         }
         const chat = getBranchGraphChat($alertStore.msg)
         if(!chat?.id) return
+        const storage = await getSqlStorage()
+        if(!chat.branchState && storage.activateChatBranch){
+            await storage.activateChatBranch(chat.id, branchId)
+            const loaded = await storage.loadChat(chat.id, {
+                messageLimit: Math.max(12, chat.message.length),
+            })
+            if(!loaded) return
+            chat.message.splice(0, chat.message.length, ...loaded.message)
+            chat.activeBranchId = branchId
+            chat.messageOffset = loaded.messageOffset
+            chat.messageTotal = loaded.messageTotal
+            chat.messagesFullyLoaded = loaded.messagesFullyLoaded
+            chat.messagesLoaded = true
+            alertStore.set({ type: 'none', msg: '' })
+            return
+        }
         const switched = activateChatBranch(chat, branchId)
         if(!switched) return
         await messageStore.replaceMessages(chat.id, switched.nextMessages, switched.previousMessages)
@@ -203,6 +223,54 @@
         const character = characterStore.characters[$selectedCharID]
         return character?.chats?.[character.chatPage]
     }
+
+    $effect(() => {
+        const type = $alertStore.type
+        const chatId = $alertStore.msg
+        const generation = ++branchGraphLoadGeneration
+        if(type !== 'branches'){
+            persistedBranchGraphChat = null
+            return
+        }
+        void (async () => {
+            const chat = getBranchGraphChat(chatId)
+            if(!chat?.id) return
+            const storage = await getSqlStorage()
+            if(chat.branchState || !storage.listChatBranches || !storage.loadBranchMessages) return
+            const summaries = await storage.listChatBranches(chat.id)
+            const activeBranchId = chat.activeBranchId
+                ?? summaries.find((branch) => branch.reason === 'root')?.id
+            const branches = []
+            for(const summary of summaries){
+                const messages = await storage.loadBranchMessages(chat.id, summary.id)
+                const branchMessageIndex = summary.forkMessageId
+                    ? messages.findIndex((message) => message.chatId === summary.forkMessageId)
+                    : -1
+                branches.push({
+                    id: summary.id,
+                    parentBranchId: summary.parentBranchId,
+                    branchMessageId: summary.forkMessageId,
+                    branchMessageIndex,
+                    reason: summary.reason,
+                    createdAt: summary.createdAt,
+                    messages,
+                })
+            }
+            if(generation !== branchGraphLoadGeneration || $alertStore.type !== 'branches') return
+            const activeMessages = branches.find((branch) => branch.id === activeBranchId)?.messages
+                ?? chat.message
+            persistedBranchGraphChat = {
+                ...chat,
+                message: activeMessages,
+                activeBranchId,
+                branchState: activeBranchId ? {
+                    baseMessageIndex: -1,
+                    activeBranchId,
+                    branches,
+                } : undefined,
+            }
+        })()
+    })
 </script>
 
 
@@ -894,7 +962,7 @@
         </div>
     </div>
 {:else if $alertStore.type === 'branches'}
-    {@const branchGraphChat = getBranchGraphChat($alertStore.msg)}
+    {@const branchGraphChat = persistedBranchGraphChat ?? getBranchGraphChat($alertStore.msg)}
     <BranchGraphModal
         chat={branchGraphChat}
         onselect={switchBranchFromGraph}
