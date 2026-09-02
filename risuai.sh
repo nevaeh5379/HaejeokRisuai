@@ -58,6 +58,7 @@ lock_dir=$state_dir/operation.lock
 compose_base=$script_dir/docker-compose.rustfs.yml
 compose_static=$script_dir/docker-compose.static.yml
 compose_local=$script_dir/docker-compose.rustfs.local.yml
+compose_postgres=$script_dir/docker-compose.rustfs.postgres.yml
 compose_lan=$script_dir/docker-compose.rustfs.lan.yml
 compose_caddy=$script_dir/docker-compose.rustfs.caddy.yml
 compose_dynv6=$script_dir/docker-compose.rustfs.dynv6.yml
@@ -129,6 +130,8 @@ Install options:
   --proxy-type TYPE               host or container (docker is a compatibility alias)
   --proxy-network NAME            Existing external container network
   --app-port PORT                 Published RisuAI host port (default: 6001)
+  --postgres-port PORT            Publish PostgreSQL on 127.0.0.1:PORT (disabled by default)
+  --no-postgres-port              Disable a previously saved PostgreSQL host port
   --rustfs-api-port PORT          Loopback RustFS API port (default: 9000)
   --rustfs-console-port PORT      Loopback RustFS console port (default: 9001)
   --http-port PORT                Caddy HTTP host port (default: 80)
@@ -149,7 +152,7 @@ Install options:
 Environment inputs:
   RISUAI_RUNTIME, RISUAI_CONTAINER_ENGINE, RISUAI_MODE, RISUAI_DOMAIN,
   RISUAI_DNS_PROVIDER, RISUAI_PROXY_TYPE,
-  RISUAI_PROXY_NETWORK, RISUAI_PORT, RUSTFS_API_PORT,
+  RISUAI_PROXY_NETWORK, RISUAI_PORT, POSTGRES_PORT, RUSTFS_API_PORT,
   RUSTFS_CONSOLE_PORT, RISUAI_HTTP_PORT, RISUAI_HTTPS_PORT,
   RISUAI_WAIT_TIMEOUT, DYNV6_TOKEN, CLOUDFLARE_TOKEN,
   CLOUDFLARE_ZONE_ID, POSTGRES_PASSWORD, RUSTFS_ACCESS_KEY,
@@ -161,6 +164,7 @@ safer than command-line token values.
 
 Examples:
   ./risuai.sh install --mode local -y
+  ./risuai.sh install --mode local --postgres-port 5432 -y
   ./risuai.sh install --container-engine podman --mode local -y
   ./risuai.sh install --runtime static --mode local -y
   ./risuai.sh install --runtime static --mode domain --domain chat.example.com \
@@ -259,6 +263,7 @@ input_cloudflare_zone_id=${CLOUDFLARE_ZONE_ID:-}
 input_cloudflare_token=${CLOUDFLARE_TOKEN:-}
 input_dynv6_token=${DYNV6_TOKEN:-}
 input_app_port=${RISUAI_PORT:-}
+input_postgres_port=${POSTGRES_PORT:-}
 input_rustfs_api_port=${RUSTFS_API_PORT:-}
 input_rustfs_console_port=${RUSTFS_CONSOLE_PORT:-}
 input_http_port=${RISUAI_HTTP_PORT:-}
@@ -275,6 +280,7 @@ input_rustfs_secret_key=${RUSTFS_SECRET_KEY:-}
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES
 unset RISUAI_RUNTIME RISUAI_CONTAINER_ENGINE RISUAI_MODE RISUAI_DOMAIN RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
 unset RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_INSTALLATION_ID RISUAI_MIGRATE_CONCURRENCY
+unset POSTGRES_PORT
 unset RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
 unset POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
 unset DYNV6_ZONE DYNV6_TOKEN DYNV6_TOKEN_FILE DYNV6_IPV6 DYNV6_UPDATE_INTERVAL
@@ -640,7 +646,10 @@ require_files_for_configuration() {
     required_base=$(compose_base_for_runtime "$required_runtime") || die "Invalid application runtime: $required_runtime"
     required_file "$required_base" "$required_runtime Compose file"
     case "$required_runtime" in
-        node) required_file "$script_dir/Dockerfile" "Node Dockerfile" ;;
+        node)
+            required_file "$script_dir/Dockerfile" "Node Dockerfile"
+            required_file "$compose_postgres" "PostgreSQL host-port Compose overlay"
+            ;;
         static)
             required_file "$script_dir/Dockerfile.static" "static-web Dockerfile"
             required_file "$script_dir/deploy/rustfs/Caddyfile.static" "static-web Caddy configuration"
@@ -729,6 +738,11 @@ validate_saved_configuration() {
         saved_port=$(env_value_or "$validate_file" "$saved_port_key" "$saved_port_default")
         is_valid_port "$saved_port" || { error "Invalid $saved_port_key in $validate_file"; return 1; }
     done
+    saved_postgres_port=$(read_env_value_from "$validate_file" POSTGRES_PORT)
+    if [ -n "$saved_postgres_port" ]; then
+        is_valid_port "$saved_postgres_port" || { error "Invalid POSTGRES_PORT in $validate_file"; return 1; }
+        [ "$saved_runtime" = node ] || { error "POSTGRES_PORT is only valid with the node runtime"; return 1; }
+    fi
     if [ "$saved_runtime" = node ]; then
         saved_postgres=$(read_env_value_from "$validate_file" POSTGRES_PASSWORD)
         saved_access=$(read_env_value_from "$validate_file" RUSTFS_ACCESS_KEY)
@@ -785,6 +799,7 @@ compose_with_env() (
     selected_proxy=$(env_value_or "$selected_env" RISUAI_PROXY_TYPE none)
     selected_proxy_network=$(read_env_value_from "$selected_env" RISUAI_PROXY_NETWORK)
     selected_postgres=$(read_env_value_from "$selected_env" POSTGRES_PASSWORD)
+    selected_postgres_port=$(read_env_value_from "$selected_env" POSTGRES_PORT)
     selected_access=$(read_env_value_from "$selected_env" RUSTFS_ACCESS_KEY)
     selected_secret=$(read_env_value_from "$selected_env" RUSTFS_SECRET_KEY)
     selected_domain=$(read_env_value_from "$selected_env" RISUAI_DOMAIN)
@@ -811,6 +826,7 @@ compose_with_env() (
     RISUAI_HTTP_PORT=$selected_http_port
     RISUAI_HTTPS_PORT=$selected_https_port
     POSTGRES_PASSWORD=$selected_postgres
+    POSTGRES_PORT=$selected_postgres_port
     RUSTFS_ACCESS_KEY=$selected_access
     RUSTFS_SECRET_KEY=$selected_secret
     RUSTFS_BIND_ADDRESS=127.0.0.1
@@ -828,9 +844,13 @@ compose_with_env() (
     RISUAI_MIGRATE_CONCURRENCY=4
     export COMPOSE_PROJECT_NAME RISUAI_RUNTIME RISUAI_CONTAINER_ENGINE RISUAI_MODE RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
     export RISUAI_INSTALLATION_ID RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_MIGRATE_CONCURRENCY
-    export POSTGRES_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
+    export POSTGRES_PASSWORD POSTGRES_PORT RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
     export RISUAI_DOMAIN DYNV6_ZONE DYNV6_IPV6 DYNV6_TOKEN_FILE DYNV6_UPDATE_INTERVAL
     export CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 CLOUDFLARE_TOKEN_FILE CLOUDFLARE_UPDATE_INTERVAL
+
+    if [ "$selected_runtime" = node ] && [ -n "$selected_postgres_port" ]; then
+        set -- -f "$compose_postgres" "$@"
+    fi
 
     case "$selected_mode:$selected_dns:$selected_proxy" in
         local:*:*|proxy:*:host)
@@ -904,9 +924,16 @@ check_container_ownership() {
 validate_port_layout() {
     if [ "$runtime" = node ]; then
         [ "$rustfs_api_port" != "$rustfs_console_port" ] || die "RustFS API and console ports must be different"
+        if [ -n "${postgres_port:-}" ]; then
+            [ "$postgres_port" != "$rustfs_api_port" ] || die "PostgreSQL and RustFS API cannot publish the same host port"
+            [ "$postgres_port" != "$rustfs_console_port" ] || die "PostgreSQL and RustFS console cannot publish the same host port"
+        fi
         if [ "$mode:$proxy_type" != proxy:docker ]; then
             [ "$app_port" != "$rustfs_api_port" ] || die "RisuAI and RustFS API cannot publish the same host port"
             [ "$app_port" != "$rustfs_console_port" ] || die "RisuAI and RustFS console cannot publish the same host port"
+            if [ -n "${postgres_port:-}" ]; then
+                [ "$app_port" != "$postgres_port" ] || die "RisuAI and PostgreSQL cannot publish the same host port"
+            fi
         fi
     fi
     case "$mode" in
@@ -916,6 +943,9 @@ validate_port_layout() {
                 if [ "$runtime" = node ]; then
                     [ "$public_tcp_port" != "$rustfs_api_port" ] || die "A Caddy port conflicts with the RustFS API port"
                     [ "$public_tcp_port" != "$rustfs_console_port" ] || die "A Caddy port conflicts with the RustFS console port"
+                    if [ -n "${postgres_port:-}" ]; then
+                        [ "$public_tcp_port" != "$postgres_port" ] || die "A Caddy port conflicts with the PostgreSQL host port"
+                    fi
                 fi
                 [ "$public_tcp_port" != "$app_port" ] || die "A Caddy port conflicts with the RisuAI maintenance port"
             done
@@ -1033,6 +1063,7 @@ check_required_ports() {
     if [ "$runtime" = node ]; then
         check_port tcp "$rustfs_api_port" loopback
         check_port tcp "$rustfs_console_port" loopback
+        [ -z "${postgres_port:-}" ] || check_port tcp "$postgres_port" loopback
     fi
     case "$mode:$proxy_type" in
         local:*|proxy:host) check_port tcp "$app_port" loopback ;;
@@ -1054,6 +1085,8 @@ load_saved_port_settings() {
     proxy_type=$(env_value_or "$env_file" RISUAI_PROXY_TYPE none)
     proxy_network=$(read_env_value_from "$env_file" RISUAI_PROXY_NETWORK)
     app_port=$(normalize_port "$(env_value_or "$env_file" RISUAI_PORT 6001)")
+    postgres_port=$(read_env_value_from "$env_file" POSTGRES_PORT)
+    [ -z "$postgres_port" ] || postgres_port=$(normalize_port "$postgres_port")
     rustfs_api_port=$(normalize_port "$(env_value_or "$env_file" RUSTFS_API_PORT 9000)")
     rustfs_console_port=$(normalize_port "$(env_value_or "$env_file" RUSTFS_CONSOLE_PORT 9001)")
     http_port=$(normalize_port "$(env_value_or "$env_file" RISUAI_HTTP_PORT 80)")
@@ -1108,6 +1141,7 @@ show_deployment_from() {
     current_dns=$(env_value_or "$show_env" RISUAI_DNS_PROVIDER none)
     current_proxy=$(env_value_or "$show_env" RISUAI_PROXY_TYPE none)
     current_app_port=$(env_value_or "$show_env" RISUAI_PORT 6001)
+    current_postgres_port=$(read_env_value_from "$show_env" POSTGRES_PORT)
     current_api_port=$(env_value_or "$show_env" RUSTFS_API_PORT 9000)
     current_console_port=$(env_value_or "$show_env" RUSTFS_CONSOLE_PORT 9001)
     current_http_port=$(env_value_or "$show_env" RISUAI_HTTP_PORT 80)
@@ -1132,6 +1166,11 @@ show_deployment_from() {
             ;;
     esac
     if [ "$current_runtime" = node ]; then
+        if [ -n "$current_postgres_port" ]; then
+            printf '  PostgreSQL:        127.0.0.1:%s/tcp\n' "$current_postgres_port"
+        else
+            printf '  PostgreSQL:        internal container network only\n'
+        fi
         printf '  RustFS API:        127.0.0.1:%s/tcp\n' "$current_api_port"
         printf '  RustFS console:    http://127.0.0.1:%s\n' "$current_console_port"
     else
@@ -1850,6 +1889,7 @@ cloudflare_zone_id=$input_cloudflare_zone_id
 cloudflare_token=$input_cloudflare_token
 dynv6_token=$input_dynv6_token
 app_port=$input_app_port
+postgres_port=$input_postgres_port
 rustfs_api_port=$input_rustfs_api_port
 rustfs_console_port=$input_rustfs_console_port
 http_port=$input_http_port
@@ -1879,10 +1919,12 @@ cloudflare_cli_source=none
 [ -n "$cloudflare_token" ] && cloudflare_token_source=environment
 http_port_explicit=false
 https_port_explicit=false
+postgres_port_explicit=false
 rustfs_api_port_explicit=false
 rustfs_console_port_explicit=false
 [ -n "$http_port" ] && http_port_explicit=true
 [ -n "$https_port" ] && https_port_explicit=true
+[ -n "$postgres_port" ] && postgres_port_explicit=true
 [ -n "$rustfs_api_port" ] && rustfs_api_port_explicit=true
 [ -n "$rustfs_console_port" ] && rustfs_console_port_explicit=true
 
@@ -1917,6 +1959,8 @@ while [ "$#" -gt 0 ]; do
         --proxy-type) [ "$#" -ge 2 ] || die "--proxy-type requires a value"; proxy_type=$2; shift 2 ;;
         --proxy-network) [ "$#" -ge 2 ] || die "--proxy-network requires a value"; proxy_network=$2; shift 2 ;;
         --app-port) [ "$#" -ge 2 ] || die "--app-port requires a value"; app_port=$2; shift 2 ;;
+        --postgres-port) [ "$#" -ge 2 ] || die "--postgres-port requires a value"; postgres_port=$2; postgres_port_explicit=true; shift 2 ;;
+        --no-postgres-port) postgres_port=; postgres_port_explicit=true; shift ;;
         --rustfs-api-port) [ "$#" -ge 2 ] || die "--rustfs-api-port requires a value"; rustfs_api_port=$2; rustfs_api_port_explicit=true; shift 2 ;;
         --rustfs-console-port) [ "$#" -ge 2 ] || die "--rustfs-console-port requires a value"; rustfs_console_port=$2; rustfs_console_port_explicit=true; shift 2 ;;
         --http-port) [ "$#" -ge 2 ] || die "--http-port requires a value"; http_port=$2; http_port_explicit=true; shift 2 ;;
@@ -1978,6 +2022,8 @@ if [ -z "$runtime" ] && [ "$interactive" = true ]; then runtime=$(prompt_line "A
 case "$runtime" in node|static) ;; *) die "Invalid --runtime: $runtime (expected node or static)" ;; esac
 if [ "$runtime" = static ]; then
     if [ "$rustfs_api_port_explicit" = true ] || [ "$rustfs_console_port_explicit" = true ]; then die "--rustfs-api-port/--rustfs-console-port are only valid with --runtime node"; fi
+    if [ "$postgres_port_explicit" = true ] && [ -n "$postgres_port" ]; then die "--postgres-port is only valid with --runtime node"; fi
+    postgres_port=
     # Storage credentials from the shell are irrelevant to a static deployment
     # and must not leak into its saved configuration. Credentials already saved
     # by a previous Node deployment are preserved later for a reversible switch.
@@ -2051,11 +2097,13 @@ esac
 if [ "$mode" = dynv6 ]; then case "$domain" in *.dynv6.net) ;; *) die "dynv6 mode requires a hostname below dynv6.net" ;; esac; fi
 
 if [ -z "$app_port" ] && [ "$saved_configuration_valid" = true ]; then app_port=$(env_value_or "$env_file" RISUAI_PORT 6001); fi
+if [ "$runtime" = node ] && [ "$postgres_port_explicit" = false ] && [ "$saved_configuration_valid" = true ]; then postgres_port=$(read_env_value_from "$env_file" POSTGRES_PORT); fi
 if [ -z "$rustfs_api_port" ] && [ "$saved_configuration_valid" = true ]; then rustfs_api_port=$(env_value_or "$env_file" RUSTFS_API_PORT 9000); fi
 if [ -z "$rustfs_console_port" ] && [ "$saved_configuration_valid" = true ]; then rustfs_console_port=$(env_value_or "$env_file" RUSTFS_CONSOLE_PORT 9001); fi
 if [ -z "$http_port" ] && [ "$saved_configuration_valid" = true ]; then http_port=$(env_value_or "$env_file" RISUAI_HTTP_PORT 80); fi
 if [ -z "$https_port" ] && [ "$saved_configuration_valid" = true ]; then https_port=$(env_value_or "$env_file" RISUAI_HTTPS_PORT 443); fi
 app_port=$(normalize_port "${app_port:-6001}")
+[ -z "$postgres_port" ] || postgres_port=$(normalize_port "$postgres_port")
 rustfs_api_port=$(normalize_port "${rustfs_api_port:-9000}")
 rustfs_console_port=$(normalize_port "${rustfs_console_port:-9001}")
 http_port=$(normalize_port "${http_port:-80}")
@@ -2158,7 +2206,12 @@ if [ "$assume_yes" != true ] && [ "$dry_run" != true ]; then
         proxy:docker) configured_target="http://risuai:6001 on $proxy_network" ;;
     esac
     printf '  Configured target: %s\n' "$configured_target"
-    if [ "$runtime" = node ]; then printf '  RustFS:            loopback ports %s/%s only\n' "$rustfs_api_port" "$rustfs_console_port"; else printf '  Web server:        Caddy serving the browser-only static build\n'; fi
+    if [ "$runtime" = node ]; then
+        if [ -n "$postgres_port" ]; then printf '  PostgreSQL:        127.0.0.1:%s/tcp\n' "$postgres_port"; else printf '  PostgreSQL:        internal only\n'; fi
+        printf '  RustFS:            loopback ports %s/%s only\n' "$rustfs_api_port" "$rustfs_console_port"
+    else
+        printf '  Web server:        Caddy serving the browser-only static build\n'
+    fi
     [ "$saved_present" = false ] || printf '  Existing data:     credentials and volumes will be preserved\n'
     case "$mode" in lan) warn "LAN mode listens on every IPv4 interface without TLS." ;; domain|dynv6) warn "Public/NAT TCP mappings must ultimately expose HTTP on 80 and HTTPS on 443 for automatic certificates." ;; esac
     prompt_confirmation "Apply this plan?" no || { info "Installation cancelled"; exit 0; }
@@ -2191,6 +2244,7 @@ RISUAI_PROXY_NETWORK=$proxy_network
 RISUAI_PORT=$app_port
 RISUAI_HTTP_PORT=$http_port
 RISUAI_HTTPS_PORT=$https_port
+POSTGRES_PORT=$postgres_port
 POSTGRES_PASSWORD=$postgres_password
 RUSTFS_ACCESS_KEY=$rustfs_access_key
 RUSTFS_SECRET_KEY=$rustfs_secret_key
