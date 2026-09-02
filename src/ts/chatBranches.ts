@@ -117,19 +117,88 @@ export function syncActiveChatBranch(chat: Chat): void {
  * Keep every saved timeline that references the same logical message in sync.
  * Branches intentionally clone their message suffixes, so updating only the
  * live array can otherwise restore stale content when another branch is opened.
+ * 
+ * Performance optimization: Uses a debounced queue to batch synchronous updates
+ * and avoids redundant work by tracking which messages are already queued.
  */
-export function syncChatBranchMessage(chat: Chat, message: Message): void {
-  const state = chat.branchState;
-  if (!state || !message.chatId) return;
+const syncBranchQueue = new Map<string, { chat: Chat; message: Message }>();
+let syncBranchPending = false;
+let syncBranchScheduled = false;
 
-  syncActiveChatBranch(chat);
-  for (const branch of state.branches) {
-    for (let index = 0; index < branch.messages.length; index++) {
-      if (branch.messages[index]?.chatId === message.chatId) {
-        branch.messages[index] = cloneMessages([message])[0];
+function processSyncBranchQueue(): void {
+  if (syncBranchQueue.size === 0) {
+    syncBranchPending = false;
+    syncBranchScheduled = false;
+    return;
+  }
+
+  const entries = Array.from(syncBranchQueue.values());
+  syncBranchQueue.clear();
+  syncBranchPending = false;
+  syncBranchScheduled = false;
+
+  for (const { chat, message } of entries) {
+    const state = chat.branchState;
+    if (!state || !message.chatId) continue;
+
+    // Only sync active branch immediately; other branches are updated lazily
+    const active = activeTimeline(chat);
+    if (active) {
+      active.messages = cloneMessages(chat.message.slice(state.baseMessageIndex + 1));
+      Object.assign(active, cloneBranchScriptState(chat));
+    }
+
+    // Update only branches that actually contain this message
+    const targetIndex = chat.message.findIndex((m) => m.chatId === message.chatId);
+    if (targetIndex < 0) continue;
+
+    for (const branch of state.branches) {
+      // Skip if message is before this branch's base
+      if (targetIndex <= state.baseMessageIndex) continue;
+
+      const relativeIndex = targetIndex - state.baseMessageIndex - 1;
+      if (relativeIndex >= 0 && relativeIndex < branch.messages.length) {
+        const existing = branch.messages[relativeIndex];
+        if (existing?.chatId === message.chatId) {
+          branch.messages[relativeIndex] = cloneMessages([message])[0];
+        }
       }
     }
   }
+}
+
+function scheduleSyncBranchProcessing(): void {
+  if (syncBranchScheduled) return;
+  syncBranchScheduled = true;
+  
+  // Use requestIdleCallback for non-urgent batching, with timeout fallback
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(() => processSyncBranchQueue(), { timeout: 50 });
+  } else {
+    setTimeout(() => processSyncBranchQueue(), 0);
+  }
+}
+
+function queueSyncChatBranchMessage(chat: Chat, message: Message): void {
+  if (!message.chatId) return;
+  syncBranchQueue.set(message.chatId, { chat, message });
+
+  if (!syncBranchPending) {
+    syncBranchPending = true;
+    scheduleSyncBranchProcessing();
+  }
+}
+
+export function syncChatBranchMessage(chat: Chat, message: Message): void {
+  queueSyncChatBranchMessage(chat, message);
+}
+
+/**
+ * Flush any pending branch synchronization immediately.
+ * Used for testing and critical paths that require synchronous behavior.
+ */
+export function flushSyncChatBranchQueue(): void {
+  processSyncBranchQueue();
 }
 
 /**

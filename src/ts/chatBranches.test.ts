@@ -105,6 +105,7 @@ describe("chatBranches", () => {
 
     editedInput.data = "edited input";
     syncChatBranchMessage(chat, editedInput);
+    flushSyncChatBranchQueue();
 
     activateChatBranch(chat, reroll.id);
     expect(chat.message[2]?.data).toBe("edited input");
