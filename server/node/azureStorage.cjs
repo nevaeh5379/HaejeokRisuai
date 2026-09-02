@@ -6,6 +6,7 @@
 
 const sql = require('mssql');
 const crypto = require('crypto');
+const { buildLegacyBranchMigrationPlan } = require('../../packages/protocol/legacyBranchMigration.cjs');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const path = require('path');
@@ -918,6 +919,110 @@ class AzureStorage extends SqlStorageBase {
         return { assets: fields };
     }
 
+    async _loadLinearMessagesForBranchMigration(target, chatId) {
+        const query = async (sqlText) => target.request().input('legacyChatId', sql.NVarChar(450), chatId).query(sqlText);
+        const [messagesRes, attrsRes, generationRes, promptInfoRes, togglesRes, itemsRes] = await Promise.all([
+            query('SELECT * FROM [chat].[messages] WHERE chat_id = @legacyChatId ORDER BY position, id'),
+            query('SELECT * FROM [chat].[message_attributes] WHERE chat_id = @legacyChatId ORDER BY message_id, [key]'),
+            query('SELECT * FROM [chat].[message_generation] WHERE chat_id = @legacyChatId'),
+            query('SELECT * FROM [chat].[message_prompt_info] WHERE chat_id = @legacyChatId'),
+            query('SELECT * FROM [chat].[message_prompt_toggles] WHERE chat_id = @legacyChatId ORDER BY message_id, position'),
+            query('SELECT * FROM [chat].[message_prompt_items] WHERE chat_id = @legacyChatId ORDER BY message_id, position'),
+        ]);
+        const relations = {
+            attributes: groupMessageRows(attrsRes.recordset),
+            generation: new Map(generationRes.recordset.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfoRes.recordset.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(togglesRes.recordset),
+            promptItems: groupMessageRows(itemsRes.recordset),
+        };
+        return messagesRes.recordset.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key) || [],
+                generation: relations.generation.get(key) || null,
+                promptInfo: relations.promptInfo.get(key) || null,
+                promptToggles: relations.promptToggles.get(key) || [],
+                promptItems: relations.promptItems.get(key) || [],
+            });
+        });
+    }
+
+    async migrateLegacyBranchState(target, chatId) {
+        let req = target.request();
+        req.input('legacyBranchChatId', sql.NVarChar(450), chatId);
+        const legacyRes = await req.query(`
+            SELECT
+                (SELECT COUNT(*) FROM [chat].[branches] WHERE chat_id = @legacyBranchChatId) AS branch_count,
+                (SELECT TOP 1 [value] FROM [chat].[attributes]
+                  WHERE chat_id = @legacyBranchChatId AND [key] = 'branchState') AS branch_state
+        `);
+        const legacyRow = legacyRes.recordset[0] || {};
+        if (Number(legacyRow.branch_count ?? 0) > 1 || legacyRow.branch_state == null) return false;
+        let branchState = legacyRow.branch_state;
+        if (typeof branchState === 'string') branchState = JSON.parse(branchState);
+        branchState = decodePostgresJsonValue(branchState);
+        if (!Array.isArray(branchState?.branches) || branchState.branches.length <= 1) return false;
+        const messages = await this._loadLinearMessagesForBranchMigration(target, chatId);
+        const plan = buildLegacyBranchMigrationPlan({ id: chatId, message: messages, branchState }, () => crypto.randomUUID());
+        if (!plan) return false;
+
+        req = target.request();
+        req.input('legacyBranchChatId', sql.NVarChar(450), chatId);
+        await req.query(`
+            DELETE FROM [chat].[active_branches] WHERE chat_id = @legacyBranchChatId;
+            DELETE FROM [chat].[message_branch_links] WHERE chat_id = @legacyBranchChatId;
+            DELETE FROM [chat].[branches] WHERE chat_id = @legacyBranchChatId;
+        `);
+
+        const splitMessages = plan.messages.map((message) => splitMessage({
+            chatId,
+            id: message.id,
+            position: message.position,
+            data: message.data,
+        }));
+        const msgCols = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
+        const msgTypes = ['nvarchar(450)', 'nvarchar(450)', 'int', 'nvarchar(32)', 'nvarchar(max)', 'varbinary(max)', 'nvarchar(max)', 'bigint', 'nvarchar(max)', 'bit', 'nvarchar(32)', 'bit'];
+        await bulkInsert(target, 'chat.messages', msgCols, msgTypes, splitMessages.map((item) => item.core), ['chat_id', 'id']);
+
+        if (splitMessages.length > 0) {
+            req = target.request();
+            req.input('legacyMessagePairs', sql.NVarChar(sql.MAX), JSON.stringify(splitMessages.map((item) => ({ chat_id: chatId, message_id: item.core.id }))));
+            for (const table of ['chat.message_attributes', 'chat.message_generation', 'chat.message_prompt_info', 'chat.message_prompt_toggles', 'chat.message_prompt_items']) {
+                await req.query(`DELETE targetRows FROM ${assertSqlIdentifier(table)} targetRows
+                    INNER JOIN OPENJSON(@legacyMessagePairs) WITH (
+                        chat_id NVARCHAR(450) '$.chat_id', message_id NVARCHAR(450) '$.message_id'
+                    ) src ON targetRows.chat_id = src.chat_id AND targetRows.message_id = src.message_id;`);
+            }
+        }
+        await bulkInsert(target, 'chat.message_attributes', ['chat_id', 'message_id', 'key', 'value'], ['nvarchar(450)', 'nvarchar(450)', 'nvarchar(450)', 'nvarchar(max)'],
+            splitMessages.flatMap((item) => item.attributes.map((attr) => ({ chat_id: chatId, message_id: item.core.id, key: attr.key, value: JSON.stringify(attr.value) }))));
+        await bulkInsert(target, 'chat.message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'], ['nvarchar(450)', 'nvarchar(450)', 'nvarchar(512)', 'nvarchar(450)', 'int', 'int', 'int', 'float', 'float', 'float', 'float'],
+            splitMessages.flatMap((item) => item.generation ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }] : []));
+        await bulkInsert(target, 'chat.message_prompt_info', ['chat_id', 'message_id', 'prompt_name'], ['nvarchar(450)', 'nvarchar(450)', 'nvarchar(max)'],
+            splitMessages.flatMap((item) => item.prompt?.info ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }] : []));
+        await bulkInsert(target, 'chat.message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'], ['nvarchar(450)', 'nvarchar(450)', 'int', 'nvarchar(450)', 'nvarchar(max)'],
+            splitMessages.flatMap((item) => (item.prompt?.toggles || []).map((row) => ({ ...row, chat_id: chatId, message_id: item.core.id }))));
+        await bulkInsert(target, 'chat.message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'], ['nvarchar(450)', 'nvarchar(450)', 'int', 'nvarchar(max)'],
+            splitMessages.flatMap((item) => (item.prompt?.items || []).map((row) => ({ chat_id: chatId, message_id: item.core.id, position: row.position, payload: JSON.stringify(row.payload) }))));
+
+        await bulkInsert(target, 'chat.branches', ['chat_id', 'id', 'parent_branch_id', 'fork_message_id', 'head_message_id', 'reason', 'created_at'],
+            ['nvarchar(450)', 'nvarchar(450)', 'nvarchar(450)', 'nvarchar(450)', 'nvarchar(450)', 'nvarchar(32)', 'bigint'],
+            plan.branches.map((branch) => ({
+                chat_id: chatId, id: branch.id, parent_branch_id: branch.parentBranchId ?? null,
+                fork_message_id: branch.forkMessageId ?? null, head_message_id: branch.headMessageId ?? null,
+                reason: branch.reason, created_at: branch.createdAt,
+            })));
+        await bulkInsert(target, 'chat.message_branch_links', ['chat_id', 'message_id', 'parent_message_id', 'origin_branch_id'],
+            ['nvarchar(450)', 'nvarchar(450)', 'nvarchar(450)', 'nvarchar(450)'],
+            plan.links.map((link) => ({ chat_id: chatId, message_id: link.messageId, parent_message_id: link.parentMessageId ?? null, origin_branch_id: link.originBranchId })));
+        req = target.request();
+        req.input('legacyBranchChatId', sql.NVarChar(450), chatId);
+        req.input('legacyActiveBranchId', sql.NVarChar(450), plan.activeBranchId);
+        await req.query('INSERT INTO [chat].[active_branches] (chat_id, branch_id) VALUES (@legacyBranchChatId, @legacyActiveBranchId)');
+        return true;
+    }
+
     async ensureChatBranchGraphs(target, chatIds) {
         const ids = [...new Set((chatIds || []).filter(Boolean))];
         if (ids.length === 0) return;
@@ -937,7 +1042,7 @@ class AzureStorage extends SqlStorageBase {
               JOIN ids ON ids.id = chats.id
              WHERE NOT EXISTS (
                  SELECT 1 FROM [chat].[branches] existing
-                  WHERE existing.chat_id = chats.id AND existing.id = CONCAT(chats.id, ':root')
+                  WHERE existing.chat_id = chats.id
              );
         `);
         req = target.request();
@@ -953,6 +1058,11 @@ class AzureStorage extends SqlStorageBase {
                  WHERE NOT EXISTS (
                      SELECT 1 FROM [chat].[active_branches] active WHERE active.chat_id = messages.chat_id
                  )
+                   AND (SELECT COUNT(*) FROM [chat].[branches] branches WHERE branches.chat_id = messages.chat_id) = 1
+                   AND EXISTS (
+                       SELECT 1 FROM [chat].[branches] root
+                        WHERE root.chat_id = messages.chat_id AND root.id = CONCAT(messages.chat_id, ':root')
+                   )
             )
             INSERT INTO [chat].[message_branch_links]
                 (chat_id, message_id, parent_message_id, origin_branch_id)
@@ -975,13 +1085,22 @@ class AzureStorage extends SqlStorageBase {
               JOIN ids ON ids.id = chats.id
              WHERE NOT EXISTS (
                  SELECT 1 FROM [chat].[active_branches] existing WHERE existing.chat_id = chats.id
-             );
+             )
+               AND (SELECT COUNT(*) FROM [chat].[branches] branches WHERE branches.chat_id = chats.id) = 1
+               AND EXISTS (
+                   SELECT 1 FROM [chat].[branches] root
+                    WHERE root.chat_id = chats.id AND root.id = CONCAT(chats.id, ':root')
+               );
         `);
     }
 
     async ensureChatBranchGraph(target, chatId) {
+        await this.migrateLegacyBranchState(target, chatId);
+        let active = await this._activeBranchId(target, chatId);
+        if (active) return active;
         await this.ensureChatBranchGraphs(target, [chatId]);
-        return `${chatId}:root`;
+        active = await this._activeBranchId(target, chatId);
+        return active;
     }
 
     async linkIncomingMessagesToActiveBranches(target, splitMessages) {

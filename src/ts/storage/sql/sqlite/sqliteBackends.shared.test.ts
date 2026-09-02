@@ -415,6 +415,56 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("migrates legacy branchState into the persistent graph without losing branch points", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    const source = buildFullDatabase();
+    const chat = source.characters[0].chats[0] as Chat;
+    const prompt = makeMessage("m1", "user", "one");
+    const original = makeMessage("m2", "char", "two");
+    const rerolled = makeMessage("m-alt", "char", "alternative");
+    chat.message = [prompt, rerolled];
+    chat.branchState = {
+      baseMessageIndex: 0,
+      activeBranchId: "reroll-legacy",
+      branches: [
+        {
+          id: "root-legacy",
+          branchMessageId: "m1",
+          branchMessageIndex: 0,
+          reason: "root",
+          createdAt: 10,
+          messages: [original],
+        },
+        {
+          id: "reroll-legacy",
+          parentBranchId: "root-legacy",
+          branchMessageId: "m1",
+          branchMessageIndex: 0,
+          reason: "reroll",
+          createdAt: 20,
+          messages: [rerolled],
+        },
+      ],
+    };
+    await seed(storage, source);
+
+    const loaded = await storage.loadChat("chat-1");
+    expect(loaded?.branchState).toBeUndefined();
+    expect(loaded?.activeBranchId).toBe("reroll-legacy");
+    expect(loaded?.message.map((message) => message.data)).toEqual(["one", "alternative"]);
+
+    const branches = await storage.listChatBranches!("chat-1");
+    expect(branches).toHaveLength(2);
+    expect(branches.find((branch) => branch.id === "reroll-legacy")).toMatchObject({
+      parentBranchId: "root-legacy",
+      forkMessageId: "m1",
+      headMessageId: "m-alt",
+    });
+    expect((await storage.loadBranchMessages!("chat-1", "root-legacy")).map((message) => message.data)).toEqual(["one", "two"]);
+    expect((await storage.loadBranchMessages!("chat-1", "reroll-legacy")).map((message) => message.data)).toEqual(["one", "alternative"]);
+    database.close();
+  });
+
   it("switches persistent branches without rewriting existing messages", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     await seed(storage);

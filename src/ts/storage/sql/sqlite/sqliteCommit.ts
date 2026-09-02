@@ -205,7 +205,7 @@ function countCharacterTagStatements(value: unknown): number {
     Math.ceil(removed / CHARACTER_TAG_BATCH_SIZE);
 }
 
-function messageExtensionData(
+export function messageExtensionData(
   data: Record<string, any>,
   content: RelationalNodeRow,
 ): Record<string, unknown> {

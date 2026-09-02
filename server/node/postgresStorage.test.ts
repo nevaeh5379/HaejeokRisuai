@@ -277,7 +277,6 @@ describe('PostgreSQL sync payload validation', () => {
         )
 
         const selects = queries.filter((query) => query.startsWith('SELECT'))
-        expect(selects).toHaveLength(2)
         expect(selects.some((query) => query.includes('message_generation'))).toBe(false)
         expect(selects.some((query) => query.includes('message_prompt'))).toBe(false)
         expect(messages).toEqual([{

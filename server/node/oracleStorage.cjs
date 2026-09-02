@@ -17,6 +17,7 @@
 
 const oracledb = require('oracledb');
 const crypto = require('crypto');
+const { buildLegacyBranchMigrationPlan } = require('../../packages/protocol/legacyBranchMigration.cjs');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const path = require('path');
@@ -1575,6 +1576,120 @@ class OracleStorage extends SqlStorageBase {
         }
     }
 
+    async _loadLinearMessagesForBranchMigration(conn, chatId) {
+        const [messages, attributes, generations, promptInfos, promptToggles, promptItems] = await Promise.all([
+            fetchRows(conn, `SELECT * FROM chat_messages WHERE chat_id = :1 ORDER BY position, id`, [chatId], { clobColumns: ['content_text'], blobColumns: ['content_binary'] }),
+            fetchRows(conn, `SELECT * FROM chat_message_attributes WHERE chat_id = :1 ORDER BY message_id, key_value`, [chatId]),
+            fetchRows(conn, `SELECT * FROM chat_message_generation WHERE chat_id = :1`, [chatId]),
+            fetchRows(conn, `SELECT * FROM chat_message_prompt_info WHERE chat_id = :1`, [chatId]),
+            fetchRows(conn, `SELECT * FROM chat_message_prompt_toggles WHERE chat_id = :1 ORDER BY message_id, position`, [chatId], { clobColumns: ['toggle_value'] }),
+            fetchRows(conn, `SELECT * FROM chat_message_prompt_items WHERE chat_id = :1 ORDER BY message_id, position`, [chatId]),
+        ]);
+        const relations = {
+            attributes: groupMessageRows(attributes),
+            generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptToggles),
+            promptItems: groupMessageRows(promptItems),
+        };
+        return messages.map((row) => {
+            const key = `${row.chat_id}\0${row.id}`;
+            return rebuildMessage(row, {
+                attributes: relations.attributes.get(key),
+                generation: relations.generation.get(key),
+                promptInfo: relations.promptInfo.get(key),
+                promptToggles: relations.promptToggles.get(key),
+                promptItems: relations.promptItems.get(key),
+            });
+        });
+    }
+
+    async _upsertMessagesForBranchMigration(conn, splitMessages) {
+        if (splitMessages.length === 0) return;
+        const messageColumns = ['chat_id', 'id', 'position', 'role', 'content_text', 'content_binary', 'saying_character_id', 'sent_time', 'sender_name', 'other_user', 'disabled_scope', 'is_comment'];
+        const updateCols = messageColumns.slice(2);
+        const upsertSql = `BEGIN
+            UPDATE chat_messages SET
+                ${updateCols.map((column) => `${column.toUpperCase()} = :${column}`).join(', ')},
+                updated_at = SYSTIMESTAMP
+            WHERE chat_id = :chat_id AND id = :id;
+            IF SQL%ROWCOUNT = 0 THEN
+                INSERT INTO chat_messages (${messageColumns.map((column) => column.toUpperCase()).join(', ')})
+                VALUES (${messageColumns.map((column) => `:${column}`).join(', ')});
+            END IF;
+        END;`;
+        const bindDefs = {};
+        for (const column of messageColumns) {
+            const type = this._getColumnBindType('chat_messages', column);
+            bindDefs[column] = type === oracledb.DB_TYPE_VARCHAR ? { type, maxSize: 4000 } : { type };
+        }
+        const binds = splitMessages.map((item) => {
+            const row = {};
+            for (const column of messageColumns) {
+                const type = this._getColumnBindType('chat_messages', column);
+                row[column] = this._formatBindValue(item.core[column], type, false);
+            }
+            return row;
+        });
+        await conn.executeMany(upsertSql, binds, { bindDefs });
+    }
+
+    async migrateLegacyBranchState(conn, chatId) {
+        const legacyRow = await fetchOne(conn, `
+            SELECT
+                (SELECT COUNT(*) FROM chat_branches WHERE chat_id = :1) AS branch_count,
+                (SELECT value FROM chat_attributes WHERE chat_id = :1 AND key_value = 'branchState') AS branch_state
+              FROM dual
+        `, [chatId]);
+        if (!legacyRow || Number(legacyRow.branch_count ?? 0) > 1 || legacyRow.branch_state == null) return false;
+        let branchState = legacyRow.branch_state;
+        if (typeof branchState === 'string') {
+            try { branchState = JSON.parse(branchState); } catch {}
+        }
+        branchState = decodePostgresJsonValue(branchState);
+        if (!Array.isArray(branchState?.branches) || branchState.branches.length <= 1) return false;
+        const messages = await this._loadLinearMessagesForBranchMigration(conn, chatId);
+        const plan = buildLegacyBranchMigrationPlan({ id: chatId, message: messages, branchState }, () => crypto.randomUUID());
+        if (!plan) return false;
+
+        await conn.execute(`DELETE FROM chat_active_branches WHERE chat_id = :1`, [chatId]);
+        await conn.execute(`DELETE FROM chat_message_branch_links WHERE chat_id = :1`, [chatId]);
+        await conn.execute(`DELETE FROM chat_branches WHERE chat_id = :1`, [chatId]);
+
+        const splitMessages = plan.messages.map((message) => splitMessage({
+            chatId,
+            id: message.id,
+            position: message.position,
+            data: message.data,
+        }));
+        await deleteMessageChildren(conn, plan.messages.map((message) => ({ chatId, id: message.id })));
+        await this._upsertMessagesForBranchMigration(conn, splitMessages);
+        await this._bulkInsertRows(conn, 'chat_message_attributes', ['chat_id', 'message_id', 'key_value', 'value'],
+            splitMessages.flatMap((item) => item.attributes.map((row) => ({ chat_id: chatId, message_id: item.core.id, key_value: row.key, value: row.value }))));
+        await this._bulkInsertRows(conn, 'chat_message_generation', ['chat_id', 'message_id', 'model', 'generation_id', 'input_tokens', 'output_tokens', 'max_context', 'stage1_time', 'stage2_time', 'stage3_time', 'stage4_time'],
+            splitMessages.flatMap((item) => item.generation ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }] : []));
+        await this._bulkInsertRows(conn, 'chat_message_prompt_info', ['chat_id', 'message_id', 'prompt_name'],
+            splitMessages.flatMap((item) => item.prompt?.info ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }] : []));
+        await this._bulkInsertRows(conn, 'chat_message_prompt_toggles', ['chat_id', 'message_id', 'position', 'toggle_key', 'toggle_value'],
+            splitMessages.flatMap((item) => (item.prompt?.toggles || []).map((row) => ({ ...row, chat_id: chatId, message_id: item.core.id }))));
+        await this._bulkInsertRows(conn, 'chat_message_prompt_items', ['chat_id', 'message_id', 'position', 'payload'],
+            splitMessages.flatMap((item) => (item.prompt?.items || []).map((row) => ({ ...row, chat_id: chatId, message_id: item.core.id }))));
+
+        await this._bulkInsertRows(conn, 'chat_branches', ['chat_id', 'id', 'parent_branch_id', 'fork_message_id', 'head_message_id', 'reason', 'created_at'],
+            plan.branches.map((branch) => ({
+                chat_id: chatId, id: branch.id, parent_branch_id: branch.parentBranchId ?? null,
+                fork_message_id: branch.forkMessageId ?? null, head_message_id: branch.headMessageId ?? null,
+                reason: branch.reason, created_at: branch.createdAt,
+            })));
+        await this._bulkInsertRows(conn, 'chat_message_branch_links', ['chat_id', 'message_id', 'parent_message_id', 'origin_branch_id'],
+            plan.links.map((link) => ({ chat_id: chatId, message_id: link.messageId, parent_message_id: link.parentMessageId ?? null, origin_branch_id: link.originBranchId })));
+        await conn.execute(
+            `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (:1, :2)`,
+            [chatId, plan.activeBranchId]
+        );
+        return true;
+    }
+
     async ensureChatBranchGraphs(conn, chatIds) {
         const ids = [...new Set((chatIds || []).filter(Boolean))];
         if (ids.length === 0) return;
@@ -1590,6 +1705,9 @@ class OracleStorage extends SqlStorageBase {
                   FROM chat_chats chats
                   JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids
                     ON ids.id = chats.id
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM chat_branches existing WHERE existing.chat_id = chats.id
+                 )
             ) source
             ON (target.chat_id = source.chat_id AND target.id = source.id)
             WHEN NOT MATCHED THEN INSERT
@@ -1613,6 +1731,11 @@ class OracleStorage extends SqlStorageBase {
                        WHERE NOT EXISTS (
                            SELECT 1 FROM chat_active_branches active WHERE active.chat_id = messages.chat_id
                        )
+                         AND (SELECT COUNT(*) FROM chat_branches branches WHERE branches.chat_id = messages.chat_id) = 1
+                         AND EXISTS (
+                             SELECT 1 FROM chat_branches root
+                              WHERE root.chat_id = messages.chat_id AND root.id = messages.chat_id || ':root'
+                         )
                   ) ordered
             ) source
             ON (target.chat_id = source.chat_id AND target.message_id = source.message_id)
@@ -1628,6 +1751,11 @@ class OracleStorage extends SqlStorageBase {
                   FROM chat_chats chats
                   JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids
                     ON ids.id = chats.id
+                 WHERE (SELECT COUNT(*) FROM chat_branches branches WHERE branches.chat_id = chats.id) = 1
+                   AND EXISTS (
+                       SELECT 1 FROM chat_branches root
+                        WHERE root.chat_id = chats.id AND root.id = chats.id || ':root'
+                   )
             ) source
             ON (target.chat_id = source.chat_id)
             WHEN NOT MATCHED THEN INSERT (chat_id, branch_id)
@@ -1636,8 +1764,12 @@ class OracleStorage extends SqlStorageBase {
     }
 
     async ensureChatBranchGraph(conn, chatId) {
+        await this.migrateLegacyBranchState(conn, chatId);
+        let active = await this._activeBranchId(conn, chatId);
+        if (active) return active;
         await this.ensureChatBranchGraphs(conn, [chatId]);
-        return `${chatId}:root`;
+        active = await this._activeBranchId(conn, chatId);
+        return active;
     }
 
     async linkIncomingMessagesToActiveBranches(conn, splitMessages) {
@@ -2668,7 +2800,7 @@ class OracleStorage extends SqlStorageBase {
             'last_message_time', 'sent_time', 'is_comment', 'is_streaming', 'streaming_optimization_mode',
             'node_id', 'parent_node_id', 'bias', 'sd_model', 'use_sd', 'new_chat_on_start',
             'chat_page', 'utility_bot', 'is_private', 'creation_time', 'modification_time', 'last_interaction_time', 'trash_time',
-            'revision', 'schema_version', 'singleton', 'initialized'
+            'revision', 'schema_version', 'singleton', 'initialized', 'created_at'
         ]);
 
         if (numberCols.has(col) && !(mappedTable === 'character_scripts' && col === 'flag')) {

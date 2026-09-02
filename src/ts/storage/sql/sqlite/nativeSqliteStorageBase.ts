@@ -12,6 +12,8 @@ import type {
   RisuPersona,
 } from "../../database/schema";
 import type { RisuModule } from "../../../process/modules";
+import { v4 as uuidv4 } from "uuid";
+import { buildLegacyBranchMigrationPlan } from "../../../../../packages/protocol/legacyBranchMigration.cjs";
 import type {
   BotPresetSummary,
   SqlStartupDataResult,
@@ -63,6 +65,7 @@ import {
   type SqliteTransactionStatement,
 } from "./sqliteStorageUtils";
 import {
+  buildSqliteLegacyBranchMigrationStatements,
   ensureSqliteBranchGraphStatements,
   mapSqliteChatBranchRow,
   SQLITE_BRANCH_SCHEMA_STATEMENTS,
@@ -908,7 +911,7 @@ export abstract class NativeSqliteStorageBase {
     // count, and recent messages share one native query batch.
     const messageQuery = buildBranchMessageRowsQuery(chatId, undefined, limit);
     const totalQuery = buildBranchMessageCountQuery(chatId);
-    const [chatRows, chatNodeRows, totalRows, messageRows, activeBranchRows] = await this.selectRowSets([
+    const [chatRows, chatNodeRows, totalRows, messageRows, activeBranchRows, branchCountRows] = await this.selectRowSets([
       {
         sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
         bind: [chatId],
@@ -928,6 +931,10 @@ export abstract class NativeSqliteStorageBase {
         sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
         bind: [chatId],
       },
+      {
+        sql: "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+        bind: [chatId],
+      },
     ]);
     const chatRow = chatRows[0] as
       | {
@@ -942,13 +949,19 @@ export abstract class NativeSqliteStorageBase {
     const activeBranch = activeBranchRows[0] as
       | { branch_id: string }
       | undefined;
+    const branchCount = Number(
+      (branchCountRows[0] as { total?: number } | undefined)?.total ?? 0,
+    );
+    const chatData = (chatNodeRows.length
+      ? rebuildRelationalValue(chatNodeRows)
+      : {}) as any;
+    if (await this.migrateLegacyBranchGraphIfNeeded(chatId, chatData, branchCount)) {
+      return this.loadChat(chatId, options);
+    }
     if (!activeBranch) {
       await this.ensureBranchGraph(chatId);
       return this.loadChat(chatId, options);
     }
-    const chatData = (chatNodeRows.length
-      ? rebuildRelationalValue(chatNodeRows)
-      : {}) as any;
     chatData.id = chatRow.id;
     chatData.name = chatRow.name ?? "";
     chatData.note = chatRow.note ?? "";
@@ -1015,7 +1028,57 @@ export abstract class NativeSqliteStorageBase {
     };
   }
 
+  private async loadLinearMessages(chatId: string): Promise<Message[]> {
+    const query = buildMessageRowsQuery(chatId, undefined, 0, false, "full");
+    return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
+  }
+
+  private async loadLegacyChatExtension(chatId: string): Promise<Record<string, any>> {
+    const rows = await this.selectRows(
+      `SELECT node_id, parent_node_id, node_order, object_key,
+              object_key_encoded, value_type, text_value, encoded_text_value,
+              number_value, boolean_value
+         FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
+      [chatId],
+    );
+    return (rows.length ? rebuildRelationalValue(rows) : {}) as Record<string, any>;
+  }
+
+  private async migrateLegacyBranchGraphIfNeeded(
+    chatId: string,
+    knownChatData?: Record<string, any>,
+    knownBranchCount?: number,
+  ): Promise<boolean> {
+    const branchCount = knownBranchCount ?? Number((await this.selectOne<{ total: number }>(
+      "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+      [chatId],
+    ))?.total ?? 0);
+    if (branchCount > 1) return false;
+    const chatData = knownChatData ?? await this.loadLegacyChatExtension(chatId);
+    if (!Array.isArray(chatData.branchState?.branches) || chatData.branchState.branches.length <= 1) {
+      return false;
+    }
+    return this.writeQueue.run(async () => {
+      const currentCount = Number((await this.selectOne<{ total: number }>(
+        "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+        [chatId],
+      ))?.total ?? 0);
+      if (currentCount > 1) return false;
+      const plan = buildLegacyBranchMigrationPlan(
+        { ...chatData, id: chatId, message: await this.loadLinearMessages(chatId) },
+        uuidv4,
+      );
+      if (!plan) return false;
+      await this.executeNativeTransaction(
+        null,
+        buildSqliteLegacyBranchMigrationStatements(chatId, chatData, plan),
+      );
+      return true;
+    });
+  }
+
   private async ensureBranchGraph(chatId: string): Promise<void> {
+    if (await this.migrateLegacyBranchGraphIfNeeded(chatId)) return;
     await this.writeQueue.run(() =>
       this.executeNativeTransaction(
         null,

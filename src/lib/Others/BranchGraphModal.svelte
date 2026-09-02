@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, tick, untrack } from 'svelte'
+    import { onMount, tick } from 'svelte'
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
@@ -20,12 +20,12 @@
     const minScale = 0.25
     const maxScale = 1.6
 
-    const graph = untrack(() => getChatBranches(chat))
-    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]))
-    const graphWidth = padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX
-    const graphHeight = padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY
-    const activeNode = graph.nodes.find((node) => node.activeTerminal)
-        ?? [...graph.nodes].reverse().find((node) => node.activePath)
+    const graph = $derived(getChatBranches(chat))
+    const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
+    const graphWidth = $derived(padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX)
+    const graphHeight = $derived(padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY)
+    const activeNode = $derived(graph.nodes.find((node) => node.activeTerminal)
+        ?? [...graph.nodes].reverse().find((node) => node.activePath))
     let viewport: HTMLDivElement | undefined = $state()
     let panX = $state(0)
     let panY = $state(0)
@@ -208,6 +208,14 @@
         if(event.key === '0' && !event.metaKey && !event.ctrlKey) fitGraph()
     }
 
+    $effect(() => {
+        graph
+        if(!viewport || hasInteracted) return
+        void tick().then(() => {
+            if(viewport && !hasInteracted) fitGraph(false)
+        })
+    })
+
     onMount(() => {
         let observer: ResizeObserver | undefined
         void tick().then(() => {
@@ -302,6 +310,7 @@
                     class:branch-node--path={!node.activeTerminal && node.activePath}
                     class:branch-node--selectable={node.terminals.length > 0}
                     class:branch-node--summary={node.kind === 'summary'}
+                    class:branch-node--fork={node.branchPoint}
                     style={`left:${left(node.x)}px;top:${top(node.y)}px;width:${cardWidth}px;height:${cardHeight}px;`}
                     aria-current={node.activeTerminal ? 'true' : undefined}
                     aria-disabled={node.terminals.length === 0 ? 'true' : undefined}
