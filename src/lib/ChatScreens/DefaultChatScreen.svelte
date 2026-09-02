@@ -37,6 +37,12 @@
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
+    import {
+        getNextFirstMessageIndex,
+        getPreviousFirstMessageIndex,
+        getSelectedFirstMessage,
+        normalizeFirstMessageIndex,
+    } from 'src/ts/firstMessageSelection';
 
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
 
@@ -1144,8 +1150,11 @@
                     <Chat
                         character={createSimpleCharacter(characterStore.characters[selectedCharacterIndex])}
                         name={characterStore.characters[selectedCharacterIndex].name}
-                        message={characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].fmIndex === -1 ? characterStore.characters[selectedCharacterIndex].firstMessage :
-                            characterStore.characters[selectedCharacterIndex].alternateGreetings[characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].fmIndex]}
+                        message={getSelectedFirstMessage(
+                            characterStore.characters[selectedCharacterIndex].firstMessage,
+                            characterStore.characters[selectedCharacterIndex].alternateGreetings,
+                            characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].fmIndex,
+                        )}
                         role='char'
                         img={getCharImage(characterStore.characters[selectedCharacterIndex].image, 'css', lowSpecMode ? { thumbnail: true } : undefined)}
                         idx={-1}
@@ -1156,12 +1165,7 @@
                             const cha = characterStore.characters[selectedCharacterIndex]
                             const chat = characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex]
                             if(cha.type !== 'group'){
-                                if (chat.fmIndex >= (cha.alternateGreetings.length - 1)){
-                                    chat.fmIndex = -1
-                                }
-                                else{
-                                    chat.fmIndex += 1
-                                }
+                                chat.fmIndex = getNextFirstMessageIndex(chat.fmIndex, cha.alternateGreetings.length)
                             }
                             characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex] = chat
                         }}
@@ -1169,17 +1173,15 @@
                             const cha = characterStore.characters[selectedCharacterIndex]
                             const chat = characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex]
                             if(cha.type !== 'group'){
-                                if (chat.fmIndex === -1){
-                                    chat.fmIndex = (cha.alternateGreetings.length - 1)
-                                }
-                                else{
-                                    chat.fmIndex -= 1
-                                }
+                                chat.fmIndex = getPreviousFirstMessageIndex(chat.fmIndex, cha.alternateGreetings.length)
                             }
                             characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex] = chat
                         }}
                         isLastMemory={false}
-                        currentPage={(characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].fmIndex ?? -1) + 2}
+                        currentPage={normalizeFirstMessageIndex(
+                            characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].fmIndex,
+                            characterStore.characters[selectedCharacterIndex].alternateGreetings.length,
+                        ) + 2}
                         totalPages={characterStore.characters[selectedCharacterIndex].alternateGreetings.length + 1}
                         targetCharacterIndex={selectedCharacterIndex}
                         targetChatIndex={selectedChatIndex}
