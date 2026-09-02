@@ -331,6 +331,14 @@ export async function runStorageAnalysis(
       }
     }
 
+    // Assets referenced only by saved character snapshots must not be treated
+    // as orphans. snapshotAssetRefs is intentionally a compact top-level cache
+    // so SQL backends can answer the asset-only query without loading snapshot
+    // lore/scripts themselves.
+    for (const snapshotAsset of (char as any).snapshotAssetRefs ?? []) {
+      addAsset(snapshotAsset, "additional", "Snapshot asset", "Snapshot asset");
+    }
+
     const totalSize = botAssets.reduce((sum, a) => sum + a.size, 0);
     const missingCount = botAssets.filter((a) => a.missing).length;
 

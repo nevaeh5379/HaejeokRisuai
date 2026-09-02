@@ -890,7 +890,7 @@ class AzureStorage extends SqlStorageBase {
         const pool = await this.getPool();
         const [charRes, attrsRes, emotionsRes, assetsRes] = await Promise.all([
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT image FROM [character].[characters] WHERE id = @id'),
-            pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[attributes] WHERE character_id = @id ORDER BY [key]'),
+            pool.request().input('id', sql.NVarChar(450), characterId).query("SELECT * FROM [character].[attributes] WHERE character_id = @id AND [key] IN ('customBackground', 'gptSoVitsConfig', 'vits', 'snapshotAssetRefs') ORDER BY [key]"),
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[emotions] WHERE character_id = @id ORDER BY position'),
             pool.request().input('id', sql.NVarChar(450), characterId).query('SELECT * FROM [character].[assets] WHERE character_id = @id ORDER BY position'),
         ]);

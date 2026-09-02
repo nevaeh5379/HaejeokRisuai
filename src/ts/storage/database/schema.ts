@@ -669,6 +669,35 @@ export interface loreBook {
   folder?: string;
 }
 
+export type CharacterSnapshotData = Partial<
+  Omit<
+    character,
+    | "chaId"
+    | "detailsLoaded"
+    | "chats"
+    | "chatFolders"
+    | "chatPage"
+    | "scriptstate"
+    | "realmId"
+    | "trashTime"
+    | "lastInteraction"
+    | "coldstorage"
+    | "coldStoragedChats"
+    | "creation_date"
+    | "modification_date"
+    | "snapshots"
+    | "snapshotAssetRefs"
+  >
+>;
+
+export interface CharacterSnapshot {
+  id: string;
+  name: string;
+  createdAt: number;
+  version: 1;
+  data: CharacterSnapshotData;
+}
+
 export interface character {
   type?: "character";
   name: string;
@@ -854,6 +883,9 @@ export interface character {
   coldstorage?: string;
   coldStoragedChats?: string[];
   customModuleToggle?: string;
+  snapshots?: CharacterSnapshot[];
+  /** Cached asset references held by snapshots for lightweight orphan analysis. */
+  snapshotAssetRefs?: string[];
 }
 
 export interface loreSettings {
