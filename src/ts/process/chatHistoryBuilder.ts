@@ -19,6 +19,7 @@ import { runImageEmbedding } from "./transformers";
 import { getModuleAssets } from "./modules";
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
+import { getSelectedFirstMessage } from "../firstMessageSelection";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>
@@ -52,10 +53,11 @@ async function addFirstMessage(
   const active = getActiveMessages(currentChat);
   if (nowChatroom.type === "group" || active.reset) return null;
 
-  const firstMessage =
-    currentChat.fmIndex === -1
-      ? nowChatroom.firstMessage
-      : nowChatroom.alternateGreetings[currentChat.fmIndex];
+  const firstMessage = getSelectedFirstMessage(
+    nowChatroom.firstMessage,
+    nowChatroom.alternateGreetings,
+    currentChat.fmIndex,
+  );
   const parsedFirstMessage = risuChatParser(firstMessage, {
     chara: currentChar,
     chatTarget,
