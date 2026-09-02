@@ -24,7 +24,7 @@ export async function requestChatData(
 ): Promise<requestDataResponse> {
   const db = settingsStore.state;
   const fallBackModels: string[] = safeStructuredClone(
-    db?.fallbackModels?.[model] ?? [],
+    presetStore.state.fallbackModels?.[model] ?? [],
   );
   const requestCharacter = arg.currentChar ?? characterStore.currentCharacter;
   const tools = arg.tools ?? (await getTools(requestCharacter));
