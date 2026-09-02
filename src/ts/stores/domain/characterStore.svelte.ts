@@ -51,21 +51,21 @@ function persistedFieldsFingerprint(
 function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
   if (current.length === 0) return loaded;
 
-  const currentById = new Map(
-    current.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
+  const loadedById = new Map(
+    loaded.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
   );
-  const loadedIds = new Set<string>();
-  const merged = loaded.map((chat) => {
+  const currentIds = new Set<string>();
+  const merged = current.map((chat) => {
     if (!chat.id) return chat;
-    loadedIds.add(chat.id);
-    const existing = currentById.get(chat.id);
-    if (!existing) return chat;
-    Object.assign(chat, existing);
-    return chat;
+    currentIds.add(chat.id);
+    const persisted = loadedById.get(chat.id);
+    if (!persisted) return chat;
+    Object.assign(persisted, chat);
+    return persisted;
   });
 
-  for (const chat of current) {
-    if (chat.id && !loadedIds.has(chat.id)) merged.push(chat);
+  for (const chat of loaded) {
+    if (chat.id && !currentIds.has(chat.id)) merged.push(chat);
   }
   return merged;
 }
@@ -840,16 +840,26 @@ class CharacterStore
         if (fullChar) {
           const idx = this.characters.findIndex((c) => c.chaId === chaId);
           if (idx >= 0) {
-            const existingChats = this.characters[idx].chats ?? [];
+            const currentCharacter = this.characters[idx];
+            const existingChats = currentCharacter.chats ?? [];
+            const currentChatPage = currentCharacter.chatPage ?? 0;
+            const activeChatId = existingChats[currentChatPage]?.id;
             const loadedChats = fullChar.chats ?? [];
-            this.characters[idx] = Object.assign(
-              this.characters[idx],
-              fullChar,
-              {
-                chats: mergeLoadedChats(loadedChats, existingChats),
-                detailsLoaded: true,
-              },
-            );
+            const mergedChats = mergeLoadedChats(loadedChats, existingChats);
+            const activeChatIndex = activeChatId
+              ? mergedChats.findIndex((chat) => chat.id === activeChatId)
+              : -1;
+            this.characters[idx] = Object.assign(currentCharacter, fullChar, {
+              chats: mergedChats,
+              chatPage:
+                activeChatIndex >= 0
+                  ? activeChatIndex
+                  : Math.min(
+                      currentChatPage,
+                      Math.max(0, mergedChats.length - 1),
+                    ),
+              detailsLoaded: true,
+            });
             this.touchHydratedCharacter(chaId);
             if (idx === this.selectedId) {
               this.observeActive();
