@@ -696,6 +696,61 @@ describe("NodePostgresStorage browser client", () => {
     );
   });
 
+  it("uses persistent branch endpoints for remote SQL storage", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ branches: [{
+        id: "root", chatId: "chat-123", reason: "root", createdAt: 0,
+      }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ messages: [{
+        chatId: "msg-1", role: "user", data: "hello",
+      }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ branch: {
+        id: "reroll-1", chatId: "chat-123", parentBranchId: "root",
+        forkMessageId: "msg-1", reason: "reroll", createdAt: 123,
+      } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodePostgresStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    const branches = await storage.listChatBranches("chat-123");
+    const messages = await storage.loadBranchMessages("chat-123", "root", {
+      messageLimit: 12,
+      mode: "generation",
+    });
+    const created = await storage.createChatBranch({
+      id: "reroll-1",
+      chatId: "chat-123",
+      parentBranchId: "root",
+      forkMessageId: "msg-1",
+      reason: "reroll",
+      createdAt: 123,
+    });
+    await storage.activateChatBranch("chat-123", "reroll-1");
+
+    expect(branches[0]?.id).toBe("root");
+    expect(messages[0]?.chatId).toBe("msg-1");
+    expect(created.id).toBe("reroll-1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/chats/chat-123/branches");
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "/api/database-v2/chats/chat-123/branches/root/messages?limit=12&mode=generation",
+    );
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/database-v2/chats/chat-123/branches");
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toEqual({
+      id: "reroll-1",
+      parentBranchId: "root",
+      forkMessageId: "msg-1",
+      reason: "reroll",
+      createdAt: 123,
+    });
+    expect(fetchMock.mock.calls[3][0]).toBe(
+      "/api/database-v2/chats/chat-123/branches/reroll-1/activate",
+    );
+    expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: "POST" });
+  });
+
   it("loads character details on demand", async () => {
     const fetchMock = vi
       .fn()

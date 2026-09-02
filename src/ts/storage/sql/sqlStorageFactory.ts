@@ -4,6 +4,18 @@ import { isCapacitor, isTauri, isNodeServer } from "../../platform";
 
 let storageSingleton: ISqlStorage | null = null;
 
+export type SqlBranchStorage = ISqlStorage & Required<Pick<
+  ISqlStorage,
+  "listChatBranches" | "loadBranchMessages" | "createChatBranch" | "activateChatBranch"
+>>;
+
+const REQUIRED_BRANCH_STORAGE_METHODS = [
+  "listChatBranches",
+  "loadBranchMessages",
+  "createChatBranch",
+  "activateChatBranch",
+] as const;
+
 /**
  * Wraps a storage backend so that every `commit()` call is serialised.
  * Multiple domain stores (character, settings, message, adapter) share one
@@ -83,6 +95,23 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
   const { WebSqliteStorage } = await import("./sqlite/web/webSqliteStorage");
   storageSingleton = wrapWithSerializedCommits(new WebSqliteStorage());
   return storageSingleton;
+}
+
+/**
+ * Returns the branch-capable storage contract. Branch features are not allowed
+ * to silently fall back to the legacy in-memory branchState implementation.
+ */
+export async function getSqlBranchStorage(): Promise<SqlBranchStorage> {
+  const storage = await getSqlStorage();
+  const missing = REQUIRED_BRANCH_STORAGE_METHODS.filter(
+    (method) => typeof storage[method] !== "function",
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `Persistent chat branch storage is required; missing API: ${missing.join(", ")}`,
+    );
+  }
+  return storage as SqlBranchStorage;
 }
 
 /**

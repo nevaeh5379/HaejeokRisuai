@@ -192,9 +192,10 @@ export interface ISqlStorage {
     limit: number,
   ): Promise<SqlMessagePage>;
   /**
-   * Persistent branch graph APIs. Kept optional while remote SQL servers roll
-   * out the same protocol; callers must use the legacy compatibility path
-   * when a backend does not expose them yet.
+   * Persistent branch graph APIs. These remain optional only at the transport
+   * boundary while remote SQL servers roll out the protocol. Runtime branch
+   * features must require them and fail fast; they must never fall back to the
+   * legacy in-memory branchState path.
    */
   listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
   loadBranchMessages?(

@@ -4368,19 +4368,12 @@ app.get('/api/database-v2/chats/:chatId', authenticatedRouteLimiter, async (req,
     }
 
     try {
-        const chat = await postgresStorage.loadChat(req.params.chatId);
+        const chat = await postgresStorage.loadChat(req.params.chatId, {
+            messageLimit: normalizePageInteger(req.query.messageLimit, undefined),
+        });
         if (!chat) {
             res.status(404).send({ error: 'Chat not found', code: 'chat_not_found' });
             return;
-        }
-        if (req.query.messageLimit !== undefined) {
-            const page = paginateMessages(chat.message, {
-                limit: normalizePageInteger(req.query.messageLimit, undefined),
-            });
-            chat.message = page.messages;
-            chat.messageOffset = page.offset;
-            chat.messageTotal = page.total;
-            chat.messagesFullyLoaded = !page.hasMore;
         }
         await sendCompressedJson(req, res, { chat });
     } catch (error) {
@@ -4405,21 +4398,105 @@ app.get('/api/database-v2/chats/:chatId/messages', authenticatedRouteLimiter, as
     }
 
     try {
-        const messages = await postgresStorage.loadChatMessages(req.params.chatId, {
-            mode: req.query.mode === 'generation' ? 'generation' : 'full',
-        });
         if (req.query.limit !== undefined || req.query.before !== undefined) {
-            const page = paginateMessages(messages, {
-                before: normalizePageInteger(req.query.before, undefined),
-                limit: normalizePageInteger(req.query.limit, undefined),
-            });
+            const page = await postgresStorage.loadChatMessagePage(
+                req.params.chatId,
+                normalizePageInteger(req.query.before, undefined),
+                normalizePageInteger(req.query.limit, 50),
+            );
             await sendCompressedJson(req, res, page);
             return;
         }
+        const messages = await postgresStorage.loadChatMessages(req.params.chatId, {
+            mode: req.query.mode === 'generation' ? 'generation' : 'full',
+        });
         await sendCompressedJson(req, res, { messages });
     } catch (error) {
         if (error instanceof PostgresPayloadError) {
             res.status(400).send({ error: error.message, code: 'invalid_chat_id' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/chats/:chatId/branches', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
+        return;
+    }
+    try {
+        await sendCompressedJson(req, res, {
+            branches: await postgresStorage.listChatBranches(req.params.chatId),
+        });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_branch_request' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.get('/api/database-v2/chats/:chatId/branches/:branchId/messages', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
+        return;
+    }
+    try {
+        const messages = await postgresStorage.loadBranchMessages(
+            req.params.chatId,
+            req.params.branchId,
+            {
+                messageLimit: normalizePageInteger(req.query.limit, undefined),
+                mode: req.query.mode === 'generation' ? 'generation' : 'full',
+            },
+        );
+        await sendCompressedJson(req, res, { messages });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_branch_request' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/database-v2/chats/:chatId/branches', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
+        return;
+    }
+    try {
+        const branch = await postgresStorage.createChatBranch({
+            ...(req.body || {}),
+            chatId: req.params.chatId,
+        });
+        res.send({ branch });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_branch_request' });
+            return;
+        }
+        next(error);
+    }
+});
+
+app.post('/api/database-v2/chats/:chatId/branches/:branchId/activate', authenticatedRouteLimiter, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!postgresStorage.enabled) {
+        res.status(404).send({ error: 'SQL storage is not configured', code: 'sql_disabled' });
+        return;
+    }
+    try {
+        await postgresStorage.activateChatBranch(req.params.chatId, req.params.branchId);
+        res.send({ success: true });
+    } catch (error) {
+        if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+            res.status(400).send({ error: error.message, code: 'invalid_chat_branch_request' });
             return;
         }
         next(error);

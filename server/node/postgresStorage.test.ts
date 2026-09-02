@@ -249,7 +249,13 @@ describe('PostgreSQL sync payload validation', () => {
         const client = {
             query: async (sql:string) => {
                 queries.push(sql)
-                if (sql.includes('FROM chat.messages ')) {
+                if (sql.includes('SELECT branch_id FROM chat.active_branches')) {
+                    return { rows: [{ branch_id: '00000000-0000-4000-8000-000000000001:root' }] }
+                }
+                if (sql.includes('COUNT(message_id)::bigint AS total')) {
+                    return { rows: [{ total: 1 }] }
+                }
+                if (sql.includes('JOIN chat.messages messages')) {
                     return { rows: [{
                         chat_id: '00000000-0000-4000-8000-000000000001',
                         id: '00000000-0000-4000-8000-000000000002',
@@ -279,6 +285,12 @@ describe('PostgreSQL sync payload validation', () => {
             data: 'hello',
             chatId: '00000000-0000-4000-8000-000000000002',
         }])
+    })
+
+    it('has persistent branch methods on PostgresStorage prototype', () => {
+        for (const method of ['listChatBranches', 'loadBranchMessages', 'createChatBranch', 'activateChatBranch']) {
+            expect(typeof PostgresStorage.prototype[method]).toBe('function')
+        }
     })
 
     it('has revision methods on PostgresStorage prototype', () => {

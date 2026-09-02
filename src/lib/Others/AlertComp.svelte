@@ -1,7 +1,7 @@
 <script lang="ts">
     import { alertGenerationInfoStore } from "../../ts/alert";
     
-    import { characterStore, settingsStore, presetStore, messageStore } from 'src/ts/stores/domain';
+    import { characterStore, settingsStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from '../../ts/characters';
     import { ParseMarkdown } from '../../ts/parser/parser.svelte';
     import BarIcon from '../SideBars/BarIcon.svelte';
@@ -9,7 +9,6 @@
     import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
-    import { activateChatBranch } from 'src/ts/chatBranches';
     import Button from '../UI/GUI/Button.svelte';
     import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, SparkleIcon, InfoIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
@@ -28,7 +27,7 @@
     import BranchGraphModal from "./BranchGraphModal.svelte";
     import { appVer } from "../../ts/appVersion";
     import { translateStackTrace } from "../../ts/sourcemap";
-    import { getSqlStorage } from "src/ts/storage/sql/sqlStorageFactory";
+    import { getSqlBranchStorage } from "src/ts/storage/sql/sqlStorageFactory";
     import type { Chat } from "src/ts/storage/database/schema";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import {
@@ -188,27 +187,21 @@
         }
         const chat = getBranchGraphChat($alertStore.msg)
         if(!chat?.id) return
-        const storage = await getSqlStorage()
-        if(!chat.branchState && storage.activateChatBranch){
-            await storage.activateChatBranch(chat.id, branchId)
-            const loaded = await storage.loadChat(chat.id, {
-                messageLimit: Math.max(12, chat.message.length),
-            })
-            if(!loaded) return
-            chat.message.splice(0, chat.message.length, ...loaded.message)
-            chat.activeBranchId = branchId
-            chat.messageOffset = loaded.messageOffset
-            chat.messageTotal = loaded.messageTotal
-            chat.messagesFullyLoaded = loaded.messagesFullyLoaded
-            chat.messagesLoaded = true
-            alertStore.set({ type: 'none', msg: '' })
-            return
+        if(chat.branchState){
+            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
         }
-        const switched = activateChatBranch(chat, branchId)
-        if(!switched) return
-        await messageStore.replaceMessages(chat.id, switched.nextMessages, switched.previousMessages)
-        characterStore.markChatDirty(chat.id)
-        await characterStore.flush()
+        const storage = await getSqlBranchStorage()
+        await storage.activateChatBranch(chat.id, branchId)
+        const loaded = await storage.loadChat(chat.id, {
+            messageLimit: Math.max(12, chat.message.length),
+        })
+        if(!loaded) return
+        chat.message.splice(0, chat.message.length, ...loaded.message)
+        chat.activeBranchId = branchId
+        chat.messageOffset = loaded.messageOffset
+        chat.messageTotal = loaded.messageTotal
+        chat.messagesFullyLoaded = loaded.messagesFullyLoaded
+        chat.messagesLoaded = true
         alertStore.set({ type: 'none', msg: '' })
     }
 
@@ -235,8 +228,10 @@
         void (async () => {
             const chat = getBranchGraphChat(chatId)
             if(!chat?.id) return
-            const storage = await getSqlStorage()
-            if(chat.branchState || !storage.listChatBranches || !storage.loadBranchMessages) return
+            if(chat.branchState){
+                throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
+            }
+            const storage = await getSqlBranchStorage()
             const summaries = await storage.listChatBranches(chat.id)
             const activeBranchId = chat.activeBranchId
                 ?? summaries.find((branch) => branch.reason === 'root')?.id
@@ -962,12 +957,17 @@
         </div>
     </div>
 {:else if $alertStore.type === 'branches'}
-    {@const branchGraphChat = persistedBranchGraphChat ?? getBranchGraphChat($alertStore.msg)}
-    <BranchGraphModal
-        chat={branchGraphChat}
-        onselect={switchBranchFromGraph}
-        onclose={() => alertStore.set({ type: 'none', msg: '' })}
-    />
+    {#if persistedBranchGraphChat}
+        <BranchGraphModal
+            chat={persistedBranchGraphChat}
+            onselect={switchBranchFromGraph}
+            onclose={() => alertStore.set({ type: 'none', msg: '' })}
+        />
+    {:else}
+        <div class="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center text-textcolor">
+            Loading branch graph…
+        </div>
+    {/if}
 {:else if $alertStore.type === 'requestlogs'}
     {@const logs = getFetchLogs()}
     <div class="fixed inset-0 z-50 bg-black/80 flex justify-center items-start overflow-y-auto p-4">

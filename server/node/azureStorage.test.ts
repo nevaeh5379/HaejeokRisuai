@@ -350,3 +350,12 @@ describe('AzureStorage Server Interface Compatibility', () => {
         expect(typeof storage.getTableRows).toBe('function')
     })
 })
+
+
+describe('AzureStorage persistent branch API', () => {
+    it('exposes persistent branch operations', () => {
+        for (const method of ['listChatBranches', 'loadBranchMessages', 'createChatBranch', 'activateChatBranch']) {
+            expect(typeof AzureStorage.prototype[method]).toBe('function')
+        }
+    })
+})

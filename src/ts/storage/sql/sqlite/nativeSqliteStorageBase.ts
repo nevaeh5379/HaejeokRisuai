@@ -942,18 +942,10 @@ export abstract class NativeSqliteStorageBase {
     const activeBranch = activeBranchRows[0] as
       | { branch_id: string }
       | undefined;
-    let resolvedTotalRows = totalRows;
-    let resolvedMessageRows = messageRows;
     if (!activeBranch) {
-      [resolvedTotalRows, resolvedMessageRows] = await this.selectRowSets([
-        {
-          sql: "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
-          bind: [chatId],
-        },
-        buildMessageRowsQuery(chatId, limit, 0, limit !== undefined, "full"),
-      ]);
+      await this.ensureBranchGraph(chatId);
+      return this.loadChat(chatId, options);
     }
-
     const chatData = (chatNodeRows.length
       ? rebuildRelationalValue(chatNodeRows)
       : {}) as any;
@@ -965,8 +957,8 @@ export abstract class NativeSqliteStorageBase {
     chatData.activeBranchId = activeBranch?.branch_id;
     if (activeBranch) delete chatData.branchState;
 
-    const total = Number((resolvedTotalRows[0] as { total?: number } | undefined)?.total ?? 0);
-    chatData.message = rebuildMessageRows(resolvedMessageRows);
+    const total = Number((totalRows[0] as { total?: number } | undefined)?.total ?? 0);
+    chatData.message = rebuildMessageRows(messageRows);
     const offset = Math.max(0, total - chatData.message.length);
     chatData.messageOffset = offset;
     chatData.messageTotal = total;
@@ -976,38 +968,18 @@ export abstract class NativeSqliteStorageBase {
     return chatData;
   }
 
-  private async loadMessageRowsBatch(
-    chatId: string,
-    limit: number | undefined,
-    offset: number,
-    newest: boolean,
-    mode: "full" | "generation" = "full",
-  ): Promise<Message[]> {
-    const query = buildMessageRowsQuery(chatId, limit, offset, newest, mode);
-    const rows = await this.selectRows(query.sql, query.bind);
-    return rebuildMessageRows(rows);
-  }
-
   async loadChatMessages(
     chatId: string,
     options?: { mode?: "full" | "generation" },
   ): Promise<Message[]> {
-    const activeBranch = await this.selectOne<{ branch_id: string }>(
-      "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-      [chatId],
-    );
-    if (activeBranch) {
-      return this.loadBranchMessages(chatId, activeBranch.branch_id, {
-        mode: options?.mode,
-      });
-    }
-    return this.loadMessageRowsBatch(
+    await this.ensureBranchGraph(chatId);
+    const query = buildBranchMessageRowsQuery(
       chatId,
       undefined,
-      0,
-      false,
+      undefined,
       options?.mode === "generation" ? "generation" : "full",
     );
+    return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
   }
 
   async loadChatMessagePage(
@@ -1015,16 +987,8 @@ export abstract class NativeSqliteStorageBase {
     before: number | undefined,
     limit: number,
   ) {
-    const activeBranch = await this.selectOne<{ branch_id: string }>(
-      "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-      [chatId],
-    );
-    const totalQuery = activeBranch
-      ? buildBranchMessageCountQuery(chatId, activeBranch.branch_id)
-      : {
-          sql: "SELECT COUNT(*) AS total FROM messages WHERE chat_id = ?",
-          bind: [chatId],
-        };
+    await this.ensureBranchGraph(chatId);
+    const totalQuery = buildBranchMessageCountQuery(chatId);
     const totalRow = await this.selectOne<{ total: number }>(
       totalQuery.sql,
       totalQuery.bind,
@@ -1033,26 +997,16 @@ export abstract class NativeSqliteStorageBase {
     const end = normalizeSqlitePageEnd(before, total);
     const normalizedLimit = normalizeSqliteLimit(limit);
     const offset = Math.max(0, end - normalizedLimit);
-    let messages: Message[];
-    if (activeBranch) {
-      const pageQuery = buildBranchMessageRowsQuery(
-        chatId,
-        activeBranch.branch_id,
-        end - offset,
-        "full",
-        offset,
-      );
-      messages = rebuildMessageRows(
-        await this.selectRows(pageQuery.sql, pageQuery.bind),
-      );
-    } else {
-      messages = await this.loadMessageRowsBatch(
-        chatId,
-        end - offset,
-        offset,
-        false,
-      );
-    }
+    const pageQuery = buildBranchMessageRowsQuery(
+      chatId,
+      undefined,
+      end - offset,
+      "full",
+      offset,
+    );
+    const messages = rebuildMessageRows(
+      await this.selectRows(pageQuery.sql, pageQuery.bind),
+    );
     return {
       messages,
       offset,

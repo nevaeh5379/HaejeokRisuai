@@ -327,3 +327,12 @@ describe('Oracle reserved-word column mapping', () => {
         expect(binds[0][9]).toBe('{"event":"test"}')
     })
 })
+
+
+describe('OracleStorage persistent branch API', () => {
+    it('exposes persistent branch operations', () => {
+        for (const method of ['listChatBranches', 'loadBranchMessages', 'createChatBranch', 'activateChatBranch']) {
+            expect(typeof OracleStorage.prototype[method]).toBe('function')
+        }
+    })
+})

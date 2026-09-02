@@ -129,6 +129,7 @@ const AUDITED_TABLES = [
     'chat.chats', 'chat.attributes', 'chat.suggestions', 'chat.modules',
     'chat.script_state', 'chat.bookmarks', 'chat.memory',
     'chat.lore_entries', 'chat.lore_cache_items', 'chat.messages',
+    'chat.branches', 'chat.active_branches', 'chat.message_branch_links',
     'chat.message_attributes', 'chat.message_generation',
     'chat.message_prompt_info', 'chat.message_prompt_toggles', 'chat.message_prompt_items',
     'cold.archives', 'cold.archive_attributes', 'cold.field_presence',
@@ -917,99 +918,258 @@ class AzureStorage extends SqlStorageBase {
         return { assets: fields };
     }
 
-    async loadChat(chatId) {
-        const pool = await this.getPool();
-        const [
-            chatRes, attrsRes, suggestionsRes, modulesRes,
-            scriptStateRes, bookmarksRes, memoryRes, loreRes,
-            msgsRes, msgAttrsRes, msgGenRes, msgPromptInfoRes,
-            msgPromptTogglesRes, msgPromptItemsRes,
-        ] = await Promise.all([
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[chats] WHERE id = @id'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[attributes] WHERE chat_id = @id ORDER BY [key]'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[suggestions] WHERE chat_id = @id ORDER BY position'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[modules] WHERE chat_id = @id ORDER BY position'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[script_state] WHERE chat_id = @id ORDER BY [key]'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[bookmarks] WHERE chat_id = @id ORDER BY position'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[memory] WHERE chat_id = @id ORDER BY memory_type'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[lore_entries] WHERE chat_id = @id ORDER BY position'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[messages] WHERE chat_id = @id ORDER BY position, id'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_attributes] WHERE chat_id = @id ORDER BY chat_id, message_id, [key]'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_generation] WHERE chat_id = @id'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_info] WHERE chat_id = @id'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_toggles] WHERE chat_id = @id ORDER BY chat_id, message_id, position'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_items] WHERE chat_id = @id ORDER BY chat_id, message_id, position'),
-        ]);
-
-        if (chatRes.recordset.length === 0) return null;
-
-        const messageRelations = {
-            attributes: groupMessageRows(msgAttrsRes.recordset),
-            generation: new Map(msgGenRes.recordset.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-            promptInfo: new Map(msgPromptInfoRes.recordset.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-            promptToggles: groupMessageRows(msgPromptTogglesRes.recordset),
-            promptItems: groupMessageRows(msgPromptItemsRes.recordset),
-        };
-
-        const messages = msgsRes.recordset.map((row) => {
-            const key = `${row.chat_id}\0${row.id}`;
-            const related = {
-                attributes: messageRelations.attributes.get(key) || [],
-                generation: messageRelations.generation.get(key) || null,
-                promptInfo: messageRelations.promptInfo.get(key) || null,
-                promptToggles: messageRelations.promptToggles.get(key) || [],
-                promptItems: messageRelations.promptItems.get(key) || [],
-            };
-            return rebuildMessage(row, related);
-        });
-
-        const chatRelations = {
-            attributes: attrsRes.recordset,
-            suggestions: suggestionsRes.recordset,
-            modules: modulesRes.recordset,
-            scriptState: scriptStateRes.recordset,
-            bookmarks: bookmarksRes.recordset,
-            memory: memoryRes.recordset,
-            lore: loreRes.recordset,
-            messages,
-        };
-
-        const chat = rebuildChat(chatRes.recordset[0], chatRelations, { shallow: false });
-        chat.messagesLoaded = true;
-        chat.detailsLoaded = true;
-        return chat;
+    async ensureChatBranchGraphs(target, chatIds) {
+        const ids = [...new Set((chatIds || []).filter(Boolean))];
+        if (ids.length === 0) return;
+        const payload = JSON.stringify(ids.map((id) => ({ id })));
+        let req = target.request();
+        req.input('branchChatIds', sql.NVarChar(sql.MAX), payload);
+        await req.query(`
+            WITH ids AS (
+                SELECT id FROM OPENJSON(@branchChatIds) WITH (id NVARCHAR(450) '$.id')
+            )
+            INSERT INTO [chat].[branches]
+                (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+            SELECT chats.id, CONCAT(chats.id, ':root'), NULL, NULL,
+                   (SELECT TOP 1 id FROM [chat].[messages] WHERE chat_id = chats.id ORDER BY position DESC, id DESC),
+                   'root', 0
+              FROM [chat].[chats] chats
+              JOIN ids ON ids.id = chats.id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM [chat].[branches] existing
+                  WHERE existing.chat_id = chats.id AND existing.id = CONCAT(chats.id, ':root')
+             );
+        `);
+        req = target.request();
+        req.input('branchChatIds', sql.NVarChar(sql.MAX), payload);
+        await req.query(`
+            WITH ids AS (
+                SELECT id FROM OPENJSON(@branchChatIds) WITH (id NVARCHAR(450) '$.id')
+            ), ordered AS (
+                SELECT messages.chat_id, messages.id,
+                       LAG(messages.id) OVER (PARTITION BY messages.chat_id ORDER BY messages.position, messages.id) AS parent_message_id
+                  FROM [chat].[messages] messages
+                  JOIN ids ON ids.id = messages.chat_id
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM [chat].[active_branches] active WHERE active.chat_id = messages.chat_id
+                 )
+            )
+            INSERT INTO [chat].[message_branch_links]
+                (chat_id, message_id, parent_message_id, origin_branch_id)
+            SELECT ordered.chat_id, ordered.id, ordered.parent_message_id, CONCAT(ordered.chat_id, ':root')
+              FROM ordered
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM [chat].[message_branch_links] existing
+                  WHERE existing.chat_id = ordered.chat_id AND existing.message_id = ordered.id
+             );
+        `);
+        req = target.request();
+        req.input('branchChatIds', sql.NVarChar(sql.MAX), payload);
+        await req.query(`
+            WITH ids AS (
+                SELECT id FROM OPENJSON(@branchChatIds) WITH (id NVARCHAR(450) '$.id')
+            )
+            INSERT INTO [chat].[active_branches] (chat_id, branch_id)
+            SELECT chats.id, CONCAT(chats.id, ':root')
+              FROM [chat].[chats] chats
+              JOIN ids ON ids.id = chats.id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM [chat].[active_branches] existing WHERE existing.chat_id = chats.id
+             );
+        `);
     }
 
-    async loadChatMessages(chatId, options = {}) {
-        const pool = await this.getPool();
-        const includeMetadata = options.mode !== 'generation';
+    async ensureChatBranchGraph(target, chatId) {
+        await this.ensureChatBranchGraphs(target, [chatId]);
+        return `${chatId}:root`;
+    }
+
+    async linkIncomingMessagesToActiveBranches(target, splitMessages) {
+        if (!splitMessages || splitMessages.length === 0) return;
+        const payload = JSON.stringify(splitMessages.map((item) => ({
+            chat_id: item.core.chat_id,
+            message_id: item.core.id,
+            position: item.core.position,
+        })));
+        const req = target.request();
+        req.input('incomingMessages', sql.NVarChar(sql.MAX), payload);
+        const inserted = await req.query(`
+            WITH incoming AS (
+                SELECT chat_id, message_id, position
+                  FROM OPENJSON(@incomingMessages) WITH (
+                      chat_id NVARCHAR(450) '$.chat_id',
+                      message_id NVARCHAR(450) '$.message_id',
+                      position INT '$.position'
+                  )
+            ), unlinked AS (
+                SELECT incoming.*
+                  FROM incoming
+                  LEFT JOIN [chat].[message_branch_links] links
+                    ON links.chat_id = incoming.chat_id AND links.message_id = incoming.message_id
+                 WHERE links.message_id IS NULL
+            ), ordered AS (
+                SELECT unlinked.*,
+                       LAG(message_id) OVER (PARTITION BY chat_id ORDER BY position, message_id) AS previous_incoming_id
+                  FROM unlinked
+            )
+            INSERT INTO [chat].[message_branch_links]
+                (chat_id, message_id, parent_message_id, origin_branch_id)
+            OUTPUT inserted.chat_id, inserted.message_id, inserted.origin_branch_id
+            SELECT ordered.chat_id,
+                   ordered.message_id,
+                   COALESCE(ordered.previous_incoming_id, branch.head_message_id),
+                   active.branch_id
+              FROM ordered
+              JOIN [chat].[active_branches] active ON active.chat_id = ordered.chat_id
+              JOIN [chat].[branches] branch ON branch.chat_id = active.chat_id AND branch.id = active.branch_id;
+        `);
+        const positionByKey = new Map(splitMessages.map((item) => [
+            `${item.core.chat_id}\0${item.core.id}`,
+            Number(item.core.position) || 0,
+        ]));
+        const heads = new Map();
+        for (const row of inserted.recordset || []) {
+            const key = `${row.chat_id}\0${row.origin_branch_id}`;
+            const position = positionByKey.get(`${row.chat_id}\0${row.message_id}`) ?? 0;
+            const previous = heads.get(key);
+            if (!previous || position >= previous.position) {
+                heads.set(key, { chatId: row.chat_id, branchId: row.origin_branch_id, messageId: row.message_id, position });
+            }
+        }
+        for (const head of heads.values()) {
+            const update = target.request();
+            update.input('headChatId', sql.NVarChar(450), head.chatId);
+            update.input('headBranchId', sql.NVarChar(450), head.branchId);
+            update.input('headMessageId', sql.NVarChar(450), head.messageId);
+            await update.query(`
+                UPDATE [chat].[branches]
+                   SET head_message_id = @headMessageId
+                 WHERE chat_id = @headChatId AND id = @headBranchId
+            `);
+        }
+    }
+
+    async detachMessagesFromBranchGraph(target, deletions) {
+        for (const deletion of deletions || []) {
+            for (const messageId of deletion.ids || []) {
+                const req = target.request();
+                req.input('detachChatId', sql.NVarChar(450), deletion.chatId);
+                req.input('detachMessageId', sql.NVarChar(450), messageId);
+                await req.query(`
+                    UPDATE child
+                       SET parent_message_id = removed.parent_message_id
+                      FROM [chat].[message_branch_links] child
+                      JOIN [chat].[message_branch_links] removed
+                        ON removed.chat_id = @detachChatId AND removed.message_id = @detachMessageId
+                     WHERE child.chat_id = @detachChatId AND child.parent_message_id = @detachMessageId;
+                    UPDATE branch
+                       SET head_message_id = removed.parent_message_id
+                      FROM [chat].[branches] branch
+                      JOIN [chat].[message_branch_links] removed
+                        ON removed.chat_id = @detachChatId AND removed.message_id = @detachMessageId
+                     WHERE branch.chat_id = @detachChatId AND branch.head_message_id = @detachMessageId;
+                    UPDATE [chat].[branches]
+                       SET fork_message_id = NULL
+                     WHERE chat_id = @detachChatId AND fork_message_id = @detachMessageId;
+                    DELETE FROM [chat].[message_branch_links]
+                     WHERE chat_id = @detachChatId AND message_id = @detachMessageId;
+                `);
+            }
+        }
+    }
+
+    async _activeBranchId(target, chatId) {
+        const req = target.request();
+        req.input('activeChatId', sql.NVarChar(450), chatId);
+        const result = await req.query('SELECT branch_id FROM [chat].[active_branches] WHERE chat_id = @activeChatId');
+        return result.recordset[0]?.branch_id ?? null;
+    }
+
+    async _loadBranchPage(target, chatId, branchId, options = {}) {
+        let req = target.request();
+        req.input('branchChatId', sql.NVarChar(450), chatId);
+        req.input('branchId', sql.NVarChar(450), branchId);
+        const countRes = await req.query(`
+            WITH branch_path(message_id) AS (
+                SELECT head_message_id FROM [chat].[branches] WHERE chat_id = @branchChatId AND id = @branchId
+                UNION ALL
+                SELECT links.parent_message_id
+                  FROM branch_path path
+                  JOIN [chat].[message_branch_links] links
+                    ON links.chat_id = @branchChatId AND links.message_id = path.message_id
+                 WHERE links.parent_message_id IS NOT NULL
+            )
+            SELECT COUNT(message_id) AS total FROM branch_path
+            OPTION (MAXRECURSION 0);
+        `);
+        const total = Number(countRes.recordset[0]?.total ?? 0);
+        const end = options.before === undefined
+            ? total
+            : Math.max(0, Math.min(total, Math.floor(Number(options.before) || 0)));
+        const requestedLimit = options.limit === undefined
+            ? end
+            : Math.max(1, Math.floor(Number(options.limit) || 1));
+        const offset = Math.max(0, end - requestedLimit);
+        const pageSize = Math.max(0, end - offset);
+        if (pageSize === 0) return { messages: [], offset, total, hasMore: offset > 0 };
+        req = target.request();
+        req.input('branchChatId', sql.NVarChar(450), chatId);
+        req.input('branchId', sql.NVarChar(450), branchId);
+        req.input('branchOffset', sql.Int, offset);
+        req.input('branchPageSize', sql.Int, pageSize);
+        const messagesRes = await req.query(`
+            WITH branch_path(message_id, depth) AS (
+                SELECT head_message_id, 0 FROM [chat].[branches] WHERE chat_id = @branchChatId AND id = @branchId
+                UNION ALL
+                SELECT links.parent_message_id, path.depth + 1
+                  FROM branch_path path
+                  JOIN [chat].[message_branch_links] links
+                    ON links.chat_id = @branchChatId AND links.message_id = path.message_id
+                 WHERE links.parent_message_id IS NOT NULL
+            )
+            SELECT messages.*, branch_path.depth
+              FROM branch_path
+              JOIN [chat].[messages] messages
+                ON messages.chat_id = @branchChatId AND messages.id = branch_path.message_id
+             ORDER BY branch_path.depth DESC
+             OFFSET @branchOffset ROWS FETCH NEXT @branchPageSize ROWS ONLY
+             OPTION (MAXRECURSION 0);
+        `);
+        const ids = messagesRes.recordset.map((row) => row.id);
+        if (ids.length === 0) return { messages: [], offset, total, hasMore: offset > 0 };
+        const idsPayload = JSON.stringify(ids);
+        const relationQuery = async (query) => {
+            const request = target.request();
+            request.input('branchRelationChatId', sql.NVarChar(450), chatId);
+            request.input('branchMessageIds', sql.NVarChar(sql.MAX), idsPayload);
+            return await request.query(query);
+        };
+        const relationJoin = `INNER JOIN OPENJSON(@branchMessageIds) WITH (id NVARCHAR(450) '$') ids ON ids.id = source.message_id`;
         const queries = [
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[messages] WHERE chat_id = @id ORDER BY position, id'),
-            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_attributes] WHERE chat_id = @id ORDER BY chat_id, message_id, [key]'),
+            relationQuery(`SELECT source.* FROM [chat].[message_attributes] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.[key]`),
         ];
-        if (includeMetadata) {
+        if (options.mode !== 'generation') {
             queries.push(
-                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_generation] WHERE chat_id = @id'),
-                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_info] WHERE chat_id = @id'),
-                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_toggles] WHERE chat_id = @id ORDER BY chat_id, message_id, position'),
-                pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[message_prompt_items] WHERE chat_id = @id ORDER BY chat_id, message_id, position'),
+                relationQuery(`SELECT source.* FROM [chat].[message_generation] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`),
+                relationQuery(`SELECT source.* FROM [chat].[message_prompt_info] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId`),
+                relationQuery(`SELECT source.* FROM [chat].[message_prompt_toggles] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.position`),
+                relationQuery(`SELECT source.* FROM [chat].[message_prompt_items] source ${relationJoin} WHERE source.chat_id = @branchRelationChatId ORDER BY source.message_id, source.position`)
             );
         }
         const results = await Promise.all(queries);
-        const messagesRes = results[0];
-        const attrsRes = results[1];
-        const generationRows = results[2]?.recordset ?? [];
-        const promptInfoRows = results[3]?.recordset ?? [];
-        const promptToggleRows = results[4]?.recordset ?? [];
-        const promptItemRows = results[5]?.recordset ?? [];
+        const attributes = results[0]?.recordset ?? [];
+        const generations = results[1]?.recordset ?? [];
+        const promptInfos = results[2]?.recordset ?? [];
+        const promptToggles = results[3]?.recordset ?? [];
+        const promptItems = results[4]?.recordset ?? [];
         const relations = {
-            attributes: groupMessageRows(attrsRes.recordset),
-            generation: new Map(generationRows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-            promptInfo: new Map(promptInfoRows.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
-            promptToggles: groupMessageRows(promptToggleRows),
-            promptItems: groupMessageRows(promptItemRows),
+            attributes: groupMessageRows(attributes),
+            generation: new Map(generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptInfo: new Map(promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row])),
+            promptToggles: groupMessageRows(promptToggles),
+            promptItems: groupMessageRows(promptItems),
         };
-        return messagesRes.recordset.map((row) => {
+        const messages = messagesRes.recordset.map((row) => {
             const key = `${row.chat_id}\0${row.id}`;
             return rebuildMessage(row, {
                 attributes: relations.attributes.get(key) || [],
@@ -1018,6 +1178,161 @@ class AzureStorage extends SqlStorageBase {
                 promptToggles: relations.promptToggles.get(key) || [],
                 promptItems: relations.promptItems.get(key) || [],
             });
+        });
+        return { messages, offset, total, hasMore: offset > 0 };
+    }
+
+    async loadChat(chatId, options = {}) {
+        assertId(chatId, 'chatId');
+        const pool = await this.getPool();
+        await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+        const activeBranchId = await this._activeBranchId(pool, chatId);
+        const [chatRes, attrsRes, suggestionsRes, modulesRes, scriptStateRes, bookmarksRes, memoryRes, loreRes] = await Promise.all([
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[chats] WHERE id = @id'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[attributes] WHERE chat_id = @id ORDER BY [key]'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[suggestions] WHERE chat_id = @id ORDER BY position'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[modules] WHERE chat_id = @id ORDER BY position'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[script_state] WHERE chat_id = @id ORDER BY [key]'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[bookmarks] WHERE chat_id = @id ORDER BY position'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[memory] WHERE chat_id = @id ORDER BY memory_type'),
+            pool.request().input('id', sql.NVarChar(450), chatId).query('SELECT * FROM [chat].[lore_entries] WHERE chat_id = @id ORDER BY position'),
+        ]);
+        if (chatRes.recordset.length === 0 || !activeBranchId) return null;
+        const page = await this._loadBranchPage(pool, chatId, activeBranchId, { limit: options.messageLimit, mode: 'full' });
+        const chat = rebuildChat(chatRes.recordset[0], {
+            attributes: attrsRes.recordset,
+            suggestions: suggestionsRes.recordset,
+            modules: modulesRes.recordset,
+            scriptState: scriptStateRes.recordset,
+            bookmarks: bookmarksRes.recordset,
+            memory: memoryRes.recordset,
+            lore: loreRes.recordset,
+            messages: page.messages,
+        }, { shallow: false });
+        chat.activeBranchId = activeBranchId;
+        delete chat.branchState;
+        chat.messageOffset = page.offset;
+        chat.messageTotal = page.total;
+        chat.messagesFullyLoaded = !page.hasMore;
+        chat.messagesLoaded = true;
+        chat.detailsLoaded = true;
+        return chat;
+    }
+
+    async loadChatMessages(chatId, options = {}) {
+        assertId(chatId, 'chatId');
+        const pool = await this.getPool();
+        await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+        const branchId = await this._activeBranchId(pool, chatId);
+        if (!branchId) return [];
+        return (await this._loadBranchPage(pool, chatId, branchId, { mode: options.mode })).messages;
+    }
+
+    async loadChatMessagePage(chatId, before, limit) {
+        assertId(chatId, 'chatId');
+        const pool = await this.getPool();
+        await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+        const branchId = await this._activeBranchId(pool, chatId);
+        if (!branchId) return { messages: [], offset: 0, total: 0, hasMore: false };
+        return await this._loadBranchPage(pool, chatId, branchId, { before, limit, mode: 'full' });
+    }
+
+    async listChatBranches(chatId) {
+        assertId(chatId, 'chatId');
+        const pool = await this.getPool();
+        await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+        const req = pool.request();
+        req.input('branchListChatId', sql.NVarChar(450), chatId);
+        const result = await req.query(`
+            SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
+              FROM [chat].[branches] WHERE chat_id = @branchListChatId ORDER BY created_at, id
+        `);
+        return result.recordset.map((row) => ({
+            id: row.id,
+            chatId: row.chat_id,
+            parentBranchId: row.parent_branch_id ?? undefined,
+            forkMessageId: row.fork_message_id ?? undefined,
+            headMessageId: row.head_message_id ?? undefined,
+            reason: row.reason,
+            createdAt: Number(row.created_at) || 0,
+        }));
+    }
+
+    async loadBranchMessages(chatId, branchId, options = {}) {
+        assertId(chatId, 'chatId');
+        assertId(branchId, 'branchId');
+        const pool = await this.getPool();
+        await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+        return (await this._loadBranchPage(pool, chatId, branchId, {
+            limit: options.messageLimit,
+            mode: options.mode,
+        })).messages;
+    }
+
+    async createChatBranch(input) {
+        assertId(input?.chatId, 'chatId');
+        assertId(input?.id, 'branchId');
+        if (input?.parentBranchId) assertId(input.parentBranchId, 'parentBranchId');
+        if (input?.forkMessageId) assertId(input.forkMessageId, 'forkMessageId');
+        const chatId = input.chatId;
+        const branchId = input.id;
+        const parentInput = input.parentBranchId ?? null;
+        const forkMessageId = input.forkMessageId ?? null;
+        const reason = input?.reason;
+        if (!['root', 'manual', 'reroll'].includes(reason)) throw new StoragePayloadError('Invalid chat branch reason');
+        const createdAt = Number.isFinite(Number(input?.createdAt)) ? Math.trunc(Number(input.createdAt)) : Date.now();
+        return await this.withTransaction(async (tx) => {
+            await this.ensureChatBranchGraph(tx, chatId);
+            const activeId = await this._activeBranchId(tx, chatId);
+            const parentBranchId = parentInput ?? activeId;
+            if (!parentBranchId) throw new StoragePayloadError('Chat branch root does not exist');
+            let req = tx.request();
+            req.input('createChatId', sql.NVarChar(450), chatId);
+            req.input('createParentId', sql.NVarChar(450), parentBranchId);
+            const parent = await req.query('SELECT 1 AS ok FROM [chat].[branches] WHERE chat_id = @createChatId AND id = @createParentId');
+            if (parent.recordset.length === 0) throw new StoragePayloadError('Parent chat branch does not exist');
+            req = tx.request();
+            req.input('createChatId', sql.NVarChar(450), chatId);
+            req.input('createBranchId', sql.NVarChar(450), branchId);
+            req.input('createParentId', sql.NVarChar(450), parentBranchId);
+            req.input('createForkId', sql.NVarChar(450), forkMessageId);
+            req.input('createReason', sql.NVarChar(32), reason);
+            req.input('createTime', sql.BigInt, createdAt);
+            await req.query(`
+                INSERT INTO [chat].[branches]
+                    (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+                VALUES (@createChatId, @createBranchId, @createParentId, @createForkId, @createForkId, @createReason, @createTime)
+            `);
+            req = tx.request();
+            req.input('createChatId', sql.NVarChar(450), chatId);
+            req.input('createBranchId', sql.NVarChar(450), branchId);
+            await req.query('UPDATE [chat].[active_branches] SET branch_id = @createBranchId WHERE chat_id = @createChatId');
+            return {
+                id: branchId,
+                chatId,
+                parentBranchId,
+                forkMessageId: forkMessageId ?? undefined,
+                headMessageId: forkMessageId ?? undefined,
+                reason,
+                createdAt,
+            };
+        });
+    }
+
+    async activateChatBranch(chatId, branchId) {
+        assertId(chatId, 'chatId');
+        assertId(branchId, 'branchId');
+        await this.withTransaction(async (tx) => {
+            await this.ensureChatBranchGraph(tx, chatId);
+            let req = tx.request();
+            req.input('activateChatId', sql.NVarChar(450), chatId);
+            req.input('activateBranchId', sql.NVarChar(450), branchId);
+            const exists = await req.query('SELECT 1 AS ok FROM [chat].[branches] WHERE chat_id = @activateChatId AND id = @activateBranchId');
+            if (exists.recordset.length === 0) throw new StoragePayloadError('Chat branch does not exist');
+            req = tx.request();
+            req.input('activateChatId', sql.NVarChar(450), chatId);
+            req.input('activateBranchId', sql.NVarChar(450), branchId);
+            await req.query('UPDATE [chat].[active_branches] SET branch_id = @activateBranchId WHERE chat_id = @activateChatId');
         });
     }
 
@@ -1372,6 +1687,7 @@ class AzureStorage extends SqlStorageBase {
                         INNER JOIN OPENJSON(@chat_delete_ids) values_json ON target.id = values_json.[value];`);
                 }
                 if (payload.messageDeletes) {
+                    await this.detachMessagesFromBranchGraph(tx, payload.messageDeletes);
                     for (const del of payload.messageDeletes) {
                         if (del.ids.length > 0) {
                             const delIdsList = del.ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
@@ -1618,6 +1934,7 @@ class AzureStorage extends SqlStorageBase {
                 if (onProgress) onProgress({ stage: 'messages', message: `Inserting ${payload.messages.length} messages` });
 
                 const splitMessages = payload.messages.map(splitMessage);
+                await this.ensureChatBranchGraphs(tx, splitMessages.map((item) => item.core.chat_id));
 
                 const msgScalarCols = [
                     'chat_id', 'id', 'position', 'role', 'content_text', 'content_binary',
@@ -1631,6 +1948,7 @@ class AzureStorage extends SqlStorageBase {
                 ];
 
                 await bulkInsert(tx, 'chat.messages', msgScalarCols, msgScalarTypes, splitMessages.map((m) => m.core), ['chat_id', 'id']);
+                await this.linkIncomingMessagesToActiveBranches(tx, splitMessages);
 
                 const msgOwnerPairs = splitMessages.map((m) => ({ chat_id: m.core.chat_id, message_id: m.core.id }));
                 const msgChildTables = [

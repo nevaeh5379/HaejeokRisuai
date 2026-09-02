@@ -807,6 +807,41 @@ CREATE INDEX messages_content_fts_idx
 ON chat_messages (content_text)
 INDEXTYPE IS CTXSYS.CONTEXT;
 
+
+CREATE TABLE chat_branches (
+    chat_id VARCHAR2(4000) NOT NULL REFERENCES chat_chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    id VARCHAR2(4000) NOT NULL,
+    parent_branch_id VARCHAR2(4000),
+    fork_message_id VARCHAR2(4000),
+    head_message_id VARCHAR2(4000),
+    reason VARCHAR2(32) NOT NULL CHECK (reason IN ('root', 'manual', 'reroll')),
+    created_at NUMBER NOT NULL,
+    PRIMARY KEY (chat_id, id),
+    FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, fork_message_id) REFERENCES chat_messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, head_message_id) REFERENCES chat_messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX branches_parent_idx ON chat_branches (chat_id, parent_branch_id, created_at);
+
+CREATE TABLE chat_active_branches (
+    chat_id VARCHAR2(4000) PRIMARY KEY REFERENCES chat_chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    branch_id VARCHAR2(4000) NOT NULL,
+    FOREIGN KEY (chat_id, branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE chat_message_branch_links (
+    chat_id VARCHAR2(4000) NOT NULL,
+    message_id VARCHAR2(4000) NOT NULL,
+    parent_message_id VARCHAR2(4000),
+    origin_branch_id VARCHAR2(4000) NOT NULL,
+    PRIMARY KEY (chat_id, message_id),
+    FOREIGN KEY (chat_id, message_id) REFERENCES chat_messages(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, parent_message_id) REFERENCES chat_messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX message_branch_parent_idx ON chat_message_branch_links (chat_id, parent_message_id);
+CREATE INDEX message_branch_origin_idx ON chat_message_branch_links (chat_id, origin_branch_id);
+
 CREATE TABLE chat_message_attributes (
     chat_id VARCHAR2(4000) NOT NULL,
     message_id VARCHAR2(4000) NOT NULL,

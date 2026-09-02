@@ -804,6 +804,41 @@ WHERE sent_time IS NOT NULL;
 CREATE INDEX IF NOT EXISTS messages_content_fts_idx
 ON chat.messages USING GIN (to_tsvector('simple', COALESCE(content_text, '')));
 
+
+CREATE TABLE IF NOT EXISTS chat.branches (
+    chat_id TEXT NOT NULL REFERENCES chat.chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    id TEXT NOT NULL,
+    parent_branch_id TEXT,
+    fork_message_id TEXT,
+    head_message_id TEXT,
+    reason TEXT NOT NULL CHECK (reason IN ('root', 'manual', 'reroll')),
+    created_at BIGINT NOT NULL,
+    PRIMARY KEY (chat_id, id),
+    FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat.branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, fork_message_id) REFERENCES chat.messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, head_message_id) REFERENCES chat.messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX IF NOT EXISTS branches_parent_idx ON chat.branches (chat_id, parent_branch_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chat.active_branches (
+    chat_id TEXT PRIMARY KEY REFERENCES chat.chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    branch_id TEXT NOT NULL,
+    FOREIGN KEY (chat_id, branch_id) REFERENCES chat.branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE IF NOT EXISTS chat.message_branch_links (
+    chat_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    parent_message_id TEXT,
+    origin_branch_id TEXT NOT NULL,
+    PRIMARY KEY (chat_id, message_id),
+    FOREIGN KEY (chat_id, message_id) REFERENCES chat.messages(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, parent_message_id) REFERENCES chat.messages(chat_id, id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat.branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX IF NOT EXISTS message_branch_parent_idx ON chat.message_branch_links (chat_id, parent_message_id);
+CREATE INDEX IF NOT EXISTS message_branch_origin_idx ON chat.message_branch_links (chat_id, origin_branch_id);
+
 CREATE TABLE IF NOT EXISTS chat.message_attributes (
     chat_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
@@ -1328,6 +1363,9 @@ BEGIN
         ARRAY['chat', 'memory'],
         ARRAY['chat', 'lore_entries'],
         ARRAY['chat', 'messages'],
+        ARRAY['chat', 'branches'],
+        ARRAY['chat', 'active_branches'],
+        ARRAY['chat', 'message_branch_links'],
         ARRAY['chat', 'message_attributes'],
         ARRAY['chat', 'message_generation'],
         ARRAY['chat', 'message_prompt_info'],

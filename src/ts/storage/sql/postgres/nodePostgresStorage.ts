@@ -7,6 +7,8 @@ import type {
   SqlStartupDataResult,
   SqlDatabaseSnapshotResult,
   SqlRecentChatMetadata,
+  SqlChatBranchSummary,
+  SqlCreateChatBranchInput,
   BotPresetSummary,
   StoredBotPreset,
 } from "../ISqlStorage";
@@ -1153,6 +1155,98 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       );
     }
     return await response.json();
+  }
+
+  async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
+    if (!(await this.ensureEnabled())) return [];
+    const response = await fetch(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches`,
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "SQL chat branch list failed");
+    }
+    const body: { branches?: SqlChatBranchSummary[] } = await response.json();
+    return body.branches ?? [];
+  }
+
+  async loadBranchMessages(
+    chatId: string,
+    branchId: string,
+    options: { messageLimit?: number; mode?: "full" | "generation" } = {},
+  ): Promise<Message[]> {
+    if (!(await this.ensureEnabled())) return [];
+    const params = new URLSearchParams();
+    if (options.messageLimit !== undefined) {
+      params.set("limit", String(options.messageLimit));
+    }
+    if (options.mode === "generation") params.set("mode", "generation");
+    const search = params.size > 0 ? `?${params}` : "";
+    const response = await fetch(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/messages${search}`,
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "SQL chat branch messages load failed");
+    }
+    const body: { messages?: Message[] } = await response.json();
+    return body.messages ?? [];
+  }
+
+  async createChatBranch(
+    input: SqlCreateChatBranchInput,
+  ): Promise<SqlChatBranchSummary> {
+    if (!(await this.ensureEnabled())) {
+      throw new Error("SQL storage is not enabled");
+    }
+    const response = await fetch(
+      `/api/database-v2/chats/${encodeURIComponent(input.chatId)}/branches`,
+      {
+        method: "POST",
+        cache: "no-cache",
+        headers: {
+          ...(await this.authHeaders()),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          id: input.id,
+          parentBranchId: input.parentBranchId,
+          forkMessageId: input.forkMessageId,
+          reason: input.reason,
+          createdAt: input.createdAt,
+        }),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "SQL chat branch creation failed");
+    }
+    const body: { branch: SqlChatBranchSummary } = await response.json();
+    return body.branch;
+  }
+
+  async activateChatBranch(chatId: string, branchId: string): Promise<void> {
+    if (!(await this.ensureEnabled())) {
+      throw new Error("SQL storage is not enabled");
+    }
+    const response = await fetch(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/activate`,
+      {
+        method: "POST",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "SQL chat branch activation failed");
+    }
   }
 
   async listRecentChats(limit?: number): Promise<SqlRecentChatMetadata[]> {
