@@ -132,6 +132,40 @@ describe("CharacterStore", () => {
     expect(characterStore.characters[0].detailsLoaded).toBe(true);
   });
 
+  it("preserves the current chat order and selection during async hydration", async () => {
+    const shallow = makeChar("stable-chat-selection", 2);
+    shallow.detailsLoaded = false;
+    shallow.chats[0].id = "chat-stable-a";
+    shallow.chats[1].id = "chat-stable-b";
+
+    const loaded = makeChar("stable-chat-selection", 3);
+    loaded.chaId = shallow.chaId;
+    loaded.detailsLoaded = true;
+    loaded.chatPage = 0;
+    loaded.chats[0].id = "chat-stable-b";
+    loaded.chats[1].id = "chat-stable-a";
+    loaded.chats[2].id = "chat-stable-new";
+
+    let resolveLoad!: (value: character) => void;
+    vi.mocked(mockStorage.loadCharacter).mockImplementationOnce(
+      () => new Promise<character>((resolve) => (resolveLoad = resolve)),
+    );
+    characterStore.init([shallow], mockStorage);
+
+    const hydration = characterStore.ensureCharacterDetails(shallow.chaId!);
+    characterStore.characters[0].chatPage = 1;
+    resolveLoad(loaded);
+    await hydration;
+
+    const hydrated = characterStore.characters[0];
+    expect(hydrated.chats.map((chat) => chat.id)).toEqual([
+      "chat-stable-a",
+      "chat-stable-b",
+      "chat-stable-new",
+    ]);
+    expect(hydrated.chats[hydrated.chatPage].id).toBe("chat-stable-b");
+  });
+
   it("matches the initial SQL message page to the configured render window", async () => {
     const chars = [makeChar("initial-page")];
     const chat = chars[0].chats[0];
