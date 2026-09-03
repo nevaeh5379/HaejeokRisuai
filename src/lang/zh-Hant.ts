@@ -1473,6 +1473,7 @@ export const languageChineseTraditional = {
   menuSideBar: "選單側邊欄",
   home: "首頁",
   showSavingIcon: "顯示儲存圖示",
+  showChatTabs: "顯示聊天分頁",
   pluginVersionWarn:
     "這是 {{plugin_version}} 版本的外掛，與當前 Risuai 版本不相容。請更新外掛至 {{required_version}} 版本。",
   imageTranslation: "圖像翻譯",

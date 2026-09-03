@@ -85,6 +85,19 @@ describe("normalizeDatabaseDefaults", () => {
     expect(db.top_p).toBe(1);
     expect(db.settingsCloseButtonSize).toBe(24);
     expect(db.keepSessionAlive).toBe("off");
+    expect(db.showChatTabs).toBe(true);
+  });
+
+  it("preserves explicit showChatTabs setting", () => {
+    const dbDisabled = normalizeDatabaseInput({
+      showChatTabs: false,
+    });
+    expect(dbDisabled.showChatTabs).toBe(false);
+
+    const dbEnabled = normalizeDatabaseInput({
+      showChatTabs: true,
+    });
+    expect(dbEnabled.showChatTabs).toBe(true);
   });
 
   it("keeps relational character data outside schema normalization", () => {
