@@ -271,4 +271,107 @@ test.describe("Save indicator icon (E2E)", () => {
     // And auto-hide after delay
     await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
   });
+
+  test("displays save icon when editing a lorebook", async ({ page }) => {
+    await waitForAppReady(page);
+    await enableSaveIconSetting(page);
+
+    const saveIndicator = page.locator("[data-save-indicator]");
+    await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
+
+    // Add and edit a lorebook entry on character lore
+    await page.evaluate(async () => {
+      const charUrl = "/src/ts/characters.ts";
+      const domainUrl = "/src/ts/stores/domain/index.ts";
+      const { createNewCharacter, changeChar } = (await import(
+        /* @vite-ignore */ charUrl
+      )) as {
+        createNewCharacter: () => number;
+        changeChar: (idx: number) => Promise<void>;
+      };
+      const { characterStore } = (await import(
+        /* @vite-ignore */ domainUrl
+      )) as { characterStore: any };
+
+      const idx = createNewCharacter();
+      await changeChar(idx);
+      await characterStore.flush();
+
+      // Add a new lorebook entry to character globalLore
+      const char = characterStore.characters[idx];
+      char.globalLore.push({
+        key: "test-lore-" + Date.now(),
+        comment: "E2E Lore Entry",
+        content: "Lore content text",
+        mode: "normal",
+        insertorder: 100,
+        alwaysActive: false,
+        secondkey: "",
+        selective: false,
+      });
+      characterStore.markCharacterDirty(char.chaId);
+    });
+
+    // Save indicator should appear for lorebook update
+    await expect(saveIndicator).toBeVisible({ timeout: 5000 });
+    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+
+    // And auto-hide after delay
+    await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
+  });
+
+  test("displays save icon when creating a module", async ({ page }) => {
+    await waitForAppReady(page);
+    await enableSaveIconSetting(page);
+
+    const saveIndicator = page.locator("[data-save-indicator]");
+    await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
+
+    // Create and install a new module via moduleStore
+    await page.evaluate(async () => {
+      const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
+      const { moduleStore } = (await import(
+        /* @vite-ignore */ moduleStoreUrl
+      )) as { moduleStore: any };
+
+      await moduleStore.installModule({
+        id: "test-module-" + Date.now(),
+        name: "Test Module",
+        description: "Created in E2E test",
+      });
+    });
+
+    // Save indicator should appear for module creation
+    await expect(saveIndicator).toBeVisible({ timeout: 5000 });
+    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+
+    // And auto-hide after delay
+    await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
+  });
+
+  test("displays save icon when selecting a model", async ({ page }) => {
+    await waitForAppReady(page);
+    await enableSaveIconSetting(page);
+
+    const saveIndicator = page.locator("[data-save-indicator]");
+    await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
+
+    // Change the active AI model in presetStore
+    await page.evaluate(async () => {
+      const presetStoreUrl = "/src/ts/stores/domain/presetStore.svelte.ts";
+      const { presetStore } = (await import(
+        /* @vite-ignore */ presetStoreUrl
+      )) as { presetStore: any };
+
+      const nextModel = presetStore.state.aiModel === "claude-3-5-sonnet" ? "gpt-4o" : "claude-3-5-sonnet";
+      presetStore.state.aiModel = nextModel;
+    });
+
+    // Save indicator should appear for model selection
+    await expect(saveIndicator).toBeVisible({ timeout: 5000 });
+    await expect(saveIndicator).toHaveAttribute("data-save-indicator", /saving|saved/);
+
+    // And auto-hide after delay
+    await expect(saveIndicator).toHaveCount(0, { timeout: 6000 });
+  });
 });
