@@ -234,11 +234,19 @@ class LocalFsStorage {
             return { exists: false };
         }
         const key = hexToKey(hexPath);
+        const stat = await fs.promises.stat(fullPath);
         return {
             exists: true,
             filePath: fullPath,
-            stream: fs.createReadStream(fullPath),
-            contentLength: (await fs.promises.stat(fullPath)).size,
+            get stream() {
+                if (!this._stream) {
+                    const s = fs.createReadStream(fullPath);
+                    s.on('error', () => {});
+                    this._stream = s;
+                }
+                return this._stream;
+            },
+            contentLength: stat.size,
             contentType: getContentType(key)
         };
     }

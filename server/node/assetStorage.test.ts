@@ -158,6 +158,7 @@ describe('LocalFsStorage', () => {
         expect(readResult.contentType).toBe('video/webm')
         expect(readResult.contentLength).toBe(videoData.length)
         expect(readResult.stream).toBeDefined()
+        readResult.stream?.destroy()
     })
 
     it('generates, caches, and deletes thumbnails for image assets', async () => {
