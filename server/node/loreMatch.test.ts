@@ -35,10 +35,18 @@ describe("Node lore matching", () => {
       { role: "user", data: "quiet village" },
     ];
     expect(
-      matchLoreRequest(messages, { ...baseRequest, keys: ["dragon"], searchDepth: 1 }).matched,
+      matchLoreRequest(messages, {
+        ...baseRequest,
+        keys: ["dragon"],
+        searchDepth: 1,
+      }).matched,
     ).toBe(false);
     expect(
-      matchLoreRequest(messages, { ...baseRequest, keys: ["dragon"], searchDepth: 2 }).matched,
+      matchLoreRequest(messages, {
+        ...baseRequest,
+        keys: ["dragon"],
+        searchDepth: 2,
+      }).matched,
     ).toBe(true);
   });
 

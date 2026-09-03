@@ -13,7 +13,14 @@ import {
   alertWait,
 } from "./alert";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
-import type { character, customscript, loreSettings, loreBook, triggerscript, groupChat } from "./storage/database/schema";
+import type {
+  character,
+  customscript,
+  loreSettings,
+  loreBook,
+  triggerscript,
+  groupChat,
+} from "./storage/database/schema";
 import { importPreset } from "./storage/presets/presetService";
 
 import {
@@ -54,10 +61,7 @@ import { type CharacterCardV3, type LorebookEntry } from "@risuai/ccardlib";
 import { reencodeImage } from "./process/files/inlays";
 import { PngChunk } from "./pngChunk";
 import type { OnnxModelFiles } from "./process/transformers";
-import {
-  CharXImporter,
-  CharXWriter,
-} from "./process/processzip";
+import { CharXImporter, CharXWriter } from "./process/processzip";
 import {
   exportModuleLegacy,
   readModule,
@@ -258,8 +262,6 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       }
 
       readedPngChunks++;
-
-
 
       const assetId = await saveAsset(assetData);
       assets[assetIndex] = assetId;

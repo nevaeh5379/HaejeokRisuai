@@ -14,10 +14,13 @@ export async function requestEcho(
   const db = settingsStore.state;
   const delay = db.echoDelay ?? 0;
   const message = db.echoMessage ?? "Echo Message";
-  const remote = await tryExecuteNodeProvider(arg.modelInfo?.format ?? LLMFormat.Echo, {
-    message,
-    delayMs: Math.max(0, Math.round(delay * 1000)),
-  });
+  const remote = await tryExecuteNodeProvider(
+    arg.modelInfo?.format ?? LLMFormat.Echo,
+    {
+      message,
+      delayMs: Math.max(0, Math.round(delay * 1000)),
+    },
+  );
   if (remote) return remote;
 
   if (delay > 0) {

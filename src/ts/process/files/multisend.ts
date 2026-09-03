@@ -1,4 +1,3 @@
-
 import { selectedCharID } from "src/ts/stores.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
@@ -27,7 +26,9 @@ async function sendPofile(arg: sendFileArg) {
   const targetChatId = initialChat.id;
   const resolveTarget = () => {
     const characterIndex = targetCharacterId
-      ? characterStore.characters.findIndex((character) => character?.chaId === targetCharacterId)
+      ? characterStore.characters.findIndex(
+          (character) => character?.chaId === targetCharacterId,
+        )
       : initialCharacterIndex;
     const currentChar = characterStore.characters[characterIndex];
     const chatIndex = targetChatId
@@ -65,7 +66,8 @@ async function sendPofile(arg: sendFileArg) {
       const { sendChat } = await import("../index.svelte");
       await sendChat(-1, { targetCharacterId, targetChatId });
       target = resolveTarget();
-      const res = target.currentChat.message[target.currentChat.message.length - 1];
+      const res =
+        target.currentChat.message[target.currentChat.message.length - 1];
       const msgStr = res.data
         .split("\n")
         .filter((a) => {

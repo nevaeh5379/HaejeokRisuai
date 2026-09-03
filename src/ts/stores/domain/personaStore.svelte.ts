@@ -4,10 +4,7 @@ import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 import { StoreCommitQueue } from "./storeCommitQueue";
-import type {
-  FlushableStore,
-  InitializableStore,
-} from "./storeContracts";
+import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 const createDefaultPersona = (): RisuPersona => ({
   name: "User",
@@ -18,9 +15,7 @@ const createDefaultPersona = (): RisuPersona => ({
 });
 
 class PersonaStore
-  implements
-    InitializableStore<[storage: ISqlStorage]>,
-    FlushableStore
+  implements InitializableStore<[storage: ISqlStorage]>, FlushableStore
 {
   personas = $state<RisuPersona[]>([]);
   activeIndex = $state(0);
@@ -53,18 +48,21 @@ class PersonaStore
       storage.loadPersonas(),
       storage.loadSettingKey("selectedPersona"),
     ]);
-    const personas = storedPersonas.length > 0
-      ? storedPersonas.map((persona) => ({
-          ...persona,
-          largePortrait: persona.largePortrait ?? false,
-        }))
-      : [createDefaultPersona()];
+    const personas =
+      storedPersonas.length > 0
+        ? storedPersonas.map((persona) => ({
+            ...persona,
+            largePortrait: persona.largePortrait ?? false,
+          }))
+        : [createDefaultPersona()];
     if (
       selected !== undefined &&
       selected !== null &&
       (!Number.isSafeInteger(selected) || selected < 0)
     ) {
-      throw new TypeError(`Invalid selected persona index: ${String(selected)}`);
+      throw new TypeError(
+        `Invalid selected persona index: ${String(selected)}`,
+      );
     }
     const index = typeof selected === "number" ? selected : 0;
     if (!personas[index]) {
@@ -137,7 +135,8 @@ class PersonaStore
 
   replace(personas: RisuPersona[]): void {
     this.assertLoaded();
-    this.personas = personas.length > 0 ? [...personas] : [createDefaultPersona()];
+    this.personas =
+      personas.length > 0 ? [...personas] : [createDefaultPersona()];
     if (!this.personas[this.activeIndex]) this.activeIndex = 0;
     this.markPersonasDirty();
   }
@@ -184,7 +183,8 @@ class PersonaStore
     const personasFingerprint = snapshotFingerprint(personas);
     const activeIndex = this.activeIndex;
     const personasChanged =
-      this.personasDirty || personasFingerprint !== this.committedPersonasFingerprint;
+      this.personasDirty ||
+      personasFingerprint !== this.committedPersonasFingerprint;
     const activeIndexChanged =
       this.activeIndexDirty || activeIndex !== this.committedActiveIndex;
     if (!personasChanged && !activeIndexChanged) return;

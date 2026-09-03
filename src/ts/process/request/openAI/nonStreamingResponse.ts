@@ -36,10 +36,17 @@ export async function interpretOpenAINonStreamingResponse(
   function processTextResponse(dat: any): string {
     if (dat?.choices[0]?.text) {
       let text = dat.choices[0].text as string;
-      if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
+      if (
+        arg.extractJson &&
+        (presetStore.state.jsonSchemaEnabled || arg.schema)
+      ) {
         try {
           const parsed = JSON.parse(text);
-          const extracted = extractJSON(parsed, arg.extractJson, resolveRequestParserContext(arg));
+          const extracted = extractJSON(
+            parsed,
+            arg.extractJson,
+            resolveRequestParserContext(arg),
+          );
           return extracted;
         } catch (error) {
           console.log(error);
@@ -48,8 +55,15 @@ export async function interpretOpenAINonStreamingResponse(
       }
       return text;
     }
-    if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
-      return extractJSON(dat.choices[0].message.content, arg.extractJson, resolveRequestParserContext(arg));
+    if (
+      arg.extractJson &&
+      (presetStore.state.jsonSchemaEnabled || arg.schema)
+    ) {
+      return extractJSON(
+        dat.choices[0].message.content,
+        arg.extractJson,
+        resolveRequestParserContext(arg),
+      );
     }
     return formatOpenAIReasoningText(dat, {
       deepSeekThinkingOutput: arg.modelInfo.flags.includes(
@@ -112,9 +126,14 @@ export async function interpretOpenAINonStreamingResponse(
                 });
               } else {
                 const parsed = functionArgs;
-                const x = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
-                  (m) => m.type === "text",
-                );
+                const x = (
+                  await callTool(
+                    tool.name,
+                    parsed,
+                    tool.mcpURL,
+                    resolveRequestToolContext(arg),
+                  )
+                ).filter((m) => m.type === "text");
                 if (x.length > 0) {
                   messages.push({
                     role: "tool",
@@ -191,7 +210,10 @@ export async function interpretOpenAINonStreamingResponse(
       }
 
       if (arg.multiGen && dat.choices) {
-        if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
+        if (
+          arg.extractJson &&
+          (presetStore.state.jsonSchemaEnabled || arg.schema)
+        ) {
           const c = dat.choices.map((v: { message: { content: string } }) => {
             const extracted = extractJSON(
               v.message.content ?? "",

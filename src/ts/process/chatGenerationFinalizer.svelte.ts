@@ -1,11 +1,17 @@
-import type { character, MessageGenerationInfo } from "../storage/database/schema";
+import type {
+  character,
+  MessageGenerationInfo,
+} from "../storage/database/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { tokenize } from "../tokenizer";
 import { parseChatML } from "../parser/chatML";
 import { requestChatData } from "./request/chatRequestOrchestrator";
-import type { ChatModelResponse, ChatStageTimings } from "@risuai/chat-core/types.cjs";
+import type {
+  ChatModelResponse,
+  ChatStageTimings,
+} from "@risuai/chat-core/types.cjs";
 import {
   decideAutoContinuation,
   endsWithCompletionPunctuation,
@@ -18,7 +24,6 @@ import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
 import { notifyChatResponse } from "../chatNotifications";
 import { requireChatTargetFromIndexes } from "../chatTarget";
 
-
 function updateGenerationStageTimings(
   generationInfo: MessageGenerationInfo,
   timings: ChatStageTimings,
@@ -30,10 +35,7 @@ function updateGenerationStageTimings(
   generationInfo.stageTiming.stage4 = timings.stage4Duration;
 }
 
-async function shouldAutoContinue(
-  result: string,
-  usedContinueTokens: number,
-) {
+async function shouldAutoContinue(result: string, usedContinueTokens: number) {
   const minimumTokens = settingsStore.state.autoContinueMinTokens;
   const continueIncomplete = settingsStore.state.autoContinueChat;
   const remote = await tryCreateNodeAutoContinuationDecision(
@@ -132,7 +134,9 @@ function startPostGenerationStage(options: FinalizeChatGenerationOptions) {
       options.stageTimings.stage3Duration;
   }
   const chatId =
-    characterStore.characters[options.selectedChar]?.chats?.[options.selectedChat]?.id;
+    characterStore.characters[options.selectedChar]?.chats?.[
+      options.selectedChat
+    ]?.id;
   setChatProcessStage(chatId, 4);
   options.stageTimings.stage4Start = Date.now();
 }

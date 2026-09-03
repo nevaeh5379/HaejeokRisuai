@@ -35,7 +35,10 @@ vi.mock("./storage/files/persistant", () => ({
 vi.mock("./pngchunk", () => ({
   PngChunk: {
     streamWriter: class {
-      constructor(public img: any, public writer: any) {}
+      constructor(
+        public img: any,
+        public writer: any,
+      ) {}
       async init() {}
       async write(key: string, data: string) {
         if (key === "chara") {
@@ -52,7 +55,11 @@ vi.mock("./media", () => ({
 }));
 
 import { VirtualWriter } from "./globalApi.svelte";
-import { createBaseV3, exportChar, exportCharacterCard } from "./characterCards";
+import {
+  createBaseV3,
+  exportChar,
+  exportCharacterCard,
+} from "./characterCards";
 
 describe("createBaseV3 asset packaging", () => {
   it("includes main icon asset even when emotionImages is undefined", () => {

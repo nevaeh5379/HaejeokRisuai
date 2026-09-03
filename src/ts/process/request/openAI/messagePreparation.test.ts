@@ -23,20 +23,28 @@ describe("OpenAI browser message preparation", () => {
         { type: "image", data: "ignored" },
       ],
     });
-    const result = await prepareOpenAIProviderMessages([{
-      role: "assistant",
-      content: "before<tool_call>stored-id</tool_call>after",
-    }], "auto");
+    const result = await prepareOpenAIProviderMessages(
+      [
+        {
+          role: "assistant",
+          content: "before<tool_call>stored-id</tool_call>after",
+        },
+      ],
+      "auto",
+    );
 
-    expect(mocks.decodeToolCall).toHaveBeenCalledWith("stored-id");    expect(result).toEqual([
+    expect(mocks.decodeToolCall).toHaveBeenCalledWith("stored-id");
+    expect(result).toEqual([
       {
         role: "assistant",
         content: "before",
-        tool_calls: [{
-          id: "call-1",
-          type: "function",
-          function: { name: "weather", arguments: '{"city":"Seoul"}' },
-        }],
+        tool_calls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: { name: "weather", arguments: '{"city":"Seoul"}' },
+          },
+        ],
       },
       {
         role: "tool",
@@ -58,21 +66,24 @@ describe("OpenAI browser message preparation", () => {
     };
     const result = await prepareOpenAIProviderMessages([source], "high");
 
-    expect(source.content).toBe("describe this");    expect(source.multimodals[0].base64).toBe("data:image/png;base64,abc");
-    expect(result).toEqual([{
-      role: "user",
-      content: [
-        {
-          type: "image_url",
-          image_url: {
-            url: "data:image/png;base64,abc",
-            detail: "high",
+    expect(source.content).toBe("describe this");
+    expect(source.multimodals[0].base64).toBe("data:image/png;base64,abc");
+    expect(result).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: {
+              url: "data:image/png;base64,abc",
+              detail: "high",
+            },
           },
-        },
-        { type: "text", text: "describe this" },
-      ],
-      multimodals: source.multimodals,
-    }]);
+          { type: "text", text: "describe this" },
+        ],
+        multimodals: source.multimodals,
+      },
+    ]);
     expect(result[0]).not.toBe(source);
   });
 });

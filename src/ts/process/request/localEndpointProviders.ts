@@ -31,7 +31,10 @@ export async function requestOobaLegacy(
   const currentChar = resolveRequestCharacter(arg);
   const useStreaming = arg.useStreaming;
   const abortSignal = arg.abortSignal;
-  let streamUrl = presetStore.state.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream");
+  let streamUrl = presetStore.state.textgenWebUIStreamURL.replace(
+    /\/api.*/,
+    "/api/v1/stream",
+  );
   let blockingUrl = presetStore.state.textgenWebUIBlockingURL.replace(
     /\/api.*/,
     "/api/v1/generate",
@@ -58,7 +61,8 @@ export async function requestOobaLegacy(
     top_p: presetStore.state.ooba.top_p,
     typical_p: presetStore.state.ooba.typical_p,
     repetition_penalty: presetStore.state.ooba.repetition_penalty,
-    encoder_repetition_penalty: presetStore.state.ooba.encoder_repetition_penalty,
+    encoder_repetition_penalty:
+      presetStore.state.ooba.encoder_repetition_penalty,
     top_k: presetStore.state.ooba.top_k,
     min_length: presetStore.state.ooba.min_length,
     no_repeat_ngram_size: presetStore.state.ooba.no_repeat_ngram_size,
@@ -208,8 +212,10 @@ export async function requestOoba(
   }
   let bodyTemplate: Record<string, any> = {
     prompt: prompt,
-    presence_penalty: arg.PresensePenalty || presetStore.state.PresensePenalty / 100,
-    frequency_penalty: arg.frequencyPenalty || presetStore.state.frequencyPenalty / 100,
+    presence_penalty:
+      arg.PresensePenalty || presetStore.state.PresensePenalty / 100,
+    frequency_penalty:
+      arg.frequencyPenalty || presetStore.state.frequencyPenalty / 100,
     logit_bias: {},
     max_tokens: maxTokens,
     stop: stopStrings,

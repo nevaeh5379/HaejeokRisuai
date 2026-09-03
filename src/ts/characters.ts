@@ -1,7 +1,13 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/files/assetPersistence";
-import type { character, groupChat, Chat, loreBook, Message } from "./storage/database/schema";
+import type {
+  character,
+  groupChat,
+  Chat,
+  loreBook,
+  Message,
+} from "./storage/database/schema";
 import { defaultSdDataFunc } from "./storage/presets/presetDefaults";
 import { safeStructuredClone } from "./polyfill";
 
@@ -378,9 +384,7 @@ export async function exportChat(page: number) {
     if (mode === "0") {
       let folders = [];
       if (chat.folderId) {
-        folders = char.chatFolders?.filter(
-          (f) => f.id === chat.folderId,
-        );
+        folders = char.chatFolders?.filter((f) => f.id === chat.folderId);
       }
       const stringl = Buffer.from(
         JSON.stringify({
@@ -646,7 +650,10 @@ export async function importChat() {
           characterStore.characters[selectedID].chaId,
           chats
             .filter((chat) => chat.id)
-            .map((chat) => ({ chatId: chat.id!, messages: chat.message ?? [] })),
+            .map((chat) => ({
+              chatId: chat.id!,
+              messages: chat.message ?? [],
+            })),
         );
         alertNormal(language.successImport);
         return;
@@ -669,7 +676,10 @@ export async function importChat() {
             characterStore.characters[selectedID].chaId,
             mappedChats
               .filter((chat) => chat.id)
-              .map((chat) => ({ chatId: chat.id!, messages: chat.message ?? [] })),
+              .map((chat) => ({
+                chatId: chat.id!,
+                messages: chat.message ?? [],
+              })),
           );
           alertNormal(language.successImport);
           return;
@@ -841,7 +851,10 @@ export function characterFormatUpdate(
     if (arg.updateInteraction) {
       const interactionTime = Date.now();
       if (characterIndex !== null) {
-        characterStore.touchCharacterInteraction(characterIndex, interactionTime);
+        characterStore.touchCharacterInteraction(
+          characterIndex,
+          interactionTime,
+        );
       } else {
         cha.lastInteraction = interactionTime;
       }
@@ -998,7 +1011,10 @@ export function characterFormatUpdate(
   }
 
   const interactionTime = arg.updateInteraction ? Date.now() : null;
-  if (interactionTime !== null && (!sqlHydrated || needsFullCharacterPersistence)) {
+  if (
+    interactionTime !== null &&
+    (!sqlHydrated || needsFullCharacterPersistence)
+  ) {
     cha.lastInteraction = interactionTime;
   }
   formattedCharacters.add(cha);
@@ -1011,7 +1027,10 @@ export function characterFormatUpdate(
       if (needsFullCharacterPersistence) {
         characterStore.markCharacterDirty(cha.chaId);
       } else if (interactionTime !== null) {
-        characterStore.touchCharacterInteraction(characterIndex, interactionTime);
+        characterStore.touchCharacterInteraction(
+          characterIndex,
+          interactionTime,
+        );
       }
       for (const chatId of dirtyChatIds) characterStore.markChatDirty(chatId);
       if (chatManifestChanged) {
@@ -1113,7 +1132,9 @@ export async function makeGroupImage() {
 
     const uri = canvas.toDataURL();
     canvas.remove();
-    characterStore.characters[charID].image = await saveImage(dataURLtoBuffer(uri));
+    characterStore.characters[charID].image = await saveImage(
+      dataURLtoBuffer(uri),
+    );
     alertStore.set({
       type: "none",
       msg: "",
@@ -1255,7 +1276,9 @@ export async function changeChar(
 
   const currentChar = characterStore.characters?.[index];
   if (arg.chatId && currentChar?.chats) {
-    const requestedChatIndex = currentChar.chats.findIndex((chat) => chat.id === arg.chatId);
+    const requestedChatIndex = currentChar.chats.findIndex(
+      (chat) => chat.id === arg.chatId,
+    );
     if (requestedChatIndex >= 0) currentChar.chatPage = requestedChatIndex;
   }
   characterFormatUpdate(index, {
@@ -1326,7 +1349,8 @@ export async function duplicateChat(
     sourceChat.messagesLoaded === false ||
     sourceChat.messagesFullyLoaded === false ||
     sourceChat.detailsLoaded === false ||
-    (expectedMessageTotal !== null && sourceChat.message.length < expectedMessageTotal)
+    (expectedMessageTotal !== null &&
+      sourceChat.message.length < expectedMessageTotal)
   ) {
     const error = new Error(
       "Could not fully load this chat before duplicating it. The original chat was left unchanged.",
@@ -1344,7 +1368,11 @@ export async function duplicateChat(
 
   const newChat: Chat = safeStructuredClone(sourceChat);
   newChat.id = uuidv4();
-  newChat.name = createChatCopyName(sourceChat.name || "Chat", "Copy", char.chats);
+  newChat.name = createChatCopyName(
+    sourceChat.name || "Chat",
+    "Copy",
+    char.chats,
+  );
   newChat.branch = undefined;
   newChat.branchState = undefined;
   newChat.isStreaming = false;
@@ -1383,8 +1411,12 @@ export async function duplicateChat(
   newChat.detailsLoaded = true;
 
   const selectNew = options.selectNew ?? false;
-  const requestedInsertIndex = options.insertIndex ?? (selectNew ? 0 : sourceIndex + 1);
-  const insertIndex = Math.max(0, Math.min(requestedInsertIndex, char.chats.length));
+  const requestedInsertIndex =
+    options.insertIndex ?? (selectNew ? 0 : sourceIndex + 1);
+  const insertIndex = Math.max(
+    0,
+    Math.min(requestedInsertIndex, char.chats.length),
+  );
   const activeChatIndex = char.chatPage ?? 0;
 
   char.chats.splice(insertIndex, 0, newChat);
@@ -1394,7 +1426,11 @@ export async function duplicateChat(
   characterStore.markChatDirty(newChat.id);
   characterStore.markChatManifestDirty(characterId);
   characterStore.markCharacterDirty(characterId);
-  await messageStore.persistNewChat(characterId, newChat.id, newChat.message ?? []);
+  await messageStore.persistNewChat(
+    characterId,
+    newChat.id,
+    newChat.message ?? [],
+  );
 
   const selectedCharacter = characterStore.characters[get(selectedCharID)];
   if (selectNew) {
@@ -1419,12 +1455,17 @@ export async function duplicateCharacter(
 
   const characterId = initialChar.chaId;
   const findSourceIndex = () =>
-    characterStore.characters.findIndex((candidate) => candidate.chaId === characterId);
+    characterStore.characters.findIndex(
+      (candidate) => candidate.chaId === characterId,
+    );
   const findSourceCharacter = () => {
     const index = findSourceIndex();
     return index >= 0 ? characterStore.characters[index] : undefined;
   };
-  const failHydration = (message: string, details?: Record<string, unknown>) => {
+  const failHydration = (
+    message: string,
+    details?: Record<string, unknown>,
+  ) => {
     const error = new Error(message);
     console.error("[duplicateCharacter] Hydration did not complete", {
       characterId,
@@ -1452,7 +1493,10 @@ export async function duplicateCharacter(
     try {
       await characterStore.ensureCharacterDetails(characterId);
     } catch (error) {
-      console.error("[duplicateCharacter] Failed to ensure character details:", error);
+      console.error(
+        "[duplicateCharacter] Failed to ensure character details:",
+        error,
+      );
       alertError(error);
       return null;
     }
@@ -1547,7 +1591,10 @@ export async function duplicateCharacter(
   if (sourceChar.chats.length !== chatTargets.length) {
     return failHydration(
       "Character chats changed while preparing the duplicate. Please try again.",
-      { expectedChats: chatTargets.length, actualChats: sourceChar.chats.length },
+      {
+        expectedChats: chatTargets.length,
+        actualChats: sourceChar.chats.length,
+      },
     );
   }
 

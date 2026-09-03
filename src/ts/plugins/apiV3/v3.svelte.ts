@@ -377,9 +377,9 @@ class SafeElement {
     } else if (allowedDelayedEventListeners.includes(type)) {
       const modifiedListener = (event: any) => {
         let delay = 0;
-        try {
-          delay = (crypto.getRandomValues(new Uint32Array(1))[0] / 100) % 100; //0-99 ms
-        } catch (error) {}
+        // This jitter is not security-sensitive; Math.random avoids needless
+        // cryptographic sampling and the modulo/scaling bias CodeQL warns about.
+        delay = Math.floor(Math.random() * 100); // 0-99 ms
         setTimeout(() => {
           listener(trimEvent(event));
         }, delay);
@@ -678,9 +678,7 @@ const getPluginPermission = async (
 
   pluginHash =
     (await hasher(
-      new TextEncoder().encode(
-        getRuntimePlugin(pluginName)?.script,
-      ),
+      new TextEncoder().encode(getRuntimePlugin(pluginName)?.script),
     )) + `_${permissionDesc}`;
 
   if (!requiresReconfirm && (await permissionForage.getItem(pluginHash))) {
@@ -881,7 +879,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
     loadPlugins: oldApis.loadPlugins,
     readImage: oldApis.readImage,
     readInlay: async (id: string) => {
-      const conf = await getPluginPermission(plugin.name, "inlay", "periodically");
+      const conf = await getPluginPermission(
+        plugin.name,
+        "inlay",
+        "periodically",
+      );
       if (!conf) {
         return null;
       }
@@ -1448,9 +1450,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       }
 
       if (
-        getModelInfo(presetStore.state.aiModel).id.startsWith(
-          "pluginmodel:::",
-        )
+        getModelInfo(presetStore.state.aiModel).id.startsWith("pluginmodel:::")
       ) {
         // Executing plugin provider is block because it can be used for loopholes for ipc right now.
         throw new Error(

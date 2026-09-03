@@ -131,7 +131,9 @@ export function settingDomain(key: string): string {
 
 function assertCanonicalRootSetting(key: string): void {
   if (isLegacyPersonaMirrorKey(key)) {
-    throw new Error(`${key} is a legacy persona mirror and cannot be persisted`);
+    throw new Error(
+      `${key} is a legacy persona mirror and cannot be persisted`,
+    );
   }
 }
 
@@ -162,9 +164,12 @@ function countRelationalValueNodes(value: unknown): number {
       typeof current === "boolean" ||
       typeof current === "number" ||
       typeof current === "string"
-    ) return;
+    )
+      return;
     if (typeof current !== "object") {
-      throw new TypeError(`Unsupported relational value type: ${typeof current}`);
+      throw new TypeError(
+        `Unsupported relational value type: ${typeof current}`,
+      );
     }
     if (ancestors.has(current)) {
       throw new TypeError("Relational values cannot contain cycles");
@@ -188,8 +193,10 @@ function countReplaceNodeStatements(
   value: unknown,
   skipDelete = false,
 ): number {
-  return (skipDelete ? 0 : 1) +
-    Math.ceil(countRelationalValueNodes(value) / RELATIONAL_NODE_BATCH_SIZE);
+  return (
+    (skipDelete ? 0 : 1) +
+    Math.ceil(countRelationalValueNodes(value) / RELATIONAL_NODE_BATCH_SIZE)
+  );
 }
 
 function countCharacterTagStatements(value: unknown): number {
@@ -200,9 +207,11 @@ function countCharacterTagStatements(value: unknown): number {
     if (typeof tag === "string") strings++;
     else removed++;
   }
-  return 1 +
+  return (
+    1 +
     Math.ceil(strings / CHARACTER_TAG_BATCH_SIZE) +
-    Math.ceil(removed / CHARACTER_TAG_BATCH_SIZE);
+    Math.ceil(removed / CHARACTER_TAG_BATCH_SIZE)
+  );
 }
 
 export function messageExtensionData(
@@ -272,7 +281,11 @@ async function replaceNodes(
     .map((column) => `${table}.${column} IS NOT excluded.${column}`)
     .join(" OR ");
 
-  for (let offset = 0; offset < rows.length; offset += RELATIONAL_NODE_BATCH_SIZE) {
+  for (
+    let offset = 0;
+    offset < rows.length;
+    offset += RELATIONAL_NODE_BATCH_SIZE
+  ) {
     const batch = rows.slice(offset, offset + RELATIONAL_NODE_BATCH_SIZE);
     await execute(
       `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${batch
@@ -308,7 +321,10 @@ async function replaceCharacterTags(
     offset < removedPositions.length;
     offset += CHARACTER_TAG_BATCH_SIZE
   ) {
-    const batch = removedPositions.slice(offset, offset + CHARACTER_TAG_BATCH_SIZE);
+    const batch = removedPositions.slice(
+      offset,
+      offset + CHARACTER_TAG_BATCH_SIZE,
+    );
     await execute(
       `DELETE FROM character_tags WHERE character_id = ? AND position IN (${batch
         .map(() => "?")
@@ -424,11 +440,13 @@ export function countSqliteCommitStatements(commit: SqlCommit): number {
       typeof data.data === "string" ? data.data : String(data.data ?? ""),
     )[0];
     const extension = messageExtensionData(data, content);
-    total += 3 + (
-      Object.keys(extension).length === 0
-        ? (replacingEntities ? 0 : 1)
-        : countReplaceNodeStatements(extension, replacingEntities)
-    );
+    total +=
+      3 +
+      (Object.keys(extension).length === 0
+        ? replacingEntities
+          ? 0
+          : 1
+        : countReplaceNodeStatements(extension, replacingEntities));
   }
   for (const deletion of commit.messageDeletes ?? []) {
     if (deletion.ids.length > 0) total += deletion.ids.length * 4 + 1;
@@ -468,11 +486,9 @@ export async function applySqliteCommit(
   await applySettingUpsert(commit, execute);
   await applySettingDeletes(commit, execute);
 
-  if (commit.pluginStorage)
-    await applyPluginStorage(commit, execute);
-  
-  if (commit.presets)
-    await applyPresets(commit, execute);
+  if (commit.pluginStorage) await applyPluginStorage(commit, execute);
+
+  if (commit.presets) await applyPresets(commit, execute);
 
   await applyCharacters(commit, execute, replacingEntities);
   for (const touch of commit.characterTouches ?? []) {
@@ -572,14 +588,7 @@ export async function applySqliteCommit(
                 SELECT parent_message_id FROM message_branch_links
                  WHERE chat_id = ? AND message_id = ?
               ))`,
-      [
-        entry.id,
-        entry.chatId,
-        entry.chatId,
-        entry.id,
-        entry.chatId,
-        entry.id,
-      ],
+      [entry.id, entry.chatId, entry.chatId, entry.id, entry.chatId, entry.id],
     );
     const extension = messageExtensionData(data, content);
     if (Object.keys(extension).length === 0) {
@@ -664,7 +673,11 @@ export async function applySqliteCommit(
   }
 }
 
-async function applyCharacters(commit: SqlCommit, execute: SqliteExecute, replacingEntities: boolean) {
+async function applyCharacters(
+  commit: SqlCommit,
+  execute: SqliteExecute,
+  replacingEntities: boolean,
+) {
   for (const entry of commit.characters) {
     const data = entry.data as Record<string, unknown>;
     await execute(
@@ -685,7 +698,7 @@ async function applyCharacters(commit: SqlCommit, execute: SqliteExecute, replac
         data.creationDate ?? data.creation_date ?? null,
         data.modificationDate ?? data.modification_date ?? null,
         data.lastInteraction ?? null,
-      ]
+      ],
     );
     await replaceNodes(
       execute,
@@ -693,7 +706,7 @@ async function applyCharacters(commit: SqlCommit, execute: SqliteExecute, replac
       ["character_id"],
       [entry.id],
       data,
-      replacingEntities
+      replacingEntities,
     );
     await replaceCharacterTags(execute, entry.id, data.tags);
   }
@@ -725,16 +738,16 @@ async function applyPresets(commit: SqlCommit, execute: SqliteExecute) {
         data.aiModel ?? "",
         serialized,
         presetContentHash(data),
-      ]
+      ],
     );
   }
   if (commit.presets.order) {
     await execute("UPDATE bot_presets SET position = position + 1000000000");
     for (const [position, id] of commit.presets.order.entries()) {
-      await execute(
-        "UPDATE bot_presets SET position = ? WHERE preset_id = ?",
-        [position, id]
-      );
+      await execute("UPDATE bot_presets SET position = ? WHERE preset_id = ?", [
+        position,
+        id,
+      ]);
     }
   }
   if (commit.presets.activeId !== undefined) {
@@ -754,14 +767,14 @@ async function applyPresets(commit: SqlCommit, execute: SqliteExecute) {
         root.encoded_text_value,
         root.number_value,
         root.boolean_value,
-      ]
+      ],
     );
     await replaceNodes(
       execute,
       "setting_extension_nodes",
       ["setting_key"],
       ["activeBotPresetId"],
-      value
+      value,
     );
   }
 }
@@ -793,10 +806,10 @@ async function applyModules(commit: SqlCommit, execute: SqliteExecute) {
   }
   if (commit.modules.order) {
     for (const [position, id] of commit.modules.order.entries()) {
-      await execute("UPDATE module_records SET position = ? WHERE module_id = ?", [
-        position,
-        id,
-      ]);
+      await execute(
+        "UPDATE module_records SET position = ? WHERE module_id = ?",
+        [position, id],
+      );
     }
   }
 }
@@ -812,7 +825,7 @@ async function applyPluginStorage(commit: SqlCommit, execute: SqliteExecute) {
     await execute(
       `INSERT INTO plugin_custom_storage (key, value, updated_at) VALUES (?, ?, datetime('now'))
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')`,
-      [upsert.key, JSON.stringify(upsert.value)]
+      [upsert.key, JSON.stringify(upsert.value)],
     );
   }
 }
@@ -847,14 +860,14 @@ async function applySettingUpsert(commit: SqlCommit, execute: SqliteExecute) {
         root.encoded_text_value,
         root.number_value,
         root.boolean_value,
-      ]
+      ],
     );
     await replaceNodes(
       execute,
       "setting_extension_nodes",
       ["setting_key"],
       [upsert.key],
-      upsert.value
+      upsert.value,
     );
   }
 }

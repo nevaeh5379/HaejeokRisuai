@@ -15,7 +15,6 @@ import {
   parseDefaults,
 } from "./valibotDefaults";
 
-
 const providerScalarDefaults = {
   classicMaxWidth: defaultBoolean(false),
   openrouterKey: defaultString(),

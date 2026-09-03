@@ -23,8 +23,7 @@ const browserNavigator =
 export const isTauri: boolean =
   typeof window !== "undefined" &&
   !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-export const isCapacitor: boolean =
-  !isTauri && Capacitor.isNativePlatform();
+export const isCapacitor: boolean = !isTauri && Capacitor.isNativePlatform();
 export const isNodeServer: boolean = !!(
   globalThis as typeof globalThis & { __NODE__?: boolean }
 ).__NODE__;

@@ -19,9 +19,7 @@ export async function generateClientThumbnail(
     const blob = new Blob([imageData as any]);
 
     const drawCoverTop = (
-      ctx:
-        | CanvasRenderingContext2D
-        | OffscreenCanvasRenderingContext2D,
+      ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
       source: CanvasImageSource,
       srcW: number,
       srcH: number,
@@ -49,9 +47,7 @@ export async function generateClientThumbnail(
       }
 
       const ctx = canvas.getContext("2d") as
-        | CanvasRenderingContext2D
-        | OffscreenCanvasRenderingContext2D
-        | null;
+        CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
       if (!ctx) {
         bitmap.close();
         return imageData;

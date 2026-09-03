@@ -9,7 +9,9 @@ function conflictRevision(error: unknown): number | null {
     typeof error === "object" &&
     error !== null &&
     "currentRevision" in error &&
-    Number.isSafeInteger((error as { currentRevision?: unknown }).currentRevision)
+    Number.isSafeInteger(
+      (error as { currentRevision?: unknown }).currentRevision,
+    )
   ) {
     return (error as { currentRevision: number }).currentRevision;
   }
@@ -26,16 +28,18 @@ export function commitSqlChanges(
 ): Promise<SqlCommitResult> {
   const finishSave = beginSave();
   const previous = storageQueues.get(storage) ?? Promise.resolve();
-  const operation = previous.catch(() => undefined).then(async () => {
-    const rebased = { ...commit, baseRevision: storage.getRevision() };
-    try {
-      return await storage.commit(rebased);
-    } catch (error) {
-      const currentRevision = conflictRevision(error);
-      if (currentRevision === null) throw error;
-      return storage.commit({ ...rebased, baseRevision: currentRevision });
-    }
-  });
+  const operation = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const rebased = { ...commit, baseRevision: storage.getRevision() };
+      try {
+        return await storage.commit(rebased);
+      } catch (error) {
+        const currentRevision = conflictRevision(error);
+        if (currentRevision === null) throw error;
+        return storage.commit({ ...rebased, baseRevision: currentRevision });
+      }
+    });
   const trackedOperation = operation.finally(finishSave);
   storageQueues.set(
     storage,

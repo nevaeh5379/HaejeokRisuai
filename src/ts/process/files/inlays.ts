@@ -59,7 +59,9 @@ export async function migrateLocalInlaysToServer(): Promise<{
 }> {
   const storage = await getRemoteNodeStorage();
   if (!storage) {
-    throw new Error("Inlay server storage is only available on the node server");
+    throw new Error(
+      "Inlay server storage is only available on the node server",
+    );
   }
   const stored = await readAllCachedInlays();
   const remoteIds = new Set(await listRemoteInlayIds());
@@ -370,7 +372,9 @@ export { clearInlayCache };
 
 export function supportsInlayImage() {
   const db = settingsStore.state;
-  return getModelInfo(presetStore.state.aiModel).flags.includes(LLMFlags.hasImageInput);
+  return getModelInfo(presetStore.state.aiModel).flags.includes(
+    LLMFlags.hasImageInput,
+  );
 }
 
 export async function reencodeImage(img: Uint8Array) {

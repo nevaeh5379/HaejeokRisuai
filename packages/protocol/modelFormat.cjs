@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 const LLM_FORMATS = Object.freeze({
   OpenAICompatible: 0,

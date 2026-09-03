@@ -13,12 +13,10 @@ import {
   writeInlayImage,
 } from "../inlays";
 
-const { migrateLocalInlaysToServer, resetInlayRemoteWriteState } = await import(
-  "../inlays"
-);
-const { resetRemoteAvailability, getInlayServerKey } = await import(
-  "../inlayRemote"
-);
+const { migrateLocalInlaysToServer, resetInlayRemoteWriteState } =
+  await import("../inlays");
+const { resetRemoteAvailability, getInlayServerKey } =
+  await import("../inlayRemote");
 
 //#region module mocks
 
@@ -83,8 +81,24 @@ vi.mock(import("src/ts/model/modellist"), () => ({
 const remoteMocks = vi.hoisted(() => {
   return {
     remoteStore: new Map<string, Uint8Array>(),
-    remoteFailureCount: { _v: 0, get value() { return this._v; }, set value(v: number) { this._v = v; } },
-    nodeServerMode: { _v: false, get value() { return this._v; }, set value(v: boolean) { this._v = v; } },
+    remoteFailureCount: {
+      _v: 0,
+      get value() {
+        return this._v;
+      },
+      set value(v: number) {
+        this._v = v;
+      },
+    },
+    nodeServerMode: {
+      _v: false,
+      get value() {
+        return this._v;
+      },
+      set value(v: boolean) {
+        this._v = v;
+      },
+    },
     forageStorage: {
       Init: async () => {},
       realStorage: null as unknown,
@@ -126,7 +140,8 @@ vi.mock("src/ts/platform", async (importOriginal) => {
 });
 
 vi.mock("src/ts/globalApi.svelte", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("src/ts/globalApi.svelte")>();
+  const actual =
+    await importOriginal<typeof import("src/ts/globalApi.svelte")>();
   return {
     ...actual,
     forageStorage: remoteMocks.forageStorage,
@@ -134,9 +149,8 @@ vi.mock("src/ts/globalApi.svelte", async (importOriginal) => {
 });
 
 vi.mock("src/ts/storage/files/nodeStorage", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("src/ts/storage/files/nodeStorage")
-  >();
+  const actual =
+    await importOriginal<typeof import("src/ts/storage/files/nodeStorage")>();
   return {
     ...actual,
     NodeStorage: class MockNodeStorage {
@@ -244,7 +258,9 @@ describe("inlay backup payload", () => {
       name: "signature",
       type: "signature",
     };
-    expect(decodeInlayAssetBackup(await encodeInlayAssetBackup(asset))).toEqual(asset);
+    expect(decodeInlayAssetBackup(await encodeInlayAssetBackup(asset))).toEqual(
+      asset,
+    );
   });
 });
 

@@ -1,22 +1,30 @@
 import { expect, test, vi } from "vitest";
 
-const characterHandle = vi.hoisted(() => vi.fn(async () => [{ type: "text", text: "ok" }]));
+const characterHandle = vi.hoisted(() =>
+  vi.fn(async () => [{ type: "text", text: "ok" }]),
+);
 
 vi.mock("./characters", () => ({
   CharacterHandler: class {
-    getTools() { return []; }
+    getTools() {
+      return [];
+    }
     handle = characterHandle;
   },
 }));
 vi.mock("./chats", () => ({
   ChatHandler: class {
-    getTools() { return []; }
+    getTools() {
+      return [];
+    }
     handle = vi.fn(async () => null);
   },
 }));
 vi.mock("./modules", () => ({
   ModuleHandler: class {
-    getTools() { return []; }
+    getTools() {
+      return [];
+    }
     handle = vi.fn(async () => null);
   },
 }));

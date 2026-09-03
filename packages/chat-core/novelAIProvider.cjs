@@ -1,8 +1,8 @@
-'use strict';
+"use strict";
 
 const NOVELAI_GENERATE_URLS = Object.freeze({
-  kayra: 'https://text.novelai.net/ai/generate',
-  clio: 'https://api.novelai.net/ai/generate',
+  kayra: "https://text.novelai.net/ai/generate",
+  clio: "https://api.novelai.net/ai/generate",
 });
 
 const NOVELAI_BAD_WORD_IDS = [
@@ -323,15 +323,15 @@ const NOVELAI_BAD_WORD_IDS = [
   [41471],
   [2936],
   [23],
-];;
+];
 
 const NOVELAI_REPETITION_PENALTY_WHITELIST = Object.freeze([
   49256, 49264, 49231, 49230, 49287, 85, 49255, 49399, 49262, 336, 333, 432,
-  363, 468, 492, 745, 401, 426, 623, 794, 1096, 2919, 2072, 7379, 1259,
-  2110, 620, 526, 487, 16562, 603, 805, 761, 2681, 942, 8917, 653, 3513,
-  506, 5301, 562, 5010, 614, 10942, 539, 2976, 462, 5189, 567, 2032, 123,
-  124, 125, 126, 127, 128, 129, 130, 131, 132, 588, 803, 1040, 49209, 4, 5,
-  6, 7, 8, 9, 10, 11, 12,
+  363, 468, 492, 745, 401, 426, 623, 794, 1096, 2919, 2072, 7379, 1259, 2110,
+  620, 526, 487, 16562, 603, 805, 761, 2681, 942, 8917, 653, 3513, 506, 5301,
+  562, 5010, 614, 10942, 539, 2976, 462, 5189, 567, 2032, 123, 124, 125, 126,
+  127, 128, 129, 130, 131, 132, 588, 803, 1040, 49209, 4, 5, 6, 7, 8, 9, 10, 11,
+  12,
 ]);
 
 function resolveNovelAIGenerateUrl(variant) {
@@ -339,7 +339,7 @@ function resolveNovelAIGenerateUrl(variant) {
 }
 
 function buildNovelAIRequest(options) {
-  const variant = options.modelId === 'novelai_kayra' ? 'kayra' : 'clio';
+  const variant = options.modelId === "novelai_kayra" ? "kayra" : "clio";
   const settings = options.settings;
   const parameters = {
     temperature: options.temperature,
@@ -358,7 +358,7 @@ function buildNovelAIRequest(options) {
     use_cache: false,
     use_string: true,
     return_full_text: false,
-    prefix: options.adventureMode ? 'theme_textadventure' : 'vanilla',
+    prefix: options.adventureMode ? "theme_textadventure" : "vanilla",
     order: [6, 2, 3, 0, 4, 1, 5, 8],
     typical_p: settings.typicalp,
     repetition_penalty_whitelist: NOVELAI_REPETITION_PENALTY_WHITELIST,
@@ -368,14 +368,14 @@ function buildNovelAIRequest(options) {
     mirostat_lr: settings.mirostat_lr ?? 1,
     mirostat_tau: settings.mirostat_tau ?? 0,
     cfg_scale: settings.cfg_scale ?? 1,
-    cfg_uc: '',
+    cfg_uc: "",
   };
 
   return {
     variant,
     body: {
       input: options.prompt,
-      model: variant === 'kayra' ? 'kayra-v1' : 'clio-v1',
+      model: variant === "kayra" ? "kayra-v1" : "clio-v1",
       parameters,
     },
   };

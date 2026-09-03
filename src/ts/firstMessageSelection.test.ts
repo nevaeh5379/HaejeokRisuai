@@ -11,9 +11,9 @@ describe("first message selection", () => {
     "normalizes an invalid index (%s) to the default greeting",
     (index) => {
       expect(normalizeFirstMessageIndex(index, 2)).toBe(-1);
-      expect(getSelectedFirstMessage("default", ["alt 1", "alt 2"], index)).toBe(
-        "default",
-      );
+      expect(
+        getSelectedFirstMessage("default", ["alt 1", "alt 2"], index),
+      ).toBe("default");
     },
   );
 

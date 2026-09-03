@@ -5,7 +5,6 @@ import { HypaProcesser } from "./hypamemory";
 import { language } from "src/lang";
 import type { ChatTokenizer } from "src/ts/tokenizer";
 
-
 const maxRecentChatQuery = 4;
 export async function hanuraiMemory(
   chats: OpenAIChat[],
@@ -101,7 +100,8 @@ export async function hanuraiMemory(
     memo: "supaMemory",
     content,
   }));
-  const candidateTokenCounts = await tokenizer.tokenizeChatsDetailed(candidateChats);
+  const candidateTokenCounts =
+    await tokenizer.tokenizeChatsDetailed(candidateChats);
   let resultTexts: string[] = [];
   for (let i = 0; i < candidateTexts.length; i++) {
     const tokenized = candidateTokenCounts[i] + 2;

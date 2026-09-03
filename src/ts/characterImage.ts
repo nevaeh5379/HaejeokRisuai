@@ -76,7 +76,10 @@ class CharacterImageCache extends Map<string, string> {
     );
     super.clear();
     this.pinnedKeys.clear();
-    if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+    if (
+      typeof URL !== "undefined" &&
+      typeof URL.revokeObjectURL === "function"
+    ) {
       for (const url of urls) URL.revokeObjectURL(url);
     }
   }
@@ -412,7 +415,9 @@ export async function getCharImagesBatch(
   let fallbackCursor = 0;
   const usesNativeTransform =
     isCapacitor &&
-    (options.thumbnail === true || options.size === "thumb" || options.size === "display");
+    (options.thumbnail === true ||
+      options.size === "thumb" ||
+      options.size === "display");
   const fallbackWorkerCount = usesNativeTransform
     ? Math.min(3, uncachedLocs.length)
     : uncachedLocs.length;
@@ -422,8 +427,7 @@ export async function getCharImagesBatch(
         const loc = uncachedLocs[fallbackCursor++];
         try {
           const src = await getFileSrc(loc, {
-            thumbnail:
-              options.thumbnail === true || options.size === "thumb",
+            thumbnail: options.thumbnail === true || options.size === "thumb",
             ...(options.size === "display" ? { display: true } : {}),
             ...(options.width !== undefined ? { width: options.width } : {}),
             ...(options.height !== undefined ? { height: options.height } : {}),

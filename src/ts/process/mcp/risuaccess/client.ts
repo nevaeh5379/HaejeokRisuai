@@ -93,7 +93,7 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
   ): Promise<RPCToolCallContent[]> {
     try {
       const effectiveArgs =
-        (!args?.id && context?.currentChar?.chaId)
+        !args?.id && context?.currentChar?.chaId
           ? { ...args, id: context.currentChar.chaId }
           : args;
       for (const handler of this.handlers) {

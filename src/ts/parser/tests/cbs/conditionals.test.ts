@@ -45,7 +45,10 @@ vi.mock(import("../../../stores/domain/characterStore.svelte"), () => {
           chatPage: 0,
           chats: [
             { id: "chat-other", scriptstate: { $scope: "selected" } },
-            { id: "chat-target", scriptstate: { $scope: "target", $enabled: "true" } },
+            {
+              id: "chat-target",
+              scriptstate: { $scope: "target", $enabled: "true" },
+            },
           ],
           defaultVariables: "",
         },
@@ -430,7 +433,6 @@ SBC{{slot::n}}
     });
   });
 });
-
 
 test("uses the explicit trigger id from parser context", () => {
   expect(

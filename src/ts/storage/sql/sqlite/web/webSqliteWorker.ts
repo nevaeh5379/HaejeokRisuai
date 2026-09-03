@@ -27,7 +27,10 @@
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
-import { isSqlitePragmaStatement, splitSqliteStatements } from "../sqliteSchemaStatements";
+import {
+  isSqlitePragmaStatement,
+  splitSqliteStatements,
+} from "../sqliteSchemaStatements";
 import {
   SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
   SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
@@ -43,7 +46,9 @@ import {
 interface SqliteStmt {
   bind: (params: unknown[]) => void;
   step: () => boolean;
-  get: (ndx?: unknown[] | Record<string, unknown> | number) => unknown[] | unknown;
+  get: (
+    ndx?: unknown[] | Record<string, unknown> | number,
+  ) => unknown[] | unknown;
   getColumnNames: (tgt?: string[]) => string[];
   finalize: () => void;
 }
@@ -57,7 +62,10 @@ interface SqliteDb {
 interface SahPoolUtil {
   OpfsSAHPoolDb: new (filename: string) => SqliteDb;
   getFileNames: () => string[];
-  importDb: (filename: string, data: Uint8Array | ArrayBuffer) => Promise<number>;
+  importDb: (
+    filename: string,
+    data: Uint8Array | ArrayBuffer,
+  ) => Promise<number>;
   reserveMinimumCapacity: (minimum: number) => Promise<number>;
   unlink: (filename: string) => boolean;
 }
@@ -102,7 +110,8 @@ async function opfsRootFileExists(filename: string): Promise<boolean> {
     await root.getFileHandle(filename.replace(/^\/+/, ""), { create: false });
     return true;
   } catch (error) {
-    if (error instanceof DOMException && error.name === "NotFoundError") return false;
+    if (error instanceof DOMException && error.name === "NotFoundError")
+      return false;
     throw error;
   }
 }
@@ -137,13 +146,18 @@ function queryScalar(database: SqliteDb, sql: string): unknown {
 function validateDatabaseFile(database: SqliteDb): void {
   const quickCheck = String(queryScalar(database, "PRAGMA quick_check") ?? "");
   if (quickCheck !== "ok") {
-    throw new Error(`SQLite quick_check failed after SAH migration: ${quickCheck}`);
+    throw new Error(
+      `SQLite quick_check failed after SAH migration: ${quickCheck}`,
+    );
   }
 }
 
-async function openPersistentDatabase(sqlite3: Sqlite3Module): Promise<SqliteDb> {
+async function openPersistentDatabase(
+  sqlite3: Sqlite3Module,
+): Promise<SqliteDb> {
   if (typeof sqlite3.installOpfsSAHPoolVfs !== "function") {
-    if (typeof sqlite3.oo1?.OpfsDb !== "function") throw new Error("OPFS not available");
+    if (typeof sqlite3.oo1?.OpfsDb !== "function")
+      throw new Error("OPFS not available");
     activeVfs = "opfs";
     return new sqlite3.oo1.OpfsDb(DB_FILE);
   }
@@ -321,7 +335,9 @@ function rebuildMessagesFromRows(
         message.generationInfo.inputTokens = Number(core.message_input_tokens);
       }
       if (core.message_output_tokens != null) {
-        message.generationInfo.outputTokens = Number(core.message_output_tokens);
+        message.generationInfo.outputTokens = Number(
+          core.message_output_tokens,
+        );
       }
     }
     return message;
@@ -370,10 +386,12 @@ async function handleInit(): Promise<{
         );
       }
     }
-    const hadLastMessageTimeTrigger = Boolean(selectOneInternal(
-      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
-      [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
-    ));
+    const hadLastMessageTimeTrigger = Boolean(
+      selectOneInternal(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+        [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
+      ),
+    );
     // Apply schema — use multiple exec calls instead of one big exec to avoid
     // "Column index out of range" issues in SQLite WASM's exec() with complex
     // multi-statement SQL containing PRAGMAs.
@@ -394,7 +412,10 @@ async function handleInit(): Promise<{
     // Execute the rest of the schema one complete SQLite statement at a time.
     const schemaStatements = splitSqliteStatements(sqliteSchemaSql)
       .map((statement) => statement.trim())
-      .filter((statement) => statement.length > 0 && !isSqlitePragmaStatement(statement));
+      .filter(
+        (statement) =>
+          statement.length > 0 && !isSqlitePragmaStatement(statement),
+      );
     for (const stmt of schemaStatements) {
       db.exec(stmt);
     }
@@ -403,9 +424,12 @@ async function handleInit(): Promise<{
       [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
     );
     if (!lastMessageTrigger) {
-      throw new Error("SQLite last_message_time trigger was not installed by the schema");
+      throw new Error(
+        "SQLite last_message_time trigger was not installed by the schema",
+      );
     }
-    if (!hadLastMessageTimeTrigger) db.exec(SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL);
+    if (!hadLastMessageTimeTrigger)
+      db.exec(SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL);
     const rows = selectRowsInternal(
       "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
     ).rows;
@@ -471,7 +495,10 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
       }
       case "selectBatch": {
         const result = msg.statements.map((statement) => {
-          const selected = selectRowsInternal(statement.sql, statement.bind ?? []);
+          const selected = selectRowsInternal(
+            statement.sql,
+            statement.bind ?? [],
+          );
           if (statement.transform === "relational") {
             return {
               value: selected.rows.length

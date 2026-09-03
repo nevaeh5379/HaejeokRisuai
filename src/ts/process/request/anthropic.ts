@@ -55,7 +55,10 @@ export async function requestClaude(
   const ollamaCloudAnthropic = aiModel === "ollama-cloud";
   let replacerURL = arg.customURL ?? DEFAULT_ANTHROPIC_MESSAGES_URL;
   let apiKey =
-    arg.key || (aiModel === "reverse_proxy" ? presetStore.state.proxyKey : db.claudeAPIKey);
+    arg.key ||
+    (aiModel === "reverse_proxy"
+      ? presetStore.state.proxyKey
+      : db.claudeAPIKey);
   const maxTokens = arg.maxTokens;
   if (aiModel === "reverse_proxy" && db.autofillRequestUrl) {
     if (replacerURL.endsWith("v1")) {
@@ -382,7 +385,11 @@ export async function requestClaude(
     if (arg.extractJson && presetStore.state.jsonSchemaEnabled) {
       return {
         type: "success",
-        result: extractJSON(resText, presetStore.state.jsonSchema, resolveRequestParserContext(arg)),
+        result: extractJSON(
+          resText,
+          presetStore.state.jsonSchema,
+          resolveRequestParserContext(arg),
+        ),
       };
     }
     return {
@@ -904,9 +911,10 @@ async function requestClaudeHTTP(
   }
 
   const db = settingsStore.state;
-  let nodeTransport:
-    | { format: LLMFormat; payload: Record<string, unknown> }
-    | null = null;
+  let nodeTransport: {
+    format: LLMFormat;
+    payload: Record<string, unknown>;
+  } | null = null;
   if (
     replacerURL === DEFAULT_ANTHROPIC_MESSAGES_URL &&
     arg.modelInfo.format === LLMFormat.Anthropic
@@ -997,8 +1005,15 @@ async function requestClaudeHTTP(
       }
 
       if (content.type === "tool_use") {
-        const tool = arg.tools?.find((candidate) => candidate.name === content.name);
-        const used = await callTool(content.name, content.input, tool?.mcpURL, resolveRequestToolContext(arg));
+        const tool = arg.tools?.find(
+          (candidate) => candidate.name === content.name,
+        );
+        const used = await callTool(
+          content.name,
+          content.input,
+          tool?.mcpURL,
+          resolveRequestToolContext(arg),
+        );
         const r: Claude3ToolResponseBlock = {
           type: "tool_result",
           tool_use_id: content.id,
@@ -1087,7 +1102,13 @@ async function requestClaudeHTTP(
   if (arg.extractJson && presetStore.state.jsonSchemaEnabled) {
     return {
       type: "success",
-      result: arg.additionalOutput + extractJSON(resText, presetStore.state.jsonSchema, resolveRequestParserContext(arg)),
+      result:
+        arg.additionalOutput +
+        extractJSON(
+          resText,
+          presetStore.state.jsonSchema,
+          resolveRequestParserContext(arg),
+        ),
     };
   }
   return {

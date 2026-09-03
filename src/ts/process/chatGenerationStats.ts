@@ -79,7 +79,8 @@ export function recordChatGenerationText(
       ...stats,
       outputText,
       firstTokenAt:
-        stats.firstTokenAt ?? (hasOutput ? (firstTokenAt ?? observedAt) : undefined),
+        stats.firstTokenAt ??
+        (hasOutput ? (firstTokenAt ?? observedAt) : undefined),
       lastTokenAt: hasOutput ? observedAt : stats.lastTokenAt,
     };
   });
@@ -125,7 +126,10 @@ export function getChatGenerationStats(
 ) {
   let match: ChatGenerationStats | null = null;
   for (const current of stats.values()) {
-    if (current.selectedChar !== selectedChar || current.selectedChat !== selectedChat) {
+    if (
+      current.selectedChar !== selectedChar ||
+      current.selectedChat !== selectedChat
+    ) {
       continue;
     }
     if (!match || current.startedAt > match.startedAt) match = current;

@@ -1,5 +1,14 @@
 import { v4 } from "uuid";
-import type { BtwSession, BtwSessionConfig, botPreset, character, Chat, groupChat, Message, MessagePresetInfo } from "../storage/database/schema";
+import type {
+  BtwSession,
+  BtwSessionConfig,
+  botPreset,
+  character,
+  Chat,
+  groupChat,
+  Message,
+  MessagePresetInfo,
+} from "../storage/database/schema";
 import { safeStructuredClone } from "../polyfill";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -60,7 +69,10 @@ async function loadPromptPreset(id?: string): Promise<botPreset | undefined> {
   try {
     return await presetStore.load(targetId);
   } catch (error) {
-    console.warn("[BTW] Failed to load prompt preset; using active prompt", error);
+    console.warn(
+      "[BTW] Failed to load prompt preset; using active prompt",
+      error,
+    );
     return presetStore.activePreset;
   }
 }
@@ -101,7 +113,8 @@ function findCharacter(id: string): character | undefined {
   const direct = findCharacterbyId(id);
   if (direct?.type === "character") return direct;
   return characterStore.characters.find(
-    (entry): entry is character => entry?.type === "character" && entry.chaId === id,
+    (entry): entry is character =>
+      entry?.type === "character" && entry.chaId === id,
   );
 }
 
@@ -177,7 +190,7 @@ async function consumeBtwResponse(
       const chunk = await reader.read();
       if (chunk.value) {
         const firstKey = Object.keys(chunk.value)[0];
-        const next = firstKey ? chunk.value[firstKey] ?? result : result;
+        const next = firstKey ? (chunk.value[firstKey] ?? result) : result;
         result = next;
         onChunk(result);
       }
@@ -187,7 +200,8 @@ async function consumeBtwResponse(
     signal.removeEventListener("abort", abort);
     void reader.cancel().catch(() => {});
   }
-  if (signal.aborted) throw new DOMException("BTW generation aborted", "AbortError");
+  if (signal.aborted)
+    throw new DOMException("BTW generation aborted", "AbortError");
   return result;
 }
 
@@ -227,7 +241,10 @@ export async function syncBtwToggleValues(
   const next = { ...session.config.toggleValues };
   let changed = false;
   for (const toggle of definitions) {
-    if (!toggle.key || ["group", "groupEnd", "divider", "caption"].includes(toggle.type ?? "")) {
+    if (
+      !toggle.key ||
+      ["group", "groupEnd", "divider", "caption"].includes(toggle.type ?? "")
+    ) {
       continue;
     }
     const key = `toggle_${toggle.key}`;
@@ -256,7 +273,10 @@ async function createSession(
   );
   const toggleValues: Record<string, string> = {};
   for (const toggle of toggleDefinitions) {
-    if (!toggle.key || ["group", "groupEnd", "divider", "caption"].includes(toggle.type ?? "")) {
+    if (
+      !toggle.key ||
+      ["group", "groupEnd", "divider", "caption"].includes(toggle.type ?? "")
+    ) {
       continue;
     }
     const key = `toggle_${toggle.key}`;
@@ -269,7 +289,8 @@ async function createSession(
   const now = Date.now();
   const session: BtwSession = {
     id: v4(),
-    name: name?.trim().slice(0, 48) || `BTW ${(chat.btwSessions?.length ?? 0) + 1}`,
+    name:
+      name?.trim().slice(0, 48) || `BTW ${(chat.btwSessions?.length ?? 0) + 1}`,
     createdAt: now,
     updatedAt: now,
     baseMessageCount: chat.message.length,
@@ -321,7 +342,9 @@ export function updateBtwSessionConfig(
   session.config = {
     ...session.config,
     ...patch,
-    moduleIds: patch.moduleIds ? [...patch.moduleIds] : session.config.moduleIds,
+    moduleIds: patch.moduleIds
+      ? [...patch.moduleIds]
+      : session.config.moduleIds,
     toggleValues: patch.toggleValues
       ? { ...patch.toggleValues }
       : session.config.toggleValues,
@@ -329,7 +352,11 @@ export function updateBtwSessionConfig(
   markBtwDirty(chat, session);
 }
 
-export function renameBtwSession(chat: Chat, session: BtwSession, name: string) {
+export function renameBtwSession(
+  chat: Chat,
+  session: BtwSession,
+  name: string,
+) {
   const trimmed = name.trim();
   if (!trimmed) return;
   session.name = trimmed.slice(0, 80);
@@ -390,7 +417,11 @@ export async function sendBtwMessage(
   try {
     const baseMessages = parent.message.slice(0, session.baseMessageCount);
     const currentChar = resolveBtwSpeaker(room, baseMessages);
-    const syntheticChat = createSyntheticChat(parent, session, assistantMessage.chatId!);
+    const syntheticChat = createSyntheticChat(
+      parent,
+      session,
+      assistantMessage.chatId!,
+    );
     await syncBtwToggleValues(characterIndex, parent, session);
     const preset = await loadPromptPreset(session.config.promptPresetId);
     const generation = promptOverridesFromPreset(preset, session.config);
@@ -477,7 +508,8 @@ export async function sendBtwMessage(
     markBtwDirty(parent, session);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      if (!assistantMessage.data) assistantMessage.data = "[BTW generation cancelled]";
+      if (!assistantMessage.data)
+        assistantMessage.data = "[BTW generation cancelled]";
     } else {
       const message = error instanceof Error ? error.message : String(error);
       btwRuntime.errors[sessionId] = message;

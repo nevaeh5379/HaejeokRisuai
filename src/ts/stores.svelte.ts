@@ -58,11 +58,13 @@ export function isMobileGUIActive(
 ): boolean {
   return Boolean(
     import.meta.env.VITE_RISU_LITE === "TRUE" ||
-      (betaEnabled && window.innerWidth <= 800),
+    (betaEnabled && window.innerWidth <= 800),
   );
 }
 
-export function syncMobileGUI(betaEnabled = settingsStore.state?.betaMobileGUI) {
+export function syncMobileGUI(
+  betaEnabled = settingsStore.state?.betaMobileGUI,
+) {
   const active = isMobileGUIActive(betaEnabled);
   if (active) {
     void import("./hotkey").then(({ initMobileGesture }) => {

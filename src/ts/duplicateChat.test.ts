@@ -50,11 +50,19 @@ class MockSqlStorage {
   }
 }
 
-function makeMessage(chatId: string, data: string, role: Message["role"] = "user"): Message {
+function makeMessage(
+  chatId: string,
+  data: string,
+  role: Message["role"] = "user",
+): Message {
   return { chatId, role, data };
 }
 
-function makeChat(id: string, messages: Message[], extra: Partial<Chat> = {}): Chat {
+function makeChat(
+  id: string,
+  messages: Message[],
+  extra: Partial<Chat> = {},
+): Chat {
   return {
     id,
     name: "Chat",
@@ -115,7 +123,10 @@ describe("duplicateChat", () => {
     expect(duplicated).not.toBeNull();
     expect(duplicated!.id).not.toBe("chat-1");
     expect(duplicated!.name).toBe("Chat (Copy)");
-    expect(duplicated!.message.map((m) => m.data)).toEqual(["hello", "hi there"]);
+    expect(duplicated!.message.map((m) => m.data)).toEqual([
+      "hello",
+      "hi there",
+    ]);
     expect(duplicated!.message.map((m) => m.chatId)).not.toEqual(["m1", "m2"]);
     expect(new Set(duplicated!.message.map((m) => m.chatId)).size).toBe(2);
     expect(mockStorage.commits.some((c) => c.messages.length > 0)).toBe(true);
@@ -175,13 +186,14 @@ describe("duplicateChat", () => {
   });
 
   it("remaps bookmarks and bookmarkNames to the duplicated message IDs", async () => {
-    const sourceChat = makeChat("chat-bm", [
-      makeMessage("m1", "bookmarked"),
-      makeMessage("m2", "plain", "char"),
-    ], {
-      bookmarks: ["m1", "m2"],
-      bookmarkNames: { m1: "User| hello", m2: "Char| hi" },
-    });
+    const sourceChat = makeChat(
+      "chat-bm",
+      [makeMessage("m1", "bookmarked"), makeMessage("m2", "plain", "char")],
+      {
+        bookmarks: ["m1", "m2"],
+        bookmarkNames: { m1: "User| hello", m2: "Char| hi" },
+      },
+    );
     const testChar = {
       chaId: "char-bm",
       type: "character",
@@ -274,11 +286,15 @@ describe("duplicateChat", () => {
   });
 
   it("rejects a loader that claims completion after returning fewer messages than expected", async () => {
-    const source = makeChat("chat-short-load", [makeMessage("recent", "recent")], {
-      messagesFullyLoaded: false,
-      messageTotal: 3,
-      detailsLoaded: true,
-    });
+    const source = makeChat(
+      "chat-short-load",
+      [makeMessage("recent", "recent")],
+      {
+        messagesFullyLoaded: false,
+        messageTotal: 3,
+        detailsLoaded: true,
+      },
+    );
     const testChar = {
       chaId: "char-short-load",
       type: "character",
@@ -335,7 +351,9 @@ describe("duplicateChat", () => {
 
   it("re-finds the source chat after async reordering and inserts beside it", async () => {
     const source = makeChat("chat-source-race", [makeMessage("s1", "source")]);
-    const other = makeChat("chat-other-race", [makeMessage("o1", "other", "char")]);
+    const other = makeChat("chat-other-race", [
+      makeMessage("o1", "other", "char"),
+    ]);
     const testChar = {
       chaId: "char-race",
       type: "character",
@@ -358,7 +376,6 @@ describe("duplicateChat", () => {
       duplicated?.id,
     ]);
   });
-
 });
 
 describe("messageStore unique ID handling in persistNewChats", () => {
@@ -399,7 +416,9 @@ describe("messageStore unique ID handling in persistNewChats", () => {
   });
 
   it("marks chat and chat manifest dirty so flushing commits to SQL storage for inactive character", async () => {
-    const sourceChat = makeChat("chat-inactive-1", [makeMessage("m1", "hello")]);
+    const sourceChat = makeChat("chat-inactive-1", [
+      makeMessage("m1", "hello"),
+    ]);
     const char1 = {
       chaId: "char-inactive-target",
       type: "character",
@@ -427,7 +446,9 @@ describe("messageStore unique ID handling in persistNewChats", () => {
     const chatCommit = mockStorage.commits.find(
       (candidate) =>
         candidate.chats.some((c) => c.id === duplicated!.id) ||
-        candidate.chatManifests.some((m) => m.characterId === "char-inactive-target"),
+        candidate.chatManifests.some(
+          (m) => m.characterId === "char-inactive-target",
+        ),
     );
     expect(chatCommit).toBeDefined();
     expect(chatCommit!.chats.some((c) => c.id === duplicated!.id)).toBe(true);

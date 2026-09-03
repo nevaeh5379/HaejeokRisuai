@@ -94,4 +94,3 @@ describe("Domain Registry and Contract", () => {
     expect(populated.pluginCustomStorage).toBeDefined();
   });
 });
-

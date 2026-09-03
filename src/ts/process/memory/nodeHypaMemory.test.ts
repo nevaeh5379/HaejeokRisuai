@@ -58,7 +58,10 @@ beforeEach(() => {
       model: "subModel",
     },
   });
-  mocks.continueSession.mockResolvedValue({ status: "done", result: "complete" });
+  mocks.continueSession.mockResolvedValue({
+    status: "done",
+    result: "complete",
+  });
 });
 
 test("keeps generation context through browser-side Node Hypa actions", async () => {

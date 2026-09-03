@@ -82,5 +82,4 @@ export async function requestOpenAI(
     arg,
     localNetworkOptions,
   );
-
 }

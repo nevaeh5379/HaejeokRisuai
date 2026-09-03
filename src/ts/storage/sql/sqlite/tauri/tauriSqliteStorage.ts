@@ -34,8 +34,10 @@ async function getSQL() {
  * database file in the app data directory. The Rust plugin handles
  * the native sqlite3 connection; this class issues SQL via the JS API.
  */
-export class TauriSqliteStorage extends NativeSqliteStorageBase
-  implements ISqlStorage {
+export class TauriSqliteStorage
+  extends NativeSqliteStorageBase
+  implements ISqlStorage
+{
   readonly backendKind = "tauri-sqlite" as const;
 
   private db: SqlDatabase | null = null;

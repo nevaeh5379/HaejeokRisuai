@@ -10,5 +10,8 @@ export interface ChatSendOptions {
 }
 
 export interface ChatExecutor {
-  execute(chatProcessIndex?: number, options?: ChatSendOptions): Promise<boolean>;
+  execute(
+    chatProcessIndex?: number,
+    options?: ChatSendOptions,
+  ): Promise<boolean>;
 }

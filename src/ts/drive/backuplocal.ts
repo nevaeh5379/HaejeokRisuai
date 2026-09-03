@@ -19,7 +19,10 @@ import {
 } from "../alert";
 import { LocalWriter, forageStorage } from "../globalApi.svelte";
 import { isCapacitor, isNodeServer, isTauri } from "src/ts/platform";
-import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/backup/risuSave";
+import {
+  decodeRisuSave,
+  encodeRisuSaveLegacyAsync,
+} from "../storage/backup/risuSave";
 import { normalizeDatabaseDefaults } from "../storage/database/databaseDefaults";
 import type {
   CanonicalDatabase,
@@ -385,7 +388,10 @@ async function writeLocalBackupInlays(writer: LocalWriter, label: string) {
       continue;
     }
     if (index === 0 || index === inlays.length - 1 || index % 8 === 0) {
-      alertProgress(`${label} (Saving inlays ${index + 1} / ${inlays.length})`, 88);
+      alertProgress(
+        `${label} (Saving inlays ${index + 1} / ${inlays.length})`,
+        88,
+      );
       await sleep(0);
     }
     await writer.writeBackup(name, await encodeInlayAssetBackup(asset));
@@ -441,59 +447,59 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   try {
     const auth = await nodeStorage.getCachedAuth();
     alertProgress(
-    mode === "compatible"
-      ? "Saving compatible local backup... (Starting server stream)"
-      : mode === "partial"
-        ? "Saving partial local backup... (Starting server stream)"
-        : "Saving HaejeokRisuAI local backup... (Starting server stream)",
-    1,
-  );
-  const response = await fetch(`/api/local-backup/export/jobs?mode=${mode}`, {
-    method: "POST",
-    headers: { "risu-auth": auth },
-  });
-  const body = (await response.json().catch(() => null)) as {
-    id?: string;
-    error?: string;
-  } | null;
-  if (!response.ok || !body?.id) {
-    throw new Error(
-      body?.error ?? `Local backup export failed (${response.status})`,
+      mode === "compatible"
+        ? "Saving compatible local backup... (Starting server stream)"
+        : mode === "partial"
+          ? "Saving partial local backup... (Starting server stream)"
+          : "Saving HaejeokRisuAI local backup... (Starting server stream)",
+      1,
     );
-  }
-  const completion = fetch(
-    `/api/local-backup/export/jobs/${encodeURIComponent(body.id)}`,
-    {
+    const response = await fetch(`/api/local-backup/export/jobs?mode=${mode}`, {
+      method: "POST",
       headers: { "risu-auth": auth },
-    },
-  );
-  const anchor = document.createElement("a");
-  anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
-  const dateStr = new Date().toISOString().slice(0, 10);
-  anchor.download =
-    mode === "compatible"
-      ? `risu_compatible_backup_${dateStr}.risubackup`
-      : mode === "partial"
-        ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
-        : `haejeokrisu_backup_${dateStr}.risubackup`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  alertProgress(
-    "Saving local backup... (Server is streaming directly to the download)",
-    50,
-  );
-  const completed = await completion;
-  const completedBody = (await completed.json().catch(() => null)) as {
-    status?: string;
-    error?: string;
-  } | null;
-  if (!completed.ok || completedBody?.status !== "complete") {
-    throw new Error(
-      completedBody?.error ??
-        `Local backup download failed (${completed.status})`,
+    });
+    const body = (await response.json().catch(() => null)) as {
+      id?: string;
+      error?: string;
+    } | null;
+    if (!response.ok || !body?.id) {
+      throw new Error(
+        body?.error ?? `Local backup export failed (${response.status})`,
+      );
+    }
+    const completion = fetch(
+      `/api/local-backup/export/jobs/${encodeURIComponent(body.id)}`,
+      {
+        headers: { "risu-auth": auth },
+      },
     );
-  }
+    const anchor = document.createElement("a");
+    anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    anchor.download =
+      mode === "compatible"
+        ? `risu_compatible_backup_${dateStr}.risubackup`
+        : mode === "partial"
+          ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
+          : `haejeokrisu_backup_${dateStr}.risubackup`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    alertProgress(
+      "Saving local backup... (Server is streaming directly to the download)",
+      50,
+    );
+    const completed = await completion;
+    const completedBody = (await completed.json().catch(() => null)) as {
+      status?: string;
+      error?: string;
+    } | null;
+    if (!completed.ok || completedBody?.status !== "complete") {
+      throw new Error(
+        completedBody?.error ??
+          `Local backup download failed (${completed.status})`,
+      );
+    }
     alertNormal("Success");
   } finally {
     if (mode === "native") {
@@ -1209,10 +1215,16 @@ async function restoreLocalBackupSource(
           entriesWritten++;
         } else if (result.status === "invalid") {
           invalidInlayEntries.push(inlayKey);
-          console.warn(`Skipping invalid inlay item ${inlayKey}:`, result.error);
+          console.warn(
+            `Skipping invalid inlay item ${inlayKey}:`,
+            result.error,
+          );
         } else {
           failedInlayWrites.push(inlayKey);
-          console.error(`Failed to store inlay item ${inlayKey}:`, result.error);
+          console.error(
+            `Failed to store inlay item ${inlayKey}:`,
+            result.error,
+          );
         }
         currentEntryName = "";
         return;

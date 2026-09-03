@@ -1,9 +1,9 @@
-'use strict';
+"use strict";
 
 function resolveRequestModel(request, settings) {
-  let aiModel = request.staticModel || (
-    request.mode === 'model' ? settings.primaryModel : settings.subModel
-  );
+  let aiModel =
+    request.staticModel ||
+    (request.mode === "model" ? settings.primaryModel : settings.subModel);
   if (settings.separateModelsForAxModels && !request.staticModel) {
     const separateModel = settings.separateModels?.[request.mode];
     if (separateModel) aiModel = separateModel;
@@ -17,13 +17,15 @@ function prepareProviderExecutionContext(request, settings, resolveModelInfo) {
   let customURL;
   let key;
 
-  if (aiModel === 'reverse_proxy') {
-    modelInfo.internalID = settings.reverseProxy?.requestModel || '';
+  if (aiModel === "reverse_proxy") {
+    modelInfo.internalID = settings.reverseProxy?.requestModel || "";
     modelInfo.format = settings.reverseProxy?.format ?? modelInfo.format;
     customURL = settings.reverseProxy?.url;
     key = settings.reverseProxy?.key;
-  } else if (aiModel.startsWith('xcustom:::')) {
-    const customModel = settings.customModels?.find((item) => item.id === aiModel);
+  } else if (aiModel.startsWith("xcustom:::")) {
+    const customModel = settings.customModels?.find(
+      (item) => item.id === aiModel,
+    );
     customURL = customModel?.url;
     key = customModel?.key;
   }
@@ -38,12 +40,17 @@ function prepareProviderExecutionContext(request, settings, resolveModelInfo) {
       : Boolean(settings.useStreaming && request.useStreaming),
     continue: request.continue ?? false,
     biasString: request.biasString ?? [],
-    multiGen: settings.genTime > 1 && aiModel.startsWith('gpt') &&
-      !request.continue && !request.noMultiGen,
+    multiGen:
+      settings.genTime > 1 &&
+      aiModel.startsWith("gpt") &&
+      !request.continue &&
+      !request.noMultiGen,
     extractJson: request.extractJson ?? settings.extractJson,
     customURL,
     key,
-    pluginBlocked: Boolean(request.blockPlugins && modelInfo.id?.startsWith('pluginmodel:::')),
+    pluginBlocked: Boolean(
+      request.blockPlugins && modelInfo.id?.startsWith("pluginmodel:::"),
+    ),
   };
 }
 

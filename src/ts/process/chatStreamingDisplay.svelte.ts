@@ -1,4 +1,8 @@
-import type { groupChat, character, StreamingDisplayOptimizationMode } from "../storage/database/schema";
+import type {
+  groupChat,
+  character,
+  StreamingDisplayOptimizationMode,
+} from "../storage/database/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { trimUntilPunctuation } from "../util";
@@ -66,7 +70,9 @@ async function writeDisplayResult(
   deferPostProcessing: boolean,
 ) {
   if (deferPostProcessing) {
-    targetMessage(options).data = options.reformatContent(options.prefix + result);
+    targetMessage(options).data = options.reformatContent(
+      options.prefix + result,
+    );
   } else {
     const processed = await processScriptFull(
       options.nowChatroom,
@@ -271,7 +277,9 @@ function resetStreamingState(options: StreamDisplayOptions) {
   void options.reader.cancel().catch(() => {});
 }
 
-function createStreamDisplayState(options: StreamDisplayOptions): StreamDisplayState {
+function createStreamDisplayState(
+  options: StreamDisplayOptions,
+): StreamDisplayState {
   return {
     result: "",
     emoChanged: false,
@@ -283,7 +291,10 @@ function createStreamDisplayState(options: StreamDisplayOptions): StreamDisplayS
   };
 }
 
-function createAbortReader(options: StreamDisplayOptions, state: StreamDisplayState) {
+function createAbortReader(
+  options: StreamDisplayOptions,
+  state: StreamDisplayState,
+) {
   return () => {
     state.streamAborted = true;
     void options.reader.cancel().catch(() => {});

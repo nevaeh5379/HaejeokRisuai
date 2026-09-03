@@ -367,7 +367,9 @@ function getResponsesRequestModel(arg: RequestDataArgumentExtended): string {
         db.nanogptSubRequestModel,
         arg.mode,
         modeOverride?.nanogptRequestModel,
-      ) || arg.modelInfo.internalID || arg.aiModel
+      ) ||
+      arg.modelInfo.internalID ||
+      arg.aiModel
     );
   }
   return arg.modelInfo.internalID || arg.aiModel || "gpt-4.1";
@@ -600,7 +602,11 @@ function extractResponsesText(
     result = `<Thoughts>\n\n${thoughts.join("\n\n")}\n\n</Thoughts>\n${result}`;
   }
   if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
-    return extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
+    return extractJSON(
+      result,
+      arg.extractJson,
+      resolveRequestParserContext(arg),
+    );
   }
 
   return result;
@@ -648,9 +654,14 @@ async function appendResponsesToolOutputs(
       if (!tool) {
         output = "No tool found with name: " + toolCall.name;
       } else {
-        const used = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
-          (m) => m.type === "text",
-        );
+        const used = (
+          await callTool(
+            tool.name,
+            parsed,
+            tool.mcpURL,
+            resolveRequestToolContext(arg),
+          )
+        ).filter((m) => m.type === "text");
         if (used.length > 0) {
           output = used[0].text;
           if (arg.rememberToolUsage) {
@@ -694,9 +705,10 @@ async function requestHTTPResponsesAPI(
 ): Promise<requestDataResponse> {
   const db = settingsStore.state;
   const externalBody = toExternalResponsesBody(body);
-  let nodeTransport:
-    | { format: LLMFormat; payload: Record<string, unknown> }
-    | null = null;
+  let nodeTransport: {
+    format: LLMFormat;
+    payload: Record<string, unknown>;
+  } | null = null;
   if (
     requestURL === DEFAULT_OPENAI_RESPONSES_URL &&
     arg.modelInfo.format === LLMFormat.OpenAIResponseAPI
@@ -843,8 +855,15 @@ function getResponsesTranStream(
     if (reasoning) {
       result = `<Thoughts>\n\n${reasoning}\n\n</Thoughts>\n${result}`;
     }
-    if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
-      result = extractJSON(result, arg.extractJson, resolveRequestParserContext(arg));
+    if (
+      arg.extractJson &&
+      (presetStore.state.jsonSchemaEnabled || arg.schema)
+    ) {
+      result = extractJSON(
+        result,
+        arg.extractJson,
+        resolveRequestParserContext(arg),
+      );
     }
     const chunk: Record<string, string> = { "0": error || result };
     if (Object.keys(calls).length > 0) {

@@ -133,10 +133,7 @@ export async function loadData() {
       // ── Step 7: Plugins, format checks, state updates ─────────────
       LoadingStatusState.text = "Loading chat runtime...";
       const runtimeSettingsReady = initRuntimeSettings(storage);
-      await Promise.all([
-        runtimeSettingsReady,
-        serviceWorkerReady,
-      ]);
+      await Promise.all([runtimeSettingsReady, serviceWorkerReady]);
 
       await persistStorageIfStandalone();
       LoadingStatusState.text = "Checking For Format Update...";

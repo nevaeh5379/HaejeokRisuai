@@ -55,7 +55,8 @@ export class CapacitorStorage {
             recursive: true,
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           if (!/exist/i.test(message)) throw error;
         }
         this.initialized = true;

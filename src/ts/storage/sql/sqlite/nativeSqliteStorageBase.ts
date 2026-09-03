@@ -241,7 +241,9 @@ export abstract class NativeSqliteStorageBase {
     existedBeforeSchemaApply: boolean,
   ): Promise<void> {
     if (!(await this.hasLastMessageTimeTrigger())) {
-      throw new Error("SQLite last_message_time trigger was not installed by the schema");
+      throw new Error(
+        "SQLite last_message_time trigger was not installed by the schema",
+      );
     }
     if (!existedBeforeSchemaApply) {
       await this.executeNativeTransaction(null, [
@@ -297,7 +299,11 @@ export abstract class NativeSqliteStorageBase {
   private rebuildSettingRows(
     rows: Record<string, unknown>[],
     deferredKeyList: readonly string[] = [],
-  ): { values: Map<string, unknown>; keyCount: number; deferredKeys: Set<string> } {
+  ): {
+    values: Map<string, unknown>;
+    keyCount: number;
+    deferredKeys: Set<string>;
+  } {
     const deferredKeys = new Set(deferredKeyList);
     const grouped = new Map<string, Record<string, unknown>[]>();
     const rootRows = new Map<string, Record<string, unknown>>();
@@ -358,7 +364,6 @@ export abstract class NativeSqliteStorageBase {
     return { values, keyCount: grouped.size, deferredKeys };
   }
 
-
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
     if (!this._enabled) {
       const ok = await this.init();
@@ -394,23 +399,28 @@ export abstract class NativeSqliteStorageBase {
       }
     }
     const characters = (characterRows as Array<Record<string, unknown>>).map(
-      (row) => ({
-        chaId: String(row.id ?? ""),
-        type: (row.kind as "character" | "group") ?? "character",
-        name: String(row.name ?? ""),
-        image: String(row.image ?? ""),
-        trashTime: (row.trash_time as number | null) ?? undefined,
-        creationDate: (row.creation_time as number | null) ?? undefined,
-        modificationDate: (row.modification_time as number | null) ?? undefined,
-        lastInteraction: (row.last_interaction_time as number | null) ?? undefined,
-        detailsLoaded: false,
-        chats: [],
-        chatPage: 0,
-      }) as unknown as character | groupChat,
+      (row) =>
+        ({
+          chaId: String(row.id ?? ""),
+          type: (row.kind as "character" | "group") ?? "character",
+          name: String(row.name ?? ""),
+          image: String(row.image ?? ""),
+          trashTime: (row.trash_time as number | null) ?? undefined,
+          creationDate: (row.creation_time as number | null) ?? undefined,
+          modificationDate:
+            (row.modification_time as number | null) ?? undefined,
+          lastInteraction:
+            (row.last_interaction_time as number | null) ?? undefined,
+          detailsLoaded: false,
+          chats: [],
+          chatPage: 0,
+        }) as unknown as character | groupChat,
     );
     const metaRow = metaRows[0] as { initialized?: number } | undefined;
     const initialized =
-      metaRow?.initialized === 1 || characters.length > 0 || rebuilt.keyCount > 0;
+      metaRow?.initialized === 1 ||
+      characters.length > 0 ||
+      rebuilt.keyCount > 0;
     return {
       status: initialized ? "ready" : "empty",
       revision: this.revision,
@@ -491,13 +501,16 @@ export abstract class NativeSqliteStorageBase {
       )) ?? {}) as character | groupChat;
       fullChar.chaId = row.id;
       fullChar.name = row.name ?? fullChar.name ?? "";
-      fullChar.type = (row.kind as "character" | "group") ?? fullChar.type ?? "character";
+      fullChar.type =
+        (row.kind as "character" | "group") ?? fullChar.type ?? "character";
       fullChar.image = row.image ?? fullChar.image ?? "";
       fullChar.trashTime = row.trash_time ?? fullChar.trashTime;
-      fullChar.lastInteraction = row.last_interaction_time ?? fullChar.lastInteraction;
+      fullChar.lastInteraction =
+        row.last_interaction_time ?? fullChar.lastInteraction;
       if (fullChar.type === "character") {
         fullChar.creation_date = row.creation_time ?? fullChar.creation_date;
-        fullChar.modification_date = row.modification_time ?? fullChar.modification_date;
+        fullChar.modification_date =
+          row.modification_time ?? fullChar.modification_date;
       }
       fullChar.detailsLoaded = true;
       const chatRows = await this.selectRows<{
@@ -882,29 +895,30 @@ export abstract class NativeSqliteStorageBase {
     // rows. Hydrating every chat's extension nodes here would defeat lazy
     // loading on character switches. Keep the three independent reads in one
     // backend batch so Capacitor crosses the JS/native bridge only once.
-    const [characterRows, characterNodeRows, chatRowsRaw] = await this.selectRowSets([
-      {
-        sql: "SELECT id FROM characters WHERE id = ?",
-        bind: [characterId],
-      },
-      {
-        sql: `SELECT node_id, parent_node_id, node_order, object_key,
+    const [characterRows, characterNodeRows, chatRowsRaw] =
+      await this.selectRowSets([
+        {
+          sql: "SELECT id FROM characters WHERE id = ?",
+          bind: [characterId],
+        },
+        {
+          sql: `SELECT node_id, parent_node_id, node_order, object_key,
                      object_key_encoded, value_type, text_value, encoded_text_value,
                      number_value, boolean_value
                 FROM character_extension_nodes
                WHERE character_id = ?
                ORDER BY node_id`,
-        bind: [characterId],
-      },
-      {
-        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-        bind: [characterId],
-      },
-    ]);
+          bind: [characterId],
+        },
+        {
+          sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+          bind: [characterId],
+        },
+      ]);
     if (characterRows.length === 0) return null;
-    const fullChar = (characterNodeRows.length
-      ? rebuildRelationalValue(characterNodeRows)
-      : {}) as any;
+    const fullChar = (
+      characterNodeRows.length ? rebuildRelationalValue(characterNodeRows) : {}
+    ) as any;
     const chatRows = chatRowsRaw as Array<{
       id: string;
       name: string;
@@ -942,7 +956,14 @@ export abstract class NativeSqliteStorageBase {
     // count, and recent messages share one native query batch.
     const messageQuery = buildBranchMessageRowsQuery(chatId, undefined, limit);
     const totalQuery = buildBranchMessageCountQuery(chatId);
-    const [chatRows, chatNodeRows, totalRows, messageRows, activeBranchRows, branchCountRows] = await this.selectRowSets([
+    const [
+      chatRows,
+      chatNodeRows,
+      totalRows,
+      messageRows,
+      activeBranchRows,
+      branchCountRows,
+    ] = await this.selectRowSets([
       {
         sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
         bind: [chatId],
@@ -978,15 +999,16 @@ export abstract class NativeSqliteStorageBase {
       | undefined;
     if (!chatRow) return null;
     const activeBranch = activeBranchRows[0] as
-      | { branch_id: string }
-      | undefined;
+      { branch_id: string } | undefined;
     const branchCount = Number(
       (branchCountRows[0] as { total?: number } | undefined)?.total ?? 0,
     );
-    const chatData = (chatNodeRows.length
-      ? rebuildRelationalValue(chatNodeRows)
-      : {}) as any;
-    if (await this.migrateLegacyBranchGraphIfNeeded(chatId, chatData, branchCount)) {
+    const chatData = (
+      chatNodeRows.length ? rebuildRelationalValue(chatNodeRows) : {}
+    ) as any;
+    if (
+      await this.migrateLegacyBranchGraphIfNeeded(chatId, chatData, branchCount)
+    ) {
       return this.loadChat(chatId, options);
     }
     if (!activeBranch) {
@@ -1001,7 +1023,9 @@ export abstract class NativeSqliteStorageBase {
     chatData.activeBranchId = activeBranch?.branch_id;
     if (activeBranch) delete chatData.branchState;
 
-    const total = Number((totalRows[0] as { total?: number } | undefined)?.total ?? 0);
+    const total = Number(
+      (totalRows[0] as { total?: number } | undefined)?.total ?? 0,
+    );
     chatData.message = rebuildMessageRows(messageRows);
     const offset = Math.max(0, total - chatData.message.length);
     chatData.messageOffset = offset;
@@ -1064,7 +1088,9 @@ export abstract class NativeSqliteStorageBase {
     return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
   }
 
-  private async loadLegacyChatExtension(chatId: string): Promise<Record<string, any>> {
+  private async loadLegacyChatExtension(
+    chatId: string,
+  ): Promise<Record<string, any>> {
     const rows = await this.selectRows(
       `SELECT node_id, parent_node_id, node_order, object_key,
               object_key_encoded, value_type, text_value, encoded_text_value,
@@ -1072,7 +1098,10 @@ export abstract class NativeSqliteStorageBase {
          FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
       [chatId],
     );
-    return (rows.length ? rebuildRelationalValue(rows) : {}) as Record<string, any>;
+    return (rows.length ? rebuildRelationalValue(rows) : {}) as Record<
+      string,
+      any
+    >;
   }
 
   private async migrateLegacyBranchGraphIfNeeded(
@@ -1080,23 +1109,41 @@ export abstract class NativeSqliteStorageBase {
     knownChatData?: Record<string, any>,
     knownBranchCount?: number,
   ): Promise<boolean> {
-    const branchCount = knownBranchCount ?? Number((await this.selectOne<{ total: number }>(
-      "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-      [chatId],
-    ))?.total ?? 0);
+    const branchCount =
+      knownBranchCount ??
+      Number(
+        (
+          await this.selectOne<{ total: number }>(
+            "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+            [chatId],
+          )
+        )?.total ?? 0,
+      );
     if (branchCount > 1) return false;
-    const chatData = knownChatData ?? await this.loadLegacyChatExtension(chatId);
-    if (!Array.isArray(chatData.branchState?.branches) || chatData.branchState.branches.length <= 1) {
+    const chatData =
+      knownChatData ?? (await this.loadLegacyChatExtension(chatId));
+    if (
+      !Array.isArray(chatData.branchState?.branches) ||
+      chatData.branchState.branches.length <= 1
+    ) {
       return false;
     }
     return this.writeQueue.run(async () => {
-      const currentCount = Number((await this.selectOne<{ total: number }>(
-        "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-        [chatId],
-      ))?.total ?? 0);
+      const currentCount = Number(
+        (
+          await this.selectOne<{ total: number }>(
+            "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+            [chatId],
+          )
+        )?.total ?? 0,
+      );
       if (currentCount > 1) return false;
       const plan = buildLegacyBranchMigrationPlan(
-        { ...chatData, id: chatId, message: await this.loadLinearMessages(chatId) },
+        {
+          ...chatData,
+          id: chatId,
+          message: await this.loadLinearMessages(chatId),
+        },
         uuidv4,
       );
       if (!plan) return false;
@@ -1131,7 +1178,9 @@ export abstract class NativeSqliteStorageBase {
 
   async loadChatBranchGraph(chatId: string) {
     await this.ensureBranchGraph(chatId);
-    const branchRows = await this.selectRows<SqliteChatBranchRow & { active_branch_id?: string }>(
+    const branchRows = await this.selectRows<
+      SqliteChatBranchRow & { active_branch_id?: string }
+    >(
       `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
               branch.head_message_id, branch.reason, branch.created_at,
               active.branch_id AS active_branch_id
@@ -1141,14 +1190,20 @@ export abstract class NativeSqliteStorageBase {
       [chatId],
     );
     const graphQuery = buildBranchGraphRowsQuery(chatId);
-    const graphRows = await this.selectRows<Record<string, unknown>>(graphQuery.sql, graphQuery.bind);
+    const graphRows = await this.selectRows<Record<string, unknown>>(
+      graphQuery.sql,
+      graphQuery.bind,
+    );
     return {
       branches: branchRows.map(mapSqliteChatBranchRow),
       activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
       messages: rebuildBranchGraphMessages(graphRows),
       links: graphRows.map((row) => ({
         messageId: String(row.message_id),
-        parentMessageId: row.graph_parent_message_id == null ? undefined : String(row.graph_parent_message_id),
+        parentMessageId:
+          row.graph_parent_message_id == null
+            ? undefined
+            : String(row.graph_parent_message_id),
         originBranchId: String(row.graph_origin_branch_id),
       })),
     };
@@ -1168,7 +1223,11 @@ export abstract class NativeSqliteStorageBase {
       chatId,
       branchId,
       limit,
-      options?.mode === "generation" ? "generation" : options?.mode === "graph" ? "graph" : "full",
+      options?.mode === "generation"
+        ? "generation"
+        : options?.mode === "graph"
+          ? "graph"
+          : "full",
     );
     return rebuildMessageRows(await this.selectRows(query.sql, query.bind));
   }
@@ -1381,8 +1440,7 @@ export abstract class NativeSqliteStorageBase {
     if (rows.length === 0) {
       return (
         ((await this.loadSettingValue("modules")) as
-          | RisuModule[]
-          | undefined) ?? []
+          RisuModule[] | undefined) ?? []
       );
     }
     const nodeRows = await this.selectRows(
@@ -1427,7 +1485,9 @@ export abstract class NativeSqliteStorageBase {
     );
   }
 
-  async loadPlugins(options?: { enabledOnly?: boolean }): Promise<any[] | null> {
+  async loadPlugins(options?: {
+    enabledOnly?: boolean;
+  }): Promise<any[] | null> {
     const plugins =
       ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
     return options?.enabledOnly && plugins

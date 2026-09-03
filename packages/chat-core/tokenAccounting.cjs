@@ -1,8 +1,8 @@
-'use strict';
+"use strict";
 
 function calculateMultimodalTokenCost(data, options) {
   if (!options.supportsInlayImage) return options.chatAdditionalTokens;
-  if (options.visionQuality === 'low') return 87;
+  if (options.visionQuality === "low") return 87;
 
   let encoded = options.chatAdditionalTokens;
   let height = data.height ?? 0;
@@ -32,12 +32,13 @@ async function countChatTokensDetailed(chats, countTexts, options) {
   for (const chat of chats) {
     texts.push(chat.content);
     if (chat.name && options.useName) texts.push(chat.name);
-    if (options.countThoughts && chat.thoughts?.length) texts.push(...chat.thoughts);
+    if (options.countThoughts && chat.thoughts?.length)
+      texts.push(...chat.thoughts);
   }
 
   const counts = await countTexts(texts);
   if (!Array.isArray(counts) || counts.length !== texts.length) {
-    throw new TypeError('Text token counter returned an invalid count array');
+    throw new TypeError("Text token counter returned an invalid count array");
   }
 
   let countIndex = 0;
@@ -46,7 +47,8 @@ async function countChatTokensDetailed(chats, countTexts, options) {
     let encoded = counts[countIndex++] + options.chatAdditionalTokens;
     if (chat.name && options.useName) encoded += counts[countIndex++] + 1;
     if (options.countThoughts && chat.thoughts?.length) {
-      for (let i = 0; i < chat.thoughts.length; i++) encoded += counts[countIndex++] + 1;
+      for (let i = 0; i < chat.thoughts.length; i++)
+        encoded += counts[countIndex++] + 1;
     }
     for (const multimodal of chat.multimodals ?? []) {
       encoded += calculateMultimodalTokenCost(multimodal, options);

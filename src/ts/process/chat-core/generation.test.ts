@@ -9,15 +9,16 @@ import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 type Response = { type: "success"; result: string; model?: string };
 type Character = { id: string };
 
-function runtime(
-  counts: number[],
-): ChatGenerationRuntime<Character, Response> {
+function runtime(counts: number[]): ChatGenerationRuntime<Character, Response> {
   return {
     tokenizeChatsDetailed: vi.fn(async () => counts),
     getGenerationSettings: () => ({ maxResponseTokens: 8 }),
     createGenerationId: () => "generation-id",
     getGenerationModel: (model) => model ?? "default-model",
-    requestModel: vi.fn(async () => ({ type: "success" as const, result: "ok" })),
+    requestModel: vi.fn(async () => ({
+      type: "success" as const,
+      result: "ok",
+    })),
     registerGenerationContext: vi.fn(),
     unregisterGenerationContext: vi.fn(),
   };
@@ -44,7 +45,11 @@ describe("createChatGenerationPlan", () => {
       generationId: "generation-id",
       generationModel: "default-model",
     });
-    if (plan.ok) expect(plan.formated.map((item) => item.content)).toEqual(["fixed", "keep"]);
+    if (plan.ok)
+      expect(plan.formated.map((item) => item.content)).toEqual([
+        "fixed",
+        "keep",
+      ]);
   });
 
   it("reports overflow when non-removable prompts cannot fit", async () => {
@@ -102,6 +107,8 @@ describe("executeChatModelRequest", () => {
       }),
       expect.any(AbortSignal),
     );
-    expect(rt.unregisterGenerationContext).toHaveBeenCalledWith("generation-id");
+    expect(rt.unregisterGenerationContext).toHaveBeenCalledWith(
+      "generation-id",
+    );
   });
 });

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
-import { isSqlitePragmaStatement, splitSqliteStatements } from "./sqliteSchemaStatements";
+import {
+  isSqlitePragmaStatement,
+  splitSqliteStatements,
+} from "./sqliteSchemaStatements";
 
 describe("splitSqliteStatements", () => {
   it("keeps trigger bodies and quoted/comment semicolons intact", () => {
@@ -24,10 +27,12 @@ describe("splitSqliteStatements", () => {
   });
 
   it("recognizes PRAGMA statements after leading comments", () => {
-    expect(isSqlitePragmaStatement("-- comment\nPRAGMA foreign_keys = ON;"))
-      .toBe(true);
-    expect(isSqlitePragmaStatement("/* comment */ CREATE TABLE x (id INTEGER);"))
-      .toBe(false);
+    expect(
+      isSqlitePragmaStatement("-- comment\nPRAGMA foreign_keys = ON;"),
+    ).toBe(true);
+    expect(
+      isSqlitePragmaStatement("/* comment */ CREATE TABLE x (id INTEGER);"),
+    ).toBe(false);
   });
 
   it("splits the production schema into executable statements", () => {
@@ -36,7 +41,15 @@ describe("splitSqliteStatements", () => {
       /^\s*CREATE\s+TRIGGER\b/i.test(statement),
     );
     expect(triggers).toHaveLength(3);
-    expect(triggers.every((statement) => /\bBEGIN\b[\s\S]*\bEND\s*;?\s*$/i.test(statement))).toBe(true);
-    expect(statements.some((statement) => statement.includes("CREATE TABLE IF NOT EXISTS messages"))).toBe(true);
+    expect(
+      triggers.every((statement) =>
+        /\bBEGIN\b[\s\S]*\bEND\s*;?\s*$/i.test(statement),
+      ),
+    ).toBe(true);
+    expect(
+      statements.some((statement) =>
+        statement.includes("CREATE TABLE IF NOT EXISTS messages"),
+      ),
+    ).toBe(true);
   });
 });

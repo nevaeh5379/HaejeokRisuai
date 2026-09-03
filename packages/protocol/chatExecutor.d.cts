@@ -25,9 +25,9 @@ export type NodeChatGenerationPlan =
     }
   | { ok: false; requiredTokens: number };
 
-export function normalizeChatPlanRequest(input: unknown):
-  | { value: NodeChatPlanRequest }
-  | { error: string };
+export function normalizeChatPlanRequest(
+  input: unknown,
+): { value: NodeChatPlanRequest } | { error: string };
 
 export interface NodeChatContinuationRequest {
   result: string;
@@ -43,6 +43,6 @@ export interface NodeChatContinuationDecision {
   reason: "minimum-tokens" | "incomplete" | null;
 }
 
-export function normalizeChatContinuationRequest(input: unknown):
-  | { value: NodeChatContinuationRequest }
-  | { error: string };
+export function normalizeChatContinuationRequest(
+  input: unknown,
+): { value: NodeChatContinuationRequest } | { error: string };

@@ -1,10 +1,10 @@
-'use strict';
+"use strict";
 
 const {
   containsBannedCharacterSet,
   decideFailedRequestRetry,
   shouldFallbackOnBlankResponse,
-} = require('./requestPolicy.cjs');
+} = require("./requestPolicy.cjs");
 
 function hasUsableFallbackAfter(fallbackModels, fallbackIndex) {
   for (let index = fallbackIndex + 1; index < fallbackModels.length; index++) {
@@ -15,8 +15,9 @@ function hasUsableFallbackAfter(fallbackModels, fallbackIndex) {
 
 function rejectedBannedResponse(response) {
   return {
-    type: 'fail',
-    result: 'Response contained a banned character set after exhausting retries.',
+    type: "fail",
+    result:
+      "Response contained a banned character set after exhausting retries.",
     noRetry: true,
     model: response.model,
   };
@@ -28,7 +29,11 @@ async function executeChatRequestFallbacks(options, runtime) {
     : [];
   let lastResponse;
 
-  for (let fallbackIndex = 0; fallbackIndex < fallbackModels.length; fallbackIndex++) {
+  for (
+    let fallbackIndex = 0;
+    fallbackIndex < fallbackModels.length;
+    fallbackIndex++
+  ) {
     const fallbackModel = fallbackModels[fallbackIndex];
     if (fallbackIndex !== 0 && !fallbackModel) continue;
 
@@ -41,7 +46,7 @@ async function executeChatRequestFallbacks(options, runtime) {
 
     while (true) {
       if (runtime.isAborted?.()) {
-        return { type: 'fail', result: 'Aborted' };
+        return { type: "fail", result: "Aborted" };
       }
 
       const context = {
@@ -54,11 +59,11 @@ async function executeChatRequestFallbacks(options, runtime) {
       lastResponse = response;
 
       if (runtime.isAborted?.()) {
-        return { type: 'fail', result: 'Aborted' };
+        return { type: "fail", result: "Aborted" };
       }
 
       if (
-        response.type === 'success' &&
+        response.type === "success" &&
         containsBannedCharacterSet(response.result, options.bannedCharacterSets)
       ) {
         retryCount += 1;
@@ -78,7 +83,7 @@ async function executeChatRequestFallbacks(options, runtime) {
         break;
       }
 
-      if (response.type !== 'fail' || response.noRetry) {
+      if (response.type !== "fail" || response.noRetry) {
         const usedModel = fallbackModel || response.model;
         return usedModel ? { ...response, model: usedModel } : response;
       }
@@ -95,12 +100,12 @@ async function executeChatRequestFallbacks(options, runtime) {
       if (retryDecision.delayMs > 0) {
         await (runtime.sleep ?? defaultSleep)(retryDecision.delayMs);
       }
-      if (retryDecision.action === 'return') return response;
-      if (retryDecision.action === 'fallback') break;
+      if (retryDecision.action === "return") return response;
+      if (retryDecision.action === "fallback") break;
     }
   }
 
-  return lastResponse ?? { type: 'fail', result: 'All models failed' };
+  return lastResponse ?? { type: "fail", result: "All models failed" };
 }
 
 function defaultSleep(delayMs) {

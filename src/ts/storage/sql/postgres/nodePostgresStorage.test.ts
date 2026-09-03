@@ -88,23 +88,26 @@ describe("NodePostgresStorage browser client", () => {
 
   it("keeps SQL disabled in the browser while the server is in recovery mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        enabled: true,
-        configured: true,
-        managedByEnvironment: false,
-        vendor: "postgres",
-        params: { connectionString: "postgresql://db/risuai", poolMax: 10 },
-        storedVendor: "postgres",
-        revision: null,
-        initialized: false,
-        runtime: {
-          status: "degraded",
+      new Response(
+        JSON.stringify({
+          enabled: true,
+          configured: true,
+          managedByEnvironment: false,
           vendor: "postgres",
-          error: { code: "28P01", message: "authentication failed" },
-          attemptStartedAt: "2026-08-24T00:00:00.000Z",
-          readyAt: null,
-        },
-      }), { status: 200, headers: { "content-type": "application/json" } }),
+          params: { connectionString: "postgresql://db/risuai", poolMax: 10 },
+          storedVendor: "postgres",
+          revision: null,
+          initialized: false,
+          runtime: {
+            status: "degraded",
+            vendor: "postgres",
+            error: { code: "28P01", message: "authentication failed" },
+            attemptStartedAt: "2026-08-24T00:00:00.000Z",
+            readyAt: null,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -116,18 +119,21 @@ describe("NodePostgresStorage browser client", () => {
 
   it("retries the configured SQL connection through the recovery endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        success: true,
-        enabled: true,
-        configured: true,
-        managedByEnvironment: false,
-        vendor: "postgres",
-        params: { connectionString: "postgresql://db/risuai", poolMax: 10 },
-        storedVendor: "postgres",
-        revision: 7,
-        initialized: true,
-        runtime: { status: "ready", vendor: "postgres", error: null },
-      }), { status: 200, headers: { "content-type": "application/json" } }),
+      new Response(
+        JSON.stringify({
+          success: true,
+          enabled: true,
+          configured: true,
+          managedByEnvironment: false,
+          vendor: "postgres",
+          params: { connectionString: "postgresql://db/risuai", poolMax: 10 },
+          storedVendor: "postgres",
+          revision: 7,
+          initialized: true,
+          runtime: { status: "ready", vendor: "postgres", error: null },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -185,7 +191,10 @@ describe("NodePostgresStorage browser client", () => {
           enabled: true,
           configured: true,
           runtime: { status: "ready", vendor: "postgres", error: null },
-          params: { connectionString: "postgresql://remote/risuai", poolMax: 10 },
+          params: {
+            connectionString: "postgresql://remote/risuai",
+            poolMax: 10,
+          },
           storedVendor: "postgres",
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -567,13 +576,20 @@ describe("NodePostgresStorage browser client", () => {
     const storage = new NodePostgresStorage(async () => "test-auth");
     const startup = await storage.loadStartupData();
     expect(startup?.settings.theme).toBe("dark");
-    expect(Object.prototype.hasOwnProperty.call(startup?.settings ?? {}, "username")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(startup?.settings ?? {}, "username"),
+    ).toBe(false);
     expect(startup?.characters).toEqual([]);
     expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/startup");
 
     const snapshot = await storage.exportDatabaseSnapshot();
     expect(snapshot?.database?.personas[0]?.name).toBe("test-user");
-    expect(Object.prototype.hasOwnProperty.call(snapshot?.database ?? {}, "username")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        snapshot?.database ?? {},
+        "username",
+      ),
+    ).toBe(false);
     expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/export");
   });
 
@@ -699,17 +715,53 @@ describe("NodePostgresStorage browser client", () => {
   it("uses persistent branch endpoints for remote SQL storage", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ branches: [{
-        id: "root", chatId: "chat-123", reason: "root", createdAt: 0,
-      }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ messages: [{
-        chatId: "msg-1", role: "user", data: "hello",
-      }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ branch: {
-        id: "reroll-1", chatId: "chat-123", parentBranchId: "root",
-        forkMessageId: "msg-1", reason: "reroll", createdAt: 123,
-      } }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branches: [
+              {
+                id: "root",
+                chatId: "chat-123",
+                reason: "root",
+                createdAt: 0,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            messages: [
+              {
+                chatId: "msg-1",
+                role: "user",
+                data: "hello",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branch: {
+              id: "reroll-1",
+              chatId: "chat-123",
+              parentBranchId: "root",
+              forkMessageId: "msg-1",
+              reason: "reroll",
+              createdAt: 123,
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true }), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const storage = new NodePostgresStorage(async () => "test-auth");
     (storage as any).status = "enabled";
@@ -732,11 +784,15 @@ describe("NodePostgresStorage browser client", () => {
     expect(branches[0]?.id).toBe("root");
     expect(messages[0]?.chatId).toBe("msg-1");
     expect(created.id).toBe("reroll-1");
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/chats/chat-123/branches");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/chats/chat-123/branches",
+    );
     expect(fetchMock.mock.calls[1][0]).toBe(
       "/api/database-v2/chats/chat-123/branches/root/messages?limit=12&mode=generation",
     );
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/database-v2/chats/chat-123/branches");
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      "/api/database-v2/chats/chat-123/branches",
+    );
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "POST" });
     expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toEqual({
       id: "reroll-1",
@@ -753,19 +809,31 @@ describe("NodePostgresStorage browser client", () => {
 
   it("loads the persistent branch graph through one batch endpoint", async () => {
     const graph = {
-      branches: [{ id: "root", chatId: "chat-123", reason: "root", createdAt: 0, headMessageId: "msg-1" }],
+      branches: [
+        {
+          id: "root",
+          chatId: "chat-123",
+          reason: "root",
+          createdAt: 0,
+          headMessageId: "msg-1",
+        },
+      ],
       activeBranchId: "root",
       messages: [{ chatId: "msg-1", role: "user", data: "hello" }],
       links: [{ messageId: "msg-1", originBranchId: "root" }],
     };
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ graph }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ graph }), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const storage = new NodePostgresStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
-    await expect(storage.loadChatBranchGraph("chat-123")).resolves.toEqual(graph);
+    await expect(storage.loadChatBranchGraph("chat-123")).resolves.toEqual(
+      graph,
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/database-v2/chats/chat-123/branches/graph",
@@ -914,7 +982,9 @@ describe("NodePostgresStorage browser client", () => {
 
     const storage = new NodePostgresStorage(async () => "test-auth");
     const result = await storage.loadStartupData();
-    expect(Object.prototype.hasOwnProperty.call(result?.settings ?? {}, "username")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(result?.settings ?? {}, "username"),
+    ).toBe(false);
     expect(result?.characters).toEqual([]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -992,7 +1062,6 @@ describe("NodePostgresStorage browser client", () => {
     });
   });
 });
-
 
 describe("NodePostgresStorage concurrent commit handling", () => {
   beforeEach(() => {

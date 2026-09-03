@@ -1,19 +1,19 @@
-'use strict';
+"use strict";
 
 const NANOGPT_TRANSPORT_URLS = Object.freeze({
   chat: Object.freeze({
-    standard: 'https://nano-gpt.com/api/v1/chat/completions',
-    subscription: 'https://nano-gpt.com/api/subscription/v1/chat/completions',
+    standard: "https://nano-gpt.com/api/v1/chat/completions",
+    subscription: "https://nano-gpt.com/api/subscription/v1/chat/completions",
   }),
   responses: Object.freeze({
-    standard: 'https://nano-gpt.com/api/v1/responses',
-    subscription: 'https://nano-gpt.com/api/subscription/v1/responses',
+    standard: "https://nano-gpt.com/api/v1/responses",
+    subscription: "https://nano-gpt.com/api/subscription/v1/responses",
   }),
   messages: Object.freeze({
-    standard: 'https://nano-gpt.com/api/v1/messages',
+    standard: "https://nano-gpt.com/api/v1/messages",
   }),
   legacy: Object.freeze({
-    standard: 'https://nano-gpt.com/api/v1/completions',
+    standard: "https://nano-gpt.com/api/v1/completions",
   }),
 });
 

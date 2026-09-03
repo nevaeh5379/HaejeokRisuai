@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 const { resolveLoreEntries } = require("./loreResolve.cjs") as {
-  resolveLoreEntries: (messages: unknown[], entries: unknown[], options?: unknown) => {
+  resolveLoreEntries: (
+    messages: unknown[],
+    entries: unknown[],
+    options?: unknown,
+  ) => {
     activatedIndexes: number[];
     logs: Array<{ activated: string }>;
   };
@@ -37,7 +41,10 @@ describe("resolveLoreEntries", () => {
     );
 
     expect(result.activatedIndexes).toEqual([0, 1]);
-    expect(result.logs.map((item) => item.activated)).toEqual(["moon", "dragon"]);
+    expect(result.logs.map((item) => item.activated)).toEqual([
+      "moon",
+      "dragon",
+    ]);
   });
 
   it("respects no-recursive-search entries", () => {
@@ -52,5 +59,4 @@ describe("resolveLoreEntries", () => {
     });
     expect(result.activatedIndexes).toEqual([0]);
   });
-
 });

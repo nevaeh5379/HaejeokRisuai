@@ -5,10 +5,17 @@ import { isCapacitor, isTauri, isNodeServer } from "../../platform";
 
 let storageSingleton: ISqlStorage | null = null;
 
-export type SqlBranchStorage = ISqlStorage & Required<Pick<
-  ISqlStorage,
-  "listChatBranches" | "loadChatBranchGraph" | "loadBranchMessages" | "createChatBranch" | "activateChatBranch"
->>;
+export type SqlBranchStorage = ISqlStorage &
+  Required<
+    Pick<
+      ISqlStorage,
+      | "listChatBranches"
+      | "loadChatBranchGraph"
+      | "loadBranchMessages"
+      | "createChatBranch"
+      | "activateChatBranch"
+    >
+  >;
 
 const REQUIRED_BRANCH_STORAGE_METHODS = [
   "listChatBranches",
@@ -87,7 +94,8 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
       return storageSingleton;
     }
     // Fallback: create a standalone NodePostgresStorage
-    const { NodePostgresStorage } = await import("./postgres/nodePostgresStorage");
+    const { NodePostgresStorage } =
+      await import("./postgres/nodePostgresStorage");
     storageSingleton = wrapWithSerializedCommits(
       new NodePostgresStorage(async () => "") as unknown as ISqlStorage,
     );
@@ -95,13 +103,15 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
   }
 
   if (isCapacitor) {
-    const { CapacitorSqliteStorage } = await import("./sqlite/capacitor/capacitorSqliteStorage");
+    const { CapacitorSqliteStorage } =
+      await import("./sqlite/capacitor/capacitorSqliteStorage");
     storageSingleton = wrapWithSerializedCommits(new CapacitorSqliteStorage());
     return storageSingleton;
   }
 
   if (isTauri) {
-    const { TauriSqliteStorage } = await import("./sqlite/tauri/tauriSqliteStorage");
+    const { TauriSqliteStorage } =
+      await import("./sqlite/tauri/tauriSqliteStorage");
     storageSingleton = wrapWithSerializedCommits(new TauriSqliteStorage());
     return storageSingleton;
   }

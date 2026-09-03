@@ -1,14 +1,28 @@
 import type { settingsStore } from "./settingsStore.svelte";
 import type { presetStore } from "./presetStore.svelte";
-import type { PresetSettingKey, PresetState, SettingsState } from "./stateOwnership";
-import type { SettingContext, SettingItem, SettingPath } from "../../setting/types";
+import type {
+  PresetSettingKey,
+  PresetState,
+  SettingsState,
+} from "./stateOwnership";
+import type {
+  SettingContext,
+  SettingItem,
+  SettingPath,
+} from "../../setting/types";
 
 type Assert<T extends true> = T;
 /** Every protocol preset key must be absent from SettingsStore and present in PresetStore. */
 export type OwnershipContract = [
-  Assert<Extract<keyof SettingsState, PresetSettingKey> extends never ? true : false>,
-  Assert<Exclude<PresetSettingKey, keyof PresetState> extends never ? true : false>,
-  Assert<Extract<keyof SettingsState, keyof PresetState> extends never ? true : false>,
+  Assert<
+    Extract<keyof SettingsState, PresetSettingKey> extends never ? true : false
+  >,
+  Assert<
+    Exclude<PresetSettingKey, keyof PresetState> extends never ? true : false
+  >,
+  Assert<
+    Extract<keyof SettingsState, keyof PresetState> extends never ? true : false
+  >,
 ];
 
 /** Compile-only regression checks, included by pnpm check; never executed. */
@@ -27,10 +41,14 @@ export function checkOwnership(
   settings.set("localNetworkMode", true);
   // @ts-expect-error Delete API must reject preset keys.
   settings.delete("localNetworkMode");
-  // @ts-expect-error Mutation callbacks must expose only settings.
-  settings.update((state) => { state.mainPrompt = "wrong store"; });
-  // @ts-expect-error Hydration callbacks must expose only settings.
-  settings.hydrate((state) => { state.localNetworkMode = true; });
+  settings.update((state) => {
+    // @ts-expect-error Mutation callbacks must expose only settings.
+    state.mainPrompt = "wrong store";
+  });
+  settings.hydrate((state) => {
+    // @ts-expect-error Hydration callbacks must expose only settings.
+    state.localNetworkMode = true;
+  });
   // @ts-expect-error Ordinary snapshots must not expose startup-only preset data.
   settings.getStateRecord().localNetworkMode;
   // @ts-expect-error Settings do not belong to the preset state.

@@ -1,9 +1,47 @@
-'use strict';
+"use strict";
 
 const COMPLETION_PUNCTUATION = new Set([
-  '.', '!', '?', '。', '！', '？', '…', '@', '#', '$', '%', '^', '&', '*',
-  '(', ')', '-', '_', '+', '=', '{', '}', '[', ']', '|', '\\', ':', ';', '<',
-  '>', ',', '/', '~', '`', ' ', '¡', '¿', '‽', '⁉', "'", '"',
+  ".",
+  "!",
+  "?",
+  "。",
+  "！",
+  "？",
+  "…",
+  "@",
+  "#",
+  "$",
+  "%",
+  "^",
+  "&",
+  "*",
+  "(",
+  ")",
+  "-",
+  "_",
+  "+",
+  "=",
+  "{",
+  "}",
+  "[",
+  "]",
+  "|",
+  "\\",
+  ":",
+  ";",
+  "<",
+  ">",
+  ",",
+  "/",
+  "~",
+  "`",
+  " ",
+  "¡",
+  "¿",
+  "‽",
+  "⁉",
+  "'",
+  '"',
 ]);
 
 function endsWithCompletionPunctuation(text) {
@@ -15,17 +53,18 @@ function endsWithCompletionPunctuation(text) {
     (code >= 0x02b0 && code <= 0x02ff) ||
     (code >= 0x0300 && code <= 0x036f) ||
     (code >= 0x0590 && code <= 0x05cf) ||
-    (code >= 0x3000 && code <= 0x303f)
+    (code >= 0x3000 && code <= 0x303f),
   );
 }
 
 function decideAutoContinuation(input) {
-  const belowMinimum = input.minimumTokens > 0 && input.resultTokens < input.minimumTokens;
+  const belowMinimum =
+    input.minimumTokens > 0 && input.resultTokens < input.minimumTokens;
   if (belowMinimum) {
     return {
       shouldContinue: true,
       resultTokens: input.resultTokens,
-      reason: 'minimum-tokens',
+      reason: "minimum-tokens",
     };
   }
 
@@ -33,7 +72,7 @@ function decideAutoContinuation(input) {
     return {
       shouldContinue: true,
       resultTokens: input.resultTokens,
-      reason: 'incomplete',
+      reason: "incomplete",
     };
   }
 

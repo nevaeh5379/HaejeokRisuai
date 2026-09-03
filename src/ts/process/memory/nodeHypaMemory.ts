@@ -5,7 +5,10 @@ import type { character } from "../../storage/database/schema";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
 import { NodeStorage } from "../../storage/files/nodeStorage";
-import { tokenize as countPlainTokens, type ChatTokenizer } from "../../tokenizer";
+import {
+  tokenize as countPlainTokens,
+  type ChatTokenizer,
+} from "../../tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { runSummarizer } from "../transformers";
 
@@ -25,8 +28,7 @@ type HypaSessionResponse<T> =
   | { status: "action"; sessionId: string; action: HypaAction };
 
 export type NodeHypaResult<T> =
-  | { handled: false }
-  | { handled: true; result: T };
+  { handled: false } | { handled: true; result: T };
 
 export type HypaGenerationContext = {
   currentChar?: character;

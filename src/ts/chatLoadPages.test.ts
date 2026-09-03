@@ -63,7 +63,6 @@ describe("normalizeChatLoadPages", () => {
   });
 });
 
-
 describe("getAbsoluteChatMessageIndex", () => {
   it("keeps full-chat indexes unchanged when there is no page offset", () => {
     expect(getAbsoluteChatMessageIndex(5, 0)).toBe(5);

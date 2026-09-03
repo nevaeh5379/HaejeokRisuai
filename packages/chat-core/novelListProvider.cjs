@@ -1,6 +1,6 @@
-'use strict';
+"use strict";
 
-const DEFAULT_NOVELLIST_API_URL = 'https://api.tringpt.com//api';
+const DEFAULT_NOVELLIST_API_URL = "https://api.tringpt.com//api";
 
 function buildNovelListRequestBody(options) {
   const biasString = options.biasString ?? [];
@@ -24,11 +24,11 @@ function buildNovelListRequestBody(options) {
     rep_pen_range: options.sampler.rep_pen_range,
     typical_p: options.sampler.typical_p,
     badwords: options.sampler.badwords,
-    model: options.modelId === 'novellist_damsel' ? 'damsel' : 'supertrin',
+    model: options.modelId === "novellist_damsel" ? "damsel" : "supertrin",
     stoptokens: `「${options.sampler.stoptokens}`,
-    logit_bias: logitBias.length > 0 ? logitBias.join('<<|>>') : undefined,
+    logit_bias: logitBias.length > 0 ? logitBias.join("<<|>>") : undefined,
     logit_bias_values:
-      logitBiasValues.length > 0 ? logitBiasValues.join('|') : undefined,
+      logitBiasValues.length > 0 ? logitBiasValues.join("|") : undefined,
   };
 }
 

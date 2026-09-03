@@ -21,7 +21,9 @@ export async function shareRealmCardData(): Promise<{
   data: ArrayBuffer;
 }> {
   const char = safeStructuredClone(
-    characterStore.getCharacterByIndex(characterStore.selectedId, { snapshot: true }),
+    characterStore.getCharacterByIndex(characterStore.selectedId, {
+      snapshot: true,
+    }),
   ) as character;
   const trimedName = char.name.replace(/[^a-zA-Z0-9]/g, "") || "character";
   const writer = new VirtualWriter();

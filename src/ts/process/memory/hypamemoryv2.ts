@@ -8,7 +8,10 @@ import { forageStorage, globalFetch } from "src/ts/globalApi.svelte";
 import { appendLastPath } from "src/ts/util";
 import { isNodeServer } from "src/ts/platform";
 import { NodeStorage } from "src/ts/storage/files/nodeStorage";
-import { vectorContentSignature, vectorDescriptorRevision } from "./vectorIndexSignature";
+import {
+  vectorContentSignature,
+  vectorDescriptorRevision,
+} from "./vectorIndexSignature";
 
 export interface HypaProcessorV2Options {
   model?: HypaModel;
@@ -29,7 +32,6 @@ export interface EmbeddingResult<TMetadata> extends EmbeddingText<TMetadata> {
 }
 
 export type EmbeddingVector = number[] | Float32Array;
-
 
 export class HypaProcessorV2<TMetadata> {
   private static readonly LOG_PREFIX = "[HypaProcessorV2]";
@@ -85,9 +87,13 @@ export class HypaProcessorV2<TMetadata> {
     // Get query embeddings (don't save to memory)
     const ebdResults = await this.getEmbeds(ebdTexts, false);
 
-    const serverScoredResults = await this.tryServerSimilaritySearch(ebdResults);
+    const serverScoredResults =
+      await this.tryServerSimilaritySearch(ebdResults);
     if (serverScoredResults) {
-      const serverResultMap = new Map<string, [EmbeddingResult<TMetadata>, number][]>();
+      const serverResultMap = new Map<
+        string,
+        [EmbeddingResult<TMetadata>, number][]
+      >();
       for (let i = 0; i < uniqueQueries.length; i++) {
         serverResultMap.set(uniqueQueries[i], serverScoredResults[i]);
       }
@@ -344,15 +350,19 @@ export class HypaProcessorV2<TMetadata> {
   private async tryServerSimilaritySearch(
     queryResults: EmbeddingResult<TMetadata>[],
   ): Promise<[EmbeddingResult<TMetadata>, number][][] | null> {
-    if (!this.options.serverIndexId || isContextModel(this.options.model)) return null;
-    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage)) return null;
+    if (!this.options.serverIndexId || isContextModel(this.options.model))
+      return null;
+    if (!isNodeServer || !(forageStorage.realStorage instanceof NodeStorage))
+      return null;
 
     const db = settingsStore.state;
     const indexId = [
       this.options.serverIndexId,
       this.options.model,
       this.options.model === "custom" ? this.options.customEmbeddingUrl : "",
-      this.options.model === "custom" ? db.hypaCustomSettings?.model?.trim() || "" : "",
+      this.options.model === "custom"
+        ? db.hypaCustomSettings?.model?.trim() || ""
+        : "",
     ].join("|");
     const vectors = Array.from(this.vectors.values());
     const descriptors = vectors.map((vector) => ({
@@ -395,10 +405,15 @@ export class HypaProcessorV2<TMetadata> {
             const vector = this.vectors.get(id);
             return vector ? [vector, score] : null;
           })
-          .filter((row): row is [EmbeddingResult<TMetadata>, number] => row !== null),
+          .filter(
+            (row): row is [EmbeddingResult<TMetadata>, number] => row !== null,
+          ),
       );
     } catch (error) {
-      console.warn(`${HypaProcessorV2.LOG_PREFIX} Server vector search failed; using browser fallback`, error);
+      console.warn(
+        `${HypaProcessorV2.LOG_PREFIX} Server vector search failed; using browser fallback`,
+        error,
+      );
       return null;
     }
   }

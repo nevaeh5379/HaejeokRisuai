@@ -1,5 +1,10 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { character, Chat, groupChat, MessagePresetInfo } from "../storage/database/schema";
+import type {
+  character,
+  Chat,
+  groupChat,
+  MessagePresetInfo,
+} from "../storage/database/schema";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
 import { setChatProcessStage } from "./chatRuntimeState";
@@ -13,7 +18,10 @@ import { buildChatHistory } from "./chatHistoryBuilder";
 import { applyChatMemory } from "./chatMemory";
 import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
+import {
+  generationOverride,
+  type ChatGenerationOverrides,
+} from "./chatGenerationContext";
 import {
   applyMemoryPromptPolicy,
   applyTriggerPromptPolicy,

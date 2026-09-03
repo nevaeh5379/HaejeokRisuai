@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 
 const parser = vi.hoisted(() => vi.fn((text: string) => text));
 const requestChatData = vi.hoisted(() =>
-  vi.fn(async () => ({ type: "success", result: "summary" } as const)),
+  vi.fn(async () => ({ type: "success", result: "summary" }) as const),
 );
 const storage = vi.hoisted(() => ({
   startHypaMemorySession: vi.fn(async () => ({
@@ -48,11 +48,10 @@ const tokenizer = {
 const currentChar = { name: "Target", chaId: "char-a" } as never;
 const chatTarget = { characterId: "char-a", chatId: "chat-a" };
 test("keeps generation context through Node Hypa browser actions", async () => {
-  const result = await tryRunNodeHypaMemory(
-    { mode: "v3" },
-    tokenizer,
-    { currentChar, chatTarget },
-  );
+  const result = await tryRunNodeHypaMemory({ mode: "v3" }, tokenizer, {
+    currentChar,
+    chatTarget,
+  });
 
   expect(result).toEqual({ handled: true, result: { ok: true } });
   expect(parser).toHaveBeenCalledWith("{{char}}", {

@@ -15,7 +15,9 @@ import { resolveRequestCharacter } from "./requestContext";
 
 test("prefers the request character over the current UI selection", () => {
   const target = { name: "Generation Character" };
-  expect(resolveRequestCharacter({ currentChar: target } as never)).toBe(target);
+  expect(resolveRequestCharacter({ currentChar: target } as never)).toBe(
+    target,
+  );
   expect(getCurrentCharacter).not.toHaveBeenCalled();
 });
 

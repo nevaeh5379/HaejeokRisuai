@@ -56,7 +56,8 @@ async function processCommand(
   const chatIndex = target?.chatIndex ?? currentChar.chatPage;
   const currentChat = currentChar.chats[chatIndex];
   if (!currentChat) return false;
-  const chatTarget = chatTargetFromIndexes(characterIndex, chatIndex) ?? undefined;
+  const chatTarget =
+    chatTargetFromIndexes(characterIndex, chatIndex) ?? undefined;
   let { commandName, arg, namedArg } = commandParser(command, pipe);
 
   if (!arg) {

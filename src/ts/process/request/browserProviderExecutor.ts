@@ -5,9 +5,9 @@ import {
 } from "@risuai/chat-core/providerExecutor.cjs";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 
-export class BrowserProviderExecutor<TRequest>
-  implements ProviderExecutor<TRequest>
-{
+export class BrowserProviderExecutor<
+  TRequest,
+> implements ProviderExecutor<TRequest> {
   constructor(
     private readonly handlers: ProviderHandlers<TRequest>,
     private readonly unknownModelMessage: () => string,

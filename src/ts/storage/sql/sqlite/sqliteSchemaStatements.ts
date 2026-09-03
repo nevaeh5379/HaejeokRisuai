@@ -57,7 +57,14 @@ export function splitSqliteStatements(sql: string): string[] {
       continue;
     }
     if (quote) {
-      const close = quote === "single" ? "'" : quote === "double" ? '"' : quote === "backtick" ? "`" : "]";
+      const close =
+        quote === "single"
+          ? "'"
+          : quote === "double"
+            ? '"'
+            : quote === "backtick"
+              ? "`"
+              : "]";
       if (char === close) {
         if (quote !== "bracket" && next === close) i++;
         else quote = null;
@@ -74,10 +81,22 @@ export function splitSqliteStatements(sql: string): string[] {
       i++;
       continue;
     }
-    if (char === "'") { quote = "single"; continue; }
-    if (char === '"') { quote = "double"; continue; }
-    if (char === "`") { quote = "backtick"; continue; }
-    if (char === "[") { quote = "bracket"; continue; }
+    if (char === "'") {
+      quote = "single";
+      continue;
+    }
+    if (char === '"') {
+      quote = "double";
+      continue;
+    }
+    if (char === "`") {
+      quote = "backtick";
+      continue;
+    }
+    if (char === "[") {
+      quote = "bracket";
+      continue;
+    }
 
     if (/[A-Za-z_]/.test(char) && (i === 0 || !isWordChar(sql[i - 1]))) {
       let end = i + 1;

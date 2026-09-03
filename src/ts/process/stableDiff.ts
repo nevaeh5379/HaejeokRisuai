@@ -641,7 +641,9 @@ export async function generateAIImage(
     }
   }
   if (db.sdProvider === "kei") {
-    alertError("The Kei image provider is unavailable in Haejeok RisuAI because Risu Account integration has been removed.");
+    alertError(
+      "The Kei image provider is unavailable in Haejeok RisuAI because Risu Account integration has been removed.",
+    );
     return false;
   }
   if (db.sdProvider === "fal") {

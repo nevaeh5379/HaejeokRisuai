@@ -20,15 +20,17 @@ export interface ResolvedChatTarget {
 }
 
 /** Resolve stable IDs at the moment an operation runs; never retain array indexes. */
-export function resolveChatTarget(target: ChatTarget): ResolvedChatTarget | null {
+export function resolveChatTarget(
+  target: ChatTarget,
+): ResolvedChatTarget | null {
   const characterIndex = characterStore.characters.findIndex(
     (candidate) => candidate.chaId === target.characterId,
   );
   if (characterIndex < 0) return null;
   const character = characterStore.characters[characterIndex];
-  const chatIndex = character.chats?.findIndex(
-    (candidate) => candidate.id === target.chatId,
-  ) ?? -1;
+  const chatIndex =
+    character.chats?.findIndex((candidate) => candidate.id === target.chatId) ??
+    -1;
   if (chatIndex < 0) return null;
   return {
     target,
@@ -42,7 +44,9 @@ export function resolveChatTarget(target: ChatTarget): ResolvedChatTarget | null
 export function requireChatTarget(target: ChatTarget): ResolvedChatTarget {
   const resolved = resolveChatTarget(target);
   if (!resolved) {
-    throw new Error(`Chat target not found: ${target.characterId}/${target.chatId}`);
+    throw new Error(
+      `Chat target not found: ${target.characterId}/${target.chatId}`,
+    );
   }
   return resolved;
 }
@@ -74,7 +78,9 @@ export function requireChatTargetFromIndexes(
 ): ChatTarget {
   const target = chatTargetFromIndexes(characterIndex, chatIndex);
   if (!target) {
-    throw new Error(`Chat coordinates not found: ${characterIndex}/${chatIndex}`);
+    throw new Error(
+      `Chat coordinates not found: ${characterIndex}/${chatIndex}`,
+    );
   }
   return target;
 }

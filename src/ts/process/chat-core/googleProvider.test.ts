@@ -108,16 +108,17 @@ describe("Google provider core", () => {
     expect(
       prepareGoogleConversation([{ role: "function", content: "tool output" }])
         .chats,
-    ).toEqual([
-      { role: "user", parts: [{ text: "function:tool output" }] },
-    ]);
+    ).toEqual([{ role: "user", parts: [{ text: "function:tool output" }] }]);
   });
   it("merges consecutive roles using Gemini part semantics", () => {
     const chats = [
       { role: "user" as const, parts: [{ text: "first" }] },
       {
         role: "user" as const,
-        parts: [{ text: "second" }, { inlineData: { mimeType: "image/png", data: "A" } }],
+        parts: [
+          { text: "second" },
+          { inlineData: { mimeType: "image/png", data: "A" } },
+        ],
       },
       { role: "model" as const, parts: [{ text: "answer" }] },
       {
@@ -178,12 +179,7 @@ describe("Google provider core", () => {
         ],
         { thinking: true },
       ),
-    ).toEqual([
-      "temperature",
-      "top_p",
-      "thinking_tokens",
-      "reasoning_effort",
-    ]);
+    ).toEqual(["temperature", "top_p", "thinking_tokens", "reasoning_effort"]);
     expect(
       selectGoogleGenerationParameters(
         ["temperature", "thinking_tokens", "reasoning_effort"],
@@ -201,9 +197,9 @@ describe("Google provider core", () => {
   });
 
   it("routes Vertex global-only Gemini models without coupling to auth", () => {
-    expect(selectGoogleVertexRegion("gemini-3-pro-preview", "us-central1")).toBe(
-      "global",
-    );
+    expect(
+      selectGoogleVertexRegion("gemini-3-pro-preview", "us-central1"),
+    ).toBe("global");
     expect(
       selectGoogleVertexRegion("gemini-3.6-flash-preview", "us-west1"),
     ).toBe("global");
@@ -287,7 +283,9 @@ describe("Google provider core", () => {
     const generationConfig = { maxOutputTokens: 512 };
     expect(
       finalizeGoogleGenerationConfig(generationConfig, { useStreaming: true }),
-    ).toEqual({ generationConfig: { maxOutputTokens: 512 }, useStreaming: true });
+    ).toEqual({
+      generationConfig: { maxOutputTokens: 512 },
+      useStreaming: true,
+    });
   });
-
 });

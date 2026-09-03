@@ -22,7 +22,9 @@ describe("vectorIndex", () => {
   });
 
   it("uses a compact revision handshake for warm indexes", () => {
-    expect(checkVectorIndexRevision("chat-revision", "rev-a").ready).toBe(false);
+    expect(checkVectorIndexRevision("chat-revision", "rev-a").ready).toBe(
+      false,
+    );
 
     const status = syncVectorIndex(
       "chat-revision",
@@ -45,7 +47,9 @@ describe("vectorIndex", () => {
       missingIds: [],
       size: 2,
     });
-    expect(checkVectorIndexRevision("chat-revision", "rev-b").ready).toBe(false);
+    expect(checkVectorIndexRevision("chat-revision", "rev-b").ready).toBe(
+      false,
+    );
   });
 
   it("requests missing vectors and reuses matching signatures", () => {
@@ -61,10 +65,12 @@ describe("vectorIndex", () => {
       { id: "b", signature: "two", embedding: [0, 1] },
     ]);
 
-    expect(syncVectorIndex("chat-1", [
-      { id: "a", signature: "one" },
-      { id: "b", signature: "two" },
-    ]).missingIds).toEqual([]);
+    expect(
+      syncVectorIndex("chat-1", [
+        { id: "a", signature: "one" },
+        { id: "b", signature: "two" },
+      ]).missingIds,
+    ).toEqual([]);
   });
 
   it("ranks vectors by cosine similarity", () => {
@@ -169,7 +175,11 @@ describe("vectorIndex", () => {
     const directory = await mkdtemp(join(tmpdir(), "risu-vector-scope-"));
     try {
       configureVectorIndexPersistence(directory);
-      for (const indexId of ["scope-a:first", "scope-a:second", "scope-b:first"]) {
+      for (const indexId of [
+        "scope-a:first",
+        "scope-a:second",
+        "scope-b:first",
+      ]) {
         syncVectorIndex(indexId, [{ id: "x", signature: "same" }], "rev");
         upsertVectorIndex(indexId, [
           { id: "x", signature: "same", embedding: [1, 0, 0] },

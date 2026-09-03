@@ -161,7 +161,12 @@ export function unstringlizeChat(
 ) {
   let minIndex = -1;
 
-  const chunks = getUnstringlizerChunks(formated, char, "normal", chatTarget).chunks;
+  const chunks = getUnstringlizerChunks(
+    formated,
+    char,
+    "normal",
+    chatTarget,
+  ).chunks;
 
   for (const chunk of chunks) {
     const ind = text.indexOf(chunk);
@@ -345,7 +350,12 @@ export function unstringlizeAIN(
   chatTarget?: ChatExecutionTarget,
 ) {
   const db = settingsStore.state;
-  const chunksResult = getUnstringlizerChunks(formated, char, "ain", chatTarget);
+  const chunksResult = getUnstringlizerChunks(
+    formated,
+    char,
+    "ain",
+    chatTarget,
+  );
   const chunks = chunksResult.chunks;
   let result: ["char" | "user", string][] = [];
   data = `${char} 「` + data;

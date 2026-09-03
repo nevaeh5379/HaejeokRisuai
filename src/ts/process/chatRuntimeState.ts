@@ -7,7 +7,9 @@ const processStages = new Map<string, number>();
 export const doingChat = writable(false);
 /** @deprecated Prefer chatProcessStages for chat-scoped generation UI. */
 export const chatProcessStage = writable(0);
-export const chatProcessStages = writable<ReadonlyMap<string, number>>(new Map());
+export const chatProcessStages = writable<ReadonlyMap<string, number>>(
+  new Map(),
+);
 export const activeGenerationChatIds = writable<ReadonlySet<string>>(new Set());
 
 function publishGenerationState() {
@@ -55,7 +57,7 @@ export function isLocalChatGenerationActive(
 export function isChatGenerationActive(chatId: string | undefined): boolean {
   return Boolean(
     chatId &&
-      (localGenerationChats.has(chatId) || remoteGenerationSources.has(chatId)),
+    (localGenerationChats.has(chatId) || remoteGenerationSources.has(chatId)),
   );
 }
 

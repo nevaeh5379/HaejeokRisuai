@@ -28,13 +28,17 @@ export interface ChatTabGroup {
 const MAX_CHAT_GROUPS = 2;
 
 function createGroupId(): string {
-  return globalThis.crypto?.randomUUID?.() ??
-    `chat-group-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `chat-group-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 function createTabId(): string {
-  return globalThis.crypto?.randomUUID?.() ??
-    `chat-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `chat-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 export function findChatTarget(chatId: string): ChatTarget | null {
@@ -59,7 +63,10 @@ export class ChatTabsStore {
   navigating = $state(false);
 
   get focusedGroup(): ChatTabGroup {
-    return this.groups.find((group) => group.id === this.focusedGroupId) ?? this.groups[0];
+    return (
+      this.groups.find((group) => group.id === this.focusedGroupId) ??
+      this.groups[0]
+    );
   }
 
   get activeTabId(): string | null {
@@ -173,9 +180,11 @@ export class ChatTabsStore {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
     const tab = this.tabs.find((item) => item.id === tabId);
-    if (!tab) return { activeChanged: false, activeTab: this.activeTab ?? null };
+    if (!tab)
+      return { activeChanged: false, activeTab: this.activeTab ?? null };
     const group = this.getGroup(tab.groupId);
-    if (!group) return { activeChanged: false, activeTab: this.activeTab ?? null };
+    if (!group)
+      return { activeChanged: false, activeTab: this.activeTab ?? null };
     const groupTabs = this.tabsForGroup(group.id);
     const groupIndex = groupTabs.findIndex((item) => item.id === tabId);
     const wasGroupActive = group.activeTabId === tabId;
@@ -186,19 +195,28 @@ export class ChatTabsStore {
       const index = this.groups.findIndex((item) => item.id === group.id);
       this.groups.splice(index, 1);
       if (wasFocused) {
-        const nextGroup = this.groups[Math.min(index, this.groups.length - 1)] ?? this.groups[0];
+        const nextGroup =
+          this.groups[Math.min(index, this.groups.length - 1)] ??
+          this.groups[0];
         this.focusedGroupId = nextGroup.id;
-        return { activeChanged: true, activeTab: this.activeTabForGroup(nextGroup.id) ?? null };
+        return {
+          activeChanged: true,
+          activeTab: this.activeTabForGroup(nextGroup.id) ?? null,
+        };
       }
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
 
     if (wasGroupActive) {
       const remaining = this.tabsForGroup(group.id);
-      const next = remaining[Math.min(groupIndex, remaining.length - 1)] ?? null;
+      const next =
+        remaining[Math.min(groupIndex, remaining.length - 1)] ?? null;
       group.activeTabId = next?.id ?? null;
       if (next) next.unread = false;
-      return { activeChanged: wasFocused, activeTab: wasFocused ? next : this.activeTab ?? null };
+      return {
+        activeChanged: wasFocused,
+        activeTab: wasFocused ? next : (this.activeTab ?? null),
+      };
     }
     return { activeChanged: false, activeTab: this.activeTab ?? null };
   }
@@ -206,7 +224,9 @@ export class ChatTabsStore {
   closeOthers(tabId: string): void {
     const tab = this.tabs.find((item) => item.id === tabId);
     if (!tab) return;
-    this.tabs = this.tabs.filter((item) => item.groupId !== tab.groupId || item.id === tabId);
+    this.tabs = this.tabs.filter(
+      (item) => item.groupId !== tab.groupId || item.id === tabId,
+    );
     const group = this.getGroup(tab.groupId);
     if (group) group.activeTabId = tab.id;
     tab.unread = false;
@@ -218,7 +238,9 @@ export class ChatTabsStore {
     const groupTabs = this.tabsForGroup(tab.groupId);
     const index = groupTabs.findIndex((item) => item.id === tabId);
     if (index < 0) return;
-    const removeIds = new Set(groupTabs.slice(index + 1).map((item) => item.id));
+    const removeIds = new Set(
+      groupTabs.slice(index + 1).map((item) => item.id),
+    );
     this.tabs = this.tabs.filter((item) => !removeIds.has(item.id));
   }
 
@@ -230,10 +252,17 @@ export class ChatTabsStore {
     if (!this.canSplit()) return null;
     const source = this.tabs.find((item) => item.id === tabId);
     if (!source) return null;
-    const sourceGroupIndex = this.groups.findIndex((group) => group.id === source.groupId);
+    const sourceGroupIndex = this.groups.findIndex(
+      (group) => group.id === source.groupId,
+    );
     if (sourceGroupIndex < 0) return null;
     const group: ChatTabGroup = { id: createGroupId(), activeTabId: null };
-    const copy = this.createTab(source.characterId, source.chatId, group.id, source);
+    const copy = this.createTab(
+      source.characterId,
+      source.chatId,
+      group.id,
+      source,
+    );
     group.activeTabId = copy.id;
     this.groups.splice(sourceGroupIndex + 1, 0, group);
     this.tabs.push(copy);
@@ -249,13 +278,23 @@ export class ChatTabsStore {
   moveToAdjacentGroup(tabId: string, direction: -1 | 1): ChatTab | null {
     const tab = this.tabs.find((item) => item.id === tabId);
     if (!tab) return null;
-    const sourceIndex = this.groups.findIndex((group) => group.id === tab.groupId);
+    const sourceIndex = this.groups.findIndex(
+      (group) => group.id === tab.groupId,
+    );
     const targetGroup = this.groups[sourceIndex + direction];
     if (!targetGroup) return null;
-    return this.moveTab(tabId, targetGroup.id, this.tabsForGroup(targetGroup.id).length);
+    return this.moveTab(
+      tabId,
+      targetGroup.id,
+      this.tabsForGroup(targetGroup.id).length,
+    );
   }
 
-  moveTab(tabId: string, targetGroupId: string, targetIndex: number): ChatTab | null {
+  moveTab(
+    tabId: string,
+    targetGroupId: string,
+    targetIndex: number,
+  ): ChatTab | null {
     const tab = this.tabs.find((item) => item.id === tabId);
     const sourceGroup = tab ? this.getGroup(tab.groupId) : undefined;
     const targetGroup = this.getGroup(targetGroupId);
@@ -263,7 +302,9 @@ export class ChatTabsStore {
 
     const sourceGroupId = sourceGroup.id;
     const sourceTabs = this.tabsForGroup(sourceGroupId);
-    const targetTabs = this.tabsForGroup(targetGroupId).filter((item) => item.id !== tabId);
+    const targetTabs = this.tabsForGroup(targetGroupId).filter(
+      (item) => item.id !== tabId,
+    );
     const insertAt = Math.max(0, Math.min(targetIndex, targetTabs.length));
     targetTabs.splice(insertAt, 0, tab);
 
@@ -276,7 +317,8 @@ export class ChatTabsStore {
       if (sourceTabs.length === 1) {
         this.groups.splice(this.groups.indexOf(sourceGroup), 1);
       } else if (sourceGroup.activeTabId === tab.id) {
-        sourceGroup.activeTabId = sourceTabs.find((item) => item.id !== tab.id)?.id ?? null;
+        sourceGroup.activeTabId =
+          sourceTabs.find((item) => item.id !== tab.id)?.id ?? null;
       }
     }
 
@@ -314,7 +356,9 @@ export class ChatTabsStore {
 
   isActiveChat(chatId: string): boolean {
     if (!chatId) return false;
-    return this.groups.some((group) => this.activeTabForGroup(group.id)?.chatId === chatId);
+    return this.groups.some(
+      (group) => this.activeTabForGroup(group.id)?.chatId === chatId,
+    );
   }
 
   private createTab(
@@ -354,9 +398,11 @@ export async function navigateToChatTab(tabId: string): Promise<boolean> {
       const { changeChar } = await import("./characters");
       await changeChar(characterIndex);
     }
-    if (sequence !== navigationSequence || chatTabsStore.activeTabId !== tabId) return false;
+    if (sequence !== navigationSequence || chatTabsStore.activeTabId !== tabId)
+      return false;
     const character = characterStore.characters[characterIndex];
-    const chatIndex = character?.chats?.findIndex((chat) => chat.id === tab.chatId) ?? -1;
+    const chatIndex =
+      character?.chats?.findIndex((chat) => chat.id === tab.chatId) ?? -1;
     if (chatIndex < 0) return false;
     if (character.chatPage !== chatIndex) {
       const { changeChatTo } = await import("./globalApi.svelte");

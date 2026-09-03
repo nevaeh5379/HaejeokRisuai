@@ -51,8 +51,9 @@ export function getAbsoluteChatMessageIndex(
   messageOffset: number | undefined,
 ): number {
   if (localIndex < 0) return localIndex;
-  const offset = Number.isSafeInteger(messageOffset) && (messageOffset ?? 0) > 0
-    ? messageOffset!
-    : 0;
+  const offset =
+    Number.isSafeInteger(messageOffset) && (messageOffset ?? 0) > 0
+      ? messageOffset!
+      : 0;
   return offset + localIndex;
 }

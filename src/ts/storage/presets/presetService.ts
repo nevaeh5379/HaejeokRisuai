@@ -7,7 +7,10 @@ import { safeStructuredClone } from "../../polyfill";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
 import type { PresetState } from "../../stores/domain/stateOwnership";
-import { encode as encodeMsgpack, decode as decodeMsgpack } from "msgpackr/index-no-eval";
+import {
+  encode as encodeMsgpack,
+  decode as decodeMsgpack,
+} from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "../../rpack/rpack_js";
 import type { DatabaseSettings, botPreset } from "../database/schema";
@@ -269,7 +272,9 @@ export function setPreset(db: DatabaseSettings, newPres: botPreset) {
       translate: "",
       otherAx: "",
     };
-    db.providerModelOverrides = safeStructuredClone(newPres.providerModelOverrides) ?? {
+    db.providerModelOverrides = safeStructuredClone(
+      newPres.providerModelOverrides,
+    ) ?? {
       memory: {},
       emotion: {},
       translate: {},

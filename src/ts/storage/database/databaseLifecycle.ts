@@ -3,7 +3,10 @@ import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../stores/domain/deferredSettingsLoader";
 import type { ISqlStorage, SqlStartupDataResult } from "../sql/ISqlStorage";
-import { normalizeSettingsDefaults, type SettingsInput } from "./databaseDefaults";
+import {
+  normalizeSettingsDefaults,
+  type SettingsInput,
+} from "./databaseDefaults";
 
 export function installStartupData(
   startup: SqlStartupDataResult,

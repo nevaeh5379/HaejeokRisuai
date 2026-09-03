@@ -49,7 +49,6 @@ export async function requestCohere(
     },
   );
 
-
   let headers: Record<string, string> = {
     Authorization: "Bearer " + (arg.key ?? db.cohereAPIKey),
     "Content-Type": "application/json",

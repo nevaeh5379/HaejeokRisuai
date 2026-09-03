@@ -117,11 +117,17 @@ test("uses the explicit room and chat for message context", () => {
 
 test("combines speaker, target chat, and target room module lore", () => {
   const encoded = run("lorebook") as string;
-  const lore = (JSON.parse(encoded) as string[]).map((item) => JSON.parse(item));
+  const lore = (JSON.parse(encoded) as string[]).map((item) =>
+    JSON.parse(item),
+  );
   expect(lore.map((item) => item.comment)).toEqual([
     "speaker-global",
     "target-local",
     "target-module",
   ]);
-  expect(getModuleLorebooks).toHaveBeenCalledWith(targetRoom, undefined, targetRoom.chats[1]);
+  expect(getModuleLorebooks).toHaveBeenCalledWith(
+    targetRoom,
+    undefined,
+    targetRoom.chats[1],
+  );
 });

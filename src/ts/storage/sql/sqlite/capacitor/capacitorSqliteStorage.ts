@@ -2,7 +2,10 @@ import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
 import sqliteSchemaSql from "../sqlite-schema.sql?raw";
-import { isSqlitePragmaStatement, splitSqliteStatements } from "../sqliteSchemaStatements";
+import {
+  isSqlitePragmaStatement,
+  splitSqliteStatements,
+} from "../sqliteSchemaStatements";
 import {
   buildSqlReplaceRootCommit,
   iterateSqlReplaceEntityCommits,
@@ -10,21 +13,23 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import { applySqliteCommit, countSqliteCommitStatements } from "../sqliteCommit";
+import {
+  applySqliteCommit,
+  countSqliteCommitStatements,
+} from "../sqliteCommit";
 import type { SqliteTransactionStatement } from "../sqliteStorageUtils";
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
-import {
-  nativeSqlite,
-  type NativeSqlitePlugin,
-} from "./capacitorNativeSqlite";
+import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
 
 // The Android native backend applies connection-local PRAGMAs itself. Keep
 // those out of the shared DDL script and send the remaining statements through
 // the same native transaction API used by normal commits.
 const capacitorSchemaStatements = splitSqliteStatements(sqliteSchemaSql)
   .map((statement) => statement.trim())
-  .filter((statement) => statement.length > 0 && !isSqlitePragmaStatement(statement));
+  .filter(
+    (statement) => statement.length > 0 && !isSqlitePragmaStatement(statement),
+  );
 
 /**
  * Capacitor native SQLite storage backend for Android/iOS builds.
@@ -130,7 +135,9 @@ export class CapacitorSqliteStorage
     ) => Promise<T>,
   ): Promise<T> {
     if (!this.dbOpen) throw new Error("SQLite storage is not enabled");
-    const transaction = await this.plugin.beginTransaction({ expectedRevision });
+    const transaction = await this.plugin.beginTransaction({
+      expectedRevision,
+    });
     let pendingBatch: SqliteTransactionStatement[] = [];
     let batchPayloadChars = 0;
     const flushBatch = async () => {

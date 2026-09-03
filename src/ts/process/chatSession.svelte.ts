@@ -1,5 +1,10 @@
 import { get } from "svelte/store";
-import type { character, groupChat, Chat, MessagePresetInfo } from "../storage/database/schema";
+import type {
+  character,
+  groupChat,
+  Chat,
+  MessagePresetInfo,
+} from "../storage/database/schema";
 import { changeToPreset } from "../storage/presets/presetService";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
@@ -23,7 +28,10 @@ import {
   peerSync,
 } from "../sync/multiuser";
 import type { ChatErrorContext } from "./chatError.svelte";
-import { requireChatTargetFromIndexes, type ChatExecutionTarget } from "../chatTarget";
+import {
+  requireChatTargetFromIndexes,
+  type ChatExecutionTarget,
+} from "../chatTarget";
 
 export interface GroupGenerationRequest {
   chatProcessIndex: number;
@@ -105,8 +113,7 @@ function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
   const promptToggles = parseToggleSyntax(
     presetStore.state.customPromptTemplateToggle + getModuleToggles(room),
   ).flatMap((toggle) => {
-    const raw =
-      settingsStore.state.globalChatVariables[`toggle_${toggle.key}`];
+    const raw = settingsStore.state.globalChatVariables[`toggle_${toggle.key}`];
     if (toggle.type === "select" || toggle.type === "text") {
       return [{ key: toggle.value, value: toggle.options[raw] }];
     }
@@ -118,7 +125,10 @@ function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
   };
 }
 
-function getGroupOrder(room: groupChat, findCharacter: (id: string) => character) {
+function getGroupOrder(
+  room: groupChat,
+  findCharacter: (id: string) => character,
+) {
   const lastMessage = room.chats[room.chatPage].message.at(-1);
   return selectGroupGenerationOrder({
     candidates: room.characters.map((id, index) => ({
@@ -260,7 +270,9 @@ export async function prepareChatSession(options: PrepareChatSessionOptions) {
   const selection = await loadSelectedChat(options);
   if (!selection) return { status: "done" as const, result: false };
 
-  const calculatedChatTokens = presetStore.state.aiModel.startsWith("gpt") ? 5 : 3;
+  const calculatedChatTokens = presetStore.state.aiModel.startsWith("gpt")
+    ? 5
+    : 3;
   const findCharacter = createCharacterLookup();
   const speaker = await resolveCurrentCharacter(
     options,

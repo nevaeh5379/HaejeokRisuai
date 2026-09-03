@@ -19,11 +19,18 @@ const deterministic: GroupSpeakerRandomSource = {
 
 describe("group speaker policy", () => {
   it("prioritizes characters explicitly mentioned in the latest message", () => {
-    expect(orderGroupSpeakers(candidates.slice(0, 2), "hello bob", deterministic)[0].id).toBe("b");
+    expect(
+      orderGroupSpeakers(candidates.slice(0, 2), "hello bob", deterministic)[0]
+        .id,
+    ).toBe("b");
   });
 
   it("uses talkness probabilities for unmentioned candidates", () => {
-    expect(orderGroupSpeakers(candidates.slice(0, 2), "", deterministic).map((item) => item.id)).toEqual(["a", "b"]);
+    expect(
+      orderGroupSpeakers(candidates.slice(0, 2), "", deterministic).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["a", "b"]);
   });
 
   it("falls back to one speaker when probability selection produces none", () => {
@@ -31,22 +38,31 @@ describe("group speaker policy", () => {
       random: () => 0.9,
       shuffle: (items) => [...items],
     };
-    expect(orderGroupSpeakers([{ ...candidates[1], talkness: 0.1 }], "", never)).toHaveLength(1);
+    expect(
+      orderGroupSpeakers([{ ...candidates[1], talkness: 0.1 }], "", never),
+    ).toHaveLength(1);
   });
 
   it("filters inactive and previous speakers in randomized group mode", () => {
-    expect(selectGroupGenerationOrder({
-      candidates,
-      lastMessage: "hello",
-      lastSpeakerId: "a",
-    }, deterministic).map((item) => item.id)).toEqual(["b"]);
+    expect(
+      selectGroupGenerationOrder(
+        {
+          candidates,
+          lastMessage: "hello",
+          lastSpeakerId: "a",
+        },
+        deterministic,
+      ).map((item) => item.id),
+    ).toEqual(["b"]);
   });
 
   it("preserves configured order without excluding the previous speaker", () => {
-    expect(selectGroupGenerationOrder({
-      candidates,
-      lastSpeakerId: "a",
-      preserveOrder: true,
-    }).map((item) => item.id)).toEqual(["a", "b"]);
+    expect(
+      selectGroupGenerationOrder({
+        candidates,
+        lastSpeakerId: "a",
+        preserveOrder: true,
+      }).map((item) => item.id),
+    ).toEqual(["a", "b"]);
   });
 });

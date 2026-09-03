@@ -96,9 +96,7 @@ export function groupSettingNodeRows(
  * buildMessageRowsQuery). Mirrors the worker-side rebuild used by the web
  * backend so all backends produce identical message objects.
  */
-export function rebuildMessageRows(
-  rows: Record<string, unknown>[],
-): Message[] {
+export function rebuildMessageRows(rows: Record<string, unknown>[]): Message[] {
   const nodeGroups = new Map<string, RelationalNodeRow[]>();
   const coreRows = new Map<string, Record<string, unknown>>();
   const orderedIds: string[] = [];
@@ -210,11 +208,7 @@ export function buildCharacterAssetFieldsQuery(characterId: string): {
       WHERE character_id = ?
         AND (node_id = 0 OR node_id IN (SELECT node_id FROM asset_nodes))
       ORDER BY node_id`,
-    bind: [
-      characterId,
-      ...CHARACTER_ASSET_FIELD_KEYS,
-      characterId,
-    ],
+    bind: [characterId, ...CHARACTER_ASSET_FIELD_KEYS, characterId],
   };
 }
 
@@ -280,9 +274,10 @@ excluded(chat_id, message_id, node_id) AS (
    )`
       : "";
   const metadataBind = mode === "generation" ? [chatId] : [];
-  const extensionJoin = mode === "graph"
-    ? "LEFT JOIN message_extension_nodes n ON 0"
-    : "LEFT JOIN message_extension_nodes n ON n.chat_id = selected.chat_id AND n.message_id = selected.id";
+  const extensionJoin =
+    mode === "graph"
+      ? "LEFT JOIN message_extension_nodes n ON 0"
+      : "LEFT JOIN message_extension_nodes n ON n.chat_id = selected.chat_id AND n.message_id = selected.id";
 
   return {
     sql: `WITH selected AS (${selectedSql})${withExcluded}
@@ -321,7 +316,10 @@ export function rebuildBranchGraphMessages(
 }
 
 /** Lightweight unique-message read used by the branch graph modal. */
-export function buildBranchGraphRowsQuery(chatId: string): { sql: string; bind: unknown[] } {
+export function buildBranchGraphRowsQuery(chatId: string): {
+  sql: string;
+  bind: unknown[];
+} {
   return {
     sql: `SELECT messages.id AS message_id, messages.position AS message_position,
                  messages.role AS message_role, messages.content_text AS message_content_text,
@@ -363,18 +361,18 @@ export function buildBranchMessageRowsQuery(
     limit === undefined || rootOffset !== undefined
       ? ""
       : " AND path.depth + 1 < ?";
-  const branchSeed = branchId === undefined
-    ? `SELECT branch.head_message_id, 0
+  const branchSeed =
+    branchId === undefined
+      ? `SELECT branch.head_message_id, 0
          FROM chat_branches branch
          JOIN chat_active_branches active
            ON active.chat_id = branch.chat_id AND active.branch_id = branch.id
         WHERE branch.chat_id = ?`
-    : `SELECT head_message_id, 0
+      : `SELECT head_message_id, 0
          FROM chat_branches
         WHERE chat_id = ? AND id = ?`;
-  const bind: unknown[] = branchId === undefined
-    ? [chatId, chatId]
-    : [chatId, branchId, chatId];
+  const bind: unknown[] =
+    branchId === undefined ? [chatId, chatId] : [chatId, branchId, chatId];
   if (limit !== undefined && rootOffset === undefined) bind.push(limit);
   const selectedPage =
     limit !== undefined && rootOffset !== undefined
@@ -408,11 +406,7 @@ SELECT selected.id AS message_id, selected.position AS message_position,
        selected.output_tokens AS message_output_tokens
   FROM selected
  ORDER BY selected.depth DESC`,
-      bind: [
-        ...bind,
-        chatId,
-        ...(selectedPage ? [limit, rootOffset] : []),
-      ],
+      bind: [...bind, chatId, ...(selectedPage ? [limit, rootOffset] : [])],
     };
   }
 
@@ -441,7 +435,8 @@ excluded(chat_id, message_id, node_id) AS (
         AND excluded.node_id = n.node_id
    )`
       : "";
-  const extensionJoin = "LEFT JOIN message_extension_nodes n ON n.chat_id = selected.chat_id AND n.message_id = selected.id";
+  const extensionJoin =
+    "LEFT JOIN message_extension_nodes n ON n.chat_id = selected.chat_id AND n.message_id = selected.id";
   return {
     sql: `WITH RECURSIVE branch_path(message_id, depth) AS (
   ${branchSeed}
@@ -485,13 +480,14 @@ export function buildBranchMessageCountQuery(
   chatId: string,
   branchId?: string,
 ): { sql: string; bind: unknown[] } {
-  const branchSeed = branchId === undefined
-    ? `SELECT branch.head_message_id
+  const branchSeed =
+    branchId === undefined
+      ? `SELECT branch.head_message_id
          FROM chat_branches branch
          JOIN chat_active_branches active
            ON active.chat_id = branch.chat_id AND active.branch_id = branch.id
         WHERE branch.chat_id = ?`
-    : "SELECT head_message_id FROM chat_branches WHERE chat_id = ? AND id = ?";
+      : "SELECT head_message_id FROM chat_branches WHERE chat_id = ? AND id = ?";
   return {
     sql: `WITH RECURSIVE branch_path(message_id) AS (
   ${branchSeed}
@@ -503,8 +499,7 @@ export function buildBranchMessageCountQuery(
    WHERE links.parent_message_id IS NOT NULL
 )
 SELECT COUNT(message_id) AS total FROM branch_path`,
-    bind: branchId === undefined
-      ? [chatId, chatId]
-      : [chatId, branchId, chatId],
+    bind:
+      branchId === undefined ? [chatId, chatId] : [chatId, branchId, chatId],
   };
 }

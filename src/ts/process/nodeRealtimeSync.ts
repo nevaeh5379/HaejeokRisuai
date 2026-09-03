@@ -115,12 +115,15 @@ async function applyDatabaseChange(
   }
 
   const rootValues = await Promise.all(
-    rootUpsertKeys.map(async (key) => [key, await storage.loadSettingKey(key)] as const),
+    rootUpsertKeys.map(
+      async (key) => [key, await storage.loadSettingKey(key)] as const,
+    ),
   );
   for (const [key, value] of rootValues) {
     settingsStore.hydrateSettingKey(key, value, value !== undefined);
   }
-  for (const key of rootDeleteKeys) settingsStore.hydrateSettingKey(key, undefined, false);
+  for (const key of rootDeleteKeys)
+    settingsStore.hydrateSettingKey(key, undefined, false);
 
   if (change.pluginStorageCleared) {
     settingsStore.hydrateRemotePluginCustomStorageClear();
@@ -129,10 +132,14 @@ async function applyDatabaseChange(
     settingsStore.hydrateRemotePluginCustomStorageDelete(key);
   }
   const pluginStorageValues = await Promise.all(
-    pluginStorageUpsertKeys.map(async (key) => [key, await storage.loadPluginCustomStorageKey(key)] as const),
+    pluginStorageUpsertKeys.map(
+      async (key) =>
+        [key, await storage.loadPluginCustomStorageKey(key)] as const,
+    ),
   );
   for (const [key, value] of pluginStorageValues) {
-    if (value === undefined) settingsStore.hydrateRemotePluginCustomStorageDelete(key);
+    if (value === undefined)
+      settingsStore.hydrateRemotePluginCustomStorageDelete(key);
     else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
   }
 
@@ -218,16 +225,21 @@ async function findActiveModelJobId(chatId: string): Promise<string | null> {
   }
 }
 
-export async function cancelNodeChatGeneration(chatId: string): Promise<boolean> {
+export async function cancelNodeChatGeneration(
+  chatId: string,
+): Promise<boolean> {
   if (!isNodeServer || !chatId) return false;
   let jobId = await findActiveModelJobId(chatId);
   if (!jobId) return false;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch(`/api/model-jobs/${encodeURIComponent(jobId)}`, {
-      method: "DELETE",
-      headers: { "risu-auth": await getNodeServerProxyAuth() },
-    });
+    const response = await fetch(
+      `/api/model-jobs/${encodeURIComponent(jobId)}`,
+      {
+        method: "DELETE",
+        headers: { "risu-auth": await getNodeServerProxyAuth() },
+      },
+    );
     if (response.ok) {
       if (activeModelJobsByChat.get(chatId) === jobId) {
         activeModelJobsByChat.delete(chatId);
@@ -291,9 +303,11 @@ async function consumeEventStream(
       for (const line of frame.split("\n")) {
         if (line.startsWith("id:")) {
           const parsed = Number(line.slice(3).trim());
-          if (Number.isSafeInteger(parsed) && parsed >= 0) frameEventId = parsed;
+          if (Number.isSafeInteger(parsed) && parsed >= 0)
+            frameEventId = parsed;
         } else if (line.startsWith("event:")) eventName = line.slice(6).trim();
-        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+        else if (line.startsWith("data:"))
+          dataLines.push(line.slice(5).trimStart());
       }
       if (dataLines.length > 0) {
         await dispatchEvent(storage, eventName, dataLines.join("\n"));

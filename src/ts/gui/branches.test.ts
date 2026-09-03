@@ -8,11 +8,7 @@ import {
 import { createEditedMessageBranch } from "../chatBranches";
 import type { Chat, Message } from "../storage/database/schema";
 
-function message(
-  chatId: string,
-  role: Message["role"],
-  data: string,
-): Message {
+function message(chatId: string, role: Message["role"], data: string): Message {
   return { chatId, role, data };
 }
 
@@ -21,7 +17,12 @@ function timeline(
   messages: Message[],
   active = false,
 ): ChatGraphTimeline {
-  return { branchId, messages, active, reason: branchId === "root" ? "root" : "reroll" };
+  return {
+    branchId,
+    messages,
+    active,
+    reason: branchId === "root" ? "root" : "reroll",
+  };
 }
 
 describe("buildChatMessageGraph", () => {
@@ -61,7 +62,9 @@ describe("buildChatMessageGraph", () => {
 
     const fork = graph.nodes.find((node) => node.id === "message:u2")!;
     const originalNode = graph.nodes.find((node) => node.id === "message:a2")!;
-    const rerollNode = graph.nodes.find((node) => node.id === "message:a2-alt")!;
+    const rerollNode = graph.nodes.find(
+      (node) => node.id === "message:a2-alt",
+    )!;
     expect(fork.branchPoint).toBe(true);
     expect(fork.continuationCount).toBe(2);
     expect(originalNode.y).toBe(rerollNode.y);
@@ -77,10 +80,18 @@ describe("buildChatMessageGraph", () => {
       timeline("reroll", [shared, alternative], true),
     ]);
 
-    expect(graph.nodes.find((node) => node.id === "message:u1")?.activePath).toBe(true);
-    expect(graph.nodes.find((node) => node.id === "message:a1")?.activePath).toBe(false);
-    expect(graph.nodes.find((node) => node.id === "message:a1-alt")?.activeTerminal).toBe(true);
-    expect(graph.edges.find((edge) => edge.to === "message:a1-alt")?.active).toBe(true);
+    expect(
+      graph.nodes.find((node) => node.id === "message:u1")?.activePath,
+    ).toBe(true);
+    expect(
+      graph.nodes.find((node) => node.id === "message:a1")?.activePath,
+    ).toBe(false);
+    expect(
+      graph.nodes.find((node) => node.id === "message:a1-alt")?.activeTerminal,
+    ).toBe(true);
+    expect(
+      graph.edges.find((edge) => edge.to === "message:a1-alt")?.active,
+    ).toBe(true);
   });
 
   it("exposes an empty branch as a terminal on the message where it split", () => {
@@ -94,7 +105,9 @@ describe("buildChatMessageGraph", () => {
 
     const fork = graph.nodes.find((node) => node.id === "message:a1")!;
     expect(fork.branchPoint).toBe(true);
-    expect(fork.terminals).toEqual([{ branchId: "manual", reason: "manual", active: true }]);
+    expect(fork.terminals).toEqual([
+      { branchId: "manual", reason: "manual", active: true },
+    ]);
     expect(fork.activeTerminal).toBe(true);
   });
 
@@ -102,26 +115,40 @@ describe("buildChatMessageGraph", () => {
     const sharedUser: Message = { role: "user", data: "hello" };
     const sharedAnswer: Message = { role: "char", data: "same answer" };
     const graph = buildChatMessageGraph([
-      timeline("root", [sharedUser, sharedAnswer, { role: "user", data: "left" }]),
-      timeline("reroll", [
-        { ...sharedUser },
-        { ...sharedAnswer },
-        { role: "user", data: "right" },
-      ], true),
+      timeline("root", [
+        sharedUser,
+        sharedAnswer,
+        { role: "user", data: "left" },
+      ]),
+      timeline(
+        "reroll",
+        [
+          { ...sharedUser },
+          { ...sharedAnswer },
+          { role: "user", data: "right" },
+        ],
+        true,
+      ),
     ]);
 
     expect(graph.nodes).toHaveLength(4);
-    expect(graph.nodes.filter((node) => node.preview === "same answer")).toHaveLength(1);
-    expect(graph.nodes.find((node) => node.preview === "same answer")?.branchPoint).toBe(true);
+    expect(
+      graph.nodes.filter((node) => node.preview === "same answer"),
+    ).toHaveLength(1);
+    expect(
+      graph.nodes.find((node) => node.preview === "same answer")?.branchPoint,
+    ).toBe(true);
   });
 
   it("collapses a long linear stretch while preserving its endpoints and active path", () => {
     const messages = Array.from({ length: 120 }, (_, index) =>
-      message(`m${index}`, index % 2 === 0 ? "user" : "char", `message ${index + 1}`)
+      message(
+        `m${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `message ${index + 1}`,
+      ),
     );
-    const graph = buildChatMessageGraph([
-      timeline("root", messages, true),
-    ]);
+    const graph = buildChatMessageGraph([timeline("root", messages, true)]);
 
     const summary = graph.nodes.find((node) => node.kind === "summary")!;
     expect(graph.messageCount).toBe(120);
@@ -131,15 +158,25 @@ describe("buildChatMessageGraph", () => {
     expect(summary.messageIndex).toBe(3);
     expect(summary.endMessageIndex).toBe(116);
     expect(summary.activePath).toBe(true);
-    expect(graph.edges.filter((edge) => edge.from === summary.id || edge.to === summary.id))
-      .toHaveLength(2);
-    expect(graph.edges.filter((edge) => edge.from === summary.id || edge.to === summary.id)
-      .every((edge) => edge.active)).toBe(true);
+    expect(
+      graph.edges.filter(
+        (edge) => edge.from === summary.id || edge.to === summary.id,
+      ),
+    ).toHaveLength(2);
+    expect(
+      graph.edges
+        .filter((edge) => edge.from === summary.id || edge.to === summary.id)
+        .every((edge) => edge.active),
+    ).toBe(true);
   });
 
   it("never collapses the exact fork point in a long chat", () => {
     const shared = Array.from({ length: 100 }, (_, index) =>
-      message(`shared-${index}`, index % 2 === 0 ? "user" : "char", `shared ${index + 1}`)
+      message(
+        `shared-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `shared ${index + 1}`,
+      ),
     );
     const original = message("original", "char", "original ending");
     const alternative = message("alternative", "char", "alternative ending");
@@ -149,8 +186,12 @@ describe("buildChatMessageGraph", () => {
     ]);
 
     const fork = graph.nodes.find((node) => node.id === "message:shared-99")!;
-    const originalNode = graph.nodes.find((node) => node.id === "message:original")!;
-    const alternativeNode = graph.nodes.find((node) => node.id === "message:alternative")!;
+    const originalNode = graph.nodes.find(
+      (node) => node.id === "message:original",
+    )!;
+    const alternativeNode = graph.nodes.find(
+      (node) => node.id === "message:alternative",
+    )!;
     expect(graph.collapsedMessageCount).toBeGreaterThan(0);
     expect(fork.kind).toBe("message");
     expect(fork.branchPoint).toBe(true);
@@ -190,8 +231,12 @@ describe("getChatBranches", () => {
 
     createEditedMessageBranch(chat, 2, "edited input", 10);
     const graph = getChatBranches(chat);
-    const originalInput = graph.nodes.find((node) => node.preview === "original input")!;
-    const editedInput = graph.nodes.find((node) => node.preview === "edited input")!;
+    const originalInput = graph.nodes.find(
+      (node) => node.preview === "original input",
+    )!;
+    const editedInput = graph.nodes.find(
+      (node) => node.preview === "edited input",
+    )!;
     const fork = graph.nodes.find((node) => node.preview === "first answer")!;
 
     expect(graph.timelineCount).toBe(2);

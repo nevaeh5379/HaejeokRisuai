@@ -26,7 +26,8 @@ describe("chat generation stats", () => {
       selectedChat: 2,
       model: "initial-model",
       startedAt: 1_000,
-    });    updateChatGenerationModel("generation-a", "gemini-3.7-flash");
+    });
+    updateChatGenerationModel("generation-a", "gemini-3.7-flash");
     recordChatGenerationText("generation-a", "hello", 4_500);
     recordChatGenerationText("generation-a", "hello world", 19_400);
     completeChatGenerationStats("generation-a", "hello world", 19_400);
@@ -66,8 +67,12 @@ describe("chat generation stats", () => {
     expect(stats.get("generation-a")?.outputText).toBe("alpha");
     expect(stats.get("generation-b")?.phase).toBe("generating");
     expect(stats.get("generation-b")?.model).toBe("model-b-updated");
-    expect(getChatGenerationStats(stats, 0, 0)?.generationId).toBe("generation-a");
-    expect(getChatGenerationStats(stats, 1, 3)?.generationId).toBe("generation-b");
+    expect(getChatGenerationStats(stats, 0, 0)?.generationId).toBe(
+      "generation-a",
+    );
+    expect(getChatGenerationStats(stats, 1, 3)?.generationId).toBe(
+      "generation-b",
+    );
   });
 
   it("selects the newest generation for the same chat", () => {
@@ -86,7 +91,9 @@ describe("chat generation stats", () => {
       startedAt: 20,
     });
 
-    expect(getChatGenerationStats(get(chatGenerationStats), 0, 0)?.generationId).toBe("newer");
+    expect(
+      getChatGenerationStats(get(chatGenerationStats), 0, 0)?.generationId,
+    ).toBe("newer");
   });
 
   it("hides only the completed generation after the reading window", async () => {

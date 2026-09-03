@@ -115,7 +115,9 @@ describe("importChat HTML support", () => {
     expect(characterStore.characters[0].chatPage).toBe(0);
 
     // Verify messages were persisted to SQL storage
-    expect(mockStorage.commits.some((c) => c.action === "chat-create-messages")).toBe(true);
+    expect(
+      mockStorage.commits.some((c) => c.action === "chat-create-messages"),
+    ).toBe(true);
   });
 
   it("handles HTML file with missing .idat gracefully without throwing", async () => {

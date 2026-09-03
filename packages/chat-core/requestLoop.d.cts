@@ -16,8 +16,12 @@ export interface ChatRequestAttemptContext {
 }
 
 export interface ChatRequestFallbackRuntime {
-  beginFallback?(context: Omit<ChatRequestAttemptContext, "retryCount">): void | Promise<void>;
-  executeAttempt(context: ChatRequestAttemptContext): Promise<ChatModelResponse>;
+  beginFallback?(
+    context: Omit<ChatRequestAttemptContext, "retryCount">,
+  ): void | Promise<void>;
+  executeAttempt(
+    context: ChatRequestAttemptContext,
+  ): Promise<ChatModelResponse>;
   isAborted?(): boolean;
   sleep?(delayMs: number): Promise<void>;
 }

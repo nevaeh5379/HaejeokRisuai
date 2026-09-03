@@ -5,7 +5,10 @@ import {
   createChatGenerationPlan,
   executeChatModelRequest,
 } from "@risuai/chat-core/generation.cjs";
-import type { ChatExecutor, ChatSendOptions } from "@risuai/chat-core/executor.cjs";
+import type {
+  ChatExecutor,
+  ChatSendOptions,
+} from "@risuai/chat-core/executor.cjs";
 import type {
   ChatModelResponse,
   ChatStageTimings,
@@ -175,7 +178,10 @@ export class LocalChatExecutor implements ChatExecutor {
         {
           plan,
           biases: prompt.biases,
-          triggerTarget: requireChatTargetFromIndexes(selectedChar, selectedChat),
+          triggerTarget: requireChatTargetFromIndexes(
+            selectedChar,
+            selectedChat,
+          ),
           currentChar,
           isGroupChat: nowChatroom.type === "group",
           continueGeneration: arg.continue,
@@ -206,7 +212,8 @@ export class LocalChatExecutor implements ChatExecutor {
     }
 
     if (trackGeneration && req.type !== "streaming" && req.type !== "fail") {
-      const firstResponse = req.type === "success" ? req.result : req.result[0]?.[1] ?? "";
+      const firstResponse =
+        req.type === "success" ? req.result : (req.result[0]?.[1] ?? "");
       recordChatGenerationText(
         generationId,
         firstResponse,
@@ -280,6 +287,8 @@ export class LocalChatExecutor implements ChatExecutor {
   }
 }
 
-export function createLocalChatExecutor(sink: LocalChatExecutorSink): ChatExecutor {
+export function createLocalChatExecutor(
+  sink: LocalChatExecutorSink,
+): ChatExecutor {
   return new LocalChatExecutor(sink);
 }

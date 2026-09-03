@@ -158,7 +158,9 @@ describe("Module subModel feature", () => {
       };
 
       moduleStore.modules = [moduleWithSubModel];
-      const triggers = getModuleTriggers(undefined, ["mod-with-submodel-disabled"]);
+      const triggers = getModuleTriggers(undefined, [
+        "mod-with-submodel-disabled",
+      ]);
 
       expect(triggers).toHaveLength(1);
       expect(triggers[0].subModel).toBeUndefined();
@@ -205,7 +207,10 @@ describe("Module subModel feature", () => {
         scriptstate: {},
       };
 
-      await runTrigger(char, "manual", { chat, manualName: "Test v2RunLLM disabled" });
+      await runTrigger(char, "manual", {
+        chat,
+        manualName: "Test v2RunLLM disabled",
+      });
 
       expect(mocks.requestChatData).toHaveBeenCalledWith(
         expect.objectContaining({

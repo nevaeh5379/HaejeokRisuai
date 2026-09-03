@@ -3,9 +3,9 @@ import "katex/dist/katex.min.css";
 import App from "./App.svelte";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
-import { Buffer } from 'node:buffer';
+import { Buffer } from "node:buffer";
 
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   window.Buffer = Buffer;
 }
 

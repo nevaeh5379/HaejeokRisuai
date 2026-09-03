@@ -132,7 +132,11 @@ async function summary(
       ...message,
       memo: "supaPrompt",
     }));
-    console.log("Using submodel: ", presetStore.state.subModel, "for supaMemory model");
+    console.log(
+      "Using submodel: ",
+      presetStore.state.subModel,
+      "for supaMemory model",
+    );
     const da = await requestChatData(
       {
         formated: promptbody,

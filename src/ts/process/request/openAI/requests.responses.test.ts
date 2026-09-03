@@ -761,7 +761,9 @@ describe("OpenAI Responses API helpers", () => {
     expect(result.type).toBe("success");
     const preview = JSON.parse(result.result as string);
     expect(preview.body.model).toBe("memory-model");
-    expect(preview.url).toBe("https://nano-gpt.com/api/subscription/v1/responses");
+    expect(preview.url).toBe(
+      "https://nano-gpt.com/api/subscription/v1/responses",
+    );
     expect(preview.headers["X-Provider"]).toBeUndefined();
   });
 

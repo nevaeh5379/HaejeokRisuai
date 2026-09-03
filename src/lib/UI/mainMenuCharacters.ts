@@ -4,9 +4,9 @@ export type MainMenuCharacterEntry<T> = {
   matchScore: number;
 };
 
-export function indexMainMenuCharacters<T extends { trashTime?: number | null }>(
-  characters: readonly T[],
-): MainMenuCharacterEntry<T>[] {
+export function indexMainMenuCharacters<
+  T extends { trashTime?: number | null },
+>(characters: readonly T[]): MainMenuCharacterEntry<T>[] {
   const entries: MainMenuCharacterEntry<T>[] = [];
 
   for (let index = 0; index < characters.length; index++) {

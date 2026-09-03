@@ -24,15 +24,17 @@ export interface NativeSqlitePlugin {
   }): Promise<{ statements: number }>;
   commitTransaction(options: { id: string }): Promise<void>;
   rollbackTransaction(options: { id: string }): Promise<void>;
-  restoreOpen(options: {
-    expectedRevision: number;
-  }): Promise<{ id: string }>;
+  restoreOpen(options: { expectedRevision: number }): Promise<{ id: string }>;
   restoreAppend(options: { id: string; data: string }): Promise<void>;
   restoreFinish(options: { id: string }): Promise<{ statements: number }>;
   restoreAbort(options: { id: string }): Promise<void>;
   addListener(
     eventName: "restoreProgress",
-    listener: (event: { id: string; completed: number; stage?: string }) => void,
+    listener: (event: {
+      id: string;
+      completed: number;
+      stage?: string;
+    }) => void,
   ): Promise<{ remove(): Promise<void> }>;
 }
 

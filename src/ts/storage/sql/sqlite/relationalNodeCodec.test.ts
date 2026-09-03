@@ -68,7 +68,9 @@ describe("typed relational node codec", () => {
       ],
     };
 
-    expect(rebuildRelationalValue(flattenRelationalValue(value))).toEqual(value);
+    expect(rebuildRelationalValue(flattenRelationalValue(value))).toEqual(
+      value,
+    );
   });
 
   it("enforces depth and row limits before persistence", () => {

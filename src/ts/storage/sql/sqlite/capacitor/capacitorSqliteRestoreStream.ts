@@ -33,7 +33,10 @@ class ChunkSink {
     while (offset < bytes.length) {
       const remaining = TRANSPORT_BYTE_CHUNK - this.pendingLength;
       const copied = Math.min(remaining, bytes.length - offset);
-      this.pending.set(bytes.subarray(offset, offset + copied), this.pendingLength);
+      this.pending.set(
+        bytes.subarray(offset, offset + copied),
+        this.pendingLength,
+      );
       this.pendingLength += copied;
       offset += copied;
       if (this.pendingLength >= TRANSPORT_BYTE_CHUNK) await this.flush();
@@ -91,7 +94,9 @@ async function writeBindValue(
     onSourceCharacters?.(1);
     return;
   }
-  throw new TypeError(`Unsupported native SQLite restore bind: ${typeof value}`);
+  throw new TypeError(
+    `Unsupported native SQLite restore bind: ${typeof value}`,
+  );
 }
 
 export class CapacitorSqliteRestoreStream {
@@ -100,9 +105,7 @@ export class CapacitorSqliteRestoreStream {
   private firstStatement = true;
   private progressListener: { remove(): Promise<void> } | null = null;
 
-  constructor(
-    private readonly plugin: NativeSqlitePlugin = nativeSqlite,
-  ) {}
+  constructor(private readonly plugin: NativeSqlitePlugin = nativeSqlite) {}
 
   async open(
     expectedRevision: number,
@@ -125,7 +128,8 @@ export class CapacitorSqliteRestoreStream {
     bind: unknown[] = [],
     onProgress?: (fraction: number) => void,
   ) {
-    if (!this.sink || !this.id) throw new Error("Native SQLite restore stream is not open");
+    if (!this.sink || !this.id)
+      throw new Error("Native SQLite restore stream is not open");
     const totalSourceCharacters = Math.max(
       1,
       Math.max(1, sql.length) +
@@ -157,7 +161,8 @@ export class CapacitorSqliteRestoreStream {
   }
 
   async finish(): Promise<number> {
-    if (!this.sink || !this.id) throw new Error("Native SQLite restore stream is not open");
+    if (!this.sink || !this.id)
+      throw new Error("Native SQLite restore stream is not open");
     const id = this.id;
     try {
       await this.sink.write("]");

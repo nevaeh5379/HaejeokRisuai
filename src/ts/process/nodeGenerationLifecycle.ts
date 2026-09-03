@@ -8,8 +8,10 @@ const activeLifecycles = new Map<string, string>();
 const failedLifecycles = new Set<string>();
 
 function createLifecycleId(): string {
-  return globalThis.crypto?.randomUUID?.() ??
-    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 async function publishState(

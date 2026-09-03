@@ -16,8 +16,7 @@ export interface CohereConversationBody {
 }
 
 export type CohereConversationPreparation =
-  | { ok: true; body: CohereConversationBody }
-  | { ok: false; error: string };
+  { ok: true; body: CohereConversationBody } | { ok: false; error: string };
 
 export function prepareCohereConversation(
   messages: readonly OpenAIChat[],

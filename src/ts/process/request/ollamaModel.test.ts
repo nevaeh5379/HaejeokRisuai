@@ -65,10 +65,20 @@ describe("resolveOllamaRequestModel", () => {
 
     // Translate uses Gemma4 override
     expect(
-      resolveOllamaRequestModel(settings, "cloud", "translate", translateOverride),
+      resolveOllamaRequestModel(
+        settings,
+        "cloud",
+        "translate",
+        translateOverride,
+      ),
     ).toBe("cloud-gemma4");
     expect(
-      resolveOllamaRequestModel(settings, "local", "translate", translateOverride),
+      resolveOllamaRequestModel(
+        settings,
+        "local",
+        "translate",
+        translateOverride,
+      ),
     ).toBe("local-gemma4");
 
     // Without override, falls back to auxiliary setting

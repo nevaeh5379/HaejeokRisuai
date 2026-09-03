@@ -53,20 +53,25 @@ export async function sendChat(
   const fallbackCharacter = characterStore.characters[selectedIndex];
   const targetCharacterId = arg.targetCharacterId ?? fallbackCharacter?.chaId;
   const targetCharacter = targetCharacterId
-    ? characterStore.characters.find((character) => character?.chaId === targetCharacterId)
+    ? characterStore.characters.find(
+        (character) => character?.chaId === targetCharacterId,
+      )
     : fallbackCharacter;
   const fallbackChat = targetCharacter?.chats?.[targetCharacter.chatPage ?? 0];
   const targetChatId = arg.targetChatId ?? fallbackChat?.id;
   const targetChat = targetChatId
     ? targetCharacter?.chats?.find((chat) => chat?.id === targetChatId)
     : fallbackChat;
-  const locked = keepAlive && targetChatId ? beginChatGeneration(targetChatId) : false;
+  const locked =
+    keepAlive && targetChatId ? beginChatGeneration(targetChatId) : false;
   if (keepAlive && targetChatId && !locked) return false;
 
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
   const lifecycleId =
-    locked && targetChatId ? await beginNodeGenerationLifecycle(targetChatId) : null;
+    locked && targetChatId
+      ? await beginNodeGenerationLifecycle(targetChatId)
+      : null;
   if (keepAlive) await beginNativeChatRequest();
   const serializeForPresetChain =
     chatProcessIndex === -1 && Boolean(settingsStore.state.presetChain?.trim());

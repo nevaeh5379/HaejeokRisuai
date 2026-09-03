@@ -1,10 +1,10 @@
-const FAVORITES_STORAGE_KEY = 'risu_favorite_models';
-const RECENT_STORAGE_KEY = 'risu_recent_models';
+const FAVORITES_STORAGE_KEY = "risu_favorite_models";
+const RECENT_STORAGE_KEY = "risu_recent_models";
 const MAX_RECENT_MODELS = 10;
 
 function loadFromStorage(key: string): string[] {
   try {
-    if (typeof localStorage === 'undefined') return [];
+    if (typeof localStorage === "undefined") return [];
     const item = localStorage.getItem(key);
     if (!item) return [];
     const parsed = JSON.parse(item);
@@ -16,7 +16,7 @@ function loadFromStorage(key: string): string[] {
 
 function saveToStorage(key: string, data: string[]) {
   try {
-    if (typeof localStorage === 'undefined') return;
+    if (typeof localStorage === "undefined") return;
     localStorage.setItem(key, JSON.stringify(data));
   } catch {
     // Ignore storage errors (e.g. quota exceeded or private mode)

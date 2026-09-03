@@ -1,7 +1,10 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { getChatBranchMessages } from "../chatBranches";
-import type { Chat, ChatBranchReason, Message } from "../storage/database/schema";
-
+import type {
+  Chat,
+  ChatBranchReason,
+  Message,
+} from "../storage/database/schema";
 
 export interface ChatGraphTerminal {
   branchId: string;
@@ -124,7 +127,8 @@ export function buildChatMessageGraph(
       return;
     }
     const parent = mutableNodes.get(parentId);
-    if (parent && !parent.children.includes(childId)) parent.children.push(childId);
+    if (parent && !parent.children.includes(childId))
+      parent.children.push(childId);
   };
 
   for (const timeline of timelines) {
@@ -161,7 +165,11 @@ export function buildChatMessageGraph(
         };
         mutableNodes.set(nodeId, node);
         addChild(parentId, nodeId);
-      } else if (node.parentId === undefined && parentId !== undefined && node.id !== parentId) {
+      } else if (
+        node.parentId === undefined &&
+        parentId !== undefined &&
+        node.id !== parentId
+      ) {
         node.parentId = parentId;
         addChild(parentId, nodeId);
       }
@@ -200,16 +208,19 @@ export function buildChatMessageGraph(
     }
   }
 
-  const messageCount = [...mutableNodes.values()].filter((node) => !node.synthetic).length;
+  const messageCount = [...mutableNodes.values()].filter(
+    (node) => !node.synthetic,
+  ).length;
   const keepIds = new Set<string>();
   if (messageCount <= LONG_CHAT_THRESHOLD) {
     for (const nodeId of mutableNodes.keys()) keepIds.add(nodeId);
   } else {
     const anchors = [...mutableNodes.values()]
-      .filter((node) =>
-        rootIds.includes(node.id) ||
-        node.children.length !== 1 ||
-        node.terminals.length > 0
+      .filter(
+        (node) =>
+          rootIds.includes(node.id) ||
+          node.children.length !== 1 ||
+          node.terminals.length > 0,
       )
       .map((node) => node.id);
     const nearestAnchor = new Map<string, number>();
@@ -217,14 +228,16 @@ export function buildChatMessageGraph(
     for (let index = 0; index < queue.length; index++) {
       const { id, distance } = queue[index];
       const previousDistance = nearestAnchor.get(id);
-      if (previousDistance !== undefined && previousDistance <= distance) continue;
+      if (previousDistance !== undefined && previousDistance <= distance)
+        continue;
       nearestAnchor.set(id, distance);
       keepIds.add(id);
       if (distance >= CONTEXT_RADIUS) continue;
       const node = mutableNodes.get(id);
       if (!node) continue;
-      const neighbors = [node.parentId, ...node.children]
-        .filter((neighbor): neighbor is string => Boolean(neighbor));
+      const neighbors = [node.parentId, ...node.children].filter(
+        (neighbor): neighbor is string => Boolean(neighbor),
+      );
       for (const neighbor of neighbors) {
         queue.push({ id: neighbor, distance: distance + 1 });
       }
@@ -323,7 +336,9 @@ export function buildChatMessageGraph(
             endPreview: messagePreview(last.message),
             model: "",
             isComment: false,
-            activePath: hiddenIds.every((hiddenId) => activeNodeIds.has(hiddenId)),
+            activePath: hiddenIds.every((hiddenId) =>
+              activeNodeIds.has(hiddenId),
+            ),
             activeTerminal: false,
             branchPoint: false,
             continuationCount: 1,
@@ -341,10 +356,18 @@ export function buildChatMessageGraph(
         let previousId = nodeId;
         for (const hiddenId of hiddenIds) {
           ensureMessage(hiddenId);
-          addDisplayEdge(previousId, hiddenId, originalEdgeActive(previousId, hiddenId));
+          addDisplayEdge(
+            previousId,
+            hiddenId,
+            originalEdgeActive(previousId, hiddenId),
+          );
           previousId = hiddenId;
         }
-        addDisplayEdge(previousId, targetId, originalEdgeActive(previousId, targetId));
+        addDisplayEdge(
+          previousId,
+          targetId,
+          originalEdgeActive(previousId, targetId),
+        );
       }
       renderFromMessage(targetId);
     }
@@ -372,11 +395,13 @@ export function buildChatMessageGraph(
       return x;
     }
     placing.add(nodeId);
-    const childXs = (displayNodes.get(nodeId)?.children ?? [])
-      .map((childId) => place(childId, depth + 1));
-    const x = childXs.length === 0
-      ? nextLeaf++
-      : (childXs[0] + childXs[childXs.length - 1]) / 2;
+    const childXs = (displayNodes.get(nodeId)?.children ?? []).map((childId) =>
+      place(childId, depth + 1),
+    );
+    const x =
+      childXs.length === 0
+        ? nextLeaf++
+        : (childXs[0] + childXs[childXs.length - 1]) / 2;
     positions.set(nodeId, { x, y: depth });
     placing.delete(nodeId);
     return x;
@@ -397,10 +422,7 @@ export function buildChatMessageGraph(
     1,
     Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,
   );
-  const rows = Math.max(
-    1,
-    Math.max(...nodes.map((node) => node.y), 0) + 1,
-  );
+  const rows = Math.max(1, Math.max(...nodes.map((node) => node.y), 0) + 1);
   const collapsedMessageCount = nodes.reduce(
     (total, node) => total + node.collapsedCount,
     0,
@@ -418,26 +440,32 @@ export function buildChatMessageGraph(
 }
 
 export function getChatBranches(targetChat?: Chat | null): ChatBranchGraph {
-  const character = targetChat === undefined ? characterStore.currentCharacter : undefined;
-  const chat = targetChat === undefined
-    ? character?.chats?.[character.chatPage ?? 0]
-    : targetChat;
+  const character =
+    targetChat === undefined ? characterStore.currentCharacter : undefined;
+  const chat =
+    targetChat === undefined
+      ? character?.chats?.[character.chatPage ?? 0]
+      : targetChat;
   if (!chat) return buildChatMessageGraph([]);
 
   const state = chat.branchState;
   if (!state || state.branches.length === 0) {
-    return buildChatMessageGraph([{
-      branchId: "__current__",
-      reason: "root",
-      active: true,
-      messages: chat.message ?? [],
-    }]);
+    return buildChatMessageGraph([
+      {
+        branchId: "__current__",
+        reason: "root",
+        active: true,
+        messages: chat.message ?? [],
+      },
+    ]);
   }
 
-  return buildChatMessageGraph(state.branches.map((branch) => ({
-    branchId: branch.id,
-    reason: branch.reason,
-    active: branch.id === state.activeBranchId,
-    messages: getChatBranchMessages(chat, branch.id),
-  })));
+  return buildChatMessageGraph(
+    state.branches.map((branch) => ({
+      branchId: branch.id,
+      reason: branch.reason,
+      active: branch.id === state.activeBranchId,
+      messages: getChatBranchMessages(chat, branch.id),
+    })),
+  );
 }

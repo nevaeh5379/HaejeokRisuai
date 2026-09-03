@@ -15,7 +15,9 @@ const db = vi.hoisted(() => ({
   frequencyPenalty: 0,
 }));
 
-vi.mock("../../../lang", () => ({ language: { errors: { httpError: "HTTP" } } }));
+vi.mock("../../../lang", () => ({
+  language: { errors: { httpError: "HTTP" } },
+}));
 vi.mock("../../globalApi.svelte", () => ({ globalFetch: vi.fn() }));
 vi.mock("../../parser/parser.svelte", () => ({ risuChatParser: parser }));
 vi.mock("../../stores/domain/settingsStore.svelte", () => ({
@@ -32,7 +34,9 @@ vi.mock("../stringlize", () => ({
   getStopStrings: () => [],
   unstringlizeChat: vi.fn(),
 }));
-vi.mock("../templates/chatTemplate", () => ({ applyChatTemplate: () => "prompt" }));
+vi.mock("../templates/chatTemplate", () => ({
+  applyChatTemplate: () => "prompt",
+}));
 vi.mock("./shared", () => ({
   applyAdditionalParameters: (body: any) => body,
   applyParameters: (body: any) => body,
@@ -61,14 +65,17 @@ const requestArg = {
 test.each([
   ["legacy", requestOobaLegacy],
   ["openai compatible", requestOoba],
-])("parses %s stop strings with the generation target", async (_name, request) => {
-  const result = await request(requestArg);
-  expect(result.type).toBe("success");
-  const payload = JSON.parse((result as any).result);
-  const stops = payload.body.stopping_strings ?? payload.body.stop;
-  expect(stops).toEqual(["parsed:STOP {{char}}"]);
-  expect(parser).toHaveBeenCalledWith("STOP {{char}}", {
-    chara: targetCharacter,
-    chatTarget: target,
-  });
-});
+])(
+  "parses %s stop strings with the generation target",
+  async (_name, request) => {
+    const result = await request(requestArg);
+    expect(result.type).toBe("success");
+    const payload = JSON.parse((result as any).result);
+    const stops = payload.body.stopping_strings ?? payload.body.stop;
+    expect(stops).toEqual(["parsed:STOP {{char}}"]);
+    expect(parser).toHaveBeenCalledWith("STOP {{char}}", {
+      chara: targetCharacter,
+      chatTarget: target,
+    });
+  },
+);

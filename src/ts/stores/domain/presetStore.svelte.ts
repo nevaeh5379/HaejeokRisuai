@@ -54,7 +54,9 @@ class PresetStore
     defineProperty: (_target, prop, descriptor) => {
       assertPresetKey(prop);
       if (descriptor.configurable !== true) {
-        throw new TypeError("PresetStore state properties must be configurable");
+        throw new TypeError(
+          "PresetStore state properties must be configurable",
+        );
       }
       return Reflect.defineProperty(this.stateData, prop, descriptor);
     },
@@ -172,7 +174,9 @@ class PresetStore
       throw error;
     }
 
-    const latestFingerprint = snapshotFingerprint(this.activePresetSerializer?.());
+    const latestFingerprint = snapshotFingerprint(
+      this.activePresetSerializer?.(),
+    );
     if (latestFingerprint !== this.persistedActiveFingerprint) {
       this.activeDirty = true;
       this.commitQueue.schedule(() => this.flush(), 300);

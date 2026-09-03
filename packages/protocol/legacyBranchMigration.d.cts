@@ -24,5 +24,8 @@ export interface LegacyBranchMigrationPlan {
   messages: LegacyBranchMigrationMessage[];
   links: LegacyBranchMigrationLink[];
 }
-export function buildLegacyBranchMigrationPlan(chat: any, idFactory: () => string): LegacyBranchMigrationPlan | null;
+export function buildLegacyBranchMigrationPlan(
+  chat: any,
+  idFactory: () => string,
+): LegacyBranchMigrationPlan | null;
 export function materializeLegacyTimeline(chat: any, branch: any): any[];

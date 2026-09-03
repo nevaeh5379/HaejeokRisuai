@@ -28,10 +28,13 @@ describe("OpenAI browser logit bias preparation", () => {
     mocks.strongBan.mockResolvedValue({ 99: -100 });
     mocks.tokenizeNum.mockResolvedValue([5, 6]);
 
-    const result = await prepareOpenAILogitBias([
-      ["ban me", -101],
-      ["boost me", 4],
-    ], { 1: 2 });
+    const result = await prepareOpenAILogitBias(
+      [
+        ["ban me", -101],
+        ["boost me", 4],
+      ],
+      { 1: 2 },
+    );
 
     expect(mocks.strongBan).toHaveBeenCalledWith("ban me", { 1: 2 });
     expect(mocks.tokenizeNum).toHaveBeenCalledWith("boost me");

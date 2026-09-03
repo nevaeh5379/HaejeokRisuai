@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { characterStore, messageStore } from "./stores/domain";
 import { duplicateCharacter, exportAllChats, exportChat } from "./characters";
 import { selectedCharID } from "./stores.svelte";
-import type { character, groupChat, Chat, Message } from "./storage/database/schema";
+import type {
+  character,
+  groupChat,
+  Chat,
+  Message,
+} from "./storage/database/schema";
 import type { ISqlStorage } from "./storage/sql/ISqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./storage/sql/sqlCommit";
 import { setSqlStorageForTesting } from "./storage/sql/sqlStorageFactory";
@@ -71,11 +76,19 @@ class MockSqlStorage {
   }
 }
 
-function makeMessage(chatId: string, data: string, role: Message["role"] = "user"): Message {
+function makeMessage(
+  chatId: string,
+  data: string,
+  role: Message["role"] = "user",
+): Message {
   return { chatId, role, data };
 }
 
-function makeChat(id: string, messages: Message[], extra: Partial<Chat> = {}): Chat {
+function makeChat(
+  id: string,
+  messages: Message[],
+  extra: Partial<Chat> = {},
+): Chat {
   return {
     id,
     name: "Chat 1",
@@ -104,16 +117,15 @@ describe("duplicateCharacter", () => {
   });
 
   it("duplicates a fully hydrated character with fresh IDs and persisted messages", async () => {
-    const chat1 = makeChat("chat-1", [
-      makeMessage("m1", "hello"),
-      makeMessage("m2", "hi there", "char"),
-    ], {
-      bookmarks: ["m1"],
-      bookmarkNames: { m1: "Greeting" },
-    });
-    const chat2 = makeChat("chat-2", [
-      makeMessage("m3", "another message"),
-    ]);
+    const chat1 = makeChat(
+      "chat-1",
+      [makeMessage("m1", "hello"), makeMessage("m2", "hi there", "char")],
+      {
+        bookmarks: ["m1"],
+        bookmarkNames: { m1: "Greeting" },
+      },
+    );
+    const chat2 = makeChat("chat-2", [makeMessage("m3", "another message")]);
 
     const sourceChar = {
       chaId: "char-1",
@@ -140,26 +152,42 @@ describe("duplicateCharacter", () => {
 
     // Chat 1 ID & messages
     expect(copyChar.chats[0].id).not.toBe("chat-1");
-    expect(copyChar.chats[0].message.map((m) => m.data)).toEqual(["hello", "hi there"]);
-    expect(copyChar.chats[0].message.map((m) => m.chatId)).not.toEqual(["m1", "m2"]);
-    expect(new Set(copyChar.chats[0].message.map((m) => m.chatId)).size).toBe(2);
+    expect(copyChar.chats[0].message.map((m) => m.data)).toEqual([
+      "hello",
+      "hi there",
+    ]);
+    expect(copyChar.chats[0].message.map((m) => m.chatId)).not.toEqual([
+      "m1",
+      "m2",
+    ]);
+    expect(new Set(copyChar.chats[0].message.map((m) => m.chatId)).size).toBe(
+      2,
+    );
 
     // Bookmark remapping
     const newMsg1Id = copyChar.chats[0].message[0].chatId;
     expect(copyChar.chats[0].bookmarks).toEqual([newMsg1Id]);
-    expect(copyChar.chats[0].bookmarkNames).toEqual({ [newMsg1Id!]: "Greeting" });
+    expect(copyChar.chats[0].bookmarkNames).toEqual({
+      [newMsg1Id!]: "Greeting",
+    });
 
     // Chat 2 ID & messages
     expect(copyChar.chats[1].id).not.toBe("chat-2");
-    expect(copyChar.chats[1].message.map((m) => m.data)).toEqual(["another message"]);
+    expect(copyChar.chats[1].message.map((m) => m.data)).toEqual([
+      "another message",
+    ]);
     expect(copyChar.chats[1].message[0].chatId).not.toBe("m3");
 
     // Details preserved
-    expect(copyChar.globalLore).toEqual([{ key: "lore1", content: "some lore" }]);
+    expect(copyChar.globalLore).toEqual([
+      { key: "lore1", content: "some lore" },
+    ]);
     expect(copyChar.triggerscript).toEqual([{ name: "trigger1" }]);
 
     // SQL messages persisted
-    expect(mockStorage.commits.some((c) => c.action === "chat-create-messages")).toBe(true);
+    expect(
+      mockStorage.commits.some((c) => c.action === "chat-create-messages"),
+    ).toBe(true);
   });
 
   it("hydrates shallow character details before duplicating", async () => {
@@ -222,7 +250,9 @@ describe("duplicateCharacter", () => {
 
     expect(preLoadChatMock).toHaveBeenCalledWith(0, 0, { full: true });
     expect(duplicated).not.toBeNull();
-    expect(duplicated!.chats[0].message.map((m) => m.data)).toEqual(["restored lazy message"]);
+    expect(duplicated!.chats[0].message.map((m) => m.data)).toEqual([
+      "restored lazy message",
+    ]);
   });
 
   it("aborts duplication without creating a copy if chat hydration fails", async () => {
@@ -303,21 +333,28 @@ describe("duplicateCharacter", () => {
         chats: [lazyChat],
       };
     });
-    preLoadChatMock.mockImplementation(async (characterIndex: number, chatIndex: number) => {
-      const chat = characterStore.characters[characterIndex].chats[chatIndex];
-      chat.message = [makeMessage("reordered-m", "loaded after reorder")];
-      chat.messagesLoaded = true;
-      chat.messagesFullyLoaded = true;
-      chat.detailsLoaded = true;
-    });
+    preLoadChatMock.mockImplementation(
+      async (characterIndex: number, chatIndex: number) => {
+        const chat = characterStore.characters[characterIndex].chats[chatIndex];
+        chat.message = [makeMessage("reordered-m", "loaded after reorder")];
+        chat.messagesLoaded = true;
+        chat.messagesFullyLoaded = true;
+        chat.detailsLoaded = true;
+      },
+    );
 
-    characterStore.init([sourceChar, otherChar], mockStorage as unknown as ISqlStorage);
+    characterStore.init(
+      [sourceChar, otherChar],
+      mockStorage as unknown as ISqlStorage,
+    );
 
     const duplicated = await duplicateCharacter(0);
 
     expect(duplicated).not.toBeNull();
     expect(preLoadChatMock).toHaveBeenCalledWith(1, 0, { full: true });
-    expect(characterStore.characters.some((c) => c.chaId === "char-other")).toBe(true);
+    expect(
+      characterStore.characters.some((c) => c.chaId === "char-other"),
+    ).toBe(true);
     expect(duplicated!.chats[0].message[0].data).toBe("loaded after reorder");
   });
 
@@ -345,28 +382,29 @@ describe("duplicateCharacter", () => {
 
     characterStore.init([sourceChar], mockStorage as unknown as ISqlStorage);
     let firstLoad = true;
-    preLoadChatMock.mockImplementation(async (characterIndex: number, chatIndex: number) => {
-      const char = characterStore.characters[characterIndex];
-      const target = char.chats[chatIndex];
-      target.message = [makeMessage(`${target.id}-m`, `loaded ${target.id}`)];
-      target.messagesLoaded = true;
-      target.messagesFullyLoaded = true;
-      target.detailsLoaded = true;
-      if (firstLoad) {
-        firstLoad = false;
-        char.chats.reverse();
-      }
-    });
+    preLoadChatMock.mockImplementation(
+      async (characterIndex: number, chatIndex: number) => {
+        const char = characterStore.characters[characterIndex];
+        const target = char.chats[chatIndex];
+        target.message = [makeMessage(`${target.id}-m`, `loaded ${target.id}`)];
+        target.messagesLoaded = true;
+        target.messagesFullyLoaded = true;
+        target.detailsLoaded = true;
+        if (firstLoad) {
+          firstLoad = false;
+          char.chats.reverse();
+        }
+      },
+    );
 
     const duplicated = await duplicateCharacter(0);
 
     expect(duplicated).not.toBeNull();
     expect(preLoadChatMock).toHaveBeenNthCalledWith(1, 0, 0, { full: true });
     expect(preLoadChatMock).toHaveBeenNthCalledWith(2, 0, 0, { full: true });
-    expect(duplicated!.chats.map((chat) => chat.message[0].data).sort()).toEqual([
-      "loaded chat-a",
-      "loaded chat-b",
-    ]);
+    expect(
+      duplicated!.chats.map((chat) => chat.message[0].data).sort(),
+    ).toEqual(["loaded chat-a", "loaded chat-b"]);
   });
 
   it("does not overwrite another character when cold-storage loading reorders the list", async () => {
@@ -384,7 +422,9 @@ describe("duplicateCharacter", () => {
       type: "character",
       name: "Archived Bot",
       chatPage: 0,
-      chats: [makeChat("restored-chat", [makeMessage("restored-m", "restored")])],
+      chats: [
+        makeChat("restored-chat", [makeMessage("restored-m", "restored")]),
+      ],
       detailsLoaded: true,
       globalLore: [{ key: "restored", content: "content" }],
     } as unknown as character;
@@ -393,11 +433,16 @@ describe("duplicateCharacter", () => {
       type: "character",
       name: "Neighbor Bot",
       chatPage: 0,
-      chats: [makeChat("neighbor-chat", [makeMessage("neighbor-m", "neighbor")])],
+      chats: [
+        makeChat("neighbor-chat", [makeMessage("neighbor-m", "neighbor")]),
+      ],
       detailsLoaded: true,
     } as unknown as character;
 
-    characterStore.init([archivedChar, otherChar], mockStorage as unknown as ISqlStorage);
+    characterStore.init(
+      [archivedChar, otherChar],
+      mockStorage as unknown as ISqlStorage,
+    );
     getColdStorageItemMock.mockImplementation(async () => {
       characterStore.characters = [otherChar, archivedChar];
       return { character: restoredChar };
@@ -406,8 +451,12 @@ describe("duplicateCharacter", () => {
     const duplicated = await duplicateCharacter(0);
 
     expect(duplicated).not.toBeNull();
-    expect(characterStore.characters.some((c) => c.chaId === "char-neighbor")).toBe(true);
-    const restored = characterStore.characters.find((c) => c.chaId === "char-archived");
+    expect(
+      characterStore.characters.some((c) => c.chaId === "char-neighbor"),
+    ).toBe(true);
+    const restored = characterStore.characters.find(
+      (c) => c.chaId === "char-archived",
+    );
     expect(restored?.chats[0].message[0].data).toBe("restored");
     expect(duplicated!.chats[0].message[0].data).toBe("restored");
   });
@@ -452,9 +501,7 @@ describe("duplicateCharacter", () => {
       name: "Hydrated Export Char",
       detailsLoaded: true,
       chatFolders: [{ id: "f1", name: "Folder 1" }],
-      chats: [
-        makeChat("chat-exp-1", [makeMessage("m1", "exported message")]),
-      ],
+      chats: [makeChat("chat-exp-1", [makeMessage("m1", "exported message")])],
     } as unknown as character;
 
     mockStorage.loadCharacter = vi.fn(async (id: string) => {
@@ -467,7 +514,9 @@ describe("duplicateCharacter", () => {
 
     await exportAllChats();
 
-    expect(mockStorage.loadCharacter).toHaveBeenCalledWith("char-shallow-all-chats");
+    expect(mockStorage.loadCharacter).toHaveBeenCalledWith(
+      "char-shallow-all-chats",
+    );
     expect(preLoadChatMock).toHaveBeenCalledWith(0, 0, { full: true });
     expect(downloadFileMock).toHaveBeenCalledTimes(1);
 
@@ -500,7 +549,9 @@ describe("duplicateCharacter", () => {
       chaId: "char-cold-export",
       type: "character",
       name: "Restored Export Char",
-      chats: [makeChat("chat-cold-export", [makeMessage("m-cold", "restored")])],
+      chats: [
+        makeChat("chat-cold-export", [makeMessage("m-cold", "restored")]),
+      ],
       chatFolders: [],
       detailsLoaded: true,
     } as unknown as character;

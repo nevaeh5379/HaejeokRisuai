@@ -40,7 +40,7 @@ export function defaultLooseObject<const TEntries extends ObjectEntries>(
   entries: TEntries,
 ) {
   const schema = looseObject(entries);
-  const createDefault = () => ({} as InferOutput<typeof schema>);
+  const createDefault = () => ({}) as InferOutput<typeof schema>;
   return fallback(nullish(schema, createDefault), createDefault);
 }
 
@@ -72,7 +72,9 @@ export function parseDefaults<const TEntries extends ObjectEntries>(
   entries: TEntries,
   input: unknown,
 ): ParsedDefaults<TEntries> {
-  return parse(object(entries), input, { abortEarly: true }) as ParsedDefaults<TEntries>;
+  return parse(object(entries), input, {
+    abortEarly: true,
+  }) as ParsedDefaults<TEntries>;
 }
 
 export function mergeDefaults<const TEntries extends ObjectEntries>(

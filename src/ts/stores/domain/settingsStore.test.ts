@@ -80,12 +80,14 @@ describe("SettingsStore Reactivity and Persistence", () => {
   });
 
   it("hydrates standalone deferred plugin settings before backup snapshots", async () => {
-    const plugins = [{
-      name: "restored-plugin",
-      version: "3.0",
-      enabled: true,
-      script: "console.log('restored')",
-    }];
+    const plugins = [
+      {
+        name: "restored-plugin",
+        version: "3.0",
+        enabled: true,
+        script: "console.log('restored')",
+      },
+    ];
     mockStorage.loadSettingKey = vi.fn(async (key: string) =>
       key === "plugins" ? plugins : undefined,
     ) as any;
@@ -491,33 +493,60 @@ describe("SettingsStore Reactivity and Persistence", () => {
   it("rejects every preset key through the public state", () => {
     settingsStore.init({}, mockStorage);
     for (const key of PRESET_STORE_SETTING_KEYS) {
-      expect(() => Reflect.get(settingsStore.state, key), key).toThrow(/owned by PresetStore/);
-      expect(() => Reflect.set(settingsStore.state, key, null), key).toThrow(/owned by PresetStore/);
-      expect(() => Reflect.deleteProperty(settingsStore.state, key), key).toThrow(/owned by PresetStore/);
-      expect(() => Object.defineProperty(settingsStore.state, key, { value: null }), key)
-        .toThrow(/owned by PresetStore/);
-      expect(() => settingsStore.update((state) => { Reflect.get(state, key); }), key)
-        .toThrow(/owned by PresetStore/);
+      expect(() => Reflect.get(settingsStore.state, key), key).toThrow(
+        /owned by PresetStore/,
+      );
+      expect(() => Reflect.set(settingsStore.state, key, null), key).toThrow(
+        /owned by PresetStore/,
+      );
+      expect(
+        () => Reflect.deleteProperty(settingsStore.state, key),
+        key,
+      ).toThrow(/owned by PresetStore/);
+      expect(
+        () => Object.defineProperty(settingsStore.state, key, { value: null }),
+        key,
+      ).toThrow(/owned by PresetStore/);
+      expect(
+        () =>
+          settingsStore.update((state) => {
+            Reflect.get(state, key);
+          }),
+        key,
+      ).toThrow(/owned by PresetStore/);
     }
   });
 
   it("does not rehydrate preset copies when a deferred load finishes after transfer", async () => {
     let finish!: (prompts: Record<string, unknown>) => void;
-    mockStorage.loadPrompts = vi.fn(() => new Promise((resolve) => { finish = resolve; })) as any;
+    mockStorage.loadPrompts = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    ) as any;
     settingsStore.init({ mainPrompt: "legacy" }, mockStorage);
     deferredSettingsLoader.init({
       storage: mockStorage,
       unloadedKeys: ["mainPrompt", "supaMemoryPrompt"],
-      hydrateSettingKey: (key, value, exists) => settingsStore.hydrateSettingKey(key, value, exists),
+      hydrateSettingKey: (key, value, exists) =>
+        settingsStore.hydrateSettingKey(key, value, exists),
     });
     const pending = deferredSettingsLoader.ensureKey("supaMemoryPrompt");
     settingsStore.releasePresetOwnedState();
-    finish({ mainPrompt: "stale SQL prompt", supaMemoryPrompt: "memory prompt" });
+    finish({
+      mainPrompt: "stale SQL prompt",
+      supaMemoryPrompt: "memory prompt",
+    });
     await pending;
     settingsStore.hydrateSettingKey("localNetworkMode", true);
 
-    expect(Object.keys(settingsStore.getBootstrapState())).not.toContain("mainPrompt");
-    expect(Object.keys(settingsStore.getBootstrapState())).not.toContain("localNetworkMode");
+    expect(Object.keys(settingsStore.getBootstrapState())).not.toContain(
+      "mainPrompt",
+    );
+    expect(Object.keys(settingsStore.getBootstrapState())).not.toContain(
+      "localNetworkMode",
+    );
     expect(settingsStore.state.supaMemoryPrompt).toBe("memory prompt");
     expect(deferredSettingsLoader.isLoaded("mainPrompt")).toBe(true);
     await settingsStore.flush();
@@ -536,7 +565,9 @@ describe("SettingsStore Reactivity and Persistence", () => {
     settingsStore.releasePresetOwnedState();
 
     expect(Object.keys(settingsStore.state)).not.toContain("apiType");
-    expect(Object.keys(settingsStore.state)).not.toContain("moduleIntergration");
+    expect(Object.keys(settingsStore.state)).not.toContain(
+      "moduleIntergration",
+    );
     expect(settingsStore.state.theme).toBe("dark");
     // @ts-expect-error Preset keys are rejected statically and at runtime.
     expect(() => settingsStore.state.apiType).toThrow(/owned by PresetStore/);
@@ -576,18 +607,18 @@ describe("SettingsStore Reactivity and Persistence", () => {
           state[key] = [];
         }),
       ).toThrow(/owned by another domain store/);
-      expect(Object.prototype.hasOwnProperty.call(settingsStore.state, key)).toBe(
-        false,
-      );
+      expect(
+        Object.prototype.hasOwnProperty.call(settingsStore.state, key),
+      ).toBe(false);
 
       expect(() =>
         settingsStore.hydrate((state) => {
           state[key] = [];
         }),
       ).toThrow(/owned by another domain store/);
-      expect(Object.prototype.hasOwnProperty.call(settingsStore.state, key)).toBe(
-        false,
-      );
+      expect(
+        Object.prototype.hasOwnProperty.call(settingsStore.state, key),
+      ).toBe(false);
     }
   });
 });

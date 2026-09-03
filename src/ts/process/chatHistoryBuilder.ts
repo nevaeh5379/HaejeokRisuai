@@ -1,9 +1,11 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { character, Chat, groupChat, Message } from "../storage/database/schema";
-import {
-  replaceTargetChat,
-  type ChatExecutionTarget,
-} from "src/ts/chatTarget";
+import type {
+  character,
+  Chat,
+  groupChat,
+  Message,
+} from "../storage/database/schema";
+import { replaceTargetChat, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { ChatTokenizer } from "../tokenizer";
 import { getUserName } from "../util";
@@ -18,7 +20,10 @@ import { getInlayAsset } from "./files/inlays";
 import { runImageEmbedding } from "./transformers";
 import { getModuleAssets } from "./modules";
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
-import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
+import {
+  generationOverride,
+  type ChatGenerationOverrides,
+} from "./chatGenerationContext";
 import { getSelectedFirstMessage } from "../firstMessageSelection";
 
 type LorePrompt = Awaited<
@@ -98,7 +103,9 @@ function extractInlayReferences(content: string, role: Message["role"]) {
       },
     );
   } else {
-    inlays.push(...(content.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g) ?? []));
+    inlays.push(
+      ...(content.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g) ?? []),
+    );
   }
   return { content, inlays };
 }
@@ -125,7 +132,10 @@ async function resolveInlays(content: string, inlays: string[]) {
         const caption = await runImageEmbedding(data.data);
         content += `[${caption[0].generated_text}]`;
       }
-    } else if ((data?.type === "video" || data?.type === "audio") && multimodals.length === 0) {
+    } else if (
+      (data?.type === "video" || data?.type === "audio") &&
+      multimodals.length === 0
+    ) {
       multimodals.push({ type: data.type, base64: data.data });
     } else if (data?.type === "signature") {
       multimodals.push({ type: "signature", base64: data.data });
@@ -145,22 +155,26 @@ async function resolveAssetPrompts(
   const assetPromises: Promise<void>[] = [];
   const moduleAssets = getModuleAssets(moduleRoom, moduleIds);
   const assets = (currentChar.additionalAssets ?? []).concat(moduleAssets);
-  content = content.replace(/\{\{asset_?prompt::(.+?)\}\}/gimsu, (_match, name) => {
-    const asset = assets.find((entry) => entry[0] === name);
-    const imagePath = asset?.[1] ?? (name === "icon" ? currentChar.image ?? "" : null);
-    if (imagePath !== null) {
-      assetPromises.push(
-        (async () => {
-          const data = await readImage(imagePath);
-          multimodals.push({
-            type: "image",
-            base64: `data:image/png;base64,${Buffer.from(data).toString("base64")}`,
-          });
-        })(),
-      );
-    }
-    return "";
-  });
+  content = content.replace(
+    /\{\{asset_?prompt::(.+?)\}\}/gimsu,
+    (_match, name) => {
+      const asset = assets.find((entry) => entry[0] === name);
+      const imagePath =
+        asset?.[1] ?? (name === "icon" ? (currentChar.image ?? "") : null);
+      if (imagePath !== null) {
+        assetPromises.push(
+          (async () => {
+            const data = await readImage(imagePath);
+            multimodals.push({
+              type: "image",
+              base64: `data:image/png;base64,${Buffer.from(data).toString("base64")}`,
+            });
+          })(),
+        );
+      }
+      return "";
+    },
+  );
   await Promise.all(assetPromises);
   return content;
 }
@@ -185,7 +199,8 @@ function resolveMessageRole(
   const shouldWrapName =
     (nowChatroom.type === "group" &&
       findCharacter(message.saying).chaId !== currentChar.chaId) ||
-    (nowChatroom.type === "group" && presetStore.state.groupOtherBotRole === "assistant") ||
+    (nowChatroom.type === "group" &&
+      presetStore.state.groupOtherBotRole === "assistant") ||
     (usingPromptTemplate && promptSettings.sendName);
 
   if (!shouldWrapName) return { role, content };
@@ -212,15 +227,20 @@ function extractThoughts(
   generation?: ChatGenerationOverrides,
 ) {
   const thoughts: string[] = [];
-  const maxDepth = generationOverride(
-    generation,
-    "promptSettings",
-    presetStore.state.promptSettings,
-  )?.maxThoughtTagDepth ?? -1;
-  content = content.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, thought) => {
-    if (maxDepth === -1 || maxDepth - messageCount <= index) thoughts.push(thought);
-    return "";
-  });
+  const maxDepth =
+    generationOverride(
+      generation,
+      "promptSettings",
+      presetStore.state.promptSettings,
+    )?.maxThoughtTagDepth ?? -1;
+  content = content.replace(
+    /<Thoughts>(.+)<\/Thoughts>/gms,
+    (_match, thought) => {
+      if (maxDepth === -1 || maxDepth - messageCount <= index)
+        thoughts.push(thought);
+      return "";
+    },
+  );
   return { content, thoughts };
 }
 
@@ -338,7 +358,11 @@ async function initializeHistory(options: BuildChatHistoryOptions) {
     !presetStore.state.aiModel.startsWith("novelai") &&
     !promptSettings?.trimStartNewChat
   ) {
-    chats.push({ role: "system", content: "[Start a new chat]", memo: "NewChat" });
+    chats.push({
+      role: "system",
+      content: "[Start a new chat]",
+      memo: "NewChat",
+    });
   }
   const firstMessage = await addFirstMessage(
     chats,
@@ -375,7 +399,13 @@ async function runStartTrigger(
     target: options.chatTarget,
   });
   if (!triggerResult) {
-    return { stopSending: false as const, currentChat, currentTokens, active, triggerResult };
+    return {
+      stopSending: false as const,
+      currentChat,
+      currentTokens,
+      active,
+      triggerResult,
+    };
   }
 
   currentChat = triggerResult.chat;
@@ -413,8 +443,10 @@ async function appendHistoryMessages(
       ),
     );
   }
-  return currentTokens +
-    (await options.tokenizer.tokenizeChats(chats.slice(historyStart)));
+  return (
+    currentTokens +
+    (await options.tokenizer.tokenizeChats(chats.slice(historyStart)))
+  );
 }
 
 async function collectDepthPrompts(

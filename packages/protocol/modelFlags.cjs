@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 const LLM_FLAGS = Object.freeze({
   hasImageInput: 0,

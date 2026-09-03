@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 const defaultRandomSource = {
   random: Math.random,
@@ -16,7 +16,11 @@ function words(data) {
   return data.split(/\n| /g).map((word) => word.toLocaleLowerCase());
 }
 
-function orderGroupSpeakers(candidates, input = '', randomSource = defaultRandomSource) {
+function orderGroupSpeakers(
+  candidates,
+  input = "",
+  randomSource = defaultRandomSource,
+) {
   const order = [];
   const ids = [];
 
@@ -41,7 +45,9 @@ function orderGroupSpeakers(candidates, input = '', randomSource = defaultRandom
   }
 
   while (order.length === 0 && candidates.length > 0) {
-    order.push(candidates[Math.floor(randomSource.random() * candidates.length)]);
+    order.push(
+      candidates[Math.floor(randomSource.random() * candidates.length)],
+    );
   }
   return order;
 }

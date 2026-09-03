@@ -10,8 +10,10 @@ const LEGACY_PERSONA_MIRROR_KEY_SET = new Set<string>(
 export function isLegacyPersonaMirrorKey(key: string): boolean {
   return LEGACY_PERSONA_MIRROR_KEY_SET.has(key);
 }
-export const DOMAIN_STORE_SETTING_KEYS = protocolSettings.DOMAIN_STORE_SETTING_KEYS;
-export const PRESET_STORE_SETTING_KEYS = protocolSettings.PRESET_STORE_SETTING_KEYS;
+export const DOMAIN_STORE_SETTING_KEYS =
+  protocolSettings.DOMAIN_STORE_SETTING_KEYS;
+export const PRESET_STORE_SETTING_KEYS =
+  protocolSettings.PRESET_STORE_SETTING_KEYS;
 const PRESET_STORE_SETTING_KEY_SET = new Set<string>(PRESET_STORE_SETTING_KEYS);
 export function isPresetStoreSettingKey(key: string): key is PresetSettingKey {
   return PRESET_STORE_SETTING_KEY_SET.has(key);

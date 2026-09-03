@@ -1,11 +1,11 @@
-'use strict';
+"use strict";
 
-const { resolveNanoGPTTransportUrl } = require('./nanoGPTProvider.cjs');
+const { resolveNanoGPTTransportUrl } = require("./nanoGPTProvider.cjs");
 
 const DEFAULT_OPENAI_CHAT_COMPLETIONS_URL =
-  'https://api.openai.com/v1/chat/completions';
-const DEFAULT_OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
-const DEFAULT_OPENAI_COMPLETIONS_URL = 'https://api.openai.com/v1/completions';
+  "https://api.openai.com/v1/chat/completions";
+const DEFAULT_OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const DEFAULT_OPENAI_COMPLETIONS_URL = "https://api.openai.com/v1/completions";
 
 function collectOpenAIToolCalls(data) {
   const collected = [];
@@ -28,19 +28,20 @@ function appendOpenAIStreamingFragment(current, incoming) {
 }
 
 function mergeOpenAIStreamingToolCallDeltas(current, deltas) {
-  const merged = current && typeof current === 'object' ? current : {};
+  const merged = current && typeof current === "object" ? current : {};
   if (!Array.isArray(deltas)) return merged;
   for (const toolCall of deltas) {
     const index = toolCall?.index ?? 0;
     if (!merged[index]) {
       merged[index] = {
         id: toolCall?.id || null,
-        type: 'function',
-        function: { name: null, arguments: '' },
+        type: "function",
+        function: { name: null, arguments: "" },
       };
     }
     if (toolCall?.id) merged[index].id = toolCall.id;
-    if (toolCall?.function?.name) merged[index].function.name = toolCall.function.name;
+    if (toolCall?.function?.name)
+      merged[index].function.name = toolCall.function.name;
     if (toolCall?.function?.arguments) {
       merged[index].function.arguments = appendOpenAIStreamingFragment(
         merged[index].function.arguments,
@@ -52,33 +53,33 @@ function mergeOpenAIStreamingToolCallDeltas(current, deltas) {
 }
 
 const OPENAI_MODEL_ALIASES = Object.freeze({
-  gpt35: 'gpt-3.5-turbo',
-  gpt35_0613: 'gpt-3.5-turbo-0613',
-  gpt35_16k: 'gpt-3.5-turbo-16k',
-  gpt35_16k_0613: 'gpt-3.5-turbo-16k-0613',
-  gpt4: 'gpt-4',
-  gpt45: 'gpt-4.5-preview',
-  gpt4_32k: 'gpt-4-32k',
-  gpt4_0613: 'gpt-4-0613',
-  gpt4_32k_0613: 'gpt-4-32k-0613',
-  gpt4_1106: 'gpt-4-1106-preview',
-  gpt4_0125: 'gpt-4-0125-preview',
-  gptvi4_1106: 'gpt-4-vision-preview',
-  gpt35_0125: 'gpt-3.5-turbo-0125',
-  gpt35_1106: 'gpt-3.5-turbo-1106',
-  gpt35_0301: 'gpt-3.5-turbo-0301',
-  gpt4_0314: 'gpt-4-0314',
-  gpt4_turbo_20240409: 'gpt-4-turbo-2024-04-09',
-  gpt4_turbo: 'gpt-4-turbo',
-  gpt4o: 'gpt-4o',
-  'gpt4o-2024-05-13': 'gpt-4o-2024-05-13',
-  gpt4om: 'gpt-4o-mini',
-  'gpt4om-2024-07-18': 'gpt-4o-mini-2024-07-18',
-  'gpt4o-2024-08-06': 'gpt-4o-2024-08-06',
-  'gpt4o-2024-11-20': 'gpt-4o-2024-11-20',
-  'gpt4o-chatgpt': 'chatgpt-4o-latest',
-  'gpt4o1-preview': 'o1-preview',
-  'gpt4o1-mini': 'o1-mini',
+  gpt35: "gpt-3.5-turbo",
+  gpt35_0613: "gpt-3.5-turbo-0613",
+  gpt35_16k: "gpt-3.5-turbo-16k",
+  gpt35_16k_0613: "gpt-3.5-turbo-16k-0613",
+  gpt4: "gpt-4",
+  gpt45: "gpt-4.5-preview",
+  gpt4_32k: "gpt-4-32k",
+  gpt4_0613: "gpt-4-0613",
+  gpt4_32k_0613: "gpt-4-32k-0613",
+  gpt4_1106: "gpt-4-1106-preview",
+  gpt4_0125: "gpt-4-0125-preview",
+  gptvi4_1106: "gpt-4-vision-preview",
+  gpt35_0125: "gpt-3.5-turbo-0125",
+  gpt35_1106: "gpt-3.5-turbo-1106",
+  gpt35_0301: "gpt-3.5-turbo-0301",
+  gpt4_0314: "gpt-4-0314",
+  gpt4_turbo_20240409: "gpt-4-turbo-2024-04-09",
+  gpt4_turbo: "gpt-4-turbo",
+  gpt4o: "gpt-4o",
+  "gpt4o-2024-05-13": "gpt-4o-2024-05-13",
+  gpt4om: "gpt-4o-mini",
+  "gpt4om-2024-07-18": "gpt-4o-mini-2024-07-18",
+  "gpt4o-2024-08-06": "gpt-4o-2024-08-06",
+  "gpt4o-2024-11-20": "gpt-4o-2024-11-20",
+  "gpt4o-chatgpt": "chatgpt-4o-latest",
+  "gpt4o1-preview": "o1-preview",
+  "gpt4o1-mini": "o1-mini",
 });
 
 function normalizeOpenAIProviderMessages(messages, options = {}) {
@@ -86,14 +87,22 @@ function normalizeOpenAIProviderMessages(messages, options = {}) {
   const oobaSystemPrompts = [];
   for (let i = 0; i < normalized.length; i++) {
     const message = normalized[i];
-    if (message.role !== 'function') {
-      if (!(message.name && message.name.startsWith('example_') && options.newOAIHandle)) {
+    if (message.role !== "function") {
+      if (!(
+        message.name &&
+        message.name.startsWith("example_") &&
+        options.newOAIHandle
+      )) {
         message.name = undefined;
       }
-      if (options.newOAIHandle && message.memo?.startsWith('NewChat')) {
-        message.content = '';
+      if (options.newOAIHandle && message.memo?.startsWith("NewChat")) {
+        message.content = "";
       }
-      if (options.deepSeekPrefix && i === normalized.length - 1 && message.role === 'assistant') {
+      if (
+        options.deepSeekPrefix &&
+        i === normalized.length - 1 &&
+        message.role === "assistant"
+      ) {
         message.prefix = true;
       }
       if (
@@ -101,9 +110,9 @@ function normalizeOpenAIProviderMessages(messages, options = {}) {
         i === normalized.length - 1 &&
         Array.isArray(message.thoughts) &&
         message.thoughts.length > 0 &&
-        message.role === 'assistant'
+        message.role === "assistant"
       ) {
-        message.reasoning_content = message.thoughts.join('\n');
+        message.reasoning_content = message.thoughts.join("\n");
       }
       delete message.memo;
       delete message.removable;
@@ -112,27 +121,28 @@ function normalizeOpenAIProviderMessages(messages, options = {}) {
       delete message.thoughts;
       delete message.cachePoint;
     }
-    if (options.reverseProxyOobaMode && message.role === 'system') {
-      if (typeof message.content === 'string') {
+    if (options.reverseProxyOobaMode && message.role === "system") {
+      if (typeof message.content === "string") {
         oobaSystemPrompts.push(message.content);
-        message.content = '';
+        message.content = "";
       }
     }
   }
   if (oobaSystemPrompts.length > 0) {
-    normalized.push({ role: 'system', content: oobaSystemPrompts.join('\n') });
+    normalized.push({ role: "system", content: oobaSystemPrompts.join("\n") });
   }
   if (options.newOAIHandle) {
-    normalized = normalized.filter((message) => (
-      message.content !== '' ||
-      (message.multimodals && message.multimodals.length > 0) ||
-      message.tool_calls ||
-      message.role === 'tool'
-    ));
+    normalized = normalized.filter(
+      (message) =>
+        message.content !== "" ||
+        (message.multimodals && message.multimodals.length > 0) ||
+        message.tool_calls ||
+        message.role === "tool",
+    );
   }
   if (options.developerRole) {
     normalized = normalized.map((message) => {
-      if (message.role === 'system') message.role = 'developer';
+      if (message.role === "system") message.role = "developer";
       return message;
     });
   }
@@ -140,72 +150,79 @@ function normalizeOpenAIProviderMessages(messages, options = {}) {
 }
 
 function resolveOpenAIRequestModel(options = {}) {
-  if (options.aiModel === 'nanogpt') return options.nanoGPTRequestModel;
-  if (options.aiModel === 'openrouter') return options.openRouterRequestModel;
+  if (options.aiModel === "nanogpt") return options.nanoGPTRequestModel;
+  if (options.aiModel === "openrouter") return options.openRouterRequestModel;
   if (OPENAI_MODEL_ALIASES[options.requestModel]) {
     return OPENAI_MODEL_ALIASES[options.requestModel];
   }
-  return options.internalID || options.requestModel || 'gpt-3.5-turbo';
+  return options.internalID || options.requestModel || "gpt-3.5-turbo";
 }
 
 function shouldUseOpenAIFlexProcessing(options = {}) {
   if (options.isOpenAIProvider) return true;
   const isCustomEndpoint =
-    options.aiModel === 'reverse_proxy' || options.aiModel?.startsWith('xcustom:::');
+    options.aiModel === "reverse_proxy" ||
+    options.aiModel?.startsWith("xcustom:::");
   if (!isCustomEndpoint) return false;
   try {
-    return new URL(options.url).hostname === 'api.openai.com';
+    return new URL(options.url).hostname === "api.openai.com";
   } catch {
     return false;
   }
 }
 
 function resolveOpenAIRequestEndpoint(options = {}) {
-  let url = options.aiModel === 'nanogpt'
-    ? resolveNanoGPTTransportUrl('chat', !!options.nanoGPTUseSubscriptionEndpoint)
-    : options.aiModel === 'openrouter'
-      ? 'https://openrouter.ai/api/v1/chat/completions'
-      : (options.customURL || DEFAULT_OPENAI_CHAT_COMPLETIONS_URL);
+  let url =
+    options.aiModel === "nanogpt"
+      ? resolveNanoGPTTransportUrl(
+          "chat",
+          !!options.nanoGPTUseSubscriptionEndpoint,
+        )
+      : options.aiModel === "openrouter"
+        ? "https://openrouter.ai/api/v1/chat/completions"
+        : options.customURL || DEFAULT_OPENAI_CHAT_COMPLETIONS_URL;
   if (options.modelEndpoint) url = options.modelEndpoint;
 
   let risuIdentify = false;
-  if (url.startsWith('risu::')) {
+  if (url.startsWith("risu::")) {
     risuIdentify = true;
-    url = url.slice('risu::'.length);
+    url = url.slice("risu::".length);
   }
-  if (options.aiModel === 'reverse_proxy' && options.autofillRequestUrl) {
-    if (url.endsWith('v1')) url += '/chat/completions';
-    else if (url.endsWith('v1/')) url += 'chat/completions';
-    else if (!(url.endsWith('completions') || url.endsWith('completions/'))) {
-      url += url.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions';
+  if (options.aiModel === "reverse_proxy" && options.autofillRequestUrl) {
+    if (url.endsWith("v1")) url += "/chat/completions";
+    else if (url.endsWith("v1/")) url += "chat/completions";
+    else if (!(url.endsWith("completions") || url.endsWith("completions/"))) {
+      url += url.endsWith("/") ? "v1/chat/completions" : "/v1/chat/completions";
     }
   }
   return { url, risuIdentify };
 }
 
 function buildOpenAIRequestHeaders(options = {}) {
-  const providerKey = options.aiModel === 'nanogpt'
-    ? options.nanoGPTKey
-    : options.aiModel === 'reverse_proxy'
-      ? options.proxyKey
-      : options.aiModel === 'openrouter'
-        ? options.openRouterKey
-        : options.openAIKey;
-  const selectedKey = options.keyIdentifier && options.keyByIdentifier
-    ? options.keyByIdentifier[options.keyIdentifier]
-    : (options.key ?? providerKey);
+  const providerKey =
+    options.aiModel === "nanogpt"
+      ? options.nanoGPTKey
+      : options.aiModel === "reverse_proxy"
+        ? options.proxyKey
+        : options.aiModel === "openrouter"
+          ? options.openRouterKey
+          : options.openAIKey;
+  const selectedKey =
+    options.keyIdentifier && options.keyByIdentifier
+      ? options.keyByIdentifier[options.keyIdentifier]
+      : (options.key ?? providerKey);
   const headers = {
-    Authorization: `Bearer ${selectedKey ?? ''}`,
-    'Content-Type': 'application/json',
+    Authorization: `Bearer ${selectedKey ?? ""}`,
+    "Content-Type": "application/json",
   };
-  if (options.aiModel === 'openrouter') {
-    headers['X-Title'] = 'RisuAI';
-    headers['HTTP-Referer'] = 'https://risuai.xyz';
+  if (options.aiModel === "openrouter") {
+    headers["X-Title"] = "RisuAI";
+    headers["HTTP-Referer"] = "https://risuai.xyz";
   }
-  if (options.aiModel === 'nanogpt' && options.nanoGPTProvider) {
-    headers['X-Provider'] = options.nanoGPTProvider;
+  if (options.aiModel === "nanogpt" && options.nanoGPTProvider) {
+    headers["X-Provider"] = options.nanoGPTProvider;
   }
-  if (options.risuIdentify) headers['X-Proxy-Risu'] = 'RisuAI';
+  if (options.risuIdentify) headers["X-Proxy-Risu"] = "RisuAI";
   return headers;
 }
 
@@ -220,22 +237,25 @@ function applyOpenAIPreParameterBodyPolicies(body, options = {}) {
   if (options.generationSeed > 0) body.seed = options.generationSeed;
   if (options.responseJsonSchema !== undefined) {
     body.response_format = {
-      type: 'json_schema',
+      type: "json_schema",
       json_schema: options.responseJsonSchema,
     };
   }
   if (options.prediction) {
-    body.prediction = { type: 'content', content: options.prediction };
+    body.prediction = { type: "content", content: options.prediction };
   }
-  if (options.aiModel === 'openrouter') {
-    if (options.openRouterFallback) body.route = 'fallback';
-    body.transforms = options.openRouterMiddleOut ? ['middle-out'] : [];
+  if (options.aiModel === "openrouter") {
+    if (options.openRouterFallback) body.route = "fallback";
+    body.transforms = options.openRouterMiddleOut ? ["middle-out"] : [];
     const configuredProvider = options.openRouterProvider;
-    if (configuredProvider && typeof configuredProvider === 'object') {
+    if (configuredProvider && typeof configuredProvider === "object") {
       const provider = {};
-      if (configuredProvider.order?.length) provider.order = configuredProvider.order;
-      if (configuredProvider.only?.length) provider.only = configuredProvider.only;
-      if (configuredProvider.ignore?.length) provider.ignore = configuredProvider.ignore;
+      if (configuredProvider.order?.length)
+        provider.order = configuredProvider.order;
+      if (configuredProvider.only?.length)
+        provider.only = configuredProvider.only;
+      if (configuredProvider.ignore?.length)
+        provider.ignore = configuredProvider.ignore;
       if (Object.keys(provider).length) body.provider = provider;
     }
     if (options.instructPrompt !== undefined) {
@@ -248,20 +268,23 @@ function applyOpenAIPreParameterBodyPolicies(body, options = {}) {
 
 function applyOpenAIPostParameterBodyPolicies(body, options = {}) {
   if (options.deepSeekThinkingToggle) {
-    if (options.deepSeekThinkingType === 'enabled') {
+    if (options.deepSeekThinkingType === "enabled") {
       body.thinking = {
-        type: 'enabled',
-        reasoning_effort: options.deepSeekReasoningEffort ?? 'high',
+        type: "enabled",
+        reasoning_effort: options.deepSeekReasoningEffort ?? "high",
       };
       delete body.temperature;
       delete body.top_p;
       delete body.frequency_penalty;
       delete body.presence_penalty;
     } else {
-      body.thinking = { type: 'disabled' };
+      body.thinking = { type: "disabled" };
     }
   }
-  if (Array.isArray(options.toolDefinitions) && options.toolDefinitions.length > 0) {
+  if (
+    Array.isArray(options.toolDefinitions) &&
+    options.toolDefinitions.length > 0
+  ) {
     body.tools = options.toolDefinitions;
   }
   if (options.reverseProxyOobaMode && options.reverseProxyOobaArgs) {
@@ -274,7 +297,8 @@ function applyOpenAIPostParameterBodyPolicies(body, options = {}) {
     if (options.hasTools) {
       return {
         body,
-        error: 'MultiGen mode cannot be used with tool calls. Please disable one of them.',
+        error:
+          "MultiGen mode cannot be used with tool calls. Please disable one of them.",
       };
     }
     body.n = options.genTime;
@@ -284,22 +308,23 @@ function applyOpenAIPostParameterBodyPolicies(body, options = {}) {
 
 function formatOpenAIReasoningText(data, options = {}) {
   const message = data?.choices?.[0]?.message;
-  let result = typeof message?.content === 'string' ? message.content : '';
+  let result = typeof message?.content === "string" ? message.content : "";
   const reasoningContentField =
     data?.choices?.[0]?.reasoning_content ?? message?.reasoning_content;
 
   if (options.deepSeekThinkingOutput && !reasoningContentField) {
-    let reasoningContent = '';
-    result = result.replace(/(.*)<\/think>/gms, (_match, prefix) => {
-      reasoningContent = prefix;
-      return '';
-    });
+    let reasoningContent = "";
+    const thinkCloseIndex = result.lastIndexOf("</think>");
+    if (thinkCloseIndex !== -1) {
+      reasoningContent = result.slice(0, thinkCloseIndex);
+      result = result.slice(thinkCloseIndex + "</think>".length);
+    }
     if (reasoningContent) {
-      reasoningContent = reasoningContent.replace(/<think>/gms, '');
+      reasoningContent = reasoningContent.replace(/<think>/gms, "");
       result = `<Thoughts>\n${reasoningContent}\n</Thoughts>\n${result}`;
     }
   }
-  if (reasoningContentField && !result.startsWith('<Thoughts>')) {
+  if (reasoningContentField && !result.startsWith("<Thoughts>")) {
     result = `<Thoughts>\n${reasoningContentField}\n</Thoughts>\n${result}`;
   }
   const openRouterReasoning = message?.reasoning;

@@ -13,18 +13,22 @@ describe("batched SQL database replacement", () => {
       data: `message body ${index}`,
     }));
     const database = {
-      characters: [{
-        chaId: "character-1",
-        name: "Bot",
-        image: "assets/bot.png",
-        chats: [{
-          id: "chat-1",
-          name: "Chat",
-          note: "",
-          localLore: [],
-          message: messages,
-        }],
-      }],
+      characters: [
+        {
+          chaId: "character-1",
+          name: "Bot",
+          image: "assets/bot.png",
+          chats: [
+            {
+              id: "chat-1",
+              name: "Chat",
+              note: "",
+              localLore: [],
+              message: messages,
+            },
+          ],
+        },
+      ],
       personas: [
         { name: "Persona A", icon: "assets/persona.png", personaPrompt: "Hi" },
         { name: "Persona B", icon: "", personaPrompt: "Yo" },
@@ -41,8 +45,12 @@ describe("batched SQL database replacement", () => {
 
     expect(root.replaceAll).toBe(true);
     expect(root.characters).toHaveLength(0);
-    expect(root.root.upserts.some((entry) => entry.key === "personas")).toBe(true);
-    expect(root.root.upserts.some((entry) => entry.key === "modules")).toBe(false);
+    expect(root.root.upserts.some((entry) => entry.key === "personas")).toBe(
+      true,
+    );
+    expect(root.root.upserts.some((entry) => entry.key === "modules")).toBe(
+      false,
+    );
     expect(root.modules?.upserts).toEqual([
       {
         id: "module-1",
@@ -55,7 +63,9 @@ describe("batched SQL database replacement", () => {
     expect(batches.flatMap((batch) => batch.characters)).toHaveLength(1);
     expect(batches.flatMap((batch) => batch.chats)).toHaveLength(1);
     const messageBatches = batches.filter((batch) => batch.messages.length > 0);
-    expect(messageBatches.map((batch) => batch.messages.length)).toEqual([128, 128, 44]);
+    expect(messageBatches.map((batch) => batch.messages.length)).toEqual([
+      128, 128, 44,
+    ]);
     expect(messageBatches.flatMap((batch) => batch.messages)).toHaveLength(300);
 
     const manifest = batches.flatMap((batch) => batch.messageManifests)[0];
@@ -67,18 +77,22 @@ describe("batched SQL database replacement", () => {
 
   it("keeps colliding legacy message IDs unique across restore batches", () => {
     const database = {
-      characters: [{
-        chaId: "character-1",
-        name: "Bot",
-        chats: [{
-          id: "chat-1",
-          name: "Chat",
-          message: [
-            { chatId: "duplicate-message", role: "user", data: "first" },
-            { chatId: "duplicate-message", role: "char", data: "second" },
+      characters: [
+        {
+          chaId: "character-1",
+          name: "Bot",
+          chats: [
+            {
+              id: "chat-1",
+              name: "Chat",
+              message: [
+                { chatId: "duplicate-message", role: "user", data: "first" },
+                { chatId: "duplicate-message", role: "char", data: "second" },
+              ],
+            },
           ],
-        }],
-      }],
+        },
+      ],
     } as unknown as Database;
 
     const batches = [...iterateSqlReplaceEntityCommits(database, 0, 1)];

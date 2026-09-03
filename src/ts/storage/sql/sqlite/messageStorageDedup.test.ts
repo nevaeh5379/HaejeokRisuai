@@ -17,7 +17,12 @@ describe("message SQL core/extension split", () => {
         data: body,
         name: "Bot",
         time: 123,
-        generationInfo: { model: "model", inputTokens: 10, outputTokens: 20, generationId: "gen" },
+        generationInfo: {
+          model: "model",
+          inputTokens: 10,
+          outputTokens: 20,
+          generationId: "gen",
+        },
         promptInfo: { promptName: "Prompt" },
       },
     });
@@ -25,14 +30,18 @@ describe("message SQL core/extension split", () => {
     await applySqliteCommit(commit, async (sql, bind = []) => {
       statements.push({ sql, bind });
     });
-    const messageInsert = statements.find(({ sql }) => sql.includes("INSERT INTO messages"));
+    const messageInsert = statements.find(({ sql }) =>
+      sql.includes("INSERT INTO messages"),
+    );
     expect(messageInsert?.bind).toContain(body);
     const extensionStatements = statements.filter(({ sql }) =>
       sql.includes("message_extension_nodes"),
     );
     expect(extensionStatements.length).toBeGreaterThan(0);
     expect(
-      extensionStatements.some(({ bind }) => bind.some((value) => value === body)),
+      extensionStatements.some(({ bind }) =>
+        bind.some((value) => value === body),
+      ),
     ).toBe(false);
   });
 

@@ -21,7 +21,8 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
       // Older SQL migrations copied the stale botPresets entry without
       // folding in the live root value for the active preset. Repair that
       // representation before setPreset can blank the visible setting.
-      const liveModuleIntegration = settingsStore.getBootstrapState().moduleIntergration;
+      const liveModuleIntegration =
+        settingsStore.getBootstrapState().moduleIntergration;
       if (
         activePreset &&
         activePreset.moduleIntergration === undefined &&

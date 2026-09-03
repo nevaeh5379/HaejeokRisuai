@@ -477,9 +477,7 @@ export class ModuleHandler extends MCPToolHandler {
       if (!allowedFields.includes(key)) continue;
 
       if (key === "enabled") {
-        const enabledModules = new Set(
-          moduleStore.enabledModules || [],
-        );
+        const enabledModules = new Set(moduleStore.enabledModules || []);
         if (value) {
           enabledModules.add(id);
         } else {

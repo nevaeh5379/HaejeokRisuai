@@ -101,11 +101,24 @@ function resolveServerTiktokenEncoding(
 ): TokenizerEncoding | null {
   const db = settingsStore.state;
   const nonTiktoken = new Set([
-    "mistral", "llama", "novelai", "claude", "novellist", "llama3",
-    "gemma", "cohere", "deepseek", "deepseek-v4", "glm4", "glm5",
+    "mistral",
+    "llama",
+    "novelai",
+    "claude",
+    "novellist",
+    "llama3",
+    "gemma",
+    "cohere",
+    "deepseek",
+    "deepseek-v4",
+    "glm4",
+    "glm5",
   ]);
 
-  if (presetStore.state.aiModel === "openrouter" || presetStore.state.aiModel === "reverse_proxy") {
+  if (
+    presetStore.state.aiModel === "openrouter" ||
+    presetStore.state.aiModel === "reverse_proxy"
+  ) {
     return nonTiktoken.has(db.customTokenizer) ? null : "o200k_base";
   }
   if (presetStore.state.aiModel === "custom" && pluginTokenizer) {
@@ -114,8 +127,10 @@ function resolveServerTiktokenEncoding(
     if (pluginTokenizer === "o200k_base") return "o200k_base";
     return nonTiktoken.has(pluginTokenizer) ? null : "o200k_base";
   }
-  if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) return "o200k_base";
-  if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase) return "cl100k_base";
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base)
+    return "o200k_base";
+  if (modelInfo.tokenizer === LLMTokenizer.tiktokenCl100kBase)
+    return "cl100k_base";
   if (modelInfo.tokenizer === LLMTokenizer.Unknown) return "cl100k_base";
   return null;
 }
@@ -124,7 +139,8 @@ export function getServerTiktokenEncoding(): TokenizerEncoding | null {
   const db = settingsStore.state;
   const modelInfo = getModelInfo(presetStore.state.aiModel);
   const pluginTokenizer =
-    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)?.tokenizer ?? "none";
+    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)
+      ?.tokenizer ?? "none";
   return resolveServerTiktokenEncoding(modelInfo, pluginTokenizer);
 }
 
@@ -133,27 +149,50 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
   const db = settingsStore.state;
   const modelInfo = getModelInfo(presetStore.state.aiModel);
   const pluginTokenizer =
-    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)?.tokenizer ?? "none";
+    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)
+      ?.tokenizer ?? "none";
   const results = new Array<number>(texts.length);
   const missingTexts: string[] = [];
   const missingIndexes: number[] = [];
 
   for (let i = 0; i < texts.length; i++) {
-    const key = getHash(texts[i], presetStore.state.aiModel, db.customTokenizer,
-      presetStore.state.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
-    const cached = db.useTokenizerCaching ? tokenCountCache.get(key) : undefined;
+    const key = getHash(
+      texts[i],
+      presetStore.state.aiModel,
+      db.customTokenizer,
+      presetStore.state.currentPluginProvider,
+      db.googleClaudeTokenizing,
+      modelInfo,
+      pluginTokenizer,
+    );
+    const cached = db.useTokenizerCaching
+      ? tokenCountCache.get(key)
+      : undefined;
     if (cached !== undefined) results[i] = cached;
-    else { missingTexts.push(texts[i]); missingIndexes.push(i); }
+    else {
+      missingTexts.push(texts[i]);
+      missingIndexes.push(i);
+    }
   }
 
   if (missingTexts.length > 0) {
     let counts: number[] | null = null;
     const encoding = resolveServerTiktokenEncoding(modelInfo, pluginTokenizer);
-    if (encoding && isNodeServer && forageStorage.realStorage instanceof NodeStorage) {
+    if (
+      encoding &&
+      isNodeServer &&
+      forageStorage.realStorage instanceof NodeStorage
+    ) {
       try {
-        counts = await forageStorage.realStorage.tokenizeCountBatch(missingTexts, encoding);
+        counts = await forageStorage.realStorage.tokenizeCountBatch(
+          missingTexts,
+          encoding,
+        );
       } catch (error) {
-        console.warn("Server tokenization failed; falling back to browser tokenizer", error);
+        console.warn(
+          "Server tokenization failed; falling back to browser tokenizer",
+          error,
+        );
       }
     }
     if (!counts) {
@@ -164,8 +203,15 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
       const index = missingIndexes[i];
       results[index] = counts[i];
       if (db.useTokenizerCaching) {
-        const key = getHash(texts[index], presetStore.state.aiModel, db.customTokenizer,
-          presetStore.state.currentPluginProvider, db.googleClaudeTokenizing, modelInfo, pluginTokenizer);
+        const key = getHash(
+          texts[index],
+          presetStore.state.aiModel,
+          db.customTokenizer,
+          presetStore.state.currentPluginProvider,
+          db.googleClaudeTokenizing,
+          modelInfo,
+          pluginTokenizer,
+        );
         tokenCountCache.set(key, counts[i]);
       }
     }
@@ -179,7 +225,8 @@ export async function encode(
   const db = settingsStore.state;
   const modelInfo = getModelInfo(presetStore.state.aiModel);
   const pluginTokenizer =
-    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)?.tokenizer ?? "none";
+    pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)
+      ?.tokenizer ?? "none";
 
   let cacheKey = "";
   if (db.useTokenizerCaching) {
@@ -200,7 +247,10 @@ export async function encode(
 
   let result: number[] | Uint32Array | Int32Array;
 
-  if (presetStore.state.aiModel === "openrouter" || presetStore.state.aiModel === "reverse_proxy") {
+  if (
+    presetStore.state.aiModel === "openrouter" ||
+    presetStore.state.aiModel === "reverse_proxy"
+  ) {
     switch (db.customTokenizer) {
       case "mistral":
         result = await tokenizeWebTokenizers(data, "mistral");
@@ -592,10 +642,7 @@ export class ChatTokenizer {
       visionQuality: db.gptVisionQuality,
     };
   }
-  async tokenizeChat(
-    data: OpenAIChat,
-    args: { countThoughts?: boolean } = {},
-  ) {
+  async tokenizeChat(data: OpenAIChat, args: { countThoughts?: boolean } = {}) {
     return (await this.tokenizeChatsDetailed([data], args))[0];
   }
 
@@ -624,7 +671,6 @@ export class ChatTokenizer {
       this.getTokenAccountingOptions(false),
     );
   }
-
 }
 
 export async function tokenizeNum(data: string) {

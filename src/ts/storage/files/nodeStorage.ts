@@ -141,10 +141,10 @@ function isCacheableBulkImageRequest(options?: {
 }): options is NonNullable<typeof options> {
   return Boolean(
     options &&
-      (options.thumbnail ||
-        options.size === "thumb" ||
-        options.size === "display" ||
-        (options.width && options.height)),
+    (options.thumbnail ||
+      options.size === "thumb" ||
+      options.size === "display" ||
+      (options.width && options.height)),
   );
 }
 
@@ -193,7 +193,9 @@ export class NodeStorage {
     }
   }
 
-  private async invalidateBulkImageCache(keys: Iterable<string>): Promise<void> {
+  private async invalidateBulkImageCache(
+    keys: Iterable<string>,
+  ): Promise<void> {
     const cache = await this.openBulkImageCache();
     if (!cache) return;
     const encodedKeys = new Set(
@@ -324,7 +326,9 @@ export class NodeStorage {
     });
     if (!response.ok) {
       const message = await response.text();
-      throw new Error(`Server provider capabilities failed (${response.status}): ${message}`);
+      throw new Error(
+        `Server provider capabilities failed (${response.status}): ${message}`,
+      );
     }
     const data = (await response.json()) as Partial<NodeProviderCapabilities>;
     if (
@@ -336,7 +340,9 @@ export class NodeStorage {
         (!Array.isArray(data.transportFormats) ||
           data.transportFormats.some((format) => !Number.isInteger(format))))
     ) {
-      throw new Error("Server provider capabilities returned an invalid response");
+      throw new Error(
+        "Server provider capabilities returned an invalid response",
+      );
     }
     this.nodeProviderCapabilities = {
       formats: data.formats,
@@ -362,14 +368,21 @@ export class NodeStorage {
     });
     if (!response.ok) {
       const message = await response.text();
-      throw new Error(`Server provider execution failed (${response.status}): ${message}`);
+      throw new Error(
+        `Server provider execution failed (${response.status}): ${message}`,
+      );
     }
     const data = (await response.json()) as NodeProviderExecutionResult;
     if (!data || typeof data.handled !== "boolean") {
       throw new Error("Server provider execution returned an invalid response");
     }
-    if (data.handled && (!data.response || !["success", "fail"].includes(data.response.type))) {
-      throw new Error("Server provider execution returned an invalid provider response");
+    if (
+      data.handled &&
+      (!data.response || !["success", "fail"].includes(data.response.type))
+    ) {
+      throw new Error(
+        "Server provider execution returned an invalid provider response",
+      );
     }
     return data;
   }
@@ -390,7 +403,9 @@ export class NodeStorage {
     });
     if (!response.ok) {
       const message = await response.text();
-      throw new Error(`Server provider transport failed (${response.status}): ${message}`);
+      throw new Error(
+        `Server provider transport failed (${response.status}): ${message}`,
+      );
     }
     const data = (await response.json()) as NodeProviderTransportResult;
     if (!data || typeof data.handled !== "boolean") {
@@ -402,7 +417,9 @@ export class NodeStorage {
         typeof data.response.ok !== "boolean" ||
         !Number.isInteger(data.response.status))
     ) {
-      throw new Error("Server provider transport returned an invalid transport response");
+      throw new Error(
+        "Server provider transport returned an invalid transport response",
+      );
     }
     return data;
   }
@@ -421,11 +438,17 @@ export class NodeStorage {
     });
     if (!response.ok) {
       const message = await response.text();
-      throw new Error(`Server chat continuation planning failed (${response.status}): ${message}`);
+      throw new Error(
+        `Server chat continuation planning failed (${response.status}): ${message}`,
+      );
     }
-    const data = (await response.json()) as { decision?: NodeChatContinuationDecision };
+    const data = (await response.json()) as {
+      decision?: NodeChatContinuationDecision;
+    };
     if (!data.decision || typeof data.decision.shouldContinue !== "boolean") {
-      throw new Error("Server chat continuation planning returned an invalid response");
+      throw new Error(
+        "Server chat continuation planning returned an invalid response",
+      );
     }
     return data.decision;
   }
@@ -444,7 +467,9 @@ export class NodeStorage {
     });
     if (!response.ok) {
       const message = await response.text();
-      throw new Error(`Server chat planning failed (${response.status}): ${message}`);
+      throw new Error(
+        `Server chat planning failed (${response.status}): ${message}`,
+      );
     }
     const data = (await response.json()) as { plan?: NodeChatGenerationPlan };
     if (!data.plan || typeof data.plan.ok !== "boolean") {
@@ -475,7 +500,9 @@ export class NodeStorage {
       });
       if (!response.ok) {
         const message = await response.text();
-        throw new Error(`Server tokenization failed (${response.status}): ${message}`);
+        throw new Error(
+          `Server tokenization failed (${response.status}): ${message}`,
+        );
       }
       const data = (await response.json()) as Partial<TokenizeCountResponse>;
       if (!Array.isArray(data.counts)) {
@@ -499,7 +526,9 @@ export class NodeStorage {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(`Server lore matching failed (${response.status}): ${await response.text()}`);
+      throw new Error(
+        `Server lore matching failed (${response.status}): ${await response.text()}`,
+      );
     }
     const data = (await response.json()) as Partial<LoreMatchBatchResponse>;
     if (!Array.isArray(data.results)) {
@@ -518,11 +547,15 @@ export class NodeStorage {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(`Server recursive lore resolution failed (${response.status}): ${await response.text()}`);
+      throw new Error(
+        `Server recursive lore resolution failed (${response.status}): ${await response.text()}`,
+      );
     }
     const data = (await response.json()) as Partial<LoreResolveResponse>;
     if (!Array.isArray(data.activatedIndexes) || !Array.isArray(data.logs)) {
-      throw new Error("Server recursive lore resolution returned an invalid response");
+      throw new Error(
+        "Server recursive lore resolution returned an invalid response",
+      );
     }
     return data as LoreResolveResponse;
   }
@@ -574,7 +607,10 @@ export class NodeStorage {
           entries: entries.slice(offset, offset + 64),
         } satisfies VectorIndexUpsertRequest),
       });
-      if (!response.ok) throw new Error(`Vector index upsert failed (${response.status}): ${await response.text()}`);
+      if (!response.ok)
+        throw new Error(
+          `Vector index upsert failed (${response.status}): ${await response.text()}`,
+        );
     }
   }
 
@@ -586,7 +622,10 @@ export class NodeStorage {
   ): Promise<VectorIndexSearchResult> {
     const response = await fetch("/api/vector-index/search", {
       method: "POST",
-      headers: { "content-type": "application/json", "risu-auth": await this.getCachedAuth() },
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": await this.getCachedAuth(),
+      },
       body: JSON.stringify({
         indexId,
         queries,
@@ -594,9 +633,13 @@ export class NodeStorage {
         topK,
       } satisfies VectorIndexSearchRequest),
     });
-    if (!response.ok) throw new Error(`Vector index search failed (${response.status}): ${await response.text()}`);
+    if (!response.ok)
+      throw new Error(
+        `Vector index search failed (${response.status}): ${await response.text()}`,
+      );
     const data = (await response.json()) as Partial<VectorIndexSearchResponse>;
-    if (!Array.isArray(data.results)) throw new Error("Vector index search returned an invalid response");
+    if (!Array.isArray(data.results))
+      throw new Error("Vector index search returned an invalid response");
     return data.results as VectorIndexSearchResult;
   }
 
@@ -605,7 +648,9 @@ export class NodeStorage {
       headers: { "risu-auth": await this.getCachedAuth() },
     });
     if (!response.ok) {
-      throw new Error(`Vector cache stats failed (${response.status}): ${await response.text()}`);
+      throw new Error(
+        `Vector cache stats failed (${response.status}): ${await response.text()}`,
+      );
     }
     const data = (await response.json()) as Partial<NodeVectorCacheStats>;
     if (
@@ -624,7 +669,9 @@ export class NodeStorage {
       headers: { "risu-auth": await this.getCachedAuth() },
     });
     if (!response.ok) {
-      throw new Error(`Vector cache clear failed (${response.status}): ${await response.text()}`);
+      throw new Error(
+        `Vector cache clear failed (${response.status}): ${await response.text()}`,
+      );
     }
     const data = (await response.json()) as Partial<NodeVectorCacheClearResult>;
     if (
@@ -648,7 +695,9 @@ export class NodeStorage {
     });
     if (!response.ok) {
       const message = await response.text();
-      const error = new Error(`Server Hypa memory start failed (${response.status}): ${message}`);
+      const error = new Error(
+        `Server Hypa memory start failed (${response.status}): ${message}`,
+      );
       (error as any).status = response.status;
       throw error;
     }
@@ -673,7 +722,9 @@ export class NodeStorage {
     );
     if (!response.ok) {
       const message = await response.text();
-      const error = new Error(`Server Hypa memory continuation failed (${response.status}): ${message}`);
+      const error = new Error(
+        `Server Hypa memory continuation failed (${response.status}): ${message}`,
+      );
       (error as any).status = response.status;
       throw error;
     }

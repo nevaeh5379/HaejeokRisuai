@@ -1,7 +1,6 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { writable } from "svelte/store";
 
-
 export let textAreaSize = writable(0);
 export let sideBarSize = writable(0);
 export let textAreaTextSize = writable(0);

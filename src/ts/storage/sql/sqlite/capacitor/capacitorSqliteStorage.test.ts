@@ -36,7 +36,9 @@ describe("CapacitorSqliteStorage", () => {
     const stats = (storage as any).__bridgeStats;
     stats.queryCalls = 0;
     stats.queryBatchCalls = 0;
-    const selected = await storage.loadCharacterForSelection(source.characters[0].chaId);
+    const selected = await storage.loadCharacterForSelection(
+      source.characters[0].chaId,
+    );
 
     expect(selected?.chaId).toBe(source.characters[0].chaId);
     expect(selected?.detailsLoaded).toBe(true);
@@ -71,13 +73,15 @@ describe("CapacitorSqliteStorage", () => {
     database.exec(sqliteSchemaSql);
     const storage = makeCapacitorStorage(database);
     const source = buildFullDatabase() as any;
-    source.plugins = [{
-      name: "android-restore-plugin",
-      displayName: "Android Restore Plugin",
-      version: "3.0",
-      enabled: true,
-      script: "console.log('android restore')",
-    }];
+    source.plugins = [
+      {
+        name: "android-restore-plugin",
+        displayName: "Android Restore Plugin",
+        version: "3.0",
+        enabled: true,
+        script: "console.log('android restore')",
+      },
+    ];
     source.pluginCustomStorage = {
       "android-restore-plugin": { enabledFeature: true, count: 7 },
     };
@@ -116,7 +120,9 @@ describe("CapacitorSqliteStorage", () => {
     ).toBe(false);
 
     installStartupData(loaded!, storage);
-    expect((settingsStore.getStateRecord() as any).largeStartupProbe).toBeUndefined();
+    expect(
+      (settingsStore.getStateRecord() as any).largeStartupProbe,
+    ).toBeUndefined();
     await deferredSettingsLoader.ensureKey("largeStartupProbe");
     expect((settingsStore.getStateRecord() as any).largeStartupProbe).toBe(
       source.largeStartupProbe,
@@ -134,7 +140,9 @@ describe("CapacitorSqliteStorage", () => {
     await storage.replaceDatabase(buildFullDatabase() as any);
 
     const revision = database
-      .prepare("SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1")
+      .prepare(
+        "SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1",
+      )
       .get() as { revision: number; initialized: number };
     expect(revision.revision).toBe(1);
     expect(revision.initialized).toBe(1);
@@ -157,7 +165,7 @@ describe("CapacitorSqliteStorage", () => {
 
     const source = buildFullDatabase() as any;
     source.characters[0].tags = Array.from({ length: 520 }, (_, index) =>
-      index % 3 === 0 ? null : `tag-${index}`
+      index % 3 === 0 ? null : `tag-${index}`,
     );
     source.customModels = Array.from({ length: 300 }, (_, index) => ({
       id: `model-${index}`,
@@ -184,9 +192,7 @@ describe("CapacitorSqliteStorage", () => {
     const finalApplying = statuses
       .filter((status) => status.startsWith("Applying SQL"))
       .at(-1);
-    expect(finalApplying).toMatch(
-      /\((\d+)\/(\d+) streamed, \1\/\2 applied\)$/,
-    );
+    expect(finalApplying).toMatch(/\((\d+)\/(\d+) streamed, \1\/\2 applied\)$/);
     database.close();
   });
 
@@ -223,11 +229,9 @@ describe("CapacitorSqliteStorage", () => {
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM characters").get(),
     ).toEqual({ count: 2 });
-    expect((await storage.loadPersonas()).map((persona) => persona.name)).toEqual([
-      "One",
-      "Two",
-      "Three",
-    ]);
+    expect(
+      (await storage.loadPersonas()).map((persona) => persona.name),
+    ).toEqual(["One", "Two", "Three"]);
     expect((await storage.loadModules()).map((module) => module.name)).toEqual([
       "First module",
       "Second module",

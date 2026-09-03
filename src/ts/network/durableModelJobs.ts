@@ -62,7 +62,10 @@ function inferProtocol(interceptor?: string): string {
   return "openai";
 }
 
-function isStreamingRequest(interceptor: string | undefined, body: string): boolean {
+function isStreamingRequest(
+  interceptor: string | undefined,
+  body: string,
+): boolean {
   if (interceptor?.toLowerCase().includes("stream")) return true;
   try {
     return JSON.parse(body)?.stream === true;
@@ -106,7 +109,9 @@ export async function fetchViaDurableModelJob(
 ): Promise<Response> {
   const context = getDurableGenerationContext(arg.generationId);
   if (!context) {
-    throw new DurableModelJobUnavailableError("No durable generation context is registered.");
+    throw new DurableModelJobUnavailableError(
+      "No durable generation context is registered.",
+    );
   }
 
   let created: Response;
@@ -176,13 +181,19 @@ export async function fetchViaDurableModelJob(
     detachAbort();
     releaseOwnership();
     if (arg.signal?.aborted) throw error;
-    throw new Error("The model job is still running, but its result stream disconnected.");
+    throw new Error(
+      "The model job is still running, but its result stream disconnected.",
+    );
   }
 
   const upstreamStatus = Number(
     streamResponse.headers.get("x-model-job-upstream-status"),
   );
-  if (!streamResponse.ok || !streamResponse.body || !Number.isFinite(upstreamStatus)) {
+  if (
+    !streamResponse.ok ||
+    !streamResponse.body ||
+    !Number.isFinite(upstreamStatus)
+  ) {
     detachAbort();
     releaseOwnership();
     throw new TypeError("Model job upstream connection failed.");
@@ -194,7 +205,8 @@ export async function fetchViaDurableModelJob(
   let progressedSinceAttach = true;
   let noProgressReattaches = 0;
 
-  const abortError = () => new DOMException("The operation was aborted.", "AbortError");
+  const abortError = () =>
+    new DOMException("The operation was aborted.", "AbortError");
   const sleepAbortable = (ms: number) =>
     new Promise<void>((resolve, reject) => {
       const cleanup = () => {
@@ -239,11 +251,17 @@ export async function fetchViaDurableModelJob(
     return false;
   };
 
-  const getJob = async (): Promise<Pick<DurableModelJobRecord, "status" | "error"> | null> => {
+  const getJob = async (): Promise<Pick<
+    DurableModelJobRecord,
+    "status" | "error"
+  > | null> => {
     try {
-      const response = await fetch(`/api/model-jobs/${encodeURIComponent(jobId)}`, {
-        headers: await authHeaders(),
-      });
+      const response = await fetch(
+        `/api/model-jobs/${encodeURIComponent(jobId)}`,
+        {
+          headers: await authHeaders(),
+        },
+      );
       return response.ok ? await response.json() : null;
     } catch {
       return null;
@@ -274,7 +292,9 @@ export async function fetchViaDurableModelJob(
           if (await reattach()) continue;
           detachAbort();
           releaseOwnership();
-          throw new Error("The server is still generating, but the result stream could not be reattached.");
+          throw new Error(
+            "The server is still generating, but the result stream could not be reattached.",
+          );
         }
 
         if (!read.done) {
@@ -318,7 +338,9 @@ export async function fetchViaDurableModelJob(
         releaseOwnership();
         if (arg.signal?.aborted) throw abortError();
         controller.error(
-          new Error("The server is still generating, but the result stream could not be reattached."),
+          new Error(
+            "The server is still generating, but the result stream could not be reattached.",
+          ),
         );
         return;
       }
@@ -334,7 +356,8 @@ export async function fetchViaDurableModelJob(
     status: upstreamStatus,
     headers: {
       "content-type":
-        streamResponse.headers.get("content-type") ?? "application/octet-stream",
+        streamResponse.headers.get("content-type") ??
+        "application/octet-stream",
       "x-model-job-id": jobId,
     },
   });

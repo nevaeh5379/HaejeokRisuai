@@ -1723,7 +1723,10 @@ export async function summarize(
     },
   ];
 
-  console.log(logPrefix, `Using ax model ${presetStore.state.subModel} for summarization.`);
+  console.log(
+    logPrefix,
+    `Using ax model ${presetStore.state.subModel} for summarization.`,
+  );
 
   const response = await requestChatData(
     {
@@ -1986,7 +1989,8 @@ class HypaProcesserEx extends HypaProcesser {
     const queryVector = (await this.getEmbeds(query))[0];
 
     if (this.serverSummaryChunks) {
-      const scoredTexts = await this.similaritySearchVectorWithScore(queryVector);
+      const scoredTexts =
+        await this.similaritySearchVectorWithScore(queryVector);
       const chunksByText = new Map<string, SummaryChunk[]>();
       for (const chunk of this.serverSummaryChunks) {
         const bucket = chunksByText.get(chunk.text) ?? [];
