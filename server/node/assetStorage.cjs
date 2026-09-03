@@ -229,7 +229,11 @@ class LocalFsStorage {
     }
 
     async read(hexPath) {
-        const fullPath = path.join(this.savePath, hexPath);
+        const rootPath = path.resolve(this.savePath);
+        const fullPath = path.resolve(rootPath, hexPath);
+        if (fullPath !== rootPath && !fullPath.startsWith(rootPath + path.sep)) {
+            return { exists: false };
+        }
         if (!fs.existsSync(fullPath)) {
             return { exists: false };
         }
