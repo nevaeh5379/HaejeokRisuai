@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, saving, AccountWarning, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
@@ -376,9 +376,7 @@
     {#if $hypaV3ModalOpen}
         <LazyComponent loader={hypaModalLoader} />
     {/if}
-    {#if saving.state || $AccountWarning}
-        <LazyComponent loader={savePopupLoader} />
-    {/if}
+    <LazyComponent loader={savePopupLoader} />
     {#if $hypaV3ProgressStore.open}
         <LazyComponent loader={hypaProgressLoader} />
     {/if}

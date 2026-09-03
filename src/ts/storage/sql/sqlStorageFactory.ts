@@ -1,5 +1,6 @@
 import type { ISqlStorage } from "./ISqlStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+import { beginSave } from "./saveActivity.svelte";
 import { isCapacitor, isTauri, isNodeServer } from "../../platform";
 
 let storageSingleton: ISqlStorage | null = null;
@@ -41,6 +42,19 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
           commitChain = commitChain.then(run, run);
           return commitChain as Promise<SqlCommitResult>;
         };
+      }
+      if (prop === "createChatBranch" || prop === "activateChatBranch") {
+        const orig = Reflect.get(target, prop, receiver);
+        if (typeof orig === "function") {
+          return async (...args: any[]) => {
+            const finish = beginSave();
+            try {
+              return await orig.apply(target, args);
+            } finally {
+              finish();
+            }
+          };
+        }
       }
       return Reflect.get(target, prop, receiver);
     },
