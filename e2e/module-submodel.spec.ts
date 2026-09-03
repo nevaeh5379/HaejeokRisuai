@@ -214,13 +214,48 @@ test.describe("Per-module auxiliary model (E2E)", () => {
         return { success: false, reason: "subModel not restored from character" };
       }
 
+      // Verify that provider execution context actually resolves to the module's subModel
+      const presetStoreUrl = "/src/ts/stores/domain/presetStore.svelte.ts";
+      const providerContextUrl = "/src/ts/process/request/providerContextAdapter.ts";
+      const { presetStore } = (await import(/* @vite-ignore */ presetStoreUrl)) as { presetStore: any };
+      const { prepareBrowserProviderContext } = (await import(/* @vite-ignore */ providerContextUrl)) as {
+        prepareBrowserProviderContext: (arg: any, model: any) => any;
+      };
+
+      // Set global auxiliary model to Claude
+      presetStore.state.subModel = "claude-3-5-haiku";
+
+      // When trigger uses module subModel (gpt-5.5), provider context must resolve to gpt-5.5
+      const moduleContext = prepareBrowserProviderContext(
+        { staticModel: trigger.subModel },
+        "submodel",
+      );
+      if (moduleContext.prepared.aiModel !== installed.subModel) {
+        return {
+          success: false,
+          reason: `Expected module subModel (${installed.subModel}), but got: ${moduleContext.prepared.aiModel}`,
+        };
+      }
+
+      // When trigger does not specify subModel (fallback/disabled), provider context must resolve to global subModel
+      const globalContext = prepareBrowserProviderContext(
+        { staticModel: undefined },
+        "submodel",
+      );
+      if (globalContext.prepared.aiModel !== "claude-3-5-haiku") {
+        return {
+          success: false,
+          reason: `Expected global subModel (claude-3-5-haiku), but got: ${globalContext.prepared.aiModel}`,
+        };
+      }
+
       return {
         success: true,
         subModel: installed.subModel,
       };
     });
 
-    expect(runtimeValidation.success).toBe(true);
+    expect(runtimeValidation.success, runtimeValidation.reason).toBe(true);
     expect(runtimeValidation.subModel).toBeTruthy();
   });
 });
