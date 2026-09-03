@@ -21,7 +21,7 @@
   }
 
   let { 
-    value = $bindable(""), 
+    value = $bindable(), 
     onChange = (v) => {}, 
     onclick, 
     blankable, 
@@ -130,5 +130,5 @@
   onclick={() => { openOptions = true; }}
   class="drop-shadow-lg p-2.5 flex justify-center items-center rounded-md bg-darkbutton border-darkborderc border text-textcolor hover:bg-selected transition-colors text-sm cursor-pointer {noMargin ? '' : 'my-2'}"
 >
-  {getModelInfo(value)?.fullName || value || (noneText || language.none)}
+  {value ? getModelInfo(value)?.fullName || value : (noneText || language.none)}
 </button>

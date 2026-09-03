@@ -13,7 +13,7 @@ import type {
 } from "../../database/schema";
 import type { RisuModule } from "../../../process/modules";
 import { v4 as uuidv4 } from "uuid";
-import { buildLegacyBranchMigrationPlan } from "../../../../../packages/protocol/legacyBranchMigration.cjs";
+import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
 import type {
   BotPresetSummary,
   SqlStartupDataResult,
