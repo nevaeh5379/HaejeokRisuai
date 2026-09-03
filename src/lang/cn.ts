@@ -1656,6 +1656,7 @@ export const languageChinese = {
   insertAssetPrompt: "插入资源提示词",
   requestLocation: "请求位置",
   newImageHandlingBeta: "新图像处理 (Beta)",
+  enableModuleSubModelBeta: "模块独立辅助模型设置 (Beta)",
   settingsExported: "错误报告的设置已导出并复制到剪贴板。",
   bookmarks: "书签",
   noBookmarks: "无书签",

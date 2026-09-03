@@ -1742,6 +1742,7 @@ export const languageVietnamese = {
   insertAssetPrompt: "Chèn lời nhắc tài sản",
   requestLocation: "Yêu cầu vị trí",
   newImageHandlingBeta: "Xử lý hình ảnh mới (Beta)",
+  enableModuleSubModelBeta: "Mô hình phụ theo từng mô-đun (Beta)",
   settingsExported:
     "Cài đặt báo cáo lỗi đã được xuất và sao chép vào bảng nhớ tạm.",
   bookmarks: "Dấu trang",

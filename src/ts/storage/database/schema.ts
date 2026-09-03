@@ -479,6 +479,7 @@ export interface DatabaseSettings {
   simplifiedToolUse: boolean;
   requestLocation: string;
   newImageHandlingBeta?: boolean;
+  enableModuleSubModel?: boolean;
   showFirstMessagePages: boolean;
   streamGeminiThoughts: boolean;
   verbosity: number;

@@ -1767,6 +1767,7 @@ export const languageSpanish = {
   insertAssetPrompt: "Insertar Prompt de Activo",
   requestLocation: "Ubicación de Solicitud",
   newImageHandlingBeta: "Nuevo Manejo de Imágenes (Beta)",
+  enableModuleSubModelBeta: "Modelo auxiliar por módulo (Beta)",
   settingsExported:
     "Configuración para informe de errores exportada y copiada al portapapeles.",
   bookmarks: "Marcadores",

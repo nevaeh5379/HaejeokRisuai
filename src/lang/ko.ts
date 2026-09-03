@@ -2238,6 +2238,7 @@ export const languageKorean = {
   insertAssetPrompt: "에셋 프롬프트 삽입",
   requestLocation: "리퀘스트 위치",
   newImageHandlingBeta: "새로운 이미지 처리 (베타)",
+  enableModuleSubModelBeta: "모듈 별 보조모델 설정 (베타)",
   settingsExported:
     "버그 리포트용 설정이 내보내지고 클립보드에 복사되었습니다.",
   bookmarks: "북마크",

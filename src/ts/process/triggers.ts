@@ -1720,7 +1720,9 @@ export async function runTrigger(
               noMultiGen: true,
               currentChar: char,
               triggerTarget: target,
-              staticModel: trigger.subModel,
+              staticModel: settingsStore.state.enableModuleSubModel
+                ? trigger.subModel
+                : undefined,
             },
             "submodel",
           );
@@ -1807,7 +1809,9 @@ export async function runTrigger(
             chat: chat,
             chatTarget: target,
             triggerId: arg.triggerId,
-            subModel: trigger.subModel,
+            subModel: settingsStore.state.enableModuleSubModel
+              ? trigger.subModel
+              : undefined,
           });
 
           if (triggerCodeResult.stopSending) {
@@ -2227,7 +2231,10 @@ export async function runTrigger(
               currentChar: char,
               triggerTarget: target,
               staticModel:
-                effect.model === "submodel" ? trigger.subModel : undefined,
+                effect.model === "submodel" &&
+                settingsStore.state.enableModuleSubModel
+                  ? trigger.subModel
+                  : undefined,
             },
             effect.model,
           );

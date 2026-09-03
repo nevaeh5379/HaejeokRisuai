@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   convertCharacterToModule,
   convertModuleToCharacter,
@@ -54,6 +54,7 @@ vi.mock("src/ts/stores/domain/characterStore.svelte", () => ({
 }));
 
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { getModuleTriggers } from "./modules";
 import { runTrigger, type triggerscript } from "./triggers";
 
@@ -90,7 +91,9 @@ describe("Module subModel feature", () => {
   });
 
   describe("getModuleTriggers", () => {
-    it("attaches module subModel to module triggers and leaves undefined when not set", () => {
+    it("attaches module subModel to module triggers when enableModuleSubModel is true", () => {
+      settingsStore.state.enableModuleSubModel = true;
+
       const moduleWithSubModel: RisuModule = {
         id: "mod-with-submodel",
         name: "Module With Submodel",
@@ -135,9 +138,83 @@ describe("Module subModel feature", () => {
       expect(triggers[1].subModel).toBeUndefined();
       expect(triggers[1].lowLevelAccess).toBe(false);
     });
+
+    it("does not attach subModel when enableModuleSubModel is false", () => {
+      settingsStore.state.enableModuleSubModel = false;
+
+      const moduleWithSubModel: RisuModule = {
+        id: "mod-with-submodel-disabled",
+        name: "Module With Submodel Disabled",
+        description: "",
+        subModel: "anthropic/claude-3.5-haiku",
+        trigger: [
+          {
+            comment: "Trigger A",
+            type: "start",
+            conditions: [],
+            effect: [],
+          },
+        ],
+      };
+
+      moduleStore.modules = [moduleWithSubModel];
+      const triggers = getModuleTriggers(undefined, ["mod-with-submodel-disabled"]);
+
+      expect(triggers).toHaveLength(1);
+      expect(triggers[0].subModel).toBeUndefined();
+    });
   });
 
   describe("runTrigger execution", () => {
+    beforeEach(() => {
+      settingsStore.state.enableModuleSubModel = true;
+    });
+
+    it("does not pass subModel as staticModel in v2RunLLM when enableModuleSubModel is false", async () => {
+      settingsStore.state.enableModuleSubModel = false;
+      mocks.requestChatData.mockClear();
+
+      const trigger: triggerscript = {
+        comment: "Test v2RunLLM disabled",
+        type: "manual",
+        lowLevelAccess: true,
+        subModel: "module-specific-model",
+        conditions: [],
+        effect: [
+          {
+            type: "v2RunLLM",
+            value: "Hello world",
+            valueType: "value",
+            model: "submodel",
+            outputVar: "resultVar",
+            indent: 0,
+          },
+        ],
+      };
+
+      const char: any = {
+        chaId: "char-1",
+        name: "Bot",
+        lowLevelAccess: true,
+        triggerscript: [trigger],
+      };
+
+      const chat: any = {
+        id: "chat-1",
+        message: [],
+        scriptstate: {},
+      };
+
+      await runTrigger(char, "manual", { chat, manualName: "Test v2RunLLM disabled" });
+
+      expect(mocks.requestChatData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          staticModel: undefined,
+        }),
+        "submodel",
+      );
+    });
+
     it("passes subModel as staticModel in v2RunLLM when model is submodel", async () => {
       mocks.requestChatData.mockClear();
 

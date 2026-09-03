@@ -1662,6 +1662,7 @@ export const languageChineseTraditional = {
   insertAssetPrompt: "插入資源提示詞",
   requestLocation: "請求位置",
   newImageHandlingBeta: "新版圖片處理 (Beta)",
+  enableModuleSubModelBeta: "各模組個別輔助模型設定 (Beta)",
   settingsExported: "用於錯誤回報的設定檔已匯出並複製到剪貼簿。",
   bookmarks: "書籤",
   noBookmarks: "無書籤",

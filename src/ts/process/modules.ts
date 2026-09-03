@@ -544,7 +544,7 @@ export function getModuleTriggers(
         module.trigger.map((t) => {
           const trigger = { ...t };
           trigger.lowLevelAccess = module.lowLevelAccess;
-          if (module.subModel) {
+          if (settingsStore.state.enableModuleSubModel && module.subModel) {
             trigger.subModel = module.subModel;
           }
           return trigger;

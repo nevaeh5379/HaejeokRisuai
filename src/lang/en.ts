@@ -2329,6 +2329,7 @@ export const languageEnglish = {
   insertAssetPrompt: "Insert Asset Prompt",
   requestLocation: "Request Location",
   newImageHandlingBeta: "New Image Handling (Beta)",
+  enableModuleSubModelBeta: "Per-Module Auxiliary Model (Beta)",
   settingsExported: "Settings for bug report exported and copied to clipboard.",
   bookmarks: "Bookmarks",
   noBookmarks: "No Bookmarks",

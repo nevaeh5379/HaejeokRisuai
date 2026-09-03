@@ -71,7 +71,7 @@
                         {:else}
                             <span class="">{rmodule.name}</span>
                         {/if}
-                        {#if rmodule.subModel}
+                        {#if settingsStore.state.enableModuleSubModel && rmodule.subModel}
                             <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-selected/50 text-textcolor2 border border-darkborderc">
                                 {getModelInfo(rmodule.subModel)?.fullName || rmodule.subModel}
                             </span>

@@ -75,14 +75,27 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     const nameInput = page.locator("input[type='text']").first();
     await nameInput.fill("E2E Test Module");
 
-    // 4. Verify ModelList shows default placeholder for auxiliary model
-    const auxModelButton = page
+    const auxModelSelector = page
       .locator("button")
-      .filter({ hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i })
-      .first();
+      .filter({ hasText: /Default \(Global Auxiliary Model\)|기본값 \(전역 보조 모델\)/i });
+
+    // 4. Verify auxiliary model selector is hidden by default when beta toggle is off
+    await expect(auxModelSelector).toHaveCount(0);
+
+    // 5. Enable the beta toggle in settingsStore
+    await page.evaluate(async () => {
+      const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
+      const { settingsStore } = (await import(
+        /* @vite-ignore */ settingsStoreUrl
+      )) as { settingsStore: any };
+      await settingsStore.set("enableModuleSubModel", true);
+    });
+
+    // 6. Verify ModelList shows default placeholder after enabling the toggle
+    const auxModelButton = auxModelSelector.first();
     await expect(auxModelButton).toBeVisible();
 
-    // 5. Click the ModelList button to open dropdown modal
+    // 7. Click the ModelList button to open dropdown modal
     await auxModelButton.click();
 
     // Click OpenAI accordion to expand its models
@@ -175,6 +188,20 @@ test.describe("Per-module auxiliary model (E2E)", () => {
           reason: `Trigger subModel was not propagated: ${trigger?.subModel}`,
         };
       }
+
+      // Verify that when toggle is disabled, triggers do not have subModel
+      const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
+      const { settingsStore } = (await import(/* @vite-ignore */ settingsStoreUrl)) as { settingsStore: any };
+      await settingsStore.set("enableModuleSubModel", false);
+      const disabledTriggers = getModuleTriggers(undefined, [installed.id]);
+      const disabledTrigger = disabledTriggers.find((t) => t.comment === "Runtime Trigger Test");
+      if (disabledTrigger?.subModel !== undefined) {
+        return {
+          success: false,
+          reason: "subModel was unexpectedly propagated when toggle is off",
+        };
+      }
+      await settingsStore.set("enableModuleSubModel", true);
 
       // Verify character interchangeability
       const char = convertModuleToCharacter(installed);

@@ -203,10 +203,12 @@
     <TextInput bind:value={currentModule.description} className="mt-1" size="sm"/>
     <span class="mt-4">{language.namespace} <Help key="namespace" /></span>
     <TextInput bind:value={currentModule.namespace} className="mt-1" size="sm"/>
-    <span class="mt-4">{language.moduleSubModel || language.submodel} <Help key="moduleSubModel" /></span>
-    <div class="mt-1 flex items-center">
-        <ModelList bind:value={currentModule.subModel} blankable noneText={language.defaultSubModel || language.none} noMargin />
-    </div>
+    {#if settingsStore.state.enableModuleSubModel}
+        <span class="mt-4">{language.moduleSubModel || language.submodel} <Help key="moduleSubModel" /></span>
+        <div class="mt-1 flex items-center">
+            <ModelList bind:value={currentModule.subModel} blankable noneText={language.defaultSubModel || language.none} noMargin />
+        </div>
+    {/if}
     <div class="flex items-center mt-4">
         <Check bind:check={currentModule.hideIcon} name={language.hideChatIcon}/>
     </div>

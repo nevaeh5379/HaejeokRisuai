@@ -273,7 +273,7 @@ import { language } from "src/lang";
         </div>
         <div class="mt-1 mb-3 pl-3 flex flex-wrap items-center gap-2">
             <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
-            {#if rmodule.subModel}
+            {#if settingsStore.state.enableModuleSubModel && rmodule.subModel}
                 <span class="text-xs px-2 py-0.5 rounded-md bg-selected/50 text-textcolor border border-darkborderc flex items-center gap-1">
                     <span class="text-textcolor2">{language.submodel}:</span>
                     {getModelInfo(rmodule.subModel)?.fullName || rmodule.subModel}

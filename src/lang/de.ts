@@ -1770,6 +1770,7 @@ export const languageGerman = {
   insertAssetPrompt: "Asset-Anweisung einfügen",
   requestLocation: "Anfrageort",
   newImageHandlingBeta: "Neue Bildverarbeitung (Beta)",
+  enableModuleSubModelBeta: "Modulspezifisches Hilfsmodell (Beta)",
   settingsExported:
     "Einstellungen für Fehlerbericht exportiert und in die Zwischenablage kopiert.",
   bookmarks: "Lesezeichen",
