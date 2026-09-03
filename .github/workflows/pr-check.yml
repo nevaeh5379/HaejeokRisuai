@@ -271,6 +271,7 @@ jobs:
   pr-check-all:
     name: PR Check Status
     runs-on: ubuntu-latest
+    permissions: {}
     needs: [changes, web-test, android-test, tauri-check, e2e-test]
     if: always()
     steps:
