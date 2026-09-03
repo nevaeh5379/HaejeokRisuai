@@ -138,6 +138,59 @@ describe('LocalFsStorage', () => {
         expect(await storage.exists(hex)).toBe(false)
     })
 
+    it('opens a single lazy stream and preserves the asset contents', async () => {
+        const hex = keyToHex('assets/lazy.bin')
+        const payload = Buffer.from('lazy asset contents')
+        await storage.write(hex, payload)
+        const createReadStream = vi.spyOn(fs, 'createReadStream')
+
+        try {
+            const result = await storage.openReadStream(hex)
+            expect(result.exists).toBe(true)
+            expect(result.filePath).toBe(path.join(tmpDir, hex))
+            expect(result.contentLength).toBe(payload.length)
+            expect(createReadStream).not.toHaveBeenCalled()
+
+            const stream = result.stream
+            expect(result.stream).toBe(stream)
+            expect(createReadStream).toHaveBeenCalledTimes(1)
+            const chunks: Buffer[] = []
+            for await (const chunk of stream) {
+                chunks.push(Buffer.from(chunk))
+            }
+            expect(Buffer.concat(chunks)).toEqual(payload)
+        } finally {
+            createReadStream.mockRestore()
+        }
+    })
+
+    it('rejects relative and absolute paths outside the storage directory', async () => {
+        const savePath = path.join(tmpDir, 'assets')
+        const siblingPath = path.join(tmpDir, 'assets-sibling')
+        fs.mkdirSync(savePath)
+        fs.mkdirSync(siblingPath)
+        const hex = keyToHex('assets/private.bin')
+        fs.writeFileSync(path.join(tmpDir, hex), 'private')
+        fs.writeFileSync(path.join(siblingPath, hex), 'private')
+        const localStorage = new LocalFsStorage(savePath)
+        const createReadStream = vi.spyOn(fs, 'createReadStream')
+
+        try {
+            for (const input of [
+                path.join('..', hex),
+                path.join(tmpDir, hex),
+                path.join('..', 'assets-sibling', hex),
+                path.join(siblingPath, hex),
+            ]) {
+                expect(await localStorage.read(input)).toEqual({ exists: false })
+                expect(await localStorage.openReadStream(input)).toEqual({ exists: false })
+            }
+            expect(createReadStream).not.toHaveBeenCalled()
+        } finally {
+            createReadStream.mockRestore()
+        }
+    })
+
     it('filters listed keys by prefix', async () => {
         await storage.init()
         await storage.write(keyToHex('assets/avatar.png'), Buffer.from('asset'))

@@ -244,6 +244,10 @@ class LocalFsStorage {
             filePath: fullPath,
             get stream() {
                 if (!this._stream) {
+                    // Keep the guard in the lazy getter so CodeQL can verify the stream sink.
+                    if (fullPath !== rootPath && !fullPath.startsWith(rootPath + path.sep)) {
+                        throw new Error('Asset path is outside the storage directory');
+                    }
                     const s = fs.createReadStream(fullPath);
                     s.on('error', () => {});
                     this._stream = s;
