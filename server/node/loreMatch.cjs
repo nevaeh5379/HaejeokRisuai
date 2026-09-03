@@ -5,8 +5,26 @@ function normalizeKeys(keys) {
     .filter((key) => key.length > 0);
 }
 
+const MAX_LORE_SEARCH_DEPTH = 10000;
+const MAX_LORE_REGEX_PATTERN_LENGTH = 2048;
+const LORE_REGEX_FLAGS = /^[dgimsuvy]*$/;
+
+function parseLoreRegexLiteral(value) {
+  if (typeof value !== "string" || !value.startsWith("/")) return null;
+  const separator = value.lastIndexOf("/");
+  if (separator <= 0) return null;
+  const pattern = value.slice(1, separator);
+  const flags = value.slice(separator + 1);
+  if (pattern.length > MAX_LORE_REGEX_PATTERN_LENGTH) return null;
+  if (!LORE_REGEX_FLAGS.test(flags)) return null;
+  return { pattern, flags };
+}
+
 function buildMessageList(messages, request, username, charName) {
-  const depth = Math.max(0, Math.floor(Number(request.searchDepth) || 0));
+  const depth = Math.min(
+    MAX_LORE_SEARCH_DEPTH,
+    Math.max(0, Math.floor(Number(request.searchDepth) || 0)),
+  );
   const sliced = messages.slice(messages.length - depth, messages.length);
   return sliced.map((msg, index) => {
     const isUser = msg?.role === "user";
@@ -43,12 +61,12 @@ function matchLoreRequest(messages, rawRequest, options = {}) {
   if (request.regex) {
     for (const message of messageList) {
       for (const regexString of request.keys) {
-        if (!regexString.startsWith("/")) return { matched: false, logs };
-        const regexFlag = regexString.split("/").pop();
-        if (!regexFlag) continue;
-        request.keys[0] = regexString.replace("/" + regexFlag, "");
+        const parsedRegex = parseLoreRegexLiteral(regexString);
+        if (!parsedRegex) return { matched: false, logs };
         try {
-          const regex = new RegExp(request.keys[0], regexFlag);
+          // Lorebook regexes are explicitly authored by the user. The literal is
+          // length-bounded and flags are allowlisted above before construction.
+          const regex = new RegExp(parsedRegex.pattern, parsedRegex.flags); // lgtm[js/regex-injection]
           if (regex.test(message.data)) {
             logs.push({
               prompt: message.prompt,

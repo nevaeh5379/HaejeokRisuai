@@ -52,6 +52,14 @@ function hash(value) {
     .slice(0, 32);
 }
 
+const secretFingerprintKey = crypto.randomBytes(32);
+function secretFingerprint(value) {
+  return crypto
+    .createHmac("sha256", secretFingerprintKey)
+    .update(String(value))
+    .digest("base64url");
+}
+
 function queryMetric(scope) {
   let metric = queryCacheMetrics.get(scope);
   if (!metric) {
@@ -68,11 +76,11 @@ function queryCacheEpoch(scope) {
 function queryProviderFingerprint(config) {
   const model = normalizeHypaModel(config.hypaModel);
   if (model === "custom") {
-    return `custom:${appendEmbeddingsPath(config.customEmbedding?.url || "")}:${config.customEmbedding?.model || ""}:${hash(config.customEmbedding?.key || "")}`;
+    return `custom:${appendEmbeddingsPath(config.customEmbedding?.url || "")}:${config.customEmbedding?.model || ""}:${secretFingerprint(config.customEmbedding?.key || "")}`;
   }
   if (model === "voyageContext3")
-    return `voyageContext3:${hash(config.voyageApiKey || "")}`;
-  return `${model}:${hash(config.supaMemoryKey || "")}`;
+    return `voyageContext3:${secretFingerprint(config.voyageApiKey || "")}`;
+  return `${model}:${secretFingerprint(config.supaMemoryKey || "")}`;
 }
 
 function touchQueryCache(key, entry) {

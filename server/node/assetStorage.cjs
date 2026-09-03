@@ -147,6 +147,35 @@ function keyToHex(key) {
   return Buffer.from(key, "utf-8").toString("hex");
 }
 
+function normalizeAssetHexFilename(value) {
+  if (!isHex(value)) return null;
+  const filename = path.basename(value);
+  return filename === value ? filename : null;
+}
+
+function resolveAssetHexPath(rootDir, hexPath) {
+  const filename = normalizeAssetHexFilename(hexPath);
+  if (!filename) return null;
+  return path.join(path.resolve(rootDir), filename);
+}
+
+function normalizeThumbnailDimension(value, fallback = 128) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, 4096);
+}
+
+function resolveThumbnailCachePath(thumbDir, hexPath, width, height) {
+  const filename = normalizeAssetHexFilename(hexPath);
+  if (!filename) return null;
+  const safeWidth = normalizeThumbnailDimension(width);
+  const safeHeight = normalizeThumbnailDimension(height);
+  return path.join(
+    path.resolve(thumbDir),
+    `${filename}_${safeWidth}x${safeHeight}.webp`,
+  );
+}
+
 function isImageKey(key) {
   const ext = key.split(".").pop()?.toLowerCase();
   return [
@@ -188,11 +217,13 @@ async function createThumbnailBuffer(buffer, width = 128, height = 128) {
 
 async function removeThumbnailsForHex(thumbDir, hexPath) {
   if (!fs.existsSync(thumbDir)) return;
+  const filename = normalizeAssetHexFilename(hexPath);
+  if (!filename) return;
   const standardSizes = ["128x128", "256x256", "512x512", "64x64"];
   await Promise.all(
     standardSizes.map((size) =>
       fs.promises
-        .unlink(path.join(thumbDir, `${hexPath}_${size}.webp`))
+        .unlink(path.join(path.resolve(thumbDir), `${filename}_${size}.webp`))
         .catch(() => {}),
     ),
   );
@@ -299,9 +330,8 @@ class LocalFsStorage {
   async read(hexPath) {
     const rootPath = path.resolve(this.savePath);
     const rootPrefix = path.join(rootPath, path.sep);
-    const fullPath = path.resolve(rootPath, hexPath);
-    // Only descendants are assets; allowing rootPath itself bypasses the prefix guard.
-    if (!fullPath.startsWith(rootPrefix) || fullPath === rootPath) {
+    const fullPath = resolveAssetHexPath(rootPath, hexPath);
+    if (!fullPath) {
       return { exists: false };
     }
     if (!fs.existsSync(fullPath)) {
@@ -334,15 +364,22 @@ class LocalFsStorage {
   }
 
   async readThumbnail(hexPath, options = {}) {
-    const width = options.width || 128;
-    const height = options.height || 128;
-    const key = hexToKey(hexPath);
+    const safeHexPath = normalizeAssetHexFilename(hexPath);
+    if (!safeHexPath) return { exists: false };
+    const width = normalizeThumbnailDimension(options.width);
+    const height = normalizeThumbnailDimension(options.height);
+    const key = hexToKey(safeHexPath);
     if (!isImageKey(key)) {
       return this.read(hexPath);
     }
 
     const thumbDir = path.join(this.savePath, "__thumbs");
-    const thumbPath = path.join(thumbDir, `${hexPath}_${width}x${height}.webp`);
+    const thumbPath = resolveThumbnailCachePath(
+      thumbDir,
+      safeHexPath,
+      width,
+      height,
+    );
     if (fs.existsSync(thumbPath)) {
       const stat = await fs.promises.stat(thumbPath);
       return {
@@ -386,9 +423,11 @@ class LocalFsStorage {
   }
 
   async write(hexPath, content) {
-    const fullPath = path.join(this.savePath, hexPath);
+    const safeHexPath = normalizeAssetHexFilename(hexPath);
+    const fullPath = resolveAssetHexPath(this.savePath, safeHexPath);
+    if (!fullPath || !safeHexPath) throw new Error("Invalid asset path");
     await fs.promises.writeFile(fullPath, content);
-    const key = hexToKey(hexPath);
+    const key = hexToKey(safeHexPath);
     if (isImageKey(key)) {
       createThumbnailBuffer(content, 128, 128)
         .then(async (thumbBuffer) => {
@@ -398,7 +437,7 @@ class LocalFsStorage {
               fs.mkdirSync(thumbDir, { recursive: true });
             }
             await fs.promises.writeFile(
-              path.join(thumbDir, `${hexPath}_128x128.webp`),
+              resolveThumbnailCachePath(thumbDir, safeHexPath, 128, 128),
               thumbBuffer,
             );
           }
@@ -409,7 +448,9 @@ class LocalFsStorage {
   }
 
   async writeFromPath(hexPath, sourcePath) {
-    const fullPath = path.join(this.savePath, hexPath);
+    const safeHexPath = normalizeAssetHexFilename(hexPath);
+    const fullPath = resolveAssetHexPath(this.savePath, safeHexPath);
+    if (!fullPath || !safeHexPath) throw new Error("Invalid asset path");
     try {
       await fs.promises.rename(sourcePath, fullPath);
     } catch (err) {
@@ -417,8 +458,8 @@ class LocalFsStorage {
       await fs.promises.unlink(sourcePath).catch(() => {});
     }
     const thumbDir = path.join(this.savePath, "__thumbs");
-    await removeThumbnailsForHex(thumbDir, hexPath);
-    const key = hexToKey(hexPath);
+    await removeThumbnailsForHex(thumbDir, safeHexPath);
+    const key = hexToKey(safeHexPath);
     if (isImageKey(key)) {
       fs.promises
         .readFile(fullPath)
@@ -429,7 +470,7 @@ class LocalFsStorage {
               fs.mkdirSync(thumbDir, { recursive: true });
             }
             await fs.promises.writeFile(
-              path.join(thumbDir, `${hexPath}_128x128.webp`),
+              resolveThumbnailCachePath(thumbDir, safeHexPath, 128, 128),
               thumbBuffer,
             );
           }
@@ -440,13 +481,15 @@ class LocalFsStorage {
   }
 
   createWriteStream(hexPath) {
-    const fullPath = path.join(this.savePath, hexPath);
+    const safeHexPath = normalizeAssetHexFilename(hexPath);
+    const fullPath = resolveAssetHexPath(this.savePath, safeHexPath);
+    if (!fullPath || !safeHexPath) throw new Error("Invalid asset path");
     const fileStream = fs.createWriteStream(fullPath);
     const donePromise = new Promise((resolve, reject) => {
       fileStream.on("finish", async () => {
         try {
           const thumbDir = path.join(this.savePath, "__thumbs");
-          await removeThumbnailsForHex(thumbDir, hexPath);
+          await removeThumbnailsForHex(thumbDir, safeHexPath);
           resolve({ success: true });
         } catch (err) {
           reject(err);
@@ -468,7 +511,9 @@ class LocalFsStorage {
     const paths = Array.isArray(hexPaths) ? hexPaths : [hexPaths];
     const thumbDir = path.join(this.savePath, "__thumbs");
     for (const hp of paths) {
-      const fullPath = path.join(this.savePath, hp);
+      const safeHexPath = normalizeAssetHexFilename(hp);
+      const fullPath = resolveAssetHexPath(this.savePath, safeHexPath);
+      if (!fullPath || !safeHexPath) continue;
       try {
         if (fs.existsSync(fullPath)) {
           await fs.promises.rm(fullPath);
@@ -476,7 +521,7 @@ class LocalFsStorage {
       } catch (err) {
         // Ignore removal errors if file is absent
       }
-      await removeThumbnailsForHex(thumbDir, hp);
+      await removeThumbnailsForHex(thumbDir, safeHexPath);
     }
     return { success: true };
   }
@@ -842,17 +887,21 @@ class S3AssetStorage {
   }
 
   async readThumbnail(hexPath, options = {}) {
-    const width = options.width || 128;
-    const height = options.height || 128;
-    const key = hexToKey(hexPath);
+    const safeHexPath = normalizeAssetHexFilename(hexPath);
+    if (!safeHexPath) return { exists: false };
+    const width = normalizeThumbnailDimension(options.width);
+    const height = normalizeThumbnailDimension(options.height);
+    const key = hexToKey(safeHexPath);
     if (!isImageKey(key)) {
       return this.read(hexPath);
     }
 
     // 1. Check local server disk cache (0 S3 API calls, fastest)
-    const localThumbPath = path.join(
+    const localThumbPath = resolveThumbnailCachePath(
       this.thumbDir,
-      `${hexPath}_${width}x${height}.webp`,
+      safeHexPath,
+      width,
+      height,
     );
     if (fs.existsSync(localThumbPath)) {
       try {
@@ -941,7 +990,8 @@ class S3AssetStorage {
       }
     } catch (err) {
       console.warn(
-        `[S3 Storage] Thumbnail generation error for "${key}":`,
+        '[S3 Storage] Thumbnail generation error for "%s":',
+        key,
         err,
       );
     }
@@ -960,10 +1010,13 @@ class S3AssetStorage {
       const thumbBuffer = await createThumbnailBuffer(buffer, width, height);
       if (thumbBuffer && thumbBuffer.length > 0) {
         const thumbKey = `thumbnails/${key}_${width}x${height}.webp`;
-        const localThumbPath = path.join(
+        const localThumbPath = resolveThumbnailCachePath(
           this.thumbDir,
-          `${hexPath}_${width}x${height}.webp`,
+          hexPath,
+          width,
+          height,
         );
+        if (!localThumbPath) return;
         try {
           if (!fs.existsSync(this.thumbDir)) {
             fs.mkdirSync(this.thumbDir, { recursive: true });
@@ -2350,17 +2403,21 @@ class AzureSqlAssetStorage {
   }
 
   async readThumbnail(hexPath, options = {}) {
-    const width = options.width || 128;
-    const height = options.height || 128;
-    const key = hexToKey(hexPath);
+    const safeHexPath = normalizeAssetHexFilename(hexPath);
+    if (!safeHexPath) return { exists: false };
+    const width = normalizeThumbnailDimension(options.width);
+    const height = normalizeThumbnailDimension(options.height);
+    const key = hexToKey(safeHexPath);
     if (!isImageKey(key)) {
       return this.read(hexPath);
     }
 
     // 1. Local disk cache
-    const localThumbPath = path.join(
+    const localThumbPath = resolveThumbnailCachePath(
       this.thumbDir,
-      `${hexPath}_${width}x${height}.webp`,
+      safeHexPath,
+      width,
+      height,
     );
     if (fs.existsSync(localThumbPath)) {
       try {
@@ -2449,7 +2506,8 @@ class AzureSqlAssetStorage {
       }
     } catch (err) {
       console.warn(
-        `[AzureSqlAssetStorage] thumbnail generation error for "${key}":`,
+        '[AzureSqlAssetStorage] thumbnail generation error for "%s":',
+        key,
         err,
       );
     }
@@ -2495,10 +2553,13 @@ class AzureSqlAssetStorage {
     try {
       const thumbBuffer = await createThumbnailBuffer(buffer, width, height);
       if (!thumbBuffer || thumbBuffer.length === 0) return;
-      const localThumbPath = path.join(
+      const localThumbPath = resolveThumbnailCachePath(
         this.thumbDir,
-        `${hexPath}_${width}x${height}.webp`,
+        hexPath,
+        width,
+        height,
       );
+      if (!localThumbPath) return;
       try {
         if (!fs.existsSync(this.thumbDir))
           fs.mkdirSync(this.thumbDir, { recursive: true });

@@ -61,10 +61,7 @@ function formatDuration(milliseconds) {
 function sanitizeSensitiveText(value) {
   if (value === null || value === undefined) return "";
   return String(value)
-    .replace(
-      /([a-z][a-z0-9+.-]*:\/\/)([^\s/@]+(?::[^\s/@]*)?)@/gi,
-      "$1<redacted>@",
-    )
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1<redacted>@")
     .replace(
       /\b(password|passwd|pwd|secret|token|access[_-]?key|api[_-]?key)=([^\s&,;]+)/gi,
       "$1=<redacted>",

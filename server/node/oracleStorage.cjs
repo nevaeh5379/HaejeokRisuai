@@ -5356,11 +5356,11 @@ class OracleStorage extends SqlStorageBase {
       let whereClause = "";
       const binds = [];
       if (searchTerm.length > 0) {
-        const escaped = searchTerm.replace(/([%_])/g, "\\$1");
+        const escaped = searchTerm.replace(/[\\%_]/g, "\\$&");
         const conditions = visibleColumns
           .map((c) => {
             binds.push(`%${escaped}%`);
-            return `LOWER(${dbExplorerSelectExpression(c.name, c.dataType)}) LIKE LOWER(:${binds.length})`;
+            return `LOWER(${dbExplorerSelectExpression(c.name, c.dataType)}) LIKE LOWER(:${binds.length}) ESCAPE '\\'`;
           })
           .join(" OR ");
         whereClause = ` WHERE (${conditions})`;

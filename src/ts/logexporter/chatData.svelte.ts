@@ -275,7 +275,27 @@ export function htmlToText(html: string): string {
     container.querySelectorAll("button").forEach((b) => b.remove());
     return (container.textContent ?? "").trim();
   } catch {
-    return html.replace(/<[^>]*>/g, "");
+    let text = "";
+    let insideTag = false;
+    let quote: '"' | "'" | null = null;
+    for (const char of html) {
+      if (insideTag) {
+        if (quote) {
+          if (char === quote) quote = null;
+        } else if (char === '"' || char === "'") {
+          quote = char;
+        } else if (char === ">") {
+          insideTag = false;
+        }
+        continue;
+      }
+      if (char === "<") {
+        insideTag = true;
+      } else {
+        text += char;
+      }
+    }
+    return text.trim();
   }
 }
 

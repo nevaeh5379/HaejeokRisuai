@@ -186,7 +186,7 @@ function enqueuePersist(indexId, index, directory = persistenceDir) {
     .catch(() => {})
     .then(() => writeIndexSnapshot(snapshotIndex(indexId, index), directory))
     .catch((error) =>
-      console.warn(`[VectorIndex] Failed to persist ${indexId}:`, error),
+      console.warn("[VectorIndex] Failed to persist %s:", indexId, error),
     );
   persistPromises.set(indexId, next);
   void next.finally(() => {
@@ -351,7 +351,8 @@ function loadPersistedIndex(indexId) {
     };
   } catch (error) {
     console.warn(
-      `[VectorIndex] Ignoring invalid persisted cache for ${indexId}:`,
+      "[VectorIndex] Ignoring invalid persisted cache for %s:",
+      indexId,
       error.message || error,
     );
     try {

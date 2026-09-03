@@ -2385,18 +2385,26 @@ class AzureStorage extends SqlStorageBase {
         hash: crypto.createHash("sha256").update("{}").digest("hex"),
       };
     }
-    const keysList = keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");
+    const normalizedKeys = [...new Set(keys.map((key) => String(key)))];
+    if (normalizedKeys.length > 1000) {
+      throw new StoragePayloadError("Too many setting keys requested");
+    }
+    const settingsRequest = pool.request();
+    const valuesRequest = pool.request();
+    const keyParameters = normalizedKeys.map((key, index) => {
+      const name = `settingKey${index}`;
+      settingsRequest.input(name, sql.NVarChar(450), key);
+      valuesRequest.input(name, sql.NVarChar(450), key);
+      return `@${name}`;
+    });
+    const keyList = keyParameters.join(", ");
     const [settingsRes, valuesRes] = await Promise.all([
-      pool
-        .request()
-        .query(
-          `SELECT [key] FROM [system].[settings] WHERE [key] IN (${keysList}) ORDER BY [key]`,
-        ),
-      pool
-        .request()
-        .query(
-          `SELECT * FROM [system].[setting_values] WHERE setting_key IN (${keysList}) ORDER BY setting_key, node_id`,
-        ),
+      settingsRequest.query(
+        `SELECT [key] FROM [system].[settings] WHERE [key] IN (${keyList}) ORDER BY [key]`,
+      ),
+      valuesRequest.query(
+        `SELECT * FROM [system].[setting_values] WHERE setting_key IN (${keyList}) ORDER BY setting_key, node_id`,
+      ),
     ]);
     const rebuilt = rebuildSettings(settingsRes.recordset, valuesRes.recordset);
     if (keys.includes("pluginCustomStorage")) {

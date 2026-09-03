@@ -292,9 +292,14 @@ export async function requestGoogleCloudVertex(
       );
     }
     // Input validation
-    if (!email.includes("gserviceaccount.com")) {
+    const normalizedEmail = email.trim();
+    if (
+      !/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.gserviceaccount\.com$/i.test(
+        normalizedEmail,
+      )
+    ) {
       throw new Error(
-        "Invalid Vertex client email. Must include gserviceaccount.com",
+        "Invalid Vertex client email. Must be a Google service account address",
       );
     }
     if (
@@ -328,7 +333,7 @@ export async function requestGoogleCloudVertex(
     };
 
     const claimSet = {
-      iss: email,
+      iss: normalizedEmail,
       iat: time,
       exp: time + 3600,
       scope: "https://www.googleapis.com/auth/cloud-platform",

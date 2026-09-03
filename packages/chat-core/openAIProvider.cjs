@@ -314,10 +314,11 @@ function formatOpenAIReasoningText(data, options = {}) {
 
   if (options.deepSeekThinkingOutput && !reasoningContentField) {
     let reasoningContent = "";
-    result = result.replace(/(.*)<\/think>/gms, (_match, prefix) => {
-      reasoningContent = prefix;
-      return "";
-    });
+    const thinkCloseIndex = result.lastIndexOf("</think>");
+    if (thinkCloseIndex !== -1) {
+      reasoningContent = result.slice(0, thinkCloseIndex);
+      result = result.slice(thinkCloseIndex + "</think>".length);
+    }
     if (reasoningContent) {
       reasoningContent = reasoningContent.replace(/<think>/gms, "");
       result = `<Thoughts>\n${reasoningContent}\n</Thoughts>\n${result}`;

@@ -6,6 +6,8 @@ const {
 } = require("../../packages/protocol/sqlCommit.cjs");
 
 const DEFAULT_MAX_COLD_STORAGE_KEYS = 250000;
+const MAX_COLD_STORAGE_CHATS_PER_CHARACTER = 100000;
+const MAX_COLD_STORAGE_MESSAGES_PER_CHAT = 1000000;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMPAT_UUID_PATTERN =
@@ -262,7 +264,11 @@ function createSqlStorageHelpers({
       ) {
         throw new PayloadError("Cold storage character data is invalid");
       }
-      for (const chat of character.chats || []) {
+      const chats = character.chats || [];
+      if (chats.length > MAX_COLD_STORAGE_CHATS_PER_CHARACTER) {
+        throw new PayloadError("Cold storage character has too many chats");
+      }
+      for (const chat of chats) {
         if (
           !chat ||
           typeof chat !== "object" ||
@@ -285,6 +291,9 @@ function createSqlStorageHelpers({
   }
 
   function validateMessages(messages) {
+    if (messages.length > MAX_COLD_STORAGE_MESSAGES_PER_CHAT) {
+      throw new PayloadError("Cold storage chat has too many messages");
+    }
     for (const message of messages) {
       if (!message || typeof message !== "object" || Array.isArray(message)) {
         throw new PayloadError("Cold storage message data is invalid");
@@ -307,16 +316,24 @@ function createSqlStorageHelpers({
       const { chats = [], ...characterData } = value.character;
       const normalizedChats = [];
       const normalizedMessages = [];
-      for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
+      const chatCount = Math.min(
+        chats.length,
+        MAX_COLD_STORAGE_CHATS_PER_CHARACTER,
+      );
+      for (let chatPosition = 0; chatPosition < chatCount; chatPosition++) {
         const { message = [], ...chatData } = chats[chatPosition];
         normalizedChats.push({
           position: chatPosition,
           data: chatData,
           fields: Object.keys(chats[chatPosition]),
         });
+        const messageCount = Math.min(
+          message.length,
+          MAX_COLD_STORAGE_MESSAGES_PER_CHAT,
+        );
         for (
           let messagePosition = 0;
-          messagePosition < message.length;
+          messagePosition < messageCount;
           messagePosition++
         ) {
           normalizedMessages.push({

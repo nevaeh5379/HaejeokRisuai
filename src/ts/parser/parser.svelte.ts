@@ -2185,7 +2185,7 @@ export function applyMarkdownToNode(node: Node) {
       let markdown = renderMarkdown(md, text);
       if (markdown !== text) {
         const span = document.createElement("span");
-        span.innerHTML = markdown;
+        span.innerHTML = DOMPurify.sanitize(markdown);
 
         // inherit inline style from the parent node
         const parentStyle = (node.parentNode as HTMLElement)?.style;

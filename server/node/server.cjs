@@ -179,13 +179,26 @@ const STATIC_MIME_TYPES = {
   ".ttf": "font/ttf",
 };
 
+const publicContentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) =>
+    (req.method !== "GET" && req.method !== "HEAD") ||
+    req.path.startsWith("/api/") ||
+    req.path.startsWith("/proxy") ||
+    req.path.startsWith("/v1/"),
+  message: { error: "Too many requests. Please retry shortly." },
+});
+
 app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   next();
 });
 
-app.use(async (req, res, next) => {
+app.use(publicContentLimiter, async (req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") {
     return next();
   }
@@ -1574,6 +1587,34 @@ function isLocalNetworkHost(hostname) {
   return false;
 }
 
+function normalizeAuthenticatedProxyTarget(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (parsed.username || parsed.password) return null;
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeHubProxyTarget(raw, base = hubURL) {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  try {
+    const hub = new URL(hubURL);
+    const target = new URL(raw, base);
+    if (target.protocol !== "http:" && target.protocol !== "https:") return null;
+    if (target.origin !== hub.origin) return null;
+    if (target.username || target.password) return null;
+    target.hash = "";
+    return target.toString();
+  } catch {
+    return null;
+  }
+}
+
 function sanitizeTargetUrl(raw) {
   if (typeof raw !== "string" || raw.trim() === "") {
     return null;
@@ -2126,9 +2167,16 @@ const reverseProxyFunc = async (req, res, next) => {
     });
     return;
   }
-  const header = req.headers["risu-header"]
-    ? JSON.parse(decodeURIComponent(req.headers["risu-header"]))
-    : req.headers;
+  const proxyTarget = normalizeAuthenticatedProxyTarget(String(urlParam));
+  if (!proxyTarget) {
+    res.status(400).send({ error: "Invalid proxy URL" });
+    return;
+  }
+  const header = normalizeForwardHeaders(
+    req.headers["risu-header"]
+      ? JSON.parse(decodeURIComponent(req.headers["risu-header"]))
+      : req.headers,
+  );
   if (!header["x-forwarded-for"]) {
     header["x-forwarded-for"] = req.ip;
   }
@@ -2148,7 +2196,9 @@ const reverseProxyFunc = async (req, res, next) => {
   let originalResponse;
   try {
     // make request to original server
-    originalResponse = await fetch(urlParam, {
+    // This is the authenticated generic proxy feature: callers intentionally choose
+    // the HTTP(S) endpoint, including local model servers.
+    originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
       method: req.method,
       headers: header,
       body: JSON.stringify(req.body),
@@ -2208,9 +2258,16 @@ const reverseProxyFunc_get = async (req, res, next) => {
     });
     return;
   }
-  const header = req.headers["risu-header"]
-    ? JSON.parse(decodeURIComponent(req.headers["risu-header"]))
-    : req.headers;
+  const proxyTarget = normalizeAuthenticatedProxyTarget(String(urlParam));
+  if (!proxyTarget) {
+    res.status(400).send({ error: "Invalid proxy URL" });
+    return;
+  }
+  const header = normalizeForwardHeaders(
+    req.headers["risu-header"]
+      ? JSON.parse(decodeURIComponent(req.headers["risu-header"]))
+      : req.headers,
+  );
   if (!header["x-forwarded-for"]) {
     header["x-forwarded-for"] = req.ip;
   }
@@ -2219,7 +2276,9 @@ const reverseProxyFunc_get = async (req, res, next) => {
   let originalResponse;
   try {
     // make request to original server
-    originalResponse = await fetch(urlParam, {
+    // This is the authenticated generic proxy feature: callers intentionally choose
+    // the HTTP(S) endpoint, including local model servers.
+    originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
       method: "GET",
       headers: header,
       signal: timeout.signal,
@@ -2354,6 +2413,11 @@ async function hubProxyFunc(req, res) {
     delete headersToSend["x-risu-node-path"];
 
     const hubOrigin = new URL(hubURL).origin;
+    const hubTarget = normalizeHubProxyTarget(externalURL);
+    if (!hubTarget) {
+      res.status(400).send({ error: "Invalid hub proxy target" });
+      return;
+    }
     headersToSend.origin = hubOrigin;
 
     //if Authorization header is "Server-Auth, set the token to be Server-Auth
@@ -2368,7 +2432,7 @@ async function hubProxyFunc(req, res) {
       delete headersToSend["risu-auth"];
     }
 
-    const response = await fetch(externalURL, {
+    const response = await fetch(hubTarget, {
       method: req.method,
       headers: headersToSend,
       body:
@@ -2392,8 +2456,13 @@ async function hubProxyFunc(req, res) {
       response.headers.get("location")
     ) {
       const redirectUrl = response.headers.get("location");
+      const redirectTarget = normalizeHubProxyTarget(redirectUrl, hubTarget);
+      if (!redirectTarget) {
+        res.status(502).send({ error: "Hub redirect left the trusted origin" });
+        return;
+      }
       const newHeaders = { ...headersToSend };
-      const redirectResponse = await fetch(redirectUrl, {
+      const redirectResponse = await fetch(redirectTarget, {
         method: req.method,
         headers: newHeaders,
         body:
@@ -2581,7 +2650,7 @@ app.post("/api/crypto", async (req, res) => {
   }
 });
 
-app.post("/api/set_password", async (req, res) => {
+app.post("/api/set_password", loginRouteLimiter, async (req, res) => {
   if (password === "") {
     password = req.body.password;
     writeFileSync(passwordPath, password, "utf-8");
@@ -2795,7 +2864,7 @@ app.post(
         await writePacket(res, createEndPacket(fileId));
         fileId += 1;
       } catch (err) {
-        console.error(`Error reading ${filePath} in read-bulk:`, err);
+        console.error("Error reading %s in read-bulk:", filePath, err);
       }
     }
 
@@ -7177,7 +7246,7 @@ const oauthData = {
   config: {},
   code_verifier: "",
 };
-app.get("/api/oauth_login", async (req, res) => {
+app.get("/api/oauth_login", loginRouteLimiter, async (req, res) => {
   const redirect_uri = new URL(req.url).host + "/api/oauth_callback";
 
   if (!redirect_uri) {
@@ -7255,7 +7324,7 @@ app.get("/api/oauth_login", async (req, res) => {
   res.status(500).send({ error: "OAuth2 login failed" });
 });
 
-app.get("/api/oauth_callback", async (req, res) => {
+app.get("/api/oauth_callback", loginRouteLimiter, async (req, res) => {
   //since this is a callback we don't need to check password
 
   const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
@@ -7345,7 +7414,9 @@ app.use((error, req, res, next) => {
 
   if (statusCode >= 500) {
     console.error(
-      `[Server] Unhandled error on ${req.method} ${req.path}:`,
+      "[Server] Unhandled error on %s %s:",
+      req.method,
+      req.path,
       error?.stack || error,
     );
   }
