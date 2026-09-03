@@ -223,6 +223,8 @@ export const languageSpanish = {
       "Evalúa expresiones matemáticas con soporte para aritmética básica (+, -, *, /, %, ^), operadores de comparación (<, >, <=, >=, =, !=), operadores lógicos (&&, ||, !), paréntesis para precedencia y sustitución de variables usando el formato $nombreVariable. Las variables se convierten automáticamente a números (predeterminado a 0 si es inválido).",
     namespace:
       "Namespace es un identificador único para el módulo. Se utiliza para prevenir conflictos entre módulos y para la interacción de presets, otros módulos, etc. Si no estás seguro de qué poner, déjalo en blanco.",
+    moduleSubModel:
+      "Especifica un modelo auxiliar dedicado para los disparadores y scripts de este módulo. Si se deja en blanco, se utilizará el modelo auxiliar global.",
     moduleIntergration:
       "Puedes habilitar módulos poniendo el namespace del módulo en las secciones de integración de módulos. Si deseas habilitar múltiples módulos, puedes separarlos por comas. Por ejemplo, `modulo1,modulo2,modulo3`. Esto es para usuarios avanzados que desean variar el uso de módulos por presets.",
     customCSS:
@@ -389,30 +391,42 @@ export const languageSpanish = {
     igpPrompt:
       "Si el Prompt IGP no está en blanco, se ejecutará después de la solicitud del modelo principal, después de la ejecución del modelo principal, como un modelo de emoción, agregando el resultado después de la respuesta del modelo principal.",
     welcomeTitle: "Bienvenido a Haejeok RisuAI",
-    welcomeGreeting: "¡Hola! Bienvenido a Haejeok RisuAI. Soy Iris, tu guía de configuración.",
+    welcomeGreeting:
+      "¡Hola! Bienvenido a Haejeok RisuAI. Soy Iris, tu guía de configuración.",
     welcomeSubGreeting: "¿Cómo te gustaría comenzar hoy?",
     irisName: "Iris",
-    irisGatewayDefault: "¡Encantada de conocerte! Elige tu método preferido. Para nuevos usuarios, ¡recomendamos la Configuración rápida!",
-    irisGatewayDetected: "Se encontró un database.bin previo. ¿Deseas restaurarlo ahora?",
-    irisMigrationDrop: "¡Arrastra y suelta tu archivo database.bin aquí para migrarlo al almacenamiento SQL de alto rendimiento!",
-    irisMigrationPreview: "¡Datos verificados! ¿Restauramos los personajes y chats?",
+    irisGatewayDefault:
+      "¡Encantada de conocerte! Elige tu método preferido. Para nuevos usuarios, ¡recomendamos la Configuración rápida!",
+    irisGatewayDetected:
+      "Se encontró un database.bin previo. ¿Deseas restaurarlo ahora?",
+    irisMigrationDrop:
+      "¡Arrastra y suelta tu archivo database.bin aquí para migrarlo al almacenamiento SQL de alto rendimiento!",
+    irisMigrationPreview:
+      "¡Datos verificados! ¿Restauramos los personajes y chats?",
     irisStep1: "¡Indica el apodo con el que te gustaría que te llamen!",
-    irisStep2: "¡Elige tu proveedor de IA preferido! Se recomienda Claude 3.7 Sonnet o GPT-4o.",
-    irisStep3: "Configura tu clave de API, traducción y memoria de contexto. ¡Podrás cambiar esto más tarde en Ajustes!",
+    irisStep2:
+      "¡Elige tu proveedor de IA preferido! Se recomienda Claude 3.7 Sonnet o GPT-4o.",
+    irisStep3:
+      "Configura tu clave de API, traducción y memoria de contexto. ¡Podrás cambiar esto más tarde en Ajustes!",
     irisStep4: "¡Todo listo! ¡Comencemos el viaje con Haejeok RisuAI!",
     gatewayMigrationTitle: "Restaurar / Migrar datos",
-    gatewayMigrationDesc: "Restaura personajes, chats y ajustes preestablecidos desde database.bin o copia de seguridad.",
+    gatewayMigrationDesc:
+      "Restaura personajes, chats y ajustes preestablecidos desde database.bin o copia de seguridad.",
     gatewayQuickSetupTitle: "Configuración rápida de IA",
-    gatewayQuickSetupDesc: "Configura tu apodo y modelos de IA (Claude, OpenAI, Gemini, etc.) en pocos pasos.",
+    gatewayQuickSetupDesc:
+      "Configura tu apodo y modelos de IA (Claude, OpenAI, Gemini, etc.) en pocos pasos.",
     gatewaySkipTitle: "Omitir y explorar",
-    gatewaySkipDesc: "Entra directamente a Haejeok RisuAI con la configuración por defecto.",
+    gatewaySkipDesc:
+      "Entra directamente a Haejeok RisuAI con la configuración por defecto.",
     detectedLegacyDbTitle: "Se detectó database.bin previo",
-    detectedLegacyDbDesc: "Encontramos datos guardados en tu dispositivo. ¿Deseas migrarlos ahora?",
+    detectedLegacyDbDesc:
+      "Encontramos datos guardados en tu dispositivo. ¿Deseas migrarlos ahora?",
     migrateDetectedBtn: "Migrar datos detectados",
     checkDataBtn: "Inspeccionar datos",
     currentUsername: "Apodo actual:",
     dropDatabaseBinTitle: "Arrastra y suelta database.bin aquí",
-    dropDatabaseBinDesc: "o haz clic para seleccionar database.bin / .risum / .risup",
+    dropDatabaseBinDesc:
+      "o haz clic para seleccionar database.bin / .risum / .risup",
     selectFileBtn: "Examinar archivo",
     migrationPreviewTitle: "Vista previa del contenido",
     migrationCharacters: "Personajes",
@@ -423,17 +437,21 @@ export const languageSpanish = {
     startMigrationBtn: "Iniciar migración",
     migrationInProgress: "Migrando datos a la base de datos SQL...",
     migrationSuccessTitle: "Migración completada",
-    migrationSuccessDesc: "Todos tus datos han sido migrados con éxito al nuevo almacenamiento SQL.",
+    migrationSuccessDesc:
+      "Todos tus datos han sido migrados con éxito al nuevo almacenamiento SQL.",
     migrationFailedTitle: "Error en la migración",
-    migrationFailedDesc: "No se pudo leer el archivo de base de datos. Por favor verifica el archivo.",
+    migrationFailedDesc:
+      "No se pudo leer el archivo de base de datos. Por favor verifica el archivo.",
     chooseAnotherFile: "Elegir otro archivo",
     selectAiModel: "Elegir proveedor de IA",
     selectAiModelDesc: "Selecciona el proveedor de modelo de IA que prefieras.",
     inputApiKeyTitle: "Clave API y ajustes",
     inputApiKeyPlaceholder: "Pega tu clave API aquí...",
     apiKeyLink: "Obtener clave API",
-    apiKeyDesc: "Las claves se guardan de forma segura en tu dispositivo y nunca se envían fuera.",
-    nicknameDesc: "Elige el nombre con el que se dirigirán a ti en las conversaciones.",
+    apiKeyDesc:
+      "Las claves se guardan de forma segura en tu dispositivo y nunca se envían fuera.",
+    nicknameDesc:
+      "Elige el nombre con el que se dirigirán a ti en las conversaciones.",
     nicknameInputPlaceholder: "Ingresa tu apodo (ej. Aventurero, User)",
     nextStep: "Siguiente",
     prevStep: "Atrás",
@@ -465,7 +483,8 @@ export const languageSpanish = {
     chatTransModeAuto: "Traducción automática (Recomendado)",
     chatTransModeDirect: "Entrada directa",
     memoryCapacity: "Capacidad de memoria (Entrada directa de Tokens)",
-    contextHelp: "Ingresa directamente el límite de Tokens (ej. 16000, 32000, 128000) o elige un ajuste preestablecido.",
+    contextHelp:
+      "Ingresa directamente el límite de Tokens (ej. 16000, 32000, 128000) o elige un ajuste preestablecido.",
     maxContextLabel: "Tamaño máximo de contexto (Tokens)",
     maxResponseLabel: "Tokens máximos de respuesta",
     endpointUrlLabel: "URL del Endpoint / Proxy",
@@ -960,6 +979,8 @@ export const languageSpanish = {
   editOrder: "Editar Orden",
   autoMode: "Modo Automático",
   submodel: "Modelo Auxiliar",
+  moduleSubModel: "Modelo auxiliar del módulo",
+  defaultSubModel: "Predeterminado (Modelo auxiliar global)",
   timeOutinSec: "Tiempo de Espera (en segundos)",
   emotionPrompt: "Prompt de Emoción",
   singleView: "Vista Única",
@@ -1291,7 +1312,8 @@ export const languageSpanish = {
   createModule: "Crear Módulo",
   createFolder: "Crear Carpeta",
   removeFolder: "Eliminar Carpeta",
-  removeFolderConfirm: "¿Realmente deseas eliminar esta carpeta? Los módulos dentro se moverán a la raíz.",
+  removeFolderConfirm:
+    "¿Realmente deseas eliminar esta carpeta? Los módulos dentro se moverán a la raíz.",
   moveToFolder: "Mover a Carpeta",
   noFolder: "Sin Carpeta",
   ungrouped: "Sin agrupar",

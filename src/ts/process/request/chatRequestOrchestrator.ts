@@ -93,7 +93,7 @@ export async function requestChatData(
         const response = await requestChatDataMain(
           {
             ...arg,
-            staticModel: fallbackModel,
+            staticModel: fallbackModel || arg.staticModel,
             tools,
           },
           model,

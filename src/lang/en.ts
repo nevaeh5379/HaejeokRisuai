@@ -266,6 +266,8 @@ export const languageEnglish = {
       "Evaluates mathematical expressions with support for basic arithmetic (+, -, *, /, %, ^), comparison operators (<, >, <=, >=, =, !=), logical operators (&&, ||, !), parentheses for precedence, and variable substitution using $variableName format. Variables are automatically converted to numbers (defaults to 0 if invalid).",
     namespace:
       "Namespace is a unique identifier for the module. It is used to prevent conflicts between modules, and for interaction of presets, other modules and etc. If you are not sure what to put, leave it blank.",
+    moduleSubModel:
+      "Specifies a dedicated auxiliary model for this module's triggers and scripts. If left blank, the global auxiliary model will be used.",
     moduleIntergration:
       "You can enable modules by putting the module namespace in the module intergartion sections. if you want to enable multiple modules, you can seperate them by comma. for example, `module1,module2,module3`. This is for advanced users, who wants to vary the use of modules by presets.",
     customCSS:
@@ -492,30 +494,43 @@ export const languageEnglish = {
     igpPrompt:
       "if IGP Prompt is not a blank, it will be executed after the main model request, after main model execution, as a emotion model, adding the result after the main model response.",
     welcomeTitle: "Welcome to Haejeok RisuAI",
-    welcomeGreeting: "Hello there! Welcome to Haejeok RisuAI. I am Iris, your guide to get everything ready.",
+    welcomeGreeting:
+      "Hello there! Welcome to Haejeok RisuAI. I am Iris, your guide to get everything ready.",
     welcomeSubGreeting: "How would you like to start today?",
     irisName: "Iris",
-    irisGatewayDefault: "Nice to meet you! Choose your preferred setup method. If you're new, Quick Setup is recommended.",
-    irisGatewayDetected: "We found your existing save data. Would you like to restore it now?",
-    irisMigrationDrop: "Drop your database.bin file here and I'll restore your characters and chats to high-performance SQL storage!",
-    irisMigrationPreview: "Data verified! Shall we restore characters and chats?",
+    irisGatewayDefault:
+      "Nice to meet you! Choose your preferred setup method. If you're new, Quick Setup is recommended.",
+    irisGatewayDetected:
+      "We found your existing save data. Would you like to restore it now?",
+    irisMigrationDrop:
+      "Drop your database.bin file here and I'll restore your characters and chats to high-performance SQL storage!",
+    irisMigrationPreview:
+      "Data verified! Shall we restore characters and chats?",
     irisStep1: "What nickname would you like to be called during chats?",
-    irisStep2: "Choose your preferred AI provider! Anthropic Claude or GPT-4o is recommended.",
-    irisStep3: "Configure your API key, chat translation, and memory context. You can change these anytime in Settings!",
-    irisStep4: "Everything is ready! Let's embark on your journey with Haejeok RisuAI.",
+    irisStep2:
+      "Choose your preferred AI provider! Anthropic Claude or GPT-4o is recommended.",
+    irisStep3:
+      "Configure your API key, chat translation, and memory context. You can change these anytime in Settings!",
+    irisStep4:
+      "Everything is ready! Let's embark on your journey with Haejeok RisuAI.",
     gatewayMigrationTitle: "Restore Data",
-    gatewayMigrationDesc: "Restore characters, chats, and presets from a database.bin or backup file.",
+    gatewayMigrationDesc:
+      "Restore characters, chats, and presets from a database.bin or backup file.",
     gatewayQuickSetupTitle: "Quick AI Setup",
-    gatewayQuickSetupDesc: "Set your nickname and configure AI models (Claude, OpenAI, Gemini, etc.) in a few easy steps.",
+    gatewayQuickSetupDesc:
+      "Set your nickname and configure AI models (Claude, OpenAI, Gemini, etc.) in a few easy steps.",
     gatewaySkipTitle: "Skip & Explore",
-    gatewaySkipDesc: "Jump straight into Haejeok RisuAI with default settings. You can configure everything later in Settings.",
+    gatewaySkipDesc:
+      "Jump straight into Haejeok RisuAI with default settings. You can configure everything later in Settings.",
     detectedLegacyDbTitle: "Legacy database.bin Detected",
-    detectedLegacyDbDesc: "We found existing save data on your device. Would you like to migrate it now?",
+    detectedLegacyDbDesc:
+      "We found existing save data on your device. Would you like to migrate it now?",
     migrateDetectedBtn: "Migrate Detected Data",
     checkDataBtn: "Inspect Data",
     currentUsername: "Existing Nickname:",
     dropDatabaseBinTitle: "Drag & Drop database.bin Here",
-    dropDatabaseBinDesc: "or click to select a database.bin / .risum / .risup backup file",
+    dropDatabaseBinDesc:
+      "or click to select a database.bin / .risum / .risup backup file",
     selectFileBtn: "Browse File",
     migrationPreviewTitle: "Backup Content Preview",
     migrationCharacters: "Characters",
@@ -526,22 +541,28 @@ export const languageEnglish = {
     startMigrationBtn: "Start Migration",
     migrationInProgress: "Migrating data to SQL database...",
     migrationSuccessTitle: "Migration Complete",
-    migrationSuccessDesc: "All your characters and chats have been safely migrated to the new high-performance SQL storage.",
+    migrationSuccessDesc:
+      "All your characters and chats have been safely migrated to the new high-performance SQL storage.",
     migrationFailedTitle: "Migration Failed",
-    migrationFailedDesc: "Could not read the database file. Please verify the file and try again.",
+    migrationFailedDesc:
+      "Could not read the database file. Please verify the file and try again.",
     chooseAnotherFile: "Choose Another File",
     selectAiModel: "Choose an AI Provider",
-    selectAiModelDesc: "Select your preferred AI model provider to start chatting.",
+    selectAiModelDesc:
+      "Select your preferred AI model provider to start chatting.",
     inputApiKeyTitle: "API Key & Settings",
     inputApiKeyPlaceholder: "Paste your API key here...",
     apiKeyLink: "Get an API key",
-    apiKeyDesc: "Keys are stored safely on your device and are never sent elsewhere. (You can configure this later)",
-    nicknameDesc: "Choose the name you want to be addressed by in conversations.",
+    apiKeyDesc:
+      "Keys are stored safely on your device and are never sent elsewhere. (You can configure this later)",
+    nicknameDesc:
+      "Choose the name you want to be addressed by in conversations.",
     nicknameInputPlaceholder: "Enter your nickname (e.g. Adventurer, User)",
     nextStep: "Next",
     prevStep: "Back",
     finishSetup: "Launch Haejeok RisuAI",
-    allSetMessage: "Everything is ready! Let's dive into Haejeok RisuAI together.",
+    allSetMessage:
+      "Everything is ready! Let's dive into Haejeok RisuAI together.",
     modelClaudeDesc: "Anthropic Claude (Claude 3.7 Sonnet, Claude 3.5)",
     modelOpenAIDesc: "OpenAI ChatGPT (GPT-4o, o3-mini)",
     modelGeminiDesc: "Google Gemini (Gemini 2.5 Flash, 2.5 Pro)",
@@ -568,7 +589,8 @@ export const languageEnglish = {
     chatTransModeAuto: "Auto Translate (Recommended)",
     chatTransModeDirect: "Direct Input",
     memoryCapacity: "Memory Context Tokens (Direct Input)",
-    contextHelp: "Directly enter the token limit (e.g. 16000, 32000, 128000) or pick a preset.",
+    contextHelp:
+      "Directly enter the token limit (e.g. 16000, 32000, 128000) or pick a preset.",
     maxContextLabel: "Max Context Size (Tokens)",
     maxResponseLabel: "Max Response Tokens",
     endpointUrlLabel: "Endpoint / Proxy URL",
@@ -1042,8 +1064,7 @@ export const languageEnglish = {
   pluginStorageExplorerSave: "Save",
   pluginStorageExplorerSaving: "Saving...",
   pluginStorageExplorerSelectKey: "Select a storage key to inspect its value.",
-  pluginStorageExplorerJsonHint:
-    "Values are stored as JSON-serializable data.",
+  pluginStorageExplorerJsonHint: "Values are stored as JSON-serializable data.",
   pluginStorageExplorerUnsaved: "Unsaved changes",
   sqlStorage: "SQL Database Storage",
   sqlStorageDescription:
@@ -1476,6 +1497,8 @@ export const languageEnglish = {
   editOrder: "Edit Order",
   autoMode: "Auto Mode",
   submodel: "Auxiliary Model",
+  moduleSubModel: "Module Auxiliary Model",
+  defaultSubModel: "Default (Global Auxiliary Model)",
   timeOutinSec: "Timeout (in seconds)",
   emotionPrompt: "Emotion Prompt",
   singleView: "Single View",
@@ -1513,7 +1536,8 @@ export const languageEnglish = {
   classicRisu: "Classic Risu",
   highcontrast: "High-Contrast",
   autoColorAdapt: "Auto-adapt Bot Style Colors",
-  autoColorAdaptHelp: "Automatically adapts bot's hardcoded inline styles (background/text colors) to match the current theme (light/dark).",
+  autoColorAdaptHelp:
+    "Automatically adapts bot's hardcoded inline styles (background/text colors) to match the current theme (light/dark).",
   colorAdaptEngine: "Color Adaptation Engine",
   quickPreset: "You can quickly change preset by Ctrl + (Index of Preset)",
   requestretrys: "Request Retrys when Fail",
@@ -1853,7 +1877,8 @@ export const languageEnglish = {
   createModule: "Create Module",
   createFolder: "Create Folder",
   removeFolder: "Remove Folder",
-  removeFolderConfirm: "Do you really want to remove this folder? Modules inside will be moved to the root.",
+  removeFolderConfirm:
+    "Do you really want to remove this folder? Modules inside will be moved to the root.",
   moveToFolder: "Move to Folder",
   noFolder: "No Folder",
   ungrouped: "Ungrouped",
@@ -2720,13 +2745,17 @@ export const languageEnglish = {
   mainModelCardTitle: "Main Model",
   mainModelCardDesc: "Primary AI model used for generating bot chat responses.",
   subModelCardTitle: "Auxiliary Model",
-  subModelCardDesc: "Default secondary model used for memory summarization, translation, and emotion processing.",
+  subModelCardDesc:
+    "Default secondary model used for memory summarization, translation, and emotion processing.",
   auxModelsSplitCardTitle: "Separate Auxiliary Models",
-  auxModelsSplitCardDesc: "Assign dedicated AI models for specific features (Memory, Translation, Emotion, Other).",
+  auxModelsSplitCardDesc:
+    "Assign dedicated AI models for specific features (Memory, Translation, Emotion, Other).",
   providerCredentialsTitle: "Provider Credentials & Settings",
-  providerCredentialsDesc: "Manage API keys and connection settings for the active models.",
+  providerCredentialsDesc:
+    "Manage API keys and connection settings for the active models.",
   noModelsFound: "No matching models found.",
-  noFavoriteModelsDesc: "No favorite models yet. Click the star icon on any model to bookmark it.",
+  noFavoriteModelsDesc:
+    "No favorite models yet. Click the star icon on any model to bookmark it.",
   noRecentModelsDesc: "No recently used models yet.",
   clearSearch: "Clear search",
   selectThisModel: "Select",

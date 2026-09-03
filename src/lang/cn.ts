@@ -198,6 +198,8 @@ export const languageChinese = {
       "计算数学表达式，支持基本算术 (+, -, *, /, %, ^)、比较运算符 (<, >, <=, >=, =, !=)、逻辑运算符 (&&, ||, !)、用于优先级的括号，以及使用 $variableName 格式的变量替换。变量会自动转换为数字（若无效则默认为 0）。",
     namespace:
       "命名空间（Namespace）是模块的唯一标识符，用于防止模块冲突，并与默认和其他模块等进行交互。若不确定如何填写，建议留空。",
+    moduleSubModel:
+      "指定用于此模块触发器与脚本的专用辅助模型。若留空，将使用全局辅助模型。",
     moduleIntergration:
       "可在模块集成区域中输入模块的命名空间（Namespace）来激活模块。若要激活多个模块，可用逗号分隔，例如：`module1,module2,module3`。此功能便于高级用户通过默认敏捷运用模块。",
     customCSS: "自定义 CSS 样式。若出现问题，可使用 (Ctrl + .) 激活或禁用。",
@@ -340,25 +342,33 @@ export const languageChinese = {
     igpPrompt:
       "若 IGP 提示词不为空，它将在主模型请求之后，作为情感模型执行，并将结果添加到主模型回应之后。",
     welcomeTitle: "欢迎使用 Haejeok RisuAI",
-    welcomeGreeting: "你好！欢迎使用 Haejeok RisuAI。我是爱丽丝，负责引导你完成初始设置。",
+    welcomeGreeting:
+      "你好！欢迎使用 Haejeok RisuAI。我是爱丽丝，负责引导你完成初始设置。",
     welcomeSubGreeting: "请选择你希望开始的方式：",
     irisName: "爱丽丝 (Iris)",
-    irisGatewayDefault: "很高兴见到你！请选择设置方式。如果你是第一次使用，推荐“快速推荐设置”！",
+    irisGatewayDefault:
+      "很高兴见到你！请选择设置方式。如果你是第一次使用，推荐“快速推荐设置”！",
     irisGatewayDetected: "发现本地已有保存数据 (database.bin)，要直接恢复吗？",
-    irisMigrationDrop: "请将 database.bin 拖放到此处，我将帮你把角色和对话迁移到高性能 SQL 存储！",
+    irisMigrationDrop:
+      "请将 database.bin 拖放到此处，我将帮你把角色和对话迁移到高性能 SQL 存储！",
     irisMigrationPreview: "数据已确认！是否开始恢复角色和对话记录？",
     irisStep1: "请输入在对话中使用的昵称！",
-    irisStep2: "请选择你偏好的 AI 模型提供者！推荐使用 Claude 3.7 Sonnet 或 GPT-4o。",
-    irisStep3: "请配置 API 密钥、聊天翻译与上下文容量，后续可在设置中随时更改！",
+    irisStep2:
+      "请选择你偏好的 AI 模型提供者！推荐使用 Claude 3.7 Sonnet 或 GPT-4o。",
+    irisStep3:
+      "请配置 API 密钥、聊天翻译与上下文容量，后续可在设置中随时更改！",
     irisStep4: "所有准备已就绪！让我们与 Haejeok RisuAI 一起开启旅程吧！",
     gatewayMigrationTitle: "导入数据",
     gatewayMigrationDesc: "从 database.bin 或备份文件中恢复角色、对话和预设。",
     gatewayQuickSetupTitle: "AI 快速推荐设置",
-    gatewayQuickSetupDesc: "轻松几步设置昵称和常用 AI 模型 (Claude、OpenAI、Gemini 等)。",
+    gatewayQuickSetupDesc:
+      "轻松几步设置昵称和常用 AI 模型 (Claude、OpenAI、Gemini 等)。",
     gatewaySkipTitle: "跳过并直接体验",
-    gatewaySkipDesc: "使用默认设置直接进入 Haejeok RisuAI 主界面（可随时在设置中配置）。",
+    gatewaySkipDesc:
+      "使用默认设置直接进入 Haejeok RisuAI 主界面（可随时在设置中配置）。",
     detectedLegacyDbTitle: "检测到旧版 database.bin",
-    detectedLegacyDbDesc: "在你的设备上发现了先前的保存数据。要现在进行迁移吗？",
+    detectedLegacyDbDesc:
+      "在你的设备上发现了先前的保存数据。要现在进行迁移吗？",
     migrateDetectedBtn: "直接迁移检测到的数据",
     checkDataBtn: "查看数据",
     currentUsername: "现有昵称：",
@@ -374,7 +384,8 @@ export const languageChinese = {
     startMigrationBtn: "开始迁移此数据",
     migrationInProgress: "正在将数据转换为 SQL 存储...",
     migrationSuccessTitle: "迁移完成",
-    migrationSuccessDesc: "所有角色和对话记录已安全迁移到新的高性能 SQL 存储中。",
+    migrationSuccessDesc:
+      "所有角色和对话记录已安全迁移到新的高性能 SQL 存储中。",
     migrationFailedTitle: "迁移失败",
     migrationFailedDesc: "读取数据库文件时发生错误，请确认文件是否正确。",
     chooseAnotherFile: "选择其他文件",
@@ -416,7 +427,8 @@ export const languageChinese = {
     chatTransModeAuto: "自动翻译 (推荐)",
     chatTransModeDirect: "直接输入",
     memoryCapacity: "记忆容量 (直接输入 Token 数)",
-    contextHelp: "直接输入 Token 上限（例如 16000, 32000, 128000）或选择常用预设。",
+    contextHelp:
+      "直接输入 Token 上限（例如 16000, 32000, 128000）或选择常用预设。",
     maxContextLabel: "最大上下文 Token",
     maxResponseLabel: "最大响应 Token",
     endpointUrlLabel: "端点 / 代理 URL",
@@ -873,6 +885,8 @@ export const languageChinese = {
   editOrder: "编辑顺序",
   autoMode: "自动模式",
   submodel: "辅助模型",
+  moduleSubModel: "模块辅助模型",
+  defaultSubModel: "默认值 (全局辅助模型)",
   timeOutinSec: "超时时间（秒）",
   emotionPrompt: "情绪提示词",
   singleView: "单角色模式",

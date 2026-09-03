@@ -9,6 +9,7 @@
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
     import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
+    import { getModelInfo } from "src/ts/model/modellist";
 
     interface Props {
         close?: any;
@@ -69,6 +70,11 @@
                             <span class="text-textcolor2">{rmodule.name}</span>
                         {:else}
                             <span class="">{rmodule.name}</span>
+                        {/if}
+                        {#if rmodule.subModel}
+                            <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-selected/50 text-textcolor2 border border-darkborderc">
+                                {getModelInfo(rmodule.subModel)?.fullName || rmodule.subModel}
+                            </span>
                         {/if}
                         <div class="grow flex justify-end">
 
