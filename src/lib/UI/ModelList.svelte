@@ -78,7 +78,7 @@
       {#each providers as provider}
         {#if provider.providerName === '@as-is'}
           {#each provider.models as model}
-            <button class="hover:bg-selected px-4 py-2 text-base text-left rounded-lg transition-colors cursor-pointer" onclick={() => { changeModel(model.id); }}>{model.name}</button>
+            <button class="hover:bg-selected px-6 py-2 text-lg transition-colors cursor-pointer" onclick={() => { changeModel(model.id); }}>{model.name}</button>
           {/each}
         {:else}
           <Accordion name={provider.providerName}>
@@ -115,7 +115,7 @@
       {/if}
 
       {#if blankable}
-        <button class="hover:bg-selected px-4 py-2 text-base text-left rounded-lg transition-colors cursor-pointer" onclick={() => { changeModel(''); }}>{noneText || language.none}</button>
+        <button class="hover:bg-selected px-6 py-2 text-lg transition-colors cursor-pointer" onclick={() => { changeModel(''); }}>{noneText || language.none}</button>
       {/if}
 
       <div class="text-textcolor2 text-xs mt-3 pt-2 border-t border-darkborderc">
