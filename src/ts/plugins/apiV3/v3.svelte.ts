@@ -377,10 +377,9 @@ class SafeElement {
     } else if (allowedDelayedEventListeners.includes(type)) {
       const modifiedListener = (event: any) => {
         let delay = 0;
-        try {
-          const randomValue = crypto.getRandomValues(new Uint32Array(1))[0];
-          delay = Math.floor((randomValue / 0x100000000) * 100); // 0-99 ms
-        } catch (error) {}
+        // This jitter is not security-sensitive; Math.random avoids needless
+        // cryptographic sampling and the modulo/scaling bias CodeQL warns about.
+        delay = Math.floor(Math.random() * 100); // 0-99 ms
         setTimeout(() => {
           listener(trimEvent(event));
         }, delay);

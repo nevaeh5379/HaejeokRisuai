@@ -58,14 +58,38 @@ function formatDuration(milliseconds) {
   return `${Math.round(seconds)}s`;
 }
 
+function redactUrlCredentials(value) {
+  const schemePattern = /[a-z][a-z0-9+.-]*:\/\//gi;
+  let result = "";
+  let cursor = 0;
+  let match;
+
+  while ((match = schemePattern.exec(value)) !== null) {
+    const authorityStart = match.index + match[0].length;
+    let authorityEnd = authorityStart;
+    while (
+      authorityEnd < value.length &&
+      !"/?# \t\r\n".includes(value[authorityEnd])
+    ) {
+      authorityEnd += 1;
+    }
+    const atIndex = value.lastIndexOf("@", authorityEnd - 1);
+    if (atIndex >= authorityStart) {
+      result += value.slice(cursor, authorityStart) + "<redacted>@";
+      cursor = atIndex + 1;
+    }
+    schemePattern.lastIndex = authorityEnd;
+  }
+
+  return result + value.slice(cursor);
+}
+
 function sanitizeSensitiveText(value) {
   if (value === null || value === undefined) return "";
-  return String(value)
-    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1<redacted>@")
-    .replace(
-      /\b(password|passwd|pwd|secret|token|access[_-]?key|api[_-]?key)=([^\s&,;]+)/gi,
-      "$1=<redacted>",
-    );
+  return redactUrlCredentials(String(value)).replace(
+    /\b(password|passwd|pwd|secret|token|access[_-]?key|api[_-]?key)=([^\s&,;]+)/gi,
+    "$1=<redacted>",
+  );
 }
 
 function describePostgresTarget(connectionString) {
