@@ -230,8 +230,10 @@ class LocalFsStorage {
 
     async read(hexPath) {
         const rootPath = path.resolve(this.savePath);
+        const rootPrefix = path.join(rootPath, path.sep);
         const fullPath = path.resolve(rootPath, hexPath);
-        if (fullPath !== rootPath && !fullPath.startsWith(rootPath + path.sep)) {
+        // Only descendants are assets; allowing rootPath itself bypasses the prefix guard.
+        if (!fullPath.startsWith(rootPrefix) || fullPath === rootPath) {
             return { exists: false };
         }
         if (!fs.existsSync(fullPath)) {
@@ -244,8 +246,8 @@ class LocalFsStorage {
             filePath: fullPath,
             get stream() {
                 if (!this._stream) {
-                    // Keep the guard in the lazy getter so CodeQL can verify the stream sink.
-                    if (fullPath !== rootPath && !fullPath.startsWith(rootPath + path.sep)) {
+                    // Validate in the lazy getter as well, immediately before opening the file.
+                    if (!fullPath.startsWith(rootPrefix) || fullPath === rootPath) {
                         throw new Error('Asset path is outside the storage directory');
                     }
                     const s = fs.createReadStream(fullPath);

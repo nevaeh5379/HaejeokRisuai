@@ -191,6 +191,26 @@ describe('LocalFsStorage', () => {
         }
     })
 
+    it('rejects paths resolving to the storage directory before accessing the filesystem', async () => {
+        const existsSync = vi.spyOn(fs, 'existsSync')
+        const stat = vi.spyOn(fs.promises, 'stat')
+        const createReadStream = vi.spyOn(fs, 'createReadStream')
+
+        try {
+            for (const input of ['', '.', tmpDir, path.join('asset', '..')]) {
+                expect(await storage.read(input)).toEqual({ exists: false })
+                expect(await storage.openReadStream(input)).toEqual({ exists: false })
+            }
+            expect(existsSync).not.toHaveBeenCalled()
+            expect(stat).not.toHaveBeenCalled()
+            expect(createReadStream).not.toHaveBeenCalled()
+        } finally {
+            existsSync.mockRestore()
+            stat.mockRestore()
+            createReadStream.mockRestore()
+        }
+    })
+
     it('filters listed keys by prefix', async () => {
         await storage.init()
         await storage.write(keyToHex('assets/avatar.png'), Buffer.from('asset'))
