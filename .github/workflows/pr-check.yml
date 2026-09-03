@@ -12,6 +12,8 @@ jobs:
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       web: ${{ steps.filter.outputs.web }}
       android: ${{ steps.filter.outputs.android }}
