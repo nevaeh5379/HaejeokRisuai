@@ -41,12 +41,12 @@ export function checkOwnership(
   settings.set("localNetworkMode", true);
   // @ts-expect-error Delete API must reject preset keys.
   settings.delete("localNetworkMode");
-  // @ts-expect-error Mutation callbacks must expose only settings.
   settings.update((state) => {
+    // @ts-expect-error Mutation callbacks must expose only settings.
     state.mainPrompt = "wrong store";
   });
-  // @ts-expect-error Hydration callbacks must expose only settings.
   settings.hydrate((state) => {
+    // @ts-expect-error Hydration callbacks must expose only settings.
     state.localNetworkMode = true;
   });
   // @ts-expect-error Ordinary snapshots must not expose startup-only preset data.

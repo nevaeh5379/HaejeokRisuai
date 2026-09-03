@@ -77,8 +77,8 @@ describe("PostgreSQL branch runtime safety", () => {
     expect(source).toMatch(
       /SET head_message_id = \(\s*SELECT removed\.parent_message_id/,
     );
-    expect(source).toContain(
-      "await this.detachMessagesFromBranchGraph(client, [{ chatId, ids: [messageId] }])",
+    expect(source).toMatch(
+      /await this\.detachMessagesFromBranchGraph\(client,\s*\[\s*\{\s*chatId,\s*ids:\s*\[messageId\]\s*\},?\s*\]\s*\)/,
     );
   });
 });
