@@ -238,14 +238,20 @@ describe("SQL row commits", () => {
       statements.push({ sql, bind });
     });
 
-    expect(statements).toHaveLength(9);
+    expect(statements).toHaveLength(12);
     expect(statements.filter(({ sql }) => sql.includes("UPDATE message_branch_links"))).toHaveLength(2);
     expect(statements.filter(({ sql }) => sql.includes("UPDATE chat_branches"))).toHaveLength(4);
     expect(statements.filter(({ sql }) => sql.includes("DELETE FROM message_branch_links"))).toHaveLength(2);
-    expect(statements.at(-1)).toEqual({
+    expect(
+      statements.find(({ sql }) => sql.startsWith("DELETE FROM messages")),
+    ).toEqual({
       sql: "DELETE FROM messages WHERE chat_id = ? AND id IN (?,?)",
       bind: ["chat-1", "msg-1", "msg-2"],
     });
+    expect(
+      statements.filter(({ sql }) => sql.includes("UPDATE system_write_guards")),
+    ).toHaveLength(2);
+    expect(statements.some(({ sql }) => sql.includes("last_message_time"))).toBe(true);
   });
 
   it("deletes only explicitly named characters", async () => {
@@ -281,15 +287,19 @@ describe("SQL row commits", () => {
       statements.push({ sql, bind });
     });
 
-    expect(statements[0]).toEqual({
+    expect(
+      statements.find(({ sql }) => sql === "DELETE FROM chats WHERE id = ?"),
+    ).toEqual({
       sql: "DELETE FROM chats WHERE id = ?",
       bind: ["chat-removed"],
     });
-    expect(statements.at(-1)).toEqual({
+    expect(
+      statements.find(({ sql }) => sql.startsWith("DELETE FROM messages")),
+    ).toEqual({
       sql: "DELETE FROM messages WHERE chat_id = ? AND id IN (?)",
       bind: ["chat-1", "message-removed"],
     });
-    expect(statements).toHaveLength(6);
+    expect(statements).toHaveLength(9);
     expect(statements.some(({ sql }) => sql.includes("NOT IN"))).toBe(false);
   });
 

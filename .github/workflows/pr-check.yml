@@ -75,5 +75,8 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Sync Capacitor Android
+        run: pnpm exec cap sync android
+
       - name: Run Android backup low-memory test
         run: ./android/gradlew -p android :app:testLowMemoryBackup --no-daemon
