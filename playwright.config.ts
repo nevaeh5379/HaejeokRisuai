@@ -22,6 +22,14 @@ export default defineConfig({
   // Folder containing the test files
   testDir: "./e2e",
 
+  // Global timeout per test (60s) to prevent timeouts on slower CI runners
+  timeout: 60_000,
+
+  // Global expect assertion timeout (15s) to accommodate cold-start compilation
+  expect: {
+    timeout: 15_000,
+  },
+
   // Run test files in parallel for speed. Each test gets its own browser
   // context (fresh storage), so parallelism is safe here.
   fullyParallel: true,

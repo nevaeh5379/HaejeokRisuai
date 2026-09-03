@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('test', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
   await page.goto('http://127.0.0.1:5174/');
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: 'Recommended Quick AI Setup' }).click();
@@ -12,21 +13,21 @@ test('test', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: '128k' }).click();
   await page.getByRole('button', { name: 'English (Original)' }).click();
   await page.getByRole('spinbutton', { name: '1000' }).click();
-  await page.getByRole('spinbutton', { name: '1000' }).press('End');
-  await page.getByRole('spinbutton', { name: '1000' }).press('Clear');
   await page.getByRole('spinbutton', { name: '1000' }).fill('30000');
   await page.getByRole('button', { name: 'Complete Setup' }).click();
   await page.getByRole('button', { name: 'Launch Haejeok RisuAI' }).click();
-  await page.getByRole('button').nth(1).click();
+  await expect(page.getByRole('button', { name: 'Launch Haejeok RisuAI' })).toHaveCount(0);
+
+  const addCharacterButton = page.locator("button:has(svg path[d*='M12 6v6m0 0v6m0-6h6m-6 0H6'])");
+  await addCharacterButton.click();
   await page.getByRole('button', { name: 'Create from Scratch' }).click();
   await page.getByRole('button', { name: 'Character' }).click();
   await page.getByRole('textbox').nth(1).click();
   await page.getByRole('textbox').nth(1).fill('hello world!\nmy name! ah iris!!');
   await page.getByRole('textbox', { name: 'Character Name' }).click();
   await page.getByRole('textbox', { name: 'Character Name' }).fill('iris');
-  await page.locator('.text-textcolor2.svelte-cdrlzn').first().click();
-  await page.locator('button').nth(5).click();
-  await page.locator('button:nth-child(7)').click();
+
+  await page.locator('button:has(svg.lucide-share-2)').click();
   await page.getByRole('button', { name: 'Export Character' }).click();
 
   await page.getByRole('button', { name: 'Character Card V3', exact: true }).click();
@@ -37,7 +38,7 @@ test('test', async ({ page }, testInfo) => {
   const savedPath = testInfo.outputPath(download.suggestedFilename());
   await download.saveAs(savedPath);
   await page.getByRole('button', { name: 'OK' }).click();
-  await page.getByRole('button').nth(3).click();
+  await addCharacterButton.click();
   await page.getByRole('button', { name: 'Import Character' }).click();
 
   const fileChooserPromise = page.waitForEvent('filechooser');

@@ -4,16 +4,7 @@ async function waitForDomainStores(page: import("@playwright/test").Page) {
   await page.goto("/");
   await expect(page.locator("#preloading")).toHaveCount(0);
   await page.waitForFunction(
-    async () => {
-      const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
-      const { moduleStore } = (await import(
-        /* @vite-ignore */ moduleStoreUrl
-      )) as { moduleStore: { loaded: boolean } };
-      return (
-        moduleStore.loaded &&
-        performance.getEntriesByName("plugins-ready").length > 0
-      );
-    },
+    () => performance.getEntriesByName("plugins-ready").length > 0,
     undefined,
     { timeout: 120_000 },
   );
@@ -340,11 +331,17 @@ test.describe("domain store boundaries", () => {
 
     await expect
       .poll(
-        async () =>
-          (await consentButton.isVisible()) || (await moduleList.isVisible()),
+        async () => {
+          if (await consentButton.isVisible()) {
+            await consentButton.click();
+            return true;
+          }
+          const text = await moduleList.textContent();
+          return Boolean(text && text.trim().length > 0);
+        },
+        { timeout: 10000 },
       )
       .toBe(true);
-    if (await consentButton.isVisible()) await consentButton.click();
 
     const parentModuleNames = await page.evaluate(async () => {
       const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";

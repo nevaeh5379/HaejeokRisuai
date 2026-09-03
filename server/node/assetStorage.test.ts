@@ -138,6 +138,79 @@ describe('LocalFsStorage', () => {
         expect(await storage.exists(hex)).toBe(false)
     })
 
+    it('opens a single lazy stream and preserves the asset contents', async () => {
+        const hex = keyToHex('assets/lazy.bin')
+        const payload = Buffer.from('lazy asset contents')
+        await storage.write(hex, payload)
+        const createReadStream = vi.spyOn(fs, 'createReadStream')
+
+        try {
+            const result = await storage.openReadStream(hex)
+            expect(result.exists).toBe(true)
+            expect(result.filePath).toBe(path.join(tmpDir, hex))
+            expect(result.contentLength).toBe(payload.length)
+            expect(createReadStream).not.toHaveBeenCalled()
+
+            const stream = result.stream
+            expect(result.stream).toBe(stream)
+            expect(createReadStream).toHaveBeenCalledTimes(1)
+            const chunks: Buffer[] = []
+            for await (const chunk of stream) {
+                chunks.push(Buffer.from(chunk))
+            }
+            expect(Buffer.concat(chunks)).toEqual(payload)
+        } finally {
+            createReadStream.mockRestore()
+        }
+    })
+
+    it('rejects relative and absolute paths outside the storage directory', async () => {
+        const savePath = path.join(tmpDir, 'assets')
+        const siblingPath = path.join(tmpDir, 'assets-sibling')
+        fs.mkdirSync(savePath)
+        fs.mkdirSync(siblingPath)
+        const hex = keyToHex('assets/private.bin')
+        fs.writeFileSync(path.join(tmpDir, hex), 'private')
+        fs.writeFileSync(path.join(siblingPath, hex), 'private')
+        const localStorage = new LocalFsStorage(savePath)
+        const createReadStream = vi.spyOn(fs, 'createReadStream')
+
+        try {
+            for (const input of [
+                path.join('..', hex),
+                path.join(tmpDir, hex),
+                path.join('..', 'assets-sibling', hex),
+                path.join(siblingPath, hex),
+            ]) {
+                expect(await localStorage.read(input)).toEqual({ exists: false })
+                expect(await localStorage.openReadStream(input)).toEqual({ exists: false })
+            }
+            expect(createReadStream).not.toHaveBeenCalled()
+        } finally {
+            createReadStream.mockRestore()
+        }
+    })
+
+    it('rejects paths resolving to the storage directory before accessing the filesystem', async () => {
+        const existsSync = vi.spyOn(fs, 'existsSync')
+        const stat = vi.spyOn(fs.promises, 'stat')
+        const createReadStream = vi.spyOn(fs, 'createReadStream')
+
+        try {
+            for (const input of ['', '.', tmpDir, path.join('asset', '..')]) {
+                expect(await storage.read(input)).toEqual({ exists: false })
+                expect(await storage.openReadStream(input)).toEqual({ exists: false })
+            }
+            expect(existsSync).not.toHaveBeenCalled()
+            expect(stat).not.toHaveBeenCalled()
+            expect(createReadStream).not.toHaveBeenCalled()
+        } finally {
+            existsSync.mockRestore()
+            stat.mockRestore()
+            createReadStream.mockRestore()
+        }
+    })
+
     it('filters listed keys by prefix', async () => {
         await storage.init()
         await storage.write(keyToHex('assets/avatar.png'), Buffer.from('asset'))
@@ -158,6 +231,7 @@ describe('LocalFsStorage', () => {
         expect(readResult.contentType).toBe('video/webm')
         expect(readResult.contentLength).toBe(videoData.length)
         expect(readResult.stream).toBeDefined()
+        readResult.stream?.destroy()
     })
 
     it('generates, caches, and deletes thumbnails for image assets', async () => {

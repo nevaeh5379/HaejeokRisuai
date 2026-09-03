@@ -229,16 +229,34 @@ class LocalFsStorage {
     }
 
     async read(hexPath) {
-        const fullPath = path.join(this.savePath, hexPath);
+        const rootPath = path.resolve(this.savePath);
+        const rootPrefix = path.join(rootPath, path.sep);
+        const fullPath = path.resolve(rootPath, hexPath);
+        // Only descendants are assets; allowing rootPath itself bypasses the prefix guard.
+        if (!fullPath.startsWith(rootPrefix) || fullPath === rootPath) {
+            return { exists: false };
+        }
         if (!fs.existsSync(fullPath)) {
             return { exists: false };
         }
         const key = hexToKey(hexPath);
+        const stat = await fs.promises.stat(fullPath);
         return {
             exists: true,
             filePath: fullPath,
-            stream: fs.createReadStream(fullPath),
-            contentLength: (await fs.promises.stat(fullPath)).size,
+            get stream() {
+                if (!this._stream) {
+                    // Validate in the lazy getter as well, immediately before opening the file.
+                    if (!fullPath.startsWith(rootPrefix) || fullPath === rootPath) {
+                        throw new Error('Asset path is outside the storage directory');
+                    }
+                    const s = fs.createReadStream(fullPath);
+                    s.on('error', () => {});
+                    this._stream = s;
+                }
+                return this._stream;
+            },
+            contentLength: stat.size,
             contentType: getContentType(key)
         };
     }
