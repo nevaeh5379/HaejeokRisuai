@@ -47,6 +47,13 @@ export function trackDeep(value: unknown, seen = new WeakSet<object>()): void {
     for (const item of value) trackDeep(item, seen);
     return;
   }
+  if (Array.isArray(value)) {
+    void value.length;
+    for (let index = 0; index < value.length; index++) {
+      trackDeep(value[index], seen);
+    }
+    return;
+  }
   for (const key of Object.keys(value))
     trackDeep((value as Record<string, unknown>)[key], seen);
 }
