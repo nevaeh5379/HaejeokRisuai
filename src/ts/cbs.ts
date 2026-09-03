@@ -1,5 +1,13 @@
-import type { Chat, character, groupChat, loreBook } from "./storage/database/schema";
-import type { PresetState, SettingsState } from "./stores/domain/stateOwnership";
+import type {
+  Chat,
+  character,
+  groupChat,
+  loreBook,
+} from "./storage/database/schema";
+import type {
+  PresetState,
+  SettingsState,
+} from "./stores/domain/stateOwnership";
 import type { CbsConditions } from "./parser/parser.svelte";
 import type { RisuModule } from "./process/modules";
 import type { LLMModel } from "./model/modellist";
@@ -127,19 +135,13 @@ export type CBSRegisterArg = {
   safeStructuredClone: <T>(obj: T) => T;
   parseArray: (str: string) => unknown[];
   parseDict: (str: string) => { [key: string]: unknown };
-  getChatVar: (
-    key: string,
-    target?: ChatExecutionTarget,
-  ) => string;
+  getChatVar: (key: string, target?: ChatExecutionTarget) => string;
   setChatVar: (
     key: string,
     value: string,
     target?: ChatExecutionTarget,
   ) => void;
-  getGlobalChatVar: (
-    key: string,
-    target?: ChatExecutionTarget,
-  ) => string;
+  getGlobalChatVar: (key: string, target?: ChatExecutionTarget) => string;
   calcString: (str: string) => number;
   dateTimeFormat: (format: string, timestamp?: number) => string;
   getModules: (character?: character | groupChat) => RisuModule[];
@@ -246,7 +248,8 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "trigger_id",
     callback: (str, matcherArg, args, vars) => {
-      const currentTriggerId = matcherArg.triggerId ?? get(CurrentTriggerIdStore);
+      const currentTriggerId =
+        matcherArg.triggerId ?? get(CurrentTriggerIdStore);
       return currentTriggerId ?? "null";
     },
     alias: ["triggerid"],
@@ -363,7 +366,10 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "persona",
     callback: (str, matcherArg, args, vars) => {
-      return risuChatParser(getPersonaPrompt(matcherArg.chatTarget), matcherArg);
+      return risuChatParser(
+        getPersonaPrompt(matcherArg.chatTarget),
+        matcherArg,
+      );
     },
     alias: ["userpersona"],
     description:
@@ -772,7 +778,9 @@ export function registerCBS(arg: CBSRegisterArg) {
       }
       if (matcherArg.chatID !== -1) {
         const { chat } = resolveRoom(matcherArg);
-        return chat?.message[matcherArg.chatID]?.role ?? matcherArg.role ?? "null";
+        return (
+          chat?.message[matcherArg.chatID]?.role ?? matcherArg.role ?? "null"
+        );
       }
       return matcherArg.role ?? "null";
     },
@@ -912,7 +920,9 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (matcherArg.runVar) {
         setChatVar(
           args[0],
-          (Number(getChatVar(args[0], matcherArg.chatTarget)) + Number(args[1])).toString(),
+          (
+            Number(getChatVar(args[0], matcherArg.chatTarget)) + Number(args[1])
+          ).toString(),
           matcherArg.chatTarget,
         );
         return "";
@@ -1663,7 +1673,11 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "chardisplayasset",
     callback: (str, matcherArg, args, vars) => {
       const selchar = resolveSpeaker(matcherArg);
-      if (!selchar || selchar.type === "group" || !selchar.prebuiltAssetCommand) {
+      if (
+        !selchar ||
+        selchar.type === "group" ||
+        !selchar.prebuiltAssetCommand
+      ) {
         return makeArray([]);
       }
 

@@ -67,10 +67,7 @@ export type ProtocolSettingKeys = {
     | "promptSettings"
     | "customPromptTemplateToggle";
   LEGACY_PERSONA_MIRROR_KEYS:
-    | "username"
-    | "userIcon"
-    | "userNote"
-    | "personaPrompt";
+    "username" | "userIcon" | "userNote" | "personaPrompt";
   DOMAIN_STORE_SETTING_KEYS:
     | "personas"
     | "selectedPersona"
@@ -164,10 +161,7 @@ export type ProtocolSettingKeys = {
     | "verbosity"
     | "dynamicOutput";
   NON_SETTINGS_ROOT_KEYS:
-    | "characters"
-    | "isSql"
-    | "botPresets"
-    | "botPresetsId";
+    "characters" | "isSql" | "botPresets" | "botPresetsId";
   BOOTSTRAP_SETTING_KEYS:
     | "plugins"
     | "pluginCustomStorage"

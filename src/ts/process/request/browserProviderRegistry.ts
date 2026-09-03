@@ -24,27 +24,28 @@ import type {
   requestDataResponse,
 } from "./requestContracts";
 
-const browserProviderExecutor = new BrowserProviderExecutor<RequestDataArgumentExtended>(
-  {
-    openai: requestOpenAI,
-    "openai-responses": requestOpenAIResponseAPI,
-    "openai-legacy": requestOpenAILegacyInstruct,
-    anthropic: requestClaude,
-    google: requestGoogleCloudVertex,
-    novelai: requestNovelAI,
-    novellist: requestNovelList,
-    cohere: requestCohere,
-    "ooba-legacy": requestOobaLegacy,
-    ooba: requestOoba,
-    plugin: requestPlugin,
-    kobold: requestKobold,
-    ollama: requestOllama,
-    horde: requestHorde,
-    webllm: requestWebLLM,
-    echo: requestEcho,
-  },
-  () => language.errors.unknownModel,
-);
+const browserProviderExecutor =
+  new BrowserProviderExecutor<RequestDataArgumentExtended>(
+    {
+      openai: requestOpenAI,
+      "openai-responses": requestOpenAIResponseAPI,
+      "openai-legacy": requestOpenAILegacyInstruct,
+      anthropic: requestClaude,
+      google: requestGoogleCloudVertex,
+      novelai: requestNovelAI,
+      novellist: requestNovelList,
+      cohere: requestCohere,
+      "ooba-legacy": requestOobaLegacy,
+      ooba: requestOoba,
+      plugin: requestPlugin,
+      kobold: requestKobold,
+      ollama: requestOllama,
+      horde: requestHorde,
+      webllm: requestWebLLM,
+      echo: requestEcho,
+    },
+    () => language.errors.unknownModel,
+  );
 
 export function executeBrowserProvider(
   format: number,

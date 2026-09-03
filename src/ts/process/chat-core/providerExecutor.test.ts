@@ -1,17 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
-import { canExecuteProviderRoute, executeProviderRoute } from "@risuai/chat-core/providerExecutor.cjs";
+import {
+  canExecuteProviderRoute,
+  executeProviderRoute,
+} from "@risuai/chat-core/providerExecutor.cjs";
 import { LLM_FORMATS } from "../../../../packages/protocol/modelFormat.cjs";
 
 describe("provider executor", () => {
   it("reports whether a runtime implements the resolved route", () => {
-    const handlers = { openai: async () => ({ type: "success" as const, result: "ok" }) };
+    const handlers = {
+      openai: async () => ({ type: "success" as const, result: "ok" }),
+    };
     expect(canExecuteProviderRoute(LLM_FORMATS.Mistral, handlers)).toBe(true);
-    expect(canExecuteProviderRoute(LLM_FORMATS.Anthropic, handlers)).toBe(false);
+    expect(canExecuteProviderRoute(LLM_FORMATS.Anthropic, handlers)).toBe(
+      false,
+    );
     expect(canExecuteProviderRoute(999, handlers)).toBe(false);
   });
 
   it("dispatches a format through its runtime-neutral provider route", async () => {
-    const openai = vi.fn(async () => ({ type: "success" as const, result: "ok" }));
+    const openai = vi.fn(async () => ({
+      type: "success" as const,
+      result: "ok",
+    }));
     const result = await executeProviderRoute(
       LLM_FORMATS.Mistral,
       { prompt: "hello" },
@@ -22,9 +32,14 @@ describe("provider executor", () => {
   });
 
   it("fails without retrying when the format is unknown", async () => {
-    const result = await executeProviderRoute(999, {}, {}, {
-      unknownModelMessage: "unknown",
-    });
+    const result = await executeProviderRoute(
+      999,
+      {},
+      {},
+      {
+        unknownModelMessage: "unknown",
+      },
+    );
     expect(result).toEqual({ type: "fail", result: "unknown", noRetry: true });
   });
 

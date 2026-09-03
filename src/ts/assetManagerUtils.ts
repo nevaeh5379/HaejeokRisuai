@@ -33,9 +33,15 @@ function formatSequenceToken(value: number, widthText?: string) {
   return width > 0 ? String(value).padStart(width, "0") : String(value);
 }
 
-function expandSequenceTokens(value: string, sequence: number, originalIndex: number) {
+function expandSequenceTokens(
+  value: string,
+  sequence: number,
+  originalIndex: number,
+) {
   return value
-    .replace(/\{n(?::(\d+))?\}/g, (_, width) => formatSequenceToken(sequence, width))
+    .replace(/\{n(?::(\d+))?\}/g, (_, width) =>
+      formatSequenceToken(sequence, width),
+    )
     .replace(/\{index(?::(\d+))?\}/g, (_, width) =>
       formatSequenceToken(originalIndex + 1, width),
     );
@@ -52,7 +58,8 @@ export function buildBatchRenamePreview(
   } catch (error) {
     return {
       items: [],
-      error: error instanceof Error ? error.message : "Invalid regular expression",
+      error:
+        error instanceof Error ? error.message : "Invalid regular expression",
       changedCount: 0,
       conflictCount: 0,
     };
@@ -62,24 +69,28 @@ export function buildBatchRenamePreview(
     (index) => index >= 0 && index < assets.length,
   );
   const targetSet = new Set(uniqueTargets);
-  const items: BatchRenamePreviewItem[] = uniqueTargets.map((originalIndex, sequenceIndex) => {
-    const oldName = assets[originalIndex]?.[0] ?? "";
-    const perItemRegex = new RegExp(regex.source, regex.flags);
-    const replaced = oldName.replace(perItemRegex, options.replacement);
-    const newName = expandSequenceTokens(
-      replaced,
-      (options.startAt ?? 1) + sequenceIndex,
-      originalIndex,
-    ).trim();
-    return { originalIndex, oldName, newName, changed: oldName !== newName };
-  });
+  const items: BatchRenamePreviewItem[] = uniqueTargets.map(
+    (originalIndex, sequenceIndex) => {
+      const oldName = assets[originalIndex]?.[0] ?? "";
+      const perItemRegex = new RegExp(regex.source, regex.flags);
+      const replaced = oldName.replace(perItemRegex, options.replacement);
+      const newName = expandSequenceTokens(
+        replaced,
+        (options.startAt ?? 1) + sequenceIndex,
+        originalIndex,
+      ).trim();
+      return { originalIndex, oldName, newName, changed: oldName !== newName };
+    },
+  );
 
   const previewByIndex = new Map(
     items.map((item) => [item.originalIndex, item]),
   );
   const finalNameOwners = new Map<string, number[]>();
   for (let index = 0; index < assets.length; index++) {
-    const previewItem = targetSet.has(index) ? previewByIndex.get(index) : undefined;
+    const previewItem = targetSet.has(index)
+      ? previewByIndex.get(index)
+      : undefined;
     const finalName = previewItem?.newName ?? assets[index]?.[0] ?? "";
     const owners = finalNameOwners.get(finalName) ?? [];
     owners.push(index);
@@ -150,9 +161,9 @@ export function remapAssetFolderAssignments(
   return next;
 }
 
-export function stripAdditionalAssetFolderMetadata<T extends Record<string, any>>(
-  character: T,
-): T {
+export function stripAdditionalAssetFolderMetadata<
+  T extends Record<string, any>,
+>(character: T): T {
   const copy = { ...character };
   delete copy.additionalAssetFolders;
   delete copy.additionalAssetFolderAssignments;
@@ -168,7 +179,11 @@ export function collectAssetFolderSubtree(
   while (changed) {
     changed = false;
     for (const folder of folders) {
-      if (folder.parentId && result.has(folder.parentId) && !result.has(folder.id)) {
+      if (
+        folder.parentId &&
+        result.has(folder.parentId) &&
+        !result.has(folder.id)
+      ) {
         result.add(folder.id);
         changed = true;
       }

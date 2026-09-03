@@ -34,7 +34,10 @@ vi.mock("../parser/chatVar.svelte", () => ({
 vi.mock("../parser/parser.svelte", () => ({
   hasher: vi.fn(),
   risuChatParser: vi.fn(
-    (value: string, options?: { triggerId?: string; chara?: { name?: string } }) =>
+    (
+      value: string,
+      options?: { triggerId?: string; chara?: { name?: string } },
+    ) =>
       value
         .replaceAll("{{trigger_id}}", options?.triggerId ?? "null")
         .replaceAll("{{char}}", options?.chara?.name ?? "fallback"),
@@ -110,7 +113,9 @@ vi.mock("./files/inlays", () => ({
 }));
 vi.mock("./lorebook.svelte", () => ({ loadLoreBookV3Prompt: vi.fn() }));
 vi.mock("./memory/hypamemory", () => ({ HypaProcesser: vi.fn() }));
-vi.mock("./request/chatRequestOrchestrator", () => ({ requestChatData: vi.fn() }));
+vi.mock("./request/chatRequestOrchestrator", () => ({
+  requestChatData: vi.fn(),
+}));
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
 
 let runScripted: typeof import("./scriptings").runScripted;
@@ -171,8 +176,14 @@ test("reuses a Lua engine with the current character and chat context", async ()
       if getName(id) == "Beta" then stopChat(id) end
     end
   `;
-  const firstChat = { id: "chat-a", message: [] as { role: string; data: string }[] };
-  const secondChat = { id: "chat-b", message: [] as { role: string; data: string }[] };
+  const firstChat = {
+    id: "chat-a",
+    message: [] as { role: string; data: string }[],
+  };
+  const secondChat = {
+    id: "chat-b",
+    message: [] as { role: string; data: string }[],
+  };
 
   const first = await runScripted(code, {
     char: { type: "character", chaId: "a", name: "Alpha" } as never,
@@ -327,11 +338,9 @@ test("preserves message metadata when Lua replaces the full chat", async () => {
     name: "Narrator",
     generationInfo: { model: "test-model" },
   });
-  expect(commitMessages).toHaveBeenCalledWith(
-    "chat-1",
-    chat.message,
-    ["message-1"],
-  );
+  expect(commitMessages).toHaveBeenCalledWith("chat-1", chat.message, [
+    "message-1",
+  ]);
 });
 
 test("checks module button triggers when character triggers are missing", async () => {

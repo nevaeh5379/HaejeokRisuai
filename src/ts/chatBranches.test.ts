@@ -11,7 +11,11 @@ import {
 } from "./chatBranches";
 import type { Chat, Message } from "./storage/database/schema";
 
-function makeMessage(role: Message["role"], data: string, chatId: string): Message {
+function makeMessage(
+  role: Message["role"],
+  data: string,
+  chatId: string,
+): Message {
   return { role, data, chatId };
 }
 
@@ -64,7 +68,9 @@ describe("chatBranches", () => {
       createdAt: 10,
     });
     chat.message.push(makeMessage("char", "alternative", "r1"));
-    const rootId = chat.branchState!.branches.find((branch) => branch.reason === "root")!.id;
+    const rootId = chat.branchState!.branches.find(
+      (branch) => branch.reason === "root",
+    )!.id;
 
     // Switching away snapshots the live active path; normal generation does not
     // need to rewrite branch metadata on every response.
@@ -120,7 +126,12 @@ describe("chatBranches", () => {
       makeMessage("char", "original response", "m4"),
     ]);
 
-    const editedBranch = createEditedMessageBranch(chat, 2, "edited input", 10)!;
+    const editedBranch = createEditedMessageBranch(
+      chat,
+      2,
+      "edited input",
+      10,
+    )!;
     const originalBranchId = editedBranch.parentBranchId!;
 
     expect(chat.branchState?.baseMessageIndex).toBe(1);
@@ -131,7 +142,11 @@ describe("chatBranches", () => {
       "edited input",
     ]);
     expect(chat.message[2]?.chatId).not.toBe("m3");
-    expect(getChatBranchMessages(chat, originalBranchId).map((message) => message.data)).toEqual([
+    expect(
+      getChatBranchMessages(chat, originalBranchId).map(
+        (message) => message.data,
+      ),
+    ).toEqual([
       "first prompt",
       "first answer",
       "original input",
@@ -150,17 +165,25 @@ describe("chatBranches", () => {
       makeMessage("char", "original response", "m2"),
     ]);
 
-    const editedBranch = createEditedMessageBranch(chat, 0, "edited input", 10)!;
+    const editedBranch = createEditedMessageBranch(
+      chat,
+      0,
+      "edited input",
+      10,
+    )!;
     const originalBranchId = editedBranch.parentBranchId!;
 
     expect(chat.branchState?.baseMessageIndex).toBe(-1);
-    expect(getChatBranchMessages(chat, originalBranchId).map((message) => message.data)).toEqual([
-      "original input",
-      "original response",
-    ]);
-    expect(getChatBranchMessages(chat, editedBranch.id).map((message) => message.data)).toEqual([
-      "edited input",
-    ]);
+    expect(
+      getChatBranchMessages(chat, originalBranchId).map(
+        (message) => message.data,
+      ),
+    ).toEqual(["original input", "original response"]);
+    expect(
+      getChatBranchMessages(chat, editedBranch.id).map(
+        (message) => message.data,
+      ),
+    ).toEqual(["edited input"]);
   });
 
   it("treats rerolls from the same turn as sibling timelines", () => {
@@ -217,12 +240,14 @@ describe("chatBranches", () => {
     });
 
     expect(chat.branchState?.baseMessageIndex).toBe(0);
-    expect(getChatBranchMessages(chat, rootId).map((message) => message.data)).toEqual([
-      "u1", "a1", "u2", "a2",
-    ]);
-    expect(getChatBranchMessages(chat, laterBranch.id).map((message) => message.data)).toEqual([
-      "u1", "a1", "u2", "alternate a2",
-    ]);
+    expect(
+      getChatBranchMessages(chat, rootId).map((message) => message.data),
+    ).toEqual(["u1", "a1", "u2", "a2"]);
+    expect(
+      getChatBranchMessages(chat, laterBranch.id).map(
+        (message) => message.data,
+      ),
+    ).toEqual(["u1", "a1", "u2", "alternate a2"]);
   });
 
   it("stores only the branch suffix after the shared base", () => {
@@ -240,8 +265,13 @@ describe("chatBranches", () => {
     syncActiveChatBranch(chat);
 
     expect(chat.branchState?.baseMessageIndex).toBe(0);
-    expect(branch.messages.map((message) => message.data)).toEqual(["alt", "u2"]);
-    expect(branch.messages.some((message) => message.chatId === "m1")).toBe(false);
+    expect(branch.messages.map((message) => message.data)).toEqual([
+      "alt",
+      "u2",
+    ]);
+    expect(branch.messages.some((message) => message.chatId === "m1")).toBe(
+      false,
+    );
   });
 
   it("resolves an arbitrary assistant message to the user turn it answers", () => {
@@ -305,7 +335,9 @@ describe("chatBranches", () => {
 
     expect(rerollBranch.parentBranchId).toBe(manualBranch.id);
     expect(data(chat)).toEqual(["u1", "a1", "u2", "alternate a2"]);
-    expect(rerollBranch.messages.map((message) => message.data)).toEqual(["alternate a2"]);
+    expect(rerollBranch.messages.map((message) => message.data)).toEqual([
+      "alternate a2",
+    ]);
   });
 
   it("keeps the latest-turn behavior when no reroll position is supplied", () => {
@@ -359,7 +391,7 @@ describe("chatBranches", () => {
 
   it("keeps current script state when switching to a legacy branch without snapshots", () => {
     const chat = makeChat([makeMessage("user", "hello", "m1")]);
-    chat.scriptstate = { "$legacy": "keep-me" };
+    chat.scriptstate = { $legacy: "keep-me" };
     chat.branchState = {
       baseMessageIndex: 0,
       activeBranchId: "root",
@@ -383,7 +415,7 @@ describe("chatBranches", () => {
     };
 
     activateChatBranch(chat, "legacy-child");
-    expect(chat.scriptstate).toEqual({ "$legacy": "keep-me" });
+    expect(chat.scriptstate).toEqual({ $legacy: "keep-me" });
     expect(data(chat)).toEqual(["hello", "legacy"]);
   });
 });

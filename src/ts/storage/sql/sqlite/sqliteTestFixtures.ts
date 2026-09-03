@@ -11,7 +11,13 @@ export function buildFullDatabase(): Database {
     language: "en",
     theme: "dark",
     personas: [
-      { name: "Persona", icon: "", personaPrompt: "", note: "", largePortrait: false },
+      {
+        name: "Persona",
+        icon: "",
+        personaPrompt: "",
+        note: "",
+        largePortrait: false,
+      },
     ],
     loreBook: [
       {

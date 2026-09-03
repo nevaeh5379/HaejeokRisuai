@@ -6,7 +6,10 @@
  */
 
 import type { DatabaseSettings } from "../storage/database/schema";
-import type { PresetState, SettingsState } from "../stores/domain/stateOwnership";
+import type {
+  PresetState,
+  SettingsState,
+} from "../stores/domain/stateOwnership";
 
 export type SettingKey = keyof (SettingsState & PresetState);
 /** Nested bindings must name an existing property of a settings/preset object. */

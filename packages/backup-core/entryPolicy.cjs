@@ -1,35 +1,49 @@
-'use strict';
+"use strict";
 
-const COLD_STORAGE_RE = /^(?:coldstorage[\/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/;
-const INLAY_RE = /^inlay_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.risuinlay$/;
+const COLD_STORAGE_RE =
+  /^(?:coldstorage[\/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/;
+const INLAY_RE =
+  /^inlay_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.risuinlay$/;
 
 function normalizeBackupEntryName(name) {
-    if (typeof name !== 'string') return null;
-    const normalized = name.replace(/\\/g, '/');
-    const segments = normalized.split('/');
-    if (
-        segments.length === 0 ||
-        segments.some((segment) => segment === '' || segment === '.' || segment === '..')
-    ) return null;
-    return normalized;
+  if (typeof name !== "string") return null;
+  const normalized = name.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  if (
+    segments.length === 0 ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  )
+    return null;
+  return normalized;
 }
 
 function classifyBackupEntry(name) {
-    const normalized = normalizeBackupEntryName(name);
-    if (!normalized) return { kind: 'invalid', normalized: null };
-    if (normalized === 'database.risudat') return { kind: 'database', normalized };
-    if (normalized === 'encryption.risudat') return { kind: 'encryption', normalized };
-    if (COLD_STORAGE_RE.test(normalized)) return { kind: 'coldStorage', normalized };
-    if (INLAY_RE.test(normalized)) return { kind: 'inlay', normalized };
-    if (normalized.startsWith('assets/')) return { kind: 'asset', normalized };
-    if (!normalized.includes('/')) return { kind: 'asset', normalized };
-    return { kind: 'extension', normalized };
+  const normalized = normalizeBackupEntryName(name);
+  if (!normalized) return { kind: "invalid", normalized: null };
+  if (normalized === "database.risudat")
+    return { kind: "database", normalized };
+  if (normalized === "encryption.risudat")
+    return { kind: "encryption", normalized };
+  if (COLD_STORAGE_RE.test(normalized))
+    return { kind: "coldStorage", normalized };
+  if (INLAY_RE.test(normalized)) return { kind: "inlay", normalized };
+  if (normalized.startsWith("assets/")) return { kind: "asset", normalized };
+  if (!normalized.includes("/")) return { kind: "asset", normalized };
+  return { kind: "extension", normalized };
 }
 
 function getInlayBackupKey(name) {
-    const normalized = normalizeBackupEntryName(name);
-    if (!normalized) return null;
-    return INLAY_RE.exec(normalized)?.[1] ?? null;
+  const normalized = normalizeBackupEntryName(name);
+  if (!normalized) return null;
+  return INLAY_RE.exec(normalized)?.[1] ?? null;
 }
 
-module.exports = { COLD_STORAGE_RE, INLAY_RE, normalizeBackupEntryName, classifyBackupEntry, getInlayBackupKey };
+module.exports = {
+  COLD_STORAGE_RE,
+  INLAY_RE,
+  normalizeBackupEntryName,
+  classifyBackupEntry,
+  getInlayBackupKey,
+};

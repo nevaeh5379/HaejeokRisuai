@@ -212,7 +212,8 @@ async function applySupaMemory(
     return { ok: false as const };
   }
 
-  state.currentChat.supaMemoryData = result.memory ?? state.currentChat.supaMemoryData;
+  state.currentChat.supaMemoryData =
+    result.memory ?? state.currentChat.supaMemoryData;
   storedChat(options).supaMemoryData = state.currentChat.supaMemoryData;
   state.currentChat.lastMemory = result.lastId ?? state.currentChat.lastMemory;
   return {
@@ -225,8 +226,12 @@ async function applySupaMemory(
   };
 }
 
-function runConfiguredMemory(options: ApplyChatMemoryOptions, state: MemoryState) {
-  if (settingsStore.state.hanuraiEnable) return applyHanuraiMemory(options, state);
+function runConfiguredMemory(
+  options: ApplyChatMemoryOptions,
+  state: MemoryState,
+) {
+  if (settingsStore.state.hanuraiEnable)
+    return applyHanuraiMemory(options, state);
   if (settingsStore.state.hypav2) return applyHypaV2Memory(options, state);
   if (settingsStore.state.hypaV3) return applyHypaV3Memory(options, state);
   return applySupaMemory(options, state);

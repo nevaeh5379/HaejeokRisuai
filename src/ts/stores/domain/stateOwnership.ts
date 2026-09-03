@@ -8,5 +8,8 @@ type OtherDomainKey =
 
 /** Public live state, distinct from the combined import/backup schema. */
 export type PresetState = Pick<DatabaseSettings, PresetSettingKey>;
-export type SettingsState = Omit<DatabaseSettings, PresetSettingKey | OtherDomainKey>;
+export type SettingsState = Omit<
+  DatabaseSettings,
+  PresetSettingKey | OtherDomainKey
+>;
 export type SettingsKey = keyof SettingsState;

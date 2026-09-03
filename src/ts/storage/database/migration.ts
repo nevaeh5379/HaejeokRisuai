@@ -21,7 +21,7 @@ export interface LegacyDatabaseStats {
 }
 
 export interface LegacyDatabaseInfo {
-  source: 'local_file' | 'opfs' | 'uploaded';
+  source: "local_file" | "opfs" | "uploaded";
   path?: string;
   size?: number;
   db: Database;
@@ -49,11 +49,11 @@ export function extractDatabaseStats(legacyDb: Database): LegacyDatabaseStats {
 export async function detectLocalLegacyDatabase(): Promise<LegacyDatabaseInfo | null> {
   let legacyBytes: Uint8Array | null = null;
   let detectedPath: string | undefined = undefined;
-  let source: 'local_file' | 'opfs' = 'opfs';
+  let source: "local_file" | "opfs" = "opfs";
 
   try {
     if (isTauri) {
-      source = 'local_file';
+      source = "local_file";
       const { exists } = await import("@tauri-apps/plugin-fs");
       const { appDataDir, join } = await import("@tauri-apps/api/path");
       const appDir = await appDataDir();
@@ -76,14 +76,16 @@ export async function detectLocalLegacyDatabase(): Promise<LegacyDatabaseInfo | 
         }
       }
     } else {
-      source = 'opfs';
+      source = "opfs";
       const candidates = [
         "database/database.bin",
         "save/database/database.bin",
         "save/database.bin",
       ];
       for (const key of candidates) {
-        const item = (await forageStorage.getItem(key)) as unknown as Uint8Array | null;
+        const item = (await forageStorage.getItem(
+          key,
+        )) as unknown as Uint8Array | null;
         if (item && item.length > 0) {
           legacyBytes = item;
           detectedPath = key;
@@ -107,7 +109,7 @@ export async function detectLocalLegacyDatabase(): Promise<LegacyDatabaseInfo | 
  */
 export async function parseLegacyDatabaseBytes(
   bytes: Uint8Array,
-  source: 'local_file' | 'opfs' | 'uploaded' = 'uploaded',
+  source: "local_file" | "opfs" | "uploaded" = "uploaded",
   path?: string,
 ): Promise<LegacyDatabaseInfo | null> {
   try {

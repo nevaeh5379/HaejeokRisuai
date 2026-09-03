@@ -54,7 +54,6 @@ describe("decideAutoContinuation", () => {
   });
 });
 
-
 describe("completion punctuation", () => {
   it("preserves the legacy completion character rules", () => {
     expect(endsWithCompletionPunctuation("finished.")).toBe(true);

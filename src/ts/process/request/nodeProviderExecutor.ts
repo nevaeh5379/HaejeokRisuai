@@ -1,4 +1,7 @@
-import type { ChatFailureResponse, ChatSuccessResponse } from "@risuai/chat-core/types.cjs";
+import type {
+  ChatFailureResponse,
+  ChatSuccessResponse,
+} from "@risuai/chat-core/types.cjs";
 import { resolveProviderRoute } from "@risuai/chat-core/providerRouting.cjs";
 import type { NodeProviderTransportResult } from "../../../../packages/protocol/providerExecution.cjs";
 import { forageStorage } from "../../globalApi.svelte";
@@ -20,10 +23,16 @@ export async function tryExecuteNodeProvider(
 
   try {
     const capabilities = await storage.getNodeProviderCapabilities(abortSignal);
-    if (!capabilities.formats.includes(format) || !capabilities.routes.includes(route)) {
+    if (
+      !capabilities.formats.includes(format) ||
+      !capabilities.routes.includes(route)
+    ) {
       return null;
     }
-    const result = await storage.executeChatProvider({ format, payload }, abortSignal);
+    const result = await storage.executeChatProvider(
+      { format, payload },
+      abortSignal,
+    );
     return result.handled ? result.response : null;
   } catch (error) {
     if (abortSignal?.aborted) throw error;

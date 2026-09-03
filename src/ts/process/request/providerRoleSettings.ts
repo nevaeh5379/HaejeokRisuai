@@ -68,7 +68,11 @@ export function resolveProviderRoleSettingForMode<T>(
   mode?: ModelModeExtended,
   modeOverride?: T | null | undefined,
 ): T {
-  if (isAuxiliaryProviderMode(mode) && modeOverride !== null && modeOverride !== undefined) {
+  if (
+    isAuxiliaryProviderMode(mode) &&
+    modeOverride !== null &&
+    modeOverride !== undefined
+  ) {
     return modeOverride;
   }
   return resolveProviderRoleSetting(mainValue, auxiliaryValue, mode);

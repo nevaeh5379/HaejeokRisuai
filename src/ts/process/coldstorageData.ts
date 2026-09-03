@@ -1,5 +1,9 @@
 import { safeStructuredClone } from "../polyfill";
-import type { Database, character, groupChat } from "../storage/database/schema";
+import type {
+  Database,
+  character,
+  groupChat,
+} from "../storage/database/schema";
 
 export const coldStorageHeader = "\uEF01COLDSTORAGE\uEF01";
 

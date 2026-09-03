@@ -37,7 +37,9 @@ describe("Anthropic provider core", () => {
           role: "user",
           content: "second",
           cachePoint: true,
-          multimodals: [{ type: "image", base64: "data:image/jpeg;base64,BBB" }],
+          multimodals: [
+            { type: "image", base64: "data:image/jpeg;base64,BBB" },
+          ],
         },
       ],
       { oneHourCaching: true },
@@ -83,7 +85,9 @@ describe("Anthropic provider core", () => {
   });
 
   it("converts system-only input into the legacy Start message", () => {
-    expect(prepareAnthropicConversation([{ role: "system", content: "rules" }])).toEqual({
+    expect(
+      prepareAnthropicConversation([{ role: "system", content: "rules" }]),
+    ).toEqual({
       ok: true,
       systemPrompt: "",
       messages: [{ role: "user", content: [{ type: "text", text: "Start" }] }],

@@ -3,7 +3,10 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { risuChatParser } from "./scripts";
 import { runTrigger } from "./triggers";
-import { requireChatTargetFromIndexes, type ChatExecutionTarget } from "../chatTarget";
+import {
+  requireChatTargetFromIndexes,
+  type ChatExecutionTarget,
+} from "../chatTarget";
 
 export function findMessageIndexByChatId(chat: Chat, chatId?: string) {
   if (!chatId) return -1;

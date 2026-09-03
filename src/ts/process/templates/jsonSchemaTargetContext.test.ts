@@ -36,9 +36,9 @@ test("passes generation context into interface schema parsing", () => {
 
 test("preserves context through provider schema helpers", () => {
   const source = 'interface Result {\n  speaker: "{{char}}"\n}';
-  expect(getOpenAIJSONSchema(source, context).schema.properties.speaker.const).toBe(
-    "Target Character",
-  );
+  expect(
+    getOpenAIJSONSchema(source, context).schema.properties.speaker.const,
+  ).toBe("Target Character");
   expect(
     getGeneralJSONSchema(source, ["$schema"], context).properties.speaker.const,
   ).toBe("Target Character");

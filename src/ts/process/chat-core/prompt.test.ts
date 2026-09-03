@@ -9,8 +9,16 @@ import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
 
 function sections(): PromptSections {
   return {
-    main: [], jailbreak: [], chats: [], lorebook: [], globalNote: [],
-    authorNote: [], lastChat: [], description: [], postEverything: [], personaPrompt: [],
+    main: [],
+    jailbreak: [],
+    chats: [],
+    lorebook: [],
+    globalNote: [],
+    authorNote: [],
+    lastChat: [],
+    description: [],
+    postEverything: [],
+    personaPrompt: [],
   };
 }
 
@@ -41,12 +49,20 @@ describe("prompt core policies", () => {
   it("inserts depth and relative-depth prompts at their intended locations", () => {
     const target = sections();
     target.chats = [chat("a"), chat("b"), chat("c")];
-    insertDepthPrompts(target, [
-      { role: "system", prompt: "direct", pos: "depth", depth: 1 },
-      { role: "system", prompt: "relative", pos: "after", depth: 1 },
-    ], (value) => `rendered:${value}`);
+    insertDepthPrompts(
+      target,
+      [
+        { role: "system", prompt: "direct", pos: "depth", depth: 1 },
+        { role: "system", prompt: "relative", pos: "after", depth: 1 },
+      ],
+      (value) => `rendered:${value}`,
+    );
     expect(target.chats.map((item) => item.content)).toEqual([
-      "a", "rendered:direct", "b", "rendered:relative", "c",
+      "a",
+      "rendered:direct",
+      "b",
+      "rendered:relative",
+      "c",
     ]);
   });
 
@@ -54,15 +70,23 @@ describe("prompt core policies", () => {
     const target = sections();
     target.lastChat.push(chat("history"));
     applyTriggerPromptPolicy(target, {
-      additonalSysPrompt: { start: "start", historyend: "end", promptend: "post" },
+      additonalSysPrompt: {
+        start: "start",
+        historyend: "end",
+        promptend: "post",
+      },
     });
-    expect(target.lastChat.map((item) => item.content)).toEqual(["start", "history", "end"]);
+    expect(target.lastChat.map((item) => item.content)).toEqual([
+      "start",
+      "history",
+      "end",
+    ]);
     expect(target.postEverything.map((item) => item.content)).toEqual(["post"]);
   });
 
   it("normalizes escaped bias text before rendering", () => {
-    expect(buildPromptBiases([["a\\nb\\\\c\\rd", 2]], (value) => `[${value}]`)).toEqual([
-      ["[a\nb\\c\rd]", 2],
-    ]);
+    expect(
+      buildPromptBiases([["a\\nb\\\\c\\rd", 2]], (value) => `[${value}]`),
+    ).toEqual([["[a\nb\\c\rd]", 2]]);
   });
 });

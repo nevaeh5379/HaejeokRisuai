@@ -88,10 +88,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(db.modules).toEqual(source.modules);
     expect(db.language).toBe("en");
     expect(db.theme).toBe("dark");
-    expect(db.characters[0].chats[0].message.map((m: Message) => m.data)).toEqual([
-      "one",
-      "two",
-    ]);
+    expect(
+      db.characters[0].chats[0].message.map((m: Message) => m.data),
+    ).toEqual(["one", "two"]);
     expect(db.characters[0].chats[0].messagesLoaded).toBe(true);
     expect(db.characters[0].chats[0].messagesFullyLoaded).toBe(true);
     expect(db.characters[0].chats[0].messageOffset).toBe(0);
@@ -116,9 +115,14 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
   it("rejects legacy persona mirrors as canonical root writes", async () => {
     const { storage, database } = makeFreshHarness(make);
     for (const key of LEGACY_PERSONA_MIRROR_KEYS) {
-      const commit = createEmptySqlCommit(storage.getRevision(), "legacy-mirror-test");
+      const commit = createEmptySqlCommit(
+        storage.getRevision(),
+        "legacy-mirror-test",
+      );
       commit.root.upserts.push({ key, value: "legacy" });
-      await expect(storage.commit(commit)).rejects.toThrow(/legacy persona mirror/);
+      await expect(storage.commit(commit)).rejects.toThrow(
+        /legacy persona mirror/,
+      );
     }
     database.close();
   });
@@ -164,14 +168,30 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(characters[0].message).toBeUndefined();
 
     // Settings never contain data owned by other domain stores.
-    expect(Object.prototype.hasOwnProperty.call(settings, "personas")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "selectedPersona")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "modules")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "enabledModules")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "moduleFolders")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "activeBotPresetId")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "loreBook")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(settings, "globalscript")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "personas")).toBe(
+      false,
+    );
+    expect(
+      Object.prototype.hasOwnProperty.call(settings, "selectedPersona"),
+    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "modules")).toBe(
+      false,
+    );
+    expect(
+      Object.prototype.hasOwnProperty.call(settings, "enabledModules"),
+    ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(settings, "moduleFolders"),
+    ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(settings, "activeBotPresetId"),
+    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, "loreBook")).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(settings, "globalscript")).toBe(
+      false,
+    );
 
     // Lazy loading contract: every setting-node read in a shallow load must
     // exclude the deferred keys; plugin storage must not be read at all.
@@ -197,9 +217,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     queryLog.clear();
     const live = settingsStore.state;
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
-    expect(live.loreBook).toEqual([
-      { name: "My First LoreBook", data: [] },
-    ]);
+    expect(live.loreBook).toEqual([{ name: "My First LoreBook", data: [] }]);
     await deferredSettingsLoader.ensureKey("loreBook");
     expect(settingsStore.state.loreBook).toEqual(source.loreBook);
     expect(queryLog.touching("setting_extension_nodes")).toBeGreaterThan(0);
@@ -246,9 +264,13 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     }
 
     installStartupData(startup!, storage);
-    expect(settingsStore.getBootstrapState().mainPrompt).not.toBe("leaky-mainPrompt");
+    expect(settingsStore.getBootstrapState().mainPrompt).not.toBe(
+      "leaky-mainPrompt",
+    );
     await deferredSettingsLoader.ensureKey("mainPrompt");
-    expect(settingsStore.getBootstrapState().mainPrompt).toBe("leaky-mainPrompt");
+    expect(settingsStore.getBootstrapState().mainPrompt).toBe(
+      "leaky-mainPrompt",
+    );
     settingsStore.dispose();
     database.close();
   });
@@ -392,7 +414,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     await storage.replaceDatabase(replacement as Database);
 
     const loaded = (await storage.exportDatabaseSnapshot())?.database as any;
-    expect(Object.prototype.hasOwnProperty.call(loaded, "username")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(loaded, "username")).toBe(
+      false,
+    );
     expect(loaded.personas[0].name).toBe("replaced");
     expect(loaded.characters).toEqual([]);
     const charCount = database
@@ -451,17 +475,30 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const loaded = await storage.loadChat("chat-1");
     expect(loaded?.branchState).toBeUndefined();
     expect(loaded?.activeBranchId).toBe("reroll-legacy");
-    expect(loaded?.message.map((message) => message.data)).toEqual(["one", "alternative"]);
+    expect(loaded?.message.map((message) => message.data)).toEqual([
+      "one",
+      "alternative",
+    ]);
 
     const branches = await storage.listChatBranches!("chat-1");
     expect(branches).toHaveLength(2);
-    expect(branches.find((branch) => branch.id === "reroll-legacy")).toMatchObject({
+    expect(
+      branches.find((branch) => branch.id === "reroll-legacy"),
+    ).toMatchObject({
       parentBranchId: "root-legacy",
       forkMessageId: "m1",
       headMessageId: "m-alt",
     });
-    expect((await storage.loadBranchMessages!("chat-1", "root-legacy")).map((message) => message.data)).toEqual(["one", "two"]);
-    expect((await storage.loadBranchMessages!("chat-1", "reroll-legacy")).map((message) => message.data)).toEqual(["one", "alternative"]);
+    expect(
+      (await storage.loadBranchMessages!("chat-1", "root-legacy")).map(
+        (message) => message.data,
+      ),
+    ).toEqual(["one", "two"]);
+    expect(
+      (await storage.loadBranchMessages!("chat-1", "reroll-legacy")).map(
+        (message) => message.data,
+      ),
+    ).toEqual(["one", "alternative"]);
     database.close();
   });
 
@@ -469,11 +506,18 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
     const readLastTime = () =>
-      (database.prepare("SELECT last_message_time FROM chats WHERE id = 'chat-1'").get() as { last_message_time: number | null }).last_message_time;
+      (
+        database
+          .prepare("SELECT last_message_time FROM chats WHERE id = 'chat-1'")
+          .get() as { last_message_time: number | null }
+      ).last_message_time;
 
     expect(readLastTime()).toBe(2000);
 
-    const metadataOnly = createEmptySqlCommit(storage.getRevision(), "chat-metadata-only");
+    const metadataOnly = createEmptySqlCommit(
+      storage.getRevision(),
+      "chat-metadata-only",
+    );
     metadataOnly.chats.push({
       id: "chat-1",
       characterId: "char-1",
@@ -485,7 +529,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     const append = createEmptySqlCommit(storage.getRevision(), "append-latest");
     append.messages.push({
-      id: "m3-latest", chatId: "chat-1", position: 2,
+      id: "m3-latest",
+      chatId: "chat-1",
+      position: 2,
       data: makeMessage("m3-latest", "char", "latest", { time: 3000 }),
     });
     await storage.commit(append);
@@ -493,13 +539,18 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     const update = createEmptySqlCommit(storage.getRevision(), "update-latest");
     update.messages.push({
-      id: "m3-latest", chatId: "chat-1", position: 2,
+      id: "m3-latest",
+      chatId: "chat-1",
+      position: 2,
       data: makeMessage("m3-latest", "char", "edited", { time: 1500 }),
     });
     await storage.commit(update);
     expect(readLastTime()).toBe(1500);
 
-    const deletion = createEmptySqlCommit(storage.getRevision(), "delete-latest");
+    const deletion = createEmptySqlCommit(
+      storage.getRevision(),
+      "delete-latest",
+    );
     deletion.messageDeletes.push({ chatId: "chat-1", ids: ["m3-latest"] });
     await storage.commit(deletion);
     expect(readLastTime()).toBe(2000);
@@ -514,13 +565,20 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
   it("applies the legacy timestamp fallback before the recent-chat LIMIT", async () => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);
-    database.exec("UPDATE characters SET last_interaction_time = CASE id WHEN 'char-2' THEN 999999 ELSE 1 END");
+    database.exec(
+      "UPDATE characters SET last_interaction_time = CASE id WHEN 'char-2' THEN 999999 ELSE 1 END",
+    );
     database.exec("UPDATE chats SET last_message_time = NULL");
     for (let i = 0; i < 55; i++) {
-      database.prepare("INSERT INTO chats (id, character_id, position, name) VALUES (?, 'char-1', ?, ?)")
+      database
+        .prepare(
+          "INSERT INTO chats (id, character_id, position, name) VALUES (?, 'char-1', ?, ?)",
+        )
         .run(`legacy-${i}`, i + 2, `Legacy ${i}`);
     }
-    database.exec("INSERT INTO chats (id, character_id, position, name) VALUES ('recent-char-2', 'char-2', 0, 'Recent')");
+    database.exec(
+      "INSERT INTO chats (id, character_id, position, name) VALUES ('recent-char-2', 'char-2', 0, 'Recent')",
+    );
 
     const recent = await storage.listRecentChats!(50);
     expect(recent).toHaveLength(50);
@@ -542,16 +600,27 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     });
     await storage.commit(append);
 
-    database.exec("DELETE FROM message_branch_links WHERE chat_id = 'chat-1' AND message_id = 'm2'");
-    const deletion = createEmptySqlCommit(storage.getRevision(), "delete-missing-link-parent");
+    database.exec(
+      "DELETE FROM message_branch_links WHERE chat_id = 'chat-1' AND message_id = 'm2'",
+    );
+    const deletion = createEmptySqlCommit(
+      storage.getRevision(),
+      "delete-missing-link-parent",
+    );
     deletion.messageDeletes.push({ chatId: "chat-1", ids: ["m2"] });
 
     await expect(storage.commit(deletion)).resolves.toBeDefined();
-    const dangling = database.prepare(
-      "SELECT parent_message_id FROM message_branch_links WHERE chat_id = ? AND message_id = ?",
-    ).get("chat-1", "m3") as { parent_message_id: string | null } | undefined;
+    const dangling = database
+      .prepare(
+        "SELECT parent_message_id FROM message_branch_links WHERE chat_id = ? AND message_id = ?",
+      )
+      .get("chat-1", "m3") as { parent_message_id: string | null } | undefined;
     expect(dangling?.parent_message_id ?? null).toBeNull();
-    expect(database.prepare("SELECT 1 FROM messages WHERE chat_id = ? AND id = ?").get("chat-1", "m2")).toBeUndefined();
+    expect(
+      database
+        .prepare("SELECT 1 FROM messages WHERE chat_id = ? AND id = ?")
+        .get("chat-1", "m2"),
+    ).toBeUndefined();
     database.close();
   });
 
@@ -584,8 +653,13 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       new Set(["m1", "m2", "m-alt-graph"]),
     );
     expect(graph.links).toHaveLength(3);
-    expect(graph.messages.find((message) => message.chatId === "m1")?.generationInfo?.model).toBe("test-model");
-    expect(graph.messages.every((message) => message.promptInfo === undefined)).toBe(true);
+    expect(
+      graph.messages.find((message) => message.chatId === "m1")?.generationInfo
+        ?.model,
+    ).toBe("test-model");
+    expect(
+      graph.messages.every((message) => message.promptInfo === undefined),
+    ).toBe(true);
     expect(queryLog.touching("message_extension_nodes")).toBeLessThanOrEqual(1);
     database.close();
   });
@@ -619,17 +693,14 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     });
     await storage.commit(append);
 
-    expect((await storage.loadChatMessages("chat-1")).map((m) => m.data)).toEqual([
-      "one",
-      "alternative",
-    ]);
+    expect(
+      (await storage.loadChatMessages("chat-1")).map((m) => m.data),
+    ).toEqual(["one", "alternative"]);
     expect(
       (await storage.loadBranchMessages!("chat-1", root.id)).map((m) => m.data),
     ).toEqual(["one", "two"]);
     expect(
-      queryLog.where(
-        (sql) => /(?:INSERT INTO|UPDATE) messages\b/i.test(sql),
-      ),
+      queryLog.where((sql) => /(?:INSERT INTO|UPDATE) messages\b/i.test(sql)),
       "reroll append must write only the new message row",
     ).toHaveLength(1);
 

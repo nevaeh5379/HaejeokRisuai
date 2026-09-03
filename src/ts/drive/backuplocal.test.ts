@@ -109,12 +109,16 @@ describe("restoreInlayBackupEntry", () => {
     const decodeError = new Error("bad inlay payload");
     const write = vi.fn(async () => {});
 
-    const result = await restoreInlayBackupEntry("broken", new Uint8Array([1]), {
-      decode: () => {
-        throw decodeError;
+    const result = await restoreInlayBackupEntry(
+      "broken",
+      new Uint8Array([1]),
+      {
+        decode: () => {
+          throw decodeError;
+        },
+        write,
       },
-      write,
-    });
+    );
 
     expect(result).toEqual({ status: "invalid", error: decodeError });
     expect(write).not.toHaveBeenCalled();
@@ -214,7 +218,8 @@ describe("backup database defaults", () => {
   it("does not mutate the shared preset template when creating defaults", async () => {
     const { normalizeDatabaseDefaults } =
       await import("../storage/database/databaseDefaults");
-    const { presetTemplate } = await import("../storage/presets/presetDefaults");
+    const { presetTemplate } =
+      await import("../storage/presets/presetDefaults");
     const originalName = presetTemplate.name;
     const db: DatabaseInput = {};
 

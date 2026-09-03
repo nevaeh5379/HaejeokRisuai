@@ -37,52 +37,53 @@ export interface DomainHandler<T = unknown> {
   ensureDomain(db: DatabaseDraft): void;
 }
 
-export const CharacterDomainHandler: DomainHandler<(character | groupChat)[]> = {
-  key: "characters",
-  collectAssets(characters, scope, addAsset) {
-    for (const char of characters ?? []) {
-      if (!char) continue;
-      const charName = char.name ?? "Unknown Character";
-      addAsset(
-        char.image,
-        charName,
-        scope === "essential" ? "Profile Image" : "Main Image",
-      );
-      if (scope === "essential") continue;
+export const CharacterDomainHandler: DomainHandler<(character | groupChat)[]> =
+  {
+    key: "characters",
+    collectAssets(characters, scope, addAsset) {
+      for (const char of characters ?? []) {
+        if (!char) continue;
+        const charName = char.name ?? "Unknown Character";
+        addAsset(
+          char.image,
+          charName,
+          scope === "essential" ? "Profile Image" : "Main Image",
+        );
+        if (scope === "essential") continue;
 
-      for (const emotion of char.emotionImages ?? []) {
-        if (emotion?.[1]) {
-          addAsset(emotion[1], charName, emotion[0]);
+        for (const emotion of char.emotionImages ?? []) {
+          if (emotion?.[1]) {
+            addAsset(emotion[1], charName, emotion[0]);
+          }
+        }
+        if (char.type === "group") continue;
+        for (const asset of char.additionalAssets ?? []) {
+          if (asset?.[1]) {
+            addAsset(asset[1], charName, asset[0]);
+          }
+        }
+        for (const [name, key] of Object.entries(char.vits?.files ?? {})) {
+          if (typeof key === "string" && key.length > 0) {
+            addAsset(key, charName, name);
+          }
+        }
+        for (const asset of char.ccAssets ?? []) {
+          if (asset?.uri) {
+            addAsset(asset.uri, charName, asset.name);
+          }
         }
       }
-      if (char.type === "group") continue;
-      for (const asset of char.additionalAssets ?? []) {
-        if (asset?.[1]) {
-          addAsset(asset[1], charName, asset[0]);
+    },
+    ensureDomain(db) {
+      if (!Array.isArray(db.characters) || db.characters.length === 0) {
+        if (characterStore.characters.length > 0) {
+          db.characters = $state.snapshot(characterStore.characters);
+        } else {
+          db.characters ??= [];
         }
       }
-      for (const [name, key] of Object.entries(char.vits?.files ?? {})) {
-        if (typeof key === "string" && key.length > 0) {
-          addAsset(key, charName, name);
-        }
-      }
-      for (const asset of char.ccAssets ?? []) {
-        if (asset?.uri) {
-          addAsset(asset.uri, charName, asset.name);
-        }
-      }
-    }
-  },
-  ensureDomain(db) {
-    if (!Array.isArray(db.characters) || db.characters.length === 0) {
-      if (characterStore.characters.length > 0) {
-        db.characters = $state.snapshot(characterStore.characters);
-      } else {
-        db.characters ??= [];
-      }
-    }
-  },
-};
+    },
+  };
 
 export const PersonaDomainHandler: DomainHandler<RisuPersona[]> = {
   key: "personas",
@@ -124,11 +125,7 @@ export const ModuleDomainHandler: DomainHandler<RisuModule[]> = {
       if (scope !== "essential") {
         for (const asset of mod.assets ?? []) {
           if (asset?.[1]) {
-            addAsset(
-              asset[1],
-              "Module",
-              `${modName} - ${asset[0] || "Asset"}`,
-            );
+            addAsset(asset[1], "Module", `${modName} - ${asset[0] || "Asset"}`);
           }
         }
       }
@@ -151,11 +148,7 @@ export const PresetDomainHandler: DomainHandler<botPreset[]> = {
     if (scope === "essential") {
       for (const preset of presets ?? []) {
         if (preset?.image) {
-          addAsset(
-            preset.image,
-            "Preset",
-            `${preset.name} Preset Image`,
-          );
+          addAsset(preset.image, "Preset", `${preset.name} Preset Image`);
         }
       }
     }
@@ -173,7 +166,9 @@ export const PresetDomainHandler: DomainHandler<botPreset[]> = {
   },
 };
 
-export const PluginStorageDomainHandler: DomainHandler<Record<string, unknown>> = {
+export const PluginStorageDomainHandler: DomainHandler<
+  Record<string, unknown>
+> = {
   key: "pluginCustomStorage",
   collectAssets(_storage, _scope, _addAsset) {
     // Plugin custom storage does not reference core managed asset files directly
@@ -224,9 +219,7 @@ export const DOMAIN_REGISTRY: Record<CoreDomainKey, DomainHandler<any>> = {
   settings: SettingsDomainHandler,
 };
 
-export function ensureAllDomains(
-  db: DatabaseDraft,
-): DatabaseDraft {
+export function ensureAllDomains(db: DatabaseDraft): DatabaseDraft {
   for (const handler of Object.values(DOMAIN_REGISTRY)) {
     handler.ensureDomain(db);
   }
@@ -256,7 +249,12 @@ export function collectAllDomainAssets(
   PersonaDomainHandler.collectAssets(db.personas, scope, addAsset, db);
   ModuleDomainHandler.collectAssets(db.modules, scope, addAsset, db);
   PresetDomainHandler.collectAssets(db.botPresets, scope, addAsset, db);
-  PluginStorageDomainHandler.collectAssets(db.pluginCustomStorage, scope, addAsset, db);
+  PluginStorageDomainHandler.collectAssets(
+    db.pluginCustomStorage,
+    scope,
+    addAsset,
+    db,
+  );
   SettingsDomainHandler.collectAssets(db, scope, addAsset, db);
 
   return assets;

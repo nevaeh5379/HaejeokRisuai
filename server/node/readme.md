@@ -18,11 +18,11 @@ DATABASE_URL=postgresql://risuai:password@127.0.0.1:5432/risuai pnpm runserver
 
 Server startup reports each database phase separately (connect/ping, metadata inspection, schema version validation, schema loading, schema application, and final verification), including elapsed-time heartbeats. Connection targets are logged without usernames, passwords, tokens, or unrelated URL query parameters. These environment variables control failure detection:
 
-| Variable | Default | Description |
-| :--- | ---: | :--- |
-| `RISU_STORAGE_CONNECT_TIMEOUT_MS` | `30000` | Maximum initial database connection wait. |
-| `RISU_STORAGE_STARTUP_TIMEOUT_MS` | `180000` | Hard limit for the complete structured-storage startup step. |
-| `RISU_STORAGE_STARTUP_HEARTBEAT_MS` | `10000` | Interval for “still running” progress logs. |
+| Variable                            |  Default | Description                                                  |
+| :---------------------------------- | -------: | :----------------------------------------------------------- |
+| `RISU_STORAGE_CONNECT_TIMEOUT_MS`   |  `30000` | Maximum initial database connection wait.                    |
+| `RISU_STORAGE_STARTUP_TIMEOUT_MS`   | `180000` | Hard limit for the complete structured-storage startup step. |
+| `RISU_STORAGE_STARTUP_HEARTBEAT_MS` |  `10000` | Interval for “still running” progress logs.                  |
 
 If startup exceeds the hard limit or the connection fails, the HTTP server continues in SQL recovery mode instead of remaining indefinitely at `Step 1`. The last numbered database phase identifies whether the delay is network/DNS/authentication, a schema query, or schema DDL (which can also indicate a database lock or heavy load). Application data endpoints return `503 storage_unavailable` until the configured SQL database is ready; static UI, authentication, health, and database configuration endpoints remain available. RisuAI never falls back to `database.bin` while SQL is configured. `SIGTERM` and `SIGINT` are logged explicitly during graceful shutdown, so a container stop can be distinguished from a startup failure.
 
@@ -104,16 +104,16 @@ RisuAI supports offloading media assets (character avatars, emotion sprites, aud
 
 Configure S3 storage from **Advanced Settings → S3 / Object Storage**, or via environment variables:
 
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `RISU_STORAGE_TYPE` | `fs` | Set to `s3` to enable S3 storage by default. |
-| `RISU_S3_ENDPOINT` | *(empty)* | S3 endpoint URL (e.g., `http://127.0.0.1:9000` for RustFS/MinIO). |
-| `RISU_S3_BUCKET` | `risuai-assets` | Target bucket name. |
-| `RISU_S3_ACCESS_KEY_ID` | *(empty)* | S3 Access Key ID. |
-| `RISU_S3_SECRET_ACCESS_KEY` | *(empty)* | S3 Secret Access Key. |
-| `RISU_S3_REGION` | `us-east-1` | S3 Region. |
-| `RISU_S3_FORCE_PATH_STYLE` | `true` | Path-style addressing (required for RustFS and MinIO). |
-| `RISU_S3_AUTO_CREATE_BUCKET` | `true` | Automatically create the bucket if it does not exist. |
+| Variable                     | Default         | Description                                                       |
+| :--------------------------- | :-------------- | :---------------------------------------------------------------- |
+| `RISU_STORAGE_TYPE`          | `fs`            | Set to `s3` to enable S3 storage by default.                      |
+| `RISU_S3_ENDPOINT`           | _(empty)_       | S3 endpoint URL (e.g., `http://127.0.0.1:9000` for RustFS/MinIO). |
+| `RISU_S3_BUCKET`             | `risuai-assets` | Target bucket name.                                               |
+| `RISU_S3_ACCESS_KEY_ID`      | _(empty)_       | S3 Access Key ID.                                                 |
+| `RISU_S3_SECRET_ACCESS_KEY`  | _(empty)_       | S3 Secret Access Key.                                             |
+| `RISU_S3_REGION`             | `us-east-1`     | S3 Region.                                                        |
+| `RISU_S3_FORCE_PATH_STYLE`   | `true`          | Path-style addressing (required for RustFS and MinIO).            |
+| `RISU_S3_AUTO_CREATE_BUCKET` | `true`          | Automatically create the bucket if it does not exist.             |
 
 ### RustFS + PostgreSQL All-in-One Deployment
 
@@ -139,6 +139,7 @@ credentials. Direct Compose use bypasses the installer's state permissions,
 environment isolation, ownership checks, transaction, and port validation.
 
 This stack starts:
+
 - **RustFS**: High-performance Rust-based S3 object storage (S3 API on port 9000, Web Console on port 9001).
 - **PostgreSQL 17**: Relational database for chats, characters, and revisions.
 - **RisuAI Server**: Pre-configured to communicate with both PostgreSQL and RustFS.
@@ -202,6 +203,7 @@ boundaries, reverse-proxy setup, backups, and direct Compose requirements.
 ### Asset Migration & Tools
 
 When S3 is enabled:
+
 - **Migrate Local Assets to S3**: Copies all existing local asset files in `save/` to the S3 bucket.
 - **Download S3 Assets to Local**: Exports all objects from the S3 bucket back to the local `save/` directory.
 - During migration, read requests automatically fall back to local disk if an asset hasn't been uploaded yet, ensuring zero broken images.

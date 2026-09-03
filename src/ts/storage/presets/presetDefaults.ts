@@ -107,5 +107,3 @@ const defaultSdData: [string, string][] = [
 export const defaultSdDataFunc = () => {
   return safeStructuredClone(defaultSdData);
 };
-
-

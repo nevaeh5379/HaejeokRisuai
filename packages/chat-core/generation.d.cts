@@ -34,12 +34,18 @@ export interface ChatModelRequest<TCharacter> {
   rememberToolUsage?: boolean;
 }
 
-export interface ChatGenerationRuntime<TCharacter, TResponse extends { model?: string }> {
+export interface ChatGenerationRuntime<
+  TCharacter,
+  TResponse extends { model?: string },
+> {
   tokenizeChatsDetailed(chats: OpenAIChat[]): Promise<number[]>;
   getGenerationSettings(): ChatGenerationSettings;
   createGenerationId(): string;
   getGenerationModel(model?: string): string;
-  requestModel(request: ChatModelRequest<TCharacter>, signal: AbortSignal): Promise<TResponse>;
+  requestModel(
+    request: ChatModelRequest<TCharacter>,
+    signal: AbortSignal,
+  ): Promise<TResponse>;
   registerGenerationContext?(context: ChatGenerationContext): void;
   unregisterGenerationContext?(generationId: string): void;
 }
@@ -72,12 +78,18 @@ export interface ExecuteChatModelRequestInput<TCharacter> {
   speakerId?: string;
 }
 
-export function createChatGenerationPlan<TCharacter, TResponse extends { model?: string }>(
+export function createChatGenerationPlan<
+  TCharacter,
+  TResponse extends { model?: string },
+>(
   runtime: ChatGenerationRuntime<TCharacter, TResponse>,
   input: ChatGenerationPlanInput,
 ): Promise<ChatGenerationPlan>;
 
-export function executeChatModelRequest<TCharacter, TResponse extends { model?: string }>(
+export function executeChatModelRequest<
+  TCharacter,
+  TResponse extends { model?: string },
+>(
   runtime: ChatGenerationRuntime<TCharacter, TResponse>,
   input: ExecuteChatModelRequestInput<TCharacter>,
   signal: AbortSignal,

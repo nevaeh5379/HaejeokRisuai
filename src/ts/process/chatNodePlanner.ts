@@ -7,10 +7,7 @@ import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import { forageStorage } from "../globalApi.svelte";
 import { isNodeServer } from "../platform";
 import { NodeStorage } from "../storage/files/nodeStorage";
-import {
-  ChatTokenizer,
-  getServerTiktokenEncoding,
-} from "../tokenizer";
+import { ChatTokenizer, getServerTiktokenEncoding } from "../tokenizer";
 
 interface GenerationPlanRuntimeView {
   getGenerationSettings(): ChatGenerationSettings;
@@ -70,7 +67,6 @@ export async function tryCreateNodeChatGenerationPlan(
     return null;
   }
 }
-
 
 export async function tryCreateNodeAutoContinuationDecision(
   result: string,

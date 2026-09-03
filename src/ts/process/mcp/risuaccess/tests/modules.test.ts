@@ -1,6 +1,9 @@
 import fc from "fast-check";
 import type { RisuModule } from "src/ts/process/modules";
-import type { customscript, loreBook } from "../../../../storage/database/schema";
+import type {
+  customscript,
+  loreBook,
+} from "../../../../storage/database/schema";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -116,11 +119,7 @@ test("retrieves bgEmbedding, toggles, description, id, enabled, low level access
     .fill(0)
     .map((_, i) => makeModule(String(i)));
   moduleStore.modules = modules;
-  moduleStore.enabledModules = [
-    modules[0].id,
-    modules[2].id,
-    modules[4].id,
-  ];
+  moduleStore.enabledModules = [modules[0].id, modules[2].id, modules[4].id];
 
   await fc.assert(
     fc.asyncProperty(

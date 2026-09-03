@@ -79,12 +79,7 @@ describe("provider role settings", () => {
 
   it("supports per-feature setting overrides for auxiliary modes", () => {
     expect(
-      resolveProviderRoleSettingForMode(
-        false,
-        false,
-        "memory",
-        true,
-      ),
+      resolveProviderRoleSettingForMode(false, false, "memory", true),
     ).toBe(true);
 
     expect(
@@ -115,6 +110,8 @@ describe("provider role settings", () => {
     });
     expect(getProviderModeOverride(false, overrides, "memory")).toBeUndefined();
     expect(getProviderModeOverride(true, overrides, "model")).toBeUndefined();
-    expect(getProviderModeOverride(true, overrides, "submodel")).toBeUndefined();
+    expect(
+      getProviderModeOverride(true, overrides, "submodel"),
+    ).toBeUndefined();
   });
 });

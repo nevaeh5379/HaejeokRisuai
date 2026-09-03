@@ -51,8 +51,7 @@ type FailedOpenAIRequestPreparation = {
 };
 
 export type OpenAIRequestPreparationResult =
-  | PreparedOpenAIRequest
-  | FailedOpenAIRequestPreparation;
+  PreparedOpenAIRequest | FailedOpenAIRequestPreparation;
 
 export async function prepareModernOpenAIRequest(
   arg: RequestDataArgumentExtended,

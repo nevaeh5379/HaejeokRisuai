@@ -1,6 +1,12 @@
 import { v4 as uuidv4 } from "uuid";
 import { safeStructuredClone } from "./polyfill";
-import type { Chat, ChatBranchReason, ChatBranchState, ChatBranchTimeline, Message } from "./storage/database/schema";
+import type {
+  Chat,
+  ChatBranchReason,
+  ChatBranchState,
+  ChatBranchTimeline,
+  Message,
+} from "./storage/database/schema";
 
 export interface CreateChatTimelineBranchOptions {
   branchMessageIndex: number;
@@ -32,9 +38,10 @@ export function resolveRerollTarget(
   requestedIndex?: number,
 ): RerollTarget | null {
   if (messages.length === 0) return null;
-  const targetIndex = requestedIndex === undefined
-    ? messages.length - 1
-    : Math.min(messages.length - 1, Math.max(0, requestedIndex));
+  const targetIndex =
+    requestedIndex === undefined
+      ? messages.length - 1
+      : Math.min(messages.length - 1, Math.max(0, requestedIndex));
   const target = messages[targetIndex];
   if (!target) return null;
 
@@ -64,7 +71,9 @@ function cloneMessages(messages: Message[]): Message[] {
 
 function cloneBranchScriptState(chat: Chat) {
   return {
-    scriptstate: chat.scriptstate ? safeStructuredClone(chat.scriptstate) : null,
+    scriptstate: chat.scriptstate
+      ? safeStructuredClone(chat.scriptstate)
+      : null,
     GLGlobalVariables: chat.GLGlobalVariables
       ? safeStructuredClone(chat.GLGlobalVariables)
       : null,
@@ -87,7 +96,8 @@ function restoreBranchScriptState(
       : undefined;
   }
   if ("useLocallySetGlobalVariables" in branch) {
-    chat.useLocallySetGlobalVariables = branch.useLocallySetGlobalVariables ?? undefined;
+    chat.useLocallySetGlobalVariables =
+      branch.useLocallySetGlobalVariables ?? undefined;
   }
 }
 
@@ -109,7 +119,9 @@ export function syncActiveChatBranch(chat: Chat): void {
   const state = chat.branchState;
   const active = activeTimeline(chat);
   if (!state || !active) return;
-  active.messages = cloneMessages(chat.message.slice(state.baseMessageIndex + 1));
+  active.messages = cloneMessages(
+    chat.message.slice(state.baseMessageIndex + 1),
+  );
   Object.assign(active, cloneBranchScriptState(chat));
 }
 
@@ -235,7 +247,8 @@ export function activateChatBranch(
   branchId: string,
 ): ChatBranchSwitchResult | null {
   const state = chat.branchState;
-  if (!state || !state.branches.some((branch) => branch.id === branchId)) return null;
+  if (!state || !state.branches.some((branch) => branch.id === branchId))
+    return null;
 
   const previousMessages = cloneMessages(chat.message);
   syncActiveChatBranch(chat);
@@ -262,19 +275,25 @@ export function createChatTimelineBranch(
     id: uuidv4(),
     parentBranchId,
     branchMessageId:
-      options.branchMessageId ?? chat.message[options.branchMessageIndex]?.chatId,
+      options.branchMessageId ??
+      chat.message[options.branchMessageIndex]?.chatId,
     branchMessageIndex: options.branchMessageIndex,
     reason: options.reason,
     createdAt: options.createdAt ?? Date.now(),
     messages: cloneMessages(
-      chat.message.slice(state.baseMessageIndex + 1, options.branchMessageIndex + 1),
+      chat.message.slice(
+        state.baseMessageIndex + 1,
+        options.branchMessageIndex + 1,
+      ),
     ),
     ...cloneBranchScriptState(chat),
   };
 
   state.branches.push(branch);
   state.activeBranchId = branch.id;
-  chat.message = cloneMessages(chat.message.slice(0, options.branchMessageIndex + 1));
+  chat.message = cloneMessages(
+    chat.message.slice(0, options.branchMessageIndex + 1),
+  );
   updateChatMessageRuntime(chat);
   return branch;
 }
@@ -316,7 +335,9 @@ export function getRerollAlternatives(
 
   const branchIds = [
     parentBranchId,
-    ...siblings.map((branch) => branch.id).filter((id) => id !== parentBranchId),
+    ...siblings
+      .map((branch) => branch.id)
+      .filter((id) => id !== parentBranchId),
   ];
   return {
     parentBranchId,

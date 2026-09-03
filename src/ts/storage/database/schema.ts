@@ -4,7 +4,10 @@ import type { NAISettings } from "../../process/models/nai";
 import type { ColorScheme } from "../../gui/colorscheme";
 import type { PromptItem, PromptSettings } from "../../process/prompt";
 import type { OobaChatCompletionRequestParams } from "../../model/ooba";
-import type { HypaV3Settings, HypaV3Preset } from "../../process/memory/hypav3Preset";
+import type {
+  HypaV3Settings,
+  HypaV3Preset,
+} from "../../process/memory/hypav3Preset";
 import type { TranslatorPreset } from "../../translator/presets";
 import type { OnnxModelFiles } from "../../process/transformers";
 import type { RisuModule, ModuleFolder } from "../../process/modules";
@@ -581,7 +584,8 @@ export interface PresetStoreData {
  * contract plus compatibility-only persona mirrors.
  */
 export interface Database
-  extends DatabaseSettings,
+  extends
+    DatabaseSettings,
     CharacterStoreData,
     PersonaStoreData,
     ModuleStoreData,

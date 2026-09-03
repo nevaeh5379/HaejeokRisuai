@@ -6,11 +6,12 @@ import {
 
 describe("legacy backup encryption", () => {
   it("returns a validated key from the upstream service", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ key: "secret-key" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ key: "secret-key" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
     ) as unknown as typeof fetch;
 
     await expect(fetchLegacyBackupKey(1234, fetchImpl)).resolves.toBe(
@@ -22,8 +23,9 @@ describe("legacy backup encryption", () => {
   });
 
   it("decrypts only after a valid key is received", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ key: "secret-key" }), { status: 200 }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ key: "secret-key" }), { status: 200 }),
     ) as unknown as typeof fetch;
     const decrypt = vi.fn(async () => new Uint8Array([9, 8, 7]).buffer);
 
@@ -34,8 +36,9 @@ describe("legacy backup encryption", () => {
   });
 
   it("rejects a failed key request before decryption", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("Forbidden", { status: 403, statusText: "Forbidden" }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response("Forbidden", { status: 403, statusText: "Forbidden" }),
     ) as unknown as typeof fetch;
     const decrypt = vi.fn(async () => new ArrayBuffer(0));
 
@@ -51,8 +54,8 @@ describe("legacy backup encryption", () => {
   });
 
   it("rejects key responses without a usable key", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(JSON.stringify({ key: null }), { status: 200 }),
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify({ key: null }), { status: 200 }),
     ) as unknown as typeof fetch;
 
     await expect(fetchLegacyBackupKey(1234, fetchImpl)).rejects.toThrow(

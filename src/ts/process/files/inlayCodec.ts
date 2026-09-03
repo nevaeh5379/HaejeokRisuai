@@ -73,9 +73,7 @@ export function decodeInlayAssetBackup(data: Uint8Array): InlayAsset {
     ext: metadata.ext,
     type: metadata.type,
     ...(typeof metadata.width === "number" ? { width: metadata.width } : {}),
-    ...(typeof metadata.height === "number"
-      ? { height: metadata.height }
-      : {}),
+    ...(typeof metadata.height === "number" ? { height: metadata.height } : {}),
     data: restoredData,
   } as InlayAsset;
 }

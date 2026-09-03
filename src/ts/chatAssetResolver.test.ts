@@ -29,10 +29,14 @@ describe("chat asset resolver", () => {
     ]);
 
     const seen: string[] = [];
-    const result = resolveChatAssetFromIndex(index, "alice.jpg", (left, right) => {
-      seen.push(right);
-      return right.endsWith(".png") ? 1 : 2;
-    });
+    const result = resolveChatAssetFromIndex(
+      index,
+      "alice.jpg",
+      (left, right) => {
+        seen.push(right);
+        return right.endsWith(".png") ? 1 : 2;
+      },
+    );
 
     expect(result).toBe("alice-png");
     expect(seen.sort()).toEqual(["alice.png", "alice.webp"]);

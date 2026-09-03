@@ -40,7 +40,8 @@ function branchedChat(): Chat {
           scriptstate: { "$lb-xnai-stack": "root-state" },
           GLGlobalVariables: { lightboard: "root" },
           useLocallySetGlobalVariables: true,
-        },        {
+        },
+        {
           id: "manual-1",
           parentBranchId: "root",
           branchMessageIndex: 0,
@@ -59,7 +60,9 @@ function branchedChat(): Chat {
           branchMessageId: "u1",
           reason: "reroll",
           createdAt: 3,
-          messages: [{ chatId: "r1-msg", role: "char", data: "Take the river" }],
+          messages: [
+            { chatId: "r1-msg", role: "char", data: "Take the river" },
+          ],
           scriptstate: { "$lb-xnai-stack": "reroll-stale-snapshot" },
           GLGlobalVariables: { lightboard: "reroll-stale" },
           useLocallySetGlobalVariables: false,
@@ -81,7 +84,9 @@ describe("compatible branch backup expansion", () => {
       "Adventure (Branch 1)",
       "Adventure (Reroll 1)",
     ]);
-    expect(result.chats.map((chat) => chat.message.map((message) => message.data))).toEqual([
+    expect(
+      result.chats.map((chat) => chat.message.map((message) => message.data)),
+    ).toEqual([
       ["Choose a road", "Take the mountain"],
       ["Choose a road"],
       ["Choose a road", "Take the river"],
@@ -92,7 +97,9 @@ describe("compatible branch backup expansion", () => {
   it("exports each timeline with its own chat-scoped script state", () => {
     const result = expandChatBranchesForCompatibility(branchedChat(), ids());
 
-    expect(result.chats[0].scriptstate).toEqual({ "$lb-xnai-stack": "root-state" });
+    expect(result.chats[0].scriptstate).toEqual({
+      "$lb-xnai-stack": "root-state",
+    });
     expect(result.chats[0].GLGlobalVariables).toEqual({ lightboard: "root" });
     expect(result.chats[0].useLocallySetGlobalVariables).toBe(true);
 
@@ -100,8 +107,12 @@ describe("compatible branch backup expansion", () => {
     expect(result.chats[1].GLGlobalVariables).toBeUndefined();
     expect(result.chats[1].useLocallySetGlobalVariables).toBeUndefined();
 
-    expect(result.chats[2].scriptstate).toEqual({ "$lb-xnai-stack": "reroll-live-state" });
-    expect(result.chats[2].GLGlobalVariables).toEqual({ lightboard: "reroll-live" });
+    expect(result.chats[2].scriptstate).toEqual({
+      "$lb-xnai-stack": "reroll-live-state",
+    });
+    expect(result.chats[2].GLGlobalVariables).toEqual({
+      lightboard: "reroll-live",
+    });
     expect(result.chats[2].useLocallySetGlobalVariables).toBe(false);
   });
 
@@ -152,22 +163,29 @@ describe("compatible branch backup expansion", () => {
       name: "Bot",
       chatPage: 0,
       coldStoragedChats: [coldKey],
-      chats: [{
-        id: "cold-chat",
-        name: "Old chat",
-        note: "",
-        localLore: [],
-        message: [{ role: "char", data: coldStorageHeader + coldKey }],
-      }],
-    } as character;
-    const coldValues = new Map<string, unknown>([[coldKey, {
-      message: [
-        { chatId: "old-u", role: "user", data: "old question" },
-        { chatId: "old-a", role: "char", data: "old answer" },
+      chats: [
+        {
+          id: "cold-chat",
+          name: "Old chat",
+          note: "",
+          localLore: [],
+          message: [{ role: "char", data: coldStorageHeader + coldKey }],
+        },
       ],
-      scriptstate: { route: "archive" },
-      localLore: [],
-    }]]);
+    } as character;
+    const coldValues = new Map<string, unknown>([
+      [
+        coldKey,
+        {
+          message: [
+            { chatId: "old-u", role: "user", data: "old question" },
+            { chatId: "old-a", role: "char", data: "old answer" },
+          ],
+          scriptstate: { route: "archive" },
+          localLore: [],
+        },
+      ],
+    ]);
 
     const expanded = expandCharacterBranchesForCompatibility(
       source,
@@ -199,23 +217,28 @@ describe("compatible branch backup expansion", () => {
       chaId: "cold-char",
       name: "Restored Bot",
       chatPage: 0,
-      chats: [{
-        id: "nested-cold-chat",
-        name: "Archived adventure",
-        note: "",
-        localLore: [],
-        message: [{ role: "char", data: coldStorageHeader + chatKey }],
-      }],
+      chats: [
+        {
+          id: "nested-cold-chat",
+          name: "Archived adventure",
+          note: "",
+          localLore: [],
+          message: [{ role: "char", data: coldStorageHeader + chatKey }],
+        },
+      ],
     } as character;
     const coldValues = new Map<string, unknown>([
       [characterKey, { character: restoredCharacter }],
-      [chatKey, {
-        message: [
-          { chatId: "nested-u", role: "user", data: "remember me" },
-          { chatId: "nested-a", role: "char", data: "always" },
-        ],
-        localLore: [],
-      }],
+      [
+        chatKey,
+        {
+          message: [
+            { chatId: "nested-u", role: "user", data: "remember me" },
+            { chatId: "nested-a", role: "char", data: "always" },
+          ],
+          localLore: [],
+        },
+      ],
     ]);
 
     const expanded = expandCharacterBranchesForCompatibility(
@@ -233,5 +256,4 @@ describe("compatible branch backup expansion", () => {
     expect(expanded.coldStoragedChats).toBeUndefined();
     expect(stub.name).toBe("Stub");
   });
-
 });

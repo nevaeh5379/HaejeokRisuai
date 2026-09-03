@@ -1,12 +1,17 @@
-export const SQL_DATABASE_VENDORS: readonly ['postgres', 'oracle', 'azure'];
+export const SQL_DATABASE_VENDORS: readonly ["postgres", "oracle", "azure"];
 export type DbVendor = (typeof SQL_DATABASE_VENDORS)[number];
 
-export const SQL_RUNTIME_STATUSES: readonly ['starting', 'ready', 'degraded', 'unconfigured'];
+export const SQL_RUNTIME_STATUSES: readonly [
+  "starting",
+  "ready",
+  "degraded",
+  "unconfigured",
+];
 export type SqlStorageRuntimeStatus = (typeof SQL_RUNTIME_STATUSES)[number];
 
-export const ASSET_STORAGE_TYPES: readonly ['fs', 's3', 'azuresql'];
+export const ASSET_STORAGE_TYPES: readonly ["fs", "s3", "azuresql"];
 export type AssetStorageType = (typeof ASSET_STORAGE_TYPES)[number];
-export type AssetStorageTarget = 'active' | AssetStorageType;
+export type AssetStorageTarget = "active" | AssetStorageType;
 
 export interface NodeSqlStorageRuntimeError {
   code: string;
@@ -93,7 +98,7 @@ export interface NodeS3Stats {
   endpoint?: string;
   totalObjects: number;
   totalSizeBytes: number;
-  listSource?: 'catalog' | 'storage';
+  listSource?: "catalog" | "storage";
 }
 
 export interface NodeS3MigrationResult {
@@ -137,12 +142,12 @@ export interface NodeStorageAssetDetails {
   totalObjects: number;
   totalSizeBytes: number;
   assets: NodeStorageAssetItem[];
-  listSource?: 'catalog' | 'storage' | 'storage-sync';
+  listSource?: "catalog" | "storage" | "storage-sync";
   catalogEmpty?: boolean;
 }
 
 export interface NodeS3ProgressEvent {
-  type: 'progress';
+  type: "progress";
   current: number;
   total: number;
   migrated?: number;

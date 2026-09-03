@@ -1,4 +1,7 @@
-import type { ChatFailureResponse, ChatSuccessResponse } from "../chat-core/types.cjs";
+import type {
+  ChatFailureResponse,
+  ChatSuccessResponse,
+} from "../chat-core/types.cjs";
 import type { ProviderRoute } from "../chat-core/providerRouting.cjs";
 
 export interface NodeProviderExecutionRequest {
@@ -6,7 +9,8 @@ export interface NodeProviderExecutionRequest {
   payload: Record<string, unknown>;
 }
 
-export type NodeProviderSerializableResponse = ChatSuccessResponse | ChatFailureResponse;
+export type NodeProviderSerializableResponse =
+  ChatSuccessResponse | ChatFailureResponse;
 
 export type NodeProviderExecutionResult =
   | { handled: false }
@@ -34,10 +38,10 @@ export type NodeProviderTransportResult =
       };
     };
 
-export function normalizeNodeProviderExecutionRequest(input: unknown):
-  | { value: NodeProviderExecutionRequest }
-  | { error: string };
+export function normalizeNodeProviderExecutionRequest(
+  input: unknown,
+): { value: NodeProviderExecutionRequest } | { error: string };
 
-export function normalizeNodeProviderTransportRequest(input: unknown):
-  | { value: NodeProviderTransportRequest }
-  | { error: string };
+export function normalizeNodeProviderTransportRequest(
+  input: unknown,
+): { value: NodeProviderTransportRequest } | { error: string };

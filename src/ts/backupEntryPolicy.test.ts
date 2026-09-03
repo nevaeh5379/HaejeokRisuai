@@ -14,9 +14,11 @@ describe("backup entry policy", () => {
   });
 
   it("recognizes HaejeokRisuAI inlay sidecars without treating them as normal assets", () => {
-    expect(classifyBackupEntry(
-      "inlay_11111111-1111-4111-8111-111111111111.risuinlay",
-    ).kind).toBe("inlay");
+    expect(
+      classifyBackupEntry(
+        "inlay_11111111-1111-4111-8111-111111111111.risuinlay",
+      ).kind,
+    ).toBe("inlay");
     expect(
       getInlayBackupKey("inlay_11111111-1111-4111-8111-111111111111.risuinlay"),
     ).toBe("11111111-1111-4111-8111-111111111111");
@@ -25,12 +27,16 @@ describe("backup entry policy", () => {
   });
 
   it("keeps both cold-storage naming variants", () => {
-    expect(classifyBackupEntry(
-      "coldstorage/11111111-1111-1111-1111-111111111111.json",
-    ).kind).toBe("coldStorage");
-    expect(classifyBackupEntry(
-      "coldstorage_22222222-2222-2222-2222-222222222222.json",
-    ).kind).toBe("coldStorage");
+    expect(
+      classifyBackupEntry(
+        "coldstorage/11111111-1111-1111-1111-111111111111.json",
+      ).kind,
+    ).toBe("coldStorage");
+    expect(
+      classifyBackupEntry(
+        "coldstorage_22222222-2222-2222-2222-222222222222.json",
+      ).kind,
+    ).toBe("coldStorage");
   });
 
   it("treats unknown fork namespaces as optional extensions", () => {

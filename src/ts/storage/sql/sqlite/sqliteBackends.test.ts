@@ -1,10 +1,7 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import sqliteSchemaSql from "./sqlite-schema.sql?raw";
-import {
-  createEmptySqlCommit,
-  SqlRevisionConflictError,
-} from "../sqlCommit";
+import { createEmptySqlCommit, SqlRevisionConflictError } from "../sqlCommit";
 import {
   flattenRelationalValue,
   rebuildRelationalValue,
@@ -105,13 +102,17 @@ describe("WebSqliteStorage", () => {
       transform?: "relational" | "messages";
     }>;
     expect(
-      statements.find(({ sql }) => sql.includes("chat_extension_nodes"))?.transform,
+      statements.find(({ sql }) => sql.includes("chat_extension_nodes"))
+        ?.transform,
     ).toBe("relational");
     expect(
       statements.find(({ sql }) => sql.includes("message_extension_nodes"))
         ?.transform,
     ).toBe("messages");
-    expect(chat?.message.map((message) => message.chatId)).toEqual(["m2", "m3"]);
+    expect(chat?.message.map((message) => message.chatId)).toEqual([
+      "m2",
+      "m3",
+    ]);
     expect(chat?.messageOffset).toBe(1);
     database.close();
   });
@@ -144,7 +145,9 @@ describe("WebSqliteStorage", () => {
       statements.some(({ sql }) => sql.includes("character_extension_nodes")),
     ).toBe(false);
     expect(
-      statements.some(({ sql }) => sql.includes("INSERT INTO system_revisions")),
+      statements.some(({ sql }) =>
+        sql.includes("INSERT INTO system_revisions"),
+      ),
     ).toBe(false);
     const revisionRows = database
       .prepare("SELECT COUNT(*) AS count FROM system_revisions")
@@ -161,22 +164,34 @@ describe("WebSqliteStorage", () => {
       changed: "before",
     };
     const initial = createEmptySqlCommit(0, "seed-tree");
-    initial.root.upserts.push({ key: "writeAmplificationTest", value: initialValue });
+    initial.root.upserts.push({
+      key: "writeAmplificationTest",
+      value: initialValue,
+    });
     await storage.commit(initial);
 
     const rpc = (storage as any).rpc;
     const batchSpy = vi.spyOn(rpc, "execBatch");
     const changesBefore = Number(
-      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
-        .count,
+      (
+        database.prepare("SELECT total_changes() AS count").get() as {
+          count: number;
+        }
+      ).count,
     );
     const updatedValue = { ...initialValue, changed: "after" };
     const updated = createEmptySqlCommit(1, "update-tree");
-    updated.root.upserts.push({ key: "writeAmplificationTest", value: updatedValue });
+    updated.root.upserts.push({
+      key: "writeAmplificationTest",
+      value: updatedValue,
+    });
     await storage.commit(updated);
     const changesAfter = Number(
-      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
-        .count,
+      (
+        database.prepare("SELECT total_changes() AS count").get() as {
+          count: number;
+        }
+      ).count,
     );
     expect(changesAfter - changesBefore).toBeLessThan(10);
 
@@ -188,7 +203,9 @@ describe("WebSqliteStorage", () => {
       sql.includes("INSERT INTO setting_extension_nodes"),
     );
     expect(nodeWrites.length).toBeLessThan(10);
-    expect(nodeWrites.every(({ sql }) => sql.includes("ON CONFLICT"))).toBe(true);
+    expect(nodeWrites.every(({ sql }) => sql.includes("ON CONFLICT"))).toBe(
+      true,
+    );
     expect(
       statements.some(
         ({ sql }) =>
@@ -202,7 +219,10 @@ describe("WebSqliteStorage", () => {
 
     const shrunkValue = { changed: "small" };
     const shrunk = createEmptySqlCommit(2, "shrink-tree");
-    shrunk.root.upserts.push({ key: "writeAmplificationTest", value: shrunkValue });
+    shrunk.root.upserts.push({
+      key: "writeAmplificationTest",
+      value: shrunkValue,
+    });
     await storage.commit(shrunk);
     expect(
       await (storage as any).loadSettingValue("writeAmplificationTest"),
@@ -212,7 +232,9 @@ describe("WebSqliteStorage", () => {
         "SELECT COUNT(*) AS count FROM setting_extension_nodes WHERE setting_key = 'writeAmplificationTest'",
       )
       .get() as { count: number };
-    expect(Number(count.count)).toBe(flattenRelationalValue(shrunkValue).length);
+    expect(Number(count.count)).toBe(
+      flattenRelationalValue(shrunkValue).length,
+    );
     database.close();
   });
 
@@ -236,13 +258,13 @@ describe("WebSqliteStorage", () => {
 
     expect(await storage.loadModules()).toEqual([first, second, created]);
     expect(
-      database
-        .prepare("SELECT COUNT(*) AS count FROM module_records")
-        .get(),
+      database.prepare("SELECT COUNT(*) AS count FROM module_records").get(),
     ).toEqual({ count: 3 });
     expect(
       database
-        .prepare("SELECT COUNT(*) AS count FROM system_settings WHERE key = 'modules'")
+        .prepare(
+          "SELECT COUNT(*) AS count FROM system_settings WHERE key = 'modules'",
+        )
         .get(),
     ).toEqual({ count: 0 });
 
@@ -265,9 +287,9 @@ describe("WebSqliteStorage", () => {
       sql.includes("module_extension_nodes"),
     );
     expect(moduleNodeWrites.length).toBeGreaterThan(0);
-    expect(
-      moduleNodeWrites.every(({ bind }) => bind?.[0] === updated.id),
-    ).toBe(true);
+    expect(moduleNodeWrites.every(({ bind }) => bind?.[0] === updated.id)).toBe(
+      true,
+    );
     database.close();
   });
 
@@ -283,8 +305,11 @@ describe("WebSqliteStorage", () => {
     await storage.commit(initial);
 
     const changesBefore = Number(
-      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
-        .count,
+      (
+        database.prepare("SELECT total_changes() AS count").get() as {
+          count: number;
+        }
+      ).count,
     );
     const updated = createEmptySqlCommit(1, "update-character-tags");
     updated.characters.push({
@@ -294,8 +319,11 @@ describe("WebSqliteStorage", () => {
     });
     await storage.commit(updated);
     const changesAfter = Number(
-      (database.prepare("SELECT total_changes() AS count").get() as { count: number })
-        .count,
+      (
+        database.prepare("SELECT total_changes() AS count").get() as {
+          count: number;
+        }
+      ).count,
     );
 
     expect(changesAfter - changesBefore).toBeLessThan(10);
@@ -415,7 +443,9 @@ describe("WebSqliteStorage", () => {
 
     await expect(storage.replaceDatabase(source)).resolves.toBe(true);
     const loaded = await storage.loadStartupData();
-    expect(Object.prototype.hasOwnProperty.call(loaded?.settings ?? {}, "username")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(loaded?.settings ?? {}, "username"),
+    ).toBe(false);
     expect(await storage.loadPluginCustomStorageKey("plugin")).toEqual({
       nested: [1, null, "three"],
     });
@@ -429,9 +459,9 @@ describe("WebSqliteStorage", () => {
     expect(chat?.message).toEqual(source.characters[0].chats[0].message);
     const summaries = await storage.listBotPresets();
     expect(summaries).toHaveLength(1);
-    expect((await storage.loadBotPreset(summaries[0].id))?.moduleIntergration).toBe(
-      "module-a",
-    );
+    expect(
+      (await storage.loadBotPreset(summaries[0].id))?.moduleIntergration,
+    ).toBe("module-a");
     database.close();
   });
 });
@@ -451,15 +481,21 @@ describe("TauriSqliteStorage", () => {
     expect(command).toBe("sqlite_execute_transaction");
     expect(payload.expectedRevision).toBe(0);
     expect(payload).not.toHaveProperty("dbPath");
-    expect(payload.statements.some((entry: any) =>
-      entry.sql.includes("UPDATE system_storage_meta"),
-    )).toBe(true);
-    expect(payload.statements.every((entry: any) =>
-      !/^(BEGIN|COMMIT|ROLLBACK)/i.test(entry.sql.trim()),
-    )).toBe(true);
+    expect(
+      payload.statements.some((entry: any) =>
+        entry.sql.includes("UPDATE system_storage_meta"),
+      ),
+    ).toBe(true);
+    expect(
+      payload.statements.every(
+        (entry: any) => !/^(BEGIN|COMMIT|ROLLBACK)/i.test(entry.sql.trim()),
+      ),
+    ).toBe(true);
     // The native transaction actually executed: the revision persisted.
     const row = database
-      .prepare("SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1")
+      .prepare(
+        "SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1",
+      )
       .get() as { revision: number; initialized: number };
     expect(row.revision).toBe(1);
     expect(row.initialized).toBe(1);

@@ -118,7 +118,10 @@ describe("ModelGrid props_invalid_value regression (Risu b6595 report)", () => {
     const override = new ProviderModelOverrideState();
 
     expect(() =>
-      mountComponent(ModelGrid, botSettingsStyleProps(override, { loading: true })),
+      mountComponent(
+        ModelGrid,
+        botSettingsStyleProps(override, { loading: true }),
+      ),
     ).not.toThrow();
 
     // Still renders the loading spinner instead of crashing.

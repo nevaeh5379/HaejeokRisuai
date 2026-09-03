@@ -40,16 +40,24 @@ describe("SQL row commits", () => {
               branchState: {
                 baseMessageIndex: 0,
                 activeBranchId: "branch-root",
-                branches: [{
-                  id: "branch-root",
-                  branchMessageIndex: 0,
-                  reason: "root",
-                  createdAt: 1,
-                  messages: [{ chatId: "branch-message", role: "char", data: "saved branch" }],
-                  scriptstate: { "$lb-xnai-stack": "root-state" },
-                  GLGlobalVariables: { lightboard: "root" },
-                  useLocallySetGlobalVariables: true,
-                }],
+                branches: [
+                  {
+                    id: "branch-root",
+                    branchMessageIndex: 0,
+                    reason: "root",
+                    createdAt: 1,
+                    messages: [
+                      {
+                        chatId: "branch-message",
+                        role: "char",
+                        data: "saved branch",
+                      },
+                    ],
+                    scriptstate: { "$lb-xnai-stack": "root-state" },
+                    GLGlobalVariables: { lightboard: "root" },
+                    useLocallySetGlobalVariables: true,
+                  },
+                ],
               },
               message: [{ chatId: "message-1", role: "user", data: "hello" }],
             },
@@ -76,11 +84,13 @@ describe("SQL row commits", () => {
     expect(commit.chats).toHaveLength(1);
     expect(commit.chats[0].data).not.toHaveProperty("message");
     expect(commit.chats[0].data).toHaveProperty("branchState");
-    expect((commit.chats[0].data as any).branchState.branches[0]).toMatchObject({
-      scriptstate: { "$lb-xnai-stack": "root-state" },
-      GLGlobalVariables: { lightboard: "root" },
-      useLocallySetGlobalVariables: true,
-    });
+    expect((commit.chats[0].data as any).branchState.branches[0]).toMatchObject(
+      {
+        scriptstate: { "$lb-xnai-stack": "root-state" },
+        GLGlobalVariables: { lightboard: "root" },
+        useLocallySetGlobalVariables: true,
+      },
+    );
     expect(commit.chats[0].data).not.toHaveProperty("messageOffset");
     expect(commit.chats[0].data).not.toHaveProperty("messageTotal");
     expect(commit.chats[0].data).not.toHaveProperty("messagesFullyLoaded");
@@ -96,19 +106,23 @@ describe("SQL row commits", () => {
 
   it("preserves legacy messages whose IDs collide during explicit import", () => {
     const database = {
-      characters: [{
-        chaId: "character-1",
-        name: "Character",
-        chats: [{
-          id: "chat-1",
-          name: "Chat",
-          message: [
-            { chatId: "duplicate-message", role: "user", data: "first" },
-            { chatId: "duplicate-message", role: "char", data: "second" },
-            { role: "user", data: "missing id" },
+      characters: [
+        {
+          chaId: "character-1",
+          name: "Character",
+          chats: [
+            {
+              id: "chat-1",
+              name: "Chat",
+              message: [
+                { chatId: "duplicate-message", role: "user", data: "first" },
+                { chatId: "duplicate-message", role: "char", data: "second" },
+                { role: "user", data: "missing id" },
+              ],
+            },
           ],
-        }],
-      }],
+        },
+      ],
     } as unknown as Database;
 
     const commit = buildSqlReplaceCommit(database, 0);
@@ -239,9 +253,19 @@ describe("SQL row commits", () => {
     });
 
     expect(statements).toHaveLength(12);
-    expect(statements.filter(({ sql }) => sql.includes("UPDATE message_branch_links"))).toHaveLength(2);
-    expect(statements.filter(({ sql }) => sql.includes("UPDATE chat_branches"))).toHaveLength(4);
-    expect(statements.filter(({ sql }) => sql.includes("DELETE FROM message_branch_links"))).toHaveLength(2);
+    expect(
+      statements.filter(({ sql }) =>
+        sql.includes("UPDATE message_branch_links"),
+      ),
+    ).toHaveLength(2);
+    expect(
+      statements.filter(({ sql }) => sql.includes("UPDATE chat_branches")),
+    ).toHaveLength(4);
+    expect(
+      statements.filter(({ sql }) =>
+        sql.includes("DELETE FROM message_branch_links"),
+      ),
+    ).toHaveLength(2);
     expect(
       statements.find(({ sql }) => sql.startsWith("DELETE FROM messages")),
     ).toEqual({
@@ -249,9 +273,13 @@ describe("SQL row commits", () => {
       bind: ["chat-1", "msg-1", "msg-2"],
     });
     expect(
-      statements.filter(({ sql }) => sql.includes("UPDATE system_write_guards")),
+      statements.filter(({ sql }) =>
+        sql.includes("UPDATE system_write_guards"),
+      ),
     ).toHaveLength(2);
-    expect(statements.some(({ sql }) => sql.includes("last_message_time"))).toBe(true);
+    expect(
+      statements.some(({ sql }) => sql.includes("last_message_time")),
+    ).toBe(true);
   });
 
   it("deletes only explicitly named characters", async () => {
@@ -270,9 +298,7 @@ describe("SQL row commits", () => {
         bind: ["character-removed"],
       },
     ]);
-    expect(
-      statements.some(({ sql }) => sql.includes("NOT IN")),
-    ).toBe(false);
+    expect(statements.some(({ sql }) => sql.includes("NOT IN"))).toBe(false);
   });
 
   it("treats chat and message manifests as non-destructive", async () => {

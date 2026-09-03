@@ -1,4 +1,10 @@
-import type { character, groupChat, Chat, MessageGenerationInfo, MessagePresetInfo } from "../storage/database/schema";
+import type {
+  character,
+  groupChat,
+  Chat,
+  MessageGenerationInfo,
+  MessagePresetInfo,
+} from "../storage/database/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -150,7 +156,11 @@ async function consumeNonStreamingResponses(
   let outputMessageId: string | undefined;
 
   for (let index = 0; index < responses.length; index++) {
-    const processed = await processSingleResponse(options, responses[index], index);
+    const processed = await processSingleResponse(
+      options,
+      responses[index],
+      index,
+    );
     result = processed.result;
     emoChanged = processed.emoChanged;
     if (index === 0) {
@@ -172,8 +182,13 @@ async function consumeNonStreamingResponses(
   return { rerolls, result, emoChanged, outputMessageId };
 }
 
-export async function processNonStreamingResponse(options: NonStreamingOptions) {
-  const consumed = await consumeNonStreamingResponses(options, getResponses(options.req));
+export async function processNonStreamingResponse(
+  options: NonStreamingOptions,
+) {
+  const consumed = await consumeNonStreamingResponses(
+    options,
+    getResponses(options.req),
+  );
   if (consumed.rerolls.length > 1) {
     addRerolls(options.generationId, consumed.rerolls);
   }

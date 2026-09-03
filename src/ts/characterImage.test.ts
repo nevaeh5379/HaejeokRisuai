@@ -202,7 +202,10 @@ describe("getCharImagesBatch", () => {
       fullImageBlobCache.set(key, `blob:${key}`);
     }
 
-    fullImageBlobCache.set("assets/persona-preview.png", "blob:persona-preview");
+    fullImageBlobCache.set(
+      "assets/persona-preview.png",
+      "blob:persona-preview",
+    );
 
     expect(fullImageBlobCache.has("assets/persona-preview.png")).toBe(true);
     expect(revokeObjectURL).not.toHaveBeenCalledWith("blob:persona-preview");
@@ -216,7 +219,10 @@ describe("getCharImagesBatch", () => {
     vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
     mocks.settingsState.lowSpecMode = true;
 
-    const keys = Array.from({ length: 5 }, (_, index) => `full_assets/card-${index}.png`);
+    const keys = Array.from(
+      { length: 5 },
+      (_, index) => `full_assets/card-${index}.png`,
+    );
     for (const key of keys) pinCharacterImageCache(key);
     for (const [index, key] of keys.entries()) {
       fullImageBlobCache.set(key, `blob:pinned-${index}`);

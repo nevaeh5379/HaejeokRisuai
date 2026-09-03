@@ -61,9 +61,7 @@ function createMemoryCacheStorage() {
     delete: vi.fn(async (request: RequestInfo | URL) =>
       entries.delete(toUrl(request)),
     ),
-    keys: vi.fn(async () =>
-      [...entries.keys()].map((url) => new Request(url)),
-    ),
+    keys: vi.fn(async () => [...entries.keys()].map((url) => new Request(url))),
   };
   return {
     cache,
@@ -318,7 +316,7 @@ describe("NodeStorage vector index requests", () => {
       "fetch",
       vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
         requestBody = JSON.parse(init.body as string);
-        return new Response(JSON.stringify({ results: [[['a', 1]]] }), {
+        return new Response(JSON.stringify({ results: [[["a", 1]]] }), {
           status: 200,
         });
       }),
@@ -333,8 +331,7 @@ describe("NodeStorage vector index requests", () => {
       1,
     );
 
-
-    expect(results).toEqual([[['a', 1]]]);
+    expect(results).toEqual([[["a", 1]]]);
     expect(requestBody).toEqual({
       indexId: "dynamic-assets:char",
       queries: [[1, 0]],

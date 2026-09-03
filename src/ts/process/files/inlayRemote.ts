@@ -62,7 +62,10 @@ function touchMemoryCache(id: string, asset: InlayAsset) {
 }
 
 function evictForCacheLimit(incomingWeight: number) {
-  while (memoryCache.size > 0 && memoryCacheWeight + incomingWeight > MAX_CACHE_BYTES) {
+  while (
+    memoryCache.size > 0 &&
+    memoryCacheWeight + incomingWeight > MAX_CACHE_BYTES
+  ) {
     const oldest = memoryCache.keys().next().value;
     if (oldest === undefined) return;
     const evicted = memoryCache.get(oldest)!;

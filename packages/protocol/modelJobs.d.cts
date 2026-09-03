@@ -1,10 +1,20 @@
-export const MODEL_JOB_STATUSES: readonly ['running', 'done', 'failed', 'aborted'];
+export const MODEL_JOB_STATUSES: readonly [
+  "running",
+  "done",
+  "failed",
+  "aborted",
+];
 export type ModelJobStatus = (typeof MODEL_JOB_STATUSES)[number];
 
-export const MODEL_JOB_TERMINAL_STATUSES: readonly ['done', 'failed', 'aborted'];
-export type TerminalModelJobStatus = (typeof MODEL_JOB_TERMINAL_STATUSES)[number];
+export const MODEL_JOB_TERMINAL_STATUSES: readonly [
+  "done",
+  "failed",
+  "aborted",
+];
+export type TerminalModelJobStatus =
+  (typeof MODEL_JOB_TERMINAL_STATUSES)[number];
 
-export const MODEL_JOB_FILTERS: readonly ['active', 'unclaimed'];
+export const MODEL_JOB_FILTERS: readonly ["active", "unclaimed"];
 export type ModelJobFilter = (typeof MODEL_JOB_FILTERS)[number];
 
 export const DEFAULT_MODEL_JOB_MAX_BODY_BYTES: number;
@@ -27,7 +37,7 @@ export interface CreateModelJobRequest {
 export interface NormalizedCreateModelJobRequest {
   targetUrl: string;
   targetOrigin: string;
-  method: 'POST';
+  method: "POST";
   headers?: Record<string, string>;
   body: string;
   chatId: string;
@@ -70,7 +80,11 @@ export interface ListModelJobsResponse {
 }
 
 export type NormalizeModelJobCreateResult =
-  | { value: NormalizedCreateModelJobRequest; error?: never; httpStatus?: never }
+  | {
+      value: NormalizedCreateModelJobRequest;
+      error?: never;
+      httpStatus?: never;
+    }
   | { value?: never; error: string; httpStatus: number };
 
 export function normalizeModelJobCreateRequest(

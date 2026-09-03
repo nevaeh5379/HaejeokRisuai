@@ -1,8 +1,9 @@
 import { expect, test, vi } from "vitest";
 
 const parser = vi.hoisted(() =>
-  vi.fn((text: string, arg?: any) =>
-    `${text}:${arg?.chatTarget?.characterId ?? "missing"}`,
+  vi.fn(
+    (text: string, arg?: any) =>
+      `${text}:${arg?.chatTarget?.characterId ?? "missing"}`,
   ),
 );
 

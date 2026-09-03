@@ -20,7 +20,9 @@ const settings = {
     url: "https://proxy.example",
     key: "proxy-key",
   },
-  customModels: [{ id: "xcustom:::one", url: "https://custom", key: "custom-key" }],
+  customModels: [
+    { id: "xcustom:::one", url: "https://custom", key: "custom-key" },
+  ],
 };
 
 const modelInfo = (id: string) => ({ id, internalID: id, format: 0 });
@@ -29,8 +31,12 @@ describe("provider execution context", () => {
   it("resolves primary, sub, static, and separate models", () => {
     expect(resolveRequestModel({ mode: "model" }, settings)).toBe("gpt-main");
     expect(resolveRequestModel({ mode: "submodel" }, settings)).toBe("gpt-sub");
-    expect(resolveRequestModel({ mode: "memory" }, settings)).toBe("memory-model");
-    expect(resolveRequestModel({ mode: "memory", staticModel: "fixed" }, settings)).toBe("fixed");
+    expect(resolveRequestModel({ mode: "memory" }, settings)).toBe(
+      "memory-model",
+    );
+    expect(
+      resolveRequestModel({ mode: "memory", staticModel: "fixed" }, settings),
+    ).toBe("fixed");
   });
   it("derives shared generation options", () => {
     const prepared = prepareProviderExecutionContext(
@@ -56,7 +62,10 @@ describe("provider execution context", () => {
       settings,
       modelInfo,
     );
-    expect(prepared.modelInfo).toMatchObject({ internalID: "proxy-model", format: 18 });
+    expect(prepared.modelInfo).toMatchObject({
+      internalID: "proxy-model",
+      format: 18,
+    });
     expect(prepared.customURL).toBe("https://proxy.example");
     expect(prepared.key).toBe("proxy-key");
   });

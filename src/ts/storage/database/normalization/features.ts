@@ -213,7 +213,9 @@ function normalizeHotkeys(data: Database): void {
   if (!data.hotkeys) {
     data.hotkeys = safeStructuredClone(defaultHotkeys);
   } else {
-    const existingActions = new Set(data.hotkeys.map((hotkey) => hotkey.action));
+    const existingActions = new Set(
+      data.hotkeys.map((hotkey) => hotkey.action),
+    );
     const newHotkeys = defaultHotkeys.filter(
       (hotkey) => !existingActions.has(hotkey.action),
     );

@@ -1,6 +1,17 @@
 import localforage from "localforage";
 import { getNodeClientSessionId } from "../../../network/nodeClientSession";
-import type { Database, DatabaseSettings, Message, character, groupChat, Chat, RisuPersona, botPreset, loreBook, customscript } from "../../database/schema";
+import type {
+  Database,
+  DatabaseSettings,
+  Message,
+  character,
+  groupChat,
+  Chat,
+  RisuPersona,
+  botPreset,
+  loreBook,
+  customscript,
+} from "../../database/schema";
 import type { RisuModule } from "../../../process/modules";
 import type {
   INodeSqlStorageAdmin,
@@ -213,7 +224,8 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   });
 
   private memoryPluginsCache: { hash: string; plugins: any[] } | null = null;
-  private memoryRuntimePluginsCache: { hash: string; plugins: any[] } | null = null;
+  private memoryRuntimePluginsCache: { hash: string; plugins: any[] } | null =
+    null;
   private memoryPluginStorageCache: {
     hash: string;
     pluginCustomStorage: Record<string, any>;
@@ -255,11 +267,12 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (this.status === "unknown") {
       try {
         const config = await this.getDatabaseConfig();
-        this.status = config.runtime?.status === "ready"
-          ? "enabled"
-          : config.runtime?.status === "degraded"
-            ? "degraded"
-            : "disabled";
+        this.status =
+          config.runtime?.status === "ready"
+            ? "enabled"
+            : config.runtime?.status === "degraded"
+              ? "degraded"
+              : "disabled";
       } catch {
         this.status = "disabled";
         return false;
@@ -356,13 +369,14 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       throw await responseError(response, "DB configuration load failed");
     }
     const config = await response.json();
-    this.status = config.runtime?.status === "ready"
-      ? "enabled"
-      : config.runtime?.status === "degraded"
-        ? "degraded"
-        : config.enabled
-          ? "enabled"
-          : "disabled";
+    this.status =
+      config.runtime?.status === "ready"
+        ? "enabled"
+        : config.runtime?.status === "degraded"
+          ? "degraded"
+          : config.enabled
+            ? "enabled"
+            : "disabled";
     if (config.revision != null) {
       this.revision = config.revision;
     }
@@ -399,11 +413,12 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       throw await responseError(response, "DB configuration update failed");
     }
     const body = await response.json();
-    this.status = body.runtime?.status === "ready" || body.enabled
-      ? "enabled"
-      : body.runtime?.status === "degraded"
-        ? "degraded"
-        : "disabled";
+    this.status =
+      body.runtime?.status === "ready" || body.enabled
+        ? "enabled"
+        : body.runtime?.status === "degraded"
+          ? "degraded"
+          : "disabled";
     if (body.revision != null) {
       this.revision = body.revision;
     }
@@ -487,7 +502,9 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     return this.revision;
   }
 
-  async loadPlugins(options?: { enabledOnly?: boolean }): Promise<any[] | null> {
+  async loadPlugins(options?: {
+    enabledOnly?: boolean;
+  }): Promise<any[] | null> {
     if (!(await this.ensureEnabled())) return null;
 
     const enabledOnly = options?.enabledOnly === true;
@@ -505,7 +522,8 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
 
     const headers: Record<string, string> = await this.authHeaders();
     if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-plugins-${enabledOnly ? "runtime-" : ""}${cached.hash}"`;
+      headers["If-None-Match"] =
+        `"risu-plugins-${enabledOnly ? "runtime-" : ""}${cached.hash}"`;
     }
 
     const response = await fetch(
@@ -1013,7 +1031,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       headers: await this.authHeaders(),
     });
     if (!response.ok) {
-      throw await responseError(response, "SQL database snapshot export failed");
+      throw await responseError(
+        response,
+        "SQL database snapshot export failed",
+      );
     }
     const body = (await response.json()) as SqlDatabaseSnapshotResult;
     this.revision = body.revision;
@@ -1126,7 +1147,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return [];
     }
     if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL chat messages load failed");
+      throw await responseError(
+        response,
+        "PostgreSQL chat messages load failed",
+      );
     }
     const body: { messages?: Message[] } = await response.json();
     return body.messages ?? [];
@@ -1197,7 +1221,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   async loadBranchMessages(
     chatId: string,
     branchId: string,
-    options: { messageLimit?: number; mode?: "full" | "generation" | "graph" } = {},
+    options: {
+      messageLimit?: number;
+      mode?: "full" | "generation" | "graph";
+    } = {},
   ): Promise<Message[]> {
     if (!(await this.ensureEnabled())) return [];
     const params = new URLSearchParams();
@@ -1217,7 +1244,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       },
     );
     if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "SQL chat branch messages load failed");
+      throw await responseError(
+        response,
+        "SQL chat branch messages load failed",
+      );
     }
     const body: { messages?: Message[] } = await response.json();
     return body.messages ?? [];
@@ -1288,7 +1318,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return [];
     }
     if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL recent chats load failed");
+      throw await responseError(
+        response,
+        "PostgreSQL recent chats load failed",
+      );
     }
     const body: { chats: SqlRecentChatMetadata[] } = await response.json();
     return body.chats ?? [];

@@ -74,7 +74,9 @@ describe("prepareBrowserProviderContext provider role settings", () => {
     expect(memory.prepared.modelInfo.internalID).toBe("proxy-memory-himoi");
 
     const translate = prepareBrowserProviderContext(request, "translate");
-    expect(translate.prepared.modelInfo.internalID).toBe("proxy-translate-gemma4");
+    expect(translate.prepared.modelInfo.internalID).toBe(
+      "proxy-translate-gemma4",
+    );
 
     // Falls back to sub model when feature override is empty
     const emotion = prepareBrowserProviderContext(request, "emotion");

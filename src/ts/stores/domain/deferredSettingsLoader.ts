@@ -70,7 +70,10 @@ class DeferredSettingsLoader {
         hydrateSettingKey(key, value, value !== undefined);
         this.markLoaded([key]);
       } catch (error) {
-        console.error(`[DeferredSettingsLoader] Failed to hydrate ${key}:`, error);
+        console.error(
+          `[DeferredSettingsLoader] Failed to hydrate ${key}:`,
+          error,
+        );
       }
     })().finally(() => {
       if (this.keyLoads.get(key) === pending) this.keyLoads.delete(key);

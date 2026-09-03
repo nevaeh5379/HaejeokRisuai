@@ -23,11 +23,13 @@ async function expandRememberedToolCalls(
       ...originalMessage,
       role: "assistant",
       content: currentContent,
-      tool_calls: [{
-        id: call.call.id,
-        type: "function",
-        function: { name: call.call.name, arguments: call.call.arg },
-      }],
+      tool_calls: [
+        {
+          id: call.call.id,
+          type: "function",
+          function: { name: call.call.name, arguments: call.call.arg },
+        },
+      ],
     });
     const textContents = call.response
       .filter((item) => item.type === "text")
@@ -57,8 +59,13 @@ export async function prepareOpenAIProviderMessages(
 ): Promise<OpenAIChatExtra[]> {
   const prepared: OpenAIChatExtra[] = [];
   for (const message of messages) {
-    if (typeof message.content === "string" && message.content.includes("<tool_call>")) {
-      prepared.push(...await expandRememberedToolCalls(message.content, message));
+    if (
+      typeof message.content === "string" &&
+      message.content.includes("<tool_call>")
+    ) {
+      prepared.push(
+        ...(await expandRememberedToolCalls(message.content, message)),
+      );
       continue;
     }
     if (message.multimodals?.length && message.role === "user") {

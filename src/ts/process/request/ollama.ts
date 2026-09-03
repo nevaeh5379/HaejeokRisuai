@@ -274,7 +274,8 @@ export async function requestOllama(
         model: arg.aiModel,
       };
     }
-    const response: any = remoteTransport?.data ?? (await ollama.chat(requestBody));
+    const response: any =
+      remoteTransport?.data ?? (await ollama.chat(requestBody));
 
     const result = formatThinkingOutput(
       response.message?.thinking ?? "",

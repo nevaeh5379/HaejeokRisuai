@@ -1,10 +1,10 @@
-import type { DbVendor } from './storageConfig.cjs';
+import type { DbVendor } from "./storageConfig.cjs";
 
 export interface NodePostgresRevision {
   id: number;
   storage_revision: number | null;
   database_initialized: boolean | null;
-  scope: 'database' | 'cold-storage' | 'restore';
+  scope: "database" | "cold-storage" | "restore";
   action: string;
   restored_from_revision: number | null;
   created_at: string;
@@ -15,7 +15,7 @@ export interface NodePostgresAuditLogItem {
   sequence: number;
   revisionId?: number;
   tableName: string;
-  operation: 'INSERT' | 'UPDATE' | 'DELETE';
+  operation: "INSERT" | "UPDATE" | "DELETE";
   beforeRow: Record<string, unknown> | null;
   afterRow: Record<string, unknown> | null;
   recordedAt: string;
@@ -38,7 +38,9 @@ export interface NodePostgresRevisionDiff {
   baseRevisionId: number;
   targetRevisionId: number;
   totalChanges: number;
-  tables: Array<NodePostgresTableSummary & { entries: NodePostgresAuditLogItem[] }>;
+  tables: Array<
+    NodePostgresTableSummary & { entries: NodePostgresAuditLogItem[] }
+  >;
 }
 
 export interface NodePostgresRestorePreview {
@@ -59,7 +61,7 @@ export interface NodePostgresRestorePreview {
 }
 
 export interface NodePostgresMessageSearchResult {
-  storageState: 'active' | 'cold';
+  storageState: "active" | "cold";
   archiveId: string | null;
   characterId: string | null;
   characterName: string | null;
@@ -67,7 +69,7 @@ export interface NodePostgresMessageSearchResult {
   chatName: string;
   messageId: string;
   position: number;
-  role: 'user' | 'char';
+  role: "user" | "char";
   sentTime: number | null;
   senderName: string | null;
   snippet: string;
@@ -101,7 +103,7 @@ export interface NodePostgresCharacterSearchResult {
   id: string;
   name: string;
   image: string | null;
-  kind: 'character' | 'group';
+  kind: "character" | "group";
 }
 
 export interface NodePostgresTableInfo {
@@ -164,8 +166,18 @@ export interface NodeBackupConfigUpdate {
 }
 
 export interface NodeBackupProgressEvent {
-  type?: 'progress' | 'done' | 'error';
-  stage?: 'reading' | 'preparing' | 'connecting' | 'settings' | 'characters' | 'chats' | 'messages' | 'finalizing' | 'done' | string;
+  type?: "progress" | "done" | "error";
+  stage?:
+    | "reading"
+    | "preparing"
+    | "connecting"
+    | "settings"
+    | "characters"
+    | "chats"
+    | "messages"
+    | "finalizing"
+    | "done"
+    | string;
   message?: string;
   percentage?: number;
   current?: number;

@@ -124,9 +124,9 @@ describe("normalizeDatabaseDefaults", () => {
     expect(db.promptSettings.assistantPrefill).toBe("");
     expect(db.promptSettings.trimStartNewChat).toBe(true);
     expect(db.sdConfig.width).toBe(512);
-    expect((db.sdConfig as unknown as { customField?: string }).customField).toBe(
-      "keep-me",
-    );
+    expect(
+      (db.sdConfig as unknown as { customField?: string }).customField,
+    ).toBe("keep-me");
   });
 
   it("repairs malformed OpenRouter provider arrays", () => {

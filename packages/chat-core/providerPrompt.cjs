@@ -1,6 +1,6 @@
-'use strict';
+"use strict";
 
-const { LLM_FLAGS } = require('../protocol/modelFlags.cjs');
+const { LLM_FLAGS } = require("../protocol/modelFlags.cjs");
 
 function cloneMessage(message) {
   return {
@@ -29,7 +29,7 @@ function formatProviderMessages(formated, flags, options = {}) {
 
   if (!flags.includes(LLM_FLAGS.hasFullSystemPrompt)) {
     if (flags.includes(LLM_FLAGS.hasFirstSystemPrompt)) {
-      while (messages.length > 0 && messages[0].role === 'system') {
+      while (messages.length > 0 && messages[0].role === "system") {
         const current = messages.shift();
         if (systemPrompt) systemPrompt.content += `\n\n${current.content}`;
         else systemPrompt = current;
@@ -37,11 +37,11 @@ function formatProviderMessages(formated, flags, options = {}) {
     }
 
     for (const message of messages) {
-      if (message.role !== 'system') continue;
+      if (message.role !== "system") continue;
       message.content = options.systemContentReplacement
-        ? options.systemContentReplacement.replace('{{slot}}', message.content)
+        ? options.systemContentReplacement.replace("{{slot}}", message.content)
         : `system: ${message.content}`;
-      message.role = options.systemRoleReplacement || 'user';
+      message.role = options.systemRoleReplacement || "user";
     }
   }
 
@@ -49,15 +49,16 @@ function formatProviderMessages(formated, flags, options = {}) {
     const alternated = [];
     for (const message of messages) {
       const previous = alternated.at(-1);
-      if (previous && previous.role === message.role) mergeMessage(previous, message);
+      if (previous && previous.role === message.role)
+        mergeMessage(previous, message);
       else alternated.push(message);
     }
     messages = alternated;
   }
 
   if (flags.includes(LLM_FLAGS.mustStartWithUserInput)) {
-    if (messages.length === 0 || messages[0].role !== 'user') {
-      messages.unshift({ role: 'user', content: ' ' });
+    if (messages.length === 0 || messages[0].role !== "user") {
+      messages.unshift({ role: "user", content: " " });
     }
   }
 

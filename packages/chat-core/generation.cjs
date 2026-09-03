@@ -1,7 +1,7 @@
-'use strict';
+"use strict";
 
 function hasRenderableContent(chat) {
-  return chat.content !== '' || Boolean(chat.multimodals?.length);
+  return chat.content !== "" || Boolean(chat.multimodals?.length);
 }
 
 async function createChatGenerationPlan(runtime, input) {
@@ -14,7 +14,7 @@ async function createChatGenerationPlan(runtime, input) {
     while (inputTokens > input.maxContextTokens && pointer < formated.length) {
       if (formated[pointer].removable) {
         inputTokens -= tokenCounts[pointer];
-        formated[pointer].content = '';
+        formated[pointer].content = "";
       }
       pointer++;
     }

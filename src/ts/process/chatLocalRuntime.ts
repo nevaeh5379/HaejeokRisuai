@@ -24,7 +24,8 @@ export function createLocalChatGenerationRuntime(
     }),
     createGenerationId: v4,
     getGenerationModel: getGenerationModelString,
-    requestModel: (request, signal) => requestChatData(request, "model", signal),
+    requestModel: (request, signal) =>
+      requestChatData(request, "model", signal),
     registerGenerationContext: registerDurableGenerationContext,
     unregisterGenerationContext: unregisterDurableGenerationContext,
   };

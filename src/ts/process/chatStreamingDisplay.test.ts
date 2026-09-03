@@ -10,7 +10,9 @@ vi.mock("../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: settingsState },
 }));
 vi.mock("../stores/domain/characterStore.svelte", () => ({
-  characterStore: { characters: [{ chaId: "char-0", chats: [{ id: "chat-0" }] }] },
+  characterStore: {
+    characters: [{ chaId: "char-0", chats: [{ id: "chat-0" }] }],
+  },
 }));
 vi.mock("../util", () => ({
   trimUntilPunctuation: (value: string) => value,

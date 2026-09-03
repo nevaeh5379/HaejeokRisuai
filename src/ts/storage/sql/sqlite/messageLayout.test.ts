@@ -34,7 +34,9 @@ describe("message metadata storage layout", () => {
     // object_key_encoded null). Keys with NUL or unpaired surrogates would be
     // base64-encoded and invisible to the SQL filter, but promptInfo and
     // generationInfo are fixed ASCII identifiers.
-    const promptInfoRow = rootChildren.find((row) => row.object_key === "promptInfo");
+    const promptInfoRow = rootChildren.find(
+      (row) => row.object_key === "promptInfo",
+    );
     const generationInfoRow = rootChildren.find(
       (row) => row.object_key === "generationInfo",
     );

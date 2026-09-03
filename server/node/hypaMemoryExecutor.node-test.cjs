@@ -1,20 +1,20 @@
-'use strict';
+"use strict";
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { createHypaMemoryExecutor } = require('./hypaMemoryExecutor.cjs');
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
 
-async function drive(executor, response, scope = 'test-scope') {
-  while (response.status === 'action') {
+async function drive(executor, response, scope = "test-scope") {
+  while (response.status === "action") {
     let value;
-    if (response.action.type === 'tokenize') {
+    if (response.action.type === "tokenize") {
       value = response.action.messages.map(() => 1);
-    } else if (response.action.type === 'tokenize-texts') {
+    } else if (response.action.type === "tokenize-texts") {
       value = response.action.texts.map(() => 1);
-    } else if (response.action.type === 'summarize') {
-      value = { ok: true, text: 'summary' };
-    } else if (response.action.type === 'distilbart') {
-      value = { ok: true, text: 'summary' };
+    } else if (response.action.type === "summarize") {
+      value = { ok: true, text: "summary" };
+    } else if (response.action.type === "distilbart") {
+      value = { ok: true, text: "summary" };
     } else {
       throw new Error(`Unexpected action: ${response.action.type}`);
     }
@@ -30,24 +30,24 @@ async function drive(executor, response, scope = 'test-scope') {
 
 function v3Request() {
   return {
-    mode: 'v3',
+    mode: "v3",
     chats: [
-      { role: 'user', content: 'hello', memo: 'm1' },
-      { role: 'assistant', content: 'world', memo: 'm2' },
+      { role: "user", content: "hello", memo: "m1" },
+      { role: "assistant", content: "world", memo: "m2" },
     ],
     currentTokens: 10,
     maxContextTokens: 1000,
-    room: { id: 'room-1' },
-    character: { id: 'char-1', name: 'Test', type: 'character' },
+    room: { id: "room-1" },
+    character: { id: "char-1", name: "Test", type: "character" },
     config: {
       maxResponse: 0,
-      hypaModel: 'openai3small',
-      supaMemoryKey: '',
+      hypaModel: "openai3small",
+      supaMemoryKey: "",
       customEmbedding: {},
-      voyageApiKey: '',
+      voyageApiKey: "",
       v3Settings: {
-            summarizationPrompt: '',
-        reSummarizationPrompt: '',
+        summarizationPrompt: "",
+        reSummarizationPrompt: "",
         memoryTokensRatio: 0.2,
         extraSummarizationRatio: 0.1,
         maxChatsPerSummary: 8,
@@ -56,7 +56,7 @@ function v3Request() {
         enableSimilarityCorrection: false,
         preserveOrphanedMemory: false,
         doNotSummarizeUserMessage: false,
-        summaryChunkSeparator: '\\n\\n',
+        summaryChunkSeparator: "\\n\\n",
         useExperimentalImpl: true,
         queryChatCount: 2,
       },
@@ -64,64 +64,69 @@ function v3Request() {
   };
 }
 
-test('Hypa V3 experimental state machine stays server-owned and returns passthrough history when no memory exists', async () => {
+test("Hypa V3 experimental state machine stays server-owned and returns passthrough history when no memory exists", async () => {
   const executor = createHypaMemoryExecutor();
-  const started = await executor.start(v3Request(), { scope: 'test-scope' });
-  assert.equal(started.status, 'action');
-  assert.equal(started.action.type, 'tokenize');
+  const started = await executor.start(v3Request(), { scope: "test-scope" });
+  assert.equal(started.status, "action");
+  assert.equal(started.action.type, "tokenize");
 
   const result = await drive(executor, started);
   assert.equal(result.error, undefined);
   assert.equal(result.memory.summaries.length, 0);
-  assert.deepEqual(result.chats.map((chat) => chat.memo), ['m1', 'm2']);
-});
-
-test('Hypa sessions are isolated by authenticated scope', async () => {
-  const executor = createHypaMemoryExecutor();
-  const started = await executor.start(v3Request(), { scope: 'owner' });
-  await assert.rejects(
-    executor.resume(started.sessionId, started.action.id, [1, 1], { scope: 'other' }),
-    (error) => error?.code === 'hypa_session_missing',
+  assert.deepEqual(
+    result.chats.map((chat) => chat.memo),
+    ["m1", "m2"],
   );
-  executor.cancel(started.sessionId, { scope: 'owner' });
 });
 
-test('Hypa V2 completes on Node without embedding work when no retrieval chunks exist', async () => {
+test("Hypa sessions are isolated by authenticated scope", async () => {
+  const executor = createHypaMemoryExecutor();
+  const started = await executor.start(v3Request(), { scope: "owner" });
+  await assert.rejects(
+    executor.resume(started.sessionId, started.action.id, [1, 1], {
+      scope: "other",
+    }),
+    (error) => error?.code === "hypa_session_missing",
+  );
+  executor.cancel(started.sessionId, { scope: "owner" });
+});
+
+test("Hypa V2 completes on Node without embedding work when no retrieval chunks exist", async () => {
   const executor = createHypaMemoryExecutor();
   const request = {
-    mode: 'v2',
+    mode: "v2",
     chats: [
-      { role: 'user', content: 'hello', memo: 'm1' },
-      { role: 'assistant', content: 'world', memo: 'm2' },
+      { role: "user", content: "hello", memo: "m1" },
+      { role: "assistant", content: "world", memo: "m2" },
     ],
     currentTokens: 10,
     maxContextTokens: 1000,
-    room: { id: 'room-2' },
-    character: { id: 'char-2', name: 'Test', type: 'character' },
+    room: { id: "room-2" },
+    character: { id: "char-2", name: "Test", type: "character" },
     config: {
       maxResponse: 0,
       hypaAllocatedTokens: 20,
       hypaChunkSize: 100,
-      hypaModel: 'openai3small',
-      supaModelType: 'subModel',
-      supaMemoryPrompt: '',
-      supaMemoryKey: '',
+      hypaModel: "openai3small",
+      supaModelType: "subModel",
+      supaMemoryPrompt: "",
+      supaMemoryKey: "",
       customEmbedding: {},
-      voyageApiKey: '',
+      voyageApiKey: "",
     },
   };
 
   const result = await drive(
     executor,
-    await executor.start(request, { scope: 'test-scope' }),
+    await executor.start(request, { scope: "test-scope" }),
   );
   assert.equal(result.error, undefined);
   assert.equal(result.memory.mainChunks.length, 0);
-  assert.equal(result.chats[0].memo, 'supaMemory');
+  assert.equal(result.chats[0].memo, "supaMemory");
   assert.match(result.chats[0].content, /Past Events Summary/);
 });
 
-test('Hypa V3 embeddings and similarity ranking execute on the Node backend', async () => {
+test("Hypa V3 embeddings and similarity ranking execute on the Node backend", async () => {
   const originalFetch = global.fetch;
   let embeddingCalls = 0;
   global.fetch = async (_url, options) => {
@@ -145,24 +150,24 @@ test('Hypa V3 embeddings and similarity ranking execute on the Node backend', as
     request.currentTokens = 10;
     request.maxContextTokens = 100;
     request.chats = [
-      { role: 'user', content: 'old event', memo: 'm1' },
-      { role: 'user', content: 'remember this', memo: 'm2' },
+      { role: "user", content: "old event", memo: "m1" },
+      { role: "user", content: "remember this", memo: "m2" },
     ];
     request.room.hypaV3Data = {
       summaries: [
         {
-          text: 'An old event happened.',
-          chatMemos: ['m1'],
+          text: "An old event happened.",
+          chatMemos: ["m1"],
           isImportant: false,
           tags: [],
         },
       ],
     };
-    request.config.hypaModel = 'custom';
+    request.config.hypaModel = "custom";
     request.config.customEmbedding = {
-      url: 'http://embedding.test',
-      key: 'test-key',
-      model: 'test-model',
+      url: "http://embedding.test",
+      key: "test-key",
+      model: "test-model",
     };
     request.config.v3Settings.memoryTokensRatio = 0.5;
     request.config.v3Settings.recentMemoryRatio = 0;
@@ -171,45 +176,63 @@ test('Hypa V3 embeddings and similarity ranking execute on the Node backend', as
 
     const result = await drive(
       executor,
-      await executor.start(request, { scope: 'embedding-scope' }),
-      'embedding-scope',
+      await executor.start(request, { scope: "embedding-scope" }),
+      "embedding-scope",
     );
 
-    assert.ok(embeddingCalls >= 2, 'document and query embeddings should be fetched by Node');
+    assert.ok(
+      embeddingCalls >= 2,
+      "document and query embeddings should be fetched by Node",
+    );
     assert.match(result.chats[0].content, /An old event happened\./);
     assert.deepEqual(result.memory.metrics.lastSimilarSummaries, [0]);
 
     const callsAfterWarmup = embeddingCalls;
     await drive(
       executor,
-      await executor.start(structuredClone(request), { scope: 'embedding-scope' }),
-      'embedding-scope',
+      await executor.start(structuredClone(request), {
+        scope: "embedding-scope",
+      }),
+      "embedding-scope",
     );
-    assert.equal(embeddingCalls, callsAfterWarmup, 'warm document and query embeddings should both be reused');
-    assert.ok(executor.getQueryCacheStats('embedding-scope').hits >= 1);
+    assert.equal(
+      embeddingCalls,
+      callsAfterWarmup,
+      "warm document and query embeddings should both be reused",
+    );
+    assert.ok(executor.getQueryCacheStats("embedding-scope").hits >= 1);
 
-    const cleared = executor.clearQueryCache('embedding-scope');
+    const cleared = executor.clearQueryCache("embedding-scope");
     assert.ok(cleared.entries >= 1);
     await drive(
       executor,
-      await executor.start(structuredClone(request), { scope: 'embedding-scope' }),
-      'embedding-scope',
+      await executor.start(structuredClone(request), {
+        scope: "embedding-scope",
+      }),
+      "embedding-scope",
     );
-    assert.equal(embeddingCalls, callsAfterWarmup + 1, 'clearing query cache should refetch only the query embedding');
+    assert.equal(
+      embeddingCalls,
+      callsAfterWarmup + 1,
+      "clearing query cache should refetch only the query embedding",
+    );
   } finally {
     global.fetch = originalFetch;
   }
 });
 
-
-test('concurrent Hypa query embeddings coalesce into one backend request', async () => {
+test("concurrent Hypa query embeddings coalesce into one backend request", async () => {
   const originalFetch = global.fetch;
   let hold = false;
   let heldCalls = 0;
   let releaseHeld;
   let heldStarted;
-  const heldStartedPromise = new Promise((resolve) => { heldStarted = resolve; });
-  const releasePromise = new Promise((resolve) => { releaseHeld = resolve; });
+  const heldStartedPromise = new Promise((resolve) => {
+    heldStarted = resolve;
+  });
+  const releasePromise = new Promise((resolve) => {
+    releaseHeld = resolve;
+  });
   global.fetch = async (_url, options) => {
     const body = JSON.parse(options.body);
     const inputs = Array.isArray(body.input) ? body.input : [body.input];
@@ -222,7 +245,9 @@ test('concurrent Hypa query embeddings coalesce into one backend request', async
       ok: true,
       status: 200,
       async text() {
-        return JSON.stringify({ data: inputs.map(() => ({ embedding: [1, 0, 0] })) });
+        return JSON.stringify({
+          data: inputs.map(() => ({ embedding: [1, 0, 0] })),
+        });
       },
     };
   };
@@ -233,32 +258,65 @@ test('concurrent Hypa query embeddings coalesce into one backend request', async
     request.currentTokens = 10;
     request.maxContextTokens = 100;
     request.chats = [
-      { role: 'user', content: 'old event', memo: 'm1' },
-      { role: 'user', content: 'same query', memo: 'm2' },
+      { role: "user", content: "old event", memo: "m1" },
+      { role: "user", content: "same query", memo: "m2" },
     ];
     request.room.hypaV3Data = {
-      summaries: [{ text: 'An old event happened.', chatMemos: ['m1'], isImportant: false, tags: [] }],
+      summaries: [
+        {
+          text: "An old event happened.",
+          chatMemos: ["m1"],
+          isImportant: false,
+          tags: [],
+        },
+      ],
     };
-    request.config.hypaModel = 'custom';
-    request.config.customEmbedding = { url: 'http://embedding.test', key: 'test-key', model: 'test-model' };
+    request.config.hypaModel = "custom";
+    request.config.customEmbedding = {
+      url: "http://embedding.test",
+      key: "test-key",
+      model: "test-model",
+    };
     request.config.v3Settings.memoryTokensRatio = 0.5;
     request.config.v3Settings.recentMemoryRatio = 0;
     request.config.v3Settings.similarMemoryRatio = 1;
     request.config.v3Settings.queryChatCount = 1;
 
-    await drive(executor, await executor.start(structuredClone(request), { scope: 'coalesce-scope' }), 'coalesce-scope');
-    executor.clearQueryCache('coalesce-scope');
+    await drive(
+      executor,
+      await executor.start(structuredClone(request), {
+        scope: "coalesce-scope",
+      }),
+      "coalesce-scope",
+    );
+    executor.clearQueryCache("coalesce-scope");
     hold = true;
 
-    const first = drive(executor, await executor.start(structuredClone(request), { scope: 'coalesce-scope' }), 'coalesce-scope');
+    const first = drive(
+      executor,
+      await executor.start(structuredClone(request), {
+        scope: "coalesce-scope",
+      }),
+      "coalesce-scope",
+    );
     await heldStartedPromise;
-    const second = drive(executor, await executor.start(structuredClone(request), { scope: 'coalesce-scope' }), 'coalesce-scope');
+    const second = drive(
+      executor,
+      await executor.start(structuredClone(request), {
+        scope: "coalesce-scope",
+      }),
+      "coalesce-scope",
+    );
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(heldCalls, 1, 'the second session should join the first query embedding request');
+    assert.equal(
+      heldCalls,
+      1,
+      "the second session should join the first query embedding request",
+    );
     releaseHeld();
     await Promise.all([first, second]);
 
-    const stats = executor.getQueryCacheStats('coalesce-scope');
+    const stats = executor.getQueryCacheStats("coalesce-scope");
     assert.equal(stats.misses, 1);
     assert.ok(stats.coalesced >= 1);
   } finally {
@@ -267,7 +325,7 @@ test('concurrent Hypa query embeddings coalesce into one backend request', async
   }
 });
 
-test('clearing query cache prevents new sessions from joining stale in-flight work', async () => {
+test("clearing query cache prevents new sessions from joining stale in-flight work", async () => {
   const originalFetch = global.fetch;
   let hold = false;
   let heldCalls = 0;
@@ -278,7 +336,9 @@ test('clearing query cache prevents new sessions from joining stale in-flight wo
     if (hold) {
       heldCalls += 1;
       let release;
-      const releasePromise = new Promise((resolve) => { release = resolve; });
+      const releasePromise = new Promise((resolve) => {
+        release = resolve;
+      });
       releases.push(release);
       await releasePromise;
     }
@@ -286,7 +346,9 @@ test('clearing query cache prevents new sessions from joining stale in-flight wo
       ok: true,
       status: 200,
       async text() {
-        return JSON.stringify({ data: inputs.map(() => ({ embedding: [1, 0, 0] })) });
+        return JSON.stringify({
+          data: inputs.map(() => ({ embedding: [1, 0, 0] })),
+        });
       },
     };
   };
@@ -297,39 +359,72 @@ test('clearing query cache prevents new sessions from joining stale in-flight wo
     request.currentTokens = 10;
     request.maxContextTokens = 100;
     request.chats = [
-      { role: 'user', content: 'old event', memo: 'm1' },
-      { role: 'user', content: 'stale query', memo: 'm2' },
+      { role: "user", content: "old event", memo: "m1" },
+      { role: "user", content: "stale query", memo: "m2" },
     ];
     request.room.hypaV3Data = {
-      summaries: [{ text: 'An old event happened.', chatMemos: ['m1'], isImportant: false, tags: [] }],
+      summaries: [
+        {
+          text: "An old event happened.",
+          chatMemos: ["m1"],
+          isImportant: false,
+          tags: [],
+        },
+      ],
     };
-    request.config.hypaModel = 'custom';
-    request.config.customEmbedding = { url: 'http://embedding.test', key: 'test-key', model: 'test-model' };
+    request.config.hypaModel = "custom";
+    request.config.customEmbedding = {
+      url: "http://embedding.test",
+      key: "test-key",
+      model: "test-model",
+    };
     request.config.v3Settings.memoryTokensRatio = 0.5;
     request.config.v3Settings.recentMemoryRatio = 0;
     request.config.v3Settings.similarMemoryRatio = 1;
     request.config.v3Settings.queryChatCount = 1;
 
-    await drive(executor, await executor.start(structuredClone(request), { scope: 'clear-race-scope' }), 'clear-race-scope');
-    executor.clearQueryCache('clear-race-scope');
+    await drive(
+      executor,
+      await executor.start(structuredClone(request), {
+        scope: "clear-race-scope",
+      }),
+      "clear-race-scope",
+    );
+    executor.clearQueryCache("clear-race-scope");
     hold = true;
 
-    const first = drive(executor, await executor.start(structuredClone(request), { scope: 'clear-race-scope' }), 'clear-race-scope');
+    const first = drive(
+      executor,
+      await executor.start(structuredClone(request), {
+        scope: "clear-race-scope",
+      }),
+      "clear-race-scope",
+    );
     while (heldCalls < 1) await new Promise((resolve) => setImmediate(resolve));
-    executor.clearQueryCache('clear-race-scope');
-    const second = drive(executor, await executor.start(structuredClone(request), { scope: 'clear-race-scope' }), 'clear-race-scope');
+    executor.clearQueryCache("clear-race-scope");
+    const second = drive(
+      executor,
+      await executor.start(structuredClone(request), {
+        scope: "clear-race-scope",
+      }),
+      "clear-race-scope",
+    );
     while (heldCalls < 2) await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(heldCalls, 2, 'a post-clear session should start a fresh query embedding request');
+    assert.equal(
+      heldCalls,
+      2,
+      "a post-clear session should start a fresh query embedding request",
+    );
     for (const release of releases) release();
     await Promise.all([first, second]);
-    assert.equal(executor.getQueryCacheStats('clear-race-scope').entries, 1);
+    assert.equal(executor.getQueryCacheStats("clear-race-scope").entries, 1);
   } finally {
     for (const release of releases) release();
     global.fetch = originalFetch;
   }
 });
 
-test('legacy HypaMemory retrieval also uses the Node vector backend', async () => {
+test("legacy HypaMemory retrieval also uses the Node vector backend", async () => {
   const originalFetch = global.fetch;
   let embeddingCalls = 0;
   global.fetch = async (_url, options) => {
@@ -349,47 +444,47 @@ test('legacy HypaMemory retrieval also uses the Node vector backend', async () =
   try {
     const executor = createHypaMemoryExecutor();
     const chats = Array.from({ length: 15 }, (_, index) => ({
-      role: index % 2 === 0 ? 'user' : 'assistant',
+      role: index % 2 === 0 ? "user" : "assistant",
       content: `message ${index + 1}`,
       memo: `m${index + 1}`,
     }));
     const request = {
-      mode: 'legacy',
+      mode: "legacy",
       chats,
       currentTokens: 91,
       maxContextTokens: 100,
       room: {
-        id: 'legacy-room',
+        id: "legacy-room",
         supaMemoryData: `hypa:\n${JSON.stringify([
-          { id: 'm15', supa: 'old summary', hypa: ['remembered event'] },
+          { id: "m15", supa: "old summary", hypa: ["remembered event"] },
         ])}`,
       },
-      character: { id: 'legacy-char', name: 'Alice', type: 'character' },
+      character: { id: "legacy-char", name: "Alice", type: "character" },
       config: {
-        hypaModel: 'custom',
-        supaModelType: 'subModel',
-        supaMemoryPrompt: '',
-        supaMemoryKey: '',
+        hypaModel: "custom",
+        supaModelType: "subModel",
+        supaMemoryPrompt: "",
+        supaMemoryKey: "",
         maxSupaChunkSize: 1000,
         removePunctuationHypa: false,
-        userName: 'User',
+        userName: "User",
         customEmbedding: {
-          url: 'http://embedding.test',
-          key: 'test-key',
-          model: 'test-model',
+          url: "http://embedding.test",
+          key: "test-key",
+          model: "test-model",
         },
-        voyageApiKey: '',
+        voyageApiKey: "",
       },
     };
 
     const result = await drive(
       executor,
-      await executor.start(request, { scope: 'legacy-scope' }),
-      'legacy-scope',
+      await executor.start(request, { scope: "legacy-scope" }),
+      "legacy-scope",
     );
     assert.ok(embeddingCalls >= 2);
     assert.equal(result.error, undefined);
-    assert.equal(result.chats[0].memo, 'supaMemory');
+    assert.equal(result.chats[0].memo, "supaMemory");
     assert.match(result.chats[0].content, /past events: remembered event/);
   } finally {
     global.fetch = originalFetch;

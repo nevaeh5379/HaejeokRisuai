@@ -18,7 +18,8 @@ import { additionalInformations } from "./addinfo";
 
 beforeEach(() => {
   vi.clearAllMocks();
-});test("uses the explicit chat target for user names", async () => {
+});
+test("uses the explicit chat target for user names", async () => {
   const target = { characterId: "char-target", chatId: "chat-target" };
   const result = await additionalInformations(
     { name: "Bot", additionalText: "reference" } as never,

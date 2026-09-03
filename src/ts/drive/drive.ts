@@ -23,7 +23,10 @@ import { language } from "../../lang";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { sleep } from "../util";
 import { hubURL } from "../characterCards";
-import { decodeRisuSave, encodeRisuSaveLegacyAsync } from "../storage/backup/risuSave";
+import {
+  decodeRisuSave,
+  encodeRisuSaveLegacyAsync,
+} from "../storage/backup/risuSave";
 import {
   collectColdStorageBackupPayloads,
   confirmIncompleteColdStorageOperation,

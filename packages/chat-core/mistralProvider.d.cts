@@ -1,7 +1,4 @@
-import type {
-  ChatFailureResponse,
-  ChatSuccessResponse,
-} from "./types.cjs";
+import type { ChatFailureResponse, ChatSuccessResponse } from "./types.cjs";
 
 export const DEFAULT_MISTRAL_API_URL: string;
 

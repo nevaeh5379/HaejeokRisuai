@@ -87,11 +87,12 @@ export function alertError(msg: string | Error) {
     msg.includes("Failed to fetch") ||
     msg.includes("NetworkError when attempting to fetch resource.")
   ) {
-    submsg = !isTauri && !isNodeServer
-      ? language.errors.networkFetchWeb
-      : db.usePlainFetch
-        ? language.errors.networkFetchPlain
-        : language.errors.networkFetch;
+    submsg =
+      !isTauri && !isNodeServer
+        ? language.errors.networkFetchWeb
+        : db.usePlainFetch
+          ? language.errors.networkFetchPlain
+          : language.errors.networkFetch;
   }
 
   alertStoreImported.set({

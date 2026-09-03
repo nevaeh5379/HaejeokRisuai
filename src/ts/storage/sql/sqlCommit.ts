@@ -1,4 +1,12 @@
-import type { Chat, Database, PortableDatabase, Message, character, groupChat, botPreset } from "../database/schema";
+import type {
+  Chat,
+  Database,
+  PortableDatabase,
+  Message,
+  character,
+  groupChat,
+  botPreset,
+} from "../database/schema";
 import { v4 as uuidv4 } from "uuid";
 import { isLegacyPersonaMirrorKey } from "./sqlDeferredSettings";
 
@@ -71,9 +79,11 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
         commit.modules.order !== undefined),
     ) ||
     commit.characters.length > 0 ||
-    (commit.characterTouches !== undefined && commit.characterTouches.length > 0) ||
+    (commit.characterTouches !== undefined &&
+      commit.characterTouches.length > 0) ||
     commit.characterIds !== undefined ||
-    (commit.characterDeletes !== undefined && commit.characterDeletes.length > 0) ||
+    (commit.characterDeletes !== undefined &&
+      commit.characterDeletes.length > 0) ||
     commit.chats.length > 0 ||
     commit.chatManifests.length > 0 ||
     (commit.chatDeletes !== undefined && commit.chatDeletes.length > 0) ||
@@ -93,13 +103,12 @@ export function mergeLegacyModulesIntoCommit(
   const changed = new Set(commit.modules.upserts.map((entry) => entry.id));
   const inferredOrder = [
     ...legacyModules
-      .filter(
-        (module): module is { id: string } & Record<string, unknown> =>
-          Boolean(
-            module &&
-              typeof module === "object" &&
-              typeof (module as { id?: unknown }).id === "string",
-          ),
+      .filter((module): module is { id: string } & Record<string, unknown> =>
+        Boolean(
+          module &&
+          typeof module === "object" &&
+          typeof (module as { id?: unknown }).id === "string",
+        ),
       )
       .map((module) => module.id)
       .filter((id) => !deleted.has(id)),
@@ -107,15 +116,15 @@ export function mergeLegacyModulesIntoCommit(
       .map((entry) => entry.id)
       .filter((id) => !deleted.has(id)),
   ];
-  const order =
-    commit.modules.order ?? [...new Set(inferredOrder)];
+  const order = commit.modules.order ?? [...new Set(inferredOrder)];
   const positions = new Map(order.map((id, position) => [id, position]));
   const migrated = legacyModules.flatMap((module) => {
     if (
       !module ||
       typeof module !== "object" ||
       typeof (module as { id?: unknown }).id !== "string"
-    ) return [];
+    )
+      return [];
     const data = module as { id: string } & Record<string, unknown>;
     if (deleted.has(data.id) || changed.has(data.id)) return [];
     return [{ id: data.id, position: positions.get(data.id) ?? 0, data }];
@@ -360,10 +369,16 @@ export function* iterateSqlReplaceEntityCommits(
   messageBatchSize = 128,
 ): Generator<SqlCommit> {
   if (!Number.isSafeInteger(messageBatchSize) || messageBatchSize < 1) {
-    throw new Error("SQL restore message batch size must be a positive integer");
+    throw new Error(
+      "SQL restore message batch size must be a positive integer",
+    );
   }
   const characterIds: string[] = [];
-  for (let characterPosition = 0; characterPosition < (database.characters ?? []).length; characterPosition++) {
+  for (
+    let characterPosition = 0;
+    characterPosition < (database.characters ?? []).length;
+    characterPosition++
+  ) {
     const currentCharacter = database.characters[characterPosition];
     if (currentCharacter.detailsLoaded === false) {
       throw new Error(
@@ -383,7 +398,10 @@ export function* iterateSqlReplaceEntityCommits(
       chat.id ||= uuidv4();
     }
 
-    const characterCommit = createEmptySqlCommit(baseRevision, "replace-entities");
+    const characterCommit = createEmptySqlCommit(
+      baseRevision,
+      "replace-entities",
+    );
     characterCommit.characters.push({
       id: currentCharacter.chaId,
       position: characterPosition,
@@ -413,10 +431,21 @@ export function* iterateSqlReplaceEntityCommits(
       });
       yield chatCommit;
 
-      for (let offset = 0; offset < messages.length; offset += messageBatchSize) {
-        const messageCommit = createEmptySqlCommit(baseRevision, "replace-entities");
+      for (
+        let offset = 0;
+        offset < messages.length;
+        offset += messageBatchSize
+      ) {
+        const messageCommit = createEmptySqlCommit(
+          baseRevision,
+          "replace-entities",
+        );
         const end = Math.min(messages.length, offset + messageBatchSize);
-        for (let messagePosition = offset; messagePosition < end; messagePosition++) {
+        for (
+          let messagePosition = offset;
+          messagePosition < end;
+          messagePosition++
+        ) {
           const message = messages[messagePosition];
           messageCommit.messages.push({
             id: messageIds[messagePosition],

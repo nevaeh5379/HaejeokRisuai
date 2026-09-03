@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 
 const requestChatData = vi.hoisted(() =>
-  vi.fn(async () => ({ type: "success", result: "ok" } as const)),
+  vi.fn(async () => ({ type: "success", result: "ok" }) as const),
 );
 
 vi.mock("../request/chatRequestOrchestrator", () => ({ requestChatData }));

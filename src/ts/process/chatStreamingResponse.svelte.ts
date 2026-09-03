@@ -1,4 +1,11 @@
-import type { character, groupChat, Chat, MessageGenerationInfo, MessagePresetInfo, StreamingDisplayOptimizationMode } from "../storage/database/schema";
+import type {
+  character,
+  groupChat,
+  Chat,
+  MessageGenerationInfo,
+  MessagePresetInfo,
+  StreamingDisplayOptimizationMode,
+} from "../storage/database/schema";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -88,8 +95,9 @@ async function applyStreamingInlay(
   const asyncIndex = findMessageIndexByChatId(currentChat, outputMessageId);
   if (asyncIndex !== -1) {
     currentChat.message[asyncIndex].data = resolved;
-    characterStore.characters[options.selectedChar].chats[options.selectedChat] =
-      currentChat;
+    characterStore.characters[options.selectedChar].chats[
+      options.selectedChat
+    ] = currentChat;
   }
   return currentChat;
 }

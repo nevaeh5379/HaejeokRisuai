@@ -8,10 +8,7 @@ interface NativeChatPlugin {
     body?: string;
     notify: boolean;
   }): Promise<void>;
-  showNotification(options: {
-    title?: string;
-    body?: string;
-  }): Promise<void>;
+  showNotification(options: { title?: string; body?: string }): Promise<void>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
 }
 
@@ -74,7 +71,10 @@ export async function requestNativeChatNotificationPermission(): Promise<boolean
   try {
     return (await nativeChat.requestNotificationPermission()).granted;
   } catch (error) {
-    console.warn("[NativeChat] Failed to request notification permission:", error);
+    console.warn(
+      "[NativeChat] Failed to request notification permission:",
+      error,
+    );
     return false;
   }
 }

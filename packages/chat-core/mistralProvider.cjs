@@ -1,15 +1,18 @@
-'use strict';
+"use strict";
 
-const DEFAULT_MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
+const DEFAULT_MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
 
 function formatMistralMessages(messages) {
   const result = [];
   for (const chat of messages) {
     if (result.length === 0) {
-      if (chat.role === 'user' || chat.role === 'system') {
+      if (chat.role === "user" || chat.role === "system") {
         result.push({ role: chat.role, content: chat.content });
       } else {
-        result.push({ role: 'system', content: `${chat.role}:${chat.content}` });
+        result.push({
+          role: "system",
+          content: `${chat.role}:${chat.content}`,
+        });
       }
       continue;
     }
@@ -20,16 +23,16 @@ function formatMistralMessages(messages) {
       continue;
     }
 
-    if (chat.role === 'system') {
-      if (previous?.role === 'user') {
+    if (chat.role === "system") {
+      if (previous?.role === "user") {
         previous.content += `\nSystem:${chat.content}`;
       } else {
-        result.push({ role: 'user', content: `System:${chat.content}` });
+        result.push({ role: "user", content: `System:${chat.content}` });
       }
       continue;
     }
-    if (chat.role === 'function') {
-      result.push({ role: 'user', content: chat.content });
+    if (chat.role === "function") {
+      result.push({ role: "user", content: chat.content });
       continue;
     }
 
@@ -38,21 +41,24 @@ function formatMistralMessages(messages) {
   return result;
 }
 
-function decodeMistralResponse(ok, data, httpErrorPrefix = '') {
+function decodeMistralResponse(ok, data, httpErrorPrefix = "") {
   if (ok) {
     try {
       return {
-        type: 'success',
-        result: data.choices[0].message.content ?? '',
+        type: "success",
+        result: data.choices[0].message.content ?? "",
       };
     } catch {
-      return { type: 'fail', result: `${httpErrorPrefix}${JSON.stringify(data)}` };
+      return {
+        type: "fail",
+        result: `${httpErrorPrefix}${JSON.stringify(data)}`,
+      };
     }
   }
 
   const errorMessage = data?.error?.message;
   return {
-    type: 'fail',
+    type: "fail",
     result: `${httpErrorPrefix}${errorMessage ?? JSON.stringify(data)}`,
   };
 }

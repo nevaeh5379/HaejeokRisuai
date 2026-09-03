@@ -22,15 +22,10 @@ import { ChatHandler } from "./chats";
 
 test("reads chat history from the tool generation target", async () => {
   const handler = new ChatHandler();
-  const result = await handler.getChatHistory(
-    "char-a",
-    20,
-    0,
-    {
-      currentChar: targetChar as never,
-      chatTarget: { characterId: "char-a", chatId: "chat-target" },
-    },
-  );
+  const result = await handler.getChatHistory("char-a", 20, 0, {
+    currentChar: targetChar as never,
+    chatTarget: { characterId: "char-a", chatId: "chat-target" },
+  });
 
   expect(result[0]?.type).toBe("text");
   if (result[0]?.type !== "text") throw new Error("Expected text tool result");

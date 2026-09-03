@@ -8,10 +8,7 @@ import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
-import type {
-  FlushableStore,
-  InitializableStore,
-} from "./storeContracts";
+import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 // Keep persisted history ordering, overlay newer in-memory fields, and retain
 // stable-ID messages that have not reached storage yet.
@@ -197,10 +194,9 @@ function toCharacterSummary(
 
 class CharacterStore
   implements
-    InitializableStore<[
-      characters: (character | groupChat)[],
-      storage: ISqlStorage,
-    ]>,
+    InitializableStore<
+      [characters: (character | groupChat)[], storage: ISqlStorage]
+    >,
     FlushableStore
 {
   private storage: ISqlStorage | null = null;
@@ -351,8 +347,13 @@ class CharacterStore
           CHAT_RUNTIME_KEYS,
         )
       : "";
-    let lastManifestKey = (char.chats ?? []).map((c) => c?.id).filter(Boolean).join(",");
-    const knownChatIds = new Set<string>((char.chats ?? []).map((c) => c?.id).filter(Boolean) as string[]);
+    let lastManifestKey = (char.chats ?? [])
+      .map((c) => c?.id)
+      .filter(Boolean)
+      .join(",");
+    const knownChatIds = new Set<string>(
+      (char.chats ?? []).map((c) => c?.id).filter(Boolean) as string[],
+    );
     let previousChatIds = new Set(knownChatIds);
 
     this.activeDispose = $effect.root(() => {
@@ -417,7 +418,10 @@ class CharacterStore
             added = true;
           }
         }
-        const manifestKey = chats.map((c) => c?.id).filter(Boolean).join(",");
+        const manifestKey = chats
+          .map((c) => c?.id)
+          .filter(Boolean)
+          .join(",");
         const currentChatIds = new Set(
           chats.map((c) => c?.id).filter(Boolean) as string[],
         );
@@ -663,8 +667,7 @@ class CharacterStore
         );
         if (stillAbsent) this.dirtyChatDeletes.add(id);
       }
-      for (const id of committedManifestIds)
-        this.dirtyChatManifests.add(id);
+      for (const id of committedManifestIds) this.dirtyChatManifests.add(id);
       this.dirtyCharacterIds ||= committedCharacterOrder;
       console.error(
         "[CharacterStore] Failed to commit character changes to SQL storage:",
@@ -800,11 +803,11 @@ class CharacterStore
     return (char.chats ?? []).some((chat) =>
       Boolean(
         chat.id &&
-          (protectedChatIds.has(chat.id) ||
-            chat.preventMessageCompaction ||
-            this.dirtyChats.has(chat.id) ||
-            this.chatDetailPromises.has(chat.id) ||
-            this.olderChatPromises.has(chat.id)),
+        (protectedChatIds.has(chat.id) ||
+          chat.preventMessageCompaction ||
+          this.dirtyChats.has(chat.id) ||
+          this.chatDetailPromises.has(chat.id) ||
+          this.olderChatPromises.has(chat.id)),
       ),
     );
   }
@@ -863,9 +866,16 @@ class CharacterStore
         const nextCursor = Math.min(cursor + batchSize, candidates.length);
         for (; cursor < nextCursor; cursor += 1) {
           const chaId = candidates[cursor];
-          const index = this.characters.findIndex((char) => char.chaId === chaId);
+          const index = this.characters.findIndex(
+            (char) => char.chaId === chaId,
+          );
           const char = this.characters[index];
-          if (!char || index === this.selectedId || char.detailsLoaded === false) continue;
+          if (
+            !char ||
+            index === this.selectedId ||
+            char.detailsLoaded === false
+          )
+            continue;
           if (this.hasProtectedCharacterDetails(char, protectedNow)) continue;
 
           for (const chat of char.chats ?? []) {
@@ -951,7 +961,9 @@ class CharacterStore
     };
     const refreshed = await storage.loadChat(
       chatId,
-      fullyLoaded ? undefined : { messageLimit: getInitialChatLoadPages(settingsStore.state) },
+      fullyLoaded
+        ? undefined
+        : { messageLimit: getInitialChatLoadPages(settingsStore.state) },
     );
     if (!refreshed) return false;
 

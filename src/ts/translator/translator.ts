@@ -3,7 +3,11 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { get } from "svelte/store";
 import { parseChatML } from "../parser/chatML";
-import type { character, customscript, groupChat } from "../storage/database/schema";
+import type {
+  character,
+  customscript,
+  groupChat,
+} from "../storage/database/schema";
 
 import {
   defaultTranslatorPrompt,
@@ -312,7 +316,8 @@ export async function translateHTML(
   if (charArg !== "") {
     if (typeof charArg === "string") {
       const charId = get(selectedCharID);
-      alwaysExistChar = resolvedTarget?.character ?? characterStore.characters[charId];
+      alwaysExistChar =
+        resolvedTarget?.character ?? characterStore.characters[charId];
     } else {
       alwaysExistChar = charArg;
     }
@@ -348,7 +353,9 @@ export async function translateHTML(
     return applyEdittransRegex(r, charArg, alwaysExistChar, chatID, chatTarget);
   }
   if (db.translatorType == "bergamot" && db.htmlTranslation) {
-    const from = presetStore.state.aiModel.startsWith("novellist") ? "ja" : "en";
+    const from = presetStore.state.aiModel.startsWith("novellist")
+      ? "ja"
+      : "en";
     const to = db.translator || "en";
 
     if (!bergamotTranslate) {
@@ -758,7 +765,10 @@ export function applyEdittransRegex(
     (alwaysExistChar.type === "simple" ? undefined : alwaysExistChar);
   let scripts: customscript[] = [];
   scripts = (presetStore.state.presetRegex ?? [])
-    .concat(getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat) ?? [])
+    .concat(
+      getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat) ??
+        [],
+    )
     .concat(alwaysExistChar?.customscript ?? []);
 
   const parsedScripts: pEdittransScript[] = [];

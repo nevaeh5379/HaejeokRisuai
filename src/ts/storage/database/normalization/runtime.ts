@@ -94,11 +94,14 @@ function normalizeChatLoadSettings(data: Database): void {
 }
 
 function migrateStreamingDisplayMode(data: Database): void {
-  const legacy = (data as {
-    largeChatPerformanceMode?: StreamingDisplayOptimizationMode;
-  }).largeChatPerformanceMode;
+  const legacy = (
+    data as {
+      largeChatPerformanceMode?: StreamingDisplayOptimizationMode;
+    }
+  ).largeChatPerformanceMode;
   data.streamingDisplayOptimizationMode ??= legacy ?? "off";
-  delete (data as { largeChatPerformanceMode?: unknown }).largeChatPerformanceMode;
+  delete (data as { largeChatPerformanceMode?: unknown })
+    .largeChatPerformanceMode;
 }
 
 function applyPlatformRuntimePolicy(data: Database): void {

@@ -7,7 +7,11 @@ import {
   scriptCacheRevision,
   selectedCharID,
 } from "../stores.svelte";
-import type { character, customscript, groupChat } from "../storage/database/schema";
+import type {
+  character,
+  customscript,
+  groupChat,
+} from "../storage/database/schema";
 import { resolveChatTarget, type ChatExecutionTarget } from "../chatTarget";
 
 import { downloadFile } from "../globalApi.svelte";
@@ -176,7 +180,8 @@ export async function processScriptFull(
   const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
 
   if (mode === "editdisplay") {
-    const displayCharacter = resolvedTarget?.character ?? characterStore.currentCharacter;
+    const displayCharacter =
+      resolvedTarget?.character ?? characterStore.currentCharacter;
     const displayChat = resolvedTarget?.chat ?? characterStore.currentChat;
     if (displayCharacter && displayCharacter.type !== "group" && displayChat) {
       try {
@@ -206,7 +211,8 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
-  const moduleRoom = resolvedTarget?.character ?? (char.type === "simple" ? undefined : char);
+  const moduleRoom =
+    resolvedTarget?.character ?? (char.type === "simple" ? undefined : char);
   const scripts = (presetStore.state.presetRegex ?? [])
     .concat(char.customscript ?? [])
     .concat(getModuleRegexScripts(moduleRoom, undefined, resolvedTarget?.chat))
@@ -311,10 +317,14 @@ export async function processScriptFull(
               pscript.actions.includes("inject")) &&
             chatID !== -1
           ) {
-            const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
-            const selectedIndex = resolvedTarget?.characterIndex ?? get(selectedCharID);
+            const resolvedTarget = chatTarget
+              ? resolveChatTarget(chatTarget)
+              : null;
+            const selectedIndex =
+              resolvedTarget?.characterIndex ?? get(selectedCharID);
             const selchar = characterStore.characters[selectedIndex];
-            const targetChatIndex = resolvedTarget?.chatIndex ?? selchar.chatPage;
+            const targetChatIndex =
+              resolvedTarget?.chatIndex ?? selchar.chatPage;
             selchar.chats[targetChatIndex].message[chatID].data = data;
             data = data.replace(reg, "");
           } else if (
@@ -373,10 +383,14 @@ export async function processScriptFull(
             chatID !== -1
           ) {
             const v = outScript.split(" ", 2)[1];
-            const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
-            const selectedIndex = resolvedTarget?.characterIndex ?? get(selectedCharID);
+            const resolvedTarget = chatTarget
+              ? resolveChatTarget(chatTarget)
+              : null;
+            const selectedIndex =
+              resolvedTarget?.characterIndex ?? get(selectedCharID);
             const selchar = characterStore.characters[selectedIndex];
-            const chat = selchar.chats[resolvedTarget?.chatIndex ?? selchar.chatPage];
+            const chat =
+              selchar.chats[resolvedTarget?.chatIndex ?? selchar.chatPage];
             let lastChat =
               chat.fmIndex === -1
                 ? selchar.firstMessage
@@ -488,7 +502,11 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0]);
 
-    const moduleAssets = getModuleAssets(moduleRoom, undefined, resolvedTarget?.chat);
+    const moduleAssets = getModuleAssets(
+      moduleRoom,
+      undefined,
+      resolvedTarget?.chat,
+    );
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0]);
@@ -523,7 +541,9 @@ export async function processScriptFull(
             `{{${type}::${bestMatchCache.get(cacheKey)}}}`,
           );
         } else if (!assetNameSet.has(assetName)) {
-          const searched = await (await getAssetProcesser()).similaritySearch(assetName, 1);
+          const searched = await (
+            await getAssetProcesser()
+          ).similaritySearch(assetName, 1);
           const bestMatch = searched[0];
           if (bestMatch) {
             data = data.replaceAll(match[0], `{{${type}::${bestMatch}}}`);

@@ -1,10 +1,5 @@
 export type ProviderModelMode =
-  | "model"
-  | "submodel"
-  | "memory"
-  | "emotion"
-  | "otherAx"
-  | "translate";
+  "model" | "submodel" | "memory" | "emotion" | "otherAx" | "translate";
 
 export interface ProviderModelDescriptor {
   id: string;

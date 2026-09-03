@@ -91,9 +91,7 @@ export function prepareGoogleConversation(
   options?: GoogleConversationOptions,
 ): GoogleConversationPreparation;
 
-export function mergeGoogleConsecutiveChats(
-  chats: GeminiChat[],
-): GeminiChat[];
+export function mergeGoogleConsecutiveChats(chats: GeminiChat[]): GeminiChat[];
 
 export type GoogleSafetyThreshold = "BLOCK_NONE" | "OFF";
 export interface GoogleSafetySetting {

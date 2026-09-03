@@ -5,19 +5,14 @@ import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 import { buildModuleDelta } from "./moduleCommit";
 import { StoreCommitQueue } from "./storeCommitQueue";
-import type {
-  FlushableStore,
-  InitializableStore,
-} from "./storeContracts";
+import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 function fingerprintOf(value: unknown): string {
   return snapshotFingerprint($state.snapshot(value));
 }
 
 class ModuleStore
-  implements
-    InitializableStore<[storage: ISqlStorage]>,
-    FlushableStore
+  implements InitializableStore<[storage: ISqlStorage]>, FlushableStore
 {
   modules = $state<RisuModule[]>([]);
   enabledModules = $state<string[]>([]);
@@ -62,7 +57,7 @@ class ModuleStore
       ? enabled.filter((id): id is string => typeof id === "string")
       : [];
     this.moduleFolders = Array.isArray(folders)
-      ? folders as ModuleFolder[]
+      ? (folders as ModuleFolder[])
       : [];
     this.loaded = true;
     this.committedModules = $state.snapshot(this.modules);
@@ -205,7 +200,9 @@ class ModuleStore
   }
 
   async removeFolder(id: string): Promise<void> {
-    this.moduleFolders = this.moduleFolders.filter((folder) => folder.id !== id);
+    this.moduleFolders = this.moduleFolders.filter(
+      (folder) => folder.id !== id,
+    );
     for (const module of this.modules) {
       if (module.folderId === id) module.folderId = undefined;
     }
@@ -237,7 +234,8 @@ class ModuleStore
       !this.dirtyEnabled &&
       !this.dirtyFolders &&
       !this.hasPendingContentChange()
-    ) return;
+    )
+      return;
 
     const storage = this.storage;
     if (!storage) {

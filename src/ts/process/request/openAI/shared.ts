@@ -10,7 +10,10 @@ export interface LocalNetworkRequestOptions {
 
 export function getLocalNetworkRequestOptions(
   url: string,
-  db: Pick<PresetState, "localNetworkMode" | "localNetworkTimeoutSec"> = presetStore.state,
+  db: Pick<
+    PresetState,
+    "localNetworkMode" | "localNetworkTimeoutSec"
+  > = presetStore.state,
   useStreaming = false,
 ): LocalNetworkRequestOptions {
   if (!db.localNetworkMode || !isLocalNetworkUrl(url)) {

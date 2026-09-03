@@ -8,7 +8,10 @@ import { language } from "../../lang";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import { HypaProcesser } from "./memory/hypamemory";
 import { stableDiff } from "./stableDiff";
-import type { ChatModelResponse, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type {
+  ChatModelResponse,
+  OpenAIChat,
+} from "@risuai/chat-core/types.cjs";
 import { requireChatTargetFromIndexes } from "../chatTarget";
 
 type EmotionAsset = [string, string];
@@ -105,13 +108,17 @@ async function processEmbeddingEmotion(
   const emotionList = state.assets.map((asset) => asset[0]);
   const processor = new HypaProcesser();
   await processor.addText(emotionList.map((emotion) => `emotion:${emotion}`));
-  const searched = (await processor.similaritySearchScored(result)).map((entry) => {
-    entry[0] = entry[0].replace("emotion:", "");
-    return entry;
-  });
+  const searched = (await processor.similaritySearchScored(result)).map(
+    (entry) => {
+      entry[0] = entry[0].replace("emotion:", "");
+      return entry;
+    },
+  );
 
   for (let i = 0; i < state.history.length; i++) {
-    const index = searched.findIndex((entry) => entry[0] === state.history[i][0]);
+    const index = searched.findIndex(
+      (entry) => entry[0] === state.history[i][0],
+    );
     if (index !== -1) {
       searched[index][1] -= (5 - (state.history.length - (i + 1))) / 200;
     }
@@ -121,7 +128,10 @@ async function processEmbeddingEmotion(
   if (best) commitNamedEmotion(currentChar, state, best);
 }
 
-function buildModelEmotionPrompt(emotionList: string[], result: string): OpenAIChat[] {
+function buildModelEmotionPrompt(
+  emotionList: string[],
+  result: string,
+): OpenAIChat[] {
   const instruction =
     settingsStore.state.emotionPrompt2 ||
     "From the list below, choose a word that best represents a character's outfit description, action, or emotion in their dialogue. Prioritize selecting words related to outfit first, then action, and lastly emotion. Print out the chosen word.";
@@ -130,7 +140,10 @@ function buildModelEmotionPrompt(emotionList: string[], result: string): OpenAIC
       role: "system",
       content: `${instruction}\n\n list: ${shuffleArray([...emotionList]).join(", ")} \noutput only one word.`,
     },
-    { role: "user", content: `"Good morning, Master! Is there anything I can do for you today?"` },
+    {
+      role: "user",
+      content: `"Good morning, Master! Is there anything I can do for you today?"`,
+    },
     { role: "assistant", content: "happy" },
     { role: "user", content: result },
   ];
@@ -185,8 +198,12 @@ async function processModelEmotion(
   );
 }
 
-function buildImageGenerationTranscript(selectedChar: number, selectedChat: number) {
-  const messages = characterStore.characters[selectedChar].chats[selectedChat].message;
+function buildImageGenerationTranscript(
+  selectedChar: number,
+  selectedChat: number,
+) {
+  const messages =
+    characterStore.characters[selectedChar].chats[selectedChat].message;
   let transcript = "";
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "char") {
@@ -215,16 +232,22 @@ async function processEmotionEffects(
   options: PostGenerationEffectsOptions,
 ): Promise<{ returnEarly: boolean; emoChanged: boolean }> {
   let emotionState: EmotionState | undefined;
-  const getState = () => (emotionState ??= getEmotionState(options.currentChar));
+  const getState = () =>
+    (emotionState ??= getEmotionState(options.currentChar));
   let emoChanged = options.emoChanged;
 
   if (
     options.req.special?.emotion &&
-    commitNamedEmotion(options.currentChar, getState(), options.req.special.emotion)
+    commitNamedEmotion(
+      options.currentChar,
+      getState(),
+      options.req.special.emotion,
+    )
   ) {
     emoChanged = true;
   }
-  if (options.currentChar.inlayViewScreen) return { returnEarly: false, emoChanged };
+  if (options.currentChar.inlayViewScreen)
+    return { returnEarly: false, emoChanged };
   if (
     options.currentChar.viewScreen !== "emotion" ||
     emoChanged ||

@@ -10,7 +10,10 @@ import { LLMFlags } from "src/ts/model/modellist";
 
 import { callTool, encodeToolCall } from "../../mcp/mcp";
 import { extractJSON } from "../../templates/jsonSchema";
-import type { RequestDataArgumentExtended, StreamResponseChunk } from "../requestContracts";
+import type {
+  RequestDataArgumentExtended,
+  StreamResponseChunk,
+} from "../requestContracts";
 import {
   resolveRequestParserContext,
   resolveRequestToolContext,
@@ -63,9 +66,16 @@ export function getTranStream(
                     );
                   }
                 }
-                if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
+                if (
+                  arg.extractJson &&
+                  (presetStore.state.jsonSchemaEnabled || arg.schema)
+                ) {
                   for (const key in readed) {
-                    const extracted = extractJSON(readed[key], arg.extractJson, resolveRequestParserContext(arg));
+                    const extracted = extractJSON(
+                      readed[key],
+                      arg.extractJson,
+                      resolveRequestParserContext(arg),
+                    );
                     JSONreaded[key] = extracted;
                   }
                   console.log(JSONreaded);
@@ -92,12 +102,18 @@ export function getTranStream(
                     if (!readed[ind]) {
                       readed[ind] = "";
                     }
-                    readed[ind] = appendOpenAIStreamingFragment(readed[ind], chunk);
+                    readed[ind] = appendOpenAIStreamingFragment(
+                      readed[ind],
+                      chunk,
+                    );
                   } else {
                     if (!readed["0"]) {
                       readed["0"] = "";
                     }
-                    readed["0"] = appendOpenAIStreamingFragment(readed["0"], chunk);
+                    readed["0"] = appendOpenAIStreamingFragment(
+                      readed["0"],
+                      chunk,
+                    );
                   }
                 }
                 // Check for tool calls in the delta
@@ -139,9 +155,16 @@ export function getTranStream(
             reasoningContent = reasoningContent.replace(/\<think\>/gm, "");
           }
         }
-        if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
+        if (
+          arg.extractJson &&
+          (presetStore.state.jsonSchemaEnabled || arg.schema)
+        ) {
           for (const key in readed) {
-            const extracted = extractJSON(readed[key], arg.extractJson, resolveRequestParserContext(arg));
+            const extracted = extractJSON(
+              readed[key],
+              arg.extractJson,
+              resolveRequestParserContext(arg),
+            );
             JSONreaded[key] = extracted;
           }
           console.log(JSONreaded);
@@ -261,9 +284,14 @@ export function wrapToolStream(
                     });
                   } else {
                     const parsed = functionArgs;
-                    const x = (await callTool(tool.name, parsed, tool.mcpURL, resolveRequestToolContext(arg))).filter(
-                      (m) => m.type === "text",
-                    );
+                    const x = (
+                      await callTool(
+                        tool.name,
+                        parsed,
+                        tool.mcpURL,
+                        resolveRequestToolContext(arg),
+                      )
+                    ).filter((m) => m.type === "text");
                     if (x.length > 0) {
                       messages.push({
                         role: "tool",

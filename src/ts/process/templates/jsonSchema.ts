@@ -145,7 +145,10 @@ export function getOpenAIJSONSchema(
   return {
     name: "format",
     strict: presetStore.state.strictJsonSchema,
-    schema: convertInterfaceToSchema(schema ?? presetStore.state.jsonSchema, context),
+    schema: convertInterfaceToSchema(
+      schema ?? presetStore.state.jsonSchema,
+      context,
+    ),
   };
 }
 
@@ -169,7 +172,10 @@ export function getGeneralJSONSchema(
     return data;
   }
 
-  const d = convertInterfaceToSchema(schema ?? presetStore.state.jsonSchema, context);
+  const d = convertInterfaceToSchema(
+    schema ?? presetStore.state.jsonSchema,
+    context,
+  );
   return process(d);
 }
 

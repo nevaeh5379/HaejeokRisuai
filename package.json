@@ -112,6 +112,7 @@
     "pg": "^8.23.0",
     "png-chunk-text": "^1.0.0",
     "postcss-selector-parser": "^7.1.5",
+    "prettier": "^3.9.6",
     "pyodide": "^314.0.6",
     "rfdc": "^1.4.1",
     "sharp": "^0.35.4",

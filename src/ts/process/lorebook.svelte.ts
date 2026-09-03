@@ -11,7 +11,12 @@ import {
 } from "../chatTarget";
 import { countTokenTexts } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
-import { findCharacterbyId, getUserName, pickHashRand, selectSingleFile } from "../util";
+import {
+  findCharacterbyId,
+  getUserName,
+  pickHashRand,
+  selectSingleFile,
+} from "../util";
 import { alertError, alertNormal } from "../alert";
 import { language } from "../../lang";
 import { downloadFile, forageStorage } from "../globalApi.svelte";
@@ -20,7 +25,10 @@ import { CCardLib } from "@risuai/ccardlib";
 import { v4 } from "uuid";
 import { isNodeServer } from "../platform";
 import { NodeStorage } from "../storage/files/nodeStorage";
-import { prepareLoreEntriesForServer, type PreparedServerLoreEntry } from "./loreServerPrepare";
+import {
+  prepareLoreEntriesForServer,
+  type PreparedServerLoreEntry,
+} from "./loreServerPrepare";
 
 export function addLorebook(type: number) {
   const selectedID = get(selectedCharID);
@@ -172,8 +180,7 @@ export async function loadLoreBookV3Prompt(
         if (msg.role === "user") {
           return {
             source: `message ${i} by user`,
-            prompt:
-              `\x01{{${userName}}}:` + msg.data + "\x01",
+            prompt: `\x01{{${userName}}}:` + msg.data + "\x01",
             data: msg.data,
           };
         } else {
@@ -297,7 +304,10 @@ export async function loadLoreBookV3Prompt(
     try {
       for (const lore of fullLore) {
         if (!lore.alwaysActive && !lore.key) continue;
-        if (lore.content.split("\n").some((line) => line.trim().startsWith("@@@"))) return;
+        if (
+          lore.content.split("\n").some((line) => line.trim().startsWith("@@@"))
+        )
+          return;
         let scanDepth = loreDepth;
         let fullWordMatching = fullWordMatchingSetting;
         let dontSearchWhenRecursive = false;
@@ -348,15 +358,20 @@ export async function loadLoreBookV3Prompt(
 
     if (requests.size === 0) return;
     const requestEntries = [...requests.entries()];
-    const maxDepth = Math.max(...requestEntries.map(([, request]) => request.searchDepth), 0);
-    const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map((msg) => ({
-      role: msg.role,
-      data: msg.data,
-      displayName:
-        msg.name ??
-        (msg.saying ? findCharacterbyId(msg.saying)?.name : null) ??
-        char.name,
-    }));
+    const maxDepth = Math.max(
+      ...requestEntries.map(([, request]) => request.searchDepth),
+      0,
+    );
+    const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map(
+      (msg) => ({
+        role: msg.role,
+        data: msg.data,
+        displayName:
+          msg.name ??
+          (msg.saying ? findCharacterbyId(msg.saying)?.name : null) ??
+          char.name,
+      }),
+    );
 
     try {
       const results = await forageStorage.realStorage.loreMatchBatch({
@@ -392,11 +407,16 @@ export async function loadLoreBookV3Prompt(
     if (!prepared) return null;
 
     const maxDepth = Math.max(...prepared.map((entry) => entry.scanDepth), 0);
-    const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map((msg) => ({
-      role: msg.role,
-      data: msg.data,
-      displayName: msg.name ?? (msg.saying ? findCharacterbyId(msg.saying)?.name : null) ?? char.name,
-    }));
+    const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map(
+      (msg) => ({
+        role: msg.role,
+        data: msg.data,
+        displayName:
+          msg.name ??
+          (msg.saying ? findCharacterbyId(msg.saying)?.name : null) ??
+          char.name,
+      }),
+    );
 
     try {
       const result = await forageStorage.realStorage.loreResolve({
@@ -411,7 +431,10 @@ export async function loadLoreBookV3Prompt(
         logs: result.logs,
       };
     } catch (error) {
-      console.warn("Server recursive lore resolution failed; using browser engine", error);
+      console.warn(
+        "Server recursive lore resolution failed; using browser engine",
+        error,
+      );
       return null;
     }
   }
@@ -469,7 +492,10 @@ export async function loadLoreBookV3Prompt(
       const entry = serverRecursiveLore.entries.get(index);
       if (!entry) continue;
       activeTokenTexts.push(
-        risuChatParser(entry.content, { chara: char, chatTarget: chatVarTarget }),
+        risuChatParser(entry.content, {
+          chara: char,
+          chatTarget: chatVarTarget,
+        }),
       );
       actives.push({
         depth: entry.depth,

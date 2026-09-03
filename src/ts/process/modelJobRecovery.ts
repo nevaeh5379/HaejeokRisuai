@@ -158,7 +158,9 @@ export function decodeDurableModelJob(
   return withReasoning(reasoning, text);
 }
 
-async function listJobs(filter: "active" | "unclaimed"): Promise<DurableModelJobRecord[]> {
+async function listJobs(
+  filter: "active" | "unclaimed",
+): Promise<DurableModelJobRecord[]> {
   try {
     const response = await fetch(`/api/model-jobs?${filter}=1`, {
       headers: await authHeaders(),
@@ -173,9 +175,12 @@ async function listJobs(filter: "active" | "unclaimed"): Promise<DurableModelJob
 
 async function getJob(jobId: string): Promise<DurableModelJobRecord | null> {
   try {
-    const response = await fetch(`/api/model-jobs/${encodeURIComponent(jobId)}`, {
-      headers: await authHeaders(),
-    });
+    const response = await fetch(
+      `/api/model-jobs/${encodeURIComponent(jobId)}`,
+      {
+        headers: await authHeaders(),
+      },
+    );
     return response.ok ? await response.json() : null;
   } catch {
     return null;
@@ -201,7 +206,8 @@ async function readJournal(
     `/api/model-jobs/${encodeURIComponent(job.id)}/stream`,
     { headers: await authHeaders() },
   );
-  if (!response.ok) throw new Error(`Model job journal unavailable (${response.status})`);
+  if (!response.ok)
+    throw new Error(`Model job journal unavailable (${response.status})`);
   if (!onProgress || !response.body) return await response.text();
 
   const reader = response.body.getReader();
@@ -224,9 +230,14 @@ type LocatedChat = {
 };
 
 async function locateChat(chatId: string): Promise<LocatedChat | null> {
-  for (let characterIndex = 0; characterIndex < characterStore.characters.length; characterIndex++) {
+  for (
+    let characterIndex = 0;
+    characterIndex < characterStore.characters.length;
+    characterIndex++
+  ) {
     const character = characterStore.characters[characterIndex];
-    const chatIndex = character?.chats?.findIndex((chat) => chat?.id === chatId) ?? -1;
+    const chatIndex =
+      character?.chats?.findIndex((chat) => chat?.id === chatId) ?? -1;
     if (chatIndex < 0) continue;
     await preLoadChat(characterIndex, chatIndex, { full: true });
     return { characterIndex, chatIndex };
@@ -271,11 +282,14 @@ function previewRecoveredText(job: DurableModelJobRecord, text: string): void {
 }
 
 function clearRecoveredPreview(job: DurableModelJobRecord): void {
-  if (!job.generationId || !remotePreviewGenerationIds.delete(job.generationId)) return;
+  if (!job.generationId || !remotePreviewGenerationIds.delete(job.generationId))
+    return;
   for (const character of characterStore.characters) {
     const chat = character?.chats?.find((item) => item?.id === job.chatId);
     if (!chat?.message) continue;
-    chat.message = chat.message.filter((message) => message?.chatId !== job.generationId);
+    chat.message = chat.message.filter(
+      (message) => message?.chatId !== job.generationId,
+    );
     chat.isStreaming = false;
     character.reloadKeys = (character.reloadKeys ?? 0) + 1;
     return;
@@ -345,7 +359,11 @@ async function recoverTerminalJob(job: DurableModelJobRecord): Promise<void> {
     job.upstreamStatus < 200 ||
     job.upstreamStatus >= 300
   ) {
-    console.warn("[ModelJobRecovery] upstream returned", job.upstreamStatus, job.id);
+    console.warn(
+      "[ModelJobRecovery] upstream returned",
+      job.upstreamStatus,
+      job.id,
+    );
     await claimJob(job.id);
     return;
   }
@@ -405,7 +423,11 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
       clearRecoveredPreview(terminal);
     }
   } catch (error) {
-    console.warn("[ModelJobRecovery] active job reattach failed", job.id, error);
+    console.warn(
+      "[ModelJobRecovery] active job reattach failed",
+      job.id,
+      error,
+    );
   } finally {
     attachedJobs.delete(job.id);
     if (reachedTerminalState) {
@@ -426,7 +448,11 @@ async function runRecovery(): Promise<void> {
     try {
       await recoverTerminalJob(job);
     } catch (error) {
-      console.warn("[ModelJobRecovery] terminal recovery failed", job.id, error);
+      console.warn(
+        "[ModelJobRecovery] terminal recovery failed",
+        job.id,
+        error,
+      );
     }
   }
   for (const job of active) {

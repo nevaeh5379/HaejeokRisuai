@@ -307,12 +307,19 @@ export function applyParameters(
     if (isReasoningCapabilityParameter(parameter)) {
       continue;
     }
-    if (parameter === "top_k" && arg.ignoreTopKIfZero && presetStore.state.top_k === 0) {
+    if (
+      parameter === "top_k" &&
+      arg.ignoreTopKIfZero &&
+      presetStore.state.top_k === 0
+    ) {
       continue;
     }
     switch (parameter) {
       case "temperature": {
-        value = presetStore.state.temperature === -1000 ? -1000 : presetStore.state.temperature / 100;
+        value =
+          presetStore.state.temperature === -1000
+            ? -1000
+            : presetStore.state.temperature / 100;
         break;
       }
       case "top_k": {
@@ -350,11 +357,16 @@ export function applyParameters(
       }
       case "frequency_penalty": {
         value =
-          presetStore.state.frequencyPenalty === -1000 ? -1000 : presetStore.state.frequencyPenalty / 100;
+          presetStore.state.frequencyPenalty === -1000
+            ? -1000
+            : presetStore.state.frequencyPenalty / 100;
         break;
       }
       case "presence_penalty": {
-        value = presetStore.state.PresensePenalty === -1000 ? -1000 : presetStore.state.PresensePenalty / 100;
+        value =
+          presetStore.state.PresensePenalty === -1000
+            ? -1000
+            : presetStore.state.PresensePenalty / 100;
         break;
       }
       case "thinking_tokens": {

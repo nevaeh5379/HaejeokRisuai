@@ -38,13 +38,14 @@ export function createChatAssetNameIndex(
     normalized.push({ name, path });
     exact.set(name, path);
   }
-  normalized.sort((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-  );
+  normalized.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return { exact, sorted: normalized };
 }
 
-function lowerBoundByName(assets: readonly NormalizedAsset[], prefix: string): number {
+function lowerBoundByName(
+  assets: readonly NormalizedAsset[],
+  prefix: string,
+): number {
   let lo = 0;
   let hi = assets.length;
   while (lo < hi) {

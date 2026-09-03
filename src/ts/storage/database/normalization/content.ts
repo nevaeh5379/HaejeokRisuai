@@ -169,10 +169,7 @@ export function normalizeContentDatabaseSettings(data: Database): void {
     style_aware: false,
   };
   migrateNovelAiV4Config(data);
-  data.customTextTheme = mergeDefaults(
-    textThemeDefaults,
-    data.customTextTheme,
-  );
+  data.customTextTheme = mergeDefaults(textThemeDefaults, data.customTextTheme);
   data.hordeConfig = mergeDefaults(hordeConfigDefaults, data.hordeConfig);
   data.novelai = mergeDefaults(novelAiDefaults, data.novelai);
   normalizeLoreBookState(data);

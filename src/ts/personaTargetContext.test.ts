@@ -8,7 +8,11 @@ vi.mock("./stores/domain/characterStore.svelte", () => ({
   characterStore: {
     selectedId: 0,
     characters: [
-      { chaId: "char-a", chatPage: 0, chats: [{ id: "chat-a", bindedPersona: "persona-a" }] },
+      {
+        chaId: "char-a",
+        chatPage: 0,
+        chats: [{ id: "chat-a", bindedPersona: "persona-a" }],
+      },
       {
         chaId: "char-b",
         chatPage: 0,
@@ -23,8 +27,18 @@ vi.mock("./stores/domain/characterStore.svelte", () => ({
 vi.mock("./stores/domain/personaStore.svelte", () => ({
   personaStore: {
     list: [
-      { id: "persona-a", name: "Alpha", icon: "a.png", personaPrompt: "A prompt" },
-      { id: "persona-b", name: "Beta", icon: "b.png", personaPrompt: "B prompt" },
+      {
+        id: "persona-a",
+        name: "Alpha",
+        icon: "a.png",
+        personaPrompt: "A prompt",
+      },
+      {
+        id: "persona-b",
+        name: "Beta",
+        icon: "b.png",
+        personaPrompt: "B prompt",
+      },
     ],
     activePersona: {
       id: "persona-a",
@@ -41,8 +55,18 @@ vi.mock("./stores/domain/settingsStore.svelte", () => ({
       userIcon: "default.png",
       personaPrompt: "Default prompt",
       personas: [
-        { id: "persona-a", name: "Alpha", icon: "a.png", personaPrompt: "A prompt" },
-        { id: "persona-b", name: "Beta", icon: "b.png", personaPrompt: "B prompt" },
+        {
+          id: "persona-a",
+          name: "Alpha",
+          icon: "a.png",
+          personaPrompt: "A prompt",
+        },
+        {
+          id: "persona-b",
+          name: "Beta",
+          icon: "b.png",
+          personaPrompt: "B prompt",
+        },
       ],
     },
   },

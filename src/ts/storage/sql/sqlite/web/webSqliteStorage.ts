@@ -1,6 +1,18 @@
 import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
-import type { CanonicalDatabase, Database, DatabaseSettings, character, groupChat, Chat, Message, RisuPersona, botPreset, loreBook, customscript } from "../../../database/schema";
+import type {
+  CanonicalDatabase,
+  Database,
+  DatabaseSettings,
+  character,
+  groupChat,
+  Chat,
+  Message,
+  RisuPersona,
+  botPreset,
+  loreBook,
+  customscript,
+} from "../../../database/schema";
 import type { RisuModule } from "../../../../process/modules";
 import type {
   ISqlStorage,
@@ -356,7 +368,6 @@ export class WebSqliteStorage implements ISqlStorage {
     return buildMessageRowsQuery(chatId, limit, offset, newest, mode);
   }
 
-
   private async loadCharacterChats(characterId: string): Promise<Chat[]> {
     const chatRows = await this.selectRows(
       "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
@@ -417,8 +428,7 @@ export class WebSqliteStorage implements ISqlStorage {
       throw new Error("Active bot preset does not exist");
     if (commit.presets.activeId === undefined) {
       const current = (await this.loadSettingValue("activeBotPresetId")) as
-        | string
-        | undefined;
+        string | undefined;
       if (!current || !ids.has(current)) {
         const index = originalIds.indexOf(current ?? "");
         commit.presets.activeId =
@@ -438,7 +448,9 @@ export class WebSqliteStorage implements ISqlStorage {
       if (!ok) return null;
     }
 
-    const settingsRows = await this.selectRows("SELECT key FROM system_settings");
+    const settingsRows = await this.selectRows(
+      "SELECT key FROM system_settings",
+    );
     const deferredKeys = new Set<string>(DEFERRED_STARTUP_SETTING_KEYS);
     const settingsStoreExcludedKeys = new Set<string>(
       SETTINGS_STORE_EXCLUDED_KEYS,
@@ -462,25 +474,30 @@ export class WebSqliteStorage implements ISqlStorage {
     const charRows = await this.selectRows(
       "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
     );
-    const characters: (character | groupChat)[] = charRows.map((row) => ({
-      chaId: row.id as string,
-      type: (row.kind as "character" | "group") ?? "character",
-      name: (row.name as string) ?? "",
-      image: (row.image as string) ?? "",
-      trashTime: (row.trash_time as number) ?? undefined,
-      creationDate: (row.creation_time as number) ?? undefined,
-      modificationDate: (row.modification_time as number) ?? undefined,
-      lastInteraction: (row.last_interaction_time as number) ?? undefined,
-      detailsLoaded: false,
-      chats: [],
-      chatPage: 0,
-    } as unknown as character | groupChat));
+    const characters: (character | groupChat)[] = charRows.map(
+      (row) =>
+        ({
+          chaId: row.id as string,
+          type: (row.kind as "character" | "group") ?? "character",
+          name: (row.name as string) ?? "",
+          image: (row.image as string) ?? "",
+          trashTime: (row.trash_time as number) ?? undefined,
+          creationDate: (row.creation_time as number) ?? undefined,
+          modificationDate: (row.modification_time as number) ?? undefined,
+          lastInteraction: (row.last_interaction_time as number) ?? undefined,
+          detailsLoaded: false,
+          chats: [],
+          chatPage: 0,
+        }) as unknown as character | groupChat,
+    );
 
     const metaRow = await this.selectOne(
       "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
     );
     const initialized =
-      metaRow?.initialized === 1 || characters.length > 0 || settingsRows.length > 0;
+      metaRow?.initialized === 1 ||
+      characters.length > 0 ||
+      settingsRows.length > 0;
     return {
       status: initialized ? "ready" : "empty",
       revision: this.revision,
@@ -591,13 +608,17 @@ export class WebSqliteStorage implements ISqlStorage {
       )) ?? {}) as character | groupChat;
       fullChar.chaId = row.id;
       fullChar.name = (row.name as string) ?? fullChar.name ?? "";
-      fullChar.type = (row.kind as "character" | "group") ?? fullChar.type ?? "character";
+      fullChar.type =
+        (row.kind as "character" | "group") ?? fullChar.type ?? "character";
       fullChar.image = (row.image as string) ?? fullChar.image ?? "";
       fullChar.trashTime = (row.trash_time as number) ?? fullChar.trashTime;
-      fullChar.lastInteraction = (row.last_interaction_time as number) ?? fullChar.lastInteraction;
+      fullChar.lastInteraction =
+        (row.last_interaction_time as number) ?? fullChar.lastInteraction;
       if (fullChar.type === "character") {
-        fullChar.creation_date = (row.creation_time as number) ?? fullChar.creation_date;
-        fullChar.modification_date = (row.modification_time as number) ?? fullChar.modification_date;
+        fullChar.creation_date =
+          (row.creation_time as number) ?? fullChar.creation_date;
+        fullChar.modification_date =
+          (row.modification_time as number) ?? fullChar.modification_date;
       }
       fullChar.detailsLoaded = true;
       const chats = await this.loadCharacterChats(row.id);
@@ -662,9 +683,7 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.writeQueue.run(() => this.commitInternal(commit));
   }
 
-  private async commitInternal(
-    commit: SqlCommit,
-  ): Promise<SqlCommitResult> {
+  private async commitInternal(commit: SqlCommit): Promise<SqlCommitResult> {
     if (!this._enabled) throw new Error("SQLite storage is not enabled");
     await this.run("BEGIN IMMEDIATE");
     try {
@@ -757,25 +776,26 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadCharacterForSelection(
     characterId: string,
   ): Promise<character | groupChat | null> {
-    const [characterResult, nodeResult, chatResult] = await this.selectBatchResults([
-      {
-        sql: "SELECT id FROM characters WHERE id = ?",
-        bind: [characterId],
-      },
-      {
-        sql: `SELECT node_id, parent_node_id, node_order, object_key,
+    const [characterResult, nodeResult, chatResult] =
+      await this.selectBatchResults([
+        {
+          sql: "SELECT id FROM characters WHERE id = ?",
+          bind: [characterId],
+        },
+        {
+          sql: `SELECT node_id, parent_node_id, node_order, object_key,
                      object_key_encoded, value_type, text_value, encoded_text_value,
                      number_value, boolean_value
               FROM character_extension_nodes
               WHERE character_id = ? ORDER BY node_id`,
-        bind: [characterId],
-        transform: "relational",
-      },
-      {
-        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-        bind: [characterId],
-      },
-    ]);
+          bind: [characterId],
+          transform: "relational",
+        },
+        {
+          sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
+          bind: [characterId],
+        },
+      ]);
     const characterRows = characterResult.rows ?? [];
     const chatRows = chatResult.rows ?? [];
     if (characterRows.length === 0) return null;
@@ -821,41 +841,50 @@ export class WebSqliteStorage implements ISqlStorage {
       requestedLimit === undefined
         ? undefined
         : normalizeSqliteLimit(requestedLimit);
-    const messageStatement = buildBranchMessageRowsQuery(chatId, undefined, limit);
+    const messageStatement = buildBranchMessageRowsQuery(
+      chatId,
+      undefined,
+      limit,
+    );
     const totalStatement = buildBranchMessageCountQuery(chatId);
-    const [chatResult, nodeResult, totalResult, messageResult, activeBranchResult, branchCountResult] =
-      await this.selectBatchResults([
-        {
-          sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-          bind: [chatId],
-        },
-        {
-          sql: `SELECT node_id, parent_node_id, node_order, object_key,
+    const [
+      chatResult,
+      nodeResult,
+      totalResult,
+      messageResult,
+      activeBranchResult,
+      branchCountResult,
+    ] = await this.selectBatchResults([
+      {
+        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
+        bind: [chatId],
+      },
+      {
+        sql: `SELECT node_id, parent_node_id, node_order, object_key,
                        object_key_encoded, value_type, text_value, encoded_text_value,
                        number_value, boolean_value
                 FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
-          bind: [chatId],
-          transform: "relational",
-        },
-        totalStatement,
-        {
-          ...messageStatement,
-          transform: "messages",
-        },
-        {
-          sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-          bind: [chatId],
-        },
-        {
-          sql: "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-          bind: [chatId],
-        },
-      ]);
+        bind: [chatId],
+        transform: "relational",
+      },
+      totalStatement,
+      {
+        ...messageStatement,
+        transform: "messages",
+      },
+      {
+        sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
+        bind: [chatId],
+      },
+      {
+        sql: "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+        bind: [chatId],
+      },
+    ]);
     const cr = chatResult.rows?.[0];
     if (!cr) return null;
     const activeBranch = activeBranchResult.rows?.[0] as
-      | { branch_id: string }
-      | undefined;
+      { branch_id: string } | undefined;
     const branchCount = Number(branchCountResult.rows?.[0]?.total ?? 0);
     const cd = (nodeResult.value ?? {}) as any;
     if (await this.migrateLegacyBranchGraphIfNeeded(chatId, cd, branchCount)) {
@@ -951,19 +980,25 @@ export class WebSqliteStorage implements ISqlStorage {
 
   private async loadLinearMessages(chatId: string): Promise<Message[]> {
     const query = buildMessageRowsQuery(chatId, undefined, 0, false, "full");
-    const [result] = await this.selectBatchResults([{ ...query, transform: "messages" }]);
+    const [result] = await this.selectBatchResults([
+      { ...query, transform: "messages" },
+    ]);
     return (result.value ?? []) as Message[];
   }
 
-  private async loadLegacyChatExtension(chatId: string): Promise<Record<string, any>> {
-    const [result] = await this.selectBatchResults([{
-      sql: `SELECT node_id, parent_node_id, node_order, object_key,
+  private async loadLegacyChatExtension(
+    chatId: string,
+  ): Promise<Record<string, any>> {
+    const [result] = await this.selectBatchResults([
+      {
+        sql: `SELECT node_id, parent_node_id, node_order, object_key,
                    object_key_encoded, value_type, text_value, encoded_text_value,
                    number_value, boolean_value
               FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
-      bind: [chatId],
-      transform: "relational",
-    }]);
+        bind: [chatId],
+        transform: "relational",
+      },
+    ]);
     return (result.value ?? {}) as Record<string, any>;
   }
 
@@ -972,22 +1007,40 @@ export class WebSqliteStorage implements ISqlStorage {
     knownChatData?: Record<string, any>,
     knownBranchCount?: number,
   ): Promise<boolean> {
-    const branchCount = knownBranchCount ?? Number((await this.selectOne(
-      "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-      [chatId],
-    ))?.total ?? 0);
+    const branchCount =
+      knownBranchCount ??
+      Number(
+        (
+          await this.selectOne(
+            "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+            [chatId],
+          )
+        )?.total ?? 0,
+      );
     if (branchCount > 1) return false;
-    const chatData = knownChatData ?? await this.loadLegacyChatExtension(chatId);
-    if (!Array.isArray(chatData.branchState?.branches) || chatData.branchState.branches.length <= 1) {
+    const chatData =
+      knownChatData ?? (await this.loadLegacyChatExtension(chatId));
+    if (
+      !Array.isArray(chatData.branchState?.branches) ||
+      chatData.branchState.branches.length <= 1
+    ) {
       return false;
     }
-    const currentCount = Number((await this.selectOne(
-      "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-      [chatId],
-    ))?.total ?? 0);
+    const currentCount = Number(
+      (
+        await this.selectOne(
+          "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+          [chatId],
+        )
+      )?.total ?? 0,
+    );
     if (currentCount > 1) return false;
     const plan = buildLegacyBranchMigrationPlan(
-      { ...chatData, id: chatId, message: await this.loadLinearMessages(chatId) },
+      {
+        ...chatData,
+        id: chatId,
+        message: await this.loadLinearMessages(chatId),
+      },
       uuidv4,
     );
     if (!plan) return false;
@@ -1015,7 +1068,9 @@ export class WebSqliteStorage implements ISqlStorage {
 
   async loadChatBranchGraph(chatId: string) {
     await this.ensureBranchGraph(chatId);
-    const branchRows = await this.selectRows<SqliteChatBranchRow & { active_branch_id?: string }>(
+    const branchRows = await this.selectRows<
+      SqliteChatBranchRow & { active_branch_id?: string }
+    >(
       `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
               branch.head_message_id, branch.reason, branch.created_at,
               active.branch_id AS active_branch_id
@@ -1025,14 +1080,20 @@ export class WebSqliteStorage implements ISqlStorage {
       [chatId],
     );
     const graphQuery = buildBranchGraphRowsQuery(chatId);
-    const graphRows = await this.selectRows<Record<string, unknown>>(graphQuery.sql, graphQuery.bind);
+    const graphRows = await this.selectRows<Record<string, unknown>>(
+      graphQuery.sql,
+      graphQuery.bind,
+    );
     return {
       branches: branchRows.map(mapSqliteChatBranchRow),
       activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
       messages: rebuildBranchGraphMessages(graphRows),
       links: graphRows.map((row) => ({
         messageId: String(row.message_id),
-        parentMessageId: row.graph_parent_message_id == null ? undefined : String(row.graph_parent_message_id),
+        parentMessageId:
+          row.graph_parent_message_id == null
+            ? undefined
+            : String(row.graph_parent_message_id),
         originBranchId: String(row.graph_origin_branch_id),
       })),
     };
@@ -1052,7 +1113,11 @@ export class WebSqliteStorage implements ISqlStorage {
       chatId,
       branchId,
       limit,
-      options?.mode === "generation" ? "generation" : options?.mode === "graph" ? "graph" : "full",
+      options?.mode === "generation"
+        ? "generation"
+        : options?.mode === "graph"
+          ? "graph"
+          : "full",
     );
     const [result] = await this.selectBatchResults([
       { ...query, transform: "messages" },
@@ -1163,25 +1228,23 @@ export class WebSqliteStorage implements ISqlStorage {
       characterName: (row.character_name as string) ?? "",
       characterImage: row.character_image ?? null,
       characterType:
-        row.character_kind === "group" ? ("group" as const) : ("character" as const),
+        row.character_kind === "group"
+          ? ("group" as const)
+          : ("character" as const),
       chatId: row.chat_id,
       chatPosition: Number(row.chat_position) || 0,
       chatName: (row.chat_name as string) ?? "",
       folderId: row.folder_id ?? null,
       lastDate:
         row.last_message_time == null ? null : Number(row.last_message_time),
-      lastMessage: decodedText(
-        row.last_message_text,
-        row.last_message_encoded,
-      ),
+      lastMessage: decodedText(row.last_message_text, row.last_message_encoded),
     }));
   }
 
   async loadPersonas(): Promise<RisuPersona[]> {
     return (
       ((await this.loadSettingValue("personas")) as
-        | RisuPersona[]
-        | undefined) ?? []
+        RisuPersona[] | undefined) ?? []
     );
   }
   async listBotPresets(): Promise<BotPresetSummary[]> {
@@ -1210,8 +1273,7 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
     return (
       ((await this.loadSettingValue("loreBook")) as
-        | { name: string; data: loreBook[] }[]
-        | undefined) ?? []
+        { name: string; data: loreBook[] }[] | undefined) ?? []
     );
   }
   async loadModules(): Promise<RisuModule[]> {
@@ -1221,8 +1283,7 @@ export class WebSqliteStorage implements ISqlStorage {
     if (rows.length === 0) {
       return (
         ((await this.loadSettingValue("modules")) as
-          | RisuModule[]
-          | undefined) ?? []
+          RisuModule[] | undefined) ?? []
       );
     }
     const nodeRows = await this.selectRows(
@@ -1264,14 +1325,18 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadScripts(): Promise<customscript[]> {
     return (
       ((await this.loadSettingValue("globalscript")) as
-        | customscript[]
-        | undefined) ?? []
+        customscript[] | undefined) ?? []
     );
   }
 
-  async loadPlugins(options?: { enabledOnly?: boolean }): Promise<any[] | null> {
-    const plugins = ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
-    return options?.enabledOnly && plugins ? plugins.filter((plugin) => plugin?.enabled) : plugins;
+  async loadPlugins(options?: {
+    enabledOnly?: boolean;
+  }): Promise<any[] | null> {
+    const plugins =
+      ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
+    return options?.enabledOnly && plugins
+      ? plugins.filter((plugin) => plugin?.enabled)
+      : plugins;
   }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
     const rows = await this.selectRows(
@@ -1692,11 +1757,14 @@ export class WebSqliteStorage implements ISqlStorage {
     }
     const allColumns = await this.getDbExplorerColumns(table);
     const columnNames = new Set(allColumns.map((column) => column.name));
-    const requestedColumns = options.columns?.filter((name) => columnNames.has(name));
+    const requestedColumns = options.columns?.filter((name) =>
+      columnNames.has(name),
+    );
     const columns = requestedColumns?.length
       ? allColumns.filter((column) => requestedColumns.includes(column.name))
       : allColumns;
-    if (columns.length === 0) throw new Error(`SQLite table has no columns: ${table}`);
+    if (columns.length === 0)
+      throw new Error(`SQLite table has no columns: ${table}`);
 
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
     const limit = normalizeSqliteLimit(options.limit ?? 50);
@@ -1704,13 +1772,17 @@ export class WebSqliteStorage implements ISqlStorage {
     const search = options.search?.trim() ?? "";
     const where = search
       ? ` WHERE ${allColumns
-          .map((column) => `CAST(${this.quoteExplorerIdentifier(column.name)} AS TEXT) LIKE ? COLLATE NOCASE`)
+          .map(
+            (column) =>
+              `CAST(${this.quoteExplorerIdentifier(column.name)} AS TEXT) LIKE ? COLLATE NOCASE`,
+          )
           .join(" OR ")}`
       : "";
     const searchBinds = search ? allColumns.map(() => `%${search}%`) : [];
-    const sortColumn = options.sortColumn && columnNames.has(options.sortColumn)
-      ? options.sortColumn
-      : "";
+    const sortColumn =
+      options.sortColumn && columnNames.has(options.sortColumn)
+        ? options.sortColumn
+        : "";
     const orderBy = sortColumn
       ? ` ORDER BY ${this.quoteExplorerIdentifier(sortColumn)} ${options.sortOrder === "desc" ? "DESC" : "ASC"}`
       : "";
@@ -1719,7 +1791,10 @@ export class WebSqliteStorage implements ISqlStorage {
       .join(", ");
 
     const [countResult, rowsResult] = await this.selectBatchResults([
-      { sql: `SELECT COUNT(*) AS total FROM ${quotedTable}${where}`, bind: searchBinds },
+      {
+        sql: `SELECT COUNT(*) AS total FROM ${quotedTable}${where}`,
+        bind: searchBinds,
+      },
       {
         sql: `SELECT ${selection} FROM ${quotedTable}${where}${orderBy} LIMIT ? OFFSET ?`,
         bind: [...searchBinds, limit, offset],

@@ -10,8 +10,7 @@ import { language } from "../lang";
 import { isCapacitor, isTauri } from "./platform";
 
 const UPDATE_REMINDER_KEY = "risu_update_reminder";
-const isAndroidNative =
-  isCapacitor && Capacitor.getPlatform() === "android";
+const isAndroidNative = isCapacitor && Capacitor.getPlatform() === "android";
 
 type ListenerHandle = { remove(): Promise<void> };
 

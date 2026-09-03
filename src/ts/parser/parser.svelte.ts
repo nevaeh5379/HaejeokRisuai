@@ -1,7 +1,12 @@
 import DOMPurify from "dompurify";
 import markdownit from "markdown-it";
 import { appVer } from "../appVersion";
-import type { character, customscript, groupChat, triggerscript } from "../storage/database/schema";
+import type {
+  character,
+  customscript,
+  groupChat,
+  triggerscript,
+} from "../storage/database/schema";
 import type { SettingsState } from "../stores/domain/stateOwnership";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 
@@ -140,7 +145,12 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
       if (settingsStore.state?.autoColorAdapt && data.attrValue) {
         const isDark = get(ColorSchemeTypeStore) === "dark";
         const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
-        data.attrValue = adaptSingleColor(data.attrValue, 'bg', !isDark, engine);
+        data.attrValue = adaptSingleColor(
+          data.attrValue,
+          "bg",
+          !isDark,
+          engine,
+        );
       }
       break;
     }
@@ -148,7 +158,12 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
       if (settingsStore.state?.autoColorAdapt && data.attrValue) {
         const isDark = get(ColorSchemeTypeStore) === "dark";
         const engine = settingsStore.state.colorAdaptEngine ?? "oklch";
-        data.attrValue = adaptSingleColor(data.attrValue, 'fg', !isDark, engine);
+        data.attrValue = adaptSingleColor(
+          data.attrValue,
+          "fg",
+          !isDark,
+          engine,
+        );
       }
       break;
     }
@@ -1009,9 +1024,7 @@ export function trimMarkdown(data: string) {
   for (const el of Array.from(root.querySelectorAll("risu-style"))) {
     const decoded = decodeStyleContent(el.textContent ?? "");
     if (decoded.css === undefined) {
-      el.replaceWith(
-        root.ownerDocument.createTextNode(decoded.fallback ?? ""),
-      );
+      el.replaceWith(root.ownerDocument.createTextNode(decoded.fallback ?? ""));
       continue;
     }
     const style = root.ownerDocument.createElement("style");
@@ -1138,7 +1151,9 @@ function encodeStyle(txt: string) {
     return "<risu-style>" + Buffer.from(c1).toString("hex") + "</risu-style>";
   });
 }
-function decodeStyleRule<T extends CssAtRuleAST | CssDeclarationAST>(rule: T): T {
+function decodeStyleRule<T extends CssAtRuleAST | CssDeclarationAST>(
+  rule: T,
+): T {
   if (rule.type === "rule") {
     if (rule.selectors) {
       for (let i = 0; i < rule.selectors.length; i++) {
@@ -1168,11 +1183,20 @@ function decodeStyleRule<T extends CssAtRuleAST | CssDeclarationAST>(rule: T): T
         const decl = rule.declarations[j];
         if (decl.type === "declaration" && decl.property && decl.value) {
           const prop = decl.property.toLowerCase();
-          if (prop === "background" || prop === "background-color" || prop === "background-image") {
+          if (
+            prop === "background" ||
+            prop === "background-color" ||
+            prop === "background-image"
+          ) {
             decl.value = adaptCssValue(decl.value, "bg", !isDark, engine);
           } else if (prop === "color") {
             decl.value = adaptCssValue(decl.value, "fg", !isDark, engine);
-          } else if (prop.includes("border") || prop.includes("outline") || prop === "box-shadow" || prop === "text-shadow") {
+          } else if (
+            prop.includes("border") ||
+            prop.includes("outline") ||
+            prop === "box-shadow" ||
+            prop === "text-shadow"
+          ) {
             decl.value = adaptCssValue(decl.value, "border", !isDark, engine);
           }
         }
@@ -1563,10 +1587,7 @@ function blockStartMatcher(
           }
           case "vis": {
             //vis = variable is
-            const variable = getChatVar(
-              statement.pop(),
-              matcherArg.chatTarget,
-            );
+            const variable = getChatVar(statement.pop(), matcherArg.chatTarget);
             if (variable === condition) {
               statement.push("1");
             } else {
@@ -1576,10 +1597,7 @@ function blockStartMatcher(
           }
           case "visnot": {
             //visnot = variable is not
-            const variable = getChatVar(
-              statement.pop(),
-              matcherArg.chatTarget,
-            );
+            const variable = getChatVar(statement.pop(), matcherArg.chatTarget);
             if (variable !== condition) {
               statement.push("1");
             } else {

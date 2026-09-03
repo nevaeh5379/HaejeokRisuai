@@ -1,14 +1,16 @@
-export const TOKENIZER_ENCODINGS: readonly ['cl100k_base', 'o200k_base'];
+export const TOKENIZER_ENCODINGS: readonly ["cl100k_base", "o200k_base"];
 export type TokenizerEncoding = (typeof TOKENIZER_ENCODINGS)[number];
 
-export const VECTOR_SEARCH_METRICS: readonly ['cosine', 'dot'];
+export const VECTOR_SEARCH_METRICS: readonly ["cosine", "dot"];
 export type VectorSearchMetric = (typeof VECTOR_SEARCH_METRICS)[number];
 
 export interface TokenizeCountRequest {
   texts: string[];
   encoding: TokenizerEncoding;
 }
-export interface TokenizeCountResponse { counts: number[]; }
+export interface TokenizeCountResponse {
+  counts: number[];
+}
 
 export interface LoreMessage {
   role: string;
@@ -38,7 +40,9 @@ export interface LoreMatchBatchRequest {
   username: string;
   charName: string;
 }
-export interface LoreMatchBatchResponse { results: LoreMatchResult[]; }
+export interface LoreMatchBatchResponse {
+  results: LoreMatchResult[];
+}
 
 export interface LoreResolveRequest {
   messages: LoreMessage[];
@@ -51,8 +55,13 @@ export interface LoreResolveResponse {
   logs: LoreMatchLog[];
 }
 
-export interface VectorIndexDescriptor { id: string; signature: string; }
-export interface VectorIndexEntry extends VectorIndexDescriptor { embedding: number[]; }
+export interface VectorIndexDescriptor {
+  id: string;
+  signature: string;
+}
+export interface VectorIndexEntry extends VectorIndexDescriptor {
+  embedding: number[];
+}
 export interface VectorIndexStatusRequest {
   indexId: string;
   descriptors?: VectorIndexDescriptor[];
@@ -67,7 +76,9 @@ export interface VectorIndexUpsertRequest {
   indexId: string;
   entries: VectorIndexEntry[];
 }
-export interface VectorIndexUpsertResponse { size: number; }
+export interface VectorIndexUpsertResponse {
+  size: number;
+}
 export interface VectorIndexSearchRequest {
   indexId: string;
   queries: number[][];
@@ -75,4 +86,6 @@ export interface VectorIndexSearchRequest {
   topK?: number;
 }
 export type VectorIndexSearchResult = Array<Array<[string, number]>>;
-export interface VectorIndexSearchResponse { results: VectorIndexSearchResult; }
+export interface VectorIndexSearchResponse {
+  results: VectorIndexSearchResult;
+}

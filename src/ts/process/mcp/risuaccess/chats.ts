@@ -47,7 +47,12 @@ export class ChatHandler extends MCPToolHandler {
     context?: MCPToolCallContext,
   ): Promise<RPCToolCallContent[] | null> {
     if (toolName === "risu-get-chat-history") {
-      return await this.getChatHistory(args.id, args.count, args.offset, context);
+      return await this.getChatHistory(
+        args.id,
+        args.count,
+        args.offset,
+        context,
+      );
     }
     return null;
   }

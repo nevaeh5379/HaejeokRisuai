@@ -212,7 +212,9 @@ export async function requestGoogleCloudVertex(
   mergeGoogleConsecutiveChats(reformatedChat);
 
   const uncensoredCatagory = buildGoogleSafetySettings({
-    includeCivicIntegrity: !arg.modelInfo.flags.includes(LLMFlags.noCivilIntegrity),
+    includeCivicIntegrity: !arg.modelInfo.flags.includes(
+      LLMFlags.noCivilIntegrity,
+    ),
     blockOff: arg.modelInfo.flags.includes(LLMFlags.geminiBlockOff),
   });
 
@@ -278,7 +280,6 @@ export async function requestGoogleCloudVertex(
   let headers: { [key: string]: string } = {
     "Content-Type": "application/json",
   };
-
 
   const PROJECT_ID = db.google.projectId;
   const REGION = db.vertexRegion;
@@ -534,7 +535,8 @@ async function requestGoogle(
       arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema);
     return formatGoogleTextResponse(rDatas, {
       transformText: shouldExtractJson
-        ? (text) => extractJSON(text, arg.extractJson, resolveRequestParserContext(arg))
+        ? (text) =>
+            extractJSON(text, arg.extractJson, resolveRequestParserContext(arg))
         : undefined,
     });
   };
@@ -781,7 +783,14 @@ async function requestGoogle(
 
       const tool = tools.find((t) => t.name === functionName);
       if (tool) {
-        const result = (await callTool(tool.name, functionArgs, tool.mcpURL, resolveRequestToolContext(arg))).filter((r) => {
+        const result = (
+          await callTool(
+            tool.name,
+            functionArgs,
+            tool.mcpURL,
+            resolveRequestToolContext(arg),
+          )
+        ).filter((r) => {
           return r.type === "text";
         });
         if (result.length === 0) {
@@ -1030,8 +1039,15 @@ function wrapToolStream(
 
         value = initStreamState(value);
 
-        if (arg.extractJson && (presetStore.state.jsonSchemaEnabled || arg.schema)) {
-          value["0"] = extractJSON(value["0"], arg.extractJson, resolveRequestParserContext(arg));
+        if (
+          arg.extractJson &&
+          (presetStore.state.jsonSchemaEnabled || arg.schema)
+        ) {
+          value["0"] = extractJSON(
+            value["0"],
+            arg.extractJson,
+            resolveRequestParserContext(arg),
+          );
         }
 
         let content = value["0"];
@@ -1112,11 +1128,16 @@ function wrapToolStream(
               const functionArgs = call.args;
               const tool = tools.find((t) => t.name === functionName);
               if (tool) {
-                const result = (await callTool(tool.name, functionArgs, tool.mcpURL, resolveRequestToolContext(arg))).filter(
-                  (r) => {
-                    return r.type === "text";
-                  },
-                );
+                const result = (
+                  await callTool(
+                    tool.name,
+                    functionArgs,
+                    tool.mcpURL,
+                    resolveRequestToolContext(arg),
+                  )
+                ).filter((r) => {
+                  return r.type === "text";
+                });
                 if (result.length === 0) {
                   parts.push({
                     functionResponse: {

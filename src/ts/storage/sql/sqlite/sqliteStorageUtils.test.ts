@@ -44,11 +44,6 @@ describe("sqlite storage utilities", () => {
     await first;
     await expect(second).rejects.toThrow("expected");
     await expect(third).resolves.toBe(3);
-    expect(events).toEqual([
-      "first:start",
-      "first:end",
-      "second",
-      "third",
-    ]);
+    expect(events).toEqual(["first:start", "first:end", "second", "third"]);
   });
 });

@@ -57,7 +57,9 @@ describe("OpenAI non-streaming response interpreter", () => {
     const result = await interpretOpenAINonStreamingResponse({
       ok: true,
       data: {
-        choices: [{ message: { content: "answer", reasoning_content: "thinking" } }],
+        choices: [
+          { message: { content: "answer", reasoning_content: "thinking" } },
+        ],
       },
       body: { messages: [] },
       arg: makeArg(),
@@ -84,7 +86,10 @@ describe("OpenAI non-streaming response interpreter", () => {
     });
     expect(result).toEqual({
       type: "multiline",
-      result: [["char", "first"], ["char", "second"]],
+      result: [
+        ["char", "first"],
+        ["char", "second"],
+      ],
     });
   });
 
@@ -111,17 +116,21 @@ describe("OpenAI non-streaming response interpreter", () => {
     const result = await interpretOpenAINonStreamingResponse({
       ok: true,
       data: {
-        choices: [{
-          message: {
-            role: "assistant",
-            content: "checking",
-            tool_calls: [{
-              id: "call-1",
-              type: "function",
-              function: { name: "weather", arguments: '{"city":"Seoul"}' },
-            }],
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "checking",
+              tool_calls: [
+                {
+                  id: "call-1",
+                  type: "function",
+                  function: { name: "weather", arguments: '{"city":"Seoul"}' },
+                },
+              ],
+            },
           },
-        }],
+        ],
       },
       body,
       arg: makeArg({

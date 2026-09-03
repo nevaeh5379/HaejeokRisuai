@@ -71,7 +71,9 @@ export function normalizeSettingsDefaults<T extends SettingsInput>(
   return input as T & NormalizedSettingsInput;
 }
 
-export function normalizeSettingsInput(input: unknown): NormalizedSettingsInput {
+export function normalizeSettingsInput(
+  input: unknown,
+): NormalizedSettingsInput {
   const data = requireObject(input, "Settings input") as SettingsInput;
   return normalizeSettingsDefaults(data);
 }
@@ -187,7 +189,9 @@ export function normalizeDatabaseDefaults(
   return input as Database | NormalizedDatabaseInput;
 }
 
-export function normalizeDatabaseInput(input: unknown): NormalizedDatabaseInput {
+export function normalizeDatabaseInput(
+  input: unknown,
+): NormalizedDatabaseInput {
   const data = requireObject(input, "Database input") as DatabaseInput;
   return normalizeDatabaseDefaults(data);
 }

@@ -10,10 +10,7 @@ import {
   readImage,
   saveAsset,
 } from "../globalApi.svelte";
-import {
-  hotReloading,
-  selectedCharID,
-} from "../stores.svelte";
+import { hotReloading, selectedCharID } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { isPresetStoreSettingKey } from "../storage/sql/sqlDeferredSettings";
@@ -499,8 +496,9 @@ export async function togglePluginEnabled(index: number): Promise<void> {
 export async function loadPlugins() {
   console.log("Loading plugins...");
   const plugins = deferredSettingsLoader.isLoaded("plugins")
-    ? settingsStore.state.plugins ?? []
-    : ((await (await getSqlStorage()).loadPlugins({ enabledOnly: true })) as RisuPlugin[] | null) ?? [];
+    ? (settingsStore.state.plugins ?? [])
+    : (((await (await getSqlStorage()).loadPlugins({ enabledOnly: true })) as
+        RisuPlugin[] | null) ?? []);
 
   const enabledPlugins = safeStructuredClone(plugins).filter(
     (p: RisuPlugin) => p.enabled,
@@ -670,7 +668,9 @@ function setAllowedDbValue(key: string, value: any): void {
 function hasAllowedDbValue(key: string): boolean {
   return (
     domainDbKeys.has(key) ||
-    (isPresetStoreSettingKey(key) ? key in presetStore.state : key in settingsStore.state)
+    (isPresetStoreSettingKey(key)
+      ? key in presetStore.state
+      : key in settingsStore.state)
   );
 }
 
@@ -688,7 +688,9 @@ export const getV2PluginAPIs = () => {
       }
     },
     getChar: () => {
-      return characterStore.getCharacterByIndex(characterStore.selectedId, { snapshot: true });
+      return characterStore.getCharacterByIndex(characterStore.selectedId, {
+        snapshot: true,
+      });
     },
     setChar: (char: any) => {
       const charid = get(selectedCharID);
@@ -878,18 +880,13 @@ export const getV2PluginAPIs = () => {
           return false;
         },
         ownKeys(target) {
-          const keys = allowedDbKeys.filter(
-            (key) => hasAllowedDbValue(key),
-          );
+          const keys = allowedDbKeys.filter((key) => hasAllowedDbValue(key));
           keys.push(...settingsStore.getPluginCustomStorageKeys());
           return Array.from(new Set(keys));
         },
         has(target, prop) {
           if (typeof prop === "string") {
-            if (
-              allowedDbKeys.includes(prop) &&
-              hasAllowedDbValue(prop)
-            )
+            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop))
               return true;
             if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
           }
@@ -897,10 +894,7 @@ export const getV2PluginAPIs = () => {
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop === "string") {
-            if (
-              allowedDbKeys.includes(prop) &&
-              hasAllowedDbValue(prop)
-            ) {
+            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
               return {
                 value: getAllowedDbValue(prop),
                 writable: true,

@@ -8,10 +8,7 @@ import {
   SETTINGS_STORE_EXCLUDED_KEYS,
 } from "../../storage/sql/sqlDeferredSettings";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
-import type {
-  FlushableStore,
-  InitializableStore,
-} from "./storeContracts";
+import type { FlushableStore, InitializableStore } from "./storeContracts";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
@@ -53,10 +50,9 @@ function guardedSettingsState(state: Record<string, any>): Record<string, any> {
 
 class SettingsStore
   implements
-    InitializableStore<[
-      initialSettings: Partial<DatabaseSettings>,
-      storage: ISqlStorage | null,
-    ]>,
+    InitializableStore<
+      [initialSettings: Partial<DatabaseSettings>, storage: ISqlStorage | null]
+    >,
     FlushableStore
 {
   private storage: ISqlStorage | null = null;
@@ -94,7 +90,9 @@ class SettingsStore
       // This forwarding proxy has an empty target; a non-configurable own
       // property would violate its invariants when state is replaced.
       if (descriptor.configurable !== true) {
-        throw new TypeError("SettingsStore state properties must be configurable");
+        throw new TypeError(
+          "SettingsStore state properties must be configurable",
+        );
       }
       return Reflect.defineProperty(this.stateData, prop, descriptor);
     },
@@ -176,7 +174,8 @@ class SettingsStore
         if (initial) {
           initial = false;
           if (
-            snapshotFingerprint($state.snapshot(this.stateData[key])) !== baseline
+            snapshotFingerprint($state.snapshot(this.stateData[key])) !==
+            baseline
           ) {
             this.dirtyKeys.add(key);
             this.scheduleCommit();
@@ -280,7 +279,9 @@ class SettingsStore
         ]);
         if (pluginStoragePayload.clear) {
           this.pendingPluginStorageClear = true;
-          for (const key of Object.keys(this.stateData.pluginCustomStorage ?? {}))
+          for (const key of Object.keys(
+            this.stateData.pluginCustomStorage ?? {},
+          ))
             impactedKeys.add(key);
         }
         for (const key of impactedKeys) {

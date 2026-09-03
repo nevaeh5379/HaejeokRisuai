@@ -17,12 +17,14 @@ describe("RisuSave decode memory behavior", () => {
       personas: [{ name: "A", icon: "", personaPrompt: "" }],
       modules: [{ id: "module-1", name: "Module" }],
       botPresets: [{ name: "Preset", mainPrompt: "hello" }],
-      plugins: [{
-        name: "backup-plugin",
-        version: "3.0",
-        enabled: true,
-        script: "console.log('backup')",
-      }],
+      plugins: [
+        {
+          name: "backup-plugin",
+          version: "3.0",
+          enabled: true,
+          script: "console.log('backup')",
+        },
+      ],
       pluginCustomStorage: { "backup-plugin": { restored: true } },
     });
     const guarded = new NoCopyUint8Array(new ArrayBuffer(source.byteLength));
@@ -42,46 +44,50 @@ describe("RisuSave decode memory behavior", () => {
   it("preserves branch-scoped Lua state through compressed backup encoding", async () => {
     const largeState = JSON.stringify({ scenes: ["x".repeat(128 * 1024)] });
     const source = {
-      characters: [{
-        chaId: "char-1",
-        type: "character",
-        name: "Bot",
-        chats: [{
-          id: "chat-1",
-          name: "Chat",
-          note: "",
-          localLore: [],
-          message: [{ role: "user", data: "hello", chatId: "m1" }],
-          scriptstate: { "$lb-xnai-stack": "live" },
-          branchState: {
-            baseMessageIndex: 0,
-            activeBranchId: "child",
-            branches: [
-              {
-                id: "root",
-                branchMessageIndex: 0,
-                reason: "root",
-                createdAt: 1,
-                messages: [],
-                scriptstate: { "$lb-xnai-stack": largeState },
-                GLGlobalVariables: { lightboard: "root" },
-                useLocallySetGlobalVariables: true,
+      characters: [
+        {
+          chaId: "char-1",
+          type: "character",
+          name: "Bot",
+          chats: [
+            {
+              id: "chat-1",
+              name: "Chat",
+              note: "",
+              localLore: [],
+              message: [{ role: "user", data: "hello", chatId: "m1" }],
+              scriptstate: { "$lb-xnai-stack": "live" },
+              branchState: {
+                baseMessageIndex: 0,
+                activeBranchId: "child",
+                branches: [
+                  {
+                    id: "root",
+                    branchMessageIndex: 0,
+                    reason: "root",
+                    createdAt: 1,
+                    messages: [],
+                    scriptstate: { "$lb-xnai-stack": largeState },
+                    GLGlobalVariables: { lightboard: "root" },
+                    useLocallySetGlobalVariables: true,
+                  },
+                  {
+                    id: "child",
+                    parentBranchId: "root",
+                    branchMessageIndex: 0,
+                    reason: "reroll",
+                    createdAt: 2,
+                    messages: [],
+                    scriptstate: null,
+                    GLGlobalVariables: null,
+                    useLocallySetGlobalVariables: false,
+                  },
+                ],
               },
-              {
-                id: "child",
-                parentBranchId: "root",
-                branchMessageIndex: 0,
-                reason: "reroll",
-                createdAt: 2,
-                messages: [],
-                scriptstate: null,
-                GLGlobalVariables: null,
-                useLocallySetGlobalVariables: false,
-              },
-            ],
-          },
-        }],
-      }],
+            },
+          ],
+        },
+      ],
     };
 
     const encoded = await encodeRisuSaveLegacyAsync(source, "compression");

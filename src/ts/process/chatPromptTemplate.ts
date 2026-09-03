@@ -15,7 +15,10 @@ import type {
 } from "./prompt";
 import { risuChatParser } from "./scripts";
 import { runLuaEditTrigger } from "./scriptings";
-import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
+import {
+  generationOverride,
+  type ChatGenerationOverrides,
+} from "./chatGenerationContext";
 import {
   applyPromptBlockRole,
   PROMPT_ROLE_TO_OPENAI,
@@ -46,7 +49,8 @@ function isCardEnabled(card: PromptItem, context: RenderContext) {
       "jailbreakToggle",
       settingsStore.state.jailbreakToggle,
     )
-  ) return false;
+  )
+    return false;
   if (card.type === "cot" && !settingsStore.state.chainOfThought) return false;
   return true;
 }
@@ -158,8 +162,14 @@ function systemizeChat(chats: OpenAIChat[]) {
   return chats;
 }
 
-function renderChatCard(card: PromptItemChat, context: RenderContext): RenderedCard {
-  const { start, end } = normalizeChatRange(card, context.unformated.chats.length);
+function renderChatCard(
+  card: PromptItemChat,
+  context: RenderContext,
+): RenderedCard {
+  const { start, end } = normalizeChatRange(
+    card,
+    context.unformated.chats.length,
+  );
   if (start >= end) return { prompts: [], promptInfo: [] };
   let prompts = context.unformated.chats.slice(start, end);
   if (
@@ -289,7 +299,11 @@ function renderCard(
   ) {
     return renderTypedCard(card, context, memories, capturePromptInfo);
   }
-  if (card.type === "plain" || card.type === "jailbreak" || card.type === "cot") {
+  if (
+    card.type === "plain" ||
+    card.type === "jailbreak" ||
+    card.type === "cot"
+  ) {
     return renderPlainCard(card, context, capturePromptInfo);
   }
   if (card.type === "lorebook") {
@@ -297,7 +311,10 @@ function renderCard(
   }
   if (card.type === "postEverything") return renderPostEverythingCard(context);
   if (card.type === "chatML") {
-    return { prompts: (parseChatML(card.text) ?? []) as OpenAIChat[], promptInfo: [] };
+    return {
+      prompts: (parseChatML(card.text) ?? []) as OpenAIChat[],
+      promptInfo: [],
+    };
   }
   if (card.type === "chat") return renderChatCard(card, context);
   return { prompts: [], promptInfo: [] };
@@ -435,14 +452,18 @@ function renderTemplateCards(
   }
 }
 
-function renderLegacyPromptOrder(options: FormatPromptOptions, formated: OpenAIChat[]) {
-  const formatOrder = safeStructuredClone(
-    generationOverride(
-      options.context.generation,
-      "formatingOrder",
-      presetStore.state.formatingOrder,
-    ),
-  ) ?? [];
+function renderLegacyPromptOrder(
+  options: FormatPromptOptions,
+  formated: OpenAIChat[],
+) {
+  const formatOrder =
+    safeStructuredClone(
+      generationOverride(
+        options.context.generation,
+        "formatingOrder",
+        presetStore.state.formatingOrder,
+      ),
+    ) ?? [];
   formatOrder.push("postEverything");
   for (const key of formatOrder) {
     mergePrompts(formated, options.context.unformated[key]);
@@ -453,7 +474,10 @@ function trimPromptContents(prompts: OpenAIChat[]) {
   for (const prompt of prompts) prompt.content = prompt.content.trim();
 }
 
-function insertCharacterDepthPrompt(options: FormatPromptOptions, formated: OpenAIChat[]) {
+function insertCharacterDepthPrompt(
+  options: FormatPromptOptions,
+  formated: OpenAIChat[],
+) {
   const depthPrompt = options.context.currentChar.depth_prompt;
   if (!depthPrompt?.prompt) return;
   formated.splice(formated.length - depthPrompt.depth, 0, {

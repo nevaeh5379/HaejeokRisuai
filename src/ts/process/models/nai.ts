@@ -10,8 +10,10 @@ export function stringlizeNAIChat(
   continued: boolean,
 ) {
   const db = settingsStore.state;
-  let seperator = presetStore.state.NAIsettings.seperator.replaceAll("\\n", "\n") || "\n";
-  let starter = presetStore.state.NAIsettings.starter.replaceAll("\\n", "\n") || "⁂";
+  let seperator =
+    presetStore.state.NAIsettings.seperator.replaceAll("\\n", "\n") || "\n";
+  let starter =
+    presetStore.state.NAIsettings.starter.replaceAll("\\n", "\n") || "⁂";
   let resultString: string[] = [];
 
   for (const form of formated) {

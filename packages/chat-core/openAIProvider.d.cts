@@ -83,7 +83,9 @@ export function buildOpenAIRequestHeaders(options?: {
   risuIdentify?: boolean;
 }): Record<string, string>;
 
-export function applyOpenAIPreParameterBodyPolicies<T extends Record<string, any>>(
+export function applyOpenAIPreParameterBodyPolicies<
+  T extends Record<string, any>,
+>(
   body: T,
   options?: {
     useCompletionTokens?: boolean;
@@ -102,7 +104,9 @@ export function applyOpenAIPreParameterBodyPolicies<T extends Record<string, any
   },
 ): T;
 
-export function applyOpenAIPostParameterBodyPolicies<T extends Record<string, any>>(
+export function applyOpenAIPostParameterBodyPolicies<
+  T extends Record<string, any>,
+>(
   body: T,
   options?: {
     deepSeekThinkingToggle?: boolean;

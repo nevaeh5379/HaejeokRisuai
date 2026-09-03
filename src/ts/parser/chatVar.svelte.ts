@@ -82,7 +82,10 @@ export function setGLChatVar(
   return true;
 }
 
-export function getGlobalChatVar(key: string, target?: ChatExecutionTarget): string {
+export function getGlobalChatVar(
+  key: string,
+  target?: ChatExecutionTarget,
+): string {
   const requestValue = target?.globalVariables?.[key];
   if (requestValue !== undefined) return requestValue;
   const localValue = getGLChatVar(key, target);

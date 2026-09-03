@@ -65,9 +65,14 @@ export async function notifyChatResponse(
   const chatId = options.chatId || target?.chatId;
 
   if (chatId) chatTabsStore.markUnread(chatId);
-  if (!settingsStore.state.notification || !rememberNotification(options.dedupeKey)) return;
+  if (
+    !settingsStore.state.notification ||
+    !rememberNotification(options.dedupeKey)
+  )
+    return;
 
-  const characterName = options.characterName || target?.characterName || "RisuAI";
+  const characterName =
+    options.characterName || target?.characterName || "RisuAI";
   const chatName = options.chatName || target?.chatName || "Chat";
   const result = options.result || findLatestResponse(chatId);
   const body = compactText(result, 320) || "Response ready";

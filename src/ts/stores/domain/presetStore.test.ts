@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ISqlStorage, StoredBotPreset } from "../../storage/sql/ISqlStorage";
+import type {
+  ISqlStorage,
+  StoredBotPreset,
+} from "../../storage/sql/ISqlStorage";
 import { presetStore } from "./presetStore.svelte";
 
 describe("PresetStore active ownership", () => {
@@ -66,10 +69,15 @@ describe("PresetStore active ownership", () => {
 
   it("rejects settings and other domain writes through the preset state", () => {
     for (const key of ["theme", "askRemoval", "modules", "characters"]) {
-      expect(() => Reflect.set(presetStore.state, key, null)).toThrow(/owned by another domain store/);
-      expect(() => Reflect.deleteProperty(presetStore.state, key)).toThrow(/owned by another domain store/);
-      expect(() => Object.defineProperty(presetStore.state, key, { value: null }))
-        .toThrow(/owned by another domain store/);
+      expect(() => Reflect.set(presetStore.state, key, null)).toThrow(
+        /owned by another domain store/,
+      );
+      expect(() => Reflect.deleteProperty(presetStore.state, key)).toThrow(
+        /owned by another domain store/,
+      );
+      expect(() =>
+        Object.defineProperty(presetStore.state, key, { value: null }),
+      ).toThrow(/owned by another domain store/);
     }
   });
 

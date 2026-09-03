@@ -202,10 +202,10 @@ class MessageStore implements FlushableStore {
       !!chat &&
       chat.messagesFullyLoaded !== false &&
       msgs.length === allMessages.length &&
-      msgs.every((message, index) => message.chatId === allMessages[index]?.chatId);
-    const currentIds = new Set(
-      messageUpserts.map((message) => message.id),
-    );
+      msgs.every(
+        (message, index) => message.chatId === allMessages[index]?.chatId,
+      );
+    const currentIds = new Set(messageUpserts.map((message) => message.id));
     const removedIds = previousMessageIds.filter((id) => !currentIds.has(id));
 
     try {
@@ -270,8 +270,11 @@ class MessageStore implements FlushableStore {
         chats: [],
         chatManifests: [],
         messages: messageUpserts,
-        messageManifests: [{ chatId, ids: nextMessages.map((message) => message.chatId!) }],
-        messageDeletes: removedIds.length > 0 ? [{ chatId, ids: removedIds }] : [],
+        messageManifests: [
+          { chatId, ids: nextMessages.map((message) => message.chatId!) },
+        ],
+        messageDeletes:
+          removedIds.length > 0 ? [{ chatId, ids: removedIds }] : [],
       });
     } catch (error) {
       console.error("[MessageStore] Failed to replace messages:", error);
@@ -485,11 +488,13 @@ export function releaseInactiveChatMessages(
  */
 export function compactChatMessages(chatId: string): void {
   const chat = findChatAcrossCharacters(chatId);
-  if (!chat 
-    || !chat.id
-    || chat.preventMessageCompaction
-    || chat.messagesFullyLoaded === false
-  ) return;
+  if (
+    !chat ||
+    !chat.id ||
+    chat.preventMessageCompaction ||
+    chat.messagesFullyLoaded === false
+  )
+    return;
   const messages = chat.message;
   const retention = getActiveChatMessageRetention();
   if (!messages || messages.length <= retention) return;

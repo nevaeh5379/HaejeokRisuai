@@ -3,7 +3,8 @@ import { flushSync, mount, unmount } from "svelte";
 import type { Chat, Message } from "src/ts/storage/database/schema";
 import BranchGraphModalHarness from "./fixtures/BranchGraphModalHarness.svelte";
 
-let mounted: { app: { setChat(chat: Chat): void }; target: HTMLElement } | undefined;
+let mounted:
+  { app: { setChat(chat: Chat): void }; target: HTMLElement } | undefined;
 
 function message(chatId: string, role: "user" | "char", data: string): Message {
   return { chatId, role, data } as Message;
@@ -12,7 +13,10 @@ function message(chatId: string, role: "user" | "char", data: string): Message {
 function linearChat(): Chat {
   return {
     id: "chat-1",
-    message: [message("m1", "user", "hello"), message("m2", "char", "original")],
+    message: [
+      message("m1", "user", "hello"),
+      message("m2", "char", "original"),
+    ],
   } as Chat;
 }
 
@@ -28,8 +32,22 @@ function branchedChat(): Chat {
       baseMessageIndex: -1,
       activeBranchId: "reroll",
       branches: [
-        { id: "root", reason: "root", createdAt: 0, branchMessageIndex: -1, messages: [first, original] },
-        { id: "reroll", parentBranchId: "root", branchMessageId: "m1", branchMessageIndex: 0, reason: "reroll", createdAt: 1, messages: [first, reroll] },
+        {
+          id: "root",
+          reason: "root",
+          createdAt: 0,
+          branchMessageIndex: -1,
+          messages: [first, original],
+        },
+        {
+          id: "reroll",
+          parentBranchId: "root",
+          branchMessageId: "m1",
+          branchMessageIndex: 0,
+          reason: "reroll",
+          createdAt: 1,
+          messages: [first, reroll],
+        },
       ],
     },
   } as Chat;
@@ -60,6 +78,8 @@ describe("BranchGraphModal persistent branch hydration", () => {
 
     expect(target.querySelectorAll(".branch-node")).toHaveLength(3);
     expect(target.querySelectorAll(".branch-node--fork")).toHaveLength(1);
-    expect(target.querySelectorAll(".branch-junction").length).toBeGreaterThan(0);
+    expect(target.querySelectorAll(".branch-junction").length).toBeGreaterThan(
+      0,
+    );
   });
 });

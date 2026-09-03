@@ -3,18 +3,17 @@ import type { character, Chat, groupChat } from "../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../polyfill";
-import {
-  getAuthorNoteDefaultText,
-  getPersonaPrompt,
-} from "../util";
+import { getAuthorNoteDefaultText, getPersonaPrompt } from "../util";
 import { risuChatParser } from "./scripts";
 import { additionalInformations } from "./embedding/addinfo";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import type { PromptItem, PromptRole } from "./prompt";
-import { generationOverride, type ChatGenerationOverrides } from "./chatGenerationContext";
+import {
+  generationOverride,
+  type ChatGenerationOverrides,
+} from "./chatGenerationContext";
 import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
 export type { PromptSections } from "@risuai/chat-core/types.cjs";
-
 
 export const PROMPT_ROLE_TO_OPENAI = {
   system: "system",
@@ -61,9 +60,16 @@ function getUtilityBotTemplate(): PromptItem[] {
   ];
 }
 
-function resolvePromptTemplate(currentChar: character, generation?: ChatGenerationOverrides) {
+function resolvePromptTemplate(
+  currentChar: character,
+  generation?: ChatGenerationOverrides,
+) {
   let promptTemplate = safeStructuredClone(
-    generationOverride(generation, "promptTemplate", presetStore.state.promptTemplate),
+    generationOverride(
+      generation,
+      "promptTemplate",
+      presetStore.state.promptTemplate,
+    ),
   );
   const usingPromptTemplate = !!promptTemplate;
   if (promptTemplate) ensurePostEverythingCard(promptTemplate);
@@ -72,7 +78,11 @@ function resolvePromptTemplate(currentChar: character, generation?: ChatGenerati
     currentChar.utilityBot &&
     !(
       usingPromptTemplate &&
-      generationOverride(generation, "promptSettings", presetStore.state.promptSettings).utilOverride
+      generationOverride(
+        generation,
+        "promptSettings",
+        presetStore.state.promptSettings,
+      ).utilOverride
     )
   ) {
     promptTemplate = getUtilityBotTemplate();
@@ -92,7 +102,6 @@ function parseLegacyPrompt(data: string): OpenAIChat[] {
   }
   return chats;
 }
-
 
 function buildLegacyMainPrompts(
   sections: PromptSections,
@@ -125,15 +134,21 @@ function buildLegacyMainPrompts(
       }),
     ),
   );
-  if (generationOverride(
-    generation,
-    "jailbreakToggle",
-    settingsStore.state.jailbreakToggle,
-  )) {
+  if (
+    generationOverride(
+      generation,
+      "jailbreakToggle",
+      settingsStore.state.jailbreakToggle,
+    )
+  ) {
     sections.jailbreak.push(
       ...parseLegacyPrompt(
         risuChatParser(
-          generationOverride(generation, "jailbreak", presetStore.state.jailbreak),
+          generationOverride(
+            generation,
+            "jailbreak",
+            presetStore.state.jailbreak,
+          ),
           {
             chara: currentChar,
             chatTarget: target,
@@ -156,10 +171,8 @@ function buildLegacyGlobalNote(
     presetStore.state.globalNote,
   );
   const globalNote =
-    currentChar.replaceGlobalNote?.replaceAll(
-      "{{original}}",
-      baseGlobalNote,
-    ) || baseGlobalNote;
+    currentChar.replaceGlobalNote?.replaceAll("{{original}}", baseGlobalNote) ||
+    baseGlobalNote;
   sections.globalNote.push(
     ...parseLegacyPrompt(
       risuChatParser(globalNote, { chara: currentChar, chatTarget: target }),
@@ -227,7 +240,8 @@ async function buildDescriptionText(
     presetStore.state.promptPreprocess,
   );
   let description = risuChatParser(
-    (promptPreprocess ? settingsStore.state.descriptionPrefix : "") + currentChar.desc,
+    (promptPreprocess ? settingsStore.state.descriptionPrefix : "") +
+      currentChar.desc,
     { chara: currentChar, chatTarget: target },
   );
   const additionalInfo = await additionalInformations(
@@ -278,7 +292,12 @@ async function buildDescriptionPrompt(
 ) {
   const prompt: OpenAIChat = {
     role: "system",
-    content: await buildDescriptionText(currentChar, currentChat, target, generation),
+    content: await buildDescriptionText(
+      currentChar,
+      currentChat,
+      target,
+      generation,
+    ),
   };
   sections.description.push(prompt);
   appendGroupSpeakerInstruction(sections, currentChar, nowChatroom);
@@ -408,7 +427,9 @@ function createPositionParser(
   lorePrompt: LorePrompt,
   resolvePosition: (text: string, maxDepth?: number) => string,
 ) {
-  const injections = lorePrompt.actives.filter((active) => active.inject && !active.inject.lore);
+  const injections = lorePrompt.actives.filter(
+    (active) => active.inject && !active.inject.lore,
+  );
   const byLocation = new Map<string, typeof injections>();
   for (const injection of injections) {
     const location = injection.inject.location;
@@ -494,7 +515,13 @@ export async function preparePromptSections(
     chatVariables: generation?.chatVariables,
   });
   const resolvePosition = createPositionResolver(lorePrompt);
-  buildLorebookSections(sections, currentChar, lorePrompt, resolvePosition, scopedTarget);
+  buildLorebookSections(
+    sections,
+    currentChar,
+    lorePrompt,
+    resolvePosition,
+    scopedTarget,
+  );
   addPersonaAndInlayPrompts(sections, currentChar, scopedTarget);
   appendDepthZeroLorebookPrompts(
     sections,

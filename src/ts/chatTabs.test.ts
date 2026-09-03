@@ -37,7 +37,10 @@ describe("ChatTabsStore.moveTab", () => {
   it("reorders tabs within a split without changing the active tab", () => {
     store.moveTab("a", "left", 1);
 
-    expect(store.tabsForGroup("left").map((item) => item.id)).toEqual(["b", "a"]);
+    expect(store.tabsForGroup("left").map((item) => item.id)).toEqual([
+      "b",
+      "a",
+    ]);
     expect(store.getGroup("left")?.activeTabId).toBe("a");
     expect(store.focusedGroupId).toBe("left");
   });
@@ -46,7 +49,10 @@ describe("ChatTabsStore.moveTab", () => {
     store.moveTab("b", "right", 0);
 
     expect(store.tabsForGroup("left").map((item) => item.id)).toEqual(["a"]);
-    expect(store.tabsForGroup("right").map((item) => item.id)).toEqual(["b", "c"]);
+    expect(store.tabsForGroup("right").map((item) => item.id)).toEqual([
+      "b",
+      "c",
+    ]);
     expect(store.getGroup("right")?.activeTabId).toBe("b");
     expect(store.focusedGroupId).toBe("right");
   });
@@ -57,7 +63,10 @@ describe("ChatTabsStore.moveTab", () => {
     store.moveTab("a", "right", 1);
 
     expect(store.groups.map((group) => group.id)).toEqual(["right"]);
-    expect(store.tabsForGroup("right").map((item) => item.id)).toEqual(["c", "a"]);
+    expect(store.tabsForGroup("right").map((item) => item.id)).toEqual([
+      "c",
+      "a",
+    ]);
     expect(store.getGroup("right")?.activeTabId).toBe("a");
   });
 });

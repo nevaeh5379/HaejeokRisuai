@@ -5,7 +5,7 @@
  * into light-theme optimized styles (and vice versa) using 4 distinct algorithms.
  */
 
-export type ColorAdaptEngine = 'oklch' | 'colord' | 'leonardo' | 'darkreader';
+export type ColorAdaptEngine = "oklch" | "colord" | "leonardo" | "darkreader";
 
 export interface RGBA {
   r: number; // 0 - 255
@@ -38,24 +38,24 @@ export function parseColor(colorStr: string): RGBA | null {
 
   // Named colors
   const namedColors: Record<string, string> = {
-    white: '#ffffff',
-    black: '#000000',
-    gray: '#808080',
-    grey: '#808080',
-    darkgray: '#a9a9a9',
-    darkgrey: '#a9a9a9',
-    lightgray: '#d3d3d3',
-    lightgrey: '#d3d3d3',
-    dimgray: '#696969',
-    dimgrey: '#696969',
-    transparent: 'rgba(0,0,0,0)',
+    white: "#ffffff",
+    black: "#000000",
+    gray: "#808080",
+    grey: "#808080",
+    darkgray: "#a9a9a9",
+    darkgrey: "#a9a9a9",
+    lightgray: "#d3d3d3",
+    lightgrey: "#d3d3d3",
+    dimgray: "#696969",
+    dimgrey: "#696969",
+    transparent: "rgba(0,0,0,0)",
   };
   if (namedColors[str]) {
     return parseColor(namedColors[str]);
   }
 
   // Hex (#rgb, #rgba, #rrggbb, #rrggbbaa)
-  if (str.startsWith('#')) {
+  if (str.startsWith("#")) {
     const hex = str.slice(1);
     if (hex.length === 3) {
       return {
@@ -92,14 +92,16 @@ export function parseColor(colorStr: string): RGBA | null {
   }
 
   // rgb/rgba
-  const rgbMatch = str.match(/rgba?\s*\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/);
+  const rgbMatch = str.match(
+    /rgba?\s*\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)/,
+  );
   if (rgbMatch) {
     const r = Math.min(255, Math.max(0, parseFloat(rgbMatch[1])));
     const g = Math.min(255, Math.max(0, parseFloat(rgbMatch[2])));
     const b = Math.min(255, Math.max(0, parseFloat(rgbMatch[3])));
     let a = 1;
     if (rgbMatch[4]) {
-      if (rgbMatch[4].endsWith('%')) {
+      if (rgbMatch[4].endsWith("%")) {
         a = parseFloat(rgbMatch[4]) / 100;
       } else {
         a = parseFloat(rgbMatch[4]);
@@ -109,14 +111,18 @@ export function parseColor(colorStr: string): RGBA | null {
   }
 
   // hsl/hsla
-  const hslMatch = str.match(/hsla?\s*\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%(?:[,\s/]+([\d.]+%?))?\s*\)/);
+  const hslMatch = str.match(
+    /hsla?\s*\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%(?:[,\s/]+([\d.]+%?))?\s*\)/,
+  );
   if (hslMatch) {
     const h = parseFloat(hslMatch[1]) % 360;
     const s = Math.min(100, Math.max(0, parseFloat(hslMatch[2]))) / 100;
     const l = Math.min(100, Math.max(0, parseFloat(hslMatch[3]))) / 100;
     let a = 1;
     if (hslMatch[4]) {
-      a = hslMatch[4].endsWith('%') ? parseFloat(hslMatch[4]) / 100 : parseFloat(hslMatch[4]);
+      a = hslMatch[4].endsWith("%")
+        ? parseFloat(hslMatch[4]) / 100
+        : parseFloat(hslMatch[4]);
     }
     const rgb = hslToRgb({ h, s, l, a });
     return rgb;
@@ -149,9 +155,15 @@ export function rgbToHsl(rgba: RGBA): HSL {
     const d = max - min;
     s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
     switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      case b: h = (r - g) / d + 4; break;
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
     }
     h *= 60;
   }
@@ -207,9 +219,15 @@ export function rgbToOklch(rgba: RGBA): OKLCH {
   const lg = srgbToLinear(rgba.g);
   const lb = srgbToLinear(rgba.b);
 
-  const l_ = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
-  const m_ = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
-  const s_ = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  const l_ = Math.cbrt(
+    0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb,
+  );
+  const m_ = Math.cbrt(
+    0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb,
+  );
+  const s_ = Math.cbrt(
+    0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb,
+  );
 
   const L = 0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_;
   const a = 1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_;
@@ -267,18 +285,22 @@ export function getContrastRatio(fg: RGBA, bg: RGBA): number {
 // 3. The 4 Transformation Engines
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ColorRole = 'bg' | 'fg' | 'border';
+export type ColorRole = "bg" | "fg" | "border";
 
-export function adaptColorOklch(rgba: RGBA, role: ColorRole, toLight: boolean): RGBA {
+export function adaptColorOklch(
+  rgba: RGBA,
+  role: ColorRole,
+  toLight: boolean,
+): RGBA {
   const oklch = rgbToOklch(rgba);
 
   if (toLight) {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (oklch.l < 0.6) {
         oklch.l = 0.94 - oklch.l * 0.15;
         oklch.c = Math.min(oklch.c * 0.5, 0.04);
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (oklch.l < 0.4) {
         oklch.l = 0.82 + oklch.l * 0.1;
         oklch.c = Math.min(oklch.c * 0.4, 0.03);
@@ -290,7 +312,7 @@ export function adaptColorOklch(rgba: RGBA, role: ColorRole, toLight: boolean): 
       if (isColoredAccent) {
         // Bright neon/accent in dark theme -> Deep, vivid jewel tone in light theme
         if (oklch.l > 0.38) {
-          oklch.l = 0.40; // Optimal 5.5:1 ~ 7:1 contrast ratio against white/light backgrounds
+          oklch.l = 0.4; // Optimal 5.5:1 ~ 7:1 contrast ratio against white/light backgrounds
           oklch.c = Math.min(oklch.c * 1.1, 0.19); // Retain rich, eye-pleasing hue
         }
       } else {
@@ -301,12 +323,12 @@ export function adaptColorOklch(rgba: RGBA, role: ColorRole, toLight: boolean): 
       }
     }
   } else {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (oklch.l > 0.5) {
         oklch.l = 0.12 + (1 - oklch.l) * 0.15;
         oklch.c = Math.min(oklch.c * 0.6, 0.05);
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (oklch.l > 0.6) {
         oklch.l = 0.28 - (1 - oklch.l) * 0.1;
         oklch.c = Math.min(oklch.c * 0.4, 0.03);
@@ -321,16 +343,20 @@ export function adaptColorOklch(rgba: RGBA, role: ColorRole, toLight: boolean): 
   return oklchToRgb(oklch);
 }
 
-export function adaptColorColord(rgba: RGBA, role: ColorRole, toLight: boolean): RGBA {
+export function adaptColorColord(
+  rgba: RGBA,
+  role: ColorRole,
+  toLight: boolean,
+): RGBA {
   const hsl = rgbToHsl(rgba);
 
   if (toLight) {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (hsl.l < 0.6) {
-        hsl.l = 0.92 + (1 - (hsl.l / 0.6)) * 0.05;
+        hsl.l = 0.92 + (1 - hsl.l / 0.6) * 0.05;
         hsl.s = Math.min(hsl.s * 0.35, 0.25);
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (hsl.l < 0.4) {
         hsl.l = 0.82;
         hsl.s = Math.min(hsl.s * 0.3, 0.2);
@@ -349,12 +375,12 @@ export function adaptColorColord(rgba: RGBA, role: ColorRole, toLight: boolean):
       }
     }
   } else {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (hsl.l > 0.5) {
         hsl.l = 0.14 * (1 - hsl.l);
         hsl.s = Math.min(hsl.s * 0.4, 0.3);
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (hsl.l > 0.6) {
         hsl.l = 0.28;
       }
@@ -368,16 +394,20 @@ export function adaptColorColord(rgba: RGBA, role: ColorRole, toLight: boolean):
   return hslToRgb(hsl);
 }
 
-export function adaptColorLeonardo(rgba: RGBA, role: ColorRole, toLight: boolean): RGBA {
+export function adaptColorLeonardo(
+  rgba: RGBA,
+  role: ColorRole,
+  toLight: boolean,
+): RGBA {
   const oklch = rgbToOklch(rgba);
 
   if (toLight) {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (oklch.l < 0.6) {
         oklch.l = 0.93;
         oklch.c = Math.min(oklch.c * 0.4, 0.03);
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (oklch.l < 0.4) {
         oklch.l = 0.84;
         oklch.c = Math.min(oklch.c * 0.3, 0.02);
@@ -396,12 +426,12 @@ export function adaptColorLeonardo(rgba: RGBA, role: ColorRole, toLight: boolean
       }
     }
   } else {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (oklch.l > 0.5) {
         oklch.l = 0.16;
         oklch.c = Math.min(oklch.c * 0.4, 0.03);
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (oklch.l > 0.6) {
         oklch.l = 0.28;
       }
@@ -415,16 +445,20 @@ export function adaptColorLeonardo(rgba: RGBA, role: ColorRole, toLight: boolean
   return oklchToRgb(oklch);
 }
 
-export function adaptColorDarkReader(rgba: RGBA, role: ColorRole, toLight: boolean): RGBA {
+export function adaptColorDarkReader(
+  rgba: RGBA,
+  role: ColorRole,
+  toLight: boolean,
+): RGBA {
   const hsl = rgbToHsl(rgba);
 
   if (toLight) {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (hsl.l < 0.55) {
         hsl.l = 1 - hsl.l * 0.85;
         hsl.s = hsl.s * 0.6;
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (hsl.l < 0.4) {
         hsl.l = 1 - hsl.l * 0.5;
       }
@@ -441,12 +475,12 @@ export function adaptColorDarkReader(rgba: RGBA, role: ColorRole, toLight: boole
       }
     }
   } else {
-    if (role === 'bg') {
+    if (role === "bg") {
       if (hsl.l > 0.5) {
         hsl.l = (1 - hsl.l) * 0.85;
         hsl.s = hsl.s * 0.6;
       }
-    } else if (role === 'border') {
+    } else if (role === "border") {
       if (hsl.l > 0.6) {
         hsl.l = (1 - hsl.l) * 0.6;
       }
@@ -468,25 +502,26 @@ export function adaptSingleColor(
   colorStr: string,
   roleOrIsBg: ColorRole | boolean,
   toLight: boolean,
-  engine: ColorAdaptEngine = 'oklch',
+  engine: ColorAdaptEngine = "oklch",
 ): string {
   const parsed = parseColor(colorStr);
   if (!parsed) return colorStr;
 
-  const role: ColorRole = typeof roleOrIsBg === 'boolean' ? (roleOrIsBg ? 'bg' : 'fg') : roleOrIsBg;
+  const role: ColorRole =
+    typeof roleOrIsBg === "boolean" ? (roleOrIsBg ? "bg" : "fg") : roleOrIsBg;
 
   let adapted: RGBA;
   switch (engine) {
-    case 'colord':
+    case "colord":
       adapted = adaptColorColord(parsed, role, toLight);
       break;
-    case 'leonardo':
+    case "leonardo":
       adapted = adaptColorLeonardo(parsed, role, toLight);
       break;
-    case 'darkreader':
+    case "darkreader":
       adapted = adaptColorDarkReader(parsed, role, toLight);
       break;
-    case 'oklch':
+    case "oklch":
     default:
       adapted = adaptColorOklch(parsed, role, toLight);
       break;
@@ -503,15 +538,15 @@ export function adaptCssValue(
   val: string,
   role: ColorRole,
   toLight: boolean,
-  engine: ColorAdaptEngine = 'oklch',
+  engine: ColorAdaptEngine = "oklch",
 ): string {
-  if (!val || typeof val !== 'string') return val;
+  if (!val || typeof val !== "string") return val;
 
   const hasImportant = /!\s*important/i.test(val);
-  let cleanVal = val.replace(/!\s*important/gi, '').trim();
+  let cleanVal = val.replace(/!\s*important/gi, "").trim();
 
   // If it's a url(...) image without gradient, don't modify the URL part
-  if (cleanVal.includes('url(') && !cleanVal.includes('gradient')) {
+  if (cleanVal.includes("url(") && !cleanVal.includes("gradient")) {
     return val;
   }
 
@@ -529,13 +564,24 @@ export function adaptCssValue(
   });
 
   // 3. Known named colors (whole word boundary)
-  const named = ['white', 'black', 'gray', 'grey', 'darkgray', 'darkgrey', 'lightgray', 'lightgrey', 'dimgray', 'dimgrey'];
-  const namedRegex = new RegExp(`\\b(${named.join('|')})\\b`, 'gi');
+  const named = [
+    "white",
+    "black",
+    "gray",
+    "grey",
+    "darkgray",
+    "darkgrey",
+    "lightgray",
+    "lightgrey",
+    "dimgray",
+    "dimgrey",
+  ];
+  const namedRegex = new RegExp(`\\b(${named.join("|")})\\b`, "gi");
   cleanVal = cleanVal.replace(namedRegex, (match) => {
     return adaptSingleColor(match, role, toLight, engine);
   });
 
-  return cleanVal + (hasImportant ? ' !important' : '');
+  return cleanVal + (hasImportant ? " !important" : "");
 }
 
 /**
@@ -545,18 +591,18 @@ export function adaptCssValue(
 export function adaptInlineStyle(
   styleStr: string,
   toLight: boolean,
-  engine: ColorAdaptEngine = 'oklch',
+  engine: ColorAdaptEngine = "oklch",
 ): string {
-  if (!styleStr || typeof styleStr !== 'string') return styleStr;
+  if (!styleStr || typeof styleStr !== "string") return styleStr;
 
-  const declarations = styleStr.split(';');
+  const declarations = styleStr.split(";");
   const result: string[] = [];
 
   for (const decl of declarations) {
     const trimmed = decl.trim();
     if (!trimmed) continue;
 
-    const colonIdx = trimmed.indexOf(':');
+    const colonIdx = trimmed.indexOf(":");
     if (colonIdx === -1) {
       result.push(trimmed);
       continue;
@@ -565,39 +611,43 @@ export function adaptInlineStyle(
     const prop = trimmed.slice(0, colonIdx).trim().toLowerCase();
     const val = trimmed.slice(colonIdx + 1).trim();
 
-    if (prop === 'background' || prop === 'background-color' || prop === 'background-image') {
-      result.push(`${prop}: ${adaptCssValue(val, 'bg', toLight, engine)}`);
+    if (
+      prop === "background" ||
+      prop === "background-color" ||
+      prop === "background-image"
+    ) {
+      result.push(`${prop}: ${adaptCssValue(val, "bg", toLight, engine)}`);
       continue;
     }
 
-    if (prop === 'color') {
-      result.push(`${prop}: ${adaptCssValue(val, 'fg', toLight, engine)}`);
+    if (prop === "color") {
+      result.push(`${prop}: ${adaptCssValue(val, "fg", toLight, engine)}`);
       continue;
     }
 
     if (
-      prop === 'border' ||
-      prop === 'border-color' ||
-      prop === 'border-top' ||
-      prop === 'border-bottom' ||
-      prop === 'border-left' ||
-      prop === 'border-right' ||
-      prop === 'outline' ||
-      prop === 'outline-color'
+      prop === "border" ||
+      prop === "border-color" ||
+      prop === "border-top" ||
+      prop === "border-bottom" ||
+      prop === "border-left" ||
+      prop === "border-right" ||
+      prop === "outline" ||
+      prop === "outline-color"
     ) {
-      result.push(`${prop}: ${adaptCssValue(val, 'border', toLight, engine)}`);
+      result.push(`${prop}: ${adaptCssValue(val, "border", toLight, engine)}`);
       continue;
     }
 
-    if (prop === 'box-shadow' || prop === 'text-shadow') {
-      result.push(`${prop}: ${adaptCssValue(val, 'border', toLight, engine)}`);
+    if (prop === "box-shadow" || prop === "text-shadow") {
+      result.push(`${prop}: ${adaptCssValue(val, "border", toLight, engine)}`);
       continue;
     }
 
     result.push(trimmed);
   }
 
-  return result.join('; ') + (result.length > 0 ? ';' : '');
+  return result.join("; ") + (result.length > 0 ? ";" : "");
 }
 
 /**
@@ -606,24 +656,31 @@ export function adaptInlineStyle(
 export function adaptFullCssText(
   cssText: string,
   toLight: boolean,
-  engine: ColorAdaptEngine = 'oklch',
+  engine: ColorAdaptEngine = "oklch",
 ): string {
-  if (!cssText || typeof cssText !== 'string') return cssText;
+  if (!cssText || typeof cssText !== "string") return cssText;
 
-  return cssText.replace(/([a-zA-Z0-9_-]+)\s*:\s*([^;{}]+)/g, (fullMatch, prop, val) => {
-    const p = prop.trim().toLowerCase();
-    if (p === 'background' || p === 'background-color' || p === 'background-image') {
-      return `${prop}: ${adaptCssValue(val, 'bg', toLight, engine)}`;
-    }
-    if (p === 'color') {
-      return `${prop}: ${adaptCssValue(val, 'fg', toLight, engine)}`;
-    }
-    if (p.includes('border') || p.includes('outline')) {
-      return `${prop}: ${adaptCssValue(val, 'border', toLight, engine)}`;
-    }
-    if (p === 'box-shadow' || p === 'text-shadow') {
-      return `${prop}: ${adaptCssValue(val, 'border', toLight, engine)}`;
-    }
-    return fullMatch;
-  });
+  return cssText.replace(
+    /([a-zA-Z0-9_-]+)\s*:\s*([^;{}]+)/g,
+    (fullMatch, prop, val) => {
+      const p = prop.trim().toLowerCase();
+      if (
+        p === "background" ||
+        p === "background-color" ||
+        p === "background-image"
+      ) {
+        return `${prop}: ${adaptCssValue(val, "bg", toLight, engine)}`;
+      }
+      if (p === "color") {
+        return `${prop}: ${adaptCssValue(val, "fg", toLight, engine)}`;
+      }
+      if (p.includes("border") || p.includes("outline")) {
+        return `${prop}: ${adaptCssValue(val, "border", toLight, engine)}`;
+      }
+      if (p === "box-shadow" || p === "text-shadow") {
+        return `${prop}: ${adaptCssValue(val, "border", toLight, engine)}`;
+      }
+      return fullMatch;
+    },
+  );
 }

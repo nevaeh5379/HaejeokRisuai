@@ -129,16 +129,13 @@ export const replacePlaceholders = (
 
 export function checkPersonaBinded(target?: ChatExecutionTarget) {
   try {
-    const chat = (target
-      ? resolveChatTarget(target)
-      : resolveSelectedChatTarget()
+    const chat = (
+      target ? resolveChatTarget(target) : resolveSelectedChatTarget()
     )?.chat;
     if (!chat?.bindedPersona) {
       return null;
     }
-    const persona = personaStore.list.find(
-      (v) => v.id === chat.bindedPersona,
-    );
+    const persona = personaStore.list.find((v) => v.id === chat.bindedPersona);
     return persona;
   } catch (error) {
     return null;

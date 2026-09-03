@@ -262,13 +262,20 @@ describe("messageStore", () => {
 
     await messageStore.replaceMessages("chat-1", next, previous);
 
-    expect(chat.message.map((message) => message.chatId)).toEqual(["msg-1", "branch-msg"]);
+    expect(chat.message.map((message) => message.chatId)).toEqual([
+      "msg-1",
+      "branch-msg",
+    ]);
     expect(chat.messageTotal).toBe(2);
     expect(mockStorage.commits).toHaveLength(1);
     const commit = mockStorage.commits[0];
     expect(commit.action).toBe("message-branch-switch");
-    expect(commit.messageManifests).toEqual([{ chatId: "chat-1", ids: ["msg-1", "branch-msg"] }]);
-    expect(commit.messageDeletes).toEqual([{ chatId: "chat-1", ids: ["msg-2", "msg-3"] }]);
+    expect(commit.messageManifests).toEqual([
+      { chatId: "chat-1", ids: ["msg-1", "branch-msg"] },
+    ]);
+    expect(commit.messageDeletes).toEqual([
+      { chatId: "chat-1", ids: ["msg-2", "msg-3"] },
+    ]);
     expect(commit.messages.map((message) => message.position)).toEqual([0, 1]);
   });
 
@@ -423,9 +430,7 @@ describe("messageStore", () => {
     expect(ids[0]).toBe("duplicate-message");
     expect(new Set(ids).size).toBe(3);
     expect(duplicatedChat.message.map((m: Message) => m.chatId)).toEqual(ids);
-    expect(commit.messageManifests).toEqual([
-      { chatId: "chat-clone", ids },
-    ]);
+    expect(commit.messageManifests).toEqual([{ chatId: "chat-clone", ids }]);
   });
 
   it("retains a message commit after a transient storage failure", async () => {

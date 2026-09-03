@@ -1,25 +1,30 @@
-'use strict';
+"use strict";
 
 function containsBannedCharacterSet(text, bannedCharacterSets) {
   if (!bannedCharacterSets?.length) return false;
   for (const set of bannedCharacterSets) {
-    const checkRegex = new RegExp(`\\p{Script=${set}}`, 'gu');
+    const checkRegex = new RegExp(`\\p{Script=${set}}`, "gu");
     if (checkRegex.test(text)) return true;
   }
   return false;
 }
 
-function shouldFallbackOnBlankResponse(response, fallbackIndex, fallbackCount, enabled) {
+function shouldFallbackOnBlankResponse(
+  response,
+  fallbackIndex,
+  fallbackCount,
+  enabled,
+) {
   return Boolean(
     enabled &&
-      response.type === 'success' &&
-      fallbackIndex !== fallbackCount - 1 &&
-      response.result.trim() === '',
+    response.type === "success" &&
+    fallbackIndex !== fallbackCount - 1 &&
+    response.result.trim() === "",
   );
 }
 
 function isPluginModel(model) {
-  return model === 'custom' || Boolean(model?.startsWith('pluginmodel:::'));
+  return model === "custom" || Boolean(model?.startsWith("pluginmodel:::"));
 }
 
 function decideFailedRequestRetry(input) {
@@ -31,12 +36,15 @@ function decideFailedRequestRetry(input) {
   retryCount += 1;
 
   if (retryCount <= input.requestRetries) {
-    return { action: 'retry', retryCount, delayMs };
+    return { action: "retry", retryCount, delayMs };
   }
 
   const lastFallback = input.fallbackIndex === input.fallbackCount - 1;
   return {
-    action: lastFallback || isPluginModel(input.response.model) ? 'return' : 'fallback',
+    action:
+      lastFallback || isPluginModel(input.response.model)
+        ? "return"
+        : "fallback",
     retryCount,
     delayMs,
   };

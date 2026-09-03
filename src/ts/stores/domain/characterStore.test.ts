@@ -823,7 +823,9 @@ describe("CharacterStore", () => {
       loaded.chats[0].id = "chat-rehydrate-0";
       loaded.chats[0].detailsLoaded = false;
       (loaded as any).globalLore = [{ key: "restored" }];
-      (mockStorage as any).loadCharacterForSelection = vi.fn(async () => loaded);
+      (mockStorage as any).loadCharacterForSelection = vi.fn(
+        async () => loaded,
+      );
 
       await characterStore.ensureCharacterDetails(evictedId);
 

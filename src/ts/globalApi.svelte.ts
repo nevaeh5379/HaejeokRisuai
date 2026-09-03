@@ -47,7 +47,10 @@ import {
   oldJailbreak,
   oldMainPrompt,
 } from "./storage/presets/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/backup/risuSave";
+import {
+  decodeRisuSave,
+  encodeRisuSaveLegacy,
+} from "./storage/backup/risuSave";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -71,7 +74,10 @@ import {
   fetchViaDurableModelJob,
   getDurableGenerationContext,
 } from "./network/durableModelJobs";
-import { getNodeServerProxyAuth, NodeStorage } from "./storage/files/nodeStorage";
+import {
+  getNodeServerProxyAuth,
+  NodeStorage,
+} from "./storage/files/nodeStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
@@ -2805,7 +2811,9 @@ export async function loadInternalBackup() {
   await storage.replaceDatabase(decoded);
   const startup = await storage.loadStartupData();
   if (!startup) {
-    throw new Error("SQL storage returned no startup data after backup restore");
+    throw new Error(
+      "SQL storage returned no startup data after backup restore",
+    );
   }
   installStartupData(startup, storage);
   alertNormal("Loaded backup");
@@ -3182,7 +3190,9 @@ export function createChatCopyName(
   type: "Copy" | "Branch" = "Copy",
   existingChats?: Array<{ name?: string }>,
 ): string {
-  let name = (originalName || "Chat").replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, "").trim();
+  let name = (originalName || "Chat")
+    .replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, "")
+    .trim();
   if (!name) name = "Chat";
   let copyIndex = 1;
   let newName = `${name} (${type})`;
