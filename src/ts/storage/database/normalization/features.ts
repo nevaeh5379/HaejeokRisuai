@@ -71,6 +71,7 @@ const featureScalarDefaults = {
   assetMaxDifference: defaultNumber(4),
   showSavingIcon: defaultBoolean(false),
   showPromptComparison: defaultBoolean(false),
+  showChatTabs: defaultBoolean(true),
   reasoningEffort: defaultNumber(0),
   verbosity: defaultNumber(1),
   hypaV3PresetId: defaultNumber(0),

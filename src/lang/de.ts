@@ -1564,6 +1564,7 @@ export const languageGerman = {
   menuSideBar: "Menü-Seitenleiste",
   home: "Startseite",
   showSavingIcon: "Speichersymbol anzeigen",
+  showChatTabs: "Chat-Tabs anzeigen",
   pluginVersionWarn:
     "Dies ist Version {{plugin_version}} des Plugins, die nicht mit dieser Version von Risuai kompatibel ist. Bitte aktualisieren Sie das Plugin auf Version {{required_version}}.",
   imageTranslation: "Bildübersetzung",

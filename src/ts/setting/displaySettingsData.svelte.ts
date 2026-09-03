@@ -329,6 +329,13 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ["first", "message", "pages"],
   },
   {
+    id: "display.showChatTabs",
+    type: "check",
+    labelKey: "showChatTabs",
+    bindKey: "showChatTabs",
+    keywords: ["chat", "tabs", "tab", "ui", "탭"],
+  },
+  {
     id: "display.hideRealm",
     type: "check",
     labelKey: "hideRealm",

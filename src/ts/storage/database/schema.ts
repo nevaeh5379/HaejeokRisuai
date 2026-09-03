@@ -387,6 +387,7 @@ export interface DatabaseSettings {
   menuSideBar: boolean;
   pluginV2: RisuPlugin[];
   showSavingIcon: boolean;
+  showChatTabs: boolean;
   presetRegex: customscript[];
   banCharacterset: string[];
   showPromptComparison: boolean;

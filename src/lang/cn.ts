@@ -1472,6 +1472,7 @@ export const languageChinese = {
   menuSideBar: "菜单侧边栏",
   home: "主页",
   showSavingIcon: "显示保存图标",
+  showChatTabs: "显示聊天标签页",
   pluginVersionWarn:
     "这是插件的 {{plugin_version}} 版本。它与此版本的 Risuai 不兼容。请将插件更新到 {{required_version}} 版本。",
   imageTranslation: "图片翻译",

@@ -2130,6 +2130,7 @@ export const languageEnglish = {
   menuSideBar: "Menu Side Bar",
   home: "Home",
   showSavingIcon: "Show Saving Icon",
+  showChatTabs: "Show Chat Tabs",
   pluginVersionWarn:
     "This is {{plugin_version}} version of the plugin. Which is not compatible with this version of Risuai. Please update the plugin to {{required_version}} version.",
   imageTranslation: "Image Translation",
