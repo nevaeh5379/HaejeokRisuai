@@ -58,14 +58,41 @@ function formatDuration(milliseconds) {
   return `${Math.round(seconds)}s`;
 }
 
+function isAsciiLetter(char) {
+  const code = char?.charCodeAt(0) ?? 0;
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isUrlSchemeChar(char) {
+  const code = char?.charCodeAt(0) ?? 0;
+  return (
+    isAsciiLetter(char) ||
+    (code >= 48 && code <= 57) ||
+    char === "+" ||
+    char === "." ||
+    char === "-"
+  );
+}
+
 function redactUrlCredentials(value) {
-  const schemePattern = /[a-z][a-z0-9+.-]*:\/\//gi;
   let result = "";
   let cursor = 0;
-  let match;
+  let searchFrom = 0;
 
-  while ((match = schemePattern.exec(value)) !== null) {
-    const authorityStart = match.index + match[0].length;
+  while (searchFrom < value.length) {
+    const schemeEnd = value.indexOf("://", searchFrom);
+    if (schemeEnd < 0) break;
+
+    let schemeStart = schemeEnd;
+    while (schemeStart > 0 && isUrlSchemeChar(value[schemeStart - 1])) {
+      schemeStart -= 1;
+    }
+    if (schemeStart === schemeEnd || !isAsciiLetter(value[schemeStart])) {
+      searchFrom = schemeEnd + 3;
+      continue;
+    }
+
+    const authorityStart = schemeEnd + 3;
     let authorityEnd = authorityStart;
     while (
       authorityEnd < value.length &&
@@ -78,7 +105,7 @@ function redactUrlCredentials(value) {
       result += value.slice(cursor, authorityStart) + "<redacted>@";
       cursor = atIndex + 1;
     }
-    schemePattern.lastIndex = authorityEnd;
+    searchFrom = Math.max(authorityEnd, schemeEnd + 3);
   }
 
   return result + value.slice(cursor);
