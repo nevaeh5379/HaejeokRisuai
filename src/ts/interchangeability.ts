@@ -22,6 +22,10 @@ export function convertModuleToCharacter(m: RisuModule): character {
   char.moduleNamespace = m.namespace;
   char.customModuleToggle = m.customModuleToggle || "";
   char.image = m.icon || "";
+  if (m.subModel) {
+    char.extentions ??= {};
+    char.extentions["moduleSubModel"] = m.subModel;
+  }
 
   for (let i = 0; i < char.globalLore.length; i++) {
     const lore = safeStructuredClone(char.globalLore[i]);
@@ -76,6 +80,7 @@ export function convertCharacterToModule(c: character): RisuModule {
     customModuleToggle: c.customModuleToggle,
     id: v4(),
     icon: c.image,
+    subModel: (c.extentions?.["moduleSubModel"] as string) || undefined,
   };
   mod.lorebook = safeStructuredClone(mod.lorebook || []);
 

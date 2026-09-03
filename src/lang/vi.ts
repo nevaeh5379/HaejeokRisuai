@@ -219,6 +219,8 @@ export const languageVietnamese = {
       "Đánh giá các biểu thức toán học với hỗ trợ cho số học cơ bản (+, -, *, /, %, ^), toán tử so sánh (<, >, <=, >=, =, !=), toán tử logic (&&, ||, !), dấu ngoặc đơn để ưu tiên, và thay thế biến bằng định dạng $variableName. Các biến được tự động chuyển đổi thành số (mặc định là 0 nếu không hợp lệ).",
     namespace:
       "Namespace là một định danh duy nhất cho mô-đun. Nó được sử dụng để ngăn xung đột giữa các mô-đun, và cho sự tương tác của các cài đặt trước, các mô-đun khác, v.v. Nếu bạn không chắc chắn nên đặt gì, hãy để trống.",
+    moduleSubModel:
+      "Chỉ định một mô hình phụ trợ chuyên dụng cho các trigger và tập lệnh của mô-đun này. Nếu để trống, mô hình phụ trợ toàn cục sẽ được sử dụng.",
     moduleIntergration:
       "Bạn có thể kích hoạt các mô-đun bằng cách đặt namespace mô-đun vào phần tích hợp mô-đun. Nếu bạn muốn kích hoạt nhiều mô-đun, bạn có thể phân tách chúng bằng dấu phẩy. Ví dụ, `module1,module2,module3`. Điều này dành cho người dùng nâng cao, những người muốn thay đổi việc sử dụng các mô-đun theo cài đặt trước.",
     customCSS:
@@ -385,30 +387,43 @@ export const languageVietnamese = {
     igpPrompt:
       "Nếu IGP Prompt không trống, nó sẽ được thực thi sau yêu cầu mô hình chính, sau khi thực thi mô hình chính, dưới dạng mô hình cảm xúc, thêm kết quả sau phản hồi mô hình chính.",
     welcomeTitle: "Chào mừng bạn đến với Haejeok RisuAI",
-    welcomeGreeting: "Xin chào! Chào mừng bạn đến với Haejeok RisuAI. Tôi là Iris, người hướng dẫn của bạn.",
+    welcomeGreeting:
+      "Xin chào! Chào mừng bạn đến với Haejeok RisuAI. Tôi là Iris, người hướng dẫn của bạn.",
     welcomeSubGreeting: "Bạn muốn bắt đầu như thế nào?",
     irisName: "Iris",
-    irisGatewayDefault: "Rất vui được gặp bạn! Hãy chọn phương thức bắt đầu. Nếu là người mới, chúng tôi khuyên dùng Thiết lập nhanh!",
-    irisGatewayDetected: "Đã tìm thấy database.bin cũ. Bạn có muốn khôi phục ngay không?",
-    irisMigrationDrop: "Kéo thả tệp database.bin vào đây để chuyển đổi dữ liệu sang lưu trữ SQL hiệu năng cao!",
-    irisMigrationPreview: "Đã xác nhận dữ liệu! Khôi phục nhân vật và cuộc trò chuyện chứ?",
+    irisGatewayDefault:
+      "Rất vui được gặp bạn! Hãy chọn phương thức bắt đầu. Nếu là người mới, chúng tôi khuyên dùng Thiết lập nhanh!",
+    irisGatewayDetected:
+      "Đã tìm thấy database.bin cũ. Bạn có muốn khôi phục ngay không?",
+    irisMigrationDrop:
+      "Kéo thả tệp database.bin vào đây để chuyển đổi dữ liệu sang lưu trữ SQL hiệu năng cao!",
+    irisMigrationPreview:
+      "Đã xác nhận dữ liệu! Khôi phục nhân vật và cuộc trò chuyện chứ?",
     irisStep1: "Hãy nhập biệt danh bạn muốn dùng khi trò chuyện!",
-    irisStep2: "Chọn nhà cung cấp AI yêu thích! Khuyên dùng Claude 3.7 Sonnet hoặc GPT-4o.",
-    irisStep3: "Cấu hình khóa API, dịch thuật và dung lượng bộ nhớ. Bạn có thể thay đổi sau trong Cài đặt!",
-    irisStep4: "Tất cả đã sẵn sàng! Cùng bắt đầu hành trình với Haejeok RisuAI nào!",
+    irisStep2:
+      "Chọn nhà cung cấp AI yêu thích! Khuyên dùng Claude 3.7 Sonnet hoặc GPT-4o.",
+    irisStep3:
+      "Cấu hình khóa API, dịch thuật và dung lượng bộ nhớ. Bạn có thể thay đổi sau trong Cài đặt!",
+    irisStep4:
+      "Tất cả đã sẵn sàng! Cùng bắt đầu hành trình với Haejeok RisuAI nào!",
     gatewayMigrationTitle: "Khôi phục / Di chuyển dữ liệu",
-    gatewayMigrationDesc: "Khôi phục nhân vật, cuộc trò chuyện và cấu hình mẫu từ tệp database.bin hoặc bản sao lưu.",
+    gatewayMigrationDesc:
+      "Khôi phục nhân vật, cuộc trò chuyện và cấu hình mẫu từ tệp database.bin hoặc bản sao lưu.",
     gatewayQuickSetupTitle: "Thiết lập AI nhanh",
-    gatewayQuickSetupDesc: "Cài đặt biệt danh và mô hình AI (Claude, OpenAI, Gemini...) chỉ trong vài bước đơn giản.",
+    gatewayQuickSetupDesc:
+      "Cài đặt biệt danh và mô hình AI (Claude, OpenAI, Gemini...) chỉ trong vài bước đơn giản.",
     gatewaySkipTitle: "Bỏ qua & Khám phá",
-    gatewaySkipDesc: "Vào thẳng giao diện chính của Haejeok RisuAI với cài đặt mặc định.",
+    gatewaySkipDesc:
+      "Vào thẳng giao diện chính của Haejeok RisuAI với cài đặt mặc định.",
     detectedLegacyDbTitle: "Đã phát hiện database.bin cũ",
-    detectedLegacyDbDesc: "Đã tìm thấy dữ liệu lưu trước đó trên thiết bị. Bạn có muốn di chuyển ngay không?",
+    detectedLegacyDbDesc:
+      "Đã tìm thấy dữ liệu lưu trước đó trên thiết bị. Bạn có muốn di chuyển ngay không?",
     migrateDetectedBtn: "Di chuyển dữ liệu đã phát hiện",
     checkDataBtn: "Kiểm tra dữ liệu",
     currentUsername: "Biệt danh hiện tại:",
     dropDatabaseBinTitle: "Kéo & Thả tệp database.bin vào đây",
-    dropDatabaseBinDesc: "hoặc nhấn để chọn tệp sao lưu database.bin / .risum / .risup",
+    dropDatabaseBinDesc:
+      "hoặc nhấn để chọn tệp sao lưu database.bin / .risum / .risup",
     selectFileBtn: "Chọn tệp",
     migrationPreviewTitle: "Xem trước dữ liệu sao lưu",
     migrationCharacters: "Nhân vật",
@@ -419,22 +434,27 @@ export const languageVietnamese = {
     startMigrationBtn: "Bắt đầu di chuyển",
     migrationInProgress: "Đang di chuyển dữ liệu vào cơ sở dữ liệu SQL...",
     migrationSuccessTitle: "Di chuyển hoàn tất",
-    migrationSuccessDesc: "Tất cả nhân vật và trò chuyện đã được chuyển sang bộ lưu trữ SQL an toàn.",
+    migrationSuccessDesc:
+      "Tất cả nhân vật và trò chuyện đã được chuyển sang bộ lưu trữ SQL an toàn.",
     migrationFailedTitle: "Di chuyển thất bại",
-    migrationFailedDesc: "Không thể đọc tệp cơ sở dữ liệu. Vui lòng kiểm tra lại tệp.",
+    migrationFailedDesc:
+      "Không thể đọc tệp cơ sở dữ liệu. Vui lòng kiểm tra lại tệp.",
     chooseAnotherFile: "Chọn tệp khác",
     selectAiModel: "Chọn nhà cung cấp AI",
     selectAiModelDesc: "Chọn nhà cung cấp mô hình AI bạn muốn sử dụng.",
     inputApiKeyTitle: "Khóa API & Cài đặt",
     inputApiKeyPlaceholder: "Dán khóa API của bạn vào đây...",
     apiKeyLink: "Lấy khóa API",
-    apiKeyDesc: "Khóa được lưu trữ an toàn trên thiết bị của bạn và không bao giờ bị gửi ra ngoài.",
+    apiKeyDesc:
+      "Khóa được lưu trữ an toàn trên thiết bị của bạn và không bao giờ bị gửi ra ngoài.",
     nicknameDesc: "Chọn tên bạn muốn được gọi trong các cuộc trò chuyện.",
-    nicknameInputPlaceholder: "Nhập biệt danh của bạn (ví dụ: Nhà thám hiểm, User)",
+    nicknameInputPlaceholder:
+      "Nhập biệt danh của bạn (ví dụ: Nhà thám hiểm, User)",
     nextStep: "Tiếp theo",
     prevStep: "Quay lại",
     finishSetup: "Khởi chạy Haejeok RisuAI",
-    allSetMessage: "Mọi thứ đã sẵn sàng! Hãy cùng trải nghiệm Haejeok RisuAI nào.",
+    allSetMessage:
+      "Mọi thứ đã sẵn sàng! Hãy cùng trải nghiệm Haejeok RisuAI nào.",
     modelClaudeDesc: "Anthropic Claude (Claude 3.7 Sonnet, Claude 3.5)",
     modelOpenAIDesc: "OpenAI ChatGPT (GPT-4o, o3-mini)",
     modelGeminiDesc: "Google Gemini (Gemini 2.5 Flash, 2.5 Pro)",
@@ -461,7 +481,8 @@ export const languageVietnamese = {
     chatTransModeAuto: "Tự động dịch (Khuyên dùng)",
     chatTransModeDirect: "Nhập trực tiếp",
     memoryCapacity: "Dung lượng bộ nhớ (Nhập trực tiếp Token)",
-    contextHelp: "Nhập trực tiếp giới hạn Token (ví dụ: 16000, 32000, 128000) hoặc chọn mẫu có sẵn.",
+    contextHelp:
+      "Nhập trực tiếp giới hạn Token (ví dụ: 16000, 32000, 128000) hoặc chọn mẫu có sẵn.",
     maxContextLabel: "Kích thước ngữ cảnh tối đa (Tokens)",
     maxResponseLabel: "Token phản hồi tối đa",
     endpointUrlLabel: "URL Điểm cuối / Proxy",
@@ -942,6 +963,8 @@ export const languageVietnamese = {
   editOrder: "Chỉnh sửa đơn hàng",
   autoMode: "Chế độ tự động",
   submodel: "Mô hình phụ trợ",
+  moduleSubModel: "Mô hình phụ trợ của mô-đun",
+  defaultSubModel: "Mặc định (Mô hình phụ trợ toàn cục)",
   timeOutinSec: "Thời gian chờ (tính bằng giây)",
   emotionPrompt: "Nhắc nhở cảm xúc",
   singleView: "Chế độ xem đơn",
@@ -1269,7 +1292,8 @@ export const languageVietnamese = {
   createModule: "Tạo mô-đun",
   createFolder: "Tạo thư mục",
   removeFolder: "Xóa thư mục",
-  removeFolderConfirm: "Bạn có thực sự muốn xóa thư mục này? Các mô-đun bên trong sẽ được chuyển về thư mục gốc.",
+  removeFolderConfirm:
+    "Bạn có thực sự muốn xóa thư mục này? Các mô-đun bên trong sẽ được chuyển về thư mục gốc.",
   moveToFolder: "Chuyển vào thư mục",
   noFolder: "Không có thư mục",
   ungrouped: "Chưa phân nhóm",
@@ -1718,6 +1742,7 @@ export const languageVietnamese = {
   insertAssetPrompt: "Chèn lời nhắc tài sản",
   requestLocation: "Yêu cầu vị trí",
   newImageHandlingBeta: "Xử lý hình ảnh mới (Beta)",
+  enableModuleSubModelBeta: "Mô hình phụ theo từng mô-đun (Beta)",
   settingsExported:
     "Cài đặt báo cáo lỗi đã được xuất và sao chép vào bảng nhớ tạm.",
   bookmarks: "Dấu trang",

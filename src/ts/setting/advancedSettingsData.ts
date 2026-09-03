@@ -320,6 +320,14 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: "mt-4",
   },
   {
+    id: "adv.enableModuleSubModel",
+    type: "check",
+    labelKey: "enableModuleSubModelBeta",
+    bindKey: "enableModuleSubModel",
+    classes: "mt-4",
+    helpKey: "moduleSubModel",
+  },
+  {
     id: "adv.allowExt",
     type: "check",
     fallbackLabel: "Allow all in file select",

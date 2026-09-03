@@ -198,6 +198,8 @@ export const languageChineseTraditional = {
       "計算數學表達式，支援基本運算（+, -, *, /, %, ^）、比較運算符（<, >, <=, >=, =, !=）、邏輯運算符（&&, ||, !）、優先順序括號以及使用 $variableName 格式的變數替換。變數將自動轉換為數字（無效則預設為 0）。",
     namespace:
       "命名空間（Namespace）是模組的唯一標識符，用於防止模組衝突，並與預設提示詞和其他模組等進行互動。若不確定如何填寫，建議留空。",
+    moduleSubModel:
+      "指定用於此模組觸發器與腳本的專用輔助模型。若留空，將使用全域輔助模型。",
     moduleIntergration:
       "可在模組整合區域中輸入模組的命名空間（Namespace）來啟用模組。若要啟用多個模組，可用逗號分隔，例如：`module1,module2,module3`。此功能便於進階使用者通過預設提示詞靈活運用模組。",
     customCSS: "自訂 CSS 樣式。若出現問題，可使用 (Ctrl + .) 啟用或禁用。",
@@ -377,25 +379,33 @@ export const languageChineseTraditional = {
     igpPrompt:
       "若 IGP 提示詞不為空，將在主要模型請求完成後作為情緒模型執行，並將結果附加至主要模型的回應後。",
     welcomeTitle: "歡迎使用 Haejeok RisuAI",
-    welcomeGreeting: "您好！歡迎使用 Haejeok RisuAI。我是愛麗絲，將協助您完成初始設定。",
+    welcomeGreeting:
+      "您好！歡迎使用 Haejeok RisuAI。我是愛麗絲，將協助您完成初始設定。",
     welcomeSubGreeting: "請選擇您偏好的開始方式：",
     irisName: "愛麗絲 (Iris)",
-    irisGatewayDefault: "很高興見到您！請選擇設定方式。如果您是初次使用，推薦選擇「快速推薦設定」！",
-    irisGatewayDetected: "在本地找到了先前的儲存資料 (database.bin)，要直接還原嗎？",
-    irisMigrationDrop: "請將 database.bin 拖放到此處，我將為您把角色與對話遷移至高效能 SQL 儲存庫！",
+    irisGatewayDefault:
+      "很高興見到您！請選擇設定方式。如果您是初次使用，推薦選擇「快速推薦設定」！",
+    irisGatewayDetected:
+      "在本地找到了先前的儲存資料 (database.bin)，要直接還原嗎？",
+    irisMigrationDrop:
+      "請將 database.bin 拖放到此處，我將為您把角色與對話遷移至高效能 SQL 儲存庫！",
     irisMigrationPreview: "資料已就緒！是否開始還原角色與對話紀錄？",
     irisStep1: "請設定在對話中稱呼您的暱稱！",
-    irisStep2: "請選擇您偏好的 AI 模型提供者！推薦使用 Claude 3.7 Sonnet 或 GPT-4o。",
+    irisStep2:
+      "請選擇您偏好的 AI 模型提供者！推薦使用 Claude 3.7 Sonnet 或 GPT-4o。",
     irisStep3: "請確認 API 金鑰、翻譯模式與記憶容量，日後可在設定中隨時調整！",
     irisStep4: "一切準備就緒！讓我們與 Haejeok RisuAI 一起啟程吧！",
     gatewayMigrationTitle: "匯入資料",
     gatewayMigrationDesc: "從 database.bin 或備份檔案中還原角色、對話與預設。",
     gatewayQuickSetupTitle: "AI 快速推薦設定",
-    gatewayQuickSetupDesc: "簡單幾步快速設定暱稱與熱門 AI 模型 (Claude、OpenAI、Gemini 等)。",
+    gatewayQuickSetupDesc:
+      "簡單幾步快速設定暱稱與熱門 AI 模型 (Claude、OpenAI、Gemini 等)。",
     gatewaySkipTitle: "跳過並直接體驗",
-    gatewaySkipDesc: "使用預設值直接進入 Haejeok RisuAI 主介面（可隨時在設定中更改）。",
+    gatewaySkipDesc:
+      "使用預設值直接進入 Haejeok RisuAI 主介面（可隨時在設定中更改）。",
     detectedLegacyDbTitle: "偵測到舊版 database.bin",
-    detectedLegacyDbDesc: "在您的裝置上發現了先前的儲存資料。要立即進行遷移嗎？",
+    detectedLegacyDbDesc:
+      "在您的裝置上發現了先前的儲存資料。要立即進行遷移嗎？",
     migrateDetectedBtn: "直接遷移偵測到的資料",
     checkDataBtn: "檢視資料",
     currentUsername: "現有暱稱：",
@@ -411,7 +421,8 @@ export const languageChineseTraditional = {
     startMigrationBtn: "開始遷移此資料",
     migrationInProgress: "正在將資料轉換至 SQL 儲存庫...",
     migrationSuccessTitle: "遷移完成",
-    migrationSuccessDesc: "所有角色與對話紀錄已安全遷移至全新高效能 SQL 儲存庫。",
+    migrationSuccessDesc:
+      "所有角色與對話紀錄已安全遷移至全新高效能 SQL 儲存庫。",
     migrationFailedTitle: "遷移失敗",
     migrationFailedDesc: "讀取資料庫檔案時發生錯誤，請確認檔案格式是否正確。",
     chooseAnotherFile: "選擇其他檔案",
@@ -420,7 +431,8 @@ export const languageChineseTraditional = {
     inputApiKeyTitle: "API 金鑰與設定",
     inputApiKeyPlaceholder: "在此貼上您的 API 金鑰...",
     apiKeyLink: "前往取得 API 金鑰",
-    apiKeyDesc: "金鑰僅安全儲存於您的本機裝置中，絕不外流。（稍後也可在設定中填寫）",
+    apiKeyDesc:
+      "金鑰僅安全儲存於您的本機裝置中，絕不外流。（稍後也可在設定中填寫）",
     nicknameDesc: "請設定在對話中稱呼您的名稱。",
     nicknameInputPlaceholder: "請輸入您的暱称（例：冒險者、User）",
     nextStep: "下一步",
@@ -453,7 +465,8 @@ export const languageChineseTraditional = {
     chatTransModeAuto: "自動翻譯 (推薦)",
     chatTransModeDirect: "直接輸入",
     memoryCapacity: "記憶容量 (直接輸入 Token 數)",
-    contextHelp: "直接輸入 Token 上限（例如 16000, 32000, 128000）或選擇常用預設。",
+    contextHelp:
+      "直接輸入 Token 上限（例如 16000, 32000, 128000）或選擇常用預設。",
     maxContextLabel: "最大上下文 Token",
     maxResponseLabel: "最大回應 Token",
     endpointUrlLabel: "端點 / 代理 URL",
@@ -905,6 +918,8 @@ export const languageChineseTraditional = {
   theme: "介面主題",
   editOrder: "編輯順序",
   submodel: "輔助模型",
+  moduleSubModel: "模組輔助模型",
+  defaultSubModel: "預設值 (全域輔助模型)",
   timeOutinSec: "超時時間（秒）",
   emotionPrompt: "情緒提示詞",
   singleView: "單角色模式",
@@ -1647,6 +1662,7 @@ export const languageChineseTraditional = {
   insertAssetPrompt: "插入資源提示詞",
   requestLocation: "請求位置",
   newImageHandlingBeta: "新版圖片處理 (Beta)",
+  enableModuleSubModelBeta: "各模組個別輔助模型設定 (Beta)",
   settingsExported: "用於錯誤回報的設定檔已匯出並複製到剪貼簿。",
   bookmarks: "書籤",
   noBookmarks: "無書籤",

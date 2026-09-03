@@ -213,6 +213,8 @@ export const languageKorean = {
       "기본 산술 연산(+, -, *, /, %, ^), 비교 연산자(<, >, <=, >=, =, !=), 논리 연산자(&&, ||, !), 괄호를 사용한 우선순위 설정, $변수명 형태의 변수 치환을 지원하는 수학 표현식을 계산합니다. 변수는 자동으로 숫자로 변환되며 유효하지 않은 경우 0으로 처리됩니다.",
     namespace:
       "네임스페이스는 모듈의 고유 식별자입니다. 모듈 간의 충돌을 방지하고 프리셋, 다른 모듈 등과의 상호 작용에 사용됩니다. 무엇을 입력해야 할지 모르면 비워두세요.",
+    moduleSubModel:
+      "이 모듈의 트리거 및 스크립트 실행 시 사용할 전용 보조 모델을 지정합니다. 비워두면 전역 보조 모델을 사용합니다.",
     moduleIntergration:
       "모듈 통합 섹션에 모듈 네임스페이스를 입력하여 모듈을 활성화할 수 있습니다. 여러 모듈을 활성화하려면 쉼표로 구분하세요. 예: `module1,module2,module3`. 프리셋에 따라 모듈 사용을 다르게 하고 싶은 고급 사용자를 위한 기능입니다.",
     customCSS:
@@ -417,30 +419,40 @@ export const languageKorean = {
     igpPrompt:
       "IGP 프롬프트가 비어있지 않으면, 메인 모델 요청 후, 메인 모델 실행 후에 감정 모델로 실행되어 결과를 메인 모델 응답 뒤에 추가합니다.",
     welcomeTitle: "Haejeok RisuAI에 오신 것을 환영합니다.",
-    welcomeGreeting: "안녕하세요! Haejeok RisuAI에 오신 걸 환영해요. 시작을 도와드릴 아이리스예요.",
+    welcomeGreeting:
+      "안녕하세요! Haejeok RisuAI에 오신 걸 환영해요. 시작을 도와드릴 아이리스예요.",
     welcomeSubGreeting: "원하시는 시작 방법을 선택해주세요.",
     irisName: "아이리스 (Iris)",
-    irisGatewayDefault: "만나서 반가워요! 원하는 시작 방식을 골라주세요. 처음이시라면 빠른 설정을 추천해요!",
-    irisGatewayDetected: "이전 데이터(database.bin)를 찾았어요! 바로 복원해드릴까요?",
-    irisMigrationDrop: "database.bin 파일을 올려주시면 캐릭터와 대화를 깔끔하게 복원해 드릴게요!",
-    irisMigrationPreview: "데이터를 확인했어요. 캐릭터와 대화 기록을 복원할까요?",
+    irisGatewayDefault:
+      "만나서 반가워요! 원하는 시작 방식을 골라주세요. 처음이시라면 빠른 설정을 추천해요!",
+    irisGatewayDetected:
+      "이전 데이터(database.bin)를 찾았어요! 바로 복원해드릴까요?",
+    irisMigrationDrop:
+      "database.bin 파일을 올려주시면 캐릭터와 대화를 깔끔하게 복원해 드릴게요!",
+    irisMigrationPreview:
+      "데이터를 확인했어요. 캐릭터와 대화 기록을 복원할까요?",
     irisStep1: "대화할 때 불릴 멋진 닉네임을 알려주세요!",
-    irisStep2: "사용하실 AI 모델을 골라주세요. Claude 3.7 Sonnet이나 GPT-4o를 추천해요!",
-    irisStep3: "API 키와 채팅 번역, 기억 용량 설정을 확인해주세요. 나중에 언제든 바꿀 수 있어요!",
+    irisStep2:
+      "사용하실 AI 모델을 골라주세요. Claude 3.7 Sonnet이나 GPT-4o를 추천해요!",
+    irisStep3:
+      "API 키와 채팅 번역, 기억 용량 설정을 확인해주세요. 나중에 언제든 바꿀 수 있어요!",
     irisStep4: "모든 준비가 끝났어요! 이제 함께 즐거운 대화를 시작해볼까요?",
     gatewayMigrationTitle: "데이터 가져오기",
     gatewayMigrationDesc: "백업 파일에서 기존 캐릭터와 대화를 복원합니다.",
     gatewayQuickSetupTitle: "AI 빠른 설정",
     gatewayQuickSetupDesc: "닉네임과 사용할 AI 모델을 빠르게 설정합니다.",
     gatewaySkipTitle: "직접 설정할래요 (건너뛰기)",
-    gatewaySkipDesc: "기본 설정으로 바로 Haejeok RisuAI 메인 화면으로 이동합니다. (설정 메뉴에서 언제든 변경 가능)",
+    gatewaySkipDesc:
+      "기본 설정으로 바로 Haejeok RisuAI 메인 화면으로 이동합니다. (설정 메뉴에서 언제든 변경 가능)",
     detectedLegacyDbTitle: "기존 저장 데이터(database.bin) 발견",
-    detectedLegacyDbDesc: "기기에서 이전 버전의 데이터 파일을 찾았어요. 바로 마이그레이션할까요?",
+    detectedLegacyDbDesc:
+      "기기에서 이전 버전의 데이터 파일을 찾았어요. 바로 마이그레이션할까요?",
     migrateDetectedBtn: "감지된 데이터 바로 마이그레이션",
     checkDataBtn: "데이터 확인하기",
     currentUsername: "기존 닉네임:",
     dropDatabaseBinTitle: "database.bin 파일을 여기에 끌어다 놓으세요",
-    dropDatabaseBinDesc: "또는 클릭하여 database.bin / .risum / .risup 백업 파일 선택",
+    dropDatabaseBinDesc:
+      "또는 클릭하여 database.bin / .risum / .risup 백업 파일 선택",
     selectFileBtn: "파일 선택",
     migrationPreviewTitle: "가져올 데이터 미리보기",
     migrationCharacters: "캐릭터",
@@ -449,24 +461,30 @@ export const languageKorean = {
     migrationModules: "모듈",
     migrationUsername: "사용자 닉네임",
     startMigrationBtn: "이 데이터로 마이그레이션 시작",
-    migrationInProgress: "데이터를 고성능 SQL 저장소로 열심히 변환하고 있어요...",
+    migrationInProgress:
+      "데이터를 고성능 SQL 저장소로 열심히 변환하고 있어요...",
     migrationSuccessTitle: "마이그레이션 완료",
-    migrationSuccessDesc: "모든 캐릭터와 대화 기록이 안전하게 이전되었어요! 이제 즐겁게 대화해 보세요.",
+    migrationSuccessDesc:
+      "모든 캐릭터와 대화 기록이 안전하게 이전되었어요! 이제 즐겁게 대화해 보세요.",
     migrationFailedTitle: "마이그레이션 실패",
-    migrationFailedDesc: "데이터베이스 파일을 읽는 중 오류가 발생했습니다. 올바른 파일인지 확인해주세요.",
+    migrationFailedDesc:
+      "데이터베이스 파일을 읽는 중 오류가 발생했습니다. 올바른 파일인지 확인해주세요.",
     chooseAnotherFile: "다른 파일 선택하기",
     selectAiModel: "AI 모델 제공자 선택",
     selectAiModelDesc: "대화에 사용할 선호하는 AI 제공자를 선택해주세요.",
     inputApiKeyTitle: "API 키 및 설정",
     inputApiKeyPlaceholder: "발급받은 API 키를 여기에 붙여넣어 주세요...",
     apiKeyLink: "API 키 발급 페이지 바로가기",
-    apiKeyDesc: "키는 브라우저/기기 내부에만 안전하게 저장되며 외부로 유출되지 않습니다. (나중에 설정 가능)",
+    apiKeyDesc:
+      "키는 브라우저/기기 내부에만 안전하게 저장되며 외부로 유출되지 않습니다. (나중에 설정 가능)",
     nicknameDesc: "대화에서 사용할 본인의 이름을 정해주세요.",
-    nicknameInputPlaceholder: "사용하실 닉네임을 입력해주세요 (예: 모험가, User)",
+    nicknameInputPlaceholder:
+      "사용하실 닉네임을 입력해주세요 (예: 모험가, User)",
     nextStep: "다음",
     prevStep: "이전",
     finishSetup: "Haejeok RisuAI 시작하기",
-    allSetMessage: "모든 준비가 끝났어요! 아이리스와 함께 Haejeok RisuAI를 시작해봐요.",
+    allSetMessage:
+      "모든 준비가 끝났어요! 아이리스와 함께 Haejeok RisuAI를 시작해봐요.",
     modelClaudeDesc: "Anthropic Claude (Claude 3.7 Sonnet, Claude 3.5)",
     modelOpenAIDesc: "OpenAI ChatGPT (GPT-4o, o3-mini)",
     modelGeminiDesc: "Google Gemini (Gemini 2.5 Flash, 2.5 Pro)",
@@ -493,7 +511,8 @@ export const languageKorean = {
     chatTransModeAuto: "자동 번역 (권장)",
     chatTransModeDirect: "직접 입력",
     memoryCapacity: "기억 용량 (컨텍스트 토큰 직접 입력)",
-    contextHelp: "원하는 토큰 수(예: 16000, 32000, 128000)를 직접 입력하거나 아래 추천 버튼을 선택하세요.",
+    contextHelp:
+      "원하는 토큰 수(예: 16000, 32000, 128000)를 직접 입력하거나 아래 추천 버튼을 선택하세요.",
     maxContextLabel: "최대 컨텍스트 토큰",
     maxResponseLabel: "최대 응답 토큰",
     endpointUrlLabel: "엔드포인트 / 프록시 URL",
@@ -1394,6 +1413,8 @@ export const languageKorean = {
   editOrder: "캐릭터 순서 변경",
   autoMode: "오토 모드",
   submodel: "보조 모델",
+  moduleSubModel: "모듈 보조 모델",
+  defaultSubModel: "기본값 (전역 보조 모델)",
   timeOutinSec: "타임아웃 (초)",
   emotionPrompt: "감정 프롬프트",
   singleView: "싱글",
@@ -1433,7 +1454,8 @@ export const languageKorean = {
   classicRisu: "클래식 Risu",
   highcontrast: "고대비",
   autoColorAdapt: "봇 스타일 색상 자동 변환",
-  autoColorAdaptHelp: "봇의 하드코딩된 인라인 스타일(배경/글자색)을 현재 테마(라이트/다크)에 맞추어 자동으로 보정합니다.",
+  autoColorAdaptHelp:
+    "봇의 하드코딩된 인라인 스타일(배경/글자색)을 현재 테마(라이트/다크)에 맞추어 자동으로 보정합니다.",
   colorAdaptEngine: "색상 변환 엔진",
   quickPreset: "Ctrl + (프리셋 번호)로 프리셋을 빠르게 변경할 수 있습니다",
   requestretrys: "실패 시 재요청 횟수",
@@ -1769,7 +1791,8 @@ export const languageKorean = {
   createModule: "모듈 생성",
   createFolder: "폴더 생성",
   removeFolder: "폴더 삭제",
-  removeFolderConfirm: "정말로 이 폴더를 삭제하시겠습니까? 폴더 안의 모듈은 루트로 이동합니다.",
+  removeFolderConfirm:
+    "정말로 이 폴더를 삭제하시겠습니까? 폴더 안의 모듈은 루트로 이동합니다.",
   moveToFolder: "폴더로 이동",
   noFolder: "폴더 없음",
   ungrouped: "폴더 미지정",
@@ -2215,6 +2238,7 @@ export const languageKorean = {
   insertAssetPrompt: "에셋 프롬프트 삽입",
   requestLocation: "리퀘스트 위치",
   newImageHandlingBeta: "새로운 이미지 처리 (베타)",
+  enableModuleSubModelBeta: "모듈 별 보조모델 설정 (베타)",
   settingsExported:
     "버그 리포트용 설정이 내보내지고 클립보드에 복사되었습니다.",
   bookmarks: "북마크",
@@ -2559,13 +2583,17 @@ export const languageKorean = {
   mainModelCardTitle: "메인 모델",
   mainModelCardDesc: "대화 및 응답 생성에 사용되는 기본 AI 모델입니다.",
   subModelCardTitle: "보조 모델",
-  subModelCardDesc: "메모리 요약, 번역, 감정 분석 등에 기본으로 사용되는 보조 AI 모델입니다.",
+  subModelCardDesc:
+    "메모리 요약, 번역, 감정 분석 등에 기본으로 사용되는 보조 AI 모델입니다.",
   auxModelsSplitCardTitle: "보조 모델 세부 분리",
-  auxModelsSplitCardDesc: "기능별(메모리, 번역, 감정, 기타)로 각각 다른 전용 모델을 지정합니다.",
+  auxModelsSplitCardDesc:
+    "기능별(메모리, 번역, 감정, 기타)로 각각 다른 전용 모델을 지정합니다.",
   providerCredentialsTitle: "프로바이더 인증 및 연결 설정",
-  providerCredentialsDesc: "선택된 모델의 API 키 및 연결 엔드포인트를 관리합니다.",
+  providerCredentialsDesc:
+    "선택된 모델의 API 키 및 연결 엔드포인트를 관리합니다.",
   noModelsFound: "일치하는 모델이 없습니다.",
-  noFavoriteModelsDesc: "즐겨찾기로 등록된 모델이 없습니다. 별표 아이콘을 눌러 추가하세요.",
+  noFavoriteModelsDesc:
+    "즐겨찾기로 등록된 모델이 없습니다. 별표 아이콘을 눌러 추가하세요.",
   noRecentModelsDesc: "최근 사용한 모델 기록이 없습니다.",
   clearSearch: "검색어 지우기",
   selectThisModel: "선택하기",

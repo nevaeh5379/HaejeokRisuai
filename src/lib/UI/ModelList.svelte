@@ -17,16 +17,18 @@
     excludesPrefix?: string;
     noMargin?: boolean;
     inlineCard?: boolean;
+    noneText?: string;
   }
 
   let { 
-    value = $bindable(""), 
+    value = $bindable(), 
     onChange = (v) => {}, 
     onclick, 
     blankable, 
     excludesPrefix, 
     noMargin,
-    inlineCard = false
+    inlineCard = false,
+    noneText
   }: Props = $props();
 
   let openOptions = $state(false);
@@ -76,7 +78,7 @@
       {#each providers as provider}
         {#if provider.providerName === '@as-is'}
           {#each provider.models as model}
-            <button class="hover:bg-selected px-4 py-2 text-base text-left rounded-lg transition-colors cursor-pointer" onclick={() => { changeModel(model.id); }}>{model.name}</button>
+            <button class="hover:bg-selected px-6 py-2 text-lg transition-colors cursor-pointer" onclick={() => { changeModel(model.id); }}>{model.name}</button>
           {/each}
         {:else}
           <Accordion name={provider.providerName}>
@@ -113,7 +115,7 @@
       {/if}
 
       {#if blankable}
-        <button class="hover:bg-selected px-4 py-2 text-base text-left rounded-lg transition-colors cursor-pointer" onclick={() => { changeModel(''); }}>{language.none}</button>
+        <button class="hover:bg-selected px-6 py-2 text-lg transition-colors cursor-pointer" onclick={() => { changeModel(''); }}>{noneText || language.none}</button>
       {/if}
 
       <div class="text-textcolor2 text-xs mt-3 pt-2 border-t border-darkborderc">
@@ -128,5 +130,5 @@
   onclick={() => { openOptions = true; }}
   class="drop-shadow-lg p-2.5 flex justify-center items-center rounded-md bg-darkbutton border-darkborderc border text-textcolor hover:bg-selected transition-colors text-sm cursor-pointer {noMargin ? '' : 'my-2'}"
 >
-  {getModelInfo(value)?.fullName || value || language.none}
+  {value ? getModelInfo(value)?.fullName || value : (noneText || language.none)}
 </button>

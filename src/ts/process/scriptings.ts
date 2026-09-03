@@ -13,7 +13,12 @@ import {
   risuChatParser,
 } from "../parser/parser.svelte";
 import { LuaEngine, LuaFactory } from "wasmoon";
-import type { Chat, character, groupChat, triggerscript } from "../storage/database/schema";
+import type {
+  Chat,
+  character,
+  groupChat,
+  triggerscript,
+} from "../storage/database/schema";
 
 import { get } from "svelte/store";
 import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";
@@ -63,6 +68,7 @@ interface BasicScriptingEngineState {
   getVar?: (key: string) => string;
   messagesMutated?: boolean;
   stopSending?: boolean;
+  subModel?: string;
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -95,6 +101,7 @@ export async function runScripted(
     meta?: object;
     mode?: string;
     type?: "lua" | "py";
+    subModel?: string;
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
@@ -103,7 +110,8 @@ export async function runScripted(
   const setVar =
     arg.setVar ??
     ((key: string, value: string) => setChatVar(key, value, arg.chatTarget));
-  const getVar = arg.getVar ?? ((key: string) => getChatVar(key, arg.chatTarget));
+  const getVar =
+    arg.getVar ?? ((key: string) => getChatVar(key, arg.chatTarget));
   const meta = arg.meta ?? {};
   const mode = arg.mode ?? "manual";
 
@@ -130,9 +138,11 @@ export async function runScripted(
     ScriptingEngineState.getVar = getVar;
     ScriptingEngineState.messagesMutated = false;
     ScriptingEngineState.stopSending = false;
+    ScriptingEngineState.subModel = arg.subModel;
     const getScriptingCharacter = () => {
       const scriptingChar = ScriptingEngineState.char;
-      if (scriptingChar && scriptingChar.type !== "simple") return scriptingChar;
+      if (scriptingChar && scriptingChar.type !== "simple")
+        return scriptingChar;
       const target = ScriptingEngineState.chatTarget;
       if (target) return resolveChatTarget(target)?.character;
       return characterStore.currentCharacter;
@@ -819,7 +829,8 @@ export async function runScripted(
           throw "Character is a group";
         }
         scriptingChar.desc = desc;
-        if (scriptingChar.chaId) characterStore.markCharacterDirty(scriptingChar.chaId);
+        if (scriptingChar.chaId)
+          characterStore.markCharacterDirty(scriptingChar.chaId);
       });
 
       declareAPI("getCharacterFirstMessage", (id: string) => {
@@ -832,7 +843,8 @@ export async function runScripted(
         const scriptingChar = getStoredScriptingCharacter();
         if (!scriptingChar) return false;
         scriptingChar.firstMessage = data;
-        if (scriptingChar.chaId) characterStore.markCharacterDirty(scriptingChar.chaId);
+        if (scriptingChar.chaId)
+          characterStore.markCharacterDirty(scriptingChar.chaId);
         return true;
       });
 
@@ -866,7 +878,8 @@ export async function runScripted(
         const scriptingChar = getStoredScriptingCharacter();
         if (!scriptingChar) return false;
         scriptingChar.backgroundHTML = data;
-        if (scriptingChar.chaId) characterStore.markCharacterDirty(scriptingChar.chaId);
+        if (scriptingChar.chaId)
+          characterStore.markCharacterDirty(scriptingChar.chaId);
         return true;
       });
 
@@ -880,7 +893,11 @@ export async function runScripted(
         const loreSources = [
           ScriptingEngineState.chat?.localLore ?? [],
           selectedChar.globalLore ?? [],
-          getModuleLorebooks(selectedChar, undefined, ScriptingEngineState.chat) ?? [],
+          getModuleLorebooks(
+            selectedChar,
+            undefined,
+            ScriptingEngineState.chat,
+          ) ?? [],
         ];
 
         const found = [];
@@ -923,7 +940,11 @@ export async function runScripted(
 
           const scriptingChar = getScriptingCharacter();
           const currentChat = ScriptingEngineState.chat;
-          if (!scriptingChar || scriptingChar.type !== "character" || !currentChat) {
+          if (
+            !scriptingChar ||
+            scriptingChar.type !== "character" ||
+            !currentChat
+          ) {
             return;
           }
 
@@ -1087,6 +1108,7 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
+              staticModel: ScriptingEngineState.subModel,
             },
             "otherAx",
           );
@@ -1691,6 +1713,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
           mode: mode,
           data,
           meta,
+          subModel: trigger.subModel,
         });
         data = runResult.res ?? data;
       }
@@ -1734,7 +1757,9 @@ export async function runLuaButtonTrigger(
               return {
                 ...v,
                 lowLevelAccess:
-                  char.type !== "simple" ? (char.lowLevelAccess ?? false) : false,
+                  char.type !== "simple"
+                    ? (char.lowLevelAccess ?? false)
+                    : false,
               } as triggerscript;
             })
             .filter((v): v is triggerscript => !!v)
@@ -1749,6 +1774,7 @@ export async function runLuaButtonTrigger(
           lowLevelAccess: trigger.lowLevelAccess,
           mode: "onButtonClick",
           data: data,
+          subModel: trigger.subModel,
         });
       }
     }

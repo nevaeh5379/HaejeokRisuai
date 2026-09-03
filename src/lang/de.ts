@@ -225,6 +225,8 @@ export const languageGerman = {
       "Wertet mathematische Ausdrücke aus und unterstützt Grundrechenarten (+, -, *, /, %, ^), Vergleichsoperatoren (<, >, <=, >=, =, !=), logische Operatoren (&&, ||, !), Klammern für die Rangfolge und Variablensubstitution im Format $VariablenName. Variablen werden automatisch in Zahlen umgewandelt (Standard ist 0, wenn ungültig).",
     namespace:
       "Der Namespace ist eine eindeutige Kennung für das Modul. Er wird verwendet, um Konflikte zwischen Modulen zu vermeiden und für die Interaktion von Voreinstellungen, anderen Modulen usw. Wenn Sie nicht sicher sind, was Sie eingeben sollen, lassen Sie es leer.",
+    moduleSubModel:
+      "Gibt ein dediziertes Hilfsmodell für die Trigger und Skripte dieses Moduls an. Wenn leer gelassen, wird das globale Hilfsmodell verwendet.",
     moduleIntergration:
       "Sie können Module aktivieren, indem Sie den Modul-Namespace in die Modul-Integrationsabschnitte eingeben. Wenn Sie mehrere Module aktivieren möchten, können Sie diese durch Kommas trennen. Zum Beispiel `Modul1,Modul2,Modul3`. Dies ist für fortgeschrittene Benutzer gedacht, die die Verwendung von Modulen je nach Voreinstellung variieren möchten.",
     customCSS:
@@ -391,30 +393,42 @@ export const languageGerman = {
     igpPrompt:
       "Wenn die IGP-Anweisung nicht leer ist, wird sie nach der Hauptmodellanfrage ausgeführt, nach der Ausführung des Hauptmodells, als Emotionsmodell, und das Ergebnis wird nach der Antwort des Hauptmodells hinzugefügt.",
     welcomeTitle: "Willkommen bei Haejeok RisuAI",
-    welcomeGreeting: "Hallo! Willkommen bei Haejeok RisuAI. Ich bin Iris und helfe Ihnen bei der Einrichtung.",
+    welcomeGreeting:
+      "Hallo! Willkommen bei Haejeok RisuAI. Ich bin Iris und helfe Ihnen bei der Einrichtung.",
     welcomeSubGreeting: "Wie möchten Sie beginnen?",
     irisName: "Iris",
-    irisGatewayDefault: "Schön, Sie kennenzulernen! Wählen Sie Ihre bevorzugte Methode. Für Einsteiger empfehlen wir das Schnelle Setup.",
-    irisGatewayDetected: "Vorhandene database.bin gefunden. Möchten Sie sie jetzt wiederherstellen?",
-    irisMigrationDrop: "Ziehen Sie Ihre database.bin-Datei hierher, um Charaktere und Chats in den SQL-Speicher zu übertragen!",
-    irisMigrationPreview: "Daten überprüft! Sollen Charaktere und Chats wiederhergestellt werden?",
+    irisGatewayDefault:
+      "Schön, Sie kennenzulernen! Wählen Sie Ihre bevorzugte Methode. Für Einsteiger empfehlen wir das Schnelle Setup.",
+    irisGatewayDetected:
+      "Vorhandene database.bin gefunden. Möchten Sie sie jetzt wiederherstellen?",
+    irisMigrationDrop:
+      "Ziehen Sie Ihre database.bin-Datei hierher, um Charaktere und Chats in den SQL-Speicher zu übertragen!",
+    irisMigrationPreview:
+      "Daten überprüft! Sollen Charaktere und Chats wiederhergestellt werden?",
     irisStep1: "Wie möchten Sie in Unterhaltungen genannt werden?",
-    irisStep2: "Wählen Sie Ihren bevorzugten KI-Anbieter! Claude 3.7 Sonnet oder GPT-4o wird empfohlen.",
-    irisStep3: "Konfigurieren Sie API-Schlüssel, Übersetzung und Speicherkapazität.",
+    irisStep2:
+      "Wählen Sie Ihren bevorzugten KI-Anbieter! Claude 3.7 Sonnet oder GPT-4o wird empfohlen.",
+    irisStep3:
+      "Konfigurieren Sie API-Schlüssel, Übersetzung und Speicherkapazität.",
     irisStep4: "Alles bereit! Starten wir die Reise mit Haejeok RisuAI.",
     gatewayMigrationTitle: "Daten wiederherstellen / migrieren",
-    gatewayMigrationDesc: "Charaktere, Chats und Voreinstellungen aus database.bin oder Backup wiederherstellen.",
+    gatewayMigrationDesc:
+      "Charaktere, Chats und Voreinstellungen aus database.bin oder Backup wiederherstellen.",
     gatewayQuickSetupTitle: "Schnelles KI-Setup",
-    gatewayQuickSetupDesc: "Spitznamen und KI-Modelle (Claude, OpenAI, Gemini etc.) in wenigen Schritten einrichten.",
+    gatewayQuickSetupDesc:
+      "Spitznamen und KI-Modelle (Claude, OpenAI, Gemini etc.) in wenigen Schritten einrichten.",
     gatewaySkipTitle: "Überspringen & Erkunden",
-    gatewaySkipDesc: "Direkt mit Standardeinstellungen zu Haejeok RisuAI springen (jederzeit in den Einstellungen anpassbar).",
+    gatewaySkipDesc:
+      "Direkt mit Standardeinstellungen zu Haejeok RisuAI springen (jederzeit in den Einstellungen anpassbar).",
     detectedLegacyDbTitle: "Alte database.bin erkannt",
-    detectedLegacyDbDesc: "Es wurden vorhandene Speicherdaten gefunden. Möchten Sie diese jetzt migrieren?",
+    detectedLegacyDbDesc:
+      "Es wurden vorhandene Speicherdaten gefunden. Möchten Sie diese jetzt migrieren?",
     migrateDetectedBtn: "Erkannte Daten migrieren",
     checkDataBtn: "Daten überprüfen",
     currentUsername: "Vorhandener Spitzname:",
     dropDatabaseBinTitle: "database.bin-Datei hierher ziehen",
-    dropDatabaseBinDesc: "oder klicken, um database.bin / .risum / .risup auszuwählen",
+    dropDatabaseBinDesc:
+      "oder klicken, um database.bin / .risum / .risup auszuwählen",
     selectFileBtn: "Datei auswählen",
     migrationPreviewTitle: "Vorschau der Backup-Daten",
     migrationCharacters: "Charaktere",
@@ -425,7 +439,8 @@ export const languageGerman = {
     startMigrationBtn: "Migration starten",
     migrationInProgress: "Daten werden in SQL-Datenbank migriert...",
     migrationSuccessTitle: "Migration abgeschlossen",
-    migrationSuccessDesc: "Alle Daten wurden erfolgreich in den schnellen SQL-Speicher übertragen.",
+    migrationSuccessDesc:
+      "Alle Daten wurden erfolgreich in den schnellen SQL-Speicher übertragen.",
     migrationFailedTitle: "Migration fehlgeschlagen",
     migrationFailedDesc: "Die Datenbankdatei konnte nicht gelesen werden.",
     chooseAnotherFile: "Andere Datei wählen",
@@ -436,7 +451,8 @@ export const languageGerman = {
     apiKeyLink: "API-Schlüssel abrufen",
     apiKeyDesc: "Schlüssel werden sicher auf Ihrem Gerät gespeichert.",
     nicknameDesc: "Wählen Sie Ihren Namen für Unterhaltungen.",
-    nicknameInputPlaceholder: "Geben Sie Ihren Spitznamen ein (z. B. Abenteurer, User)",
+    nicknameInputPlaceholder:
+      "Geben Sie Ihren Spitznamen ein (z. B. Abenteurer, User)",
     nextStep: "Weiter",
     prevStep: "Zurück",
     finishSetup: "Haejeok RisuAI starten",
@@ -467,7 +483,8 @@ export const languageGerman = {
     chatTransModeAuto: "Automatische Übersetzung (Empfohlen)",
     chatTransModeDirect: "Direkte Eingabe",
     memoryCapacity: "Speicherkapazität (Token direkt eingeben)",
-    contextHelp: "Geben Sie das Token-Limit direkt ein (z. B. 16000, 32000, 128000) oder wählen Sie eine Voreinstellung.",
+    contextHelp:
+      "Geben Sie das Token-Limit direkt ein (z. B. 16000, 32000, 128000) oder wählen Sie eine Voreinstellung.",
     maxContextLabel: "Max. Kontextgröße (Tokens)",
     maxResponseLabel: "Max. Antwort-Tokens",
     endpointUrlLabel: "Endpunkt- / Proxy-URL",
@@ -955,6 +972,8 @@ export const languageGerman = {
   editOrder: "Reihenfolge bearbeiten",
   autoMode: "Automatischer Modus",
   submodel: "Hilfsmodell",
+  moduleSubModel: "Modul-Hilfsmodell",
+  defaultSubModel: "Standard (Globales Hilfsmodell)",
   timeOutinSec: "Zeitüberschreitung (in Sekunden)",
   emotionPrompt: "Emotions-Anweisung",
   singleView: "Einzelansicht",
@@ -1289,7 +1308,8 @@ export const languageGerman = {
   createModule: "Modul erstellen",
   createFolder: "Ordner erstellen",
   removeFolder: "Ordner entfernen",
-  removeFolderConfirm: "Möchten Sie diesen Ordner wirklich entfernen? Die darin enthaltenen Module werden in den Hauptordner verschoben.",
+  removeFolderConfirm:
+    "Möchten Sie diesen Ordner wirklich entfernen? Die darin enthaltenen Module werden in den Hauptordner verschoben.",
   moveToFolder: "In Ordner verschieben",
   noFolder: "Kein Ordner",
   ungrouped: "Ungruppiert",
@@ -1750,6 +1770,7 @@ export const languageGerman = {
   insertAssetPrompt: "Asset-Anweisung einfügen",
   requestLocation: "Anfrageort",
   newImageHandlingBeta: "Neue Bildverarbeitung (Beta)",
+  enableModuleSubModelBeta: "Modulspezifisches Hilfsmodell (Beta)",
   settingsExported:
     "Einstellungen für Fehlerbericht exportiert und in die Zwischenablage kopiert.",
   bookmarks: "Lesezeichen",

@@ -36,6 +36,7 @@ export interface triggerscript {
   conditions: triggerCondition[];
   effect: triggerEffect[];
   lowLevelAccess?: boolean;
+  subModel?: string;
 }
 
 export type triggerCondition =
@@ -1206,7 +1207,7 @@ export async function runTrigger(
     arg.target ??
     (char.chaId && arg.chat.id
       ? { characterId: char.chaId, chatId: arg.chat.id }
-      : getSelectedChatTarget() ?? undefined);
+      : (getSelectedChatTarget() ?? undefined));
   const resolvedTarget = target ? resolveChatTarget(target) : null;
   const moduleRoom = resolvedTarget?.character ?? char;
   const getTargetChat = () =>
@@ -1486,7 +1487,9 @@ export async function runTrigger(
           }
         }
       } else if (condition.type === "exists") {
-        const conditionValue = parseTriggerText(condition.value, { chara: char });
+        const conditionValue = parseTriggerText(condition.value, {
+          chara: char,
+        });
         const val = parseTriggerText(conditionValue, { chara: char });
         let da = chat.message
           .slice(0 - condition.depth)
@@ -1699,6 +1702,44 @@ export async function runTrigger(
           break;
         }
 
+        case "runAxLLM": {
+          if (!trigger.lowLevelAccess) {
+            break;
+          }
+          const effectValue = parseTriggerText(effect.value, { chara: char });
+          const varName = effect.inputVar;
+          let promptbody: OpenAIChat[] = parseChatML(effectValue);
+          if (!promptbody) {
+            promptbody = [{ role: "user", content: effectValue }];
+          }
+          const result = await requestChatData(
+            {
+              formated: promptbody,
+              bias: {},
+              useStreaming: false,
+              noMultiGen: true,
+              currentChar: char,
+              triggerTarget: target,
+              staticModel: settingsStore.state.enableModuleSubModel
+                ? trigger.subModel
+                : undefined,
+            },
+            "submodel",
+          );
+
+          if (
+            result.type === "fail" ||
+            result.type === "streaming" ||
+            result.type === "multiline"
+          ) {
+            setVar(varName, "Error: " + result.result);
+          } else {
+            setVar(varName, result.result);
+          }
+
+          break;
+        }
+
         case "checkSimilarity": {
           if (!trigger.lowLevelAccess) {
             break;
@@ -1768,6 +1809,9 @@ export async function runTrigger(
             chat: chat,
             chatTarget: target,
             triggerId: arg.triggerId,
+            subModel: settingsStore.state.enableModuleSubModel
+              ? trigger.subModel
+              : undefined,
           });
 
           if (triggerCodeResult.stopSending) {
@@ -2186,6 +2230,11 @@ export async function runTrigger(
               noMultiGen: true,
               currentChar: char,
               triggerTarget: target,
+              staticModel:
+                effect.model === "submodel" &&
+                settingsStore.state.enableModuleSubModel
+                  ? trigger.subModel
+                  : undefined,
             },
             effect.model,
           );
@@ -2508,7 +2557,10 @@ export async function runTrigger(
           break;
         }
         case "v2GetCharacterDesc": {
-          setVar(parseTriggerText(effect.outputVar, { chara: char }), char.desc);
+          setVar(
+            parseTriggerText(effect.outputVar, { chara: char }),
+            char.desc,
+          );
           break;
         }
         case "v2SetCharacterDesc": {
@@ -2582,7 +2634,9 @@ export async function runTrigger(
             let index =
               effect.indexType === "value"
                 ? Number(parseTriggerText(effect.index, { chara: char }))
-                : Number(getVar(parseTriggerText(effect.index, { chara: char })));
+                : Number(
+                    getVar(parseTriggerText(effect.index, { chara: char })),
+                  );
             setVar(
               parseTriggerText(effect.outputVar, { chara: char }),
               arr[index] ?? "null",
@@ -2668,7 +2722,9 @@ export async function runTrigger(
             let start =
               effect.startType === "value"
                 ? Number(parseTriggerText(effect.start, { chara: char }))
-                : Number(getVar(parseTriggerText(effect.start, { chara: char })));
+                : Number(
+                    getVar(parseTriggerText(effect.start, { chara: char })),
+                  );
             let value =
               effect.itemType === "value"
                 ? parseTriggerText(effect.item, { chara: char })
@@ -2689,7 +2745,9 @@ export async function runTrigger(
             let start =
               effect.startType === "value"
                 ? Number(parseTriggerText(effect.start, { chara: char }))
-                : Number(getVar(parseTriggerText(effect.start, { chara: char })));
+                : Number(
+                    getVar(parseTriggerText(effect.start, { chara: char })),
+                  );
             let end =
               effect.endType === "value"
                 ? Number(parseTriggerText(effect.end, { chara: char }))
@@ -2730,7 +2788,9 @@ export async function runTrigger(
             let index =
               effect.indexType === "value"
                 ? Number(parseTriggerText(effect.index, { chara: char }))
-                : Number(getVar(parseTriggerText(effect.index, { chara: char })));
+                : Number(
+                    getVar(parseTriggerText(effect.index, { chara: char })),
+                  );
             arr.splice(index, 1);
             setVar(varName, JSON.stringify(arr));
           } catch (error) {
@@ -3051,7 +3111,10 @@ export async function runTrigger(
                 loreEntry.content,
               );
             } else {
-              setVar(parseTriggerText(effect.outputVar, { chara: char }), "null");
+              setVar(
+                parseTriggerText(effect.outputVar, { chara: char }),
+                "null",
+              );
             }
           }
           break;
@@ -3281,7 +3344,9 @@ export async function runTrigger(
               break;
             }
 
-            let varValue = getVar(parseTriggerText(effect.var, { chara: char }));
+            let varValue = getVar(
+              parseTriggerText(effect.var, { chara: char }),
+            );
             let dict = JSON.parse(varValue);
             dict[key] = value;
             setVar(
@@ -3314,7 +3379,9 @@ export async function runTrigger(
               break;
             }
 
-            let varValue = getVar(parseTriggerText(effect.var, { chara: char }));
+            let varValue = getVar(
+              parseTriggerText(effect.var, { chara: char }),
+            );
             let dict = JSON.parse(varValue);
             let key =
               effect.keyType === "value"

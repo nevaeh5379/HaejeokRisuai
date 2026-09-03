@@ -345,6 +345,8 @@ interface RisuModule {
     customModuleToggle?: string;
     /** MCP module configuration */
     mcp?: any;
+    /** Dedicated auxiliary model */
+    subModel?: string;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
 
 const runtimeScalarDefaults = {
   openAIFlexProcessing: defaultBoolean(false),
+  enableModuleSubModel: defaultBoolean(false),
   rememberToolUsage: defaultBoolean(true),
   simplifiedToolUse: defaultBoolean(false),
   streamGeminiThoughts: defaultBoolean(false),

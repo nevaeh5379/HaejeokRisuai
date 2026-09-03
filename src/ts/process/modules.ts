@@ -11,7 +11,14 @@ import {
   alertStore,
   alertWait,
 } from "../alert";
-import type { Chat, character, customscript, groupChat, loreBook, triggerscript } from "../storage/database/schema";
+import type {
+  Chat,
+  character,
+  customscript,
+  groupChat,
+  loreBook,
+  triggerscript,
+} from "../storage/database/schema";
 
 import {
   AppendableBuffer,
@@ -62,6 +69,7 @@ export interface RisuModule {
   mcp?: MCPModule;
   icon?: string;
   folderId?: string;
+  subModel?: string;
 }
 
 export interface ModuleFolder {
@@ -464,7 +472,9 @@ function getModulesForCharacter(
     ids = ids.concat([persona.embeddedModule?.id]);
   }
   if (presetStore.state.moduleIntergration) {
-    const intList = presetStore.state.moduleIntergration.split(",").map((s) => s.trim());
+    const intList = presetStore.state.moduleIntergration
+      .split(",")
+      .map((s) => s.trim());
     ids = ids.concat(intList);
   }
   return getModuleByIds(ids);
@@ -476,7 +486,10 @@ export function getModules(
   chat?: Chat,
 ) {
   if (overrideIds !== undefined) return getModuleByIds(overrideIds);
-  return getModulesForCharacter(character ?? characterStore.currentCharacter, chat);
+  return getModulesForCharacter(
+    character ?? characterStore.currentCharacter,
+    chat,
+  );
 }
 
 export function getModuleLorebooks(
@@ -529,8 +542,12 @@ export function getModuleTriggers(
     if (module.trigger) {
       triggers = triggers.concat(
         module.trigger.map((t) => {
-          t.lowLevelAccess = module.lowLevelAccess;
-          return t;
+          const trigger = { ...t };
+          trigger.lowLevelAccess = module.lowLevelAccess;
+          if (settingsStore.state.enableModuleSubModel && module.subModel) {
+            trigger.subModel = module.subModel;
+          }
+          return trigger;
         }),
       );
     }
