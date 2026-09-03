@@ -3,29 +3,8 @@ import {
   createPresetSettingsState,
 } from "../storage/presets/presetService";
 import type { ISqlStorage } from "../storage/sql/ISqlStorage";
-import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-
-/**
- * Deferred settings keys that belong to the active preset: when the preset
- * is hydrated at startup these keys arrive with it, so the per-key lazy
- * loader must not hydrate them a second time.
- *
- * Kept as an explicit subset of PROMPT_SETTING_KEYS — presets only own the
- * prompt fields persisted on the preset itself, not every deferred prompt key.
- */
-const PRESET_OWNED_DEFERRED_KEYS = [
-  "promptTemplate",
-  "promptSettings",
-  "customPromptTemplateToggle",
-  "mainPrompt",
-  "jailbreak",
-  "globalNote",
-  "autoSuggestPrompt",
-  "instructChatTemplate",
-  "JinjaTemplate",
-] as const;
 
 /**
  * Initialises the preset domain: loads the presets, repairs the stale
@@ -42,7 +21,7 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
       // Older SQL migrations copied the stale botPresets entry without
       // folding in the live root value for the active preset. Repair that
       // representation before setPreset can blank the visible setting.
-      const liveModuleIntegration = settingsStore.getStateRecord().moduleIntergration;
+      const liveModuleIntegration = settingsStore.getBootstrapState().moduleIntergration;
       if (
         activePreset &&
         activePreset.moduleIntergration === undefined &&
@@ -57,7 +36,7 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
       }
       if (activePreset) {
         const activeState = createPresetSettingsState(
-          settingsStore.getStateRecord(),
+          settingsStore.getBootstrapState(),
           activePreset,
         );
         presetStore.bindActivePresetState(activeState, () => {
@@ -73,12 +52,6 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
             : undefined;
         });
         settingsStore.releasePresetOwnedState();
-        const presetOwnedDeferredKeys = PRESET_OWNED_DEFERRED_KEYS.filter(
-          (key) =>
-            (activePreset as unknown as Record<string, unknown>)[key] !==
-            undefined,
-        );
-        deferredSettingsLoader.markLoaded(presetOwnedDeferredKeys);
       }
       performance.mark("active-preset-ready");
     })

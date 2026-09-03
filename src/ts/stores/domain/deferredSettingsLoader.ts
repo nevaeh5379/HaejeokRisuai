@@ -66,6 +66,7 @@ class DeferredSettingsLoader {
       try {
         const value = await storage.loadSettingKey(key);
         if (generation !== this.generation) return;
+        if (!this.unloadedKeys.has(key)) return;
         hydrateSettingKey(key, value, value !== undefined);
         this.markLoaded([key]);
       } catch (error) {
@@ -135,6 +136,7 @@ class DeferredSettingsLoader {
         const prompts = await storage.loadPrompts();
         if (generation !== this.generation) return;
         for (const key of PROMPT_SETTING_KEYS) {
+          if (!this.unloadedKeys.has(key)) continue;
           if (Object.prototype.hasOwnProperty.call(prompts, key)) {
             hydrateSettingKey(key, (prompts as Record<string, unknown>)[key]);
           }

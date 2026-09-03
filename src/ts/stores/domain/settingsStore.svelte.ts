@@ -1,4 +1,5 @@
 import type { DatabaseSettings } from "../../storage/database/schema";
+import type { SettingsKey, SettingsState } from "./stateOwnership";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
@@ -31,6 +32,10 @@ function assertPublicSettingsKey(key: string): void {
 
 function guardedSettingsState(state: Record<string, any>): Record<string, any> {
   return new Proxy(state, {
+    get(target, property, receiver) {
+      if (typeof property === "string") assertPublicSettingsKey(property);
+      return Reflect.get(target, property, receiver);
+    },
     set(target, property, value) {
       if (typeof property === "string") assertPublicSettingsKey(property);
       return Reflect.set(target, property, value);
@@ -65,9 +70,10 @@ class SettingsStore
   private pluginStorageLoads = new Map<string, Promise<any>>();
   private keyDisposers = new Map<string, () => void>();
   private keySetDispose: (() => void) | null = null;
+  private presetStateReleased = false;
 
   private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
-  readonly state = new Proxy({} as DatabaseSettings, {
+  readonly state = new Proxy({} as SettingsState, {
     get: (_target, prop) => {
       if (typeof prop === "string") {
         assertPublicSettingsKey(prop);
@@ -83,6 +89,15 @@ class SettingsStore
       if (typeof prop === "string") assertPublicSettingsKey(prop);
       return Reflect.deleteProperty(this.stateData, prop);
     },
+    defineProperty: (_target, prop, descriptor) => {
+      if (typeof prop === "string") assertPublicSettingsKey(prop);
+      // This forwarding proxy has an empty target; a non-configurable own
+      // property would violate its invariants when state is replaced.
+      if (descriptor.configurable !== true) {
+        throw new TypeError("SettingsStore state properties must be configurable");
+      }
+      return Reflect.defineProperty(this.stateData, prop, descriptor);
+    },
     has: (_target, prop) => Reflect.has(this.stateData, prop),
     ownKeys: () => Reflect.ownKeys(this.stateData),
     getOwnPropertyDescriptor: (_target, prop) => {
@@ -96,6 +111,7 @@ class SettingsStore
     storage: ISqlStorage | null,
   ): void {
     this.storage = storage;
+    this.presetStateReleased = false;
     for (const dispose of this.keyDisposers.values()) dispose();
     this.keyDisposers.clear();
     this.keySetDispose?.();
@@ -136,8 +152,8 @@ class SettingsStore
 
   private observeKey(key: string): void {
     assertSettingsKey(key);
-    // Kept on the public settings facade for compatibility. PresetStore alone
-    // observes and persists these values.
+    // Startup may temporarily carry legacy preset fields. PresetStore alone
+    // observes and persists these values after ownership is transferred.
     if (PRESET_OWNED_KEYS.has(key)) return;
     if (this.keyDisposers.has(key) || key === "pluginCustomStorage") return;
     // Synchronous baseline taken at observe time.  The first (async) effect
@@ -292,11 +308,18 @@ class SettingsStore
     }
   }
 
-  getStateRecord(): DatabaseSettings {
+  getStateRecord(): SettingsState {
+    return this.stateData;
+  }
+
+  /** @internal Startup migration only; may contain legacy preset values until release. */
+  getBootstrapState(): DatabaseSettings {
     return this.stateData;
   }
 
   releasePresetOwnedState(): void {
+    this.presetStateReleased = true;
+    deferredSettingsLoader.markLoaded(PRESET_OWNED_KEYS);
     for (const key of PRESET_OWNED_KEYS) {
       this.keyDisposers.get(key)?.();
       this.keyDisposers.delete(key);
@@ -316,14 +339,14 @@ class SettingsStore
     );
   }
 
-  get<K extends keyof DatabaseSettings>(key: K): DatabaseSettings[K] | undefined {
+  get<K extends SettingsKey>(key: K): SettingsState[K] | undefined {
     const keyStr = String(key);
     assertPublicSettingsKey(keyStr);
     deferredSettingsLoader.request(keyStr);
     return this.stateData[keyStr];
   }
 
-  set<K extends keyof DatabaseSettings>(key: K, value: DatabaseSettings[K]): void {
+  set<K extends SettingsKey>(key: K, value: SettingsState[K]): void {
     const keyStr = String(key);
     assertPublicSettingsKey(keyStr);
     this.stateData[keyStr] = value;
@@ -343,8 +366,8 @@ class SettingsStore
     this.scheduleCommit();
   }
 
-  update(updater: (state: DatabaseSettings) => void): void {
-    updater(guardedSettingsState(this.stateData) as DatabaseSettings);
+  update(updater: (state: SettingsState) => void): void {
+    updater(guardedSettingsState(this.stateData) as SettingsState);
     for (const key of Object.keys(this.stateData)) {
       assertSettingsKey(key);
       if (key === "pluginCustomStorage" || PRESET_OWNED_KEYS.has(key)) continue;
@@ -355,7 +378,7 @@ class SettingsStore
   }
 
   /** Apply storage-derived runtime values without turning hydration into a write. */
-  hydrate(updater: (state: DatabaseSettings) => void): void {
+  hydrate(updater: (state: SettingsState) => void): void {
     const dirtyValues = new Map<string, any>();
     for (const key of this.dirtyKeys) {
       if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
@@ -371,7 +394,7 @@ class SettingsStore
     this.keySetDispose = null;
     let hydrationError: unknown;
     try {
-      updater(guardedSettingsState(this.stateData) as DatabaseSettings);
+      updater(guardedSettingsState(this.stateData) as SettingsState);
     } catch (error) {
       hydrationError = error;
     }
@@ -393,6 +416,9 @@ class SettingsStore
   hydrateSettingKey(key: string, value: unknown, exists = true): void {
     if (!key) return;
     assertSettingsKey(key);
+    // A deferred SQL load or remote legacy event can finish after ownership
+    // moved to PresetStore. Never retain a second copy of that state here.
+    if (this.presetStateReleased && PRESET_OWNED_KEYS.has(key)) return;
     this.keyDisposers.get(key)?.();
     this.keyDisposers.delete(key);
     this.dirtyKeys.delete(key);
@@ -406,7 +432,7 @@ class SettingsStore
     }
   }
 
-  delete(key: keyof DatabaseSettings): void {
+  delete(key: SettingsKey): void {
     const keyStr = String(key);
     assertPublicSettingsKey(keyStr);
     if (keyStr === "pluginCustomStorage") {

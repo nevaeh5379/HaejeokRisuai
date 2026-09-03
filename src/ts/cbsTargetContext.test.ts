@@ -81,7 +81,7 @@ registerCBS({
     callbacks.set(name, callback);
     for (const item of alias) callbacks.set(item, callback);
   },
-  getSettings: () => ({ promptTemplate: [] }) as any,
+  getPresetSettings: () => ({ promptTemplate: [] }) as any,
   getCharacters: () => [selectedRoom, targetRoom] as any,
   getSelectedCharID: () => 0,
   risuChatParser: (text) => text,

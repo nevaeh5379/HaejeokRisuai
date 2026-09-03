@@ -661,7 +661,7 @@ function getAllowedDbValue(key: string): any {
 function setAllowedDbValue(key: string, value: any): void {
   if (setDomainDbValue(key, value)) return;
   if (isPresetStoreSettingKey(key)) {
-    presetStore.state[key] = value;
+    presetStore.set(key, value);
   } else {
     settingsStore.set(key as any, value);
   }

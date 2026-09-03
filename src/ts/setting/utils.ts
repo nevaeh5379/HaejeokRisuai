@@ -1,4 +1,4 @@
-import type { SettingItem, SettingContext } from "./types";
+import type { SettingItem, SettingContext, SettingKey } from "./types";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { isPresetStoreSettingKey } from "../storage/sql/sqlDeferredSettings";
@@ -22,13 +22,15 @@ import { displaySettingsItems } from "./displaySettingsData.svelte";
  */
 export const UNINITIALIZED = Symbol("uninitialized");
 
-function stateForKey(key: string): any {
-  return isPresetStoreSettingKey(key) ? presetStore.state : settingsStore.state;
+function getSetting(key: SettingKey) {
+  return isPresetStoreSettingKey(key)
+    ? presetStore.state[key]
+    : settingsStore.state[key];
 }
 
-function stateForItem(item: SettingItem): any {
-  const key = item.bindKey ?? item.bindPath?.split(".")[0];
-  return key ? stateForKey(key) : settingsStore.state;
+function setSetting(key: SettingKey, value: any): void {
+  if (isPresetStoreSettingKey(key)) presetStore.set(key, value);
+  else settingsStore.set(key, value);
 }
 
 export function getLabel(item: SettingItem): string {
@@ -40,18 +42,19 @@ export function getLabel(item: SettingItem): string {
 
 export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
   if (item.getValue) {
-    return item.getValue(stateForItem(item), ctx);
+    return item.getValue(ctx);
   }
   if (item.bindPath) {
     const parts = item.bindPath.split(".");
-    let value: any = stateForKey(parts[0]);
+    // SettingPath checks the root and nested key when the item is defined.
+    let value: any = getSetting(parts.shift() as SettingKey);
     for (const part of parts) {
       value = value?.[part];
     }
     return value;
   }
   if (item.bindKey) {
-    return stateForKey(item.bindKey)[item.bindKey];
+    return getSetting(item.bindKey);
   }
   return undefined;
 }
@@ -62,30 +65,20 @@ export function setSettingValue(
   ctx: SettingContext,
 ): void {
   if (item.setValue) {
-    const state = stateForItem(item);
-    item.setValue(state, newValue, ctx);
-    if (item.bindKey) {
-      if (!isPresetStoreSettingKey(item.bindKey)) {
-        settingsStore.set(item.bindKey as any, state[item.bindKey]);
-      }
-    }
+    item.setValue(ctx, newValue);
+    if (item.bindKey) setSetting(item.bindKey, getSetting(item.bindKey));
   } else if (item.bindPath) {
     const parts = item.bindPath.split(".");
-    const state = stateForKey(parts[0]);
+    const root = parts.shift() as SettingKey;
+    const state: any = getSetting(root) ?? {};
     let obj: any = state;
     for (let i = 0; i < parts.length - 1; i++) {
       obj = obj[parts[i]] ??= {};
     }
     obj[parts[parts.length - 1]] = newValue;
-    if (!isPresetStoreSettingKey(parts[0])) {
-      settingsStore.set(parts[0] as any, state[parts[0]]);
-    }
+    setSetting(root, state);
   } else if (item.bindKey) {
-    if (isPresetStoreSettingKey(item.bindKey)) {
-      presetStore.state[item.bindKey] = newValue;
-    } else {
-      settingsStore.set(item.bindKey as any, newValue);
-    }
+    setSetting(item.bindKey, newValue);
   }
 
   if (item.onChange) {

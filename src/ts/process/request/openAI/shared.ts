@@ -1,4 +1,5 @@
-import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import type { PresetState } from "src/ts/stores/domain/stateOwnership";
 
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 
@@ -9,7 +10,7 @@ export interface LocalNetworkRequestOptions {
 
 export function getLocalNetworkRequestOptions(
   url: string,
-  db = settingsStore.state,
+  db: Pick<PresetState, "localNetworkMode" | "localNetworkTimeoutSec"> = presetStore.state,
   useStreaming = false,
 ): LocalNetworkRequestOptions {
   if (!db.localNetworkMode || !isLocalNetworkUrl(url)) {

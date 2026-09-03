@@ -1,7 +1,9 @@
 import DOMPurify from "dompurify";
 import markdownit from "markdown-it";
 import { appVer } from "../appVersion";
-import type { DatabaseSettings, character, customscript, groupChat, triggerscript } from "../storage/database/schema";
+import type { character, customscript, groupChat, triggerscript } from "../storage/database/schema";
+import type { SettingsState } from "../stores/domain/stateOwnership";
+import { presetStore } from "../stores/domain/presetStore.svelte";
 
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
@@ -1266,6 +1268,7 @@ function initMatcher() {
       }
     },
     getSettings: () => settingsStore.state,
+    getPresetSettings: () => presetStore.state,
     getCharacters: () => characterStore.characters,
     getUserName: getUserName,
     getPersonaPrompt: getPersonaPrompt,
@@ -1849,7 +1852,7 @@ export function risuChatParser(
   da: string,
   arg: {
     chatID?: number;
-    db?: DatabaseSettings;
+    db?: SettingsState;
     chara?: string | character | groupChat;
     rmVar?: boolean;
     var?: { [key: string]: string };

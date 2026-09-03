@@ -1,4 +1,5 @@
 import protocolSettings from "../../../../packages/protocol/settings.json";
+import type { PresetSettingKey } from "../../stores/domain/stateOwnership";
 
 export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;
 export const LEGACY_PERSONA_MIRROR_KEYS =
@@ -12,7 +13,7 @@ export function isLegacyPersonaMirrorKey(key: string): boolean {
 export const DOMAIN_STORE_SETTING_KEYS = protocolSettings.DOMAIN_STORE_SETTING_KEYS;
 export const PRESET_STORE_SETTING_KEYS = protocolSettings.PRESET_STORE_SETTING_KEYS;
 const PRESET_STORE_SETTING_KEY_SET = new Set<string>(PRESET_STORE_SETTING_KEYS);
-export function isPresetStoreSettingKey(key: string): boolean {
+export function isPresetStoreSettingKey(key: string): key is PresetSettingKey {
   return PRESET_STORE_SETTING_KEY_SET.has(key);
 }
 export const NON_SETTINGS_ROOT_KEYS = protocolSettings.NON_SETTINGS_ROOT_KEYS;

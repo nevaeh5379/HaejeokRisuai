@@ -87,7 +87,8 @@ manualEntries.push(
 
 function currentContext(): SettingContext {
   return {
-    db: settingsStore.state as any,
+    db: settingsStore.state,
+    preset: presetStore.state,
     modelInfo: getModelInfo(presetStore.state.aiModel),
     subModelInfo: getModelInfo(presetStore.state.subModel),
   };

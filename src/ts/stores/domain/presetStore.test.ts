@@ -64,6 +64,15 @@ describe("PresetStore active ownership", () => {
     expect(storage.loadBotPreset).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects settings and other domain writes through the preset state", () => {
+    for (const key of ["theme", "askRemoval", "modules", "characters"]) {
+      expect(() => Reflect.set(presetStore.state, key, null)).toThrow(/owned by another domain store/);
+      expect(() => Reflect.deleteProperty(presetStore.state, key)).toThrow(/owned by another domain store/);
+      expect(() => Object.defineProperty(presetStore.state, key, { value: null }))
+        .toThrow(/owned by another domain store/);
+    }
+  });
+
   it("flushes the live active preset through the preset domain", async () => {
     await presetStore.init(storage);
     presetStore.bindActivePresetState(

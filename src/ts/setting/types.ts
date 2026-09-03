@@ -5,7 +5,16 @@
  * Settings are defined as data and rendered automatically by SettingRenderer.
  */
 
-import type { Database } from "../storage/database/schema";
+import type { DatabaseSettings } from "../storage/database/schema";
+import type { PresetState, SettingsState } from "../stores/domain/stateOwnership";
+
+export type SettingKey = keyof (SettingsState & PresetState);
+/** Nested bindings must name an existing property of a settings/preset object. */
+export type SettingPath = {
+  [K in SettingKey]: NonNullable<DatabaseSettings[K]> extends object
+    ? `${K}.${Extract<keyof NonNullable<DatabaseSettings[K]>, string>}`
+    : never;
+}[SettingKey];
 import type {
   CustomComponentId,
   CustomComponentProps,
@@ -16,7 +25,8 @@ import type { LLMModel } from "../model/types";
  * Context passed to condition functions for visibility checks
  */
 export interface SettingContext {
-  db: Database;
+  db: SettingsState;
+  preset: PresetState;
   modelInfo: LLMModel;
   subModelInfo: LLMModel;
 }
@@ -125,17 +135,17 @@ export interface SettingItem {
   showExperimental?: boolean;
 
   /**
-   * Database key for binding (settingsStore.state.xxx)
+   * Settings/preset key for binding, routed to the owning store.
    * Only for input types (check, text, number, textarea, slider, select, color)
    */
-  bindKey?: keyof Database;
+  bindKey?: SettingKey;
 
   /**
    * Path for nested object binding (e.g., 'ooba.top_p')
    * Use when binding to nested properties like presetStore.state.ooba.top_p
    * Takes precedence over bindKey if both are specified
    */
-  bindPath?: string;
+  bindPath?: SettingPath;
 
   /**
    * Condition function for visibility
@@ -169,16 +179,16 @@ export interface SettingItem {
 
   /**
    * Optional getter function for the setting's value.
-   * Recommended over bindKey/bindPath for complete type safety and reactivity.
-   * TODO: Consider making SettingItem generic or using discriminated unions to eliminate `any` from accessor signatures.
+   * Receives each domain separately so callbacks cannot mistake a partial
+   * store for the complete database.
    */
-  getValue?: (db: Database, ctx?: SettingContext) => any;
+  getValue?: (ctx: SettingContext) => any;
 
   /**
    * Optional setter function for the setting's value.
    * TODO: Consider making SettingItem generic or using discriminated unions to eliminate `any` from accessor signatures.
    */
-  setValue?: (db: Database, val: any, ctx?: SettingContext) => void;
+  setValue?: (ctx: SettingContext, val: any) => void;
 
   /**
    * Optional callback fired when the value changes (useful for side-effects like CSS updates)

@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
-import type { botPreset, DatabaseSettings } from "../../storage/database/schema";
+import type { botPreset } from "../../storage/database/schema";
+import type { PresetSettingKey, PresetState } from "./stateOwnership";
+import { isPresetStoreSettingKey } from "../../storage/sql/sqlDeferredSettings";
 import { presetTemplate } from "../../storage/presets/presetDefaults";
 import type {
   BotPresetSummary,
@@ -22,6 +24,12 @@ export type PresetLoadStatus = "idle" | "loading" | "ready" | "error";
  */
 const PRESET_CACHE_MAX_ENTRIES = 6;
 
+function assertPresetKey(key: PropertyKey): void {
+  if (typeof key === "string" && !isPresetStoreSettingKey(key)) {
+    throw new Error(`[PresetStore] ${key} is owned by another domain store`);
+  }
+}
+
 class PresetStore
   implements InitializableStore<[storage: ISqlStorage]>, FlushableStore
 {
@@ -32,11 +40,24 @@ class PresetStore
   private activeDirty = false;
   private persistedActiveFingerprint = "";
   private readonly commitQueue = new StoreCommitQueue();
-  private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
-  readonly state = new Proxy({} as DatabaseSettings, {
+  private stateData = $state<PresetState>({} as PresetState);
+  readonly state = new Proxy({} as PresetState, {
     get: (_target, prop) => Reflect.get(this.stateData, prop),
-    set: (_target, prop, value) => Reflect.set(this.stateData, prop, value),
-    deleteProperty: (_target, prop) => Reflect.deleteProperty(this.stateData, prop),
+    set: (_target, prop, value) => {
+      assertPresetKey(prop);
+      return Reflect.set(this.stateData, prop, value);
+    },
+    deleteProperty: (_target, prop) => {
+      assertPresetKey(prop);
+      return Reflect.deleteProperty(this.stateData, prop);
+    },
+    defineProperty: (_target, prop, descriptor) => {
+      assertPresetKey(prop);
+      if (descriptor.configurable !== true) {
+        throw new TypeError("PresetStore state properties must be configurable");
+      }
+      return Reflect.defineProperty(this.stateData, prop, descriptor);
+    },
     has: (_target, prop) => Reflect.has(this.stateData, prop),
     ownKeys: () => Reflect.ownKeys(this.stateData),
     getOwnPropertyDescriptor: (_target, prop) => {
@@ -86,9 +107,10 @@ class PresetStore
    * documents remain in the bounded cache.
    */
   bindActivePresetState(
-    initialState: DatabaseSettings,
+    initialState: PresetState,
     serialize: () => StoredBotPreset | undefined,
   ): void {
+    for (const key of Object.keys(initialState)) assertPresetKey(key);
     this.activeObserverDispose?.();
     this.commitQueue.cancel();
     this.stateData = safeStructuredClone(initialState);
@@ -113,14 +135,19 @@ class PresetStore
     });
   }
 
-  replaceActivePresetState(nextState: DatabaseSettings): void {
+  replaceActivePresetState(nextState: PresetState): void {
     if (!this.activePresetSerializer)
       throw new Error("Active preset state is not initialized");
     this.bindActivePresetState(nextState, this.activePresetSerializer);
   }
 
-  getStateRecord(): DatabaseSettings {
+  getStateRecord(): PresetState {
     return this.stateData;
+  }
+
+  set<K extends PresetSettingKey>(key: K, value: PresetState[K]): void {
+    assertPresetKey(key);
+    this.stateData[key] = value;
   }
 
   /** Persist the canonical live active preset, including immediate mutations. */
@@ -306,7 +333,7 @@ class PresetStore
       throw error;
     }
   }
-  async activate(id: string, nextState: DatabaseSettings): Promise<void> {
+  async activate(id: string, nextState: PresetState): Promise<void> {
     await this.setActiveId(id);
     this.replaceActivePresetState(nextState);
   }
@@ -397,7 +424,7 @@ class PresetStore
     this.commitQueue.reset();
     this.storage = null;
     this.activePresetSerializer = null;
-    this.stateData = {} as DatabaseSettings;
+    this.stateData = {} as PresetState;
     this.activeDirty = false;
     this.persistedActiveFingerprint = "";
     this.summaries = [];

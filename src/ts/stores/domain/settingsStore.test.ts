@@ -5,6 +5,7 @@ import { settingsStore } from "./settingsStore.svelte";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
+import { PRESET_STORE_SETTING_KEYS } from "../../storage/sql/sqlDeferredSettings";
 
 describe("SettingsStore Reactivity and Persistence", () => {
   let committed: SqlCommit[] = [];
@@ -487,6 +488,42 @@ describe("SettingsStore Reactivity and Persistence", () => {
     });
   });
 
+  it("rejects every preset key through the public state", () => {
+    settingsStore.init({}, mockStorage);
+    for (const key of PRESET_STORE_SETTING_KEYS) {
+      expect(() => Reflect.get(settingsStore.state, key), key).toThrow(/owned by PresetStore/);
+      expect(() => Reflect.set(settingsStore.state, key, null), key).toThrow(/owned by PresetStore/);
+      expect(() => Reflect.deleteProperty(settingsStore.state, key), key).toThrow(/owned by PresetStore/);
+      expect(() => Object.defineProperty(settingsStore.state, key, { value: null }), key)
+        .toThrow(/owned by PresetStore/);
+      expect(() => settingsStore.update((state) => { Reflect.get(state, key); }), key)
+        .toThrow(/owned by PresetStore/);
+    }
+  });
+
+  it("does not rehydrate preset copies when a deferred load finishes after transfer", async () => {
+    let finish!: (prompts: Record<string, unknown>) => void;
+    mockStorage.loadPrompts = vi.fn(() => new Promise((resolve) => { finish = resolve; })) as any;
+    settingsStore.init({ mainPrompt: "legacy" }, mockStorage);
+    deferredSettingsLoader.init({
+      storage: mockStorage,
+      unloadedKeys: ["mainPrompt", "supaMemoryPrompt"],
+      hydrateSettingKey: (key, value, exists) => settingsStore.hydrateSettingKey(key, value, exists),
+    });
+    const pending = deferredSettingsLoader.ensureKey("supaMemoryPrompt");
+    settingsStore.releasePresetOwnedState();
+    finish({ mainPrompt: "stale SQL prompt", supaMemoryPrompt: "memory prompt" });
+    await pending;
+    settingsStore.hydrateSettingKey("localNetworkMode", true);
+
+    expect(Object.keys(settingsStore.getBootstrapState())).not.toContain("mainPrompt");
+    expect(Object.keys(settingsStore.getBootstrapState())).not.toContain("localNetworkMode");
+    expect(settingsStore.state.supaMemoryPrompt).toBe("memory prompt");
+    expect(deferredSettingsLoader.isLoaded("mainPrompt")).toBe(true);
+    await settingsStore.flush();
+    expect(committed).toHaveLength(0);
+  });
+
   it("releases active preset fields from the settings domain", async () => {
     settingsStore.init(
       {
@@ -501,8 +538,10 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(Object.keys(settingsStore.state)).not.toContain("apiType");
     expect(Object.keys(settingsStore.state)).not.toContain("moduleIntergration");
     expect(settingsStore.state.theme).toBe("dark");
+    // @ts-expect-error Preset keys are rejected statically and at runtime.
     expect(() => settingsStore.state.apiType).toThrow(/owned by PresetStore/);
-    expect(() => settingsStore.set("apiType", "openai" as any)).toThrow(
+    // @ts-expect-error Preset keys cannot be written through SettingsStore.
+    expect(() => settingsStore.set("apiType", "openai")).toThrow(
       /owned by PresetStore/,
     );
     await settingsStore.flush();
