@@ -6,6 +6,7 @@ import type { PromptItem } from "../../process/prompt";
 import { safeStructuredClone } from "../../polyfill";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
+import type { PresetState } from "../../stores/domain/stateOwnership";
 import { encode as encodeMsgpack, decode as decodeMsgpack } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "../../rpack/rpack_js";
@@ -140,14 +141,14 @@ export async function changeToPreset(id = 0, savecurrent = true) {
 export function createPresetSettingsState(
   base: DatabaseSettings,
   preset: botPreset,
-): DatabaseSettings {
+): PresetState {
   const combined = safeStructuredClone(base);
   setPreset(combined, preset);
   const state: Record<string, unknown> = {};
   for (const key of PRESET_STORE_SETTING_KEYS) {
     state[key] = combined[key as keyof DatabaseSettings];
   }
-  return state as unknown as DatabaseSettings;
+  return state as PresetState;
 }
 
 export function applyPresetToCurrentState(preset: botPreset): void {

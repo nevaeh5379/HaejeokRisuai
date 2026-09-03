@@ -1,4 +1,5 @@
-import type { Chat, DatabaseSettings, character, groupChat, loreBook } from "./storage/database/schema";
+import type { Chat, character, groupChat, loreBook } from "./storage/database/schema";
+import type { PresetState, SettingsState } from "./stores/domain/stateOwnership";
 import type { CbsConditions } from "./parser/parser.svelte";
 import type { RisuModule } from "./process/modules";
 import type { LLMModel } from "./model/modellist";
@@ -12,6 +13,9 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   },
   getSettings: () => {
     throw new Error("getSettings not implemented");
+  },
+  getPresetSettings: () => {
+    throw new Error("getPresetSettings not implemented");
   },
   getCharacters: () => [],
   getUserName: () => "placeholder_user",
@@ -66,7 +70,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
 
 export type matcherArg = {
   chatID: number;
-  db: DatabaseSettings;
+  db: SettingsState;
   chara: character | string;
   rmVar: boolean;
   var?: { [key: string]: string };
@@ -113,7 +117,8 @@ export type CBSRegisterArg = {
     };
     internalOnly?: boolean;
   }) => void | Promise<void>;
-  getSettings: () => DatabaseSettings;
+  getSettings: () => SettingsState;
+  getPresetSettings: () => PresetState;
   getCharacters: () => (character | groupChat)[];
   getUserName: (target?: ChatExecutionTarget) => string;
   getPersonaPrompt: (target?: ChatExecutionTarget) => string;
@@ -157,6 +162,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   const {
     registerFunction,
     getSettings,
+    getPresetSettings,
     getCharacters,
     getUserName,
     getPersonaPrompt,
@@ -367,7 +373,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "mainprompt",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return risuChatParser(db.mainPrompt, matcherArg);
     },
     alias: ["systemprompt", "main_prompt"],
@@ -442,7 +448,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "jb",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return risuChatParser(db.jailbreak, matcherArg);
     },
     alias: ["jailbreak"],
@@ -453,7 +459,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "globalnote",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return risuChatParser(db.globalNote, matcherArg);
     },
     alias: ["globalnote", "systemnote", "ujb"],
@@ -464,7 +470,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "authornote",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       const { chat } = resolveRoom(matcherArg);
       if (chat?.note) {
         return risuChatParser(chat.note, matcherArg);
@@ -736,7 +742,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "model",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return db.aiModel;
     },
     alias: [],
@@ -747,7 +753,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "axmodel",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return db.subModel;
     },
     alias: [],
@@ -802,7 +808,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "maxcontext",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return db.maxContext.toString();
     },
     alias: [],
@@ -1512,7 +1518,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: "prefillsupported",
     callback: (str, matcherArg, args, vars) => {
-      const db = getSettings();
+      const db = getPresetSettings();
       return db.aiModel.startsWith("claude") ? "1" : "0";
     },
     alias: ["prefill_supported", "prefill"],
@@ -2073,6 +2079,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "metadata",
     callback: (str, matcherArg, args, vars) => {
       const db = getSettings();
+      const preset = getPresetSettings();
       switch (args[0].toLocaleLowerCase()) {
         case "mobile": {
           return isMobile ? "1" : "0";
@@ -2102,27 +2109,27 @@ export function registerCBS(arg: CBSRegisterArg) {
           return navigator.language;
         }
         case "modelshortname": {
-          const modelInfo = getModelInfo(db.aiModel);
+          const modelInfo = getModelInfo(preset.aiModel);
           return modelInfo.shortName ?? modelInfo.name ?? modelInfo.id;
         }
         case "modelname": {
-          const modelInfo = getModelInfo(db.aiModel);
+          const modelInfo = getModelInfo(preset.aiModel);
           return modelInfo.name ?? modelInfo.id;
         }
         case "modelinternalid": {
-          const modelInfo = getModelInfo(db.aiModel);
+          const modelInfo = getModelInfo(preset.aiModel);
           return modelInfo.internalID ?? modelInfo.id;
         }
         case "modelformat": {
-          const modelInfo = getModelInfo(db.aiModel);
+          const modelInfo = getModelInfo(preset.aiModel);
           return modelInfo.format.toString();
         }
         case "modelprovider": {
-          const modelInfo = getModelInfo(db.aiModel);
+          const modelInfo = getModelInfo(preset.aiModel);
           return modelInfo.provider.toString();
         }
         case "modeltokenizer": {
-          const modelInfo = getModelInfo(db.aiModel);
+          const modelInfo = getModelInfo(preset.aiModel);
           return modelInfo.tokenizer.toString();
         }
         case "imateapot": {
@@ -2132,7 +2139,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return isTauri ? "local" : isNodeServer ? "node" : "web";
         }
         case "maxcontext": {
-          return db.maxContext.toString();
+          return preset.maxContext.toString();
         }
         default: {
           return `Error: ${args[0]} is not a valid metadata key.`;

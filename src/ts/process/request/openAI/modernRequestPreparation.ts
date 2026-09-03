@@ -221,10 +221,10 @@ export async function prepareModernOpenAIRequest(
     body,
     headers,
     replacerURL,
-    localNetworkOptions: getLocalNetworkRequestOptions(replacerURL, db, false),
+    localNetworkOptions: getLocalNetworkRequestOptions(replacerURL),
     streamingLocalNetworkOptions: getLocalNetworkRequestOptions(
       replacerURL,
-      db,
+      undefined,
       true,
     ),
   };

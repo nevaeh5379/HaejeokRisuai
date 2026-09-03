@@ -1100,12 +1100,12 @@ export async function requestOpenAIResponseAPI(
 
   const localNetworkOptions = getLocalNetworkRequestOptions(
     requestURL,
-    db,
+    undefined,
     false,
   );
   const streamingLocalNetworkOptions = getLocalNetworkRequestOptions(
     requestURL,
-    db,
+    undefined,
     true,
   );
 

@@ -31,7 +31,7 @@ export async function requestMistral(
   const db = settingsStore.state;
   const reformatedChat = formatMistralMessages(formatedChat);
   const requestURL = resolveMistralRequestUrl(arg.customURL);
-  const networkOptions = getLocalNetworkRequestOptions(requestURL, db, false);
+  const networkOptions = getLocalNetworkRequestOptions(requestURL);
 
   const body = applyParameters(
     {

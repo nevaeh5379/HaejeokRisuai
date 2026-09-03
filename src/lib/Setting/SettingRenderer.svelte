@@ -24,7 +24,8 @@ import type { SettingItem, SettingContext } from 'src/ts/setting/types';
 
     // Build context for condition checks
     let ctx: SettingContext = $derived({
-        db: settingsStore.state as any,
+        db: settingsStore.state,
+        preset: presetStore.state,
         modelInfo: effectiveModelInfo,
         subModelInfo: effectiveSubModelInfo,
     });

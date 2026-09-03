@@ -246,9 +246,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     }
 
     installStartupData(startup!, storage);
-    expect(settingsStore.getStateRecord().mainPrompt).not.toBe("leaky-mainPrompt");
+    expect(settingsStore.getBootstrapState().mainPrompt).not.toBe("leaky-mainPrompt");
     await deferredSettingsLoader.ensureKey("mainPrompt");
-    expect(settingsStore.getStateRecord().mainPrompt).toBe("leaky-mainPrompt");
+    expect(settingsStore.getBootstrapState().mainPrompt).toBe("leaky-mainPrompt");
     settingsStore.dispose();
     database.close();
   });
