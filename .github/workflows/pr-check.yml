@@ -9,12 +9,116 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typecheck:
-    name: Linux / Test
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      android: ${{ steps.filter.outputs.android }}
+      tauri: ${{ steps.filter.outputs.tauri }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'src/**'
+              - 'packages/**'
+              - 'server/**'
+              - 'deploy/**'
+              - 'tooling/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig*.json'
+              - 'vite.config.*'
+              - 'svelte.config.*'
+              - '.github/workflows/pr-check.yml'
+            android:
+              - 'android/**'
+              - 'capacitor.config.*'
+              - 'src/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/pr-check.yml'
+            tauri:
+              - 'src-tauri/**'
+              - '.github/workflows/pr-check.yml'
+            e2e:
+              - 'src/**'
+              - 'e2e/**'
+              - 'index.html'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'playwright.config.ts'
+              - 'vite.config.*'
+              - 'svelte.config.*'
+              - '.github/workflows/pr-check.yml'
+
+  web-test:
+    name: Linux / Web & Unit Tests
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: install pnpm
+        shell: bash
+        run: |
+          npm install --global pnpm@10.34.1
+          pnpm --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v5
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Termux deployment scripts
+        shell: bash
+        run: |
+          bash -n deploy/termux/install.sh
+          bash -n deploy/termux/haejeok.sh
+          python3 tooling/release_downloads_test.py
+
+      - name: Run svelte-check
+        run: pnpm check
+
+      - name: Build
+        run: pnpm build
+
+      - name: Run unit tests
+        run: pnpm test
+
+  android-test:
+    name: Linux / Android Low-Memory Test
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v6
@@ -59,24 +163,122 @@ jobs:
       - name: install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate Termux deployment scripts
-        shell: bash
-        run: |
-          bash -n deploy/termux/install.sh
-          bash -n deploy/termux/haejeok.sh
-          python3 tooling/release_downloads_test.py
-
-      - name: Run svelte-check
-        run: pnpm check
-
-      - name: Build
+      - name: Build web assets for Capacitor
         run: pnpm build
-
-      - name: Run tests
-        run: pnpm test
 
       - name: Sync Capacitor Android
         run: pnpm exec cap sync android
 
       - name: Run Android backup low-memory test
         run: ./android/gradlew -p android :app:testLowMemoryBackup --no-daemon
+
+      - name: Upload Android Test Results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: android/app/build/reports/tests/
+
+  tauri-check:
+    name: Linux / Tauri Rust Check
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: install system dependencies (ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  e2e-test:
+    name: Linux / Playwright E2E
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: install pnpm
+        shell: bash
+        run: |
+          npm install --global pnpm@10.34.1
+          pnpm --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v5
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium & Dependencies
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E Tests
+        run: pnpm exec playwright test --workers=1
+
+      - name: Upload Playwright Test Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  pr-check-all:
+    name: PR Check Status
+    runs-on: ubuntu-latest
+    needs: [changes, web-test, android-test, tauri-check, e2e-test]
+    if: always()
+    steps:
+      - name: Verify all checks succeeded or were skipped
+        shell: bash
+        run: |
+          results="${{ needs.web-test.result }} ${{ needs.android-test.result }} ${{ needs.tauri-check.result }} ${{ needs.e2e-test.result }}"
+          echo "Job results: $results"
+          if echo "$results" | grep -qE "failure|cancelled"; then
+            echo "One or more PR checks failed or were cancelled."
+            exit 1
+          fi
+          echo "All PR checks passed or were skipped successfully."

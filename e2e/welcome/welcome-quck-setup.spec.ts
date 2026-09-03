@@ -12,8 +12,6 @@ test('test', async ({ page }) => {
   await page.getByRole('button', { name: '128k' }).click();
   await page.getByRole('button', { name: 'English (Original)' }).click();
   await page.getByRole('spinbutton', { name: '1000' }).click();
-  await page.getByRole('spinbutton', { name: '1000' }).press('End');
-  await page.getByRole('spinbutton', { name: '1000' }).press('Clear');
   await page.getByRole('spinbutton', { name: '1000' }).fill('30000');
   await page.getByRole('button', { name: 'Complete Setup' }).click();
   await page.getByRole('button', { name: 'Launch Haejeok RisuAI' }).click();
