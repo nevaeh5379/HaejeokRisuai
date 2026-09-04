@@ -170,6 +170,58 @@ describe("buildChatMessageGraph", () => {
     ).toBe(true);
   });
 
+  it("keeps every message when density is all", () => {
+    const messages = Array.from({ length: 120 }, (_, index) =>
+      message(
+        `full-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `full message ${index + 1}`,
+      ),
+    );
+
+    const graph = buildChatMessageGraph([timeline("root", messages, true)], {
+      density: "all",
+    });
+
+    expect(graph.nodes).toHaveLength(120);
+    expect(graph.collapsedMessageCount).toBe(0);
+    expect(graph.nodes.every((node) => node.kind === "message")).toBe(true);
+  });
+
+  it("compresses linear runs to branch landmarks when density is branches", () => {
+    const shared = Array.from({ length: 12 }, (_, index) =>
+      message(
+        `landmark-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `landmark ${index + 1}`,
+      ),
+    );
+    const original = message("landmark-original", "char", "original ending");
+    const alternative = message("landmark-alt", "char", "alternative ending");
+
+    const graph = buildChatMessageGraph(
+      [
+        timeline("root", [...shared, original]),
+        timeline("reroll", [...shared, alternative], true),
+      ],
+      { density: "branches" },
+    );
+
+    const fork = graph.nodes.find((node) => node.id === "message:landmark-11")!;
+    expect(graph.nodes).toHaveLength(5);
+    expect(graph.collapsedMessageCount).toBe(10);
+    expect(graph.nodes.filter((node) => node.kind === "summary")).toHaveLength(
+      1,
+    );
+    expect(fork.branchPoint).toBe(true);
+    expect(
+      graph.nodes.some((node) => node.id === "message:landmark-original"),
+    ).toBe(true);
+    expect(graph.nodes.some((node) => node.id === "message:landmark-alt")).toBe(
+      true,
+    );
+  });
+
   it("never collapses the exact fork point in a long chat", () => {
     const shared = Array.from({ length: 100 }, (_, index) =>
       message(

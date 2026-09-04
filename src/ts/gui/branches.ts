@@ -55,6 +55,12 @@ export interface ChatGraphTimeline {
   messages: Message[];
 }
 
+export type ChatGraphDensity = "smart" | "all" | "branches";
+
+export interface ChatGraphBuildOptions {
+  density?: ChatGraphDensity;
+}
+
 interface MutableMessageNode {
   id: string;
   message: Message;
@@ -101,6 +107,7 @@ function fallbackSignature(message: Message): string {
  */
 export function buildChatMessageGraph(
   timelines: ChatGraphTimeline[],
+  options: ChatGraphBuildOptions = {},
 ): ChatBranchGraph {
   const empty: ChatBranchGraph = {
     nodes: [],
@@ -211,8 +218,12 @@ export function buildChatMessageGraph(
   const messageCount = [...mutableNodes.values()].filter(
     (node) => !node.synthetic,
   ).length;
+  const density = options.density ?? "smart";
   const keepIds = new Set<string>();
-  if (messageCount <= LONG_CHAT_THRESHOLD) {
+  if (
+    density === "all" ||
+    (density === "smart" && messageCount <= LONG_CHAT_THRESHOLD)
+  ) {
     for (const nodeId of mutableNodes.keys()) keepIds.add(nodeId);
   } else {
     const anchors = [...mutableNodes.values()]
@@ -232,7 +243,8 @@ export function buildChatMessageGraph(
         continue;
       nearestAnchor.set(id, distance);
       keepIds.add(id);
-      if (distance >= CONTEXT_RADIUS) continue;
+      const contextRadius = density === "branches" ? 0 : CONTEXT_RADIUS;
+      if (distance >= contextRadius) continue;
       const node = mutableNodes.get(id);
       if (!node) continue;
       const neighbors = [node.parentId, ...node.children].filter(
@@ -321,7 +333,8 @@ export function buildChatMessageGraph(
       visitedOriginalIds.add(targetId);
       ensureMessage(targetId);
 
-      if (hiddenIds.length >= MIN_COLLAPSED_RUN) {
+      const collapseThreshold = density === "branches" ? 1 : MIN_COLLAPSED_RUN;
+      if (hiddenIds.length >= collapseThreshold) {
         const first = mutableNodes.get(hiddenIds[0])!;
         const last = mutableNodes.get(hiddenIds[hiddenIds.length - 1])!;
         const id = `summary:${summaryId++}`;
@@ -439,25 +452,31 @@ export function buildChatMessageGraph(
   };
 }
 
-export function getChatBranches(targetChat?: Chat | null): ChatBranchGraph {
+export function getChatBranches(
+  targetChat?: Chat | null,
+  options: ChatGraphBuildOptions = {},
+): ChatBranchGraph {
   const character =
     targetChat === undefined ? characterStore.currentCharacter : undefined;
   const chat =
     targetChat === undefined
       ? character?.chats?.[character.chatPage ?? 0]
       : targetChat;
-  if (!chat) return buildChatMessageGraph([]);
+  if (!chat) return buildChatMessageGraph([], options);
 
   const state = chat.branchState;
   if (!state || state.branches.length === 0) {
-    return buildChatMessageGraph([
-      {
-        branchId: "__current__",
-        reason: "root",
-        active: true,
-        messages: chat.message ?? [],
-      },
-    ]);
+    return buildChatMessageGraph(
+      [
+        {
+          branchId: "__current__",
+          reason: "root",
+          active: true,
+          messages: chat.message ?? [],
+        },
+      ],
+      options,
+    );
   }
 
   return buildChatMessageGraph(
@@ -467,5 +486,6 @@ export function getChatBranches(targetChat?: Chat | null): ChatBranchGraph {
       active: branch.id === state.activeBranchId,
       messages: getChatBranchMessages(chat, branch.id),
     })),
+    options,
   );
 }
