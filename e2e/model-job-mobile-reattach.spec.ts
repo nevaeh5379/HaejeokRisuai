@@ -63,7 +63,9 @@ test("mobile client reattaches its Node model job after the result stream discon
   });
   await page.route(`**/api/model-jobs/${jobId}/stream`, async (route) => {
     streamRequests += 1;
-    if (streamRequests === 1) {
+    // The client retries the initial attach with backoff before giving up,
+    // so every attempt must fail to simulate a persistently dead socket.
+    if (streamRequests <= 5) {
       await route.abort("connectionfailed");
       return;
     }
@@ -109,7 +111,7 @@ test("mobile client reattaches its Node model job after the result stream discon
 
   expect(initialFailure).toContain("still running");
   expect(sourceClientId).not.toBe("");
-  expect(streamRequests).toBe(1);
+  expect(streamRequests).toBe(5);
 
   await page.evaluate(async () => {
     const recoveryPath = "/src/ts/process/modelJobRecovery.ts";
@@ -119,7 +121,7 @@ test("mobile client reattaches its Node model job after the result stream discon
     await recoverDurableModelJobs();
   });
 
-  await expect.poll(() => streamRequests).toBe(2);
+  await expect.poll(() => streamRequests).toBe(6);
 });
 
 test("normal completion suppresses a stale same-client active snapshot", async ({

@@ -209,16 +209,49 @@ export async function fetchViaDurableModelJob(
   const detachAbort = () =>
     arg.signal?.removeEventListener("abort", abortWithAuth);
 
-  let streamResponse: Response;
-  try {
-    streamResponse = await fetch(
-      `/api/model-jobs/${encodeURIComponent(jobId)}/stream`,
-      { headers: await authHeaders(), signal: arg.signal },
-    );
-  } catch (error) {
+  const abortError = () =>
+    new DOMException("The operation was aborted.", "AbortError");
+  const sleepAbortable = (ms: number) =>
+    new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        arg.signal?.removeEventListener("abort", onAbort);
+      };
+      const onAbort = () => {
+        cleanup();
+        reject(abortError());
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, ms);
+      if (arg.signal?.aborted) return onAbort();
+      arg.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+
+  let streamResponse: Response | null = null;
+  let attachAborted = false;
+  let lastAttachError: unknown = null;
+  for (let attempt = 0; attempt < MAX_REATTACH_ATTEMPTS; attempt++) {
+    try {
+      if (attempt > 0) await sleepAbortable(500 * 2 ** (attempt - 1));
+      streamResponse = await fetch(
+        `/api/model-jobs/${encodeURIComponent(jobId)}/stream`,
+        { headers: await authHeaders(), signal: arg.signal },
+      );
+      break;
+    } catch (error) {
+      lastAttachError = error;
+      if (arg.signal?.aborted) {
+        attachAborted = true;
+        break;
+      }
+    }
+  }
+  if (!streamResponse) {
     detachAbort();
-    releaseOwnership(!arg.signal?.aborted);
-    if (arg.signal?.aborted) throw error;
+    releaseOwnership(!attachAborted);
+    if (attachAborted) throw lastAttachError;
     throw new Error(
       "The model job is still running, but its result stream disconnected.",
     );
@@ -242,26 +275,6 @@ export async function fetchViaDurableModelJob(
   let skipBytes = 0;
   let progressedSinceAttach = true;
   let noProgressReattaches = 0;
-
-  const abortError = () =>
-    new DOMException("The operation was aborted.", "AbortError");
-  const sleepAbortable = (ms: number) =>
-    new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        clearTimeout(timer);
-        arg.signal?.removeEventListener("abort", onAbort);
-      };
-      const onAbort = () => {
-        cleanup();
-        reject(abortError());
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, ms);
-      if (arg.signal?.aborted) return onAbort();
-      arg.signal?.addEventListener("abort", onAbort, { once: true });
-    });
 
   const reattach = async (): Promise<boolean> => {
     if (progressedSinceAttach) {
