@@ -85,6 +85,7 @@ describe("normalizeDatabaseDefaults", () => {
     expect(db.top_p).toBe(1);
     expect(db.settingsCloseButtonSize).toBe(24);
     expect(db.keepSessionAlive).toBe("off");
+    expect(db.generationStatsPosition).toBe("bottom-right");
     expect(db.showChatTabs).toBe(true);
   });
 

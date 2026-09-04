@@ -22,6 +22,13 @@ import type { Loadout } from "../../loadout";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
+export type GenerationStatsPosition =
+  | "bottom-right"
+  | "bottom-left"
+  | "top-right"
+  | "top-left"
+  | "off";
+
 export interface ProviderModelOverride {
   ollamaModel?: string;
   ollamaModelName?: string;
@@ -521,6 +528,7 @@ export interface DatabaseSettings {
   autoScrollToNewMessage?: boolean;
   alwaysScrollToNewMessage?: boolean;
   newMessageButtonStyle?: string;
+  generationStatsPosition?: GenerationStatsPosition;
   chatLoadInitialPages?: number;
   chatLoadAdditionalPages?: number;
   streamingDisplayOptimizationMode?: StreamingDisplayOptimizationMode;

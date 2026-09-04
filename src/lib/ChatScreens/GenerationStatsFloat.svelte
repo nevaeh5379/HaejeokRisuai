@@ -3,6 +3,7 @@
     import { language } from '../../lang'
     import { createDeferredTokenCalculator } from '../../ts/deferredTokenCalculator'
     import { calculateChatGenerationMetrics, chatGenerationStats, getChatGenerationStats } from '../../ts/process/chatGenerationStats'
+    import { settingsStore } from '../../ts/stores/domain/settingsStore.svelte'
 
     interface Props {
         selectedChar: number
@@ -28,6 +29,22 @@
     let visibleStats = $derived(
         getChatGenerationStats($chatGenerationStats, selectedChar, selectedChat)
     )
+
+    let position = $derived(settingsStore.state.generationStatsPosition ?? 'bottom-right')
+
+    let positionClass = $derived.by(() => {
+        switch (position) {
+            case 'bottom-left':
+                return 'bottom-20 left-4'
+            case 'top-left':
+                return 'top-16 left-4'
+            case 'top-right':
+                return 'top-16 right-4'
+            case 'bottom-right':
+            default:
+                return 'bottom-20 right-4'
+        }
+    })
 
     onMount(() => {
         const timer = setInterval(() => {
@@ -62,12 +79,13 @@
     }
 </script>
 
-{#if visibleStats && metrics}
+{#if visibleStats && metrics && position !== 'off'}
     <aside
-        class="pointer-events-none absolute bottom-20 right-4 z-40 min-w-44 max-w-[min(16rem,calc(100%-2rem))] rounded-lg border border-darkborderc bg-darkbg/95 px-3 py-2 text-sm text-textcolor shadow-lg backdrop-blur-sm"
+        class="pointer-events-none absolute {positionClass} z-40 min-w-44 max-w-[min(16rem,calc(100%-2rem))] rounded-lg border border-darkborderc bg-darkbg/95 px-3 py-2 text-sm text-textcolor shadow-lg backdrop-blur-sm"
         role="status"
         aria-live="polite"
         data-testid="generation-stats-float"
+        data-position={position}
     >
         <div class="truncate font-medium" title={visibleStats.model}>{visibleStats.model || language.model}</div>
         <div class="mt-1 text-textcolor2">

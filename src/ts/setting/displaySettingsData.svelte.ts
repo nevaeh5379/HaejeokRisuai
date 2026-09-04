@@ -418,6 +418,50 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ["saving", "icon"],
   },
   {
+    id: "display.generationStatsPosition",
+    type: "select",
+    labelKey: "generationStatsPosition",
+    bindKey: "generationStatsPosition",
+    classes: "mt-4",
+    keywords: [
+      "generation",
+      "stats",
+      "float",
+      "floating",
+      "position",
+      "생성",
+      "통계",
+      "플로팅",
+      "플러팅",
+      "대기",
+      "위치",
+    ],
+    options: {
+      selectOptions: [
+        {
+          value: "bottom-right",
+          labelKey: "generationStatsPositionBottomRight",
+        },
+        {
+          value: "bottom-left",
+          labelKey: "generationStatsPositionBottomLeft",
+        },
+        {
+          value: "top-right",
+          labelKey: "generationStatsPositionTopRight",
+        },
+        {
+          value: "top-left",
+          labelKey: "generationStatsPositionTopLeft",
+        },
+        {
+          value: "off",
+          labelKey: "generationStatsPositionOff",
+        },
+      ],
+    },
+  },
+  {
     id: "display.showPromptComparison",
     type: "check",
     labelKey: "showPromptComparison",
