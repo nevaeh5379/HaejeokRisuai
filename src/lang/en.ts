@@ -2009,6 +2009,8 @@ export const languageEnglish = {
   notCharxWarn:
     "This character uses multiple assets. It is recommended to export this character as a CharX format for better compatibility.",
   noPlugins: "No Plugins Installed",
+  pluginLoadFailed: "Failed to load plugins.",
+  pluginLoadRetry: "Retry",
   legacyTranslation: "Legacy Translation",
   clipboardSuccess: "Copied to Clipboard",
   translateContent: "Translate Content",

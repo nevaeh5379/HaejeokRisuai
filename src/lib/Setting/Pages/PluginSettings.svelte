@@ -16,14 +16,44 @@ import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } f
     import CheckInput from "src/lib/UI/GUI/CheckInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import { hotReloadPluginFiles } from "src/ts/plugins/apiV3/developMode";
+    import { onMount } from "svelte";
+    import { deferredSettingsLoader } from "src/ts/stores/domain/deferredSettingsLoader";
 
     let showParams = $state([])
+    let isLoading = $state(!deferredSettingsLoader.isLoaded("plugins"))
+    let loadFailed = $state(false)
+
+    async function loadPluginSettings() {
+        isLoading = true
+        loadFailed = false
+        try {
+            await deferredSettingsLoader.ensureKey("plugins")
+        } finally {
+            // The loader logs storage failures and leaves the key unloaded.
+            loadFailed = !deferredSettingsLoader.isLoaded("plugins")
+            isLoading = false
+        }
+    }
+
+    onMount(() => {
+        if (isLoading) void loadPluginSettings()
+    })
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.plugin}</h2>
 
 <span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
 
+{#if isLoading}
+    <div role="status" class="text-textcolor2 py-4">{language.loading}...</div>
+{:else if loadFailed}
+    <div role="alert" class="text-textcolor2 py-4">
+        <p>{language.pluginLoadFailed}</p>
+        <button class="mt-2 hover:text-textcolor cursor-pointer" onclick={loadPluginSettings}>
+            {language.pluginLoadRetry}
+        </button>
+    </div>
+{:else}
 <div class="border-solid border-darkborderc p-2 flex flex-col border-1">
     {#if !settingsStore.state.plugins || settingsStore.state.plugins?.length === 0}
         <span class="text-textcolor2">{language.noPlugins}</span>
@@ -276,3 +306,4 @@ import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } f
         <CodeXmlIcon />
     </button>
 </div>
+{/if}

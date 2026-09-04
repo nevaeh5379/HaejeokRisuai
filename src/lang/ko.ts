@@ -1920,6 +1920,8 @@ export const languageKorean = {
   notCharxWarn:
     "이 캐릭터는 여러 에셋을 사용합니다. 더 나은 호환성을 위해 이 캐릭터를 CharX 포맷으로 엑스포트하는 것이 좋습니다.",
   noPlugins: "설치된 플러그인이 없습니다.",
+  pluginLoadFailed: "플러그인을 불러오지 못했습니다.",
+  pluginLoadRetry: "재시도",
   legacyTranslation: "레거시 번역",
   clipboardSuccess: "클립보드에 복사됨",
   translateContent: "컨텐츠 번역",
