@@ -1718,6 +1718,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
           data,
           meta,
           subModel: trigger.subModel,
+          sourceModuleId: trigger.sourceModuleId,
         });
         data = runResult.res ?? data;
       }
@@ -1779,6 +1780,7 @@ export async function runLuaButtonTrigger(
           mode: "onButtonClick",
           data: data,
           subModel: trigger.subModel,
+          sourceModuleId: trigger.sourceModuleId,
         });
       }
     }

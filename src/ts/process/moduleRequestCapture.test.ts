@@ -3,6 +3,7 @@ import { get } from "svelte/store";
 import {
   captureModuleRequest,
   capturedModuleRequests,
+  moduleRequestCaptureEnabled,
   clearModuleRequestCapture,
   setModuleRequestCapture,
 } from "./moduleRequestCapture";
@@ -32,9 +33,11 @@ describe("request capture memory limits", () => {
     setModuleRequestCapture(true);
     const value = request();
     for (let i = 0; i < 8; i++) captureModuleRequest(value);
+    expect(get(moduleRequestCaptureEnabled)).toBe(false);
     value.messages[0].content = "changed";
     expect(get(capturedModuleRequests)).toHaveLength(5);
     expect(get(capturedModuleRequests)[0].messages[0].content).toBe("hello");
+    setModuleRequestCapture(true);
     captureModuleRequest({
       ...request(),
       messages: [{ role: "user", content: "x".repeat(50000) }],

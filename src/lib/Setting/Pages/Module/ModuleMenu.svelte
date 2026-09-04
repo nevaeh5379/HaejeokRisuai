@@ -2,6 +2,7 @@
     import { language } from "src/lang";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import ModelList from "src/lib/UI/ModelList.svelte";
+    import ModuleRequestRules from "./ModuleRequestRules.svelte";
     import type { loreBook } from "../../../../ts/storage/database/schema";
     import LoreBookList from "src/lib/SideBars/LoreBook/LoreBookList.svelte";
     import { type CCLorebook, convertExternalLorebook } from "src/ts/process/lorebook.svelte";
@@ -208,6 +209,7 @@
         <div class="mt-1 flex items-center">
             <ModelList bind:value={currentModule.subModel} blankable noneText={language.defaultSubModel || language.none} noMargin />
         </div>
+        <ModuleRequestRules bind:currentModule />
     {/if}
     <div class="flex items-center mt-4">
         <Check bind:check={currentModule.hideIcon} name={language.hideChatIcon}/>

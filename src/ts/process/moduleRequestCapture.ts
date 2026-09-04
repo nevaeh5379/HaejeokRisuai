@@ -15,22 +15,42 @@ const MAX_REQUESTS = 5;
 const MAX_CHARACTERS = 24000;
 const MAX_MESSAGES = 100;
 let enabled = false;
+let capturesRemaining = 0;
 let nextId = 0;
 export const moduleRequestCaptureEnabled = writable(false);
 export const capturedModuleRequests = writable<CapturedModuleRequest[]>([]);
+export const recentModuleRuleDecisions = writable<
+  Pick<CapturedModuleRequest, "sourceModuleId" | "decision" | "selectedModel">[]
+>([]);
 
 export function setModuleRequestCapture(value: boolean) {
   enabled = value;
+  capturesRemaining = value ? MAX_REQUESTS : 0;
   moduleRequestCaptureEnabled.set(value);
 }
 
 export function clearModuleRequestCapture() {
   capturedModuleRequests.set([]);
+  recentModuleRuleDecisions.set([]);
 }
 
 export function captureModuleRequest(
   request: Omit<CapturedModuleRequest, "id" | "truncated">,
 ) {
+  const decision = {
+    ...request.decision,
+    modules: request.decision.modules.map((m) => ({ ...m })),
+  };
+  recentModuleRuleDecisions.update((entries) =>
+    [
+      {
+        sourceModuleId: request.sourceModuleId,
+        decision,
+        selectedModel: request.selectedModel,
+      },
+      ...entries,
+    ].slice(0, MAX_REQUESTS),
+  );
   if (!enabled) return;
   let remaining = MAX_CHARACTERS;
   let truncated = request.messages.length > MAX_MESSAGES;
@@ -62,13 +82,11 @@ export function captureModuleRequest(
         id: ++nextId,
         messages,
         activeModuleIds: [...request.activeModuleIds],
-        decision: {
-          ...request.decision,
-          modules: request.decision.modules.map((m) => ({ ...m })),
-        },
+        decision,
         truncated,
       },
       ...entries,
     ].slice(0, MAX_REQUESTS),
   );
+  if (--capturesRemaining === 0) setModuleRequestCapture(false);
 }

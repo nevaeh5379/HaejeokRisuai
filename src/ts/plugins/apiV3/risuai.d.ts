@@ -347,6 +347,14 @@ interface RisuModule {
     mcp?: any;
     /** Dedicated auxiliary model */
     subModel?: string;
+    /** Literal conditions for routing auxiliary requests to this module's model. */
+    subModelRequestRules?: {
+        enabled: boolean;
+        phrases: string[];
+        sourceModuleId?: string;
+        role?: "user" | "assistant" | "system";
+        lastMessages?: number;
+    }[];
 }
 
 /**

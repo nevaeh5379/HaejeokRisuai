@@ -36,11 +36,9 @@ export function matchesModuleRequestRule(
     return false;
   if (rule.sourceModuleId && rule.sourceModuleId !== sourceModuleId)
     return false;
-  if (
-    !rule.phrases.length ||
-    rule.phrases.some((p) => typeof p !== "string" || !p.trim())
-  )
-    return false;
+  if (rule.phrases.some((p) => typeof p !== "string")) return false;
+  const phrases = rule.phrases.filter((phrase) => phrase.trim().length > 0);
+  if (!phrases.length) return false;
   if (
     rule.lastMessages !== undefined &&
     (!Number.isSafeInteger(rule.lastMessages) || rule.lastMessages < 1)
@@ -55,7 +53,7 @@ export function matchesModuleRequestRule(
     if (rule.role && message.role !== rule.role) continue;
     if (
       typeof message.content === "string" &&
-      rule.phrases.every((phrase) => message.content.includes(phrase))
+      phrases.every((phrase) => message.content.includes(phrase))
     )
       return true;
   }

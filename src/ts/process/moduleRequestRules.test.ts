@@ -13,6 +13,14 @@ const modules = [
   { id: "a", name: "A", subModel: "model-a", subModelRequestRules: [rule] },
 ];
 describe("module request rules", () => {
+  it("ignores blank editing lines without making an empty rule match", () => {
+    expect(
+      matchesModuleRequestRule(
+        { enabled: true, phrases: ["weather", "", " "] },
+        [{ role: "user", content: "weather" }],
+      ),
+    ).toBe(true);
+  });
   it("requires every literal phrase in the same message", () => {
     expect(
       matchesModuleRequestRule(rule, [

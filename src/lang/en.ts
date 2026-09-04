@@ -1,4 +1,47 @@
 export const languageEnglish = {
+  moduleRequestRules: {
+    title: "Auxiliary model request rules",
+    description:
+      "Route matching auxiliary requests to this module's model, even when another module makes the call. Only enabled modules with a dedicated model participate. Main model requests are unchanged.",
+    add: "Add rule",
+    enabled: "Enabled",
+    remove: "Remove rule",
+    phrases: "Required phrases (one per line)",
+    phrasesHelp:
+      "Case-sensitive literal text. Every line must occur in the same message. Empty rules never match. Prefer unique instructions over words that may occur in chat history.",
+    source: "Calling module",
+    anySource: "Any calling module",
+    missingSource: "Unavailable module",
+    advanced: "Advanced message filters",
+    role: "Message role",
+    anyRole: "Any role",
+    tail: "Search the last N messages (blank = entire request)",
+    tailHelp:
+      "Counted across all roles. Extra messages and retries can change positions.",
+    noModel:
+      "Select a dedicated auxiliary model above to activate these rules.",
+    capture: "Capture next 5 auxiliary attempts",
+    stop: "Stop capture",
+    clear: "Clear recent requests",
+    captureHelp:
+      "Capture is optional and stops after 5 attempts. You can return to chat to generate requests. Text stays only in this session's memory, limited to 5 requests and 24,000 characters each; images are excluded.",
+    recent: "Recent request decisions",
+    noRecent: "No recent auxiliary requests.",
+    prompts: "Captured requests",
+    selectionHelp:
+      "Select a unique phrase in a message, then create a rule. The rule will also use that message's role and the calling module when known.",
+    fromSelection: "Create rule from selected text",
+    matched: "Matched module",
+    conflict: "Multiple modules matched; existing model selection retained",
+    unmatched: "No matching rule; existing model selection retained",
+    existing: "Existing global auxiliary model",
+    preview: "Preview with current rules",
+    truncated:
+      "This request was truncated. Preview is unavailable; selected text can still be used to create a rule.",
+    inactive: "This module was not enabled for this request.",
+    fallbackHelp:
+      "Explicit error-fallback models retain priority. Matching rules do not change retry behavior.",
+  },
   formating: {
     main: "Main Prompt",
     jailbreak: "Jailbreak Prompt",
