@@ -71,6 +71,9 @@ const {
   encodeDatabase: encodeLocalBackupDatabase,
 } = require("./localBackupFormat.cjs");
 const {
+  materializePortableDatabaseBranches,
+} = require("../../packages/backup-core/portableBranches.cjs");
+const {
   normalizePageInteger,
   paginateMessages,
 } = require("./messagePagination.cjs");
@@ -3212,7 +3215,10 @@ async function buildPortableServerDatabase() {
     throw new Error("SQL storage is not configured");
   const loaded = await postgresStorage.exportDatabaseSnapshot();
   if (!loaded?.database) throw new Error("Database is not initialized");
-  const database = loaded.database;
+  const database = await materializePortableDatabaseBranches(
+    loaded.database,
+    (chatId) => postgresStorage.loadChatBranchGraph(chatId),
+  );
   if (!database.botPresets || database.botPresets.length === 0) {
     const summaries = (await postgresStorage.listBotPresets()).presets;
     const loadedPresets = (

@@ -47,7 +47,10 @@ import {
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { NodeStorage } from "../storage/files/nodeStorage";
-import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
+import {
+  getSqlBranchStorage,
+  getSqlStorage,
+} from "../storage/sql/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
@@ -66,6 +69,7 @@ import {
   classifyBackupEntry,
   getInlayBackupKey,
 } from "@risuai/backup-core/entryPolicy.cjs";
+import { materializePortableDatabaseBranches } from "@risuai/backup-core/portableBranches.cjs";
 import {
   decodeInlayAssetBackup,
   encodeInlayAssetBackup,
@@ -606,7 +610,12 @@ export async function createBackupDatabaseSnapshot(
 
   ensureAllDomains(db);
 
-  return normalizeBackupSnapshot(db);
+  const normalized = normalizeBackupSnapshot(db);
+  const branchStorage = await getSqlBranchStorage();
+  return await materializePortableDatabaseBranches(
+    normalized,
+    (chatId) => branchStorage.loadChatBranchGraph(chatId),
+  );
 }
 
 import {
