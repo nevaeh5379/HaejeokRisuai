@@ -2202,10 +2202,10 @@ const reverseProxyFunc = async (req, res, next) => {
   let originalResponse;
   try {
     // make request to original server
-    // This is the authenticated generic proxy feature: callers intentionally choose
-    // the HTTP(S) endpoint, including local model servers.
+    // This authenticated generic proxy intentionally lets authenticated callers choose
+    // an HTTP(S) endpoint, including local model servers.
+    // codeql[js/request-forgery]
     originalResponse = await fetch(proxyTarget, {
-      // lgtm[js/request-forgery]
       method: req.method,
       headers: header,
       body: JSON.stringify(req.body),
@@ -2283,10 +2283,10 @@ const reverseProxyFunc_get = async (req, res, next) => {
   let originalResponse;
   try {
     // make request to original server
-    // This is the authenticated generic proxy feature: callers intentionally choose
-    // the HTTP(S) endpoint, including local model servers.
+    // This authenticated generic proxy intentionally lets authenticated callers choose
+    // an HTTP(S) endpoint, including local model servers.
+    // codeql[js/request-forgery]
     originalResponse = await fetch(proxyTarget, {
-      // lgtm[js/request-forgery]
       method: "GET",
       headers: header,
       signal: timeout.signal,
