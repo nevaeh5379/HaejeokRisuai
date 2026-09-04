@@ -259,6 +259,18 @@ export const languageEnglish = {
       "Reduces post-loading stalls on older devices by finishing chat runtime setup before showing the app, decoding bounded character thumbnails, rendering fewer chat messages, and releasing inactive messages in small idle batches. Restart Risuai after changing this setting.",
     chatLoadInitialPages:
       "Number of recent chat messages to render when a chat screen opens. Higher values show more history immediately but can make long chats heavier to open.",
+    assetCacheEntries:
+      "Maximum number of cached asset URLs. Old entries are removed when either the count or size limit is reached. The entered value also applies in low-spec mode. Changes take effect on subsequent image loads; reopen the screen to reload missing images.",
+    assetCacheSizeMB:
+      "Maximum asset cache size in MB. Higher values can reduce images disappearing during cache eviction, but use more memory. Decoded images require additional memory, so this is not a limit on total app memory.",
+    thumbnailCacheEntries:
+      "Maximum number of cached thumbnails, reused while browsing bot lists and other screens. The entered count applies directly.",
+    thumbnailCacheSizeMB:
+      "Maximum cache size in MB for thumbnails received from a Node server. Entries are removed when either the count or size limit is reached. Other environments use the thumbnail count or asset cache limits.",
+    characterImageCacheEntries:
+      "Maximum number of cached bot icons, display images, and originals combined. Images currently in use on screen are protected and may temporarily exceed this limit.",
+    fullResolutionImageCacheEntries:
+      "Maximum number of unused original images retained within the bot image cache. Originals have a separate limit because they use more memory. Originals currently in use on screen are protected.",
     chatLoadAdditionalPages:
       "Number of older chat messages to render each time you scroll to the top. Higher values reduce repeated loading but can make each load heavier.",
     emotionPrompt:
@@ -1493,6 +1505,12 @@ export const languageEnglish = {
   loreBookDepth: "Lorebook Search Depth",
   loreBookToken: "Lorebook Max Tokens",
   lowSpecMode: "Low-spec Mode",
+  assetCacheEntries: "Asset Cache Count",
+  assetCacheSizeMB: "Asset Cache Size (MB)",
+  thumbnailCacheEntries: "Thumbnail Cache Count",
+  thumbnailCacheSizeMB: "Node Thumbnail Cache Size (MB)",
+  characterImageCacheEntries: "Bot Image Cache Count",
+  fullResolutionImageCacheEntries: "Original Bot Image Cache Count",
   chatLoadInitialPages: "Initial Chat Load Count",
   chatLoadAdditionalPages: "Additional Chat Load Count",
   removeCharacter: "Remove Character",

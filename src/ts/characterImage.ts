@@ -3,6 +3,7 @@ import { forageStorage, getFileSrc } from "./globalApi.svelte";
 import { NodeStorage } from "./storage/files/nodeStorage";
 import { getMimeType } from "./media/mimeType";
 import { isCapacitor } from "./platform";
+import { getImageCacheLimit } from "./memory/imageCacheLimits";
 
 // Character images can be multi-megabyte blobs. Keep Map compatibility for the
 // existing UI while bounding the number of decoded/object-URL resources retained
@@ -85,16 +86,16 @@ class CharacterImageCache extends Map<string, string> {
   }
 
   private trim(): void {
-    const maxEntries = settingsStore.state.lowSpecMode
-      ? 32
-      : isCapacitor
-        ? 64
-        : 128;
-    const maxFullResolution = settingsStore.state.lowSpecMode
-      ? 4
-      : isCapacitor
-        ? 6
-        : 12;
+    const maxEntries = getImageCacheLimit(
+      settingsStore.state,
+      "characterImageCacheEntries",
+      isCapacitor,
+    );
+    const maxFullResolution = getImageCacheLimit(
+      settingsStore.state,
+      "fullResolutionImageCacheEntries",
+      isCapacitor,
+    );
     // Pinned entries are the currently rendered working set. They must not consume
     // the disposable full-resolution LRU budget, otherwise any newly loaded preview
     // can be inserted and immediately revoked while the UI is still using its URL.

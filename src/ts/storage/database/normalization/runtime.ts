@@ -1,4 +1,8 @@
-import { isNodeServer, isTauri } from "../../../platform";
+import { isCapacitor, isNodeServer, isTauri } from "../../../platform";
+import {
+  normalizeImageCacheSettings,
+  type ImageCacheLimitKey,
+} from "../../../memory/imageCacheLimits";
 import {
   DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
@@ -83,6 +87,7 @@ export type RuntimeValidatedDefaults = Required<
     | "wavespeedImage"
     | "chatLoadInitialPages"
     | "chatLoadAdditionalPages"
+    | ImageCacheLimitKey
   >
 >;
 
@@ -116,6 +121,7 @@ function applyPlatformRuntimePolicy(data: Database): void {
 
 export function normalizeRuntimeDatabaseSettings(data: Database): void {
   Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
+  normalizeImageCacheSettings(data, isCapacitor);
   data.customModels ??= [];
   data.authRefreshes ??= [];
   data.openaiCompatImage = mergeDefaults(

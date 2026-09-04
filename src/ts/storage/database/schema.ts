@@ -522,6 +522,12 @@ export interface DatabaseSettings {
   enableBookmark?: boolean;
   hideAllImages?: boolean;
   lowSpecMode?: boolean;
+  assetCacheEntries?: number;
+  assetCacheSizeMB?: number;
+  thumbnailCacheEntries?: number;
+  thumbnailCacheSizeMB?: number;
+  characterImageCacheEntries?: number;
+  fullResolutionImageCacheEntries?: number;
   blurHiddenCharacters?: boolean;
   characterFavorites?: string[];
   characterHidden?: string[];

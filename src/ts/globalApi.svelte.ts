@@ -81,6 +81,7 @@ import {
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
+import { getImageCacheLimit } from "./memory/imageCacheLimits";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
 
@@ -166,7 +167,12 @@ const revokeObjectUrl = (url: string) => {
   if (url.startsWith("blob:")) URL.revokeObjectURL(url);
 };
 const tauriThumbnailUrls = new BoundedCache<string, string>({
-  maxEntries: () => (settingsStore.state.lowSpecMode ? 24 : 96),
+  maxEntries: () =>
+    getImageCacheLimit(
+      settingsStore.state,
+      "thumbnailCacheEntries",
+      isCapacitor,
+    ),
   onEvict: revokeObjectUrl,
 });
 
@@ -179,8 +185,20 @@ const tauriThumbnailUrls = new BoundedCache<string, string>({
 class ThumbnailBatchLoader {
   private cacheWeights = new Map<string, number>();
   private cache = new BoundedCache<string, string>({
-    maxEntries: () => (settingsStore.state.lowSpecMode ? 24 : 96),
-    maxWeight: () => (settingsStore.state.lowSpecMode ? 3 : 8) * 1024 * 1024,
+    maxEntries: () =>
+      getImageCacheLimit(
+        settingsStore.state,
+        "thumbnailCacheEntries",
+        isCapacitor,
+      ),
+    maxWeight: () =>
+      getImageCacheLimit(
+        settingsStore.state,
+        "thumbnailCacheSizeMB",
+        isCapacitor,
+      ) *
+      1024 *
+      1024,
     weigh: (_url, loc) => this.cacheWeights.get(loc) ?? 1,
     onEvict: (url, loc) => {
       this.cacheWeights.delete(loc);
@@ -407,9 +425,11 @@ const swRegistrationPromises = new Map<string, Promise<void>>();
 const browserAssetWeights = new Map<string, number>();
 const browserAssetUrls = new BoundedCache<string, string>({
   maxEntries: () =>
-    settingsStore.state.lowSpecMode ? 16 : isCapacitor ? 32 : 64,
+    getImageCacheLimit(settingsStore.state, "assetCacheEntries", isCapacitor),
   maxWeight: () =>
-    (settingsStore.state.lowSpecMode ? 8 : isCapacitor ? 12 : 24) * 1024 * 1024,
+    getImageCacheLimit(settingsStore.state, "assetCacheSizeMB", isCapacitor) *
+    1024 *
+    1024,
   weigh: (_url, key) => browserAssetWeights.get(key) ?? 1,
   onEvict: (url, key) => {
     browserAssetWeights.delete(key);

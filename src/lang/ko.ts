@@ -204,6 +204,18 @@ export const languageKorean = {
       "구형 기기에서 로딩 이후 발생하는 멈춤을 줄입니다. 채팅 런타임 준비가 끝난 뒤 앱을 표시하고, 제한된 크기의 캐릭터 썸네일을 디코딩하며, 더 적은 채팅 메시지를 렌더링하고, 비활성 메시지를 유휴 시간에 나누어 정리합니다. 설정을 변경한 뒤 Risuai를 다시 시작하세요.",
     chatLoadInitialPages:
       "채팅 화면을 열 때 처음 렌더링할 최근 채팅 메시지 개수입니다. 값이 높을수록 더 많은 기록을 바로 볼 수 있지만 긴 채팅을 열 때 무거워질 수 있습니다.",
+    assetCacheEntries:
+      "에셋 URL 캐시에 보관할 최대 개수입니다. 개수와 용량 중 먼저 도달한 한도에 따라 오래된 항목을 정리합니다. 입력한 값은 저사양 모드에서도 그대로 적용되며, 다음 이미지 로딩부터 반영됩니다. 이미 사라진 이미지는 화면을 다시 열어 주세요.",
+    assetCacheSizeMB:
+      "에셋 캐시에 보관할 최대 용량(MB)입니다. 값을 높이면 캐시 정리로 이미지가 사라지는 현상을 줄일 수 있지만 메모리 사용량이 늘어납니다. 이미지 디코딩에 필요한 메모리는 별도이므로 앱 전체 메모리 한도는 아닙니다.",
+    thumbnailCacheEntries:
+      "썸네일 캐시에 보관할 최대 개수입니다. 봇 목록 등을 탐색할 때 작은 이미지를 재사용합니다. 입력한 개수가 그대로 적용됩니다.",
+    thumbnailCacheSizeMB:
+      "Node 서버에서 받은 썸네일 캐시의 최대 용량(MB)입니다. 개수와 용량 중 먼저 도달한 한도에 따라 정리합니다. 다른 환경에서는 썸네일 개수 또는 에셋 캐시 한도를 사용합니다.",
+    characterImageCacheEntries:
+      "봇 아이콘·표시용 이미지·원본을 포함한 봇 이미지 캐시의 최대 개수입니다. 현재 화면에서 사용 중인 이미지는 보호하므로 일시적으로 이 한도를 넘을 수 있습니다.",
+    fullResolutionImageCacheEntries:
+      "봇 이미지 캐시 안에서 보관할 미사용 원본 이미지의 최대 개수입니다. 원본은 메모리를 많이 사용하므로 별도로 제한합니다. 현재 화면에서 사용 중인 원본은 보호합니다.",
     chatLoadAdditionalPages:
       "위로 스크롤할 때마다 추가로 렌더링할 이전 채팅 메시지 개수입니다. 값이 높을수록 반복 로딩은 줄지만 한 번의 로딩이 무거워질 수 있습니다.",
     emotionPrompt:
@@ -1409,6 +1421,12 @@ export const languageKorean = {
   loreBookDepth: "로어북 검색 깊이",
   loreBookToken: "로어북 최대 토큰",
   lowSpecMode: "저사양 모드",
+  assetCacheEntries: "에셋 캐시 개수",
+  assetCacheSizeMB: "에셋 캐시 용량 (MB)",
+  thumbnailCacheEntries: "썸네일 캐시 개수",
+  thumbnailCacheSizeMB: "Node 썸네일 캐시 용량 (MB)",
+  characterImageCacheEntries: "봇 이미지 캐시 개수",
+  fullResolutionImageCacheEntries: "원본 봇 이미지 캐시 개수",
   chatLoadInitialPages: "채팅 초기 로딩 개수",
   chatLoadAdditionalPages: "채팅 추가 로딩 개수",
   removeCharacter: "캐릭터 삭제",

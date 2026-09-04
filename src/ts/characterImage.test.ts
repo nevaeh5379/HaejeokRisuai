@@ -15,7 +15,11 @@ const mocks = vi.hoisted(() => {
     storage,
     forageStorage: { realStorage: storage },
     getFileSrc: vi.fn(async () => "/api/read"),
-    settingsState: { hideAllImages: false, lowSpecMode: false },
+    settingsState: {
+      hideAllImages: false,
+      lowSpecMode: false,
+      fullResolutionImageCacheEntries: 4 as number | undefined,
+    },
   };
 });
 
@@ -111,6 +115,7 @@ describe("getCharImagesBatch", () => {
     fullImageBlobCache.clear();
     mocks.forageStorage.realStorage = mocks.storage;
     mocks.settingsState.lowSpecMode = false;
+    mocks.settingsState.fullResolutionImageCacheEntries = 4;
   });
 
   it("never falls back to one direct request per local image", async () => {
@@ -185,6 +190,31 @@ describe("getCharImagesBatch", () => {
     expect(fullImageBlobCache.has("assets/full-0.png")).toBe(false);
     expect(fullImageBlobCache.has("assets/full-6.png")).toBe(true);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:full-0");
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the higher default and applies edited limits to existing character caches", () => {
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(), revokeObjectURL });
+    mocks.settingsState.lowSpecMode = true;
+    mocks.settingsState.fullResolutionImageCacheEntries = undefined;
+
+    for (let index = 0; index < 9; index++) {
+      fullImageBlobCache.set(`assets/full-${index}.png`, `blob:full-${index}`);
+    }
+    expect(fullImageBlobCache.size).toBe(8);
+    expect(fullImageBlobCache.has("assets/full-8.png")).toBe(true);
+
+    mocks.settingsState.fullResolutionImageCacheEntries = 12;
+    for (let index = 9; index < 13; index++) {
+      fullImageBlobCache.set(`assets/full-${index}.png`, `blob:full-${index}`);
+    }
+    expect(fullImageBlobCache.size).toBe(12);
+
+    mocks.settingsState.fullResolutionImageCacheEntries = 4;
+    fullImageBlobCache.set("assets/latest.png", "blob:latest");
+    expect(fullImageBlobCache.size).toBe(4);
+    expect(fullImageBlobCache.get("assets/latest.png")).toBe("blob:latest");
     vi.unstubAllGlobals();
   });
 
