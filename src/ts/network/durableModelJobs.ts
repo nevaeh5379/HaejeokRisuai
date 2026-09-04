@@ -16,6 +16,7 @@ export interface DurableGenerationContext {
 const contexts = new Map<string, DurableGenerationContext>();
 const ownedJobIds = new Set<string>();
 const creatingGenerationIds = new Set<string>();
+const detachedJobIds = new Set<string>();
 
 export function isDurableModelJobLocallyManaged(
   job: Pick<DurableModelJobRecord, "id" | "generationId">,
@@ -24,6 +25,20 @@ export function isDurableModelJobLocallyManaged(
     ownedJobIds.has(job.id) ||
     (!!job.generationId && creatingGenerationIds.has(job.generationId))
   );
+}
+
+export function shouldRecoverDurableModelJob(
+  job: Pick<DurableModelJobRecord, "id" | "generationId" | "sourceClientId">,
+): boolean {
+  if (isDurableModelJobLocallyManaged(job)) return false;
+  return (
+    job.sourceClientId !== getNodeClientSessionId() ||
+    detachedJobIds.has(job.id)
+  );
+}
+
+export function clearDurableModelJobDetached(jobId: string): void {
+  detachedJobIds.delete(jobId);
 }
 
 export function registerDurableGenerationContext(
@@ -177,7 +192,11 @@ export async function fetchViaDurableModelJob(
     creatingGenerationIds.delete(arg.generationId);
   }
 
-  const releaseOwnership = () => ownedJobIds.delete(jobId);
+  const releaseOwnership = (detached = false) => {
+    ownedJobIds.delete(jobId);
+    if (detached) detachedJobIds.add(jobId);
+    else detachedJobIds.delete(jobId);
+  };
   const abortWithAuth = () => {
     void (async () => {
       await fetch(`/api/model-jobs/${encodeURIComponent(jobId)}`, {
@@ -198,7 +217,7 @@ export async function fetchViaDurableModelJob(
     );
   } catch (error) {
     detachAbort();
-    releaseOwnership();
+    releaseOwnership(!arg.signal?.aborted);
     if (arg.signal?.aborted) throw error;
     throw new Error(
       "The model job is still running, but its result stream disconnected.",
@@ -214,7 +233,7 @@ export async function fetchViaDurableModelJob(
     !Number.isFinite(upstreamStatus)
   ) {
     detachAbort();
-    releaseOwnership();
+    releaseOwnership(true);
     throw new TypeError("Model job upstream connection failed.");
   }
 
@@ -310,7 +329,7 @@ export async function fetchViaDurableModelJob(
           }
           if (await reattach()) continue;
           detachAbort();
-          releaseOwnership();
+          releaseOwnership(true);
           throw new Error(
             "The server is still generating, but the result stream could not be reattached.",
           );
@@ -354,7 +373,7 @@ export async function fetchViaDurableModelJob(
         }
         if (await reattach()) continue;
         detachAbort();
-        releaseOwnership();
+        releaseOwnership(true);
         if (arg.signal?.aborted) throw abortError();
         controller.error(
           new Error(
