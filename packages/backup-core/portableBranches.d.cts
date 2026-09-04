@@ -29,6 +29,15 @@ export function preparePortableChatForBranchRestore<
   T extends Record<string, any>,
 >(sourceChat: T, graph: PortableBranchGraph): T;
 
+export function loadPortableBranchGraphForExport(
+  chatId: string,
+  loadGraph: (chatId: string) => Promise<PortableBranchGraph>,
+  loadBranchMessages: (
+    chatId: string,
+    branchId: string,
+  ) => Promise<Array<Record<string, any> & { chatId?: string }>>,
+): Promise<PortableBranchGraph>;
+
 export function attachPortableDatabaseBranchGraphs<
   T extends Record<string, any>,
 >(

@@ -68,7 +68,10 @@ import {
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
 import { getSqlBranchStorage } from "./storage/sql/sqlStorageFactory";
 import { buildChatJsonExportPayload } from "./chatExport";
-import { preparePortableChatForBranchRestore } from "@risuai/backup-core/portableBranches.cjs";
+import {
+  loadPortableBranchGraphForExport,
+  preparePortableChatForBranchRestore,
+} from "@risuai/backup-core/portableBranches.cjs";
 import { restorePortableChatBranchGraph } from "./storage/sql/portableBranchRestore";
 
 export { createBlankChar } from "./characterDefaults";
@@ -403,7 +406,12 @@ export async function exportChat(page: number) {
       if (jsonExportMode === "native") {
         if (!chat.id) throw new Error("Chat ID is required for branch export");
         const branchStorage = await getSqlBranchStorage();
-        branchGraph = await branchStorage.loadChatBranchGraph(chat.id);
+        branchGraph = await loadPortableBranchGraphForExport(
+          chat.id,
+          (id) => branchStorage.loadChatBranchGraph(id),
+          (id, branchId) =>
+            branchStorage.loadBranchMessages(id, branchId, { mode: "full" }),
+        );
       }
       const payload = buildChatJsonExportPayload(
         chat,

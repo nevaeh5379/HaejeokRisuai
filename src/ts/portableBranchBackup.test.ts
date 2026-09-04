@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attachPortableDatabaseBranchGraphs,
   expandChatBranchGraphForCompatibility,
+  loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
 } from "@risuai/backup-core/portableBranches.cjs";
 
@@ -44,6 +45,64 @@ const graph = {
 };
 
 describe("portable persistent branch backup", () => {
+  it("hydrates native exports with full-fidelity branch messages", async () => {
+    const fullMessages = {
+      root: [
+        { ...message("m1", "shared"), disabled: true },
+        {
+          ...message("original", "original"),
+          saying: "speaker-1",
+          promptInfo: { promptName: "full-root" },
+          generationInfo: { model: "model-a", generationId: "gen-root" },
+        },
+      ],
+      reroll: [
+        { ...message("m1", "shared"), disabled: true },
+        {
+          ...message("alt", "active"),
+          promptInfo: { promptName: "full-alt" },
+          generationInfo: { model: "model-b", generationId: "gen-alt" },
+        },
+      ],
+    };
+    const exported = await loadPortableBranchGraphForExport(
+      "chat-1",
+      async () => graph,
+      async (_chatId, branchId) =>
+        fullMessages[branchId as keyof typeof fullMessages],
+    );
+
+    expect(
+      exported.messages.find((item) => item.chatId === "m1")?.disabled,
+    ).toBe(true);
+    expect(
+      exported.messages.find((item) => item.chatId === "original")?.promptInfo,
+    ).toEqual({ promptName: "full-root" });
+    expect(
+      exported.messages.find((item) => item.chatId === "alt")?.generationInfo,
+    ).toEqual({ model: "model-b", generationId: "gen-alt" });
+  });
+
+  it("hydrates a single-branch native chat export too", async () => {
+    const singleGraph = {
+      branches: [graph.branches[0]],
+      activeBranchId: "root",
+      messages: [message("m1", "shared"), message("original", "original")],
+      links: graph.links.slice(0, 2),
+    };
+    const exported = await loadPortableBranchGraphForExport(
+      "chat-1",
+      async () => singleGraph,
+      async () => [
+        { ...message("m1", "shared"), disabled: true },
+        { ...message("original", "original"), saying: "speaker-root" },
+      ],
+    );
+
+    expect(exported.messages[0].disabled).toBe(true);
+    expect(exported.messages[1].saying).toBe("speaker-root");
+  });
+
   it("stores SQL branch graphs outside Chat without serializing branchState", async () => {
     const database = {
       characters: [
@@ -86,7 +145,10 @@ describe("portable persistent branch backup", () => {
       },
       async () => graph,
     );
+    const graphPayload = portable.haejeokBranchGraphs;
     const prepared = preparePortableDatabaseForBranchRestore(portable);
+    expect(prepared.database).toBe(portable);
+    expect(prepared.branchGraphs).toBe(graphPayload);
     const chat = prepared.database.characters[0].chats[0] as any;
     expect(chat.message.map((item: any) => item.data)).toEqual([
       "shared",

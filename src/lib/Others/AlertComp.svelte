@@ -942,6 +942,8 @@
     {#if persistedBranchGraphChat}
         <BranchGraphModal
             chat={persistedBranchGraphChat}
+            branchGraph={persistedBranchGraph}
+            loading={branchGraphLoading}
             onselect={switchBranchFromGraph}
             onclose={() => alertStore.set({ type: 'none', msg: '' })}
         />

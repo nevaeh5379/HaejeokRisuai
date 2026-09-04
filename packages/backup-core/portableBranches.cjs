@@ -71,6 +71,48 @@ function preparePortableChatForBranchRestore(sourceChat, graph) {
   return chat;
 }
 
+async function loadPortableBranchGraphForExport(
+  chatId,
+  loadGraph,
+  loadBranchMessages,
+) {
+  const graph = await loadGraph(chatId);
+  if (!graph) {
+    throw new Error(`Branch export could not load graph for ${chatId}`);
+  }
+  if (!Array.isArray(graph.branches) || graph.branches.length === 0) {
+    return graph;
+  }
+
+  const fullMessagesById = new Map();
+  for (const branch of graph.branches) {
+    const messages = await loadBranchMessages(chatId, branch.id);
+    for (const message of messages || []) {
+      if (message?.chatId && !fullMessagesById.has(message.chatId)) {
+        fullMessagesById.set(message.chatId, message);
+      }
+    }
+  }
+
+  const missingMessageIds = [];
+  const messages = (graph.messages || []).map((message) => {
+    if (!message?.chatId) {
+      throw new Error(
+        `Branch export encountered a message without an id in ${chatId}`,
+      );
+    }
+    const fullMessage = fullMessagesById.get(message.chatId);
+    if (!fullMessage) missingMessageIds.push(message.chatId);
+    return fullMessage || message;
+  });
+  if (missingMessageIds.length > 0) {
+    throw new Error(
+      `Branch export could not load full message data for ${missingMessageIds.join(", ")}`,
+    );
+  }
+  return { ...graph, messages };
+}
+
 async function attachPortableDatabaseBranchGraphs(database, loadGraph) {
   const result = cloneValue(database);
   const graphs = {};
@@ -99,8 +141,13 @@ function extractPortableDatabaseBranchGraphs(source) {
 }
 
 function preparePortableDatabaseForBranchRestore(source) {
-  const { database, branchGraphs } =
-    extractPortableDatabaseBranchGraphs(source);
+  // Restore owns the freshly decoded database object, so transfer the branch
+  // graph out of it instead of deep-cloning the entire database and graph.
+  // This avoids retaining several complete copies of large chat histories.
+  const database = source && typeof source === "object" ? source : {};
+  const raw = database[NATIVE_BRANCH_GRAPHS_KEY];
+  const branchGraphs = raw && typeof raw === "object" ? raw : {};
+  delete database[NATIVE_BRANCH_GRAPHS_KEY];
   for (const character of database.characters || []) {
     for (let index = 0; index < (character?.chats || []).length; index++) {
       const chat = character.chats[index];
@@ -239,6 +286,7 @@ function expandPortableDatabaseBranchGraphsForCompatibility(
 module.exports = {
   NATIVE_BRANCH_GRAPHS_KEY,
   attachPortableDatabaseBranchGraphs,
+  loadPortableBranchGraphForExport,
   extractPortableDatabaseBranchGraphs,
   preparePortableChatForBranchRestore,
   preparePortableDatabaseForBranchRestore,

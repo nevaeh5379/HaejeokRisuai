@@ -73,6 +73,7 @@ const {
 const {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
+  loadPortableBranchGraphForExport,
 } = require("../../packages/backup-core/portableBranches.cjs");
 const {
   normalizePageInteger,
@@ -3222,7 +3223,16 @@ async function buildPortableServerDatabase() {
   if (!loaded?.database) throw new Error("Database is not initialized");
   const database = await attachPortableDatabaseBranchGraphs(
     loaded.database,
-    (chatId) => postgresStorage.loadChatBranchGraph(chatId),
+    async (chatId) => {
+      const graph = await postgresStorage.loadChatBranchGraph(chatId);
+      if (graph.branches.length <= 1) return graph;
+      return loadPortableBranchGraphForExport(
+        chatId,
+        async () => graph,
+        (id, branchId) =>
+          postgresStorage.loadBranchMessages(id, branchId, { mode: "full" }),
+      );
+    },
   );
   if (!database.botPresets || database.botPresets.length === 0) {
     const summaries = (await postgresStorage.listBotPresets()).presets;

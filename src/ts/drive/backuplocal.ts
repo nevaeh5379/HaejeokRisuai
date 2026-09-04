@@ -72,6 +72,7 @@ import {
 import {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
+  loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
 } from "@risuai/backup-core/portableBranches.cjs";
 import { restorePortableDatabaseBranchGraphs } from "../storage/sql/portableBranchRestore";
@@ -617,8 +618,18 @@ export async function createBackupDatabaseSnapshot(
 
   const normalized = normalizeBackupSnapshot(db);
   const branchStorage = await getSqlBranchStorage();
-  return (await attachPortableDatabaseBranchGraphs(normalized, (chatId) =>
-    branchStorage.loadChatBranchGraph(chatId),
+  return (await attachPortableDatabaseBranchGraphs(
+    normalized,
+    async (chatId) => {
+      const graph = await branchStorage.loadChatBranchGraph(chatId);
+      if (graph.branches.length <= 1) return graph;
+      return loadPortableBranchGraphForExport(
+        chatId,
+        async () => graph,
+        (id, branchId) =>
+          branchStorage.loadBranchMessages(id, branchId, { mode: "full" }),
+      );
+    },
   )) as PortableDatabase;
 }
 

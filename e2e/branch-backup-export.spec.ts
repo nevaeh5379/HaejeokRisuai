@@ -66,6 +66,18 @@ async function seedBranchedChat(page: Page) {
       chatId: originalId,
       role: "char",
       data: "original response",
+      saying: "speaker-original",
+      disabled: true,
+      generationInfo: {
+        model: "model-original",
+        generationId: "gen-original",
+        inputTokens: 11,
+      },
+      promptInfo: {
+        promptName: "root-preset",
+        promptToggles: [{ key: "root-toggle", value: "on" }],
+        promptText: [{ role: "user", content: "root prompt" }],
+      },
     });
 
     const storage = await getSqlBranchStorage();
@@ -81,6 +93,18 @@ async function seedBranchedChat(page: Page) {
       chatId: alternativeId,
       role: "char",
       data: "alternative response",
+      saying: "speaker-alternative",
+      disabled: "allBefore",
+      generationInfo: {
+        model: "model-alternative",
+        generationId: "gen-alternative",
+        outputTokens: 17,
+      },
+      promptInfo: {
+        promptName: "alternative-preset",
+        promptToggles: [{ key: "alt-toggle", value: "off" }],
+        promptText: [{ role: "assistant", content: "alternative prompt" }],
+      },
     });
     await messageStore.flush();
     await characterStore.flush();
@@ -168,6 +192,9 @@ async function decodeBackupDatabase(page: Page, bytes: number[]) {
 }
 
 test.describe("persistent branch export boundaries", () => {
+  // Both cases mutate the same origin-scoped OPFS database and service worker.
+  // Running them in parallel can close/reload the database underneath the other case.
+  test.describe.configure({ mode: "serial" });
   test.setTimeout(120_000);
 
   test("preserves every branch through native backup and fresh restore", async ({
@@ -199,6 +226,17 @@ test.describe("persistent branch export boundaries", () => {
     expect(backedUpGraph?.messages.map((message: any) => message.data)).toEqual(
       expect.arrayContaining(["original response", "alternative response"]),
     );
+    const backedUpAlternative = backedUpGraph?.messages.find(
+      (message: any) => message.chatId === seeded.alternativeId,
+    );
+    expect(backedUpAlternative?.saying).toBe("speaker-alternative");
+    expect(backedUpAlternative?.disabled).toBe("allBefore");
+    expect(backedUpAlternative?.generationInfo?.generationId).toBe(
+      "gen-alternative",
+    );
+    expect(backedUpAlternative?.promptInfo?.promptName).toBe(
+      "alternative-preset",
+    );
 
     const freshContext = await browser.newContext();
     await freshContext.addInitScript(() => {
@@ -225,11 +263,25 @@ test.describe("persistent branch export boundaries", () => {
           /* @vite-ignore */ factoryUrl
         )) as { getSqlBranchStorage: () => Promise<any> };
         const storage = await getSqlBranchStorage();
+        if (!storage.isEnabled()) await storage.init();
         const graph = await storage.loadChatBranchGraph(chatId);
+        const fullMessages = new Map<string, any>();
+        for (const branch of graph.branches) {
+          for (const message of await storage.loadBranchMessages(
+            chatId,
+            branch.id,
+            { mode: "full" },
+          )) {
+            if (message.chatId && !fullMessages.has(message.chatId)) {
+              fullMessages.set(message.chatId, message);
+            }
+          }
+        }
         return {
           branchCount: graph.branches.length,
           activeBranchId: graph.activeBranchId,
           messages: graph.messages.map((message: any) => message.data),
+          fullMessages: Object.fromEntries(fullMessages),
         };
       }, seeded.chatId);
 
@@ -241,6 +293,16 @@ test.describe("persistent branch export boundaries", () => {
           "original response",
           "alternative response",
         ]),
+      );
+      const restoredAlternative =
+        restoredGraph.fullMessages[seeded.alternativeId];
+      expect(restoredAlternative?.saying).toBe("speaker-alternative");
+      expect(restoredAlternative?.disabled).toBe("allBefore");
+      expect(restoredAlternative?.generationInfo?.generationId).toBe(
+        "gen-alternative",
+      );
+      expect(restoredAlternative?.promptInfo?.promptName).toBe(
+        "alternative-preset",
       );
     } finally {
       await freshContext.close();
@@ -301,6 +363,17 @@ test.describe("persistent branch export boundaries", () => {
       ),
     ).toEqual(
       expect.arrayContaining(["original response", "alternative response"]),
+    );
+    const nativeAlternative = native.payload.data.branchGraph.messages.find(
+      (message: any) => message.data === "alternative response",
+    );
+    expect(nativeAlternative?.saying).toBe("speaker-alternative");
+    expect(nativeAlternative?.disabled).toBe("allBefore");
+    expect(nativeAlternative?.generationInfo?.generationId).toBe(
+      "gen-alternative",
+    );
+    expect(nativeAlternative?.promptInfo?.promptName).toBe(
+      "alternative-preset",
     );
   });
 });
