@@ -265,9 +265,10 @@ export default defineConfig(({command, mode}) => {
     resolve:{
       alias:{
         'src':'/src',
-        '@risuai/chat-core':resolve(process.cwd(), 'packages/chat-core'),
-        '@risuai/protocol':resolve(process.cwd(), 'packages/protocol'),
-        '@risuai/backup-core':resolve(process.cwd(), 'packages/backup-core'),
+         '@risuai/chat-core':resolve(process.cwd(), 'packages/chat-core'),
+         '@risuai/protocol':resolve(process.cwd(), 'packages/protocol'),
+         '@risuai/backup-core':resolve(process.cwd(), 'packages/backup-core'),
+         '@risuai/hypa-v3':resolve(process.cwd(), 'packages/hypa-v3/src'),
       }
     },
     worker: {

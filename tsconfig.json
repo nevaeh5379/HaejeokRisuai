@@ -16,7 +16,8 @@
       "src/*": ["./src/*"],
       "@risuai/chat-core/*": ["./packages/chat-core/*"],
       "@risuai/protocol/*": ["./packages/protocol/*"],
-      "@risuai/backup-core/*": ["./packages/backup-core/*"]
+      "@risuai/backup-core/*": ["./packages/backup-core/*"],
+      "@risuai/hypa-v3/*": ["./packages/hypa-v3/src/*"]
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,
@@ -34,7 +35,7 @@
     /* Debugging */
     "sourceMap": true
   },
-  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "public/sw.js", "e2e/**/*.ts", "playwright.config.ts", "tooling/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "packages/hypa-v3/src/**/*.ts", "public/sw.js", "e2e/**/*.ts", "playwright.config.ts", "tooling/**/*.ts"],
   "exclude": ["src/**/web/*.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
