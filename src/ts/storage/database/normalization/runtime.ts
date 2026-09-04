@@ -34,6 +34,10 @@ const runtimeScalarDefaults = {
   autoScrollToNewMessage: defaultBoolean(true),
   alwaysScrollToNewMessage: defaultBoolean(false),
   newMessageButtonStyle: defaultString("bottom-center"),
+  generationStatsPosition: defaultPicklist(
+    ["bottom-right", "bottom-left", "top-right", "top-left", "off"],
+    "bottom-right",
+  ),
   echoMessage: defaultString("Echo Message"),
   echoDelay: defaultNumber(0),
   createFolderOnBranch: defaultBoolean(true),
