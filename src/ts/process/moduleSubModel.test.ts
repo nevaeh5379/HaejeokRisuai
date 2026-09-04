@@ -66,6 +66,9 @@ describe("Module subModel feature", () => {
         name: "Test Module",
         description: "A test module with subModel",
         subModel: "claude-3-5-sonnet",
+        subModelRequestRules: [
+          { enabled: true, phrases: ["unique instruction"] },
+        ],
       };
 
       const char = convertModuleToCharacter(originalModule);
@@ -73,6 +76,12 @@ describe("Module subModel feature", () => {
 
       const convertedModule = convertCharacterToModule(char);
       expect(convertedModule.subModel).toBe("claude-3-5-sonnet");
+      expect(convertedModule.subModelRequestRules).toEqual(
+        originalModule.subModelRequestRules,
+      );
+      expect(convertedModule.subModelRequestRules).not.toBe(
+        originalModule.subModelRequestRules,
+      );
     });
 
     it("handles module without subModel", () => {
@@ -134,6 +143,7 @@ describe("Module subModel feature", () => {
 
       expect(triggers).toHaveLength(2);
       expect(triggers[0].subModel).toBe("anthropic/claude-3.5-haiku");
+      expect(triggers[0].sourceModuleId).toBe("mod-with-submodel");
       expect(triggers[0].lowLevelAccess).toBe(true);
       expect(triggers[1].subModel).toBeUndefined();
       expect(triggers[1].lowLevelAccess).toBe(false);

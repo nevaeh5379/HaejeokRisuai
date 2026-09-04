@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   executeChatRequestFallbacks: vi.fn(),
   requestChatDataMain: vi.fn(),
+  getModules: vi.fn(() => []),
 }));
 
 vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
@@ -56,6 +57,7 @@ vi.mock("../../stores/domain/characterStore.svelte", () => ({
   characterStore: { currentCharacter: null },
 }));
 vi.mock("../mcp/mcp", () => ({ getTools: vi.fn() }));
+vi.mock("../modules", () => ({ getModules: mocks.getModules }));
 vi.mock("../triggers", () => ({ runTrigger: vi.fn() }));
 vi.mock("./request", () => ({
   requestChatDataMain: mocks.requestChatDataMain,
@@ -63,15 +65,81 @@ vi.mock("./request", () => ({
 vi.mock("../../chatTarget", () => ({ resolveChatTarget: vi.fn() }));
 
 import { requestChatData } from "./chatRequestOrchestrator";
+import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 
 describe("requestChatData", () => {
   beforeEach(() => {
+    mocks.requestChatDataMain
+      .mockReset()
+      .mockResolvedValue({ type: "success", result: "ok" });
+    settingsStore.state.enableModuleSubModel = false;
+    mocks.getModules.mockReset().mockReturnValue([]);
     mocks.executeChatRequestFallbacks.mockReset();
     mocks.executeChatRequestFallbacks.mockResolvedValue({
       type: "success",
       result: "ok",
     });
   });
+
+  it.each(["submodel", "otherAx"] as const)(
+    "routes %s using request-local source and preserves explicit fallbacks",
+    async (mode) => {
+      settingsStore.state.enableModuleSubModel = true;
+      mocks.getModules.mockReturnValue([
+        {
+          id: "owner",
+          name: "Owner",
+          subModel: "owner-model",
+          subModelRequestRules: [
+            {
+              enabled: true,
+              phrases: ["unique instruction"],
+              sourceModuleId: "backend",
+            },
+          ],
+        },
+      ] as any);
+      mocks.executeChatRequestFallbacks.mockImplementation(
+        async (_options, callbacks) => {
+          await callbacks.executeAttempt({ fallbackModel: "" });
+          return callbacks.executeAttempt({ fallbackModel: "retry-model" });
+        },
+      );
+      const arg = {
+        currentChar: {},
+        tools: [],
+        formated: [{ role: "user", content: "unique instruction" }],
+        sourceModuleId: "backend",
+        staticModel: "backend-model",
+      } as any;
+      await requestChatData(arg, mode);
+      expect(mocks.requestChatDataMain).toHaveBeenNthCalledWith(
+        mocks.requestChatDataMain.mock.calls.length - 1,
+        expect.objectContaining({ staticModel: "owner-model" }),
+        mode,
+        null,
+      );
+      expect(mocks.requestChatDataMain).toHaveBeenLastCalledWith(
+        expect.objectContaining({ staticModel: "retry-model" }),
+        mode,
+        null,
+      );
+      expect(arg.staticModel).toBe("backend-model");
+      await requestChatData({ ...arg, sourceModuleId: "other" }, mode);
+      expect(mocks.requestChatDataMain.mock.calls.at(-2)?.[0].staticModel).toBe(
+        "backend-model",
+      );
+      await requestChatData(arg, "model");
+      expect(mocks.requestChatDataMain.mock.calls.at(-2)?.[0].staticModel).toBe(
+        "backend-model",
+      );
+      settingsStore.state.enableModuleSubModel = false;
+      await requestChatData(arg, mode);
+      expect(mocks.requestChatDataMain.mock.calls.at(-2)?.[0].staticModel).toBe(
+        "backend-model",
+      );
+    },
+  );
 
   it("reads fallback models from the active preset", async () => {
     const response = await requestChatData(

@@ -24,6 +24,9 @@ const getChatVarMock = vi.hoisted(() => vi.fn(() => "target-value"));
 const getGlobalChatVarMock = vi.hoisted(() => vi.fn(() => "global-value"));
 const setChatVarMock = vi.hoisted(() => vi.fn());
 const lowSpecModeState = vi.hoisted(() => ({ value: false }));
+const requestChatDataMock = vi.hoisted(() =>
+  vi.fn(async () => ({ type: "success", result: "ok" })),
+);
 
 vi.mock("../parser/chatVar.svelte", () => ({
   getChatVar: getChatVarMock,
@@ -114,7 +117,7 @@ vi.mock("./files/inlays", () => ({
 vi.mock("./lorebook.svelte", () => ({ loadLoreBookV3Prompt: vi.fn() }));
 vi.mock("./memory/hypamemory", () => ({ HypaProcesser: vi.fn() }));
 vi.mock("./request/chatRequestOrchestrator", () => ({
-  requestChatData: vi.fn(),
+  requestChatData: requestChatDataMock,
 }));
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
 
@@ -135,6 +138,61 @@ beforeAll(async () => {
   runScripted = scriptings.runScripted;
   runLuaEditTrigger = scriptings.runLuaEditTrigger;
   runLuaButtonTrigger = scriptings.runLuaButtonTrigger;
+});
+
+test("Lua auxiliary calls retain each invocation's source even when engines are reused", async () => {
+  requestChatDataMock.mockClear();
+  const code = `onStart = async(function(id)
+    return axLLM(id, {{role = "user", content = "unique instruction"}})
+  end)`;
+  for (const sourceModuleId of ["backend-a", "backend-b", undefined]) {
+    await runScripted(code, {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      lowLevelAccess: true,
+      subModel: "backend-model",
+      sourceModuleId,
+    });
+    expect(requestChatDataMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sourceModuleId, staticModel: "backend-model" }),
+      "otherAx",
+    );
+  }
+});
+
+test("module button auxiliary calls carry their execution module", async () => {
+  requestChatDataMock.mockClear();
+  moduleTriggers.mockReturnValue([
+    {
+      sourceModuleId: "button-backend",
+      subModel: "button-model",
+      lowLevelAccess: true,
+      effect: [
+        {
+          type: "triggerlua",
+          code: `onButtonClick = async(function(id, button)
+      return axLLM(id, {{role = "user", content = button}})
+    end)`,
+        },
+      ],
+    },
+  ] as never);
+  try {
+    await runLuaButtonTrigger(
+      { type: "character", triggerscript: [], chats: [] } as never,
+      "reroll",
+    );
+    expect(requestChatDataMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sourceModuleId: "button-backend",
+        staticModel: "button-model",
+      }),
+      "otherAx",
+    );
+  } finally {
+    moduleTriggers.mockReset();
+  }
 });
 
 test("does not stop generation when setStateChanged is a no-op", async () => {

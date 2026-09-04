@@ -36,6 +36,8 @@ export interface requestDataArgument {
   imageResponse?: boolean;
   previewBody?: boolean;
   staticModel?: string;
+  /** Host-side execution provenance; never a provider request field. */
+  sourceModuleId?: string;
   escape?: boolean;
   tools?: MCPTool[];
   rememberToolUsage?: boolean;

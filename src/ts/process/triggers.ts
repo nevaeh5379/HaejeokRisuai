@@ -37,6 +37,8 @@ export interface triggerscript {
   effect: triggerEffect[];
   lowLevelAccess?: boolean;
   subModel?: string;
+  /** Runtime provenance attached by getModuleTriggers. */
+  sourceModuleId?: string;
 }
 
 export type triggerCondition =
@@ -1723,6 +1725,7 @@ export async function runTrigger(
               staticModel: settingsStore.state.enableModuleSubModel
                 ? trigger.subModel
                 : undefined,
+              sourceModuleId: trigger.sourceModuleId,
             },
             "submodel",
           );
@@ -1812,6 +1815,7 @@ export async function runTrigger(
             subModel: settingsStore.state.enableModuleSubModel
               ? trigger.subModel
               : undefined,
+            sourceModuleId: trigger.sourceModuleId,
           });
 
           if (triggerCodeResult.stopSending) {
@@ -2235,6 +2239,7 @@ export async function runTrigger(
                 settingsStore.state.enableModuleSubModel
                   ? trigger.subModel
                   : undefined,
+              sourceModuleId: trigger.sourceModuleId,
             },
             effect.model,
           );

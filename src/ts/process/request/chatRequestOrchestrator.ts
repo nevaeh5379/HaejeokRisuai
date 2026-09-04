@@ -16,6 +16,9 @@ import type {
 } from "./requestContracts";
 import type { ModelModeExtended } from "./shared";
 import { resolveChatTarget } from "../../chatTarget";
+import { getModules } from "../modules";
+import { resolveModuleRequestRules } from "../moduleRequestRules";
+import { captureModuleRequest } from "../moduleRequestCapture";
 
 export async function requestChatData(
   arg: requestDataArgument,
@@ -27,6 +30,23 @@ export async function requestChatData(
     presetStore.state.fallbackModels?.[model] ?? [],
   );
   const requestCharacter = arg.currentChar ?? characterStore.currentCharacter;
+  const requestChat = arg.triggerTarget
+    ? resolveChatTarget(arg.triggerTarget)?.chat
+    : requestCharacter?.chats?.[requestCharacter.chatPage];
+  const useModuleRules =
+    db.enableModuleSubModel && (model === "submodel" || model === "otherAx");
+  // Snapshot configuration before asynchronous hooks or character switches.
+  const ruleModules =
+    useModuleRules && requestCharacter && (!arg.triggerTarget || requestChat)
+      ? getModules(requestCharacter, undefined, requestChat).map((module) => ({
+          id: module.id,
+          name: module.name,
+          subModel: module.subModel,
+          subModelRequestRules: safeStructuredClone(
+            module.subModelRequestRules,
+          ),
+        }))
+      : [];
   const tools = arg.tools ?? (await getTools(requestCharacter));
   fallBackModels.push("");
 
@@ -90,10 +110,28 @@ export async function requestChatData(
           console.error(error);
         }
 
+        const decision = useModuleRules
+          ? resolveModuleRequestRules(
+              ruleModules,
+              arg.formated,
+              arg.sourceModuleId,
+            )
+          : undefined;
+        const selectedModel =
+          fallbackModel || decision?.model || arg.staticModel;
+        if (decision) {
+          captureModuleRequest({
+            sourceModuleId: arg.sourceModuleId,
+            activeModuleIds: ruleModules.map((module) => module.id),
+            messages: arg.formated,
+            decision,
+            selectedModel,
+          });
+        }
         const response = await requestChatDataMain(
           {
             ...arg,
-            staticModel: fallbackModel || arg.staticModel,
+            staticModel: selectedModel,
             tools,
           },
           model,

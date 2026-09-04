@@ -69,6 +69,7 @@ interface BasicScriptingEngineState {
   messagesMutated?: boolean;
   stopSending?: boolean;
   subModel?: string;
+  sourceModuleId?: string;
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -102,6 +103,7 @@ export async function runScripted(
     mode?: string;
     type?: "lua" | "py";
     subModel?: string;
+    sourceModuleId?: string;
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
@@ -139,6 +141,7 @@ export async function runScripted(
     ScriptingEngineState.messagesMutated = false;
     ScriptingEngineState.stopSending = false;
     ScriptingEngineState.subModel = arg.subModel;
+    ScriptingEngineState.sourceModuleId = arg.sourceModuleId;
     const getScriptingCharacter = () => {
       const scriptingChar = ScriptingEngineState.char;
       if (scriptingChar && scriptingChar.type !== "simple")
@@ -1109,6 +1112,7 @@ export async function runScripted(
               forceStreaming: options.streaming === true,
               noMultiGen: true,
               staticModel: ScriptingEngineState.subModel,
+              sourceModuleId: ScriptingEngineState.sourceModuleId,
             },
             "otherAx",
           );
@@ -1714,6 +1718,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
           data,
           meta,
           subModel: trigger.subModel,
+          sourceModuleId: trigger.sourceModuleId,
         });
         data = runResult.res ?? data;
       }
@@ -1775,6 +1780,7 @@ export async function runLuaButtonTrigger(
           mode: "onButtonClick",
           data: data,
           subModel: trigger.subModel,
+          sourceModuleId: trigger.sourceModuleId,
         });
       }
     }
