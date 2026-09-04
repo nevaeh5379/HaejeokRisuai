@@ -15,9 +15,15 @@ export interface DurableGenerationContext {
 
 const contexts = new Map<string, DurableGenerationContext>();
 const ownedJobIds = new Set<string>();
+const creatingGenerationIds = new Set<string>();
 
-export function isDurableModelJobOwned(jobId: string): boolean {
-  return ownedJobIds.has(jobId);
+export function isDurableModelJobLocallyManaged(
+  job: Pick<DurableModelJobRecord, "id" | "generationId">,
+): boolean {
+  return (
+    ownedJobIds.has(job.id) ||
+    (!!job.generationId && creatingGenerationIds.has(job.generationId))
+  );
 }
 
 export function registerDurableGenerationContext(
@@ -115,6 +121,7 @@ export async function fetchViaDurableModelJob(
   }
 
   let created: Response;
+  creatingGenerationIds.add(arg.generationId);
   try {
     created = await fetch("/api/model-jobs", {
       method: "POST",
@@ -136,6 +143,7 @@ export async function fetchViaDurableModelJob(
       signal: arg.signal,
     });
   } catch (error) {
+    creatingGenerationIds.delete(arg.generationId);
     if (arg.signal?.aborted) throw error;
     // The POST may already have reached the server. Falling back to a direct
     // provider request here could double-generate, so ambiguous network errors
@@ -143,20 +151,31 @@ export async function fetchViaDurableModelJob(
     throw new Error(`Model job creation connection failed: ${String(error)}`);
   }
 
-  if (created.status === 409) throw new DurableModelJobBusyError();
+  if (created.status === 409) {
+    creatingGenerationIds.delete(arg.generationId);
+    throw new DurableModelJobBusyError();
+  }
   if (created.status === 404 || created.status === 405) {
+    creatingGenerationIds.delete(arg.generationId);
     throw new DurableModelJobUnavailableError(
       `Model job API is unavailable (HTTP ${created.status})`,
     );
   }
   if (!created.ok) {
+    creatingGenerationIds.delete(arg.generationId);
     throw new Error(`Model job creation failed with HTTP ${created.status}`);
   }
-  const { jobId } = (await created.json()) as Partial<CreateModelJobResponse>;
-  if (!jobId) {
-    throw new Error("Model job creation returned no job id.");
+  let jobId: string;
+  try {
+    const parsed = (await created.json()) as Partial<CreateModelJobResponse>;
+    if (!parsed.jobId) {
+      throw new Error("Model job creation returned no job id.");
+    }
+    jobId = parsed.jobId;
+    ownedJobIds.add(jobId);
+  } finally {
+    creatingGenerationIds.delete(arg.generationId);
   }
-  ownedJobIds.add(jobId);
 
   const releaseOwnership = () => ownedJobIds.delete(jobId);
   const abortWithAuth = () => {
