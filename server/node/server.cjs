@@ -2203,9 +2203,10 @@ const reverseProxyFunc = async (req, res, next) => {
   try {
     // make request to original server
     // This authenticated generic proxy intentionally lets authenticated callers choose
-    // an HTTP(S) endpoint, including local model servers.
-    // codeql[js/request-forgery]
-    originalResponse = await fetch(proxyTarget, {
+    // an HTTP(S) endpoint, including local model servers. Keep the in-source CodeQL
+    // suppression on the sink line; Prettier would otherwise move it into the object.
+    // prettier-ignore
+    originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
       method: req.method,
       headers: header,
       body: JSON.stringify(req.body),
@@ -2284,9 +2285,10 @@ const reverseProxyFunc_get = async (req, res, next) => {
   try {
     // make request to original server
     // This authenticated generic proxy intentionally lets authenticated callers choose
-    // an HTTP(S) endpoint, including local model servers.
-    // codeql[js/request-forgery]
-    originalResponse = await fetch(proxyTarget, {
+    // an HTTP(S) endpoint, including local model servers. Keep the in-source CodeQL
+    // suppression on the sink line; Prettier would otherwise move it into the object.
+    // prettier-ignore
+    originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
       method: "GET",
       headers: header,
       signal: timeout.signal,
