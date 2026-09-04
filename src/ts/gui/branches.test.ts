@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildChatGraphGitLanes,
   buildChatMessageGraph,
   getChatBranches,
   type ChatGraphTimeline,
@@ -249,6 +250,29 @@ describe("buildChatMessageGraph", () => {
     expect(fork.branchPoint).toBe(true);
     expect(originalNode.y).toBe(alternativeNode.y);
     expect(originalNode.x).not.toBe(alternativeNode.x);
+  });
+});
+
+describe("buildChatGraphGitLanes", () => {
+  it("keeps the active continuation in its current lane and moves alternatives aside", () => {
+    const shared = message("lane-shared", "user", "shared");
+    const original = message("lane-original", "char", "original");
+    const activeAlternative = message(
+      "lane-active",
+      "char",
+      "active alternative",
+    );
+    const graph = buildChatMessageGraph([
+      timeline("root", [shared, original]),
+      timeline("reroll", [shared, activeAlternative], true),
+    ]);
+
+    const lanes = buildChatGraphGitLanes(graph);
+
+    expect(lanes.laneByNodeId.get("message:lane-shared")).toBe(0);
+    expect(lanes.laneByNodeId.get("message:lane-active")).toBe(0);
+    expect(lanes.laneByNodeId.get("message:lane-original")).not.toBe(0);
+    expect(lanes.columns).toBe(2);
   });
 });
 

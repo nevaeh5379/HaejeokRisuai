@@ -61,6 +61,50 @@ export interface ChatGraphBuildOptions {
   density?: ChatGraphDensity;
 }
 
+export interface ChatGraphLaneLayout {
+  laneByNodeId: Map<string, number>;
+  columns: number;
+}
+
+export function buildChatGraphGitLanes(
+  graph: ChatBranchGraph,
+): ChatGraphLaneLayout {
+  const children = new Map<string, Array<{ id: string; active: boolean }>>();
+  const incoming = new Set<string>();
+  for (const edge of graph.edges) {
+    const siblings = children.get(edge.from) ?? [];
+    siblings.push({ id: edge.to, active: edge.active });
+    children.set(edge.from, siblings);
+    incoming.add(edge.to);
+  }
+
+  const laneByNodeId = new Map<string, number>();
+  let nextLane = 0;
+  const visit = (nodeId: string, lane: number) => {
+    if (laneByNodeId.has(nodeId)) return;
+    laneByNodeId.set(nodeId, lane);
+    const childEdges = children.get(nodeId) ?? [];
+    if (childEdges.length === 0) return;
+
+    const primary = childEdges.find((child) => child.active) ?? childEdges[0];
+    visit(primary.id, lane);
+    for (const child of childEdges) {
+      if (child.id === primary.id) continue;
+      visit(child.id, nextLane++);
+    }
+  };
+
+  for (const node of graph.nodes) {
+    if (incoming.has(node.id)) continue;
+    visit(node.id, nextLane++);
+  }
+  for (const node of graph.nodes) {
+    if (!laneByNodeId.has(node.id)) visit(node.id, nextLane++);
+  }
+
+  return { laneByNodeId, columns: Math.max(1, nextLane) };
+}
+
 interface MutableMessageNode {
   id: string;
   message: Message;

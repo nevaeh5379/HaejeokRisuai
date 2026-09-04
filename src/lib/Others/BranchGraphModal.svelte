@@ -3,7 +3,7 @@
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
-    import { getChatBranches, type ChatGraphDensity } from 'src/ts/gui/branches'
+    import { buildChatGraphGitLanes, getChatBranches, type ChatGraphDensity } from 'src/ts/gui/branches'
     import type { Chat } from '../../ts/storage/database/schema';interface Props {
         chat?: Chat | null
         loading?: boolean
@@ -28,8 +28,9 @@
     const gapY = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 42 : 64)
     const graph = $derived(getChatBranches(chat, { density }))
     const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
+    const gitLanes = $derived(buildChatGraphGitLanes(graph))
     const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)
-    const standardColumns = $derived(layout === 'timeline' ? graph.rows : graph.columns)
+    const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? gitLanes.columns : graph.columns)
     const standardRows = $derived(layout === 'timeline' ? graph.columns : graph.rows)
     const graphWidth = $derived(layout === 'radial'
         ? padding * 2 + radialRadius * 2 + cardWidth
@@ -60,6 +61,13 @@
             return {
                 left: padding + node.y * (cardWidth + gapX),
                 top: padding + node.x * (cardHeight + gapY),
+            }
+        }
+        if(layout === 'git') {
+            const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
+            return {
+                left: padding + lane * (cardWidth + gapX),
+                top: padding + node.y * (cardHeight + gapY),
             }
         }
         if(layout === 'radial') {
