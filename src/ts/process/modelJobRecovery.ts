@@ -1,5 +1,8 @@
 import { isNodeServer } from "../platform";
-import { isDurableModelJobOwned } from "../network/durableModelJobs";
+import {
+  clearDurableModelJobDetached,
+  shouldRecoverDurableModelJob,
+} from "../network/durableModelJobs";
 import { preLoadChat } from "./coldstorage.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
@@ -7,7 +10,6 @@ import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import type { Message } from "../storage/database/schema";
 import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 import { setRemoteChatGeneration } from "./chatRuntimeState";
-import { getNodeClientSessionId } from "../network/nodeClientSession";
 
 export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 
@@ -382,7 +384,7 @@ let recoveryInFlight: Promise<void> | null = null;
 let recoveryTriggersInstalled = false;
 
 async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
-  if (attachedJobs.has(job.id) || isDurableModelJobOwned(job.id)) return;
+  if (attachedJobs.has(job.id) || !shouldRecoverDurableModelJob(job)) return;
   attachedJobs.add(job.id);
   let reachedTerminalState = false;
   try {
@@ -431,6 +433,7 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
   } finally {
     attachedJobs.delete(job.id);
     if (reachedTerminalState) {
+      clearDurableModelJobDetached(job.id);
       setRemoteChatGeneration(job.chatId, false, "model-job:" + job.id);
     }
   }
@@ -443,10 +446,11 @@ async function runRecovery(): Promise<void> {
     listJobs("active"),
   ]);
   for (const job of unclaimed) {
-    if (isDurableModelJobOwned(job.id)) continue;
+    if (!shouldRecoverDurableModelJob(job)) continue;
     setRemoteChatGeneration(job.chatId, false, "model-job:" + job.id);
     try {
       await recoverTerminalJob(job);
+      clearDurableModelJobDetached(job.id);
     } catch (error) {
       console.warn(
         "[ModelJobRecovery] terminal recovery failed",
@@ -456,12 +460,7 @@ async function runRecovery(): Promise<void> {
     }
   }
   for (const job of active) {
-    if (
-      isDurableModelJobOwned(job.id) ||
-      job.sourceClientId === getNodeClientSessionId()
-    ) {
-      continue;
-    }
+    if (!shouldRecoverDurableModelJob(job)) continue;
     setRemoteChatGeneration(job.chatId, true, "model-job:" + job.id);
     void recoverActiveJob(job);
   }
