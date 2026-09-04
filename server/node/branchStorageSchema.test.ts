@@ -97,6 +97,14 @@ describe("legacy branch migration wiring", () => {
         /ensureChatBranchGraph[\s\S]{0,500}migrateLegacyBranchState/,
       );
     });
+
+    it(`${label} keeps legacy branchState as archival recovery data after migration`, () => {
+      const source = read(file);
+      const start = source.indexOf("async migrateLegacyBranchState");
+      const end = source.indexOf("async ensureChatBranchGraph", start);
+      const migration = source.slice(start, end);
+      expect(migration).not.toMatch(/DELETE[\s\S]{0,180}branchState/);
+    });
   }
 
   for (const [label, file] of [
