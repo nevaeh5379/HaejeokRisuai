@@ -8,6 +8,29 @@ import {
 } from "./databaseDefaults";
 
 describe("normalizeDatabaseDefaults", () => {
+  it("defaults and preserves image cache settings across normalization", () => {
+    expect(normalizeSettingsInput({}).assetCacheEntries).toBe(128);
+    expect(
+      normalizeSettingsInput({ assetCacheEntries: 80 }).assetCacheEntries,
+    ).toBe(80);
+    expect(
+      normalizeDatabaseInput({ assetCacheSizeMB: 32 }).assetCacheSizeMB,
+    ).toBe(32);
+    expect(
+      normalizeDatabaseInput({ assetCacheSizeMB: 999 }).assetCacheSizeMB,
+    ).toBe(512);
+    expect(
+      normalizeDatabaseInput({ assetCacheEntries: -1 }).assetCacheEntries,
+    ).toBe(128);
+    const custom = normalizeSettingsInput({
+      lowSpecMode: true,
+      assetCacheEntries: 80,
+      assetCacheSizeMB: 32,
+    });
+    expect(custom.assetCacheEntries).toBe(80);
+    expect(custom.assetCacheSizeMB).toBe(32);
+    expect(normalizeSettingsInput(custom).assetCacheEntries).toBe(80);
+  });
   it("migrates legacy NovelAI v4 image settings", () => {
     const db = {
       NAIImgConfig: {

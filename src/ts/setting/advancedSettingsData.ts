@@ -1,6 +1,10 @@
 import type { SettingItem } from "./types";
 import { isNodeServer, isTauri } from "../platform";
 import { presetStore } from "../stores/domain/presetStore.svelte";
+import {
+  IMAGE_CACHE_LIMITS,
+  IMAGE_CACHE_LIMIT_KEYS,
+} from "../memory/imageCacheLimits";
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -153,6 +157,14 @@ export const advancedSettingsItems: SettingItem[] = [
     helpKey: "lowSpecMode",
     classes: "mt-4",
   },
+  ...IMAGE_CACHE_LIMIT_KEYS.map((key): SettingItem => ({
+    id: `adv.${key}`,
+    type: "number",
+    labelKey: key,
+    bindKey: key,
+    helpKey: key,
+    options: { min: 1, max: IMAGE_CACHE_LIMITS[key].max },
+  })),
   {
     id: "adv.chatLoadInitial",
     type: "number",
