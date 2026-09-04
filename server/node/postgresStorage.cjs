@@ -3065,8 +3065,10 @@ class PostgresStorage extends SqlStorageBase {
       "INSERT INTO chat.active_branches (chat_id, branch_id) VALUES ($1, $2)",
       [chatId, plan.activeBranchId],
     );
-    // Keep branchState stored as archival input until per-branch runtime state
-    // also has a persistent table. Runtime loaders ignore it after migration.
+    await client.query(
+      "DELETE FROM chat.attributes WHERE chat_id = $1 AND key = 'branchState'",
+      [chatId],
+    );
     return true;
   }
 

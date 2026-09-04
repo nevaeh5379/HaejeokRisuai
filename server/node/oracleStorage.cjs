@@ -2530,6 +2530,10 @@ class OracleStorage extends SqlStorageBase {
       `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (:1, :2)`,
       [chatId, plan.activeBranchId],
     );
+    await conn.execute(
+      `DELETE FROM chat_attributes WHERE chat_id = :1 AND key_value = 'branchState'`,
+      [chatId],
+    );
     return true;
   }
 
