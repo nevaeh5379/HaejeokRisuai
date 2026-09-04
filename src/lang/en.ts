@@ -1888,6 +1888,8 @@ export const languageEnglish = {
   saveBackupLocalCompatibleDescription:
     "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",
   loadBackupLocal: "Load Backup Locally",
+  exportChatJsonCompatible: "Compatibility JSON (Current timeline only)",
+  exportChatJsonHaejeok: "HaejeokRisuAI JSON (Preserve branches)",
   topP: "Top P",
   genTimes: "Generation Choices",
   cot: "Chain of Thoughts",

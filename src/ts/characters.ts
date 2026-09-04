@@ -66,6 +66,8 @@ import {
   preloadCharacterImage,
 } from "./characterImage";
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
+import { getSqlBranchStorage } from "./storage/sql/sqlStorageFactory";
+import { buildChatJsonExportData } from "./chatExport";
 
 export { createBlankChar } from "./characterDefaults";
 export { getCharImage, getCharImagesBatch } from "./characterImage";
@@ -322,6 +324,15 @@ export async function exportChat(page: number) {
       "Export as HTML File",
       "Export as HTML Embed",
     ]);
+    let jsonExportMode: "compatible" | "native" = "compatible";
+    if (mode === "0") {
+      const selectedJsonMode = await alertSelect([
+        language.exportChatJsonCompatible,
+        language.exportChatJsonHaejeok,
+      ]);
+      if (selectedJsonMode !== "0" && selectedJsonMode !== "1") return;
+      jsonExportMode = selectedJsonMode === "1" ? "native" : "compatible";
+    }
     const doTranslate =
       mode === "2" || mode === "3"
         ? (await alertSelect([
@@ -386,18 +397,34 @@ export async function exportChat(page: number) {
       if (chat.folderId) {
         folders = char.chatFolders?.filter((f) => f.id === chat.folderId);
       }
+      let branchGraph;
+      if (jsonExportMode === "native") {
+        if (!chat.id) throw new Error("Chat ID is required for branch export");
+        const branchStorage = await getSqlBranchStorage();
+        branchGraph = await branchStorage.loadChatBranchGraph(chat.id);
+      }
+      const exportedChat = buildChatJsonExportData(
+        chat,
+        jsonExportMode,
+        branchGraph,
+      );
       const stringl = Buffer.from(
         JSON.stringify({
           type: "risuChat",
           ver: 2,
-          data: chat,
+          data: exportedChat,
           folders: folders,
         }),
         "utf-8",
       );
 
+      const formatSuffix =
+        jsonExportMode === "native" ? "haejeok" : "compatible";
       await downloadFile(
-        `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") + ".json",
+        `${char.name}_${date}_chat_${formatSuffix}`.replace(
+          /[<>:"/\\|?*\.\,]/g,
+          "",
+        ) + ".json",
         stringl,
       );
     } else if (mode === "2") {

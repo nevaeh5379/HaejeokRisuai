@@ -1804,6 +1804,8 @@ export const languageKorean = {
   saveBackupLocalCompatibleDescription:
     "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
   loadBackupLocal: "로컬 백업 불러오기",
+  exportChatJsonCompatible: "호환용 JSON (현재 타임라인만)",
+  exportChatJsonHaejeok: "해적리스용 JSON (분기점 포함)",
   topP: "Top P",
   genTimes: "생성 횟수",
   cot: "생각의 사슬",
