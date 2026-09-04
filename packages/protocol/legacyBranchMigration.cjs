@@ -147,6 +147,22 @@ function buildLegacyBranchMigrationPlan(chat, idFactory) {
             ? "reroll"
             : "manual",
       createdAt: Number(branch.createdAt || 0),
+      runtimeState: {
+        ...(Object.prototype.hasOwnProperty.call(branch, "scriptstate")
+          ? { scriptstate: cloneValue(branch.scriptstate) }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(branch, "GLGlobalVariables")
+          ? { GLGlobalVariables: cloneValue(branch.GLGlobalVariables) }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(
+          branch,
+          "useLocallySetGlobalVariables",
+        )
+          ? {
+              useLocallySetGlobalVariables: branch.useLocallySetGlobalVariables,
+            }
+          : {}),
+      },
     };
   });
 

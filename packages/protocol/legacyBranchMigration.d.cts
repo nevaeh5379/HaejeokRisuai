@@ -15,6 +15,7 @@ export interface LegacyBranchMigrationBranch {
   headMessageId?: string;
   reason: "root" | "manual" | "reroll";
   createdAt: number;
+  runtimeState: Record<string, unknown>;
 }
 export interface LegacyBranchMigrationPlan {
   chatId: string;

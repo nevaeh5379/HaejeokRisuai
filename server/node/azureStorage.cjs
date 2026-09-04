@@ -1689,11 +1689,6 @@ class AzureStorage extends SqlStorageBase {
     await req.query(
       "INSERT INTO [chat].[active_branches] (chat_id, branch_id) VALUES (@legacyBranchChatId, @legacyActiveBranchId)",
     );
-    req = target.request();
-    req.input("legacyBranchChatId", sql.NVarChar(450), chatId);
-    await req.query(
-      "DELETE FROM [chat].[attributes] WHERE chat_id = @legacyBranchChatId AND [key] = 'branchState'",
-    );
     return true;
   }
 

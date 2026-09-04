@@ -192,8 +192,11 @@ export function buildSqliteLegacyBranchMigrationStatements(
   chatExtensionData: Record<string, unknown>,
   plan: LegacyBranchMigrationPlan,
 ): SqliteTransactionStatement[] {
-  const migratedChatExtension = { ...chatExtensionData };
-  delete migratedChatExtension.branchState;
+  // Keep the legacy branchState extension as archival migration input. Runtime
+  // loaders ignore it once persistent branches exist, but preserving it avoids
+  // destroying branch-specific script/global state before that state has its own
+  // persistent branch table. This is data retention, not a runtime fallback.
+  void chatExtensionData;
 
   const statements: SqliteTransactionStatement[] = [
     {
@@ -205,21 +208,7 @@ export function buildSqliteLegacyBranchMigrationStatements(
       bind: [chatId],
     },
     { sql: "DELETE FROM chat_branches WHERE chat_id = ?", bind: [chatId] },
-    {
-      sql: "DELETE FROM chat_extension_nodes WHERE chat_id = ?",
-      bind: [chatId],
-    },
   ];
-  if (Object.keys(migratedChatExtension).length > 0) {
-    statements.push(
-      ...nodeInsertStatements(
-        "chat_extension_nodes",
-        ["chat_id"],
-        [chatId],
-        migratedChatExtension,
-      ),
-    );
-  }
   for (const message of plan.messages) {
     statements.push(...sqliteMessageStatements(chatId, message));
   }
