@@ -4,9 +4,9 @@ import {
   buildChatGraphGitLanes,
   buildChatMessageGraph,
   getChatBranches,
+  getChatBranchesFromPersistentGraph,
   type ChatGraphTimeline,
 } from "./branches";
-import { createEditedMessageBranch } from "../chatBranches";
 import type { Chat, Message } from "../storage/database/schema";
 
 function message(chatId: string, role: Message["role"], data: string): Message {
@@ -295,18 +295,46 @@ describe("getChatBranches", () => {
     ]);
   });
 
-  it("renders edited user input as a separate branch node", () => {
-    const chat = {
-      message: [
+  it("renders edited user input from the persistent SQL graph as a separate branch node", () => {
+    const graph = getChatBranchesFromPersistentGraph({
+      branches: [
+        {
+          id: "root",
+          chatId: "chat-1",
+          headMessageId: "a2",
+          reason: "root",
+          createdAt: 1,
+        },
+        {
+          id: "edit",
+          chatId: "chat-1",
+          parentBranchId: "root",
+          forkMessageId: "a1",
+          headMessageId: "u2-edit",
+          reason: "manual",
+          createdAt: 10,
+        },
+      ],
+      activeBranchId: "edit",
+      messages: [
         message("u1", "user", "first prompt"),
         message("a1", "char", "first answer"),
         message("u2", "user", "original input"),
         message("a2", "char", "original response"),
+        message("u2-edit", "user", "edited input"),
       ],
-    } as Chat;
-
-    createEditedMessageBranch(chat, 2, "edited input", 10);
-    const graph = getChatBranches(chat);
+      links: [
+        { messageId: "u1", originBranchId: "root" },
+        { messageId: "a1", parentMessageId: "u1", originBranchId: "root" },
+        { messageId: "u2", parentMessageId: "a1", originBranchId: "root" },
+        { messageId: "a2", parentMessageId: "u2", originBranchId: "root" },
+        {
+          messageId: "u2-edit",
+          parentMessageId: "a1",
+          originBranchId: "edit",
+        },
+      ],
+    });
     const originalInput = graph.nodes.find(
       (node) => node.preview === "original input",
     )!;
@@ -319,5 +347,6 @@ describe("getChatBranches", () => {
     expect(originalInput.id).not.toBe(editedInput.id);
     expect(originalInput.y).toBe(editedInput.y);
     expect(fork.branchPoint).toBe(true);
+    expect(editedInput.activeTerminal).toBe(true);
   });
 });

@@ -3,15 +3,19 @@
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
-    import { buildChatGraphGitLanes, getChatBranches, type ChatGraphDensity } from 'src/ts/gui/branches'
-    import type { Chat } from '../../ts/storage/database/schema';interface Props {
+    import { buildChatGraphGitLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
+    import type { Chat } from '../../ts/storage/database/schema'
+    import type { SqlChatBranchGraphData } from '../../ts/storage/sql/ISqlStorage'
+
+    interface Props {
         chat?: Chat | null
+        branchGraph?: SqlChatBranchGraphData | null
         loading?: boolean
         onselect: (branchId: string) => void | Promise<void>
         onclose: () => void
     }
 
-    let { chat, loading = false, onselect, onclose }: Props = $props()
+    let { chat, branchGraph = null, loading = false, onselect, onclose }: Props = $props()
 
     type GraphLayout = 'tree' | 'timeline' | 'git' | 'radial'
 
@@ -26,7 +30,9 @@
     const cardHeight = $derived(layout === 'git' ? 104 : layout === 'radial' ? 108 : 116)
     const gapX = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 72 : 56)
     const gapY = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 42 : 64)
-    const graph = $derived(getChatBranches(chat, { density }))
+    const graph = $derived(branchGraph
+        ? getChatBranchesFromPersistentGraph(branchGraph, { density })
+        : getChatBranches(chat, { density }))
     const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
     const gitLanes = $derived(buildChatGraphGitLanes(graph))
     const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)

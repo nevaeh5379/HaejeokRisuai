@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChatJsonExportData } from "./chatExport";
+import { buildChatJsonExportPayload } from "./chatExport";
 import type { Chat } from "./storage/database/schema";
 import type { SqlChatBranchGraphData } from "./storage/sql/ISqlStorage";
 
@@ -13,11 +13,7 @@ const chat = {
     { chatId: "alt", role: "char", data: "active alternative" },
   ],
   activeBranchId: "alt-branch",
-  branchState: {
-    baseMessageIndex: 0,
-    activeBranchId: "stale",
-    branches: [],
-  },
+  branchState: { baseMessageIndex: 0, activeBranchId: "stale", branches: [] },
 } satisfies Chat;
 
 const graph: SqlChatBranchGraphData = {
@@ -53,26 +49,27 @@ const graph: SqlChatBranchGraphData = {
 };
 
 describe("chat JSON export modes", () => {
-  it("strips Haejeok branch metadata from compatibility JSON", () => {
-    const exported = buildChatJsonExportData(chat, "compatible");
-    expect(exported.message.map((message) => message.data)).toEqual([
+  it("keeps compatibility JSON as a plain current-timeline risuChat", () => {
+    const payload = buildChatJsonExportPayload(chat, "compatible", []);
+    expect(payload.type).toBe("risuChat");
+    expect(payload.ver).toBe(2);
+    if (payload.type !== "risuChat") throw new Error("unexpected payload");
+    expect(payload.data.message.map((message) => message.data)).toEqual([
       "prompt",
       "active alternative",
     ]);
-    expect(exported.branchState).toBeUndefined();
-    expect(exported.activeBranchId).toBeUndefined();
-    expect(chat.branchState).toBeDefined();
+    expect(payload.data.branchState).toBeUndefined();
+    expect(payload.data.activeBranchId).toBeUndefined();
   });
 
-  it("materializes every persistent branch for Haejeok JSON", () => {
-    const exported = buildChatJsonExportData(chat, "native", graph);
-    expect(exported.branchState?.activeBranchId).toBe("alt-branch");
-    expect(exported.branchState?.branches).toHaveLength(2);
-    expect(exported.branchState?.branches[0].messages[0].data).toBe(
-      "original response",
-    );
-    expect(exported.branchState?.branches[1].messages[0].data).toBe(
-      "active alternative",
-    );
+  it("stores the persistent graph directly in Haejeok JSON", () => {
+    const payload = buildChatJsonExportPayload(chat, "native", [], graph);
+    expect(payload.type).toBe("haejeokChat");
+    expect(payload.ver).toBe(1);
+    if (payload.type !== "haejeokChat") throw new Error("unexpected payload");
+    expect(payload.data.chat.branchState).toBeUndefined();
+    expect(payload.data.chat.activeBranchId).toBeUndefined();
+    expect(payload.data.branchGraph).toEqual(graph);
+    expect(payload.data.branchGraph.branches).toHaveLength(2);
   });
 });

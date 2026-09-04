@@ -1,26 +1,44 @@
-import { materializePortableBranchChat } from "@risuai/backup-core/portableBranches.cjs";
 import { safeStructuredClone } from "./polyfill";
 import type { Chat } from "./storage/database/schema";
 import type { SqlChatBranchGraphData } from "./storage/sql/ISqlStorage";
 
 export type ChatJsonExportMode = "compatible" | "native";
 
-export function buildChatJsonExportData(
+function cleanChatForExport(chat: Chat): Chat {
+  const exported = safeStructuredClone(chat);
+  delete exported.branch;
+  delete exported.branchState;
+  delete exported.activeBranchId;
+  return exported;
+}
+
+export function buildChatJsonExportPayload(
   chat: Chat,
   mode: ChatJsonExportMode,
+  folders: unknown[],
   graph?: SqlChatBranchGraphData,
-): Chat {
-  const exportedChat = safeStructuredClone(chat);
+) {
+  const exportedChat = cleanChatForExport(chat);
   if (mode === "native") {
-    if (!graph)
+    if (!graph) {
       throw new Error(
         "Persistent branch graph is required for native chat export",
       );
-    return materializePortableBranchChat(exportedChat, graph) as Chat;
+    }
+    return {
+      type: "haejeokChat" as const,
+      ver: 1 as const,
+      data: {
+        chat: exportedChat,
+        branchGraph: safeStructuredClone(graph),
+      },
+      folders: safeStructuredClone(folders),
+    };
   }
-
-  delete exportedChat.branch;
-  delete exportedChat.branchState;
-  delete exportedChat.activeBranchId;
-  return exportedChat;
+  return {
+    type: "risuChat" as const,
+    ver: 2 as const,
+    data: exportedChat,
+    folders: safeStructuredClone(folders),
+  };
 }

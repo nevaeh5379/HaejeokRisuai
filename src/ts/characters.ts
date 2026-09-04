@@ -67,7 +67,9 @@ import {
 } from "./characterImage";
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
 import { getSqlBranchStorage } from "./storage/sql/sqlStorageFactory";
-import { buildChatJsonExportData } from "./chatExport";
+import { buildChatJsonExportPayload } from "./chatExport";
+import { preparePortableChatForBranchRestore } from "@risuai/backup-core/portableBranches.cjs";
+import { restorePortableChatBranchGraph } from "./storage/sql/portableBranchRestore";
 
 export { createBlankChar } from "./characterDefaults";
 export { getCharImage, getCharImagesBatch } from "./characterImage";
@@ -403,20 +405,13 @@ export async function exportChat(page: number) {
         const branchStorage = await getSqlBranchStorage();
         branchGraph = await branchStorage.loadChatBranchGraph(chat.id);
       }
-      const exportedChat = buildChatJsonExportData(
+      const payload = buildChatJsonExportPayload(
         chat,
         jsonExportMode,
+        folders,
         branchGraph,
       );
-      const stringl = Buffer.from(
-        JSON.stringify({
-          type: "risuChat",
-          ver: 2,
-          data: exportedChat,
-          folders: folders,
-        }),
-        "utf-8",
-      );
+      const stringl = Buffer.from(JSON.stringify(payload), "utf-8");
 
       const formatSuffix =
         jsonExportMode === "native" ? "haejeok" : "compatible";
@@ -641,6 +636,60 @@ export async function importChat() {
       alertNormal(language.successImport);
     } else if (dat.name.endsWith("json")) {
       const json = JSON.parse(Buffer.from(dat.data).toString("utf-8"));
+      if (json.type === "haejeokChat" && json.ver === 1) {
+        const sourceChat = json.data?.chat as Chat | undefined;
+        const branchGraph = json.data?.branchGraph;
+        if (
+          !sourceChat ||
+          !branchGraph ||
+          !Array.isArray(branchGraph.branches) ||
+          !Array.isArray(branchGraph.messages) ||
+          !Array.isArray(branchGraph.links)
+        ) {
+          alertError(language.errors.noData);
+          return;
+        }
+        const folders = json.folders || [];
+        const currentCharacter = characterStore.characters[selectedID];
+        const folderIdMap: Record<string, string> = {};
+        folders.forEach((folder) => {
+          if (currentCharacter.chatFolders?.some((f) => f.id === folder.id)) {
+            const newId = uuidv4();
+            folderIdMap[folder.id] = newId;
+            folder.id = newId;
+          } else {
+            folderIdMap[folder.id] = folder.id;
+          }
+        });
+        currentCharacter.chatFolders ??= [];
+        currentCharacter.chatFolders.push(...folders);
+
+        const newChat = preparePortableChatForBranchRestore(
+          sourceChat,
+          branchGraph,
+        ) as Chat;
+        if (newChat.folderId && folderIdMap[newChat.folderId]) {
+          newChat.folderId = folderIdMap[newChat.folderId];
+        }
+        newChat.id = v4();
+        currentCharacter.chats.unshift(newChat);
+        await messageStore.persistNewChat(
+          currentCharacter.chaId,
+          newChat.id,
+          newChat.message ?? [],
+        );
+        const branchStorage = await getSqlBranchStorage();
+        await restorePortableChatBranchGraph(
+          branchStorage,
+          newChat.id,
+          branchGraph,
+        );
+        const restoredChat = await branchStorage.loadChat(newChat.id);
+        if (restoredChat) currentCharacter.chats[0] = restoredChat;
+        changeChatTo(0);
+        alertNormal(language.successImport);
+        return;
+      }
       if (
         (json.type === "risuAllChats" || json.type === "risuChat") &&
         json.ver === 2

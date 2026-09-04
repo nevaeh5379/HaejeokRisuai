@@ -183,13 +183,12 @@ test.describe("persistent branch export boundaries", () => {
     const backedUpChat = decoded.characters
       .find((character: any) => character.chaId === seeded.characterId)
       ?.chats.find((chat: any) => chat.id === seeded.chatId);
-    expect(backedUpChat?.branchState?.branches).toHaveLength(2);
-    expect(backedUpChat?.branchState?.activeBranchId).toBe(seeded.branchId);
-    expect(
-      backedUpChat.branchState.branches.flatMap((branch: any) =>
-        branch.messages.map((message: any) => message.data),
-      ),
-    ).toEqual(
+    expect(backedUpChat?.branchState).toBeUndefined();
+    expect(backedUpChat?.activeBranchId).toBeUndefined();
+    const backedUpGraph = decoded.haejeokBranchGraphs?.[seeded.chatId];
+    expect(backedUpGraph?.branches).toHaveLength(2);
+    expect(backedUpGraph?.activeBranchId).toBe(seeded.branchId);
+    expect(backedUpGraph?.messages.map((message: any) => message.data)).toEqual(
       expect.arrayContaining(["original response", "alternative response"]),
     );
 
@@ -276,15 +275,21 @@ test.describe("persistent branch export boundaries", () => {
 
     const compatible = await exportOnce("compatible");
     expect(compatible.filename).toContain("chat_compatible.json");
+    expect(compatible.payload.type).toBe("risuChat");
+    expect(compatible.payload.ver).toBe(2);
     expect(compatible.payload.data.branchState).toBeUndefined();
     expect(compatible.payload.data.activeBranchId).toBeUndefined();
 
     const native = await exportOnce("haejeok");
     expect(native.filename).toContain("chat_haejeok.json");
-    expect(native.payload.data.branchState.branches).toHaveLength(2);
+    expect(native.payload.type).toBe("haejeokChat");
+    expect(native.payload.ver).toBe(1);
+    expect(native.payload.data.chat.branchState).toBeUndefined();
+    expect(native.payload.data.chat.activeBranchId).toBeUndefined();
+    expect(native.payload.data.branchGraph.branches).toHaveLength(2);
     expect(
-      native.payload.data.branchState.branches.flatMap((branch: any) =>
-        branch.messages.map((message: any) => message.data),
+      native.payload.data.branchGraph.messages.map(
+        (message: any) => message.data,
       ),
     ).toEqual(
       expect.arrayContaining(["original response", "alternative response"]),

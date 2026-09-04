@@ -200,9 +200,6 @@
 
         if (createBranch) {
             currentChat.id ??= v4()
-            if(currentChat.branchState){
-                throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-            }
             const storage = await getSqlBranchStorage()
             const branches = await storage.listChatBranches(currentChat.id)
             const parentBranchId = currentChat.activeBranchId
@@ -1036,9 +1033,6 @@
         currentChat.id ??= v4()
         const currentMessage = currentChat.message[targetIndex]
         if(!currentMessage?.chatId) throw new Error('Cannot branch a message without a persistent message id')
-        if(currentChat.branchState){
-            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-        }
         const storage = await getSqlBranchStorage()
         const branches = await storage.listChatBranches(currentChat.id)
         const parentBranchId = currentChat.activeBranchId

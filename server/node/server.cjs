@@ -71,7 +71,8 @@ const {
   encodeDatabase: encodeLocalBackupDatabase,
 } = require("./localBackupFormat.cjs");
 const {
-  materializePortableDatabaseBranches,
+  attachPortableDatabaseBranchGraphs,
+  expandPortableDatabaseBranchGraphsForCompatibility,
 } = require("../../packages/backup-core/portableBranches.cjs");
 const {
   normalizePageInteger,
@@ -1594,7 +1595,8 @@ function normalizeAuthenticatedProxyTarget(raw) {
   if (typeof raw !== "string" || raw.trim() === "") return null;
   try {
     const parsed = new URL(raw);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+      return null;
     if (parsed.username || parsed.password) return null;
     parsed.hash = "";
     return parsed.toString();
@@ -1608,7 +1610,8 @@ function normalizeHubProxyTarget(raw, base = hubURL) {
   try {
     const hub = new URL(hubURL);
     const target = new URL(raw, base);
-    if (target.protocol !== "http:" && target.protocol !== "https:") return null;
+    if (target.protocol !== "http:" && target.protocol !== "https:")
+      return null;
     if (target.origin !== hub.origin) return null;
     if (target.username || target.password) return null;
     target.hash = "";
@@ -2201,7 +2204,8 @@ const reverseProxyFunc = async (req, res, next) => {
     // make request to original server
     // This is the authenticated generic proxy feature: callers intentionally choose
     // the HTTP(S) endpoint, including local model servers.
-    originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
+    originalResponse = await fetch(proxyTarget, {
+      // lgtm[js/request-forgery]
       method: req.method,
       headers: header,
       body: JSON.stringify(req.body),
@@ -2281,7 +2285,8 @@ const reverseProxyFunc_get = async (req, res, next) => {
     // make request to original server
     // This is the authenticated generic proxy feature: callers intentionally choose
     // the HTTP(S) endpoint, including local model servers.
-    originalResponse = await fetch(proxyTarget, { // lgtm[js/request-forgery]
+    originalResponse = await fetch(proxyTarget, {
+      // lgtm[js/request-forgery]
       method: "GET",
       headers: header,
       signal: timeout.signal,
@@ -2523,12 +2528,10 @@ app.post("/proxy-stream-jobs", authenticatedRouteLimiter, async (req, res) => {
   const encodedUrl = encodeURIComponent(rawUrl);
   const url = sanitizeTargetUrl(decodeURIComponent(encodedUrl));
   if (!url) {
-    res
-      .status(400)
-      .send({
-        error:
-          "Invalid target URL. Only local/private network http(s) endpoints are allowed.",
-      });
+    res.status(400).send({
+      error:
+        "Invalid target URL. Only local/private network http(s) endpoints are allowed.",
+    });
     return;
   }
 
@@ -3215,7 +3218,7 @@ async function buildPortableServerDatabase() {
     throw new Error("SQL storage is not configured");
   const loaded = await postgresStorage.exportDatabaseSnapshot();
   if (!loaded?.database) throw new Error("Database is not initialized");
-  const database = await materializePortableDatabaseBranches(
+  const database = await attachPortableDatabaseBranchGraphs(
     loaded.database,
     (chatId) => postgresStorage.loadChatBranchGraph(chatId),
   );
@@ -3250,7 +3253,10 @@ async function encodePortableServerDatabase(
 ) {
   const portable =
     mode === "compatible"
-      ? makeLegacyCompatibleBackupDatabase(database, coldStorageValues)
+      ? makeLegacyCompatibleBackupDatabase(
+          expandPortableDatabaseBranchGraphsForCompatibility(database),
+          coldStorageValues,
+        )
       : database;
   return await encodeLocalBackupDatabase(portable);
 }
@@ -3850,12 +3856,10 @@ app.post(
       res.send({ success: true, ...(await getPostgresConfigResponse()) });
     } catch (error) {
       if (error instanceof PostgresPayloadError) {
-        res
-          .status(400)
-          .send({
-            error: error.message,
-            code: "invalid_postgres_configuration",
-          });
+        res.status(400).send({
+          error: error.message,
+          code: "invalid_postgres_configuration",
+        });
         return;
       }
       const failure = createPrimaryStorageFailure(error);
@@ -4334,12 +4338,10 @@ app.post(
       return;
     }
     if (!backupStorage?.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "Backup database is not configured",
-          code: "backup_disabled",
-        });
+      res.status(404).send({
+        error: "Backup database is not configured",
+        code: "backup_disabled",
+      });
       return;
     }
     try {
@@ -4399,12 +4401,10 @@ app.post(
       return;
     }
     if (!backupStorage?.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "Backup database is not configured",
-          code: "backup_disabled",
-        });
+      res.status(404).send({
+        error: "Backup database is not configured",
+        code: "backup_disabled",
+      });
       return;
     }
     try {
@@ -4626,12 +4626,10 @@ app.post(
         req.body?.topK ?? null,
       );
       if (results === null)
-        return res
-          .status(404)
-          .send({
-            error: "Vector index not found",
-            code: "vector_index_missing",
-          });
+        return res.status(404).send({
+          error: "Vector index not found",
+          code: "vector_index_missing",
+        });
       res.send({ results });
     } catch (error) {
       if (error instanceof TypeError || error instanceof RangeError)
@@ -4791,12 +4789,10 @@ app.patch(
   postgresJsonParser,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -4807,12 +4803,10 @@ app.patch(
         !Number.isSafeInteger(baseRevision) ||
         baseRevision < 0
       ) {
-        res
-          .status(400)
-          .send({
-            error: "enabled and baseRevision are required",
-            code: "invalid_plugin_toggle",
-          });
+        res.status(400).send({
+          error: "enabled and baseRevision are required",
+          code: "invalid_plugin_toggle",
+        });
         return;
       }
       const loaded = await postgresStorage.loadPlugins();
@@ -4914,11 +4908,9 @@ app.get(
         req.params.key,
       );
       if (!result.exists) {
-        res
-          .status(404)
-          .send({
-            error: `Plugin custom storage key not found: ${req.params.key}`,
-          });
+        res.status(404).send({
+          error: `Plugin custom storage key not found: ${req.params.key}`,
+        });
         return;
       }
       const etag = `"risu-plugin-key-${result.hash}"`;
@@ -5032,12 +5024,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5071,12 +5061,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5114,12 +5102,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     if (
@@ -5173,12 +5159,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5212,12 +5196,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5251,12 +5233,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5290,12 +5270,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5329,12 +5307,10 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5718,12 +5694,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5744,21 +5718,17 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
       if (typeof postgresStorage.getRevisionDiff !== "function") {
-        res
-          .status(501)
-          .send({
-            error: "Revision diff is not supported by current storage engine",
-          });
+        res.status(501).send({
+          error: "Revision diff is not supported by current storage engine",
+        });
         return;
       }
       const diff = await postgresStorage.getRevisionDiff(
@@ -5786,22 +5756,17 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
       if (typeof postgresStorage.getRevisionDetails !== "function") {
-        res
-          .status(501)
-          .send({
-            error:
-              "Revision details are not supported by current storage engine",
-          });
+        res.status(501).send({
+          error: "Revision details are not supported by current storage engine",
+        });
         return;
       }
       const details = await postgresStorage.getRevisionDetails(req.params.id);
@@ -5832,21 +5797,17 @@ app.post(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
       if (typeof postgresStorage.previewRestore !== "function") {
-        res
-          .status(501)
-          .send({
-            error: "Restore preview is not supported by current storage engine",
-          });
+        res.status(501).send({
+          error: "Restore preview is not supported by current storage engine",
+        });
         return;
       }
       const preview = await postgresStorage.previewRestore(
@@ -5871,12 +5832,10 @@ app.post(
   requireNodeAuth,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -5977,12 +5936,10 @@ app.put(
   postgresJsonParser,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6003,12 +5960,10 @@ app.delete(
   requireNodeAuth,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6027,12 +5982,10 @@ app.post(
   postgresJsonParser,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6054,12 +6007,10 @@ app.post(
   postgresJsonParser,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6077,12 +6028,10 @@ app.delete(
   requireNodeAuth,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6101,12 +6050,10 @@ app.post(
   postgresJsonParser,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6127,12 +6074,10 @@ app.delete(
   requireNodeAuth,
   async (req, res, next) => {
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     try {
@@ -6155,12 +6100,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
 
@@ -6181,24 +6124,20 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
 
     try {
       const item = await postgresStorage.loadColdStorage(req.params.key);
       if (!item) {
-        res
-          .status(404)
-          .send({
-            error: "Cold storage item not found",
-            code: "cold_storage_not_found",
-          });
+        res.status(404).send({
+          error: "Cold storage item not found",
+          code: "cold_storage_not_found",
+        });
         return;
       }
       const etag = `"risu-cold-${item.key}-${item.revision}"`;
@@ -6292,12 +6231,10 @@ app.delete(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
 
@@ -6335,12 +6272,10 @@ app.post(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "PostgreSQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
 
@@ -6378,12 +6313,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     if (typeof postgresStorage.searchMessages !== "function") {
@@ -6418,12 +6351,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     if (typeof postgresStorage.getTokenUsage !== "function") {
@@ -6449,12 +6380,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     if (typeof postgresStorage.getBotChatStats !== "function") {
@@ -6480,12 +6409,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     const tag = req.query.tag;
@@ -6524,12 +6451,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     if (typeof postgresStorage.listDbExplorerTables !== "function") {
@@ -6555,12 +6480,10 @@ app.get(
       return;
     }
     if (!postgresStorage.enabled) {
-      res
-        .status(404)
-        .send({
-          error: "SQL storage is not configured",
-          code: "postgres_disabled",
-        });
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "postgres_disabled",
+      });
       return;
     }
     if (typeof postgresStorage.getDbExplorerTableRows !== "function") {
@@ -6834,11 +6757,9 @@ app.post(
         assetStorageManager.getStorage().type !== "s3" &&
         assetStorageManager.getStorage().type !== "azuresql"
       ) {
-        res
-          .status(400)
-          .send({
-            error: "Remote storage (S3 or Azure SQL) is not currently active.",
-          });
+        res.status(400).send({
+          error: "Remote storage (S3 or Azure SQL) is not currently active.",
+        });
         return;
       }
 
@@ -6890,11 +6811,9 @@ app.post(
         assetStorageManager.getStorage().type !== "s3" &&
         assetStorageManager.getStorage().type !== "azuresql"
       ) {
-        res
-          .status(400)
-          .send({
-            error: "Remote storage (S3 or Azure SQL) is not currently active.",
-          });
+        res.status(400).send({
+          error: "Remote storage (S3 or Azure SQL) is not currently active.",
+        });
         return;
       }
 
@@ -6932,11 +6851,9 @@ app.post(
       assetStorageManager.getStorage().type !== "s3" &&
       assetStorageManager.getStorage().type !== "azuresql"
     ) {
-      res
-        .status(400)
-        .send({
-          error: "Remote storage (S3 or Azure SQL) is not currently active",
-        });
+      res.status(400).send({
+        error: "Remote storage (S3 or Azure SQL) is not currently active",
+      });
       return;
     }
 
@@ -7163,12 +7080,10 @@ app.post(
       return;
     }
     if (!canUseAssetCatalog()) {
-      res
-        .status(400)
-        .send({
-          error: "SQL asset catalog is unavailable",
-          code: "asset_catalog_unavailable",
-        });
+      res.status(400).send({
+        error: "SQL asset catalog is unavailable",
+        code: "asset_catalog_unavailable",
+      });
       return;
     }
     try {

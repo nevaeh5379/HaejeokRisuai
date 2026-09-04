@@ -23,11 +23,7 @@ import type { Loadout } from "../../loadout";
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
 export type GenerationStatsPosition =
-  | "bottom-right"
-  | "bottom-left"
-  | "top-right"
-  | "top-left"
-  | "off";
+  "bottom-right" | "bottom-left" | "top-right" | "top-left" | "off";
 
 export interface ProviderModelOverride {
   ollamaModel?: string;
@@ -1217,6 +1213,7 @@ export interface ChatBranchInfo {
   createdAt: number;
 }
 
+/** @deprecated Legacy Haejeok branchState timeline retained only for import migration. */
 export interface ChatBranchTimeline {
   id: string;
   parentBranchId?: string;
@@ -1233,6 +1230,7 @@ export interface ChatBranchTimeline {
   useLocallySetGlobalVariables?: boolean | null;
 }
 
+/** @deprecated Legacy Haejeok in-memory branch format retained only for import migration. */
 export interface ChatBranchState {
   baseMessageIndex: number;
   activeBranchId: string;
@@ -1285,6 +1283,7 @@ export interface Chat {
   branch?: ChatBranchInfo;
   /** Active pointer for the persistent parent-linked branch graph. */
   activeBranchId?: string;
+  /** @deprecated Migration input only. Runtime branches live in persistent SQL graph tables. */
   branchState?: ChatBranchState;
   lastDate?: number;
   bookmarks?: string[];

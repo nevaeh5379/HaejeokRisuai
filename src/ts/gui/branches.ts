@@ -1,10 +1,10 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-import { getChatBranchMessages } from "../chatBranches";
 import type {
   Chat,
   ChatBranchReason,
   Message,
 } from "../storage/database/schema";
+import type { SqlChatBranchGraphData } from "../storage/sql/ISqlStorage";
 
 export interface ChatGraphTerminal {
   branchId: string;
@@ -496,6 +496,41 @@ export function buildChatMessageGraph(
   };
 }
 
+export function getChatBranchesFromPersistentGraph(
+  snapshot: SqlChatBranchGraphData,
+  options: ChatGraphBuildOptions = {},
+): ChatBranchGraph {
+  const messageById = new Map(
+    snapshot.messages
+      .filter((message) => Boolean(message.chatId))
+      .map((message) => [message.chatId!, message]),
+  );
+  const parentById = new Map(
+    snapshot.links.map((link) => [link.messageId, link.parentMessageId]),
+  );
+  const timelineForHead = (headMessageId?: string) => {
+    const reversed: Message[] = [];
+    const seen = new Set<string>();
+    let messageId = headMessageId;
+    while (messageId && !seen.has(messageId)) {
+      seen.add(messageId);
+      const message = messageById.get(messageId);
+      if (message) reversed.push(message);
+      messageId = parentById.get(messageId);
+    }
+    return reversed.reverse();
+  };
+  return buildChatMessageGraph(
+    snapshot.branches.map((branch) => ({
+      branchId: branch.id,
+      reason: branch.reason,
+      active: branch.id === snapshot.activeBranchId,
+      messages: timelineForHead(branch.headMessageId || branch.forkMessageId),
+    })),
+    options,
+  );
+}
+
 export function getChatBranches(
   targetChat?: Chat | null,
   options: ChatGraphBuildOptions = {},
@@ -507,29 +542,15 @@ export function getChatBranches(
       ? character?.chats?.[character.chatPage ?? 0]
       : targetChat;
   if (!chat) return buildChatMessageGraph([], options);
-
-  const state = chat.branchState;
-  if (!state || state.branches.length === 0) {
-    return buildChatMessageGraph(
-      [
-        {
-          branchId: "__current__",
-          reason: "root",
-          active: true,
-          messages: chat.message ?? [],
-        },
-      ],
-      options,
-    );
-  }
-
   return buildChatMessageGraph(
-    state.branches.map((branch) => ({
-      branchId: branch.id,
-      reason: branch.reason,
-      active: branch.id === state.activeBranchId,
-      messages: getChatBranchMessages(chat, branch.id),
-    })),
+    [
+      {
+        branchId: "__current__",
+        reason: "root",
+        active: true,
+        messages: chat.message ?? [],
+      },
+    ],
     options,
   );
 }

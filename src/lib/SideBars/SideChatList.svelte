@@ -2,7 +2,7 @@
     import { tick } from "svelte";
     import { v4 } from "uuid";
     import type Sortable from 'sortablejs/modular/sortable.core.esm.js';
-    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, GitBranch } from "@lucide/svelte";
+    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character, groupChat } from "../../ts/storage/database/schema";
     import { ReloadGUIPointer } from 'src/ts/stores.svelte';
@@ -374,9 +374,6 @@
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
                             <span class="flex items-center min-w-0 gap-1.5">
-                                {#if (chat.branchState?.branches?.length ?? 0) > 1}
-                                    <GitBranch size={14}/>
-                                {/if}
                                 <span class="truncate">{chat.name}</span>
                             </span>
                         {/if}
@@ -490,9 +487,6 @@
                     <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
                 {:else}
                     <span class="flex items-center min-w-0 gap-1.5">
-                        {#if (chat.branchState?.branches?.length ?? 0) > 1}
-                            <GitBranch size={14}/>
-                        {/if}
                         <span class="truncate">{chat.name}</span>
                     </span>
                 {/if}

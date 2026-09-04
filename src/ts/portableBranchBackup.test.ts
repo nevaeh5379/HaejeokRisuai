@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  materializePortableBranchChat,
-  materializePortableDatabaseBranches,
+  attachPortableDatabaseBranchGraphs,
+  expandChatBranchGraphForCompatibility,
+  preparePortableDatabaseForBranchRestore,
 } from "@risuai/backup-core/portableBranches.cjs";
 
 const message = (chatId: string, data: string) => ({
@@ -10,172 +11,148 @@ const message = (chatId: string, data: string) => ({
   data,
 });
 
-describe("portable branch backup", () => {
-  it("rebuilds all SQL branch timelines into native branchState", () => {
-    const chat = {
-      id: "chat-1",
-      name: "test",
-      note: "",
-      message: [message("m1", "shared"), message("alt", "active")],
-      scriptstate: { active: "yes" },
-    };
-    const graph = {
-      branches: [
-        {
-          id: "root",
-          chatId: "chat-1",
-          headMessageId: "original",
-          reason: "root" as const,
-          createdAt: 1,
-        },
-        {
-          id: "reroll",
-          chatId: "chat-1",
-          parentBranchId: "root",
-          forkMessageId: "m1",
-          headMessageId: "alt",
-          reason: "reroll" as const,
-          createdAt: 2,
-        },
-      ],
-      activeBranchId: "reroll",
-      messages: [
-        message("m1", "shared"),
-        message("original", "original"),
-        message("alt", "active"),
-      ],
-      links: [
-        { messageId: "m1", originBranchId: "root" },
-        {
-          messageId: "original",
-          parentMessageId: "m1",
-          originBranchId: "root",
-        },
-        { messageId: "alt", parentMessageId: "m1", originBranchId: "reroll" },
-      ],
-    };
-
-    const portable = materializePortableBranchChat(chat, graph);
-
-    expect(portable.message.map((item: any) => item.data)).toEqual([
-      "shared",
-      "active",
-    ]);
-    expect(portable.branchState?.baseMessageIndex).toBe(0);
-    expect(portable.branchState?.activeBranchId).toBe("reroll");
-    expect(portable.branchState?.branches).toHaveLength(2);
-    expect(
-      portable.branchState?.branches[0].messages.map((item: any) => item.data),
-    ).toEqual(["original"]);
-    expect(portable.branchState?.branches[1]).toMatchObject({
+const graph = {
+  branches: [
+    {
+      id: "root",
+      chatId: "chat-1",
+      headMessageId: "original",
+      reason: "root" as const,
+      createdAt: 1,
+    },
+    {
       id: "reroll",
+      chatId: "chat-1",
       parentBranchId: "root",
-      branchMessageId: "m1",
-      messages: [expect.objectContaining({ data: "active" })],
-      scriptstate: { active: "yes" },
-    });
-  });
+      forkMessageId: "m1",
+      headMessageId: "alt",
+      reason: "reroll" as const,
+      createdAt: 2,
+    },
+  ],
+  activeBranchId: "reroll",
+  messages: [
+    message("m1", "shared"),
+    message("original", "original"),
+    message("alt", "active"),
+  ],
+  links: [
+    { messageId: "m1", originBranchId: "root" },
+    { messageId: "original", parentMessageId: "m1", originBranchId: "root" },
+    { messageId: "alt", parentMessageId: "m1", originBranchId: "reroll" },
+  ],
+};
 
-  it("hydrates every chat in a database snapshot through the persistent graph loader", async () => {
+describe("portable persistent branch backup", () => {
+  it("stores SQL branch graphs outside Chat without serializing branchState", async () => {
     const database = {
       characters: [
         {
           chats: [
             {
-              id: "chat-db",
+              id: "chat-1",
               message: [message("m1", "shared"), message("alt", "active")],
+              activeBranchId: "reroll",
+              branchState: { stale: true },
             },
           ],
         },
       ],
     };
-    const loaderCalls: string[] = [];
-    const portable = await materializePortableDatabaseBranches(
+    const portable = await attachPortableDatabaseBranchGraphs(
       database,
-      async (chatId: string) => {
-        loaderCalls.push(chatId);
-        return {
-          branches: [
-            {
-              id: "root",
-              chatId,
-              headMessageId: "root-tail",
-              reason: "root",
-              createdAt: 1,
-            },
-            {
-              id: "alt",
-              chatId,
-              parentBranchId: "root",
-              forkMessageId: "m1",
-              headMessageId: "alt",
-              reason: "reroll",
-              createdAt: 2,
-            },
-          ],
-          activeBranchId: "alt",
-          messages: [
-            message("m1", "shared"),
-            message("root-tail", "root"),
-            message("alt", "active"),
-          ],
-          links: [
-            { messageId: "m1", originBranchId: "root" },
-            {
-              messageId: "root-tail",
-              parentMessageId: "m1",
-              originBranchId: "root",
-            },
-            { messageId: "alt", parentMessageId: "m1", originBranchId: "alt" },
-          ],
-        };
-      },
+      async () => graph,
     );
-
-    expect(loaderCalls).toEqual(["chat-db"]);
-    expect(
-      (portable.characters[0].chats[0] as any).branchState.branches,
-    ).toHaveLength(2);
-    expect(
-      (database.characters[0].chats[0] as any).branchState,
-    ).toBeUndefined();
+    const chat = portable.characters[0].chats[0] as any;
+    expect(chat.branchState).toBeUndefined();
+    expect(chat.activeBranchId).toBeUndefined();
+    expect(portable.haejeokBranchGraphs?.["chat-1"]).toEqual(graph);
+    expect((database.characters[0].chats[0] as any).branchState).toBeDefined();
   });
 
-  it("keeps an empty child branch as a real timeline", () => {
-    const chat = { id: "chat-2", message: [message("m1", "shared")] };
-    const graph = {
-      branches: [
+  it("prepares the SQL root timeline for direct persistent-graph restore", async () => {
+    const portable = await attachPortableDatabaseBranchGraphs(
+      {
+        characters: [
+          {
+            chats: [
+              {
+                id: "chat-1",
+                message: [message("m1", "shared"), message("alt", "active")],
+              },
+            ],
+          },
+        ],
+      },
+      async () => graph,
+    );
+    const prepared = preparePortableDatabaseForBranchRestore(portable);
+    const chat = prepared.database.characters[0].chats[0] as any;
+    expect(chat.message.map((item: any) => item.data)).toEqual([
+      "shared",
+      "original",
+    ]);
+    expect(chat.branchState).toBeUndefined();
+    expect((prepared.database as any).haejeokBranchGraphs).toBeUndefined();
+    expect(prepared.branchGraphs["chat-1"].activeBranchId).toBe("reroll");
+  });
+
+  it("flattens a persistent graph directly for compatibility exports", () => {
+    const expanded = expandChatBranchGraphForCompatibility(
+      {
+        id: "chat-1",
+        name: "Chat",
+        message: [message("m1", "shared"), message("alt", "active")],
+      },
+      graph,
+      (() => {
+        let id = 0;
+        return () => `new-${++id}`;
+      })(),
+    );
+    expect(expanded.chats).toHaveLength(2);
+    expect(expanded.activeIndex).toBe(1);
+    expect(
+      expanded.chats.map((chat) => chat.message.map((item: any) => item.data)),
+    ).toEqual([
+      ["shared", "original"],
+      ["shared", "active"],
+    ]);
+    expect(
+      expanded.chats.every((chat) => (chat as any).branchState === undefined),
+    ).toBe(true);
+  });
+  it("keeps legacy branchState only when it is needed as migration input", () => {
+    const source = {
+      characters: [
         {
-          id: "root",
-          chatId: "chat-2",
-          headMessageId: "m2",
-          reason: "root" as const,
-          createdAt: 1,
+          chats: [
+            {
+              id: "legacy-chat",
+              message: [message("legacy-message", "legacy")],
+              branchState: {
+                baseMessageIndex: 0,
+                activeBranchId: "legacy-root",
+                branches: [
+                  {
+                    id: "legacy-root",
+                    reason: "root",
+                    createdAt: 1,
+                    branchMessageIndex: 0,
+                    messages: [],
+                  },
+                ],
+              },
+            },
+          ],
         },
-        {
-          id: "empty",
-          chatId: "chat-2",
-          parentBranchId: "root",
-          forkMessageId: "m1",
-          headMessageId: "m1",
-          reason: "manual" as const,
-          createdAt: 2,
-        },
-      ],
-      activeBranchId: "empty",
-      messages: [message("m1", "shared"), message("m2", "root tail")],
-      links: [
-        { messageId: "m1", originBranchId: "root" },
-        { messageId: "m2", parentMessageId: "m1", originBranchId: "root" },
       ],
     };
 
-    const portable = materializePortableBranchChat(chat, graph);
-    expect(portable.branchState?.baseMessageIndex).toBe(0);
+    const prepared = preparePortableDatabaseForBranchRestore(source);
     expect(
-      portable.branchState?.branches.find(
-        (branch: any) => branch.id === "empty",
-      )?.messages,
-    ).toEqual([]);
+      (prepared.database.characters[0].chats[0] as any).branchState,
+    ).toEqual(source.characters[0].chats[0].branchState);
+    expect(prepared.branchGraphs).toEqual({});
   });
 });
