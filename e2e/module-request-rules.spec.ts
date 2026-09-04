@@ -52,6 +52,22 @@ async function seed(page: Page, rules: boolean) {
         emotion: [],
         translate: [],
       };
+      const charMap: Record<string, string> = {
+        "<": "\\u003C",
+        ">": "\\u003E",
+        "/": "\\u002F",
+        "\\": "\\\\",
+        "\b": "\\b",
+        "\f": "\\f",
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\0": "\\0",
+        "\u2028": "\\u2028",
+        "\u2029": "\\u2029",
+      };
+      const escapeUnsafeChars = (str: string) =>
+        str.replace(/[<>\/\\\b\f\n\r\t\0\u2028\u2029]/g, (x) => charMap[x]);
       const lore = (identifier: string, phrase: string) => ({
         key: "",
         secondkey: "",
@@ -60,7 +76,7 @@ async function seed(page: Page, rules: boolean) {
         mode: "normal",
         alwaysActive: false,
         selective: false,
-        content: `return function() return {{role="user", content=${JSON.stringify(phrase)}}} end`,
+        content: `return function() return {{role="user", content=${escapeUnsafeChars(JSON.stringify(phrase))}}} end`,
       });
       for (const [id, name, model, identifier, phrase] of [
         [OWNER_A, "Rule Owner A", "gpt4om", "weather", PHRASE_A],
