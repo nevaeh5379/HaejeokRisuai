@@ -17,7 +17,6 @@ import {
   endsWithCompletionPunctuation,
 } from "@risuai/chat-core/finalization.cjs";
 import { risuChatParser } from "./scripts";
-import { setChatProcessStage } from "./chatRuntimeState";
 import { peerSync } from "../sync/multiuser";
 import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
@@ -126,21 +125,6 @@ export interface FinalizeChatGenerationOptions {
   resendGeneration: () => Promise<boolean>;
 }
 
-function startPostGenerationStage(options: FinalizeChatGenerationOptions) {
-  options.stageTimings.stage3Duration =
-    Date.now() - options.stageTimings.stage3Start;
-  if (options.generationInfo.stageTiming) {
-    options.generationInfo.stageTiming.stage3 =
-      options.stageTimings.stage3Duration;
-  }
-  const chatId =
-    characterStore.characters[options.selectedChar]?.chats?.[
-      options.selectedChat
-    ]?.id;
-  setChatProcessStage(chatId, 4);
-  options.stageTimings.stage4Start = Date.now();
-}
-
 async function handleResend(options: FinalizeChatGenerationOptions) {
   if (!options.resendChat) return null;
   options.stageTimings.stage4Duration =
@@ -205,7 +189,6 @@ export async function finalizeChatGeneration(
     options.currentChar,
     options.abortSignal,
   );
-  startPostGenerationStage(options);
   const resendResult = await handleResend(options);
   if (resendResult !== null) return resendResult;
 

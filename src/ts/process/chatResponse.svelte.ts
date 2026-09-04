@@ -21,6 +21,7 @@ export interface ProcessChatResponseOptions {
   generationInfo: MessageGenerationInfo;
   promptInfo: MessagePresetInfo;
   generationId: string;
+  onModelComplete: () => void;
   reformatContent: (data: string) => string;
   throwError: (error: string) => void;
 }
@@ -39,5 +40,6 @@ export async function processChatResponse(options: ProcessChatResponseOptions) {
   if (options.req.type === "streaming") {
     return processStreamingResponse({ ...options, req: options.req });
   }
+  options.onModelComplete();
   return processNonStreamingResponse({ ...options, req: options.req });
 }

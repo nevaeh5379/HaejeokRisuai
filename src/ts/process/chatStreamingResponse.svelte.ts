@@ -33,6 +33,7 @@ interface StreamingOptions {
   generationInfo: MessageGenerationInfo;
   promptInfo: MessagePresetInfo;
   generationId: string;
+  onModelComplete: () => void;
   reformatContent: (data: string) => string;
 }
 
@@ -144,6 +145,7 @@ async function streamResponseBody(options: StreamingOptions) {
     reformatContent: options.reformatContent,
     performanceMode,
     generationId: options.generationId,
+    onModelComplete: options.onModelComplete,
   });
   return { target, streamed };
 }
