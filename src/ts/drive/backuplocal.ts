@@ -47,7 +47,10 @@ import {
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { NodeStorage } from "../storage/files/nodeStorage";
-import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
+import {
+  getSqlBranchStorage,
+  getSqlStorage,
+} from "../storage/sql/sqlStorageFactory";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
@@ -66,6 +69,13 @@ import {
   classifyBackupEntry,
   getInlayBackupKey,
 } from "@risuai/backup-core/entryPolicy.cjs";
+import {
+  attachPortableDatabaseBranchGraphs,
+  expandPortableDatabaseBranchGraphsForCompatibility,
+  loadPortableBranchGraphForExport,
+  preparePortableDatabaseForBranchRestore,
+} from "@risuai/backup-core/portableBranches.cjs";
+import { restorePortableDatabaseBranchGraphs } from "../storage/sql/portableBranchRestore";
 import {
   decodeInlayAssetBackup,
   encodeInlayAssetBackup,
@@ -317,9 +327,9 @@ export function buildPortableLocalBackupDatabase(
     cleanDb[key] = value;
   }
   cleanDb.pluginCustomStorage ??= {};
-  return mode === "compatible"
-    ? makeLegacyCompatibleDatabase(cleanDb, coldStorageValues)
-    : cleanDb;
+  if (mode !== "compatible") return cleanDb;
+  const expanded = expandPortableDatabaseBranchGraphsForCompatibility(cleanDb);
+  return makeLegacyCompatibleDatabase(expanded, coldStorageValues);
 }
 
 function formatBackupElapsed(startedAt: number) {
@@ -606,7 +616,21 @@ export async function createBackupDatabaseSnapshot(
 
   ensureAllDomains(db);
 
-  return normalizeBackupSnapshot(db);
+  const normalized = normalizeBackupSnapshot(db);
+  const branchStorage = await getSqlBranchStorage();
+  return (await attachPortableDatabaseBranchGraphs(
+    normalized,
+    async (chatId) => {
+      const graph = await branchStorage.loadChatBranchGraph(chatId);
+      if (graph.branches.length <= 1) return graph;
+      return loadPortableBranchGraphForExport(
+        chatId,
+        async () => graph,
+        (id, branchId) =>
+          branchStorage.loadBranchMessages(id, branchId, { mode: "full" }),
+      );
+    },
+  )) as PortableDatabase;
 }
 
 import {
@@ -1560,7 +1584,10 @@ async function restoreLocalBackupSource(
       : "Decoding database...",
     91,
   );
-  const dbData = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
+  const decodedDb = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
+  const prepared = preparePortableDatabaseForBranchRestore(decodedDb);
+  const dbData = prepared.database as Database;
+  const portableBranchGraphs = prepared.branchGraphs;
   db = null;
   console.info("[LocalBackupRestore] Decoded database summary", {
     databaseBytes: databaseByteLength,
@@ -1611,10 +1638,17 @@ async function restoreLocalBackupSource(
   await storage.replaceDatabase(dbData, (step, syncProgress) => {
     const ratio =
       syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
-    const progress = 92 + ratio * 8;
+    const progress = 92 + ratio * 7;
     const sqlPercent = Math.round(ratio * 100);
     alertProgress(`${baseMsg}\n${step}\nSQL restore: ${sqlPercent}%`, progress);
   });
+  if (Object.keys(portableBranchGraphs).length > 0) {
+    alertProgress(`${baseMsg}\nRestoring branch graphs...`, 99);
+    await restorePortableDatabaseBranchGraphs(
+      await getSqlBranchStorage(),
+      portableBranchGraphs,
+    );
+  }
 
   const completionMessage =
     invalidInlayEntries.length > 0

@@ -1,10 +1,10 @@
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-import { getChatBranchMessages } from "../chatBranches";
 import type {
   Chat,
   ChatBranchReason,
   Message,
 } from "../storage/database/schema";
+import type { SqlChatBranchGraphData } from "../storage/sql/ISqlStorage";
 
 export interface ChatGraphTerminal {
   branchId: string;
@@ -55,6 +55,56 @@ export interface ChatGraphTimeline {
   messages: Message[];
 }
 
+export type ChatGraphDensity = "smart" | "all" | "branches";
+
+export interface ChatGraphBuildOptions {
+  density?: ChatGraphDensity;
+}
+
+export interface ChatGraphLaneLayout {
+  laneByNodeId: Map<string, number>;
+  columns: number;
+}
+
+export function buildChatGraphGitLanes(
+  graph: ChatBranchGraph,
+): ChatGraphLaneLayout {
+  const children = new Map<string, Array<{ id: string; active: boolean }>>();
+  const incoming = new Set<string>();
+  for (const edge of graph.edges) {
+    const siblings = children.get(edge.from) ?? [];
+    siblings.push({ id: edge.to, active: edge.active });
+    children.set(edge.from, siblings);
+    incoming.add(edge.to);
+  }
+
+  const laneByNodeId = new Map<string, number>();
+  let nextLane = 0;
+  const visit = (nodeId: string, lane: number) => {
+    if (laneByNodeId.has(nodeId)) return;
+    laneByNodeId.set(nodeId, lane);
+    const childEdges = children.get(nodeId) ?? [];
+    if (childEdges.length === 0) return;
+
+    const primary = childEdges.find((child) => child.active) ?? childEdges[0];
+    visit(primary.id, lane);
+    for (const child of childEdges) {
+      if (child.id === primary.id) continue;
+      visit(child.id, nextLane++);
+    }
+  };
+
+  for (const node of graph.nodes) {
+    if (incoming.has(node.id)) continue;
+    visit(node.id, nextLane++);
+  }
+  for (const node of graph.nodes) {
+    if (!laneByNodeId.has(node.id)) visit(node.id, nextLane++);
+  }
+
+  return { laneByNodeId, columns: Math.max(1, nextLane) };
+}
+
 interface MutableMessageNode {
   id: string;
   message: Message;
@@ -101,6 +151,7 @@ function fallbackSignature(message: Message): string {
  */
 export function buildChatMessageGraph(
   timelines: ChatGraphTimeline[],
+  options: ChatGraphBuildOptions = {},
 ): ChatBranchGraph {
   const empty: ChatBranchGraph = {
     nodes: [],
@@ -211,8 +262,12 @@ export function buildChatMessageGraph(
   const messageCount = [...mutableNodes.values()].filter(
     (node) => !node.synthetic,
   ).length;
+  const density = options.density ?? "smart";
   const keepIds = new Set<string>();
-  if (messageCount <= LONG_CHAT_THRESHOLD) {
+  if (
+    density === "all" ||
+    (density === "smart" && messageCount <= LONG_CHAT_THRESHOLD)
+  ) {
     for (const nodeId of mutableNodes.keys()) keepIds.add(nodeId);
   } else {
     const anchors = [...mutableNodes.values()]
@@ -232,7 +287,8 @@ export function buildChatMessageGraph(
         continue;
       nearestAnchor.set(id, distance);
       keepIds.add(id);
-      if (distance >= CONTEXT_RADIUS) continue;
+      const contextRadius = density === "branches" ? 0 : CONTEXT_RADIUS;
+      if (distance >= contextRadius) continue;
       const node = mutableNodes.get(id);
       if (!node) continue;
       const neighbors = [node.parentId, ...node.children].filter(
@@ -321,7 +377,8 @@ export function buildChatMessageGraph(
       visitedOriginalIds.add(targetId);
       ensureMessage(targetId);
 
-      if (hiddenIds.length >= MIN_COLLAPSED_RUN) {
+      const collapseThreshold = density === "branches" ? 1 : MIN_COLLAPSED_RUN;
+      if (hiddenIds.length >= collapseThreshold) {
         const first = mutableNodes.get(hiddenIds[0])!;
         const last = mutableNodes.get(hiddenIds[hiddenIds.length - 1])!;
         const id = `summary:${summaryId++}`;
@@ -439,33 +496,61 @@ export function buildChatMessageGraph(
   };
 }
 
-export function getChatBranches(targetChat?: Chat | null): ChatBranchGraph {
+export function getChatBranchesFromPersistentGraph(
+  snapshot: SqlChatBranchGraphData,
+  options: ChatGraphBuildOptions = {},
+): ChatBranchGraph {
+  const messageById = new Map(
+    snapshot.messages
+      .filter((message) => Boolean(message.chatId))
+      .map((message) => [message.chatId!, message]),
+  );
+  const parentById = new Map(
+    snapshot.links.map((link) => [link.messageId, link.parentMessageId]),
+  );
+  const timelineForHead = (headMessageId?: string) => {
+    const reversed: Message[] = [];
+    const seen = new Set<string>();
+    let messageId = headMessageId;
+    while (messageId && !seen.has(messageId)) {
+      seen.add(messageId);
+      const message = messageById.get(messageId);
+      if (message) reversed.push(message);
+      messageId = parentById.get(messageId);
+    }
+    return reversed.reverse();
+  };
+  return buildChatMessageGraph(
+    snapshot.branches.map((branch) => ({
+      branchId: branch.id,
+      reason: branch.reason,
+      active: branch.id === snapshot.activeBranchId,
+      messages: timelineForHead(branch.headMessageId || branch.forkMessageId),
+    })),
+    options,
+  );
+}
+
+export function getChatBranches(
+  targetChat?: Chat | null,
+  options: ChatGraphBuildOptions = {},
+): ChatBranchGraph {
   const character =
     targetChat === undefined ? characterStore.currentCharacter : undefined;
   const chat =
     targetChat === undefined
       ? character?.chats?.[character.chatPage ?? 0]
       : targetChat;
-  if (!chat) return buildChatMessageGraph([]);
-
-  const state = chat.branchState;
-  if (!state || state.branches.length === 0) {
-    return buildChatMessageGraph([
+  if (!chat) return buildChatMessageGraph([], options);
+  return buildChatMessageGraph(
+    [
       {
         branchId: "__current__",
         reason: "root",
         active: true,
         messages: chat.message ?? [],
       },
-    ]);
-  }
-
-  return buildChatMessageGraph(
-    state.branches.map((branch) => ({
-      branchId: branch.id,
-      reason: branch.reason,
-      active: branch.id === state.activeBranchId,
-      messages: getChatBranchMessages(chat, branch.id),
-    })),
+    ],
+    options,
   );
 }

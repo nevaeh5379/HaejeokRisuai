@@ -29,6 +29,7 @@
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getSqlBranchStorage } from "src/ts/storage/sql/sqlStorageFactory";
     import type { Chat } from "src/ts/storage/database/schema";
+    import type { SqlChatBranchGraphData } from "src/ts/storage/sql/ISqlStorage";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
     import {
         HAEJEOK_PRIVACY_URL,
@@ -42,6 +43,7 @@
     let stackTraceTranslationFailed = $state(false);
     let isTranslating = $state(false);
     let persistedBranchGraphChat = $state<Chat | null>(null);
+    let persistedBranchGraph = $state<SqlChatBranchGraphData | null>(null);
     let branchGraphLoading = $state(false);
     let branchGraphLoadGeneration = 0;
     let osLabel = $state(getFallbackOSLabel());
@@ -188,9 +190,6 @@
         }
         const chat = getBranchGraphChat($alertStore.msg)
         if(!chat?.id) return
-        if(chat.branchState){
-            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-        }
         const storage = await getSqlBranchStorage()
         await storage.activateChatBranch(chat.id, branchId)
         const loaded = await storage.loadChat(chat.id, {
@@ -224,74 +223,23 @@
         const generation = ++branchGraphLoadGeneration
         if(type !== 'branches'){
             persistedBranchGraphChat = null
+            persistedBranchGraph = null
             branchGraphLoading = false
             return
         }
         void (async () => {
             const chat = getBranchGraphChat(chatId)
             if(!chat?.id) return
-            if(chat.branchState){
-                throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-            }
-
             // Open immediately with the already-hydrated active timeline. The full
             // persistent graph replaces this snapshot as soon as branch reads finish.
-            persistedBranchGraphChat = { ...chat, branchState: undefined }
+            persistedBranchGraphChat = { ...chat }
+            persistedBranchGraph = null
             branchGraphLoading = true
 
             const storage = await getSqlBranchStorage()
             const snapshot = await storage.loadChatBranchGraph(chat.id)
-            const activeBranchId = snapshot.activeBranchId
-                ?? chat.activeBranchId
-                ?? snapshot.branches.find((branch) => branch.reason === 'root')?.id
-            const messageById = new Map(
-                snapshot.messages
-                    .filter((message) => Boolean(message.chatId))
-                    .map((message) => [message.chatId!, message]),
-            )
-            const parentById = new Map(
-                snapshot.links.map((link) => [link.messageId, link.parentMessageId]),
-            )
-            const timelineForHead = (headMessageId?: string) => {
-                const reversed = []
-                const seen = new Set<string>()
-                let messageId = headMessageId
-                while(messageId && !seen.has(messageId)){
-                    seen.add(messageId)
-                    const message = messageById.get(messageId)
-                    if(message) reversed.push(message)
-                    messageId = parentById.get(messageId)
-                }
-                return reversed.reverse()
-            }
-            const branches = snapshot.branches.map((summary) => {
-                const messages = timelineForHead(summary.headMessageId)
-                const branchMessageIndex = summary.forkMessageId
-                    ? messages.findIndex((message) => message.chatId === summary.forkMessageId)
-                    : -1
-                return {
-                    id: summary.id,
-                    parentBranchId: summary.parentBranchId,
-                    branchMessageId: summary.forkMessageId,
-                    branchMessageIndex,
-                    reason: summary.reason,
-                    createdAt: summary.createdAt,
-                    messages,
-                }
-            })
             if(generation !== branchGraphLoadGeneration || $alertStore.type !== 'branches') return
-            const activeMessages = branches.find((branch) => branch.id === activeBranchId)?.messages
-                ?? chat.message
-            persistedBranchGraphChat = {
-                ...chat,
-                message: activeMessages,
-                activeBranchId,
-                branchState: activeBranchId ? {
-                    baseMessageIndex: -1,
-                    activeBranchId,
-                    branches,
-                } : undefined,
-            }
+            persistedBranchGraph = snapshot
             branchGraphLoading = false
         })().catch((error) => {
             // Keep the immediate snapshot non-interactive when the persistent
@@ -994,6 +942,8 @@
     {#if persistedBranchGraphChat}
         <BranchGraphModal
             chat={persistedBranchGraphChat}
+            branchGraph={persistedBranchGraph}
+            loading={branchGraphLoading}
             onselect={switchBranchFromGraph}
             onclose={() => alertStore.set({ type: 'none', msg: '' })}
         />

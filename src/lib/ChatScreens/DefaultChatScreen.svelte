@@ -19,7 +19,7 @@
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
-    import { resolveRerollTarget } from 'src/ts/chatBranches';
+    import { resolveRerollTarget } from 'src/ts/chatReroll';
     import { requireChatTargetFromIndexes } from 'src/ts/chatTarget';
     import { v4 } from 'uuid';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
@@ -410,9 +410,6 @@
 
     async function persistBranchSwitch(activeChat: ChatSession, branchId: string) {
         if(!activeChat.id) return false
-        if(activeChat.branchState){
-            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-        }
         const storage = await getSqlBranchStorage()
         await storage.activateChatBranch(activeChat.id, branchId)
         const loaded = await storage.loadChat(activeChat.id, {
@@ -434,9 +431,6 @@
         parentBranchId: string,
     ) {
         activeChat.id ??= v4()
-        if(activeChat.branchState){
-            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-        }
         const storage = await getSqlBranchStorage()
         const forkMessage = activeChat.message[branchMessageIndex]
         if(!forkMessage?.chatId) throw new Error('Cannot reroll a message without a persistent message id')
@@ -461,9 +455,6 @@
         branchMessageIndex: number,
     ) {
         if(!activeChat.id) return null
-        if(activeChat.branchState){
-            throw new Error('Legacy branchState runtime fallback is disabled; migrate this chat to persistent branches first')
-        }
         const storage = await getSqlBranchStorage()
         const branches = await storage.listChatBranches(activeChat.id)
         const forkMessageId = activeChat.message[branchMessageIndex]?.chatId

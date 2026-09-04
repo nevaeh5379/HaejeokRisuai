@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildChatGraphGitLanes,
   buildChatMessageGraph,
   getChatBranches,
+  getChatBranchesFromPersistentGraph,
   type ChatGraphTimeline,
 } from "./branches";
-import { createEditedMessageBranch } from "../chatBranches";
 import type { Chat, Message } from "../storage/database/schema";
 
 function message(chatId: string, role: Message["role"], data: string): Message {
@@ -170,6 +171,58 @@ describe("buildChatMessageGraph", () => {
     ).toBe(true);
   });
 
+  it("keeps every message when density is all", () => {
+    const messages = Array.from({ length: 120 }, (_, index) =>
+      message(
+        `full-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `full message ${index + 1}`,
+      ),
+    );
+
+    const graph = buildChatMessageGraph([timeline("root", messages, true)], {
+      density: "all",
+    });
+
+    expect(graph.nodes).toHaveLength(120);
+    expect(graph.collapsedMessageCount).toBe(0);
+    expect(graph.nodes.every((node) => node.kind === "message")).toBe(true);
+  });
+
+  it("compresses linear runs to branch landmarks when density is branches", () => {
+    const shared = Array.from({ length: 12 }, (_, index) =>
+      message(
+        `landmark-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `landmark ${index + 1}`,
+      ),
+    );
+    const original = message("landmark-original", "char", "original ending");
+    const alternative = message("landmark-alt", "char", "alternative ending");
+
+    const graph = buildChatMessageGraph(
+      [
+        timeline("root", [...shared, original]),
+        timeline("reroll", [...shared, alternative], true),
+      ],
+      { density: "branches" },
+    );
+
+    const fork = graph.nodes.find((node) => node.id === "message:landmark-11")!;
+    expect(graph.nodes).toHaveLength(5);
+    expect(graph.collapsedMessageCount).toBe(10);
+    expect(graph.nodes.filter((node) => node.kind === "summary")).toHaveLength(
+      1,
+    );
+    expect(fork.branchPoint).toBe(true);
+    expect(
+      graph.nodes.some((node) => node.id === "message:landmark-original"),
+    ).toBe(true);
+    expect(graph.nodes.some((node) => node.id === "message:landmark-alt")).toBe(
+      true,
+    );
+  });
+
   it("never collapses the exact fork point in a long chat", () => {
     const shared = Array.from({ length: 100 }, (_, index) =>
       message(
@@ -200,6 +253,29 @@ describe("buildChatMessageGraph", () => {
   });
 });
 
+describe("buildChatGraphGitLanes", () => {
+  it("keeps the active continuation in its current lane and moves alternatives aside", () => {
+    const shared = message("lane-shared", "user", "shared");
+    const original = message("lane-original", "char", "original");
+    const activeAlternative = message(
+      "lane-active",
+      "char",
+      "active alternative",
+    );
+    const graph = buildChatMessageGraph([
+      timeline("root", [shared, original]),
+      timeline("reroll", [shared, activeAlternative], true),
+    ]);
+
+    const lanes = buildChatGraphGitLanes(graph);
+
+    expect(lanes.laneByNodeId.get("message:lane-shared")).toBe(0);
+    expect(lanes.laneByNodeId.get("message:lane-active")).toBe(0);
+    expect(lanes.laneByNodeId.get("message:lane-original")).not.toBe(0);
+    expect(lanes.columns).toBe(2);
+  });
+});
+
 describe("getChatBranches", () => {
   it("builds from the explicitly pinned chat instead of global selection", () => {
     const chat = {
@@ -219,18 +295,46 @@ describe("getChatBranches", () => {
     ]);
   });
 
-  it("renders edited user input as a separate branch node", () => {
-    const chat = {
-      message: [
+  it("renders edited user input from the persistent SQL graph as a separate branch node", () => {
+    const graph = getChatBranchesFromPersistentGraph({
+      branches: [
+        {
+          id: "root",
+          chatId: "chat-1",
+          headMessageId: "a2",
+          reason: "root",
+          createdAt: 1,
+        },
+        {
+          id: "edit",
+          chatId: "chat-1",
+          parentBranchId: "root",
+          forkMessageId: "a1",
+          headMessageId: "u2-edit",
+          reason: "manual",
+          createdAt: 10,
+        },
+      ],
+      activeBranchId: "edit",
+      messages: [
         message("u1", "user", "first prompt"),
         message("a1", "char", "first answer"),
         message("u2", "user", "original input"),
         message("a2", "char", "original response"),
+        message("u2-edit", "user", "edited input"),
       ],
-    } as Chat;
-
-    createEditedMessageBranch(chat, 2, "edited input", 10);
-    const graph = getChatBranches(chat);
+      links: [
+        { messageId: "u1", originBranchId: "root" },
+        { messageId: "a1", parentMessageId: "u1", originBranchId: "root" },
+        { messageId: "u2", parentMessageId: "a1", originBranchId: "root" },
+        { messageId: "a2", parentMessageId: "u2", originBranchId: "root" },
+        {
+          messageId: "u2-edit",
+          parentMessageId: "a1",
+          originBranchId: "edit",
+        },
+      ],
+    });
     const originalInput = graph.nodes.find(
       (node) => node.preview === "original input",
     )!;
@@ -243,5 +347,6 @@ describe("getChatBranches", () => {
     expect(originalInput.id).not.toBe(editedInput.id);
     expect(originalInput.y).toBe(editedInput.y);
     expect(fork.branchPoint).toBe(true);
+    expect(editedInput.activeTerminal).toBe(true);
   });
 });

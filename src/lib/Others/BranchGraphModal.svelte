@@ -3,28 +3,47 @@
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
-    import { getChatBranches } from 'src/ts/gui/branches'
-    import type { Chat } from '../../ts/storage/database/schema';interface Props {
+    import { buildChatGraphGitLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
+    import type { Chat } from '../../ts/storage/database/schema'
+    import type { SqlChatBranchGraphData } from '../../ts/storage/sql/ISqlStorage'
+
+    interface Props {
         chat?: Chat | null
+        branchGraph?: SqlChatBranchGraphData | null
         loading?: boolean
         onselect: (branchId: string) => void | Promise<void>
         onclose: () => void
     }
 
-    let { chat, loading = false, onselect, onclose }: Props = $props()
+    let { chat, branchGraph = null, loading = false, onselect, onclose }: Props = $props()
 
-    const cardWidth = 292
-    const cardHeight = 116
-    const gapX = 56
-    const gapY = 64
+    type GraphLayout = 'tree' | 'timeline' | 'git' | 'radial'
+
     const padding = 64
     const minScale = 0.25
     const maxScale = 1.6
+    let layout = $state<GraphLayout>('tree')
+    let density = $state<ChatGraphDensity>('smart')
+    let focusCurrentPath = $state(false)
 
-    const graph = $derived(getChatBranches(chat))
+    const cardWidth = $derived(layout === 'git' ? 260 : layout === 'radial' ? 264 : 292)
+    const cardHeight = $derived(layout === 'git' ? 104 : layout === 'radial' ? 108 : 116)
+    const gapX = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 72 : 56)
+    const gapY = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 42 : 64)
+    const graph = $derived(branchGraph
+        ? getChatBranchesFromPersistentGraph(branchGraph, { density })
+        : getChatBranches(chat, { density }))
     const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
-    const graphWidth = $derived(padding * 2 + graph.columns * cardWidth + Math.max(0, graph.columns - 1) * gapX)
-    const graphHeight = $derived(padding * 2 + graph.rows * cardHeight + Math.max(0, graph.rows - 1) * gapY)
+    const gitLanes = $derived(buildChatGraphGitLanes(graph))
+    const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)
+    const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? gitLanes.columns : graph.columns)
+    const standardRows = $derived(layout === 'timeline' ? graph.columns : graph.rows)
+    const graphWidth = $derived(layout === 'radial'
+        ? padding * 2 + radialRadius * 2 + cardWidth
+        : padding * 2 + standardColumns * cardWidth + Math.max(0, standardColumns - 1) * gapX)
+    const graphHeight = $derived(layout === 'radial'
+        ? padding * 2 + radialRadius * 2 + cardHeight
+        : padding * 2 + standardRows * cardHeight + Math.max(0, standardRows - 1) * gapY)
     const activeNode = $derived(graph.nodes.find((node) => node.activeTerminal)
         ?? [...graph.nodes].reverse().find((node) => node.activePath))
     let viewport: HTMLDivElement | undefined = $state()
@@ -43,8 +62,65 @@
     } | null = null
     let hasInteracted = false
 
-    const left = (x: number) => padding + x * (cardWidth + gapX)
-    const top = (y: number) => padding + y * (cardHeight + gapY)
+    function nodePosition(node: typeof graph.nodes[number]) {
+        if(layout === 'timeline') {
+            return {
+                left: padding + node.y * (cardWidth + gapX),
+                top: padding + node.x * (cardHeight + gapY),
+            }
+        }
+        if(layout === 'git') {
+            const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
+            return {
+                left: padding + lane * (cardWidth + gapX),
+                top: padding + node.y * (cardHeight + gapY),
+            }
+        }
+        if(layout === 'radial') {
+            const centerX = graphWidth / 2
+            const centerY = graphHeight / 2
+            if(node.y === 0) {
+                return { left: centerX - cardWidth / 2, top: centerY - cardHeight / 2 }
+            }
+            const angle = -Math.PI / 2 + (node.x / Math.max(1, graph.columns - 1)) * Math.PI * 2
+            const radius = node.y * 190
+            return {
+                left: centerX + Math.cos(angle) * radius - cardWidth / 2,
+                top: centerY + Math.sin(angle) * radius - cardHeight / 2,
+            }
+        }
+        return {
+            left: padding + node.x * (cardWidth + gapX),
+            top: padding + node.y * (cardHeight + gapY),
+        }
+    }
+
+    function edgeGeometry(from: typeof graph.nodes[number], to: typeof graph.nodes[number]) {
+        const fromPos = nodePosition(from)
+        const toPos = nodePosition(to)
+        if(layout === 'timeline') {
+            const x1 = fromPos.left + cardWidth
+            const y1 = fromPos.top + cardHeight / 2
+            const x2 = toPos.left
+            const y2 = toPos.top + cardHeight / 2
+            const midX = (x1 + x2) / 2
+            return { path: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`, x2, y2 }
+        }
+        if(layout === 'radial') {
+            const x1 = fromPos.left + cardWidth / 2
+            const y1 = fromPos.top + cardHeight / 2
+            const x2 = toPos.left + cardWidth / 2
+            const y2 = toPos.top + cardHeight / 2
+            return { path: `M ${x1} ${y1} L ${x2} ${y2}`, x2, y2 }
+        }
+        const x1 = fromPos.left + cardWidth / 2
+        const y1 = fromPos.top + cardHeight
+        const x2 = toPos.left + cardWidth / 2
+        const y2 = toPos.top
+        const midY = (y1 + y2) / 2
+        return { path: `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`, x2, y2 }
+    }
+
     const clampScale = (value: number) => Math.min(maxScale, Math.max(minScale, value))
 
     function reasonLabel(reason: 'root' | 'manual' | 'reroll'): string {
@@ -71,12 +147,30 @@
     function focusActive() {
         if(!viewport || !activeNode) return
         const nextScale = clampScale(Math.max(scale, 0.9))
-        const centerX = left(activeNode.x) + cardWidth / 2
-        const centerY = top(activeNode.y) + cardHeight / 2
+        const position = nodePosition(activeNode)
+        const centerX = position.left + cardWidth / 2
+        const centerY = position.top + cardHeight / 2
         scale = nextScale
         panX = viewport.clientWidth / 2 - centerX * nextScale
         panY = viewport.clientHeight / 2 - centerY * nextScale
         hasInteracted = true
+    }
+
+    function refitAfterDisplayChange() {
+        hasInteracted = false
+        void tick().then(() => fitGraph(false))
+    }
+
+    function setLayout(nextLayout: GraphLayout) {
+        if(layout === nextLayout) return
+        layout = nextLayout
+        refitAfterDisplayChange()
+    }
+
+    function setDensity(nextDensity: ChatGraphDensity) {
+        if(density === nextDensity) return
+        density = nextDensity
+        refitAfterDisplayChange()
     }
 
     function selectMessageNode(node: typeof graph.nodes[number]) {
@@ -258,6 +352,30 @@
         </button>
     </header>
 
+    <div class="graph-display-bar relative z-20 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-darkborderc/60 bg-darkbg/90 px-4 py-2 text-xs text-textcolor2 sm:px-5">
+        <span class="shrink-0 font-semibold text-textcolor">{language.branchGraphLayout}</span>
+        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-1">
+            <button class="graph-mode" class:graph-mode--active={layout === 'tree'} aria-pressed={layout === 'tree'} onclick={() => setLayout('tree')}>{language.branchGraphLayoutTree}</button>
+            <button class="graph-mode" class:graph-mode--active={layout === 'timeline'} aria-pressed={layout === 'timeline'} onclick={() => setLayout('timeline')}>{language.branchGraphLayoutTimeline}</button>
+            <button class="graph-mode" class:graph-mode--active={layout === 'git'} aria-pressed={layout === 'git'} onclick={() => setLayout('git')}>{language.branchGraphLayoutGit}</button>
+            <button class="graph-mode" class:graph-mode--active={layout === 'radial'} aria-pressed={layout === 'radial'} onclick={() => setLayout('radial')}>{language.branchGraphLayoutRadial}</button>
+        </div>
+        <span class="ml-1 shrink-0 font-semibold text-textcolor">{language.branchGraphDensity}</span>
+        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-1">
+            <button class="graph-mode" class:graph-mode--active={density === 'smart'} aria-pressed={density === 'smart'} onclick={() => setDensity('smart')}>{language.branchGraphDensitySmart}</button>
+            <button class="graph-mode" class:graph-mode--active={density === 'all'} aria-pressed={density === 'all'} onclick={() => setDensity('all')}>{language.branchGraphDensityAll}</button>
+            <button class="graph-mode" class:graph-mode--active={density === 'branches'} aria-pressed={density === 'branches'} onclick={() => setDensity('branches')}>{language.branchGraphDensityBranches}</button>
+        </div>
+        <button
+            class="graph-mode ml-1 shrink-0 border border-darkborderc/70 bg-bgcolor/70"
+            class:graph-mode--active={focusCurrentPath}
+            aria-pressed={focusCurrentPath}
+            onclick={() => focusCurrentPath = !focusCurrentPath}
+        >
+            {language.branchGraphFocusPath}
+        </button>
+    </div>
+
     <div
         bind:this={viewport}
         class="graph-viewport relative flex-1 overflow-hidden touch-none select-none"
@@ -287,25 +405,30 @@
                     {@const from = nodesById.get(edge.from)}
                     {@const to = nodesById.get(edge.to)}
                     {#if from && to}
-                        {@const x1 = left(from.x) + cardWidth / 2}
-                        {@const y1 = top(from.y) + cardHeight}
-                        {@const x2 = left(to.x) + cardWidth / 2}
-                        {@const y2 = top(to.y)}
-                        {@const midY = (y1 + y2) / 2}
+                        {@const geometry = edgeGeometry(from, to)}
                         <path
                             class:active-edge={edge.active}
+                            class:branch-edge--muted={focusCurrentPath && !edge.active}
                             class="branch-edge"
-                            d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
+                            d={geometry.path}
                             fill="none"
                             stroke-width={edge.active ? 3 : 2}
-                            stroke-dasharray={edge.active ? undefined : '5 7'}
+                            stroke-dasharray={edge.active || layout === 'git' ? undefined : '5 7'}
                         />
-                        <circle class:active-junction={edge.active} class="branch-junction" cx={x2} cy={y2} r={edge.active ? 5 : 4} />
+                        <circle
+                            class:active-junction={edge.active}
+                            class:branch-junction--muted={focusCurrentPath && !edge.active}
+                            class="branch-junction"
+                            cx={geometry.x2}
+                            cy={geometry.y2}
+                            r={edge.active ? 5 : 4}
+                        />
                     {/if}
                 {/each}
             </svg>
 
             {#each graph.nodes as node}
+                {@const position = nodePosition(node)}
                 <button
                     class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left"
                     class:branch-node--active={node.activeTerminal}
@@ -313,7 +436,10 @@
                     class:branch-node--selectable={!loading && node.terminals.length > 0}
                     class:branch-node--summary={node.kind === 'summary'}
                     class:branch-node--fork={node.branchPoint}
-                    style={`left:${left(node.x)}px;top:${top(node.y)}px;width:${cardWidth}px;height:${cardHeight}px;`}
+                    class:branch-node--git={layout === 'git'}
+                    class:branch-node--radial={layout === 'radial'}
+                    class:branch-node--muted={focusCurrentPath && !node.activePath && !node.activeTerminal}
+                    style={`left:${position.left}px;top:${position.top}px;width:${cardWidth}px;height:${cardHeight}px;`}
                     aria-current={node.activeTerminal ? 'true' : undefined}
                     aria-disabled={loading || node.terminals.length === 0 ? 'true' : undefined}
                     tabindex={!loading && node.terminals.length > 0 ? 0 : -1}
@@ -403,6 +529,28 @@
 </div>
 
 <style>
+    .graph-display-bar {
+        scrollbar-width: thin;
+    }
+
+    .graph-mode {
+        border-radius: 0.6rem;
+        padding: 0.35rem 0.65rem;
+        color: var(--risu-theme-textcolor2);
+        transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+    }
+
+    .graph-mode:hover {
+        color: var(--risu-theme-textcolor);
+        background: color-mix(in srgb, var(--risu-theme-selected) 42%, transparent);
+    }
+
+    .graph-mode--active {
+        color: var(--risu-theme-textcolor);
+        background: color-mix(in srgb, var(--risu-theme-selected) 72%, transparent);
+        border-color: color-mix(in srgb, var(--risu-theme-selected) 72%, var(--risu-theme-darkborderc));
+    }
+
     .graph-viewport {
         cursor: grab;
         background-color: var(--risu-theme-bgcolor);
@@ -446,6 +594,11 @@
         stroke: color-mix(in srgb, #22c55e 35%, var(--risu-theme-bgcolor));
     }
 
+    .branch-edge--muted,
+    .branch-junction--muted {
+        opacity: 0.16;
+    }
+
     .branch-node {
         cursor: default;
         border-color: color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
@@ -453,7 +606,21 @@
             color-mix(in srgb, var(--risu-theme-darkbg) 94%, var(--risu-theme-textcolor) 6%),
             color-mix(in srgb, var(--risu-theme-bgcolor) 92%, var(--risu-theme-selected) 8%));
         box-shadow: 0 16px 36px rgb(0 0 0 / 0.2), inset 0 1px 0 color-mix(in srgb, var(--risu-theme-textcolor) 7%, transparent);
-        transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+        transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, opacity 160ms ease;
+    }
+
+    .branch-node--git {
+        border-left-width: 3px;
+        border-radius: 0.8rem;
+        box-shadow: 0 10px 24px rgb(0 0 0 / 0.18), inset 0 1px 0 color-mix(in srgb, var(--risu-theme-textcolor) 7%, transparent);
+    }
+
+    .branch-node--radial {
+        box-shadow: 0 12px 30px rgb(0 0 0 / 0.24), inset 0 1px 0 color-mix(in srgb, var(--risu-theme-textcolor) 9%, transparent);
+    }
+
+    .branch-node--muted {
+        opacity: 0.2;
     }
 
     .branch-node:hover {
