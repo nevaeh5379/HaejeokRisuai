@@ -236,6 +236,15 @@ export class LocalChatExecutor implements ChatExecutor {
         generationInfo,
         promptInfo,
         generationId,
+        onModelComplete: () => {
+          const completedAt = Date.now();
+          stageTimings.stage3Duration = completedAt - stageTimings.stage3Start;
+          if (generationInfo.stageTiming) {
+            generationInfo.stageTiming.stage3 = stageTimings.stage3Duration;
+          }
+          stageTimings.stage4Start = completedAt;
+          setChatProcessStage(currentChat.id, 4);
+        },
         reformatContent: (data) => data.trim(),
         throwError,
       });

@@ -21,6 +21,7 @@ export interface StreamDisplayOptions {
   reformatContent: (data: string) => string;
   performanceMode: StreamingDisplayOptimizationMode;
   generationId: string;
+  onModelComplete?: () => void;
 }
 
 export async function processStreamingRerollValues(
@@ -317,6 +318,11 @@ export async function consumeStreamingDisplay(options: StreamDisplayOptions) {
       deferPostProcessing,
       controller.schedule,
     );
+    if (!state.streamAborted && !options.abortSignal.aborted) {
+      // Final display scripts and output triggers may call auxiliary models.
+      // They belong to post-processing, after the main response has ended.
+      options.onModelComplete?.();
+    }
   } finally {
     options.abortSignal.removeEventListener("abort", abortReader);
     try {
