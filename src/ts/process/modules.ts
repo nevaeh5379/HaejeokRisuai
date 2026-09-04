@@ -52,6 +52,8 @@ export interface MCPModule {
   url: string;
 }
 
+import type { ModuleRequestRule } from "./moduleRequestRules";
+
 export interface RisuModule {
   name: string;
   description: string;
@@ -70,6 +72,7 @@ export interface RisuModule {
   icon?: string;
   folderId?: string;
   subModel?: string;
+  subModelRequestRules?: ModuleRequestRule[];
 }
 
 export interface ModuleFolder {
@@ -543,6 +546,7 @@ export function getModuleTriggers(
       triggers = triggers.concat(
         module.trigger.map((t) => {
           const trigger = { ...t };
+          trigger.sourceModuleId = module.id;
           trigger.lowLevelAccess = module.lowLevelAccess;
           if (settingsStore.state.enableModuleSubModel && module.subModel) {
             trigger.subModel = module.subModel;

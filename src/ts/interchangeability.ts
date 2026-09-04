@@ -26,6 +26,12 @@ export function convertModuleToCharacter(m: RisuModule): character {
     char.extentions ??= {};
     char.extentions["moduleSubModel"] = m.subModel;
   }
+  if (m.subModelRequestRules?.length) {
+    char.extentions ??= {};
+    char.extentions["moduleSubModelRequestRules"] = safeStructuredClone(
+      m.subModelRequestRules,
+    );
+  }
 
   for (let i = 0; i < char.globalLore.length; i++) {
     const lore = safeStructuredClone(char.globalLore[i]);
@@ -81,6 +87,13 @@ export function convertCharacterToModule(c: character): RisuModule {
     id: v4(),
     icon: c.image,
     subModel: (c.extentions?.["moduleSubModel"] as string) || undefined,
+    subModelRequestRules: Array.isArray(
+      c.extentions?.["moduleSubModelRequestRules"],
+    )
+      ? (safeStructuredClone(
+          c.extentions["moduleSubModelRequestRules"],
+        ) as RisuModule["subModelRequestRules"])
+      : undefined,
   };
   mod.lorebook = safeStructuredClone(mod.lorebook || []);
 
