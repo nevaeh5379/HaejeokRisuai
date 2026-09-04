@@ -120,9 +120,17 @@ async function captureNativeBackup(page: Page) {
     )) as {
       SaveLocalBackup: (mode?: "native" | "compatible") => Promise<void>;
     };
-    const savePromise = SaveLocalBackup("native");
-    while (!downloadUrl)
+    let saveDone = false;
+    const savePromise = SaveLocalBackup("native").finally(() => {
+      saveDone = true;
+    });
+    while (!downloadUrl && !saveDone)
       await new Promise((resolve) => setTimeout(resolve, 20));
+    if (!downloadUrl) {
+      throw new Error(
+        `Native backup finished before registering a download: ${document.body.innerText.slice(-1200)}`,
+      );
+    }
     const response = await fetch(downloadUrl);
     if (!response.ok)
       throw new Error(`Backup stream failed: ${response.status}`);
