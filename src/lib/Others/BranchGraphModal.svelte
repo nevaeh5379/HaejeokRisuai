@@ -37,7 +37,7 @@
     const gitLanes = $derived(buildChatGraphGitLanes(graph))
     const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)
     const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? gitLanes.columns : graph.columns)
-    const standardRows = $derived(layout === 'timeline' ? graph.columns : graph.rows)
+    const standardRows = $derived(layout === 'timeline' ? gitLanes.columns : graph.rows)
     const graphWidth = $derived(layout === 'radial'
         ? padding * 2 + radialRadius * 2 + cardWidth
         : padding * 2 + standardColumns * cardWidth + Math.max(0, standardColumns - 1) * gapX)
@@ -64,9 +64,10 @@
 
     function nodePosition(node: typeof graph.nodes[number]) {
         if(layout === 'timeline') {
+            const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
             return {
                 left: padding + node.y * (cardWidth + gapX),
-                top: padding + node.x * (cardHeight + gapY),
+                top: padding + lane * (cardHeight + gapY),
             }
         }
         if(layout === 'git') {
