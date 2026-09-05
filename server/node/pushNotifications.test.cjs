@@ -55,6 +55,31 @@ test("generates and persists VAPID keys once", async (t) => {
   assert.equal(reopened.vapidPublicKey, first.publicKey);
 });
 
+test("reloads persisted subscriptions after restart", async (t) => {
+  const saveDir = await makeTempDir();
+  t.after(() => fs.rm(saveDir, { recursive: true, force: true }));
+
+  sendImpl = okSend();
+  sendCalls = [];
+  const first = createPushNotificationManager({ saveDir });
+  await first.ensureVapidKeys();
+  first.updateSubscription({
+    endpoint: "https://push.example/persisted",
+    keys: { p256dh: "persisted-key", auth: "persisted-auth" },
+  });
+  await first.close();
+
+  const reopened = createPushNotificationManager({ saveDir });
+  t.after(() => reopened.close());
+  assert.equal(reopened.size, 1);
+  const result = await reopened.notifyChatResponse({ body: "after restart" });
+  assert.equal(result.sent, 1);
+  assert.equal(
+    sendCalls[0]?.subscription.endpoint,
+    "https://push.example/persisted",
+  );
+});
+
 test("registers subscriptions and delivers completion pushes", async (t) => {
   const saveDir = await makeTempDir();
   t.after(() => fs.rm(saveDir, { recursive: true, force: true }));

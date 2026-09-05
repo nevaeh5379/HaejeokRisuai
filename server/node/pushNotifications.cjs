@@ -93,6 +93,32 @@ function createPushNotificationManager({ saveDir, logger = console } = {}) {
     await fsp.rename(tmp, filePath);
   }
 
+  function loadPersistedSubscriptions() {
+    let snapshot;
+    try {
+      snapshot = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        logger.warn?.("[push] failed to load subscriptions", error);
+      }
+      return;
+    }
+    if (!Array.isArray(snapshot)) {
+      logger.warn?.("[push] ignored invalid subscription snapshot");
+      return;
+    }
+    for (const persisted of snapshot) {
+      const result = updateSubscription(persisted);
+      if (result.error) continue;
+      const subscription = subscriptions.get(persisted.endpoint);
+      if (subscription && Array.isArray(persisted.chatIds)) {
+        subscription.chatIds = new Set(
+          persisted.chatIds.filter((chatId) => typeof chatId === "string"),
+        );
+      }
+    }
+  }
+
   function updateSubscription(subscription) {
     const endpoint = subscription?.endpoint;
     const keys = subscription?.keys;
@@ -128,6 +154,8 @@ function createPushNotificationManager({ saveDir, logger = console } = {}) {
     subscriptions.delete(endpoint);
     return { success: true };
   }
+
+  loadPersistedSubscriptions();
 
   async function sendNotification(subscription, payload) {
     const keys = loadVapidKeys();

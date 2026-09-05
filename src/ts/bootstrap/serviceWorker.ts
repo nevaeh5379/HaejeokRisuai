@@ -3,6 +3,28 @@ import { isCapacitor } from "../platform";
 import { LoadingStatusState } from "../stores.svelte";
 import { sleep } from "../util";
 
+let swMessageHandlerInstalled = false;
+
+function installServiceWorkerMessageHandler(): void {
+  if (swMessageHandlerInstalled || !navigator.serviceWorker) return;
+  navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
+    const data = event.data;
+    if (data?.type !== "OPEN_CHAT" || typeof data.chatId !== "string") return;
+    void import("../chatTabs.svelte")
+      .then(({ findChatTarget, openChatTargetInTab }) => {
+        const target =
+          typeof data.characterId === "string"
+            ? { characterId: data.characterId, chatId: data.chatId }
+            : findChatTarget(data.chatId);
+        if (target) {
+          return openChatTargetInTab(target.characterId, target.chatId);
+        }
+      })
+      .catch(() => {});
+  });
+  swMessageHandlerInstalled = true;
+}
+
 /**
  * Registers the service worker and initializes it.
  */
@@ -27,9 +49,11 @@ async function registerSw() {
  */
 export function startServiceWorker(): Promise<void> {
   LoadingStatusState.text = "Checking Service Worker...";
-  return !isCapacitor && navigator.serviceWorker
-    ? registerSw()
-        .then(() => setUsingSw(true))
-        .catch(() => setUsingSw(false))
-    : Promise.resolve(setUsingSw(false));
+  if (!isCapacitor && navigator.serviceWorker) {
+    installServiceWorkerMessageHandler();
+    return registerSw()
+      .then(() => setUsingSw(true))
+      .catch(() => setUsingSw(false));
+  }
+  return Promise.resolve(setUsingSw(false));
 }

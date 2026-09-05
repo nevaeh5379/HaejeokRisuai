@@ -35,25 +35,107 @@ function waitForStreamRegistration(id) {
 // as a background push and again when the user returns to the tab).
 const handledChatResponseIds = new Map();
 const HANDLED_CHAT_RESPONSE_TTL_MS = 10 * 60 * 1000;
+const HANDLED_CHAT_RESPONSE_CACHE = "risu-chat-response-handled-v1";
+const MAX_HANDLED_CHAT_RESPONSES = 128;
 
-function rememberHandledChatResponse(generationId) {
+function handledChatResponseRequest(generationId) {
+  const url = new URL(
+    `/sw/chat-response-handled/${encodeURIComponent(generationId)}`,
+    self.location.origin,
+  );
+  return new Request(url.href);
+}
+
+function rememberHandledChatResponseInMemory(
+  generationId,
+  shownAt = Date.now(),
+) {
   if (!generationId) return;
-  handledChatResponseIds.set(generationId, Date.now());
-  if (handledChatResponseIds.size > 128) {
+  handledChatResponseIds.set(generationId, shownAt);
+  if (handledChatResponseIds.size > MAX_HANDLED_CHAT_RESPONSES) {
     const oldest = handledChatResponseIds.keys().next().value;
     if (oldest !== undefined) handledChatResponseIds.delete(oldest);
   }
 }
 
-function pruneHandledChatResponses() {
+function pruneHandledChatResponsesInMemory() {
   const cutoff = Date.now() - HANDLED_CHAT_RESPONSE_TTL_MS;
   for (const [id, shownAt] of handledChatResponseIds) {
     if (shownAt < cutoff) handledChatResponseIds.delete(id);
   }
 }
 
-// Keep the map from growing unbounded across long-lived workers.
-setInterval(pruneHandledChatResponses, HANDLED_CHAT_RESPONSE_TTL_MS);
+// Keep the in-memory fast path bounded across long-lived workers. Persistent
+// entries are pruned whenever a new completion is recorded.
+setInterval(pruneHandledChatResponsesInMemory, HANDLED_CHAT_RESPONSE_TTL_MS);
+
+async function prunePersistedHandledChatResponses(cache) {
+  const cutoff = Date.now() - HANDLED_CHAT_RESPONSE_TTL_MS;
+  const retained = [];
+  for (const request of await cache.keys()) {
+    const response = await cache.match(request);
+    const shownAt = Number(await response?.text());
+    if (!Number.isFinite(shownAt) || shownAt < cutoff) {
+      await cache.delete(request);
+      continue;
+    }
+    retained.push({ request, shownAt });
+  }
+  retained.sort((a, b) => a.shownAt - b.shownAt);
+  for (const entry of retained.slice(0, -MAX_HANDLED_CHAT_RESPONSES)) {
+    await cache.delete(entry.request);
+  }
+}
+
+async function rememberHandledChatResponse(generationId) {
+  if (!generationId) return;
+  const shownAt = Date.now();
+  rememberHandledChatResponseInMemory(generationId, shownAt);
+  try {
+    const cache = await caches.open(HANDLED_CHAT_RESPONSE_CACHE);
+    await cache.put(
+      handledChatResponseRequest(generationId),
+      new Response(String(shownAt), {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      }),
+    );
+    await prunePersistedHandledChatResponses(cache);
+  } catch {}
+}
+
+async function hasHandledChatResponse(generationId) {
+  if (!generationId) return false;
+  pruneHandledChatResponsesInMemory();
+  if (handledChatResponseIds.has(generationId)) return true;
+
+  try {
+    const cache = await caches.open(HANDLED_CHAT_RESPONSE_CACHE);
+    const request = handledChatResponseRequest(generationId);
+    const response = await cache.match(request);
+    if (response) {
+      const shownAt = Number(await response.text());
+      if (
+        Number.isFinite(shownAt) &&
+        shownAt >= Date.now() - HANDLED_CHAT_RESPONSE_TTL_MS
+      ) {
+        rememberHandledChatResponseInMemory(generationId, shownAt);
+        return true;
+      }
+      await cache.delete(request);
+    }
+  } catch {}
+
+  try {
+    const notifications = await self.registration.getNotifications({
+      tag: `chat-response:${generationId}`,
+    });
+    if (notifications.length > 0) {
+      await rememberHandledChatResponse(generationId);
+      return true;
+    }
+  } catch {}
+  return false;
+}
 
 self.addEventListener("push", (event) => {
   let payload = null;
@@ -72,7 +154,7 @@ self.addEventListener("push", (event) => {
       // the push handler checks its own record before showing.
       if (
         payload.generationId &&
-        handledChatResponseIds.has(payload.generationId)
+        (await hasHandledChatResponse(payload.generationId))
       ) {
         return;
       }
@@ -84,7 +166,7 @@ self.addEventListener("push", (event) => {
         renotify: true,
         data: { chatId: payload.chatId, characterId: payload.characterId },
       });
-      rememberHandledChatResponse(payload.generationId);
+      await rememberHandledChatResponse(payload.generationId);
     })(),
   );
 });
@@ -117,31 +199,29 @@ self.addEventListener("notificationclick", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "CHAT_RESPONSE_HANDLED") {
-    rememberHandledChatResponse(event.data.generationId);
+    event.waitUntil(rememberHandledChatResponse(event.data.generationId));
     return;
   }
   if (event.data?.type === "QUERY_CHAT_RESPONSE_SHOWN") {
     // A pending push notification for this generation means the user has
     // already been told outside the page; the page must stay silent.
     event.waitUntil(
-      Promise.resolve(handledChatResponseIds.has(event.data.generationId)).then(
-        (shown) => {
-          try {
-            const port = event.ports?.[0];
-            if (port) {
-              port.postMessage({
-                type: "CHAT_RESPONSE_SHOWN",
-                shown,
-              });
-              port.close?.();
-            }
-            event.source?.postMessage({
+      hasHandledChatResponse(event.data.generationId).then((shown) => {
+        try {
+          const port = event.ports?.[0];
+          if (port) {
+            port.postMessage({
               type: "CHAT_RESPONSE_SHOWN",
               shown,
             });
-          } catch {}
-        },
-      ),
+            port.close?.();
+          }
+          event.source?.postMessage({
+            type: "CHAT_RESPONSE_SHOWN",
+            shown,
+          });
+        } catch {}
+      }),
     );
     return;
   }
