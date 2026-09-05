@@ -29,6 +29,7 @@ export interface RenderedChatNode {
   messageIndex: number;
   endMessageIndex: number;
   collapsedCount: number;
+  time?: number;
   terminals: ChatGraphTerminal[];
 }
 
@@ -103,6 +104,134 @@ export function buildChatGraphGitLanes(
   }
 
   return { laneByNodeId, columns: Math.max(1, nextLane) };
+}
+
+export interface ChatGraphRowLayout {
+  rowByNodeId: Map<string, number>;
+  rows: number;
+}
+
+interface GitRowCandidate {
+  id: string;
+  time: number;
+  active: number;
+  order: number;
+}
+
+/**
+ * Git log --graph row assignment: every node occupies its own row, ordered by
+ * message time when available (falling back to topological depth + insertion
+ * order), while parents always precede their children.
+ */
+export function buildChatGraphGitRows(
+  graph: ChatBranchGraph,
+): ChatGraphRowLayout {
+  const nodes = graph.nodes;
+  const rowByNodeId = new Map<string, number>();
+  if (nodes.length === 0) return { rowByNodeId, rows: 0 };
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const orderById = new Map(nodes.map((node, index) => [node.id, index]));
+  const children = new Map<string, string[]>();
+  const indegree = new Map<string, number>(
+    nodes.map((node) => [node.id, 0]),
+  );
+  const parentOf = new Map<string, string>();
+  for (const edge of graph.edges) {
+    if (!indegree.has(edge.from) || !indegree.has(edge.to)) continue;
+    const siblings = children.get(edge.from) ?? [];
+    siblings.push(edge.to);
+    children.set(edge.from, siblings);
+    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+    if (!parentOf.has(edge.to)) parentOf.set(edge.to, edge.from);
+  }
+
+  const effectiveTime = new Map<string, number>();
+  for (const node of nodes) {
+    if (node.time !== undefined) {
+      effectiveTime.set(node.id, node.time);
+      continue;
+    }
+    const parentId = parentOf.get(node.id);
+    const parentTime =
+      parentId === undefined ? undefined : effectiveTime.get(parentId);
+    effectiveTime.set(node.id, parentTime === undefined ? 0 : parentTime + 1);
+  }
+
+  const candidateLess = (a: GitRowCandidate, b: GitRowCandidate) =>
+    a.time !== b.time
+      ? a.time < b.time
+      : a.active !== b.active
+        ? a.active < b.active
+        : a.order < b.order;
+  const candidates: GitRowCandidate[] = [];
+  const pushCandidate = (id: string) => {
+    candidates.push({
+      id,
+      time: effectiveTime.get(id) ?? 0,
+      active: nodeById.get(id)?.activePath ? 0 : 1,
+      order: orderById.get(id) ?? 0,
+    });
+    let index = candidates.length - 1;
+    while (index > 0) {
+      const parentIndex = (index - 1) >> 1;
+      if (candidateLess(candidates[parentIndex], candidates[index])) break;
+      [candidates[parentIndex], candidates[index]] = [
+        candidates[index],
+        candidates[parentIndex],
+      ];
+      index = parentIndex;
+    }
+  };
+  const popCandidate = () => {
+    const top = candidates[0];
+    const last = candidates.pop()!;
+    if (candidates.length > 0) {
+      candidates[0] = last;
+      let index = 0;
+      for (;;) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        let smallest = index;
+        if (
+          left < candidates.length &&
+          candidateLess(candidates[left], candidates[smallest])
+        )
+          smallest = left;
+        if (
+          right < candidates.length &&
+          candidateLess(candidates[right], candidates[smallest])
+        )
+          smallest = right;
+        if (smallest === index) break;
+        [candidates[smallest], candidates[index]] = [
+          candidates[index],
+          candidates[smallest],
+        ];
+        index = smallest;
+      }
+    }
+    return top;
+  };
+
+  for (const node of nodes) {
+    if ((indegree.get(node.id) ?? 0) === 0) pushCandidate(node.id);
+  }
+  let rows = 0;
+  while (candidates.length > 0) {
+    const { id } = popCandidate();
+    rowByNodeId.set(id, rows++);
+    for (const childId of children.get(id) ?? []) {
+      const remaining = (indegree.get(childId) ?? 0) - 1;
+      indegree.set(childId, remaining);
+      if (remaining === 0) pushCandidate(childId);
+    }
+  }
+  for (const node of nodes) {
+    if (!rowByNodeId.has(node.id)) rowByNodeId.set(node.id, rows++);
+  }
+
+  return { rowByNodeId, rows };
 }
 
 interface MutableMessageNode {
@@ -319,6 +448,7 @@ export function buildChatMessageGraph(
       messageIndex: node.messageIndex,
       endMessageIndex: node.messageIndex,
       collapsedCount: 0,
+      time: node.message.time,
       terminals: node.terminals,
     };
   };

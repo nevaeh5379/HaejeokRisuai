@@ -3,7 +3,7 @@
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
-    import { buildChatGraphGitLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
+    import { buildChatGraphGitLanes, buildChatGraphGitRows, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
     import type { Chat } from '../../ts/storage/database/schema'
     import type { SqlChatBranchGraphData } from '../../ts/storage/sql/ISqlStorage'
 
@@ -35,9 +35,10 @@
         : getChatBranches(chat, { density }))
     const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
     const gitLanes = $derived(buildChatGraphGitLanes(graph))
+    const gitRows = $derived(buildChatGraphGitRows(graph))
     const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)
     const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? gitLanes.columns : graph.columns)
-    const standardRows = $derived(layout === 'timeline' ? gitLanes.columns : graph.rows)
+    const standardRows = $derived(layout === 'timeline' ? gitLanes.columns : layout === 'git' ? gitRows.rows : graph.rows)
     const graphWidth = $derived(layout === 'radial'
         ? padding * 2 + radialRadius * 2 + cardWidth
         : padding * 2 + standardColumns * cardWidth + Math.max(0, standardColumns - 1) * gapX)
@@ -72,9 +73,10 @@
         }
         if(layout === 'git') {
             const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
+            const row = gitRows.rowByNodeId.get(node.id) ?? 0
             return {
                 left: padding + lane * (cardWidth + gapX),
-                top: padding + node.y * (cardHeight + gapY),
+                top: padding + row * (cardHeight + gapY),
             }
         }
         if(layout === 'radial') {
@@ -99,6 +101,24 @@
     function edgeGeometry(from: typeof graph.nodes[number], to: typeof graph.nodes[number]) {
         const fromPos = nodePosition(from)
         const toPos = nodePosition(to)
+        if(layout === 'git') {
+            const x1 = fromPos.left + cardWidth / 2
+            const y1 = fromPos.top + cardHeight
+            const x2 = toPos.left + cardWidth / 2
+            const y2 = toPos.top
+            if(Math.abs(x2 - x1) < 0.5) {
+                return { path: `M ${x1} ${y1} L ${x1} ${y2}`, x2, y2 }
+            }
+            const yTurn = y2 - gapY / 2
+            const radius = Math.max(2, Math.min(12, Math.abs(x2 - x1) / 2, (yTurn - y1) / 2, (y2 - yTurn) / 2))
+            const sweep = x2 > x1 ? 1 : 0
+            const turnX1 = x1 + (x2 > x1 ? radius : -radius)
+            const turnX2 = x2 + (x2 > x1 ? -radius : radius)
+            return {
+                path: `M ${x1} ${y1} L ${x1} ${yTurn - radius} A ${radius} ${radius} 0 0 ${sweep} ${turnX1} ${yTurn} L ${turnX2} ${yTurn} A ${radius} ${radius} 0 0 ${sweep} ${x2} ${yTurn + radius} L ${x2} ${y2}`,
+                x2, y2
+            }
+        }
         if(layout === 'timeline') {
             const x1 = fromPos.left + cardWidth
             const y1 = fromPos.top + cardHeight / 2

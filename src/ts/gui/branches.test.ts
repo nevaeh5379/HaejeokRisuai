@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildChatGraphGitLanes,
+  buildChatGraphGitRows,
   buildChatMessageGraph,
   getChatBranches,
   getChatBranchesFromPersistentGraph,
@@ -273,6 +274,70 @@ describe("buildChatGraphGitLanes", () => {
     expect(lanes.laneByNodeId.get("message:lane-active")).toBe(0);
     expect(lanes.laneByNodeId.get("message:lane-original")).not.toBe(0);
     expect(lanes.columns).toBe(2);
+  });
+});
+
+describe("buildChatGraphGitRows", () => {
+  it("assigns every node its own row ordered by message time", () => {
+    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+      ...message(id, role, data),
+      time,
+    });
+    const u1 = withTime("row-u1", "user", "hello", 1);
+    const a1 = withTime("row-a1", "char", "first answer", 2);
+    const original = withTime("row-a2", "char", "original answer", 4);
+    const reroll = withTime("row-a2-alt", "char", "alternative answer", 3);
+    const graph = buildChatMessageGraph([
+      timeline("root", [u1, a1, original]),
+      timeline("reroll", [u1, a1, reroll], true),
+    ]);
+
+    const rows = buildChatGraphGitRows(graph);
+
+    expect(rows.rowByNodeId.get("message:row-u1")).toBe(0);
+    expect(rows.rowByNodeId.get("message:row-a1")).toBe(1);
+    expect(rows.rowByNodeId.get("message:row-a2-alt")).toBe(2);
+    expect(rows.rowByNodeId.get("message:row-a2")).toBe(3);
+    expect(rows.rows).toBe(4);
+  });
+
+  it("falls back to topological order when messages have no timestamps", () => {
+    const u1 = message("fb-u1", "user", "hello");
+    const a1 = message("fb-a1", "char", "first answer");
+    const original = message("fb-a2", "char", "original answer");
+    const reroll = message("fb-a2-alt", "char", "alternative answer");
+    const graph = buildChatMessageGraph([
+      timeline("root", [u1, a1, original]),
+      timeline("reroll", [u1, a1, reroll], true),
+    ]);
+
+    const rows = buildChatGraphGitRows(graph);
+
+    expect(rows.rowByNodeId.get("message:fb-u1")).toBe(0);
+    expect(rows.rowByNodeId.get("message:fb-a1")).toBe(1);
+    expect(rows.rowByNodeId.get("message:fb-a1")!).toBeLessThan(
+      rows.rowByNodeId.get("message:fb-a2")!,
+    );
+    expect(rows.rowByNodeId.get("message:fb-a1")!).toBeLessThan(
+      rows.rowByNodeId.get("message:fb-a2-alt")!,
+    );
+    expect(rows.rows).toBe(4);
+  });
+
+  it("keeps parents above children even with out-of-order timestamps", () => {
+    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+      ...message(id, role, data),
+      time,
+    });
+    const u1 = withTime("oo-u1", "user", "hello", 5);
+    const a1 = withTime("oo-a1", "char", "first answer", 2);
+    const graph = buildChatMessageGraph([timeline("root", [u1, a1], true)]);
+
+    const rows = buildChatGraphGitRows(graph);
+
+    expect(rows.rowByNodeId.get("message:oo-u1")!).toBeLessThan(
+      rows.rowByNodeId.get("message:oo-a1")!,
+    );
   });
 });
 
