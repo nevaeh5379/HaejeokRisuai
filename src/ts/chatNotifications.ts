@@ -178,6 +178,7 @@ function swAlreadyNotifiedChatResponse(
     const cleanup = () => {
       clearTimeout(timer);
       channel.port1.onmessage = null;
+      channel.port1.close?.();
     };
     channel.port1.onmessage = (event) => {
       cleanup();

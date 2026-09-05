@@ -127,6 +127,14 @@ self.addEventListener("message", (event) => {
       Promise.resolve(handledChatResponseIds.has(event.data.generationId)).then(
         (shown) => {
           try {
+            const port = event.ports?.[0];
+            if (port) {
+              port.postMessage({
+                type: "CHAT_RESPONSE_SHOWN",
+                shown,
+              });
+              port.close?.();
+            }
             event.source?.postMessage({
               type: "CHAT_RESPONSE_SHOWN",
               shown,
