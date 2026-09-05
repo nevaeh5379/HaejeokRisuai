@@ -1,4 +1,5 @@
 import { alertToast } from "./alert";
+import sendSound from "../etc/send.mp3";
 import {
   completeNativeChatRequest,
   requestNativeChatNotificationPermission,
@@ -101,7 +102,7 @@ export async function notifyChatResponse(
 
   if (chatId) chatTabsStore.markUnread(chatId);
   if (
-    !settingsStore.state.notification ||
+    (!settingsStore.state.notification && !settingsStore.state.playMessage) ||
     !rememberNotification(options.dedupeKey)
   )
     return;
@@ -116,6 +117,15 @@ export async function notifyChatResponse(
   // completion while the page was backgrounded; staying silent here prevents
   // a duplicate alarm when the user returns to the tab.
   if (await swAlreadyNotifiedChatResponse(generationId)) return;
+
+  if (settingsStore.state.playMessage && typeof Audio !== "undefined") {
+    try {
+      const audio = new Audio(sendSound);
+      audio.play().catch(() => {});
+    } catch {}
+  }
+
+  if (!settingsStore.state.notification) return;
 
   const characterName =
     options.characterName || target?.characterName || "RisuAI";

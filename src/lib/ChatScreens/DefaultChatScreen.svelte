@@ -13,7 +13,6 @@
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
-    import sendSound from '../../etc/send.mp3'
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
     import MainMenu from '../UI/MainMenu.svelte';
@@ -576,10 +575,6 @@
             targetChat.preventMessageCompaction = false
         }
         compactChatMessages(targetChat.id)
-        if(settingsStore.state.playMessage){
-            const audio = new Audio(sendSound);
-            audio.play().catch(() => {});
-        }
     }
 
     async function abortChat(){

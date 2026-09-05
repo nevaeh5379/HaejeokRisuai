@@ -188,3 +188,82 @@ test("shows the in-page alarm when the service worker has not notified", async (
   });
   expect(alertToastMock).toHaveBeenCalledTimes(1);
 });
+
+test("plays audio when playMessage is true and notification is disabled", async () => {
+  const { alertToast } = await import("./alert");
+  const alertToastMock = alertToast as ReturnType<typeof vi.fn>;
+  alertToastMock.mockClear();
+
+  const playMock = vi.fn().mockResolvedValue(undefined);
+  class FakeAudio {
+    play = playMock;
+  }
+  const originalAudio = globalThis.Audio;
+  (globalThis as any).Audio = FakeAudio;
+
+  const { settingsStore } = await import("./stores/domain/settingsStore.svelte");
+  (settingsStore.state as any).playMessage = true;
+  (settingsStore.state as any).notification = false;
+
+  try {
+    const { notifyChatResponse } = await importModule();
+    await notifyChatResponse({
+      chatId: "chat-1",
+      dedupeKey: "local:sound-test-only",
+    });
+    expect(playMock).toHaveBeenCalledTimes(1);
+    expect(alertToastMock).not.toHaveBeenCalled();
+  } finally {
+    (globalThis as any).Audio = originalAudio;
+    (settingsStore.state as any).playMessage = false;
+    (settingsStore.state as any).notification = true;
+  }
+});
+
+test("suppresses audio when service worker already notified", async () => {
+  const playMock = vi.fn().mockResolvedValue(undefined);
+  class FakeAudio {
+    play = playMock;
+  }
+  const originalAudio = globalThis.Audio;
+  (globalThis as any).Audio = FakeAudio;
+
+  const { settingsStore } = await import("./stores/domain/settingsStore.svelte");
+  (settingsStore.state as any).playMessage = true;
+
+  class FakePort {
+    onmessage: ((ev: { data: unknown }) => void) | null = null;
+    postMessage(): void {}
+    close(): void {}
+  }
+  const originalMessageChannel = globalThis.MessageChannel;
+  (globalThis as any).MessageChannel = class {
+    port1 = new FakePort();
+    port2 = new FakePort();
+    constructor() {
+      (globalThis as any).__lastFakeChannel = this;
+    }
+  };
+
+  swController.post = (msg: { type?: string }) => {
+    if (msg?.type === "QUERY_CHAT_RESPONSE_SHOWN") {
+      const channel = (globalThis as any).__lastFakeChannel;
+      channel?.port1.onmessage?.({ data: { shown: true } });
+    }
+  };
+
+  try {
+    const { notifyChatResponse } = await importModule();
+    await notifyChatResponse({
+      chatId: "chat-1",
+      dedupeKey: "model-job:gen-sound-suppressed",
+    });
+    expect(playMock).not.toHaveBeenCalled();
+  } finally {
+    (globalThis as any).Audio = originalAudio;
+    (globalThis as any).MessageChannel = originalMessageChannel;
+    swController.post = null;
+    (globalThis as any).__lastFakeChannel = null;
+    (settingsStore.state as any).playMessage = false;
+  }
+});
