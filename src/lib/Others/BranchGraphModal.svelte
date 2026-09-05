@@ -3,7 +3,7 @@
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
-    import { buildChatGraphGitLanes, buildChatGraphGitRows, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
+    import { buildChatGraphGitRows, buildChatGraphPackedLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
     import type { Chat } from '../../ts/storage/database/schema'
     import type { SqlChatBranchGraphData } from '../../ts/storage/sql/ISqlStorage'
 
@@ -20,25 +20,28 @@
     type GraphLayout = 'tree' | 'timeline' | 'git' | 'radial'
 
     const padding = 64
-    const minScale = 0.25
-    const maxScale = 1.6
+    // Safety guard only — no practical zoom limit; keeps scale positive and finite.
+    const minScale = 0.05
+    const maxScale = 8
     let layout = $state<GraphLayout>('tree')
     let density = $state<ChatGraphDensity>('smart')
     let focusCurrentPath = $state(false)
 
     const cardWidth = $derived(layout === 'git' ? 260 : layout === 'radial' ? 264 : 292)
     const cardHeight = $derived(layout === 'git' ? 104 : layout === 'radial' ? 108 : 116)
-    const gapX = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 72 : 56)
-    const gapY = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 42 : 64)
+    const gapX = $derived(layout === 'git' ? 18 : layout === 'timeline' ? 36 : 28)
+    const gapY = $derived(layout === 'git' ? 18 : layout === 'timeline' ? 22 : 32)
     const graph = $derived(branchGraph
         ? getChatBranchesFromPersistentGraph(branchGraph, { density })
         : getChatBranches(chat, { density }))
     const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
-    const gitLanes = $derived(buildChatGraphGitLanes(graph))
     const gitRows = $derived(buildChatGraphGitRows(graph))
+    // Lanes are packed against the layout's flow axis so branches that do not
+    // overlap reuse the same lane instead of stretching the canvas.
+    const packedLanes = $derived(buildChatGraphPackedLanes(graph, (node) => layout === 'timeline' ? node.y : (gitRows.rowByNodeId.get(node.id) ?? 0)))
     const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)
-    const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? gitLanes.columns : graph.columns)
-    const standardRows = $derived(layout === 'timeline' ? gitLanes.columns : layout === 'git' ? gitRows.rows : graph.rows)
+    const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? packedLanes.columns : graph.columns)
+    const standardRows = $derived(layout === 'timeline' ? packedLanes.columns : layout === 'git' ? gitRows.rows : graph.rows)
     const graphWidth = $derived(layout === 'radial'
         ? padding * 2 + radialRadius * 2 + cardWidth
         : padding * 2 + standardColumns * cardWidth + Math.max(0, standardColumns - 1) * gapX)
@@ -65,14 +68,14 @@
 
     function nodePosition(node: typeof graph.nodes[number]) {
         if(layout === 'timeline') {
-            const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
+            const lane = packedLanes.laneByNodeId.get(node.id) ?? 0
             return {
                 left: padding + node.y * (cardWidth + gapX),
                 top: padding + lane * (cardHeight + gapY),
             }
         }
         if(layout === 'git') {
-            const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
+            const lane = packedLanes.laneByNodeId.get(node.id) ?? 0
             const row = gitRows.rowByNodeId.get(node.id) ?? 0
             return {
                 left: padding + lane * (cardWidth + gapX),

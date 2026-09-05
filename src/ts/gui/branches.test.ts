@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildChatGraphGitLanes,
   buildChatGraphGitRows,
+  buildChatGraphPackedLanes,
   buildChatMessageGraph,
   getChatBranches,
   getChatBranchesFromPersistentGraph,
@@ -254,8 +254,8 @@ describe("buildChatMessageGraph", () => {
   });
 });
 
-describe("buildChatGraphGitLanes", () => {
-  it("keeps the active continuation in its current lane and moves alternatives aside", () => {
+describe("buildChatGraphPackedLanes", () => {
+  it("keeps the active continuation in its current lane and packs alternatives", () => {
     const shared = message("lane-shared", "user", "shared");
     const original = message("lane-original", "char", "original");
     const activeAlternative = message(
@@ -268,12 +268,41 @@ describe("buildChatGraphGitLanes", () => {
       timeline("reroll", [shared, activeAlternative], true),
     ]);
 
-    const lanes = buildChatGraphGitLanes(graph);
+    const lanes = buildChatGraphPackedLanes(graph, (node) => node.y);
 
     expect(lanes.laneByNodeId.get("message:lane-shared")).toBe(0);
     expect(lanes.laneByNodeId.get("message:lane-active")).toBe(0);
     expect(lanes.laneByNodeId.get("message:lane-original")).not.toBe(0);
     expect(lanes.columns).toBe(2);
+  });
+
+  it("reuses lanes for branches that never overlap in flow order", () => {
+    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+      ...message(id, role, data),
+      time,
+    });
+    const u1 = withTime("ru1", "user", "hello", 1);
+    const a1 = withTime("ra1", "char", "first answer", 2);
+    const u2 = withTime("ru2", "user", "continue", 3);
+    const earlyReroll = withTime("alt-early", "char", "early reroll", 4);
+    const lateReroll = withTime("alt-late", "char", "late reroll", 5);
+    const original = withTime("orig", "char", "original answer", 6);
+    const graph = buildChatMessageGraph([
+      timeline("root", [u1, a1, u2, original], true),
+      timeline("early", [u1, a1, u2, earlyReroll]),
+      timeline("late", [u1, a1, u2, lateReroll]),
+    ]);
+
+    const rows = buildChatGraphGitRows(graph);
+    const lanes = buildChatGraphPackedLanes(
+      graph,
+      (node) => rows.rowByNodeId.get(node.id) ?? 0,
+    );
+
+    expect(lanes.columns).toBe(2);
+    expect(lanes.laneByNodeId.get("message:orig")).toBe(0);
+    expect(lanes.laneByNodeId.get("message:alt-early")).toBe(1);
+    expect(lanes.laneByNodeId.get("message:alt-late")).toBe(1);
   });
 });
 

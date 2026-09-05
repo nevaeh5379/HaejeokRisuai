@@ -67,9 +67,27 @@ export interface ChatGraphLaneLayout {
   columns: number;
 }
 
-export function buildChatGraphGitLanes(
+interface PackedChain {
+  nodeIds: string[];
+  start: number;
+  end: number;
+  forkChildren: string[];
+}
+
+/**
+ * Lane assignment with reuse: the active path keeps lane 0 while every other
+ * branch chain claims the first lane whose occupied flow interval does not
+ * overlap it, so branches scattered across the chat share lanes instead of
+ * each stretching the canvas with a mostly-empty lane.
+ */
+export function buildChatGraphPackedLanes(
   graph: ChatBranchGraph,
+  flowOf: (node: RenderedChatNode) => number,
 ): ChatGraphLaneLayout {
+  const laneByNodeId = new Map<string, number>();
+  if (graph.nodes.length === 0) return { laneByNodeId, columns: 1 };
+
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   const children = new Map<string, Array<{ id: string; active: boolean }>>();
   const incoming = new Set<string>();
   for (const edge of graph.edges) {
@@ -79,31 +97,103 @@ export function buildChatGraphGitLanes(
     incoming.add(edge.to);
   }
 
-  const laneByNodeId = new Map<string, number>();
-  let nextLane = 0;
-  const visit = (nodeId: string, lane: number) => {
-    if (laneByNodeId.has(nodeId)) return;
-    laneByNodeId.set(nodeId, lane);
-    const childEdges = children.get(nodeId) ?? [];
-    if (childEdges.length === 0) return;
-
-    const primary = childEdges.find((child) => child.active) ?? childEdges[0];
-    visit(primary.id, lane);
-    for (const child of childEdges) {
-      if (child.id === primary.id) continue;
-      visit(child.id, nextLane++);
+  const chains: PackedChain[] = [];
+  const chainIdByNodeId = new Map<string, number>();
+  const pending: string[] = [];
+  const buildChain = (startId: string) => {
+    if (chainIdByNodeId.has(startId)) return;
+    const chain: PackedChain = {
+      nodeIds: [],
+      start: Number.POSITIVE_INFINITY,
+      end: Number.NEGATIVE_INFINITY,
+      forkChildren: [],
+    };
+    let currentId: string | undefined = startId;
+    while (currentId !== undefined && !chainIdByNodeId.has(currentId)) {
+      chainIdByNodeId.set(currentId, chains.length);
+      chain.nodeIds.push(currentId);
+      const flow = flowOf(nodeById.get(currentId)!);
+      chain.start = Math.min(chain.start, flow);
+      chain.end = Math.max(chain.end, flow);
+      const childEdges = children.get(currentId) ?? [];
+      const primary =
+        childEdges.find((child) => child.active) ?? childEdges[0];
+      for (const child of childEdges) {
+        if (child.id === primary?.id) continue;
+        if (!chainIdByNodeId.has(child.id)) chain.forkChildren.push(child.id);
+      }
+      currentId =
+        primary !== undefined && !chainIdByNodeId.has(primary.id)
+          ? primary.id
+          : undefined;
     }
+    chains.push(chain);
+    pending.push(...chain.forkChildren);
   };
 
   for (const node of graph.nodes) {
-    if (incoming.has(node.id)) continue;
-    visit(node.id, nextLane++);
+    if (!incoming.has(node.id)) buildChain(node.id);
+    while (pending.length > 0) buildChain(pending.shift()!);
   }
   for (const node of graph.nodes) {
-    if (!laneByNodeId.has(node.id)) visit(node.id, nextLane++);
+    if (!chainIdByNodeId.has(node.id)) buildChain(node.id);
   }
 
-  return { laneByNodeId, columns: Math.max(1, nextLane) };
+  const activeTerminal = graph.nodes.find((node) => node.activeTerminal);
+  const activeChainId = activeTerminal
+    ? chainIdByNodeId.get(activeTerminal.id)
+    : undefined;
+  const ordered = chains
+    .map((chain, index) => ({ chain, index }))
+    .sort((a, b) => a.chain.start - b.chain.start || a.index - b.index);
+  if (activeChainId !== undefined) {
+    const activePosition = ordered.findIndex(
+      (entry) => entry.index === activeChainId,
+    );
+    if (activePosition > 0) {
+      const [activeEntry] = ordered.splice(activePosition, 1);
+      ordered.unshift(activeEntry);
+    }
+  }
+
+  const laneIntervals: Array<Array<{ start: number; end: number }>> = [];
+  const laneOfChain = new Map<number, number>();
+  for (const { chain, index } of ordered) {
+    let lane = 0;
+    for (; lane < laneIntervals.length; lane++) {
+      const intervals = laneIntervals[lane];
+      let overlaps = false;
+      for (const interval of intervals) {
+        if (interval.start > chain.end) break;
+        if (interval.end >= chain.start) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) break;
+    }
+    const intervals = laneIntervals[lane] ?? [];
+    const insertAt = intervals.findIndex(
+      (interval) => interval.start > chain.start,
+    );
+    if (insertAt === -1) {
+      intervals.push({ start: chain.start, end: chain.end });
+    } else {
+      intervals.splice(insertAt, 0, {
+        start: chain.start,
+        end: chain.end,
+      });
+    }
+    laneIntervals[lane] = intervals;
+    laneOfChain.set(index, lane);
+  }
+
+  for (const [index, chain] of chains.entries()) {
+    const lane = laneOfChain.get(index) ?? 0;
+    for (const nodeId of chain.nodeIds) laneByNodeId.set(nodeId, lane);
+  }
+
+  return { laneByNodeId, columns: Math.max(1, laneIntervals.length) };
 }
 
 export interface ChatGraphRowLayout {
