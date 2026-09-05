@@ -1,10 +1,20 @@
 import type { SettingItem } from "./types";
-import { isNodeServer, isTauri } from "../platform";
+import { isCapacitor, isNodeServer, isTauri } from "../platform";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import {
   IMAGE_CACHE_LIMITS,
   IMAGE_CACHE_LIMIT_KEYS,
+  type ImageCacheLimitKey,
 } from "../memory/imageCacheLimits";
+
+const IMAGE_CACHE_CONDITIONS: Partial<
+  Record<ImageCacheLimitKey, () => boolean>
+> = {
+  assetCacheEntries: () => isCapacitor,
+  assetCacheSizeMB: () => isCapacitor,
+  thumbnailCacheEntries: () => isTauri || isNodeServer,
+  thumbnailCacheSizeMB: () => isNodeServer,
+};
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -164,6 +174,7 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: key,
     helpKey: key,
     options: { min: 1, max: IMAGE_CACHE_LIMITS[key].max },
+    condition: IMAGE_CACHE_CONDITIONS[key],
   })),
   {
     id: "adv.chatLoadInitial",

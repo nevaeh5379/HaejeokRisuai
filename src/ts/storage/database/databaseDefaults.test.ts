@@ -22,14 +22,22 @@ describe("normalizeDatabaseDefaults", () => {
     expect(
       normalizeDatabaseInput({ assetCacheEntries: -1 }).assetCacheEntries,
     ).toBe(128);
+    expect(normalizeSettingsInput({}).chatParserCacheEntries).toBe(256);
+    expect(
+      normalizeSettingsInput({ chatParserCacheEntries: 100 })
+        .chatParserCacheEntries,
+    ).toBe(100);
     const custom = normalizeSettingsInput({
       lowSpecMode: true,
       assetCacheEntries: 80,
       assetCacheSizeMB: 32,
+      chatParserCacheEntries: 500,
     });
     expect(custom.assetCacheEntries).toBe(80);
     expect(custom.assetCacheSizeMB).toBe(32);
+    expect(custom.chatParserCacheEntries).toBe(500);
     expect(normalizeSettingsInput(custom).assetCacheEntries).toBe(80);
+    expect(normalizeSettingsInput(custom).chatParserCacheEntries).toBe(500);
   });
   it("migrates legacy NovelAI v4 image settings", () => {
     const db = {

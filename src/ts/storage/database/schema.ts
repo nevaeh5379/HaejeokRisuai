@@ -524,6 +524,7 @@ export interface DatabaseSettings {
   thumbnailCacheSizeMB?: number;
   characterImageCacheEntries?: number;
   fullResolutionImageCacheEntries?: number;
+  chatParserCacheEntries?: number;
   blurHiddenCharacters?: boolean;
   characterFavorites?: string[];
   characterHidden?: string[];

@@ -14,7 +14,9 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import type { ChatExecutionTarget } from "../chatTarget";
 import { aiWatermarkingLawApplies, getFileSrc } from "../globalApi.svelte";
-import { isTauri, isNodeServer } from "src/ts/platform";
+import { isTauri, isNodeServer, isCapacitor } from "src/ts/platform";
+import { BoundedCache } from "../memory/boundedCache";
+import { getImageCacheLimit } from "../memory/imageCacheLimits";
 import { getChatVar, setChatVar, getGlobalChatVar } from "./chatVar.svelte";
 import { processScriptFull } from "../process/scripts";
 import { get } from "svelte/store";
@@ -540,8 +542,14 @@ function getEmoSrc(emoArr: string[][], emoPaths: AssetPaths) {
   }
 }
 
-const FILE_SRC_CACHE_LIMIT = 128;
-const fileSrcCache = new Map<string, string>();
+const fileSrcCache = new BoundedCache<string, string>({
+  maxEntries: () =>
+    getImageCacheLimit(
+      settingsStore.state,
+      "chatParserCacheEntries",
+      isCapacitor,
+    ),
+});
 
 async function getFileSrcCached(path: string) {
   let cached = fileSrcCache.get(path);
@@ -550,9 +558,6 @@ async function getFileSrcCached(path: string) {
   }
   const src = await getFileSrc(path);
   fileSrcCache.set(path, src);
-  if (fileSrcCache.size > FILE_SRC_CACHE_LIMIT) {
-    fileSrcCache.delete(fileSrcCache.keys().next().value!);
-  }
   return src;
 }
 
@@ -580,6 +585,7 @@ export function resetAssetsCache(
 
   assetsCache = assetPaths;
   emoAssetsCache = charEmoPaths;
+  fileSrcCache.clear();
 }
 
 $effect.root(() => {

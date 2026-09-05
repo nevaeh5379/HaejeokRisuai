@@ -216,6 +216,8 @@ export const languageKorean = {
       "봇 아이콘·표시용 이미지·원본을 포함한 봇 이미지 캐시의 최대 개수입니다. 현재 화면에서 사용 중인 이미지는 보호하므로 일시적으로 이 한도를 넘을 수 있습니다.",
     fullResolutionImageCacheEntries:
       "봇 이미지 캐시 안에서 보관할 미사용 원본 이미지의 최대 개수입니다. 원본은 메모리를 많이 사용하므로 별도로 제한합니다. 현재 화면에서 사용 중인 원본은 보호합니다.",
+    chatParserCacheEntries:
+      "채팅 메시지 내 이미지 및 에셋({{image::...}}, {{emotion::...}} 등) URL을 메모리에 보관할 최대 개수입니다. 기본값은 256개입니다.",
     chatLoadAdditionalPages:
       "위로 스크롤할 때마다 추가로 렌더링할 이전 채팅 메시지 개수입니다. 값이 높을수록 반복 로딩은 줄지만 한 번의 로딩이 무거워질 수 있습니다.",
     emotionPrompt:
@@ -1427,6 +1429,7 @@ export const languageKorean = {
   thumbnailCacheSizeMB: "Node 썸네일 캐시 용량 (MB)",
   characterImageCacheEntries: "봇 이미지 캐시 개수",
   fullResolutionImageCacheEntries: "원본 봇 이미지 캐시 개수",
+  chatParserCacheEntries: "채팅 파서 에셋 캐시 개수",
   chatLoadInitialPages: "채팅 초기 로딩 개수",
   chatLoadAdditionalPages: "채팅 추가 로딩 개수",
   removeCharacter: "캐릭터 삭제",
