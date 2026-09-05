@@ -7,6 +7,10 @@
         requestNativeChatNotificationPermission,
         usesNativeChatLifecycle,
     } from 'src/ts/androidChatLifecycle';
+    import {
+        subscribeChatResponsePush,
+        unsubscribeChatResponsePush,
+    } from 'src/ts/network/pushSubscriptions';
 </script>
 
 <div class="flex items-center mt-2">
@@ -15,6 +19,7 @@
         name={language.notification}
         onChange={async () => {
             if (!settingsStore.state.notification) {
+                await unsubscribeChatResponsePush();
                 return;
             }
             if (usesNativeChatLifecycle()) {
@@ -35,8 +40,10 @@
                 if (permission !== 'granted') {
                     alertError(language.permissionDenied);
                     settingsStore.state.notification = false;
+                    return;
                 }
             }
+            await subscribeChatResponsePush();
         }}
     />
 </div>

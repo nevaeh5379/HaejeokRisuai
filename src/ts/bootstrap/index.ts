@@ -7,6 +7,7 @@ import { registerModelDynamic } from "../model/modellist";
 import { isCapacitor, isTauri } from "../platform";
 import { initNodeRealtimeSync } from "../process/nodeRealtimeSync";
 import { initDurableModelJobRecovery } from "../process/modelJobRecovery";
+import { syncChatResponsePush } from "../network/pushSubscriptions";
 import { checkRisuUpdate } from "../update";
 import { startObserveDom } from "../observer.svelte";
 import {
@@ -148,6 +149,7 @@ export async function loadData() {
       performance.mark("plugins-ready");
       cleanChunks();
       initDurableModelJobRecovery();
+      void syncChatResponsePush();
       void initNodeRealtimeSync();
       revealShell();
       if (presetStore.activeStatus === "ready") {

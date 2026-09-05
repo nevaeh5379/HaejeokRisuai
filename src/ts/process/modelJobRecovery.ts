@@ -3,6 +3,7 @@ import {
   clearDurableModelJobDetached,
   shouldRecoverDurableModelJob,
 } from "../network/durableModelJobs";
+import { notifyChatResponse } from "../chatNotifications";
 import { preLoadChat } from "./coldstorage.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
@@ -406,6 +407,16 @@ async function recoverActiveJob(job: DurableModelJobRecord): Promise<void> {
     if (!terminal) return;
     reachedTerminalState = terminal.status !== "running";
     if (terminal.status === "done") {
+      // The local pipeline may have died while the page was backgrounded;
+      // surfacing the alarm here covers reconnects the realtime SSE missed.
+      if (document.visibilityState !== "visible") {
+        void notifyChatResponse({
+          chatId: terminal.chatId,
+          // The SW records the server push under the job's generationId, so
+          // the dedupe key must use that id — not the job id.
+          dedupeKey: `model-job:${terminal.generationId || terminal.id}`,
+        });
+      }
       const text = decodeDurableModelJob(
         terminal.protocol,
         raw,

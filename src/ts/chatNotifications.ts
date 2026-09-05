@@ -1,9 +1,11 @@
 import { alertToast } from "./alert";
 import {
   completeNativeChatRequest,
+  requestNativeChatNotificationPermission,
   showNativeChatNotification,
   usesNativeChatLifecycle,
 } from "./androidChatLifecycle";
+import { subscribeChatResponsePush } from "./network/pushSubscriptions";
 import {
   chatTabsStore,
   findChatTarget,
@@ -57,6 +59,39 @@ function findLatestResponse(chatId?: string): string {
   return "";
 }
 
+let permissionRequestedThisSession = false;
+
+/** @internal Test-only: resets the per-session permission prompt latch. */
+export function resetChatNotificationPermissionForTests(): void {
+  permissionRequestedThisSession = false;
+}
+
+/**
+ * Browsers only show the notification permission prompt while handling a
+ * user gesture. Response-time requests happen after the page is already
+ * backgrounded, so the prompt is silently dropped. Ask at send time instead,
+ * when the user is still interacting with the app.
+ */
+export async function ensureChatNotificationPermission(): Promise<void> {
+  if (!settingsStore.state.notification || permissionRequestedThisSession)
+    return;
+  permissionRequestedThisSession = true;
+  if (usesNativeChatLifecycle()) {
+    await requestNativeChatNotificationPermission();
+    return;
+  }
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "default") {
+    // Already granted: make sure the server can reach us while backgrounded.
+    await subscribeChatResponsePush();
+    return;
+  }
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") await subscribeChatResponsePush();
+  } catch (_error) {}
+}
+
 export async function notifyChatResponse(
   options: ChatResponseNotificationOptions,
 ): Promise<void> {
@@ -71,6 +106,17 @@ export async function notifyChatResponse(
   )
     return;
 
+  const generationId = options.dedupeKey?.startsWith("model-job:")
+    ? options.dedupeKey.slice("model-job:".length)
+    : options.dedupeKey?.startsWith("local:")
+      ? options.dedupeKey.slice("local:".length)
+      : null;
+
+  // The service worker may have already raised the OS notification for this
+  // completion while the page was backgrounded; staying silent here prevents
+  // a duplicate alarm when the user returns to the tab.
+  if (await swAlreadyNotifiedChatResponse(generationId)) return;
+
   const characterName =
     options.characterName || target?.characterName || "RisuAI";
   const chatName = options.chatName || target?.chatName || "Chat";
@@ -78,6 +124,10 @@ export async function notifyChatResponse(
   const body = compactText(result, 320) || "Response ready";
   const title = `${characterName} · ${chatName}`;
   alertToast(`${title}: ${compactText(body, 120)}`);
+
+  // Tell the service worker this completion was already surfaced in-page so
+  // a racing server push does not double-notify.
+  markChatResponseHandledInSw(generationId);
 
   if (usesNativeChatLifecycle()) {
     if (options.completeNativeLifecycle) {
@@ -88,15 +138,7 @@ export async function notifyChatResponse(
     return;
   }
   if (typeof Notification === "undefined") return;
-  let permission = Notification.permission;
-  if (permission === "default") {
-    try {
-      permission = await Notification.requestPermission();
-    } catch (_error) {
-      return;
-    }
-  }
-  if (permission !== "granted") return;
+  if (Notification.permission !== "granted") return;
 
   try {
     const notification = new Notification(title, { body });
@@ -108,4 +150,47 @@ export async function notifyChatResponse(
       }
     };
   } catch (_error) {}
+}
+
+function markChatResponseHandledInSw(generationId: string | null): void {
+  if (!generationId || typeof navigator === "undefined") return;
+  try {
+    navigator.serviceWorker?.controller?.postMessage({
+      type: "CHAT_RESPONSE_HANDLED",
+      generationId,
+    });
+  } catch (_error) {}
+}
+
+function swAlreadyNotifiedChatResponse(
+  generationId: string | null,
+): Promise<boolean> {
+  if (!generationId || typeof navigator === "undefined")
+    return Promise.resolve(false);
+  const controller = navigator.serviceWorker?.controller;
+  if (!controller) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, 500);
+    const cleanup = () => {
+      clearTimeout(timer);
+      channel.port1.onmessage = null;
+    };
+    channel.port1.onmessage = (event) => {
+      cleanup();
+      resolve(event.data?.shown === true);
+    };
+    try {
+      controller.postMessage(
+        { type: "QUERY_CHAT_RESPONSE_SHOWN", generationId },
+        [channel.port2],
+      );
+    } catch {
+      cleanup();
+      resolve(false);
+    }
+  });
 }
