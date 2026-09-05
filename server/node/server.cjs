@@ -57,6 +57,7 @@ const { gzip } = require("zlib");
 const { createJsonStream } = require("./streamJson.cjs");
 const { streamZip } = require("./zipStream.cjs");
 const { createModelJobManager } = require("./modelJobs.cjs");
+const { createPushNotificationManager } = require("./pushNotifications.cjs");
 const {
   createRealtimeEventHub,
   describeSqlCommitChange,
@@ -343,15 +344,30 @@ if (!existsSync(savePath)) {
 configureVectorIndexPersistence(path.join(savePath, "__vector_indexes"));
 
 const realtimeEventHub = createRealtimeEventHub();
+const pushNotificationManager = createPushNotificationManager({
+  saveDir: savePath,
+  logger: console,
+});
 const modelJobManager = createModelJobManager({
   saveDir: savePath,
   logger: console,
-  onEvent: (phase, job, context) =>
+  onEvent: (phase, job, context) => {
     realtimeEventHub.broadcast("model-job", {
       phase,
       job,
       sourceClientId: normalizeClientId(context?.sourceClientId),
-    }),
+    });
+    // The page cannot raise notifications once the browser suspends it, so
+    // the finished-generation push is sent from here instead.
+    if (phase === "terminal" && job?.status === "done") {
+      void pushNotificationManager.notifyChatResponse({
+        title: "RisuAI",
+        body: "Response ready",
+        chatId: job.chatId,
+        generationId: job.generationId,
+      });
+    }
+  },
 });
 const nodeChatExecutor = createNodeChatExecutor();
 const nodeProviderExecutor = createNodeProviderExecutor();
@@ -2156,6 +2172,46 @@ app.post(
       return;
     }
     res.send({ success: true });
+  },
+);
+
+app.get(
+  "/api/push/vapid-public-key",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  async (req, res) => {
+    const keys = await pushNotificationManager.ensureVapidKeys();
+    res.send({ publicKey: keys.publicKey });
+  },
+);
+
+app.post(
+  "/api/push/subscriptions",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  async (req, res) => {
+    const result = pushNotificationManager.updateSubscription(req.body);
+    if (result.error) {
+      res.status(400).send(result);
+      return;
+    }
+    await pushNotificationManager.close();
+    res.send(result);
+  },
+);
+
+app.delete(
+  "/api/push/subscriptions",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  async (req, res) => {
+    const result = pushNotificationManager.removeSubscription(req.body);
+    if (result.error) {
+      res.status(400).send(result);
+      return;
+    }
+    await pushNotificationManager.close();
+    res.send(result);
   },
 );
 

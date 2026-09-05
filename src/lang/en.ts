@@ -271,6 +271,8 @@ export const languageEnglish = {
       "Maximum number of cached bot icons, display images, and originals combined. Images currently in use on screen are protected and may temporarily exceed this limit.",
     fullResolutionImageCacheEntries:
       "Maximum number of unused original images retained within the bot image cache. Originals have a separate limit because they use more memory. Originals currently in use on screen are protected.",
+    chatParserCacheEntries:
+      "Maximum number of cached image and asset URLs within chat messages (such as {{image::...}} or {{emotion::...}}). The default is 256.",
     chatLoadAdditionalPages:
       "Number of older chat messages to render each time you scroll to the top. Higher values reduce repeated loading but can make each load heavier.",
     emotionPrompt:
@@ -1511,6 +1513,7 @@ export const languageEnglish = {
   thumbnailCacheSizeMB: "Node Thumbnail Cache Size (MB)",
   characterImageCacheEntries: "Bot Image Cache Count",
   fullResolutionImageCacheEntries: "Original Bot Image Cache Count",
+  chatParserCacheEntries: "Chat Parser Asset Cache Count",
   chatLoadInitialPages: "Initial Chat Load Count",
   chatLoadAdditionalPages: "Additional Chat Load Count",
   removeCharacter: "Remove Character",

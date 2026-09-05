@@ -29,6 +29,7 @@ describe("image cache limits", () => {
       thumbnailCacheSizeMB: 16,
       characterImageCacheEntries: 128,
       fullResolutionImageCacheEntries: 12,
+      chatParserCacheEntries: 256,
     });
     expect(
       getImageCacheLimit({ assetCacheEntries: 80.9 }, "assetCacheEntries"),
@@ -42,6 +43,12 @@ describe("image cache limits", () => {
         "fullResolutionImageCacheEntries",
       ),
     ).toBe(8);
+    expect(
+      getImageCacheLimit(
+        { lowSpecMode: true },
+        "chatParserCacheEntries",
+      ),
+    ).toBe(64);
     expect(
       getImageCacheLimit(
         { lowSpecMode: true, assetCacheEntries: 80 },

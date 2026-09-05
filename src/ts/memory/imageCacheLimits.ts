@@ -17,6 +17,12 @@ export const IMAGE_CACHE_LIMITS = {
     lowSpec: 8,
     max: 128,
   },
+  chatParserCacheEntries: {
+    standard: 256,
+    mobile: 256,
+    lowSpec: 64,
+    max: 4096,
+  },
 } as const;
 
 export type ImageCacheLimitKey = keyof typeof IMAGE_CACHE_LIMITS;

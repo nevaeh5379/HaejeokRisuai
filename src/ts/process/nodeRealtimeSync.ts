@@ -36,7 +36,9 @@ type ModelJobEvent = {
   job?: {
     id?: string;
     chatId?: string;
+    generationId?: string | null;
     recoverable?: boolean;
+    status?: string;
   };
 };
 
@@ -166,7 +168,26 @@ async function applyModelJob(event: ModelJobEvent): Promise<void> {
   ) {
     activeModelJobsByChat.delete(job.chatId);
   }
-  if (event.sourceClientId === getNodeClientSessionId()) return;
+  const ownClient = event.sourceClientId === getNodeClientSessionId();
+  if (ownClient) {
+    // The local stream pipeline usually delivers the result itself, but on
+    // mobile the page can be suspended before that happens. The server-side
+    // job finishing while we are hidden is the only reliable "response is
+    // ready" signal in that case, so fire the completion alarm here.
+    if (
+      event.phase === "terminal" &&
+      job.status === "done" &&
+      document.visibilityState !== "visible"
+    ) {
+      void notifyChatResponse({
+        chatId: job.chatId,
+        // The SW records the server push under the job's generationId, so
+        // the dedupe key must use that id — not the job id.
+        dedupeKey: `model-job:${job.generationId || job.id || job.chatId}`,
+      });
+    }
+    return;
+  }
   const source = `model-job:${job.id ?? job.chatId}`;
   setRemoteChatGeneration(job.chatId, event.phase === "created", source);
   void recoverDurableModelJobs();

@@ -16,6 +16,7 @@ import {
   beginNativeChatRequest,
   endNativeChatRequest,
 } from "../androidChatLifecycle";
+import { ensureChatNotificationPermission } from "../chatNotifications";
 import {
   beginNodeGenerationLifecycle,
   endNodeGenerationLifecycle,
@@ -72,7 +73,13 @@ export async function sendChat(
     locked && targetChatId
       ? await beginNodeGenerationLifecycle(targetChatId)
       : null;
-  if (keepAlive) await beginNativeChatRequest();
+  if (keepAlive) {
+    // Ask while we are still inside the send gesture: browsers drop the
+    // notification permission prompt once the tab is backgrounded, so
+    // requesting at response time never shows the dialog.
+    await ensureChatNotificationPermission();
+    await beginNativeChatRequest();
+  }
   const serializeForPresetChain =
     chatProcessIndex === -1 && Boolean(settingsStore.state.presetChain?.trim());
   try {
