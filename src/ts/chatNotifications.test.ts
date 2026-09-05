@@ -9,7 +9,6 @@ vi.mock("./androidChatLifecycle", () => ({
   usesNativeChatLifecycle: () => nativeState.native,
   requestNativeChatNotificationPermission: requestNativePermission,
 }));
-vi.mock("./alert", () => ({ alertToast: vi.fn() }));
 vi.mock("./chatTabs.svelte", () => ({
   chatTabsStore: { markUnread: vi.fn() },
   findChatTarget: vi.fn(() => null),
@@ -28,6 +27,7 @@ vi.mock("./network/pushSubscriptions", () => ({
 }));
 
 let requestPermission: ReturnType<typeof vi.fn>;
+let notificationCtor: ReturnType<typeof vi.fn>;
 const swController = vi.hoisted(() => ({
   post: null as
     ((msg: { type?: string }, transfer?: Transferable[]) => void) | null,
@@ -37,9 +37,13 @@ beforeEach(() => {
   requestNativePermission.mockClear();
   nativeState.native = false;
   requestPermission = vi.fn(async () => "granted");
+  notificationCtor = vi.fn();
   Object.defineProperty(globalThis, "Notification", {
     configurable: true,
-    value: { permission: "default", requestPermission },
+    value: Object.assign(notificationCtor, {
+      permission: "default",
+      requestPermission,
+    }),
   });
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
@@ -114,12 +118,10 @@ test("native lifecycle delegates to the Capacitor permission request", async () 
   expect(requestPermission).not.toHaveBeenCalled();
 });
 
-test("skips in-page alarm when the service worker already notified", async () => {
+test("skips notification when the service worker already notified", async () => {
   // Emulate the SW handshake: when the page posts QUERY_CHAT_RESPONSE_SHOWN,
   // the worker answers shown=true over the transferred MessageChannel.
-  const { alertToast } = await import("./alert");
-  const alertToastMock = alertToast as ReturnType<typeof vi.fn>;
-  alertToastMock.mockClear();
+  (globalThis.Notification as any).permission = "granted";
 
   class FakePort {
     onmessage: ((ev: { data: unknown }) => void) | null = null;
@@ -167,7 +169,7 @@ test("skips in-page alarm when the service worker already notified", async () =>
       dedupeKey: "model-job:gen-dup",
     });
     // The SW push already told the user; the page must stay silent.
-    expect(alertToastMock).not.toHaveBeenCalled();
+    expect(notificationCtor).not.toHaveBeenCalled();
   } finally {
     (globalThis as any).MessageChannel = originalMessageChannel;
     swController.post = null;
@@ -175,10 +177,8 @@ test("skips in-page alarm when the service worker already notified", async () =>
   }
 });
 
-test("shows the in-page alarm when the service worker has not notified", async () => {
-  const { alertToast } = await import("./alert");
-  const alertToastMock = alertToast as ReturnType<typeof vi.fn>;
-  alertToastMock.mockClear();
+test("shows notification when the service worker has not notified", async () => {
+  (globalThis.Notification as any).permission = "granted";
 
   // No SW controller in this test run: the query resolves false immediately.
   const { notifyChatResponse } = await importModule();
@@ -186,14 +186,10 @@ test("shows the in-page alarm when the service worker has not notified", async (
     chatId: "chat-1",
     dedupeKey: "model-job:gen-fresh",
   });
-  expect(alertToastMock).toHaveBeenCalledTimes(1);
+  expect(notificationCtor).toHaveBeenCalledTimes(1);
 });
 
 test("plays audio when playMessage is true and notification is disabled", async () => {
-  const { alertToast } = await import("./alert");
-  const alertToastMock = alertToast as ReturnType<typeof vi.fn>;
-  alertToastMock.mockClear();
-
   const playMock = vi.fn().mockResolvedValue(undefined);
   class FakeAudio {
     play = playMock;
@@ -212,7 +208,7 @@ test("plays audio when playMessage is true and notification is disabled", async 
       dedupeKey: "local:sound-test-only",
     });
     expect(playMock).toHaveBeenCalledTimes(1);
-    expect(alertToastMock).not.toHaveBeenCalled();
+    expect(notificationCtor).not.toHaveBeenCalled();
   } finally {
     (globalThis as any).Audio = originalAudio;
     (settingsStore.state as any).playMessage = false;

@@ -1,4 +1,3 @@
-import { alertToast } from "./alert";
 import sendSound from "../etc/send.mp3";
 import {
   completeNativeChatRequest,
@@ -133,7 +132,6 @@ export async function notifyChatResponse(
   const result = options.result || findLatestResponse(chatId);
   const body = compactText(result, 320) || "Response ready";
   const title = `${characterName} · ${chatName}`;
-  alertToast(`${title}: ${compactText(body, 120)}`);
 
   // Tell the service worker this completion was already surfaced in-page so
   // a racing server push does not double-notify.
