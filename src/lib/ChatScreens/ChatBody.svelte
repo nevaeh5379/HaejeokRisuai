@@ -8,8 +8,7 @@ import isEqual from "lodash/isEqual"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
     import { resolveCurrentChatAsset } from "src/ts/chatAssetResolver";
     import type { ChatExecutionTarget } from "src/ts/chatTarget";
-    
-    import { getFileSrc } from "src/ts/globalApi.svelte";
+    import { getFileSrc, isLiveObjectUrl, onBlobUrlsRevoked, untrackObjectUrl } from "src/ts/globalApi.svelte";
     import { isTauriAssetUrl } from "src/ts/mediaSrc";
 
     interface Props {
@@ -49,6 +48,10 @@ import isEqual from "lodash/isEqual"
     let lastParsed = ''
     let lastCharArg:string|simpleCharacterArgument = null
     let lastChatId = -10
+    // Bumped when a blob URL embedded in lastParsed was revoked by asset
+    // cache eviction, so the memoized HTML must be rebuilt. Without this,
+    // low-spec eviction makes images vanish until a manual reload.
+    let assetRev = 0
 
     function getCbsCondition(){
         try{
@@ -224,7 +227,48 @@ import isEqual from "lodash/isEqual"
         }
     }
 
-    let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx))
+    const ASSET_RETRY_LIMIT = 3
+    let assetRetries = 0
+    let lastRetryKey = ''
+
+    const bumpAssetRev = () => {
+        if(assetRetries >= ASSET_RETRY_LIMIT){
+            return
+        }
+        assetRetries++
+        assetRev++
+    }
+
+    let markParsingResult = $derived.by(() => {
+        assetRev;
+        const retryKey = `${idx}|${msgDisplay?.length ?? 0}`
+        if(retryKey !== lastRetryKey){
+            lastRetryKey = retryKey
+            assetRetries = 0
+        }
+        return markParsing(msgDisplay, character, idx)
+    })
+
+    const hasStaleBlobImages = () => {
+        if(!bodyRoot){
+            return false
+        }
+        for(const img of bodyRoot.querySelectorAll(`img[src^="blob:"]`)){
+            if(!isLiveObjectUrl(img.getAttribute('src') || '')){
+                return true
+            }
+        }
+        return false
+    }
+
+    $effect(() => {
+        const unsubscribe = onBlobUrlsRevoked(() => {
+            if(hasStaleBlobImages()){
+                bumpAssetRev()
+            }
+        })
+        return unsubscribe
+    })
 
     $effect(() => {
         if(shouldRenderRawStreaming){
@@ -233,8 +277,23 @@ import isEqual from "lodash/isEqual"
         markParsingResult
         checkImg()
         markParsingResult.then(checkImg)
+
+        const onError = (e: Event) => {
+            const img = e.target as HTMLImageElement
+            const src = img?.getAttribute('src') || ''
+            if(src.startsWith('blob:')){
+                // Image failed to load after its blob was evicted; re-parse
+                // the message so a fresh URL is embedded.
+                untrackObjectUrl(src)
+                bumpAssetRev()
+            }
+        }
+        bodyRoot?.addEventListener('error', onError, true)
+        return () => {
+            bodyRoot?.removeEventListener('error', onError, true)
+        }
     })
-</script>
+ </script>
 
 {#if shouldRenderRawStreaming}
     <span class="whitespace-pre-wrap">{rawStreamingText}</span>
