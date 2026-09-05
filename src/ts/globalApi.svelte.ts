@@ -163,8 +163,47 @@ const pathCache = new BoundedCache<string, string>({
   maxEntries: () => (settingsStore.state.lowSpecMode ? 256 : 1024),
 });
 
+/**
+ * Tracks blob URLs created for chat assets so stale URLs can be detected
+ * after cache eviction revokes them. Eviction is the main failure mode on
+ * low-spec devices: the parser's HTML cache can outlive the blob behind a
+ * `src` it already embedded.
+ */
+const liveBlobUrls = new Set<string>();
+let blobUrlRev = 0;
+const blobUrlRevokedListeners = new Set<(rev: number) => void>();
+
+export function trackObjectUrl(url: string) {
+  if (url.startsWith("blob:")) liveBlobUrls.add(url);
+}
+
+export function untrackObjectUrl(url: string) {
+  liveBlobUrls.delete(url);
+}
+
+export function isLiveObjectUrl(url: string) {
+  return !url.startsWith("blob:") || liveBlobUrls.has(url);
+}
+
+/** Monotonic counter; bumped whenever a tracked blob URL is revoked. */
+export function getBlobUrlRev() {
+  return blobUrlRev;
+}
+
+/** Subscribe to blob URL revocations; returns an unsubscribe function. */
+export function onBlobUrlsRevoked(listener: (rev: number) => void) {
+  blobUrlRevokedListeners.add(listener);
+  return () => blobUrlRevokedListeners.delete(listener);
+}
+
 const revokeObjectUrl = (url: string) => {
-  if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  if (url.startsWith("blob:")) {
+    if (liveBlobUrls.delete(url)) {
+      blobUrlRev++;
+      for (const listener of blobUrlRevokedListeners) listener(blobUrlRev);
+    }
+    URL.revokeObjectURL(url);
+  }
 };
 const tauriThumbnailUrls = new BoundedCache<string, string>({
   maxEntries: () =>
@@ -221,7 +260,13 @@ class ThumbnailBatchLoader {
 
     // 1. Memory cache hit (instant)
     if (this.cache.has(loc)) {
-      return Promise.resolve(this.cache.get(loc)!);
+      const cachedUrl = this.cache.get(loc)!;
+      if (!isLiveObjectUrl(cachedUrl)) {
+        // Blob behind this URL was revoked by eviction; reload it.
+        this.cache.delete(loc);
+      } else {
+        return Promise.resolve(cachedUrl);
+      }
     }
 
     // 2. Already in-flight
@@ -305,6 +350,7 @@ class ThumbnailBatchLoader {
             if (buf && buf.length > 0) {
               const blob = new Blob([buf as any], { type: "image/webp" });
               const blobUrl = URL.createObjectURL(blob);
+              trackObjectUrl(blobUrl);
               this.cacheWeights.set(loc, buf.byteLength);
               this.cache.set(loc, blobUrl);
               pendingItem?.resolve(blobUrl);
@@ -452,6 +498,7 @@ export async function getFileSrc(
   }
   const isThumb = options?.thumbnail ?? false;
   const isDisplay = options?.display ?? false;
+  const isTransient = options?.transient ?? false;
   const resizeKey =
     isCapacitor &&
     (isThumb || isDisplay) &&
@@ -479,6 +526,7 @@ export async function getFileSrc(
             const thumbData = await generateClientThumbnail(originalData, 128);
             const blob = new Blob([thumbData as any], { type: "image/webp" });
             const url = URL.createObjectURL(blob);
+            trackObjectUrl(url);
             tauriThumbnailUrls.set(loc, url);
             return url;
           } catch (e) {
@@ -544,10 +592,15 @@ export async function getFileSrc(
       return "/sw/img/" + encoded;
     } else {
       const cacheKey = cacheVariantKey;
-      const cachedUrl = options?.transient
+      const cachedUrl = isTransient
         ? undefined
         : browserAssetUrls.get(cacheKey);
-      if (cachedUrl) return cachedUrl;
+      if (cachedUrl && isLiveObjectUrl(cachedUrl)) return cachedUrl;
+      if (cachedUrl) {
+        // Stale entry whose blob was revoked; drop it and fall through to a
+        // fresh load instead of handing out a dead URL.
+        browserAssetUrls.delete(cacheKey);
+      }
       const isNativeImageAsset =
         isCapacitor &&
         nativeImage &&
@@ -600,6 +653,7 @@ export async function getFileSrc(
       const data = isThumb ? await generateClientThumbnail(raw, 128) : raw;
       const mime = isThumb ? "image/webp" : getMimeType(loc);
       const url = URL.createObjectURL(new Blob([data as any], { type: mime }));
+      trackObjectUrl(url);
       if (!options?.transient) {
         browserAssetWeights.set(cacheKey, data.byteLength);
         browserAssetUrls.set(cacheKey, url);
