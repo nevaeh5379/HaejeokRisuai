@@ -211,8 +211,11 @@
         refitAfterDisplayChange()
     }
 
+    let isDraggingNode = false
+    let dragThresholdPassed = false
+
     function selectMessageNode(node: typeof graph.nodes[number]) {
-        if(loading) return
+        if(loading || isDraggingNode || dragThresholdPassed) return
         const terminal = node.terminals.find((item) => item.active) ?? node.terminals.at(-1)
         if(terminal) void onselect(terminal.branchId)
     }
@@ -274,13 +277,35 @@
         isPanning = true
         hasInteracted = true
         canvasAnimating = true
-        for(const pointerId of touchPointers.keys()) viewport.setPointerCapture?.(pointerId)
+        for(const pointerId of touchPointers.keys()) safeSetPointerCapture(pointerId)
+    }
+
+    function safeSetPointerCapture(pointerId: number) {
+        if(!viewport) return
+        try {
+            viewport.setPointerCapture(pointerId)
+        } catch {
+            // Pointer may already be inactive or captured elsewhere.
+        }
+    }
+
+    function safeReleasePointerCapture(pointerId: number) {
+        if(!viewport) return
+        try {
+            if(viewport.hasPointerCapture(pointerId)) {
+                viewport.releasePointerCapture(pointerId)
+            }
+        } catch {
+            // Pointer capture may have already been implicitly released by the browser on pointerup/cancel,
+            // or the pointer may already be inactive (common on mobile touch devices).
+        }
     }
 
     function startPan(event: PointerEvent) {
         if(event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return
         const target = event.target as HTMLElement | null
-        const isInteractive = event.button !== 1 && target?.closest('button:not(.branch-node), .branch-node--selectable')
+        if(target?.closest('.graph-tool')) return
+
         if(event.pointerType === 'touch') {
             touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
             if(touchPointers.size >= 2) {
@@ -289,14 +314,23 @@
                 return
             }
         }
-        if(isInteractive) return
-        event.preventDefault()
-        hasInteracted = true
-        isPanning = true
-        canvasAnimating = true
+
+        const selectableNode = target?.closest('.branch-node--selectable')
         panPointerId = event.pointerId
         panStart = { x: event.clientX, y: event.clientY, panX, panY }
-        viewport?.setPointerCapture?.(event.pointerId)
+
+        if(selectableNode && event.button !== 1) {
+            dragThresholdPassed = false
+            isDraggingNode = false
+        } else {
+            event.preventDefault()
+            dragThresholdPassed = true
+            isDraggingNode = false
+            hasInteracted = true
+            isPanning = true
+            canvasAnimating = true
+            safeSetPointerCapture(event.pointerId)
+        }
     }
 
     function movePan(event: PointerEvent) {
@@ -319,13 +353,27 @@
             }
         }
         if(panPointerId !== event.pointerId) return
-        panX = panStart.panX + event.clientX - panStart.x
-        panY = panStart.panY + event.clientY - panStart.y
+        const dx = event.clientX - panStart.x
+        const dy = event.clientY - panStart.y
+        if(!dragThresholdPassed) {
+            if(Math.hypot(dx, dy) > 6) {
+                dragThresholdPassed = true
+                isDraggingNode = true
+                hasInteracted = true
+                isPanning = true
+                canvasAnimating = true
+                safeSetPointerCapture(event.pointerId)
+            }
+        }
+        if(dragThresholdPassed) {
+            panX = panStart.panX + dx
+            panY = panStart.panY + dy
+        }
     }
 
     function finishPan(event: PointerEvent) {
         if(event.pointerType === 'touch' && touchPointers.delete(event.pointerId)) {
-            if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
+            safeReleasePointerCapture(event.pointerId)
             if(pinchStart) {
                 pinchStart = null
                 if(touchPointers.size >= 2) {
@@ -337,7 +385,8 @@
                     const [pointerId, pointer] = remaining
                     panPointerId = pointerId
                     panStart = { x: pointer.x, y: pointer.y, panX, panY }
-                    viewport?.setPointerCapture?.(pointerId)
+                    dragThresholdPassed = true
+                    safeSetPointerCapture(pointerId)
                 } else {
                     panPointerId = null
                     isPanning = false
@@ -348,11 +397,19 @@
             }
         }
         if(panPointerId !== event.pointerId) return
-        if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
+        safeReleasePointerCapture(event.pointerId)
         panPointerId = null
         isPanning = false
         if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
         canvasAnimating = false
+        if(isDraggingNode) {
+            setTimeout(() => {
+                isDraggingNode = false
+                dragThresholdPassed = false
+            }, 80)
+        } else {
+            dragThresholdPassed = false
+        }
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -390,15 +447,22 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black/85">
-    <header class="relative z-30 flex shrink-0 items-center gap-3 border-b border-darkborderc/70 bg-darkbg/95 px-4 py-3 shadow-xl sm:px-5 sm:py-4">
-        <div class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-selected/60 bg-selected/20 text-textcolor shadow-inner">
-            <GitBranch size={20} />
+    <header class="relative z-30 flex shrink-0 items-center gap-3 border-b border-darkborderc/70 bg-darkbg/95 px-3.5 py-2.5 pt-[max(env(safe-area-inset-top),0.625rem)] shadow-xl sm:px-5 sm:py-4">
+        <div class="flex size-9 shrink-0 items-center justify-center rounded-xl border border-selected/60 bg-selected/20 text-textcolor shadow-inner sm:size-10">
+            <GitBranch size={18} class="sm:hidden" />
+            <GitBranch size={20} class="hidden sm:block" />
         </div>
-        <div class="min-w-0">
-            <h2 class="m-0 truncate text-base font-bold text-textcolor sm:text-lg">{language.branchGraphTitle}</h2>
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+                <h2 class="m-0 truncate text-base font-bold text-textcolor sm:text-lg">{language.branchGraphTitle}</h2>
+                <span class="flex items-center gap-1 rounded-full border border-darkborderc/60 bg-bgcolor/60 px-2 py-0.5 text-[10px] text-textcolor2 sm:hidden">
+                    <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_6px_rgb(34_197_94/0.7)]"></span>
+                    {language.branchGraphTimelineCount.replace('{}', graph.timelineCount.toString())}
+                </span>
+            </div>
             <div class="mt-0.5 hidden truncate text-xs text-textcolor2 sm:block">{language.branchGraphDescription}</div>
         </div>
-        <div class="ml-auto hidden items-center gap-1.5 rounded-full border border-darkborderc/70 bg-bgcolor/70 px-3 py-1.5 text-xs text-textcolor2 sm:flex">
+        <div class="hidden items-center gap-1.5 rounded-full border border-darkborderc/70 bg-bgcolor/70 px-3 py-1.5 text-xs text-textcolor2 sm:flex">
             <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgb(34_197_94/0.75)]"></span>
             {language.branchGraphMessageCount.replace('{}', graph.messageCount.toString())}
             {#if graph.collapsedMessageCount > 0}
@@ -408,21 +472,21 @@
             <span class="text-textcolor2/40">·</span>
             {language.branchGraphTimelineCount.replace('{}', graph.timelineCount.toString())}
         </div>
-        <button class="rounded-xl border border-darkborderc bg-bgcolor p-2 text-textcolor2 transition-colors hover:border-selected hover:text-textcolor" onclick={onclose} title={language.branchGraphClose} aria-label={language.branchGraphClose}>
+        <button class="shrink-0 rounded-xl border border-darkborderc bg-bgcolor p-2 text-textcolor2 transition-colors hover:border-selected hover:text-textcolor" onclick={onclose} title={language.branchGraphClose} aria-label={language.branchGraphClose}>
             <XIcon size={20} />
         </button>
     </header>
 
-    <div class="graph-display-bar relative z-20 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-darkborderc/60 bg-darkbg/90 px-4 py-2 text-xs text-textcolor2 sm:px-5">
-        <span class="shrink-0 font-semibold text-textcolor">{language.branchGraphLayout}</span>
-        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-1">
+    <div class="graph-display-bar relative z-20 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-darkborderc/60 bg-darkbg/90 px-3 py-1.5 text-xs text-textcolor2 sm:px-5 sm:py-2">
+        <span class="shrink-0 text-[11px] font-semibold text-textcolor sm:text-xs">{language.branchGraphLayout}</span>
+        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-0.5 sm:p-1">
             <button class="graph-mode" class:graph-mode--active={layout === 'tree'} aria-pressed={layout === 'tree'} onclick={() => setLayout('tree')}>{language.branchGraphLayoutTree}</button>
             <button class="graph-mode" class:graph-mode--active={layout === 'timeline'} aria-pressed={layout === 'timeline'} onclick={() => setLayout('timeline')}>{language.branchGraphLayoutTimeline}</button>
             <button class="graph-mode" class:graph-mode--active={layout === 'git'} aria-pressed={layout === 'git'} onclick={() => setLayout('git')}>{language.branchGraphLayoutGit}</button>
             <button class="graph-mode" class:graph-mode--active={layout === 'radial'} aria-pressed={layout === 'radial'} onclick={() => setLayout('radial')}>{language.branchGraphLayoutRadial}</button>
         </div>
-        <span class="ml-1 shrink-0 font-semibold text-textcolor">{language.branchGraphDensity}</span>
-        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-1">
+        <span class="ml-1 shrink-0 text-[11px] font-semibold text-textcolor sm:text-xs">{language.branchGraphDensity}</span>
+        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-0.5 sm:p-1">
             <button class="graph-mode" class:graph-mode--active={density === 'smart'} aria-pressed={density === 'smart'} onclick={() => setDensity('smart')}>{language.branchGraphDensitySmart}</button>
             <button class="graph-mode" class:graph-mode--active={density === 'all'} aria-pressed={density === 'all'} onclick={() => setDensity('all')}>{language.branchGraphDensityAll}</button>
             <button class="graph-mode" class:graph-mode--active={density === 'branches'} aria-pressed={density === 'branches'} onclick={() => setDensity('branches')}>{language.branchGraphDensityBranches}</button>
@@ -574,8 +638,8 @@
             {/each}
         </div>
 
-        <div class="pointer-events-none absolute bottom-5 left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
-            <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl">
+        <div class="pointer-events-none absolute bottom-[max(env(safe-area-inset-bottom),1.25rem)] left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
+            <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl backdrop-blur-sm">
                 <button class="graph-tool" onclick={() => zoomFromCenter(1 / 1.16)} title={language.branchGraphZoomOut} aria-label={language.branchGraphZoomOut}>
                     <ZoomOut size={17} />
                 </button>
@@ -595,7 +659,7 @@
             </div>
         </div>
 
-        <div class="pointer-events-none absolute bottom-5 right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 sm:block">
+        <div class="pointer-events-none absolute bottom-[max(env(safe-area-inset-bottom),1.25rem)] right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 sm:block">
             {language.branchGraphHint}
         </div>
     </div>
@@ -603,14 +667,27 @@
 
 <style>
     .graph-display-bar {
-        scrollbar-width: thin;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .graph-display-bar::-webkit-scrollbar {
+        display: none;
     }
 
     .graph-mode {
+        white-space: nowrap;
         border-radius: 0.6rem;
         padding: 0.35rem 0.65rem;
         color: var(--risu-theme-textcolor2);
         transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+    }
+
+    @media (max-width: 640px) {
+        .graph-mode {
+            padding: 0.28rem 0.55rem;
+            font-size: 0.72rem;
+        }
     }
 
     .graph-mode:hover {

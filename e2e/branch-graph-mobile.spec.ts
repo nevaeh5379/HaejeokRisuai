@@ -9,7 +9,12 @@ test.use({
 test("mobile branch graph supports pinch zoom", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#preloading")).toHaveCount(0);
-  await expect(page.getByText("Quick AI Setup")).toBeVisible();
+  const skipButton = page.getByRole("button", {
+    name: /Skip & Explore|직접 설정할래요/i,
+  });
+  if (await skipButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await skipButton.click();
+  }
 
   await page.evaluate(async () => {
     const domainModulePath = "/src/ts/stores/domain/index.ts";
@@ -36,7 +41,7 @@ test("mobile branch graph supports pinch zoom", async ({ page }) => {
     alertStore.set({ type: "branches", msg: "pinch-chat" });
   });
 
-  const viewport = page.getByRole("application", { name: "Branch Graph" });
+  const viewport = page.getByRole("application", { name: /Branch Graph|분기 그래프/i });
   const canvas = viewport.locator(".graph-canvas");
   await expect(viewport).toBeVisible();
 
@@ -88,4 +93,61 @@ test("mobile branch graph supports pinch zoom", async ({ page }) => {
     });
     await cdp.detach();
   }
+});
+
+test("mobile branch graph finishPan does not crash when releasePointerCapture throws Invalid pointer id", async ({ page }) => {
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (err) => pageErrors.push(err));
+
+  await page.goto("/");
+  await expect(page.locator("#preloading")).toHaveCount(0);
+  const skipButton = page.getByRole("button", {
+    name: /Skip & Explore|직접 설정할래요/i,
+  });
+  if (await skipButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await skipButton.click();
+  }
+
+  await page.evaluate(async () => {
+    const domainModulePath = "/src/ts/stores/domain/index.ts";
+    const storesModulePath = "/src/ts/stores.svelte.ts";
+    const { characterStore } = await import(domainModulePath);
+    const { alertStore } = await import(storesModulePath);
+
+    characterStore.characters.splice(0, characterStore.characters.length, {
+      chaId: "repro-character",
+      type: "character",
+      name: "Repro Test",
+      chatPage: 0,
+      chats: [
+        {
+          id: "repro-chat",
+          name: "Repro Test Chat",
+          message: [
+            { chatId: "repro-user", role: "user", data: "Hello" },
+            { chatId: "repro-char", role: "char", data: "Hi" },
+          ],
+        },
+      ],
+    });
+    alertStore.set({ type: "branches", msg: "repro-chat" });
+  });
+
+  const viewport = page.getByRole("application", { name: /Branch Graph|분기 그래프/i });
+  await expect(viewport).toBeVisible();
+
+  // Trigger reproduction:
+  await page.evaluate(() => {
+    const el = document.querySelector(".graph-viewport") as HTMLElement;
+    const downEvent = new PointerEvent("pointerdown", { pointerId: 101, pointerType: "touch", bubbles: true, cancelable: true });
+    el.dispatchEvent(downEvent);
+
+    const originalHas = el.hasPointerCapture.bind(el);
+    el.hasPointerCapture = (id) => (id === 101 ? true : originalHas(id));
+
+    const upEvent = new PointerEvent("pointerup", { pointerId: 101, pointerType: "touch", bubbles: true, cancelable: true });
+    el.dispatchEvent(upEvent);
+  });
+
+  expect(pageErrors).toHaveLength(0);
 });
