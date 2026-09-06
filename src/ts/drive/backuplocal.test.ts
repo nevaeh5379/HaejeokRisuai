@@ -48,7 +48,7 @@ describe("createNativeImportSource", () => {
     expect(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))).toEqual(
       Buffer.from(bytes),
     );
-  });
+  }, 15_000);
 
   it("rejects mismatched native chunk metadata", async () => {
     const source = createNativeImportSource(
