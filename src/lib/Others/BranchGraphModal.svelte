@@ -70,6 +70,9 @@
     // At small scales the whole (huge) canvas is visible at once; heavy paints
     // like node shadows are dropped there since they are invisible anyway.
     const zoomedOut = $derived(scale < 0.45)
+    // Below this scale node text is unreadable; render placeholder blocks
+    // instead of full cards to keep the DOM/paint cost tiny.
+    const lodThreshold = $derived(scale < 0.3)
 
     function nodePosition(node: typeof graph.nodes[number]) {
         if(layout === 'timeline') {
@@ -234,10 +237,23 @@
         zoomAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, scale * factor)
     }
 
+    let pendingWheel: WheelEvent | null = null
+    let wheelRafId: number | null = null
+
     function handleWheel(event: WheelEvent) {
         event.preventDefault()
-        setCanvasAnimating()
-        zoomAt(event.clientX, event.clientY, scale * Math.exp(-event.deltaY * 0.0015))
+        // Trackpads fire many wheel events per frame; coalesce into one zoom
+        // update per animation frame.
+        pendingWheel = event
+        if(wheelRafId !== null) return
+        wheelRafId = requestAnimationFrame(() => {
+            wheelRafId = null
+            const wheel = pendingWheel
+            pendingWheel = null
+            if(!wheel) return
+            setCanvasAnimating()
+            zoomAt(wheel.clientX, wheel.clientY, scale * Math.exp(-wheel.deltaY * 0.0015))
+        })
     }
 
     function startPinch() {
@@ -364,7 +380,10 @@
             })
             observer.observe(viewport)
         })
-        return () => observer?.disconnect()
+        return () => {
+            observer?.disconnect()
+            if(wheelRafId !== null) cancelAnimationFrame(wheelRafId)
+        }
     })
 </script>
 
@@ -469,6 +488,19 @@
 
             {#each graph.nodes as node}
                 {@const position = nodePosition(node)}
+                {#if lodThreshold}
+                    <!-- LOD: below the readable threshold full cards cost more to
+                         paint than the viewport can show; plain blocks keep zoom
+                         smooth and still communicate structure/color. -->
+                    <div
+                        class="branch-node branch-node--lod absolute z-10"
+                        class:branch-node--active={node.activeTerminal}
+                        class:branch-node--path={!node.activeTerminal && node.activePath}
+                        class:branch-node--summary={node.kind === 'summary'}
+                        class:branch-node--muted={focusCurrentPath && !node.activePath && !node.activeTerminal}
+                        style={`left:${position.left}px;top:${position.top}px;width:${cardWidth}px;height:${cardHeight}px;`}
+                    ></div>
+                {:else}
                 <button
                     class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left"
                     class:branch-node--active={node.activeTerminal}
@@ -538,6 +570,7 @@
                         </div>
                     {/if}
                 </button>
+                {/if}
             {/each}
         </div>
 
@@ -675,8 +708,41 @@
         opacity: 0.2;
     }
 
+    /* LOD blocks: no border-radius, no gradients, no shadows — one solid
+       paint rect per node so the compositor survives hundreds of nodes. */
+    .branch-node--lod {
+        cursor: default;
+        border: 1px solid color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
+        background: color-mix(in srgb, var(--risu-theme-bgcolor) 92%, var(--risu-theme-selected) 8%);
+        border-radius: 6px;
+    }
+
+    .branch-node--lod.branch-node--path {
+        background: color-mix(in srgb, #22c55e 20%, var(--risu-theme-bgcolor));
+    }
+
+    .branch-node--lod.branch-node--active {
+        background: #22c55e;
+    }
+
+    .branch-node--lod.branch-node--summary {
+        border-style: dashed;
+        background: color-mix(in srgb, var(--risu-theme-darkbg) 76%, transparent);
+    }
+
     .branch-node:hover {
         border-color: color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
+    }
+
+    /* The base .branch-node transition covers border/shadow/transform/opacity;
+       strip it from LOD blocks so switching classes never animates paint. */
+    .branch-node--lod {
+        transition: none;
+    }
+
+    .branch-node--lod:hover {
+        transform: none;
+        box-shadow: none;
     }
 
     .branch-node--selectable {
