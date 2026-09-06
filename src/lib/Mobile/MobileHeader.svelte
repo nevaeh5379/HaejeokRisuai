@@ -30,7 +30,8 @@
         alertStore,
         ReloadGUIPointer,
         mobileSettingsReturnChar,
-        openMobileSettingsPage
+        openMobileSettingsPage,
+        mobileBotTargetStore
     } from "src/ts/stores.svelte";
     import { preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders';
     import { getCharImage } from "src/ts/characters";
@@ -54,6 +55,9 @@
     );
 
     let settingsMenuTitle = $derived.by(() => {
+        if ($SettingsMenuIndex === 1 && $mobileBotTargetStore?.title) {
+            return $mobileBotTargetStore.title;
+        }
         switch ($SettingsMenuIndex) {
             case 0: return `${language.account} & ${language.files}`;
             case 1: return language.chatBot;
@@ -357,6 +361,7 @@
             {#if $SettingsMenuIndex > -1 || mobileSettingsReturnChar.value}
                 <button
                     onclick={() => {
+                        mobileBotTargetStore.set(null);
                         if (mobileSettingsReturnChar.value) {
                             const ret = mobileSettingsReturnChar.value;
                             mobileSettingsReturnChar.value = null;

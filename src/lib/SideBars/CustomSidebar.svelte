@@ -33,7 +33,7 @@
         {#if item.type === 'model'}
             <Button onclick={() => {
                 if ($MobileGUI) {
-                    openMobileSettingsPage(1, $selectedCharID, $MobileSideBar);
+                    openMobileSettingsPage(1, $selectedCharID, $MobileSideBar, { submenu: 0, modelTab: 'main', title: language.mainModelCardTitle || language.model });
                 } else {
                     $SettingsMenuIndex = 1;
                     settingsOpen.set(true);

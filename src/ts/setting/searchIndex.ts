@@ -19,7 +19,13 @@ import {
 import { languageSettingsItems } from "./languageSettingsData.svelte";
 
 export type SettingsSearchTarget =
-  | { kind: "menu"; menuIndex: number; subTab?: number; itemId?: string }
+  | {
+      kind: "menu";
+      menuIndex: number;
+      subTab?: number;
+      modelTab?: "main" | "sub" | "provider";
+      itemId?: string;
+    }
   | { kind: "dbExplorer" }
   | { kind: "storageExplorer" };
 
@@ -107,11 +113,10 @@ const manualEntries: ManualEntry[] = [
   },
   {
     id: "chatbot.model",
-    label: () => language.model,
+    label: () => language.mainModelCardTitle || language.model,
     keywords: [
       "model",
-      "provider",
-      "api key",
+      "main model",
       "openai",
       "claude",
       "gemini",
@@ -122,9 +127,42 @@ const manualEntries: ManualEntry[] = [
       "novelai",
       "reverse proxy",
       "모델",
-      "api 키",
+      "메인 모델",
+      "메인모델",
     ],
-    target: { kind: "menu", menuIndex: 1, subTab: 0 },
+    target: { kind: "menu", menuIndex: 1, subTab: 0, modelTab: "main" },
+    location: () => language.chatBot,
+  },
+  {
+    id: "chatbot.submodel",
+    label: () => language.subModelCardTitle || language.submodel,
+    keywords: [
+      "submodel",
+      "auxiliary",
+      "auxiliary model",
+      "ax model",
+      "sub model",
+      "보조 모델",
+      "서브 모델",
+      "보조모델",
+      "서브모델",
+    ],
+    target: { kind: "menu", menuIndex: 1, subTab: 0, modelTab: "sub" },
+    location: () => language.chatBot,
+  },
+  {
+    id: "chatbot.providers",
+    label: () => language.providerSettings || "API & Providers",
+    keywords: [
+      "provider",
+      "api key",
+      "credentials",
+      "endpoint",
+      "프로바이더",
+      "api 키",
+      "제공자",
+    ],
+    target: { kind: "menu", menuIndex: 1, subTab: 0, modelTab: "provider" },
     location: () => language.chatBot,
   },
   {

@@ -260,10 +260,19 @@ export const mobileSettingsReturnChar = $state<{
   value: null,
 });
 
+export interface MobileBotTarget {
+  submenu: number;
+  modelTab?: 'main' | 'sub' | 'provider';
+  title?: string;
+}
+
+export const mobileBotTargetStore = writable<MobileBotTarget | null>(null);
+
 export function openMobileSettingsPage(
   menuIndex: number,
   fromCharId?: number,
   sidebar?: number,
+  botTarget?: MobileBotTarget | null,
 ) {
   if (fromCharId !== undefined && fromCharId >= 0) {
     mobileSettingsReturnChar.value = {
@@ -274,6 +283,7 @@ export function openMobileSettingsPage(
   selectedCharID.set(-1);
   MobileSideBar.set(0);
   MobileGUIStack.set(2);
+  mobileBotTargetStore.set(botTarget ?? null);
   SettingsMenuIndex.set(menuIndex);
 }
 
