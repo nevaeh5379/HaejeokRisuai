@@ -221,8 +221,14 @@ export interface ISqlStorage {
     input: SqlCreateChatBranchInput,
   ): Promise<SqlChatBranchSummary>;
   activateChatBranch?(chatId: string, branchId: string): Promise<void>;
-  /** Lightweight recent-chat feed; avoids hydrating character/chat trees. */
-  listRecentChats?(limit?: number): Promise<SqlRecentChatMetadata[]>;
+  /** Lightweight recent-chat feed; avoids hydrating character/chat trees.
+   * `activeChatId` marks the currently open chat so backends can rank it by
+   * the character's latest interaction without boosting that character's
+   * other chats (which would pollute the result before LIMIT is applied). */
+  listRecentChats?(
+    limit?: number,
+    activeChatId?: string,
+  ): Promise<SqlRecentChatMetadata[]>;
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 

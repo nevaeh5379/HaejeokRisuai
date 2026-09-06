@@ -5746,7 +5746,12 @@ app.get(
     }
     try {
       await sendCompressedJson(req, res, {
-        chats: await postgresStorage.listRecentChats(req.query.limit),
+        chats: await postgresStorage.listRecentChats(
+          req.query.limit,
+          typeof req.query.activeChatId === "string" && req.query.activeChatId
+            ? req.query.activeChatId
+            : null,
+        ),
       });
     } catch (error) {
       next(error);

@@ -4876,7 +4876,7 @@ class OracleStorage extends SqlStorageBase {
   // 검색: searchMessages, searchCharactersByTag, searchCharactersByName
   // ============================================================
 
-  async listRecentChats(rawLimit) {
+  async listRecentChats(rawLimit, activeChatId = null) {
     this.assertEnabled();
     const parsedLimit = Number.parseInt(rawLimit, 10);
     const limit = Number.isSafeInteger(parsedLimit)
@@ -4904,9 +4904,12 @@ class OracleStorage extends SqlStorageBase {
                    FROM chat_chats ch
                    JOIN character_characters c ON c.id = ch.character_id
                   WHERE c.trash_time IS NULL
-                  ORDER BY NVL(ch.last_message_time, NVL(c.last_interaction_time, 0)) DESC, ch.id
+                  ORDER BY CASE
+                             WHEN ch.id = :activeChatId THEN GREATEST(NVL(ch.last_message_time, 0), NVL(c.last_interaction_time, 0))
+                             ELSE NVL(ch.last_message_time, NVL(c.last_interaction_time, 0))
+                           END DESC, ch.id
                   FETCH FIRST :limit ROWS ONLY`,
-        [limit],
+        { limit, activeChatId },
         { clobColumns: ["character_image", "last_message_text"] },
       );
       return rows.map((row) => ({
