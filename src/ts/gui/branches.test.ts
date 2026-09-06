@@ -252,6 +252,53 @@ describe("buildChatMessageGraph", () => {
     expect(originalNode.y).toBe(alternativeNode.y);
     expect(originalNode.x).not.toBe(alternativeNode.x);
   });
+
+  it("compacts trees with repeated rerolls across turns without column explosion or diagonal drift", () => {
+    // 30 turns = 60 messages in main timeline
+    const mainMessages: Message[] = [];
+    const timelines: ChatGraphTimeline[] = [];
+
+    for (let turn = 0; turn < 30; turn++) {
+      const userMsg = message(`u-${turn}`, "user", `user ${turn}`);
+      const charMsg = message(`c-${turn}`, "char", `char ${turn}`);
+      mainMessages.push(userMsg, charMsg);
+
+      // Add rerolls at various turns
+      if (turn % 3 === 1) {
+        const rerollMsg = message(`c-${turn}-reroll`, "char", `char ${turn} reroll`);
+        timelines.push(
+          timeline(`reroll-${turn}`, [...mainMessages.slice(0, -1), rerollMsg], false)
+        );
+      }
+    }
+    timelines.unshift(timeline("root", mainMessages, true));
+
+    const graph = buildChatMessageGraph(timelines, { density: "all" });
+
+    // With contour packing, columns are kept compact (7 columns vs naive 11)
+    expect(graph.columns).toBeLessThanOrEqual(8);
+
+    // Verify tree fork centering: for each branch point, parent is centered between its children
+    const parentNodes = graph.nodes.filter((n) => n.branchPoint);
+    for (const parent of parentNodes) {
+      const childEdges = graph.edges.filter((e) => e.from === parent.id);
+      const childNodes = childEdges.map((e) => graph.nodes.find((n) => n.id === e.to)!);
+      if (childNodes.length >= 2) {
+        const minChildX = Math.min(...childNodes.map((c) => c.x));
+        const maxChildX = Math.max(...childNodes.map((c) => c.x));
+        expect(parent.x).toBeCloseTo((minChildX + maxChildX) / 2);
+      }
+    }
+
+    // Nodes at the same depth must never share the same x
+    const depthMap = new Map<number, number[]>();
+    for (const node of graph.nodes) {
+      const xs = depthMap.get(node.y) ?? [];
+      expect(xs).not.toContain(node.x);
+      xs.push(node.x);
+      depthMap.set(node.y, xs);
+    }
+  });
 });
 
 describe("buildChatGraphPackedLanes", () => {

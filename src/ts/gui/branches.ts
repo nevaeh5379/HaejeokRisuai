@@ -660,33 +660,167 @@ export function buildChatMessageGraph(
     renderFromMessage(nodeId);
   }
 
-  const positions = new Map<string, { x: number; y: number }>();
-  const placing = new Set<string>();
-  let nextLeaf = 0;
-  const place = (nodeId: string, depth: number): number => {
-    const positioned = positions.get(nodeId);
-    if (positioned) return positioned.x;
-    if (placing.has(nodeId)) {
-      const x = nextLeaf++;
-      positions.set(nodeId, { x, y: depth });
-      return x;
+
+  // Hierarchical compact tree layout using depth contours (Reingold-Tilford variant)
+  interface NodeLayoutInfo {
+    childOffsets: Map<string, number>;
+    leftContour: number[];
+    rightContour: number[];
+  }
+
+  const layoutInfo = new Map<string, NodeLayoutInfo>();
+  const visitingSubtree = new Set<string>();
+
+  const layoutSubtree = (nodeId: string): NodeLayoutInfo => {
+    const cached = layoutInfo.get(nodeId);
+    if (cached) return cached;
+    if (visitingSubtree.has(nodeId)) {
+      return { childOffsets: new Map(), leftContour: [0], rightContour: [0] };
     }
-    placing.add(nodeId);
-    const childXs = (displayNodes.get(nodeId)?.children ?? []).map((childId) =>
-      place(childId, depth + 1),
-    );
-    const x =
-      childXs.length === 0
-        ? nextLeaf++
-        : (childXs[0] + childXs[childXs.length - 1]) / 2;
-    positions.set(nodeId, { x, y: depth });
-    placing.delete(nodeId);
-    return x;
+    visitingSubtree.add(nodeId);
+
+    const children = displayNodes.get(nodeId)?.children ?? [];
+    if (children.length === 0) {
+      visitingSubtree.delete(nodeId);
+      const leafInfo: NodeLayoutInfo = {
+        childOffsets: new Map(),
+        leftContour: [0],
+        rightContour: [0],
+      };
+      layoutInfo.set(nodeId, leafInfo);
+      return leafInfo;
+    }
+
+    if (children.length === 1) {
+      const childId = children[0];
+      const childLayout = layoutSubtree(childId);
+      visitingSubtree.delete(nodeId);
+      const singleInfo: NodeLayoutInfo = {
+        childOffsets: new Map([[childId, 0]]),
+        leftContour: [0, ...childLayout.leftContour],
+        rightContour: [0, ...childLayout.rightContour],
+      };
+      layoutInfo.set(nodeId, singleInfo);
+      return singleInfo;
+    }
+
+    const childLayouts = children.map((childId) => layoutSubtree(childId));
+    const childX: number[] = [0];
+    const accumLeft = [...childLayouts[0].leftContour];
+    const accumRight = [...childLayouts[0].rightContour];
+
+    for (let i = 1; i < children.length; i++) {
+      const cur = childLayouts[i];
+      let shift = 1;
+      const overlap = Math.min(accumRight.length, cur.leftContour.length);
+      for (let d = 0; d < overlap; d++) {
+        const gap = accumRight[d] - cur.leftContour[d] + 1;
+        if (gap > shift) shift = gap;
+      }
+      childX.push(shift);
+      for (let d = 0; d < cur.leftContour.length; d++) {
+        const l = cur.leftContour[d] + shift;
+        const r = cur.rightContour[d] + shift;
+        if (d < accumLeft.length) {
+          if (l < accumLeft[d]) accumLeft[d] = l;
+          if (r > accumRight[d]) accumRight[d] = r;
+        } else {
+          accumLeft.push(l);
+          accumRight.push(r);
+        }
+      }
+    }
+
+    const Xu = (childX[0] + childX[childX.length - 1]) / 2;
+
+    const childOffsets = new Map<string, number>();
+    for (let i = 0; i < children.length; i++) {
+      childOffsets.set(children[i], childX[i] - Xu);
+    }
+
+    visitingSubtree.delete(nodeId);
+    const branchInfo: NodeLayoutInfo = {
+      childOffsets,
+      leftContour: [0, ...accumLeft.map((x) => x - Xu)],
+      rightContour: [0, ...accumRight.map((x) => x - Xu)],
+    };
+    layoutInfo.set(nodeId, branchInfo);
+    return branchInfo;
   };
 
-  for (const rootId of displayRootIds) place(rootId, 0);
+  for (const rootId of displayRootIds) layoutSubtree(rootId);
+  for (const nodeId of displayNodes.keys()) layoutSubtree(nodeId);
+
+  // Pack multiple roots side-by-side using depth contours
+  const rootPositions = new Map<string, number>();
+  const globalLeftContour: number[] = [];
+  const globalRightContour: number[] = [];
+
+  for (const rootId of displayRootIds) {
+    const layout = layoutInfo.get(rootId);
+    if (!layout) continue;
+    if (rootPositions.size === 0) {
+      rootPositions.set(rootId, 0);
+      globalLeftContour.push(...layout.leftContour);
+      globalRightContour.push(...layout.rightContour);
+    } else {
+      let shift = 1;
+      const overlap = Math.min(
+        globalRightContour.length,
+        layout.leftContour.length,
+      );
+      for (let d = 0; d < overlap; d++) {
+        const gap = globalRightContour[d] - layout.leftContour[d] + 1;
+        if (gap > shift) shift = gap;
+      }
+      rootPositions.set(rootId, shift);
+      for (let d = 0; d < layout.leftContour.length; d++) {
+        const l = layout.leftContour[d] + shift;
+        const r = layout.rightContour[d] + shift;
+        if (d < globalLeftContour.length) {
+          if (l < globalLeftContour[d]) globalLeftContour[d] = l;
+          if (r > globalRightContour[d]) globalRightContour[d] = r;
+        } else {
+          globalLeftContour.push(l);
+          globalRightContour.push(r);
+        }
+      }
+    }
+  }
+
+  // Assign absolute coordinates
+  const positions = new Map<string, { x: number; y: number }>();
+  const assignPositions = (nodeId: string, absX: number, depth: number) => {
+    if (positions.has(nodeId)) return;
+    positions.set(nodeId, { x: absX, y: depth });
+    const layout = layoutInfo.get(nodeId);
+    if (!layout) return;
+    const children = displayNodes.get(nodeId)?.children ?? [];
+    for (const childId of children) {
+      const relX = layout.childOffsets.get(childId) ?? 0;
+      assignPositions(childId, absX + relX, depth + 1);
+    }
+  };
+
+  for (const rootId of displayRootIds) {
+    const rootX = rootPositions.get(rootId) ?? 0;
+    assignPositions(rootId, rootX, 0);
+  }
   for (const nodeId of displayNodes.keys()) {
-    if (!positions.has(nodeId)) place(nodeId, 0);
+    if (!positions.has(nodeId)) {
+      assignPositions(nodeId, 0, 0);
+    }
+  }
+
+  // Normalize so leftmost node is at x = 0
+  let minX = Number.POSITIVE_INFINITY;
+  for (const pos of positions.values()) {
+    if (pos.x < minX) minX = pos.x;
+  }
+  if (Number.isFinite(minX) && minX !== 0) {
+    for (const pos of positions.values()) {
+      pos.x -= minX;
+    }
   }
 
   const nodes = [...displayNodes.values()]
