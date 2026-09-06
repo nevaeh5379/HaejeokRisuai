@@ -51,7 +51,7 @@ import isEqual from "lodash/isEqual"
     // Bumped when a blob URL embedded in lastParsed was revoked by asset
     // cache eviction, so the memoized HTML must be rebuilt. Without this,
     // low-spec eviction makes images vanish until a manual reload.
-    let assetRev = 0
+    let assetRev = $state(0)
 
     function getCbsCondition(){
         try{

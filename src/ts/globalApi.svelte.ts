@@ -653,8 +653,8 @@ export async function getFileSrc(
       const data = isThumb ? await generateClientThumbnail(raw, 128) : raw;
       const mime = isThumb ? "image/webp" : getMimeType(loc);
       const url = URL.createObjectURL(new Blob([data as any], { type: mime }));
-      trackObjectUrl(url);
       if (!options?.transient) {
+        trackObjectUrl(url);
         browserAssetWeights.set(cacheKey, data.byteLength);
         browserAssetUrls.set(cacheKey, url);
       }
