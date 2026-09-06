@@ -4,6 +4,39 @@
 
   type LazySource = string | Promise<string> | (() => string | Promise<string>);
 
+  // One shared observer for every avatar in the app (hundreds of them across
+  // the sidebar and session lists) instead of one IntersectionObserver per
+  // avatar, which multiplies layout-observer work on low-end phones.
+  type ObservedAvatar = {
+    element: HTMLSpanElement;
+    reveal: (visible: boolean) => void;
+  };
+  let sharedObserver: IntersectionObserver | null = null;
+  let observed = new Set<ObservedAvatar>();
+
+  function getSharedObserver(): IntersectionObserver {
+    if (sharedObserver) return sharedObserver;
+    sharedObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const target = observedAvatars.get(entry.target as HTMLSpanElement);
+          if (target) {
+            // Lazy-load only once. Hiding the sidebar must not tear down
+            // already decoded avatars and force recreation on the next open.
+            target.reveal(true);
+            sharedObserver!.unobserve(entry.target as HTMLSpanElement);
+            observedAvatars.delete(entry.target as HTMLSpanElement);
+          }
+        }
+      },
+      { rootMargin: '320px' },
+    );
+    return sharedObserver;
+  }
+
+  const observedAvatars = new Map<Element, ObservedAvatar>();
+
   interface Props {
     rounded: boolean;
     src: LazySource;
@@ -44,16 +77,19 @@
       sourceVisible = true;
       return;
     }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some(entry => entry.isIntersecting)) {
-        // Lazy-load only once. Hiding the sidebar must not tear down already
-        // decoded avatars and force every icon to be recreated on the next open.
-        sourceVisible = true;
-        observer.disconnect();
-      }
-    }, { rootMargin: '320px' });
-    observer.observe(avatarElement);
-    return () => observer.disconnect();
+    const entry: ObservedAvatar = {
+      element: avatarElement,
+      reveal: (visible) => {
+        if (visible) sourceVisible = true;
+      },
+    };
+    observedAvatars.set(avatarElement, entry);
+    observed.add(entry);
+    getSharedObserver().observe(avatarElement);
+    return () => {
+      observedAvatars.delete(avatarElement);
+      getSharedObserver().unobserve(avatarElement);
+    };
   });
 </script>
 

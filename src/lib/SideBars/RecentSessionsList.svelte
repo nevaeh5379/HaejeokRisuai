@@ -3,7 +3,7 @@
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import { language } from 'src/lang';
     import { getCharImage } from 'src/ts/characterImage';
-    import { getPreparedNativeThumbnailSrc } from 'src/ts/globalApi.svelte';
+    import { getPreparedNativeThumbnailSrc, preloadThumbnails } from 'src/ts/globalApi.svelte';
     import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -216,6 +216,18 @@
         });
     });
 
+    $effect(() => {
+        // Batch-fetch every thumbnail up front (the loader coalesces requests
+        // into one 10ms window) so scrolling paints cached blobs instead of
+        // triggering per-row network loads mid-scroll on low-end phones.
+        const locations = allSessions
+            .map((session) => session.characterImage ?? '')
+            .filter((loc) => loc && !/^(https?:|data:|blob:|\/)/i.test(loc));
+        if (locations.length > 0) {
+            preloadThumbnails(locations);
+        }
+    });
+
     async function selectSession(item: SessionItem) {
         const { changeChar } = await import('../../ts/characters');
         let index = item.charIndex;
@@ -317,7 +329,7 @@
                 <button
                     type="button"
                     class="flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors bg-bgcolor/40 hover:bg-bgcolor border border-darkborderc/40 hover:border-selected/60 group w-full cursor-pointer overflow-hidden relative shrink-0"
-                    style="content-visibility:auto; contain-intrinsic-size:56px;"
+                    style="content-visibility:auto; contain-intrinsic-size:auto 64px;"
                     onclick={() => void selectSession(session)}
                 >
                     <!-- Avatar with Group Badge -->
