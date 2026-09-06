@@ -51,6 +51,7 @@
         currentTarget: EventTarget & HTMLDivElement;
     }) => any
     chaId?: string;
+    eager?: boolean;
   }
 
   let {
@@ -64,16 +65,20 @@
     backgroundimg = '',
     children,
     oncontextmenu,
-    chaId
+    chaId,
+    eager = false
   }: Props = $props();
 
   let avatarElement: HTMLSpanElement;
+  // Eager mode (short lists like recent sessions whose thumbnails are
+  // batch-preloaded) skips the intersection dance entirely: rows are fully
+  // rendered up front so scrolling is pure compositing.
   let sourceVisible = $state(false);
   let resolvedSrc = $derived(typeof src === 'function' ? (sourceVisible ? src() : '') : src);
   let resolvedBackground = $derived(typeof backgroundimg === 'function' ? (sourceVisible ? backgroundimg() : '') : backgroundimg);
 
   onMount(() => {
-    if (typeof IntersectionObserver === 'undefined') {
+    if (eager || typeof IntersectionObserver === 'undefined') {
       sourceVisible = true;
       return;
     }
