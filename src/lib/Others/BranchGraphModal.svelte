@@ -58,12 +58,9 @@
     let panPointerId: number | null = null
     let panStart = { x: 0, y: 0, panX: 0, panY: 0 }
     const touchPointers = new Map<number, { x: number, y: number }>()
-    let pinchStart: {
-        distance: number
-        graphX: number
-        graphY: number
-        scale: number
-    } | null = null
+    let lastPinchCenter: { x: number, y: number } | null = null
+    let lastPinchDistance: number | null = null
+    let cachedViewportBounds: DOMRect | null = null
     let hasInteracted = false
     let canvasAnimating = $state(false)
     let canvasAnimatingTimer: ReturnType<typeof setTimeout> | undefined
@@ -155,10 +152,12 @@
 
     const clampScale = (value: number) => Math.min(maxScale, Math.max(minScale, value))
 
-    function setCanvasAnimating() {
+    function triggerCanvasAnimation(duration = 200) {
         if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
         canvasAnimating = true
-        canvasAnimatingTimer = setTimeout(() => canvasAnimating = false, 200)
+        canvasAnimatingTimer = setTimeout(() => {
+            canvasAnimating = false
+        }, duration)
     }
 
     function reasonLabel(reason: 'root' | 'manual' | 'reroll'): string {
@@ -178,8 +177,7 @@
         scale = nextScale
         panX = (viewport.clientWidth - graphWidth * nextScale) / 2
         panY = (viewport.clientHeight - graphHeight * nextScale) / 2
-        isPanning = !animate
-        if(!animate) requestAnimationFrame(() => isPanning = false)
+        if(animate) triggerCanvasAnimation(200)
     }
 
     function focusActive() {
@@ -192,6 +190,7 @@
         panX = viewport.clientWidth / 2 - centerX * nextScale
         panY = viewport.clientHeight / 2 - centerY * nextScale
         hasInteracted = true
+        triggerCanvasAnimation(200)
     }
 
     function refitAfterDisplayChange() {
@@ -237,7 +236,24 @@
     function zoomFromCenter(factor: number) {
         if(!viewport) return
         const bounds = viewport.getBoundingClientRect()
-        zoomAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, scale * factor)
+        let nextScale = scale * factor
+        if(factor > 1 && scale < 0.25) {
+            nextScale = Math.max(scale * 1.35, scale + 0.04)
+        } else if(factor < 1 && scale < 0.25) {
+            nextScale = Math.min(scale * 0.75, scale - 0.03)
+        }
+        triggerCanvasAnimation(200)
+        zoomAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, nextScale)
+    }
+
+    function handleDblClick(event: MouseEvent) {
+        if(!viewport) return
+        triggerCanvasAnimation(200)
+        if(scale < 0.6) {
+            zoomAt(event.clientX, event.clientY, 1)
+        } else {
+            fitGraph(true)
+        }
     }
 
     let pendingWheel: WheelEvent | null = null
@@ -254,7 +270,6 @@
             const wheel = pendingWheel
             pendingWheel = null
             if(!wheel) return
-            setCanvasAnimating()
             zoomAt(wheel.clientX, wheel.clientY, scale * Math.exp(-wheel.deltaY * 0.0015))
         })
     }
@@ -264,19 +279,17 @@
         const [first, second] = [...touchPointers.values()]
         const distance = Math.hypot(second.x - first.x, second.y - first.y)
         if(distance === 0) return
-        const bounds = viewport.getBoundingClientRect()
-        const centerX = (first.x + second.x) / 2 - bounds.left
-        const centerY = (first.y + second.y) / 2 - bounds.top
-        pinchStart = {
-            distance,
-            graphX: (centerX - panX) / scale,
-            graphY: (centerY - panY) / scale,
-            scale,
+        lastPinchDistance = distance
+        lastPinchCenter = {
+            x: (first.x + second.x) / 2,
+            y: (first.y + second.y) / 2,
         }
+        cachedViewportBounds = viewport.getBoundingClientRect()
         panPointerId = null
         isPanning = true
+        isDraggingNode = true
+        dragThresholdPassed = true
         hasInteracted = true
-        canvasAnimating = true
         for(const pointerId of touchPointers.keys()) safeSetPointerCapture(pointerId)
     }
 
@@ -328,7 +341,6 @@
             isDraggingNode = false
             hasInteracted = true
             isPanning = true
-            canvasAnimating = true
             safeSetPointerCapture(event.pointerId)
         }
     }
@@ -338,75 +350,118 @@
             touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
             if(touchPointers.size >= 2) {
                 event.preventDefault()
-                if(!pinchStart) startPinch()
-                if(!viewport || !pinchStart) return
+                if(!lastPinchCenter || !lastPinchDistance) {
+                    startPinch()
+                }
+                if(!viewport || !lastPinchCenter || !lastPinchDistance) return
                 const [first, second] = [...touchPointers.values()]
                 const distance = Math.hypot(second.x - first.x, second.y - first.y)
-                const bounds = viewport.getBoundingClientRect()
-                const centerX = (first.x + second.x) / 2 - bounds.left
-                const centerY = (first.y + second.y) / 2 - bounds.top
-                const nextScale = clampScale(pinchStart.scale * distance / pinchStart.distance)
-                panX = centerX - pinchStart.graphX * nextScale
-                panY = centerY - pinchStart.graphY * nextScale
-                scale = nextScale
+                const currentCenter = {
+                    x: (first.x + second.x) / 2,
+                    y: (first.y + second.y) / 2,
+                }
+
+                // 1. Pan delta (movement of midpoint between fingers)
+                const dx = currentCenter.x - lastPinchCenter.x
+                const dy = currentCenter.y - lastPinchCenter.y
+                panX += dx
+                panY += dy
+
+                // 2. Zoom delta around currentCenter
+                if(distance > 5 && lastPinchDistance > 5) {
+                    const ratio = distance / lastPinchDistance
+                    if(Math.abs(ratio - 1) > 0.001) {
+                        if(!cachedViewportBounds) cachedViewportBounds = viewport.getBoundingClientRect()
+                        const bounds = cachedViewportBounds
+                        const relX = currentCenter.x - bounds.left
+                        const relY = currentCenter.y - bounds.top
+                        const graphX = (relX - panX) / scale
+                        const graphY = (relY - panY) / scale
+                        const nextScale = clampScale(scale * ratio)
+                        panX = relX - graphX * nextScale
+                        panY = relY - graphY * nextScale
+                        scale = nextScale
+                    }
+                }
+
+                lastPinchCenter = currentCenter
+                lastPinchDistance = distance
+                isDraggingNode = true
+                hasInteracted = true
                 return
             }
         }
+
         if(panPointerId !== event.pointerId) return
         const dx = event.clientX - panStart.x
         const dy = event.clientY - panStart.y
         if(!dragThresholdPassed) {
-            if(Math.hypot(dx, dy) > 6) {
+            if(Math.hypot(dx, dy) > 8) {
                 dragThresholdPassed = true
                 isDraggingNode = true
                 hasInteracted = true
                 isPanning = true
-                canvasAnimating = true
                 safeSetPointerCapture(event.pointerId)
+                panStart.x = event.clientX
+                panStart.y = event.clientY
+                panStart.panX = panX
+                panStart.panY = panY
             }
         }
         if(dragThresholdPassed) {
-            panX = panStart.panX + dx
-            panY = panStart.panY + dy
+            panX = panStart.panX + (event.clientX - panStart.x)
+            panY = panStart.panY + (event.clientY - panStart.y)
         }
     }
 
     function finishPan(event: PointerEvent) {
         if(event.pointerType === 'touch' && touchPointers.delete(event.pointerId)) {
             safeReleasePointerCapture(event.pointerId)
-            if(pinchStart) {
-                pinchStart = null
-                if(touchPointers.size >= 2) {
-                    startPinch()
-                    return
-                }
+            const wasPinching = lastPinchCenter !== null || lastPinchDistance !== null
+            if(touchPointers.size >= 2) {
+                startPinch()
+                return
+            }
+            lastPinchCenter = null
+            lastPinchDistance = null
+            cachedViewportBounds = null
+
+            if(touchPointers.size === 1) {
                 const remaining = touchPointers.entries().next().value
                 if(remaining) {
                     const [pointerId, pointer] = remaining
                     panPointerId = pointerId
                     panStart = { x: pointer.x, y: pointer.y, panX, panY }
-                    dragThresholdPassed = true
+                    dragThresholdPassed = wasPinching
+                    isPanning = wasPinching
+                    isDraggingNode = wasPinching
                     safeSetPointerCapture(pointerId)
-                } else {
-                    panPointerId = null
-                    isPanning = false
-                    if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
-                    canvasAnimating = false
                 }
                 return
             }
+
+            panPointerId = null
+            isPanning = false
+            if(isDraggingNode) {
+                setTimeout(() => {
+                    isDraggingNode = false
+                    dragThresholdPassed = false
+                }, 120)
+            } else {
+                dragThresholdPassed = false
+            }
+            return
         }
+
         if(panPointerId !== event.pointerId) return
         safeReleasePointerCapture(event.pointerId)
         panPointerId = null
         isPanning = false
-        if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
-        canvasAnimating = false
         if(isDraggingNode) {
             setTimeout(() => {
                 isDraggingNode = false
                 dragThresholdPassed = false
-            }, 80)
+            }, 120)
         } else {
             dragThresholdPassed = false
         }
@@ -440,6 +495,7 @@
         return () => {
             observer?.disconnect()
             if(wheelRafId !== null) cancelAnimationFrame(wheelRafId)
+            if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
         }
     })
 </script>
@@ -510,15 +566,14 @@
         onpointermove={movePan}
         onpointerup={finishPan}
         onpointercancel={finishPan}
-        ondblclick={() => fitGraph()}
+        ondblclick={handleDblClick}
         role="application"
         aria-label={language.branchGraphTitle}
     >
         <div
-            class="graph-canvas absolute left-0 top-0"
-            class:graph-canvas--moving={isPanning}
+            class="graph-canvas absolute left-0 top-0 touch-none select-none"
             class:graph-canvas--zoomed-out={zoomedOut}
-            class:graph-canvas--zoom-animating={canvasAnimating}
+            class:graph-canvas--animated={canvasAnimating}
             style={`width:${graphWidth}px;height:${graphHeight}px;transform:translate3d(${panX}px,${panY}px,0) scale(${scale});`}
         >
             <svg class="pointer-events-none absolute inset-0 overflow-visible" width={graphWidth} height={graphHeight} aria-hidden="true">
@@ -557,7 +612,7 @@
                          paint than the viewport can show; plain blocks keep zoom
                          smooth and still communicate structure/color. -->
                     <div
-                        class="branch-node branch-node--lod absolute z-10"
+                        class="branch-node branch-node--lod absolute z-10 touch-none select-none"
                         class:branch-node--active={node.activeTerminal}
                         class:branch-node--path={!node.activeTerminal && node.activePath}
                         class:branch-node--summary={node.kind === 'summary'}
@@ -566,7 +621,7 @@
                     ></div>
                 {:else}
                 <button
-                    class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left"
+                    class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left touch-none select-none"
                     class:branch-node--active={node.activeTerminal}
                     class:branch-node--path={!node.activeTerminal && node.activePath}
                     class:branch-node--selectable={!loading && node.terminals.length > 0}
@@ -716,13 +771,11 @@
 
     .graph-canvas {
         transform-origin: 0 0;
-        transition: transform 180ms ease-out;
         will-change: transform;
     }
 
-    .graph-canvas--moving,
-    .graph-canvas--zoom-animating {
-        transition: none;
+    .graph-canvas--animated {
+        transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
     }
 
     /* Zoomed out the whole canvas is visible at once: drop expensive paint
