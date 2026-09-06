@@ -587,6 +587,38 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("boosts only the active chat with the character interaction time", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    // char-1 was just opened: its interaction time is newer than every
+    // message timestamp in the seeded data.
+    database.exec(
+      "UPDATE characters SET last_interaction_time = CASE id WHEN 'char-1' THEN 999999 ELSE 1 END",
+    );
+
+    // Without an active chat hint, a message-less chat (chat-2, NULL
+    // last_message_time) falls back to the character interaction time, so it
+    // can rank above its sibling chat-1. This is exactly why the caller must
+    // pass the active chat hint: the backend cannot know which chat was
+    // opened. The returned metadata still keeps the chat's own timestamps.
+    const withoutActive = await storage.listRecentChats!(50);
+    expect(withoutActive[0]?.chatId).toBe("chat-2");
+    expect(withoutActive[0]?.lastDate).toBe(null);
+    expect(withoutActive.find((row) => row.chatId === "chat-1")?.lastDate).toBe(
+      2000,
+    );
+
+    // With the active chat hint, only chat-1 is boosted above the fallback so
+    // the open session is first; sibling chat-2 keeps its fallback ordering
+    // and cannot crowd out other characters' recent rows before LIMIT.
+    const withActive = await storage.listRecentChats!(50, "chat-1");
+    expect(withActive[0]?.chatId).toBe("chat-1");
+    // The boosted row is ranked first, but the returned metadata still reports
+    // the chat's own last message time so the UI ago-text stays truthful.
+    expect(withActive[0]?.lastDate).toBe(2000);
+    database.close();
+  });
+
   it("deletes a parent message safely when its own branch-link row is missing", async () => {
     const { storage, database } = makeFreshHarness(make);
     await seed(storage);

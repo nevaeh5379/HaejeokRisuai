@@ -141,8 +141,13 @@
             allSessions = buildLocalSessionSnapshot();
             return;
         }
+        // Let the backend boost only the chat that is actually open; the UI
+        // no longer needs to patch timestamps afterwards (which could only
+        // fix rows that survived LIMIT).
+        const activeChar = characterStore.currentCharacter;
+        const activeChatId = activeChar?.chats?.[activeChar.chatPage ?? 0]?.id;
         try {
-            const rows = await storage.listRecentChats(50);
+            const rows = await storage.listRecentChats(50, activeChatId);
             if (token !== refreshToken) return;
             const indexById = new Map(
                 (characterStore.characters ?? []).map((character, index) => [character.chaId, index]),
@@ -154,16 +159,7 @@
                     ? char?.chatFolders?.find((folder) => folder.id === row.folderId)?.name
                     : undefined;
                 const lastMessageSnippet = cleanSnippet(row.lastMessage ?? '');
-                // Use the freshest of the chat's last message time and the
-                // character's last interaction, but only for the chat that was
-                // actually opened, so merely visiting a chat moves it to the
-                // top of the recent list.
-                const isActiveChat =
-                    row.chatId !== undefined &&
-                    char?.chats?.[char.chatPage ?? 0]?.id === row.chatId;
-                const timestamp = isActiveChat
-                    ? Math.max(row.lastDate ?? 0, char?.lastInteraction ?? 0)
-                    : (row.lastDate ?? char?.lastInteraction ?? 0);
+                const timestamp = row.lastDate ?? char?.lastInteraction ?? 0;
                 return [{
                     charIndex: charIndex ?? -1,
                     chatIndex: row.chatPosition,

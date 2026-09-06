@@ -1301,15 +1301,22 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     }
   }
 
-  async listRecentChats(limit?: number): Promise<SqlRecentChatMetadata[]> {
+  async listRecentChats(
+    limit?: number,
+    activeChatId?: string,
+  ): Promise<SqlRecentChatMetadata[]> {
     if (!(await this.ensureEnabled())) {
       return [];
     }
-    const url =
-      limit !== undefined && limit !== null && limit > 0
-        ? `/api/database-v2/recent-chats?limit=${encodeURIComponent(limit)}`
-        : "/api/database-v2/recent-chats";
-    const response = await fetch(url, {
+    const params = new URLSearchParams();
+    if (limit !== undefined && limit !== null && limit > 0) {
+      params.set("limit", String(limit));
+    }
+    if (activeChatId) {
+      params.set("activeChatId", activeChatId);
+    }
+    const search = params.size > 0 ? `?${params.toString()}` : "";
+    const response = await fetch(`/api/database-v2/recent-chats${search}`, {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),

@@ -3255,6 +3255,9 @@ export function changeChatTo(IdOrIndex: string | number) {
   if (characterStore.characters[characterStore.selectedId]) {
     characterStore.characters[characterStore.selectedId].chatPage = index;
   }
+  // Touch the character so same-character chat switches also refresh the
+  // recent-sessions ordering (it ranks by last interaction).
+  characterStore.touchCharacterInteraction(characterStore.selectedId);
   ReloadGUIPointer.set(Math.random());
   releaseInactiveChatMessages(() => getProtectedChatIds([nextChat?.id]));
 }

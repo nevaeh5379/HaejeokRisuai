@@ -1305,7 +1305,10 @@ export abstract class NativeSqliteStorageBase {
     );
   }
 
-  async listRecentChats(limit = 50): Promise<SqlRecentChatMetadata[]> {
+  async listRecentChats(
+    limit = 50,
+    activeChatId?: string,
+  ): Promise<SqlRecentChatMetadata[]> {
     const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 100));
     const rows = await this.selectRows<{
       character_id: string;
@@ -1338,9 +1341,12 @@ export abstract class NativeSqliteStorageBase {
          FROM chats ch
          JOIN characters c ON c.id = ch.character_id
         WHERE c.trash_time IS NULL
-        ORDER BY MAX(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0) DESC, ch.id
+        ORDER BY CASE
+              WHEN ch.id = ? THEN MAX(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0)
+              ELSE COALESCE(ch.last_message_time, c.last_interaction_time, 0)
+            END DESC, ch.id
         LIMIT ?`,
-      [normalizedLimit],
+      activeChatId ? [activeChatId, normalizedLimit] : [null, normalizedLimit],
     );
     return rows.map((row) => ({
       characterId: row.character_id,

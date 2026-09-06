@@ -5777,7 +5777,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listRecentChats(rawLimit) {
+  async listRecentChats(rawLimit, activeChatId = null) {
     this.assertEnabled();
     const parsedLimit = Number.parseInt(rawLimit, 10);
     const limit = Number.isSafeInteger(parsedLimit)
@@ -5801,9 +5801,12 @@ class PostgresStorage extends SqlStorageBase {
                FROM chat.chats AS ch
                JOIN character.characters AS c ON c.id = ch.character_id
               WHERE c.trash_time IS NULL
-              ORDER BY GREATEST(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0) DESC, ch.id
+              ORDER BY CASE
+                        WHEN ch.id = $2 THEN GREATEST(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0)
+                        ELSE COALESCE(ch.last_message_time, c.last_interaction_time, 0)
+                      END DESC, ch.id
               LIMIT $1`,
-      [limit],
+      [limit, activeChatId],
     );
     return result.rows.map((row) => ({
       characterId: row.character_id,
