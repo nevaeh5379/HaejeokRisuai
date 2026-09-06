@@ -576,77 +576,87 @@ export function buildChatMessageGraph(
     return ids.length > 1;
   };
 
-  const renderFromMessage = (nodeId: string) => {
-    visitedOriginalIds.add(nodeId);
-    ensureMessage(nodeId);
-    if (processedMessageIds.has(nodeId)) return;
-    processedMessageIds.add(nodeId);
-    const source = mutableNodes.get(nodeId);
-    if (!source) return;
+  // Iterative traversal: long linear chats must not grow the call stack.
+  const renderFromMessage = (startNodeId: string) => {
+    const renderStack: string[] = [startNodeId];
+    while (renderStack.length > 0) {
+      const nodeId = renderStack.pop()!;
+      visitedOriginalIds.add(nodeId);
+      ensureMessage(nodeId);
+      if (processedMessageIds.has(nodeId)) continue;
+      processedMessageIds.add(nodeId);
+      const source = mutableNodes.get(nodeId);
+      if (!source) continue;
 
-    for (const directChildId of source.children) {
-      const hiddenIds: string[] = [];
-      let targetId = directChildId;
-      while (!keepIds.has(targetId)) {
-        hiddenIds.push(targetId);
+      const nextIds: string[] = [];
+      for (const directChildId of source.children) {
+        const hiddenIds: string[] = [];
+        let targetId = directChildId;
+        while (!keepIds.has(targetId)) {
+          hiddenIds.push(targetId);
+          visitedOriginalIds.add(targetId);
+          const hidden = mutableNodes.get(targetId);
+          if (!hidden || hidden.children.length !== 1) break;
+          targetId = hidden.children[0];
+        }
         visitedOriginalIds.add(targetId);
-        const hidden = mutableNodes.get(targetId);
-        if (!hidden || hidden.children.length !== 1) break;
-        targetId = hidden.children[0];
-      }
-      visitedOriginalIds.add(targetId);
-      ensureMessage(targetId);
+        ensureMessage(targetId);
 
-      const collapseThreshold = density === "branches" ? 1 : MIN_COLLAPSED_RUN;
-      if (hiddenIds.length >= collapseThreshold) {
-        const first = mutableNodes.get(hiddenIds[0])!;
-        const last = mutableNodes.get(hiddenIds[hiddenIds.length - 1])!;
-        const id = `summary:${summaryId++}`;
-        const pathIds = [nodeId, ...hiddenIds, targetId];
-        displayNodes.set(id, {
-          node: {
-            id,
-            x: 0,
-            y: 0,
-            kind: "summary",
-            preview: messagePreview(first.message),
-            endPreview: messagePreview(last.message),
-            model: "",
-            isComment: false,
-            activePath: hiddenIds.every((hiddenId) =>
-              activeNodeIds.has(hiddenId),
-            ),
-            activeTerminal: false,
-            branchPoint: false,
-            continuationCount: 1,
-            messageIndex: first.messageIndex,
-            endMessageIndex: last.messageIndex,
-            collapsedCount: hiddenIds.length,
-            terminals: [],
-          },
-          children: [],
-        });
-        const active = pathIsActive(pathIds);
-        addDisplayEdge(nodeId, id, active);
-        addDisplayEdge(id, targetId, active);
-      } else {
-        let previousId = nodeId;
-        for (const hiddenId of hiddenIds) {
-          ensureMessage(hiddenId);
+        const collapseThreshold = density === "branches" ? 1 : MIN_COLLAPSED_RUN;
+        if (hiddenIds.length >= collapseThreshold) {
+          const first = mutableNodes.get(hiddenIds[0])!;
+          const last = mutableNodes.get(hiddenIds[hiddenIds.length - 1])!;
+          const id = `summary:${summaryId++}`;
+          const pathIds = [nodeId, ...hiddenIds, targetId];
+          displayNodes.set(id, {
+            node: {
+              id,
+              x: 0,
+              y: 0,
+              kind: "summary",
+              preview: messagePreview(first.message),
+              endPreview: messagePreview(last.message),
+              model: "",
+              isComment: false,
+              activePath: hiddenIds.every((hiddenId) =>
+                activeNodeIds.has(hiddenId),
+              ),
+              activeTerminal: false,
+              branchPoint: false,
+              continuationCount: 1,
+              messageIndex: first.messageIndex,
+              endMessageIndex: last.messageIndex,
+              collapsedCount: hiddenIds.length,
+              terminals: [],
+            },
+            children: [],
+          });
+          const active = pathIsActive(pathIds);
+          addDisplayEdge(nodeId, id, active);
+          addDisplayEdge(id, targetId, active);
+        } else {
+          let previousId = nodeId;
+          for (const hiddenId of hiddenIds) {
+            ensureMessage(hiddenId);
+            addDisplayEdge(
+              previousId,
+              hiddenId,
+              originalEdgeActive(previousId, hiddenId),
+            );
+            previousId = hiddenId;
+          }
           addDisplayEdge(
             previousId,
-            hiddenId,
-            originalEdgeActive(previousId, hiddenId),
+            targetId,
+            originalEdgeActive(previousId, targetId),
           );
-          previousId = hiddenId;
         }
-        addDisplayEdge(
-          previousId,
-          targetId,
-          originalEdgeActive(previousId, targetId),
-        );
+        nextIds.push(targetId);
       }
-      renderFromMessage(targetId);
+      // Reverse so pop() visits targets in the original child order (DFS).
+      for (let index = nextIds.length - 1; index >= 0; index--) {
+        renderStack.push(nextIds[index]);
+      }
     }
   };
 
@@ -661,15 +671,46 @@ export function buildChatMessageGraph(
   }
 
 
-  // Hierarchical compact tree layout using depth contours (Reingold-Tilford variant)
+  // Hierarchical compact tree layout using depth contours (Reingold-Tilford variant).
+  // Single-child chain nodes store only a compact {tailId, length} record instead
+  // of full contour arrays, so a long linear chat costs O(N) layout memory, not O(N²).
   interface NodeLayoutInfo {
     childOffsets: Map<string, number>;
     leftContour: number[];
     rightContour: number[];
+    chain?: { tailId: string; length: number };
   }
 
   const layoutInfo = new Map<string, NodeLayoutInfo>();
   const visitingSubtree = new Set<string>();
+
+  // Depth-indexed contour lookups. Single-child chain nodes hold compact
+  // {tailId, length} metadata (their contour is all zeros) and resolve reads
+  // against the chain tail's arrays in O(1), so no contour is copied per node.
+  const leftAt = (id: string, depth: number): number | undefined => {
+    const layout = layoutInfo.get(id);
+    if (!layout) return undefined;
+    const chain = layout.chain;
+    if (!chain) return layout.leftContour[depth];
+    if (depth < chain.length) return 0;
+    return layoutInfo.get(chain.tailId)?.leftContour[depth - chain.length];
+  };
+  const rightAt = (id: string, depth: number): number | undefined => {
+    const layout = layoutInfo.get(id);
+    if (!layout) return undefined;
+    const chain = layout.chain;
+    if (!chain) return layout.rightContour[depth];
+    if (depth < chain.length) return 0;
+    return layoutInfo.get(chain.tailId)?.rightContour[depth - chain.length];
+  };
+  const contourLength = (id: string): number => {
+    const layout = layoutInfo.get(id);
+    if (!layout) return 0;
+    const chain = layout.chain;
+    if (!chain) return layout.leftContour.length;
+    const tail = layoutInfo.get(chain.tailId);
+    return chain.length + (tail ? tail.leftContour.length : 0);
+  };
 
   const layoutSubtree = (nodeId: string): NodeLayoutInfo => {
     const cached = layoutInfo.get(nodeId);
@@ -697,30 +738,41 @@ export function buildChatMessageGraph(
       visitingSubtree.delete(nodeId);
       const singleInfo: NodeLayoutInfo = {
         childOffsets: new Map([[childId, 0]]),
-        leftContour: [0, ...childLayout.leftContour],
-        rightContour: [0, ...childLayout.rightContour],
+        leftContour: [],
+        rightContour: [],
+        chain: {
+          tailId: childLayout.chain?.tailId ?? childId,
+          length: (childLayout.chain?.length ?? 0) + 1,
+        },
       };
       layoutInfo.set(nodeId, singleInfo);
       return singleInfo;
     }
 
-    const childLayouts = children.map((childId) => layoutSubtree(childId));
+    children.forEach((childId) => layoutSubtree(childId));
+
     const childX: number[] = [0];
-    const accumLeft = [...childLayouts[0].leftContour];
-    const accumRight = [...childLayouts[0].rightContour];
+    const firstDepth = contourLength(children[0]);
+    const accumLeft: number[] = [];
+    const accumRight: number[] = [];
+    for (let d = 0; d < firstDepth; d++) {
+      accumLeft.push(leftAt(children[0], d) ?? 0);
+      accumRight.push(rightAt(children[0], d) ?? 0);
+    }
 
     for (let i = 1; i < children.length; i++) {
-      const cur = childLayouts[i];
+      const curId = children[i];
+      const curDepth = contourLength(curId);
       let shift = 1;
-      const overlap = Math.min(accumRight.length, cur.leftContour.length);
+      const overlap = Math.min(accumRight.length, curDepth);
       for (let d = 0; d < overlap; d++) {
-        const gap = accumRight[d] - cur.leftContour[d] + 1;
+        const gap = accumRight[d] - (leftAt(curId, d) ?? 0) + 1;
         if (gap > shift) shift = gap;
       }
       childX.push(shift);
-      for (let d = 0; d < cur.leftContour.length; d++) {
-        const l = cur.leftContour[d] + shift;
-        const r = cur.rightContour[d] + shift;
+      for (let d = 0; d < curDepth; d++) {
+        const l = (leftAt(curId, d) ?? 0) + shift;
+        const r = (rightAt(curId, d) ?? 0) + shift;
         if (d < accumLeft.length) {
           if (l < accumLeft[d]) accumLeft[d] = l;
           if (r > accumRight[d]) accumRight[d] = r;
@@ -748,8 +800,29 @@ export function buildChatMessageGraph(
     return branchInfo;
   };
 
-  for (const rootId of displayRootIds) layoutSubtree(rootId);
-  for (const nodeId of displayNodes.keys()) layoutSubtree(nodeId);
+  const computeLayout = (nodeId: string): NodeLayoutInfo => {
+    // Iterative post-order: process children before the parent without recursion.
+    const stack: string[] = [nodeId];
+    const order: string[] = [];
+    const seen = new Set<string>();
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      if (layoutInfo.has(current)) continue;
+      order.push(current);
+      for (const childId of displayNodes.get(current)?.children ?? []) {
+        if (!layoutInfo.has(childId)) stack.push(childId);
+      }
+    }
+    for (let index = order.length - 1; index >= 0; index--) {
+      layoutSubtree(order[index]);
+    }
+    return layoutInfo.get(nodeId)!;
+  };
+
+  for (const rootId of displayRootIds) computeLayout(rootId);
+  for (const nodeId of displayNodes.keys()) computeLayout(nodeId);
 
   // Pack multiple roots side-by-side using depth contours
   const rootPositions = new Map<string, number>();
@@ -761,44 +834,51 @@ export function buildChatMessageGraph(
     if (!layout) continue;
     if (rootPositions.size === 0) {
       rootPositions.set(rootId, 0);
-      globalLeftContour.push(...layout.leftContour);
-      globalRightContour.push(...layout.rightContour);
     } else {
       let shift = 1;
       const overlap = Math.min(
         globalRightContour.length,
-        layout.leftContour.length,
+        contourLength(rootId),
       );
       for (let d = 0; d < overlap; d++) {
-        const gap = globalRightContour[d] - layout.leftContour[d] + 1;
+        const gap =
+          (globalRightContour[d] ?? 0) - (leftAt(rootId, d) ?? 0) + 1;
         if (gap > shift) shift = gap;
       }
       rootPositions.set(rootId, shift);
-      for (let d = 0; d < layout.leftContour.length; d++) {
-        const l = layout.leftContour[d] + shift;
-        const r = layout.rightContour[d] + shift;
-        if (d < globalLeftContour.length) {
-          if (l < globalLeftContour[d]) globalLeftContour[d] = l;
-          if (r > globalRightContour[d]) globalRightContour[d] = r;
-        } else {
-          globalLeftContour.push(l);
-          globalRightContour.push(r);
-        }
+    }
+    const shift = rootPositions.get(rootId) ?? 0;
+    const depth = contourLength(rootId);
+    for (let d = 0; d < depth; d++) {
+      const l = (leftAt(rootId, d) ?? 0) + shift;
+      const r = (rightAt(rootId, d) ?? 0) + shift;
+      if (d < globalLeftContour.length) {
+        if (l < globalLeftContour[d]) globalLeftContour[d] = l;
+        if (r > globalRightContour[d]) globalRightContour[d] = r;
+      } else {
+        globalLeftContour.push(l);
+        globalRightContour.push(r);
       }
     }
   }
 
-  // Assign absolute coordinates
+  // Assign absolute coordinates (iterative DFS: safe for long linear chains)
   const positions = new Map<string, { x: number; y: number }>();
-  const assignPositions = (nodeId: string, absX: number, depth: number) => {
-    if (positions.has(nodeId)) return;
-    positions.set(nodeId, { x: absX, y: depth });
-    const layout = layoutInfo.get(nodeId);
-    if (!layout) return;
-    const children = displayNodes.get(nodeId)?.children ?? [];
-    for (const childId of children) {
-      const relX = layout.childOffsets.get(childId) ?? 0;
-      assignPositions(childId, absX + relX, depth + 1);
+  const assignPositions = (startNodeId: string, absX: number, depth: number) => {
+    const stack: { nodeId: string; absX: number; depth: number }[] = [
+      { nodeId: startNodeId, absX, depth },
+    ];
+    while (stack.length > 0) {
+      const { nodeId, absX: x, depth: y } = stack.pop()!;
+      if (positions.has(nodeId)) continue;
+      positions.set(nodeId, { x, y });
+      const layout = layoutInfo.get(nodeId);
+      if (!layout) continue;
+      const children = displayNodes.get(nodeId)?.children ?? [];
+      for (const childId of children) {
+        const relX = layout.childOffsets.get(childId) ?? 0;
+        stack.push({ nodeId: childId, absX: x + relX, depth: y + 1 });
+      }
     }
   };
 

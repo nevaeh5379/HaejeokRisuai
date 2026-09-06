@@ -190,6 +190,28 @@ describe("buildChatMessageGraph", () => {
     expect(graph.nodes.every((node) => node.kind === "message")).toBe(true);
   });
 
+  it("lays out a long linear chat without quadratic contour memory", () => {
+    const messages = Array.from({ length: 5000 }, (_, index) =>
+      message(
+        `linear-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `linear ${index + 1}`,
+      ),
+    );
+
+    const graph = buildChatMessageGraph([timeline("root", messages, true)], {
+      density: "all",
+    });
+
+    expect(graph.nodes).toHaveLength(5000);
+    expect(graph.rows).toBe(5000);
+    expect(graph.columns).toBe(1);
+    expect(graph.nodes.every((node) => node.x === 0)).toBe(true);
+    expect(graph.nodes.every((node) => node.y === node.messageIndex)).toBe(
+      true,
+    );
+  });
+
   it("compresses linear runs to branch landmarks when density is branches", () => {
     const shared = Array.from({ length: 12 }, (_, index) =>
       message(
