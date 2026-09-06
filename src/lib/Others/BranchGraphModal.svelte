@@ -65,6 +65,11 @@
         scale: number
     } | null = null
     let hasInteracted = false
+    let canvasAnimating = $state(false)
+    let canvasAnimatingTimer: ReturnType<typeof setTimeout> | undefined
+    // At small scales the whole (huge) canvas is visible at once; heavy paints
+    // like node shadows are dropped there since they are invisible anyway.
+    const zoomedOut = $derived(scale < 0.45)
 
     function nodePosition(node: typeof graph.nodes[number]) {
         if(layout === 'timeline') {
@@ -147,6 +152,12 @@
 
     const clampScale = (value: number) => Math.min(maxScale, Math.max(minScale, value))
 
+    function setCanvasAnimating() {
+        if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
+        canvasAnimating = true
+        canvasAnimatingTimer = setTimeout(() => canvasAnimating = false, 200)
+    }
+
     function reasonLabel(reason: 'root' | 'manual' | 'reroll'): string {
         if(reason === 'root') return language.branchGraphOriginal
         if(reason === 'reroll') return language.branchGraphReroll
@@ -225,6 +236,7 @@
 
     function handleWheel(event: WheelEvent) {
         event.preventDefault()
+        setCanvasAnimating()
         zoomAt(event.clientX, event.clientY, scale * Math.exp(-event.deltaY * 0.0015))
     }
 
@@ -245,6 +257,7 @@
         panPointerId = null
         isPanning = true
         hasInteracted = true
+        canvasAnimating = true
         for(const pointerId of touchPointers.keys()) viewport.setPointerCapture?.(pointerId)
     }
 
@@ -264,6 +277,7 @@
         event.preventDefault()
         hasInteracted = true
         isPanning = true
+        canvasAnimating = true
         panPointerId = event.pointerId
         panStart = { x: event.clientX, y: event.clientY, panX, panY }
         viewport?.setPointerCapture?.(event.pointerId)
@@ -311,6 +325,8 @@
                 } else {
                     panPointerId = null
                     isPanning = false
+                    if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
+                    canvasAnimating = false
                 }
                 return
             }
@@ -319,6 +335,8 @@
         if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
         panPointerId = null
         isPanning = false
+        if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
+        canvasAnimating = false
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -352,7 +370,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black/85 backdrop-blur-sm">
+<div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black/85">
     <header class="relative z-30 flex shrink-0 items-center gap-3 border-b border-darkborderc/70 bg-darkbg/95 px-4 py-3 shadow-xl sm:px-5 sm:py-4">
         <div class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-selected/60 bg-selected/20 text-textcolor shadow-inner">
             <GitBranch size={20} />
@@ -416,15 +434,11 @@
         <div
             class="graph-canvas absolute left-0 top-0"
             class:graph-canvas--moving={isPanning}
+            class:graph-canvas--zoomed-out={zoomedOut}
+            class:graph-canvas--zoom-animating={canvasAnimating}
             style={`width:${graphWidth}px;height:${graphHeight}px;transform:translate3d(${panX}px,${panY}px,0) scale(${scale});`}
         >
             <svg class="pointer-events-none absolute inset-0 overflow-visible" width={graphWidth} height={graphHeight} aria-hidden="true">
-                <defs>
-                    <filter id="branch-active-glow" x="-30%" y="-30%" width="160%" height="160%">
-                        <feGaussianBlur stdDeviation="3" result="blur" />
-                        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                    </filter>
-                </defs>
                 {#each graph.edges as edge}
                     {@const from = nodesById.get(edge.from)}
                     {@const to = nodesById.get(edge.to)}
@@ -439,14 +453,16 @@
                             stroke-width={edge.active ? 3 : 2}
                             stroke-dasharray={edge.active || layout === 'git' ? undefined : '5 7'}
                         />
-                        <circle
-                            class:active-junction={edge.active}
-                            class:branch-junction--muted={focusCurrentPath && !edge.active}
-                            class="branch-junction"
-                            cx={geometry.x2}
-                            cy={geometry.y2}
-                            r={edge.active ? 5 : 4}
-                        />
+                        {#if !zoomedOut}
+                            <circle
+                                class:active-junction={edge.active}
+                                class:branch-junction--muted={focusCurrentPath && !edge.active}
+                                class="branch-junction"
+                                cx={geometry.x2}
+                                cy={geometry.y2}
+                                r={edge.active ? 5 : 4}
+                            />
+                        {/if}
                     {/if}
                 {/each}
             </svg>
@@ -469,7 +485,7 @@
                     tabindex={!loading && node.terminals.length > 0 ? 0 : -1}
                     onclick={() => selectMessageNode(node)}
                 >
-                    <span class="branch-node-glow pointer-events-none absolute -right-8 -top-12 size-28 rounded-full opacity-0 blur-2xl"></span>
+                    {#if node.activeTerminal && !zoomedOut}<span class="branch-node-glow pointer-events-none absolute -right-8 -top-12 size-28 rounded-full opacity-0 blur-2xl"></span>{/if}
                     {#if node.kind === 'summary'}
                         <div class="relative flex w-full items-center gap-2">
                             <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-textcolor2/40 bg-textcolor/5 text-textcolor2">
@@ -526,7 +542,7 @@
         </div>
 
         <div class="pointer-events-none absolute bottom-5 left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
-            <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl backdrop-blur-md">
+            <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl">
                 <button class="graph-tool" onclick={() => zoomFromCenter(1 / 1.16)} title={language.branchGraphZoomOut} aria-label={language.branchGraphZoomOut}>
                     <ZoomOut size={17} />
                 </button>
@@ -546,7 +562,7 @@
             </div>
         </div>
 
-        <div class="pointer-events-none absolute bottom-5 right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 backdrop-blur sm:block">
+        <div class="pointer-events-none absolute bottom-5 right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 sm:block">
             {language.branchGraphHint}
         </div>
     </div>
@@ -594,8 +610,20 @@
         will-change: transform;
     }
 
-    .graph-canvas--moving {
+    .graph-canvas--moving,
+    .graph-canvas--zoom-animating {
         transition: none;
+    }
+
+    /* Zoomed out the whole canvas is visible at once: drop expensive paint
+       effects that are invisible at small scales but cost the rasterizer
+       large blur buffers per node. */
+    .graph-canvas--zoomed-out .branch-node,
+    .graph-canvas--zoomed-out .branch-node--git,
+    .graph-canvas--zoomed-out .branch-node--radial,
+    .graph-canvas--zoomed-out .branch-node--summary {
+        box-shadow: none;
+        text-shadow: none;
     }
 
     .branch-edge {
@@ -604,7 +632,7 @@
 
     .branch-edge.active-edge {
         stroke: #22c55e;
-        filter: url(#branch-active-glow);
+        filter: drop-shadow(0 0 2.5px rgb(34 197 94 / 0.55));
     }
 
     .branch-junction {
