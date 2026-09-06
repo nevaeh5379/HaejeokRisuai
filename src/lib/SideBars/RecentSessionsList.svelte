@@ -4,7 +4,7 @@
     import { language } from 'src/lang';
     import { getCharImage } from 'src/ts/characterImage';
     import { getPreparedNativeThumbnailSrc } from 'src/ts/globalApi.svelte';
-    import { sideBarStore } from 'src/ts/stores.svelte';
+    import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
     import {
@@ -104,8 +104,14 @@
             for (let chatIdx = 0; chatIdx < (char.chats?.length ?? 0); chatIdx++) {
                 const chat = char.chats[chatIdx];
                 if (!chat) continue;
-                const lastMsg = chat.message?.[chat.message.length - 1];
-                const timestamp = chat.lastDate || lastMsg?.time || 0;
+                    const lastMsg = chat.message?.[chat.message.length - 1];
+                    const chatTime = chat.lastDate || lastMsg?.time || 0;
+                    // Only the active chat inherits the character-level
+                    // interaction time; other chats keep their own timestamps.
+                    const timestamp =
+                        chatIdx === (char.chatPage ?? 0)
+                            ? Math.max(chatTime, char.lastInteraction ?? 0)
+                            : chatTime;
                 const folderName = chat.folderId
                     ? char.chatFolders?.find((folder) => folder.id === chat.folderId)?.name
                     : undefined;
@@ -148,10 +154,16 @@
                     ? char?.chatFolders?.find((folder) => folder.id === row.folderId)?.name
                     : undefined;
                 const lastMessageSnippet = cleanSnippet(row.lastMessage ?? '');
-                // A chat with no usable timestamp (e.g. legacy rows) would sink to
-                // the bottom of a timestamp sort; fall back to the character's
-                // last interaction so it still shows up near the top.
-                const timestamp = row.lastDate ?? char?.lastInteraction ?? 0;
+                // Use the freshest of the chat's last message time and the
+                // character's last interaction, but only for the chat that was
+                // actually opened, so merely visiting a chat moves it to the
+                // top of the recent list.
+                const isActiveChat =
+                    row.chatId !== undefined &&
+                    char?.chats?.[char.chatPage ?? 0]?.id === row.chatId;
+                const timestamp = isActiveChat
+                    ? Math.max(row.lastDate ?? 0, char?.lastInteraction ?? 0)
+                    : (row.lastDate ?? char?.lastInteraction ?? 0);
                 return [{
                     charIndex: charIndex ?? -1,
                     chatIndex: row.chatPosition,
@@ -181,6 +193,12 @@
     });
 
     $effect(() => {
+        // Re-read when the sidebar opens (after the drawer animation) and when
+        // the selected character/chat changes (ReloadGUIPointer fires on both
+        // changeChar and changeChatTo), so a session that was just opened
+        // moves to the top even while the sidebar stays open.
+        void $selectedCharID;
+        void $ReloadGUIPointer;
         if (!$sideBarStore) return;
         const delayMs = Math.max(0, Number(settingsStore.state.animationSpeed ?? 0.2) * 1000 + 32);
         const timer = window.setTimeout(() => void refreshSessions(), delayMs);

@@ -1219,7 +1219,7 @@ export class WebSqliteStorage implements ISqlStorage {
                LIMIT 1
             )
         WHERE c.trash_time IS NULL
-        ORDER BY COALESCE(ch.last_message_time, c.last_interaction_time, 0) DESC, ch.id
+        ORDER BY MAX(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0) DESC, ch.id
         LIMIT ?`,
       [normalizedLimit],
     );

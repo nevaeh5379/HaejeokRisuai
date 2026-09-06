@@ -1338,7 +1338,7 @@ export abstract class NativeSqliteStorageBase {
          FROM chats ch
          JOIN characters c ON c.id = ch.character_id
         WHERE c.trash_time IS NULL
-        ORDER BY COALESCE(ch.last_message_time, c.last_interaction_time, 0) DESC, ch.id
+        ORDER BY MAX(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0) DESC, ch.id
         LIMIT ?`,
       [normalizedLimit],
     );
