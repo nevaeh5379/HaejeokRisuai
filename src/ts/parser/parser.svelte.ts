@@ -13,7 +13,13 @@ import { presetStore } from "../stores/domain/presetStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import type { ChatExecutionTarget } from "../chatTarget";
-import { aiWatermarkingLawApplies, getFileSrc } from "../globalApi.svelte";
+import {
+  aiWatermarkingLawApplies,
+  getFileSrc,
+  isLiveObjectUrl,
+  trackObjectUrl,
+  untrackObjectUrl,
+} from "../globalApi.svelte";
 import { isTauri, isNodeServer, isCapacitor } from "src/ts/platform";
 import { BoundedCache } from "../memory/boundedCache";
 import { getImageCacheLimit } from "../memory/imageCacheLimits";
@@ -553,8 +559,12 @@ const fileSrcCache = new BoundedCache<string, string>({
 
 async function getFileSrcCached(path: string) {
   let cached = fileSrcCache.get(path);
-  if (cached) {
+  if (cached && isLiveObjectUrl(cached)) {
     return cached;
+  }
+  if (cached) {
+    // Blob was revoked by asset cache eviction; reload from storage.
+    fileSrcCache.delete(path);
   }
   const src = await getFileSrc(path);
   fileSrcCache.set(path, src);
@@ -847,14 +857,22 @@ async function parseInlayAssets(data: string) {
       }
 
       let url = blobUrlCache.get(id);
+      if (url && !isLiveObjectUrl(url)) {
+        blobUrlCache.delete(id);
+        url = undefined;
+      }
       if (!url && asset?.data instanceof Blob) {
         url = URL.createObjectURL(asset.data);
+        trackObjectUrl(url);
         blobUrlCache.set(id, url);
         const cacheLimit = settingsStore.state.lowSpecMode ? 8 : 24;
         if (blobUrlCache.size > cacheLimit) {
           const oldest = blobUrlCache.keys().next().value!;
           const oldUrl = blobUrlCache.get(oldest);
-          if (oldUrl) URL.revokeObjectURL(oldUrl);
+          if (oldUrl) {
+            untrackObjectUrl(oldUrl);
+            URL.revokeObjectURL(oldUrl);
+          }
           blobUrlCache.delete(oldest);
         }
       }
