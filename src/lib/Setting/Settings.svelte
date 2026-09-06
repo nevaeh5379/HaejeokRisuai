@@ -8,7 +8,7 @@
     import PluginSettings from "./Pages/PluginSettings.svelte";
     import FilesSettings from "./Pages/FilesSettings.svelte";
     import AdvancedSettings from "./Pages/AdvancedSettings.svelte";
-    import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex, settingsOpen } from "src/ts/stores.svelte";
+    import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex, settingsOpen, mobileBotTargetStore } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import Communities from "./Pages/Communities.svelte";
     import GlobalLoreBookSettings from "./Pages/GlobalLoreBookSettings.svelte";
@@ -39,8 +39,7 @@
     let dbExplorerOpen = $state(false)
     let storageExplorerOpen = $state(false)
     let pluginStorageExplorerOpen = $state(false)
-    let searchNavigation = $state<{ menuIndex: number; subTab?: number } | null>(null)
-    let mobileBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider'; title: string } | null>(null)
+    let searchNavigation = $state<{ menuIndex: number; subTab?: number; modelTab?: 'main' | 'sub' | 'provider' } | null>(null)
     let desktopBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider' }>({ submenu: 0, modelTab: 'main' })
     let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
     let isMobile = $derived(innerWidth < 768 || $MobileGUI)
@@ -50,14 +49,17 @@
         if (!isMobile && $SettingsMenuIndex === -1) {
             $SettingsMenuIndex = 1
         }
+        if ($SettingsMenuIndex === -1) {
+            $mobileBotTargetStore = null
+        }
         if (searchNavigation && searchNavigation.menuIndex === 1 && searchNavigation.subTab !== undefined) {
-            desktopBotTarget = { submenu: searchNavigation.subTab, modelTab: 'main' }
+            desktopBotTarget = { submenu: searchNavigation.subTab, modelTab: searchNavigation.modelTab || 'main' }
         }
     })
 
     let currentMenuTitle = $derived.by(() => {
-        if (isMobile && $SettingsMenuIndex === 1 && mobileBotTarget?.title) {
-            return mobileBotTarget.title;
+        if (isMobile && $SettingsMenuIndex === 1 && $mobileBotTargetStore?.title) {
+            return $mobileBotTargetStore.title;
         }
         switch ($SettingsMenuIndex) {
             case 0: return `${language.account} & ${language.files}`;
@@ -104,7 +106,14 @@
         dbExplorerOpen = false
         storageExplorerOpen = false
         pluginStorageExplorerOpen = false
-        searchNavigation = { menuIndex: target.menuIndex, subTab: target.subTab }
+        searchNavigation = { menuIndex: target.menuIndex, subTab: target.subTab, modelTab: target.modelTab }
+        if (isMobile && target.menuIndex === 1) {
+            $mobileBotTargetStore = {
+                submenu: target.subTab ?? 0,
+                modelTab: target.modelTab,
+                title: result.label,
+            }
+        }
         $SettingsMenuIndex = target.menuIndex
         if (target.itemId) {
             requestAnimationFrame(() => scrollToSettingAnchor(target.itemId!))
@@ -360,7 +369,7 @@
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => {
-                            mobileBotTarget = { submenu: 0, modelTab: 'main', title: language.mainModelCardTitle || language.model };
+                            $mobileBotTargetStore = { submenu: 0, modelTab: 'main', title: language.mainModelCardTitle || language.model };
                             $SettingsMenuIndex = 1;
                         }}
                     >
@@ -368,19 +377,33 @@
                             <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <BotIcon size={18} />
                             </div>
-                            <span class="flex min-w-0 flex-col">
-                                <span class="text-base font-medium text-textcolor truncate">{language.mainModelCardTitle || language.model}</span>
-                                <span class="text-xs text-textcolor2 line-clamp-2">{language.mainModelCardDesc}</span>
-                            </span>
+                            <span class="text-base font-medium text-textcolor truncate">{language.mainModelCardTitle || language.model}</span>
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 2. API Keys & Providers -->
+                    <!-- 2. Auxiliary Model Selection -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => {
-                            mobileBotTarget = { submenu: 0, modelTab: 'provider', title: language.providerSettings || "API & Providers" };
+                            $mobileBotTargetStore = { submenu: 0, modelTab: 'sub', title: language.subModelCardTitle || language.submodel };
+                            $SettingsMenuIndex = 1;
+                        }}
+                    >
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
+                                <SparkleIcon size={18} />
+                            </div>
+                            <span class="text-base font-medium text-textcolor truncate">{language.subModelCardTitle || language.submodel}</span>
+                        </div>
+                        <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                    </button>
+
+                    <!-- 3. API Keys & Providers -->
+                    <button
+                        class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                        onclick={() => {
+                            $mobileBotTargetStore = { submenu: 0, modelTab: 'provider', title: language.providerSettings || "API & Providers" };
                             $SettingsMenuIndex = 1;
                         }}
                     >
@@ -388,19 +411,16 @@
                             <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0">
                                 <KeyIcon size={18} />
                             </div>
-                            <span class="flex min-w-0 flex-col">
-                                <span class="text-base font-medium text-textcolor truncate">{language.providerSettings || "API & Providers"}</span>
-                                <span class="text-xs text-textcolor2 line-clamp-2">{language.providerCredentialsDesc}</span>
-                            </span>
+                            <span class="text-base font-medium text-textcolor truncate">{language.providerSettings || "API & Providers"}</span>
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 3. Generation Parameters -->
+                    <!-- 4. Generation Parameters -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => {
-                            mobileBotTarget = { submenu: 1, title: language.parameters };
+                            $mobileBotTargetStore = { submenu: 1, title: language.parameters };
                             $SettingsMenuIndex = 1;
                         }}
                     >
@@ -413,11 +433,11 @@
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 4. Prompts & Formats -->
+                    <!-- 5. Prompts & Formats -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => {
-                            mobileBotTarget = { submenu: 2, title: language.prompt };
+                            $mobileBotTargetStore = { submenu: 2, title: language.prompt };
                             $SettingsMenuIndex = 1;
                         }}
                     >
@@ -430,11 +450,11 @@
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
 
-                    <!-- 5. Others -->
+                    <!-- 6. Others -->
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                         onclick={() => {
-                            mobileBotTarget = { submenu: 3, title: language.others };
+                            $mobileBotTargetStore = { submenu: 3, title: language.others };
                             $SettingsMenuIndex = 1;
                         }}
                     >
@@ -681,9 +701,9 @@
         <UserSettings />
     {:else if $SettingsMenuIndex === 1}
         <BotSettings
-            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : (isMobile && mobileBotTarget ? mobileBotTarget.submenu : desktopBotTarget.submenu)}
-            targetModelTab={searchNavigation?.menuIndex === 1 ? undefined : (isMobile && mobileBotTarget?.modelTab ? mobileBotTarget.modelTab : desktopBotTarget.modelTab)}
-            hideTabs={true}
+            targetSubmenu={searchNavigation?.menuIndex === 1 ? searchNavigation.subTab : (isMobile && $mobileBotTargetStore ? $mobileBotTargetStore.submenu : desktopBotTarget.submenu)}
+            targetModelTab={searchNavigation?.menuIndex === 1 && searchNavigation.modelTab ? searchNavigation.modelTab : (isMobile && $mobileBotTargetStore?.modelTab ? $mobileBotTargetStore.modelTab : desktopBotTarget.modelTab)}
+            hideTabs={!isMobile || !!$mobileBotTargetStore}
             goPromptTemplate={() => {
                 $SettingsMenuIndex = 13
             }}
@@ -748,7 +768,7 @@
                             class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
                             onclick={() => {
                                 $SettingsMenuIndex = -1;
-                                mobileBotTarget = null;
+                                $mobileBotTargetStore = null;
                             }}
                             aria-label="Back"
                         >
