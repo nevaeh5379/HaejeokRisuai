@@ -130,6 +130,142 @@
     }
 
     let isDragging = false
+    let autoScrollRaf: number | null = null
+    let autoScrollSpeed = 0
+    let scrollTargetEl: HTMLElement | null = null
+    let lastTouchX = 0
+    let lastTouchY = 0
+
+    function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+        let node = el?.parentElement ?? null
+        while (node && node !== document.body && node !== document.documentElement) {
+            const style = window.getComputedStyle(node)
+            const overflowY = style.overflowY
+            if (
+                (overflowY === 'auto' || overflowY === 'scroll') &&
+                node.scrollHeight > node.clientHeight
+            ) {
+                return node
+            }
+            node = node.parentElement
+        }
+        return (document.scrollingElement as HTMLElement) || document.documentElement
+    }
+
+    function autoScrollTick() {
+        if (!isDragging || autoScrollSpeed === 0) {
+            autoScrollRaf = null
+            return
+        }
+
+        let scrolled = false
+        if (rootEle && rootEle.scrollHeight > rootEle.clientHeight + 4) {
+            if (autoScrollSpeed > 0 && rootEle.scrollTop + rootEle.clientHeight < rootEle.scrollHeight - 2) {
+                rootEle.scrollTop += autoScrollSpeed
+                scrolled = true
+            } else if (autoScrollSpeed < 0 && rootEle.scrollTop > 2) {
+                rootEle.scrollTop += autoScrollSpeed
+                scrolled = true
+            }
+        }
+
+        if (!scrolled) {
+            if (!scrollTargetEl || !scrollTargetEl.isConnected) {
+                scrollTargetEl = findScrollParent(rootEle)
+            }
+            if (scrollTargetEl) {
+                scrollTargetEl.scrollTop += autoScrollSpeed
+            }
+        }
+
+        try {
+            const target = document.elementFromPoint(lastTouchX, lastTouchY)
+            if (target) {
+                target.dispatchEvent(new PointerEvent('pointermove', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: lastTouchX,
+                    clientY: lastTouchY,
+                }))
+            }
+        } catch {}
+
+        autoScrollRaf = requestAnimationFrame(autoScrollTick)
+    }
+
+    function handlePointerMoveForScroll(e: PointerEvent | TouchEvent) {
+        if (!isDragging) {
+            stopAutoScroll()
+            return
+        }
+
+        const touch = 'touches' in e && e.touches.length > 0 ? e.touches[0] : (e as PointerEvent)
+        if (!touch || touch.clientY === undefined) return
+
+        lastTouchX = touch.clientX
+        lastTouchY = touch.clientY
+
+        const clientY = touch.clientY
+        const vh = window.innerHeight
+        const threshold = 120
+
+        let speed = 0
+
+        // 1. Check relative to rootEle if rootEle has internal scroll
+        if (rootEle && rootEle.scrollHeight > rootEle.clientHeight + 4) {
+            const rect = rootEle.getBoundingClientRect()
+            if (clientY > rect.bottom - 80 && clientY < rect.bottom + 60) {
+                const ratio = Math.min(1, Math.max(0, (clientY - (rect.bottom - 80)) / 80))
+                speed = Math.round(4 + ratio * 20)
+            } else if (clientY < rect.top + 80 && clientY > rect.top - 60) {
+                const ratio = Math.min(1, Math.max(0, (rect.top + 80 - clientY) / 80))
+                speed = -Math.round(4 + ratio * 20)
+            }
+        }
+
+        // 2. If not scrolling rootEle or rootEle is near edge, check viewport edges (for outer container)
+        if (speed === 0) {
+            if (clientY > vh - threshold) {
+                const ratio = Math.min(1, Math.max(0, (clientY - (vh - threshold)) / threshold))
+                speed = Math.round(4 + ratio * 20)
+            } else if (clientY < threshold) {
+                const ratio = Math.min(1, Math.max(0, (threshold - clientY) / threshold))
+                speed = -Math.round(4 + ratio * 20)
+            }
+        }
+
+        autoScrollSpeed = speed
+
+        if (autoScrollSpeed !== 0 && !autoScrollRaf) {
+            autoScrollRaf = requestAnimationFrame(autoScrollTick)
+        }
+    }
+
+    function startAutoScroll() {
+        stopAutoScroll()
+        scrollTargetEl = findScrollParent(rootEle)
+        window.addEventListener('pointermove', handlePointerMoveForScroll, { passive: true })
+        window.addEventListener('touchmove', handlePointerMoveForScroll, { passive: true })
+    }
+
+    function stopAutoScroll() {
+        if (autoScrollRaf) {
+            cancelAnimationFrame(autoScrollRaf)
+            autoScrollRaf = null
+        }
+        autoScrollSpeed = 0
+        window.removeEventListener('pointermove', handlePointerMoveForScroll)
+        window.removeEventListener('touchmove', handlePointerMoveForScroll)
+    }
+
+    const sortableMergedOptions = {
+        ...sortableOptions,
+        scroll: true,
+        scrollSensitivity: 100,
+        scrollSpeed: 20,
+        bubbleScroll: true,
+        forceAutoScrollFallback: true,
+    }
 
     function destroyRootSortable() {
         if (isDragging) return
@@ -183,6 +319,7 @@
 
     const handleSortEnd = async (evt: any) => {
         isDragging = false
+        stopAutoScroll()
         if (hoverFolderTimer) {
             clearTimeout(hoverFolderTimer)
             hoverFolderTimer = null
@@ -248,10 +385,11 @@
                 },
                 onStart: () => {
                     isDragging = true
+                    startAutoScroll()
                 },
                 onMove: checkFolderHover,
                 onEnd: handleSortEnd,
-                ...sortableOptions,
+                ...sortableMergedOptions,
             })
             folderStbMap.set(folderId, stb)
         })
@@ -306,10 +444,11 @@
                 },
                 onStart: () => {
                     isDragging = true
+                    startAutoScroll()
                 },
                 onMove: checkFolderHover,
                 onEnd: handleSortEnd,
-                ...sortableOptions,
+                ...sortableMergedOptions,
             })
         })
 
@@ -320,6 +459,7 @@
     })
 
     onDestroy(() => {
+        stopAutoScroll()
         destroySortable()
         refreshModules()
     })
