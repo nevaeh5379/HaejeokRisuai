@@ -1956,6 +1956,7 @@ export const languageEnglish = {
   removeFolderConfirm:
     "Do you really want to remove this folder? Modules inside will be moved to the root.",
   moveToFolder: "Move to Folder",
+  removeFromFolder: "Remove from Folder",
   noFolder: "No Folder",
   ungrouped: "Ungrouped",
   basicInfo: "Basic Info",
