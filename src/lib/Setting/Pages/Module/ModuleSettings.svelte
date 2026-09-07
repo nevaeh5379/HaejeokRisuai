@@ -352,6 +352,9 @@
             }
         } else {
             const moduleId = itemEl.getAttribute('data-module-id')
+            if (itemEl.parentNode) {
+                itemEl.remove()
+            }
             if (!moduleId) return
 
             if (toEl === rootEle) {
@@ -469,7 +472,6 @@
 
     <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
-    {#key sorted}
     <div bind:this={rootEle} class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
         {#if modules.length === 0 && moduleFolders.length === 0}
             <div class="text-textcolor2 p-3">{language.noModules}</div>
@@ -580,7 +582,6 @@
             {/each}
         {/if}
     </div>
-    {/key}
 
     <div class="flex mr-2 mt-4">
         <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" use:tooltip={language.createModule} onclick={async () => {
