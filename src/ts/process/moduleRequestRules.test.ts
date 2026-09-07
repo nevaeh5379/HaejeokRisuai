@@ -21,28 +21,57 @@ describe("module request rules", () => {
       ),
     ).toBe(true);
   });
-  it("requires every literal phrase in the same message", () => {
+  it("requires every literal phrase in the same message when matchMode is all", () => {
+    const allRule: ModuleRequestRule = { ...rule, matchMode: "all" };
     expect(
-      matchesModuleRequestRule(rule, [
+      matchesModuleRequestRule(allRule, [
         { role: "user", content: "weather format" },
       ]),
     ).toBe(true);
     expect(
-      matchesModuleRequestRule(rule, [
+      matchesModuleRequestRule(allRule, [
         { role: "user", content: "weather" },
         { role: "user", content: "format" },
       ]),
     ).toBe(false);
     expect(
-      matchesModuleRequestRule(rule, [
+      matchesModuleRequestRule(allRule, [
         { role: "user", content: "Weather format" },
       ]),
     ).toBe(false);
     expect(
-      matchesModuleRequestRule({ ...rule, phrases: ["[a.*]"] }, [
+      matchesModuleRequestRule({ ...allRule, phrases: ["[a.*]"] }, [
         { role: "user", content: "[a.*]" },
       ]),
     ).toBe(true);
+  });
+  it("matches any phrase by default and trims whitespace", () => {
+    expect(
+      matchesModuleRequestRule(rule, [
+        { role: "user", content: "weather only" },
+      ]),
+    ).toBe(true);
+    expect(
+      matchesModuleRequestRule(
+        { enabled: true, phrases: [" weather ", "format\r"] },
+        [{ role: "user", content: "weather only" }],
+      ),
+    ).toBe(true);
+  });
+  it("matches all phrases across the request when matchMode is all_request", () => {
+    const requestRule: ModuleRequestRule = { ...rule, matchMode: "all_request" };
+    expect(
+      matchesModuleRequestRule(requestRule, [
+        { role: "system", content: "weather header" },
+        { role: "user", content: "output format" },
+      ]),
+    ).toBe(true);
+    expect(
+      matchesModuleRequestRule(requestRule, [
+        { role: "system", content: "weather header" },
+        { role: "user", content: "other content" },
+      ]),
+    ).toBe(false);
   });
   it("restricts source, role and optional tail without confusing role-relative positions", () => {
     const messages = [
@@ -115,5 +144,35 @@ describe("module request rules", () => {
       ).status,
     ).toBe("unmatched");
     expect(resolveModuleRequestRules(modules, []).status).toBe("unmatched");
+  });
+  it("forgives mistakenly selecting the module itself as sourceModuleId", () => {
+    const messages = [{ role: "user", content: "weather" }];
+    const selfSourceModule = {
+      id: "a",
+      name: "A",
+      subModel: "model-a",
+      subModelRequestRules: [{ enabled: true, phrases: ["weather"], sourceModuleId: "a" }],
+    };
+    expect(
+      resolveModuleRequestRules([selfSourceModule], messages, "backend"),
+    ).toMatchObject({ status: "matched", model: "model-a" });
+  });
+  it("resolves conflicts in favor of the more specific (longer) matched phrase", () => {
+    const messages = [{ role: "user", content: "detailed weather report" }];
+    const genericModule = {
+      id: "generic",
+      name: "Generic",
+      subModel: "generic-model",
+      subModelRequestRules: [{ enabled: true, phrases: ["weather"] }],
+    };
+    const specificModule = {
+      id: "specific",
+      name: "Specific",
+      subModel: "specific-model",
+      subModelRequestRules: [{ enabled: true, phrases: ["detailed weather"] }],
+    };
+    expect(
+      resolveModuleRequestRules([genericModule, specificModule], messages),
+    ).toMatchObject({ status: "matched", model: "specific-model" });
   });
 });

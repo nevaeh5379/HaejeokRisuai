@@ -354,6 +354,7 @@ interface RisuModule {
         sourceModuleId?: string;
         role?: "user" | "assistant" | "system";
         lastMessages?: number;
+        matchMode?: "any" | "all" | "all_request";
     }[];
 }
 
