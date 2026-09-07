@@ -153,6 +153,7 @@ export interface DatabaseSettings {
   textScreenRounded?: boolean;
   textScreenBorder?: string;
   characterOrder: (string | folder)[];
+  moduleOrder?: string[];
   hordeConfig: hordeConfig;
   novelai: {
     token: string;
@@ -583,6 +584,7 @@ export interface ModuleStoreData {
   modules: RisuModule[];
   enabledModules: string[];
   moduleFolders: ModuleFolder[];
+  moduleOrder?: string[];
 }
 
 /** PresetStore-owned selection metadata. */

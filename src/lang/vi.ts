@@ -1301,6 +1301,7 @@ export const languageVietnamese = {
   removeFolderConfirm:
     "Bạn có thực sự muốn xóa thư mục này? Các mô-đun bên trong sẽ được chuyển về thư mục gốc.",
   moveToFolder: "Chuyển vào thư mục",
+  removeFromFolder: "Xóa khỏi thư mục",
   noFolder: "Không có thư mục",
   ungrouped: "Chưa phân nhóm",
   basicInfo: "Thông tin cơ bản",
