@@ -24,7 +24,6 @@ import {
   AppendableBuffer,
   downloadFile,
   forageStorage,
-  LocalWriter,
   readImage,
   saveAsset,
   VirtualWriter,
@@ -97,11 +96,10 @@ export async function exportModule(
     char.extentions ??= {};
     char.extentions["moduleNoneImage"] = true;
   }
-  const writer = new LocalWriter();
-  await writer.init(module.name + ".module", ["charx"]);
   await exportCharacterCard(char, "charx", {
     spec: "v3",
-    writer,
+    filenameBase: `${module.name}.module`,
+    showSuccessAlert: false,
   });
   if (alertEnd) {
     alertNormal(language.successExport);
