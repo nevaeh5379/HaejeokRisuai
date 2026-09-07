@@ -129,123 +129,169 @@
         }
     }
 
+    let isDragging = false
+
+    function destroyRootSortable() {
+        if (isDragging) return
+        if (rootStb) {
+            try { rootStb.destroy() } catch {}
+            rootStb = null
+        }
+    }
+
     function destroySortable() {
         if (hoverFolderTimer) {
             clearTimeout(hoverFolderTimer)
             hoverFolderTimer = null
         }
         hoverFolderId = null
-        if (rootStb) {
-            try { rootStb.destroy() } catch {}
-            rootStb = null
-        }
+        if (isDragging) return
+        destroyRootSortable()
         for (const stb of folderStbMap.values()) {
             try { stb.destroy() } catch {}
         }
         folderStbMap.clear()
     }
 
+    const checkFolderHover = (event: any) => {
+        if (event.related?.className?.indexOf?.('no-sort') !== -1) return false
+        const folderEl = event.related?.closest?.('[data-folder-id]')
+        if (folderEl) {
+            const fId = folderEl.getAttribute('data-folder-id')
+            if (fId && !openFolders.has(fId)) {
+                if (hoverFolderId !== fId) {
+                    if (hoverFolderTimer) clearTimeout(hoverFolderTimer)
+                    hoverFolderId = fId
+                    hoverFolderTimer = setTimeout(() => {
+                        if (hoverFolderId === fId) {
+                            const next = new Set(openFolders)
+                            next.add(fId)
+                            openFolders = next
+                        }
+                    }, 500)
+                }
+            }
+        } else {
+            if (hoverFolderTimer) {
+                clearTimeout(hoverFolderTimer)
+                hoverFolderTimer = null
+            }
+            hoverFolderId = null
+        }
+        return true
+    }
+
+    const handleSortEnd = async (evt: any) => {
+        isDragging = false
+        if (hoverFolderTimer) {
+            clearTimeout(hoverFolderTimer)
+            hoverFolderTimer = null
+        }
+        hoverFolderId = null
+
+        const fromEl: HTMLElement = evt.from
+        const toEl: HTMLElement = evt.to
+        const itemEl: HTMLElement = evt.item
+        const oldIndex: number | undefined = evt.oldIndex
+        const newIndex: number | undefined = evt.newIndex
+
+        if (oldIndex === undefined || newIndex === undefined) return
+        if (fromEl === toEl && oldIndex === newIndex) return
+
+        scrollPos = rootEle?.scrollTop ?? 0
+
+        if (fromEl === toEl) {
+            if (fromEl === rootEle) {
+                await moduleStore.moveRootItem(oldIndex, newIndex)
+            } else {
+                const folderId = fromEl.getAttribute('data-folder-container-id')
+                if (folderId) {
+                    const fModules = moduleStore.modulesInFolder(folderId)
+                    const copy = fModules.map((m) => m.id)
+                    const [moved] = copy.splice(oldIndex, 1)
+                    copy.splice(newIndex, 0, moved)
+                    await moduleStore.reorderFolderModules(folderId, copy)
+                }
+            }
+        } else {
+            const moduleId = itemEl.getAttribute('data-module-id')
+            if (!moduleId) return
+
+            if (toEl === rootEle) {
+                await moduleStore.moveModule(moduleId, undefined, newIndex)
+            } else {
+                const targetFolderId = toEl.getAttribute('data-folder-container-id')
+                if (targetFolderId) {
+                    await moduleStore.moveModule(moduleId, targetFolderId, newIndex)
+                }
+            }
+        }
+        sorted += 1
+    }
+
+    function folderSortable(node: HTMLElement, folderId: string) {
+        let stb: any = null
+        let cancelled = false
+
+        import('sortablejs/modular/sortable.core.esm.js').then(({ default: Sortable }) => {
+            if (cancelled || !node) return
+            stb = Sortable.create(node, {
+                handle: '.module-drag-handle',
+                draggable: '.sortable-item',
+                animation: 150,
+                group: {
+                    name: 'modules-group',
+                    pull: true,
+                    put: (to: any, from: any, dragEl: HTMLElement) => {
+                        return dragEl.getAttribute('data-item-type') !== 'folder'
+                    },
+                },
+                onStart: () => {
+                    isDragging = true
+                },
+                onMove: checkFolderHover,
+                onEnd: handleSortEnd,
+                ...sortableOptions,
+            })
+            folderStbMap.set(folderId, stb)
+        })
+
+        return {
+            destroy() {
+                cancelled = true
+                if (stb) {
+                    try { stb.destroy() } catch {}
+                }
+                folderStbMap.delete(folderId)
+            }
+        }
+    }
+
     $effect(() => {
         const _search = moduleSearch
-        const _items = rootItems
-        const _open = openFolders
         const _sorted = sorted
         const _ele = rootEle
 
         if (!_ele || _search !== '') {
-            destroySortable()
+            if (!isDragging) destroySortable()
             return
         }
 
         let cancelled = false
         tick().then(async () => {
-            if (cancelled || !_ele || moduleSearch !== '') return
-            destroySortable()
+            if (cancelled || !_ele || moduleSearch !== '' || isDragging) return
+            destroyRootSortable()
             const { default: Sortable } = await import('sortablejs/modular/sortable.core.esm.js')
-            if (cancelled || !_ele || moduleSearch !== '') return
+            if (cancelled || !_ele || moduleSearch !== '' || isDragging) return
 
             if (scrollPos > 0) {
                 _ele.scrollTop = scrollPos
             }
 
-            const handleSortEnd = async (evt: any) => {
-                if (hoverFolderTimer) {
-                    clearTimeout(hoverFolderTimer)
-                    hoverFolderTimer = null
-                }
-                hoverFolderId = null
-
-                const fromEl: HTMLElement = evt.from
-                const toEl: HTMLElement = evt.to
-                const itemEl: HTMLElement = evt.item
-                const oldIndex: number | undefined = evt.oldIndex
-                const newIndex: number | undefined = evt.newIndex
-
-                if (oldIndex === undefined || newIndex === undefined) return
-                if (fromEl === toEl && oldIndex === newIndex) return
-
-                scrollPos = _ele?.scrollTop ?? 0
-
-                if (fromEl === toEl) {
-                    if (fromEl === _ele) {
-                        await moduleStore.moveRootItem(oldIndex, newIndex)
-                    } else {
-                        const folderId = fromEl.getAttribute('data-folder-container-id')
-                        if (folderId) {
-                            const fModules = moduleStore.modulesInFolder(folderId)
-                            const copy = fModules.map((m) => m.id)
-                            const [moved] = copy.splice(oldIndex, 1)
-                            copy.splice(newIndex, 0, moved)
-                            await moduleStore.reorderFolderModules(folderId, copy)
-                        }
-                    }
-                } else {
-                    const moduleId = itemEl.getAttribute('data-module-id')
-                    if (!moduleId) return
-
-                    if (toEl === _ele) {
-                        await moduleStore.moveModule(moduleId, undefined, newIndex)
-                    } else {
-                        const targetFolderId = toEl.getAttribute('data-folder-container-id')
-                        if (targetFolderId) {
-                            await moduleStore.moveModule(moduleId, targetFolderId, newIndex)
-                        }
-                    }
-                }
-                sorted += 1
-            }
-
-            const checkFolderHover = (event: any) => {
-                if (event.related?.className?.indexOf?.('no-sort') !== -1) return false
-                const folderEl = event.related?.closest?.('[data-folder-id]')
-                if (folderEl) {
-                    const fId = folderEl.getAttribute('data-folder-id')
-                    if (fId && !openFolders.has(fId)) {
-                        if (hoverFolderId !== fId) {
-                            if (hoverFolderTimer) clearTimeout(hoverFolderTimer)
-                            hoverFolderId = fId
-                            hoverFolderTimer = setTimeout(() => {
-                                if (hoverFolderId === fId) {
-                                    const next = new Set(openFolders)
-                                    next.add(fId)
-                                    openFolders = next
-                                }
-                            }, 500)
-                        }
-                    }
-                } else {
-                    if (hoverFolderTimer) {
-                        clearTimeout(hoverFolderTimer)
-                        hoverFolderTimer = null
-                    }
-                    hoverFolderId = null
-                }
-                return true
-            }
-
             rootStb = Sortable.create(_ele, {
                 handle: '.root-drag-handle',
                 draggable: '.sortable-item',
+                animation: 150,
                 group: {
                     name: 'modules-group',
                     pull: (to: any, from: any, dragEl: HTMLElement) => {
@@ -258,36 +304,18 @@
                         return true
                     },
                 },
+                onStart: () => {
+                    isDragging = true
+                },
                 onMove: checkFolderHover,
                 onEnd: handleSortEnd,
                 ...sortableOptions,
-            })
-
-            const folderContainers = _ele.querySelectorAll<HTMLDivElement>('[data-folder-container-id]')
-            folderContainers.forEach((container) => {
-                const folderId = container.getAttribute('data-folder-container-id')
-                if (!folderId) return
-                const stb = Sortable.create(container, {
-                    handle: '.module-drag-handle',
-                    draggable: '.sortable-item',
-                    group: {
-                        name: 'modules-group',
-                        pull: true,
-                        put: (to: any, from: any, dragEl: HTMLElement) => {
-                            return dragEl.getAttribute('data-item-type') !== 'folder'
-                        },
-                    },
-                    onMove: checkFolderHover,
-                    onEnd: handleSortEnd,
-                    ...sortableOptions,
-                })
-                folderStbMap.set(folderId, stb)
             })
         })
 
         return () => {
             cancelled = true
-            destroySortable()
+            if (!isDragging) destroyRootSortable()
         }
     })
 
@@ -380,6 +408,7 @@
                         {#if openFolders.has(item.folder.id)}
                             <div
                                 data-folder-container-id={item.folder.id}
+                                use:folderSortable={item.folder.id}
                                 class="flex flex-col pl-4 border-t-1 border-selected/50 bg-textcolor/2 min-h-[44px]"
                             >
                                 {#if item.modules.length === 0}
