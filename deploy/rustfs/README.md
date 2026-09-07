@@ -1,5 +1,7 @@
 # RisuAI Node/storage and static-web deployment
 
+[English](README.md) | [한국어](README.ko.md)
+
 `risuai.sh` is the guided installer and lifecycle manager for either the full
 RisuAI Node/PostgreSQL/RustFS stack or a browser-only static build served by
 Caddy. It selects only the runtime, networking, and DDNS services required by
