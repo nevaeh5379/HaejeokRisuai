@@ -30,6 +30,7 @@ const runtimeScalarDefaults = {
   settingsCloseButtonSize: defaultNumber(24),
   hideAllImages: defaultBoolean(false),
   lowSpecMode: defaultBoolean(false),
+  waitingMinigame: defaultBoolean(true),
   blurHiddenCharacters: defaultBoolean(true),
   ImagenModel: defaultString("imagen-4.0-generate-001"),
   ImagenImageSize: defaultString("1K"),
