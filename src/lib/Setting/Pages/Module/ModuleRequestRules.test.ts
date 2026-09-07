@@ -115,4 +115,25 @@ describe("module request rule editor", () => {
       language.moduleRequestRules.preview + ":",
     );
   });
+
+  it("renders help buttons and displays descriptions via alertMd instead of raw paragraphs", async () => {
+    const alertModule = await import("src/ts/alert");
+    const alertMdSpy = vi.spyOn(alertModule, "alertMd").mockImplementation(() => {});
+    const currentModule = {
+      ...owner(),
+      subModelRequestRules: [{ enabled: true, phrases: ["first"] }],
+    };
+    instance = mount(ModuleRequestRules, { target, props: { currentModule } });
+    flushSync();
+
+    const helpButtons = target.querySelectorAll<HTMLButtonElement>("button.help");
+    expect(helpButtons.length).toBeGreaterThanOrEqual(3);
+
+    helpButtons[0].click();
+    expect(alertMdSpy).toHaveBeenCalledWith(
+      `${language.moduleRequestRules.description}\n\n${language.moduleRequestRules.fallbackHelp}`,
+      "help",
+    );
+    alertMdSpy.mockRestore();
+  });
 });

@@ -1,6 +1,16 @@
-<button title={name+' '+language.showHelp} class="relative help inline-flex items-center cursor-default hover:text-green-500" style="vertical-align: -2px;" onclick={() => {
-    alertMd(language.help[key], 'help')
-}}>
+<button
+    type="button"
+    title={(name ? name + ' ' : '') + language.showHelp}
+    class="relative help inline-flex items-center cursor-pointer hover:text-green-500"
+    style="vertical-align: -2px;"
+    onclick={(e) => {
+        e.stopPropagation();
+        const content = text ?? (key ? language.help[key] : '');
+        if (content) {
+            alertMd(content, 'help');
+        }
+    }}
+>
     
     {#if key === "experimental"}
         <div class="text-red-500 hover:text-green-500">
@@ -21,9 +31,10 @@
 
     interface Props {
         unrecommended?: boolean;
-        key: (keyof (typeof language.help));
+        key?: (keyof (typeof language.help));
         name?: string;
+        text?: string;
     }
 
-    let { unrecommended = false, key, name = '' }: Props = $props();
+    let { unrecommended = false, key, name = '', text }: Props = $props();
 </script>
