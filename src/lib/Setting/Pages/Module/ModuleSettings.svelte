@@ -9,7 +9,7 @@
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule, type ModuleFolder } from "src/ts/process/modules";
-    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, FolderOutput, ArrowUp, ArrowDown, GripVertical } from "@lucide/svelte";
+    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, ArrowUp, ArrowDown, GripVertical } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertNormal, alertSelect, alertInput } from "src/ts/alert";
@@ -739,18 +739,6 @@
                     </button>
                     <button class="text-textcolor2 mr-2 cursor-not-allowed">
                         <SquarePen size={18}/>
-                    </button>
-                {/if}
-                {#if !isRoot}
-                    <button
-                        class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
-                        use:tooltip={language.removeFromFolder}
-                        onclick={async (e) => {
-                            e.stopPropagation()
-                            await moduleStore.moveModule(rmodule.id, undefined)
-                        }}
-                    >
-                        <FolderOutput size={18}/>
                     </button>
                 {/if}
                 <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.moveToFolder} onclick={async (e) => {
