@@ -211,7 +211,7 @@ test.describe("Issue #61 routing failure reproductions", () => {
     await seed(page);
   });
 
-  test("reproduces #61 case 1: multi-line alternative keywords in UI textarea fail to route because engine enforces AND per message", async ({
+  test("verifies fix for #61 case 1: multi-line alternative keywords in UI textarea route successfully with default 'any' matching", async ({
     page,
   }) => {
     await editOwner(page);
@@ -239,68 +239,64 @@ test.describe("Issue #61 routing failure reproductions", () => {
     // Trigger the backend Lua trigger which invokes axLLM with PHRASE_A
     await invoke(page, "weather");
 
-    // Despite adding the rule containing PHRASE_A, routing DID NOT OCCUR:
-    // The request fell back to the backend module's model (gpt-4-turbo) instead of Rule Owner A's subModel (gpt-4o-mini)!
+    // With fix: routing SUCCEEDS to Rule Owner A's subModel (gpt-4o-mini)
     expect(requests).toHaveLength(1);
-    expect(requests[0].model).toBe("gpt-4-turbo");
+    expect(requests[0].model).toBe("gpt-4o-mini");
 
-    // Verify in UI that the decision was indeed 'unmatched'
+    // Verify in UI that the decision was 'matched'
     await editOwner(page);
     await page.getByText("Recent request decisions", { exact: true }).click();
     await expect(
       page
-        .getByText(/No matching rule; existing model selection retained|일치하는 규칙이 없어/)
+        .getByText(/Matched module: Rule Owner A|일치한 모듈: Rule Owner A/)
         .first(),
     ).toBeVisible();
   });
 
-  test("reproduces #61 case 2: user selects target module as 'Calling module' in UI dropdown, causing sourceModuleId mismatch", async ({
+  test("verifies fix for #61 case 2: dropdown prevents self-selection, and legacy self-sourceModuleId is forgiven", async ({
     page,
   }) => {
     await editOwner(page);
-
-    // User clicks "Add rule"
     await page.getByRole("button", { name: "Add rule", exact: true }).click();
 
-    // User enters the matching phrase
-    const phrasesTextarea = page.getByLabel("Required phrases (one per line)");
-    await phrasesTextarea.fill(PHRASE_A);
-
-    // User selects "Rule Owner A" in "Calling module" dropdown (thinking this rule belongs to Rule Owner A)
+    // Verify dropdown does not contain current module (preventing user confusion)
     const sourceSelect = page.getByLabel("Calling module");
-    await sourceSelect.selectOption({ label: "Rule Owner A" });
+    const options = await sourceSelect.locator("option").allTextContents();
+    expect(options).not.toContain("Rule Owner A");
+    expect(options).toContain("Rule Owner B");
+    expect(options).toContain("Shared E2E Backend");
 
-    // Save module
-    await page
-      .getByRole("button", { name: "Edit Module", exact: true })
-      .last()
-      .click();
+    // Simulate a legacy rule where user had set sourceModuleId to the module's own ID
+    await page.evaluate(
+      async ({ OWNER_A, PHRASE_A }) => {
+        const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+        const { moduleStore } = await import(/* @vite-ignore */ path);
+        const owner = moduleStore.modules.find((m: any) => m.id === OWNER_A);
+        owner.subModelRequestRules = [
+          {
+            enabled: true,
+            phrases: [PHRASE_A],
+            sourceModuleId: OWNER_A, // mistakenly set to self
+          },
+        ];
+      },
+      { OWNER_A, PHRASE_A },
+    );
 
-    // Trigger the backend Lua trigger
+    // Trigger backend Lua trigger
     await invoke(page, "weather");
 
-    // Routing fails because the actual caller was BACKEND (Shared E2E Backend),
-    // but rule required sourceModuleId == OWNER_A:
+    // With fix: the self-source is forgiven and routed to gpt-4o-mini
     expect(requests).toHaveLength(1);
-    expect(requests[0].model).toBe("gpt-4-turbo");
-
-    // Verify in UI that the decision was 'unmatched'
-    await editOwner(page);
-    await page.getByText("Recent request decisions", { exact: true }).click();
-    await expect(
-      page
-        .getByText(/No matching rule; existing model selection retained|일치하는 규칙이 없어/)
-        .first(),
-    ).toBeVisible();
+    expect(requests[0].model).toBe("gpt-4o-mini");
   });
 
-  test("reproduces #61 case 3: phrases distributed across multiple messages (e.g. system tag + user prompt) fail per-message AND check", async ({
+  test("verifies fix for #61 case 3: phrases across multiple messages or in either message route successfully", async ({
     page,
   }) => {
-    // Reconfigure the backend lorebook to generate a typical Lightboard multi-message prompt:
-    // System message has the module tag "<lb-weather>", while User message has the query PHRASE_A.
+    // Reconfigure backend lorebook to generate Lightboard multi-message prompt
     await page.evaluate(
-      async ({ BACKEND, OWNER_A, PHRASE_A }) => {
+      async ({ OWNER_A, PHRASE_A }) => {
         const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
         const { moduleStore } = await import(/* @vite-ignore */ path);
         const owner = moduleStore.modules.find((m: any) => m.id === OWNER_A);
@@ -319,7 +315,6 @@ test.describe("Issue #61 routing failure reproductions", () => {
             } end`,
           },
         ];
-        // User sets rule requiring both the module tag "<lb-weather>" and the query PHRASE_A
         owner.subModelRequestRules = [
           {
             enabled: true,
@@ -327,42 +322,32 @@ test.describe("Issue #61 routing failure reproductions", () => {
           },
         ];
       },
-      { BACKEND, OWNER_A, PHRASE_A },
+      { OWNER_A, PHRASE_A },
     );
 
     // Backend invokes request containing both messages
     await invoke(page, "weather");
 
-    // Routing fails: because matchesModuleRequestRule checks phrases.every on each message individually,
-    // neither the system nor user message contains BOTH phrases. It falls back to backend:
+    // With fix: default "any" mode matches either phrase and routes successfully
     expect(requests).toHaveLength(1);
-    expect(requests[0].model).toBe("gpt-4-turbo");
-
-    await editOwner(page);
-    await page.getByText("Recent request decisions", { exact: true }).click();
-    await expect(
-      page
-        .getByText(/No matching rule; existing model selection retained|일치하는 규칙이 없어/)
-        .first(),
-    ).toBeVisible();
+    expect(requests[0].model).toBe("gpt-4o-mini");
   });
 
-  test("reproduces #61 case 4: multiple modules matching common identifier prefix trigger 'conflict' and drop routing", async ({
+  test("verifies fix for #61 case 4: more specific matched phrase wins over generic prefix match instead of dropping to backend", async ({
     page,
   }) => {
-    // Owner A has a specific rule (e.g. [날씨 예보] / PHRASE_A)
     await page.evaluate(
       async ({ OWNER_A, PHRASE_A, OWNER_B }) => {
         const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
         const { moduleStore } = await import(/* @vite-ignore */ path);
-        // Owner A matches PHRASE_A
+        // Owner A matches full specific phrase
         moduleStore.modules
           .find((m: any) => m.id === OWNER_A)
           .subModelRequestRules.push({
             enabled: true,
             phrases: [PHRASE_A],
           });
-        // Owner B has a broader prefix rule (e.g. "Return the unique") that also matches PHRASE_A
+        // Owner B has a broader prefix rule
         moduleStore.modules
           .find((m: any) => m.id === OWNER_B)
           .subModelRequestRules.push({
@@ -373,19 +358,17 @@ test.describe("Issue #61 routing failure reproductions", () => {
       { OWNER_A, PHRASE_A, OWNER_B },
     );
 
-    // Backend invokes request containing PHRASE_A
     await invoke(page, "weather");
 
-    // Conflict occurs: both OWNER_A and OWNER_B match, so resolveModuleRequestRules returns model: undefined.
-    // As a result, routing drops and uses the backend default:
+    // With fix: Owner A's longer match score wins over Owner B's generic prefix
     expect(requests).toHaveLength(1);
-    expect(requests[0].model).toBe("gpt-4-turbo");
+    expect(requests[0].model).toBe("gpt-4o-mini");
 
     await editOwner(page);
     await page.getByText("Recent request decisions", { exact: true }).click();
     await expect(
       page
-        .getByText(/Multiple modules matched; existing model selection retained|여러 모듈이 일치하여/)
+        .getByText(/Matched module: Rule Owner A|일치한 모듈: Rule Owner A/)
         .first(),
     ).toBeVisible();
   });

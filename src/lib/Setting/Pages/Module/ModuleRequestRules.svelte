@@ -12,8 +12,11 @@
   const fieldClass = "w-full rounded border border-darkborderc bg-darkbg p-2 text-textcolor";
   const buttonClass = "rounded border border-darkborderc bg-darkbutton px-3 py-2 text-textcolor disabled:opacity-40";
 
-  function addRule(phrases: string[] = [], sourceModuleId?: string, role?: ModuleRequestRule["role"]) {
-    currentModule.subModelRequestRules = [...(currentModule.subModelRequestRules ?? []), { enabled: true, phrases, sourceModuleId, role }];
+  function addRule(phrases: string[] = [], sourceModuleId?: string, role?: ModuleRequestRule["role"], matchMode?: ModuleRequestRule["matchMode"]) {
+    const safeSourceId = sourceModuleId === currentModule.id ? undefined : sourceModuleId;
+    const rule: ModuleRequestRule = { enabled: true, phrases, sourceModuleId: safeSourceId, role };
+    if (matchMode) rule.matchMode = matchMode;
+    currentModule.subModelRequestRules = [...(currentModule.subModelRequestRules ?? []), rule];
   }
 
   function updateRule(index: number, update: Partial<ModuleRequestRule>) {
@@ -64,13 +67,20 @@
       <label>{language.moduleRequestRules.source}
         <select class={fieldClass} value={rule.sourceModuleId ?? ""} onchange={(event) => updateRule(index, { sourceModuleId: event.currentTarget.value || undefined })}>
           <option value="">{language.moduleRequestRules.anySource}</option>
-          {#if rule.sourceModuleId && !moduleStore.list.some((module) => module.id === rule.sourceModuleId)}<option value={rule.sourceModuleId}>{language.moduleRequestRules.missingSource}: {rule.sourceModuleId}</option>{/if}
-          {#each moduleStore.list as module (module.id)}<option value={module.id}>{module.name}</option>{/each}
+          {#if rule.sourceModuleId && rule.sourceModuleId !== currentModule.id && !moduleStore.list.some((module) => module.id === rule.sourceModuleId)}<option value={rule.sourceModuleId}>{language.moduleRequestRules.missingSource}: {rule.sourceModuleId}</option>{/if}
+          {#each moduleStore.list.filter((module) => module.id !== currentModule.id) as module (module.id)}<option value={module.id}>{module.name}</option>{/each}
         </select>
       </label>
       <details>
         <summary class="cursor-pointer">{language.moduleRequestRules.advanced}</summary>
         <div class="mt-2 flex flex-col gap-2">
+          <label>{language.moduleRequestRules.matchMode}
+            <select class={fieldClass} value={rule.matchMode ?? "any"} onchange={(event) => updateRule(index, { matchMode: event.currentTarget.value as ModuleRequestRule["matchMode"] })}>
+              <option value="any">{language.moduleRequestRules.matchModeAny}</option>
+              <option value="all">{language.moduleRequestRules.matchModeAll}</option>
+              <option value="all_request">{language.moduleRequestRules.matchModeAllRequest}</option>
+            </select>
+          </label>
           <label>{language.moduleRequestRules.role}
             <select class={fieldClass} value={rule.role ?? ""} onchange={(event) => updateRule(index, { role: (event.currentTarget.value || undefined) as ModuleRequestRule["role"] })}>
               <option value="">{language.moduleRequestRules.anyRole}</option>
@@ -124,7 +134,11 @@
             <textarea class={fieldClass} readonly rows="4" value={message.content} onselect={(event) => rememberSelection(event, request.id, message.role)}></textarea>
           </label>
         {/each}
-        <button class={buttonClass} disabled={selectedRequestId !== request.id || !selectedText.trim()} onclick={() => { addRule(selectedText.split(/\r?\n/), request.sourceModuleId, selectedRole); selectedText = ""; }}>{language.moduleRequestRules.fromSelection}</button>
+        <button class={buttonClass} disabled={selectedRequestId !== request.id || !selectedText.trim()} onclick={() => {
+          const lines = selectedText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+          addRule(lines, request.sourceModuleId === currentModule.id ? undefined : request.sourceModuleId, selectedRole);
+          selectedText = "";
+        }}>{language.moduleRequestRules.fromSelection}</button>
       </div>
     </details>
   {/each}
