@@ -1879,7 +1879,9 @@ export class LocalWriter {
       this.port = channel.port1;
       const a = document.createElement("a");
       a.href = `/sw/download?id=${id}`;
-      a.download = fileName;
+      // The service worker response supplies Content-Disposition. Setting the
+      // download attribute here makes Chromium bypass the controlling worker
+      // for this navigation and save the host's HTML SPA fallback instead.
       document.body.appendChild(a);
       a.click();
       a.remove();
