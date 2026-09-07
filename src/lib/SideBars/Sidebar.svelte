@@ -50,6 +50,7 @@
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { get } from 'svelte/store';
+    import { onMount } from 'svelte';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
     import { btwRuntime } from 'src/ts/process/btwRuntime.svelte';
   let sideBarMode = $state(0);
@@ -108,6 +109,21 @@
   let { openGrid = () => {}, hidden = false }: Props = $props();
 
   sideBarClosing.set(false)
+
+  onMount(() => {
+    // Warm up the panel chunks while the browser is idle so the first sidebar
+    // open on mobile does not pay the network + parse cost mid-animation.
+    const warm = () => {
+      void preloadChatSidebarPanel()
+      void import('./RecentSessionsList.svelte')
+    }
+    const ric = (globalThis as any).requestIdleCallback
+    if (typeof ric === 'function') {
+      ric(warm, { timeout: 3000 })
+    } else {
+      setTimeout(warm, 800)
+    }
+  })
 
   $effect(() => {
     let newCharImages: sortType[] = [];
@@ -428,7 +444,8 @@
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   class:editMode
-  class:risu-sub-sidebar={$sideBarClosing}
+  class:dynamic-sidebar={$DynamicGUI}
+  class:risu-sub-sidebar={!$sideBarClosing}
   class:risu-sub-sidebar-close={$sideBarClosing}
   class:hidden={hidden}
   class:flex={!hidden}
@@ -500,7 +517,8 @@
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   class:editMode
-  class:risu-sub-sidebar={$sideBarClosing}
+  class:dynamic-sidebar={$DynamicGUI}
+  class:risu-sub-sidebar={!$sideBarClosing}
   class:risu-sub-sidebar-close={$sideBarClosing}
   class:hidden={hidden}
   class:flex={!hidden}
@@ -960,6 +978,7 @@
   class:dynamic-sidebar={$DynamicGUI}
   class:hidden={hidden}
   class:flex={!hidden}
+  class:max-w-[calc(100%-8rem)]={$DynamicGUI}
   onanimationend={() => {
     if($sideBarClosing){
       $sideBarClosing = false
@@ -1035,7 +1054,14 @@
 </div>
 
 {#if $DynamicGUI}
-    <div role="button" tabindex="0" class="grow h-full min-w-12" class:hidden={hidden} onclick={() => {
+    <!-- Full-cover scrim BEHIND the sliding bars. With transform-based
+         animation the backdrop must not sit next to the panel's final layout
+         slot (that leaves an undimmed gap where the panel has not arrived
+         yet). Covering everything at z-[-1] reproduces the old width
+         animation's look - the whole area dims first, the opaque panel and
+         avatar bar slide in on top of it, and at rest they cover the scrim
+         exactly like before. -->
+    <div role="button" tabindex="0" class="absolute inset-0 z-[-1]" class:hidden={hidden} onclick={() => {
       if($sideBarClosing){
         return
       }
@@ -1057,22 +1083,24 @@
   .editMode {
     min-width: 6rem;
   }
+  /* DynamicGUI overlay: the panel sits right of the w-20 (5rem) avatar bar,
+     so shifting by calc(-100% - 5rem) moves it fully off-screen. Transform-only
+     animation keeps this on the compositor; width animation would re-layout
+     the whole panel content every frame. */
   @keyframes sidebar-transition {
     from {
-      width: 0rem;
+      transform: translateX(calc(-100% - 5rem));
     }
     to {
-      width: var(--sidebar-size);
+      transform: translateX(0);
     }
   }
   @keyframes sidebar-transition-close {
     from {
-      width: var(--sidebar-size);
-      right:0rem;
+      transform: translateX(0);
     }
     to {
-      width: 0rem;
-      right: 10rem;
+      transform: translateX(calc(-100% - 5rem));
     }
   }
   @keyframes sidebar-transition-non-dynamic {
@@ -1097,7 +1125,26 @@
       right:3rem;
     }
   }
+  /* Avatar bar: fixed 5rem wide. Desktop keeps the width animation (needed
+     for flex re-layout); DynamicGUI overlay uses transform instead to avoid
+     re-layout of the avatar list every frame. */
   @keyframes sub-sidebar-transition {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes sub-sidebar-transition-close {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
+  }
+  @keyframes sub-sidebar-transition-width {
     from {
       width: 0rem;
       min-width: 0rem;
@@ -1107,13 +1154,12 @@
       min-width: 5rem;
     }
   }
-  @keyframes sub-sidebar-transition-close {
+  @keyframes sub-sidebar-transition-close-width {
     from {
       width: 5rem;
       min-width: 5rem;
       max-width: 5rem;
       right:0rem;
-
     }
     to {
       width: 0rem;
@@ -1124,18 +1170,18 @@
   }
   @keyframes sidebar-dark-animation{
     from {
-      background-color: rgba(0,0,0,0) !important;
+      opacity: 0;
     }
     to {
-      background-color: rgba(0,0,0,0.5) !important;
+      opacity: 0.5;
     }
   }
   @keyframes sidebar-dark-closing-animation{
     from {
-      background-color: rgba(0,0,0,0.5) !important;
+      opacity: 0.5;
     }
     to {
-      background-color: rgba(0,0,0,0) !important;
+      opacity: 0;
     }
   }
 
@@ -1151,32 +1197,48 @@
   .risu-sidebar.dynamic-sidebar {
     animation-name: sidebar-transition;
     animation-duration: var(--risu-animation-speed);
+    /* translateX keeps the panel on the GPU compositor so the hundreds of
+       child nodes inside the sidebar are not re-laid-out every frame. */
+    will-change: transform;
   }
   .risu-sidebar-close.dynamic-sidebar {
     animation-name: sidebar-transition-close;
     animation-duration: var(--risu-animation-speed);
     position: relative;
-    right: 3rem;
+    will-change: transform;
   }
 
 
-  .risu-sub-sidebar {
-    animation-name: sub-sidebar-transition;
+  .risu-sub-sidebar:not(.dynamic-sidebar) {
+    animation-name: sub-sidebar-transition-width;
     animation-duration: var(--risu-animation-speed);
   }
-  .risu-sub-sidebar-close {
-    animation-name: sub-sidebar-transition-close;
+  .risu-sub-sidebar-close:not(.dynamic-sidebar) {
+    animation-name: sub-sidebar-transition-close-width;
     animation-duration: var(--risu-animation-speed);
     position: relative;
   }
-  .sidebar-dark-animation{
-    animation-name: sidebar-dark-transition;
+  .risu-sub-sidebar.dynamic-sidebar {
+    animation-name: sub-sidebar-transition;
     animation-duration: var(--risu-animation-speed);
-    background-color: rgba(0,0,0,0.5)
+    will-change: transform;
+  }
+  .risu-sub-sidebar-close.dynamic-sidebar {
+    animation-name: sub-sidebar-transition-close;
+    animation-duration: var(--risu-animation-speed);
+    position: relative;
+    will-change: transform;
+  }
+  .sidebar-dark-animation{
+    animation-name: sidebar-dark-animation;
+    animation-duration: var(--risu-animation-speed);
+    background-color: rgb(0,0,0);
+    opacity: 0.5;
   }
   .sidebar-dark-close-animation{
-    animation-name: sidebar-dark-closing-transition;
+    animation-name: sidebar-dark-closing-animation;
     animation-duration: var(--risu-animation-speed);
-    background-color: rgba(0,0,0,0)
+    background-color: rgb(0,0,0);
+    opacity: 0;
   }
 </style>

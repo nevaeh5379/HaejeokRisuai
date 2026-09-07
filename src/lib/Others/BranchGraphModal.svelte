@@ -3,7 +3,7 @@
     import { Ellipsis, GitBranch, Maximize, ZoomIn, ZoomOut, XIcon } from '@lucide/svelte'
 
     import { language } from 'src/lang'
-    import { buildChatGraphGitLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
+    import { buildChatGraphGitRows, buildChatGraphPackedLanes, getChatBranches, getChatBranchesFromPersistentGraph, type ChatGraphDensity } from 'src/ts/gui/branches'
     import type { Chat } from '../../ts/storage/database/schema'
     import type { SqlChatBranchGraphData } from '../../ts/storage/sql/ISqlStorage'
 
@@ -20,24 +20,28 @@
     type GraphLayout = 'tree' | 'timeline' | 'git' | 'radial'
 
     const padding = 64
-    const minScale = 0.25
-    const maxScale = 1.6
+    // Safety guard only — no practical zoom limit; keeps scale positive and finite.
+    const minScale = 0.05
+    const maxScale = 8
     let layout = $state<GraphLayout>('tree')
     let density = $state<ChatGraphDensity>('smart')
     let focusCurrentPath = $state(false)
 
     const cardWidth = $derived(layout === 'git' ? 260 : layout === 'radial' ? 264 : 292)
     const cardHeight = $derived(layout === 'git' ? 104 : layout === 'radial' ? 108 : 116)
-    const gapX = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 72 : 56)
-    const gapY = $derived(layout === 'git' ? 34 : layout === 'timeline' ? 42 : 64)
+    const gapX = $derived(layout === 'git' ? 18 : layout === 'timeline' ? 36 : 28)
+    const gapY = $derived(layout === 'git' ? 18 : layout === 'timeline' ? 22 : 32)
     const graph = $derived(branchGraph
         ? getChatBranchesFromPersistentGraph(branchGraph, { density })
         : getChatBranches(chat, { density }))
     const nodesById = $derived(new Map(graph.nodes.map((node) => [node.id, node])))
-    const gitLanes = $derived(buildChatGraphGitLanes(graph))
+    const gitRows = $derived(buildChatGraphGitRows(graph))
+    // Lanes are packed against the layout's flow axis so branches that do not
+    // overlap reuse the same lane instead of stretching the canvas.
+    const packedLanes = $derived(buildChatGraphPackedLanes(graph, (node) => layout === 'timeline' ? node.y : (gitRows.rowByNodeId.get(node.id) ?? 0)))
     const radialRadius = $derived(Math.max(0, graph.rows - 1) * 190)
-    const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? gitLanes.columns : graph.columns)
-    const standardRows = $derived(layout === 'timeline' ? graph.columns : graph.rows)
+    const standardColumns = $derived(layout === 'timeline' ? graph.rows : layout === 'git' ? packedLanes.columns : graph.columns)
+    const standardRows = $derived(layout === 'timeline' ? packedLanes.columns : layout === 'git' ? gitRows.rows : graph.rows)
     const graphWidth = $derived(layout === 'radial'
         ? padding * 2 + radialRadius * 2 + cardWidth
         : padding * 2 + standardColumns * cardWidth + Math.max(0, standardColumns - 1) * gapX)
@@ -54,26 +58,33 @@
     let panPointerId: number | null = null
     let panStart = { x: 0, y: 0, panX: 0, panY: 0 }
     const touchPointers = new Map<number, { x: number, y: number }>()
-    let pinchStart: {
-        distance: number
-        graphX: number
-        graphY: number
-        scale: number
-    } | null = null
+    let lastPinchCenter: { x: number, y: number } | null = null
+    let lastPinchDistance: number | null = null
+    let cachedViewportBounds: DOMRect | null = null
     let hasInteracted = false
+    let canvasAnimating = $state(false)
+    let canvasAnimatingTimer: ReturnType<typeof setTimeout> | undefined
+    // At small scales the whole (huge) canvas is visible at once; heavy paints
+    // like node shadows are dropped there since they are invisible anyway.
+    const zoomedOut = $derived(scale < 0.45)
+    // Below this scale node text is unreadable; render placeholder blocks
+    // instead of full cards to keep the DOM/paint cost tiny.
+    const lodThreshold = $derived(scale < 0.3)
 
     function nodePosition(node: typeof graph.nodes[number]) {
         if(layout === 'timeline') {
+            const lane = packedLanes.laneByNodeId.get(node.id) ?? 0
             return {
                 left: padding + node.y * (cardWidth + gapX),
-                top: padding + node.x * (cardHeight + gapY),
+                top: padding + lane * (cardHeight + gapY),
             }
         }
         if(layout === 'git') {
-            const lane = gitLanes.laneByNodeId.get(node.id) ?? 0
+            const lane = packedLanes.laneByNodeId.get(node.id) ?? 0
+            const row = gitRows.rowByNodeId.get(node.id) ?? 0
             return {
                 left: padding + lane * (cardWidth + gapX),
-                top: padding + node.y * (cardHeight + gapY),
+                top: padding + row * (cardHeight + gapY),
             }
         }
         if(layout === 'radial') {
@@ -98,6 +109,24 @@
     function edgeGeometry(from: typeof graph.nodes[number], to: typeof graph.nodes[number]) {
         const fromPos = nodePosition(from)
         const toPos = nodePosition(to)
+        if(layout === 'git') {
+            const x1 = fromPos.left + cardWidth / 2
+            const y1 = fromPos.top + cardHeight
+            const x2 = toPos.left + cardWidth / 2
+            const y2 = toPos.top
+            if(Math.abs(x2 - x1) < 0.5) {
+                return { path: `M ${x1} ${y1} L ${x1} ${y2}`, x2, y2 }
+            }
+            const yTurn = y2 - gapY / 2
+            const radius = Math.max(2, Math.min(12, Math.abs(x2 - x1) / 2, (yTurn - y1) / 2, (y2 - yTurn) / 2))
+            const sweep = x2 > x1 ? 1 : 0
+            const turnX1 = x1 + (x2 > x1 ? radius : -radius)
+            const turnX2 = x2 + (x2 > x1 ? -radius : radius)
+            return {
+                path: `M ${x1} ${y1} L ${x1} ${yTurn - radius} A ${radius} ${radius} 0 0 ${sweep} ${turnX1} ${yTurn} L ${turnX2} ${yTurn} A ${radius} ${radius} 0 0 ${sweep} ${x2} ${yTurn + radius} L ${x2} ${y2}`,
+                x2, y2
+            }
+        }
         if(layout === 'timeline') {
             const x1 = fromPos.left + cardWidth
             const y1 = fromPos.top + cardHeight / 2
@@ -123,6 +152,14 @@
 
     const clampScale = (value: number) => Math.min(maxScale, Math.max(minScale, value))
 
+    function triggerCanvasAnimation(duration = 200) {
+        if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
+        canvasAnimating = true
+        canvasAnimatingTimer = setTimeout(() => {
+            canvasAnimating = false
+        }, duration)
+    }
+
     function reasonLabel(reason: 'root' | 'manual' | 'reroll'): string {
         if(reason === 'root') return language.branchGraphOriginal
         if(reason === 'reroll') return language.branchGraphReroll
@@ -140,8 +177,7 @@
         scale = nextScale
         panX = (viewport.clientWidth - graphWidth * nextScale) / 2
         panY = (viewport.clientHeight - graphHeight * nextScale) / 2
-        isPanning = !animate
-        if(!animate) requestAnimationFrame(() => isPanning = false)
+        if(animate) triggerCanvasAnimation(200)
     }
 
     function focusActive() {
@@ -154,6 +190,7 @@
         panX = viewport.clientWidth / 2 - centerX * nextScale
         panY = viewport.clientHeight / 2 - centerY * nextScale
         hasInteracted = true
+        triggerCanvasAnimation(200)
     }
 
     function refitAfterDisplayChange() {
@@ -173,8 +210,11 @@
         refitAfterDisplayChange()
     }
 
+    let isDraggingNode = false
+    let dragThresholdPassed = false
+
     function selectMessageNode(node: typeof graph.nodes[number]) {
-        if(loading) return
+        if(loading || isDraggingNode || dragThresholdPassed) return
         const terminal = node.terminals.find((item) => item.active) ?? node.terminals.at(-1)
         if(terminal) void onselect(terminal.branchId)
     }
@@ -196,12 +236,42 @@
     function zoomFromCenter(factor: number) {
         if(!viewport) return
         const bounds = viewport.getBoundingClientRect()
-        zoomAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, scale * factor)
+        let nextScale = scale * factor
+        if(factor > 1 && scale < 0.25) {
+            nextScale = Math.max(scale * 1.35, scale + 0.04)
+        } else if(factor < 1 && scale < 0.25) {
+            nextScale = Math.min(scale * 0.75, scale - 0.03)
+        }
+        triggerCanvasAnimation(200)
+        zoomAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, nextScale)
     }
+
+    function handleDblClick(event: MouseEvent) {
+        if(!viewport) return
+        triggerCanvasAnimation(200)
+        if(scale < 0.6) {
+            zoomAt(event.clientX, event.clientY, 1)
+        } else {
+            fitGraph(true)
+        }
+    }
+
+    let pendingWheel: WheelEvent | null = null
+    let wheelRafId: number | null = null
 
     function handleWheel(event: WheelEvent) {
         event.preventDefault()
-        zoomAt(event.clientX, event.clientY, scale * Math.exp(-event.deltaY * 0.0015))
+        // Trackpads fire many wheel events per frame; coalesce into one zoom
+        // update per animation frame.
+        pendingWheel = event
+        if(wheelRafId !== null) return
+        wheelRafId = requestAnimationFrame(() => {
+            wheelRafId = null
+            const wheel = pendingWheel
+            pendingWheel = null
+            if(!wheel) return
+            zoomAt(wheel.clientX, wheel.clientY, scale * Math.exp(-wheel.deltaY * 0.0015))
+        })
     }
 
     function startPinch() {
@@ -209,25 +279,46 @@
         const [first, second] = [...touchPointers.values()]
         const distance = Math.hypot(second.x - first.x, second.y - first.y)
         if(distance === 0) return
-        const bounds = viewport.getBoundingClientRect()
-        const centerX = (first.x + second.x) / 2 - bounds.left
-        const centerY = (first.y + second.y) / 2 - bounds.top
-        pinchStart = {
-            distance,
-            graphX: (centerX - panX) / scale,
-            graphY: (centerY - panY) / scale,
-            scale,
+        lastPinchDistance = distance
+        lastPinchCenter = {
+            x: (first.x + second.x) / 2,
+            y: (first.y + second.y) / 2,
         }
+        cachedViewportBounds = viewport.getBoundingClientRect()
         panPointerId = null
         isPanning = true
+        isDraggingNode = true
+        dragThresholdPassed = true
         hasInteracted = true
-        for(const pointerId of touchPointers.keys()) viewport.setPointerCapture?.(pointerId)
+        for(const pointerId of touchPointers.keys()) safeSetPointerCapture(pointerId)
+    }
+
+    function safeSetPointerCapture(pointerId: number) {
+        if(!viewport) return
+        try {
+            viewport.setPointerCapture(pointerId)
+        } catch {
+            // Pointer may already be inactive or captured elsewhere.
+        }
+    }
+
+    function safeReleasePointerCapture(pointerId: number) {
+        if(!viewport) return
+        try {
+            if(viewport.hasPointerCapture(pointerId)) {
+                viewport.releasePointerCapture(pointerId)
+            }
+        } catch {
+            // Pointer capture may have already been implicitly released by the browser on pointerup/cancel,
+            // or the pointer may already be inactive (common on mobile touch devices).
+        }
     }
 
     function startPan(event: PointerEvent) {
         if(event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return
         const target = event.target as HTMLElement | null
-        const isInteractive = event.button !== 1 && target?.closest('button:not(.branch-node), .branch-node--selectable')
+        if(target?.closest('.graph-tool')) return
+
         if(event.pointerType === 'touch') {
             touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
             if(touchPointers.size >= 2) {
@@ -236,13 +327,22 @@
                 return
             }
         }
-        if(isInteractive) return
-        event.preventDefault()
-        hasInteracted = true
-        isPanning = true
+
+        const selectableNode = target?.closest('.branch-node--selectable')
         panPointerId = event.pointerId
         panStart = { x: event.clientX, y: event.clientY, panX, panY }
-        viewport?.setPointerCapture?.(event.pointerId)
+
+        if(selectableNode && event.button !== 1) {
+            dragThresholdPassed = false
+            isDraggingNode = false
+        } else {
+            event.preventDefault()
+            dragThresholdPassed = true
+            isDraggingNode = false
+            hasInteracted = true
+            isPanning = true
+            safeSetPointerCapture(event.pointerId)
+        }
     }
 
     function movePan(event: PointerEvent) {
@@ -250,51 +350,121 @@
             touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
             if(touchPointers.size >= 2) {
                 event.preventDefault()
-                if(!pinchStart) startPinch()
-                if(!viewport || !pinchStart) return
+                if(!lastPinchCenter || !lastPinchDistance) {
+                    startPinch()
+                }
+                if(!viewport || !lastPinchCenter || !lastPinchDistance) return
                 const [first, second] = [...touchPointers.values()]
                 const distance = Math.hypot(second.x - first.x, second.y - first.y)
-                const bounds = viewport.getBoundingClientRect()
-                const centerX = (first.x + second.x) / 2 - bounds.left
-                const centerY = (first.y + second.y) / 2 - bounds.top
-                const nextScale = clampScale(pinchStart.scale * distance / pinchStart.distance)
-                panX = centerX - pinchStart.graphX * nextScale
-                panY = centerY - pinchStart.graphY * nextScale
-                scale = nextScale
+                const currentCenter = {
+                    x: (first.x + second.x) / 2,
+                    y: (first.y + second.y) / 2,
+                }
+
+                // 1. Pan delta (movement of midpoint between fingers)
+                const dx = currentCenter.x - lastPinchCenter.x
+                const dy = currentCenter.y - lastPinchCenter.y
+                panX += dx
+                panY += dy
+
+                // 2. Zoom delta around currentCenter
+                if(distance > 5 && lastPinchDistance > 5) {
+                    const ratio = distance / lastPinchDistance
+                    if(Math.abs(ratio - 1) > 0.001) {
+                        if(!cachedViewportBounds) cachedViewportBounds = viewport.getBoundingClientRect()
+                        const bounds = cachedViewportBounds
+                        const relX = currentCenter.x - bounds.left
+                        const relY = currentCenter.y - bounds.top
+                        const graphX = (relX - panX) / scale
+                        const graphY = (relY - panY) / scale
+                        const nextScale = clampScale(scale * ratio)
+                        panX = relX - graphX * nextScale
+                        panY = relY - graphY * nextScale
+                        scale = nextScale
+                    }
+                }
+
+                lastPinchCenter = currentCenter
+                lastPinchDistance = distance
+                isDraggingNode = true
+                hasInteracted = true
                 return
             }
         }
+
         if(panPointerId !== event.pointerId) return
-        panX = panStart.panX + event.clientX - panStart.x
-        panY = panStart.panY + event.clientY - panStart.y
+        const dx = event.clientX - panStart.x
+        const dy = event.clientY - panStart.y
+        if(!dragThresholdPassed) {
+            if(Math.hypot(dx, dy) > 8) {
+                dragThresholdPassed = true
+                isDraggingNode = true
+                hasInteracted = true
+                isPanning = true
+                safeSetPointerCapture(event.pointerId)
+                panStart.x = event.clientX
+                panStart.y = event.clientY
+                panStart.panX = panX
+                panStart.panY = panY
+            }
+        }
+        if(dragThresholdPassed) {
+            panX = panStart.panX + (event.clientX - panStart.x)
+            panY = panStart.panY + (event.clientY - panStart.y)
+        }
     }
 
     function finishPan(event: PointerEvent) {
         if(event.pointerType === 'touch' && touchPointers.delete(event.pointerId)) {
-            if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
-            if(pinchStart) {
-                pinchStart = null
-                if(touchPointers.size >= 2) {
-                    startPinch()
-                    return
-                }
+            safeReleasePointerCapture(event.pointerId)
+            const wasPinching = lastPinchCenter !== null || lastPinchDistance !== null
+            if(touchPointers.size >= 2) {
+                startPinch()
+                return
+            }
+            lastPinchCenter = null
+            lastPinchDistance = null
+            cachedViewportBounds = null
+
+            if(touchPointers.size === 1) {
                 const remaining = touchPointers.entries().next().value
                 if(remaining) {
                     const [pointerId, pointer] = remaining
                     panPointerId = pointerId
                     panStart = { x: pointer.x, y: pointer.y, panX, panY }
-                    viewport?.setPointerCapture?.(pointerId)
-                } else {
-                    panPointerId = null
-                    isPanning = false
+                    dragThresholdPassed = wasPinching
+                    isPanning = wasPinching
+                    isDraggingNode = wasPinching
+                    safeSetPointerCapture(pointerId)
                 }
                 return
             }
+
+            panPointerId = null
+            isPanning = false
+            if(isDraggingNode) {
+                setTimeout(() => {
+                    isDraggingNode = false
+                    dragThresholdPassed = false
+                }, 120)
+            } else {
+                dragThresholdPassed = false
+            }
+            return
         }
+
         if(panPointerId !== event.pointerId) return
-        if(viewport?.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId)
+        safeReleasePointerCapture(event.pointerId)
         panPointerId = null
         isPanning = false
+        if(isDraggingNode) {
+            setTimeout(() => {
+                isDraggingNode = false
+                dragThresholdPassed = false
+            }, 120)
+        } else {
+            dragThresholdPassed = false
+        }
     }
 
     function handleKeydown(event: KeyboardEvent) {
@@ -322,22 +492,33 @@
             })
             observer.observe(viewport)
         })
-        return () => observer?.disconnect()
+        return () => {
+            observer?.disconnect()
+            if(wheelRafId !== null) cancelAnimationFrame(wheelRafId)
+            if(canvasAnimatingTimer) clearTimeout(canvasAnimatingTimer)
+        }
     })
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black/85 backdrop-blur-sm">
-    <header class="relative z-30 flex shrink-0 items-center gap-3 border-b border-darkborderc/70 bg-darkbg/95 px-4 py-3 shadow-xl sm:px-5 sm:py-4">
-        <div class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-selected/60 bg-selected/20 text-textcolor shadow-inner">
-            <GitBranch size={20} />
+<div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black/85">
+    <header class="relative z-30 flex shrink-0 items-center gap-3 border-b border-darkborderc/70 bg-darkbg/95 px-3.5 py-2.5 pt-[max(env(safe-area-inset-top),0.625rem)] shadow-xl sm:px-5 sm:py-4">
+        <div class="flex size-9 shrink-0 items-center justify-center rounded-xl border border-selected/60 bg-selected/20 text-textcolor shadow-inner sm:size-10">
+            <GitBranch size={18} class="sm:hidden" />
+            <GitBranch size={20} class="hidden sm:block" />
         </div>
-        <div class="min-w-0">
-            <h2 class="m-0 truncate text-base font-bold text-textcolor sm:text-lg">{language.branchGraphTitle}</h2>
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+                <h2 class="m-0 truncate text-base font-bold text-textcolor sm:text-lg">{language.branchGraphTitle}</h2>
+                <span class="flex items-center gap-1 rounded-full border border-darkborderc/60 bg-bgcolor/60 px-2 py-0.5 text-[10px] text-textcolor2 sm:hidden">
+                    <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_6px_rgb(34_197_94/0.7)]"></span>
+                    {language.branchGraphTimelineCount.replace('{}', graph.timelineCount.toString())}
+                </span>
+            </div>
             <div class="mt-0.5 hidden truncate text-xs text-textcolor2 sm:block">{language.branchGraphDescription}</div>
         </div>
-        <div class="ml-auto hidden items-center gap-1.5 rounded-full border border-darkborderc/70 bg-bgcolor/70 px-3 py-1.5 text-xs text-textcolor2 sm:flex">
+        <div class="hidden items-center gap-1.5 rounded-full border border-darkborderc/70 bg-bgcolor/70 px-3 py-1.5 text-xs text-textcolor2 sm:flex">
             <span class="size-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgb(34_197_94/0.75)]"></span>
             {language.branchGraphMessageCount.replace('{}', graph.messageCount.toString())}
             {#if graph.collapsedMessageCount > 0}
@@ -347,21 +528,21 @@
             <span class="text-textcolor2/40">·</span>
             {language.branchGraphTimelineCount.replace('{}', graph.timelineCount.toString())}
         </div>
-        <button class="rounded-xl border border-darkborderc bg-bgcolor p-2 text-textcolor2 transition-colors hover:border-selected hover:text-textcolor" onclick={onclose} title={language.branchGraphClose} aria-label={language.branchGraphClose}>
+        <button class="shrink-0 rounded-xl border border-darkborderc bg-bgcolor p-2 text-textcolor2 transition-colors hover:border-selected hover:text-textcolor" onclick={onclose} title={language.branchGraphClose} aria-label={language.branchGraphClose}>
             <XIcon size={20} />
         </button>
     </header>
 
-    <div class="graph-display-bar relative z-20 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-darkborderc/60 bg-darkbg/90 px-4 py-2 text-xs text-textcolor2 sm:px-5">
-        <span class="shrink-0 font-semibold text-textcolor">{language.branchGraphLayout}</span>
-        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-1">
+    <div class="graph-display-bar relative z-20 flex shrink-0 items-center gap-2 overflow-x-auto border-b border-darkborderc/60 bg-darkbg/90 px-3 py-1.5 text-xs text-textcolor2 sm:px-5 sm:py-2">
+        <span class="shrink-0 text-[11px] font-semibold text-textcolor sm:text-xs">{language.branchGraphLayout}</span>
+        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-0.5 sm:p-1">
             <button class="graph-mode" class:graph-mode--active={layout === 'tree'} aria-pressed={layout === 'tree'} onclick={() => setLayout('tree')}>{language.branchGraphLayoutTree}</button>
             <button class="graph-mode" class:graph-mode--active={layout === 'timeline'} aria-pressed={layout === 'timeline'} onclick={() => setLayout('timeline')}>{language.branchGraphLayoutTimeline}</button>
             <button class="graph-mode" class:graph-mode--active={layout === 'git'} aria-pressed={layout === 'git'} onclick={() => setLayout('git')}>{language.branchGraphLayoutGit}</button>
             <button class="graph-mode" class:graph-mode--active={layout === 'radial'} aria-pressed={layout === 'radial'} onclick={() => setLayout('radial')}>{language.branchGraphLayoutRadial}</button>
         </div>
-        <span class="ml-1 shrink-0 font-semibold text-textcolor">{language.branchGraphDensity}</span>
-        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-1">
+        <span class="ml-1 shrink-0 text-[11px] font-semibold text-textcolor sm:text-xs">{language.branchGraphDensity}</span>
+        <div class="flex shrink-0 items-center rounded-xl border border-darkborderc/70 bg-bgcolor/70 p-0.5 sm:p-1">
             <button class="graph-mode" class:graph-mode--active={density === 'smart'} aria-pressed={density === 'smart'} onclick={() => setDensity('smart')}>{language.branchGraphDensitySmart}</button>
             <button class="graph-mode" class:graph-mode--active={density === 'all'} aria-pressed={density === 'all'} onclick={() => setDensity('all')}>{language.branchGraphDensityAll}</button>
             <button class="graph-mode" class:graph-mode--active={density === 'branches'} aria-pressed={density === 'branches'} onclick={() => setDensity('branches')}>{language.branchGraphDensityBranches}</button>
@@ -385,22 +566,17 @@
         onpointermove={movePan}
         onpointerup={finishPan}
         onpointercancel={finishPan}
-        ondblclick={() => fitGraph()}
+        ondblclick={handleDblClick}
         role="application"
         aria-label={language.branchGraphTitle}
     >
         <div
-            class="graph-canvas absolute left-0 top-0"
-            class:graph-canvas--moving={isPanning}
+            class="graph-canvas absolute left-0 top-0 touch-none select-none"
+            class:graph-canvas--zoomed-out={zoomedOut}
+            class:graph-canvas--animated={canvasAnimating}
             style={`width:${graphWidth}px;height:${graphHeight}px;transform:translate3d(${panX}px,${panY}px,0) scale(${scale});`}
         >
             <svg class="pointer-events-none absolute inset-0 overflow-visible" width={graphWidth} height={graphHeight} aria-hidden="true">
-                <defs>
-                    <filter id="branch-active-glow" x="-30%" y="-30%" width="160%" height="160%">
-                        <feGaussianBlur stdDeviation="3" result="blur" />
-                        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                    </filter>
-                </defs>
                 {#each graph.edges as edge}
                     {@const from = nodesById.get(edge.from)}
                     {@const to = nodesById.get(edge.to)}
@@ -415,22 +591,37 @@
                             stroke-width={edge.active ? 3 : 2}
                             stroke-dasharray={edge.active || layout === 'git' ? undefined : '5 7'}
                         />
-                        <circle
-                            class:active-junction={edge.active}
-                            class:branch-junction--muted={focusCurrentPath && !edge.active}
-                            class="branch-junction"
-                            cx={geometry.x2}
-                            cy={geometry.y2}
-                            r={edge.active ? 5 : 4}
-                        />
+                        {#if !zoomedOut}
+                            <circle
+                                class:active-junction={edge.active}
+                                class:branch-junction--muted={focusCurrentPath && !edge.active}
+                                class="branch-junction"
+                                cx={geometry.x2}
+                                cy={geometry.y2}
+                                r={edge.active ? 5 : 4}
+                            />
+                        {/if}
                     {/if}
                 {/each}
             </svg>
 
             {#each graph.nodes as node}
                 {@const position = nodePosition(node)}
+                {#if lodThreshold}
+                    <!-- LOD: below the readable threshold full cards cost more to
+                         paint than the viewport can show; plain blocks keep zoom
+                         smooth and still communicate structure/color. -->
+                    <div
+                        class="branch-node branch-node--lod absolute z-10 touch-none select-none"
+                        class:branch-node--active={node.activeTerminal}
+                        class:branch-node--path={!node.activeTerminal && node.activePath}
+                        class:branch-node--summary={node.kind === 'summary'}
+                        class:branch-node--muted={focusCurrentPath && !node.activePath && !node.activeTerminal}
+                        style={`left:${position.left}px;top:${position.top}px;width:${cardWidth}px;height:${cardHeight}px;`}
+                    ></div>
+                {:else}
                 <button
-                    class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left"
+                    class="branch-node absolute z-10 flex flex-col overflow-hidden rounded-2xl border px-4 py-3 text-left touch-none select-none"
                     class:branch-node--active={node.activeTerminal}
                     class:branch-node--path={!node.activeTerminal && node.activePath}
                     class:branch-node--selectable={!loading && node.terminals.length > 0}
@@ -445,7 +636,7 @@
                     tabindex={!loading && node.terminals.length > 0 ? 0 : -1}
                     onclick={() => selectMessageNode(node)}
                 >
-                    <span class="branch-node-glow pointer-events-none absolute -right-8 -top-12 size-28 rounded-full opacity-0 blur-2xl"></span>
+                    {#if node.activeTerminal && !zoomedOut}<span class="branch-node-glow pointer-events-none absolute -right-8 -top-12 size-28 rounded-full opacity-0 blur-2xl"></span>{/if}
                     {#if node.kind === 'summary'}
                         <div class="relative flex w-full items-center gap-2">
                             <span class="flex size-7 shrink-0 items-center justify-center rounded-lg border border-dashed border-textcolor2/40 bg-textcolor/5 text-textcolor2">
@@ -498,11 +689,12 @@
                         </div>
                     {/if}
                 </button>
+                {/if}
             {/each}
         </div>
 
-        <div class="pointer-events-none absolute bottom-5 left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
-            <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl backdrop-blur-md">
+        <div class="pointer-events-none absolute bottom-[max(env(safe-area-inset-bottom),1.25rem)] left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
+            <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl backdrop-blur-sm">
                 <button class="graph-tool" onclick={() => zoomFromCenter(1 / 1.16)} title={language.branchGraphZoomOut} aria-label={language.branchGraphZoomOut}>
                     <ZoomOut size={17} />
                 </button>
@@ -522,7 +714,7 @@
             </div>
         </div>
 
-        <div class="pointer-events-none absolute bottom-5 right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 backdrop-blur sm:block">
+        <div class="pointer-events-none absolute bottom-[max(env(safe-area-inset-bottom),1.25rem)] right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 sm:block">
             {language.branchGraphHint}
         </div>
     </div>
@@ -530,14 +722,27 @@
 
 <style>
     .graph-display-bar {
-        scrollbar-width: thin;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .graph-display-bar::-webkit-scrollbar {
+        display: none;
     }
 
     .graph-mode {
+        white-space: nowrap;
         border-radius: 0.6rem;
         padding: 0.35rem 0.65rem;
         color: var(--risu-theme-textcolor2);
         transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+    }
+
+    @media (max-width: 640px) {
+        .graph-mode {
+            padding: 0.28rem 0.55rem;
+            font-size: 0.72rem;
+        }
     }
 
     .graph-mode:hover {
@@ -566,12 +771,22 @@
 
     .graph-canvas {
         transform-origin: 0 0;
-        transition: transform 180ms ease-out;
         will-change: transform;
     }
 
-    .graph-canvas--moving {
-        transition: none;
+    .graph-canvas--animated {
+        transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* Zoomed out the whole canvas is visible at once: drop expensive paint
+       effects that are invisible at small scales but cost the rasterizer
+       large blur buffers per node. */
+    .graph-canvas--zoomed-out .branch-node,
+    .graph-canvas--zoomed-out .branch-node--git,
+    .graph-canvas--zoomed-out .branch-node--radial,
+    .graph-canvas--zoomed-out .branch-node--summary {
+        box-shadow: none;
+        text-shadow: none;
     }
 
     .branch-edge {
@@ -580,7 +795,7 @@
 
     .branch-edge.active-edge {
         stroke: #22c55e;
-        filter: url(#branch-active-glow);
+        filter: drop-shadow(0 0 2.5px rgb(34 197 94 / 0.55));
     }
 
     .branch-junction {
@@ -623,8 +838,41 @@
         opacity: 0.2;
     }
 
+    /* LOD blocks: no border-radius, no gradients, no shadows — one solid
+       paint rect per node so the compositor survives hundreds of nodes. */
+    .branch-node--lod {
+        cursor: default;
+        border: 1px solid color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
+        background: color-mix(in srgb, var(--risu-theme-bgcolor) 92%, var(--risu-theme-selected) 8%);
+        border-radius: 6px;
+    }
+
+    .branch-node--lod.branch-node--path {
+        background: color-mix(in srgb, #22c55e 20%, var(--risu-theme-bgcolor));
+    }
+
+    .branch-node--lod.branch-node--active {
+        background: #22c55e;
+    }
+
+    .branch-node--lod.branch-node--summary {
+        border-style: dashed;
+        background: color-mix(in srgb, var(--risu-theme-darkbg) 76%, transparent);
+    }
+
     .branch-node:hover {
         border-color: color-mix(in srgb, var(--risu-theme-darkborderc) 85%, transparent);
+    }
+
+    /* The base .branch-node transition covers border/shadow/transform/opacity;
+       strip it from LOD blocks so switching classes never animates paint. */
+    .branch-node--lod {
+        transition: none;
+    }
+
+    .branch-node--lod:hover {
+        transform: none;
+        box-shadow: none;
     }
 
     .branch-node--selectable {

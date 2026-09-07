@@ -10,6 +10,10 @@ import {
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
 import { deferredSettingsLoader } from "./deferredSettingsLoader";
+import {
+  PluginCustomStorageSubsystem,
+  type PluginStorageRecord,
+} from "./pluginCustomStorage.svelte";
 
 const FORBIDDEN_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
 const PRESET_OWNED_KEYS = new Set<string>(PRESET_STORE_SETTING_KEYS);
@@ -27,22 +31,27 @@ function assertPublicSettingsKey(key: string): void {
   }
 }
 
-function guardedSettingsState(state: Record<string, any>): Record<string, any> {
+/** Shared key-guard for proxy traps; non-string properties pass through. */
+function assertTrapKey(property: PropertyKey): void {
+  if (typeof property === "string") assertPublicSettingsKey(property);
+}
+
+function guardedSettingsState(state: SettingsState): SettingsState {
   return new Proxy(state, {
     get(target, property, receiver) {
-      if (typeof property === "string") assertPublicSettingsKey(property);
+      assertTrapKey(property);
       return Reflect.get(target, property, receiver);
     },
     set(target, property, value) {
-      if (typeof property === "string") assertPublicSettingsKey(property);
+      assertTrapKey(property);
       return Reflect.set(target, property, value);
     },
     deleteProperty(target, property) {
-      if (typeof property === "string") assertPublicSettingsKey(property);
+      assertTrapKey(property);
       return Reflect.deleteProperty(target, property);
     },
     defineProperty(target, property, descriptor) {
-      if (typeof property === "string") assertPublicSettingsKey(property);
+      assertTrapKey(property);
       return Reflect.defineProperty(target, property, descriptor);
     },
   });
@@ -59,11 +68,6 @@ class SettingsStore
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private dirtyKeys = new Set<string>();
   private pendingDeletes = new Set<string>();
-  private pendingPluginStorageUpserts = new Map<string, unknown>();
-  private pendingPluginStorageDeletes = new Set<string>();
-  private pendingPluginStorageClear = false;
-  private pluginStorageKeys = new Set<string>();
-  private pluginStorageLoads = new Map<string, Promise<any>>();
   private keyDisposers = new Map<string, () => void>();
   private keySetDispose: (() => void) | null = null;
   private presetStateReleased = false;
@@ -71,22 +75,20 @@ class SettingsStore
   private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
   readonly state = new Proxy({} as SettingsState, {
     get: (_target, prop) => {
-      if (typeof prop === "string") {
-        assertPublicSettingsKey(prop);
-        deferredSettingsLoader.request(prop);
-      }
+      assertTrapKey(prop);
+      if (typeof prop === "string") deferredSettingsLoader.request(prop);
       return Reflect.get(this.stateData, prop);
     },
     set: (_target, prop, value) => {
-      if (typeof prop === "string") assertPublicSettingsKey(prop);
+      assertTrapKey(prop);
       return Reflect.set(this.stateData, prop, value);
     },
     deleteProperty: (_target, prop) => {
-      if (typeof prop === "string") assertPublicSettingsKey(prop);
+      assertTrapKey(prop);
       return Reflect.deleteProperty(this.stateData, prop);
     },
     defineProperty: (_target, prop, descriptor) => {
-      if (typeof prop === "string") assertPublicSettingsKey(prop);
+      assertTrapKey(prop);
       // This forwarding proxy has an empty target; a non-configurable own
       // property would violate its invariants when state is replaced.
       if (descriptor.configurable !== true) {
@@ -104,6 +106,22 @@ class SettingsStore
     },
   });
 
+  private readonly pluginStorage = new PluginCustomStorageSubsystem({
+    getRecord: () => this.stateData.pluginCustomStorage,
+    ensureRecord: () =>
+      (this.stateData.pluginCustomStorage ??=
+        {} as PluginStorageRecord) as PluginStorageRecord,
+    setRecord: (record) => {
+      this.stateData.pluginCustomStorage =
+        record as DatabaseSettings["pluginCustomStorage"];
+    },
+    notifyChanged: () => this.scheduleCommit(),
+  });
+
+  private hasOwnKey(key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(this.stateData, key);
+  }
+
   init(
     initialSettings: Partial<DatabaseSettings>,
     storage: ISqlStorage | null,
@@ -116,16 +134,12 @@ class SettingsStore
     this.keySetDispose = null;
     this.dirtyKeys.clear();
     this.pendingDeletes.clear();
-    this.pendingPluginStorageUpserts.clear();
-    this.pendingPluginStorageDeletes.clear();
-    this.pendingPluginStorageClear = false;
-    this.pluginStorageLoads.clear();
     for (const key of Object.keys(initialSettings)) assertSettingsKey(key);
     const settingsCopy = { ...initialSettings } as DatabaseSettings;
     settingsCopy.pluginCustomStorage ??= {};
-    this.pluginStorageKeys = new Set(
-      Object.keys(settingsCopy.pluginCustomStorage),
-    );
+    this.pluginStorage.reset(storage, [
+      ...Object.keys(settingsCopy.pluginCustomStorage),
+    ]);
 
     this.stateData = settingsCopy as DatabaseSettings;
     this.observe();
@@ -157,13 +171,13 @@ class SettingsStore
     // Synchronous baseline taken at observe time.  The first (async) effect
     // run compares against it so mutations occurring between observe and the
     // first flush are still detected; later runs mark unconditionally.
-    const baseline = Object.prototype.hasOwnProperty.call(this.stateData, key)
+    const baseline = this.hasOwnKey(key)
       ? snapshotFingerprint($state.snapshot(this.stateData[key]))
       : undefined;
     let initial = true;
     const dispose = $effect.root(() => {
       $effect(() => {
-        if (!Object.prototype.hasOwnProperty.call(this.stateData, key)) {
+        if (!this.hasOwnKey(key)) {
           initial = false;
           this.dirtyKeys.delete(key);
           this.pendingDeletes.add(key);
@@ -205,10 +219,7 @@ class SettingsStore
     }
     const hasRootChanges =
       this.dirtyKeys.size > 0 || this.pendingDeletes.size > 0;
-    const hasPluginChanges =
-      this.pendingPluginStorageUpserts.size > 0 ||
-      this.pendingPluginStorageDeletes.size > 0 ||
-      this.pendingPluginStorageClear;
+    const hasPluginChanges = this.pluginStorage.hasPendingChanges();
     if (!hasRootChanges && !hasPluginChanges) {
       return;
     }
@@ -216,7 +227,7 @@ class SettingsStore
     // Serialise at flush time — snapshots are never retained between commits
     const upserts: { key: string; value: unknown }[] = [];
     for (const key of this.dirtyKeys) {
-      if (!Object.prototype.hasOwnProperty.call(this.stateData, key)) continue;
+      if (!this.hasOwnKey(key)) continue;
       if (this.pendingDeletes.has(key)) continue;
       upserts.push({ key, value: $state.snapshot(this.stateData[key]) });
     }
@@ -224,20 +235,9 @@ class SettingsStore
     this.dirtyKeys.clear();
     this.pendingDeletes.clear();
 
-    let pluginStoragePayload: import("../../storage/sql/sqlCommit").SqlCommit["pluginStorage"] =
-      undefined;
-    if (hasPluginChanges) {
-      pluginStoragePayload = {
-        upserts: Array.from(this.pendingPluginStorageUpserts.entries()).map(
-          ([key, value]) => ({ key, value }),
-        ),
-        deletes: Array.from(this.pendingPluginStorageDeletes),
-        clear: this.pendingPluginStorageClear || undefined,
-      };
-      this.pendingPluginStorageUpserts.clear();
-      this.pendingPluginStorageDeletes.clear();
-      this.pendingPluginStorageClear = false;
-    }
+    const pluginStoragePayload = hasPluginChanges
+      ? this.pluginStorage.takeCommitPayload()
+      : undefined;
 
     try {
       await commitSqlChanges(storage, {
@@ -255,57 +255,26 @@ class SettingsStore
         messageManifests: [],
       });
     } catch (error) {
-      for (const { key } of upserts) {
-        if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
-          this.pendingDeletes.delete(key);
-          this.dirtyKeys.add(key);
-        } else {
-          this.dirtyKeys.delete(key);
-          this.pendingDeletes.add(key);
-        }
-      }
-      for (const key of deletes) {
-        if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
-          this.pendingDeletes.delete(key);
-          this.dirtyKeys.add(key);
-        } else {
-          this.pendingDeletes.add(key);
-        }
-      }
-      if (pluginStoragePayload) {
-        const impactedKeys = new Set([
-          ...pluginStoragePayload.upserts.map(({ key }) => key),
-          ...pluginStoragePayload.deletes,
-        ]);
-        if (pluginStoragePayload.clear) {
-          this.pendingPluginStorageClear = true;
-          for (const key of Object.keys(
-            this.stateData.pluginCustomStorage ?? {},
-          ))
-            impactedKeys.add(key);
-        }
-        for (const key of impactedKeys) {
-          if (
-            Object.prototype.hasOwnProperty.call(
-              this.stateData.pluginCustomStorage ?? {},
-              key,
-            )
-          ) {
-            this.pendingPluginStorageDeletes.delete(key);
-            this.pendingPluginStorageUpserts.set(
-              key,
-              $state.snapshot(this.stateData.pluginCustomStorage[key]),
-            );
-          } else {
-            this.pendingPluginStorageUpserts.delete(key);
-            this.pendingPluginStorageDeletes.add(key);
-          }
-        }
-      }
+      this.restoreKeyAfterFailedCommit(upserts.map(({ key }) => key));
+      this.restoreKeyAfterFailedCommit(deletes);
+      this.pluginStorage.restoreAfterFailedCommit(pluginStoragePayload);
       console.error(
         "[SettingsStore] Failed to commit setting changes to SQL storage:",
         error,
       );
+    }
+  }
+
+  /** Re-queue a batch of keys after a failed commit, mirroring current state. */
+  private restoreKeyAfterFailedCommit(keys: Iterable<string>): void {
+    for (const key of keys) {
+      if (this.hasOwnKey(key)) {
+        this.pendingDeletes.delete(key);
+        this.dirtyKeys.add(key);
+      } else {
+        this.dirtyKeys.delete(key);
+        this.pendingDeletes.add(key);
+      }
     }
   }
 
@@ -334,9 +303,7 @@ class SettingsStore
     return (
       this.dirtyKeys.size > 0 ||
       this.pendingDeletes.size > 0 ||
-      this.pendingPluginStorageUpserts.size > 0 ||
-      this.pendingPluginStorageDeletes.size > 0 ||
-      this.pendingPluginStorageClear
+      this.pluginStorage.hasPendingChanges()
     );
   }
 
@@ -351,14 +318,8 @@ class SettingsStore
     const keyStr = String(key);
     assertPublicSettingsKey(keyStr);
     this.stateData[keyStr] = value;
-    if (PRESET_OWNED_KEYS.has(keyStr)) return;
     if (keyStr === "pluginCustomStorage") {
-      this.pluginStorageKeys.clear();
-      if (value && typeof value === "object") {
-        for (const [k, v] of Object.entries(value)) {
-          this.setPluginCustomStorageKey(k, v);
-        }
-      }
+      this.pluginStorage.replaceRecord(value);
       return;
     }
     this.observeKey(keyStr);
@@ -368,7 +329,7 @@ class SettingsStore
   }
 
   update(updater: (state: SettingsState) => void): void {
-    updater(guardedSettingsState(this.stateData) as SettingsState);
+    updater(guardedSettingsState(this.stateData));
     for (const key of Object.keys(this.stateData)) {
       assertSettingsKey(key);
       if (key === "pluginCustomStorage" || PRESET_OWNED_KEYS.has(key)) continue;
@@ -380,9 +341,9 @@ class SettingsStore
 
   /** Apply storage-derived runtime values without turning hydration into a write. */
   hydrate(updater: (state: SettingsState) => void): void {
-    const dirtyValues = new Map<string, any>();
+    const dirtyValues = new Map<string, unknown>();
     for (const key of this.dirtyKeys) {
-      if (Object.prototype.hasOwnProperty.call(this.stateData, key)) {
+      if (this.hasOwnKey(key)) {
         dirtyValues.set(key, $state.snapshot(this.stateData[key]));
       }
     }
@@ -395,7 +356,7 @@ class SettingsStore
     this.keySetDispose = null;
     let hydrationError: unknown;
     try {
-      updater(guardedSettingsState(this.stateData) as SettingsState);
+      updater(guardedSettingsState(this.stateData));
     } catch (error) {
       hydrationError = error;
     }
@@ -437,11 +398,10 @@ class SettingsStore
     const keyStr = String(key);
     assertPublicSettingsKey(keyStr);
     if (keyStr === "pluginCustomStorage") {
-      this.clearPluginCustomStorage();
+      this.pluginStorage.clear();
       return;
     }
     delete this.stateData[keyStr];
-    if (PRESET_OWNED_KEYS.has(keyStr)) return;
     this.keyDisposers.get(keyStr)?.();
     this.keyDisposers.delete(keyStr);
     this.dirtyKeys.delete(keyStr);
@@ -449,123 +409,52 @@ class SettingsStore
     this.scheduleCommit();
   }
 
-  getPluginCustomStorage(): Record<string, any> {
-    this.stateData.pluginCustomStorage ??= {};
-    return this.stateData.pluginCustomStorage;
-  }
-
   getPluginCustomStorageKeys(): string[] {
-    return Array.from(this.pluginStorageKeys);
+    return this.pluginStorage.getKeys();
   }
 
   hasPluginCustomStorageKey(key: string): boolean {
-    return this.pluginStorageKeys.has(key);
+    return this.pluginStorage.hasKey(key);
   }
 
   hasLoadedPluginCustomStorageKey(key: string): boolean {
-    return Object.prototype.hasOwnProperty.call(
-      this.stateData.pluginCustomStorage ?? {},
-      key,
-    );
+    return this.pluginStorage.hasLoadedKey(key);
   }
 
   hydratePluginCustomStorageKeys(keys: string[]): void {
-    this.pluginStorageKeys = new Set([
-      ...keys,
-      ...Object.keys(this.stateData.pluginCustomStorage ?? {}),
-    ]);
+    this.pluginStorage.hydrateKeys(keys);
   }
 
-  hydratePluginCustomStorageKey(key: string, value: any): void {
-    this.stateData.pluginCustomStorage ??= {};
-    this.stateData.pluginCustomStorage[key] = value;
-    this.pluginStorageKeys.add(key);
+  hydratePluginCustomStorageKey(key: string, value: unknown): void {
+    this.pluginStorage.hydrateKey(key, value);
   }
 
-  hydrateRemotePluginCustomStorageKey(key: string, value: any): void {
-    if (
-      this.pendingPluginStorageClear ||
-      this.pendingPluginStorageDeletes.has(key) ||
-      this.pendingPluginStorageUpserts.has(key)
-    )
-      return;
-    this.hydratePluginCustomStorageKey(key, value);
+  hydrateRemotePluginCustomStorageKey(key: string, value: unknown): void {
+    this.pluginStorage.hydrateRemoteKey(key, value);
   }
 
   hydrateRemotePluginCustomStorageDelete(key: string): void {
-    if (
-      this.pendingPluginStorageClear ||
-      this.pendingPluginStorageDeletes.has(key) ||
-      this.pendingPluginStorageUpserts.has(key)
-    )
-      return;
-    if (this.stateData.pluginCustomStorage)
-      delete this.stateData.pluginCustomStorage[key];
-    this.pluginStorageKeys.delete(key);
+    this.pluginStorage.hydrateRemoteDelete(key);
   }
 
   hydrateRemotePluginCustomStorageClear(): void {
-    const preserved = Object.fromEntries(
-      this.pendingPluginStorageUpserts.entries(),
-    );
-    this.stateData.pluginCustomStorage = preserved;
-    this.pluginStorageKeys = new Set(Object.keys(preserved));
+    this.pluginStorage.hydrateRemoteClear();
   }
 
-  async loadPluginCustomStorageKey(key: string): Promise<any> {
-    if (this.hasLoadedPluginCustomStorageKey(key)) {
-      return this.stateData.pluginCustomStorage[key];
-    }
-    const existingLoad = this.pluginStorageLoads.get(key);
-    if (existingLoad) return existingLoad;
-    const storage = this.storage || (await getSqlStorage());
-    const pending = storage
-      .loadPluginCustomStorageKey(key)
-      .then((value) => {
-        if (
-          this.pendingPluginStorageClear ||
-          this.pendingPluginStorageDeletes.has(key)
-        )
-          return undefined;
-        if (this.hasLoadedPluginCustomStorageKey(key))
-          return this.stateData.pluginCustomStorage[key];
-        if (value !== undefined) this.hydratePluginCustomStorageKey(key, value);
-        return value;
-      })
-      .finally(() => {
-        if (this.pluginStorageLoads.get(key) === pending)
-          this.pluginStorageLoads.delete(key);
-      });
-    this.pluginStorageLoads.set(key, pending);
-    return pending;
+  async loadPluginCustomStorageKey(key: string): Promise<unknown> {
+    return this.pluginStorage.loadKey(key);
   }
 
-  setPluginCustomStorageKey(key: string, value: any): void {
-    this.stateData.pluginCustomStorage ??= {};
-    this.stateData.pluginCustomStorage[key] = value;
-    this.pluginStorageKeys.add(key);
-    this.pendingPluginStorageDeletes.delete(key);
-    this.pendingPluginStorageUpserts.set(key, $state.snapshot(value));
-    this.scheduleCommit();
+  setPluginCustomStorageKey(key: string, value: unknown): void {
+    this.pluginStorage.setKey(key, value);
   }
 
   removePluginCustomStorageKey(key: string): void {
-    if (this.stateData.pluginCustomStorage) {
-      delete this.stateData.pluginCustomStorage[key];
-    }
-    this.pluginStorageKeys.delete(key);
-    this.pendingPluginStorageUpserts.delete(key);
-    this.pendingPluginStorageDeletes.add(key);
-    this.scheduleCommit();
+    this.pluginStorage.removeKey(key);
   }
 
   clearPluginCustomStorage(): void {
-    this.stateData.pluginCustomStorage = {};
-    this.pluginStorageKeys.clear();
-    this.pendingPluginStorageUpserts.clear();
-    this.pendingPluginStorageDeletes.clear();
-    this.pendingPluginStorageClear = true;
-    this.scheduleCommit();
+    this.pluginStorage.clear();
   }
 
   dispose(): void {

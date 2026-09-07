@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildChatGraphGitLanes,
+  buildChatGraphGitRows,
+  buildChatGraphPackedLanes,
   buildChatMessageGraph,
   getChatBranches,
   getChatBranchesFromPersistentGraph,
@@ -189,6 +190,28 @@ describe("buildChatMessageGraph", () => {
     expect(graph.nodes.every((node) => node.kind === "message")).toBe(true);
   });
 
+  it("lays out a long linear chat without quadratic contour memory", () => {
+    const messages = Array.from({ length: 5000 }, (_, index) =>
+      message(
+        `linear-${index}`,
+        index % 2 === 0 ? "user" : "char",
+        `linear ${index + 1}`,
+      ),
+    );
+
+    const graph = buildChatMessageGraph([timeline("root", messages, true)], {
+      density: "all",
+    });
+
+    expect(graph.nodes).toHaveLength(5000);
+    expect(graph.rows).toBe(5000);
+    expect(graph.columns).toBe(1);
+    expect(graph.nodes.every((node) => node.x === 0)).toBe(true);
+    expect(graph.nodes.every((node) => node.y === node.messageIndex)).toBe(
+      true,
+    );
+  });
+
   it("compresses linear runs to branch landmarks when density is branches", () => {
     const shared = Array.from({ length: 12 }, (_, index) =>
       message(
@@ -251,10 +274,57 @@ describe("buildChatMessageGraph", () => {
     expect(originalNode.y).toBe(alternativeNode.y);
     expect(originalNode.x).not.toBe(alternativeNode.x);
   });
+
+  it("compacts trees with repeated rerolls across turns without column explosion or diagonal drift", () => {
+    // 30 turns = 60 messages in main timeline
+    const mainMessages: Message[] = [];
+    const timelines: ChatGraphTimeline[] = [];
+
+    for (let turn = 0; turn < 30; turn++) {
+      const userMsg = message(`u-${turn}`, "user", `user ${turn}`);
+      const charMsg = message(`c-${turn}`, "char", `char ${turn}`);
+      mainMessages.push(userMsg, charMsg);
+
+      // Add rerolls at various turns
+      if (turn % 3 === 1) {
+        const rerollMsg = message(`c-${turn}-reroll`, "char", `char ${turn} reroll`);
+        timelines.push(
+          timeline(`reroll-${turn}`, [...mainMessages.slice(0, -1), rerollMsg], false)
+        );
+      }
+    }
+    timelines.unshift(timeline("root", mainMessages, true));
+
+    const graph = buildChatMessageGraph(timelines, { density: "all" });
+
+    // With contour packing, columns are kept compact (7 columns vs naive 11)
+    expect(graph.columns).toBeLessThanOrEqual(8);
+
+    // Verify tree fork centering: for each branch point, parent is centered between its children
+    const parentNodes = graph.nodes.filter((n) => n.branchPoint);
+    for (const parent of parentNodes) {
+      const childEdges = graph.edges.filter((e) => e.from === parent.id);
+      const childNodes = childEdges.map((e) => graph.nodes.find((n) => n.id === e.to)!);
+      if (childNodes.length >= 2) {
+        const minChildX = Math.min(...childNodes.map((c) => c.x));
+        const maxChildX = Math.max(...childNodes.map((c) => c.x));
+        expect(parent.x).toBeCloseTo((minChildX + maxChildX) / 2);
+      }
+    }
+
+    // Nodes at the same depth must never share the same x
+    const depthMap = new Map<number, number[]>();
+    for (const node of graph.nodes) {
+      const xs = depthMap.get(node.y) ?? [];
+      expect(xs).not.toContain(node.x);
+      xs.push(node.x);
+      depthMap.set(node.y, xs);
+    }
+  });
 });
 
-describe("buildChatGraphGitLanes", () => {
-  it("keeps the active continuation in its current lane and moves alternatives aside", () => {
+describe("buildChatGraphPackedLanes", () => {
+  it("keeps the active continuation in its current lane and packs alternatives", () => {
     const shared = message("lane-shared", "user", "shared");
     const original = message("lane-original", "char", "original");
     const activeAlternative = message(
@@ -267,12 +337,105 @@ describe("buildChatGraphGitLanes", () => {
       timeline("reroll", [shared, activeAlternative], true),
     ]);
 
-    const lanes = buildChatGraphGitLanes(graph);
+    const lanes = buildChatGraphPackedLanes(graph, (node) => node.y);
 
     expect(lanes.laneByNodeId.get("message:lane-shared")).toBe(0);
     expect(lanes.laneByNodeId.get("message:lane-active")).toBe(0);
     expect(lanes.laneByNodeId.get("message:lane-original")).not.toBe(0);
     expect(lanes.columns).toBe(2);
+  });
+
+  it("reuses lanes for branches that never overlap in flow order", () => {
+    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+      ...message(id, role, data),
+      time,
+    });
+    const u1 = withTime("ru1", "user", "hello", 1);
+    const a1 = withTime("ra1", "char", "first answer", 2);
+    const u2 = withTime("ru2", "user", "continue", 3);
+    const earlyReroll = withTime("alt-early", "char", "early reroll", 4);
+    const lateReroll = withTime("alt-late", "char", "late reroll", 5);
+    const original = withTime("orig", "char", "original answer", 6);
+    const graph = buildChatMessageGraph([
+      timeline("root", [u1, a1, u2, original], true),
+      timeline("early", [u1, a1, u2, earlyReroll]),
+      timeline("late", [u1, a1, u2, lateReroll]),
+    ]);
+
+    const rows = buildChatGraphGitRows(graph);
+    const lanes = buildChatGraphPackedLanes(
+      graph,
+      (node) => rows.rowByNodeId.get(node.id) ?? 0,
+    );
+
+    expect(lanes.columns).toBe(2);
+    expect(lanes.laneByNodeId.get("message:orig")).toBe(0);
+    expect(lanes.laneByNodeId.get("message:alt-early")).toBe(1);
+    expect(lanes.laneByNodeId.get("message:alt-late")).toBe(1);
+  });
+});
+
+describe("buildChatGraphGitRows", () => {
+  it("assigns every node its own row ordered by message time", () => {
+    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+      ...message(id, role, data),
+      time,
+    });
+    const u1 = withTime("row-u1", "user", "hello", 1);
+    const a1 = withTime("row-a1", "char", "first answer", 2);
+    const original = withTime("row-a2", "char", "original answer", 4);
+    const reroll = withTime("row-a2-alt", "char", "alternative answer", 3);
+    const graph = buildChatMessageGraph([
+      timeline("root", [u1, a1, original]),
+      timeline("reroll", [u1, a1, reroll], true),
+    ]);
+
+    const rows = buildChatGraphGitRows(graph);
+
+    expect(rows.rowByNodeId.get("message:row-u1")).toBe(0);
+    expect(rows.rowByNodeId.get("message:row-a1")).toBe(1);
+    expect(rows.rowByNodeId.get("message:row-a2-alt")).toBe(2);
+    expect(rows.rowByNodeId.get("message:row-a2")).toBe(3);
+    expect(rows.rows).toBe(4);
+  });
+
+  it("falls back to topological order when messages have no timestamps", () => {
+    const u1 = message("fb-u1", "user", "hello");
+    const a1 = message("fb-a1", "char", "first answer");
+    const original = message("fb-a2", "char", "original answer");
+    const reroll = message("fb-a2-alt", "char", "alternative answer");
+    const graph = buildChatMessageGraph([
+      timeline("root", [u1, a1, original]),
+      timeline("reroll", [u1, a1, reroll], true),
+    ]);
+
+    const rows = buildChatGraphGitRows(graph);
+
+    expect(rows.rowByNodeId.get("message:fb-u1")).toBe(0);
+    expect(rows.rowByNodeId.get("message:fb-a1")).toBe(1);
+    expect(rows.rowByNodeId.get("message:fb-a1")!).toBeLessThan(
+      rows.rowByNodeId.get("message:fb-a2")!,
+    );
+    expect(rows.rowByNodeId.get("message:fb-a1")!).toBeLessThan(
+      rows.rowByNodeId.get("message:fb-a2-alt")!,
+    );
+    expect(rows.rows).toBe(4);
+  });
+
+  it("keeps parents above children even with out-of-order timestamps", () => {
+    const withTime = (id: string, role: Message["role"], data: string, time: number) => ({
+      ...message(id, role, data),
+      time,
+    });
+    const u1 = withTime("oo-u1", "user", "hello", 5);
+    const a1 = withTime("oo-a1", "char", "first answer", 2);
+    const graph = buildChatMessageGraph([timeline("root", [u1, a1], true)]);
+
+    const rows = buildChatGraphGitRows(graph);
+
+    expect(rows.rowByNodeId.get("message:oo-u1")!).toBeLessThan(
+      rows.rowByNodeId.get("message:oo-a1")!,
+    );
   });
 });
 

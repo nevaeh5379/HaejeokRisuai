@@ -143,7 +143,15 @@
 
     $effect(() => {
         if ($sideBarStore || $selectedCharID) {
-            preloadLazy(assetManagerLoader)
+            // Defer the asset manager chunk so it never competes with the
+            // sidebar open animation on low-end devices.
+            const preload = () => preloadLazy(assetManagerLoader)
+            const ric = (globalThis as any).requestIdleCallback
+            if (typeof ric === 'function') {
+                ric(preload, { timeout: 4000 })
+            } else {
+                setTimeout(preload, 500)
+            }
         }
     })
 
@@ -334,7 +342,7 @@
             {#if (!$DynamicGUI)}
                 <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: !$sideBarStore }} />
             {:else}
-                <div class="top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
+                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
 

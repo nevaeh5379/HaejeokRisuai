@@ -399,6 +399,43 @@ export function preloadThumbnails(keys: string[]) {
   thumbnailBatchLoader.preload(keys);
 }
 
+/**
+ * Pre-decode thumbnails so scrolling paints already-decoded bitmaps instead
+ * of triggering decode work mid-scroll. Resolves every batch-loaded blob URL
+ * through `img.decode()` on the main thread scheduler, spaced with
+ * requestAnimationFrame-ish yielding to avoid blocking the UI.
+ */
+export async function preloadThumbnailsDecoded(keys: string[]) {
+  for (const key of keys) {
+    const url = await thumbnailBatchLoader.load(key).catch(() => "");
+    if (!url || url === "/none.webp" || !url.startsWith("blob:")) continue;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image();
+        img.decoding = "async";
+        img.src = url;
+        const done = () => resolve();
+        img.onload = done;
+        img.onerror = () => reject(new Error("decode warm failed"));
+        // decode() keeps the decoded bitmap in the image cache without
+        // attaching the element to the DOM.
+        const decoded = (img as HTMLImageElement & {
+          decode?: () => Promise<void>;
+        }).decode?.();
+        if (decoded) {
+          decoded.then(done).catch(() => {
+            /* fall back to load event */
+          });
+        }
+      });
+      // Yield between decodes so we never monopolize the main thread.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } catch {
+      // Best-effort warmup; ignore individual failures.
+    }
+  }
+}
+
 const preparedNativeThumbnailKeys = new BoundedCache<string, true>({
   maxEntries: () => (settingsStore.state.lowSpecMode ? 4096 : 32768),
 });
