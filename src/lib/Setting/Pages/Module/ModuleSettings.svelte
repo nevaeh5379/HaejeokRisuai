@@ -9,7 +9,7 @@
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule, type ModuleFolder } from "src/ts/process/modules";
-    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, ArrowUp, ArrowDown, GripVertical } from "@lucide/svelte";
+    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, FolderOutput, ArrowUp, ArrowDown, GripVertical } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertNormal, alertSelect, alertInput } from "src/ts/alert";
@@ -39,6 +39,9 @@
     let sorted = $state(0)
     let rootStb: any = null
     let folderStbMap = new Map<string, any>()
+    let hoverFolderId: string | null = null
+    let hoverFolderTimer: any = null
+    let scrollPos = 0
 
     let displayItems = $derived.by(() => {
         const q = moduleSearch.trim().toLowerCase()
@@ -99,23 +102,39 @@
 
     async function moveModuleToFolder(module: RisuModule) {
         const folders = moduleFolders
-        const options = [
-            language.noFolder,
-            ...folders.map((f) => f.name),
-        ]
+        if (folders.length === 0) {
+            alertNormal(language.noFolder)
+            return
+        }
+        const isInsideFolder = module.folderId !== undefined
+        const options = isInsideFolder
+            ? [language.removeFromFolder || language.noFolder, ...folders.map((f) => f.name)]
+            : folders.map((f) => f.name)
         const sel = parseInt(await alertSelect(options))
         if (Number.isNaN(sel)) return
-        if (sel === 0) {
-            await moduleStore.moveModuleToFolder(module.id, undefined)
+        if (isInsideFolder) {
+            if (sel === 0) {
+                await moduleStore.moveModule(module.id, undefined)
+            } else {
+                const folder = folders[sel - 1]
+                if (folder) {
+                    await moduleStore.moveModule(module.id, folder.id)
+                }
+            }
         } else {
-            const folder = folders[sel - 1]
+            const folder = folders[sel]
             if (folder) {
-                await moduleStore.moveModuleToFolder(module.id, folder.id)
+                await moduleStore.moveModule(module.id, folder.id)
             }
         }
     }
 
     function destroySortable() {
+        if (hoverFolderTimer) {
+            clearTimeout(hoverFolderTimer)
+            hoverFolderTimer = null
+        }
+        hoverFolderId = null
         if (rootStb) {
             try { rootStb.destroy() } catch {}
             rootStb = null
@@ -145,14 +164,102 @@
             const { default: Sortable } = await import('sortablejs/modular/sortable.core.esm.js')
             if (cancelled || !_ele || moduleSearch !== '') return
 
+            if (scrollPos > 0) {
+                _ele.scrollTop = scrollPos
+            }
+
+            const handleSortEnd = async (evt: any) => {
+                if (hoverFolderTimer) {
+                    clearTimeout(hoverFolderTimer)
+                    hoverFolderTimer = null
+                }
+                hoverFolderId = null
+
+                const fromEl: HTMLElement = evt.from
+                const toEl: HTMLElement = evt.to
+                const itemEl: HTMLElement = evt.item
+                const oldIndex: number | undefined = evt.oldIndex
+                const newIndex: number | undefined = evt.newIndex
+
+                if (oldIndex === undefined || newIndex === undefined) return
+                if (fromEl === toEl && oldIndex === newIndex) return
+
+                scrollPos = _ele?.scrollTop ?? 0
+
+                if (fromEl === toEl) {
+                    if (fromEl === _ele) {
+                        await moduleStore.moveRootItem(oldIndex, newIndex)
+                    } else {
+                        const folderId = fromEl.getAttribute('data-folder-container-id')
+                        if (folderId) {
+                            const fModules = moduleStore.modulesInFolder(folderId)
+                            const copy = fModules.map((m) => m.id)
+                            const [moved] = copy.splice(oldIndex, 1)
+                            copy.splice(newIndex, 0, moved)
+                            await moduleStore.reorderFolderModules(folderId, copy)
+                        }
+                    }
+                } else {
+                    const moduleId = itemEl.getAttribute('data-module-id')
+                    if (!moduleId) return
+
+                    if (toEl === _ele) {
+                        await moduleStore.moveModule(moduleId, undefined, newIndex)
+                    } else {
+                        const targetFolderId = toEl.getAttribute('data-folder-container-id')
+                        if (targetFolderId) {
+                            await moduleStore.moveModule(moduleId, targetFolderId, newIndex)
+                        }
+                    }
+                }
+                sorted += 1
+            }
+
+            const checkFolderHover = (event: any) => {
+                if (event.related?.className?.indexOf?.('no-sort') !== -1) return false
+                const folderEl = event.related?.closest?.('[data-folder-id]')
+                if (folderEl) {
+                    const fId = folderEl.getAttribute('data-folder-id')
+                    if (fId && !openFolders.has(fId)) {
+                        if (hoverFolderId !== fId) {
+                            if (hoverFolderTimer) clearTimeout(hoverFolderTimer)
+                            hoverFolderId = fId
+                            hoverFolderTimer = setTimeout(() => {
+                                if (hoverFolderId === fId) {
+                                    const next = new Set(openFolders)
+                                    next.add(fId)
+                                    openFolders = next
+                                }
+                            }, 500)
+                        }
+                    }
+                } else {
+                    if (hoverFolderTimer) {
+                        clearTimeout(hoverFolderTimer)
+                        hoverFolderTimer = null
+                    }
+                    hoverFolderId = null
+                }
+                return true
+            }
+
             rootStb = Sortable.create(_ele, {
                 handle: '.root-drag-handle',
-                draggable: '.root-sort-item',
-                onEnd: async (evt) => {
-                    if (evt.oldIndex === undefined || evt.newIndex === undefined || evt.oldIndex === evt.newIndex) return
-                    await moduleStore.moveRootItem(evt.oldIndex, evt.newIndex)
-                    sorted += 1
+                draggable: '.sortable-item',
+                group: {
+                    name: 'modules-group',
+                    pull: (to: any, from: any, dragEl: HTMLElement) => {
+                        if (dragEl.getAttribute('data-item-type') === 'folder') {
+                            return to.el === _ele
+                        }
+                        return true
+                    },
+                    put: (to: any, from: any, dragEl: HTMLElement) => {
+                        return true
+                    },
                 },
+                onMove: checkFolderHover,
+                onEnd: handleSortEnd,
                 ...sortableOptions,
             })
 
@@ -162,16 +269,16 @@
                 if (!folderId) return
                 const stb = Sortable.create(container, {
                     handle: '.module-drag-handle',
-                    draggable: '.folder-module-item',
-                    onEnd: async (evt) => {
-                        if (evt.oldIndex === undefined || evt.newIndex === undefined || evt.oldIndex === evt.newIndex) return
-                        const fModules = moduleStore.modulesInFolder(folderId)
-                        const copy = fModules.map((m) => m.id)
-                        const [moved] = copy.splice(evt.oldIndex, 1)
-                        copy.splice(evt.newIndex, 0, moved)
-                        await moduleStore.reorderFolderModules(folderId, copy)
-                        sorted += 1
+                    draggable: '.sortable-item',
+                    group: {
+                        name: 'modules-group',
+                        pull: true,
+                        put: (to: any, from: any, dragEl: HTMLElement) => {
+                            return dragEl.getAttribute('data-item-type') !== 'folder'
+                        },
                     },
+                    onMove: checkFolderHover,
+                    onEnd: handleSortEnd,
                     ...sortableOptions,
                 })
                 folderStbMap.set(folderId, stb)
@@ -194,6 +301,7 @@
 
     <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
+    {#key sorted}
     <div bind:this={rootEle} class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
         {#if modules.length === 0 && moduleFolders.length === 0}
             <div class="text-textcolor2 p-3">{language.noModules}</div>
@@ -201,11 +309,12 @@
             <div class="text-textcolor2 p-3">{language.noModules}</div>
         {:else}
             {#each displayItems as item, i (item.type === 'folder' ? 'folder:' + item.folder.id : item.module.id)}
-                {#if i !== 0}
-                    <div class="border-t-1 border-selected"></div>
-                {/if}
                 {#if item.type === 'folder'}
-                    <div class="root-sort-item flex flex-col">
+                    <div
+                        class="root-sort-item sortable-item flex flex-col {i !== 0 ? 'border-t-1 border-selected' : ''}"
+                        data-item-type="folder"
+                        data-folder-id={item.folder.id}
+                    >
                         <div class="w-full flex items-center pl-3 pr-3 py-2 text-left">
                             {#if moduleSearch === ''}
                                 <div class="root-drag-handle mr-2 cursor-grab text-textcolor2 hover:text-textcolor shrink-0" title="Drag to reorder">
@@ -269,9 +378,21 @@
                             </button>
                         </div>
                         {#if openFolders.has(item.folder.id)}
-                            <div data-folder-container-id={item.folder.id} class="flex flex-col pl-4 border-t-1 border-selected/50 bg-textcolor/2">
+                            <div
+                                data-folder-container-id={item.folder.id}
+                                class="flex flex-col pl-4 border-t-1 border-selected/50 bg-textcolor/2 min-h-[44px]"
+                            >
+                                {#if item.modules.length === 0}
+                                    <div class="empty-placeholder text-textcolor2/60 text-xs py-3 text-center italic pointer-events-none">
+                                        {language.noModules}
+                                    </div>
+                                {/if}
                                 {#each item.modules as fmodule, mIdx (fmodule.id)}
-                                    <div class="folder-module-item flex flex-col">
+                                    <div
+                                        class="folder-module-item sortable-item flex flex-col"
+                                        data-item-type="module"
+                                        data-module-id={fmodule.id}
+                                    >
                                         {@render moduleRow(fmodule, false, mIdx, item.modules.length, mIdx !== 0)}
                                     </div>
                                 {/each}
@@ -279,13 +400,18 @@
                         {/if}
                     </div>
                 {:else}
-                    <div class="root-sort-item flex flex-col">
+                    <div
+                        class="root-sort-item sortable-item flex flex-col {i !== 0 ? 'border-t-1 border-selected' : ''}"
+                        data-item-type="module"
+                        data-module-id={item.module.id}
+                    >
                         {@render moduleRow(item.module, true, i, displayItems.length, false)}
                     </div>
                 {/if}
             {/each}
         {/if}
     </div>
+    {/key}
 
     <div class="flex mr-2 mt-4">
         <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" use:tooltip={language.createModule} onclick={async () => {
@@ -437,6 +563,18 @@
                     </button>
                     <button class="text-textcolor2 mr-2 cursor-not-allowed">
                         <SquarePen size={18}/>
+                    </button>
+                {/if}
+                {#if !isRoot}
+                    <button
+                        class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
+                        use:tooltip={language.removeFromFolder}
+                        onclick={async (e) => {
+                            e.stopPropagation()
+                            await moduleStore.moveModule(rmodule.id, undefined)
+                        }}
+                    >
+                        <FolderOutput size={18}/>
                     </button>
                 {/if}
                 <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.moveToFolder} onclick={async (e) => {

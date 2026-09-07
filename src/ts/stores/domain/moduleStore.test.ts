@@ -199,4 +199,40 @@ describe("moduleStore ordering and folder positions", () => {
     await moduleStore.removeModule("m1");
     expect(moduleStore.order).toEqual(["m2"]);
   });
+
+  it("moves a module into a specific folder index, between folders, and back to root next to folder", async () => {
+    const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
+    const mod2: RisuModule = { id: "m2", name: "Module 2", description: "", folderId: "f1" };
+    const mod3: RisuModule = { id: "m3", name: "Module 3", description: "", folderId: "f1" };
+    const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
+    const folder2: ModuleFolder = { id: "f2", name: "Folder 2", color: "" };
+
+    mockStorage.loadModules = vi.fn(async () => [mod1, mod2, mod3]);
+    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+      if (key === "moduleFolders") return [folder1, folder2];
+      if (key === "moduleOrder") return ["m1", "folder:f1", "folder:f2"];
+      return [];
+    });
+
+    await moduleStore.init(mockStorage);
+
+    // 1. Move m1 from root into folder1 at index 1 (between m2 and m3)
+    await moduleStore.moveModule("m1", "f1", 1);
+    expect(moduleStore.getById("m1")?.folderId).toBe("f1");
+    expect(moduleStore.modulesInFolder("f1").map((m) => m.id)).toEqual(["m2", "m1", "m3"]);
+    expect(moduleStore.order).toEqual(["folder:f1", "folder:f2"]);
+
+    // 2. Move m1 from folder1 into folder2 at index 0
+    await moduleStore.moveModule("m1", "f2", 0);
+    expect(moduleStore.getById("m1")?.folderId).toBe("f2");
+    expect(moduleStore.modulesInFolder("f1").map((m) => m.id)).toEqual(["m2", "m3"]);
+    expect(moduleStore.modulesInFolder("f2").map((m) => m.id)).toEqual(["m1"]);
+
+    // 3. Move m1 out of folder2 without targetIndex -> should be placed right next to folder:f2
+    await moduleStore.moveModule("m1", undefined);
+    expect(moduleStore.getById("m1")?.folderId).toBeUndefined();
+    expect(moduleStore.modulesInFolder("f2")).toHaveLength(0);
+    expect(moduleStore.order).toEqual(["folder:f1", "folder:f2", "m1"]);
+  });
 });
+
