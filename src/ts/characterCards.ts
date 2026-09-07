@@ -1388,6 +1388,10 @@ function getCharXAssetDirectory(asset: { type?: string; ext?: string }) {
 async function exportCharacterCardNodeStream(
   char: character,
   type: "charx" | "charxJpeg",
+  options: {
+    filenameBase?: string;
+    showSuccessAlert?: boolean;
+  } = {},
 ) {
   const card = createBaseV3(char);
   const entries: NodeCharXExportEntry[] = [];
@@ -1488,8 +1492,7 @@ async function exportCharacterCardNodeStream(
       "risu-auth": auth,
     },
     body: JSON.stringify({
-      filename:
-        type === "charxJpeg" ? `${char.name}.jpeg` : `${char.name}.charx`,
+      filename: `${options.filenameBase ?? char.name}.${type === "charxJpeg" ? "jpeg" : "charx"}`,
       previewSource: type === "charxJpeg" ? char.image : undefined,
       entries,
     }),
@@ -1504,7 +1507,7 @@ async function exportCharacterCardNodeStream(
   }
   const anchor = document.createElement("a");
   anchor.href = `/api/charx-export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
-  anchor.download = `${char.name || "character"}.${type === "charxJpeg" ? "jpeg" : "charx"}`;
+  anchor.download = `${(options.filenameBase ?? char.name) || "character"}.${type === "charxJpeg" ? "jpeg" : "charx"}`;
   const completionResponse = fetch(
     `/api/charx-export/jobs/${encodeURIComponent(body.id)}`,
     {
@@ -1525,7 +1528,9 @@ async function exportCharacterCardNodeStream(
       completionBody?.error ?? `CharX download failed (${completed.status})`,
     );
   }
-  alertNormal(language.successExport);
+  if (options.showSuccessAlert !== false) {
+    alertNormal(language.successExport);
+  }
 }
 
 export async function exportCharacterCard(
@@ -1535,6 +1540,8 @@ export async function exportCharacterCard(
     password?: string;
     writer?: LocalWriter | VirtualWriter;
     spec?: "v2" | "v3";
+    filenameBase?: string;
+    showSuccessAlert?: boolean;
   } = {},
 ) {
   if (char.detailsLoaded === false) {
@@ -1555,7 +1562,10 @@ export async function exportCharacterCard(
       if (!(forageStorage.realStorage instanceof NodeStorage)) {
         throw new Error("Node CharX export requires NodeStorage");
       }
-      await exportCharacterCardNodeStream(char, type);
+      await exportCharacterCardNodeStream(char, type, {
+        filenameBase: arg.filenameBase,
+        showSuccessAlert: arg.showSuccessAlert,
+      });
     } catch (error) {
       alertError(error);
     }
@@ -1574,7 +1584,9 @@ export async function exportCharacterCard(
         charxJpeg: ["CharX Embeded Jpeg", "jpeg"],
       };
       const ext = nameExt[type];
-      await (localWriter as LocalWriter).init(ext[0], [ext[1]]);
+      await (localWriter as LocalWriter).init(arg.filenameBase ?? ext[0], [
+        ext[1],
+      ]);
     }
     const writer =
       type === "charx" || type === "charxJpeg"
@@ -1888,7 +1900,7 @@ export async function exportCharacterCard(
 
     await sleep(10);
 
-    if (!arg.writer) {
+    if (!arg.writer && arg.showSuccessAlert !== false) {
       alertNormal(language.successExport);
     }
   } catch (e) {

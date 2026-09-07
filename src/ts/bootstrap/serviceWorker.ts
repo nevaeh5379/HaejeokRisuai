@@ -1,9 +1,21 @@
 import { setUsingSw } from "../globalApi.svelte";
-import { isCapacitor } from "../platform";
+import { isCapacitor, isTauri } from "../platform";
 import { LoadingStatusState } from "../stores.svelte";
 import { waitForCompatibleServiceWorkerController } from "./serviceWorkerProtocol";
 
 let swMessageHandlerInstalled = false;
+
+async function unregisterTauriServiceWorker(): Promise<void> {
+  if (!navigator.serviceWorker) return;
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    await registration?.unregister();
+  } catch {
+    // Tauri does not use the web service worker. Cleanup failure must never
+    // block native startup or trigger the web reload recovery path.
+  }
+}
 
 function installServiceWorkerMessageHandler(): void {
   if (swMessageHandlerInstalled || !navigator.serviceWorker) return;
@@ -49,6 +61,12 @@ async function registerSw(): Promise<boolean> {
  */
 export function startServiceWorker(): Promise<void> {
   LoadingStatusState.text = "Checking Service Worker...";
+
+  if (isTauri) {
+    setUsingSw(false);
+    return unregisterTauriServiceWorker();
+  }
+
   if (!isCapacitor && navigator.serviceWorker) {
     installServiceWorkerMessageHandler();
     return registerSw()

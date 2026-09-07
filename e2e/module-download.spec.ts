@@ -69,9 +69,8 @@ test("downloads a module as a real CharX archive instead of the HTML app shell",
     .click();
 
   const row = page
-    .locator("div.pl-3.pt-2\\.5")
-    .filter({ hasText: "E2E Download Module" })
-    .first();
+    .getByText("E2E Download Module", { exact: true })
+    .locator("..");
   await expect(row).toBeVisible();
   await row.locator("button:has(svg.lucide-share-2)").click();
 
