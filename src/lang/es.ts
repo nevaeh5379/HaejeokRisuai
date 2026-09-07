@@ -1321,7 +1321,6 @@ export const languageSpanish = {
   removeFolderConfirm:
     "¿Realmente deseas eliminar esta carpeta? Los módulos dentro se moverán a la raíz.",
   moveToFolder: "Mover a Carpeta",
-  removeFromFolder: "Sacar de Carpeta",
   noFolder: "Sin Carpeta",
   ungrouped: "Sin agrupar",
   basicInfo: "Información Básica",

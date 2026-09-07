@@ -130,7 +130,6 @@ function normalizeAggregateDomains(data: Database): void {
   data.modules ??= [];
   data.enabledModules ??= [];
   data.moduleFolders ??= [];
-  data.moduleOrder ??= [];
 
   if (!Array.isArray(data.personas) || data.personas.length === 0) {
     data.personas = [

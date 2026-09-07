@@ -1317,7 +1317,6 @@ export const languageGerman = {
   removeFolderConfirm:
     "Möchten Sie diesen Ordner wirklich entfernen? Die darin enthaltenen Module werden in den Hauptordner verschoben.",
   moveToFolder: "In Ordner verschieben",
-  removeFromFolder: "Aus Ordner entfernen",
   noFolder: "Kein Ordner",
   ungrouped: "Ungruppiert",
   basicInfo: "Basisinfo",
