@@ -1269,7 +1269,6 @@ export const languageChineseTraditional = {
   removeFolder: "刪除資料夾",
   removeFolderConfirm: "確定要刪除此資料夾嗎？其中的模組將移至根目錄。",
   moveToFolder: "移至資料夾",
-  removeFromFolder: "移出資料夾",
   noFolder: "無資料夾",
   ungrouped: "未分組",
   basicInfo: "基本資料",

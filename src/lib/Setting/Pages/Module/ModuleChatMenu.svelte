@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { CircleCheckIcon, Waypoints, XIcon, FolderIcon, ChevronDown, ChevronRight } from "@lucide/svelte";
+    import { CircleCheckIcon, Waypoints, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
@@ -8,7 +8,7 @@
     import { ReloadGUIPointer, selectedCharID, SettingsMenuIndex, settingsOpen, MobileGUI, MobileSideBar, openMobileSettingsPage } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-    import { moduleStore, type ModuleRootItem } from "src/ts/stores/domain/moduleStore.svelte";
+    import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
     import { getModelInfo } from "src/ts/model/modellist";
 
     interface Props {
@@ -22,56 +22,17 @@
     let enabledModules = $derived(moduleStore.enabledModules)
     let currentCharacter = $derived(characterStore.characters?.[$selectedCharID])
     let currentChat = $derived(currentCharacter?.chats?.[currentCharacter.chatPage])
-    let rootItems = $derived(moduleStore.getRootItems())
-    let openFolders = $state<Set<string>>(new Set())
-    let initializedFolderExpansion = false
 
-    $effect(() => {
-        const folders = moduleStore.folders
-        if (!initializedFolderExpansion && folders.length > 0) {
-            initializedFolderExpansion = true
-            openFolders = new Set(folders.map((f) => f.id))
-        }
-    })
-
-    function toggleFolder(id: string) {
-        const next = new Set(openFolders)
-        if (next.has(id)) {
-            next.delete(id)
-        } else {
-            next.add(id)
-        }
-        openFolders = next
+    function sortModules(modules:RisuModule[], search:string){
+        return modules.filter((v) => {
+            if(search === '') return true
+            return v.name.toLowerCase().includes(search.toLowerCase())
+        
+        }).sort((a, b) => {
+            let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+            return score
+        })
     }
-
-    let displayItems = $derived.by(() => {
-        const q = moduleSearch.trim().toLowerCase()
-        if (!q) return rootItems
-        const result: ModuleRootItem[] = []
-        for (const item of rootItems) {
-            if (item.type === 'folder') {
-                const matchingModules = item.modules.filter((m) =>
-                    m.name.toLowerCase().includes(q) ||
-                    (m.description && m.description.toLowerCase().includes(q))
-                )
-                if (matchingModules.length > 0 || item.folder.name.toLowerCase().includes(q)) {
-                    result.push({
-                        type: 'folder',
-                        folder: item.folder,
-                        modules: matchingModules,
-                    })
-                }
-            } else {
-                if (
-                    item.module.name.toLowerCase().includes(q) ||
-                    (item.module.description && item.module.description.toLowerCase().includes(q))
-                ) {
-                    result.push(item)
-                }
-            }
-        }
-        return result
-    })
 
 </script>
 
@@ -93,42 +54,82 @@
 
         <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
-        <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md max-h-[60vh] overflow-y-auto">
-            {#if modules.length === 0 && moduleStore.folders.length === 0}
-                <div class="text-textcolor2 p-3">{language.noModules}</div>
-            {:else if displayItems.length === 0}
+        <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
+            {#if modules.length === 0}
                 <div class="text-textcolor2 p-3">{language.noModules}</div>
             {:else}
-                {#each displayItems as item, i (item.type === 'folder' ? 'folder:' + item.folder.id : item.module.id)}
+                {#each sortModules(modules, moduleSearch) as rmodule, i}
                     {#if i !== 0}
                         <div class="border-t-1 border-selected"></div>
                     {/if}
-                    {#if item.type === 'folder'}
-                        <div class="flex flex-col">
-                            <button
-                                class="w-full flex items-center px-3 py-2 text-left hover:bg-textcolor/5 cursor-pointer"
-                                onclick={() => toggleFolder(item.folder.id)}
-                            >
-                                {#if openFolders.has(item.folder.id)}
-                                    <ChevronDown size={18} class="mr-2 text-textcolor2 shrink-0" />
-                                {:else}
-                                    <ChevronRight size={18} class="mr-2 text-textcolor2 shrink-0" />
-                                {/if}
-                                <FolderIcon size={18} class="mr-2 text-textcolor2 shrink-0" />
-                                <span class="text-base font-semibold truncate">{item.folder.name}</span>
-                                <span class="ml-2 text-xs text-textcolor2 shrink-0">({item.modules.length})</span>
-                            </button>
-                            {#if openFolders.has(item.folder.id)}
-                                <div class="flex flex-col pl-4 border-t-1 border-selected/50 bg-textcolor/2">
-                                    {#each item.modules as fmodule, mIdx (fmodule.id)}
-                                        {@render chatModuleRow(fmodule, mIdx !== 0)}
-                                    {/each}
-                                </div>
+                    <div class="pl-3 py-3 text-left flex items-center">
+                        {#if rmodule.mcp}
+                            <Waypoints size={18} class="mr-2" />
+                        {/if}
+                        {#if !alertMode && enabledModules.includes(rmodule.id)}
+                            <span class="text-textcolor2">{rmodule.name}</span>
+                        {:else}
+                            <span class="">{rmodule.name}</span>
+                        {/if}
+                        {#if settingsStore.state.enableModuleSubModel && rmodule.subModel}
+                            <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-selected/50 text-textcolor2 border border-darkborderc">
+                                {getModelInfo(rmodule.subModel)?.fullName || rmodule.subModel}
+                            </span>
+                        {/if}
+                        <div class="grow flex justify-end">
+
+                            {#if alertMode}
+                                <button class={"text-textcolor2 mr-2 cursor-pointer hover:text-blue-500 transition-colors"} onclick={async (e) => {
+                                    e.stopPropagation()
+
+                                    close(rmodule.id)
+                                }}>
+                                    <CircleCheckIcon size={18}/>
+                                </button>
+                            {:else if enabledModules.includes(rmodule.id)}
+                                <button class="mr-2 text-textcolor2 cursor-not-allowed"aria-labelledby="disabled">
+                                </button>
+                            {:else}
+                                <button class={(currentChat?.modules?.includes(rmodule.id)) ?
+                                        "mr-2 cursor-pointer text-blue-500" :
+                                        (currentCharacter?.modules?.includes(rmodule.id)) ?
+                                        "mr-2 cursor-pointer text-violet-500" :
+                                        "text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer"
+                                } onclick={async (e) => {
+                                    e.stopPropagation()
+                                    if (!currentChat) return
+                                    currentChat.modules ??= []
+                                    if(currentChat.modules.includes(rmodule.id)){
+                                        currentChat.modules.splice(currentChat.modules.indexOf(rmodule.id), 1)
+
+                                    }
+                                    else{
+                                        currentChat.modules.push(rmodule.id)
+                                    }
+                                    currentChat.modules = currentChat.modules
+                                    $ReloadGUIPointer += 1
+                                }}
+                                oncontextmenu={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (!currentCharacter) return
+                                    if(!currentCharacter.modules){
+                                        currentCharacter.modules = []
+                                    }
+                                    if(currentCharacter.modules.includes(rmodule.id)){
+                                        currentCharacter.modules.splice(currentCharacter.modules.indexOf(rmodule.id), 1)
+                                    }
+                                    else{
+                                        currentCharacter.modules.push(rmodule.id)
+                                    }
+                                    $ReloadGUIPointer += 1
+                                }}>
+
+                                    <CircleCheckIcon size={18}/>
+                                </button>
                             {/if}
                         </div>
-                    {:else}
-                        {@render chatModuleRow(item.module, false)}
-                    {/if}
+                    </div>
                 {/each}
             {/if}
         </div>
@@ -146,76 +147,6 @@
         </div>
     </div>
 </div>
-
-{#snippet chatModuleRow(rmodule: RisuModule, showDivider: boolean)}
-    {#if showDivider}
-        <div class="border-t-1 border-selected/50"></div>
-    {/if}
-    <div class="pl-3 py-3 pr-3 text-left flex items-center">
-        {#if rmodule.mcp}
-            <Waypoints size={18} class="mr-2 shrink-0" />
-        {/if}
-        {#if !alertMode && enabledModules.includes(rmodule.id)}
-            <span class="text-textcolor2 truncate">{rmodule.name}</span>
-        {:else}
-            <span class="truncate">{rmodule.name}</span>
-        {/if}
-        {#if settingsStore.state.enableModuleSubModel && rmodule.subModel}
-            <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-selected/50 text-textcolor2 border border-darkborderc shrink-0">
-                {getModelInfo(rmodule.subModel)?.fullName || rmodule.subModel}
-            </span>
-        {/if}
-        <div class="grow flex justify-end">
-            {#if alertMode}
-                <button class={"text-textcolor2 mr-2 cursor-pointer hover:text-blue-500 transition-colors"} onclick={async (e) => {
-                    e.stopPropagation()
-                    close(rmodule.id)
-                }}>
-                    <CircleCheckIcon size={18}/>
-                </button>
-            {:else if enabledModules.includes(rmodule.id)}
-                <button class="mr-2 text-textcolor2 cursor-not-allowed" aria-labelledby="disabled">
-                </button>
-            {:else}
-                <button class={(currentChat?.modules?.includes(rmodule.id)) ?
-                        "mr-2 cursor-pointer text-blue-500" :
-                        (currentCharacter?.modules?.includes(rmodule.id)) ?
-                        "mr-2 cursor-pointer text-violet-500" :
-                        "text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer"
-                } onclick={async (e) => {
-                    e.stopPropagation()
-                    if (!currentChat) return
-                    currentChat.modules ??= []
-                    if(currentChat.modules.includes(rmodule.id)){
-                        currentChat.modules.splice(currentChat.modules.indexOf(rmodule.id), 1)
-                    }
-                    else{
-                        currentChat.modules.push(rmodule.id)
-                    }
-                    currentChat.modules = currentChat.modules
-                    $ReloadGUIPointer += 1
-                }}
-                oncontextmenu={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    if (!currentCharacter) return
-                    if(!currentCharacter.modules){
-                        currentCharacter.modules = []
-                    }
-                    if(currentCharacter.modules.includes(rmodule.id)){
-                        currentCharacter.modules.splice(currentCharacter.modules.indexOf(rmodule.id), 1)
-                    }
-                    else{
-                        currentCharacter.modules.push(rmodule.id)
-                    }
-                    $ReloadGUIPointer += 1
-                }}>
-                    <CircleCheckIcon size={18}/>
-                </button>
-            {/if}
-        </div>
-    </div>
-{/snippet}
 
 <style>
     .break-any{
