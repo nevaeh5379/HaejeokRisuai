@@ -2,6 +2,8 @@
 
 [English](README.md) | [한국어](README.ko.md)
 
+> 이 문서는 LLM 의해 작성되었습니다. 헛소리 혹은 개소리를 포함되어 있을 수도 있으니 참고해주세요.
+
 <picture>
   <img alt="Haejeok RisuAI" src="./public/logo_typo_small.avif" width="400"/>
 </picture>
