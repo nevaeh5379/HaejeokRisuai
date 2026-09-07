@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const e2ePort = Number(process.env.E2E_PORT ?? 5174);
+const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
+
 /**
  * Playwright E2E test configuration.
  *
@@ -46,7 +49,7 @@ export default defineConfig({
 
   use: {
     // All pages default to the Vite dev server used for local development
-    baseURL: "http://127.0.0.1:5174",
+    baseURL: e2eBaseUrl,
 
     // Collect a trace (screenshot + DOM snapshots + network + console)
     // for failing tests — open it with `pnpm test:e2e:report`.
@@ -72,8 +75,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "./node_modules/.bin/vite",
-    url: "http://127.0.0.1:5174",
+    command: `./node_modules/.bin/vite --port ${e2ePort} --strictPort`,
+    url: e2eBaseUrl,
     // Vite cold-start of this app can take a while
     timeout: 300_000,
     reuseExistingServer: !process.env.CI,

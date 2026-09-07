@@ -1,8 +1,7 @@
 import { setUsingSw } from "../globalApi.svelte";
 import { isCapacitor } from "../platform";
 import { LoadingStatusState } from "../stores.svelte";
-import { sleep } from "../util";
-import { hasCompatibleServiceWorkerController } from "./serviceWorkerProtocol";
+import { waitForCompatibleServiceWorkerController } from "./serviceWorkerProtocol";
 
 let swMessageHandlerInstalled = false;
 
@@ -36,8 +35,7 @@ async function registerSw(): Promise<boolean> {
   try {
     await reg.update();
   } catch {}
-  await sleep(100);
-  if (!(await hasCompatibleServiceWorkerController())) {
+  if (!(await waitForCompatibleServiceWorkerController())) {
     location.reload();
     return false;
   }
