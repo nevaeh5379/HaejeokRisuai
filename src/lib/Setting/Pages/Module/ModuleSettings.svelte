@@ -9,7 +9,7 @@
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { exportModule, exportModuleLegacy, importModule, refreshModules, type RisuModule, type ModuleFolder } from "src/ts/process/modules";
-    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, ArrowUp, ArrowDown, GripVertical } from "@lucide/svelte";
+    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints, UserIcon, FolderPlus, FolderIcon, ChevronDown, ChevronRight, FolderInput, GripVertical } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertNormal, alertSelect, alertInput } from "src/ts/alert";
@@ -510,28 +510,6 @@
                                 <span class="text-lg font-semibold truncate">{item.folder.name}</span>
                                 <span class="ml-2 text-sm text-textcolor2 shrink-0">({item.modules.length})</span>
                             </button>
-                            {#if moduleSearch === ''}
-                                <button
-                                    class="text-textcolor2 hover:text-textcolor p-1 mr-1 cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
-                                    disabled={i === 0}
-                                    onclick={async (e) => {
-                                        e.stopPropagation()
-                                        await moduleStore.moveFolder(item.folder.id, 'up')
-                                    }}
-                                >
-                                    <ArrowUp size={16} />
-                                </button>
-                                <button
-                                    class="text-textcolor2 hover:text-textcolor p-1 mr-2 cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
-                                    disabled={i === displayItems.length - 1}
-                                    onclick={async (e) => {
-                                        e.stopPropagation()
-                                        await moduleStore.moveFolder(item.folder.id, 'down')
-                                    }}
-                                >
-                                    <ArrowDown size={16} />
-                                </button>
-                            {/if}
                             <button
                                 class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                                 use:tooltip={language.renameFolder}
@@ -669,36 +647,6 @@
                     <UserIcon size={18}/>
                 </button>
             {:else}
-                {#if moduleSearch === ''}
-                    <button
-                        class="text-textcolor2 hover:text-textcolor p-1 mr-1 cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
-                        disabled={index === 0}
-                        onclick={async (e) => {
-                            e.stopPropagation()
-                            if (isRoot) {
-                                await moduleStore.moveRootModule(rmodule.id, 'up')
-                            } else {
-                                await moduleStore.moveFolderModule(rmodule.id, 'up')
-                            }
-                        }}
-                    >
-                        <ArrowUp size={16} />
-                    </button>
-                    <button
-                        class="text-textcolor2 hover:text-textcolor p-1 mr-2 cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
-                        disabled={index === totalCount - 1}
-                        onclick={async (e) => {
-                            e.stopPropagation()
-                            if (isRoot) {
-                                await moduleStore.moveRootModule(rmodule.id, 'down')
-                            } else {
-                                await moduleStore.moveFolderModule(rmodule.id, 'down')
-                            }
-                        }}
-                    >
-                        <ArrowDown size={16} />
-                    </button>
-                {/if}
                 <button class={(enabledModules.includes(rmodule.id)) ?
                         "mr-2 cursor-pointer text-blue-500" :
                         rmodule.namespace &&
