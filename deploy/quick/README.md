@@ -1,5 +1,7 @@
 # Quick Docker installation
 
+[English](README.md) | [한국어](README.ko.md)
+
 This deployment is the minimal supported path for users who want Haejeok RisuAI with PostgreSQL, RustFS, and encrypted restic backups without cloning the source repository.
 
 Install with:

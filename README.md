@@ -1,5 +1,7 @@
 # Haejeok RisuAI
 
+[English](README.md) | [한국어](README.ko.md)
+
 <picture>
   <img alt="Haejeok RisuAI" src="./public/logo_typo_small.avif" width="400"/>
 </picture>

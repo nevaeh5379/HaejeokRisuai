@@ -1,5 +1,7 @@
 # Termux deployment
 
+[English](README.md) | [한국어](README.ko.md)
+
 Haejeok RisuAI can run directly on Android through Termux without Docker.
 The Termux runtime uses:
 
