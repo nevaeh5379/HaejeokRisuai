@@ -234,5 +234,43 @@ describe("moduleStore ordering and folder positions", () => {
     expect(moduleStore.modulesInFolder("f2")).toHaveLength(0);
     expect(moduleStore.order).toEqual(["folder:f1", "folder:f2", "m1"]);
   });
+
+  it("synchronizes root order when modules are upserted through compatibility APIs", async () => {
+    const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
+    mockStorage.loadModules = vi.fn(async () => [mod1]);
+    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+      if (key === "moduleOrder") return ["m1"];
+      return [];
+    });
+
+    await moduleStore.init(mockStorage);
+
+    const mod2: RisuModule = { id: "m2", name: "Module 2", description: "" };
+    moduleStore.upsertModules([mod2]);
+
+    expect(moduleStore.order).toEqual(["m1", "m2"]);
+    expect(moduleStore.getRootItems().map((item) => item.type === "module" ? item.module.id : item.folder.id)).toEqual(["m1", "m2"]);
+
+    await moduleStore.flush();
+    expect(committed.at(-1)?.root.upserts).toContainEqual({
+      key: "moduleOrder",
+      value: ["m1", "m2"],
+    });
+  });
+
+  it("keeps getRootItems pure when root order is stale", async () => {
+    const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
+    mockStorage.loadModules = vi.fn(async () => [mod1]);
+    mockStorage.loadSettingKey = vi.fn(async (key: string) => {
+      if (key === "moduleOrder") return ["m1"];
+      return [];
+    });
+
+    await moduleStore.init(mockStorage);
+    moduleStore.order.push("missing-module");
+
+    expect(moduleStore.getRootItems()).toEqual([{ type: "module", module: mod1 }]);
+    expect(moduleStore.order).toEqual(["m1", "missing-module"]);
+  });
 });
 

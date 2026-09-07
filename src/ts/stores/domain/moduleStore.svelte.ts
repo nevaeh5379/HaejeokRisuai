@@ -153,6 +153,7 @@ class ModuleStore
     }
 
     this.modules = nextModules;
+    this.syncSanitizedRootOrder();
     this.markModulesDirty();
   }
 
@@ -202,19 +203,25 @@ class ModuleStore
     return result;
   }
 
-  getRootItems(): ModuleRootItem[] {
+  private syncSanitizedRootOrder(): void {
     const sanitized = this.sanitizeRootOrder(this.moduleOrder);
     if (
-      sanitized.length !== this.moduleOrder.length ||
-      sanitized.some((id, idx) => id !== this.moduleOrder[idx])
+      sanitized.length === this.moduleOrder.length &&
+      sanitized.every((id, idx) => id === this.moduleOrder[idx])
     ) {
-      this.moduleOrder = sanitized;
+      return;
     }
+    this.moduleOrder = sanitized;
+    this.markOrderDirty();
+  }
+
+  getRootItems(): ModuleRootItem[] {
+    const sanitized = this.sanitizeRootOrder(this.moduleOrder);
     const folderMap = new Map(this.moduleFolders.map((f) => [f.id, f]));
     const moduleMap = new Map(this.modules.map((m) => [m.id, m]));
 
     const items: ModuleRootItem[] = [];
-    for (const key of this.moduleOrder) {
+    for (const key of sanitized) {
       if (key.startsWith("folder:")) {
         const folderId = key.slice("folder:".length);
         const folder = folderMap.get(folderId);
@@ -440,6 +447,7 @@ class ModuleStore
     const index = this.modules.findIndex((current) => current.id === id);
     if (index < 0) throw new Error(`Module not found: ${id}`);
     this.modules[index] = module;
+    this.syncSanitizedRootOrder();
     this.markModulesDirty();
     await this.flush();
   }

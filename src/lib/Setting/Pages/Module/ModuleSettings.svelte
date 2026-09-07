@@ -379,6 +379,7 @@
         import('sortablejs/modular/sortable.core.esm.js').then(({ default: Sortable }) => {
             if (cancelled || !node) return
             stb = Sortable.create(node, {
+                ...sortableMergedOptions,
                 handle: '.module-drag-handle',
                 draggable: '.sortable-item',
                 animation: 150,
@@ -395,7 +396,6 @@
                 },
                 onMove: checkFolderHover,
                 onEnd: handleSortEnd,
-                ...sortableMergedOptions,
             })
             folderStbMap.set(folderId, stb)
         })
@@ -433,6 +433,7 @@
             }
 
             rootStb = Sortable.create(_ele, {
+                ...sortableMergedOptions,
                 handle: '.root-drag-handle',
                 draggable: '.sortable-item',
                 animation: 150,
@@ -454,7 +455,6 @@
                 },
                 onMove: checkFolderHover,
                 onEnd: handleSortEnd,
-                ...sortableMergedOptions,
             })
         })
 

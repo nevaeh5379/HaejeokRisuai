@@ -24,10 +24,12 @@
     let currentChat = $derived(currentCharacter?.chats?.[currentCharacter.chatPage])
     let rootItems = $derived(moduleStore.getRootItems())
     let openFolders = $state<Set<string>>(new Set())
+    let initializedFolderExpansion = false
 
     $effect(() => {
         const folders = moduleStore.folders
-        if (openFolders.size === 0 && folders.length > 0) {
+        if (!initializedFolderExpansion && folders.length > 0) {
+            initializedFolderExpansion = true
             openFolders = new Set(folders.map((f) => f.id))
         }
     })
