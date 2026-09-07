@@ -64,6 +64,7 @@ compose_caddy=$script_dir/docker-compose.rustfs.caddy.yml
 compose_dynv6=$script_dir/docker-compose.rustfs.dynv6.yml
 compose_cloudflare=$script_dir/docker-compose.rustfs.cloudflare.yml
 compose_proxy_docker=$script_dir/docker-compose.rustfs.proxy-docker.yml
+compose_dev=$script_dir/docker-compose.dev.yml
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
     color_blue='\033[1;34m'
@@ -92,6 +93,7 @@ RisuAI Node/storage or static-web installer and manager
 Usage:
   ./risuai.sh [install] [options]
   ./risuai.sh start|stop|restart|rebuild|down|status|doctor|config
+  ./risuai.sh dev [web|node|server|services] [options]
   ./risuai.sh logs [--follow|--no-follow] [--tail N] [SERVICE]
   ./risuai.sh db status|password|sync-password|shell|backup|optimize
   ./risuai.sh recovery|help|version
@@ -106,6 +108,12 @@ Deployment modes:
 Application runtimes:
   node     Node server with PostgreSQL and RustFS (default)
   static   Browser-only web build served by Caddy; no Node server or storage services
+
+Developer commands:
+  dev [web]                         Run the Vite browser development server (default)
+  dev node [--no-services] [-- ...] Run PostgreSQL/RustFS, Node backend, and Vite together
+  dev server [--no-services]        Run the PostgreSQL-backed Node backend only
+  dev services up|down|status|logs  Manage reusable PostgreSQL/RustFS dev containers
 
 Database management:
   db status                         Check PostgreSQL health, credentials, version, and size
@@ -179,6 +187,8 @@ Examples:
     --dynv6-token-file /run/secrets/dynv6-token --ipv6 -y
   ./risuai.sh install --mode proxy --proxy-type docker \
     --proxy-network reverse-proxy -y
+  ./risuai.sh dev
+  ./risuai.sh dev node
 EOF
 }
 
@@ -246,7 +256,7 @@ EOF
 }
 
 short_usage() {
-    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|recovery|help|version]\n' "${0##*/}" >&2
+    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|recovery|help|version]\n' "${0##*/}" >&2
 }
 
 # Capture user inputs, then remove deployment interpolation variables from the
@@ -288,7 +298,7 @@ unset CLOUDFLARE_TOKEN CLOUDFLARE_TOKEN_FILE CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 
 
 action=install
 case "${1:-}" in
-    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|recovery|help|version)
+    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|recovery|help|version)
         action=$1
         shift
         ;;
@@ -1757,6 +1767,215 @@ run_doctor() {
     ok "Doctor found no blocking configuration problems."
 }
 
+
+dev_prepare_environment() {
+    required_file "$script_dir/package.json" "package.json"
+    command -v node >/dev/null 2>&1 || die "Node.js is required for developer commands"
+    command -v pnpm >/dev/null 2>&1 || die "pnpm is required for developer commands"
+
+    dev_env_file=$script_dir/.env.dev
+    dev_env_value() {
+        dev_env_key=$1
+        dev_env_default=$2
+        if [ -f "$dev_env_file" ]; then
+            env_value_or "$dev_env_file" "$dev_env_key" "$dev_env_default"
+        else
+            printf '%s' "$dev_env_default"
+        fi
+    }
+
+    POSTGRES_PASSWORD=${input_postgres_password:-$(dev_env_value POSTGRES_PASSWORD risuai)}
+    POSTGRES_PORT=${input_postgres_port:-$(dev_env_value POSTGRES_PORT 5433)}
+    RUSTFS_ACCESS_KEY=${input_rustfs_access_key:-$(dev_env_value RUSTFS_ACCESS_KEY rustfsadmin)}
+    RUSTFS_SECRET_KEY=${input_rustfs_secret_key:-$(dev_env_value RUSTFS_SECRET_KEY rustfsadmin)}
+    RUSTFS_API_PORT=${input_rustfs_api_port:-$(dev_env_value RUSTFS_API_PORT 9100)}
+    RUSTFS_CONSOLE_PORT=${input_rustfs_console_port:-$(dev_env_value RUSTFS_CONSOLE_PORT 9101)}
+    PORT=${PORT:-$(dev_env_value PORT 6002)}
+    POSTGRES_PORT=$(normalize_port "$POSTGRES_PORT")
+    RUSTFS_API_PORT=$(normalize_port "$RUSTFS_API_PORT")
+    RUSTFS_CONSOLE_PORT=$(normalize_port "$RUSTFS_CONSOLE_PORT")
+    PORT=$(normalize_port "$PORT")
+
+    DATABASE_URL=${DATABASE_URL:-$(dev_env_value DATABASE_URL "postgresql://risuai:$POSTGRES_PASSWORD@127.0.0.1:$POSTGRES_PORT/risuai")}
+    RISU_POSTGRES_POOL_MAX=${RISU_POSTGRES_POOL_MAX:-$(dev_env_value RISU_POSTGRES_POOL_MAX 10)}
+    RISU_STORAGE_TYPE=${RISU_STORAGE_TYPE:-$(dev_env_value RISU_STORAGE_TYPE s3)}
+    RISU_S3_ENDPOINT=${RISU_S3_ENDPOINT:-$(dev_env_value RISU_S3_ENDPOINT "http://127.0.0.1:$RUSTFS_API_PORT")}
+    RISU_S3_BUCKET=${RISU_S3_BUCKET:-$(dev_env_value RISU_S3_BUCKET risuai-assets)}
+    RISU_S3_ACCESS_KEY_ID=${RISU_S3_ACCESS_KEY_ID:-$(dev_env_value RISU_S3_ACCESS_KEY_ID "$RUSTFS_ACCESS_KEY")}
+    RISU_S3_SECRET_ACCESS_KEY=${RISU_S3_SECRET_ACCESS_KEY:-$(dev_env_value RISU_S3_SECRET_ACCESS_KEY "$RUSTFS_SECRET_KEY")}
+    RISU_S3_REGION=${RISU_S3_REGION:-$(dev_env_value RISU_S3_REGION us-east-1)}
+    RISU_S3_FORCE_PATH_STYLE=${RISU_S3_FORCE_PATH_STYLE:-$(dev_env_value RISU_S3_FORCE_PATH_STYLE true)}
+    RISU_S3_AUTO_CREATE_BUCKET=${RISU_S3_AUTO_CREATE_BUCKET:-$(dev_env_value RISU_S3_AUTO_CREATE_BUCKET true)}
+    RISU_SAVE_PATH=${RISU_SAVE_PATH:-$(dev_env_value RISU_SAVE_PATH "$script_dir/.risuai/dev-save")}
+    TRUST_PROXY=${TRUST_PROXY:-$(dev_env_value TRUST_PROXY 1)}
+    VITE_BACKEND_URL=${VITE_BACKEND_URL:-$(dev_env_value VITE_BACKEND_URL "http://127.0.0.1:$PORT")}
+    export POSTGRES_PASSWORD POSTGRES_PORT RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
+    export RUSTFS_API_PORT RUSTFS_CONSOLE_PORT PORT DATABASE_URL RISU_POSTGRES_POOL_MAX
+    export RISU_STORAGE_TYPE RISU_S3_ENDPOINT RISU_S3_BUCKET RISU_S3_ACCESS_KEY_ID
+    export RISU_S3_SECRET_ACCESS_KEY RISU_S3_REGION RISU_S3_FORCE_PATH_STYLE RISU_S3_AUTO_CREATE_BUCKET
+    export RISU_SAVE_PATH TRUST_PROXY VITE_BACKEND_URL
+}
+
+dev_require_dependencies() {
+    [ -d "$script_dir/node_modules" ] || die "Dependencies are not installed in this checkout. Run 'pnpm install' first."
+}
+
+dev_select_container_engine() {
+    dev_container_engine=${RISUAI_CONTAINER_ENGINE:-$input_container_engine}
+    if [ -z "$dev_container_engine" ] || [ "$dev_container_engine" = auto ]; then
+        dev_container_engine=$(detect_container_engine) || die "Neither Docker nor Podman is ready for development services"
+    fi
+    case "$dev_container_engine" in docker|podman) ;; *) die "Invalid development container engine: $dev_container_engine" ;; esac
+    container_engine=$dev_container_engine
+    require_container_engine
+    require_local_container_engine
+}
+
+dev_compose() {
+    if [ -f "$dev_env_file" ]; then
+        compose_for_engine "$dev_container_engine" --env-file "$dev_env_file" -f "$compose_dev" "$@"
+    else
+        compose_for_engine "$dev_container_engine" -f "$compose_dev" "$@"
+    fi
+}
+
+dev_tcp_ready() {
+    node -e 'const net=require("node:net");const s=net.connect(Number(process.argv[2]),process.argv[1]);s.setTimeout(500);s.once("connect",()=>{s.destroy();process.exit(0)});const fail=()=>{s.destroy();process.exit(1)};s.once("error",fail);s.once("timeout",fail)' "$1" "$2" >/dev/null 2>&1
+}
+
+dev_wait_for_tcp() {
+    dev_host=$1
+    dev_port=$2
+    dev_label=$3
+    dev_attempt=0
+    while [ "$dev_attempt" -lt 60 ]; do
+        if dev_tcp_ready "$dev_host" "$dev_port"; then
+            return 0
+        fi
+        dev_attempt=$((dev_attempt + 1))
+        sleep 1
+    done
+    die "$dev_label did not become reachable on $dev_host:$dev_port"
+}
+
+dev_services_up() {
+    required_file "$compose_dev" "development Compose file"
+    dev_select_container_engine
+    info "Starting reusable PostgreSQL and RustFS development services"
+    dev_compose up -d postgres rustfs
+    dev_attempt=0
+    while [ "$dev_attempt" -lt 30 ]; do
+        if dev_compose exec -T postgres pg_isready -U risuai -d risuai >/dev/null 2>&1; then
+            break
+        fi
+        dev_attempt=$((dev_attempt + 1))
+        sleep 1
+    done
+    [ "$dev_attempt" -lt 30 ] || die "PostgreSQL did not become SQL-ready within 30s"
+    dev_wait_for_tcp 127.0.0.1 "$RUSTFS_API_PORT" RustFS
+    ok "Development storage is ready (PostgreSQL :$POSTGRES_PORT, RustFS :$RUSTFS_API_PORT)"
+}
+
+dev_cleanup_backend() {
+    [ -n "${dev_backend_pid:-}" ] || return 0
+    kill "$dev_backend_pid" >/dev/null 2>&1 || true
+    wait "$dev_backend_pid" >/dev/null 2>&1 || true
+    dev_backend_pid=
+}
+
+dev_wait_for_backend() {
+    dev_attempt=0
+    while [ "$dev_attempt" -lt 60 ]; do
+        if ! kill -0 "$dev_backend_pid" >/dev/null 2>&1; then
+            wait "$dev_backend_pid" >/dev/null 2>&1 || true
+            dev_backend_pid=
+            die "Node development server exited before opening port $PORT"
+        fi
+        if dev_tcp_ready 127.0.0.1 "$PORT"; then
+            return 0
+        fi
+        dev_attempt=$((dev_attempt + 1))
+        sleep 1
+    done
+    die "Node development server did not become reachable on 127.0.0.1:$PORT"
+}
+
+manage_development() {
+    dev_prepare_environment
+    case "${1:-}" in
+        '') dev_action=web ;;
+        web|node|server|services|help|-h|--help) dev_action=$1; shift ;;
+        -*) dev_action=web ;;
+        *) dev_action=$1; shift ;;
+    esac
+    case "$dev_action" in
+        help|-h|--help)
+            cat <<'EOF'
+Usage:
+  ./risuai.sh dev [web] [VITE_ARGS...]
+  ./risuai.sh dev node [--no-services] [-- VITE_ARGS...]
+  ./risuai.sh dev server [--no-services]
+  ./risuai.sh dev services up|down|status|logs
+
+`web` is equivalent to the browser-only `pnpm dev` workflow. `node` runs the
+same Vite frontend with __NODE__ enabled and proxies it to a local Node server
+backed by PostgreSQL and RustFS. Development containers persist between runs;
+use `dev services down` when they are no longer needed.
+EOF
+            return
+            ;;
+        web)
+            dev_require_dependencies
+            info "Starting browser-only Vite development server"
+            cd "$script_dir"
+            VITE_NODE_SERVER=false NODE_SERVER=false exec pnpm exec vite "$@"
+            ;;
+        services)
+            dev_service_action=${1:-status}
+            [ "$#" -eq 0 ] || shift
+            [ "$#" -eq 0 ] || die "dev services $dev_service_action does not accept extra arguments"
+            required_file "$compose_dev" "development Compose file"
+            dev_select_container_engine
+            case "$dev_service_action" in
+                up|start) dev_services_up ;;
+                down|stop) info "Stopping development storage"; dev_compose down ;;
+                status) dev_compose ps ;;
+                logs) dev_compose logs --tail 200 ;;
+                *) die "Unknown dev services command: $dev_service_action" ;;
+            esac
+            return
+            ;;
+        node|server)
+            dev_require_dependencies
+            mkdir -p "$RISU_SAVE_PATH" || die "Cannot create development save directory: $RISU_SAVE_PATH"
+            dev_start_services=true
+            if [ "${1:-}" = --no-services ]; then dev_start_services=false; shift; fi
+            if [ "${1:-}" = -- ]; then shift; fi
+            if [ "$dev_action" = server ] && [ "$#" -gt 0 ]; then die "dev server does not accept backend arguments"; fi
+            if [ "$dev_start_services" = true ]; then dev_services_up; fi
+            cd "$script_dir"
+            if [ "$dev_action" = server ]; then
+                info "Starting PostgreSQL-backed Node development server on port $PORT"
+                exec node server/node/server.cjs
+            fi
+            info "Starting Node backend and Vite development server"
+            node server/node/server.cjs &
+            dev_backend_pid=$!
+            trap 'dev_cleanup_backend; exit 129' 1
+            trap 'dev_cleanup_backend; exit 130' 2
+            trap 'dev_cleanup_backend; exit 143' 15
+            trap 'dev_cleanup_backend' 0
+            dev_wait_for_backend
+            VITE_NODE_SERVER=true NODE_SERVER=true pnpm exec vite "$@"
+            dev_status=$?
+            dev_cleanup_backend
+            trap - 0 1 2 15
+            return "$dev_status"
+            ;;
+        *) die "Unknown dev command: $dev_action (use '${0##*/} dev help')" ;;
+    esac
+}
+
 manage_existing_installation() {
     require_installation
     case "$action" in
@@ -1874,6 +2093,7 @@ esac
 
 if [ "$action" = doctor ]; then run_doctor "$@"; exit $?; fi
 if [ "$action" = db ]; then manage_database "$@"; exit $?; fi
+if [ "$action" = dev ]; then manage_development "$@"; exit $?; fi
 if [ "$action" != install ]; then manage_existing_installation "$@"; exit $?; fi
 
 # ------------------------------ install ------------------------------
