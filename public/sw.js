@@ -347,7 +347,7 @@ self.addEventListener("fetch", (event) => {
           break;
         }
         case "init": {
-          event.respondWith(new Response("v2"));
+          event.respondWith(new Response("v3"));
           break;
         }
         case "share": {

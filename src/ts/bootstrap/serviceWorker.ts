@@ -2,6 +2,7 @@ import { setUsingSw } from "../globalApi.svelte";
 import { isCapacitor } from "../platform";
 import { LoadingStatusState } from "../stores.svelte";
 import { sleep } from "../util";
+import { hasCompatibleServiceWorkerController } from "./serviceWorkerProtocol";
 
 let swMessageHandlerInstalled = false;
 
@@ -28,7 +29,7 @@ function installServiceWorkerMessageHandler(): void {
 /**
  * Registers the service worker and initializes it.
  */
-async function registerSw() {
+async function registerSw(): Promise<boolean> {
   const reg = await navigator.serviceWorker.register("/sw.js", {
     scope: "/",
   });
@@ -36,10 +37,11 @@ async function registerSw() {
     await reg.update();
   } catch {}
   await sleep(100);
-  const da = await fetch("/sw/init");
-  if (!(da.status >= 200 && da.status < 300)) {
+  if (!(await hasCompatibleServiceWorkerController())) {
     location.reload();
+    return false;
   }
+  return true;
 }
 
 /**
@@ -52,7 +54,7 @@ export function startServiceWorker(): Promise<void> {
   if (!isCapacitor && navigator.serviceWorker) {
     installServiceWorkerMessageHandler();
     return registerSw()
-      .then(() => setUsingSw(true))
+      .then((available) => setUsingSw(available))
       .catch(() => setUsingSw(false));
   }
   return Promise.resolve(setUsingSw(false));
