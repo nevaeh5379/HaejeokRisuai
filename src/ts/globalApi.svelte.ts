@@ -83,6 +83,7 @@ import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
 import { getImageCacheLimit } from "./memory/imageCacheLimits";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
+import { hasCompatibleServiceWorkerController } from "./bootstrap/serviceWorkerProtocol";
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
 
 export const forageStorage = new AutoStorage();
@@ -1858,14 +1859,15 @@ export class LocalWriter {
       return true;
     }
 
-    if (
-      typeof navigator !== "undefined" &&
-      navigator.serviceWorker?.controller
-    ) {
+    if (await hasCompatibleServiceWorkerController()) {
       const id = uuidv4();
       const channel = new MessageChannel();
+      const controller = navigator.serviceWorker.controller;
+      if (!controller) {
+        throw new Error("Service Worker controller changed during download");
+      }
 
-      navigator.serviceWorker.controller.postMessage(
+      controller.postMessage(
         {
           type: "REGISTER_STREAM_DOWNLOAD",
           id,
@@ -1884,7 +1886,9 @@ export class LocalWriter {
       return true;
     }
 
-    throw new Error("Service Worker is not active for stream download");
+    throw new Error(
+      "Service Worker does not support stream downloads; reload the app and try again",
+    );
   }
 
   supportsNativeAssetTransfer(): boolean {
