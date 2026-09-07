@@ -24,6 +24,7 @@ const checkoutFiles = [
     "Dockerfile.static",
     "docker-compose.static.yml",
     "docker-compose.rustfs.yml",
+    "docker-compose.rustfs.postgres.yml",
     "docker-compose.rustfs.local.yml",
     "docker-compose.rustfs.lan.yml",
     "docker-compose.rustfs.caddy.yml",
