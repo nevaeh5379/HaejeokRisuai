@@ -260,6 +260,9 @@
 
     const sortableMergedOptions = {
         ...sortableOptions,
+        delay: 0,
+        delayOnTouchOnly: false,
+        touchStartThreshold: 3,
         scroll: true,
         scrollSensitivity: 100,
         scrollSpeed: 20,
@@ -485,10 +488,13 @@
                         data-item-type="folder"
                         data-folder-id={item.folder.id}
                     >
-                        <div class="w-full flex items-center pl-3 pr-3 py-2 text-left">
+                        <div class="w-full flex items-center pl-3 pr-3 py-1.5 text-left">
                             {#if moduleSearch === ''}
-                                <div class="root-drag-handle mr-2 cursor-grab text-textcolor2 hover:text-textcolor shrink-0" title="Drag to reorder">
-                                    <GripVertical size={16} />
+                                <div
+                                    class="root-drag-handle w-10 h-10 -ml-2 mr-1 flex items-center justify-center cursor-grab active:cursor-grabbing text-textcolor2 hover:text-textcolor shrink-0 touch-none select-none rounded hover:bg-textcolor/5 active:bg-textcolor/10"
+                                    title="Drag to reorder"
+                                >
+                                    <GripVertical size={18} />
                                 </div>
                             {/if}
                             <button
@@ -636,13 +642,13 @@
         <div class="border-t-1 border-selected/50"></div>
     {/if}
 
-    <div class="pl-3 pt-3 pr-3 text-left flex items-center">
+    <div class="pl-3 pt-2.5 pr-3 text-left flex items-center">
         {#if moduleSearch === ''}
             <div
-                class={isRoot ? "root-drag-handle mr-2 cursor-grab text-textcolor2 hover:text-textcolor shrink-0" : "module-drag-handle mr-2 cursor-grab text-textcolor2 hover:text-textcolor shrink-0"}
+                class="{isRoot ? 'root-drag-handle' : 'module-drag-handle'} w-10 h-10 -ml-2 mr-1 flex items-center justify-center cursor-grab active:cursor-grabbing text-textcolor2 hover:text-textcolor shrink-0 touch-none select-none rounded hover:bg-textcolor/5 active:bg-textcolor/10"
                 title="Drag to reorder"
             >
-                <GripVertical size={16} />
+                <GripVertical size={18} />
             </div>
         {/if}
         {#if rmodule.mcp}
