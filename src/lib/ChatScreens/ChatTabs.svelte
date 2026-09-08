@@ -76,7 +76,6 @@
     let suppressClickTabId: string | null = null;
     let detachedDropActive = $state(false);
     let nativeDragMarker: HTMLElement | undefined;
-    const chatTabTextDragPrefix = 'risu-chat-tab:';
 
     onDestroy(clearTabDrag);
 
@@ -335,10 +334,7 @@
     function readWorkspaceDragPayload(dataTransfer: DataTransfer | null) {
         if (!dataTransfer) return null;
         const custom = dataTransfer.getData(TAURI_CHAT_DRAG_MIME);
-        if (custom) return parseTauriChatDragPayload(custom);
-        const plain = dataTransfer.getData('text/plain');
-        if (!plain.startsWith(chatTabTextDragPrefix)) return null;
-        return parseTauriChatDragPayload(plain.slice(chatTabTextDragPrefix.length));
+        return custom ? parseTauriChatDragPayload(custom) : null;
     }
 
     function canAcceptWorkspaceDrag(dataTransfer: DataTransfer | null) {
@@ -369,7 +365,6 @@
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData(RISU_CHAT_TAB_DRAG_TYPE, serialized);
         event.dataTransfer.setData(TAURI_CHAT_DRAG_MIME, serialized);
-        event.dataTransfer.setData('text/plain', `${chatTabTextDragPrefix}${serialized}`);
         (event.currentTarget as HTMLElement).classList.add('chat-tab-chosen');
 
         void watchTauriChatTabTransferAck(payload, () => {
