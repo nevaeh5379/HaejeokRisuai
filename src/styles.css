@@ -200,11 +200,11 @@ html.tauri-macos-vibrancy .rs-macos-titlebar {
   background: transparent;
 }
 
-html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-surface {
+html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-spacer {
   width: 0;
   flex: 0 0 auto;
   pointer-events: none;
-  background: var(--risu-macos-chrome-tint);
+  background: transparent;
   transition: width var(--risu-animation-speed) ease;
   will-change: width;
 }
@@ -218,24 +218,18 @@ html.tauri-macos-vibrancy .rs-macos-titlebar-content-surface {
 
 html.tauri-macos-vibrancy
   .rs-macos-titlebar.has-sidebar:not(.sidebar-closing)
-  .rs-macos-titlebar-sidebar-surface {
+  .rs-macos-titlebar-sidebar-spacer {
   width: var(--risu-macos-sidebar-span);
 }
 
 html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar.dynamic-sidebar
-  .rs-macos-titlebar-sidebar-surface {
-  background: var(--risu-theme-darkbg);
-}
-
-html.tauri-macos-vibrancy
   .rs-macos-titlebar.has-sidebar.dynamic-sidebar:not(.sidebar-closing)
-  .rs-macos-titlebar-sidebar-surface {
+  .rs-macos-titlebar-sidebar-spacer {
   width: min(var(--risu-macos-sidebar-span), calc(100% - 3rem));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-surface {
+  html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-spacer {
     transition: none;
   }
 }
@@ -245,6 +239,29 @@ html.tauri-macos-vibrancy
 html.tauri-macos-vibrancy .rs-sidebar,
 html.tauri-macos-vibrancy .rs-sidebar-panel {
   background-color: var(--risu-macos-chrome-tint) !important;
+}
+
+/* The sidebar itself owns the titlebar-left surface. Keep its background
+ * reaching the top of the native window, but inset interactive content below
+ * the traffic lights. DynamicGUI is already fixed at top: 0; desktop sidebar
+ * layout starts below main's titlebar padding, so only desktop needs lifting. */
+html.tauri-macos-vibrancy .rs-sidebar {
+  padding-top: var(--risu-macos-titlebar-height);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.py-0 {
+  padding-top: var(--risu-macos-titlebar-height) !important;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.py-6 {
+  padding-top: calc(1.5rem + var(--risu-macos-titlebar-height)) !important;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar:not(.dynamic-sidebar),
+html.tauri-macos-vibrancy .rs-sidebar-panel:not(.dynamic-sidebar) {
+  margin-top: calc(-1 * var(--risu-macos-titlebar-height));
+  height: calc(100% + var(--risu-macos-titlebar-height));
+  max-height: calc(100% + var(--risu-macos-titlebar-height));
 }
 
 html.tauri-macos-vibrancy .rs-sidebar,
