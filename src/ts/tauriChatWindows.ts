@@ -17,6 +17,7 @@ const CHAT_WINDOW_LABEL_PREFIX = "chat-window-";
 const WORKSPACE_STATE_EVENT = "risu://chat-workspace-state";
 const WORKSPACE_WINDOW_CLOSED_EVENT = "risu://chat-workspace-window-closed";
 const TAB_TRANSFER_ACK_EVENT = "risu://chat-workspace-tab-transfer-ack";
+const TAB_TRANSFER_REQUEST_EVENT = "risu://chat-workspace-tab-transfer-request";
 const WORKSPACE_STORAGE_KEY = "risu:chat-workspace:v1";
 const WINDOW_STORAGE_PREFIX = "risu:chat-workspace-window:";
 const LAUNCH_STORAGE_PREFIX = "risu:chat-workspace-launch:";
@@ -26,6 +27,14 @@ export const TAURI_CHAT_DRAG_MIME = "application/x-risu-chat-tab";
 
 interface PhysicalPoint { x: number; y: number }
 interface PhysicalArea { width: number; height: number }
+
+export interface TauriWorkspaceWindowHitBox {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface TauriChatWindowPresentation {
   characterName?: string;
@@ -148,6 +157,72 @@ export function isPointOutsideTauriWindow(
     cursor.y < contentPosition.y - margin ||
     cursor.y > contentPosition.y + contentSize.height + margin
   );
+}
+
+function isWorkspaceWindowId(id: string): boolean {
+  return id === MAIN_CHAT_WORKSPACE_WINDOW_ID || id.startsWith(CHAT_WINDOW_LABEL_PREFIX);
+}
+
+export function findWorkspaceWindowAtPoint(
+  cursor: PhysicalPoint,
+  windows: TauriWorkspaceWindowHitBox[],
+  sourceWindowId: string,
+): string | null {
+  const matches = windows.filter((window) =>
+    window.id !== sourceWindowId &&
+    isWorkspaceWindowId(window.id) &&
+    cursor.x >= window.x &&
+    cursor.x <= window.x + window.width &&
+    cursor.y >= window.y &&
+    cursor.y <= window.y + window.height
+  );
+  if (matches.length === 0) return null;
+
+  // Auxiliary windows are usually layered above the main window. Prefer them
+  // when native bounds overlap, then prefer the smaller (more specific) window.
+  matches.sort((a, b) => {
+    const aMain = a.id === MAIN_CHAT_WORKSPACE_WINDOW_ID ? 1 : 0;
+    const bMain = b.id === MAIN_CHAT_WORKSPACE_WINDOW_ID ? 1 : 0;
+    if (aMain !== bMain) return aMain - bMain;
+    return a.width * a.height - b.width * b.height;
+  });
+  return matches[0].id;
+}
+
+export async function findTauriWorkspaceWindowUnderCursor(
+  sourceWindowId = getCurrentChatWorkspaceWindowId(),
+): Promise<string | null> {
+  if (!isTauri) return null;
+  const [{ getAllWebviewWindows }, { cursorPosition }] = await Promise.all([
+    import("@tauri-apps/api/webviewWindow"),
+    import("@tauri-apps/api/window"),
+  ]);
+  const cursor = await cursorPosition();
+  const windows = (await getAllWebviewWindows()).filter(
+    (window) => window.label !== sourceWindowId && isWorkspaceWindowId(window.label),
+  );
+  const hitBoxes = (
+    await Promise.all(
+      windows.map(async (window): Promise<TauriWorkspaceWindowHitBox | null> => {
+        try {
+          const [position, size] = await Promise.all([
+            window.outerPosition(),
+            window.outerSize(),
+          ]);
+          return {
+            id: window.label,
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    )
+  ).filter((window): window is TauriWorkspaceWindowHitBox => window !== null);
+  return findWorkspaceWindowAtPoint(cursor, hitBoxes, sourceWindowId);
 }
 
 export function createTauriChatDragPayload(
@@ -370,6 +445,12 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
   const windowId = getCurrentChatWorkspaceWindowId();
   const cleanups: Array<() => void> = [];
 
+  cleanups.push(await current.listen<TauriChatDragPayload>(TAB_TRANSFER_REQUEST_EVENT, (event) => {
+    const payload = event.payload;
+    if (!isTauriChatDragPayload(payload) || payload.sourceWindowId === windowId) return;
+    void acceptTauriChatTabDrop(payload);
+  }));
+
   if (windowId === MAIN_CHAT_WORKSPACE_WINDOW_ID) {
     const persisted = readStorage<ReturnType<ChatWindowManager["snapshot"]>>(WORKSPACE_STORAGE_KEY);
     if (persisted?.version === 1) {
@@ -416,6 +497,45 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
 
 export function getTauriChatWindowManager(): ChatWindowManager {
   return chatWindowManager;
+}
+
+export async function requestTauriChatTabTransferToWindow(
+  payload: TauriChatDragPayload,
+  targetWindowId: string,
+  timeoutMs = 1500,
+): Promise<boolean> {
+  if (
+    !isTauri ||
+    !isTauriChatDragPayload(payload) ||
+    !isWorkspaceWindowId(targetWindowId) ||
+    targetWindowId === payload.sourceWindowId
+  ) return false;
+
+  const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  const current = getCurrentWebviewWindow();
+  if (current.label !== payload.sourceWindowLabel) return false;
+
+  let resolveAck: (accepted: boolean) => void = () => {};
+  const ack = new Promise<boolean>((resolve) => { resolveAck = resolve; });
+  const unlisten = await current.listen<TauriChatDragPayload>(TAB_TRANSFER_ACK_EVENT, (event) => {
+    const received = event.payload;
+    if (!isTauriChatDragPayload(received)) return;
+    if (received.transferId !== payload.transferId) return;
+    if (received.sourceWindowId !== payload.sourceWindowId) return;
+    if (received.tab.id !== payload.tab.id) return;
+    resolveAck(true);
+  });
+  const timer = setTimeout(() => resolveAck(false), timeoutMs);
+  try {
+    await current.emitTo(targetWindowId, TAB_TRANSFER_REQUEST_EVENT, payload);
+    return await ack;
+  } catch (error) {
+    console.error("[TauriChatWorkspace] Failed to request tab transfer", error);
+    return false;
+  } finally {
+    clearTimeout(timer);
+    unlisten();
+  }
 }
 
 export async function watchTauriChatTabTransferAck(

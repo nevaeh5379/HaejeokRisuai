@@ -6,7 +6,6 @@
         sourceGroupId: string;
         dropped: boolean;
         transferred: boolean;
-        ackCleanup?: () => void;
     } | null = null;
     let lastWorkspaceSnapshotKey = '';
 </script>
@@ -22,21 +21,21 @@
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
-        acceptTauriChatTabDrop,
         clearActiveTauriChatDragPayload,
         completeCurrentTauriTabTransfer,
         createTauriChatDragPayload,
         getActiveTauriChatDragPayload,
         getCurrentChatWorkspaceWindowId,
+        findTauriWorkspaceWindowUnderCursor,
         isCurrentTauriCursorOutsideWindow,
         moveTabToNewTauriWorkspaceWindow,
         openChatInNewTauriWindow,
         parseTauriChatDragPayload,
         publishActiveTauriChatDragPayload,
         publishCurrentTauriChatWorkspaceState,
+        requestTauriChatTabTransferToWindow,
         serializeTauriChatDragPayload,
         TAURI_CHAT_DRAG_MIME,
-        watchTauriChatTabTransferAck,
     } from 'src/ts/tauriChatWindows';
     import {
         chatTabsStore,
@@ -365,7 +364,6 @@
             sourceGroupId: tab.groupId,
             dropped: false,
             transferred: false,
-            ackCleanup: undefined as (() => void) | undefined,
         };
         tauriChatTabDrag = state;
         suppressClickTabId = tab.id;
@@ -376,16 +374,6 @@
         publishActiveTauriChatDragPayload(payload);
         (event.currentTarget as HTMLElement).classList.add('chat-tab-chosen');
 
-        void watchTauriChatTabTransferAck(payload, () => {
-            if (state.transferred) return;
-            state.transferred = true;
-            state.ackCleanup?.();
-            state.ackCleanup = undefined;
-            void completeCurrentTauriTabTransfer(payload);
-        }).then((cleanup) => {
-            if (state.transferred) cleanup();
-            else state.ackCleanup = cleanup;
-        });
     }
 
     function clearNativeTabDropMarker() {
@@ -418,15 +406,24 @@
         if (!state || state.payload.tab.id !== tab.id) return;
         tauriChatTabDrag = null;
 
-        let keepAckListener = false;
         try {
             if (state.dropped || state.transferred) return;
-            if (event.dataTransfer?.dropEffect === 'move') {
-                keepAckListener = true;
-                setTimeout(() => state.ackCleanup?.(), 1500);
+            if (!(await isCurrentTauriCursorOutsideWindow())) return;
+
+            const targetWindowId = await findTauriWorkspaceWindowUnderCursor(
+                state.payload.sourceWindowId,
+            );
+            if (targetWindowId) {
+                const accepted = await requestTauriChatTabTransferToWindow(
+                    state.payload,
+                    targetWindowId,
+                );
+                if (accepted) {
+                    state.transferred = true;
+                    await completeCurrentTauriTabTransfer(state.payload);
+                }
                 return;
             }
-            if (!(await isCurrentTauriCursorOutsideWindow())) return;
 
             const label = getTabLabel(tab);
             const created = await moveTabToNewTauriWorkspaceWindow(
@@ -443,7 +440,6 @@
             alertError(error);
         } finally {
             clearActiveTauriChatDragPayload(state.payload.transferId);
-            if (!keepAckListener) state.ackCleanup?.();
             setTimeout(() => { suppressClickTabId = null; }, 0);
         }
     }
@@ -494,8 +490,10 @@
             return;
         }
 
+        // Cross-window ownership transfer is resolved by the source window on
+        // dragend using native window hit-testing. WKWebView does not reliably
+        // preserve custom MIME/drop callbacks across macOS windows.
         if (!payload) return;
-        await acceptTauriChatTabDrop(payload, groupId, targetIndex);
     }
 
     function closeToRight(tabId: string) {

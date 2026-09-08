@@ -6,6 +6,7 @@ import {
   createTauriChatDragPayload,
   getActiveTauriChatDragPayload,
   getCurrentChatWorkspaceWindowId,
+  findWorkspaceWindowAtPoint,
   isPointOutsideTauriWindow,
   parseTauriChatDragPayload,
   parseTauriChatWorkspaceLaunch,
@@ -99,6 +100,44 @@ describe("Tauri window exit detection", () => {
         { width: 800, height: 600 },
       ),
     ).toBe(false);
+  });
+});
+
+describe("Tauri workspace window hit testing", () => {
+  const windows = [
+    { id: "main", x: 0, y: 0, width: 1200, height: 900 },
+    { id: "chat-window-a", x: 1300, y: 100, width: 700, height: 700 },
+    { id: "chat-window-b", x: 2100, y: 100, width: 700, height: 700 },
+  ];
+
+  it("finds another auxiliary window under the global cursor", () => {
+    expect(
+      findWorkspaceWindowAtPoint(
+        { x: 2200, y: 300 },
+        windows,
+        "chat-window-a",
+      ),
+    ).toBe("chat-window-b");
+  });
+
+  it("never resolves the source window as a docking target", () => {
+    expect(
+      findWorkspaceWindowAtPoint(
+        { x: 1400, y: 300 },
+        windows,
+        "chat-window-a",
+      ),
+    ).toBeNull();
+  });
+
+  it("prefers an auxiliary window over main when native bounds overlap", () => {
+    const overlapping = [
+      { id: "main", x: 0, y: 0, width: 1400, height: 1000 },
+      { id: "chat-window-b", x: 400, y: 200, width: 600, height: 500 },
+    ];
+    expect(
+      findWorkspaceWindowAtPoint({ x: 500, y: 300 }, overlapping, "chat-window-a"),
+    ).toBe("chat-window-b");
   });
 });
 
