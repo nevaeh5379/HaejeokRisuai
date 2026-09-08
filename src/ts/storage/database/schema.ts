@@ -519,6 +519,7 @@ export interface DatabaseSettings {
   enableBookmark?: boolean;
   hideAllImages?: boolean;
   lowSpecMode?: boolean;
+  preloadRecentSessionThumbnails?: boolean;
   assetCacheEntries?: number;
   assetCacheSizeMB?: number;
   thumbnailCacheEntries?: number;

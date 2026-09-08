@@ -4,6 +4,8 @@
     import { language } from 'src/lang';
     import { getCharImage } from 'src/ts/characterImage';
     import { getPreparedNativeThumbnailSrc, preloadThumbnails, preloadThumbnailsDecoded } from 'src/ts/globalApi.svelte';
+    import { isCapacitor } from 'src/ts/platform';
+    import { shouldEagerLoadRecentSessionThumbnails } from 'src/ts/gui/recentSessionThumbnails';
     import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -94,6 +96,12 @@
 
     let allSessions = $state<SessionItem[]>([]);
     let refreshToken = 0;
+    let eagerRecentSessionThumbnails = $derived(
+        shouldEagerLoadRecentSessionThumbnails(
+            isCapacitor,
+            settingsStore.state.preloadRecentSessionThumbnails,
+        ),
+    );
 
     function buildLocalSessionSnapshot(): SessionItem[] {
         const characters = characterStore.characters ?? [];
@@ -217,9 +225,13 @@
     });
 
     $effect(() => {
+        // Keep hidden Android sidebar avatars lazy by default. The b6803 eager
+        // path can be re-enabled explicitly from Advanced Settings.
+        if (!eagerRecentSessionThumbnails) return;
+
         // Batch-fetch every thumbnail up front (the loader coalesces requests
         // into one 10ms window) so scrolling paints cached blobs instead of
-        // triggering per-row network loads mid-scroll on low-end phones.
+        // triggering per-row network loads mid-scroll on supported backends.
         const locations = allSessions
             .map((session) => session.characterImage ?? '')
             .filter((loc) => loc && !/^(https?:|data:|blob:|\/)/i.test(loc));
@@ -353,7 +365,7 @@
                             rounded={settingsStore.state.roundIcons}
                             name={session.characterName}
                             chaId={session.characterId}
-                            eager
+                            eager={eagerRecentSessionThumbnails}
                         />
                         {#if session.isGroup}
                             <div
