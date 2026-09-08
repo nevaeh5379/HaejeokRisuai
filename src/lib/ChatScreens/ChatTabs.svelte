@@ -13,7 +13,7 @@
 <script lang="ts">
     import { PlusIcon, XIcon } from '@lucide/svelte';
     import { onDestroy } from 'svelte';
-    import { MobileGUI, selectedCharID } from 'src/ts/stores.svelte';
+    import { MobileGUI, sideBarStore, selectedCharID } from 'src/ts/stores.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
@@ -56,6 +56,12 @@
     let { groupId, reserveSidebarSpace = false, allowSplit = false }: Props = $props();
     let showTabs = $derived(settingsStore.state.showChatTabs ?? true);
     let groupTabs = $derived(chatTabsStore.tabsForGroup(groupId));
+    let reserveMainMacOSTrafficLights = $derived(
+        isTauriMacOS &&
+        getCurrentChatWorkspaceWindowId() === 'main' &&
+        reserveSidebarSpace &&
+        !$sideBarStore,
+    );
     let reserveMacOSTrafficLights = $derived(
         isTauriMacOS &&
         getCurrentChatWorkspaceWindowId() !== 'main' &&
@@ -594,6 +600,7 @@
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:macos-aux-titlebar-tabs={reserveMacOSTrafficLights}
+        class:macos-main-titlebar-tabs-closed={reserveMainMacOSTrafficLights}
     >
         {#each groupTabs as tab (tab.id)}
             {@const label = getTabLabel(tab)}

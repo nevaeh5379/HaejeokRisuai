@@ -254,6 +254,10 @@ html.tauri-macos-vibrancy .rs-chat-tab-list.macos-aux-titlebar-tabs {
   padding-left: var(--risu-macos-traffic-lights-width) !important;
 }
 
+html.tauri-macos-vibrancy .rs-chat-tab-list.macos-main-titlebar-tabs-closed {
+  padding-left: var(--risu-macos-traffic-lights-width) !important;
+}
+
 html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
   top: 44px !important;
   left: 0 !important;
