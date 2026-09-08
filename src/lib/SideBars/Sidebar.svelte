@@ -892,7 +892,7 @@
   {#if settingsStore.state.hamburgerButtonBottom}
   <div class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
+      <div class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
@@ -904,7 +904,7 @@
           }
         }}><Settings /></BarIcon
       >
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter();
@@ -912,7 +912,7 @@
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter()
@@ -924,7 +924,7 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter();
@@ -932,7 +932,7 @@
         }}><SearchIcon /></BarIcon
       >
       {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
+        <div class="rs-sidebar-menu-gap mt-2"></div>
         <BarIcon
           onClick={() => {
             reseter();
@@ -942,7 +942,7 @@
           </BarIcon
         >
       {/each}
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter();
