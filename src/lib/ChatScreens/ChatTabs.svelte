@@ -22,6 +22,7 @@
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
         clearActiveTauriChatDragPayload,
+        clearTauriChatDockPreview,
         completeCurrentTauriTabTransfer,
         createTauriChatDragPayload,
         getActiveTauriChatDragPayload,
@@ -36,6 +37,7 @@
         requestTauriChatTabTransferToWindow,
         serializeTauriChatDragPayload,
         TAURI_CHAT_DRAG_MIME,
+        updateTauriChatDockPreview,
     } from 'src/ts/tauriChatWindows';
     import {
         chatTabsStore,
@@ -79,8 +81,13 @@
     let suppressClickTabId: string | null = null;
     let detachedDropActive = $state(false);
     let nativeDragMarker: HTMLElement | undefined;
+    let dockPreviewTimer: ReturnType<typeof setInterval> | null = null;
+    let dockPreviewUpdatePromise: Promise<void> | null = null;
 
-    onDestroy(clearTabDrag);
+    onDestroy(() => {
+        clearTabDrag();
+        stopTauriDockPreview();
+    });
 
     $effect(() => {
         if (chatTabsStore.focusedGroupId !== groupId) return;
@@ -351,6 +358,34 @@
         return Boolean(active && active.sourceWindowId !== getCurrentChatWorkspaceWindowId());
     }
 
+    function stopTauriDockPreview() {
+        if (dockPreviewTimer) clearInterval(dockPreviewTimer);
+        dockPreviewTimer = null;
+        const payload = tauriChatTabDrag?.payload;
+        if (payload) void clearTauriChatDockPreview(payload);
+    }
+
+    function startTauriDockPreview(payload: TauriChatDragPayload) {
+        stopTauriDockPreview();
+        const update = async () => {
+            if (dockPreviewUpdatePromise || tauriChatTabDrag?.payload.transferId !== payload.transferId) return;
+            dockPreviewUpdatePromise = (async () => {
+                try {
+                    await updateTauriChatDockPreview(payload);
+                } catch (error) {
+                    console.debug('[ChatTabs] Failed to update Tauri dock preview', error);
+                }
+            })();
+            try {
+                await dockPreviewUpdatePromise;
+            } finally {
+                dockPreviewUpdatePromise = null;
+            }
+        };
+        void update();
+        dockPreviewTimer = setInterval(() => void update(), 100);
+    }
+
     function startTauriMainTabDrag(event: DragEvent, tab: ChatTab) {
         if (!isTauri || !event.dataTransfer) {
             event.preventDefault();
@@ -372,6 +407,7 @@
         event.dataTransfer.setData(RISU_CHAT_TAB_DRAG_TYPE, serialized);
         event.dataTransfer.setData(TAURI_CHAT_DRAG_MIME, serialized);
         publishActiveTauriChatDragPayload(payload);
+        startTauriDockPreview(payload);
         (event.currentTarget as HTMLElement).classList.add('chat-tab-chosen');
 
     }
@@ -405,6 +441,8 @@
         clearNativeTabDropMarker();
         if (!state || state.payload.tab.id !== tab.id) return;
         tauriChatTabDrag = null;
+        if (dockPreviewTimer) clearInterval(dockPreviewTimer);
+        dockPreviewTimer = null;
 
         try {
             if (state.dropped || state.transferred) return;
@@ -439,6 +477,8 @@
             console.error('[ChatTabs] Failed to detach Tauri workspace tab', error);
             alertError(error);
         } finally {
+            if (dockPreviewUpdatePromise) await dockPreviewUpdatePromise;
+            await clearTauriChatDockPreview(state.payload);
             clearActiveTauriChatDragPayload(state.payload.transferId);
             setTimeout(() => { suppressClickTabId = null; }, 0);
         }
@@ -635,5 +675,11 @@
 
     :global(.chat-tab-drop-before) {
         box-shadow: -3px 0 0 var(--risu-theme-textcolor2);
+    }
+
+    :global(html[data-risu-chat-dock-preview='true'] [data-chat-tab-list]) {
+        outline: 2px solid rgb(59 130 246);
+        outline-offset: -2px;
+        box-shadow: inset 0 -2px 0 rgb(59 130 246 / 0.7);
     }
 </style>

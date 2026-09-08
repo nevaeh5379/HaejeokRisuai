@@ -18,6 +18,7 @@ const WORKSPACE_STATE_EVENT = "risu://chat-workspace-state";
 const WORKSPACE_WINDOW_CLOSED_EVENT = "risu://chat-workspace-window-closed";
 const TAB_TRANSFER_ACK_EVENT = "risu://chat-workspace-tab-transfer-ack";
 const TAB_TRANSFER_REQUEST_EVENT = "risu://chat-workspace-tab-transfer-request";
+const DOCK_PREVIEW_EVENT = "risu://chat-workspace-dock-preview";
 const WORKSPACE_STORAGE_KEY = "risu:chat-workspace:v1";
 const WINDOW_STORAGE_PREFIX = "risu:chat-workspace-window:";
 const LAUNCH_STORAGE_PREFIX = "risu:chat-workspace-launch:";
@@ -73,6 +74,11 @@ interface StoredTauriChatDragPayload {
   startedAt: number;
 }
 
+interface TauriDockPreviewPayload {
+  transferId: string;
+  active: boolean;
+}
+
 interface TauriWorkspaceStatePayload {
   windowId: string;
   tabs: ChatTabsSnapshot;
@@ -81,6 +87,9 @@ interface TauriWorkspaceStatePayload {
 
 const chatWindowManager = new ChatWindowManager();
 let runtimeCleanup: (() => void) | null = null;
+let dockPreviewTargetWindowId: string | null = null;
+let dockPreviewTransferId: string | null = null;
+let dockPreviewExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cloneTab(tab: ChatTab): ChatTab {
   return { ...tab, fileInput: [...tab.fileInput] };
@@ -310,6 +319,83 @@ async function getDetachedWindowPlacement(
     );
     return undefined;
   }
+}
+
+async function emitDockPreview(
+  targetWindowId: string,
+  transferId: string,
+  active: boolean,
+): Promise<void> {
+  const { getCurrentWebviewWindow } =
+    await import("@tauri-apps/api/webviewWindow");
+  await getCurrentWebviewWindow().emitTo(targetWindowId, DOCK_PREVIEW_EVENT, {
+    transferId,
+    active,
+  } satisfies TauriDockPreviewPayload);
+}
+
+export async function updateTauriChatDockPreview(
+  payload: TauriChatDragPayload,
+): Promise<string | null> {
+  if (!isTauri || !isTauriChatDragPayload(payload)) return null;
+  const targetWindowId = await findTauriWorkspaceWindowUnderCursor(
+    payload.sourceWindowId,
+  );
+  if (
+    dockPreviewTargetWindowId &&
+    dockPreviewTargetWindowId !== targetWindowId
+  ) {
+    await emitDockPreview(
+      dockPreviewTargetWindowId,
+      dockPreviewTransferId ?? payload.transferId,
+      false,
+    );
+  }
+  dockPreviewTargetWindowId = targetWindowId;
+  dockPreviewTransferId = payload.transferId;
+  if (targetWindowId) {
+    await emitDockPreview(targetWindowId, payload.transferId, true);
+  }
+  return targetWindowId;
+}
+
+export async function clearTauriChatDockPreview(
+  payload?: TauriChatDragPayload,
+): Promise<void> {
+  if (!dockPreviewTargetWindowId) return;
+  const targetWindowId = dockPreviewTargetWindowId;
+  const transferId = dockPreviewTransferId ?? payload?.transferId;
+  dockPreviewTargetWindowId = null;
+  dockPreviewTransferId = null;
+  if (!transferId) return;
+  try {
+    await emitDockPreview(targetWindowId, transferId, false);
+  } catch {
+    // The target may have closed while a drag was active.
+  }
+}
+
+function setCurrentWindowDockPreview(payload: TauriDockPreviewPayload): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (payload.active) {
+    root.dataset.risuChatDockPreview = "true";
+    root.dataset.risuChatDockPreviewTransfer = payload.transferId;
+    if (dockPreviewExpiryTimer) clearTimeout(dockPreviewExpiryTimer);
+    dockPreviewExpiryTimer = setTimeout(() => {
+      if (root.dataset.risuChatDockPreviewTransfer !== payload.transferId)
+        return;
+      delete root.dataset.risuChatDockPreview;
+      delete root.dataset.risuChatDockPreviewTransfer;
+      dockPreviewExpiryTimer = null;
+    }, 350);
+    return;
+  }
+  if (root.dataset.risuChatDockPreviewTransfer !== payload.transferId) return;
+  if (dockPreviewExpiryTimer) clearTimeout(dockPreviewExpiryTimer);
+  dockPreviewExpiryTimer = null;
+  delete root.dataset.risuChatDockPreview;
+  delete root.dataset.risuChatDockPreviewTransfer;
 }
 
 export function createTauriChatDragPayload(
@@ -587,6 +673,22 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
   const cleanups: Array<() => void> = [];
 
   cleanups.push(
+    await current.listen<TauriDockPreviewPayload>(
+      DOCK_PREVIEW_EVENT,
+      (event) => {
+        const payload = event.payload;
+        if (
+          !payload ||
+          typeof payload.transferId !== "string" ||
+          typeof payload.active !== "boolean"
+        )
+          return;
+        setCurrentWindowDockPreview(payload);
+      },
+    ),
+  );
+
+  cleanups.push(
     await current.listen<TauriChatDragPayload>(
       TAB_TRANSFER_REQUEST_EVENT,
       (event) => {
@@ -678,6 +780,12 @@ export async function initializeTauriChatWorkspaceRuntime(): Promise<void> {
 
   runtimeCleanup = () => {
     for (const cleanup of cleanups) cleanup();
+    if (dockPreviewExpiryTimer) clearTimeout(dockPreviewExpiryTimer);
+    dockPreviewExpiryTimer = null;
+    if (typeof document !== "undefined") {
+      delete document.documentElement.dataset.risuChatDockPreview;
+      delete document.documentElement.dataset.risuChatDockPreviewTransfer;
+    }
     runtimeCleanup = null;
   };
 }
