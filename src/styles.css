@@ -171,8 +171,6 @@ html.tauri-macos-vibrancy #app {
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
   --risu-macos-traffic-lights-width: 5rem;
-  --risu-macos-sidebar-toggle-width: 3rem;
-  --risu-macos-sidebar-toggle-gap: 0.5rem;
   --risu-macos-chrome-tint: color-mix(
     in srgb,
     var(--risu-theme-darkbg) 60%,
@@ -256,40 +254,15 @@ html.tauri-macos-vibrancy .rs-chat-tab-list.macos-aux-titlebar-tabs {
   padding-left: var(--risu-macos-traffic-lights-width) !important;
 }
 
-html.tauri-macos-vibrancy .rs-chat-tab-list.macos-main-titlebar-tabs {
-  padding-left: calc(
-    var(--risu-macos-sidebar-toggle-width) +
-      var(--risu-macos-sidebar-toggle-gap)
-  ) !important;
-  transition: padding-left var(--risu-animation-speed) ease;
-}
-
-html.tauri-macos-vibrancy
-  .rs-chat-tab-list.macos-main-titlebar-tabs.macos-sidebar-closed {
-  padding-left: calc(
-    var(--risu-macos-traffic-lights-width) +
-      var(--risu-macos-sidebar-toggle-width) +
-      var(--risu-macos-sidebar-toggle-gap)
-  ) !important;
-}
-
 html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
-  top: 5px !important;
+  top: 44px !important;
   left: 0 !important;
-  width: var(--risu-macos-sidebar-toggle-width) !important;
-  height: 2.5rem !important;
-  border-top-width: 0;
-  border-radius: 0 0.375rem 0.375rem 0;
+  width: 3rem !important;
+  height: 3rem !important;
   transition:
-    left var(--risu-animation-speed) ease,
     opacity 150ms ease,
     border-color 150ms ease,
     background-color 150ms ease;
-}
-
-html.tauri-macos-vibrancy
-  .rs-sidebar-toggle.macos-sidebar-toggle.macos-sidebar-toggle-closed {
-  left: var(--risu-macos-traffic-lights-width) !important;
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab {
