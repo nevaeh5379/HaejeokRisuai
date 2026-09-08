@@ -5,6 +5,9 @@
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
+    import { isTauri } from 'src/ts/platform';
+    import { alertError } from 'src/ts/alert';
+    import { openChatInNewTauriWindow } from 'src/ts/tauriChatWindows';
     import {
         chatTabsStore,
         navigateToChatTab,
@@ -85,9 +88,20 @@
         contextMenu = {
             tabId: tab.id,
             x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
-            y: Math.max(8, Math.min(event.clientY, window.innerHeight - 260)),
+            y: Math.max(8, Math.min(event.clientY, window.innerHeight - 320)),
         };
         void navigateToChatTab(tab.id);
+    }
+
+    async function openInNewWindow(tab: ChatTab) {
+        contextMenu = null;
+        const label = getTabLabel(tab);
+        try {
+            await openChatInNewTauriWindow(tab, `${label.characterName} · ${label.chatName} - RisuAI`);
+        } catch (error) {
+            console.error("[ChatTabs] Failed to open Tauri chat window", error);
+            alertError(error);
+        }
     }
 
     async function splitRight(tabId: string) {
@@ -320,6 +334,10 @@
             onkeydown={(event) => event.stopPropagation()}
             oncontextmenu={(event) => event.preventDefault()}
         >
+            {#if isTauri}
+                <button class="w-full px-3 py-2 text-left hover:bg-selected" onclick={() => void openInNewWindow(menuTab)}>새 창에서 열기</button>
+                <div class="my-1 border-t border-darkborderc"></div>
+            {/if}
             {#if allowSplit && chatTabsStore.canSplit()}
                 <button class="w-full px-3 py-2 text-left hover:bg-selected" onclick={() => void splitRight(menuTab.id)}>오른쪽으로 분할</button>
                 <div class="my-1 border-t border-darkborderc"></div>
