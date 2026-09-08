@@ -38,6 +38,7 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-set-position",
+    "core:window:allow-start-dragging",
     "core:window:allow-maximize",
     "core:window:allow-set-fullscreen",
     "shell:allow-open",

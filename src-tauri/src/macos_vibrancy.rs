@@ -16,7 +16,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             }
 
             let effects = EffectsBuilder::new()
-                .effect(Effect::WindowBackground)
+                .effect(Effect::Sidebar)
                 .state(EffectState::FollowsWindowActiveState)
                 .build();
             if let Err(error) = window.set_effects(effects) {
