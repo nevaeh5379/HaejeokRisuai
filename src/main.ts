@@ -4,9 +4,13 @@ import App from "./App.svelte";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 import { Buffer } from "node:buffer";
+import { isTauriMacOS } from "./ts/platform";
 
 if (typeof window !== "undefined") {
   window.Buffer = Buffer;
+  if (isTauriMacOS) {
+    document.documentElement.classList.add("tauri-macos-vibrancy");
+  }
 }
 
 window.addEventListener("vite:preloadError", (event) => {

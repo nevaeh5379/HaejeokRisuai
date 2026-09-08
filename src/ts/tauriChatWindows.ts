@@ -6,7 +6,7 @@ import {
   createSingleTabSnapshot,
   type ChatWorkspaceBounds,
 } from "./chatWorkspace";
-import { isTauri } from "./platform";
+import { isTauri, isTauriMacOS } from "./platform";
 
 const WINDOW_KIND_PARAM = "risuWindow";
 const WINDOW_ID_PARAM = "workspaceWindowId";
@@ -601,6 +601,7 @@ async function openAuxiliaryWindow(
     minWidth: 300,
     minHeight: 500,
     resizable: true,
+    transparent: isTauriMacOS,
     visible: true,
     focus: true,
   });

@@ -580,7 +580,7 @@
         ondragover={dragTabListOver}
         ondragleave={leaveTabListDrag}
         ondrop={(event) => void dropTabList(event)}
-        class="shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
+        class="rs-chat-tab-list shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
         class:pl-14={!$MobileGUI && reserveSidebarSpace}
@@ -594,7 +594,8 @@
             {@const generating = $activeGenerationChatIds.has(tab.chatId)}
             <button
                 data-chat-tab-id={tab.id}
-                class="group h-9 min-w-32 max-w-56 px-2 rounded-t-md flex items-center gap-2 border border-b-0 border-darkborderc transition-colors cursor-grab active:cursor-grabbing select-none"
+                data-active={active}
+                class="rs-chat-tab group h-9 min-w-32 max-w-56 px-2 rounded-t-md flex items-center gap-2 border border-b-0 border-darkborderc transition-colors cursor-grab active:cursor-grabbing select-none"
                 class:bg-selected={active}
                 class:bg-bgcolor={!active}
                 class:text-textcolor={active}

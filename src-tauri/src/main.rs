@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod sqlite_transaction;
+#[cfg(target_os = "macos")]
+mod macos_vibrancy;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -755,6 +757,11 @@ fn handle_haejeok_app_menu(app: &AppHandle, menu_id: &str) {
 
 fn main() {
     let mut builder = tauri::Builder::default();
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(macos_vibrancy::init());
+    }
 
     #[cfg(target_os = "macos")]
     {
