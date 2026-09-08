@@ -587,6 +587,7 @@ async function openAuxiliaryWindow(
     : await getDetachedWindowPlacement(width, height);
 
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  const { LogicalPosition } = await import("@tauri-apps/api/dpi");
   const child = new WebviewWindow(windowId, {
     url: buildTauriChatWorkspaceWindowUrl(
       windowId,
@@ -604,6 +605,7 @@ async function openAuxiliaryWindow(
     transparent: isTauriMacOS,
     titleBarStyle: isTauriMacOS ? "overlay" : undefined,
     hiddenTitle: isTauriMacOS,
+    trafficLightPosition: isTauriMacOS ? new LogicalPosition(20, 16) : undefined,
     visible: true,
     focus: true,
   });
