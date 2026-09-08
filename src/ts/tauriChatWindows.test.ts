@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { ChatTab } from "./chatTabs.svelte";
 import {
   buildTauriChatWorkspaceWindowUrl,
+  calculateDetachedWindowPlacement,
   clearActiveTauriChatDragPayload,
   createTauriChatDragPayload,
   getActiveTauriChatDragPayload,
@@ -61,7 +62,9 @@ describe("Tauri chat workspace launch", () => {
 
   it("rejects non auxiliary window labels", () => {
     expect(
-      parseTauriChatWorkspaceLaunch("?risuWindow=chat-workspace&workspaceWindowId=main"),
+      parseTauriChatWorkspaceLaunch(
+        "?risuWindow=chat-workspace&workspaceWindowId=main",
+      ),
     ).toBeNull();
   });
 });
@@ -69,7 +72,9 @@ describe("Tauri chat workspace launch", () => {
 describe("Tauri chat tab transfer payload", () => {
   it("round-trips the full tab instance so drafts and duplicate identity survive", () => {
     const payload = createTauriChatDragPayload(tab(), "chat-window-source");
-    const parsed = parseTauriChatDragPayload(serializeTauriChatDragPayload(payload));
+    const parsed = parseTauriChatDragPayload(
+      serializeTauriChatDragPayload(payload),
+    );
 
     expect(parsed?.sourceWindowId).toBe("chat-window-source");
     expect(parsed?.sourceWindowLabel).toBe("chat-window-source");
@@ -79,7 +84,9 @@ describe("Tauri chat tab transfer payload", () => {
 
   it("rejects incomplete transfer payloads", () => {
     expect(
-      parseTauriChatDragPayload(JSON.stringify({ sourceWindowId: "main", transferId: "x" })),
+      parseTauriChatDragPayload(
+        JSON.stringify({ sourceWindowId: "main", transferId: "x" }),
+      ),
     ).toBeNull();
   });
 });
@@ -112,21 +119,13 @@ describe("Tauri workspace window hit testing", () => {
 
   it("finds another auxiliary window under the global cursor", () => {
     expect(
-      findWorkspaceWindowAtPoint(
-        { x: 2200, y: 300 },
-        windows,
-        "chat-window-a",
-      ),
+      findWorkspaceWindowAtPoint({ x: 2200, y: 300 }, windows, "chat-window-a"),
     ).toBe("chat-window-b");
   });
 
   it("never resolves the source window as a docking target", () => {
     expect(
-      findWorkspaceWindowAtPoint(
-        { x: 1400, y: 300 },
-        windows,
-        "chat-window-a",
-      ),
+      findWorkspaceWindowAtPoint({ x: 1400, y: 300 }, windows, "chat-window-a"),
     ).toBeNull();
   });
 
@@ -136,7 +135,11 @@ describe("Tauri workspace window hit testing", () => {
       { id: "chat-window-b", x: 400, y: 200, width: 600, height: 500 },
     ];
     expect(
-      findWorkspaceWindowAtPoint({ x: 500, y: 300 }, overlapping, "chat-window-a"),
+      findWorkspaceWindowAtPoint(
+        { x: 500, y: 300 },
+        overlapping,
+        "chat-window-a",
+      ),
     ).toBe("chat-window-b");
   });
 });
@@ -152,9 +155,53 @@ describe("Tauri cross-window drag registry", () => {
   });
 
   it("expires abandoned cross-window drags", () => {
-    const payload = createTauriChatDragPayload(tab("stale-tab"), "chat-window-a");
+    const payload = createTauriChatDragPayload(
+      tab("stale-tab"),
+      "chat-window-a",
+    );
     publishActiveTauriChatDragPayload(payload, 1_000);
 
     expect(getActiveTauriChatDragPayload(31_001)).toBeNull();
+  });
+});
+
+describe("Tauri detached window placement", () => {
+  it("places the detached header near the cursor using logical pixels", () => {
+    expect(
+      calculateDetachedWindowPlacement({
+        cursor: { x: 1200, y: 600 },
+        scaleFactor: 2,
+        workAreaPosition: { x: 0, y: 48 },
+        workAreaSize: { width: 3024, height: 1876 },
+        windowWidth: 720,
+        windowHeight: 600,
+      }),
+    ).toEqual({ x: 460, y: 282 });
+  });
+
+  it("keeps a new detached window inside the monitor work area", () => {
+    expect(
+      calculateDetachedWindowPlacement({
+        cursor: { x: 2980, y: 1840 },
+        scaleFactor: 2,
+        workAreaPosition: { x: 0, y: 48 },
+        workAreaSize: { width: 3024, height: 1876 },
+        windowWidth: 720,
+        windowHeight: 600,
+      }),
+    ).toEqual({ x: 792, y: 362 });
+  });
+
+  it("supports monitors with negative desktop coordinates", () => {
+    expect(
+      calculateDetachedWindowPlacement({
+        cursor: { x: -600, y: 500 },
+        scaleFactor: 1,
+        workAreaPosition: { x: -1920, y: 0 },
+        workAreaSize: { width: 1920, height: 1080 },
+        windowWidth: 720,
+        windowHeight: 600,
+      }),
+    ).toEqual({ x: -740, y: 480 });
   });
 });
