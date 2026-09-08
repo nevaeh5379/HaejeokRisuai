@@ -155,8 +155,8 @@ async function editOwner(page: Page) {
     settingsOpen.set(true);
   });
   const row = page
-    .locator("div.pl-3.pt-3")
-    .filter({ hasText: "Rule Owner A" })
+    .locator("div.pl-3")
+    .filter({ has: page.getByText("Rule Owner A", { exact: true }) })
     .first();
   await row.locator("button:has(svg.lucide-square-pen)").click();
   await expect(
@@ -211,6 +211,43 @@ test.describe("Issue #61 routing failure reproductions", () => {
     await seed(page);
   });
 
+  test("isolates shared Lua backend per module owner without prompt matching", async ({
+    page,
+  }) => {
+    await page.evaluate(
+      async ({ OWNER_A, OWNER_B, BACKEND }) => {
+        const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+        const { moduleStore } = await import(/* @vite-ignore */ path);
+        for (const ownerId of [OWNER_A, OWNER_B]) {
+          const owner = moduleStore.modules.find((m: any) => m.id === ownerId);
+          owner.subModelRequestRules = [
+            {
+              enabled: true,
+              phrases: [],
+              sourceModuleId: BACKEND,
+            },
+          ];
+        }
+      },
+      { OWNER_A, OWNER_B, BACKEND },
+    );
+
+    await invoke(page, "weather");
+    await invoke(page, "inventory");
+
+    expect(requests).toHaveLength(2);
+    expect(requests.map((request) => request.model)).toEqual([
+      "gpt-4o-mini",
+      "gpt-4o",
+    ]);
+    expect(
+      requests[0].messages.some((message) => message.content === PHRASE_A),
+    ).toBe(true);
+    expect(
+      requests[1].messages.some((message) => message.content === PHRASE_B),
+    ).toBe(true);
+  });
+
   test("verifies fix for #61 case 1: multi-line alternative keywords in UI textarea route successfully with default 'any' matching", async ({
     page,
   }) => {
@@ -221,11 +258,9 @@ test.describe("Issue #61 routing failure reproductions", () => {
 
     // User specifies multiple candidate trigger phrases/identifiers (one per line)
     // as was common practice in Yumi provider for Lightboard modules:
-    const candidatePhrases = [
-      PHRASE_A,
-      "<lb-weather>",
-      "[날씨 예보]",
-    ].join("\n");
+    const candidatePhrases = [PHRASE_A, "<lb-weather>", "[날씨 예보]"].join(
+      "\n",
+    );
 
     const phrasesTextarea = page.getByLabel("Required phrases (one per line)");
     await phrasesTextarea.fill(candidatePhrases);
@@ -373,4 +408,3 @@ test.describe("Issue #61 routing failure reproductions", () => {
     ).toBeVisible();
   });
 });
-
