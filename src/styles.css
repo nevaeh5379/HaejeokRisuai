@@ -170,11 +170,10 @@ html.tauri-macos-vibrancy #app {
 
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
-  --risu-macos-chrome-tint: color-mix(
-    in srgb,
-    var(--risu-theme-darkbg) 60%,
-    transparent
-  );
+  /* Sidebar chrome is intentionally opaque. The native overlay titlebar and
+   * WebView body use different macOS compositing paths; an opaque shared
+   * surface keeps the sidebar/titlebar seam pixel-identical. */
+  --risu-macos-sidebar-surface: var(--risu-theme-darkbg);
   --risu-macos-content-tint: color-mix(
     in srgb,
     var(--risu-theme-bgcolor) 90%,
@@ -214,11 +213,11 @@ html.tauri-macos-vibrancy .rs-macos-titlebar {
   background: transparent;
 }
 
-html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-spacer {
+html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-surface {
   width: 0;
   flex: 0 0 auto;
   pointer-events: none;
-  background: transparent;
+  background: var(--risu-macos-sidebar-surface);
   transition: width var(--risu-animation-speed) ease;
   will-change: width;
 }
@@ -232,18 +231,18 @@ html.tauri-macos-vibrancy .rs-macos-titlebar-content-surface {
 
 html.tauri-macos-vibrancy
   .rs-macos-titlebar.has-sidebar:not(.sidebar-closing)
-  .rs-macos-titlebar-sidebar-spacer {
+  .rs-macos-titlebar-sidebar-surface {
   width: var(--risu-macos-sidebar-span);
 }
 
 html.tauri-macos-vibrancy
   .rs-macos-titlebar.has-sidebar.dynamic-sidebar:not(.sidebar-closing)
-  .rs-macos-titlebar-sidebar-spacer {
+  .rs-macos-titlebar-sidebar-surface {
   width: min(var(--risu-macos-sidebar-span), calc(100% - 3rem));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-spacer {
+  html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-surface {
     transition: none;
   }
 }
@@ -252,7 +251,7 @@ html.tauri-macos-vibrancy
  * macOS chrome, matching the title bar instead of becoming opaque web cards. */
 html.tauri-macos-vibrancy .rs-sidebar,
 html.tauri-macos-vibrancy .rs-sidebar-panel {
-  background-color: var(--risu-macos-chrome-tint) !important;
+  background-color: var(--risu-macos-sidebar-surface) !important;
 }
 
 /* The sidebar itself owns the titlebar-left surface. Its box starts at y=0;
