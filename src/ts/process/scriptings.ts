@@ -41,7 +41,7 @@ import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { StreamResponseChunk } from "./request/requestContracts";
 import { v4 } from "uuid";
-import { getModuleLorebooks, getModuleTriggers } from "./modules";
+import { getModuleLorebooksWithSource, getModuleTriggers } from "./modules";
 import { Mutex } from "../mutex";
 import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
@@ -894,27 +894,32 @@ export async function runScripted(
         }
 
         const loreSources = [
-          ScriptingEngineState.chat?.localLore ?? [],
-          selectedChar.globalLore ?? [],
-          getModuleLorebooks(
+          ...(ScriptingEngineState.chat?.localLore ?? []).map((lorebook) => ({
+            lorebook,
+            sourceModuleId: undefined,
+          })),
+          ...(selectedChar.globalLore ?? []).map((lorebook) => ({
+            lorebook,
+            sourceModuleId: undefined,
+          })),
+          ...getModuleLorebooksWithSource(
             selectedChar,
             undefined,
             ScriptingEngineState.chat,
-          ) ?? [],
+          ),
         ];
 
         const found = [];
-        for (const source of loreSources) {
-          for (const b of source) {
-            if (b.comment === search) {
-              found.push({
-                ...b,
-                content: risuChatParser(b.content, {
-                  chara: selectedChar,
-                  chatTarget: ScriptingEngineState.chatTarget,
-                }),
-              });
-            }
+        for (const { lorebook, sourceModuleId } of loreSources) {
+          if (lorebook.comment === search) {
+            found.push({
+              ...lorebook,
+              sourceModuleId,
+              content: risuChatParser(lorebook.content, {
+                chara: selectedChar,
+                chatTarget: ScriptingEngineState.chatTarget,
+              }),
+            });
           }
         }
 

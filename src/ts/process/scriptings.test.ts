@@ -106,7 +106,7 @@ vi.mock("../stores.svelte", () => ({
 }));
 
 vi.mock("./modules", () => ({
-  getModuleLorebooks: moduleLorebooks,
+  getModuleLorebooksWithSource: moduleLorebooks,
   getModuleTriggers: moduleTriggers,
 }));
 
@@ -192,6 +192,31 @@ test("module button auxiliary calls carry their execution module", async () => {
     );
   } finally {
     moduleTriggers.mockReset();
+  }
+});
+
+test("Lua lorebook results preserve their source module", async () => {
+  moduleLorebooks.mockReturnValue([
+    {
+      sourceModuleId: "owner-a",
+      lorebook: { comment: "owner.code", content: "return 1" },
+    },
+  ] as never);
+  try {
+    const result = await runScripted(
+      `function onStart(id)
+        local books = getLoreBooks(id, "owner.code")
+        return books[1].sourceModuleId
+      end`,
+      {
+        char: { type: "character", globalLore: [] } as never,
+        chat: { message: [], localLore: [] } as never,
+        mode: "start",
+      },
+    );
+    expect(result.res).toBe("owner-a");
+  } finally {
+    moduleLorebooks.mockReset();
   }
 });
 
@@ -546,7 +571,10 @@ test("runs module button actions that read lorebooks before character details hy
   } as any;
   currentChatState.value = { id: "chat-1", message: [] } as any;
   moduleLorebooks.mockReturnValue([
-    { comment: "ChoiceModule.actions", content: "module action" },
+    {
+      sourceModuleId: "choice-module",
+      lorebook: { comment: "ChoiceModule.actions", content: "module action" },
+    },
   ] as never);
   moduleTriggers.mockReturnValue([
     {

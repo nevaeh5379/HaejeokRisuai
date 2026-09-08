@@ -493,22 +493,37 @@ export function getModules(
   );
 }
 
+export interface ModuleLorebookSource {
+  lorebook: loreBook;
+  sourceModuleId: string;
+}
+
+export function getModuleLorebooksWithSource(
+  character?: character | groupChat,
+  overrideIds?: string[],
+  chat?: Chat,
+): ModuleLorebookSource[] {
+  const modules = getModules(character, overrideIds, chat);
+  const lorebooks: ModuleLorebookSource[] = [];
+  for (const module of modules) {
+    if (!module?.lorebook) {
+      continue;
+    }
+    for (const lorebook of module.lorebook) {
+      lorebooks.push({ lorebook, sourceModuleId: module.id });
+    }
+  }
+  return lorebooks;
+}
+
 export function getModuleLorebooks(
   character?: character | groupChat,
   overrideIds?: string[],
   chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds, chat);
-  let lorebooks: loreBook[] = [];
-  for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.lorebook) {
-      lorebooks = lorebooks.concat(module.lorebook);
-    }
-  }
-  return lorebooks;
+  return getModuleLorebooksWithSource(character, overrideIds, chat).map(
+    ({ lorebook }) => lorebook,
+  );
 }
 
 export function getModuleAssets(
