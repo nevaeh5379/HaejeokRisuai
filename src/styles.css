@@ -247,14 +247,10 @@ html.tauri-macos-vibrancy .rs-sidebar-panel {
   background-color: var(--risu-macos-chrome-tint) !important;
 }
 
-html.tauri-macos-vibrancy .rs-sidebar {
-  box-shadow: inset -1px 0
-    color-mix(in srgb, var(--risu-theme-textcolor) 9%, transparent);
-}
-
+html.tauri-macos-vibrancy .rs-sidebar,
 html.tauri-macos-vibrancy .rs-sidebar-panel {
-  border-right: 1px solid
-    color-mix(in srgb, var(--risu-theme-textcolor) 7%, transparent);
+  border-right: 0 !important;
+  box-shadow: none;
 }
 
 /* DynamicGUI turns the sidebar into an overlay at <= 1024px. An overlay must
