@@ -1,8 +1,8 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, sideBarClosing, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
@@ -184,7 +184,6 @@
 <main
     class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
     class:tauri-native={isTauri}
-    class:macos-sidebar-layout={isTauriMacOS && !detachedChatWindow && !gridOpen && $loadedStore && didFirstSetup && !$MobileGUI && !$CustomGUISettingMenuStore && !(isNodeServer && $sqlConfiguredStore === false)}
     ondragover={(e) => {
     const dropEffect = getMainDropEffect(e)
     e.preventDefault()
@@ -248,19 +247,6 @@
     }
 
 }}>
-    {#if isTauriMacOS}
-        <div
-            class="rs-macos-titlebar"
-            class:has-sidebar={!detachedChatWindow && !gridOpen && $sideBarStore}
-            class:dynamic-sidebar={$DynamicGUI}
-            class:sidebar-closing={$sideBarClosing}
-            data-tauri-drag-region
-            aria-hidden="true"
-        >
-            <div class="rs-macos-titlebar-sidebar-spacer"></div>
-            <div class="rs-macos-titlebar-content-surface"></div>
-        </div>
-    {/if}
     {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
@@ -379,7 +365,7 @@
         </div>
     {:else}
         {#if gridOpen}
-            <div class="rs-macos-primary-content grow h-full min-w-0">
+            <div class="grow h-full min-w-0">
                 <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
             </div>
         {:else}
@@ -391,7 +377,7 @@
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
                 </div>
             {/if}
-            <div class="rs-macos-primary-content grow h-full min-w-0">
+            <div class="grow h-full min-w-0">
                 {#if $selectedCharID < 0 && $PlaygroundStore === 0}
                     <LazyComponent loader={mainMenuLoader} />
                 {:else}

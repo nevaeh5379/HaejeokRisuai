@@ -180,72 +180,13 @@ html.tauri-macos-vibrancy {
     var(--risu-theme-bgcolor) 90%,
     transparent
   );
-  --risu-macos-sidebar-span: calc(5rem + var(--sidebar-size, 24rem));
 }
 
 html.tauri-macos-vibrancy main.tauri-native {
   position: relative;
   box-sizing: border-box;
-  padding-top: var(--risu-macos-titlebar-height);
-  background-color: transparent;
-}
-
-/* In the normal desktop workspace the real sidebar owns y=0, including the
- * native titlebar area. Only the primary content column keeps the titlebar
- * inset. Other screens and auxiliary windows retain main's default inset. */
-html.tauri-macos-vibrancy main.tauri-native.macos-sidebar-layout {
   padding-top: 0;
-}
-
-html.tauri-macos-vibrancy
-  main.tauri-native.macos-sidebar-layout
-  .rs-macos-primary-content {
-  box-sizing: border-box;
-  padding-top: var(--risu-macos-titlebar-height);
-}
-
-html.tauri-macos-vibrancy .rs-macos-titlebar {
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: var(--risu-macos-titlebar-height);
-  z-index: 90;
-  display: flex;
-  overflow: hidden;
-  background: transparent;
-}
-
-html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-spacer {
-  width: 0;
-  flex: 0 0 auto;
-  pointer-events: none;
-  background: transparent;
-  transition: width var(--risu-animation-speed) ease;
-  will-change: width;
-}
-
-html.tauri-macos-vibrancy .rs-macos-titlebar-content-surface {
-  flex: 1 1 auto;
-  min-width: 0;
-  pointer-events: none;
-  background: var(--risu-macos-content-tint);
-}
-
-html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar:not(.sidebar-closing)
-  .rs-macos-titlebar-sidebar-spacer {
-  width: var(--risu-macos-sidebar-span);
-}
-
-html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar.dynamic-sidebar:not(.sidebar-closing)
-  .rs-macos-titlebar-sidebar-spacer {
-  width: min(var(--risu-macos-sidebar-span), calc(100% - 3rem));
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-spacer {
-    transition: none;
-  }
+  background-color: transparent;
 }
 
 /* Left-side navigation and recent-session panels are one continuous piece of
@@ -257,21 +198,15 @@ html.tauri-macos-vibrancy .rs-sidebar-panel {
 
 /* The sidebar itself owns the titlebar-left surface. Its box starts at y=0;
  * only sidebar contents are inset below the traffic lights. */
-html.tauri-macos-vibrancy
-  main.tauri-native.macos-sidebar-layout
-  .rs-sidebar {
+html.tauri-macos-vibrancy .rs-sidebar {
   padding-top: var(--risu-macos-titlebar-height);
 }
 
-html.tauri-macos-vibrancy
-  main.tauri-native.macos-sidebar-layout
-  .rs-sidebar-panel.py-0 {
+html.tauri-macos-vibrancy .rs-sidebar-panel.py-0 {
   padding-top: var(--risu-macos-titlebar-height) !important;
 }
 
-html.tauri-macos-vibrancy
-  main.tauri-native.macos-sidebar-layout
-  .rs-sidebar-panel.py-6 {
+html.tauri-macos-vibrancy .rs-sidebar-panel.py-6 {
   padding-top: calc(1.5rem + var(--risu-macos-titlebar-height)) !important;
 }
 
@@ -319,6 +254,10 @@ html.tauri-macos-vibrancy .rs-chat-tab-list {
   ) !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-list.macos-aux-titlebar-tabs {
+  padding-left: 5rem !important;
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab {

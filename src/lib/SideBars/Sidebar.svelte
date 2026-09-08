@@ -49,6 +49,7 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    import { isTauriMacOS } from "src/ts/platform";
     import { get } from 'svelte/store';
     import { onMount } from 'svelte';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
@@ -443,6 +444,7 @@
 {#if settingsStore.state.menuSideBar}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
@@ -516,6 +518,7 @@
 {:else}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
@@ -958,6 +961,7 @@
 {/if}
 <div
   class="setting-area rs-sidebar-panel h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
+  data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
   class:overflow-hidden={btwRuntime.open}
   class:overflow-y-auto={!btwRuntime.open}
   class:py-0={btwRuntime.open}

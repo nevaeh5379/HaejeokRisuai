@@ -17,7 +17,7 @@
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
-    import { isTauri } from 'src/ts/platform';
+    import { isTauri, isTauriMacOS } from 'src/ts/platform';
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
@@ -56,6 +56,11 @@
     let { groupId, reserveSidebarSpace = false, allowSplit = false }: Props = $props();
     let showTabs = $derived(settingsStore.state.showChatTabs ?? true);
     let groupTabs = $derived(chatTabsStore.tabsForGroup(groupId));
+    let reserveMacOSTrafficLights = $derived(
+        isTauriMacOS &&
+        getCurrentChatWorkspaceWindowId() !== 'main' &&
+        chatTabsStore.groups[0]?.id === groupId,
+    );
     let selectedCharacter = $derived(characterStore.characters[$selectedCharID]);
     let selectedChat = $derived(
         selectedCharacter?.chats?.[selectedCharacter.chatPage ?? 0],
@@ -577,6 +582,7 @@
         data-group-id={groupId}
         role="tablist"
         tabindex="-1"
+        data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
         ondragover={dragTabListOver}
         ondragleave={leaveTabListDrag}
         ondrop={(event) => void dropTabList(event)}
@@ -587,6 +593,7 @@
         class:pl-2={$MobileGUI || !reserveSidebarSpace}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
+        class:macos-aux-titlebar-tabs={reserveMacOSTrafficLights}
     >
         {#each groupTabs as tab (tab.id)}
             {@const label = getTabLabel(tab)}
