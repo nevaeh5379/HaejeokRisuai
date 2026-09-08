@@ -443,7 +443,7 @@
 </script>
 {#if settingsStore.state.menuSideBar}
 <div
-  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar rs-sidebar-titlebar-inset"
   data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
@@ -519,6 +519,7 @@
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
+  class:rs-sidebar-titlebar-inset={!settingsStore.state.hamburgerButtonBottom}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
@@ -596,7 +597,7 @@
     {/if}
   </div>
   {/if}
-  <div class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
+  <div class="rs-sidebar-scroll flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
     <div class="h-4 min-h-4 w-14" role="listitem" ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)){ return }
       e.preventDefault()

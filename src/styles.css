@@ -201,6 +201,19 @@ html.tauri-macos-vibrancy .rs-sidebar-panel {
  * chat/character panel starts at y=0, so its header naturally becomes part of
  * the macOS titlebar chrome without wasting another 28px above it. */
 html.tauri-macos-vibrancy .rs-sidebar {
+  padding-top: 0;
+}
+
+/* Keep the rail itself at y=0 so the scroll viewport extends under the native
+ * titlebar. Only the initial scroll content is inset; that spacer scrolls away,
+ * allowing character cards to pass naturally behind the traffic lights. */
+html.tauri-macos-vibrancy .rs-sidebar.rs-sidebar-titlebar-inset {
+  padding-top: var(--risu-macos-titlebar-height);
+}
+
+html.tauri-macos-vibrancy
+  .rs-sidebar:not(.rs-sidebar-titlebar-inset)
+  .rs-sidebar-scroll {
   padding-top: var(--risu-macos-titlebar-height);
 }
 
