@@ -245,7 +245,13 @@
 
 }}>
     {#if isTauriMacOS}
-        <div class="rs-macos-titlebar" data-tauri-drag-region aria-hidden="true"></div>
+        <div
+            class="rs-macos-titlebar"
+            class:has-sidebar={!detachedChatWindow && $sideBarStore}
+            class:dynamic-sidebar={$DynamicGUI}
+            data-tauri-drag-region
+            aria-hidden="true"
+        ></div>
     {/if}
     {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
         <LazyComponent loader={legalLoader} />

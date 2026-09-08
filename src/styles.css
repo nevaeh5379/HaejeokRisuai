@@ -175,6 +175,12 @@ html.tauri-macos-vibrancy {
     var(--risu-theme-darkbg) 60%,
     transparent
   );
+  --risu-macos-content-tint: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 90%,
+    transparent
+  );
+  --risu-macos-sidebar-span: calc(5rem + var(--sidebar-size, 24rem));
 }
 
 html.tauri-macos-vibrancy main.tauri-native {
@@ -189,9 +195,29 @@ html.tauri-macos-vibrancy .rs-macos-titlebar {
   inset: 0 0 auto 0;
   height: var(--risu-macos-titlebar-height);
   z-index: 90;
-  background: var(--risu-macos-chrome-tint);
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--risu-theme-textcolor) 7%, transparent);
+  background: var(--risu-macos-content-tint);
+}
+
+html.tauri-macos-vibrancy .rs-macos-titlebar.has-sidebar {
+  background: linear-gradient(
+    to right,
+    var(--risu-macos-chrome-tint) 0 var(--risu-macos-sidebar-span),
+    var(--risu-macos-content-tint) var(--risu-macos-sidebar-span) 100%
+  );
+}
+
+html.tauri-macos-vibrancy
+  .rs-macos-titlebar.has-sidebar.dynamic-sidebar {
+  --risu-macos-titlebar-sidebar-stop: min(
+    var(--risu-macos-sidebar-span),
+    calc(100% - 3rem)
+  );
+  background: linear-gradient(
+    to right,
+    var(--risu-theme-darkbg) 0 var(--risu-macos-titlebar-sidebar-stop),
+    var(--risu-macos-content-tint)
+      var(--risu-macos-titlebar-sidebar-stop) 100%
+  );
 }
 
 /* Left-side navigation and recent-session panels are one continuous piece of
@@ -276,11 +302,7 @@ html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"] {
  * desktop wallpaper to dominate the UI. */
 html.tauri-macos-vibrancy .rs-main-menu,
 html.tauri-macos-vibrancy .default-chat-screen {
-  background-color: color-mix(
-    in srgb,
-    var(--risu-theme-bgcolor) 90%,
-    transparent
-  );
+  background-color: var(--risu-macos-content-tint);
 }
 
 /* WebKitGTK renders Lucide's default stroke heavier than browser engines do. */
