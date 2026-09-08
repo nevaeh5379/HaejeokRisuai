@@ -1,3 +1,8 @@
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
+
 use objc2_app_kit::{NSColor, NSTitlebarSeparatorStyle, NSWindow};
 use tauri::{
     plugin::{Builder, TauriPlugin},
@@ -5,6 +10,8 @@ use tauri::{
     Runtime, Window,
 };
 use window_vibrancy::{apply_liquid_glass, LiquidGlassOptions, NSGlassEffectViewStyle};
+
+const LIQUID_GLASS_CLASS: &str = "tauri-macos-liquid-glass";
 
 fn supports_vibrancy(label: &str) -> bool {
     label == "main" || label.starts_with("chat-window-")
@@ -25,8 +32,12 @@ fn configure_native_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> 
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    let liquid_glass_windows = Arc::new(Mutex::new(HashSet::<String>::new()));
+    let ready_windows = Arc::clone(&liquid_glass_windows);
+    let page_windows = Arc::clone(&liquid_glass_windows);
+
     Builder::new("macos-vibrancy")
-        .on_window_ready(|window| {
+        .on_window_ready(move |window| {
             if !supports_vibrancy(window.label()) {
                 return;
             }
@@ -38,17 +49,23 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 );
             }
 
-            let liquid_glass = LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular)
-                .opaque(false);
+            let liquid_glass =
+                LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(false);
 
             match apply_liquid_glass(&window, liquid_glass) {
                 Ok(()) => {
+                    if let Ok(mut windows) = ready_windows.lock() {
+                        windows.insert(window.label().to_string());
+                    }
                     eprintln!(
                         "[macOS vibrancy] Applied Liquid Glass to {}",
                         window.label()
                     );
                 }
                 Err(liquid_glass_error) => {
+                    if let Ok(mut windows) = ready_windows.lock() {
+                        windows.remove(window.label());
+                    }
                     eprintln!(
                         "[macOS vibrancy] Liquid Glass unavailable for {}; using Sidebar vibrancy: {liquid_glass_error}",
                         window.label()
@@ -64,6 +81,22 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                         );
                     }
                 }
+            }
+        })
+        .on_page_load(move |webview, _| {
+            let liquid_glass_active = page_windows
+                .lock()
+                .map(|windows| windows.contains(webview.label()))
+                .unwrap_or(false);
+            let action = if liquid_glass_active { "add" } else { "remove" };
+            let script = format!(
+                "document.documentElement.classList.{action}('{LIQUID_GLASS_CLASS}')"
+            );
+            if let Err(error) = webview.eval(script) {
+                eprintln!(
+                    "[macOS vibrancy] Failed to sync Liquid Glass DOM state for {}: {error}",
+                    webview.label()
+                );
             }
         })
         .build()

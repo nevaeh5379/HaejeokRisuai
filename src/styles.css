@@ -423,6 +423,136 @@ html.tauri-macos-vibrancy .default-chat-screen {
   background-color: var(--risu-macos-content-tint);
 }
 
+/* macOS 26+ already supplies a native Liquid Glass substrate behind the
+ * WebView. Keep Risu's surfaces as tints rather than replacing that material.
+ * DOM overlays still retain a lighter local blur because native window glass
+ * cannot blur sibling WebView content underneath a tab bar or popover. */
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass {
+  --risu-macos-chrome-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 38%,
+    transparent
+  );
+  --risu-macos-content-tint: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 80%,
+    transparent
+  );
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-recent-session-search,
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-recent-session-card {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 48%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab-list {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 28%,
+    transparent
+  ) !important;
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 52%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass
+  .rs-chat-tab[data-active="true"] {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-selected) 68%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-sidebar-menu-popover {
+  background: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 30%,
+    transparent
+  ) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 14%,
+    transparent
+  ) !important;
+  box-shadow:
+    0 10px 28px rgb(0 0 0 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-popup-list {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 38%,
+    transparent
+  ) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 14%,
+    transparent
+  ) !important;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.2);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-backdrop {
+  background-color: rgb(0 0 0 / 0.4) !important;
+  backdrop-filter: blur(1px) !important;
+  -webkit-backdrop-filter: blur(1px) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-2 {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 72%,
+    transparent
+  ) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 12%,
+    transparent
+  ) !important;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.3);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-3 {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 46%,
+    transparent
+  ) !important;
+  border-right-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 10%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-4 {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 78%,
+    transparent
+  ) !important;
+}
+
 /* WebKitGTK renders Lucide's default stroke heavier than browser engines do. */
 .tauri-native svg.lucide-icon[stroke-width="2"] {
   stroke-width: 1.5;
