@@ -2,7 +2,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
@@ -244,6 +244,9 @@
     }
 
 }}>
+    {#if isTauriMacOS}
+        <div class="rs-macos-titlebar" data-tauri-drag-region aria-hidden="true"></div>
+    {/if}
     {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
