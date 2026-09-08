@@ -119,3 +119,41 @@ describe("ChatTabsStore.openTargetDuplicate", () => {
     expect(store.tabsForGroup(groupId)).toHaveLength(1);
   });
 });
+
+
+describe("ChatTabsStore workspace snapshots", () => {
+  it("restores tab identity, drafts, and split layout", () => {
+    const source = new ChatTabsStore();
+    source.groups = [
+      { id: "left", activeTabId: "a" },
+      { id: "right", activeTabId: "b" },
+    ];
+    const a = tab("a", "left");
+    a.draft = "draft-a";
+    a.fileInput = ["a.png"];
+    source.tabs = [a, tab("b", "right")];
+    source.focusedGroupId = "right";
+
+    const target = new ChatTabsStore();
+    target.restoreSnapshot(source.snapshot());
+
+    expect(target.snapshot()).toEqual(source.snapshot());
+    expect(target.tabs[0]).not.toBe(source.tabs[0]);
+    expect(target.tabs[0].fileInput).not.toBe(source.tabs[0].fileInput);
+  });
+
+  it("imports a transferred tab without de-duplicating the same chat", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    const first = store.openTarget("character-a", "chat-a", groupId);
+    const duplicate = { ...first, id: "transferred", fileInput: [] };
+
+    const imported = store.importTransferredTab(duplicate, groupId, 1);
+
+    expect(imported?.id).toBe("transferred");
+    expect(store.tabsForGroup(groupId).map((item) => item.id)).toEqual([
+      first.id,
+      "transferred",
+    ]);
+  });
+});

@@ -3,7 +3,7 @@
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
-    import { parseTauriChatWindowPresentation, parseTauriChatWindowTarget } from './ts/tauriChatWindows';
+    import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
@@ -16,8 +16,9 @@
 
 
   
-    const detachedChatWindow = isTauri && parseTauriChatWindowTarget(location.search) !== null
-    const detachedChatPresentation = parseTauriChatWindowPresentation(location.search)
+    const auxiliaryChatLaunch = isTauri ? parseTauriChatWorkspaceLaunch(location.search) : null
+    const detachedChatWindow = auxiliaryChatLaunch !== null
+    const detachedChatPresentation = auxiliaryChatLaunch?.presentation ?? {}
     let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)

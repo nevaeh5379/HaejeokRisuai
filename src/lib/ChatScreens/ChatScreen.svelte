@@ -5,7 +5,6 @@
     import { CharEmotion, MobileGUI, selectedCharID } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
-    import DetachedChatHeader from "./DetachedChatHeader.svelte";
     import defaultWallpaper from '../../etc/bg.jpg'
     import ChatList from "../Others/ChatList.svelte";
     import TransitionImage from "./TransitionImage.svelte";
@@ -72,15 +71,34 @@
 {#if detached}
     <div class="grow h-full min-w-0 relative flex flex-col">
         <BackgroundDom />
-        <DetachedChatHeader />
         <div style={bgImg} class="grow min-h-0 w-full min-w-0">
-            <DefaultChatScreen
-                groupId={chatTabsStore.focusedGroupId}
-                allowSplit={false}
-                showTabBar={false}
-                bind:openChatList
-                bind:openModuleList
-            />
+            <div
+                bind:this={splitContainer}
+                class="h-full w-full min-w-0 grid"
+                style:grid-template-columns={splitColumns}
+                class:select-none={draggingSplit}
+            >
+                {#each chatTabsStore.groups as group, index (group.id)}
+                    {#if index > 0}
+                        <div
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label="Resize chat split"
+                            class="h-full cursor-col-resize bg-darkborderc hover:bg-textcolor2 transition-colors z-20"
+                            class:bg-textcolor2={draggingSplit}
+                            onpointerdown={startSplitDrag}
+                        ></div>
+                    {/if}
+                    <div class="h-full min-w-0 overflow-hidden">
+                        <DefaultChatScreen
+                            groupId={group.id}
+                            allowSplit={!$MobileGUI}
+                            bind:openChatList
+                            bind:openModuleList
+                        />
+                    </div>
+                {/each}
+            </div>
         </div>
     </div>
 {:else if settingsStore.state.theme === 'waifu'}

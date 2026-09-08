@@ -1,76 +1,68 @@
 import { describe, expect, it } from "vitest";
+import type { ChatTab } from "./chatTabs.svelte";
 import {
-  buildTauriChatWindowUrl,
+  buildTauriChatWorkspaceWindowUrl,
+  createTauriChatDragPayload,
+  getCurrentChatWorkspaceWindowId,
   isPointOutsideTauriWindow,
   parseTauriChatDragPayload,
-  parseTauriChatWindowPresentation,
-  parseTauriChatWindowTarget,
+  parseTauriChatWorkspaceLaunch,
   serializeTauriChatDragPayload,
 } from "./tauriChatWindows";
 
-describe("Tauri chat window targets", () => {
-  it("round-trips character and chat ids through a launch URL", () => {
-    const url = buildTauriChatWindowUrl(
-      { characterId: "character one", chatId: "chat/two" },
+function tab(id = "tab-a"): ChatTab {
+  return {
+    id,
+    groupId: "group-a",
+    characterId: "character-a",
+    chatId: "chat-a",
+    unread: false,
+    draft: "hello",
+    translatedDraft: "",
+    fileInput: ["asset.png"],
+  };
+}
+
+describe("Tauri chat workspace launch", () => {
+  it("round-trips an auxiliary window id and presentation", () => {
+    const url = buildTauriChatWorkspaceWindowUrl(
+      "chat-window-abc",
       "/index.html",
-    );
-
-    const search = url.slice(url.indexOf("?"));
-    expect(parseTauriChatWindowTarget(search)).toEqual({
-      characterId: "character one",
-      chatId: "chat/two",
-    });
-  });
-
-  it("ignores normal application URLs", () => {
-    expect(parseTauriChatWindowTarget("?characterId=a&chatId=b")).toBeNull();
-  });
-
-  it("rejects incomplete chat window targets", () => {
-    expect(
-      parseTauriChatWindowTarget("?risuWindow=chat&characterId=a"),
-    ).toBeNull();
-    expect(parseTauriChatWindowTarget("?risuWindow=chat&chatId=b")).toBeNull();
-  });
-
-  it("carries presentation labels for the immediate detached shell", () => {
-    const url = buildTauriChatWindowUrl(
-      { characterId: "character-a", chatId: "chat-b" },
-      "/",
       { characterName: "Alice", chatName: "First chat" },
     );
     const search = url.slice(url.indexOf("?"));
-    expect(parseTauriChatWindowPresentation(search)).toEqual({
-      characterName: "Alice",
-      chatName: "First chat",
+    expect(parseTauriChatWorkspaceLaunch(search)).toEqual({
+      windowId: "chat-window-abc",
+      presentation: { characterName: "Alice", chatName: "First chat" },
     });
   });
 
-
-});
-
-describe("Tauri chat drag payload", () => {
-  it("round-trips a transfer-specific payload", () => {
-    const payload = {
-      characterId: "character-a",
-      chatId: "chat-b",
-      sourceWindowLabel: "chat-window-test",
-      transferId: "transfer-1",
-    };
-    expect(parseTauriChatDragPayload(serializeTauriChatDragPayload(payload))).toEqual(
-      payload,
-    );
+  it("does not treat the main application URL as auxiliary", () => {
+    expect(parseTauriChatWorkspaceLaunch("?foo=bar")).toBeNull();
+    expect(getCurrentChatWorkspaceWindowId("?foo=bar")).toBe("main");
   });
 
-  it("rejects payloads without a transfer id", () => {
+  it("rejects non auxiliary window labels", () => {
     expect(
-      parseTauriChatDragPayload(
-        JSON.stringify({
-          characterId: "character-a",
-          chatId: "chat-b",
-          sourceWindowLabel: "chat-window-test",
-        }),
-      ),
+      parseTauriChatWorkspaceLaunch("?risuWindow=chat-workspace&workspaceWindowId=main"),
+    ).toBeNull();
+  });
+});
+
+describe("Tauri chat tab transfer payload", () => {
+  it("round-trips the full tab instance so drafts and duplicate identity survive", () => {
+    const payload = createTauriChatDragPayload(tab(), "chat-window-source");
+    const parsed = parseTauriChatDragPayload(serializeTauriChatDragPayload(payload));
+
+    expect(parsed?.sourceWindowId).toBe("chat-window-source");
+    expect(parsed?.sourceWindowLabel).toBe("chat-window-source");
+    expect(parsed?.tab).toEqual(tab());
+    expect(parsed?.transferId).toBeTruthy();
+  });
+
+  it("rejects incomplete transfer payloads", () => {
+    expect(
+      parseTauriChatDragPayload(JSON.stringify({ sourceWindowId: "main", transferId: "x" })),
     ).toBeNull();
   });
 });
@@ -91,27 +83,5 @@ describe("Tauri window exit detection", () => {
         { width: 800, height: 600 },
       ),
     ).toBe(false);
-  });
-});
-
-
-describe("Tauri detached chat drag payload", () => {
-  it("round-trips a detached chat payload", () => {
-    const payload = {
-      characterId: "character-a",
-      chatId: "chat-b",
-      sourceWindowLabel: "chat-window-test",
-      transferId: "transfer-test",
-    };
-    expect(parseTauriChatDragPayload(serializeTauriChatDragPayload(payload))).toEqual(payload);
-  });
-
-  it("rejects payloads that do not come from detached chat windows", () => {
-    expect(parseTauriChatDragPayload(JSON.stringify({
-      characterId: "character-a",
-      chatId: "chat-b",
-      sourceWindowLabel: "main",
-      transferId: "transfer-test",
-    }))).toBeNull();
   });
 });

@@ -1,9 +1,14 @@
 <script module lang="ts">
-    let tauriMainTabDrag: {
-        tabId: string;
+    import type { TauriChatDragPayload } from 'src/ts/tauriChatWindows';
+
+    let tauriChatTabDrag: {
+        payload: TauriChatDragPayload;
         sourceGroupId: string;
         dropped: boolean;
+        transferred: boolean;
+        ackCleanup?: () => void;
     } | null = null;
+    let lastWorkspaceSnapshotKey = '';
 </script>
 
 <script lang="ts">
@@ -17,11 +22,17 @@
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
-        acceptDetachedTauriChatDrop,
+        acceptTauriChatTabDrop,
+        completeCurrentTauriTabTransfer,
+        createTauriChatDragPayload,
         isCurrentTauriCursorOutsideWindow,
+        moveTabToNewTauriWorkspaceWindow,
         openChatInNewTauriWindow,
         parseTauriChatDragPayload,
+        publishCurrentTauriChatWorkspaceState,
+        serializeTauriChatDragPayload,
         TAURI_CHAT_DRAG_MIME,
+        watchTauriChatTabTransferAck,
     } from 'src/ts/tauriChatWindows';
     import {
         chatTabsStore,
@@ -65,7 +76,7 @@
     let suppressClickTabId: string | null = null;
     let detachedDropActive = $state(false);
     let nativeDragMarker: HTMLElement | undefined;
-    const detachedTextDragPrefix = 'risu-chat-tab:';
+    const chatTabTextDragPrefix = 'risu-chat-tab:';
 
     onDestroy(clearTabDrag);
 
@@ -76,6 +87,14 @@
         if (characterId && chatId) {
             chatTabsStore.syncActiveTarget(characterId, chatId, groupId);
         }
+    });
+
+    $effect(() => {
+        if (!isTauri) return;
+        const snapshotKey = JSON.stringify(chatTabsStore.snapshot());
+        if (snapshotKey === lastWorkspaceSnapshotKey) return;
+        lastWorkspaceSnapshotKey = snapshotKey;
+        void publishCurrentTauriChatWorkspaceState();
     });
 
     function getTabLabel(tab: ChatTab) {
@@ -313,6 +332,22 @@
         contextMenu = null;
     }
 
+    function readWorkspaceDragPayload(dataTransfer: DataTransfer | null) {
+        if (!dataTransfer) return null;
+        const custom = dataTransfer.getData(TAURI_CHAT_DRAG_MIME);
+        if (custom) return parseTauriChatDragPayload(custom);
+        const plain = dataTransfer.getData('text/plain');
+        if (!plain.startsWith(chatTabTextDragPrefix)) return null;
+        return parseTauriChatDragPayload(plain.slice(chatTabTextDragPrefix.length));
+    }
+
+    function canAcceptWorkspaceDrag(dataTransfer: DataTransfer | null) {
+        if (!isTauri || !dataTransfer) return false;
+        return Array.from(dataTransfer.types).some(
+            (type) => type === TAURI_CHAT_DRAG_MIME || type === RISU_CHAT_TAB_DRAG_TYPE,
+        );
+    }
+
     function startTauriMainTabDrag(event: DragEvent, tab: ChatTab) {
         if (!isTauri || !event.dataTransfer) {
             event.preventDefault();
@@ -320,15 +355,33 @@
         }
         clearTabDrag();
         contextMenu = null;
-        tauriMainTabDrag = {
-            tabId: tab.id,
+        const payload = createTauriChatDragPayload(tab);
+        const state = {
+            payload,
             sourceGroupId: tab.groupId,
             dropped: false,
+            transferred: false,
+            ackCleanup: undefined as (() => void) | undefined,
         };
+        tauriChatTabDrag = state;
         suppressClickTabId = tab.id;
+        const serialized = serializeTauriChatDragPayload(payload);
         event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData(RISU_CHAT_TAB_DRAG_TYPE, tab.id);
+        event.dataTransfer.setData(RISU_CHAT_TAB_DRAG_TYPE, serialized);
+        event.dataTransfer.setData(TAURI_CHAT_DRAG_MIME, serialized);
+        event.dataTransfer.setData('text/plain', `${chatTabTextDragPrefix}${serialized}`);
         (event.currentTarget as HTMLElement).classList.add('chat-tab-chosen');
+
+        void watchTauriChatTabTransferAck(payload, () => {
+            if (state.transferred) return;
+            state.transferred = true;
+            state.ackCleanup?.();
+            state.ackCleanup = undefined;
+            void completeCurrentTauriTabTransfer(payload);
+        }).then((cleanup) => {
+            if (state.transferred) cleanup();
+            else state.ackCleanup = cleanup;
+        });
     }
 
     function clearNativeTabDropMarker() {
@@ -336,10 +389,12 @@
         nativeDragMarker = undefined;
     }
 
-    function updateNativeTabDropTarget(list: HTMLElement, clientX: number) {
+    function updateNativeTabDropTarget(
+        list: HTMLElement,
+        clientX: number,
+        sourceTabId?: string,
+    ) {
         clearNativeTabDropMarker();
-        const sourceTabId = tauriMainTabDrag?.tabId;
-        if (!sourceTabId) return undefined;
         const tabs = Array.from(list.querySelectorAll<HTMLElement>('[data-chat-tab-id]'))
             .filter((item) => item.dataset.chatTabId !== sourceTabId);
         let targetIndex = tabs.findIndex(
@@ -352,51 +407,50 @@
         return targetIndex;
     }
 
-    async function detachTauriMainTab(tabId: string) {
-        const tab = chatTabsStore.tabs.find((item) => item.id === tabId);
-        if (!tab) return;
-        const label = getTabLabel(tab);
-        await openChatInNewTauriWindow(
-            tab,
-            `${label.characterName} · ${label.chatName} - RisuAI`,
-            label,
-        );
-        const result = chatTabsStore.detach(tab.id);
-        if (result.becameEmpty) {
-            selectedCharID.set(-1);
-        } else if (result.activeChanged && result.activeTab) {
-            await navigateToChatTab(result.activeTab.id);
-        }
-    }
-
     async function endTauriMainTabDrag(event: DragEvent, tab: ChatTab) {
-        const state = tauriMainTabDrag;
+        const state = tauriChatTabDrag;
         (event.currentTarget as HTMLElement).classList.remove('chat-tab-chosen');
         clearNativeTabDropMarker();
-        tauriMainTabDrag = null;
-        if (!state || state.tabId !== tab.id) return;
+        if (!state || state.payload.tab.id !== tab.id) return;
+        tauriChatTabDrag = null;
 
+        let keepAckListener = false;
         try {
-            if (!state.dropped && await isCurrentTauriCursorOutsideWindow()) {
-                await detachTauriMainTab(tab.id);
+            if (state.dropped || state.transferred) return;
+            if (event.dataTransfer?.dropEffect === 'move') {
+                keepAckListener = true;
+                setTimeout(() => state.ackCleanup?.(), 1500);
+                return;
+            }
+            if (!(await isCurrentTauriCursorOutsideWindow())) return;
+
+            const label = getTabLabel(tab);
+            const created = await moveTabToNewTauriWorkspaceWindow(
+                tab,
+                `${label.characterName} · ${label.chatName} - RisuAI`,
+                label,
+            );
+            if (created) {
+                state.transferred = true;
+                await completeCurrentTauriTabTransfer(state.payload);
             }
         } catch (error) {
-            console.error('[ChatTabs] Failed to detach Tauri tab after native drag', error);
+            console.error('[ChatTabs] Failed to detach Tauri workspace tab', error);
             alertError(error);
         } finally {
+            if (!keepAckListener) state.ackCleanup?.();
             setTimeout(() => { suppressClickTabId = null; }, 0);
         }
     }
 
     function dragTabListOver(event: DragEvent) {
-        if (isTauri && tauriMainTabDrag) {
-            event.preventDefault();
-            event.stopPropagation();
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-            updateNativeTabDropTarget(event.currentTarget as HTMLElement, event.clientX);
-            return;
-        }
-        dragDetachedOver(event);
+        if (!canAcceptWorkspaceDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        const sourceTabId = tauriChatTabDrag?.payload.tab.id;
+        updateNativeTabDropTarget(event.currentTarget as HTMLElement, event.clientX, sourceTabId);
+        detachedDropActive = !tauriChatTabDrag;
     }
 
     function leaveTabListDrag(event: DragEvent) {
@@ -408,58 +462,35 @@
     }
 
     async function dropTabList(event: DragEvent) {
-        if (isTauri && tauriMainTabDrag) {
-            event.preventDefault();
-            event.stopPropagation();
-            const state = tauriMainTabDrag;
-            const targetIndex = updateNativeTabDropTarget(
-                event.currentTarget as HTMLElement,
-                event.clientX,
+        if (!isTauri || !canAcceptWorkspaceDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        detachedDropActive = false;
+        const localState = tauriChatTabDrag;
+        const payload = readWorkspaceDragPayload(event.dataTransfer);
+        const sourceTabId = localState?.payload.tab.id ?? payload?.tab.id;
+        const targetIndex = updateNativeTabDropTarget(
+            event.currentTarget as HTMLElement,
+            event.clientX,
+            sourceTabId,
+        );
+        clearNativeTabDropMarker();
+
+        if (localState) {
+            const moved = chatTabsStore.moveTab(
+                localState.payload.tab.id,
+                groupId,
+                targetIndex,
             );
-            clearNativeTabDropMarker();
-            if (targetIndex === undefined) return;
-            const moved = chatTabsStore.moveTab(state.tabId, groupId, targetIndex);
-            state.dropped = Boolean(moved);
-            if (moved && state.sourceGroupId !== groupId) {
+            localState.dropped = Boolean(moved);
+            if (moved && localState.sourceGroupId !== groupId) {
                 await navigateToChatTab(moved.id);
             }
             return;
         }
-        await dropDetachedTab(event);
-    }
 
-    function readDetachedDragPayload(dataTransfer: DataTransfer | null) {
-        if (!dataTransfer) return null;
-        const custom = dataTransfer.getData(TAURI_CHAT_DRAG_MIME);
-        if (custom) return parseTauriChatDragPayload(custom);
-        const plain = dataTransfer.getData('text/plain');
-        if (!plain.startsWith(detachedTextDragPrefix)) return null;
-        return parseTauriChatDragPayload(plain.slice(detachedTextDragPrefix.length));
-    }
-
-    function canAcceptDetachedDrag(dataTransfer: DataTransfer | null) {
-        if (!isTauri || !dataTransfer) return false;
-        return Array.from(dataTransfer.types).some(
-            (type) => type === TAURI_CHAT_DRAG_MIME || type === 'text/plain',
-        );
-    }
-
-    function dragDetachedOver(event: DragEvent) {
-        if (!canAcceptDetachedDrag(event.dataTransfer)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-        detachedDropActive = true;
-    }
-
-    async function dropDetachedTab(event: DragEvent) {
-        if (!isTauri) return;
-        event.preventDefault();
-        event.stopPropagation();
-        detachedDropActive = false;
-        const payload = readDetachedDragPayload(event.dataTransfer);
         if (!payload) return;
-        await acceptDetachedTauriChatDrop(payload, groupId);
+        await acceptTauriChatTabDrop(payload, groupId, targetIndex);
     }
 
     function closeToRight(tabId: string) {
