@@ -211,6 +211,27 @@ html.tauri-macos-vibrancy .rs-sidebar-panel {
     color-mix(in srgb, var(--risu-theme-textcolor) 7%, transparent);
 }
 
+/* DynamicGUI turns the sidebar into an overlay at <= 1024px. An overlay must
+ * be an opaque surface so content behind it never bleeds through or competes
+ * with sidebar text. Wide-window chrome keeps the native vibrancy above. */
+html.tauri-macos-vibrancy .rs-sidebar.dynamic-sidebar,
+html.tauri-macos-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  background-color: var(--risu-theme-darkbg) !important;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  box-shadow: 10px 0 28px rgb(0 0 0 / 0.28);
+}
+
+html.tauri-macos-vibrancy
+  .rs-sidebar-panel.dynamic-sidebar
+  .rs-recent-session-search,
+html.tauri-macos-vibrancy
+  .rs-sidebar-panel.dynamic-sidebar
+  .rs-recent-session-card {
+  background-color: var(--risu-theme-bgcolor) !important;
+}
+
 html.tauri-macos-vibrancy .rs-recent-session-search,
 html.tauri-macos-vibrancy .rs-recent-session-card {
   background-color: color-mix(
