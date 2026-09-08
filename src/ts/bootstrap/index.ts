@@ -176,6 +176,8 @@ export async function loadData() {
           return;
         }
         await initializeTauriChatWorkspaceRuntime();
+        const { initializeTauriAppMenu } = await import("../tauriAppMenu");
+        await initializeTauriAppMenu();
       }
       revealShell();
       if (presetStore.activeStatus === "ready") {

@@ -32,6 +32,8 @@ use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::{Listener, Manager};
 use tauri::{AppHandle, Emitter};
+#[cfg(target_os = "macos")]
+use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
 
 #[tauri::command]
 async fn native_request(url: String, body: String, header: String, method: String) -> String {
@@ -566,8 +568,70 @@ async fn streamed_fetch(
 }
 
 
+#[cfg(target_os = "macos")]
+fn install_haejeok_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
+    let bot_settings = MenuItemBuilder::with_id("risu.bots.settings", "Bot Settings…")
+        .accelerator("CmdOrCtrl+Shift+B")
+        .build(app)?;
+    let personas = MenuItemBuilder::with_id("risu.bots.personas", "Personas…").build(app)?;
+    let lorebook = MenuItemBuilder::with_id("risu.bots.lorebook", "Global Lorebook…").build(app)?;
+    let prompts = MenuItemBuilder::with_id("risu.bots.prompts", "Prompt Templates…").build(app)?;
+    let bots = SubmenuBuilder::new(app, "Bots")
+        .items(&[&bot_settings, &personas, &lorebook, &prompts])
+        .build()?;
+
+    let modules = MenuItemBuilder::with_id("risu.modules.settings", "Module Settings…")
+        .accelerator("CmdOrCtrl+Shift+M")
+        .build(app)?;
+    let plugins = MenuItemBuilder::with_id("risu.modules.plugins", "Plugin Settings…").build(app)?;
+    let modules_menu = SubmenuBuilder::new(app, "Modules")
+        .items(&[&modules, &plugins])
+        .build()?;
+
+    let settings = MenuItemBuilder::with_id("risu.tools.settings", "Settings…")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+    let advanced = MenuItemBuilder::with_id("risu.tools.advanced", "Advanced Settings…").build(app)?;
+    let hotkeys = MenuItemBuilder::with_id("risu.tools.hotkeys", "Hotkey Settings…").build(app)?;
+    let account_files = MenuItemBuilder::with_id("risu.tools.account-files", "Account & Files…").build(app)?;
+    let tools = SubmenuBuilder::new(app, "Tools")
+        .items(&[&settings, &advanced, &hotkeys, &account_files])
+        .build()?;
+
+    if let Some(menu) = app.menu() {
+        let insert_at = menu.items()?.len().saturating_sub(2);
+        menu.insert(&bots, insert_at)?;
+        menu.insert(&modules_menu, insert_at + 1)?;
+        menu.insert(&tools, insert_at + 2)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn handle_haejeok_app_menu(app: &AppHandle, menu_id: &str) {
+    if !menu_id.starts_with("risu.") {
+        return;
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.set_focus();
+    }
+    let _ = app.emit_to("main", "risu://app-menu", menu_id.to_string());
+}
+
 fn main() {
     let mut builder = tauri::Builder::default();
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .setup(|app| {
+                install_haejeok_app_menu(app)?;
+                Ok(())
+            })
+            .on_menu_event(|app, event| {
+                handle_haejeok_app_menu(app, event.id().as_ref());
+            });
+    }
 
     #[cfg(desktop)]
     {
