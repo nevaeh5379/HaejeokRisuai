@@ -25,6 +25,12 @@ export interface ChatTabGroup {
   activeTabId: string | null;
 }
 
+export interface ChatTabsSnapshot {
+  tabs: ChatTab[];
+  groups: ChatTabGroup[];
+  focusedGroupId: string;
+}
+
 const MAX_CHAT_GROUPS = 2;
 
 function createGroupId(): string {
@@ -61,6 +67,68 @@ export class ChatTabsStore {
   groups = $state<ChatTabGroup[]>([{ id: createGroupId(), activeTabId: null }]);
   focusedGroupId = $state(this.groups[0].id);
   navigating = $state(false);
+
+  snapshot(): ChatTabsSnapshot {
+    return {
+      tabs: this.tabs.map((tab) => ({ ...tab, fileInput: [...tab.fileInput] })),
+      groups: this.groups.map((group) => ({ ...group })),
+      focusedGroupId: this.focusedGroupId,
+    };
+  }
+
+  restoreSnapshot(snapshot: ChatTabsSnapshot): void {
+    const groups = snapshot.groups.length
+      ? snapshot.groups.map((group) => ({ ...group }))
+      : [{ id: createGroupId(), activeTabId: null }];
+    const groupIds = new Set(groups.map((group) => group.id));
+    const fallbackGroupId = groups[0].id;
+    const tabs = snapshot.tabs.map((tab) => ({
+      ...tab,
+      groupId: groupIds.has(tab.groupId) ? tab.groupId : fallbackGroupId,
+      fileInput: [...tab.fileInput],
+    }));
+
+    for (const group of groups) {
+      const groupTabs = tabs.filter((tab) => tab.groupId === group.id);
+      if (!groupTabs.some((tab) => tab.id === group.activeTabId)) {
+        group.activeTabId = groupTabs[0]?.id ?? null;
+      }
+    }
+
+    this.tabs = tabs;
+    this.groups = groups;
+    this.focusedGroupId = groupIds.has(snapshot.focusedGroupId)
+      ? snapshot.focusedGroupId
+      : fallbackGroupId;
+  }
+
+  importTransferredTab(
+    source: ChatTab,
+    groupId = this.focusedGroupId,
+    targetIndex = this.tabsForGroup(groupId).length,
+  ): ChatTab | null {
+    if (this.tabs.some((tab) => tab.id === source.id)) return null;
+    const group = this.getGroup(groupId) ?? this.focusedGroup;
+    const tab: ChatTab = {
+      ...source,
+      groupId: group.id,
+      unread: false,
+      fileInput: [...source.fileInput],
+    };
+    const groupTabs = this.tabsForGroup(group.id);
+    const insertAt = Math.max(0, Math.min(targetIndex, groupTabs.length));
+    groupTabs.splice(insertAt, 0, tab);
+    const tabsByGroup = new Map(
+      this.groups.map((item) => [
+        item.id,
+        item.id === group.id ? groupTabs : this.tabsForGroup(item.id),
+      ]),
+    );
+    this.tabs = this.groups.flatMap((item) => tabsByGroup.get(item.id) ?? []);
+    group.activeTabId = tab.id;
+    this.focusedGroupId = group.id;
+    return tab;
+  }
 
   get focusedGroup(): ChatTabGroup {
     return (
