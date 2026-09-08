@@ -195,37 +195,47 @@ html.tauri-macos-vibrancy .rs-macos-titlebar {
   inset: 0 0 auto 0;
   height: var(--risu-macos-titlebar-height);
   z-index: 90;
-  background: var(--risu-macos-content-tint);
+  display: flex;
+  overflow: hidden;
+  background: transparent;
 }
 
-html.tauri-macos-vibrancy .rs-macos-titlebar::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
+html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-surface {
   width: 0;
+  flex: 0 0 auto;
   pointer-events: none;
   background: var(--risu-macos-chrome-tint);
   transition: width var(--risu-animation-speed) ease;
   will-change: width;
 }
 
+html.tauri-macos-vibrancy .rs-macos-titlebar-content-surface {
+  flex: 1 1 auto;
+  min-width: 0;
+  pointer-events: none;
+  background: var(--risu-macos-content-tint);
+}
+
 html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar:not(.sidebar-closing)::before {
+  .rs-macos-titlebar.has-sidebar:not(.sidebar-closing)
+  .rs-macos-titlebar-sidebar-surface {
   width: var(--risu-macos-sidebar-span);
 }
 
 html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar.dynamic-sidebar::before {
+  .rs-macos-titlebar.has-sidebar.dynamic-sidebar
+  .rs-macos-titlebar-sidebar-surface {
   background: var(--risu-theme-darkbg);
 }
 
 html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar.dynamic-sidebar:not(.sidebar-closing)::before {
+  .rs-macos-titlebar.has-sidebar.dynamic-sidebar:not(.sidebar-closing)
+  .rs-macos-titlebar-sidebar-surface {
   width: min(var(--risu-macos-sidebar-span), calc(100% - 3rem));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.tauri-macos-vibrancy .rs-macos-titlebar::before {
+  html.tauri-macos-vibrancy .rs-macos-titlebar-sidebar-surface {
     transition: none;
   }
 }

@@ -252,7 +252,10 @@
             class:sidebar-closing={$sideBarClosing}
             data-tauri-drag-region
             aria-hidden="true"
-        ></div>
+        >
+            <div class="rs-macos-titlebar-sidebar-surface"></div>
+            <div class="rs-macos-titlebar-content-surface"></div>
+        </div>
     {/if}
     {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
         <LazyComponent loader={legalLoader} />
