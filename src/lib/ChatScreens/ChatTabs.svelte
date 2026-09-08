@@ -29,12 +29,14 @@
         getCurrentChatWorkspaceWindowId,
         findTauriWorkspaceWindowUnderCursor,
         isCurrentTauriCursorOutsideWindow,
+        moveCurrentTauriWorkspaceWindowToCursor,
         moveTabToNewTauriWorkspaceWindow,
         openChatInNewTauriWindow,
         parseTauriChatDragPayload,
         publishActiveTauriChatDragPayload,
         publishCurrentTauriChatWorkspaceState,
         requestTauriChatTabTransferToWindow,
+        resolveTauriOutsideTabDropAction,
         serializeTauriChatDragPayload,
         TAURI_CHAT_DRAG_MIME,
         updateTauriChatDockPreview,
@@ -273,6 +275,17 @@
         if (!tab) return;
 
         activeDrag.detaching = true;
+        const sourceWindowId = getCurrentChatWorkspaceWindowId();
+        const action = resolveTauriOutsideTabDropAction(
+            sourceWindowId,
+            chatTabsStore.tabs.length,
+            null,
+        );
+        if (action === 'move-current-window') {
+            await moveCurrentTauriWorkspaceWindowToCursor();
+            clearTabDrag();
+            return;
+        }
         const label = getTabLabel(tab);
         try {
             await openChatInNewTauriWindow(
@@ -451,7 +464,12 @@
             const targetWindowId = await findTauriWorkspaceWindowUnderCursor(
                 state.payload.sourceWindowId,
             );
-            if (targetWindowId) {
+            const action = resolveTauriOutsideTabDropAction(
+                state.payload.sourceWindowId,
+                chatTabsStore.tabs.length,
+                targetWindowId,
+            );
+            if (action === 'transfer' && targetWindowId) {
                 const accepted = await requestTauriChatTabTransferToWindow(
                     state.payload,
                     targetWindowId,
@@ -460,6 +478,10 @@
                     state.transferred = true;
                     await completeCurrentTauriTabTransfer(state.payload);
                 }
+                return;
+            }
+            if (action === 'move-current-window') {
+                await moveCurrentTauriWorkspaceWindowToCursor();
                 return;
             }
 

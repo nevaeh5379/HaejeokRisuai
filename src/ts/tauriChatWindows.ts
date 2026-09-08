@@ -52,6 +52,25 @@ export interface TauriDetachedWindowPlacementInput {
   windowHeight: number;
 }
 
+export type TauriOutsideTabDropAction =
+  "transfer" | "move-current-window" | "create-window";
+
+export function resolveTauriOutsideTabDropAction(
+  sourceWindowId: string,
+  tabCount: number,
+  targetWindowId: string | null,
+): TauriOutsideTabDropAction {
+  if (targetWindowId) return "transfer";
+  if (
+    sourceWindowId !== MAIN_CHAT_WORKSPACE_WINDOW_ID &&
+    sourceWindowId.startsWith(CHAT_WINDOW_LABEL_PREFIX) &&
+    tabCount === 1
+  ) {
+    return "move-current-window";
+  }
+  return "create-window";
+}
+
 export interface TauriChatWindowPresentation {
   characterName?: string;
   chatName?: string;
@@ -318,6 +337,45 @@ async function getDetachedWindowPlacement(
       error,
     );
     return undefined;
+  }
+}
+
+export async function moveCurrentTauriWorkspaceWindowToCursor(): Promise<boolean> {
+  if (!isTauri) return false;
+  const windowId = getCurrentChatWorkspaceWindowId();
+  if (windowId === MAIN_CHAT_WORKSPACE_WINDOW_ID) return false;
+
+  try {
+    const [{ getCurrentWebviewWindow }, windowApi] = await Promise.all([
+      import("@tauri-apps/api/webviewWindow"),
+      import("@tauri-apps/api/window"),
+    ]);
+    const current = getCurrentWebviewWindow();
+    const cursor = await windowApi.cursorPosition();
+    const monitor = await windowApi.monitorFromPoint(cursor.x, cursor.y);
+    if (!monitor) return false;
+    const [size, currentScale] = await Promise.all([
+      current.outerSize(),
+      current.scaleFactor(),
+    ]);
+    const placement = calculateDetachedWindowPlacement({
+      cursor,
+      scaleFactor: monitor.scaleFactor,
+      workAreaPosition: monitor.workArea.position,
+      workAreaSize: monitor.workArea.size,
+      windowWidth: size.width / currentScale,
+      windowHeight: size.height / currentScale,
+    });
+    await current.setPosition(
+      new windowApi.LogicalPosition(placement.x, placement.y),
+    );
+    return true;
+  } catch (error) {
+    console.warn(
+      "[TauriChatWorkspace] Failed to move auxiliary window to cursor",
+      error,
+    );
+    return false;
   }
 }
 

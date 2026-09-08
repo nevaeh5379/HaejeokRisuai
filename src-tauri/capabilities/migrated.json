@@ -2,7 +2,10 @@
   "identifier": "migrated",
   "description": "permissions that were migrated from v1",
   "local": true,
-  "windows": ["main", "chat-window-*"],
+  "windows": [
+    "main",
+    "chat-window-*"
+  ],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
@@ -34,6 +37,7 @@
     "core:window:allow-inner-size",
     "core:window:allow-close",
     "core:window:allow-destroy",
+    "core:window:allow-set-position",
     "core:window:allow-maximize",
     "core:window:allow-set-fullscreen",
     "shell:allow-open",

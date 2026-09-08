@@ -12,6 +12,7 @@ import {
   parseTauriChatDragPayload,
   parseTauriChatWorkspaceLaunch,
   publishActiveTauriChatDragPayload,
+  resolveTauriOutsideTabDropAction,
   serializeTauriChatDragPayload,
 } from "./tauriChatWindows";
 
@@ -153,6 +154,32 @@ describe("Tauri workspace window hit testing", () => {
         "chat-window-a",
       ),
     ).toBe("chat-window-b");
+  });
+});
+
+describe("Tauri outside tab drop policy", () => {
+  it("moves an auxiliary window instead of recreating it for its sole tab", () => {
+    expect(resolveTauriOutsideTabDropAction("chat-window-a", 1, null)).toBe(
+      "move-current-window",
+    );
+  });
+
+  it("creates a new window when detaching one of multiple auxiliary tabs", () => {
+    expect(resolveTauriOutsideTabDropAction("chat-window-a", 2, null)).toBe(
+      "create-window",
+    );
+  });
+
+  it("transfers a sole auxiliary tab when another workspace window is targeted", () => {
+    expect(
+      resolveTauriOutsideTabDropAction("chat-window-a", 1, "chat-window-b"),
+    ).toBe("transfer");
+  });
+
+  it("still allows the main window to detach its sole tab", () => {
+    expect(resolveTauriOutsideTabDropAction("main", 1, null)).toBe(
+      "create-window",
+    );
   });
 });
 
