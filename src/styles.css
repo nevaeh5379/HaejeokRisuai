@@ -274,7 +274,7 @@ html.tauri-macos-vibrancy
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
-  top: 0 !important;
+  top: 5px !important;
   left: 0 !important;
   width: var(--risu-macos-sidebar-toggle-width) !important;
   height: 2.5rem !important;
