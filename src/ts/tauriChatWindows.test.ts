@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildTauriChatDragPreviewUrl,
   buildTauriChatWindowUrl,
   isPointOutsideTauriWindow,
   parseTauriChatDragPayload,
@@ -44,6 +45,17 @@ describe("Tauri chat window targets", () => {
       characterName: "Alice",
       chatName: "First chat",
     });
+  });
+
+  it("builds a lightweight drag-preview URL with encoded labels", () => {
+    expect(
+      buildTauriChatDragPreviewUrl({
+        characterName: "Alice & Bob",
+        chatName: "Chat / 1",
+      }),
+    ).toBe(
+      "/tauri-chat-drag-preview.html?characterName=Alice+%26+Bob&chatName=Chat+%2F+1",
+    );
   });
 });
 

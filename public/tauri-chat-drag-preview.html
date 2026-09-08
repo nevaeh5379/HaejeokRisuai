@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RisuAI chat tab</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #17171c;
+        color: #f3f3f4;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        display: flex;
+        align-items: stretch;
+        padding: 3px;
+      }
+      .tab {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid #464650;
+        border-radius: 7px;
+        background: #292932;
+        padding: 5px 10px 4px;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+      }
+      .character,
+      .chat {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .character {
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 15px;
+      }
+      .chat {
+        margin-top: 1px;
+        font-size: 10px;
+        line-height: 12px;
+        opacity: 0.72;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tab">
+      <div class="character" id="character">RisuAI</div>
+      <div class="chat" id="chat">Chat</div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      document.querySelector("#character").textContent =
+        params.get("characterName") || "RisuAI";
+      document.querySelector("#chat").textContent =
+        params.get("chatName") || "Chat";
+    </script>
+  </body>
+</html>

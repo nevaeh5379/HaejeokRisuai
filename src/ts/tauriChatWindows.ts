@@ -11,6 +11,7 @@ const CHAT_DROP_ACK_EVENT = "risu://dock-chat-drop-ack";
 export const TAURI_CHAT_DRAG_MIME = "application/x-risu-chat-tab";
 const MAIN_WINDOW_LABEL = "main";
 const CHAT_WINDOW_LABEL_PREFIX = "chat-window-";
+const CHAT_DRAG_PREVIEW_LABEL_PREFIX = "chat-drag-preview-";
 
 interface PhysicalPoint {
   x: number;
@@ -121,6 +122,25 @@ export function buildTauriChatWindowUrl(
 function createChatWindowLabel(): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `chat-window-${Date.now().toString(36)}-${random}`;
+}
+
+function createChatDragPreviewLabel(): string {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `${CHAT_DRAG_PREVIEW_LABEL_PREFIX}${Date.now().toString(36)}-${random}`;
+}
+
+export function buildTauriChatDragPreviewUrl(
+  presentation: TauriChatWindowPresentation = {},
+): string {
+  const params = new URLSearchParams();
+  if (presentation.characterName) {
+    params.set(CHARACTER_NAME_PARAM, presentation.characterName);
+  }
+  if (presentation.chatName) {
+    params.set(CHAT_NAME_PARAM, presentation.chatName);
+  }
+  const query = params.toString();
+  return `/tauri-chat-drag-preview.html${query ? `?${query}` : ""}`;
 }
 
 export async function openChatInNewTauriWindow(
@@ -329,4 +349,98 @@ export async function isCurrentTauriCursorOutsideWindow(
     current.innerSize(),
   ]);
   return isPointOutsideTauriWindow(cursor, position, size, margin);
+}
+
+export async function startTauriChatDragPreview(
+  presentation: TauriChatWindowPresentation = {},
+  intervalMs = 24,
+): Promise<() => void> {
+  if (!isTauri) return () => {};
+
+  const [webviewApi, windowApi] = await Promise.all([
+    import("@tauri-apps/api/webviewWindow"),
+    import("@tauri-apps/api/window"),
+  ]);
+  const { WebviewWindow, getCurrentWebviewWindow } = webviewApi;
+  const { PhysicalPosition, cursorPosition } = windowApi;
+  const current = getCurrentWebviewWindow();
+  if (current.label !== MAIN_WINDOW_LABEL) return () => {};
+
+  const preview = new WebviewWindow(createChatDragPreviewLabel(), {
+    url: buildTauriChatDragPreviewUrl(presentation),
+    title: "RisuAI chat tab",
+    width: 224,
+    height: 44,
+    resizable: false,
+    decorations: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    shadow: true,
+    visible: false,
+    focus: false,
+  });
+
+  let disposed = false;
+  let previewVisible = false;
+  let checking = false;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      void preview.once("tauri://created", () => {
+        void preview.setIgnoreCursorEvents(true).then(resolve).catch(reject);
+      });
+      void preview.once("tauri://error", (event) => {
+        reject(
+          new Error(`Failed to create chat drag preview: ${String(event.payload)}`),
+        );
+      });
+    });
+  } catch (error) {
+    await preview.close().catch(() => {});
+    throw error;
+  }
+
+  const update = async () => {
+    if (disposed || checking) return;
+    checking = true;
+    try {
+      const [cursor, position, size] = await Promise.all([
+        cursorPosition(),
+        current.innerPosition(),
+        current.innerSize(),
+      ]);
+      const outside = isPointOutsideTauriWindow(cursor, position, size, 4);
+      if (outside) {
+        await preview.setPosition(
+          new PhysicalPosition(cursor.x + 18, cursor.y + 18),
+        );
+        if (!previewVisible) {
+          await preview.show();
+          previewVisible = true;
+        }
+      } else if (previewVisible) {
+        await preview.hide();
+        previewVisible = false;
+      }
+    } catch (error) {
+      if (!disposed) {
+        console.error(
+          "[TauriChatWindows] Failed to update chat drag preview",
+          error,
+        );
+      }
+    } finally {
+      checking = false;
+    }
+  };
+
+  void update();
+  const timer = setInterval(() => void update(), Math.max(16, intervalMs));
+
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    clearInterval(timer);
+    void preview.close().catch(() => {});
+  };
 }

@@ -12,6 +12,7 @@
         isCurrentTauriCursorOutsideWindow,
         openChatInNewTauriWindow,
         parseTauriChatDragPayload,
+        startTauriChatDragPreview,
         TAURI_CHAT_DRAG_MIME,
     } from 'src/ts/tauriChatWindows';
     import {
@@ -52,6 +53,7 @@
         holdTimer?: ReturnType<typeof setTimeout>;
         previousUserSelect?: string;
         detaching?: boolean;
+        previewCleanup?: () => void;
     } | null = null;
     let suppressClickTabId: string | null = null;
     let detachedDropActive = $state(false);
@@ -185,6 +187,23 @@
         document.body.style.userSelect = 'none';
         drag.ghost = ghost;
         updateTabDropTarget();
+        if (isTauri) {
+            const activeDrag = drag;
+            const tab = chatTabsStore.tabs.find((item) => item.id === activeDrag.tabId);
+            if (tab) {
+                void startTauriChatDragPreview(getTabLabel(tab))
+                    .then((cleanup) => {
+                        if (drag === activeDrag && activeDrag.active) {
+                            activeDrag.previewCleanup = cleanup;
+                        } else {
+                            cleanup();
+                        }
+                    })
+                    .catch((error) => {
+                        console.error('[ChatTabs] Failed to create Tauri drag preview', error);
+                    });
+            }
+        }
     }
 
     function moveTabDrag(event: PointerEvent) {
@@ -251,6 +270,7 @@
         } catch (error) {
             activeDrag.detaching = false;
             console.error('[ChatTabs] Failed to detach Tauri chat tab', error);
+            clearTabDrag();
             alertError(error);
         }
     }
@@ -289,6 +309,7 @@
     function clearTabDrag() {
         if (!drag) return;
         if (drag.holdTimer) clearTimeout(drag.holdTimer);
+        drag.previewCleanup?.();
         drag.marker?.classList.remove('chat-tab-drop-before');
         drag.source.classList.remove('chat-tab-chosen');
         drag.ghost?.remove();
