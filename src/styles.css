@@ -402,9 +402,8 @@ html.tauri-macos-vibrancy .rs-chat-tab {
     transparent
   );
   position: relative;
-  isolation: isolate;
   margin-inline: 2px;
-  border-radius: 9px 9px 4px 4px !important;
+  border-radius: 9px !important;
   background-color: var(--risu-macos-tab-surface) !important;
   border-color: color-mix(
     in srgb,
@@ -421,34 +420,14 @@ html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"] {
     transparent
   );
   z-index: 2;
-  margin-inline: 8px;
-  border-radius: 10px 10px 1px 1px !important;
-  border-bottom-color: transparent !important;
-}
-
-/* Active macOS tabs flow into the strip with shallow lower shoulders rather
- * than ending as a plain rounded rectangle. The pseudo-elements use the same
- * translucent surface so the shape still reads correctly over Liquid Glass. */
-html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"]::before,
-html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"]::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  width: 10px;
-  height: 10px;
-  pointer-events: none;
-}
-
-html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"]::before {
-  left: -10px;
-  border-bottom-right-radius: 10px;
-  box-shadow: 5px 5px 0 5px var(--risu-macos-tab-surface);
-}
-
-html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"]::after {
-  right: -10px;
-  border-bottom-left-radius: 10px;
-  box-shadow: -5px 5px 0 5px var(--risu-macos-tab-surface);
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 18%,
+    transparent
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 1px 2px rgb(0 0 0 / 0.08);
 }
 
 /* Reading surfaces still show a little native material, but not enough for the
