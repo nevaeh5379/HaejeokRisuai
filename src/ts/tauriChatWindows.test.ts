@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTauriChatWindowUrl,
-  isPointInTauriChatDockZone,
   isPointOutsideTauriWindow,
+  parseTauriChatDragPayload,
   parseTauriChatWindowTarget,
+  serializeTauriChatDragPayload,
 } from "./tauriChatWindows";
 
 describe("Tauri chat window targets", () => {
@@ -32,30 +33,6 @@ describe("Tauri chat window targets", () => {
   });
 });
 
-describe("Tauri chat docking zone", () => {
-  it("accepts the top tab-strip area of the main window", () => {
-    expect(
-      isPointInTauriChatDockZone(
-        { x: 420, y: 180 },
-        { x: 100, y: 100 },
-        { width: 900, height: 700 },
-        2,
-      ),
-    ).toBe(true);
-  });
-
-  it("rejects points below the tab-strip area", () => {
-    expect(
-      isPointInTauriChatDockZone(
-        { x: 420, y: 240 },
-        { x: 100, y: 100 },
-        { width: 900, height: 700 },
-        2,
-      ),
-    ).toBe(false);
-  });
-});
-
 describe("Tauri window exit detection", () => {
   it("detects a cursor outside the native content bounds", () => {
     expect(
@@ -72,5 +49,25 @@ describe("Tauri window exit detection", () => {
         { width: 800, height: 600 },
       ),
     ).toBe(false);
+  });
+});
+
+
+describe("Tauri detached chat drag payload", () => {
+  it("round-trips a detached chat payload", () => {
+    const payload = {
+      characterId: "character-a",
+      chatId: "chat-b",
+      sourceWindowLabel: "chat-window-test",
+    };
+    expect(parseTauriChatDragPayload(serializeTauriChatDragPayload(payload))).toEqual(payload);
+  });
+
+  it("rejects payloads that do not come from detached chat windows", () => {
+    expect(parseTauriChatDragPayload(JSON.stringify({
+      characterId: "character-a",
+      chatId: "chat-b",
+      sourceWindowLabel: "main",
+    }))).toBeNull();
   });
 });

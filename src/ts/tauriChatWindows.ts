@@ -5,11 +5,10 @@ const CHAT_WINDOW_KIND_PARAM = "risuWindow";
 const CHARACTER_ID_PARAM = "characterId";
 const CHAT_ID_PARAM = "chatId";
 const CHAT_WINDOW_KIND = "chat";
-const CHAT_DOCK_REQUEST_EVENT = "risu://dock-chat-request";
-const CHAT_DOCK_ACK_EVENT = "risu://dock-chat-ack";
+const CHAT_DROP_ACK_EVENT = "risu://dock-chat-drop-ack";
+export const TAURI_CHAT_DRAG_MIME = "application/x-risu-chat-tab";
 const MAIN_WINDOW_LABEL = "main";
 const CHAT_WINDOW_LABEL_PREFIX = "chat-window-";
-const CHAT_DOCK_HEIGHT_CSS_PX = 56;
 
 interface PhysicalPoint {
   x: number;
@@ -26,14 +25,8 @@ export interface TauriChatWindowTarget {
   chatId: string;
 }
 
-interface TauriChatDockRequest extends TauriChatWindowTarget {
-  requestId: string;
+export interface TauriChatDragPayload extends TauriChatWindowTarget {
   sourceWindowLabel: string;
-}
-
-interface TauriChatDockAck {
-  requestId: string;
-  accepted: boolean;
 }
 
 export function parseTauriChatWindowTarget(
@@ -46,21 +39,6 @@ export function parseTauriChatWindowTarget(
   const chatId = params.get(CHAT_ID_PARAM)?.trim();
   if (!characterId || !chatId) return null;
   return { characterId, chatId };
-}
-
-export function isPointInTauriChatDockZone(
-  cursor: PhysicalPoint,
-  mainContentPosition: PhysicalPoint,
-  mainContentSize: PhysicalArea,
-  scaleFactor: number,
-): boolean {
-  const dockHeight = CHAT_DOCK_HEIGHT_CSS_PX * Math.max(scaleFactor, 0.1);
-  return (
-    cursor.x >= mainContentPosition.x &&
-    cursor.x <= mainContentPosition.x + mainContentSize.width &&
-    cursor.y >= mainContentPosition.y &&
-    cursor.y <= mainContentPosition.y + dockHeight
-  );
 }
 
 export function isPointOutsideTauriWindow(
@@ -87,6 +65,17 @@ function isTauriChatWindowTarget(
     target.characterId.length > 0 &&
     typeof target.chatId === "string" &&
     target.chatId.length > 0
+  );
+}
+
+function isTauriChatDragPayload(
+  value: unknown,
+): value is TauriChatDragPayload {
+  if (!isTauriChatWindowTarget(value)) return false;
+  const payload = value as Partial<TauriChatDragPayload>;
+  return (
+    typeof payload.sourceWindowLabel === "string" &&
+    payload.sourceWindowLabel.startsWith(CHAT_WINDOW_LABEL_PREFIX)
   );
 }
 
@@ -122,7 +111,8 @@ export async function openChatInNewTauriWindow(
     minWidth: 300,
     minHeight: 500,
     resizable: true,
-    focus: true,
+    visible: false,
+    focus: false,
   });
 
   return new Promise<boolean>((resolve, reject) => {
@@ -146,176 +136,102 @@ export async function restoreTauriChatWindowTarget(
   return openChatTargetInTab(target.characterId, target.chatId);
 }
 
-let dockListenerStarted = false;
-
-function isTauriChatDockRequest(value: unknown): value is TauriChatDockRequest {
-  if (!isTauriChatWindowTarget(value)) return false;
-  const request = value as Partial<TauriChatDockRequest>;
-  return (
-    typeof request.requestId === "string" &&
-    request.requestId.length > 0 &&
-    typeof request.sourceWindowLabel === "string" &&
-    request.sourceWindowLabel.startsWith(CHAT_WINDOW_LABEL_PREFIX)
-  );
+export function parseTauriChatDragPayload(value: string): TauriChatDragPayload | null {
+  try {
+    const payload = JSON.parse(value) as unknown;
+    if (!payload || typeof payload !== "object") return null;
+    return isTauriChatDragPayload(payload) ? payload : null;
+  } catch {
+    return null;
+  }
 }
 
-function isTauriChatDockAck(value: unknown): value is TauriChatDockAck {
-  if (!value || typeof value !== "object") return false;
-  const ack = value as Partial<TauriChatDockAck>;
-  return (
-    typeof ack.requestId === "string" &&
-    ack.requestId.length > 0 &&
-    typeof ack.accepted === "boolean"
-  );
+export function serializeTauriChatDragPayload(
+  payload: TauriChatDragPayload,
+): string {
+  return JSON.stringify(payload);
 }
 
-export async function startTauriChatDockListener(): Promise<void> {
-  if (!isTauri || dockListenerStarted) return;
-
+export async function getCurrentTauriChatWindowDragPayload(
+  target: TauriChatWindowTarget,
+): Promise<TauriChatDragPayload | null> {
+  if (!isTauri || !isTauriChatWindowTarget(target)) return null;
   const { getCurrentWebviewWindow } =
     await import("@tauri-apps/api/webviewWindow");
   const current = getCurrentWebviewWindow();
-  if (current.label !== MAIN_WINDOW_LABEL) return;
-
-  await current.listen<TauriChatDockRequest>(
-    CHAT_DOCK_REQUEST_EVENT,
-    (event) => {
-      if (!isTauriChatDockRequest(event.payload)) return;
-      const request = event.payload;
-      void (async () => {
-        let accepted = false;
-        try {
-          const { openChatTargetInTab } = await import("./chatTabs.svelte");
-          accepted = await openChatTargetInTab(
-            request.characterId,
-            request.chatId,
-          );
-        } catch (error) {
-          console.error(
-            "[TauriChatWindows] Failed to dock chat into main window",
-            error,
-          );
-        }
-
-        await current.emitTo(request.sourceWindowLabel, CHAT_DOCK_ACK_EVENT, {
-          requestId: request.requestId,
-          accepted,
-        } satisfies TauriChatDockAck);
-      })();
-    },
-  );
-  dockListenerStarted = true;
+  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return null;
+  return { ...target, sourceWindowLabel: current.label };
 }
 
-async function requestMainWindowDock(
-  current: {
-    label: string;
-    listen<T>(
-      event: string,
-      handler: (event: { payload: T }) => void,
-    ): Promise<() => void>;
-    emitTo(target: string, event: string, payload?: unknown): Promise<void>;
-  },
-  target: TauriChatWindowTarget,
+export async function acceptDetachedTauriChatDrop(
+  payload: TauriChatDragPayload,
+  groupId?: string,
 ): Promise<boolean> {
-  const requestId =
-    globalThis.crypto?.randomUUID?.() ??
-    `dock-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  return new Promise<boolean>(async (resolve) => {
-    let settled = false;
-    const finish = (accepted: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      unlisten?.();
-      resolve(accepted);
-    };
-    let unlisten: (() => void) | undefined;
-    const timeout = setTimeout(() => finish(false), 1800);
-
-    try {
-      unlisten = await current.listen<TauriChatDockAck>(
-        CHAT_DOCK_ACK_EVENT,
-        (event: { payload: TauriChatDockAck }) => {
-          if (!isTauriChatDockAck(event.payload)) return;
-          if (event.payload.requestId !== requestId) return;
-          finish(event.payload.accepted);
-        },
-      );
-      await current.emitTo(MAIN_WINDOW_LABEL, CHAT_DOCK_REQUEST_EVENT, {
-        ...target,
-        requestId,
-        sourceWindowLabel: current.label,
-      } satisfies TauriChatDockRequest);
-    } catch (error) {
-      console.error("[TauriChatWindows] Failed to request docking", error);
-      finish(false);
-    }
-  });
-}
-
-export async function tryDockDetachedTauriChatWindow(
-  target: TauriChatWindowTarget,
-): Promise<boolean> {
-  if (!isTauri || !isTauriChatWindowTarget(target)) return false;
-
-  const [{ WebviewWindow, getCurrentWebviewWindow }, { cursorPosition }] =
-    await Promise.all([
-      import("@tauri-apps/api/webviewWindow"),
-      import("@tauri-apps/api/window"),
-    ]);
-
+  if (!isTauri || !isTauriChatDragPayload(payload)) return false;
+  const { getCurrentWebviewWindow } =
+    await import("@tauri-apps/api/webviewWindow");
   const current = getCurrentWebviewWindow();
-  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return false;
+  if (current.label !== MAIN_WINDOW_LABEL) return false;
 
-  const main = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
-  if (!main) return false;
-
-  const [cursor, position, size, scaleFactor] = await Promise.all([
-    cursorPosition(),
-    main.innerPosition(),
-    main.innerSize(),
-    main.scaleFactor(),
-  ]);
-  if (!isPointInTauriChatDockZone(cursor, position, size, scaleFactor)) {
-    return false;
+  let accepted = false;
+  try {
+    const { chatTabsStore, navigateToChatTab } = await import("./chatTabs.svelte");
+    const tab = chatTabsStore.openTarget(
+      payload.characterId,
+      payload.chatId,
+      groupId ?? chatTabsStore.focusedGroupId,
+    );
+    accepted = await navigateToChatTab(tab.id);
+  } catch (error) {
+    console.error("[TauriChatWindows] Failed to accept detached chat drop", error);
   }
 
-  const accepted = await requestMainWindowDock(current, target);
-  if (!accepted) return false;
-  await current.close();
-  return true;
+  if (accepted) {
+    await current.emitTo(payload.sourceWindowLabel, CHAT_DROP_ACK_EVENT, {
+      characterId: payload.characterId,
+      chatId: payload.chatId,
+    });
+  }
+  return accepted;
 }
 
-export async function watchDetachedTauriChatWindowDocking(
+export async function watchDetachedTauriChatDropAck(
   target: TauriChatWindowTarget,
+  onAccepted: () => void,
 ): Promise<() => void> {
   if (!isTauri || !isTauriChatWindowTarget(target)) return () => {};
-
   const { getCurrentWebviewWindow } =
     await import("@tauri-apps/api/webviewWindow");
   const current = getCurrentWebviewWindow();
   if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return () => {};
 
-  let checking = false;
-  return current.onMoved(() => {
-    if (checking) return;
-    checking = true;
-    void tryDockDetachedTauriChatWindow(target).finally(() => {
-      checking = false;
-    });
+  return current.listen<TauriChatWindowTarget>(CHAT_DROP_ACK_EVENT, (event) => {
+    if (!isTauriChatWindowTarget(event.payload)) return;
+    if (
+      event.payload.characterId !== target.characterId ||
+      event.payload.chatId !== target.chatId
+    ) return;
+    onAccepted();
   });
 }
 
-export async function startDetachedTauriChatWindowDrag(): Promise<boolean> {
-  if (!isTauri) return false;
+export async function closeCurrentDetachedTauriChatWindow(): Promise<void> {
+  if (!isTauri) return;
   const { getCurrentWebviewWindow } =
     await import("@tauri-apps/api/webviewWindow");
   const current = getCurrentWebviewWindow();
-  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return false;
-  await current.startDragging();
-  return true;
+  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return;
+  await current.close();
+}
+
+export async function showCurrentDetachedTauriChatWindow(): Promise<void> {
+  if (!isTauri) return;
+  const { getCurrentWebviewWindow } =
+    await import("@tauri-apps/api/webviewWindow");
+  const current = getCurrentWebviewWindow();
+  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return;
+  await current.show();
+  await current.setFocus();
 }
 
 export async function isCurrentTauriCursorOutsideWindow(

@@ -7,7 +7,14 @@
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
     import { isTauri } from 'src/ts/platform';
     import { alertError } from 'src/ts/alert';
-    import { isCurrentTauriCursorOutsideWindow, openChatInNewTauriWindow, watchCurrentTauriWindowExit } from 'src/ts/tauriChatWindows';
+    import {
+        acceptDetachedTauriChatDrop,
+        isCurrentTauriCursorOutsideWindow,
+        openChatInNewTauriWindow,
+        parseTauriChatDragPayload,
+        TAURI_CHAT_DRAG_MIME,
+        watchCurrentTauriWindowExit,
+    } from 'src/ts/tauriChatWindows';
     import {
         chatTabsStore,
         navigateToChatTab,
@@ -49,6 +56,8 @@
         exitWatcher?: () => void;
     } | null = null;
     let suppressClickTabId: string | null = null;
+    let detachedDropActive = $state(false);
+    const detachedTextDragPrefix = 'risu-chat-tab:';
 
     onDestroy(clearTabDrag);
 
@@ -300,6 +309,46 @@
         contextMenu = null;
     }
 
+    function readDetachedDragPayload(dataTransfer: DataTransfer | null) {
+        if (!dataTransfer) return null;
+        const custom = dataTransfer.getData(TAURI_CHAT_DRAG_MIME);
+        if (custom) return parseTauriChatDragPayload(custom);
+        const plain = dataTransfer.getData('text/plain');
+        if (!plain.startsWith(detachedTextDragPrefix)) return null;
+        return parseTauriChatDragPayload(plain.slice(detachedTextDragPrefix.length));
+    }
+
+    function canAcceptDetachedDrag(dataTransfer: DataTransfer | null) {
+        if (!isTauri || !dataTransfer) return false;
+        return Array.from(dataTransfer.types).some(
+            (type) => type === TAURI_CHAT_DRAG_MIME || type === 'text/plain',
+        );
+    }
+
+    function dragDetachedOver(event: DragEvent) {
+        if (!canAcceptDetachedDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        detachedDropActive = true;
+    }
+
+    function leaveDetachedDrop(event: DragEvent) {
+        const list = event.currentTarget as HTMLElement;
+        const next = event.relatedTarget as Node | null;
+        if (!next || !list.contains(next)) detachedDropActive = false;
+    }
+
+    async function dropDetachedTab(event: DragEvent) {
+        if (!isTauri) return;
+        event.preventDefault();
+        event.stopPropagation();
+        detachedDropActive = false;
+        const payload = readDetachedDragPayload(event.dataTransfer);
+        if (!payload) return;
+        await acceptDetachedTauriChatDrop(payload, groupId);
+    }
+
     function closeToRight(tabId: string) {
         chatTabsStore.closeToRight(tabId);
         contextMenu = null;
@@ -317,7 +366,14 @@
     <div
         data-chat-tab-list
         data-group-id={groupId}
+        role="tablist"
+        tabindex="-1"
+        ondragover={dragDetachedOver}
+        ondragleave={leaveDetachedDrop}
+        ondrop={(event) => void dropDetachedTab(event)}
         class="shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
+        class:ring-2={detachedDropActive}
+        class:ring-blue-500={detachedDropActive}
         class:pl-14={!$MobileGUI && reserveSidebarSpace}
         class:pl-2={$MobileGUI || !reserveSidebarSpace}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}

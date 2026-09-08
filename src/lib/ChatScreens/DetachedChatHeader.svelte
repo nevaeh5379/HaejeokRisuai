@@ -1,14 +1,19 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { alertError } from 'src/ts/alert';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import {
+        closeCurrentDetachedTauriChatWindow,
+        getCurrentTauriChatWindowDragPayload,
         parseTauriChatWindowTarget,
-        startDetachedTauriChatWindowDrag,
-        watchDetachedTauriChatWindowDocking,
+        serializeTauriChatDragPayload,
+        TAURI_CHAT_DRAG_MIME,
+        watchDetachedTauriChatDropAck,
+        type TauriChatDragPayload,
     } from 'src/ts/tauriChatWindows';
 
+    const TEXT_DRAG_PREFIX = 'risu-chat-tab:';
     const target = parseTauriChatWindowTarget(location.search);
+    let dragPayload = $state<TauriChatDragPayload | null>(null);
     let character = $derived(
         target ? characterStore.characters.find((item) => item.chaId === target.characterId) : undefined,
     );
@@ -18,32 +23,42 @@
 
     onMount(() => {
         if (!target) return;
+        let disposed = false;
         let unlisten: (() => void) | undefined;
-        void watchDetachedTauriChatWindowDocking(target).then((cleanup) => {
-            unlisten = cleanup;
+        void getCurrentTauriChatWindowDragPayload(target).then((payload) => {
+            if (!disposed) dragPayload = payload;
         });
-        return () => unlisten?.();
+        void watchDetachedTauriChatDropAck(target, () => {
+            void closeCurrentDetachedTauriChatWindow();
+        }).then((cleanup) => {
+            if (disposed) cleanup();
+            else unlisten = cleanup;
+        });
+        return () => {
+            disposed = true;
+            unlisten?.();
+        };
     });
 
-    async function startDrag(event: PointerEvent) {
-        if (event.button !== 0) return;
-        event.preventDefault();
-        try {
-            await startDetachedTauriChatWindowDrag();
-        } catch (error) {
-            console.error('[DetachedChatHeader] Failed to drag Tauri window', error);
-            alertError(error);
+    function startDrag(event: DragEvent) {
+        if (!dragPayload || !event.dataTransfer) {
+            event.preventDefault();
+            return;
         }
+        const serialized = serializeTauriChatDragPayload(dragPayload);
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(TAURI_CHAT_DRAG_MIME, serialized);
+        event.dataTransfer.setData('text/plain', `${TEXT_DRAG_PREFIX}${serialized}`);
     }
 </script>
 
-<div
-    class="relative z-30 h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1 backdrop-blur-sm"
->
+<div class="relative z-30 h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1 backdrop-blur-sm">
     <button
+        draggable={Boolean(dragPayload)}
         class="h-8 min-w-32 max-w-72 cursor-grab select-none rounded-t-md border border-b-0 border-darkborderc bg-selected px-3 text-left text-textcolor active:cursor-grabbing"
-        title="Drag this tab onto the main window tab bar to dock it"
-        onpointerdown={startDrag}
+        class:opacity-60={!dragPayload}
+        title="Drag this tab onto the main window tab bar, then release to dock it"
+        ondragstart={startDrag}
     >
         <span class="block truncate text-xs font-medium">{character?.name || 'RisuAI'}</span>
         <span class="block truncate text-[10px] opacity-70">{chat?.name || 'Chat'}</span>
