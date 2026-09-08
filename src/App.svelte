@@ -257,7 +257,7 @@
             data-tauri-drag-region
             aria-hidden="true"
         >
-            <div class="rs-macos-titlebar-sidebar-surface"></div>
+            <div class="rs-macos-titlebar-sidebar-spacer"></div>
             <div class="rs-macos-titlebar-content-surface"></div>
         </div>
     {/if}
