@@ -181,7 +181,11 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" class:tauri-native={isTauri} ondragover={(e) => {
+<main
+    class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
+    class:tauri-native={isTauri}
+    class:macos-sidebar-layout={isTauriMacOS && !detachedChatWindow && !gridOpen && $loadedStore && didFirstSetup && !$MobileGUI && !$CustomGUISettingMenuStore && !(isNodeServer && $sqlConfiguredStore === false)}
+    ondragover={(e) => {
     const dropEffect = getMainDropEffect(e)
     e.preventDefault()
     e.dataTransfer.dropEffect = dropEffect
@@ -247,7 +251,7 @@
     {#if isTauriMacOS}
         <div
             class="rs-macos-titlebar"
-            class:has-sidebar={!detachedChatWindow && $sideBarStore}
+            class:has-sidebar={!detachedChatWindow && !gridOpen && $sideBarStore}
             class:dynamic-sidebar={$DynamicGUI}
             class:sidebar-closing={$sideBarClosing}
             data-tauri-drag-region
@@ -375,7 +379,9 @@
         </div>
     {:else}
         {#if gridOpen}
-            <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
+            <div class="rs-macos-primary-content grow h-full min-w-0">
+                <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
+            </div>
         {:else}
             {#if (!$DynamicGUI)}
                 <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: !$sideBarStore }} />
@@ -383,16 +389,15 @@
                 <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
-
-
-
                 </div>
             {/if}
-            {#if $selectedCharID < 0 && $PlaygroundStore === 0}
-                <LazyComponent loader={mainMenuLoader} />
-            {:else}
-                <LazyComponent loader={chatScreenLoader} />
-            {/if}
+            <div class="rs-macos-primary-content grow h-full min-w-0">
+                {#if $selectedCharID < 0 && $PlaygroundStore === 0}
+                    <LazyComponent loader={mainMenuLoader} />
+                {:else}
+                    <LazyComponent loader={chatScreenLoader} />
+                {/if}
+            </div>
         {/if}
     {/if}
     {#if $settingsOpen && !$MobileGUI}

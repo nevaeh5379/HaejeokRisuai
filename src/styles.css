@@ -190,6 +190,20 @@ html.tauri-macos-vibrancy main.tauri-native {
   background-color: transparent;
 }
 
+/* In the normal desktop workspace the real sidebar owns y=0, including the
+ * native titlebar area. Only the primary content column keeps the titlebar
+ * inset. Other screens and auxiliary windows retain main's default inset. */
+html.tauri-macos-vibrancy main.tauri-native.macos-sidebar-layout {
+  padding-top: 0;
+}
+
+html.tauri-macos-vibrancy
+  main.tauri-native.macos-sidebar-layout
+  .rs-macos-primary-content {
+  box-sizing: border-box;
+  padding-top: var(--risu-macos-titlebar-height);
+}
+
 html.tauri-macos-vibrancy .rs-macos-titlebar {
   position: absolute;
   inset: 0 0 auto 0;
@@ -241,27 +255,24 @@ html.tauri-macos-vibrancy .rs-sidebar-panel {
   background-color: var(--risu-macos-chrome-tint) !important;
 }
 
-/* The sidebar itself owns the titlebar-left surface. Keep its background
- * reaching the top of the native window, but inset interactive content below
- * the traffic lights. DynamicGUI is already fixed at top: 0; desktop sidebar
- * layout starts below main's titlebar padding, so only desktop needs lifting. */
-html.tauri-macos-vibrancy .rs-sidebar {
+/* The sidebar itself owns the titlebar-left surface. Its box starts at y=0;
+ * only sidebar contents are inset below the traffic lights. */
+html.tauri-macos-vibrancy
+  main.tauri-native.macos-sidebar-layout
+  .rs-sidebar {
   padding-top: var(--risu-macos-titlebar-height);
 }
 
-html.tauri-macos-vibrancy .rs-sidebar-panel.py-0 {
+html.tauri-macos-vibrancy
+  main.tauri-native.macos-sidebar-layout
+  .rs-sidebar-panel.py-0 {
   padding-top: var(--risu-macos-titlebar-height) !important;
 }
 
-html.tauri-macos-vibrancy .rs-sidebar-panel.py-6 {
+html.tauri-macos-vibrancy
+  main.tauri-native.macos-sidebar-layout
+  .rs-sidebar-panel.py-6 {
   padding-top: calc(1.5rem + var(--risu-macos-titlebar-height)) !important;
-}
-
-html.tauri-macos-vibrancy .rs-sidebar:not(.dynamic-sidebar),
-html.tauri-macos-vibrancy .rs-sidebar-panel:not(.dynamic-sidebar) {
-  margin-top: calc(-1 * var(--risu-macos-titlebar-height));
-  height: calc(100% + var(--risu-macos-titlebar-height));
-  max-height: calc(100% + var(--risu-macos-titlebar-height));
 }
 
 html.tauri-macos-vibrancy .rs-sidebar,
