@@ -588,7 +588,6 @@
         data-group-id={groupId}
         role="tablist"
         tabindex="-1"
-        data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
         ondragover={dragTabListOver}
         ondragleave={leaveTabListDrag}
         ondrop={(event) => void dropTabList(event)}
@@ -651,6 +650,11 @@
                 {/if}
             </button>
         {/each}
+        <div
+            class="rs-chat-tab-window-drag-surface min-w-8 flex-1 self-stretch"
+            data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
+            aria-hidden="true"
+        ></div>
         <button
             data-tab-add
             class="h-8 w-8 mb-0.5 shrink-0 flex items-center justify-center rounded-md text-textcolor2 hover:text-textcolor hover:bg-selected transition-colors"

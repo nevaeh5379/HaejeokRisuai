@@ -344,10 +344,10 @@
     }
 </script>
 <svelte:window bind:innerWidth on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} />
-<div class="rs-main-menu h-full w-full flex flex-col overflow-y-auto items-center" data-tauri-drag-region={isTauriMacOS ? "true" : undefined}>
+<div class="rs-main-menu h-full w-full flex flex-col overflow-y-auto items-center">
     {#if !$OpenRealmStore}
       <Title />
-      <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
+      <h3 class="text-textcolor2 mt-1" data-tauri-drag-region={isTauriMacOS ? "true" : undefined}>Version {getVersionString()}</h3>
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-6xl">
       {#if !$OpenRealmStore}
