@@ -4,6 +4,7 @@ use tauri::{
     window::{Effect, EffectState, EffectsBuilder},
     Runtime, Window,
 };
+use window_vibrancy::{apply_liquid_glass, LiquidGlassOptions, NSGlassEffectViewStyle};
 
 fn supports_vibrancy(label: &str) -> bool {
     label == "main" || label.starts_with("chat-window-")
@@ -37,15 +38,32 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 );
             }
 
-            let effects = EffectsBuilder::new()
-                .effect(Effect::Sidebar)
-                .state(EffectState::FollowsWindowActiveState)
-                .build();
-            if let Err(error) = window.set_effects(effects) {
-                eprintln!(
-                    "[macOS vibrancy] Failed to apply material to {}: {error}",
-                    window.label()
-                );
+            let liquid_glass = LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular)
+                .opaque(false);
+
+            match apply_liquid_glass(&window, liquid_glass) {
+                Ok(()) => {
+                    eprintln!(
+                        "[macOS vibrancy] Applied Liquid Glass to {}",
+                        window.label()
+                    );
+                }
+                Err(liquid_glass_error) => {
+                    eprintln!(
+                        "[macOS vibrancy] Liquid Glass unavailable for {}; using Sidebar vibrancy: {liquid_glass_error}",
+                        window.label()
+                    );
+                    let effects = EffectsBuilder::new()
+                        .effect(Effect::Sidebar)
+                        .state(EffectState::FollowsWindowActiveState)
+                        .build();
+                    if let Err(vibrancy_error) = window.set_effects(effects) {
+                        eprintln!(
+                            "[macOS vibrancy] Liquid Glass unavailable for {} ({liquid_glass_error}); fallback vibrancy also failed: {vibrancy_error}",
+                            window.label()
+                        );
+                    }
+                }
             }
         })
         .build()
