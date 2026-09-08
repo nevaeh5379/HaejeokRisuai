@@ -153,6 +153,7 @@ export interface DatabaseSettings {
   textScreenRounded?: boolean;
   textScreenBorder?: string;
   characterOrder: (string | folder)[];
+  moduleOrder?: string[];
   hordeConfig: hordeConfig;
   novelai: {
     token: string;
@@ -519,6 +520,7 @@ export interface DatabaseSettings {
   hideAllImages?: boolean;
   lowSpecMode?: boolean;
   waitingMinigame?: boolean;
+  preloadRecentSessionThumbnails?: boolean;
   assetCacheEntries?: number;
   assetCacheSizeMB?: number;
   thumbnailCacheEntries?: number;
@@ -584,6 +586,7 @@ export interface ModuleStoreData {
   modules: RisuModule[];
   enabledModules: string[];
   moduleFolders: ModuleFolder[];
+  moduleOrder?: string[];
 }
 
 /** PresetStore-owned selection metadata. */

@@ -31,6 +31,7 @@ const runtimeScalarDefaults = {
   hideAllImages: defaultBoolean(false),
   lowSpecMode: defaultBoolean(false),
   waitingMinigame: defaultBoolean(true),
+  preloadRecentSessionThumbnails: defaultBoolean(false),
   blurHiddenCharacters: defaultBoolean(true),
   ImagenModel: defaultString("imagen-4.0-generate-001"),
   ImagenImageSize: defaultString("1K"),

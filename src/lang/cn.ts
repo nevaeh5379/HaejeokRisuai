@@ -1249,6 +1249,7 @@ export const languageChinese = {
   removeFolder: "删除文件夹",
   removeFolderConfirm: "确定要删除此文件夹吗？其中的模块将移至根目录。",
   moveToFolder: "移至文件夹",
+  removeFromFolder: "移出文件夹",
   noFolder: "无文件夹",
   ungrouped: "未分组",
   basicInfo: "基本数据",

@@ -11,12 +11,17 @@ function fingerprintOf(value: unknown): string {
   return snapshotFingerprint($state.snapshot(value));
 }
 
+export type ModuleRootItem =
+  | { type: "folder"; folder: ModuleFolder; modules: RisuModule[] }
+  | { type: "module"; module: RisuModule };
+
 class ModuleStore
   implements InitializableStore<[storage: ISqlStorage]>, FlushableStore
 {
   modules = $state<RisuModule[]>([]);
   enabledModules = $state<string[]>([]);
   moduleFolders = $state<ModuleFolder[]>([]);
+  moduleOrder = $state<string[]>([]);
   loaded = $state(false);
 
   private storage: ISqlStorage | null = null;
@@ -25,11 +30,13 @@ class ModuleStore
   private dirtyModules = false;
   private dirtyEnabled = false;
   private dirtyFolders = false;
+  private dirtyOrder = false;
   private committedModules: RisuModule[] = [];
   // Fingerprint baselines, taken once at init/commit — never on reactive runs.
   private committedModulesFingerprint = "";
   private committedEnabledFingerprint = "";
   private committedFoldersFingerprint = "";
+  private committedOrderFingerprint = "";
 
   get list(): RisuModule[] {
     return this.modules;
@@ -37,6 +44,10 @@ class ModuleStore
 
   get folders(): ModuleFolder[] {
     return this.moduleFolders;
+  }
+
+  get order(): string[] {
+    return this.moduleOrder;
   }
 
   get enabledList(): RisuModule[] {
@@ -47,10 +58,11 @@ class ModuleStore
   async init(storage: ISqlStorage): Promise<void> {
     this.disposeObserver();
     this.storage = storage;
-    const [modules, enabled, folders] = await Promise.all([
+    const [modules, enabled, folders, order] = await Promise.all([
       storage.loadModules(),
       storage.loadSettingKey("enabledModules"),
       storage.loadSettingKey("moduleFolders"),
+      storage.loadSettingKey("moduleOrder"),
     ]);
     this.modules = [...modules];
     this.enabledModules = Array.isArray(enabled)
@@ -59,14 +71,21 @@ class ModuleStore
     this.moduleFolders = Array.isArray(folders)
       ? (folders as ModuleFolder[])
       : [];
+    this.moduleOrder = this.sanitizeRootOrder(
+      Array.isArray(order)
+        ? order.filter((id): id is string => typeof id === "string")
+        : [],
+    );
     this.loaded = true;
     this.committedModules = $state.snapshot(this.modules);
     this.committedModulesFingerprint = fingerprintOf(this.modules);
     this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
+    this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
     this.dirtyModules = false;
     this.dirtyEnabled = false;
     this.dirtyFolders = false;
+    this.dirtyOrder = false;
     // Baselines come from the synchronous assignments above — effect runs
     // must never serialise modules (they can embed MB-sized lorebooks).
     // Content is verified once per flush / hasPendingWrites.
@@ -76,6 +95,7 @@ class ModuleStore
         trackDeep(this.modules);
         trackDeep(this.enabledModules);
         trackDeep(this.moduleFolders);
+        trackDeep(this.moduleOrder);
         if (initial) {
           initial = false;
           return;
@@ -83,6 +103,7 @@ class ModuleStore
         this.dirtyModules = true;
         this.dirtyEnabled = true;
         this.dirtyFolders = true;
+        this.dirtyOrder = true;
         this.scheduleCommit();
       });
     });
@@ -132,11 +153,293 @@ class ModuleStore
     }
 
     this.modules = nextModules;
+    this.syncSanitizedRootOrder();
     this.markModulesDirty();
+  }
+
+  sanitizeRootOrder(rawOrder: string[]): string[] {
+    const validFolders = new Set(this.moduleFolders.map((f) => f.id));
+    const validUngrouped = new Set(
+      this.modules
+        .filter((m) => !m.folderId || !validFolders.has(m.folderId))
+        .map((m) => m.id),
+    );
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const item of rawOrder) {
+      if (typeof item !== "string") continue;
+      if (item.startsWith("folder:")) {
+        const folderId = item.slice("folder:".length);
+        if (validFolders.has(folderId) && !seen.has(item)) {
+          seen.add(item);
+          result.push(item);
+        }
+      } else {
+        if (validUngrouped.has(item) && !seen.has(item)) {
+          seen.add(item);
+          result.push(item);
+        }
+      }
+    }
+
+    // Append any ungrouped modules not yet in order
+    for (const module of this.modules) {
+      if (validUngrouped.has(module.id) && !seen.has(module.id)) {
+        seen.add(module.id);
+        result.push(module.id);
+      }
+    }
+
+    // Append any folders not yet in order
+    for (const folder of this.moduleFolders) {
+      const folderKey = `folder:${folder.id}`;
+      if (!seen.has(folderKey)) {
+        seen.add(folderKey);
+        result.push(folderKey);
+      }
+    }
+
+    return result;
+  }
+
+  private syncSanitizedRootOrder(): void {
+    const sanitized = this.sanitizeRootOrder(this.moduleOrder);
+    if (
+      sanitized.length === this.moduleOrder.length &&
+      sanitized.every((id, idx) => id === this.moduleOrder[idx])
+    ) {
+      return;
+    }
+    this.moduleOrder = sanitized;
+    this.markOrderDirty();
+  }
+
+  getRootItems(): ModuleRootItem[] {
+    const sanitized = this.sanitizeRootOrder(this.moduleOrder);
+    const folderMap = new Map(this.moduleFolders.map((f) => [f.id, f]));
+    const moduleMap = new Map(this.modules.map((m) => [m.id, m]));
+
+    const items: ModuleRootItem[] = [];
+    for (const key of sanitized) {
+      if (key.startsWith("folder:")) {
+        const folderId = key.slice("folder:".length);
+        const folder = folderMap.get(folderId);
+        if (folder) {
+          items.push({
+            type: "folder",
+            folder,
+            modules: this.modulesInFolder(folder.id),
+          });
+        }
+      } else {
+        const module = moduleMap.get(key);
+        if (module) {
+          items.push({
+            type: "module",
+            module,
+          });
+        }
+      }
+    }
+    return items;
+  }
+
+  private syncModulesOrderToRoot(): void {
+    const nextModules: RisuModule[] = [];
+    const moduleMap = new Map(this.modules.map((m) => [m.id, m]));
+    const addedIds = new Set<string>();
+
+    for (const key of this.moduleOrder) {
+      if (key.startsWith("folder:")) {
+        const folderId = key.slice("folder:".length);
+        for (const module of this.modulesInFolder(folderId)) {
+          if (!addedIds.has(module.id)) {
+            addedIds.add(module.id);
+            nextModules.push(module);
+          }
+        }
+      } else {
+        const module = moduleMap.get(key);
+        if (module && !addedIds.has(module.id)) {
+          addedIds.add(module.id);
+          nextModules.push(module);
+        }
+      }
+    }
+
+    for (const module of this.modules) {
+      if (!addedIds.has(module.id)) {
+        addedIds.add(module.id);
+        nextModules.push(module);
+      }
+    }
+
+    this.modules = nextModules;
+    this.markModulesDirty();
+  }
+
+  async setModuleOrder(order: string[]): Promise<void> {
+    this.moduleOrder = this.sanitizeRootOrder(order);
+    this.syncModulesOrderToRoot();
+    this.markOrderDirty();
+    await this.flush();
+  }
+
+  async moveRootItem(fromIndex: number, toIndex: number): Promise<void> {
+    const current = [...this.sanitizeRootOrder(this.moduleOrder)];
+    if (
+      fromIndex < 0 ||
+      fromIndex >= current.length ||
+      toIndex < 0 ||
+      toIndex >= current.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const [moved] = current.splice(fromIndex, 1);
+    current.splice(toIndex, 0, moved);
+    this.moduleOrder = current;
+    this.syncModulesOrderToRoot();
+    this.markOrderDirty();
+    await this.flush();
+  }
+
+  async moveFolder(folderId: string, direction: "up" | "down"): Promise<void> {
+    const current = this.sanitizeRootOrder(this.moduleOrder);
+    const key = `folder:${folderId}`;
+    const idx = current.indexOf(key);
+    if (idx < 0) return;
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= current.length) return;
+    await this.moveRootItem(idx, targetIdx);
+  }
+
+  async moveRootModule(moduleId: string, direction: "up" | "down"): Promise<void> {
+    const current = this.sanitizeRootOrder(this.moduleOrder);
+    const idx = current.indexOf(moduleId);
+    if (idx < 0) return;
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= current.length) return;
+    await this.moveRootItem(idx, targetIdx);
+  }
+
+  async moveFolderModule(moduleId: string, direction: "up" | "down"): Promise<void> {
+    const module = this.getById(moduleId);
+    if (!module || !module.folderId) return;
+    const folderModules = this.modulesInFolder(module.folderId);
+    const idx = folderModules.findIndex((m) => m.id === moduleId);
+    if (idx < 0) return;
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= folderModules.length) return;
+
+    const otherModule = folderModules[targetIdx];
+    const posA = this.modules.findIndex((m) => m.id === moduleId);
+    const posB = this.modules.findIndex((m) => m.id === otherModule.id);
+    if (posA >= 0 && posB >= 0) {
+      const copy = [...this.modules];
+      copy[posA] = otherModule;
+      copy[posB] = module;
+      this.modules = copy;
+      this.markModulesDirty();
+      await this.flush();
+    }
+  }
+
+  async reorderFolderModules(folderId: string, moduleIds: string[]): Promise<void> {
+    const folderModules = this.modulesInFolder(folderId);
+    const idSet = new Set(folderModules.map((m) => m.id));
+    const orderedFolderModules: RisuModule[] = [];
+    const moduleMap = new Map(folderModules.map((m) => [m.id, m]));
+
+    for (const id of moduleIds) {
+      const mod = moduleMap.get(id);
+      if (mod) {
+        orderedFolderModules.push(mod);
+        idSet.delete(id);
+      }
+    }
+    for (const id of idSet) {
+      const mod = moduleMap.get(id);
+      if (mod) orderedFolderModules.push(mod);
+    }
+
+    let insertIdx = 0;
+    const nextModules = [...this.modules];
+    for (let i = 0; i < nextModules.length; i++) {
+      if (nextModules[i].folderId === folderId) {
+        nextModules[i] = orderedFolderModules[insertIdx++];
+      }
+    }
+    this.modules = nextModules;
+    this.markModulesDirty();
+    await this.flush();
+  }
+
+  async moveModule(
+    moduleId: string,
+    targetFolderId: string | undefined,
+    targetIndex?: number,
+  ): Promise<void> {
+    const module = this.getById(moduleId);
+    if (!module) throw new Error(`Module not found: ${moduleId}`);
+    if (targetFolderId !== undefined && !this.getFolderById(targetFolderId)) {
+      throw new Error(`Module folder not found: ${targetFolderId}`);
+    }
+
+    const previousFolderId = module.folderId;
+    module.folderId = targetFolderId;
+    this.markModulesDirty();
+
+    if (targetFolderId === undefined) {
+      const order = this.moduleOrder.filter((k) => k !== moduleId);
+      if (
+        targetIndex !== undefined &&
+        targetIndex >= 0 &&
+        targetIndex <= order.length
+      ) {
+        order.splice(targetIndex, 0, moduleId);
+      } else if (previousFolderId) {
+        const folderKey = `folder:${previousFolderId}`;
+        const folderIdx = order.indexOf(folderKey);
+        if (folderIdx >= 0) {
+          order.splice(folderIdx + 1, 0, moduleId);
+        } else {
+          order.push(moduleId);
+        }
+      } else {
+        order.push(moduleId);
+      }
+      this.moduleOrder = order;
+      this.syncModulesOrderToRoot();
+      this.markOrderDirty();
+    } else {
+      this.moduleOrder = this.moduleOrder.filter((k) => k !== moduleId);
+      this.markOrderDirty();
+      if (targetIndex !== undefined) {
+        const folderModules = this.modulesInFolder(targetFolderId).filter(
+          (m) => m.id !== moduleId,
+        );
+        const targetModuleIds = folderModules.map((m) => m.id);
+        const boundedIndex = Math.max(
+          0,
+          Math.min(targetIndex, targetModuleIds.length),
+        );
+        targetModuleIds.splice(boundedIndex, 0, moduleId);
+        await this.reorderFolderModules(targetFolderId, targetModuleIds);
+        return;
+      }
+      this.syncModulesOrderToRoot();
+    }
+    await this.flush();
   }
 
   async installModule(module: RisuModule): Promise<void> {
     this.upsertModules([module]);
+    if (!module.folderId && !this.moduleOrder.includes(module.id)) {
+      this.moduleOrder.push(module.id);
+      this.markOrderDirty();
+    }
     await this.flush();
   }
 
@@ -144,6 +447,7 @@ class ModuleStore
     const index = this.modules.findIndex((current) => current.id === id);
     if (index < 0) throw new Error(`Module not found: ${id}`);
     this.modules[index] = module;
+    this.syncSanitizedRootOrder();
     this.markModulesDirty();
     await this.flush();
   }
@@ -153,8 +457,10 @@ class ModuleStore
     this.enabledModules = this.enabledModules.filter(
       (moduleId) => moduleId !== id,
     );
+    this.moduleOrder = this.moduleOrder.filter((k) => k !== id);
     this.markModulesDirty();
     this.dirtyEnabled = true;
+    this.markOrderDirty();
     await this.flush();
   }
 
@@ -186,7 +492,9 @@ class ModuleStore
       color,
     };
     this.moduleFolders.push(folder);
+    this.moduleOrder.push(`folder:${folder.id}`);
     this.markFoldersDirty();
+    this.markOrderDirty();
     await this.flush();
     return folder;
   }
@@ -203,11 +511,24 @@ class ModuleStore
     this.moduleFolders = this.moduleFolders.filter(
       (folder) => folder.id !== id,
     );
+    const folderKey = `folder:${id}`;
+    const folderIdx = this.moduleOrder.indexOf(folderKey);
+    const unparentedIds: string[] = [];
     for (const module of this.modules) {
-      if (module.folderId === id) module.folderId = undefined;
+      if (module.folderId === id) {
+        module.folderId = undefined;
+        unparentedIds.push(module.id);
+      }
+    }
+    if (folderIdx >= 0) {
+      this.moduleOrder.splice(folderIdx, 1, ...unparentedIds);
+    } else {
+      this.moduleOrder = this.moduleOrder.filter((k) => k !== folderKey);
+      this.moduleOrder.push(...unparentedIds);
     }
     this.markModulesDirty();
     this.dirtyFolders = true;
+    this.markOrderDirty();
     await this.flush();
   }
 
@@ -215,14 +536,7 @@ class ModuleStore
     moduleId: string,
     folderId: string | undefined,
   ): Promise<void> {
-    const module = this.getById(moduleId);
-    if (!module) throw new Error(`Module not found: ${moduleId}`);
-    if (folderId !== undefined && !this.getFolderById(folderId)) {
-      throw new Error(`Module folder not found: ${folderId}`);
-    }
-    module.folderId = folderId;
-    this.markModulesDirty();
-    await this.flush();
+    await this.moveModule(moduleId, folderId);
   }
 
   async flush(): Promise<void> {
@@ -275,6 +589,15 @@ class ModuleStore
         value: $state.snapshot(this.moduleFolders),
       });
     }
+    if (
+      this.dirtyOrder ||
+      fingerprintOf(this.moduleOrder) !== this.committedOrderFingerprint
+    ) {
+      commit.root.upserts.push({
+        key: "moduleOrder",
+        value: $state.snapshot(this.moduleOrder),
+      });
+    }
     const operation = this.queue.enqueue(() =>
       commitSqlChanges(storage, commit),
     );
@@ -283,6 +606,7 @@ class ModuleStore
     this.committedModulesFingerprint = fingerprintOf(this.modules);
     this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
+    this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
     this.clearDirty();
   }
 
@@ -291,6 +615,7 @@ class ModuleStore
       this.dirtyModules ||
       this.dirtyEnabled ||
       this.dirtyFolders ||
+      this.dirtyOrder ||
       this.hasPendingContentChange()
     );
   }
@@ -300,7 +625,8 @@ class ModuleStore
     return (
       fingerprintOf(this.modules) !== this.committedModulesFingerprint ||
       fingerprintOf(this.enabledModules) !== this.committedEnabledFingerprint ||
-      fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint
+      fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint ||
+      fingerprintOf(this.moduleOrder) !== this.committedOrderFingerprint
     );
   }
 
@@ -314,10 +640,16 @@ class ModuleStore
     this.scheduleCommit();
   }
 
+  private markOrderDirty(): void {
+    this.dirtyOrder = true;
+    this.scheduleCommit();
+  }
+
   private clearDirty(): void {
     this.dirtyModules = false;
     this.dirtyEnabled = false;
     this.dirtyFolders = false;
+    this.dirtyOrder = false;
   }
 
   private scheduleCommit(): void {
@@ -336,11 +668,13 @@ class ModuleStore
     this.modules = [];
     this.enabledModules = [];
     this.moduleFolders = [];
+    this.moduleOrder = [];
     this.loaded = false;
     this.committedModules = [];
     this.committedModulesFingerprint = "";
     this.committedEnabledFingerprint = "";
     this.committedFoldersFingerprint = "";
+    this.committedOrderFingerprint = "";
     this.clearDirty();
     this.queue.reset();
   }

@@ -206,6 +206,8 @@ export const languageKorean = {
       "이 옵션은 요청이 실패할 때 요청을 다시 시도할 횟수를 설정하는 데 사용됩니다.",
     lowSpecMode:
       "구형 기기에서 로딩 이후 발생하는 멈춤을 줄입니다. 채팅 런타임 준비가 끝난 뒤 앱을 표시하고, 제한된 크기의 캐릭터 썸네일을 디코딩하며, 더 적은 채팅 메시지를 렌더링하고, 비활성 메시지를 유휴 시간에 나누어 정리합니다. 설정을 변경한 뒤 Risuai를 다시 시작하세요.",
+    preloadRecentSessionThumbnails:
+      "Android 전용입니다. 사이드바가 닫혀 있어도 최근 세션 목록의 썸네일을 모두 미리 불러옵니다. 첫 사이드바 열기는 더 부드러워질 수 있지만 시작 시 메모리 사용량이 늘어납니다. 앱 실행 직후 종료되는 저메모리 기기에서는 끄는 것을 권장합니다.",
     chatLoadInitialPages:
       "채팅 화면을 열 때 처음 렌더링할 최근 채팅 메시지 개수입니다. 값이 높을수록 더 많은 기록을 바로 볼 수 있지만 긴 채팅을 열 때 무거워질 수 있습니다.",
     assetCacheEntries:
@@ -1427,14 +1429,7 @@ export const languageKorean = {
   loreBookDepth: "로어북 검색 깊이",
   loreBookToken: "로어북 최대 토큰",
   lowSpecMode: "저사양 모드",
-  waitingMinigame: "대기 중 미니게임",
-  dinoPressStart: "탭하거나 스페이스를 눌러 시작",
-  dinoWaitingDescription: "Chrome Dino — AI 응답을 기다리는 동안 즐겨보세요",
-  dinoResponseArrived: "AI 응답이 도착했습니다!",
-  dinoScore: "점수",
-  dinoGameOver: "게임 오버",
-  dinoNewHighScore: "새 하이스코어!",
-  dinoTapToRestart: "탭하여 재시작",
+  preloadRecentSessionThumbnails: "최근 세션 썸네일 사전 로딩",
   assetCacheEntries: "에셋 캐시 개수",
   assetCacheSizeMB: "에셋 캐시 용량 (MB)",
   thumbnailCacheEntries: "썸네일 캐시 개수",
@@ -1877,6 +1872,7 @@ export const languageKorean = {
   removeFolderConfirm:
     "정말로 이 폴더를 삭제하시겠습니까? 폴더 안의 모듈은 루트로 이동합니다.",
   moveToFolder: "폴더로 이동",
+  removeFromFolder: "폴더에서 꺼내기",
   noFolder: "폴더 없음",
   ungrouped: "폴더 미지정",
   basicInfo: "기본 정보",

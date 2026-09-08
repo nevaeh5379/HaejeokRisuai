@@ -261,6 +261,8 @@ export const languageEnglish = {
       "This option is used to set the number of request retries when request fails.",
     lowSpecMode:
       "Reduces post-loading stalls on older devices by finishing chat runtime setup before showing the app, decoding bounded character thumbnails, rendering fewer chat messages, and releasing inactive messages in small idle batches. Restart Risuai after changing this setting.",
+    preloadRecentSessionThumbnails:
+      "Android only. Eagerly loads all thumbnails in the recent-sessions list even while the sidebar is hidden. This can make the first sidebar open smoother, but increases startup memory pressure on low-memory devices. Leave it off if the app closes shortly after launch.",
     chatLoadInitialPages:
       "Number of recent chat messages to render when a chat screen opens. Higher values show more history immediately but can make long chats heavier to open.",
     assetCacheEntries:
@@ -1519,6 +1521,7 @@ export const languageEnglish = {
   dinoGameOver: "Game Over",
   dinoNewHighScore: "New high score!",
   dinoTapToRestart: "Tap to restart",
+  preloadRecentSessionThumbnails: "Preload Recent Session Thumbnails",
   assetCacheEntries: "Asset Cache Count",
   assetCacheSizeMB: "Asset Cache Size (MB)",
   thumbnailCacheEntries: "Thumbnail Cache Count",
@@ -1964,6 +1967,7 @@ export const languageEnglish = {
   removeFolderConfirm:
     "Do you really want to remove this folder? Modules inside will be moved to the root.",
   moveToFolder: "Move to Folder",
+  removeFromFolder: "Remove from Folder",
   noFolder: "No Folder",
   ungrouped: "Ungrouped",
   basicInfo: "Basic Info",

@@ -1,9 +1,21 @@
 import { setUsingSw } from "../globalApi.svelte";
-import { isCapacitor } from "../platform";
+import { isCapacitor, isTauri } from "../platform";
 import { LoadingStatusState } from "../stores.svelte";
-import { sleep } from "../util";
+import { waitForCompatibleServiceWorkerController } from "./serviceWorkerProtocol";
 
 let swMessageHandlerInstalled = false;
+
+async function unregisterTauriServiceWorker(): Promise<void> {
+  if (!navigator.serviceWorker) return;
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    await registration?.unregister();
+  } catch {
+    // Tauri does not use the web service worker. Cleanup failure must never
+    // block native startup or trigger the web reload recovery path.
+  }
+}
 
 function installServiceWorkerMessageHandler(): void {
   if (swMessageHandlerInstalled || !navigator.serviceWorker) return;
@@ -28,18 +40,18 @@ function installServiceWorkerMessageHandler(): void {
 /**
  * Registers the service worker and initializes it.
  */
-async function registerSw() {
+async function registerSw(): Promise<boolean> {
   const reg = await navigator.serviceWorker.register("/sw.js", {
     scope: "/",
   });
   try {
     await reg.update();
   } catch {}
-  await sleep(100);
-  const da = await fetch("/sw/init");
-  if (!(da.status >= 200 && da.status < 300)) {
+  if (!(await waitForCompatibleServiceWorkerController())) {
     location.reload();
+    return false;
   }
+  return true;
 }
 
 /**
@@ -49,10 +61,16 @@ async function registerSw() {
  */
 export function startServiceWorker(): Promise<void> {
   LoadingStatusState.text = "Checking Service Worker...";
+
+  if (isTauri) {
+    setUsingSw(false);
+    return unregisterTauriServiceWorker();
+  }
+
   if (!isCapacitor && navigator.serviceWorker) {
     installServiceWorkerMessageHandler();
     return registerSw()
-      .then(() => setUsingSw(true))
+      .then((available) => setUsingSw(available))
       .catch(() => setUsingSw(false));
   }
   return Promise.resolve(setUsingSw(false));

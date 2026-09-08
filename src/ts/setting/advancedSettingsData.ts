@@ -167,6 +167,15 @@ export const advancedSettingsItems: SettingItem[] = [
     helpKey: "lowSpecMode",
     classes: "mt-4",
   },
+  {
+    id: "adv.preloadRecentSessionThumbnails",
+    type: "check",
+    labelKey: "preloadRecentSessionThumbnails",
+    fallbackLabel: "Preload recent session thumbnails",
+    bindKey: "preloadRecentSessionThumbnails",
+    helpKey: "preloadRecentSessionThumbnails",
+    condition: () => isCapacitor,
+  },
   ...IMAGE_CACHE_LIMIT_KEYS.map((key): SettingItem => ({
     id: `adv.${key}`,
     type: "number",
