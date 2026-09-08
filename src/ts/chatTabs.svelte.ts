@@ -141,6 +141,19 @@ export class ChatTabsStore {
     return tab;
   }
 
+  openTargetDuplicate(
+    characterId: string,
+    chatId: string,
+    groupId = this.focusedGroupId,
+  ): ChatTab {
+    const group = this.getGroup(groupId) ?? this.focusedGroup;
+    const tab = this.createTab(characterId, chatId, group.id);
+    this.tabs.push(tab);
+    group.activeTabId = tab.id;
+    this.focusedGroupId = group.id;
+    return tab;
+  }
+
   openTarget(
     characterId: string,
     chatId: string,

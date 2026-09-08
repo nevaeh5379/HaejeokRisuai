@@ -91,3 +91,31 @@ describe("ChatTabsStore.detach", () => {
     expect(store.groups[0].activeTabId).toBeNull();
   });
 });
+
+
+describe("ChatTabsStore.openTargetDuplicate", () => {
+  it("creates a distinct tab even when the same chat is already open", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    const first = store.openTarget("character-a", "chat-a", groupId);
+    const duplicate = store.openTargetDuplicate("character-a", "chat-a", groupId);
+
+    expect(duplicate.id).not.toBe(first.id);
+    expect(store.tabsForGroup(groupId)).toHaveLength(2);
+    expect(store.tabsForGroup(groupId).map((item) => [item.characterId, item.chatId])).toEqual([
+      ["character-a", "chat-a"],
+      ["character-a", "chat-a"],
+    ]);
+    expect(store.getGroup(groupId)?.activeTabId).toBe(duplicate.id);
+  });
+
+  it("does not change normal openTarget de-duplication", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    const first = store.openTarget("character-a", "chat-a", groupId);
+    const reopened = store.openTarget("character-a", "chat-a", groupId);
+
+    expect(reopened.id).toBe(first.id);
+    expect(store.tabsForGroup(groupId)).toHaveLength(1);
+  });
+});

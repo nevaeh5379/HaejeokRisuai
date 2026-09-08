@@ -209,11 +209,7 @@ export async function acceptDetachedTauriChatDrop(
 
   const { chatTabsStore, navigateToChatTab } = await import("./chatTabs.svelte");
   const previousActiveId = chatTabsStore.activeTabId;
-  const existing = chatTabsStore.tabs.find(
-    (tab) =>
-      tab.characterId === payload.characterId && tab.chatId === payload.chatId,
-  );
-  const tab = chatTabsStore.openTarget(
+  const tab = chatTabsStore.openTargetDuplicate(
     payload.characterId,
     payload.chatId,
     groupId ?? chatTabsStore.focusedGroupId,
@@ -231,7 +227,7 @@ export async function acceptDetachedTauriChatDrop(
   }
 
   if (!accepted) {
-    if (!existing) chatTabsStore.detach(tab.id);
+    chatTabsStore.detach(tab.id);
     if (previousActiveId && chatTabsStore.tabs.some((item) => item.id === previousActiveId)) {
       await navigateToChatTab(previousActiveId);
     }
