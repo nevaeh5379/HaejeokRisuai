@@ -236,21 +236,24 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-anchor {
 
 html.tauri-macos-vibrancy .rs-sidebar-menu-popover {
   left: 50%;
-  width: 4rem !important;
-  min-width: 4rem !important;
+  width: 3.4rem !important;
+  min-width: 3.4rem !important;
   max-height: calc(100vh - 7rem);
-  padding: 0.4rem !important;
-  gap: 0.35rem;
-  border: 0 !important;
-  border-radius: 0.85rem !important;
+  padding: 0.3rem !important;
+  gap: 0.16rem;
+  border: 1px solid
+    color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent) !important;
+  border-radius: 0.9rem !important;
   background: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 72%,
+    var(--risu-theme-darkbg) 46%,
     transparent
   ) !important;
-  box-shadow: 0 10px 28px rgb(0 0 0 / 0.3);
-  backdrop-filter: blur(18px) saturate(135%);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  box-shadow:
+    0 10px 28px rgb(0 0 0 / 0.22),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
   overflow-x: hidden;
   overflow-y: auto;
   transform: translateX(-50%);
@@ -261,30 +264,45 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-popover > .rs-sidebar-menu-gap {
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button {
-  width: 2.65rem !important;
-  min-width: 2.65rem !important;
-  height: 2.65rem !important;
-  min-height: 2.65rem !important;
-  border-radius: 0.7rem !important;
-  background-color: color-mix(
-    in srgb,
-    var(--risu-theme-textcolor2) 72%,
-    transparent
-  ) !important;
+  width: 2.45rem !important;
+  min-width: 2.45rem !important;
+  height: 2.45rem !important;
+  min-height: 2.45rem !important;
+  border: 0 !important;
+  border-radius: 0.65rem !important;
+  background: transparent !important;
   box-shadow: none !important;
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button:hover {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-selected) 82%,
+    var(--risu-theme-textcolor) 11%,
     transparent
   ) !important;
 }
 
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button:active {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 17%,
+    transparent
+  ) !important;
+  transform: scale(0.96);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--risu-theme-textcolor) 34%, transparent);
+  outline-offset: -2px;
+}
+
 html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button svg {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-menu-button {
