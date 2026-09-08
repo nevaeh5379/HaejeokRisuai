@@ -3,6 +3,7 @@
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
+    import { parseTauriChatWindowTarget } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
@@ -15,6 +16,7 @@
 
 
   
+    const detachedChatWindow = isTauri && parseTauriChatWindowTarget(location.search) !== null
     let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -323,6 +325,8 @@
                 <span class="text-sm mt-1.5 text-center text-textcolor2">{LoadingStatusState.text}</span>
             </div>
         {/if}
+    {:else if detachedChatWindow}
+        <LazyComponent loader={chatScreenLoader} props={{ detached: true }} />
     {:else if $CustomGUISettingMenuStore}
         <LazyComponent loader={customGUISettingMenuLoader} />
     {:else if !didFirstSetup}

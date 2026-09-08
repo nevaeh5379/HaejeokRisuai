@@ -12,6 +12,12 @@
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { chatTabsStore } from 'src/ts/chatTabs.svelte';
+
+    interface Props {
+        detached?: boolean;
+    }
+
+    let { detached = false }: Props = $props();
     let openChatList = $state(false)
     let openModuleList = $state(false)
 
@@ -62,7 +68,20 @@
 
 <svelte:window onpointermove={moveSplitDrag} onpointerup={stopSplitDrag} onpointercancel={stopSplitDrag} />
 
-{#if settingsStore.state.theme === 'waifu'}
+{#if detached}
+    <div class="grow h-full min-w-0 relative justify-center flex">
+        <BackgroundDom />
+        <div style={bgImg} class="h-full w-full min-w-0">
+            <DefaultChatScreen
+                groupId={chatTabsStore.focusedGroupId}
+                allowSplit={false}
+                showTabBar={false}
+                bind:openChatList
+                bind:openModuleList
+            />
+        </div>
+    </div>
+{:else if settingsStore.state.theme === 'waifu'}
     <div class="grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
         <SideBarArrow />
         <BackgroundDom />

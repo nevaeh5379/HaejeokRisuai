@@ -64,6 +64,7 @@
         groupId?: string;
         reserveSidebarSpace?: boolean;
         allowSplit?: boolean;
+        showTabBar?: boolean;
     }
 
     let messageInput:string = $state('')
@@ -90,6 +91,7 @@
         groupId,
         reserveSidebarSpace = false,
         allowSplit = false,
+        showTabBar = true,
     }: Props = $props();
     let paneGroupId = $derived(groupId ?? chatTabsStore.focusedGroupId)
     let paneTab = $derived(chatTabsStore.activeTabForGroup(paneGroupId))
@@ -859,7 +861,9 @@
                 }
             }}
         >
-            <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
+            {#if showTabBar}
+                <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
+            {/if}
             <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
