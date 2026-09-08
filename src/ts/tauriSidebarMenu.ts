@@ -1,4 +1,5 @@
 import type { MenuDef } from "./stores.svelte";
+import { version as tauriOsVersion } from "@tauri-apps/plugin-os";
 import { isTauriMacOS } from "./platform";
 
 const SIDEBAR_MENU_KIND_PARAM = "risuWindow";
@@ -11,15 +12,10 @@ const POPUP_STORAGE_PREFIX = "risu:sidebar-menu-popup:";
 export const TAURI_SIDEBAR_MENU_ACTION_EVENT = "risu://sidebar-menu-action";
 
 export type TauriSidebarMenuBuiltinIcon =
-  | "settings"
-  | "home"
-  | "playground"
-  | "search"
-  | "grid";
+  "settings" | "home" | "playground" | "search" | "grid";
 
 export type TauriSidebarMenuAction =
-  | TauriSidebarMenuBuiltinIcon
-  | `plugin:${string}`;
+  TauriSidebarMenuBuiltinIcon | `plugin:${string}`;
 
 export interface TauriSidebarMenuItem {
   action: TauriSidebarMenuAction;
@@ -54,10 +50,12 @@ export interface TauriSidebarMenuPlacementInput {
   gap?: number;
 }
 
-export type TauriSidebarMenuToggleResult =
-  | "opened"
-  | "closed"
-  | "unavailable";
+export type TauriSidebarMenuToggleResult = "opened" | "closed" | "unavailable";
+
+export function supportsTauriLiquidGlassVersion(version: string): boolean {
+  const major = Number.parseInt(version.trim().split(/[._-]/)[0] ?? "", 10);
+  return Number.isFinite(major) && major >= 26;
+}
 
 let activePopup: { label: string; close(): Promise<void> } | null = null;
 
@@ -91,9 +89,19 @@ export function createTauriSidebarMenuItems(
   pluginMenus: Pick<MenuDef, "id" | "name" | "icon" | "iconType">[],
 ): TauriSidebarMenuItem[] {
   return [
-    { action: "settings", name: "Settings", iconType: "builtin", icon: "settings" },
+    {
+      action: "settings",
+      name: "Settings",
+      iconType: "builtin",
+      icon: "settings",
+    },
     { action: "home", name: "Home", iconType: "builtin", icon: "home" },
-    { action: "playground", name: "Playground", iconType: "builtin", icon: "playground" },
+    {
+      action: "playground",
+      name: "Playground",
+      iconType: "builtin",
+      icon: "playground",
+    },
     { action: "search", name: "Search", iconType: "builtin", icon: "search" },
     ...pluginMenus.map((menu) => ({
       action: `plugin:${menu.id}` as const,
@@ -124,7 +132,8 @@ export function calculateTauriSidebarMenuPlacement(
   const workWidth = input.workAreaSize.width / workScale;
   const workHeight = input.workAreaSize.height / workScale;
 
-  const triggerCenterX = innerX + input.triggerRect.left + input.triggerRect.width / 2;
+  const triggerCenterX =
+    innerX + input.triggerRect.left + input.triggerRect.width / 2;
   let desiredX = triggerCenterX - input.popupWidth / 2;
   let desiredY = innerY + input.triggerRect.top - input.popupHeight - gap;
 
@@ -166,7 +175,9 @@ function readThemeColor(name: string, fallback: string): string {
 }
 
 function createPopupLabel(sourceWindowLabel: string): string {
-  const safeSource = sourceWindowLabel.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 32);
+  const safeSource = sourceWindowLabel
+    .replace(/[^a-zA-Z0-9-]/g, "-")
+    .slice(0, 32);
   return `${POPUP_LABEL_PREFIX}${safeSource}-${Date.now().toString(36)}`;
 }
 
@@ -174,10 +185,13 @@ export async function toggleTauriSidebarMenuPopup(
   trigger: HTMLElement,
   pluginMenus: Pick<MenuDef, "id" | "name" | "icon" | "iconType">[],
 ): Promise<TauriSidebarMenuToggleResult> {
-  if (
-    !isTauriMacOS ||
-    !document.documentElement.classList.contains("tauri-macos-liquid-glass")
-  ) {
+  if (!isTauriMacOS) return "unavailable";
+
+  const macosVersion = tauriOsVersion();
+  if (!supportsTauriLiquidGlassVersion(macosVersion)) {
+    console.info(
+      `[TauriSidebarMenu] Native Liquid Glass popup requires macOS 26+; current version is ${macosVersion}`,
+    );
     return "unavailable";
   }
 
@@ -212,11 +226,20 @@ export async function toggleTauriSidebarMenuPopup(
       triggerCenterPhysical.x,
       triggerCenterPhysical.y,
     );
-    if (!monitor) return "unavailable";
+    if (!monitor) {
+      console.warn(
+        "[TauriSidebarMenu] No monitor found for popup trigger",
+        triggerCenterPhysical,
+      );
+      return "unavailable";
+    }
 
     const items = createTauriSidebarMenuItems(pluginMenus);
     const popupWidth = 62;
-    const popupHeight = Math.min(420, 20 + items.length * 40 + Math.max(0, items.length - 1) * 5);
+    const popupHeight = Math.min(
+      420,
+      20 + items.length * 40 + Math.max(0, items.length - 1) * 5,
+    );
     const placement = calculateTauriSidebarMenuPlacement({
       sourceInnerPosition: innerPosition,
       sourceScaleFactor,
@@ -236,7 +259,10 @@ export async function toggleTauriSidebarMenuPopup(
         darkBg: readThemeColor("--risu-theme-darkbg", "#21222c"),
       },
     };
-    localStorage.setItem(popupStorageKey(popupWindowLabel), JSON.stringify(payload));
+    localStorage.setItem(
+      popupStorageKey(popupWindowLabel),
+      JSON.stringify(payload),
+    );
 
     const popup = new WebviewWindow(popupWindowLabel, {
       url: buildTauriSidebarMenuPopupUrl(
@@ -263,16 +289,46 @@ export async function toggleTauriSidebarMenuPopup(
       visible: true,
       parent: source,
     });
-    activePopup = popup;
+    const creationResult = await new Promise<TauriSidebarMenuToggleResult>(
+      (resolve) => {
+        let settled = false;
+        const finish = (result: TauriSidebarMenuToggleResult) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          resolve(result);
+        };
+        const timeout = setTimeout(() => {
+          console.warn(
+            `[TauriSidebarMenu] Timed out creating native popup ${popupWindowLabel}`,
+          );
+          localStorage.removeItem(popupStorageKey(popupWindowLabel));
+          void popup.close().catch(() => undefined);
+          finish("unavailable");
+        }, 5000);
 
-    void popup.once("tauri://destroyed", () => {
-      if (activePopup?.label === popupWindowLabel) activePopup = null;
-    });
-    void popup.once("tauri://error", () => {
-      localStorage.removeItem(popupStorageKey(popupWindowLabel));
-      if (activePopup?.label === popupWindowLabel) activePopup = null;
-    });
-    return "opened";
+        void popup.once("tauri://created", () => {
+          console.info(
+            `[TauriSidebarMenu] Created native popup ${popupWindowLabel} on macOS ${macosVersion}`,
+          );
+          activePopup = popup;
+          finish("opened");
+        });
+        void popup.once("tauri://error", (event) => {
+          console.warn(
+            `[TauriSidebarMenu] Native popup creation failed for ${popupWindowLabel}`,
+            event.payload,
+          );
+          localStorage.removeItem(popupStorageKey(popupWindowLabel));
+          if (activePopup?.label === popupWindowLabel) activePopup = null;
+          finish("unavailable");
+        });
+        void popup.once("tauri://destroyed", () => {
+          if (activePopup?.label === popupWindowLabel) activePopup = null;
+        });
+      },
+    );
+    return creationResult;
   } catch (error) {
     console.warn("[TauriSidebarMenu] Failed to open native popup", error);
     return "unavailable";

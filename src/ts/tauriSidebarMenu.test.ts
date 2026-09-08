@@ -4,11 +4,23 @@ import {
   calculateTauriSidebarMenuPlacement,
   createTauriSidebarMenuItems,
   parseTauriSidebarMenuLaunch,
+  supportsTauriLiquidGlassVersion,
 } from "./tauriSidebarMenu";
 
 describe("Tauri sidebar menu popup", () => {
+  it("enables native Liquid Glass popups only on macOS 26 or newer", () => {
+    expect(supportsTauriLiquidGlassVersion("26.6.2")).toBe(true);
+    expect(supportsTauriLiquidGlassVersion("26.0")).toBe(true);
+    expect(supportsTauriLiquidGlassVersion("25.7.1")).toBe(false);
+    expect(supportsTauriLiquidGlassVersion("invalid")).toBe(false);
+  });
+
   it("round-trips popup launch URLs", () => {
-    const url = buildTauriSidebarMenuPopupUrl("main", "sidebar-menu-main-abc", "/");
+    const url = buildTauriSidebarMenuPopupUrl(
+      "main",
+      "sidebar-menu-main-abc",
+      "/",
+    );
     expect(parseTauriSidebarMenuLaunch(url.slice(url.indexOf("?")))).toEqual({
       sourceWindowLabel: "main",
       popupWindowLabel: "sidebar-menu-main-abc",

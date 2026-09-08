@@ -7,7 +7,7 @@ use objc2_app_kit::{NSColor, NSTitlebarSeparatorStyle, NSWindow};
 use tauri::{
     plugin::{Builder, TauriPlugin},
     window::{Effect, EffectState, EffectsBuilder},
-    Runtime, Window,
+    Manager, Runtime, Window,
 };
 use window_vibrancy::{apply_liquid_glass, LiquidGlassOptions, NSGlassEffectViewStyle};
 
@@ -19,6 +19,20 @@ fn supports_vibrancy(label: &str) -> bool {
 
 fn is_sidebar_menu(label: &str) -> bool {
     label.starts_with("sidebar-menu-")
+}
+
+fn sync_liquid_glass_dom_state<R: Runtime>(window: &Window<R>, active: bool) {
+    let Some(webview) = window.app_handle().get_webview_window(window.label()) else {
+        return;
+    };
+    let action = if active { "add" } else { "remove" };
+    let script = format!("document.documentElement?.classList.{action}('{LIQUID_GLASS_CLASS}')");
+    if let Err(error) = webview.eval(script) {
+        eprintln!(
+            "[macOS vibrancy] Failed to sync immediate Liquid Glass DOM state for {}: {error}",
+            window.label()
+        );
+    }
 }
 
 fn configure_native_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
@@ -64,6 +78,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                     if let Ok(mut windows) = ready_windows.lock() {
                         windows.insert(window.label().to_string());
                     }
+                    sync_liquid_glass_dom_state(&window, true);
                     eprintln!(
                         "[macOS vibrancy] Applied Liquid Glass to {}",
                         window.label()
@@ -73,6 +88,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                     if let Ok(mut windows) = ready_windows.lock() {
                         windows.remove(window.label());
                     }
+                    sync_liquid_glass_dom_state(&window, false);
                     eprintln!(
                         "[macOS vibrancy] Liquid Glass unavailable for {}; using fallback vibrancy: {liquid_glass_error}",
                         window.label()
