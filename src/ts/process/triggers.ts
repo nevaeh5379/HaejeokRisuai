@@ -39,6 +39,8 @@ export interface triggerscript {
   subModel?: string;
   /** Runtime provenance attached by getModuleTriggers. */
   sourceModuleId?: string;
+  /** Runtime-only owners that execute this module trigger in isolated Lua sandboxes. */
+  sandboxOwnerModuleIds?: string[];
 }
 
 export type triggerCondition =

@@ -7,6 +7,7 @@ import { beforeAll, expect, test, vi } from "vitest";
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
+const moduleList = vi.hoisted(() => vi.fn(() => []));
 const databaseState = vi.hoisted(() => ({
   value: {
     characters: [
@@ -108,6 +109,7 @@ vi.mock("../stores.svelte", () => ({
 vi.mock("./modules", () => ({
   getModuleLorebooksWithSource: moduleLorebooks,
   getModuleTriggers: moduleTriggers,
+  getModules: moduleList,
 }));
 
 vi.mock("./files/inlays", () => ({
@@ -192,6 +194,83 @@ test("module button auxiliary calls carry their execution module", async () => {
     );
   } finally {
     moduleTriggers.mockReset();
+  }
+});
+
+test("isolates Lua globals between backend-owner sandboxes", async () => {
+  const code = `
+    counter = counter or 0
+    function onStart()
+      counter = counter + 1
+      return counter
+    end
+  `;
+  const runFor = (owner: string) =>
+    runScripted(code, {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxOwnerModuleId: owner,
+    });
+
+  expect((await runFor("owner-a")).res).toBe(1);
+  expect((await runFor("owner-a")).res).toBe(2);
+  expect((await runFor("owner-b")).res).toBe(1);
+});
+
+test("scopes Lua module lorebooks to the backend-owner sandbox", async () => {
+  moduleLorebooks.mockClear();
+  moduleLorebooks.mockReturnValue([]);
+  const char = { type: "character", globalLore: [] } as never;
+  const chat = { message: [], localLore: [] } as never;
+  await runScripted(
+    `function onStart(id) return #getLoreBooks(id, "missing") end`,
+    {
+      char,
+      chat,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxOwnerModuleId: "owner-a",
+    },
+  );
+  expect(moduleLorebooks).toHaveBeenLastCalledWith(
+    char,
+    ["lightboard", "owner-a"],
+    chat,
+  );
+});
+
+test("uses the sandbox owner's auxiliary model without request-rule rerouting", async () => {
+  requestChatDataMock.mockClear();
+  moduleList.mockReturnValue([
+    { id: "owner-a", subModel: "owner-model" },
+  ] as never);
+  try {
+    await runScripted(
+      `onStart = async(function(id)
+        return axLLM(id, {{role = "user", content = "sandbox request"}})
+      end)`,
+      {
+        char: { type: "character" } as never,
+        chat: { message: [] } as never,
+        mode: "start",
+        lowLevelAccess: true,
+        sourceModuleId: "lightboard",
+        subModel: "backend-model",
+        sandboxOwnerModuleId: "owner-a",
+      },
+    );
+    expect(requestChatDataMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        staticModel: "owner-model",
+        sourceModuleId: "lightboard",
+        moduleSandboxOwnerId: "owner-a",
+      }),
+      "otherAx",
+    );
+  } finally {
+    moduleList.mockReset();
   }
 });
 

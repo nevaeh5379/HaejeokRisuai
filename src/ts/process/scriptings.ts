@@ -41,7 +41,11 @@ import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { StreamResponseChunk } from "./request/requestContracts";
 import { v4 } from "uuid";
-import { getModuleLorebooksWithSource, getModuleTriggers } from "./modules";
+import {
+  getModuleLorebooksWithSource,
+  getModuleTriggers,
+  getModules,
+} from "./modules";
 import { Mutex } from "../mutex";
 import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
@@ -70,6 +74,7 @@ interface BasicScriptingEngineState {
   stopSending?: boolean;
   subModel?: string;
   sourceModuleId?: string;
+  sandboxOwnerModuleId?: string;
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -104,6 +109,7 @@ export async function runScripted(
     type?: "lua" | "py";
     subModel?: string;
     sourceModuleId?: string;
+    sandboxOwnerModuleId?: string;
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
@@ -123,7 +129,12 @@ export async function runScripted(
   if (type === "lua") {
     await ensureLuaFactory();
   }
-  const ScriptingEngineState = acquireScriptingEngineState(mode, type);
+  const ScriptingEngineState = acquireScriptingEngineState(
+    mode,
+    type,
+    arg.sourceModuleId,
+    arg.sandboxOwnerModuleId,
+  );
   const executionToken = Symbol();
   let invocationAccessKey: string | undefined;
 
@@ -142,6 +153,7 @@ export async function runScripted(
     ScriptingEngineState.stopSending = false;
     ScriptingEngineState.subModel = arg.subModel;
     ScriptingEngineState.sourceModuleId = arg.sourceModuleId;
+    ScriptingEngineState.sandboxOwnerModuleId = arg.sandboxOwnerModuleId;
     const getScriptingCharacter = () => {
       const scriptingChar = ScriptingEngineState.char;
       if (scriptingChar && scriptingChar.type !== "simple")
@@ -904,7 +916,12 @@ export async function runScripted(
           })),
           ...getModuleLorebooksWithSource(
             selectedChar,
-            undefined,
+            ScriptingEngineState.sandboxOwnerModuleId
+              ? [
+                  ScriptingEngineState.sourceModuleId,
+                  ScriptingEngineState.sandboxOwnerModuleId,
+                ].filter((id): id is string => Boolean(id))
+              : undefined,
             ScriptingEngineState.chat,
           ),
         ];
@@ -1107,6 +1124,13 @@ export async function runScripted(
           const options = parseLuaOptions(optionsStr) as {
             streaming?: boolean;
           };
+          const sandboxOwner = ScriptingEngineState.sandboxOwnerModuleId
+            ? getModules(
+                getScriptingRequestCharacter(),
+                [ScriptingEngineState.sandboxOwnerModuleId],
+                ScriptingEngineState.chat,
+              )[0]
+            : undefined;
           const result = await requestChatData(
             {
               formated: promptbody,
@@ -1116,8 +1140,10 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
-              staticModel: ScriptingEngineState.subModel,
+              staticModel:
+                sandboxOwner?.subModel ?? ScriptingEngineState.subModel,
               sourceModuleId: ScriptingEngineState.sourceModuleId,
+              moduleSandboxOwnerId: sandboxOwner?.id,
             },
             "otherAx",
           );
@@ -1446,6 +1472,7 @@ function releaseScriptingExecutionContext(engineState: ScriptingEngineState) {
   engineState.getVar = undefined;
   engineState.messagesMutated = false;
   engineState.stopSending = false;
+  engineState.sandboxOwnerModuleId = undefined;
 }
 
 function disposeScriptingEngineState(engineState: ScriptingEngineState) {
@@ -1480,8 +1507,13 @@ function trimScriptingEngines() {
 function acquireScriptingEngineState(
   mode: string,
   type: "lua" | "py",
+  sourceModuleId?: string,
+  sandboxOwnerModuleId?: string,
 ): ScriptingEngineState {
-  const key = `${type}:${mode}`;
+  const sandboxKey = sandboxOwnerModuleId
+    ? `${mode}:module:${sourceModuleId ?? "unknown"}:${sandboxOwnerModuleId}`
+    : mode;
+  const key = `${type}:${sandboxKey}`;
   let engineState = ScriptingEngines.get(key);
   if (engineState) {
     ScriptingEngines.delete(key);
@@ -1714,18 +1746,24 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
-        const runResult = await runScripted(trigger.effect[0].code, {
-          char: char,
-          chat: targetChat,
-          chatTarget,
-          lowLevelAccess: false,
-          mode: mode,
-          data,
-          meta,
-          subModel: trigger.subModel,
-          sourceModuleId: trigger.sourceModuleId,
-        });
-        data = runResult.res ?? data;
+        const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
+          ? trigger.sandboxOwnerModuleIds
+          : [undefined];
+        for (const sandboxOwnerModuleId of sandboxOwners) {
+          const runResult = await runScripted(trigger.effect[0].code, {
+            char: char,
+            chat: targetChat,
+            chatTarget,
+            lowLevelAccess: false,
+            mode: mode,
+            data,
+            meta,
+            subModel: trigger.subModel,
+            sourceModuleId: trigger.sourceModuleId,
+            sandboxOwnerModuleId,
+          });
+          data = runResult.res ?? data;
+        }
       }
     }
 
@@ -1777,16 +1815,22 @@ export async function runLuaButtonTrigger(
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
-        runResult = await runScripted(trigger.effect[0].code, {
-          char: char,
-          chat: targetChat,
-          chatTarget,
-          lowLevelAccess: trigger.lowLevelAccess,
-          mode: "onButtonClick",
-          data: data,
-          subModel: trigger.subModel,
-          sourceModuleId: trigger.sourceModuleId,
-        });
+        const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
+          ? trigger.sandboxOwnerModuleIds
+          : [undefined];
+        for (const sandboxOwnerModuleId of sandboxOwners) {
+          runResult = await runScripted(trigger.effect[0].code, {
+            char: char,
+            chat: targetChat,
+            chatTarget,
+            lowLevelAccess: trigger.lowLevelAccess,
+            mode: "onButtonClick",
+            data: data,
+            subModel: trigger.subModel,
+            sourceModuleId: trigger.sourceModuleId,
+            sandboxOwnerModuleId,
+          });
+        }
       }
     }
   } catch (error) {

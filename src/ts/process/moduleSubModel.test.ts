@@ -149,6 +149,50 @@ describe("Module subModel feature", () => {
       expect(triggers[1].lowLevelAccess).toBe(false);
     });
 
+    it("creates isolated sandbox owners for modules linked to a shared Lua backend", () => {
+      settingsStore.state.enableModuleSubModel = true;
+      const backend: RisuModule = {
+        id: "lightboard",
+        name: "Lightboard",
+        description: "",
+        trigger: [
+          {
+            comment: "Shared backend",
+            type: "manual",
+            conditions: [],
+            effect: [{ type: "triggerlua", code: "function onStart() end" }],
+          },
+        ],
+      };
+      const ownerA: RisuModule = {
+        id: "owner-a",
+        name: "Owner A",
+        description: "",
+        subModel: "model-a",
+        subModelRequestRules: [
+          { enabled: true, phrases: ["a"], sourceModuleId: "lightboard" },
+        ],
+      };
+      const ownerB: RisuModule = {
+        id: "owner-b",
+        name: "Owner B",
+        description: "",
+        subModel: "model-b",
+        subModelRequestRules: [
+          { enabled: true, phrases: ["b"], sourceModuleId: "lightboard" },
+        ],
+      };
+      moduleStore.modules = [backend, ownerA, ownerB];
+
+      const [trigger] = getModuleTriggers(undefined, [
+        "lightboard",
+        "owner-a",
+        "owner-b",
+      ]);
+      expect(trigger.sourceModuleId).toBe("lightboard");
+      expect(trigger.sandboxOwnerModuleIds).toEqual(["owner-a", "owner-b"]);
+    });
+
     it("does not attach subModel when enableModuleSubModel is false", () => {
       settingsStore.state.enableModuleSubModel = false;
 
