@@ -828,19 +828,20 @@ html:not(.tauri-macos-vibrancy) .n-scroll:focus::-webkit-scrollbar-thumb {
   opacity: 1;
 }
 
-html.tauri-macos-vibrancy *,
-html.tauri-macos-vibrancy {
-  scrollbar-color: transparent transparent;
+html.tauri-macos-vibrancy .scrollbar-thin,
+html.tauri-macos-vibrancy .rs-native-sidebar-menu-popup {
+  /* `scrollbar-width: thin` is wider than our WebKit overlay treatment on
+   * current WKWebView builds, so let the pseudo-elements own the geometry. */
+  scrollbar-width: auto !important;
 }
 
-/* macOS Tauri uses a compact overlay-style scrollbar. Keep a small hit area,
- * but paint only a 2px thumb and reveal it while the scroller is being
- * interacted with. This also avoids the permanently-dark native thumb on
- * dark Risu surfaces. */
+/* Compact macOS overlay-style scrollbars. Keep a 5px mouse hit area but paint
+ * only a ~1px thumb. It stays invisible until the pointer is over the actual
+ * scroller, avoiding a permanent rail on dark surfaces. */
 html.tauri-macos-vibrancy::-webkit-scrollbar,
 html.tauri-macos-vibrancy *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   -webkit-appearance: none;
 }
 
@@ -851,57 +852,35 @@ html.tauri-macos-vibrancy *::-webkit-scrollbar-track {
 
 html.tauri-macos-vibrancy::-webkit-scrollbar-thumb,
 html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb {
-  min-height: 24px;
+  min-height: 18px;
   border: 2px solid transparent;
   border-radius: 999px;
   background: transparent;
   background-clip: content-box;
 }
 
-html.tauri-macos-vibrancy *:hover {
-  scrollbar-color: color-mix(
-      in srgb,
-      var(--risu-theme-textcolor) 34%,
-      transparent
-    )
-    transparent;
-}
-
-html.tauri-macos-vibrancy *:focus-within {
-  scrollbar-color: color-mix(
-      in srgb,
-      var(--risu-theme-textcolor) 34%,
-      transparent
-    )
-    transparent;
-}
-
-html.tauri-macos-vibrancy *:hover::-webkit-scrollbar-thumb,
-html.tauri-macos-vibrancy *:focus-within::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--risu-theme-textcolor) 34%, transparent);
+html.tauri-macos-vibrancy:hover::-webkit-scrollbar-thumb,
+html.tauri-macos-vibrancy *:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 32%, transparent);
   background-clip: content-box;
 }
 
+html.tauri-macos-vibrancy::-webkit-scrollbar-thumb:hover,
 html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb:hover,
+html.tauri-macos-vibrancy::-webkit-scrollbar-thumb:active,
 html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb:active {
   background: color-mix(in srgb, var(--risu-theme-textcolor) 52%, transparent);
   background-clip: content-box;
 }
 
-/* The avatar rail is intentionally even quieter than regular content panes. */
-html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb {
-  min-height: 24px;
-}
-
-html.tauri-macos-vibrancy .rs-sidebar-scroll:hover::-webkit-scrollbar-thumb,
-html.tauri-macos-vibrancy .rs-sidebar-scroll:focus-within::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--risu-theme-textcolor) 30%, transparent);
+html.tauri-macos-vibrancy .rs-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 28%, transparent);
   background-clip: content-box;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:hover,
 html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:active {
-  background: color-mix(in srgb, var(--risu-theme-textcolor) 48%, transparent);
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 46%, transparent);
   background-clip: content-box;
 }
 

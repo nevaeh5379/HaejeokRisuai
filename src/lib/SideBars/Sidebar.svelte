@@ -49,6 +49,7 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    import { isTauriMacOS } from "src/ts/platform";
     import {
       closeTauriSidebarMenuPopup,
       listenTauriSidebarMenuActions,
@@ -529,6 +530,13 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
+{#if isTauriMacOS}
+  <div
+    class="absolute top-0 left-0 right-1 h-7 z-20"
+    data-tauri-drag-region="true"
+    aria-hidden="true"
+  ></div>
+{/if}
 <button
   class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
   class:text-textcolor2={!(
@@ -603,6 +611,21 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
+  {#if isTauriMacOS}
+    {#if !settingsStore.state.hamburgerButtonBottom}
+      <div
+        class="absolute top-0 left-0 right-1 h-7 z-20"
+        data-tauri-drag-region="true"
+        aria-hidden="true"
+      ></div>
+    {:else}
+      <div
+        class="absolute inset-y-0 left-0 w-1.5 z-20"
+        data-tauri-drag-region="true"
+        aria-hidden="true"
+      ></div>
+    {/if}
+  {/if}
   {#if !settingsStore.state.hamburgerButtonBottom}
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
@@ -1034,7 +1057,7 @@
 </div>
 {/if}
 <div
-  class="setting-area rs-sidebar-panel h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
+  class="setting-area rs-sidebar-panel relative h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
   class:overflow-hidden={btwRuntime.open}
   class:overflow-y-auto={!btwRuntime.open}
   class:py-0={btwRuntime.open}
@@ -1063,6 +1086,13 @@
     }
   }}
 >
+  {#if isTauriMacOS && !btwRuntime.open}
+    <div
+      class="absolute top-0 left-0 right-1 h-5 z-20"
+      data-tauri-drag-region="true"
+      aria-hidden="true"
+    ></div>
+  {/if}
   <button
     class="flex w-full justify-end text-textcolor"
     onclick={async () => {
