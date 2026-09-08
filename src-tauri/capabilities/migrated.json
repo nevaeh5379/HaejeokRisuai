@@ -2,11 +2,10 @@
   "identifier": "migrated",
   "description": "permissions that were migrated from v1",
   "local": true,
-  "windows": [
-    "main"
-  ],
+  "windows": ["main", "chat-window-*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
     "fs:allow-read-file",
     "fs:allow-read",
     "fs:allow-fstat",
