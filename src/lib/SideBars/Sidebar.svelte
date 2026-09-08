@@ -50,6 +50,12 @@
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { isTauriMacOS } from "src/ts/platform";
+    import {
+      closeTauriSidebarMenuPopup,
+      listenTauriSidebarMenuActions,
+      toggleTauriSidebarMenuPopup,
+      type TauriSidebarMenuAction,
+    } from "src/ts/tauriSidebarMenu";
     import { get } from 'svelte/store';
     import { onMount } from 'svelte';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
@@ -96,6 +102,51 @@
     CharEmotion.set({});
   }
 
+  function runSidebarMenuAction(action: TauriSidebarMenuAction) {
+    if (action === "settings") {
+      const wasOpen = get(settingsOpen)
+      reseter()
+      settingsOpen.set(!wasOpen)
+      return
+    }
+    if (action === "home") {
+      reseter()
+      selectedCharID.set(-1)
+      PlaygroundStore.set(0)
+      OpenRealmStore.set(false)
+      return
+    }
+    if (action === "playground") {
+      const selected = get(selectedCharID)
+      const playground = get(PlaygroundStore)
+      reseter()
+      if (selected === -1 && playground !== 0) {
+        PlaygroundStore.set(0)
+        return
+      }
+      selectedCharID.set(-1)
+      PlaygroundStore.set(1)
+      return
+    }
+    if (action === "search") {
+      reseter()
+      messageSearchOpen.set(true)
+      return
+    }
+    if (action === "grid") {
+      reseter()
+      openGrid()
+      return
+    }
+    if (action.startsWith("plugin:")) {
+      const id = action.slice("plugin:".length)
+      const menu = additionalHamburgerMenu.find((item) => item.id === id)
+      if (!menu) return
+      reseter()
+      menu.callback()
+    }
+  }
+
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   let charImages: sortType[] = $state([]);
@@ -123,6 +174,21 @@
       ric(warm, { timeout: 3000 })
     } else {
       setTimeout(warm, 800)
+    }
+
+    let disposed = false
+    let unlistenSidebarMenu: (() => void) | undefined
+    if (isTauriMacOS) {
+      void listenTauriSidebarMenuActions(runSidebarMenuAction).then((unlisten) => {
+        if (disposed) unlisten()
+        else unlistenSidebarMenu = unlisten
+      })
+    }
+
+    return () => {
+      disposed = true
+      unlistenSidebarMenu?.()
+      void closeTauriSidebarMenuPopup()
     }
   })
 
@@ -954,7 +1020,17 @@
   </div>
   <button
     class="rs-sidebar-menu-button flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={() => {
+    onclick={async (event) => {
+      if (isTauriMacOS) {
+        const result = await toggleTauriSidebarMenuPopup(
+          event.currentTarget as HTMLElement,
+          additionalHamburgerMenu,
+        )
+        if (result !== "unavailable") {
+          menuMode = 0
+          return
+        }
+      }
       menuMode = 1 - menuMode;
     }}><ListIcon />
   </button>

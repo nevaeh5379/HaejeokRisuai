@@ -14,7 +14,11 @@ use window_vibrancy::{apply_liquid_glass, LiquidGlassOptions, NSGlassEffectViewS
 const LIQUID_GLASS_CLASS: &str = "tauri-macos-liquid-glass";
 
 fn supports_vibrancy(label: &str) -> bool {
-    label == "main" || label.starts_with("chat-window-")
+    label == "main" || label.starts_with("chat-window-") || label.starts_with("sidebar-menu-")
+}
+
+fn is_sidebar_menu(label: &str) -> bool {
+    label.starts_with("sidebar-menu-")
 }
 
 fn configure_native_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
@@ -49,8 +53,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 );
             }
 
-            let liquid_glass =
+            let mut liquid_glass =
                 LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(false);
+            if is_sidebar_menu(window.label()) {
+                liquid_glass = liquid_glass.radius(18.0);
+            }
 
             match apply_liquid_glass(&window, liquid_glass) {
                 Ok(()) => {
@@ -67,11 +74,16 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                         windows.remove(window.label());
                     }
                     eprintln!(
-                        "[macOS vibrancy] Liquid Glass unavailable for {}; using Sidebar vibrancy: {liquid_glass_error}",
+                        "[macOS vibrancy] Liquid Glass unavailable for {}; using fallback vibrancy: {liquid_glass_error}",
                         window.label()
                     );
+                    let fallback_effect = if is_sidebar_menu(window.label()) {
+                        Effect::Popover
+                    } else {
+                        Effect::Sidebar
+                    };
                     let effects = EffectsBuilder::new()
-                        .effect(Effect::Sidebar)
+                        .effect(fallback_effect)
                         .state(EffectState::FollowsWindowActiveState)
                         .build();
                     if let Err(vibrancy_error) = window.set_effects(effects) {

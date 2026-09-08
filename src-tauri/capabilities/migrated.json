@@ -4,7 +4,8 @@
   "local": true,
   "windows": [
     "main",
-    "chat-window-*"
+    "chat-window-*",
+    "sidebar-menu-*"
   ],
   "permissions": [
     "core:default",
