@@ -755,6 +755,321 @@ fn handle_haejeok_app_menu(app: &AppHandle, menu_id: &str) {
     let _ = app.emit_to("main", "risu://app-menu", menu_id.to_string());
 }
 
+#[derive(Default)]
+struct SidebarMenuWindowState {
+    ready: Mutex<HashMap<String, bool>>,
+    last_blur_hide: Mutex<HashMap<String, std::time::Instant>>,
+    first_open_pending: Mutex<HashMap<String, bool>>,
+}
+
+fn validate_sidebar_menu_label(popup_label: &str) -> Result<(), String> {
+    if popup_label.starts_with("sidebar-menu-") {
+        Ok(())
+    } else {
+        Err(format!("invalid sidebar menu label: {popup_label}"))
+    }
+}
+
+#[tauri::command]
+async fn prepare_sidebar_menu_window(
+    app: AppHandle,
+    state: tauri::State<'_, SidebarMenuWindowState>,
+    source_label: String,
+    popup_label: String,
+    query: String,
+    trigger_left: f64,
+    trigger_top: f64,
+    trigger_width: f64,
+    trigger_height: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    validate_sidebar_menu_label(&popup_label)?;
+    if app.get_webview_window(&popup_label).is_some() {
+        return Ok(());
+    }
+
+    if let Ok(mut ready) = state.ready.lock() {
+        ready.remove(&popup_label);
+    }
+    if let Ok(mut hidden) = state.last_blur_hide.lock() {
+        hidden.remove(&popup_label);
+    }
+    if let Ok(mut first_open) = state.first_open_pending.lock() {
+        first_open.remove(&popup_label);
+    }
+
+    let parent = app
+        .get_webview_window(&source_label)
+        .ok_or_else(|| format!("source window not found: {source_label}"))?;
+    let source_scale = parent
+        .scale_factor()
+        .map_err(|error| format!("failed to read source scale factor: {error}"))?;
+    let source_position = parent
+        .inner_position()
+        .map_err(|error| format!("failed to read source inner position: {error}"))?;
+    let source_x = source_position.x as f64 / source_scale;
+    let source_y = source_position.y as f64 / source_scale;
+    let gap = 8.0;
+    let mut x = source_x + trigger_left + trigger_width / 2.0 - width / 2.0;
+    let mut y = source_y + trigger_top - height - gap;
+
+    if let Some(monitor) = parent
+        .current_monitor()
+        .map_err(|error| format!("failed to read source monitor: {error}"))?
+    {
+        let work_area = monitor.work_area();
+        let work_scale = monitor.scale_factor();
+        let work_x = work_area.position.x as f64 / work_scale;
+        let work_y = work_area.position.y as f64 / work_scale;
+        let work_width = work_area.size.width as f64 / work_scale;
+        let work_height = work_area.size.height as f64 / work_scale;
+        if y < work_y {
+            y = source_y + trigger_top + trigger_height + gap;
+        }
+        let max_x = work_x.max(work_x + work_width - width);
+        let max_y = work_y.max(work_y + work_height - height);
+        x = x.clamp(work_x, max_x);
+        y = y.clamp(work_y, max_y);
+    }
+
+    let app_url = format!("index.html?{}", query.trim_start_matches('?'));
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        &popup_label,
+        tauri::WebviewUrl::App(app_url.into()),
+    )
+    .title("RisuAI Menu")
+    // macOS may briefly expose a newly-created child window even with
+    // visible(false). Keep the first construction safely offscreen, then move
+    // it to the trigger only after the popup UI reports ready.
+    .position(-10_000.0, -10_000.0)
+    .inner_size(width, height)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(true)
+    .focused(false)
+    .visible(false);
+    let builder = builder.parent(&parent).map_err(|error| {
+        let message = format!("failed to attach sidebar menu parent: {error}");
+        eprintln!("[TauriSidebarMenu] {message}");
+        message
+    })?;
+
+    builder.build().map_err(|error| {
+        let message = format!("failed to preload sidebar menu window: {error}");
+        eprintln!("[TauriSidebarMenu] {message}");
+        message
+    })?;
+    state
+        .first_open_pending
+        .lock()
+        .map_err(|_| "sidebar menu first-open state is poisoned".to_string())?
+        .insert(popup_label.clone(), true);
+    eprintln!(
+        "[TauriSidebarMenu] Prepared first-click popup {popup_label} offscreen; target=({x:.0},{y:.0})"
+    );
+    Ok(())
+}
+
+#[tauri::command]
+async fn mark_sidebar_menu_window_ready(
+    state: tauri::State<'_, SidebarMenuWindowState>,
+    popup_label: String,
+) -> Result<(), String> {
+    validate_sidebar_menu_label(&popup_label)?;
+    state
+        .ready
+        .lock()
+        .map_err(|_| "sidebar menu ready state is poisoned".to_string())?
+        .insert(popup_label.clone(), true);
+    eprintln!("[TauriSidebarMenu] Popup mounted and ready {popup_label}");
+    Ok(())
+}
+
+#[tauri::command]
+fn is_sidebar_menu_window_ready(
+    state: tauri::State<'_, SidebarMenuWindowState>,
+    popup_label: String,
+) -> bool {
+    state
+        .ready
+        .lock()
+        .map(|ready| ready.get(&popup_label).copied().unwrap_or(false))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+async fn toggle_sidebar_menu_window(
+    app: AppHandle,
+    state: tauri::State<'_, SidebarMenuWindowState>,
+    source_label: String,
+    popup_label: String,
+    trigger_left: f64,
+    trigger_top: f64,
+    trigger_width: f64,
+    trigger_height: f64,
+    width: f64,
+    height: f64,
+) -> Result<String, String> {
+    validate_sidebar_menu_label(&popup_label)?;
+    let popup = app
+        .get_webview_window(&popup_label)
+        .ok_or_else(|| format!("sidebar menu window is not prepared: {popup_label}"))?;
+    let ready = state
+        .ready
+        .lock()
+        .map_err(|_| "sidebar menu ready state is poisoned".to_string())?
+        .get(&popup_label)
+        .copied()
+        .unwrap_or(false);
+    if !ready {
+        return Err(format!("sidebar menu window is not ready: {popup_label}"));
+    }
+
+    let first_open = state
+        .first_open_pending
+        .lock()
+        .map_err(|_| "sidebar menu first-open state is poisoned".to_string())?
+        .remove(&popup_label)
+        .unwrap_or(false);
+
+    if !first_open
+        && popup
+            .is_visible()
+            .map_err(|error| format!("failed to read sidebar menu visibility: {error}"))?
+    {
+        popup
+            .hide()
+            .map_err(|error| format!("failed to hide sidebar menu window: {error}"))?;
+        if let Ok(mut hidden) = state.last_blur_hide.lock() {
+            hidden.remove(&popup_label);
+        }
+        eprintln!("[TauriSidebarMenu] Hid popup from trigger {popup_label}");
+        return Ok("closed".to_string());
+    }
+
+    let suppress_reopen = !first_open
+        && state
+        .last_blur_hide
+        .lock()
+        .map(|mut hidden| {
+            hidden
+                .remove(&popup_label)
+                .map(|at| at.elapsed() < Duration::from_millis(300))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    if suppress_reopen {
+        eprintln!("[TauriSidebarMenu] Suppressed blur-trigger reopen {popup_label}");
+        return Ok("closed".to_string());
+    }
+
+    let parent = app
+        .get_webview_window(&source_label)
+        .ok_or_else(|| format!("source window not found: {source_label}"))?;
+    let source_scale = parent
+        .scale_factor()
+        .map_err(|error| format!("failed to read source scale factor: {error}"))?;
+    let source_position = parent
+        .inner_position()
+        .map_err(|error| format!("failed to read source inner position: {error}"))?;
+    let source_x = source_position.x as f64 / source_scale;
+    let source_y = source_position.y as f64 / source_scale;
+    let gap = 8.0;
+    let mut x = source_x + trigger_left + trigger_width / 2.0 - width / 2.0;
+    let mut y = source_y + trigger_top - height - gap;
+
+    if let Some(monitor) = parent
+        .current_monitor()
+        .map_err(|error| format!("failed to read source monitor: {error}"))?
+    {
+        let work_area = monitor.work_area();
+        let work_scale = monitor.scale_factor();
+        let work_x = work_area.position.x as f64 / work_scale;
+        let work_y = work_area.position.y as f64 / work_scale;
+        let work_width = work_area.size.width as f64 / work_scale;
+        let work_height = work_area.size.height as f64 / work_scale;
+        if y < work_y {
+            y = source_y + trigger_top + trigger_height + gap;
+        }
+        let max_x = work_x.max(work_x + work_width - width);
+        let max_y = work_y.max(work_y + work_height - height);
+        x = x.clamp(work_x, max_x);
+        y = y.clamp(work_y, max_y);
+    }
+
+    popup
+        .set_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|error| format!("failed to position sidebar menu window: {error}"))?;
+    popup
+        .set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|error| format!("failed to resize sidebar menu window: {error}"))?;
+    if let Err(error) = app.emit_to(&popup_label, "risu://sidebar-menu-blur-arm", false) {
+        eprintln!("[TauriSidebarMenu] Failed to disarm popup blur close {popup_label}: {error}");
+    }
+    popup
+        .show()
+        .map_err(|error| format!("failed to show sidebar menu window: {error}"))?;
+    popup
+        .set_focus()
+        .map_err(|error| format!("failed to focus sidebar menu window: {error}"))?;
+    if let Err(error) = app.emit_to(&popup_label, "risu://sidebar-menu-blur-arm", true) {
+        eprintln!("[TauriSidebarMenu] Failed to arm popup blur close {popup_label}: {error}");
+    }
+    eprintln!("[TauriSidebarMenu] Reused and showed popup {popup_label}");
+    Ok("opened".to_string())
+}
+
+#[tauri::command]
+async fn hide_sidebar_menu_window(
+    app: AppHandle,
+    state: tauri::State<'_, SidebarMenuWindowState>,
+    popup_label: String,
+    reason: String,
+) -> Result<(), String> {
+    validate_sidebar_menu_label(&popup_label)?;
+    if let Some(popup) = app.get_webview_window(&popup_label) {
+        popup
+            .hide()
+            .map_err(|error| format!("failed to hide sidebar menu window: {error}"))?;
+        if reason == "blur" {
+            if let Ok(mut hidden) = state.last_blur_hide.lock() {
+                hidden.insert(popup_label.clone(), std::time::Instant::now());
+            }
+        } else if let Ok(mut hidden) = state.last_blur_hide.lock() {
+            hidden.remove(&popup_label);
+        }
+        eprintln!("[TauriSidebarMenu] Hid popup {popup_label} ({reason})");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn close_sidebar_menu_window(
+    app: AppHandle,
+    state: tauri::State<'_, SidebarMenuWindowState>,
+    popup_label: String,
+) -> Result<(), String> {
+    validate_sidebar_menu_label(&popup_label)?;
+    if let Some(popup) = app.get_webview_window(&popup_label) {
+        popup
+            .close()
+            .map_err(|error| format!("failed to close sidebar menu window: {error}"))?;
+    }
+    if let Ok(mut ready) = state.ready.lock() {
+        ready.remove(&popup_label);
+    }
+    if let Ok(mut hidden) = state.last_blur_hide.lock() {
+        hidden.remove(&popup_label);
+    }
+    if let Ok(mut first_open) = state.first_open_pending.lock() {
+        first_open.remove(&popup_label);
+    }
+    Ok(())
+}
+
 fn main() {
     let mut builder = tauri::Builder::default();
 
@@ -786,6 +1101,7 @@ fn main() {
     }
 
     builder
+        .manage(SidebarMenuWindowState::default())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
@@ -808,7 +1124,13 @@ fn main() {
             streamed_fetch,
             oauth_login,
             sqlite_transaction::sqlite_execute_transaction,
-            update_app_navigation_menu
+            update_app_navigation_menu,
+            prepare_sidebar_menu_window,
+            mark_sidebar_menu_window_ready,
+            is_sidebar_menu_window_ready,
+            toggle_sidebar_menu_window,
+            hide_sidebar_menu_window,
+            close_sidebar_menu_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")

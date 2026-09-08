@@ -54,6 +54,7 @@
       closeTauriSidebarMenuPopup,
       listenTauriSidebarMenuActions,
       toggleTauriSidebarMenuPopup,
+      isTauriMacOSRuntime,
       type TauriSidebarMenuAction,
     } from "src/ts/tauriSidebarMenu";
     import { get } from 'svelte/store';
@@ -147,6 +148,18 @@
     }
   }
 
+  async function toggleHamburgerMenu(event: MouseEvent) {
+    const result = await toggleTauriSidebarMenuPopup(
+      event.currentTarget as HTMLElement,
+      additionalHamburgerMenu,
+    )
+    if (result !== "unavailable") {
+      menuMode = 0
+      return
+    }
+    menuMode = 1 - menuMode
+  }
+
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   let charImages: sortType[] = $state([]);
@@ -178,7 +191,7 @@
 
     let disposed = false
     let unlistenSidebarMenu: (() => void) | undefined
-    if (isTauriMacOS) {
+    if (isTauriMacOSRuntime()) {
       void listenTauriSidebarMenuActions(runSidebarMenuAction).then((unlisten) => {
         if (disposed) unlisten()
         else unlistenSidebarMenu = unlisten
@@ -596,9 +609,7 @@
   {#if !settingsStore.state.hamburgerButtonBottom}
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={() => {
-      menuMode = 1 - menuMode;
-    }}><ListIcon />
+    onclick={toggleHamburgerMenu}><ListIcon />
   </button>
   <div class="mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
@@ -1020,19 +1031,7 @@
   </div>
   <button
     class="rs-sidebar-menu-button flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={async (event) => {
-      if (isTauriMacOS) {
-        const result = await toggleTauriSidebarMenuPopup(
-          event.currentTarget as HTMLElement,
-          additionalHamburgerMenu,
-        )
-        if (result !== "unavailable") {
-          menuMode = 0
-          return
-        }
-      }
-      menuMode = 1 - menuMode;
-    }}><ListIcon />
+    onclick={toggleHamburgerMenu}><ListIcon />
   </button>
   {/if}
 </div>
