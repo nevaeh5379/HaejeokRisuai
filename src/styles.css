@@ -241,7 +241,7 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-popover {
   width: 3.8rem !important;
   min-width: 3.8rem !important;
   max-height: calc(100vh - 7rem);
-  padding: 0.48rem !important;
+  padding: 0.62rem 0.48rem !important;
   gap: 0.28rem;
   border: 1px solid
     color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent) !important;
