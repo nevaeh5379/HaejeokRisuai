@@ -171,6 +171,8 @@ html.tauri-macos-vibrancy #app {
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
   --risu-macos-traffic-lights-width: 5rem;
+  --risu-macos-sidebar-menu-radius: 0.9rem;
+  --risu-macos-sidebar-menu-control-radius: 0.68rem;
   --risu-macos-chrome-tint: color-mix(
     in srgb,
     var(--risu-theme-darkbg) 60%,
@@ -243,7 +245,7 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-popover {
   gap: 0.16rem;
   border: 1px solid
     color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent) !important;
-  border-radius: 0.9rem !important;
+  border-radius: var(--risu-macos-sidebar-menu-radius) !important;
   background: color-mix(
     in srgb,
     var(--risu-theme-darkbg) 46%,
@@ -269,7 +271,7 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button {
   height: 2.45rem !important;
   min-height: 2.45rem !important;
   border: 0 !important;
-  border-radius: 0.65rem !important;
+  border-radius: var(--risu-macos-sidebar-menu-control-radius) !important;
   background: transparent !important;
   box-shadow: none !important;
   transition:
@@ -310,6 +312,7 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-button {
   left: 50%;
   bottom: 0.75rem;
   margin: 0 !important;
+  border-radius: var(--risu-macos-sidebar-menu-radius) !important;
   transform: translateX(-50%);
   z-index: 31;
 }
