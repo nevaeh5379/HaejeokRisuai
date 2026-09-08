@@ -607,7 +607,26 @@ export async function restoreTauriChatWorkspaceWindowState(
     await import("./chatTabs.svelte");
   chatTabsStore.restoreSnapshot(snapshot);
   const active = chatTabsStore.activeTab;
-  if (active) await navigateToChatTab(active.id);
+  if (!active) {
+    console.error(
+      "[TauriChatWorkspace] Restored auxiliary window has no active tab",
+      launch.windowId,
+    );
+    return false;
+  }
+  const navigated = await navigateToChatTab(active.id);
+  if (!navigated) {
+    console.error(
+      "[TauriChatWorkspace] Failed to navigate restored auxiliary tab",
+      {
+        windowId: launch.windowId,
+        tabId: active.id,
+        characterId: active.characterId,
+        chatId: active.chatId,
+      },
+    );
+    return false;
+  }
   await publishCurrentTauriChatWorkspaceState();
   return true;
 }

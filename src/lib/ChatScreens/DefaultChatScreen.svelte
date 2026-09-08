@@ -97,8 +97,7 @@
     let paneTab = $derived(chatTabsStore.activeTabForGroup(paneGroupId))
     let selectedCharacterIndex = $derived.by(() => {
         if(paneTab?.characterId){
-            const index = characterStore.characters.findIndex((character) => character.chaId === paneTab?.characterId)
-            if(index >= 0) return index
+            return characterStore.characters.findIndex((character) => character.chaId === paneTab.characterId)
         }
         return get(selectedCharID)
     })
@@ -106,8 +105,7 @@
     let selectedChatIndex = $derived.by(() => {
         if(!currentCharacter) return -1
         if(paneTab?.chatId){
-            const index = currentCharacter.chats?.findIndex((chat) => chat.id === paneTab?.chatId) ?? -1
-            if(index >= 0) return index
+            return currentCharacter.chats?.findIndex((chat) => chat.id === paneTab.chatId) ?? -1
         }
         return currentCharacter.chatPage ?? 0
     })
@@ -842,7 +840,7 @@
             Loading...
         </div>
     {/if}
-    {#if selectedCharacterIndex < 0}
+    {#if selectedCharacterIndex < 0 && !paneTab}
         {#if $PlaygroundStore === 0}
             <MainMenu />
         {:else}
@@ -850,6 +848,10 @@
                 <PlaygroundMenu />
             {/await}
         {/if}
+    {:else if selectedCharacterIndex < 0 || !currentCharacter || selectedChatIndex < 0 || !currentChatSession}
+        <div class="h-full w-full flex items-center justify-center text-textcolor2 bg-bgcolor">
+            {language.loadingChatData}
+        </div>
     {:else}
         <div
             class="h-full w-full min-h-0 flex flex-col"

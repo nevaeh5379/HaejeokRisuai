@@ -119,7 +119,16 @@ export async function loadData() {
       // Doing this later can overwrite a character the user selected while
       // the remaining startup work is still loading.
       selectedCharID.set(-1);
-      const revealShell = createShellRevealer();
+      const auxiliaryChatWindow =
+        isTauri &&
+        (() => {
+          const params = new URLSearchParams(location.search);
+          return (
+            params.get("risuWindow") === "chat-workspace" &&
+            params.get("workspaceWindowId")?.startsWith("chat-window-")
+          );
+        })();
+      const revealShell = createShellRevealer(Boolean(auxiliaryChatWindow));
 
       // ── Step 6: Service worker (web only) ─────────────────────────
       const serviceWorkerReady = startServiceWorker();
@@ -151,15 +160,24 @@ export async function loadData() {
       initDurableModelJobRecovery();
       void syncChatResponsePush();
       void initNodeRealtimeSync();
-      revealShell();
       if (isTauri) {
         const {
           initializeTauriChatWorkspaceRuntime,
           restoreTauriChatWorkspaceWindowState,
         } = await import("../tauriChatWindows");
-        await restoreTauriChatWorkspaceWindowState();
+        const restored = await restoreTauriChatWorkspaceWindowState();
+        if (auxiliaryChatWindow && !restored) {
+          console.error(
+            "[TauriChatWorkspace] Auxiliary window failed to restore its chat target",
+          );
+          const { getCurrentWebviewWindow } =
+            await import("@tauri-apps/api/webviewWindow");
+          await getCurrentWebviewWindow().close();
+          return;
+        }
         await initializeTauriChatWorkspaceRuntime();
       }
+      revealShell();
       if (presetStore.activeStatus === "ready") {
         startupPhase.set("chat-ready");
         performance.mark("chat-ready");
