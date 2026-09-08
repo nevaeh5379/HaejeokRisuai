@@ -275,7 +275,7 @@
     }
 </script>
 
-<div class="flex flex-col w-full h-full min-h-0 select-none">
+<div class="rs-recent-sessions flex flex-col w-full h-full min-h-0 select-none">
     <!-- Header -->
     <div class="flex items-center justify-between mb-3 px-1 shrink-0">
         <div class="flex items-center gap-2">
@@ -304,7 +304,7 @@
                 type="text"
                 bind:value={searchInput}
                 placeholder={language.searchSessions ?? 'Search sessions...'}
-                class="w-full bg-bgcolor border border-darkborderc rounded-lg pl-8 pr-8 py-1.5 text-xs text-textcolor placeholder-textcolor2/60 focus:outline-none focus:border-selected transition-colors"
+                class="rs-recent-session-search w-full bg-bgcolor border border-darkborderc rounded-lg pl-8 pr-8 py-1.5 text-xs text-textcolor placeholder-textcolor2/60 focus:outline-none focus:border-selected transition-colors"
             />
             {#if searchInput}
                 <button
@@ -352,7 +352,7 @@
             {#each filteredSessions as session (`${session.characterId ?? session.charIndex}-${session.chatId ?? session.chatIndex}`)}
                 <button
                     type="button"
-                    class="flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors bg-bgcolor/40 hover:bg-bgcolor border border-darkborderc/40 hover:border-selected/60 group w-full cursor-pointer overflow-hidden relative shrink-0"
+                    class="rs-recent-session-card flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors bg-bgcolor/40 hover:bg-bgcolor border border-darkborderc/40 hover:border-selected/60 group w-full cursor-pointer overflow-hidden relative shrink-0"
                     onclick={() => void selectSession(session)}
                 >
                     <!-- Avatar with Group Badge -->

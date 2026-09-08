@@ -957,7 +957,7 @@
 </div>
 {/if}
 <div
-  class="setting-area h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
+  class="setting-area rs-sidebar-panel h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
   class:overflow-hidden={btwRuntime.open}
   class:overflow-y-auto={!btwRuntime.open}
   class:py-0={btwRuntime.open}

@@ -344,7 +344,7 @@
     }
 </script>
 <svelte:window bind:innerWidth on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} />
-<div class="h-full w-full flex flex-col overflow-y-auto items-center">
+<div class="rs-main-menu h-full w-full flex flex-col overflow-y-auto items-center">
     {#if !$OpenRealmStore}
       <Title />
       <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>

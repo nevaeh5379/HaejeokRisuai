@@ -602,6 +602,8 @@ async function openAuxiliaryWindow(
     minHeight: 500,
     resizable: true,
     transparent: isTauriMacOS,
+    titleBarStyle: isTauriMacOS ? "transparent" : undefined,
+    hiddenTitle: isTauriMacOS,
     visible: true,
     focus: true,
   });

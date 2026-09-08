@@ -160,8 +160,8 @@ body {
   overflow-x: hidden;
 }
 
-/* macOS native material: keep app content readable while letting the native
- * NSVisualEffectView show through window chrome and chat surfaces. */
+/* macOS native material: use one coherent window material for the native
+ * title bar and side chrome, while keeping primary content visually stable. */
 html.tauri-macos-vibrancy,
 html.tauri-macos-vibrancy body,
 html.tauri-macos-vibrancy #app {
@@ -172,21 +172,42 @@ html.tauri-macos-vibrancy main.tauri-native {
   background-color: transparent;
 }
 
-html.tauri-macos-vibrancy .rs-sidebar {
+/* Sidebar chrome should read as one continuous macOS material instead of
+ * separate opaque web panels. */
+html.tauri-macos-vibrancy .rs-sidebar,
+html.tauri-macos-vibrancy .rs-sidebar-panel {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-bgcolor) 52%,
+    var(--risu-theme-darkbg) 42%,
     transparent
   ) !important;
-  box-shadow:
-    inset -1px 0 color-mix(in srgb, var(--risu-theme-textcolor) 8%, transparent),
-    6px 0 24px rgb(0 0 0 / 0.08);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar {
+  box-shadow: inset -1px 0
+    color-mix(in srgb, var(--risu-theme-textcolor) 9%, transparent);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel {
+  border-right: 1px solid
+    color-mix(in srgb, var(--risu-theme-textcolor) 7%, transparent);
+}
+
+/* Controls inside the recent-session sidebar should inherit the same material
+ * instead of punching opaque rectangles through it. */
+html.tauri-macos-vibrancy .rs-recent-session-search,
+html.tauri-macos-vibrancy .rs-recent-session-card {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 48%,
+    transparent
+  );
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab-list {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 58%,
+    var(--risu-theme-darkbg) 48%,
     transparent
   ) !important;
   backdrop-filter: none;
@@ -196,12 +217,12 @@ html.tauri-macos-vibrancy .rs-chat-tab-list {
 html.tauri-macos-vibrancy .rs-chat-tab {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-bgcolor) 70%,
+    var(--risu-theme-bgcolor) 62%,
     transparent
   ) !important;
   border-color: color-mix(
     in srgb,
-    var(--risu-theme-darkborderc) 72%,
+    var(--risu-theme-darkborderc) 62%,
     transparent
   );
 }
@@ -209,15 +230,18 @@ html.tauri-macos-vibrancy .rs-chat-tab {
 html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"] {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-selected) 78%,
+    var(--risu-theme-selected) 72%,
     transparent
   ) !important;
 }
 
+/* Main content is intentionally much more opaque than the chrome. This keeps
+ * wallpaper colors from washing through large reading surfaces. */
+html.tauri-macos-vibrancy .rs-main-menu,
 html.tauri-macos-vibrancy .default-chat-screen {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-bgcolor) 88%,
+    var(--risu-theme-bgcolor) 94%,
     transparent
   );
 }
