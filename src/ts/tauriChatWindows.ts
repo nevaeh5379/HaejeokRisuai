@@ -4,6 +4,8 @@ import { isTauri } from "./platform";
 const CHAT_WINDOW_KIND_PARAM = "risuWindow";
 const CHARACTER_ID_PARAM = "characterId";
 const CHAT_ID_PARAM = "chatId";
+const CHARACTER_NAME_PARAM = "characterName";
+const CHAT_NAME_PARAM = "chatName";
 const CHAT_WINDOW_KIND = "chat";
 const CHAT_DROP_ACK_EVENT = "risu://dock-chat-drop-ack";
 export const TAURI_CHAT_DRAG_MIME = "application/x-risu-chat-tab";
@@ -25,8 +27,14 @@ export interface TauriChatWindowTarget {
   chatId: string;
 }
 
+export interface TauriChatWindowPresentation {
+  characterName?: string;
+  chatName?: string;
+}
+
 export interface TauriChatDragPayload extends TauriChatWindowTarget {
   sourceWindowLabel: string;
+  transferId: string;
 }
 
 export function parseTauriChatWindowTarget(
@@ -39,6 +47,16 @@ export function parseTauriChatWindowTarget(
   const chatId = params.get(CHAT_ID_PARAM)?.trim();
   if (!characterId || !chatId) return null;
   return { characterId, chatId };
+}
+
+export function parseTauriChatWindowPresentation(
+  search: string,
+): TauriChatWindowPresentation {
+  const params = new URLSearchParams(search);
+  return {
+    characterName: params.get(CHARACTER_NAME_PARAM)?.trim() || undefined,
+    chatName: params.get(CHAT_NAME_PARAM)?.trim() || undefined,
+  };
 }
 
 export function isPointOutsideTauriWindow(
@@ -75,19 +93,28 @@ function isTauriChatDragPayload(
   const payload = value as Partial<TauriChatDragPayload>;
   return (
     typeof payload.sourceWindowLabel === "string" &&
-    payload.sourceWindowLabel.startsWith(CHAT_WINDOW_LABEL_PREFIX)
+    payload.sourceWindowLabel.startsWith(CHAT_WINDOW_LABEL_PREFIX) &&
+    typeof payload.transferId === "string" &&
+    payload.transferId.length > 0
   );
 }
 
 export function buildTauriChatWindowUrl(
   target: TauriChatWindowTarget,
   pathname = "/",
+  presentation: TauriChatWindowPresentation = {},
 ): string {
   const params = new URLSearchParams({
     [CHAT_WINDOW_KIND_PARAM]: CHAT_WINDOW_KIND,
     [CHARACTER_ID_PARAM]: target.characterId,
     [CHAT_ID_PARAM]: target.chatId,
   });
+  if (presentation.characterName) {
+    params.set(CHARACTER_NAME_PARAM, presentation.characterName);
+  }
+  if (presentation.chatName) {
+    params.set(CHAT_NAME_PARAM, presentation.chatName);
+  }
   return `${pathname || "/"}?${params.toString()}`;
 }
 
@@ -99,20 +126,21 @@ function createChatWindowLabel(): string {
 export async function openChatInNewTauriWindow(
   tab: Pick<ChatTab, "characterId" | "chatId">,
   title = "RisuAI",
+  presentation: TauriChatWindowPresentation = {},
 ): Promise<boolean> {
   if (!isTauri) return false;
 
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const child = new WebviewWindow(createChatWindowLabel(), {
-    url: buildTauriChatWindowUrl(tab, location.pathname),
+    url: buildTauriChatWindowUrl(tab, location.pathname, presentation),
     title,
     width: Math.max(720, Math.min(window.innerWidth, 1280)),
     height: Math.max(600, Math.min(window.innerHeight, 960)),
     minWidth: 300,
     minHeight: 500,
     resizable: true,
-    visible: false,
-    focus: false,
+    visible: true,
+    focus: true,
   });
 
   return new Promise<boolean>((resolve, reject) => {
@@ -160,7 +188,13 @@ export async function getCurrentTauriChatWindowDragPayload(
     await import("@tauri-apps/api/webviewWindow");
   const current = getCurrentWebviewWindow();
   if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return null;
-  return { ...target, sourceWindowLabel: current.label };
+  return {
+    ...target,
+    sourceWindowLabel: current.label,
+    transferId:
+      globalThis.crypto?.randomUUID?.() ??
+      `chat-transfer-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  };
 }
 
 export async function acceptDetachedTauriChatDrop(
@@ -173,43 +207,103 @@ export async function acceptDetachedTauriChatDrop(
   const current = getCurrentWebviewWindow();
   if (current.label !== MAIN_WINDOW_LABEL) return false;
 
+  const { chatTabsStore, navigateToChatTab } = await import("./chatTabs.svelte");
+  const previousActiveId = chatTabsStore.activeTabId;
+  const existing = chatTabsStore.tabs.find(
+    (tab) =>
+      tab.characterId === payload.characterId && tab.chatId === payload.chatId,
+  );
+  const tab = chatTabsStore.openTarget(
+    payload.characterId,
+    payload.chatId,
+    groupId ?? chatTabsStore.focusedGroupId,
+  );
+
   let accepted = false;
   try {
-    const { chatTabsStore, navigateToChatTab } = await import("./chatTabs.svelte");
-    const tab = chatTabsStore.openTarget(
-      payload.characterId,
-      payload.chatId,
-      groupId ?? chatTabsStore.focusedGroupId,
-    );
     accepted = await navigateToChatTab(tab.id);
+    if (accepted) {
+      accepted = await verifyDockedTauriChatState(payload, tab.id);
+    }
   } catch (error) {
     console.error("[TauriChatWindows] Failed to accept detached chat drop", error);
+    accepted = false;
   }
 
-  if (accepted) {
-    await current.emitTo(payload.sourceWindowLabel, CHAT_DROP_ACK_EVENT, {
-      characterId: payload.characterId,
-      chatId: payload.chatId,
-    });
+  if (!accepted) {
+    if (!existing) chatTabsStore.detach(tab.id);
+    if (previousActiveId && chatTabsStore.tabs.some((item) => item.id === previousActiveId)) {
+      await navigateToChatTab(previousActiveId);
+    }
+    return false;
   }
-  return accepted;
+
+  await current.emitTo(payload.sourceWindowLabel, CHAT_DROP_ACK_EVENT, {
+    characterId: payload.characterId,
+    chatId: payload.chatId,
+    sourceWindowLabel: payload.sourceWindowLabel,
+    transferId: payload.transferId,
+  } satisfies TauriChatDragPayload);
+  return true;
+}
+
+async function verifyDockedTauriChatState(
+  payload: TauriChatDragPayload,
+  tabId: string,
+): Promise<boolean> {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  const [{ get }, { selectedCharID }, { characterStore }, { chatTabsStore }] =
+    await Promise.all([
+      import("svelte/store"),
+      import("./stores.svelte"),
+      import("./stores/domain/characterStore.svelte"),
+      import("./chatTabs.svelte"),
+    ]);
+
+  const tab = chatTabsStore.tabs.find((item) => item.id === tabId);
+  if (!tab || tab.characterId !== payload.characterId || tab.chatId !== payload.chatId) {
+    return false;
+  }
+  const group = chatTabsStore.getGroup(tab.groupId);
+  if (
+    chatTabsStore.focusedGroupId !== tab.groupId ||
+    group?.activeTabId !== tab.id
+  ) {
+    return false;
+  }
+
+  const renderedTab = document.querySelector(
+    `[data-chat-tab-id="${CSS.escape(tab.id)}"]`,
+  );
+  if (!renderedTab) return false;
+
+  const selectedIndex = get(selectedCharID);
+  const character = characterStore.characters[selectedIndex];
+  const chat = character?.chats?.[character.chatPage ?? 0];
+  return (
+    character?.chaId === payload.characterId &&
+    chat?.id === payload.chatId
+  );
 }
 
 export async function watchDetachedTauriChatDropAck(
-  target: TauriChatWindowTarget,
+  payload: TauriChatDragPayload,
   onAccepted: () => void,
 ): Promise<() => void> {
-  if (!isTauri || !isTauriChatWindowTarget(target)) return () => {};
+  if (!isTauri || !isTauriChatDragPayload(payload)) return () => {};
   const { getCurrentWebviewWindow } =
     await import("@tauri-apps/api/webviewWindow");
   const current = getCurrentWebviewWindow();
-  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return () => {};
+  if (current.label !== payload.sourceWindowLabel) return () => {};
 
-  return current.listen<TauriChatWindowTarget>(CHAT_DROP_ACK_EVENT, (event) => {
-    if (!isTauriChatWindowTarget(event.payload)) return;
+  return current.listen<TauriChatDragPayload>(CHAT_DROP_ACK_EVENT, (event) => {
+    if (!isTauriChatDragPayload(event.payload)) return;
+    if (event.payload.transferId !== payload.transferId) return;
     if (
-      event.payload.characterId !== target.characterId ||
-      event.payload.chatId !== target.chatId
+      event.payload.characterId !== payload.characterId ||
+      event.payload.chatId !== payload.chatId
     ) return;
     onAccepted();
   });
@@ -222,16 +316,6 @@ export async function closeCurrentDetachedTauriChatWindow(): Promise<void> {
   const current = getCurrentWebviewWindow();
   if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return;
   await current.close();
-}
-
-export async function showCurrentDetachedTauriChatWindow(): Promise<void> {
-  if (!isTauri) return;
-  const { getCurrentWebviewWindow } =
-    await import("@tauri-apps/api/webviewWindow");
-  const current = getCurrentWebviewWindow();
-  if (!current.label.startsWith(CHAT_WINDOW_LABEL_PREFIX)) return;
-  await current.show();
-  await current.setFocus();
 }
 
 export async function isCurrentTauriCursorOutsideWindow(
@@ -253,7 +337,7 @@ export async function isCurrentTauriCursorOutsideWindow(
 
 export async function watchCurrentTauriWindowExit(
   onExit: () => void,
-  intervalMs = 60,
+  intervalMs = 32,
 ): Promise<() => void> {
   if (!isTauri) return () => {};
   const [{ getCurrentWebviewWindow }, { cursorPosition }] = await Promise.all([

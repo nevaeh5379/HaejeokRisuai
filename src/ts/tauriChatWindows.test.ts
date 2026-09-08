@@ -3,6 +3,7 @@ import {
   buildTauriChatWindowUrl,
   isPointOutsideTauriWindow,
   parseTauriChatDragPayload,
+  parseTauriChatWindowPresentation,
   parseTauriChatWindowTarget,
   serializeTauriChatDragPayload,
 } from "./tauriChatWindows";
@@ -30,6 +31,45 @@ describe("Tauri chat window targets", () => {
       parseTauriChatWindowTarget("?risuWindow=chat&characterId=a"),
     ).toBeNull();
     expect(parseTauriChatWindowTarget("?risuWindow=chat&chatId=b")).toBeNull();
+  });
+
+  it("carries presentation labels for the immediate detached shell", () => {
+    const url = buildTauriChatWindowUrl(
+      { characterId: "character-a", chatId: "chat-b" },
+      "/",
+      { characterName: "Alice", chatName: "First chat" },
+    );
+    const search = url.slice(url.indexOf("?"));
+    expect(parseTauriChatWindowPresentation(search)).toEqual({
+      characterName: "Alice",
+      chatName: "First chat",
+    });
+  });
+});
+
+describe("Tauri chat drag payload", () => {
+  it("round-trips a transfer-specific payload", () => {
+    const payload = {
+      characterId: "character-a",
+      chatId: "chat-b",
+      sourceWindowLabel: "chat-window-test",
+      transferId: "transfer-1",
+    };
+    expect(parseTauriChatDragPayload(serializeTauriChatDragPayload(payload))).toEqual(
+      payload,
+    );
+  });
+
+  it("rejects payloads without a transfer id", () => {
+    expect(
+      parseTauriChatDragPayload(
+        JSON.stringify({
+          characterId: "character-a",
+          chatId: "chat-b",
+          sourceWindowLabel: "chat-window-test",
+        }),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -59,6 +99,7 @@ describe("Tauri detached chat drag payload", () => {
       characterId: "character-a",
       chatId: "chat-b",
       sourceWindowLabel: "chat-window-test",
+      transferId: "transfer-test",
     };
     expect(parseTauriChatDragPayload(serializeTauriChatDragPayload(payload))).toEqual(payload);
   });
@@ -68,6 +109,7 @@ describe("Tauri detached chat drag payload", () => {
       characterId: "character-a",
       chatId: "chat-b",
       sourceWindowLabel: "main",
+      transferId: "transfer-test",
     }))).toBeNull();
   });
 });

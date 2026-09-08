@@ -25,14 +25,17 @@
         if (!target) return;
         let disposed = false;
         let unlisten: (() => void) | undefined;
-        void getCurrentTauriChatWindowDragPayload(target).then((payload) => {
-            if (!disposed) dragPayload = payload;
-        });
-        void watchDetachedTauriChatDropAck(target, () => {
-            void closeCurrentDetachedTauriChatWindow();
-        }).then((cleanup) => {
-            if (disposed) cleanup();
-            else unlisten = cleanup;
+        void getCurrentTauriChatWindowDragPayload(target).then(async (payload) => {
+            if (disposed || !payload) return;
+            const cleanup = await watchDetachedTauriChatDropAck(payload, () => {
+                void closeCurrentDetachedTauriChatWindow();
+            });
+            if (disposed) {
+                cleanup();
+                return;
+            }
+            unlisten = cleanup;
+            dragPayload = payload;
         });
         return () => {
             disposed = true;

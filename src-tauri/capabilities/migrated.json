@@ -33,8 +33,6 @@
     "core:window:allow-inner-position",
     "core:window:allow-inner-size",
     "core:window:allow-close",
-    "core:window:allow-show",
-    "core:window:allow-set-focus",
     "core:window:allow-maximize",
     "core:window:allow-set-fullscreen",
     "shell:allow-open",

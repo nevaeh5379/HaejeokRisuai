@@ -3,7 +3,7 @@
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
-    import { parseTauriChatWindowTarget } from './ts/tauriChatWindows';
+    import { parseTauriChatWindowPresentation, parseTauriChatWindowTarget } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
@@ -17,6 +17,7 @@
 
   
     const detachedChatWindow = isTauri && parseTauriChatWindowTarget(location.search) !== null
+    const detachedChatPresentation = parseTauriChatWindowPresentation(location.search)
     let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -309,6 +310,22 @@
                 </div>
             </div>
             <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg">RisyGTP 9+ Mytho Ultra Free</span>
+        </div>
+    {:else if detachedChatWindow && !$loadedStore}
+        <div class="w-full h-full min-w-0 flex flex-col bg-bgcolor text-textcolor">
+            <div class="h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1">
+                <div class="h-8 min-w-32 max-w-72 rounded-t-md border border-b-0 border-darkborderc bg-selected px-3 text-left">
+                    <span class="block truncate text-xs font-medium">{detachedChatPresentation.characterName || 'RisuAI'}</span>
+                    <span class="block truncate text-[10px] opacity-70">{detachedChatPresentation.chatName || 'Chat'}</span>
+                </div>
+            </div>
+            <div class="grow min-h-0 bg-bgcolor/95 relative overflow-hidden">
+                <div class="absolute inset-x-4 top-5 space-y-3 opacity-30" aria-hidden="true">
+                    <div class="h-14 rounded-xl bg-selected animate-pulse"></div>
+                    <div class="h-20 rounded-xl bg-selected animate-pulse"></div>
+                    <div class="h-12 rounded-xl bg-selected animate-pulse"></div>
+                </div>
+            </div>
         </div>
     {:else if !$loadedStore}
         {#if isNodeServer && $sqlConfiguredStore === false}

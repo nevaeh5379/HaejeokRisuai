@@ -108,7 +108,11 @@
         contextMenu = null;
         const label = getTabLabel(tab);
         try {
-            await openChatInNewTauriWindow(tab, `${label.characterName} · ${label.chatName} - RisuAI`);
+            await openChatInNewTauriWindow(
+                tab,
+                `${label.characterName} · ${label.chatName} - RisuAI`,
+                label,
+            );
         } catch (error) {
             console.error("[ChatTabs] Failed to open Tauri chat window", error);
             alertError(error);
@@ -247,7 +251,11 @@
         activeDrag.detaching = true;
         const label = getTabLabel(tab);
         try {
-            await openChatInNewTauriWindow(tab, `${label.characterName} · ${label.chatName} - RisuAI`);
+            await openChatInNewTauriWindow(
+                tab,
+                `${label.characterName} · ${label.chatName} - RisuAI`,
+                label,
+            );
             const result = chatTabsStore.detach(tab.id);
             clearTabDrag();
             if (result.becameEmpty) {
