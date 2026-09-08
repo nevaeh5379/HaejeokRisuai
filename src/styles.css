@@ -746,6 +746,15 @@ html:not(.tauri-macos-vibrancy) .n-scroll:focus::-webkit-scrollbar-thumb {
   opacity: 1;
 }
 
+html.tauri-macos-vibrancy {
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--risu-theme-textcolor) 36%,
+      transparent
+    )
+    transparent;
+}
+
 html.tauri-macos-vibrancy .scrollbar-thin {
   scrollbar-width: auto !important;
 }
