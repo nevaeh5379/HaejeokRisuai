@@ -175,6 +175,33 @@ export class ChatTabsStore {
     return tab;
   }
 
+  detach(tabId: string): {
+    activeChanged: boolean;
+    activeTab: ChatTab | null;
+    becameEmpty: boolean;
+  } {
+    const tab = this.tabs.find((item) => item.id === tabId);
+    if (!tab) {
+      return {
+        activeChanged: false,
+        activeTab: this.activeTab ?? null,
+        becameEmpty: this.tabs.length === 0,
+      };
+    }
+
+    if (this.tabs.length > 1) {
+      const result = this.close(tabId);
+      return { ...result, becameEmpty: false };
+    }
+
+    const group = this.getGroup(tab.groupId) ?? this.focusedGroup;
+    this.tabs.splice(this.tabs.indexOf(tab), 1);
+    group.activeTabId = null;
+    this.groups = [group];
+    this.focusedGroupId = group.id;
+    return { activeChanged: true, activeTab: null, becameEmpty: true };
+  }
+
   close(tabId: string): { activeChanged: boolean; activeTab: ChatTab | null } {
     if (this.tabs.length <= 1) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };

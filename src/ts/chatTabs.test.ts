@@ -70,3 +70,24 @@ describe("ChatTabsStore.moveTab", () => {
     expect(store.getGroup("right")?.activeTabId).toBe("a");
   });
 });
+
+
+describe("ChatTabsStore.detach", () => {
+  it("allows the final tab to leave the main window", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    store.tabs = [tab("only", groupId)];
+    store.groups[0].activeTabId = "only";
+
+    const result = store.detach("only");
+
+    expect(result).toEqual({
+      activeChanged: true,
+      activeTab: null,
+      becameEmpty: true,
+    });
+    expect(store.tabs).toEqual([]);
+    expect(store.groups).toHaveLength(1);
+    expect(store.groups[0].activeTabId).toBeNull();
+  });
+});

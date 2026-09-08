@@ -45,6 +45,7 @@
         marker?: HTMLElement;
         holdTimer?: ReturnType<typeof setTimeout>;
         previousUserSelect?: string;
+        detaching?: boolean;
     } | null = null;
     let suppressClickTabId: string | null = null;
 
@@ -214,6 +215,35 @@
         drag.targetIndex = targetIndex;
     }
 
+    async function detachDraggedTab() {
+        if (!isTauri || !drag?.active || drag.targetGroupId || drag.detaching) return;
+        const activeDrag = drag;
+        const tab = chatTabsStore.tabs.find((item) => item.id === activeDrag.tabId);
+        if (!tab) return;
+
+        activeDrag.detaching = true;
+        const label = getTabLabel(tab);
+        try {
+            await openChatInNewTauriWindow(tab, `${label.characterName} · ${label.chatName} - RisuAI`);
+            const result = chatTabsStore.detach(tab.id);
+            clearTabDrag();
+            if (result.becameEmpty) {
+                selectedCharID.set(-1);
+            } else if (result.activeChanged && result.activeTab) {
+                await navigateToChatTab(result.activeTab.id);
+            }
+        } catch (error) {
+            activeDrag.detaching = false;
+            console.error('[ChatTabs] Failed to detach Tauri chat tab', error);
+            alertError(error);
+        }
+    }
+
+    function leaveTabDrag(event: PointerEvent) {
+        if (!drag || event.pointerId !== drag.pointerId || !drag.active) return;
+        void detachDraggedTab();
+    }
+
     async function stopTabDrag(event: PointerEvent) {
         if (!drag || event.pointerId !== drag.pointerId) return;
         const completed = drag.active;
@@ -252,6 +282,7 @@
     onpointermove={moveTabDrag}
     onpointerup={stopTabDrag}
     onpointercancel={clearTabDrag}
+    onpointerleave={leaveTabDrag}
 />
 
 {#if showTabs}
