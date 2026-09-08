@@ -23,6 +23,7 @@ use oauth2::{
     TokenUrl
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use serde::Deserialize;
 use serde_json::json;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -33,7 +34,7 @@ use tauri::path::BaseDirectory;
 use tauri::{Listener, Manager};
 use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "macos")]
-use tauri::menu::{MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{MenuItemBuilder, MenuItemKind, Submenu, SubmenuBuilder};
 
 #[tauri::command]
 async fn native_request(url: String, body: String, header: String, method: String) -> String {
@@ -568,52 +569,186 @@ async fn streamed_fetch(
 }
 
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppMenuEntry {
+    id: String,
+    label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppNavigationMenuModel {
+    open_tabs: Vec<AppMenuEntry>,
+    recent_chats: Vec<AppMenuEntry>,
+    recent_bots: Vec<AppMenuEntry>,
+}
+
+#[cfg(target_os = "macos")]
+fn find_app_submenu(
+    items: Vec<MenuItemKind<tauri::Wry>>,
+    submenu_id: &str,
+) -> Option<Submenu<tauri::Wry>> {
+    for item in items {
+        let Some(submenu) = item.as_submenu() else {
+            continue;
+        };
+        if submenu.id().as_ref() == submenu_id {
+            return Some(submenu.clone());
+        }
+        if let Ok(children) = submenu.items() {
+            if let Some(found) = find_app_submenu(children, submenu_id) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn replace_app_menu_entries(
+    app: &AppHandle,
+    submenu_id: &str,
+    entries: &[AppMenuEntry],
+    empty_id: &str,
+    empty_label: &str,
+) -> tauri::Result<()> {
+    let Some(menu) = app.menu() else {
+        return Ok(());
+    };
+    let Some(submenu) = find_app_submenu(menu.items()?, submenu_id) else {
+        return Ok(());
+    };
+    while !submenu.items()?.is_empty() {
+        let _ = submenu.remove_at(0)?;
+    }
+    if entries.is_empty() {
+        let placeholder = MenuItemBuilder::with_id(empty_id, empty_label)
+            .enabled(false)
+            .build(app)?;
+        submenu.append(&placeholder)?;
+        return Ok(());
+    }
+    for entry in entries.iter().take(50) {
+        if !entry.id.starts_with("risu.nav.") {
+            continue;
+        }
+        let item = MenuItemBuilder::with_id(&entry.id, &entry.label).build(app)?;
+        submenu.append(&item)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        replace_app_menu_entries(
+            &app,
+            "risu.menu.chat.open-tabs",
+            &model.open_tabs,
+            "risu.empty.open-tabs",
+            "No Open Tabs",
+        )
+        .map_err(|e| e.to_string())?;
+        replace_app_menu_entries(
+            &app,
+            "risu.menu.chat.recent-chats",
+            &model.recent_chats,
+            "risu.empty.recent-chats",
+            "No Recent Chats",
+        )
+        .map_err(|e| e.to_string())?;
+        replace_app_menu_entries(
+            &app,
+            "risu.menu.bots.recent",
+            &model.recent_bots,
+            "risu.empty.recent-bots",
+            "No Recent Bots",
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, model);
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn install_haejeok_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
+    let no_tabs = MenuItemBuilder::with_id("risu.empty.open-tabs", "No Open Tabs")
+        .enabled(false)
+        .build(app)?;
+    let open_tabs = SubmenuBuilder::with_id(app, "risu.menu.chat.open-tabs", "Open Tabs")
+        .item(&no_tabs)
+        .build()?;
+    let no_recent_chats = MenuItemBuilder::with_id("risu.empty.recent-chats", "No Recent Chats")
+        .enabled(false)
+        .build(app)?;
+    let recent_chats = SubmenuBuilder::with_id(app, "risu.menu.chat.recent-chats", "Recent Chats")
+        .item(&no_recent_chats)
+        .build()?;
+    let chat_menu = SubmenuBuilder::with_id(app, "risu.menu.chat", "Chat")
+        .items(&[&open_tabs, &recent_chats])
+        .build()?;
+
+    let no_recent_bots = MenuItemBuilder::with_id("risu.empty.recent-bots", "No Recent Bots")
+        .enabled(false)
+        .build(app)?;
+    let recent_bots = SubmenuBuilder::with_id(app, "risu.menu.bots.recent", "Recent Bots")
+        .item(&no_recent_bots)
+        .build()?;
     let bot_settings = MenuItemBuilder::with_id("risu.bots.settings", "Bot Settings…")
         .accelerator("CmdOrCtrl+Shift+B")
         .build(app)?;
     let personas = MenuItemBuilder::with_id("risu.bots.personas", "Personas…").build(app)?;
     let lorebook = MenuItemBuilder::with_id("risu.bots.lorebook", "Global Lorebook…").build(app)?;
     let prompts = MenuItemBuilder::with_id("risu.bots.prompts", "Prompt Templates…").build(app)?;
-    let bots = SubmenuBuilder::new(app, "Bots")
-        .items(&[&bot_settings, &personas, &lorebook, &prompts])
+    let bots = SubmenuBuilder::with_id(app, "risu.menu.bots", "Bots")
+        .items(&[&recent_bots, &bot_settings, &personas, &lorebook, &prompts])
         .build()?;
 
     let modules = MenuItemBuilder::with_id("risu.modules.settings", "Module Settings…")
         .accelerator("CmdOrCtrl+Shift+M")
         .build(app)?;
-    let plugins = MenuItemBuilder::with_id("risu.modules.plugins", "Plugin Settings…").build(app)?;
-    let modules_menu = SubmenuBuilder::new(app, "Modules")
+    let plugins =
+        MenuItemBuilder::with_id("risu.modules.plugins", "Plugin Settings…").build(app)?;
+    let modules_menu = SubmenuBuilder::with_id(app, "risu.menu.modules", "Modules")
         .items(&[&modules, &plugins])
         .build()?;
 
     let settings = MenuItemBuilder::with_id("risu.tools.settings", "Settings…")
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
-    let advanced = MenuItemBuilder::with_id("risu.tools.advanced", "Advanced Settings…").build(app)?;
+    let advanced =
+        MenuItemBuilder::with_id("risu.tools.advanced", "Advanced Settings…").build(app)?;
     let hotkeys = MenuItemBuilder::with_id("risu.tools.hotkeys", "Hotkey Settings…").build(app)?;
-    let account_files = MenuItemBuilder::with_id("risu.tools.account-files", "Account & Files…").build(app)?;
-    let tools = SubmenuBuilder::new(app, "Tools")
+    let account_files =
+        MenuItemBuilder::with_id("risu.tools.account-files", "Account & Files…").build(app)?;
+    let tools = SubmenuBuilder::with_id(app, "risu.menu.tools", "Tools")
         .items(&[&settings, &advanced, &hotkeys, &account_files])
         .build()?;
 
     if let Some(menu) = app.menu() {
         let insert_at = menu.items()?.len().saturating_sub(2);
-        menu.insert(&bots, insert_at)?;
-        menu.insert(&modules_menu, insert_at + 1)?;
-        menu.insert(&tools, insert_at + 2)?;
+        menu.insert(&chat_menu, insert_at)?;
+        menu.insert(&bots, insert_at + 1)?;
+        menu.insert(&modules_menu, insert_at + 2)?;
+        menu.insert(&tools, insert_at + 3)?;
     }
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 fn handle_haejeok_app_menu(app: &AppHandle, menu_id: &str) {
-    if !menu_id.starts_with("risu.") {
+    if !menu_id.starts_with("risu.") || menu_id.starts_with("risu.empty.") {
         return;
     }
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.set_focus();
+    if !menu_id.starts_with("risu.nav.tab:") {
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.set_focus();
+        }
     }
     let _ = app.emit_to("main", "risu://app-menu", menu_id.to_string());
 }
@@ -665,7 +800,8 @@ fn main() {
             install_py_dependencies,
             streamed_fetch,
             oauth_login,
-            sqlite_transaction::sqlite_execute_transaction
+            sqlite_transaction::sqlite_execute_transaction,
+            update_app_navigation_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")

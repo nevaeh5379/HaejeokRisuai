@@ -562,6 +562,9 @@ function removeStorage(key: string): void {
 
 function persistWorkspaceManager(): void {
   writeStorage(WORKSPACE_STORAGE_KEY, chatWindowManager.snapshot());
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("risu:workspace-menu-refresh"));
+  }
 }
 
 async function openAuxiliaryWindow(
