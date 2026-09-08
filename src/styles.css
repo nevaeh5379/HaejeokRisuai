@@ -430,33 +430,25 @@ html.tauri-macos-vibrancy .default-chat-screen {
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass {
   --risu-macos-chrome-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 38%,
+    var(--risu-theme-darkbg) 72%,
     transparent
   );
-  --risu-macos-content-tint: color-mix(
-    in srgb,
-    var(--risu-theme-bgcolor) 80%,
-    transparent
-  );
+  --risu-macos-content-tint: var(--risu-theme-bgcolor);
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-recent-session-search,
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-recent-session-card {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-bgcolor) 48%,
+    var(--risu-theme-bgcolor) 76%,
     transparent
   ) !important;
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab-list {
-  background-color: color-mix(
-    in srgb,
-    var(--risu-theme-darkbg) 28%,
-    transparent
-  ) !important;
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background-color: var(--risu-theme-bgcolor) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab {
@@ -517,40 +509,20 @@ html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-backdrop {
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-2 {
-  background-color: color-mix(
-    in srgb,
-    var(--risu-theme-bgcolor) 72%,
-    transparent
-  ) !important;
-  border-color: color-mix(
-    in srgb,
-    var(--risu-theme-textcolor) 12%,
-    transparent
-  ) !important;
+  background-color: var(--risu-theme-bgcolor) !important;
+  border-color: var(--risu-theme-darkborderc) !important;
   box-shadow: 0 24px 64px rgb(0 0 0 / 0.3);
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-3 {
-  background-color: color-mix(
-    in srgb,
-    var(--risu-theme-darkbg) 46%,
-    transparent
-  ) !important;
-  border-right-color: color-mix(
-    in srgb,
-    var(--risu-theme-textcolor) 10%,
-    transparent
-  ) !important;
+  background-color: var(--risu-theme-darkbg) !important;
+  border-right-color: var(--risu-theme-darkborderc) !important;
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-4 {
-  background-color: color-mix(
-    in srgb,
-    var(--risu-theme-bgcolor) 78%,
-    transparent
-  ) !important;
+  background-color: var(--risu-theme-bgcolor) !important;
 }
 
 /* WebKitGTK renders Lucide's default stroke heavier than browser engines do. */
@@ -726,27 +698,33 @@ body {
     1px 1px 0 white;
 }
 
-::-webkit-scrollbar {
+/* Leave WKWebView scrollbars untouched on macOS Tauri so WebKit can use
+ * the system-native overlay scrollbar appearance and auto-hide behavior. */
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
 /* Track */
-::-webkit-scrollbar-track {
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar-track,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar-track {
   background: transparent;
 }
 
 /* Handle */
-::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar-thumb,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar-thumb {
   background: rgba(136, 136, 136, 0.5);
 }
 
 /* Handle on hover */
-::-webkit-scrollbar-thumb:hover {
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar-thumb:hover,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar-thumb:hover {
   background: rgba(85, 85, 85, 0.5);
 }
 
-.n-scroll::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy) .n-scroll::-webkit-scrollbar-thumb {
   visibility: hidden;
   opacity: 0;
   transition:
@@ -754,14 +732,18 @@ body {
     opacity 0.5s linear;
 }
 
-.n-scroll:hover::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy) .n-scroll:hover::-webkit-scrollbar-thumb {
   visibility: visible;
   opacity: 1;
 }
 
-.n-scroll:focus::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy) .n-scroll:focus::-webkit-scrollbar-thumb {
   visibility: visible;
   opacity: 1;
+}
+
+html.tauri-macos-vibrancy .scrollbar-thin {
+  scrollbar-width: auto !important;
 }
 
 * {
