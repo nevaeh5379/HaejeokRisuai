@@ -835,13 +835,13 @@ html.tauri-macos-vibrancy .rs-native-sidebar-menu-popup {
   scrollbar-width: auto !important;
 }
 
-/* Compact macOS overlay-style scrollbars. Keep a 5px mouse hit area but paint
- * only a ~1px thumb. It stays invisible until the pointer is over the actual
+/* Compact macOS overlay-style scrollbars. Keep a 7px mouse hit area and paint
+ * a ~3px thumb. It stays invisible until the pointer is over the actual
  * scroller, avoiding a permanent rail on dark surfaces. */
 html.tauri-macos-vibrancy::-webkit-scrollbar,
 html.tauri-macos-vibrancy *::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 7px;
+  height: 7px;
   -webkit-appearance: none;
 }
 
@@ -871,6 +871,11 @@ html.tauri-macos-vibrancy::-webkit-scrollbar-thumb:active,
 html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb:active {
   background: color-mix(in srgb, var(--risu-theme-textcolor) 52%, transparent);
   background-clip: content-box;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-scroll:hover::-webkit-scrollbar-thumb {
