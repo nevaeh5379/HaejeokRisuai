@@ -23,12 +23,16 @@
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
         acceptTauriChatTabDrop,
+        clearActiveTauriChatDragPayload,
         completeCurrentTauriTabTransfer,
         createTauriChatDragPayload,
+        getActiveTauriChatDragPayload,
+        getCurrentChatWorkspaceWindowId,
         isCurrentTauriCursorOutsideWindow,
         moveTabToNewTauriWorkspaceWindow,
         openChatInNewTauriWindow,
         parseTauriChatDragPayload,
+        publishActiveTauriChatDragPayload,
         publishCurrentTauriChatWorkspaceState,
         serializeTauriChatDragPayload,
         TAURI_CHAT_DRAG_MIME,
@@ -334,14 +338,18 @@
     function readWorkspaceDragPayload(dataTransfer: DataTransfer | null) {
         if (!dataTransfer) return null;
         const custom = dataTransfer.getData(TAURI_CHAT_DRAG_MIME);
-        return custom ? parseTauriChatDragPayload(custom) : null;
+        if (custom) return parseTauriChatDragPayload(custom);
+        const active = getActiveTauriChatDragPayload();
+        return active?.sourceWindowId === getCurrentChatWorkspaceWindowId() ? null : active;
     }
 
     function canAcceptWorkspaceDrag(dataTransfer: DataTransfer | null) {
         if (!isTauri || !dataTransfer) return false;
-        return Array.from(dataTransfer.types).some(
+        if (Array.from(dataTransfer.types).some(
             (type) => type === TAURI_CHAT_DRAG_MIME || type === RISU_CHAT_TAB_DRAG_TYPE,
-        );
+        )) return true;
+        const active = getActiveTauriChatDragPayload();
+        return Boolean(active && active.sourceWindowId !== getCurrentChatWorkspaceWindowId());
     }
 
     function startTauriMainTabDrag(event: DragEvent, tab: ChatTab) {
@@ -365,6 +373,7 @@
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData(RISU_CHAT_TAB_DRAG_TYPE, serialized);
         event.dataTransfer.setData(TAURI_CHAT_DRAG_MIME, serialized);
+        publishActiveTauriChatDragPayload(payload);
         (event.currentTarget as HTMLElement).classList.add('chat-tab-chosen');
 
         void watchTauriChatTabTransferAck(payload, () => {
@@ -433,6 +442,7 @@
             console.error('[ChatTabs] Failed to detach Tauri workspace tab', error);
             alertError(error);
         } finally {
+            clearActiveTauriChatDragPayload(state.payload.transferId);
             if (!keepAckListener) state.ackCleanup?.();
             setTimeout(() => { suppressClickTabId = null; }, 0);
         }

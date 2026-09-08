@@ -20,6 +20,8 @@ const TAB_TRANSFER_ACK_EVENT = "risu://chat-workspace-tab-transfer-ack";
 const WORKSPACE_STORAGE_KEY = "risu:chat-workspace:v1";
 const WINDOW_STORAGE_PREFIX = "risu:chat-workspace-window:";
 const LAUNCH_STORAGE_PREFIX = "risu:chat-workspace-launch:";
+const ACTIVE_DRAG_STORAGE_KEY = "risu:chat-workspace-active-drag";
+const ACTIVE_DRAG_MAX_AGE_MS = 30_000;
 export const TAURI_CHAT_DRAG_MIME = "application/x-risu-chat-tab";
 
 interface PhysicalPoint { x: number; y: number }
@@ -40,6 +42,11 @@ export interface TauriChatDragPayload {
   sourceWindowLabel: string;
   transferId: string;
   tab: ChatTab;
+}
+
+interface StoredTauriChatDragPayload {
+  payload: TauriChatDragPayload;
+  startedAt: number;
 }
 
 interface TauriWorkspaceStatePayload {
@@ -166,6 +173,38 @@ export function parseTauriChatDragPayload(value: string): TauriChatDragPayload |
   } catch {
     return null;
   }
+}
+
+export function publishActiveTauriChatDragPayload(
+  payload: TauriChatDragPayload,
+  startedAt = Date.now(),
+): void {
+  if (!isTauriChatDragPayload(payload)) return;
+  writeStorage(ACTIVE_DRAG_STORAGE_KEY, { payload, startedAt } satisfies StoredTauriChatDragPayload);
+}
+
+export function getActiveTauriChatDragPayload(
+  now = Date.now(),
+): TauriChatDragPayload | null {
+  const stored = readStorage<StoredTauriChatDragPayload>(ACTIVE_DRAG_STORAGE_KEY);
+  if (!stored || !isTauriChatDragPayload(stored.payload) || !Number.isFinite(stored.startedAt)) {
+    removeStorage(ACTIVE_DRAG_STORAGE_KEY);
+    return null;
+  }
+  if (now - stored.startedAt > ACTIVE_DRAG_MAX_AGE_MS || now < stored.startedAt) {
+    removeStorage(ACTIVE_DRAG_STORAGE_KEY);
+    return null;
+  }
+  return { ...stored.payload, tab: cloneTab(stored.payload.tab) };
+}
+
+export function clearActiveTauriChatDragPayload(transferId?: string): void {
+  if (!transferId) {
+    removeStorage(ACTIVE_DRAG_STORAGE_KEY);
+    return;
+  }
+  const active = getActiveTauriChatDragPayload();
+  if (active?.transferId === transferId) removeStorage(ACTIVE_DRAG_STORAGE_KEY);
 }
 
 function readStorage<T>(key: string): T | null {

@@ -76,6 +76,21 @@ describe("ChatWindowManager", () => {
     expect(restored.snapshot()).toEqual(saved);
   });
 
+  it("moves a tab directly between auxiliary windows without changing its identity", () => {
+    const manager = new ChatWindowManager();
+    manager.registerAuxiliary("aux-1", snapshot(tab("move")));
+    manager.registerAuxiliary("aux-2", createSingleTabSnapshot(tab("stay")));
+
+    const moved = manager.moveTab("move", "aux-1", "aux-2");
+
+    expect(moved?.id).toBe("move");
+    expect(manager.getWindow("aux-1")?.tabs.tabs).toEqual([]);
+    expect(manager.getWindow("aux-2")?.tabs.tabs.map((item) => item.id)).toEqual([
+      "stay",
+      "move",
+    ]);
+  });
+
   it("moves a tab between main and auxiliary ownership without changing its identity", () => {
     const manager = new ChatWindowManager(snapshot(tab("main"), tab("move")));
     manager.registerAuxiliary("aux-1", createSingleTabSnapshot(tab("aux")));
