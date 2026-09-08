@@ -217,6 +217,32 @@ html.tauri-macos-vibrancy
   padding-top: var(--risu-macos-titlebar-height);
 }
 
+/* The bottom hamburger is floating chrome on macOS, not a footer. Keep the
+ * avatar viewport full-height and reserve only scrollable breathing room so the
+ * final character/add controls can move above the floating button. */
+html.tauri-macos-vibrancy .rs-sidebar-scroll.rs-sidebar-scroll-floating-menu {
+  padding-bottom: 5rem;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-anchor {
+  position: absolute;
+  left: 0;
+  bottom: 4.5rem;
+  width: 100%;
+  height: 0;
+  border-top: 0 !important;
+  z-index: 30;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-button {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  margin: 0 !important;
+  transform: translateX(-50%);
+  z-index: 31;
+}
+
 html.tauri-macos-vibrancy .rs-sidebar,
 html.tauri-macos-vibrancy .rs-sidebar-panel {
   border-right: 0 !important;

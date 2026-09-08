@@ -597,7 +597,8 @@
     {/if}
   </div>
   {/if}
-  <div class="rs-sidebar-scroll flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
+  <div class="rs-sidebar-scroll flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
+    class:rs-sidebar-scroll-floating-menu={settingsStore.state.hamburgerButtonBottom}>
     <div class="h-4 min-h-4 w-14" role="listitem" ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)){ return }
       e.preventDefault()
@@ -889,7 +890,7 @@
     </div>
   </div>
   {#if settingsStore.state.hamburgerButtonBottom}
-  <div class="border-t border-t-selected w-full relative text-white ">
+  <div class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white ">
     {#if menuMode === 1}
       <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
         <BarIcon
@@ -952,7 +953,7 @@
     {/if}
   </div>
   <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+    class="rs-sidebar-menu-button flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={() => {
       menuMode = 1 - menuMode;
     }}><ListIcon />
