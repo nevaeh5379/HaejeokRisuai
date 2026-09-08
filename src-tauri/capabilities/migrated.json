@@ -29,6 +29,13 @@
         "**"
       ]
     },
+    "core:window:allow-get-all-windows",
+    "core:window:allow-cursor-position",
+    "core:window:allow-inner-position",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
     "core:window:allow-maximize",
     "core:window:allow-set-fullscreen",
     "shell:allow-open",

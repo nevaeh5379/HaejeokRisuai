@@ -5,6 +5,7 @@
     import { CharEmotion, MobileGUI, selectedCharID } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
+    import DetachedChatHeader from "./DetachedChatHeader.svelte";
     import defaultWallpaper from '../../etc/bg.jpg'
     import ChatList from "../Others/ChatList.svelte";
     import TransitionImage from "./TransitionImage.svelte";
@@ -69,9 +70,10 @@
 <svelte:window onpointermove={moveSplitDrag} onpointerup={stopSplitDrag} onpointercancel={stopSplitDrag} />
 
 {#if detached}
-    <div class="grow h-full min-w-0 relative justify-center flex">
+    <div class="grow h-full min-w-0 relative flex flex-col">
         <BackgroundDom />
-        <div style={bgImg} class="h-full w-full min-w-0">
+        <DetachedChatHeader />
+        <div style={bgImg} class="grow min-h-0 w-full min-w-0">
             <DefaultChatScreen
                 groupId={chatTabsStore.focusedGroupId}
                 allowSplit={false}

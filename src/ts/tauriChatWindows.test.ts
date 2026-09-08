@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTauriChatWindowUrl,
+  isPointInTauriChatDockZone,
   parseTauriChatWindowTarget,
 } from "./tauriChatWindows";
 
@@ -27,5 +28,29 @@ describe("Tauri chat window targets", () => {
       parseTauriChatWindowTarget("?risuWindow=chat&characterId=a"),
     ).toBeNull();
     expect(parseTauriChatWindowTarget("?risuWindow=chat&chatId=b")).toBeNull();
+  });
+});
+
+describe("Tauri chat docking zone", () => {
+  it("accepts the top tab-strip area of the main window", () => {
+    expect(
+      isPointInTauriChatDockZone(
+        { x: 420, y: 180 },
+        { x: 100, y: 100 },
+        { width: 900, height: 700 },
+        2,
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects points below the tab-strip area", () => {
+    expect(
+      isPointInTauriChatDockZone(
+        { x: 420, y: 240 },
+        { x: 100, y: 100 },
+        { width: 900, height: 700 },
+        2,
+      ),
+    ).toBe(false);
   });
 });

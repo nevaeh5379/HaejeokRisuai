@@ -153,8 +153,9 @@ export async function loadData() {
       void initNodeRealtimeSync();
       revealShell();
       if (isTauri) {
-        const { restoreTauriChatWindowTarget } =
+        const { restoreTauriChatWindowTarget, startTauriChatDockListener } =
           await import("../tauriChatWindows");
+        await startTauriChatDockListener();
         await restoreTauriChatWindowTarget();
       }
       if (presetStore.activeStatus === "ready") {
