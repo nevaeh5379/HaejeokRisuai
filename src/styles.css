@@ -253,14 +253,32 @@ html.tauri-macos-vibrancy .rs-recent-session-card {
   ) !important;
 }
 
+html.tauri-macos-vibrancy .default-chat-pane.has-chat-tabs > .rs-chat-tab-list {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 40;
+}
+
+html.tauri-macos-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .default-chat-screen {
+  box-sizing: border-box;
+  padding-top: 2.5rem;
+}
+
 html.tauri-macos-vibrancy .rs-chat-tab-list {
   background-color: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 58%,
+    var(--risu-theme-darkbg) 44%,
     transparent
   ) !important;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  border-bottom-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkborderc) 52%,
+    transparent
+  );
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab-list.macos-aux-titlebar-tabs {

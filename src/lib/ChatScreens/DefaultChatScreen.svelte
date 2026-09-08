@@ -854,7 +854,8 @@
         </div>
     {:else}
         <div
-            class="h-full w-full min-h-0 flex flex-col"
+            class="default-chat-pane relative h-full w-full min-h-0 flex flex-col"
+            class:has-chat-tabs={showTabBar && (settingsStore.state.showChatTabs ?? true)}
             onpointerdowncapture={() => {
                 const activeTab = chatTabsStore.activeTabForGroup(paneGroupId)
                 if(chatTabsStore.focusedGroupId !== paneGroupId){
