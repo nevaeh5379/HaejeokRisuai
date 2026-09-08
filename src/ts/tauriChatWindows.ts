@@ -605,7 +605,7 @@ async function openAuxiliaryWindow(
     transparent: isTauriMacOS,
     titleBarStyle: isTauriMacOS ? "overlay" : undefined,
     hiddenTitle: isTauriMacOS,
-    trafficLightPosition: isTauriMacOS ? new LogicalPosition(20, 16) : undefined,
+    trafficLightPosition: isTauriMacOS ? new LogicalPosition(12, 22) : undefined,
     visible: true,
     focus: true,
   });
