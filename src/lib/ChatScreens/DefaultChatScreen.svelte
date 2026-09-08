@@ -47,6 +47,16 @@
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
 
+    const loadDinoGame = () => import('./WaitingDinoGame.svelte').then(m => m.default);
+    let minigameDismissed = $state(false)
+    let minigameWasGenerating = false
+    let minigameActive = $state(false)
+    let minigameShouldBeFrozen = $state(false)
+    let dinoGameInstance: {
+        freezeGame?: (message?: string) => void
+        resetGame?: () => void
+    } | undefined = $state()
+
     interface Props {
         openModuleList?: boolean;
         openChatList?: boolean;
@@ -108,6 +118,29 @@
         getChatProcessStage($chatProcessStages, currentChatSession?.id)
     )
     let isFocusedPane = $derived(chatTabsStore.focusedGroupId === paneGroupId)
+
+    $effect(() => {
+        // new generation session begins → show the minigame again
+        if (currentChatGenerating && !minigameWasGenerating) {
+            minigameDismissed = false
+            minigameShouldBeFrozen = false
+            if (minigameActive) {
+                dinoGameInstance?.resetGame?.()
+            }
+            minigameActive = true
+        }
+        // generation finished → freeze the running game; keep it mounted for manual close
+        if (!currentChatGenerating && minigameWasGenerating) {
+            minigameShouldBeFrozen = true
+        }
+        minigameWasGenerating = currentChatGenerating
+    })
+
+    $effect(() => {
+        if (minigameShouldBeFrozen) {
+            dinoGameInstance?.freezeGame?.()
+        }
+    })
 
     $effect(() => {
         const activeTabId = chatTabsStore.getGroup(paneGroupId)?.activeTabId
@@ -997,6 +1030,22 @@
                     </div>
                 {/if}
             </div>
+            {#if minigameActive && settingsStore.state.waitingMinigame !== false && !minigameDismissed}
+                {#await loadDinoGame() then DinoGame}
+                    <div class="relative shrink-0 mx-4 my-1 rounded-md overflow-hidden border border-darkborderc bg-bgcolor"
+                         style={settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}
+                    >
+                        <button
+                                class="absolute right-1 top-1 z-10 p-1 bg-darkbg text-textcolor rounded-md transition-colors hover:text-draculared focus:text-draculared"
+                                aria-label="Close minigame"
+                                onclick={() => { minigameDismissed = true; minigameActive = false; dinoGameInstance = undefined }}
+                        >
+                            <XIcon size={16} />
+                        </button>
+                        <DinoGame bind:this={dinoGameInstance} />
+                    </div>
+                {/await}
+            {/if}
             {#if settingsStore.state.useAutoTranslateInput && characterStore.characters[selectedCharacterIndex]?.chaId !== '§playground'}
                 <div class="flex items-center mt-2 mb-2">
                     <label for='messageInputTranslate' class="text-textcolor ml-4">

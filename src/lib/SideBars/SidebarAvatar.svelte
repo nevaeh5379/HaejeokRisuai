@@ -12,7 +12,6 @@
     reveal: (visible: boolean) => void;
   };
   let sharedObserver: IntersectionObserver | null = null;
-  let observed = new Set<ObservedAvatar>();
 
   function getSharedObserver(): IntersectionObserver {
     if (sharedObserver) return sharedObserver;
@@ -74,6 +73,12 @@
   // batch-preloaded) skips the intersection dance entirely: rows are fully
   // rendered up front so scrolling is pure compositing.
   let sourceVisible = $state(false);
+  // The eager prop can be enabled from Advanced Settings while this component
+  // is already mounted. Promote to visible immediately; disabling eager does
+  // not revoke an image that has already been loaded.
+  $effect(() => {
+    if (eager) sourceVisible = true;
+  });
   let resolvedSrc = $derived(typeof src === 'function' ? (sourceVisible ? src() : '') : src);
   let resolvedBackground = $derived(typeof backgroundimg === 'function' ? (sourceVisible ? backgroundimg() : '') : backgroundimg);
 
@@ -89,7 +94,6 @@
       },
     };
     observedAvatars.set(avatarElement, entry);
-    observed.add(entry);
     getSharedObserver().observe(avatarElement);
     return () => {
       observedAvatars.delete(avatarElement);

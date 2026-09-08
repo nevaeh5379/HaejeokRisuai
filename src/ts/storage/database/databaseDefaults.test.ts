@@ -23,6 +23,13 @@ describe("normalizeDatabaseDefaults", () => {
       normalizeDatabaseInput({ assetCacheEntries: -1 }).assetCacheEntries,
     ).toBe(128);
     expect(normalizeSettingsInput({}).chatParserCacheEntries).toBe(256);
+    expect(normalizeSettingsInput({}).preloadRecentSessionThumbnails).toBe(
+      false,
+    );
+    expect(
+      normalizeSettingsInput({ preloadRecentSessionThumbnails: true })
+        .preloadRecentSessionThumbnails,
+    ).toBe(true);
     expect(
       normalizeSettingsInput({ chatParserCacheEntries: 100 })
         .chatParserCacheEntries,

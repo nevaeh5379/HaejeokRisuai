@@ -307,6 +307,13 @@ export const displaySizeSettingsItems: SettingItem[] = [
 
 export const displayOtherSettingsItems: SettingItem[] = [
   {
+    id: "display.waitingMinigame",
+    type: "check",
+    labelKey: "waitingMinigame",
+    bindKey: "waitingMinigame",
+    keywords: ["minigame", "dino", "waiting", "게임"],
+  },
+  {
     id: "display.fullScreen",
     type: "check",
     labelKey: "fullscreen",
