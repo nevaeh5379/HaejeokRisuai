@@ -51,7 +51,11 @@
     let minigameDismissed = $state(false)
     let minigameWasGenerating = false
     let minigameActive = $state(false)
-    let dinoGameInstance: { freezeGame?: (message?: string) => void } | undefined = $state()
+    let minigameShouldBeFrozen = $state(false)
+    let dinoGameInstance: {
+        freezeGame?: (message?: string) => void
+        resetGame?: () => void
+    } | undefined = $state()
 
     interface Props {
         openModuleList?: boolean;
@@ -119,16 +123,23 @@
         // new generation session begins → show the minigame again
         if (currentChatGenerating && !minigameWasGenerating) {
             minigameDismissed = false
+            minigameShouldBeFrozen = false
             if (minigameActive) {
-                (dinoGameInstance as { resetGame?: () => void } | undefined)?.resetGame?.()
+                dinoGameInstance?.resetGame?.()
             }
             minigameActive = true
         }
         // generation finished → freeze the running game; keep it mounted for manual close
         if (!currentChatGenerating && minigameWasGenerating) {
-            (dinoGameInstance as { freezeGame?: (message?: string) => void } | undefined)?.freezeGame?.()
+            minigameShouldBeFrozen = true
         }
         minigameWasGenerating = currentChatGenerating
+    })
+
+    $effect(() => {
+        if (minigameShouldBeFrozen) {
+            dinoGameInstance?.freezeGame?.()
+        }
     })
 
     $effect(() => {

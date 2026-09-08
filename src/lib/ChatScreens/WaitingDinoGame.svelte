@@ -170,24 +170,39 @@
     }
 
     function handleKeyDown(e: KeyboardEvent) {
-        if (activeElementIsTypingTarget()) return;
+        if (gameState === 'frozen' || document.activeElement !== canvas || activeElementIsTypingTarget()) return;
         if (e.key === ' ' || e.key === 'ArrowUp') {
             e.preventDefault();
             startJump();
-        } else if (e.key === 'ArrowDown') {
+        } else if (e.key === 'ArrowDown' && gameState === 'running') {
             e.preventDefault();
             setDuck(true);
         }
     }
 
     function handleKeyUp(e: KeyboardEvent) {
-        if (activeElementIsTypingTarget()) return;
+        if (gameState !== 'running' || document.activeElement !== canvas || activeElementIsTypingTarget()) return;
         if (e.key === 'ArrowDown') setDuck(false);
+    }
+
+    function focusGame() {
+        canvas?.focus();
     }
 
     function handlePointerDown(e: PointerEvent) {
         e.preventDefault();
+        focusGame();
         startJump();
+    }
+
+    function handleStartClick() {
+        focusGame();
+        startJump();
+    }
+
+    function handleRestartClick() {
+        focusGame();
+        startGame();
     }
 
     // ---- game flow ----
@@ -536,9 +551,8 @@
             readTheme();
             if (gameState !== 'running') draw();
         });
+        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
         themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
-        window.addEventListener('keydown', handleKeyDown, true);
-        window.addEventListener('keyup', handleKeyUp, true);
         // initial static render — container may not be laid out yet on the first
         // frame (dynamic import + flex layout), so retry until the width is real
         let initialAttempts = 0;
@@ -554,8 +568,6 @@
 
     onDestroy(() => {
         cancelAnimationFrame(rafId);
-        window.removeEventListener('keydown', handleKeyDown, true);
-        window.removeEventListener('keyup', handleKeyUp, true);
         resizeObserver?.disconnect();
         themeObserver?.disconnect();
     });
@@ -569,6 +581,10 @@
             style:height="{CANVAS_H}px"
             style:touch-action="none"
             aria-label="Chrome Dino minigame"
+            tabindex="0"
+            onkeydown={handleKeyDown}
+            onkeyup={handleKeyUp}
+            onblur={() => setDuck(false)}
             onpointerdown={handlePointerDown}
         ></canvas>
 
@@ -583,7 +599,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
                 class="absolute inset-0 flex flex-col items-center justify-center gap-1 cursor-pointer bg-bgcolor/40"
-                onclick={startJump}
+                onclick={handleStartClick}
             >
                 <span class="font-semibold text-sm" style="color:{themeColors.fg}">{language.dinoPressStart}</span>
                 <span class="text-xs opacity-60" style="color:{themeColors.fg}">{language.dinoWaitingDescription}</span>
@@ -601,7 +617,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
                 class="absolute inset-0 flex flex-col items-center justify-center gap-1 cursor-pointer bg-bgcolor/60"
-                onclick={startGame}
+                onclick={handleRestartClick}
             >
                 <span class="font-bold text-base" style="color:{themeColors.fg}">{language.dinoGameOver}</span>
                 <span class="text-xs opacity-70" style="color:{themeColors.fg}">
