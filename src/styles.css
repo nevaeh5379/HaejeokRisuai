@@ -272,11 +272,7 @@ html.tauri-macos-vibrancy .rs-chat-tab-list {
     var(--risu-theme-darkbg) 44%,
     transparent
   ) !important;
-  border-bottom-color: color-mix(
-    in srgb,
-    var(--risu-theme-darkborderc) 52%,
-    transparent
-  );
+  border-bottom-color: transparent !important;
   backdrop-filter: blur(18px) saturate(135%);
   -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
@@ -308,7 +304,7 @@ html.tauri-macos-vibrancy .rs-chat-tab {
   ) !important;
   border-color: color-mix(
     in srgb,
-    var(--risu-theme-darkborderc) 66%,
+    var(--risu-theme-darkborderc) 42%,
     transparent
   );
 }
