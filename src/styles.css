@@ -196,18 +196,11 @@ html.tauri-macos-vibrancy .rs-sidebar-panel {
   background-color: var(--risu-macos-chrome-tint) !important;
 }
 
-/* The sidebar itself owns the titlebar-left surface. Its box starts at y=0;
- * only sidebar contents are inset below the traffic lights. */
+/* Only the narrow icon rail needs traffic-light clearance. The adjacent
+ * chat/character panel starts at y=0, so its header naturally becomes part of
+ * the macOS titlebar chrome without wasting another 28px above it. */
 html.tauri-macos-vibrancy .rs-sidebar {
   padding-top: var(--risu-macos-titlebar-height);
-}
-
-html.tauri-macos-vibrancy .rs-sidebar-panel.py-0 {
-  padding-top: var(--risu-macos-titlebar-height) !important;
-}
-
-html.tauri-macos-vibrancy .rs-sidebar-panel.py-6 {
-  padding-top: calc(1.5rem + var(--risu-macos-titlebar-height)) !important;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar,
