@@ -1805,25 +1805,31 @@ export async function runTrigger(
         }
 
         case "triggerlua": {
-          const triggerCodeResult = await runScripted(effect.code, {
-            lowLevelAccess: trigger.lowLevelAccess,
-            mode: mode === "manual" ? arg.manualName : mode,
-            setVar: setVar,
-            getVar: getVar,
-            char: char,
-            chat: chat,
-            chatTarget: target,
-            triggerId: arg.triggerId,
-            subModel: settingsStore.state.enableModuleSubModel
-              ? trigger.subModel
-              : undefined,
-            sourceModuleId: trigger.sourceModuleId,
-          });
+          const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
+            ? trigger.sandboxOwnerModuleIds
+            : [undefined];
+          for (const sandboxOwnerModuleId of sandboxOwners) {
+            const triggerCodeResult = await runScripted(effect.code, {
+              lowLevelAccess: trigger.lowLevelAccess,
+              mode: mode === "manual" ? arg.manualName : mode,
+              setVar: setVar,
+              getVar: getVar,
+              char: char,
+              chat: chat,
+              chatTarget: target,
+              triggerId: arg.triggerId,
+              subModel: settingsStore.state.enableModuleSubModel
+                ? trigger.subModel
+                : undefined,
+              sourceModuleId: trigger.sourceModuleId,
+              sandboxOwnerModuleId,
+            });
 
-          if (triggerCodeResult.stopSending) {
-            stopSending = true;
+            if (triggerCodeResult.stopSending) {
+              stopSending = true;
+            }
+            chat = triggerCodeResult.chat;
           }
-          chat = triggerCodeResult.chat;
           break;
         }
 

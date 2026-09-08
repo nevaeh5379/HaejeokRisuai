@@ -445,5 +445,48 @@ describe("Module subModel feature", () => {
         }),
       );
     });
+
+    it("executes shared trigger Lua once per sandbox owner", async () => {
+      mocks.runScripted.mockClear();
+      const trigger: triggerscript = {
+        comment: "Shared sandbox trigger",
+        type: "manual",
+        lowLevelAccess: true,
+        sourceModuleId: "lightboard",
+        sandboxOwnerModuleIds: ["owner-a", "owner-b"],
+        conditions: [],
+        effect: [{ type: "triggerlua", code: "return true" } as any],
+      };
+      const char: any = {
+        chaId: "char-1",
+        name: "Bot",
+        lowLevelAccess: true,
+        triggerscript: [trigger],
+      };
+      const chat: any = { id: "chat-1", message: [], scriptstate: {} };
+
+      await runTrigger(char, "manual", {
+        chat,
+        manualName: "Shared sandbox trigger",
+      });
+
+      expect(mocks.runScripted).toHaveBeenCalledTimes(2);
+      expect(mocks.runScripted).toHaveBeenNthCalledWith(
+        1,
+        "return true",
+        expect.objectContaining({
+          sourceModuleId: "lightboard",
+          sandboxOwnerModuleId: "owner-a",
+        }),
+      );
+      expect(mocks.runScripted).toHaveBeenNthCalledWith(
+        2,
+        "return true",
+        expect.objectContaining({
+          sourceModuleId: "lightboard",
+          sandboxOwnerModuleId: "owner-b",
+        }),
+      );
+    });
   });
 });
