@@ -198,26 +198,36 @@ html.tauri-macos-vibrancy .rs-macos-titlebar {
   background: var(--risu-macos-content-tint);
 }
 
-html.tauri-macos-vibrancy .rs-macos-titlebar.has-sidebar {
-  background: linear-gradient(
-    to right,
-    var(--risu-macos-chrome-tint) 0 var(--risu-macos-sidebar-span),
-    var(--risu-macos-content-tint) var(--risu-macos-sidebar-span) 100%
-  );
+html.tauri-macos-vibrancy .rs-macos-titlebar::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  pointer-events: none;
+  background: var(--risu-macos-chrome-tint);
+  transition: width var(--risu-animation-speed) ease;
+  will-change: width;
 }
 
 html.tauri-macos-vibrancy
-  .rs-macos-titlebar.has-sidebar.dynamic-sidebar {
-  --risu-macos-titlebar-sidebar-stop: min(
-    var(--risu-macos-sidebar-span),
-    calc(100% - 3rem)
-  );
-  background: linear-gradient(
-    to right,
-    var(--risu-theme-darkbg) 0 var(--risu-macos-titlebar-sidebar-stop),
-    var(--risu-macos-content-tint)
-      var(--risu-macos-titlebar-sidebar-stop) 100%
-  );
+  .rs-macos-titlebar.has-sidebar:not(.sidebar-closing)::before {
+  width: var(--risu-macos-sidebar-span);
+}
+
+html.tauri-macos-vibrancy
+  .rs-macos-titlebar.has-sidebar.dynamic-sidebar::before {
+  background: var(--risu-theme-darkbg);
+}
+
+html.tauri-macos-vibrancy
+  .rs-macos-titlebar.has-sidebar.dynamic-sidebar:not(.sidebar-closing)::before {
+  width: min(var(--risu-macos-sidebar-span), calc(100% - 3rem));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.tauri-macos-vibrancy .rs-macos-titlebar::before {
+    transition: none;
+  }
 }
 
 /* Left-side navigation and recent-session panels are one continuous piece of
