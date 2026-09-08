@@ -9,7 +9,7 @@
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
-    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
+    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
@@ -160,6 +160,9 @@
 
     const getMainDropEffect = (e:DragEvent): DataTransfer['dropEffect'] => {
         const types = Array.from(e.dataTransfer?.types ?? [])
+        if(types.includes(RISU_CHAT_TAB_DRAG_TYPE)){
+            return 'move'
+        }
         if(types.includes(RISU_SIDEBAR_DRAG_TYPE)){
             return 'none'
         }

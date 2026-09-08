@@ -1,3 +1,11 @@
+<script module lang="ts">
+    let tauriMainTabDrag: {
+        tabId: string;
+        sourceGroupId: string;
+        dropped: boolean;
+    } | null = null;
+</script>
+
 <script lang="ts">
     import { PlusIcon, XIcon } from '@lucide/svelte';
     import { onDestroy } from 'svelte';
@@ -7,12 +15,12 @@
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
     import { isTauri } from 'src/ts/platform';
     import { alertError } from 'src/ts/alert';
+    import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
         acceptDetachedTauriChatDrop,
         isCurrentTauriCursorOutsideWindow,
         openChatInNewTauriWindow,
         parseTauriChatDragPayload,
-        startTauriChatDragPreview,
         TAURI_CHAT_DRAG_MIME,
     } from 'src/ts/tauriChatWindows';
     import {
@@ -53,10 +61,10 @@
         holdTimer?: ReturnType<typeof setTimeout>;
         previousUserSelect?: string;
         detaching?: boolean;
-        previewCleanup?: () => void;
     } | null = null;
     let suppressClickTabId: string | null = null;
     let detachedDropActive = $state(false);
+    let nativeDragMarker: HTMLElement | undefined;
     const detachedTextDragPrefix = 'risu-chat-tab:';
 
     onDestroy(clearTabDrag);
@@ -141,6 +149,7 @@
     }
 
     function startTabDrag(event: PointerEvent, tab: ChatTab) {
+        if (isTauri && event.pointerType === 'mouse') return;
         if (event.button !== 0 || (event.target as HTMLElement).closest('[data-tab-close]')) return;
         clearTabDrag();
         drag = {
@@ -187,23 +196,6 @@
         document.body.style.userSelect = 'none';
         drag.ghost = ghost;
         updateTabDropTarget();
-        if (isTauri) {
-            const activeDrag = drag;
-            const tab = chatTabsStore.tabs.find((item) => item.id === activeDrag.tabId);
-            if (tab) {
-                void startTauriChatDragPreview(getTabLabel(tab))
-                    .then((cleanup) => {
-                        if (drag === activeDrag && activeDrag.active) {
-                            activeDrag.previewCleanup = cleanup;
-                        } else {
-                            cleanup();
-                        }
-                    })
-                    .catch((error) => {
-                        console.error('[ChatTabs] Failed to create Tauri drag preview', error);
-                    });
-            }
-        }
     }
 
     function moveTabDrag(event: PointerEvent) {
@@ -309,7 +301,6 @@
     function clearTabDrag() {
         if (!drag) return;
         if (drag.holdTimer) clearTimeout(drag.holdTimer);
-        drag.previewCleanup?.();
         drag.marker?.classList.remove('chat-tab-drop-before');
         drag.source.classList.remove('chat-tab-chosen');
         drag.ghost?.remove();
@@ -320,6 +311,121 @@
     function closeOthers(tabId: string) {
         chatTabsStore.closeOthers(tabId);
         contextMenu = null;
+    }
+
+    function startTauriMainTabDrag(event: DragEvent, tab: ChatTab) {
+        if (!isTauri || !event.dataTransfer) {
+            event.preventDefault();
+            return;
+        }
+        clearTabDrag();
+        contextMenu = null;
+        tauriMainTabDrag = {
+            tabId: tab.id,
+            sourceGroupId: tab.groupId,
+            dropped: false,
+        };
+        suppressClickTabId = tab.id;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(RISU_CHAT_TAB_DRAG_TYPE, tab.id);
+        (event.currentTarget as HTMLElement).classList.add('chat-tab-chosen');
+    }
+
+    function clearNativeTabDropMarker() {
+        nativeDragMarker?.classList.remove('chat-tab-drop-before');
+        nativeDragMarker = undefined;
+    }
+
+    function updateNativeTabDropTarget(list: HTMLElement, clientX: number) {
+        clearNativeTabDropMarker();
+        const sourceTabId = tauriMainTabDrag?.tabId;
+        if (!sourceTabId) return undefined;
+        const tabs = Array.from(list.querySelectorAll<HTMLElement>('[data-chat-tab-id]'))
+            .filter((item) => item.dataset.chatTabId !== sourceTabId);
+        let targetIndex = tabs.findIndex(
+            (item) => clientX < item.getBoundingClientRect().left + item.offsetWidth / 2,
+        );
+        if (targetIndex < 0) targetIndex = tabs.length;
+        const marker = tabs[targetIndex] ?? list.querySelector<HTMLElement>('[data-tab-add]');
+        marker?.classList.add('chat-tab-drop-before');
+        nativeDragMarker = marker ?? undefined;
+        return targetIndex;
+    }
+
+    async function detachTauriMainTab(tabId: string) {
+        const tab = chatTabsStore.tabs.find((item) => item.id === tabId);
+        if (!tab) return;
+        const label = getTabLabel(tab);
+        await openChatInNewTauriWindow(
+            tab,
+            `${label.characterName} · ${label.chatName} - RisuAI`,
+            label,
+        );
+        const result = chatTabsStore.detach(tab.id);
+        if (result.becameEmpty) {
+            selectedCharID.set(-1);
+        } else if (result.activeChanged && result.activeTab) {
+            await navigateToChatTab(result.activeTab.id);
+        }
+    }
+
+    async function endTauriMainTabDrag(event: DragEvent, tab: ChatTab) {
+        const state = tauriMainTabDrag;
+        (event.currentTarget as HTMLElement).classList.remove('chat-tab-chosen');
+        clearNativeTabDropMarker();
+        tauriMainTabDrag = null;
+        if (!state || state.tabId !== tab.id) return;
+
+        try {
+            if (!state.dropped && await isCurrentTauriCursorOutsideWindow()) {
+                await detachTauriMainTab(tab.id);
+            }
+        } catch (error) {
+            console.error('[ChatTabs] Failed to detach Tauri tab after native drag', error);
+            alertError(error);
+        } finally {
+            setTimeout(() => { suppressClickTabId = null; }, 0);
+        }
+    }
+
+    function dragTabListOver(event: DragEvent) {
+        if (isTauri && tauriMainTabDrag) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            updateNativeTabDropTarget(event.currentTarget as HTMLElement, event.clientX);
+            return;
+        }
+        dragDetachedOver(event);
+    }
+
+    function leaveTabListDrag(event: DragEvent) {
+        const list = event.currentTarget as HTMLElement;
+        const next = event.relatedTarget as Node | null;
+        if (next && list.contains(next)) return;
+        clearNativeTabDropMarker();
+        detachedDropActive = false;
+    }
+
+    async function dropTabList(event: DragEvent) {
+        if (isTauri && tauriMainTabDrag) {
+            event.preventDefault();
+            event.stopPropagation();
+            const state = tauriMainTabDrag;
+            const targetIndex = updateNativeTabDropTarget(
+                event.currentTarget as HTMLElement,
+                event.clientX,
+            );
+            clearNativeTabDropMarker();
+            if (targetIndex === undefined) return;
+            const moved = chatTabsStore.moveTab(state.tabId, groupId, targetIndex);
+            state.dropped = Boolean(moved);
+            if (moved && state.sourceGroupId !== groupId) {
+                await navigateToChatTab(moved.id);
+            }
+            return;
+        }
+        await dropDetachedTab(event);
     }
 
     function readDetachedDragPayload(dataTransfer: DataTransfer | null) {
@@ -344,12 +450,6 @@
         event.stopPropagation();
         if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
         detachedDropActive = true;
-    }
-
-    function leaveDetachedDrop(event: DragEvent) {
-        const list = event.currentTarget as HTMLElement;
-        const next = event.relatedTarget as Node | null;
-        if (!next || !list.contains(next)) detachedDropActive = false;
     }
 
     async function dropDetachedTab(event: DragEvent) {
@@ -381,9 +481,9 @@
         data-group-id={groupId}
         role="tablist"
         tabindex="-1"
-        ondragover={dragDetachedOver}
-        ondragleave={leaveDetachedDrop}
-        ondrop={(event) => void dropDetachedTab(event)}
+        ondragover={dragTabListOver}
+        ondragleave={leaveTabListDrag}
+        ondrop={(event) => void dropTabList(event)}
         class="shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
@@ -404,7 +504,10 @@
                 class:text-textcolor={active}
                 class:text-textcolor2={!active}
                 title={`${label.characterName} · ${label.chatName}`}
+                draggable={isTauri}
                 onclick={(event) => selectTab(event, tab.id)}
+                ondragstart={(event) => startTauriMainTabDrag(event, tab)}
+                ondragend={(event) => void endTauriMainTabDrag(event, tab)}
                 onpointerdown={(event) => startTabDrag(event, tab)}
                 oncontextmenu={(event) => openContextMenu(event, tab)}
             >
