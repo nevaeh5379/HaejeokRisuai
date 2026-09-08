@@ -980,8 +980,8 @@ export async function isCurrentTauriCursorOutsideWindow(
   const current = getCurrentWebviewWindow();
   const [cursor, position, size] = await Promise.all([
     cursorPosition(),
-    current.innerPosition(),
-    current.innerSize(),
+    current.outerPosition(),
+    current.outerSize(),
   ]);
   return isPointOutsideTauriWindow(cursor, position, size, margin);
 }

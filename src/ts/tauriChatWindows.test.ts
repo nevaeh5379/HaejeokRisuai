@@ -92,7 +92,7 @@ describe("Tauri chat tab transfer payload", () => {
 });
 
 describe("Tauri window exit detection", () => {
-  it("detects a cursor outside the native content bounds", () => {
+  it("detects a cursor outside the native window bounds", () => {
     expect(
       isPointOutsideTauriWindow(
         { x: 99, y: 300 },
@@ -103,6 +103,18 @@ describe("Tauri window exit detection", () => {
     expect(
       isPointOutsideTauriWindow(
         { x: 450, y: 350 },
+        { x: 100, y: 100 },
+        { width: 800, height: 600 },
+      ),
+    ).toBe(false);
+  });
+
+  it("treats the native title-bar region as inside the source window", () => {
+    // The WebView content may begin around y=140, but the native outer window
+    // begins at y=100. A tab released in that title-bar strip must not detach.
+    expect(
+      isPointOutsideTauriWindow(
+        { x: 450, y: 115 },
         { x: 100, y: 100 },
         { width: 800, height: 600 },
       ),
