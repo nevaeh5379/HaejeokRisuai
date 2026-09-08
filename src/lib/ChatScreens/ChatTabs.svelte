@@ -7,7 +7,7 @@
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
     import { isTauri } from 'src/ts/platform';
     import { alertError } from 'src/ts/alert';
-    import { openChatInNewTauriWindow } from 'src/ts/tauriChatWindows';
+    import { isCurrentTauriCursorOutsideWindow, openChatInNewTauriWindow, watchCurrentTauriWindowExit } from 'src/ts/tauriChatWindows';
     import {
         chatTabsStore,
         navigateToChatTab,
@@ -46,6 +46,7 @@
         holdTimer?: ReturnType<typeof setTimeout>;
         previousUserSelect?: string;
         detaching?: boolean;
+        exitWatcher?: () => void;
     } | null = null;
     let suppressClickTabId: string | null = null;
 
@@ -173,6 +174,19 @@
         document.body.style.userSelect = 'none';
         drag.ghost = ghost;
         updateTabDropTarget();
+        if (isTauri) {
+            const activeDrag = drag;
+            void watchCurrentTauriWindowExit(() => {
+                if (drag !== activeDrag || !activeDrag.active) return;
+                void detachDraggedTab();
+            }).then((cleanup) => {
+                if (drag === activeDrag && activeDrag.active) {
+                    activeDrag.exitWatcher = cleanup;
+                } else {
+                    cleanup();
+                }
+            });
+        }
     }
 
     function moveTabDrag(event: PointerEvent) {
@@ -239,16 +253,30 @@
         }
     }
 
-    function leaveTabDrag(event: PointerEvent) {
-        if (!drag || event.pointerId !== drag.pointerId || !drag.active) return;
-        void detachDraggedTab();
-    }
-
     async function stopTabDrag(event: PointerEvent) {
         if (!drag || event.pointerId !== drag.pointerId) return;
         const completed = drag.active;
-        const { tabId, sourceGroupId, targetGroupId, targetIndex } = drag;
+        const activeDrag = drag;
+        const { tabId, sourceGroupId, targetGroupId, targetIndex } = activeDrag;
         if (completed) suppressClickTabId = tabId;
+
+        if (
+            completed &&
+            isTauri &&
+            !activeDrag.detaching &&
+            (!targetGroupId || targetIndex === undefined)
+        ) {
+            try {
+                if (await isCurrentTauriCursorOutsideWindow()) {
+                    await detachDraggedTab();
+                    setTimeout(() => { suppressClickTabId = null; }, 0);
+                    return;
+                }
+            } catch (error) {
+                console.error('[ChatTabs] Failed to inspect Tauri tab drop position', error);
+            }
+        }
+
         clearTabDrag();
         if (completed) setTimeout(() => { suppressClickTabId = null; }, 0);
         if (!completed || !targetGroupId || targetIndex === undefined) return;
@@ -259,6 +287,7 @@
     function clearTabDrag() {
         if (!drag) return;
         if (drag.holdTimer) clearTimeout(drag.holdTimer);
+        drag.exitWatcher?.();
         drag.marker?.classList.remove('chat-tab-drop-before');
         drag.source.classList.remove('chat-tab-chosen');
         drag.ghost?.remove();
@@ -282,7 +311,6 @@
     onpointermove={moveTabDrag}
     onpointerup={stopTabDrag}
     onpointercancel={clearTabDrag}
-    onpointerleave={leaveTabDrag}
 />
 
 {#if showTabs}

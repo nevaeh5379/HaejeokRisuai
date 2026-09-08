@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTauriChatWindowUrl,
   isPointInTauriChatDockZone,
+  isPointOutsideTauriWindow,
   parseTauriChatWindowTarget,
 } from "./tauriChatWindows";
 
@@ -50,6 +51,25 @@ describe("Tauri chat docking zone", () => {
         { x: 100, y: 100 },
         { width: 900, height: 700 },
         2,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Tauri window exit detection", () => {
+  it("detects a cursor outside the native content bounds", () => {
+    expect(
+      isPointOutsideTauriWindow(
+        { x: 99, y: 300 },
+        { x: 100, y: 100 },
+        { width: 800, height: 600 },
+      ),
+    ).toBe(true);
+    expect(
+      isPointOutsideTauriWindow(
+        { x: 450, y: 350 },
+        { x: 100, y: 100 },
+        { width: 800, height: 600 },
       ),
     ).toBe(false);
   });
