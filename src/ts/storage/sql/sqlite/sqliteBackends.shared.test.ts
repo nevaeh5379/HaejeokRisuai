@@ -73,6 +73,27 @@ function makeFreshHarness(make: MakeStorage) {
 // ── Contract suites ──────────────────────────────────────────────────
 
 describe.each(backendFactories)("$name contracts", ({ make }) => {
+  it("reads storage sync counts without exporting the aggregate database", async () => {
+    const { storage } = makeFreshHarness(make);
+    const empty = await storage.getStorageSyncSummary();
+    expect(empty).toMatchObject({
+      revision: 0,
+      initialized: false,
+      records: { characters: 0, chats: 0, messages: 0 },
+    });
+
+    await seed(storage);
+    const summary = await storage.getStorageSyncSummary();
+    expect(summary).toMatchObject({
+      revision: storage.getRevision(),
+      initialized: true,
+      records: { characters: 2, chats: 2, messages: 3 },
+    });
+    expect(summary?.records.total).toBe(
+      (summary?.records.settings ?? 0) + 2 + 2 + 3,
+    );
+  });
+
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
     const { storage, database } = makeFreshHarness(make);
     const source = await seed(storage);

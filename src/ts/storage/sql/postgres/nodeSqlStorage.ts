@@ -509,6 +509,18 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     return this.revision;
   }
 
+  async getStorageSyncSummary() {
+    const summary = await this.apiClient.getStorageSyncSummary(
+      await this.getAuth(),
+    );
+    this.revision = summary.revision;
+    return {
+      revision: summary.revision,
+      initialized: summary.initialized,
+      records: summary.records,
+    };
+  }
+
   async loadPlugins(options?: {
     enabledOnly?: boolean;
   }): Promise<any[] | null> {

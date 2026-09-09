@@ -46,6 +46,18 @@ export interface SqlDatabaseSnapshotResult {
   database: CanonicalDatabase | null;
 }
 
+export interface SqlStorageSyncSummary {
+  revision: number;
+  initialized: boolean;
+  records: {
+    settings: number;
+    characters: number;
+    chats: number;
+    messages: number;
+    total: number;
+  };
+}
+
 export interface SqlChatLoadOptions {
   messageLimit?: number;
 }
@@ -170,6 +182,7 @@ export interface ISqlStorage {
   // ── Startup / snapshot / save ───────────────────────────────────────
 
   loadStartupData(): Promise<SqlStartupDataResult | null>;
+  getStorageSyncSummary(): Promise<SqlStorageSyncSummary | null>;
   exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null>;
 
   commit(commit: SqlCommit): Promise<SqlCommitResult>;

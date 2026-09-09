@@ -49,6 +49,43 @@ describe("NodeSqlStorage browser client", () => {
     vi.restoreAllMocks();
   });
 
+  it("reads the SQL portion of the storage sync summary", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          apiVersion: 1,
+          features: {
+            sqlStorage: true,
+            assetStorage: true,
+            dataChangeEvents: true,
+            storageSync: true,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          protocolVersion: 1,
+          revision: 7,
+          initialized: true,
+          records: { settings: 4, characters: 2, chats: 3, messages: 9, total: 18 },
+          assets: { count: 5, sizeBytes: 1234 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodeSqlStorage(async () => "test-auth");
+    await expect(storage.getStorageSyncSummary()).resolves.toEqual({
+      revision: 7,
+      initialized: true,
+      records: { settings: 4, characters: 2, chats: 3, messages: 9, total: 18 },
+    });
+    expect(storage.getRevision()).toBe(7);
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      headers: { "risu-auth": "test-auth" },
+    });
+  });
+
   it("fetches server config and respects the managedByEnvironment flag", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 200,

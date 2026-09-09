@@ -682,6 +682,38 @@ export abstract class NativeSqliteStorageBase {
     return this.revision;
   }
 
+  async getStorageSyncSummary() {
+    if (!this._enabled) {
+      const ok = await this.init();
+      if (!ok) return null;
+    }
+    const row = await this.selectOne<Record<string, unknown>>(`
+      SELECT revision, initialized,
+             (SELECT COUNT(*) FROM system_settings) AS settings_count,
+             (SELECT COUNT(*) FROM characters) AS characters_count,
+             (SELECT COUNT(*) FROM chats) AS chats_count,
+             (SELECT COUNT(*) FROM messages) AS messages_count
+        FROM system_storage_meta WHERE singleton = 1
+    `);
+    const records = {
+      settings: Number(row?.settings_count) || 0,
+      characters: Number(row?.characters_count) || 0,
+      chats: Number(row?.chats_count) || 0,
+      messages: Number(row?.messages_count) || 0,
+    };
+    return {
+      revision: Number.isSafeInteger(Number(row?.revision))
+        ? Number(row?.revision)
+        : this.revision,
+      initialized:
+        row?.initialized === true || Number(row?.initialized) === 1,
+      records: {
+        ...records,
+        total: Object.values(records).reduce((a, b) => a + b, 0),
+      },
+    };
+  }
+
   protected async selectOne<T extends Record<string, unknown>>(
     sql: string,
     bind: unknown[] = [],
