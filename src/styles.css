@@ -366,6 +366,11 @@ html.tauri-macos-vibrancy
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab-list {
+  box-sizing: border-box;
+  align-items: center !important;
+  gap: 6px !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
   background-color: color-mix(
     in srgb,
     var(--risu-theme-darkbg) 44%,
@@ -402,6 +407,7 @@ html.tauri-macos-vibrancy .rs-chat-tab {
     transparent
   );
   position: relative;
+  height: 34px !important;
   margin-inline: 2px;
   border-radius: 9px !important;
   background-color: var(--risu-macos-tab-surface) !important;
@@ -411,6 +417,11 @@ html.tauri-macos-vibrancy .rs-chat-tab {
     transparent
   );
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-list [data-tab-add] {
+  align-self: center;
+  margin-bottom: 0 !important;
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"] {
