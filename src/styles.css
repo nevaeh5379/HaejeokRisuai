@@ -352,7 +352,7 @@ html.tauri-macos-vibrancy .rs-recent-session-card {
   ) !important;
 }
 
-html.tauri-macos-vibrancy .default-chat-pane.has-chat-tabs > .rs-chat-tab-list {
+html.tauri-macos-vibrancy .default-chat-pane.has-chat-tabs > .rs-chat-tab-strip-shell {
   position: absolute;
   inset: 0 0 auto 0;
   z-index: 40;
@@ -368,7 +368,6 @@ html.tauri-macos-vibrancy
 html.tauri-macos-vibrancy .rs-chat-tab-list {
   box-sizing: border-box;
   height: 48px !important;
-  transition: padding-left var(--risu-animation-speed) ease;
   align-items: center !important;
   gap: 6px !important;
   padding-top: 6px !important;
@@ -383,24 +382,14 @@ html.tauri-macos-vibrancy .rs-chat-tab-list {
   -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
-html.tauri-macos-vibrancy .rs-chat-tab-list.macos-aux-titlebar-tabs {
-  padding-left: var(--risu-macos-traffic-lights-width) !important;
-}
-
-html.tauri-macos-vibrancy .rs-chat-tab-list.macos-main-titlebar-tabs-closed {
-  padding-left: var(--risu-macos-traffic-lights-width) !important;
-}
-
-/* The tab strip scrolls horizontally, so its padding can scroll out from under
- * the native traffic lights in narrow windows. Keep a fixed chrome guard above
- * the scroller so tabs can never slide underneath the window controls. */
-html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-guard {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 45;
-  width: var(--risu-macos-traffic-lights-width);
+/* Keep native traffic-light clearance outside the horizontal tab scroller.
+ * This is real layout space, so scrollLeft can never move a tab underneath
+ * the macOS window controls. */
+html.tauri-macos-vibrancy .rs-chat-tab-strip-shell {
+  display: flex;
+  width: 100%;
   height: 48px;
+  min-width: 0;
   background-color: color-mix(
     in srgb,
     var(--risu-theme-darkbg) 44%,
@@ -410,9 +399,19 @@ html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-guard {
   -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
-html.tauri-macos-vibrancy
-  .rs-chat-tab-list:is(.macos-aux-titlebar-tabs, .macos-main-titlebar-tabs-closed) {
-  scroll-padding-left: var(--risu-macos-traffic-lights-width);
+html.tauri-macos-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  background-color: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-spacer {
+  width: var(--risu-macos-traffic-lights-width);
+  min-width: var(--risu-macos-traffic-lights-width);
+  height: 48px;
+  flex: 0 0 var(--risu-macos-traffic-lights-width);
 }
 
 /* macOS native material makes the last frame of the legacy width/right
@@ -624,8 +623,7 @@ html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab-list {
   -webkit-backdrop-filter: blur(12px) saturate(125%);
 }
 
-html.tauri-macos-vibrancy.tauri-macos-liquid-glass
-  .rs-chat-tab-traffic-light-guard {
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab-strip-shell {
   background-color: color-mix(
     in srgb,
     var(--risu-theme-bgcolor) 72%,
@@ -633,6 +631,14 @@ html.tauri-macos-vibrancy.tauri-macos-liquid-glass
   );
   backdrop-filter: blur(12px) saturate(125%);
   -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass
+  .rs-chat-tab-strip-shell
+  > .rs-chat-tab-list {
+  background-color: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab {

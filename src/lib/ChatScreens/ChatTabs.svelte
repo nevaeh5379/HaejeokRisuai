@@ -72,24 +72,6 @@
         selectedCharacter?.chats?.[selectedCharacter.chatPage ?? 0],
     );
     let contextMenu = $state<{ tabId: string; x: number; y: number } | null>(null);
-    let tabListElement: HTMLDivElement | undefined = $state();
-
-    $effect(() => {
-        const guarded = reserveMainMacOSTrafficLights || reserveMacOSTrafficLights;
-        const activeTabId = chatTabsStore.getGroup(groupId)?.activeTabId;
-        if (!guarded || !tabListElement || !activeTabId) return;
-
-        // Narrow macOS windows can retain a horizontal scroll offset from the
-        // wider layout. Re-reveal the active tab using the fixed traffic-light
-        // scroll padding so it never starts behind the native window controls.
-        requestAnimationFrame(() => {
-            const activeTab = Array.from(
-                tabListElement?.querySelectorAll<HTMLElement>('[data-chat-tab-id]') ?? [],
-            ).find((element) => element.dataset.chatTabId === activeTabId);
-            activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        });
-    });
-
     let drag: {
         tabId: string;
         sourceGroupId: string;
@@ -601,15 +583,15 @@
 />
 
 {#if showTabs}
-    {#if reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
+    <div class="rs-chat-tab-strip-shell shrink-0 w-full">
+        {#if reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
+            <div
+                class="rs-chat-tab-traffic-light-spacer"
+                data-tauri-drag-region="true"
+                aria-hidden="true"
+            ></div>
+        {/if}
         <div
-            class="rs-chat-tab-traffic-light-guard"
-            data-tauri-drag-region="true"
-            aria-hidden="true"
-        ></div>
-    {/if}
-    <div
-        bind:this={tabListElement}
         data-chat-tab-list
         data-group-id={groupId}
         role="tablist"
@@ -690,6 +672,7 @@
         >
             <PlusIcon size={17} />
         </button>
+        </div>
     </div>
 {/if}
 
