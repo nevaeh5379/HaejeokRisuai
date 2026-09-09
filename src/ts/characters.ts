@@ -419,17 +419,20 @@ export async function exportChat(page: number) {
         folders,
         branchGraph,
       );
-      const stringl = Buffer.from(JSON.stringify(payload), "utf-8");
+      const stringl = JSON.stringify(payload);
 
       const formatSuffix =
         jsonExportMode === "native" ? "haejeok" : "compatible";
-      await downloadFile(
-        `${char.name}_${date}_chat_${formatSuffix}`.replace(
-          /[<>:"/\\|?*\.\,]/g,
-          "",
-        ) + ".json",
-        stringl,
-      );
+      if (
+        !(await downloadFile(
+          `${char.name}_${date}_chat_${formatSuffix}`.replace(
+            /[<>:"/\\|?*\.\,]/g,
+            "",
+          ) + ".json",
+          stringl,
+        ))
+      )
+        return;
     } else if (mode === "2") {
       let chatContentHTML = "";
 
@@ -507,10 +510,14 @@ export async function exportChat(page: number) {
                     </body>
             `;
 
-      await downloadFile(
-        `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") + ".html",
-        Buffer.from(doc, "utf-8"),
-      );
+      if (
+        !(await downloadFile(
+          `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") +
+            ".html",
+          doc,
+        ))
+      )
+        return;
     } else if (mode === "3") {
       //create a html table
       let chatContentHTML = "";
@@ -571,10 +578,14 @@ export async function exportChat(page: number) {
         stringl = `--${char.name}\n${char.firstMessage}\n\n` + stringl;
       }
 
-      await downloadFile(
-        `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") + ".txt",
-        Buffer.from(stringl, "utf-8"),
-      );
+      if (
+        !(await downloadFile(
+          `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") +
+            ".txt",
+          stringl,
+        ))
+      )
+        return;
     }
     alertNormal(language.successExport);
   } catch (error) {
@@ -892,19 +903,20 @@ export async function exportAllChats() {
     const date = new Date().toISOString().replace(/[:.]/g, "-");
     const allChats = char.chats;
     const allFolders = char.chatFolders;
-    const stringl = Buffer.from(
-      JSON.stringify({
-        type: "risuAllChats",
-        ver: 2,
-        data: allChats,
-        folders: allFolders,
-      }),
-      "utf-8",
-    );
-    await downloadFile(
-      `${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, "") + ".json",
-      stringl,
-    );
+    const stringl = JSON.stringify({
+      type: "risuAllChats",
+      ver: 2,
+      data: allChats,
+      folders: allFolders,
+    });
+    if (
+      !(await downloadFile(
+        `${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, "") +
+          ".json",
+        stringl,
+      ))
+    )
+      return;
     alertNormal(language.successExport);
   } catch (error) {
     alertError(error);

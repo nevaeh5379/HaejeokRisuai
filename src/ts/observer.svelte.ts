@@ -1,4 +1,4 @@
-import { globalFetch } from "./globalApi.svelte";
+import { downloadFile, globalFetch } from "./globalApi.svelte";
 
 let bgmElement: HTMLAudioElement | null = null;
 const observedNodes = new WeakSet<HTMLElement>();
@@ -47,15 +47,8 @@ function nodeObserve(node: HTMLElement) {
         "class",
         "px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer",
       );
-      downloadOption.addEventListener("click", () => {
-        const a = document.createElement("a");
-        const objectUrl = URL.createObjectURL(
-          new Blob([node.textContent], { type: "text/plain" }),
-        );
-        a.href = objectUrl;
-        a.download = "code." + hlLang;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      downloadOption.addEventListener("click", async () => {
+        await downloadFile("code." + hlLang, node.textContent ?? "");
         menu.remove();
       });
 

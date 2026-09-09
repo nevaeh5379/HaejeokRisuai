@@ -101,6 +101,31 @@ public class StreamFileWriterPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void writeText(PluginCall call) {
+        String id = call.getString("id");
+        String data = call.getString("data");
+        if (id == null || data == null) {
+            call.reject("Missing stream id or text data");
+            return;
+        }
+
+        OutputStream stream = streams.get(id);
+        if (stream == null) {
+            call.reject("Unknown or closed stream");
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                stream.write(data.getBytes(StandardCharsets.UTF_8));
+                call.resolve();
+            } catch (Exception error) {
+                call.reject("Failed to write text data", error);
+            }
+        });
+    }
+
 
     @PluginMethod
     public void writeAssets(PluginCall call) {
