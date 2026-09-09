@@ -1079,12 +1079,14 @@
   class:hidden={hidden}
   class:flex={!hidden}
   class:max-w-[calc(100%-8rem)]={$DynamicGUI}
-  onanimationend={() => {
-    if($sideBarClosing){
-      // Keep the closing state latched while hidden. Reset it only when the
-      // user opens the sidebar again, so the closing animation cannot snap
-      // back to its opening styles for a frame.
-      sideBarStore.set(false)
+  onanimationend={(event) => {
+    if ($sideBarClosing && event.target === event.currentTarget) {
+      // Let the browser paint the closing animation's 100% frame before the
+      // sidebar is removed from layout. Hiding it in the animationend task can
+      // skip that final frame and look like a last-moment snap on macOS.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => sideBarStore.set(false))
+      })
     }
   }}
 >
