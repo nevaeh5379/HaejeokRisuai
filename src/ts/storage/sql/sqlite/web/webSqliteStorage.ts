@@ -66,11 +66,14 @@ import {
   buildDeferredSettingsQuery,
   groupSettingNodeRows,
   buildBranchGraphRowsQuery,
+  buildBranchGraphMessageCountQuery,
+  buildBranchGraphMessageRowsPageQuery,
   buildBranchMessageCountQuery,
   buildBranchMessageRowsQuery,
   buildMessageRowsQuery,
   buildCharacterAssetFieldsQuery,
   rebuildBranchGraphMessages,
+  rebuildBranchGraphLinks,
   rebuildMessageRows,
   type MessageLoadMode,
   type SettingNodeRow,
@@ -1128,6 +1131,51 @@ export class WebSqliteStorage implements ISqlStorage {
             : String(row.graph_parent_message_id),
         originBranchId: String(row.graph_origin_branch_id),
       })),
+    };
+  }
+
+  async loadChatBranchGraphPage(
+    chatId: string,
+    offset: number,
+    limit: number,
+  ) {
+    await this.ensureBranchGraph(chatId);
+    const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
+    const normalizedLimit = normalizeSqliteLimit(limit);
+    const branchRows = await this.selectRows<
+      SqliteChatBranchRow & { active_branch_id?: string }
+    >(
+      `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+              branch.head_message_id, branch.reason, branch.created_at,
+              active.branch_id AS active_branch_id
+         FROM chat_branches branch
+    LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
+        WHERE branch.chat_id = ? ORDER BY branch.created_at, branch.id`,
+      [chatId],
+    );
+    const countQuery = buildBranchGraphMessageCountQuery(chatId);
+    const countRow = (await this.selectOne(
+      countQuery.sql,
+      countQuery.bind,
+    )) as { total?: number } | null;
+    const total = Number(countRow?.total ?? 0);
+    const pageQuery = buildBranchGraphMessageRowsPageQuery(
+      chatId,
+      normalizedOffset,
+      normalizedLimit,
+    );
+    const rows = await this.selectRows<Record<string, unknown>>(
+      pageQuery.sql,
+      pageQuery.bind,
+    );
+    return {
+      branches: branchRows.map(mapSqliteChatBranchRow),
+      activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
+      messages: rebuildMessageRows(rows),
+      links: rebuildBranchGraphLinks(rows),
+      offset: normalizedOffset,
+      total,
+      hasMore: normalizedOffset + normalizedLimit < total,
     };
   }
 

@@ -732,6 +732,51 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("pages fully hydrated branch graph messages without loading the whole graph", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    const [root] = await storage.listChatBranches!("chat-1");
+    await storage.createChatBranch!({
+      id: "reroll-page",
+      chatId: "chat-1",
+      parentBranchId: root.id,
+      forkMessageId: "m1",
+      reason: "reroll",
+      createdAt: 201,
+    });
+    const append = createEmptySqlCommit(storage.getRevision(), "graph-page-message");
+    append.messages.push({
+      id: "m-alt-page",
+      chatId: "chat-1",
+      position: 1,
+      data: makeMessage("m-alt-page", "char", "page alternative", {
+        promptInfo: { promptName: "alt", promptToggles: [], promptText: [] },
+      }),
+    });
+    await storage.commit(append);
+
+    expect(storage.loadChatBranchGraphPage).toBeTypeOf("function");
+    const first = await storage.loadChatBranchGraphPage!("chat-1", 0, 2);
+    const second = await storage.loadChatBranchGraphPage!("chat-1", 2, 2);
+    expect(first).toMatchObject({ total: 3, offset: 0, hasMore: true });
+    expect(second).toMatchObject({ total: 3, offset: 2, hasMore: false });
+    const messages = [...first.messages, ...second.messages];
+    const links = [...first.links, ...second.links];
+    expect(new Set(messages.map((message) => message.chatId))).toEqual(
+      new Set(["m1", "m2", "m-alt-page"]),
+    );
+    expect(links).toHaveLength(3);
+    expect(messages.find((message) => message.chatId === "m1")?.promptInfo?.promptName).toBe(
+      "preset",
+    );
+    expect(
+      messages.find((message) => message.chatId === "m-alt-page")?.promptInfo?.promptName,
+    ).toBe("alt");
+    expect(first.branches).toHaveLength(2);
+    expect(first.activeBranchId).toBe("reroll-page");
+    database.close();
+  });
+
   it("switches persistent branches without rewriting existing messages", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     await seed(storage);

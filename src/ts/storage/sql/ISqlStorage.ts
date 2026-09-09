@@ -95,6 +95,12 @@ export interface SqlChatBranchGraphData {
   links: SqlChatBranchGraphLink[];
 }
 
+export interface SqlChatBranchGraphPage extends SqlChatBranchGraphData {
+  offset: number;
+  total: number;
+  hasMore: boolean;
+}
+
 export interface SqlCreateChatBranchInput {
   id: string;
   chatId: string;
@@ -225,6 +231,11 @@ export interface ISqlStorage {
    */
   listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
   loadChatBranchGraph?(chatId: string): Promise<SqlChatBranchGraphData>;
+  loadChatBranchGraphPage?(
+    chatId: string,
+    offset: number,
+    limit: number,
+  ): Promise<SqlChatBranchGraphPage>;
   loadBranchMessages?(
     chatId: string,
     branchId: string,

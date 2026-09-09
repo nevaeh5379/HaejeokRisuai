@@ -345,6 +345,75 @@ export function buildBranchGraphRowsQuery(chatId: string): {
   };
 }
 
+export function buildBranchGraphMessageRowsPageQuery(
+  chatId: string,
+  offset: number,
+  limit: number,
+): { sql: string; bind: unknown[] } {
+  return {
+    sql: `WITH selected AS (
+      SELECT messages.id, messages.position, messages.role,
+             messages.content_text, messages.content_encoded,
+             messages.sender_name, messages.sent_time,
+             messages.generation_model, messages.input_tokens, messages.output_tokens,
+             links.parent_message_id, links.origin_branch_id
+        FROM message_branch_links links
+        JOIN messages ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+       WHERE links.chat_id = ?
+       ORDER BY messages.position, messages.id
+       LIMIT ? OFFSET ?
+    )
+    SELECT selected.id AS message_id, selected.position AS message_position,
+           selected.role AS message_role, selected.content_text AS message_content_text,
+           selected.content_encoded AS message_content_encoded,
+           selected.sender_name AS message_sender_name, selected.sent_time AS message_sent_time,
+           selected.generation_model AS message_generation_model,
+           selected.input_tokens AS message_input_tokens,
+           selected.output_tokens AS message_output_tokens,
+           selected.parent_message_id AS graph_parent_message_id,
+           selected.origin_branch_id AS graph_origin_branch_id,
+           n.node_id, n.parent_node_id, n.node_order, n.object_key,
+           n.object_key_encoded, n.value_type, n.text_value, n.encoded_text_value,
+           n.number_value, n.boolean_value
+      FROM selected
+ LEFT JOIN message_extension_nodes n
+        ON n.chat_id = ? AND n.message_id = selected.id
+     ORDER BY selected.position, selected.id, n.node_id`,
+    bind: [chatId, limit, offset, chatId],
+  };
+}
+
+export function rebuildBranchGraphLinks(
+  rows: Record<string, unknown>[],
+): Array<{ messageId: string; parentMessageId?: string; originBranchId: string }> {
+  const links = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const messageId = String(row.message_id);
+    if (seen.has(messageId)) continue;
+    seen.add(messageId);
+    links.push({
+      messageId,
+      parentMessageId:
+        row.graph_parent_message_id == null
+          ? undefined
+          : String(row.graph_parent_message_id),
+      originBranchId: String(row.graph_origin_branch_id),
+    });
+  }
+  return links;
+}
+
+export function buildBranchGraphMessageCountQuery(chatId: string): {
+  sql: string;
+  bind: unknown[];
+} {
+  return {
+    sql: "SELECT COUNT(*) AS total FROM message_branch_links WHERE chat_id = ?",
+    bind: [chatId],
+  };
+}
+
 /**
  * Reads one persisted branch by walking from its head to the root. Unlike the
  * legacy position query this never touches messages that belong only to an
