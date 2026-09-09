@@ -60,7 +60,7 @@
         isTauriMacOS &&
         getCurrentChatWorkspaceWindowId() === 'main' &&
         reserveSidebarSpace &&
-        ($sideBarClosing || !$sideBarStore),
+        ($MobileGUI || $sideBarClosing || !$sideBarStore),
     );
     let reserveMacOSTrafficLights = $derived(
         isTauriMacOS &&
