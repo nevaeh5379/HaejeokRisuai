@@ -42,6 +42,7 @@ import type { Database, character, Chat, Message } from "../../database/schema";
 import { installStartupData } from "../../database/databaseLifecycle";
 import { settingsStore } from "../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../stores/domain/deferredSettingsLoader";
+import { iterateStorageSyncSqlRecords } from "../../runtime/storageSyncSource";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 
@@ -92,6 +93,26 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(summary?.records.total).toBe(
       (summary?.records.settings ?? 0) + 2 + 2 + 3,
     );
+  });
+
+  it("streams the seeded database through bounded sync records", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    const records = [];
+    for await (const record of iterateStorageSyncSqlRecords(storage, {
+      expectedRevision: storage.getRevision(),
+      pageSize: 1,
+    })) {
+      records.push(record);
+    }
+    expect(records[0]).toMatchObject({ type: "meta", revision: storage.getRevision() });
+    expect(records.filter((record) => record.type === "character")).toHaveLength(2);
+    expect(records.filter((record) => record.type === "chat")).toHaveLength(2);
+    expect(records.filter((record) => record.type === "message")).toHaveLength(3);
+    expect(records.some((record) => record.type === "module")).toBe(true);
+    const chat = records.find((record) => record.type === "chat" && record.id === "chat-1");
+    expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
+    database.close();
   });
 
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
