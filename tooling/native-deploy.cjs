@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const { setTimeout: sleep } = require("node:timers/promises");
+const { parseAllowedOrigins } = require("../server/node/remoteCors.cjs");
 
 const root = path.resolve(__dirname, "..");
 const stateDir = path.join(root, ".risuai");
@@ -46,6 +47,16 @@ function parseEnvFile(filename) {
 function takeOption(args, index) {
   if (index + 1 >= args.length) fail(`${args[index]} requires a value`);
   return args[index + 1];
+}
+
+function defaultAllowedOrigins(host) {
+  return ["127.0.0.1", "localhost", "::1"].includes(String(host).toLowerCase())
+    ? "http://localhost:5174,http://127.0.0.1:5174"
+    : "";
+}
+
+function normalizeAllowedOrigins(value) {
+  return Array.from(parseAllowedOrigins(value || "")).join(",");
 }
 
 function parseInstallArgs(args, env = process.env) {
@@ -105,6 +116,13 @@ function parseInstallArgs(args, env = process.env) {
       env.RISU_SAVE_PATH ??
       defaultSavePath,
   );
+  const allowedOrigins = normalizeAllowedOrigins(
+    value(
+      "RISUAI_ALLOWED_ORIGINS",
+      "allowed-origins",
+      defaultAllowedOrigins(host),
+    ),
+  );
   const poolMax = Number.parseInt(explicit["pool-max"] ?? "10", 10);
   if (!Number.isInteger(poolMax) || poolMax < 1)
     fail(`Invalid pool size: ${poolMax}`);
@@ -153,6 +171,7 @@ function parseInstallArgs(args, env = process.env) {
       host,
       port,
       savePath,
+      allowedOrigins,
       db: { vendor, params },
       assetStorage: { type: "fs" },
     },
@@ -243,6 +262,8 @@ function runtimeEnv(config) {
     RISU_SAVE_PATH: config.savePath,
     RISU_STORAGE_TYPE: config.assetStorage?.type || "fs",
     TRUST_PROXY: "1",
+    RISUAI_ALLOWED_ORIGINS:
+      config.allowedOrigins ?? defaultAllowedOrigins(config.host),
     ...databaseEnv(config),
   };
 }
@@ -386,7 +407,7 @@ function showLogs(args) {
 
 function usage() {
   console.log(
-    `RisuAI native deployment\n\nUsage:\n  ./risuai.sh native install --db-vendor postgres --database-url URL\n  ./risuai.sh native install --db-vendor oracle --env-file .env.oracle\n  ./risuai.sh native install --db-vendor azure --env-file .env.azure\n  ./risuai.sh native build|start|stop|restart|rebuild|status|config|logs\n\nCommon install options:\n  --port PORT             Node server port (default: 6001)\n  --host HOST             Listen host (default: 127.0.0.1)\n  --save-path PATH        Persistent local asset/settings path\n  --pool-max N            SQL connection pool size (default: 10)\n  --env-file FILE         Read DB variables from an env file\n  --skip-db-check         Save configuration without testing the DB\n  --no-build              Do not run pnpm build during install\n  --no-start              Do not start after install\n\nPostgreSQL:\n  --database-url URL      DATABASE_URL\n\nOracle:\n  --oracle-user USER\n  --oracle-password PASS\n  --oracle-tns-alias ALIAS\n  --oracle-wallet-path PATH\n  --oracle-wallet-password PASS\n\nAzure SQL:\n  --azure-host HOST\n  --azure-database DB\n  --azure-user USER\n  --azure-password PASS\n  --azure-port PORT       Default: 1433\n\nNative mode stores assets on the local filesystem. Database credentials are\nstored in .risuai/native.json with mode 0600.`,
+    `RisuAI native deployment\n\nUsage:\n  ./risuai.sh native install --db-vendor postgres --database-url URL\n  ./risuai.sh native install --db-vendor oracle --env-file .env.oracle\n  ./risuai.sh native install --db-vendor azure --env-file .env.azure\n  ./risuai.sh native build|start|stop|restart|rebuild|status|config|logs\n\nCommon install options:\n  --port PORT             Node server port (default: 6001)\n  --host HOST             Listen host (default: 127.0.0.1)\n  --save-path PATH        Persistent local asset/settings path\n  --allowed-origins LIST  Exact comma-separated browser origins allowed for remote API CORS\n  --pool-max N            SQL connection pool size (default: 10)\n  --env-file FILE         Read DB variables from an env file\n  --skip-db-check         Save configuration without testing the DB\n  --no-build              Do not run pnpm build during install\n  --no-start              Do not start after install\n\nPostgreSQL:\n  --database-url URL      DATABASE_URL\n\nOracle:\n  --oracle-user USER\n  --oracle-password PASS\n  --oracle-tns-alias ALIAS\n  --oracle-wallet-path PATH\n  --oracle-wallet-password PASS\n\nAzure SQL:\n  --azure-host HOST\n  --azure-database DB\n  --azure-user USER\n  --azure-password PASS\n  --azure-port PORT       Default: 1433\n\nNative mode stores assets on the local filesystem. Database credentials are\nstored in .risuai/native.json with mode 0600.`,
   );
 }
 
@@ -432,4 +453,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseEnvFile, parseInstallArgs, databaseEnv, maskedConfig };
+module.exports = {
+  parseEnvFile,
+  parseInstallArgs,
+  databaseEnv,
+  runtimeEnv,
+  maskedConfig,
+};

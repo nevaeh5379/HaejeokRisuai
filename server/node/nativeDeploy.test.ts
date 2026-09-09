@@ -13,6 +13,7 @@ const nativeDeploy = require("../../tooling/native-deploy.cjs") as {
     config: any;
   };
   databaseEnv: (config: any) => Record<string, string>;
+  runtimeEnv: (config: any) => Record<string, string>;
   maskedConfig: (config: any) => any;
 };
 
@@ -49,6 +50,7 @@ describe("native deployment configuration", () => {
     expect(config.db.params.connectionString).toContain("db.example");
     expect(config.port).toBe(7000);
     expect(config.host).toBe("0.0.0.0");
+    expect(config.allowedOrigins).toBe("");
     expect(nativeDeploy.databaseEnv(config).DB_VENDOR).toBe("postgres");
     expect(nativeDeploy.maskedConfig(config).db.params.connectionString).toBe(
       "postgresql://user:***@db.example/risuai",
@@ -93,5 +95,39 @@ describe("native deployment configuration", () => {
     });
     expect(nativeDeploy.databaseEnv(config).AZURE_POOL_MAX).toBe("20");
     expect(nativeDeploy.maskedConfig(config).db.params.password).toBe("***");
+  });
+  it("allows the fixed Vite origin by default for loopback native servers", () => {
+    const { config } = nativeDeploy.parseInstallArgs(
+      [
+        "--db-vendor",
+        "postgres",
+        "--database-url",
+        "postgresql://user:secret@localhost/risuai",
+      ],
+      {},
+    );
+    expect(config.allowedOrigins).toBe(
+      "http://localhost:5174,http://127.0.0.1:5174",
+    );
+    expect(nativeDeploy.runtimeEnv(config).RISUAI_ALLOWED_ORIGINS).toBe(
+      config.allowedOrigins,
+    );
+  });
+
+  it("accepts an explicit native CORS allowlist", () => {
+    const { config } = nativeDeploy.parseInstallArgs(
+      [
+        "--db-vendor",
+        "postgres",
+        "--database-url",
+        "postgresql://user:secret@localhost/risuai",
+        "--allowed-origins",
+        "https://chat.example.com,http://localhost:5174",
+      ],
+      {},
+    );
+    expect(config.allowedOrigins).toBe(
+      "https://chat.example.com,http://localhost:5174",
+    );
   });
 });
