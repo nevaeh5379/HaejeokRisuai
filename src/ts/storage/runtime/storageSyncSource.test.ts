@@ -152,6 +152,33 @@ describe("storage sync SQL source", () => {
     expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
   });
 
+  it("preserves module positions and root module order independently", async () => {
+    const { storage } = makeStorage();
+    storage.listSettingKeys = vi.fn(async () => ["moduleOrder"]);
+    storage.loadSettingKeys = vi.fn(async () =>
+      new Map([["moduleOrder", ["folder:f1", "module-b", "module-a"]]]),
+    );
+    storage.loadModules = vi.fn(async () => [
+      { id: "module-b", name: "B", folderId: "f1" },
+      { id: "module-a", name: "A" },
+    ] as any);
+
+    const records = await collect(
+      iterateStorageSyncSqlRecords(storage, { expectedRevision: 7, pageSize: 2 }),
+    );
+    const rootOrder = records.find(
+      (record) => record.type === "setting" && record.key === "moduleOrder",
+    );
+    const modules = records.filter((record) => record.type === "module");
+
+    expect(rootOrder && "value" in rootOrder ? rootOrder.value : null).toEqual([
+      "folder:f1", "module-b", "module-a",
+    ]);
+    expect(modules.map((record) => [record.id, record.position])).toEqual([
+      ["module-b", 0], ["module-a", 1],
+    ]);
+  });
+
   it("produces deterministic bounded chunks matching the measured digest", async () => {
     const measuredStorage = makeStorage().storage;
     const plan = await measureStorageSyncSqlSource(measuredStorage, {

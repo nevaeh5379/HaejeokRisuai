@@ -4145,6 +4145,61 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
+  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+    this.assertEnabled();
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      throw new PostgresPayloadError(
+        "Storage sync finalize revision must be a non-negative integer",
+      );
+    }
+    if (typeof callback !== "function") {
+      throw new PostgresPayloadError(
+        "Storage sync finalize callback is required",
+      );
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const metaResult = await client.query(
+        "SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
+      );
+      const currentRevision = Number(metaResult.rows[0].revision);
+      if (currentRevision !== expectedRevision) {
+        throw new PostgresRevisionConflictError(currentRevision);
+      }
+      const nextRevision = currentRevision + 1;
+      const revisionId = await beginAuditRevision(client, {
+        storageRevision: nextRevision,
+        databaseInitialized: true,
+        scope: "database",
+        action: "storage-sync:replace",
+      });
+      const result = await callback(client, {
+        currentRevision,
+        nextRevision,
+        revisionId,
+      });
+      await client.query(
+        `UPDATE system.storage_meta
+         SET revision = $1, initialized = TRUE, updated_at = NOW()
+         WHERE singleton = TRUE`,
+        [nextRevision],
+      );
+      await client.query("COMMIT");
+      return {
+        success: true,
+        revision: nextRevision,
+        revisionId,
+        ...(result || {}),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async updateSetting(key, value) {
     return await this.executeRevision(
       `setting:update (${key})`,

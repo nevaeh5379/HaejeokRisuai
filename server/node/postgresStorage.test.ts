@@ -48,6 +48,72 @@ const { rebuildSettings, splitSetting } =
     };
   };
 
+describe("PostgreSQL storage sync finalize concurrency", () => {
+  function storageAtRevision(revision: number) {
+    const queries: string[] = [];
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes("SELECT revision FROM system.storage_meta")) {
+          return { rows: [{ revision }] };
+        }
+        if (sql.includes("WITH inserted AS")) {
+          return { rows: [{ id: "41" }] };
+        }
+        return { rows: [], rowCount: 1 };
+      }),
+      release: vi.fn(),
+    };
+    const storage = new PostgresStorage({
+      connectionString: "postgres://sync-test",
+    });
+    storage.pool = { connect: vi.fn(async () => client) };
+    return { storage, client, queries };
+  }
+
+  it("locks and rechecks the target revision inside the finalize transaction", async () => {
+    const { storage, client, queries } = storageAtRevision(7);
+    const callback = vi.fn(async (_client: unknown, context: any) => {
+      queries.push("CALLBACK");
+      expect(context).toMatchObject({
+        currentRevision: 7,
+        nextRevision: 8,
+        revisionId: 41,
+      });
+      return { applied: 3 };
+    });
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).resolves.toMatchObject({
+      revision: 8,
+      revisionId: 41,
+      applied: 3,
+    });
+    expect(queries.findIndex((sql) => sql.includes("FOR UPDATE"))).toBeLessThan(
+      queries.indexOf("CALLBACK"),
+    );
+    expect(queries.at(-1)).toBe("COMMIT");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it("aborts instead of rebasing when another write wins the revision race", async () => {
+    const { storage, client, queries } = storageAtRevision(8);
+    const callback = vi.fn();
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).rejects.toMatchObject({
+      name: "PostgresRevisionConflictError",
+      revision: 8,
+    });
+    expect(callback).not.toHaveBeenCalled();
+    expect(queries).toContain("ROLLBACK");
+    expect(queries).not.toContain("COMMIT");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+});
+
 describe("PostgreSQL sync payload validation", () => {
   it("accepts a normalized incremental payload", () => {
     const result = validateSyncPayload({
