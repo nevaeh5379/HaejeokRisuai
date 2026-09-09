@@ -408,10 +408,23 @@ html.tauri-macos-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-spacer {
+  display: none;
   width: var(--risu-macos-traffic-lights-width);
   min-width: var(--risu-macos-traffic-lights-width);
   height: 48px;
   flex: 0 0 var(--risu-macos-traffic-lights-width);
+}
+
+html.tauri-macos-vibrancy
+  .rs-chat-tab-strip-shell.macos-traffic-light-clearance
+  > .rs-chat-tab-traffic-light-spacer {
+  display: block;
+}
+
+@media (max-width: 1024px) {
+  html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-spacer {
+    display: block;
+  }
 }
 
 /* macOS native material makes the last frame of the legacy width/right

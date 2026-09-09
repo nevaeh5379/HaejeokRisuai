@@ -56,16 +56,15 @@
     let { groupId, reserveSidebarSpace = false, allowSplit = false }: Props = $props();
     let showTabs = $derived(settingsStore.state.showChatTabs ?? true);
     let groupTabs = $derived(chatTabsStore.tabsForGroup(groupId));
+    let currentWorkspaceWindowId = $derived(getCurrentChatWorkspaceWindowId());
+    let isFirstWorkspaceGroup = $derived(chatTabsStore.groups[0]?.id === groupId);
     let reserveMainMacOSTrafficLights = $derived(
-        isTauriMacOS &&
-        getCurrentChatWorkspaceWindowId() === 'main' &&
-        reserveSidebarSpace &&
+        currentWorkspaceWindowId === 'main' &&
+        isFirstWorkspaceGroup &&
         ($MobileGUI || $sideBarClosing || !$sideBarStore),
     );
     let reserveMacOSTrafficLights = $derived(
-        isTauriMacOS &&
-        getCurrentChatWorkspaceWindowId() !== 'main' &&
-        chatTabsStore.groups[0]?.id === groupId,
+        currentWorkspaceWindowId !== 'main' && isFirstWorkspaceGroup,
     );
     let selectedCharacter = $derived(characterStore.characters[$selectedCharID]);
     let selectedChat = $derived(
@@ -583,14 +582,15 @@
 />
 
 {#if showTabs}
-    <div class="rs-chat-tab-strip-shell shrink-0 w-full">
-        {#if reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
-            <div
-                class="rs-chat-tab-traffic-light-spacer"
-                data-tauri-drag-region="true"
-                aria-hidden="true"
-            ></div>
-        {/if}
+    <div
+        class="rs-chat-tab-strip-shell shrink-0 w-full"
+        class:macos-traffic-light-clearance={reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
+    >
+        <div
+            class="rs-chat-tab-traffic-light-spacer"
+            data-tauri-drag-region="true"
+            aria-hidden="true"
+        ></div>
         <div
         data-chat-tab-list
         data-group-id={groupId}
