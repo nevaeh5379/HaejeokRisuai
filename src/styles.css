@@ -362,15 +362,16 @@ html.tauri-macos-vibrancy
   .default-chat-pane.has-chat-tabs
   > .default-chat-screen {
   box-sizing: border-box;
-  padding-top: 2.5rem;
+  padding-top: 3rem;
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab-list {
   box-sizing: border-box;
+  height: 48px !important;
   align-items: center !important;
   gap: 6px !important;
-  padding-top: 3px !important;
-  padding-bottom: 3px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
   background-color: color-mix(
     in srgb,
     var(--risu-theme-darkbg) 44%,
