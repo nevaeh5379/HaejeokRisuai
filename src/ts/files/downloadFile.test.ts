@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   openNativeWriter: vi.fn(),
   nativeWrite: vi.fn(),
+  nativeWriteText: vi.fn(),
   nativeClose: vi.fn(),
 }));
 
@@ -33,9 +34,11 @@ describe("downloadFile", () => {
     mocks.isTauri = false;
     mocks.isCapacitor = true;
     mocks.nativeWrite.mockResolvedValue(undefined);
+    mocks.nativeWriteText.mockResolvedValue(undefined);
     mocks.nativeClose.mockResolvedValue(undefined);
     mocks.openNativeWriter.mockResolvedValue({
       write: mocks.nativeWrite,
+      writeText: mocks.nativeWriteText,
       close: mocks.nativeClose,
     });
   });
@@ -47,7 +50,8 @@ describe("downloadFile", () => {
       "lorebook_export.json",
       "application/json",
     );
-    expect(mocks.nativeWrite).toHaveBeenCalledTimes(1);
+    expect(mocks.nativeWriteText).toHaveBeenCalledWith('{"ok":true}');
+    expect(mocks.nativeWrite).not.toHaveBeenCalled();
     expect(mocks.nativeClose).toHaveBeenCalledTimes(1);
     expect(mocks.writeFile).not.toHaveBeenCalled();
   });
@@ -59,6 +63,13 @@ describe("downloadFile", () => {
     );
     expect(mocks.nativeWrite).not.toHaveBeenCalled();
     expect(mocks.nativeClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps binary APK downloads on the byte writer", async () => {
+    const data = new Uint8Array([1, 2, 3]);
+    await expect(downloadFile("card.png", data)).resolves.toBe(true);
+    expect(mocks.nativeWrite).toHaveBeenCalledWith(data);
+    expect(mocks.nativeWriteText).not.toHaveBeenCalled();
   });
 
   it("preserves direct Tauri download-directory writes", async () => {

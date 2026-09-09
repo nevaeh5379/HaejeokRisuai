@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   const plugin = {
     open: vi.fn(),
     write: vi.fn(),
+    writeText: vi.fn(),
     writeAssets: vi.fn(),
     close: vi.fn(),
   };
@@ -15,13 +16,17 @@ vi.mock("@capacitor/core", () => ({
   registerPlugin: mocks.registerPlugin,
 }));
 
-import { CapacitorFileWriter } from "./capacitorFileWriter";
+import {
+  CAPACITOR_FILE_WRITER_TEXT_CHUNK_SIZE,
+  CapacitorFileWriter,
+} from "./capacitorFileWriter";
 
 describe("CapacitorFileWriter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.open.mockResolvedValue({ id: "writer-1", cancelled: false });
     mocks.write.mockResolvedValue(undefined);
+    mocks.writeText.mockResolvedValue(undefined);
     mocks.writeAssets.mockResolvedValue({ written: 1, missing: [] });
     mocks.close.mockResolvedValue(undefined);
   });
@@ -45,6 +50,23 @@ describe("CapacitorFileWriter", () => {
 
     await writer!.close();
     expect(mocks.close).toHaveBeenCalledWith({ id: "writer-1" });
+  });
+
+  it("writes large text in order without Base64 conversion", async () => {
+    const writer = await CapacitorFileWriter.open("chat.json");
+    const data =
+      "a".repeat(CAPACITOR_FILE_WRITER_TEXT_CHUNK_SIZE - 1) +
+      "😀" +
+      "나".repeat(CAPACITOR_FILE_WRITER_TEXT_CHUNK_SIZE);
+
+    await writer!.writeText(data);
+
+    expect(mocks.writeText).toHaveBeenCalledTimes(3);
+    const chunks = mocks.writeText.mock.calls.map(([options]) => options.data);
+    expect(chunks.join("")).toBe(data);
+    expect(chunks[0].endsWith("\ud83d")).toBe(false);
+    expect(chunks[1].startsWith("\ude00")).toBe(false);
+    expect(mocks.write).not.toHaveBeenCalled();
   });
 
   it("returns null when the Android save picker is cancelled", async () => {

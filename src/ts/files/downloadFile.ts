@@ -10,11 +10,15 @@ export async function downloadFile(
 ): Promise<boolean> {
   const data =
     typeof dat === "string"
-      ? new Uint8Array(Buffer.from(dat, "utf-8"))
+      ? dat
       : new Uint8Array(dat);
 
   if (isTauri) {
-    await writeFile(name, data, { baseDir: BaseDirectory.Download });
+    const bytes =
+      typeof data === "string"
+        ? new Uint8Array(Buffer.from(data, "utf-8"))
+        : data;
+    await writeFile(name, bytes, { baseDir: BaseDirectory.Download });
     return true;
   }
 
@@ -22,7 +26,11 @@ export async function downloadFile(
     const writer = await CapacitorFileWriter.open(name, getMimeType(name));
     if (!writer) return false;
     try {
-      await writer.write(data);
+      if (typeof data === "string") {
+        await writer.writeText(data);
+      } else {
+        await writer.write(data);
+      }
     } finally {
       await writer.close();
     }

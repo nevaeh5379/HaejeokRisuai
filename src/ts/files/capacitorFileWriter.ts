@@ -8,11 +8,28 @@ export interface StreamFileWriterPlugin {
     mimeType: string;
   }): Promise<{ id?: string; cancelled?: boolean }>;
   write(options: { id: string; data: string }): Promise<void>;
+  writeText(options: { id: string; data: string }): Promise<void>;
   writeAssets(options: {
     id: string;
     keys: string[];
   }): Promise<{ written: number; missing: string[] }>;
   close(options: { id: string }): Promise<void>;
+}
+
+export const CAPACITOR_FILE_WRITER_TEXT_CHUNK_SIZE = 64 * 1024;
+
+function safeTextChunkEnd(value: string, start: number): number {
+  let end = Math.min(
+    value.length,
+    start + CAPACITOR_FILE_WRITER_TEXT_CHUNK_SIZE,
+  );
+  if (end >= value.length) return end;
+  const left = value.charCodeAt(end - 1);
+  const right = value.charCodeAt(end);
+  if (left >= 0xd800 && left <= 0xdbff && right >= 0xdc00 && right <= 0xdfff) {
+    end--;
+  }
+  return end;
 }
 
 const nativeStreamFileWriter = isCapacitor
@@ -43,6 +60,17 @@ export class CapacitorFileWriter {
       id: this.id,
       data: Buffer.from(data).toString("base64"),
     });
+  }
+
+  async writeText(data: string): Promise<void> {
+    for (let offset = 0; offset < data.length; ) {
+      const end = safeTextChunkEnd(data, offset);
+      await this.plugin.writeText({
+        id: this.id,
+        data: data.slice(offset, end),
+      });
+      offset = end;
+    }
   }
 
   async writeAssets(
