@@ -86,6 +86,7 @@ import { getImageCacheLimit } from "./memory/imageCacheLimits";
 import { releaseInactiveChatMessages } from "./stores/domain/messageStore.svelte";
 import { hasCompatibleServiceWorkerController } from "./bootstrap/serviceWorkerProtocol";
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
+import { CapacitorFileWriter } from "./files/capacitorFileWriter";
 
 export const forageStorage = new AutoStorage();
 
@@ -129,37 +130,7 @@ interface fetchLog {
 
 let fetchLog: fetchLog[] = [];
 
-export async function downloadFile(
-  name: string,
-  dat: Uint8Array | ArrayBuffer | string,
-) {
-  if (typeof dat === "string") {
-    dat = Buffer.from(dat, "utf-8");
-  }
-  const data = new Uint8Array(dat);
-  const downloadURL = (data: string, fileName: string) => {
-    const a = document.createElement("a");
-    a.href = data;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.style.display = "none";
-    a.click();
-    a.remove();
-  };
-
-  if (isTauri) {
-    await writeFile(name, data, { baseDir: BaseDirectory.Download });
-  } else {
-    const blob = new Blob([data], { type: "application/octet-stream" });
-    const url = URL.createObjectURL(blob);
-
-    downloadURL(url, name);
-
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 10000);
-  }
-}
+export { downloadFile } from "./files/downloadFile";
 
 const pathCache = new BoundedCache<string, string>({
   maxEntries: () => (settingsStore.state.lowSpecMode ? 256 : 1024),
@@ -421,9 +392,11 @@ export async function preloadThumbnailsDecoded(keys: string[]) {
         img.onerror = () => reject(new Error("decode warm failed"));
         // decode() keeps the decoded bitmap in the image cache without
         // attaching the element to the DOM.
-        const decoded = (img as HTMLImageElement & {
-          decode?: () => Promise<void>;
-        }).decode?.();
+        const decoded = (
+          img as HTMLImageElement & {
+            decode?: () => Promise<void>;
+          }
+        ).decode?.();
         if (decoded) {
           decoded.then(done).catch(() => {
             /* fall back to load event */
@@ -1727,55 +1700,12 @@ export class TauriWriter {
   }
 }
 
-interface StreamFileWriterPlugin {
-  open(options: {
-    fileName: string;
-    mimeType: string;
-  }): Promise<{ id?: string; cancelled?: boolean }>;
-  write(options: { id: string; data: string }): Promise<void>;
-  writeAssets(options: {
-    id: string;
-    keys: string[];
-  }): Promise<{ written: number; missing: string[] }>;
-  close(options: { id: string }): Promise<void>;
-}
-
-const capStreamFileWriter = isCapacitor
-  ? registerPlugin<StreamFileWriterPlugin>("StreamFileWriter")
-  : undefined;
-
-class CapacitorWriter {
-  constructor(private readonly id: string) {}
-
-  async write(data: Uint8Array): Promise<void> {
-    if (!capStreamFileWriter)
-      throw new Error("Native file writer is unavailable");
-    await capStreamFileWriter.write({
-      id: this.id,
-      data: Buffer.from(data).toString("base64"),
-    });
-  }
-
-  async writeAssets(
-    keys: string[],
-  ): Promise<{ written: number; missing: string[] }> {
-    if (!capStreamFileWriter)
-      throw new Error("Native file writer is unavailable");
-    return await capStreamFileWriter.writeAssets({ id: this.id, keys });
-  }
-
-  async close(): Promise<void> {
-    if (!capStreamFileWriter) return;
-    await capStreamFileWriter.close({ id: this.id });
-  }
-}
-
 /**
  * Class representing a local writer.
  */
 export class LocalWriter {
   private tauriWriter: TauriWriter | null = null;
-  private capacitorWriter: CapacitorWriter | null = null;
+  private capacitorWriter: CapacitorFileWriter | null = null;
   private port: MessagePort | null = null;
   private bufferSize = 0;
   private buffer: Uint8Array | null = null;
@@ -1846,16 +1776,11 @@ export class LocalWriter {
     }
 
     if (isCapacitor) {
-      if (!capStreamFileWriter) {
-        throw new Error("Native file writer is unavailable");
-      }
-      const opened = await capStreamFileWriter.open({
+      this.capacitorWriter = await CapacitorFileWriter.open(
         fileName,
-        mimeType: "application/octet-stream",
-      });
-      if (opened.cancelled) return false;
-      if (!opened.id) throw new Error("Native save destination is unavailable");
-      this.capacitorWriter = new CapacitorWriter(opened.id);
+        getMimeType(fileName),
+      );
+      if (!this.capacitorWriter) return false;
       if (this.bufferSize === 0) this.setBufferSize(1024 * 1024);
       return true;
     }

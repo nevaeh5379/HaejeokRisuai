@@ -8,6 +8,9 @@ node_modules
 .vscode
 .idea
 .codegraph
+.opencode
+.codex-tmp
+.DS_Store
 
 # Mobile / Android
 android
@@ -22,6 +25,10 @@ build
 .wrangler
 .tauri
 __pycache__
+playwright-report
+test-results
+coverage
+backup
 
 # Local data & environment
 save
