@@ -290,6 +290,7 @@ describe("stageLocalStorageToRemote", () => {
     target.skipKeys.add("assets/b.bin");
     const resumeStorage = memoryResumeStorage();
     const phases: string[] = [];
+    let flushCount = 0;
 
     const result = await stageLocalStorageToRemote({
       sourceSql: sourceSql(),
@@ -298,6 +299,9 @@ describe("stageLocalStorageToRemote", () => {
         "assets/b.bin": new Uint8Array([4, 5]),
       }),
       target,
+      flushPendingWrites: async () => {
+        flushCount += 1;
+      },
       resumeStorage,
       onProgress: (progress) => phases.push(progress.phase),
     });
@@ -314,6 +318,7 @@ describe("stageLocalStorageToRemote", () => {
     );
     expect(lastAsset).toBeLessThan(target.log.indexOf("plan-sql"));
     expect(phases.at(-1)).toBe("staged");
+    expect(flushCount).toBe(2);
   });
   it("resumes persisted asset and SQL offsets", async () => {
     const sql = sourceSql();
@@ -342,6 +347,7 @@ describe("stageLocalStorageToRemote", () => {
         "assets/a.bin": new Uint8Array([1, 2, 3, 4]),
       }),
       target,
+      flushPendingWrites: async () => {},
       resumeStorage,
     });
 
@@ -374,6 +380,7 @@ describe("stageLocalStorageToRemote", () => {
         sourceSql: sourceSql(),
         sourceAssets: reader,
         target,
+        flushPendingWrites: async () => {},
         resumeStorage: memoryResumeStorage(),
       }),
     ).rejects.toBeInstanceOf(StorageSyncSourceAssetsChangedError);

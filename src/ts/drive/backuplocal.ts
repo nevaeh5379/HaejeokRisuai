@@ -46,17 +46,12 @@ import {
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { flushDurableStores } from "../stores/domain/flushDurableStores";
 import { NodeStorage } from "../storage/files/nodeStorage";
 import {
   getSqlBranchStorage,
   getSqlStorage,
 } from "../storage/sql/sqlStorageFactory";
-import { presetStore } from "../stores/domain/presetStore.svelte";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { messageStore } from "../stores/domain/messageStore.svelte";
-import { personaStore } from "../stores/domain/personaStore.svelte";
-import { moduleStore } from "../stores/domain/moduleStore.svelte";
-import type { FlushableStore } from "../stores/domain/storeContracts";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
 import {
   makeLegacyCompatibleDatabase,
@@ -590,21 +585,6 @@ function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
   db.botPresets ??= [];
   db.botPresetsId ??= 0;
   return db as PortableDatabase;
-}
-
-async function flushDurableStores(): Promise<void> {
-  const stores: readonly FlushableStore[] = [
-    characterStore,
-    presetStore,
-    settingsStore,
-    messageStore,
-    personaStore,
-    moduleStore,
-  ];
-  await Promise.all(stores.map((store) => store.flush()));
-  if (stores.some((store) => store.hasPendingWrites())) {
-    throw new Error("Cannot create a backup while database writes are pending");
-  }
 }
 
 export async function createBackupDatabaseSnapshot(

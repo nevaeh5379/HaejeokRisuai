@@ -1,3 +1,4 @@
+import { flushDurableStores } from "../../stores/domain/flushDurableStores";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import type {
   NodeStorageSyncAssetChunkResult,
@@ -453,15 +454,25 @@ export interface StageLocalToRemoteOptions {
   resumeStorage?: StorageSyncResumeStorage | null;
   signal?: AbortSignal;
   onProgress?: (progress: StorageSyncStageProgress) => void;
+  flushPendingWrites?: () => Promise<void>;
 }
 
 export async function stageLocalStorageToRemote(
   options: StageLocalToRemoteOptions,
 ): Promise<LocalToRemoteStageResult> {
-  const { sourceSql, sourceAssets, target, resumeStorage, signal, onProgress } =
-    options;
+  const {
+    sourceSql,
+    sourceAssets,
+    target,
+    resumeStorage,
+    signal,
+    onProgress,
+    flushPendingWrites = flushDurableStores,
+  } = options;
   throwIfAborted(signal);
   onProgress?.({ phase: "preview" });
+  await flushPendingWrites();
+  throwIfAborted(signal);
   const sourceSummary = await requireSourceSummary(sourceSql);
   const sourceRevision = sourceSummary.revision;
   const targetSummary = await target.getStorageSyncSummary(signal);
@@ -539,6 +550,8 @@ export async function stageLocalStorageToRemote(
   ) {
     throw new StorageSyncSourceAssetsChangedError();
   }
+  await flushPendingWrites();
+  throwIfAborted(signal);
   const finalSourceSummary = await requireSourceSummary(sourceSql);
   if (finalSourceSummary.revision !== sourceRevision) {
     throw new StorageSyncResumeConflictError(
