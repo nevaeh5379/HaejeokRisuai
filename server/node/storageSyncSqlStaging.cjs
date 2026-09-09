@@ -5,6 +5,10 @@ const fs = require("fs");
 const path = require("path");
 const { writeJsonAtomic } = require("./storageSyncPersistence.cjs");
 const { STORAGE_SYNC_CHUNK_SIZE_BYTES } = require("./storageSync.cjs");
+const {
+  StorageSyncSqlRecordError,
+  readStorageSyncSqlRecords,
+} = require("./storageSyncSqlRecords.cjs");
 
 const STORAGE_SYNC_SQL_FORMAT_VERSION = 1;
 const MAX_SYNC_SQL_STREAM_BYTES = 64 * 1024 * 1024 * 1024;
@@ -230,6 +234,32 @@ class StorageSyncSqlStagingStore {
       return serializePlan(session);
     } finally {
       session.sqlUploadInProgress = false;
+    }
+  }
+
+  async validate(session, options = {}) {
+    if (
+      session.role !== "target" ||
+      !session.sql ||
+      session.sql.state !== "ready" ||
+      session.sql.offset !== session.sql.size
+    ) {
+      throw new StorageSyncSqlError(
+        "Storage sync SQL stream is not ready for validation",
+        "sql_not_ready",
+      );
+    }
+    try {
+      return await readStorageSyncSqlRecords(this.filePath(session.id), {
+        expectedRecordCount: session.sql.recordCount,
+        expectedSourceRevision: session.peerRevision,
+        onRecord: options.onRecord,
+      });
+    } catch (error) {
+      if (!(error instanceof StorageSyncSqlRecordError)) throw error;
+      const wrapped = new StorageSyncSqlError(error.message, error.code);
+      wrapped.recordIndex = error.recordIndex;
+      throw wrapped;
     }
   }
 

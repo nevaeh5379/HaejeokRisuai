@@ -157,9 +157,16 @@ describe("StorageSyncSqlStagingStore", () => {
 
     const restored = targetSession(session.id);
     await expect(store.hydrateSession(restored)).resolves.toBe(true);
-    expect(store.getPlan(restored)).toMatchObject({ offset: first.length, state: "receiving" });
+    expect(store.getPlan(restored)).toMatchObject({
+      offset: first.length,
+      state: "receiving",
+    });
     await store.writeChunk(restored, first.length, body.subarray(first.length));
-    expect(store.getPlan(restored)).toMatchObject({ offset: body.length, state: "ready", status: "sql-ready" });
+    expect(store.getPlan(restored)).toMatchObject({
+      offset: body.length,
+      state: "ready",
+      status: "sql-ready",
+    });
   });
 
   it("drops a completed SQL file with the wrong checksum while hydrating", async () => {
@@ -172,11 +179,56 @@ describe("StorageSyncSqlStagingStore", () => {
       recordCount: 1,
       sha256: sha256(body),
     });
-    await fs.promises.writeFile(store.filePath(session.id), Buffer.from("evil\n"));
+    await fs.promises.writeFile(
+      store.filePath(session.id),
+      Buffer.from("evil\n"),
+    );
 
     const restored = targetSession(session.id);
     await store.hydrateSession(restored);
-    expect(store.getPlan(restored)).toMatchObject({ offset: 0, state: "pending", status: "receiving-sql" });
+    expect(store.getPlan(restored)).toMatchObject({
+      offset: 0,
+      state: "pending",
+      status: "receiving-sql",
+    });
   });
 
+  it("validates a ready SQL stream against the pinned source revision", async () => {
+    const store = await tempStore();
+    const session = { ...targetSession("validate-sql"), peerRevision: 7 };
+    const body = Buffer.from(
+      '{"type":"meta","formatVersion":1,"revision":7}\n' +
+        '{"type":"setting","key":"theme","value":"dark"}\n',
+    );
+    await store.plan(session, {
+      formatVersion: 1,
+      size: body.length,
+      recordCount: 2,
+      sha256: sha256(body),
+    });
+    await store.writeChunk(session, 0, body);
+
+    await expect(store.validate(session)).resolves.toMatchObject({
+      recordCount: 2,
+      sourceRevision: 7,
+      counts: { meta: 1, setting: 1 },
+    });
+  });
+
+  it("rejects validation before the stream is ready", async () => {
+    const store = await tempStore();
+    const session = { ...targetSession("validate-pending"), peerRevision: 7 };
+    const body = Buffer.from(
+      '{"type":"meta","formatVersion":1,"revision":7}\n',
+    );
+    await store.plan(session, {
+      formatVersion: 1,
+      size: body.length,
+      recordCount: 1,
+      sha256: sha256(body),
+    });
+    await expect(store.validate(session)).rejects.toMatchObject({
+      code: "sql_not_ready",
+    });
+  });
 });

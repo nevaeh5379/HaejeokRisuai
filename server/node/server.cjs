@@ -2953,15 +2953,27 @@ app.put(
 
 function sendStorageSyncSqlError(res, error) {
   const code = error.code || "storage_sync_sql_error";
+  const validationError =
+    code.startsWith("invalid_sql_") ||
+    code === "unsupported_sql_record" ||
+    code === "unterminated_sql_record" ||
+    code === "sql_record_too_large" ||
+    code === "sql_record_count_mismatch" ||
+    code === "sql_source_revision_mismatch";
   const status =
     code === "offset_mismatch" ||
     code === "sql_upload_in_progress" ||
-    code === "assets_not_ready"
+    code === "assets_not_ready" ||
+    code === "sql_not_ready"
       ? 409
-      : code === "sql_checksum_mismatch"
+      : code === "sql_checksum_mismatch" || validationError
         ? 422
         : 400;
-  res.status(status).send({ error: error.message, code });
+  const body = { error: error.message, code };
+  if (Number.isSafeInteger(error.recordIndex) && error.recordIndex >= 0) {
+    body.recordIndex = error.recordIndex;
+  }
+  res.status(status).send(body);
 }
 
 app.post(
@@ -3039,6 +3051,30 @@ app.put(
           req.body,
         ),
       );
+    } catch (error) {
+      if (error instanceof StorageSyncSqlError) {
+        sendStorageSyncSqlError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.post(
+  "/api/storage-sync/sessions/:sessionId/sql/validate",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = await getStorageSyncSession(req.params.sessionId);
+    if (!session) {
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    try {
+      res.send(await storageSyncSqlStaging.validate(session));
     } catch (error) {
       if (error instanceof StorageSyncSqlError) {
         sendStorageSyncSqlError(res, error);

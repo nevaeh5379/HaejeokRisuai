@@ -247,6 +247,13 @@ describe("NodeApiClient", () => {
           state: "ready",
           status: "sql-ready",
         }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          recordCount: 1,
+          sourceRevision: 7,
+          counts: { meta: 1 },
+        }),
       );
     const client = new NodeApiClient(profile, fetcher);
     await expect(
@@ -266,6 +273,18 @@ describe("NodeApiClient", () => {
     ).resolves.toMatchObject({ offset: 3, state: "ready" });
     expect(fetcher.mock.calls[1][0]).toContain("/sql?offset=0");
     expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "PUT" });
+    await expect(
+      client.validateStorageSyncSql("session-1", "sync-auth"),
+    ).resolves.toMatchObject({
+      recordCount: 1,
+      sourceRevision: 7,
+      counts: { meta: 1 },
+    });
+    expect(fetcher.mock.calls[2][0]).toContain("/sql/validate");
+    expect(fetcher.mock.calls[2][1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ "risu-auth": "sync-auth" }),
+    });
   });
 
   it("preserves structured SQL staging errors", async () => {

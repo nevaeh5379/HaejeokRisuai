@@ -258,7 +258,19 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
     this.session.status = this.sqlPlan.status;
     return structuredClone(this.sqlPlan);
   }
+
+  async validateStorageSyncSql(id: string) {
+    expect(id).toBe(this.session.id);
+    if (!this.sqlPlan) throw new Error("sql plan missing");
+    this.log.push("validate-sql");
+    return {
+      recordCount: this.sqlPlan.recordCount,
+      sourceRevision: this.session.peerRevision ?? 0,
+      counts: { meta: 1 },
+    };
+  }
 }
+
 describe("stageLocalStorageToRemote", () => {
   it("stages assets before SQL and respects checksum dedupe", async () => {
     const target = new FakeRemoteTarget();

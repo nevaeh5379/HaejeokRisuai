@@ -11,6 +11,7 @@ import {
   type NodeStorageSyncAssetPlan,
   type NodeStorageSyncSqlPlan,
   type NodeStorageSyncSqlPlanInput,
+  type NodeStorageSyncSqlValidation,
   type NodeStorageSyncSession,
   type NodeStorageSyncSummary,
   type StorageSyncDirection,
@@ -1523,6 +1524,17 @@ export class NodeStorage {
       id,
       offset,
       data,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async validateStorageSyncSql(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlValidation> {
+    return await this.apiClient.validateStorageSyncSql(
+      id,
       await this.getCachedAuth(),
       signal,
     );

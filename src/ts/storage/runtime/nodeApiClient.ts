@@ -96,6 +96,12 @@ export interface NodeStorageSyncSqlPlan extends NodeStorageSyncSqlPlanInput {
   status: NodeStorageSyncSessionStatus;
 }
 
+export interface NodeStorageSyncSqlValidation {
+  recordCount: number;
+  sourceRevision: number;
+  counts: Record<string, number>;
+}
+
 export class NodeStorageSyncRevisionConflictError extends Error {
   constructor(readonly currentRevision: number) {
     super(
@@ -315,6 +321,28 @@ function validateStorageSyncSqlPlan(value: unknown): NodeStorageSyncSqlPlan {
     );
   }
   return plan as NodeStorageSyncSqlPlan;
+}
+
+function validateStorageSyncSqlValidation(
+  value: unknown,
+): NodeStorageSyncSqlValidation {
+  const result = value as Partial<NodeStorageSyncSqlValidation> | null;
+  if (
+    !result ||
+    !isNonNegativeSafeInteger(result.recordCount) ||
+    !isNonNegativeSafeInteger(result.sourceRevision) ||
+    !result.counts ||
+    typeof result.counts !== "object" ||
+    Array.isArray(result.counts) ||
+    Object.values(result.counts).some(
+      (count) => !isNonNegativeSafeInteger(count),
+    )
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid storage sync SQL validation result.",
+    );
+  }
+  return result as NodeStorageSyncSqlValidation;
 }
 
 async function storageSyncAssetError(response: Response): Promise<never> {
@@ -572,6 +600,24 @@ export class NodeApiClient {
     );
     if (!response.ok) return await storageSyncSqlError(response);
     return validateStorageSyncSqlPlan(await response.json());
+  }
+
+  async validateStorageSyncSql(
+    id: string,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlValidation> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/sql/validate`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "risu-auth": auth },
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncSqlError(response);
+    return validateStorageSyncSqlValidation(await response.json());
   }
 
   async cancelStorageSyncSession(id: string, auth: string): Promise<void> {

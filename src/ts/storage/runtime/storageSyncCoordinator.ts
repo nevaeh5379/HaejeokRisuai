@@ -7,6 +7,7 @@ import type {
   NodeStorageSyncSession,
   NodeStorageSyncSqlPlan,
   NodeStorageSyncSqlPlanInput,
+  NodeStorageSyncSqlValidation,
   NodeStorageSyncSummary,
 } from "./nodeApiClient";
 import {
@@ -72,6 +73,10 @@ export interface StorageSyncRemoteTarget {
     data: Uint8Array,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlPlan>;
+  validateStorageSyncSql(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlValidation>;
 }
 
 export type StorageSyncStagePhase =
@@ -511,6 +516,15 @@ export async function stageLocalStorageToRemote(
     onProgress,
   );
   assertSqlPlanMatchesSource(sqlSourcePlan, sqlPlan);
+  const validation = await target.validateStorageSyncSql(session.id, signal);
+  if (
+    validation.recordCount !== sqlSourcePlan.recordCount ||
+    validation.sourceRevision !== sourceRevision
+  ) {
+    throw new StorageSyncPlanMismatchError(
+      "Remote SQL validation does not match the staged local source.",
+    );
+  }
 
   onProgress?.({ phase: "verifying" });
   const finalAssetManifest = await buildStorageSyncAssetManifest(sourceAssets);
