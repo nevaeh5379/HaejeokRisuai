@@ -13,7 +13,7 @@
 <script lang="ts">
     import { PlusIcon, XIcon } from '@lucide/svelte';
     import { onDestroy } from 'svelte';
-    import { MobileGUI, sideBarStore, selectedCharID } from 'src/ts/stores.svelte';
+    import { MobileGUI, sideBarClosing, sideBarStore, selectedCharID } from 'src/ts/stores.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
@@ -60,7 +60,7 @@
         isTauriMacOS &&
         getCurrentChatWorkspaceWindowId() === 'main' &&
         reserveSidebarSpace &&
-        !$sideBarStore,
+        ($sideBarClosing || !$sideBarStore),
     );
     let reserveMacOSTrafficLights = $derived(
         isTauriMacOS &&

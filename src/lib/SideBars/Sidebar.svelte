@@ -1081,7 +1081,9 @@
   class:max-w-[calc(100%-8rem)]={$DynamicGUI}
   onanimationend={() => {
     if($sideBarClosing){
-      $sideBarClosing = false
+      // Keep the closing state latched while hidden. Reset it only when the
+      // user opens the sidebar again, so the closing animation cannot snap
+      // back to its opening styles for a frame.
       sideBarStore.set(false)
     }
   }}
@@ -1292,6 +1294,7 @@
   .risu-sidebar-close:not(.dynamic-sidebar) {
     animation-name: sidebar-transition-close-non-dynamic;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
   }
   .risu-sidebar.dynamic-sidebar {
@@ -1304,6 +1307,7 @@
   .risu-sidebar-close.dynamic-sidebar {
     animation-name: sidebar-transition-close;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
     will-change: transform;
   }
@@ -1316,6 +1320,7 @@
   .risu-sub-sidebar-close:not(.dynamic-sidebar) {
     animation-name: sub-sidebar-transition-close-width;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
   }
   .risu-sub-sidebar.dynamic-sidebar {
@@ -1326,6 +1331,7 @@
   .risu-sub-sidebar-close.dynamic-sidebar {
     animation-name: sub-sidebar-transition-close;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
     will-change: transform;
   }

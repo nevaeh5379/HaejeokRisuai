@@ -368,6 +368,7 @@ html.tauri-macos-vibrancy
 html.tauri-macos-vibrancy .rs-chat-tab-list {
   box-sizing: border-box;
   height: 48px !important;
+  transition: padding-left var(--risu-animation-speed) ease;
   align-items: center !important;
   gap: 6px !important;
   padding-top: 6px !important;
