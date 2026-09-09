@@ -1,5 +1,9 @@
 const express = require("express");
 const app = express();
+const {
+  createRemoteCorsMiddleware,
+  parseAllowedOrigins,
+} = require("./remoteCors.cjs");
 if (process.env.TRUST_PROXY) {
   app.set(
     "trust proxy",
@@ -203,6 +207,12 @@ app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   next();
 });
+app.use(
+  "/api",
+  createRemoteCorsMiddleware(
+    parseAllowedOrigins(process.env.RISUAI_ALLOWED_ORIGINS || ""),
+  ),
+);
 
 app.use(publicContentLimiter, async (req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -559,6 +569,7 @@ async function initializePrimaryStorage(
 }
 
 const recoveryApiPrefixes = [
+  "/api/client-capabilities",
   "/api/health",
   "/api/test_auth",
   "/api/login",
@@ -2684,6 +2695,19 @@ app.get("/api/health", (req, res) => {
   res.status(healthy ? 200 : 503).send({
     status: healthy ? "ok" : "degraded",
     storage: runtime,
+  });
+});
+
+app.get("/api/client-capabilities", (req, res) => {
+  res.send({
+    apiVersion: 1,
+    features: {
+      sqlStorage: true,
+      assetStorage: true,
+      dataChangeEvents: true,
+      modelExecution: false,
+      vectorSearch: false,
+    },
   });
 });
 
