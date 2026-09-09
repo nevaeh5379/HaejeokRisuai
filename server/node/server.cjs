@@ -97,6 +97,7 @@ const {
   searchVectorIndex,
 } = require("./vectorIndex.cjs");
 const { matchLoreBatch } = require("./loreMatch.cjs");
+const { createStorageSyncSummary } = require("./storageSync.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -2705,11 +2706,29 @@ app.get("/api/client-capabilities", (req, res) => {
       sqlStorage: true,
       assetStorage: true,
       dataChangeEvents: true,
+      storageSync: true,
       modelExecution: false,
       vectorSearch: false,
     },
   });
 });
+
+app.get(
+  "/api/storage-sync/summary",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      const summary = await createStorageSyncSummary(
+        postgresStorage,
+        assetStorageManager.getStorage(),
+      );
+      res.send(summary);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.post("/api/login", loginRouteLimiter, async (req, res) => {
   if (password === "") {

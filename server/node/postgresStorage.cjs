@@ -770,6 +770,31 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
+  async getStorageSyncSummary() {
+    this.assertEnabled();
+    const result = await this.pool.query(`
+      SELECT meta.revision, meta.initialized,
+             (SELECT COUNT(*)::bigint FROM system.settings) AS settings_count,
+             (SELECT COUNT(*)::bigint FROM character.characters) AS characters_count,
+             (SELECT COUNT(*)::bigint FROM chat.chats) AS chats_count,
+             (SELECT COUNT(*)::bigint FROM chat.messages) AS messages_count
+        FROM system.storage_meta meta
+       WHERE meta.singleton = TRUE
+    `);
+    const row = result.rows[0] || {};
+    const records = {
+      settings: Number(row.settings_count) || 0,
+      characters: Number(row.characters_count) || 0,
+      chats: Number(row.chats_count) || 0,
+      messages: Number(row.messages_count) || 0,
+    };
+    return {
+      revision: Number(row.revision) || 0,
+      initialized: Boolean(row.initialized),
+      records: { ...records, total: Object.values(records).reduce((a, b) => a + b, 0) },
+    };
+  }
+
   async isAssetCatalogInitialized(sourceId) {
     this.assertEnabled();
     const result = await this.pool.query(

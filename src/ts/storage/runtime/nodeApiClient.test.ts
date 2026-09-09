@@ -61,4 +61,56 @@ describe("NodeApiClient", () => {
       /does not provide the required/,
     );
   });
+
+  it("loads a validated storage sync summary from capable servers", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/client-capabilities")) {
+        return Response.json({
+          apiVersion: 1,
+          features: {
+            sqlStorage: true,
+            assetStorage: true,
+            dataChangeEvents: true,
+            storageSync: true,
+          },
+        });
+      }
+      return Response.json({
+        protocolVersion: 1,
+        revision: 9,
+        initialized: true,
+        records: {
+          settings: 2,
+          characters: 3,
+          chats: 4,
+          messages: 5,
+          total: 14,
+        },
+        assets: { count: 6, sizeBytes: 700 },
+      });
+    });
+    const client = new NodeApiClient(profile, fetcher);
+    await expect(client.getStorageSyncSummary()).resolves.toMatchObject({
+      revision: 9,
+      records: { total: 14 },
+      assets: { count: 6, sizeBytes: 700 },
+    });
+  });
+
+  it("refuses storage sync when the server does not advertise it", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        apiVersion: 1,
+        features: {
+          sqlStorage: true,
+          assetStorage: true,
+          dataChangeEvents: true,
+        },
+      }),
+    );
+    const client = new NodeApiClient(profile, fetcher);
+    await expect(client.getStorageSyncSummary()).rejects.toThrow(/does not support/);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
 });

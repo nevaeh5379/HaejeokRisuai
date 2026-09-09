@@ -8,9 +8,24 @@ export interface NodeClientCapabilities {
     sqlStorage: boolean;
     assetStorage: boolean;
     dataChangeEvents: boolean;
+    storageSync?: boolean;
     modelExecution?: boolean;
     vectorSearch?: boolean;
   };
+}
+
+export interface NodeStorageSyncSummary {
+  protocolVersion: number;
+  revision: number;
+  initialized: boolean;
+  records: {
+    settings: number;
+    characters: number;
+    chats: number;
+    messages: number;
+    total: number;
+  };
+  assets: { count: number; sizeBytes: number };
 }
 
 export type NodeApiFetch = (
@@ -48,6 +63,34 @@ function validateCapabilities(value: unknown): NodeClientCapabilities {
     );
   }
   return capabilities as NodeClientCapabilities;
+}
+
+function validateStorageSyncSummary(value: unknown): NodeStorageSyncSummary {
+  const summary = value as Partial<NodeStorageSyncSummary> | null;
+  const counters = summary?.records;
+  const assets = summary?.assets;
+  const validCounter = (entry: unknown) =>
+    Number.isSafeInteger(entry) && Number(entry) >= 0;
+  if (
+    !summary ||
+    summary.protocolVersion !== 1 ||
+    !validCounter(summary.revision) ||
+    typeof summary.initialized !== "boolean" ||
+    !counters ||
+    !validCounter(counters.settings) ||
+    !validCounter(counters.characters) ||
+    !validCounter(counters.chats) ||
+    !validCounter(counters.messages) ||
+    !validCounter(counters.total) ||
+    !assets ||
+    !validCounter(assets.count) ||
+    !validCounter(assets.sizeBytes)
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid storage sync summary.",
+    );
+  }
+  return summary as NodeStorageSyncSummary;
 }
 
 export class NodeApiClient {
@@ -94,6 +137,26 @@ export class NodeApiClient {
       );
     }
     return validateCapabilities(await response.json());
+  }
+
+  async getStorageSyncSummary(signal?: AbortSignal): Promise<NodeStorageSyncSummary> {
+    const capabilities = await this.getCapabilities(signal);
+    if (capabilities.features.storageSync !== true) {
+      throw new NodeApiCompatibilityError(
+        "This server does not support local/self-hosted storage sync. Upgrade the server before syncing.",
+      );
+    }
+    const response = await this.request("/api/storage-sync/summary", {
+      method: "GET",
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Could not read storage sync summary (HTTP ${response.status}).`,
+      );
+    }
+    return validateStorageSyncSummary(await response.json());
   }
 }
 

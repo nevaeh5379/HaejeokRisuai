@@ -1190,6 +1190,36 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async getStorageSyncSummary() {
+    this.assertEnabled();
+    const conn = await this.pool.getConnection();
+    try {
+      const row = await fetchOne(
+        conn,
+        `SELECT meta.revision, meta.initialized,
+                (SELECT COUNT(*) FROM system_settings) AS settings_count,
+                (SELECT COUNT(*) FROM character_characters) AS characters_count,
+                (SELECT COUNT(*) FROM chat_chats) AS chats_count,
+                (SELECT COUNT(*) FROM chat_messages) AS messages_count
+           FROM system_storage_meta meta
+          WHERE meta.singleton = 1`,
+      );
+      const records = {
+        settings: Number(row?.settings_count) || 0,
+        characters: Number(row?.characters_count) || 0,
+        chats: Number(row?.chats_count) || 0,
+        messages: Number(row?.messages_count) || 0,
+      };
+      return {
+        revision: Number(row?.revision) || 0,
+        initialized: num1ToBool(row?.initialized),
+        records: { ...records, total: Object.values(records).reduce((a, b) => a + b, 0) },
+      };
+    } finally {
+      await conn.close();
+    }
+  }
+
   async isAssetCatalogInitialized(sourceId) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
