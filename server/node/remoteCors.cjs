@@ -4,6 +4,7 @@ const ALLOWED_HEADERS = [
   "cache-control",
   "content-encoding",
   "content-type",
+  "file-path",
   "if-none-match",
   "risu-auth",
   "x-risu-client-id",

@@ -1,24 +1,18 @@
 import type { ISqlStorage } from "../sql/ISqlStorage";
+import type { AutoStorage } from "../files/autoStorage";
 import type { NodeApiClient } from "./nodeApiClient";
 import type { StorageProfile } from "./storageProfile";
-
-export interface AssetStorageRuntime {
-  setItem(key: string, value: Uint8Array): Promise<unknown>;
-  getItem(key: string, options?: { thumbnail?: boolean }): Promise<Uint8Array>;
-  keys(prefix?: string): Promise<string[]>;
-  removeItem(key: string | string[]): Promise<unknown>;
-}
 
 export class ActiveStorageRuntime {
   readonly profile: StorageProfile;
   readonly sql: ISqlStorage;
-  readonly assets: AssetStorageRuntime;
+  readonly assets: AutoStorage;
   readonly nodeApiClient: NodeApiClient | null;
 
   constructor(options: {
     profile: StorageProfile;
     sql: ISqlStorage;
-    assets: AssetStorageRuntime;
+    assets: AutoStorage;
     nodeApiClient?: NodeApiClient | null;
   }) {
     const client = options.nodeApiClient ?? null;

@@ -1383,6 +1383,41 @@ export class NodeStorage {
     this.authChecked = true;
   }
 
+  async connectWithPassword(password: string): Promise<void> {
+    await this.apiClient.getCapabilities();
+    const response = await this.apiClient.request("/api/test_auth", {
+      headers: { "risu-auth": await this.createAuth() },
+    });
+    if (!response.ok) {
+      throw new Error(`Authentication check failed (${response.status}).`);
+    }
+    const data = await response.json();
+    if (data?.status === "success") {
+      this.authChecked = true;
+      return;
+    }
+    if (data?.status !== "unset" && data?.status !== "incorrect") {
+      throw new Error("The storage server returned an invalid auth status.");
+    }
+    if (!password) {
+      throw new Error("Enter the storage server password.");
+    }
+    const digest = await digestPassword(password, this.apiClient);
+    if (data.status === "unset") {
+      const setResponse = await this.apiClient.request("/api/set_password", {
+        method: "POST",
+        body: JSON.stringify({ password: digest }),
+        headers: { "content-type": "application/json" },
+      });
+      if (!setResponse.ok) {
+        throw new Error(
+          `Setting the storage server password failed (${setResponse.status}).`,
+        );
+      }
+    }
+    await this.authorizeKey(digest);
+  }
+
   private async checkAuth() {
     if (!this.authChecked) {
       let response: Response;

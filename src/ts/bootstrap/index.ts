@@ -4,7 +4,7 @@ import { changeLanguage } from "../../lang";
 import { installStartupData } from "../storage/database/databaseLifecycle";
 import { forageStorage } from "../globalApi.svelte";
 import { registerModelDynamic } from "../model/modellist";
-import { isCapacitor, isTauri } from "../platform";
+import { isCapacitor, isNodeServer, isTauri } from "../platform";
 import { initNodeRealtimeSync } from "../process/nodeRealtimeSync";
 import { initDurableModelJobRecovery } from "../process/modelJobRecovery";
 import { syncChatResponsePush } from "../network/pushSubscriptions";
@@ -37,6 +37,75 @@ import {
   updateErrorHandling,
   warnNightlyIfNeeded,
 } from "./startupUiChecks";
+import {
+  createRemoteNodeApiClient,
+  type NodeApiClient,
+} from "../storage/runtime/nodeApiClient";
+import {
+  loadStorageProfile,
+  normalizeRemoteBaseUrl,
+  saveStorageProfile,
+  type StorageProfile,
+  type StorageProfilePlatform,
+} from "../storage/runtime/storageProfile";
+import {
+  ActiveStorageRuntime,
+  installActiveStorageRuntime,
+} from "../storage/runtime/activeStorageRuntime";
+import {
+  describeStorageStartupError,
+  storageProfileGate,
+} from "../storage/runtime/storageProfileGate";
+import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
+
+function currentStoragePlatform(): StorageProfilePlatform {
+  if (isNodeServer) return "node";
+  if (isTauri) return "tauri";
+  if (isCapacitor) return "capacitor";
+  return "web";
+}
+
+async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> {
+  if (isNodeServer) {
+    return {
+      version: 1,
+      mode: "remote",
+      baseUrl: location.origin,
+      allowInsecureHttp: location.protocol === "http:",
+    };
+  }
+  const stored = loadStorageProfile();
+  if (stored) {
+    if (stored.mode === "remote") {
+      return {
+        ...stored,
+        baseUrl: normalizeRemoteBaseUrl(stored.baseUrl, {
+          allowInsecureHttp: stored.allowInsecureHttp,
+          platform: currentStoragePlatform(),
+          pageProtocol: globalThis.location?.protocol,
+        }),
+      };
+    }
+    return stored;
+  }
+  const local = { version: 1, mode: "local" } as const;
+  await forageStorage.Init({ profile: local });
+  const localSql = await getSqlStorage();
+  const initialized = await localSql.init();
+  if (!initialized) {
+    saveStorageProfile(local);
+    return local;
+  }
+  const startup = await localSql.loadStartupData();
+  const hasExistingData =
+    startup?.status === "ready" || (await forageStorage.hasStoredData());
+  if (hasExistingData) {
+    saveStorageProfile(local);
+    return local;
+  }
+  storageProfileGate.set({ status: "required" });
+  return null;
+}
 
 /**
  * Loads the application data.
@@ -56,19 +125,36 @@ import {
 export async function loadData() {
   const loaded = get(loadedStore);
   if (!loaded) {
+    let storageProfile: StorageProfile | null = null;
     try {
       startupPhase.set("core-loading");
+      storageProfile = await resolveBootstrapStorageProfile();
+      if (!storageProfile) return;
+      let nodeApiClient: NodeApiClient | null = null;
+      if (storageProfile.mode === "remote") {
+        nodeApiClient = await createRemoteNodeApiClient(
+          storageProfile,
+          currentStoragePlatform(),
+        );
+        await nodeApiClient.getCapabilities();
+      }
       // ── Step 0: Initialise forageStorage (needed for asset access
       // and Node server's NodeStorage which provides the SQL admin) ──
-      if (!isTauri) {
-        await forageStorage.Init();
-      }
+      await forageStorage.Init({ profile: storageProfile, nodeApiClient });
 
       // ── Step 1: Initialise SQL storage backend ────────────────────
       const storage = await initSqlStorageOrGate();
       if (!storage) {
         return;
       }
+      installActiveStorageRuntime(
+        new ActiveStorageRuntime({
+          profile: storageProfile,
+          sql: storage,
+          assets: forageStorage,
+          nodeApiClient,
+        }),
+      );
 
       // ── Step 2: Load startup domains ─────────────────────────────
       LoadingStatusState.text = "Loading Database...";
@@ -194,6 +280,14 @@ export async function loadData() {
         }
       });
     } catch (error) {
+      if (storageProfile?.mode === "remote" && !isNodeServer) {
+        storageProfileGate.set({
+          status: "failure",
+          profile: storageProfile,
+          error: describeStorageStartupError(error),
+        });
+        return;
+      }
       alertError(error);
     }
   }

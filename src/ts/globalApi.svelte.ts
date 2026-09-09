@@ -78,6 +78,7 @@ import {
   getNodeServerProxyAuth,
   NodeStorage,
 } from "./storage/files/nodeStorage";
+import { TauriAssetStorage } from "./storage/files/tauriAssetStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
@@ -548,7 +549,7 @@ export async function getFileSrc(
     : isDisplay
       ? `display${resizeKey}_${loc}`
       : loc;
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     if (loc.startsWith("assets")) {
       if (appDataDirPath === "") {
         appDataDirPath = await appDataDir();
@@ -713,7 +714,7 @@ let appDataDirPath = "";
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the image file.
  */
 export async function readImage(data: string) {
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     if (data.startsWith("assets")) {
       if (appDataDirPath === "") {
         appDataDirPath = await appDataDir();
@@ -757,7 +758,7 @@ export async function saveAsset(
       fileExtension = ext;
     }
   }
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     await writeFile(`assets/${id}.${fileExtension}`, data, {
       baseDir: BaseDirectory.AppData,
     });
@@ -782,7 +783,7 @@ export async function saveAsset(
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the loaded asset file.
  */
 export async function loadAsset(id: string) {
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     return await readFile(id, { baseDir: BaseDirectory.AppData });
   } else {
     return (await forageStorage.getItem(id)) as unknown as Uint8Array;

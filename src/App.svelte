@@ -13,6 +13,7 @@
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
+    import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
 
 
   
@@ -109,6 +110,7 @@
 
     const legalLoader = () => import('./lib/Others/Legal.svelte')
     const sqlQuickSetupLoader = () => import('./lib/Others/SqlQuickSetup.svelte')
+    const storageProfileSetupLoader = () => import('./lib/Others/StorageProfileSetup.svelte')
     const customGUISettingMenuLoader = () => import('./lib/Setting/Pages/CustomGUISettingMenu.svelte')
     const welcomeLoader = () => import('./lib/Others/WelcomeRisu.svelte')
     const settingsLoader = () => import('./lib/Setting/Settings.svelte')
@@ -335,7 +337,9 @@
             </div>
         </div>
     {:else if !$loadedStore}
-        {#if isNodeServer && $sqlConfiguredStore === false}
+        {#if $storageProfileGate.status !== 'idle'}
+            <LazyComponent loader={storageProfileSetupLoader} />
+        {:else if isNodeServer && $sqlConfiguredStore === false}
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
             <div class="w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">

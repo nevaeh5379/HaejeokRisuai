@@ -83,16 +83,16 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
     return storageSingleton;
   }
 
+  const { forageStorage } = await import("../../globalApi.svelte");
+  const { NodeStorage } = await import("../files/nodeStorage");
+  if (forageStorage.realStorage instanceof NodeStorage) {
+    storageSingleton = wrapWithSerializedCommits(
+      forageStorage.realStorage.sql as unknown as ISqlStorage,
+    );
+    return storageSingleton;
+  }
+
   if (isNodeServer) {
-    // Node server uses NodeSqlStorage via NodeStorage
-    const { forageStorage } = await import("../../globalApi.svelte");
-    const { NodeStorage } = await import("../files/nodeStorage");
-    if (forageStorage.realStorage instanceof NodeStorage) {
-      storageSingleton = wrapWithSerializedCommits(
-        forageStorage.realStorage.sql as unknown as ISqlStorage,
-      );
-      return storageSingleton;
-    }
     throw new Error(
       "Node SQL storage requires the initialized Node asset storage runtime.",
     );
