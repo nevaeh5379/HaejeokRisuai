@@ -46,7 +46,6 @@ import {
   normalizeRemoteBaseUrl,
   saveStorageProfile,
   type StorageProfile,
-  type StorageProfilePlatform,
 } from "../storage/runtime/storageProfile";
 import {
   ActiveStorageRuntime,
@@ -57,13 +56,7 @@ import {
   storageProfileGate,
 } from "../storage/runtime/storageProfileGate";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
-
-function currentStoragePlatform(): StorageProfilePlatform {
-  if (isNodeServer) return "node";
-  if (isTauri) return "tauri";
-  if (isCapacitor) return "capacitor";
-  return "web";
-}
+import { getCurrentStorageProfilePlatform } from "../storage/runtime/storageProfileConnection";
 
 async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> {
   if (isNodeServer) {
@@ -81,7 +74,7 @@ async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> 
         ...stored,
         baseUrl: normalizeRemoteBaseUrl(stored.baseUrl, {
           allowInsecureHttp: stored.allowInsecureHttp,
-          platform: currentStoragePlatform(),
+          platform: getCurrentStorageProfilePlatform(),
           pageProtocol: globalThis.location?.protocol,
         }),
       };
@@ -134,7 +127,7 @@ export async function loadData() {
       if (storageProfile.mode === "remote") {
         nodeApiClient = await createRemoteNodeApiClient(
           storageProfile,
-          currentStoragePlatform(),
+          getCurrentStorageProfilePlatform(),
         );
         await nodeApiClient.getCapabilities();
       }

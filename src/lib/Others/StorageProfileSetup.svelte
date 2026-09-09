@@ -1,13 +1,7 @@
 <script lang="ts">
-  import { isCapacitor, isTauri } from 'src/ts/platform';
-  import { NodeStorage } from 'src/ts/storage/files/nodeStorage';
-  import { createRemoteNodeApiClient } from 'src/ts/storage/runtime/nodeApiClient';
   import { storageProfileGate } from 'src/ts/storage/runtime/storageProfileGate';
-  import {
-    normalizeRemoteBaseUrl,
-    saveStorageProfile,
-    type StorageProfilePlatform,
-  } from 'src/ts/storage/runtime/storageProfile';
+  import { saveStorageProfile } from 'src/ts/storage/runtime/storageProfile';
+  import { connectRemoteStorageProfile } from 'src/ts/storage/runtime/storageProfileConnection';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
 
   const initial = $storageProfileGate;
@@ -19,12 +13,6 @@
   let showRemote = $state(initial.status === 'failure');
   let connecting = $state(false);
   let error = $state(initial.status === 'failure' ? initial.error : '');
-
-  function platform(): StorageProfilePlatform {
-    if (isTauri) return 'tauri';
-    if (isCapacitor) return 'capacitor';
-    return 'web';
-  }
 
   function chooseLocal(requireConfirmation = false) {
     if (
@@ -41,19 +29,12 @@
     connecting = true;
     error = '';
     try {
-      const profile = {
-        version: 1 as const,
-        mode: 'remote' as const,
-        baseUrl: normalizeRemoteBaseUrl(remoteUrl, {
-          allowInsecureHttp,
-          platform: platform(),
-          pageProtocol: location.protocol,
-        }),
+      const { profile } = await connectRemoteStorageProfile({
+        baseUrl: remoteUrl,
         allowInsecureHttp,
-      };
-      const client = await createRemoteNodeApiClient(profile, platform());
-      const storage = new NodeStorage(client);
-      await storage.connectWithPassword(password);
+        password,
+        pageProtocol: location.protocol,
+      });
       saveStorageProfile(profile);
       location.reload();
     } catch (cause) {

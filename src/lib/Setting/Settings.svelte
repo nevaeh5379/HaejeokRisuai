@@ -28,6 +28,7 @@
     import BrowserDbExplorerSettings from "./Pages/BrowserDbExplorerSettings.svelte";
     import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
     import PluginStorageExplorerSettings from "./Pages/PluginStorageExplorerSettings.svelte";
+    import StorageSettings from "./Pages/StorageSettings.svelte";
     import { isNodeServer, isTauri } from "src/ts/platform";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
@@ -78,6 +79,7 @@
             case 13: return language.promptTemplate;
             case 14: return language.modules;
             case 15: return language.hotkey;
+            case 17: return "저장소";
             case 77: return language.supporterThanks;
             default: return language.settings;
         }
@@ -259,6 +261,15 @@
     }}>
         <UserIcon />
         <span>{language.account} & {language.files}</span>
+    </button>
+    <button class="flex gap-2 items-center hover:text-textcolor"
+        class:text-textcolor={$SettingsMenuIndex === 17}
+        class:text-textcolor2={$SettingsMenuIndex !== 17}
+        onclick={() => {
+            $SettingsMenuIndex = 17
+    }}>
+        <HardDriveIcon />
+        <span>저장소</span>
     </button>
     <button class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 15}
@@ -587,6 +598,18 @@
                     </div>
                     <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                 </button>
+                <button
+                    class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                    onclick={() => { $SettingsMenuIndex = 17; }}
+                >
+                    <div class="flex items-center gap-3.5 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
+                            <HardDriveIcon size={18} />
+                        </div>
+                        <span class="text-base font-medium text-textcolor truncate">저장소</span>
+                    </div>
+                    <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                </button>
                 {#if !$isLite}
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
@@ -738,6 +761,8 @@
         }}/>
     {:else if $SettingsMenuIndex === 15 && window.innerWidth >= 768}
         <HotkeySettings/>
+    {:else if $SettingsMenuIndex === 17}
+        <StorageSettings/>
     {:else if $SettingsMenuIndex === 77}
         <ThanksPage/>
     {/if}
