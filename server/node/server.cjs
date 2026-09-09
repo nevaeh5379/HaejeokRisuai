@@ -112,7 +112,9 @@ const {
   StorageSyncSqlError,
   StorageSyncSqlStagingStore,
 } = require("./storageSyncSqlStaging.cjs");
-const storageSyncSessions = new StorageSyncSessionManager();
+const {
+  StorageSyncSessionPersistence,
+} = require("./storageSyncPersistence.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -381,12 +383,35 @@ const savePath = process.env.RISU_SAVE_PATH
 if (!existsSync(savePath)) {
   mkdirSync(savePath);
 }
-const storageSyncStaging = new StorageSyncStagingStore(
-  path.join(savePath, "__storage_sync"),
-);
-const storageSyncSqlStaging = new StorageSyncSqlStagingStore(
-  path.join(savePath, "__storage_sync"),
-);
+const storageSyncRoot = path.join(savePath, "__storage_sync");
+const storageSyncPersistence = new StorageSyncSessionPersistence(storageSyncRoot);
+const storageSyncStaging = new StorageSyncStagingStore(storageSyncRoot);
+const storageSyncSqlStaging = new StorageSyncSqlStagingStore(storageSyncRoot);
+const storageSyncSessions = new StorageSyncSessionManager({
+  initialSessions: storageSyncPersistence.loadActiveSessions(),
+  onCreate: (session) => storageSyncPersistence.saveBase(session),
+  onExpire: (id) => storageSyncPersistence.cleanup(id),
+});
+
+async function getStorageSyncSession(sessionId) {
+  const session = storageSyncSessions.get(sessionId);
+  if (!session || !session.needsHydration) return session;
+  if (!session.hydrationPromise) {
+    session.hydrationPromise = (async () => {
+      await storageSyncStaging.hydrateSession(session);
+      const assetStatus = session.status;
+      await storageSyncSqlStaging.hydrateSession(session);
+      if (session.assets && assetStatus !== "assets-ready") {
+        session.status = assetStatus;
+      }
+      session.needsHydration = false;
+    })().finally(() => {
+      delete session.hydrationPromise;
+    });
+  }
+  await session.hydrationPromise;
+  return session;
+}
 configureVectorIndexPersistence(path.join(savePath, "__vector_indexes"));
 
 const realtimeEventHub = createRealtimeEventHub();
@@ -2807,7 +2832,7 @@ app.get(
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -2836,7 +2861,7 @@ app.post(
   authenticatedRouteLimiter,
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -2865,7 +2890,7 @@ app.get(
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -2890,7 +2915,7 @@ app.put(
   requireNodeAuth,
   storageSyncChunkParser,
   async (req, res, next) => {
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -2944,7 +2969,7 @@ app.post(
   authenticatedRouteLimiter,
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -2968,7 +2993,7 @@ app.get(
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -2993,7 +3018,7 @@ app.put(
   requireNodeAuth,
   storageSyncChunkParser,
   async (req, res, next) => {
-    const session = storageSyncSessions.get(req.params.sessionId);
+    const session = await getStorageSyncSession(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -3029,7 +3054,7 @@ app.delete(
   authenticatedRouteLimiter,
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    const session = storageSyncSessions.cancel(req.params.sessionId);
+    const session = storageSyncSessions.get(req.params.sessionId);
     if (!session) {
       res
         .status(404)
@@ -3037,7 +3062,8 @@ app.delete(
       return;
     }
     try {
-      await storageSyncStaging.cleanup(session.id);
+      storageSyncPersistence.cleanup(session.id);
+      storageSyncSessions.cancel(session.id);
       res.status(204).end();
     } catch (error) {
       next(error);

@@ -204,8 +204,9 @@ describe("storage sync asset staging", () => {
     expect(session).toMatchObject({ status: "created" });
     expect(session.assets).toBeUndefined();
     await expect(
-      fs.promises.stat(store.sessionDirectory(session.id)),
+      fs.promises.stat(store.planPath(session.id)),
     ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await fs.promises.stat(store.sessionDirectory(session.id))).toBeTruthy();
 
     const plan = await store.planAssets(
       session,
@@ -214,4 +215,39 @@ describe("storage sync asset staging", () => {
     );
     expect(plan).toMatchObject({ status: "assets-ready", remainingBytes: 0 });
   });
+  it("hydrates asset offsets from staged files after restart", async () => {
+    const store = await tempStore();
+    const session = targetSession("restart-assets");
+    const body = Buffer.from("abcdefghij");
+    const plan = await store.planAssets(
+      session,
+      [{ key: "assets/restart.bin", size: body.length, sha256: sha256(body) }],
+      { openReadStream: async () => ({ exists: false }) },
+    );
+    await store.writeAssetChunk(session, plan.assets[0].id, 0, body.subarray(0, 4));
+
+    const restored = targetSession(session.id);
+    await expect(store.hydrateSession(restored)).resolves.toBe(true);
+    expect(store.getPlan(restored).assets[0]).toMatchObject({ offset: 4, state: "receiving" });
+    await store.writeAssetChunk(restored, plan.assets[0].id, 4, body.subarray(4));
+    expect(store.getPlan(restored)).toMatchObject({ status: "assets-ready", remainingBytes: 0 });
+  });
+
+  it("revalidates completed asset files while hydrating", async () => {
+    const store = await tempStore();
+    const session = targetSession("restart-corrupt-asset");
+    const body = Buffer.from("good");
+    const plan = await store.planAssets(
+      session,
+      [{ key: "assets/check.bin", size: body.length, sha256: sha256(body) }],
+      { openReadStream: async () => ({ exists: false }) },
+    );
+    await store.writeAssetChunk(session, plan.assets[0].id, 0, body);
+    await fs.promises.writeFile(store.assetPath(session.id, plan.assets[0].id), Buffer.from("evil"));
+
+    const restored = targetSession(session.id);
+    await store.hydrateSession(restored);
+    expect(store.getPlan(restored).assets[0]).toMatchObject({ offset: 0, state: "pending" });
+  });
+
 });

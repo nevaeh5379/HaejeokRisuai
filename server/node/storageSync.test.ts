@@ -130,4 +130,42 @@ describe("storage sync summary", () => {
     now = Number.MAX_SAFE_INTEGER;
     expect(manager.get("session")).toBeNull();
   });
+
+  it("restores persisted sessions and invokes persistence callbacks", () => {
+    const created = [];
+    const expired = [];
+    let now = 1000;
+    const restored = {
+      id: "restored",
+      direction: "local-to-remote",
+      role: "target",
+      status: "created",
+      serverRevision: 2,
+      peerRevision: 1,
+      summary: { revision: 2 },
+      createdAt: 500,
+      expiresAt: 2000,
+      chunkSizeBytes: STORAGE_SYNC_CHUNK_SIZE_BYTES,
+      maxConcurrency: STORAGE_SYNC_MAX_CONCURRENCY,
+      needsHydration: true,
+    };
+    const manager = new StorageSyncSessionManager({
+      initialSessions: [restored],
+      randomId: () => "new-session",
+      now: () => now,
+      onCreate: (session) => created.push(session.id),
+      onExpire: (id) => expired.push(id),
+    });
+    expect(manager.get("restored")).toBe(restored);
+    manager.create({
+      direction: "local-to-remote",
+      expectedRevision: 3,
+      summary: { revision: 3 },
+    });
+    expect(created).toEqual(["new-session"]);
+    now = 3000;
+    expect(manager.get("restored")).toBeNull();
+    expect(expired).toContain("restored");
+  });
+
 });

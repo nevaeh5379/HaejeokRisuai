@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { writeJsonAtomic } = require("./storageSyncPersistence.cjs");
 const { STORAGE_SYNC_CHUNK_SIZE_BYTES } = require("./storageSync.cjs");
 
 const STORAGE_SYNC_SQL_FORMAT_VERSION = 1;
@@ -77,6 +78,21 @@ class StorageSyncSqlStagingStore {
     return path.join(this.sessionDirectory(sessionId), "sql.ndjson.part");
   }
 
+  planPath(sessionId) {
+    return path.join(this.sessionDirectory(sessionId), "sql-plan.json");
+  }
+
+  persistPlan(session) {
+    const { formatVersion, size, recordCount, sha256 } = session.sql;
+    writeJsonAtomic(this.planPath(session.id), {
+      version: 1,
+      formatVersion,
+      size,
+      recordCount,
+      sha256,
+    });
+  }
+
   async plan(session, input) {
     if (session.role !== "target") {
       throw new StorageSyncSqlError(
@@ -112,6 +128,14 @@ class StorageSyncSqlStagingStore {
       session.status = "sql-ready";
     } else {
       session.status = "receiving-sql";
+    }
+    try {
+      this.persistPlan(session);
+    } catch (error) {
+      delete session.sql;
+      session.status = session.assets ? "assets-ready" : "created";
+      await this.cleanupSql(session.id);
+      throw error;
     }
     return serializePlan(session);
   }
@@ -165,7 +189,23 @@ class StorageSyncSqlStagingStore {
         offset === 0 ? "w" : "r+",
       );
       try {
-        await handle.write(Buffer.from(data), 0, data.byteLength, offset);
+        const buffer = Buffer.from(data);
+        let written = 0;
+        while (written < buffer.length) {
+          const result = await handle.write(
+            buffer,
+            written,
+            buffer.length - written,
+            offset + written,
+          );
+          if (!result.bytesWritten) {
+            throw new StorageSyncSqlError(
+              "Storage sync SQL chunk write made no progress",
+              "sql_write_failed",
+            );
+          }
+          written += result.bytesWritten;
+        }
       } finally {
         await handle.close();
       }
@@ -191,6 +231,75 @@ class StorageSyncSqlStagingStore {
     } finally {
       session.sqlUploadInProgress = false;
     }
+  }
+
+  async hydrateSession(session) {
+    if (session.sql) return true;
+    let raw;
+    try {
+      raw = JSON.parse(await fs.promises.readFile(this.planPath(session.id), "utf8"));
+    } catch (error) {
+      if (error?.code === "ENOENT") return false;
+      await this.cleanupSql(session.id);
+      return false;
+    }
+    if (raw?.version !== 1) {
+      await this.cleanupSql(session.id);
+      return false;
+    }
+    let plan;
+    try {
+      plan = normalizePlan(raw);
+    } catch {
+      await this.cleanupSql(session.id);
+      return false;
+    }
+    const filePath = this.filePath(session.id);
+    let actualSize = 0;
+    let exists = true;
+    try {
+      actualSize = (await fs.promises.stat(filePath)).size;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      exists = false;
+    }
+    if (actualSize > plan.size) {
+      await fs.promises.rm(filePath, { force: true });
+      actualSize = 0;
+      exists = false;
+    }
+    let state = actualSize > 0 ? "receiving" : "pending";
+    if (plan.size === 0) {
+      const emptyHash = crypto.createHash("sha256").digest("hex");
+      if (plan.sha256 !== emptyHash) {
+        await this.cleanupSql(session.id);
+        return false;
+      }
+      if (!exists) {
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.promises.writeFile(filePath, Buffer.alloc(0));
+      }
+      state = "ready";
+    } else if (exists && actualSize === plan.size) {
+      const digest = await sha256File(filePath);
+      if (digest === plan.sha256) state = "ready";
+      else {
+        await fs.promises.rm(filePath, { force: true });
+        actualSize = 0;
+        state = "pending";
+      }
+    }
+    session.sql = { ...plan, offset: actualSize, state };
+    session.sqlUploadInProgress = false;
+    session.status = state === "ready" ? "sql-ready" : "receiving-sql";
+    return true;
+  }
+
+  async cleanupSql(sessionId) {
+    await Promise.all([
+      fs.promises.rm(this.filePath(sessionId), { force: true }),
+      fs.promises.rm(this.planPath(sessionId), { force: true }),
+    ]);
   }
 }
 

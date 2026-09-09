@@ -141,4 +141,42 @@ describe("StorageSyncSqlStagingStore", () => {
     ).rejects.toMatchObject({ code: "assets_not_ready" });
     expect(session.sql).toBeUndefined();
   });
+
+  it("hydrates SQL offsets from the staged file after restart", async () => {
+    const store = await tempStore();
+    const session = targetSession("restart-sql");
+    const body = Buffer.from('{"type":"root"}\n{"type":"message"}\n');
+    await store.plan(session, {
+      formatVersion: 1,
+      size: body.length,
+      recordCount: 2,
+      sha256: sha256(body),
+    });
+    const first = body.subarray(0, 9);
+    await store.writeChunk(session, 0, first);
+
+    const restored = targetSession(session.id);
+    await expect(store.hydrateSession(restored)).resolves.toBe(true);
+    expect(store.getPlan(restored)).toMatchObject({ offset: first.length, state: "receiving" });
+    await store.writeChunk(restored, first.length, body.subarray(first.length));
+    expect(store.getPlan(restored)).toMatchObject({ offset: body.length, state: "ready", status: "sql-ready" });
+  });
+
+  it("drops a completed SQL file with the wrong checksum while hydrating", async () => {
+    const store = await tempStore();
+    const session = targetSession("restart-bad-sql");
+    const body = Buffer.from("good\n");
+    await store.plan(session, {
+      formatVersion: 1,
+      size: body.length,
+      recordCount: 1,
+      sha256: sha256(body),
+    });
+    await fs.promises.writeFile(store.filePath(session.id), Buffer.from("evil\n"));
+
+    const restored = targetSession(session.id);
+    await store.hydrateSession(restored);
+    expect(store.getPlan(restored)).toMatchObject({ offset: 0, state: "pending", status: "receiving-sql" });
+  });
+
 });

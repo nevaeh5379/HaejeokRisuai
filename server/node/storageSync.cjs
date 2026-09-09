@@ -65,12 +65,22 @@ class StorageSyncSessionManager {
       options.randomId ||
       (() => require("crypto").randomBytes(24).toString("base64url"));
     this.now = options.now || (() => Date.now());
+    this.onCreate = options.onCreate || (() => {});
+    this.onExpire = options.onExpire || (() => {});
+    for (const session of options.initialSessions || []) {
+      if (session?.id && session.expiresAt > this.now()) {
+        this.sessions.set(session.id, session);
+      }
+    }
   }
 
   prune() {
     const now = this.now();
     for (const [id, session] of this.sessions) {
-      if (session.expiresAt <= now) this.sessions.delete(id);
+      if (session.expiresAt <= now) {
+        this.sessions.delete(id);
+        this.onExpire(id, session);
+      }
     }
   }
 
@@ -111,6 +121,12 @@ class StorageSyncSessionManager {
       maxConcurrency: STORAGE_SYNC_MAX_CONCURRENCY,
     };
     this.sessions.set(id, session);
+    try {
+      this.onCreate(session);
+    } catch (error) {
+      this.sessions.delete(id);
+      throw error;
+    }
     return session;
   }
 
