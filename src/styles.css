@@ -392,12 +392,43 @@ html.tauri-macos-vibrancy .rs-chat-tab-list.macos-main-titlebar-tabs-closed {
 }
 
 /* macOS native material makes the last frame of the legacy width/right
- * sidebar animation conspicuous. Collapse in place and fade only at the tail
- * so the final painted frame already matches the hidden state. */
+ * sidebar animation conspicuous. The panel also carries Tailwind px-2/px-4;
+ * width: 0 alone therefore still leaves an outer box until display:none.
+ * Collapse the inline padding with the width so the painted 100% frame really
+ * has zero layout width. */
+html.tauri-macos-vibrancy .rs-sidebar-panel {
+  --risu-macos-sidebar-inline-padding: 0px;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.px-2 {
+  --risu-macos-sidebar-inline-padding: 0.5rem;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.px-4 {
+  --risu-macos-sidebar-inline-padding: 1rem;
+}
+
+@keyframes risu-macos-sidebar-panel-open {
+  0% {
+    width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  100% {
+    width: var(--sidebar-size);
+    min-width: var(--sidebar-size);
+    padding-left: var(--risu-macos-sidebar-inline-padding);
+    padding-right: var(--risu-macos-sidebar-inline-padding);
+  }
+}
+
 @keyframes risu-macos-sidebar-panel-close {
   0% {
     width: var(--sidebar-size);
     min-width: var(--sidebar-size);
+    padding-left: var(--risu-macos-sidebar-inline-padding);
+    padding-right: var(--risu-macos-sidebar-inline-padding);
     opacity: 1;
   }
   80% {
@@ -406,6 +437,8 @@ html.tauri-macos-vibrancy .rs-chat-tab-list.macos-main-titlebar-tabs-closed {
   100% {
     width: 0;
     min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
     opacity: 0;
   }
 }
@@ -454,6 +487,10 @@ html.tauri-macos-vibrancy .rs-chat-tab-list.macos-main-titlebar-tabs-closed {
     transform: translateX(-100%);
     opacity: 0;
   }
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar:not(.dynamic-sidebar) {
+  animation-name: risu-macos-sidebar-panel-open;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar-close:not(.dynamic-sidebar) {
