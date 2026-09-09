@@ -9,6 +9,8 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
+import type { NodeApiClient } from "../storage/runtime/nodeApiClient";
+import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
 import {
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
@@ -281,6 +283,7 @@ async function dispatchEvent(
   storage: NodeSqlStorage,
   eventName: string,
   rawData: string,
+  allowNodeFeatures: boolean,
 ): Promise<void> {
   let data: unknown;
   try {
@@ -290,7 +293,13 @@ async function dispatchEvent(
   }
   if (eventName === "database-change") {
     await applyDatabaseChange(storage, data as DatabaseChangeEvent);
-  } else if (eventName === "model-job") {
+    return;
+  }
+  if (!allowNodeFeatures) {
+    if (eventName === "resync-required") scheduleFullResync();
+    return;
+  }
+  if (eventName === "model-job") {
     await applyModelJob(data as ModelJobEvent);
   } else if (eventName === "generation-state") {
     applyGenerationState(data as GenerationStateEvent);
@@ -304,6 +313,7 @@ async function dispatchEvent(
 async function consumeEventStream(
   response: Response,
   storage: NodeSqlStorage,
+  allowNodeFeatures: boolean,
 ): Promise<void> {
   if (!response.body) throw new Error("Realtime event stream has no body");
   const reader = response.body.getReader();
@@ -331,7 +341,12 @@ async function consumeEventStream(
           dataLines.push(line.slice(5).trimStart());
       }
       if (dataLines.length > 0) {
-        await dispatchEvent(storage, eventName, dataLines.join("\n"));
+        await dispatchEvent(
+          storage,
+          eventName,
+          dataLines.join("\n"),
+          allowNodeFeatures,
+        );
         if (frameEventId != null) lastEventId = frameEventId;
       }
       boundary = buffer.indexOf("\n\n");
@@ -339,15 +354,23 @@ async function consumeEventStream(
   }
 }
 
-function scheduleReconnect(storage: NodeSqlStorage): void {
+function scheduleReconnect(
+  storage: NodeSqlStorage,
+  apiClient: NodeApiClient,
+  allowNodeFeatures: boolean,
+): void {
   if (!started || reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    void connect(storage);
+    void connect(storage, apiClient, allowNodeFeatures);
   }, 1000);
 }
 
-async function connect(storage: NodeSqlStorage): Promise<void> {
+async function connect(
+  storage: NodeSqlStorage,
+  apiClient: NodeApiClient,
+  allowNodeFeatures: boolean,
+): Promise<void> {
   if (!started) return;
   streamController?.abort();
   const controller = new AbortController();
@@ -359,7 +382,7 @@ async function connect(storage: NodeSqlStorage): Promise<void> {
       "x-risu-client-id": storage.getClientId(),
     };
     if (lastEventId != null) headers["last-event-id"] = String(lastEventId);
-    const response = await fetch("/api/realtime/events", {
+    const response = await apiClient.request("/api/realtime/events", {
       headers,
       cache: "no-store",
       signal: controller.signal,
@@ -367,24 +390,29 @@ async function connect(storage: NodeSqlStorage): Promise<void> {
     if (!response.ok) {
       throw new Error(`Realtime event stream unavailable (${response.status})`);
     }
-    await consumeEventStream(response, storage);
+    await consumeEventStream(response, storage, allowNodeFeatures);
   } catch (error) {
     if (!controller.signal.aborted) {
       console.warn("[NodeRealtimeSync] connection lost", error);
     }
   } finally {
     if (streamController === controller) streamController = null;
-    if (!controller.signal.aborted) scheduleReconnect(storage);
+    if (!controller.signal.aborted)
+      scheduleReconnect(storage, apiClient, allowNodeFeatures);
   }
 }
 
 export async function initNodeRealtimeSync(): Promise<void> {
-  if (!isNodeServer || started) return;
+  if (started) return;
   const storage = await getSqlStorage();
   if (!(storage instanceof NodeSqlStorage)) return;
+  const runtime = getActiveStorageRuntime();
+  if (!runtime.nodeApiClient) return;
+  const apiClient = runtime.nodeApiClient;
+  const allowNodeFeatures = isNodeServer;
   started = true;
   window.addEventListener("online", () => {
-    if (!streamController) void connect(storage);
+    if (!streamController) void connect(storage, apiClient, allowNodeFeatures);
   });
-  void connect(storage);
+  void connect(storage, apiClient, allowNodeFeatures);
 }

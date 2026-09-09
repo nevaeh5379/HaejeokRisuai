@@ -83,7 +83,7 @@ describe("remote API CORS", () => {
     );
     const allowed = request("https://app.example", "OPTIONS");
     allowed.headers["access-control-request-headers"] =
-      "content-type, risu-auth, x-risu-client-id";
+      "content-type, risu-auth, x-risu-client-id, last-event-id";
     const allowedResponse = response();
     middleware(allowed, allowedResponse.res, vi.fn());
     expect(allowedResponse.res.statusCode).toBe(204);

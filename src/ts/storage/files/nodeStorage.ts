@@ -1488,6 +1488,17 @@ export class NodeStorage {
 const sharedNodeStorage = new NodeStorage();
 
 export async function getNodeServerProxyAuth() {
+  try {
+    const { getActiveStorageRuntime } = await import(
+      "../runtime/activeStorageRuntime"
+    );
+    const storage = getActiveStorageRuntime().assets.realStorage;
+    if (storage instanceof NodeStorage) {
+      return await storage.getProxyAuth();
+    }
+  } catch {
+    // Some early Node-only callers run before the active runtime is installed.
+  }
   return await sharedNodeStorage.getProxyAuth();
 }
 

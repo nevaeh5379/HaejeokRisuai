@@ -6,6 +6,7 @@ const ALLOWED_HEADERS = [
   "content-type",
   "file-path",
   "if-none-match",
+  "last-event-id",
   "risu-auth",
   "x-risu-client-id",
 ];
