@@ -1076,7 +1076,6 @@
   class:px-2={$DynamicGUI && !btwRuntime.open}
   class:px-4={!$DynamicGUI && !btwRuntime.open}
   class:dynamic-sidebar={$DynamicGUI}
-  class:macos-sidebar-drag-layout={isTauriMacOS && !btwRuntime.open}
   class:hidden={hidden}
   class:flex={!hidden}
   class:max-w-[calc(100%-8rem)]={$DynamicGUI}
@@ -1087,13 +1086,6 @@
     }
   }}
 >
-  {#if isTauriMacOS && !btwRuntime.open}
-    <div
-      class="rs-sidebar-panel-drag-row h-5 min-h-5 w-full shrink-0"
-      data-tauri-drag-region="true"
-      aria-hidden="true"
-    ></div>
-  {/if}
   <button
     class="flex w-full justify-end text-textcolor"
     onclick={async () => {

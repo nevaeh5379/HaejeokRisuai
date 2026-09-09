@@ -401,18 +401,6 @@ html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
     background-color 150ms ease;
 }
 
-/* Reserve a real non-interactive row for window dragging in the sidebar panel.
- * The previous absolute overlay sat on top of the Chat/Character mode buttons. */
-html.tauri-macos-vibrancy .rs-sidebar-panel.macos-sidebar-drag-layout {
-  padding-top: 0 !important;
-}
-
-html.tauri-macos-vibrancy
-  .rs-sidebar-panel.macos-sidebar-drag-layout
-  .rs-sidebar-mode-tabs {
-  bottom: 0 !important;
-}
-
 html.tauri-macos-vibrancy .rs-chat-tab {
   --risu-macos-tab-surface: color-mix(
     in srgb,
