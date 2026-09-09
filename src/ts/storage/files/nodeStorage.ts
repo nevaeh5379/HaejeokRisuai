@@ -6,6 +6,9 @@ import { NodeS3Storage } from "./nodeS3Storage";
 import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
+  type NodeStorageSyncAssetChunkResult,
+  type NodeStorageSyncAssetManifestEntry,
+  type NodeStorageSyncAssetPlan,
   type NodeStorageSyncSession,
   type NodeStorageSyncSummary,
   type StorageSyncDirection,
@@ -1434,6 +1437,47 @@ export class NodeStorage {
   ): Promise<NodeStorageSyncSession> {
     return await this.apiClient.getStorageSyncSession(
       id,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async planStorageSyncAssets(
+    id: string,
+    assets: NodeStorageSyncAssetManifestEntry[],
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncAssetPlan> {
+    return await this.apiClient.planStorageSyncAssets(
+      id,
+      assets,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async getStorageSyncAssetPlan(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncAssetPlan> {
+    return await this.apiClient.getStorageSyncAssetPlan(
+      id,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async uploadStorageSyncAssetChunk(
+    id: string,
+    assetId: string,
+    offset: number,
+    data: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncAssetChunkResult> {
+    return await this.apiClient.uploadStorageSyncAssetChunk(
+      id,
+      assetId,
+      offset,
+      data,
       await this.getCachedAuth(),
       signal,
     );

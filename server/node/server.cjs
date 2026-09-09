@@ -98,11 +98,16 @@ const {
 } = require("./vectorIndex.cjs");
 const { matchLoreBatch } = require("./loreMatch.cjs");
 const {
+  STORAGE_SYNC_CHUNK_SIZE_BYTES,
   StorageSyncRevisionConflictError,
   StorageSyncSessionManager,
   StorageSyncValidationError,
   createStorageSyncSummary,
 } = require("./storageSync.cjs");
+const {
+  StorageSyncAssetError,
+  StorageSyncStagingStore,
+} = require("./storageSyncStaging.cjs");
 const storageSyncSessions = new StorageSyncSessionManager();
 const {
   describeStorageTarget,
@@ -150,6 +155,10 @@ const rawBodyParser = express.raw({
   type: "application/octet-stream",
   limit: "100mb",
 });
+const storageSyncChunkParser = express.raw({
+  type: "application/octet-stream",
+  limit: STORAGE_SYNC_CHUNK_SIZE_BYTES,
+});
 const storageStartupSettings = readStorageStartupSettings();
 
 function isStreamingAssetWriteRequest(req) {
@@ -157,6 +166,13 @@ function isStreamingAssetWriteRequest(req) {
     req.method === "POST" &&
     req.path === "/api/write" &&
     req.is("application/octet-stream")
+  );
+}
+
+function isStorageSyncAssetChunkRequest(req) {
+  return (
+    req.method === "PUT" &&
+    /^\/api\/storage-sync\/sessions\/[^/]+\/assets\/[^/]+$/.test(req.path)
   );
 }
 
@@ -333,7 +349,9 @@ app.use((req, res, next) => {
   defaultJsonParser(req, res, next);
 });
 app.use((req, res, next) => {
-  if (isStreamingAssetWriteRequest(req)) return next();
+  if (isStreamingAssetWriteRequest(req) || isStorageSyncAssetChunkRequest(req)) {
+    return next();
+  }
   rawBodyParser(req, res, next);
 });
 app.use(express.text({ limit: "100mb" }));
@@ -358,6 +376,9 @@ const savePath = process.env.RISU_SAVE_PATH
 if (!existsSync(savePath)) {
   mkdirSync(savePath);
 }
+const storageSyncStaging = new StorageSyncStagingStore(
+  path.join(savePath, "__storage_sync"),
+);
 configureVectorIndexPersistence(path.join(savePath, "__vector_indexes"));
 
 const realtimeEventHub = createRealtimeEventHub();
@@ -2786,17 +2807,117 @@ app.get(
   },
 );
 
+function sendStorageSyncAssetError(res, error) {
+  const code = error.code || "storage_sync_asset_error";
+  const status =
+    code === "offset_mismatch" || code === "asset_upload_in_progress"
+      ? 409
+      : code === "too_many_uploads"
+        ? 429
+        : code === "asset_checksum_mismatch"
+          ? 422
+          : 400;
+  res.status(status).send({ error: error.message, code });
+}
+
+app.post(
+  "/api/storage-sync/sessions/:sessionId/assets/plan",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res.status(404).send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    try {
+      const plan = await storageSyncStaging.planAssets(
+        session,
+        req.body?.assets,
+        assetStorageManager.getStorage(),
+      );
+      res.send(plan);
+    } catch (error) {
+      if (error instanceof StorageSyncAssetError) {
+        sendStorageSyncAssetError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.get(
+  "/api/storage-sync/sessions/:sessionId/assets/plan",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res.status(404).send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    try {
+      res.send(storageSyncStaging.getPlan(session));
+    } catch (error) {
+      if (error instanceof StorageSyncAssetError) {
+        sendStorageSyncAssetError(res, error);
+        return;
+      }
+      throw error;
+    }
+  },
+);
+
+app.put(
+  "/api/storage-sync/sessions/:sessionId/assets/:assetId",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  storageSyncChunkParser,
+  async (req, res, next) => {
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res.status(404).send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    if (!req.is("application/octet-stream") || !Buffer.isBuffer(req.body)) {
+      res.status(415).send({ error: "Content-Type must be application/octet-stream" });
+      return;
+    }
+    try {
+      const asset = await storageSyncStaging.writeAssetChunk(
+        session,
+        req.params.assetId,
+        Number(req.query.offset),
+        req.body,
+      );
+      res.send({ id: asset.id, offset: asset.offset, state: asset.state, status: session.status });
+    } catch (error) {
+      if (error instanceof StorageSyncAssetError) {
+        sendStorageSyncAssetError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
 app.delete(
   "/api/storage-sync/sessions/:sessionId",
   authenticatedRouteLimiter,
-  async (req, res) => {
+  async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     const session = storageSyncSessions.cancel(req.params.sessionId);
     if (!session) {
       res.status(404).send({ error: "Storage sync session not found or expired" });
       return;
     }
-    res.status(204).end();
+    try {
+      await storageSyncStaging.cleanup(session.id);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
   },
 );
 

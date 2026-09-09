@@ -147,4 +147,78 @@ describe("NodeApiClient", () => {
       headers: expect.objectContaining({ "risu-auth": "sync-auth" }),
     });
   });
+
+  it("plans assets and uploads chunks through the configured server", async () => {
+    const assetId = "a".repeat(64);
+    const digest = "b".repeat(64);
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "receiving-assets",
+          assets: [
+            {
+              id: assetId,
+              key: "assets/a.bin",
+              size: 3,
+              sha256: digest,
+              offset: 0,
+              state: "pending",
+            },
+          ],
+          skippedCount: 0,
+          missingCount: 1,
+          totalBytes: 3,
+          remainingBytes: 3,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          id: assetId,
+          offset: 3,
+          state: "ready",
+          status: "assets-ready",
+        }),
+      );
+    const client = new NodeApiClient(profile, fetcher);
+    const plan = await client.planStorageSyncAssets(
+      "session-1",
+      [{ key: "assets/a.bin", size: 3, sha256: digest }],
+      "sync-auth",
+    );
+    expect(plan.remainingBytes).toBe(3);
+    await expect(
+      client.uploadStorageSyncAssetChunk(
+        "session-1",
+        assetId,
+        0,
+        new Uint8Array([1, 2, 3]),
+        "sync-auth",
+      ),
+    ).resolves.toMatchObject({ offset: 3, state: "ready" });
+    expect(fetcher.mock.calls[1][0]).toContain(`/assets/${assetId}?offset=0`);
+    expect(fetcher.mock.calls[1][1]).toMatchObject({
+      method: "PUT",
+      headers: expect.objectContaining({
+        "content-type": "application/octet-stream",
+        "risu-auth": "sync-auth",
+      }),
+    });
+  });
+
+  it("preserves structured asset staging errors", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json(
+        { error: "expected offset 4", code: "offset_mismatch" },
+        { status: 409 },
+      ),
+    );
+    await expect(
+      client.getStorageSyncAssetPlan("session-1", "sync-auth"),
+    ).rejects.toMatchObject({
+      code: "offset_mismatch",
+      status: 409,
+      message: "expected offset 4",
+    });
+  });
 });

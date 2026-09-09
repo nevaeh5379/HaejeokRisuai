@@ -29,12 +29,16 @@ export interface NodeStorageSyncSummary {
 }
 
 export type StorageSyncDirection = "local-to-remote" | "remote-to-local";
+export type NodeStorageSyncSessionStatus =
+  "created" | "planning-assets" | "receiving-assets" | "assets-ready";
+export type NodeStorageSyncAssetState =
+  "skipped" | "pending" | "receiving" | "ready";
 
 export interface NodeStorageSyncSession {
   id: string;
   direction: StorageSyncDirection;
   role: "source" | "target";
-  status: "created" | "cancelled";
+  status: NodeStorageSyncSessionStatus;
   serverRevision: number;
   peerRevision: number | null;
   summary: NodeStorageSyncSummary;
@@ -44,12 +48,51 @@ export interface NodeStorageSyncSession {
   maxConcurrency: number;
 }
 
+export interface NodeStorageSyncAssetManifestEntry {
+  key: string;
+  size: number;
+  sha256: string;
+}
+
+export interface NodeStorageSyncAssetPlanEntry extends NodeStorageSyncAssetManifestEntry {
+  id: string;
+  offset: number;
+  state: NodeStorageSyncAssetState;
+}
+
+export interface NodeStorageSyncAssetPlan {
+  status: NodeStorageSyncSessionStatus;
+  assets: NodeStorageSyncAssetPlanEntry[];
+  skippedCount: number;
+  missingCount: number;
+  totalBytes: number;
+  remainingBytes: number;
+}
+
+export interface NodeStorageSyncAssetChunkResult {
+  id: string;
+  offset: number;
+  state: NodeStorageSyncAssetState;
+  status: NodeStorageSyncSessionStatus;
+}
+
 export class NodeStorageSyncRevisionConflictError extends Error {
   constructor(readonly currentRevision: number) {
     super(
       `Storage revision changed to ${currentRevision}. Refresh the sync preview before continuing.`,
     );
     this.name = "NodeStorageSyncRevisionConflictError";
+  }
+}
+
+export class NodeStorageSyncAssetError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "NodeStorageSyncAssetError";
   }
 }
 
@@ -118,8 +161,18 @@ function validateStorageSyncSummary(value: unknown): NodeStorageSyncSummary {
   return summary as NodeStorageSyncSummary;
 }
 
+function isNonNegativeSafeInteger(value: unknown): boolean {
+  return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
 function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
   const session = value as Partial<NodeStorageSyncSession> | null;
+  const statuses: NodeStorageSyncSessionStatus[] = [
+    "created",
+    "planning-assets",
+    "receiving-assets",
+    "assets-ready",
+  ];
   if (
     !session ||
     typeof session.id !== "string" ||
@@ -128,14 +181,14 @@ function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
       String(session.direction),
     ) ||
     !["source", "target"].includes(String(session.role)) ||
-    session.status !== "created" ||
-    !Number.isSafeInteger(session.serverRevision) ||
+    !statuses.includes(session.status as NodeStorageSyncSessionStatus) ||
+    !isNonNegativeSafeInteger(session.serverRevision) ||
     (session.peerRevision !== null &&
-      !Number.isSafeInteger(session.peerRevision)) ||
-    !Number.isSafeInteger(session.createdAt) ||
-    !Number.isSafeInteger(session.expiresAt) ||
-    !Number.isSafeInteger(session.chunkSizeBytes) ||
-    !Number.isSafeInteger(session.maxConcurrency)
+      !isNonNegativeSafeInteger(session.peerRevision)) ||
+    !isNonNegativeSafeInteger(session.createdAt) ||
+    !isNonNegativeSafeInteger(session.expiresAt) ||
+    !isNonNegativeSafeInteger(session.chunkSizeBytes) ||
+    !isNonNegativeSafeInteger(session.maxConcurrency)
   ) {
     throw new NodeApiCompatibilityError(
       "The storage server returned an invalid storage sync session.",
@@ -143,6 +196,82 @@ function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
   }
   validateStorageSyncSummary(session.summary);
   return session as NodeStorageSyncSession;
+}
+
+function validateStorageSyncAssetPlan(
+  value: unknown,
+): NodeStorageSyncAssetPlan {
+  const plan = value as Partial<NodeStorageSyncAssetPlan> | null;
+  const states: NodeStorageSyncAssetState[] = [
+    "skipped",
+    "pending",
+    "receiving",
+    "ready",
+  ];
+  if (
+    !plan ||
+    !["receiving-assets", "assets-ready"].includes(String(plan.status)) ||
+    !Array.isArray(plan.assets) ||
+    !isNonNegativeSafeInteger(plan.skippedCount) ||
+    !isNonNegativeSafeInteger(plan.missingCount) ||
+    !isNonNegativeSafeInteger(plan.totalBytes) ||
+    !isNonNegativeSafeInteger(plan.remainingBytes)
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid storage sync asset plan.",
+    );
+  }
+  for (const asset of plan.assets) {
+    if (
+      typeof asset?.id !== "string" ||
+      !/^[0-9a-f]{64}$/.test(asset.id) ||
+      typeof asset.key !== "string" ||
+      !asset.key ||
+      !isNonNegativeSafeInteger(asset.size) ||
+      typeof asset.sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(asset.sha256) ||
+      !isNonNegativeSafeInteger(asset.offset) ||
+      asset.offset > asset.size ||
+      !states.includes(asset.state)
+    ) {
+      throw new NodeApiCompatibilityError(
+        "The storage server returned an invalid storage sync asset entry.",
+      );
+    }
+  }
+  return plan as NodeStorageSyncAssetPlan;
+}
+
+function validateStorageSyncAssetChunkResult(
+  value: unknown,
+): NodeStorageSyncAssetChunkResult {
+  const result = value as Partial<NodeStorageSyncAssetChunkResult> | null;
+  if (
+    !result ||
+    typeof result.id !== "string" ||
+    !/^[0-9a-f]{64}$/.test(result.id) ||
+    !isNonNegativeSafeInteger(result.offset) ||
+    !["skipped", "pending", "receiving", "ready"].includes(
+      String(result.state),
+    ) ||
+    !["receiving-assets", "assets-ready"].includes(String(result.status))
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid storage sync chunk result.",
+    );
+  }
+  return result as NodeStorageSyncAssetChunkResult;
+}
+
+async function storageSyncAssetError(response: Response): Promise<never> {
+  const body = await response.json().catch(() => ({}));
+  throw new NodeStorageSyncAssetError(
+    typeof body?.error === "string"
+      ? body.error
+      : `Storage sync asset request failed (HTTP ${response.status}).`,
+    typeof body?.code === "string" ? body.code : "storage_sync_asset_error",
+    response.status,
+  );
 }
 
 export class NodeApiClient {
@@ -259,6 +388,66 @@ export class NodeApiClient {
       );
     }
     return validateStorageSyncSession(await response.json());
+  }
+
+  async planStorageSyncAssets(
+    id: string,
+    assets: NodeStorageSyncAssetManifestEntry[],
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncAssetPlan> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/assets/plan`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify({ assets }),
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncAssetError(response);
+    return validateStorageSyncAssetPlan(await response.json());
+  }
+
+  async getStorageSyncAssetPlan(
+    id: string,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncAssetPlan> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/assets/plan`,
+      { cache: "no-store", headers: { "risu-auth": auth }, signal },
+    );
+    if (!response.ok) return await storageSyncAssetError(response);
+    return validateStorageSyncAssetPlan(await response.json());
+  }
+
+  async uploadStorageSyncAssetChunk(
+    id: string,
+    assetId: string,
+    offset: number,
+    data: Uint8Array,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncAssetChunkResult> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/assets/${encodeURIComponent(assetId)}?offset=${encodeURIComponent(String(offset))}`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/octet-stream",
+          "risu-auth": auth,
+        },
+        body: data as BodyInit,
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncAssetError(response);
+    return validateStorageSyncAssetChunkResult(await response.json());
   }
 
   async cancelStorageSyncSession(id: string, auth: string): Promise<void> {
