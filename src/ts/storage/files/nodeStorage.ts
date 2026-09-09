@@ -1409,6 +1409,10 @@ export class NodeStorage {
     this.authChecked = true;
   }
 
+  getStorageSyncServerOrigin(): string {
+    return this.apiClient.baseUrl;
+  }
+
   async getStorageSyncSummary(
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSummary> {
