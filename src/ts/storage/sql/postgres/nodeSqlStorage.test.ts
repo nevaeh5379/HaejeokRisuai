@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildSqlVendorParams,
   isSqlVendorParamsComplete,
-  NodePostgresStorage,
-} from "./nodePostgresStorage";
+  NodeSqlStorage,
+} from "./nodeSqlStorage";
 
 describe("SQL vendor form normalization", () => {
   it("normalizes provider fields without duplicating form logic", () => {
@@ -44,7 +44,7 @@ describe("SQL vendor form normalization", () => {
   });
 });
 
-describe("NodePostgresStorage browser client", () => {
+describe("NodeSqlStorage browser client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -64,7 +64,7 @@ describe("NodePostgresStorage browser client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     const config = await storage.getServerConfig();
 
     expect(config).toEqual({
@@ -111,7 +111,7 @@ describe("NodePostgresStorage browser client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
 
     await expect(storage.init()).resolves.toBe(false);
     expect(storage.isEnabled()).toBe(false);
@@ -137,7 +137,7 @@ describe("NodePostgresStorage browser client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     const result = await storage.retryDatabaseConnection();
 
     expect(result.runtime?.status).toBe("ready");
@@ -163,7 +163,7 @@ describe("NodePostgresStorage browser client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     const updated = await storage.configureServer({
       enabled: true,
       connectionString: "postgresql://user:pass@remote/risuai",
@@ -202,7 +202,7 @@ describe("NodePostgresStorage browser client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.applyDatabaseConfig("postgres", {
       connectionString: "postgresql://user:pass@remote/risuai",
       poolMax: 10,
@@ -246,7 +246,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
     const result = await storage.commit({
       baseRevision: 4,
@@ -308,7 +308,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
 
     const revisions = await storage.listRevisions(10);
@@ -371,7 +371,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
 
     expect(await storage.listDbTables()).toEqual([
@@ -443,7 +443,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
 
     expect(
@@ -488,7 +488,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
     (storage as any).pluginsCacheForage = {
       getItem: vi.fn(async () => null),
@@ -513,7 +513,7 @@ describe("NodePostgresStorage browser client", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
     (storage as any).revision = 11;
     (storage as any).pluginsCacheForage = {
@@ -573,7 +573,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     const startup = await storage.loadStartupData();
     expect(startup?.settings.theme).toBe("dark");
     expect(
@@ -626,7 +626,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.loadStartupData();
 
     const chat = await storage.loadChat("chat-123");
@@ -649,7 +649,7 @@ describe("NodePostgresStorage browser client", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
     const messages = await storage.loadChatMessages("chat-123");
@@ -677,7 +677,7 @@ describe("NodePostgresStorage browser client", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
     await storage.loadChatMessages("chat-123", { mode: "generation" });
@@ -701,7 +701,7 @@ describe("NodePostgresStorage browser client", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
     const page = await storage.loadChatMessagePage("chat-123", 60, 20);
@@ -763,7 +763,7 @@ describe("NodePostgresStorage browser client", () => {
         new Response(JSON.stringify({ success: true }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
     const branches = await storage.listChatBranches("chat-123");
@@ -828,7 +828,7 @@ describe("NodePostgresStorage browser client", () => {
         new Response(JSON.stringify({ graph }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
     await expect(storage.loadChatBranchGraph("chat-123")).resolves.toEqual(
@@ -870,7 +870,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.loadStartupData();
 
     const char = await storage.loadCharacter("char-123");
@@ -907,7 +907,7 @@ describe("NodePostgresStorage browser client", () => {
       .mockResolvedValueOnce(new Response(null, { status: 304 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
 
     const keys = await storage.listPluginCustomStorageKeys();
@@ -980,7 +980,7 @@ describe("NodePostgresStorage browser client", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     const result = await storage.loadStartupData();
     expect(
       Object.prototype.hasOwnProperty.call(result?.settings ?? {}, "username"),
@@ -1046,7 +1046,7 @@ describe("NodePostgresStorage browser client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
     const stats = await storage.getBotChatStats();
 
@@ -1063,7 +1063,7 @@ describe("NodePostgresStorage browser client", () => {
   });
 });
 
-describe("NodePostgresStorage concurrent commit handling", () => {
+describe("NodeSqlStorage concurrent commit handling", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -1092,7 +1092,7 @@ describe("NodePostgresStorage concurrent commit handling", () => {
         new Response(JSON.stringify({ revision: 6 }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    const storage = new NodePostgresStorage(async () => "test-auth");
+    const storage = new NodeSqlStorage(async () => "test-auth");
     await storage.getServerConfig();
 
     const result = await storage.commit({

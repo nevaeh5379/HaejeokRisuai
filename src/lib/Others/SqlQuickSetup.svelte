@@ -14,7 +14,7 @@
         type DbVendor,
         type NodeSqlStorageRuntime,
         type SqlVendorFormValues,
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import { sqlConfiguredStore } from 'src/ts/stores.svelte'
 
     type Step = 'welcome' | 'vendor' | 'connection'
@@ -94,7 +94,7 @@
         testing = true
         testResult = null
         try {
-            const result = await getNodeStorage().postgres.testConnection(selectedVendor, buildParams(selectedVendor))
+            const result = await getNodeStorage().sql.testConnection(selectedVendor, buildParams(selectedVendor))
             testResult = result
             if (result.success) {
                 alertNormal(language.sqlConnectionSuccess)
@@ -120,7 +120,7 @@
         busy = true
         try {
             const params = buildParams(selectedVendor)
-            await getNodeStorage().postgres.applyDatabaseConfig(selectedVendor, params, recoveryMode ? false : migrate)
+            await getNodeStorage().sql.applyDatabaseConfig(selectedVendor, params, recoveryMode ? false : migrate)
             alertNormal(language.postgresApplySuccess)
             sqlConfiguredStore.set(true)
             setTimeout(() => location.reload(), 500)
@@ -133,14 +133,14 @@
     async function retryConnection() {
         retrying = true
         try {
-            await getNodeStorage().postgres.retryDatabaseConnection()
+            await getNodeStorage().sql.retryDatabaseConnection()
             alertNormal(language.sqlConnectionSuccess)
             sqlConfiguredStore.set(true)
             setTimeout(() => location.reload(), 300)
         } catch (error) {
             alertError(error)
             try {
-                const config = await getNodeStorage().postgres.getDatabaseConfig()
+                const config = await getNodeStorage().sql.getDatabaseConfig()
                 runtime = config.runtime ?? null
             } catch {}
         } finally {
@@ -168,7 +168,7 @@
 
     onMount(async () => {
         try {
-            const config = await getNodeStorage().postgres.getDatabaseConfig()
+            const config = await getNodeStorage().sql.getDatabaseConfig()
             runtime = config.runtime ?? null
             managedByEnvironment = config.managedByEnvironment
             configured = config.configured

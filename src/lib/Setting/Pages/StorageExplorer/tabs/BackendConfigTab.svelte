@@ -37,7 +37,7 @@
         type NodeBackupConfig,
         type NodeBackupProgressEvent,
         type SqlVendorFormValues
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import type { AssetStorageType, NodeS3ServerConfig, NodeStorageSummary } from '../types'
 
     interface Props {
@@ -196,7 +196,7 @@
         backupLoadError = ''
         try {
             const storage = getNodeStorage()
-            localBackup = await storage.postgres.getBackupStatus()
+            localBackup = await storage.sql.getBackupStatus()
             if (localBackup.configured && localBackup.vendor) {
                 backupVendor = localBackup.vendor
                 const p = localBackup.params || {}
@@ -235,7 +235,7 @@
         backupTesting = true
         try {
             const storage = getNodeStorage()
-            const result = await storage.postgres.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
+            const result = await storage.sql.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
             if (result.success) {
                 alertNormal(language.sqlConnectionSuccess)
             } else {
@@ -263,7 +263,7 @@
         backupApplying = true
         try {
             const storage = getNodeStorage()
-            localBackup = await storage.postgres.configureBackup({
+            localBackup = await storage.sql.configureBackup({
                 vendor: backupVendor,
                 params: buildBackupParams(backupVendor),
                 mirroring: { enabled: backupMirroring },
@@ -290,7 +290,7 @@
         }
         try {
             const storage = getNodeStorage()
-            await storage.postgres.resyncBackup((event) => {
+            await storage.sql.resyncBackup((event) => {
                 backupProgressData = event
             })
             alertNormal(language.sqlBackupResyncSuccess)
@@ -317,7 +317,7 @@
         }
         try {
             const storage = getNodeStorage()
-            await storage.postgres.restoreFromBackup((event) => {
+            await storage.sql.restoreFromBackup((event) => {
                 backupProgressData = event
             })
             alertNormal(language.sqlBackupRestoreToMainSuccess)
@@ -336,7 +336,7 @@
         backupRemoving = true
         try {
             const storage = getNodeStorage()
-            await storage.postgres.removeBackup()
+            await storage.sql.removeBackup()
             alertNormal(language.sqlBackupRemoveSuccess)
             localBackup = null
             await refreshBackupStatus()

@@ -67,7 +67,7 @@
         busy = true
         error = ''
         try {
-            const storage = getNodeStorage().postgres
+            const storage = getNodeStorage().sql
             if (typeof storage.getRevisionDetails === 'function') {
                 details = await storage.getRevisionDetails(revision.id)
             } else {

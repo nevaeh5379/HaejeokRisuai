@@ -35,7 +35,7 @@ import type {
   NodePostgresTableInfo,
   NodePostgresColumnInfo,
   NodePostgresTableData,
-} from "../../postgres/nodePostgresStorage";
+} from "../../postgres/nodeSqlStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,

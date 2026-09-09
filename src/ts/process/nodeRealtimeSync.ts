@@ -2,7 +2,7 @@ import { alertError } from "../alert";
 import { notifyChatResponse } from "../chatNotifications";
 import { isNodeServer } from "../platform";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
-import { NodePostgresStorage } from "../storage/sql/postgres/nodePostgresStorage";
+import { NodeSqlStorage } from "../storage/sql/postgres/nodeSqlStorage";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -68,7 +68,7 @@ function scheduleFullResync(): void {
 }
 
 async function applyDatabaseChange(
-  storage: NodePostgresStorage,
+  storage: NodeSqlStorage,
   change: DatabaseChangeEvent,
 ): Promise<void> {
   if (Number.isSafeInteger(change.revision)) {
@@ -278,7 +278,7 @@ export async function cancelNodeChatGeneration(
 }
 
 async function dispatchEvent(
-  storage: NodePostgresStorage,
+  storage: NodeSqlStorage,
   eventName: string,
   rawData: string,
 ): Promise<void> {
@@ -303,7 +303,7 @@ async function dispatchEvent(
 
 async function consumeEventStream(
   response: Response,
-  storage: NodePostgresStorage,
+  storage: NodeSqlStorage,
 ): Promise<void> {
   if (!response.body) throw new Error("Realtime event stream has no body");
   const reader = response.body.getReader();
@@ -339,7 +339,7 @@ async function consumeEventStream(
   }
 }
 
-function scheduleReconnect(storage: NodePostgresStorage): void {
+function scheduleReconnect(storage: NodeSqlStorage): void {
   if (!started || reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
@@ -347,7 +347,7 @@ function scheduleReconnect(storage: NodePostgresStorage): void {
   }, 1000);
 }
 
-async function connect(storage: NodePostgresStorage): Promise<void> {
+async function connect(storage: NodeSqlStorage): Promise<void> {
   if (!started) return;
   streamController?.abort();
   const controller = new AbortController();
@@ -381,7 +381,7 @@ async function connect(storage: NodePostgresStorage): Promise<void> {
 export async function initNodeRealtimeSync(): Promise<void> {
   if (!isNodeServer || started) return;
   const storage = await getSqlStorage();
-  if (!(storage instanceof NodePostgresStorage)) return;
+  if (!(storage instanceof NodeSqlStorage)) return;
   started = true;
   window.addEventListener("online", () => {
     if (!streamController) void connect(storage);

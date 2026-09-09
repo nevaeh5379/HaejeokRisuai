@@ -49,8 +49,8 @@ export async function getColdStorageItem(key: string) {
   if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage;
-      if (storage.postgres.isEnabled()) {
-        return await storage.postgres.getColdStorageItem(key);
+      if (storage.sql.isEnabled()) {
+        return await storage.sql.getColdStorageItem(key);
       }
       const f = await storage.getItem("coldstorage/" + key);
       if (!f) {
@@ -126,8 +126,8 @@ export async function setColdStorageItem(
   if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage;
-      if (storage.postgres.isEnabled()) {
-        return await storage.postgres.setColdStorageItem(key, value);
+      if (storage.sql.isEnabled()) {
+        return await storage.sql.setColdStorageItem(key, value);
       }
     } catch (error) {
       console.error("Cold storage PostgreSQL write failed:", error);
@@ -184,8 +184,8 @@ export async function setColdStorageItem(
 export async function listColdStorageItems(): Promise<{ items: string[] }> {
   if (isNodeServer) {
     const storage = forageStorage.realStorage as NodeStorage;
-    if (storage.postgres.isEnabled()) {
-      return await storage.postgres.listColdStorageItems();
+    if (storage.sql.isEnabled()) {
+      return await storage.sql.listColdStorageItems();
     }
     const fullKeys = await storage.keys();
     const keys = fullKeys
@@ -223,8 +223,8 @@ export async function cleanColdStorage() {
   const actualUsedKeys = await listColdDataKeys();
   if (isNodeServer) {
     const storage = forageStorage.realStorage as NodeStorage;
-    if (storage.postgres.isEnabled()) {
-      const deleted = await storage.postgres.pruneColdStorage(actualUsedKeys);
+    if (storage.sql.isEnabled()) {
+      const deleted = await storage.sql.pruneColdStorage(actualUsedKeys);
       console.log(
         "Cleaned PostgreSQL cold storage, retained keys:",
         actualUsedKeys,
@@ -265,8 +265,8 @@ async function removeColdStorageItems(keys: string[]) {
   if (isNodeServer) {
     try {
       const storage = forageStorage.realStorage as NodeStorage;
-      if (storage.postgres.isEnabled()) {
-        await storage.postgres.removeColdStorageItems(keys);
+      if (storage.sql.isEnabled()) {
+        await storage.sql.removeColdStorageItems(keys);
         return;
       }
       const deleteKeys = keys.map((k) => "coldstorage/" + k);

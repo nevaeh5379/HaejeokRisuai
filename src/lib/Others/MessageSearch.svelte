@@ -7,7 +7,7 @@
     import { characterStore } from "src/ts/stores/domain";
     import { forageStorage } from "src/ts/globalApi.svelte";
     import { NodeStorage } from "src/ts/storage/files/nodeStorage";
-    import type { NodePostgresMessageSearchResult } from "src/ts/storage/sql/postgres/nodePostgresStorage";
+    import type { NodePostgresMessageSearchResult } from "src/ts/storage/sql/postgres/nodeSqlStorage";
     import { changeChar } from "src/ts/characters";
     import { changeChatTo } from "src/ts/globalApi.svelte";
     import { findCharacterIndexbyId } from "src/ts/util";
@@ -38,7 +38,7 @@
             return;
         }
         const storage = getNodeStorage();
-        if (!storage || !storage.postgres.isEnabled()) {
+        if (!storage || !storage.sql.isEnabled()) {
             error = language.messageSearchUnavailable;
             searched = true;
             return;
@@ -46,7 +46,7 @@
         searching = true;
         error = '';
         try {
-            results = await storage.postgres.searchMessages(q, scope, 50);
+            results = await storage.sql.searchMessages(q, scope, 50);
             searched = true;
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);

@@ -24,7 +24,7 @@ import type {
   NodePostgresTokenUsage,
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
-} from "./postgres/nodePostgresStorage";
+} from "./postgres/nodeSqlStorage";
 
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
@@ -300,7 +300,7 @@ export interface ISqlStorage {
   // ── Optional table explorer ──────────────────────────────────────────
 
   listDbTables?(): Promise<
-    import("./postgres/nodePostgresStorage").NodePostgresTableInfo[]
+    import("./postgres/nodeSqlStorage").NodePostgresTableInfo[]
   >;
   getDbTableData?(
     table: string,
@@ -312,7 +312,7 @@ export interface ISqlStorage {
       search?: string;
       columns?: string[];
     },
-  ): Promise<import("./postgres/nodePostgresStorage").NodePostgresTableData>;
+  ): Promise<import("./postgres/nodeSqlStorage").NodePostgresTableData>;
 }
 
 /**
@@ -329,21 +329,21 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
   getDatabaseConfig(): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
-      storedVendor: import("./postgres/nodePostgresStorage").DbVendor | null;
+      storedVendor: import("./postgres/nodeSqlStorage").DbVendor | null;
     }
   >;
   applyDatabaseConfig(
-    vendor: import("./postgres/nodePostgresStorage").DbVendor,
+    vendor: import("./postgres/nodeSqlStorage").DbVendor,
     params: Record<string, any>,
     migrate: boolean,
   ): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
-      storedVendor: import("./postgres/nodePostgresStorage").DbVendor | null;
+      storedVendor: import("./postgres/nodeSqlStorage").DbVendor | null;
     }
   >;
   testConnection(
-    vendor: import("./postgres/nodePostgresStorage").DbVendor,
+    vendor: import("./postgres/nodeSqlStorage").DbVendor,
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }>;
   migrateLegacyData(): Promise<{
@@ -352,7 +352,7 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
     skipped: number;
   }>;
   listDbTables(): Promise<
-    import("./postgres/nodePostgresStorage").NodePostgresTableInfo[]
+    import("./postgres/nodeSqlStorage").NodePostgresTableInfo[]
   >;
   getDbTableData(
     table: string,
@@ -364,7 +364,7 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
       search?: string;
       columns?: string[];
     },
-  ): Promise<import("./postgres/nodePostgresStorage").NodePostgresTableData>;
+  ): Promise<import("./postgres/nodeSqlStorage").NodePostgresTableData>;
 }
 
 /**

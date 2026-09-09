@@ -12,7 +12,7 @@
     import { parseMultilangString } from "src/ts/util";
     import { checkCharOrder, forageStorage } from "src/ts/globalApi.svelte";
     import { NodeStorage } from "src/ts/storage/files/nodeStorage";
-    import type { NodePostgresCharacterSearchResult } from "src/ts/storage/sql/postgres/nodePostgresStorage";
+    import type { NodePostgresCharacterSearchResult } from "src/ts/storage/sql/postgres/nodeSqlStorage";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     interface Props {
         endGrid?: any;
@@ -39,10 +39,10 @@
             return;
         }
         const storage = getNodeStorage();
-        if (storage && storage.postgres.isEnabled()) {
+        if (storage && storage.sql.isEnabled()) {
             tagSearching = true;
             try {
-                tagResults = await storage.postgres.searchCharactersByTag(tag, 100);
+                tagResults = await storage.sql.searchCharactersByTag(tag, 100);
             } catch {
                 tagResults = [];
             } finally {

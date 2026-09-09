@@ -96,3 +96,26 @@ export class NodeApiClient {
     return validateCapabilities(await response.json());
   }
 }
+
+/**
+ * The Node-hosted web app deliberately keeps browser-relative requests. This
+ * avoids changing cookie/cache semantics while still routing every endpoint
+ * through the same client abstraction used by remote profiles.
+ */
+export function createSameOriginNodeApiClient(
+  fetcher: NodeApiFetch = (input, init) => fetch(input, init),
+  origin = globalThis.location?.origin || "http://localhost",
+): NodeApiClient {
+  return new NodeApiClient(
+    {
+      version: 1,
+      mode: "remote",
+      baseUrl: origin,
+      allowInsecureHttp: origin.startsWith("http:"),
+    },
+    (input, init) => {
+      const url = new URL(input);
+      return fetcher(`${url.pathname}${url.search}${url.hash}`, init);
+    },
+  );
+}

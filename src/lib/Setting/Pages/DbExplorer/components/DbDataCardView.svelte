@@ -9,7 +9,7 @@
     import type {
         NodePostgresColumnInfo,
         NodePostgresTableData
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
 
     interface Props {
         tableData: NodePostgresTableData

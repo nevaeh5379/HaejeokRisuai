@@ -1,8 +1,12 @@
 import { language } from "src/lang";
 import { alertError, alertInput, waitAlert } from "../../alert";
 import { base64url, getKeypairStore, saveKeypairStore } from "../../util";
-import { NodePostgresStorage } from "../sql/postgres/nodePostgresStorage";
+import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "./nodeS3Storage";
+import {
+  createSameOriginNodeApiClient,
+  type NodeApiClient,
+} from "../runtime/nodeApiClient";
 import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.cjs";
 import type {
   NodeChatContinuationDecision,
@@ -37,9 +41,9 @@ import type {
 } from "../../../../packages/protocol/compute.cjs";
 
 export {
-  NodePostgresPayloadTooLargeError,
-  NodePostgresRevisionConflictError,
-} from "../sql/postgres/nodePostgresStorage";
+  NodeSqlPayloadTooLargeError,
+  NodeSqlRevisionConflictError,
+} from "../sql/postgres/nodeSqlStorage";
 export {
   type AssetStorageTarget,
   type NodeS3ServerConfig,
@@ -161,14 +165,19 @@ export type NodeVectorCacheClearResult = {
 export class NodeStorage {
   authChecked = false;
   private nodeProviderCapabilities: NodeProviderCapabilities | null = null;
-  readonly postgres = new NodePostgresStorage(async () => {
-    await this.checkAuth();
-    return await this.createAuth();
-  });
-  readonly s3 = new NodeS3Storage(async () => {
-    await this.checkAuth();
-    return await this.createAuth();
-  });
+  readonly sql: NodeSqlStorage;
+  readonly s3: NodeS3Storage;
+
+  constructor(
+    readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
+  ) {
+    const getAuth = async () => {
+      await this.checkAuth();
+      return await this.createAuth();
+    };
+    this.sql = new NodeSqlStorage(getAuth, apiClient);
+    this.s3 = new NodeS3Storage(getAuth, apiClient);
+  }
 
   private async openBulkImageCache(): Promise<Cache | null> {
     if (!canUseNodeBulkImageCache()) return null;
@@ -303,7 +312,7 @@ export class NodeStorage {
       params.push(`target=${options.target}`);
     }
     params.push(`auth=${encodeURIComponent(auth)}`);
-    return `/api/read?path=${hex}&${params.join("&")}`;
+    return this.apiClient.resolve(`/api/read?path=${hex}&${params.join("&")}`);
   }
 
   async getProxyAuth() {
@@ -320,7 +329,7 @@ export class NodeStorage {
   ): Promise<NodeProviderCapabilities> {
     if (this.nodeProviderCapabilities) return this.nodeProviderCapabilities;
     const auth = await this.getCachedAuth();
-    const response = await fetch("/api/chat-executor/providers", {
+    const response = await this.apiClient.request("/api/chat-executor/providers", {
       headers: { "risu-auth": auth },
       signal: abortSignal ?? undefined,
     });
@@ -357,7 +366,7 @@ export class NodeStorage {
     abortSignal?: AbortSignal | null,
   ): Promise<NodeProviderExecutionResult> {
     const auth = await this.getCachedAuth();
-    const response = await fetch("/api/chat-executor/provider", {
+    const response = await this.apiClient.request("/api/chat-executor/provider", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -392,7 +401,7 @@ export class NodeStorage {
     abortSignal?: AbortSignal | null,
   ): Promise<NodeProviderTransportResult> {
     const auth = await this.getCachedAuth();
-    const response = await fetch("/api/chat-executor/transport", {
+    const response = await this.apiClient.request("/api/chat-executor/transport", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -428,7 +437,7 @@ export class NodeStorage {
     request: NodeChatContinuationRequest,
   ): Promise<NodeChatContinuationDecision> {
     const auth = await this.getCachedAuth();
-    const response = await fetch("/api/chat-executor/continuation", {
+    const response = await this.apiClient.request("/api/chat-executor/continuation", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -457,7 +466,7 @@ export class NodeStorage {
     request: NodeChatPlanRequest,
   ): Promise<NodeChatGenerationPlan> {
     const auth = await this.getCachedAuth();
-    const response = await fetch("/api/chat-executor/plan", {
+    const response = await this.apiClient.request("/api/chat-executor/plan", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -487,7 +496,7 @@ export class NodeStorage {
     const counts: number[] = [];
     const auth = await this.getCachedAuth();
     for (let offset = 0; offset < texts.length; offset += 1024) {
-      const response = await fetch("/api/tokenize-count", {
+      const response = await this.apiClient.request("/api/tokenize-count", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -517,7 +526,7 @@ export class NodeStorage {
     payload: LoreMatchBatchRequest,
   ): Promise<LoreMatchBatchResponse["results"]> {
     if (payload.requests.length === 0) return [];
-    const response = await fetch("/api/lore-match-batch", {
+    const response = await this.apiClient.request("/api/lore-match-batch", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -538,7 +547,7 @@ export class NodeStorage {
   }
 
   async loreResolve(payload: LoreResolveRequest): Promise<LoreResolveResponse> {
-    const response = await fetch("/api/lore-resolve", {
+    const response = await this.apiClient.request("/api/lore-resolve", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -565,7 +574,7 @@ export class NodeStorage {
     descriptors?: VectorIndexDescriptor[],
     revision?: string,
   ): Promise<VectorIndexStatusResponse> {
-    const response = await fetch("/api/vector-index/status", {
+    const response = await this.apiClient.request("/api/vector-index/status", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -599,7 +608,7 @@ export class NodeStorage {
   ): Promise<void> {
     const auth = await this.getCachedAuth();
     for (let offset = 0; offset < entries.length; offset += 64) {
-      const response = await fetch("/api/vector-index/upsert", {
+      const response = await this.apiClient.request("/api/vector-index/upsert", {
         method: "POST",
         headers: { "content-type": "application/json", "risu-auth": auth },
         body: JSON.stringify({
@@ -620,7 +629,7 @@ export class NodeStorage {
     metric: VectorSearchMetric = "cosine",
     topK?: number,
   ): Promise<VectorIndexSearchResult> {
-    const response = await fetch("/api/vector-index/search", {
+    const response = await this.apiClient.request("/api/vector-index/search", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -644,7 +653,7 @@ export class NodeStorage {
   }
 
   async vectorCacheStats(): Promise<NodeVectorCacheStats> {
-    const response = await fetch("/api/vector-index/cache", {
+    const response = await this.apiClient.request("/api/vector-index/cache", {
       headers: { "risu-auth": await this.getCachedAuth() },
     });
     if (!response.ok) {
@@ -664,7 +673,7 @@ export class NodeStorage {
   }
 
   async clearVectorCache(): Promise<NodeVectorCacheClearResult> {
-    const response = await fetch("/api/vector-index/cache", {
+    const response = await this.apiClient.request("/api/vector-index/cache", {
       method: "DELETE",
       headers: { "risu-auth": await this.getCachedAuth() },
     });
@@ -685,7 +694,7 @@ export class NodeStorage {
   }
 
   async startHypaMemorySession(request: unknown): Promise<any> {
-    const response = await fetch("/api/hypa-memory/start", {
+    const response = await this.apiClient.request("/api/hypa-memory/start", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -709,7 +718,7 @@ export class NodeStorage {
     actionId: string,
     value: unknown,
   ): Promise<any> {
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/hypa-memory/${encodeURIComponent(sessionId)}/continue`,
       {
         method: "POST",
@@ -733,7 +742,7 @@ export class NodeStorage {
 
   async cancelHypaMemorySession(sessionId: string): Promise<void> {
     try {
-      await fetch(`/api/hypa-memory/${encodeURIComponent(sessionId)}`, {
+      await this.apiClient.request(`/api/hypa-memory/${encodeURIComponent(sessionId)}`, {
         method: "DELETE",
         headers: { "risu-auth": await this.getCachedAuth() },
       });
@@ -743,7 +752,10 @@ export class NodeStorage {
   }
 
   async getKeyPair(): Promise<CryptoKeyPair> {
-    const storedKey = await getKeypairStore("node");
+    const keyStoreName = `node:${base64url(
+      Buffer.from(this.apiClient.baseUrl, "utf-8"),
+    )}`;
+    const storedKey = await getKeypairStore(keyStoreName);
 
     if (storedKey) {
       return storedKey;
@@ -758,14 +770,14 @@ export class NodeStorage {
       ["sign", "verify"],
     );
 
-    await saveKeypairStore("node", keyPair);
+    await saveKeypairStore(keyStoreName, keyPair);
 
     return keyPair;
   }
 
   async setItem(key: string, value: Uint8Array) {
     await this.checkAuth();
-    const da = await fetch("/api/write", {
+    const da = await this.apiClient.request("/api/write", {
       method: "POST",
       body: value as any,
       headers: {
@@ -842,7 +854,7 @@ export class NodeStorage {
 
     await new Promise<void>((resolve, reject) => {
       const request = new XMLHttpRequest();
-      request.open("POST", "/api/write-bulk");
+      request.open("POST", this.apiClient.resolve("/api/write-bulk"));
       request.responseType = "json";
       request.setRequestHeader("content-type", body.type);
       request.setRequestHeader("risu-auth", auth);
@@ -914,7 +926,7 @@ export class NodeStorage {
     const thumbParam = options?.thumbnail ? "?thumb=1" : "";
     const query = [thumbParam, targetParam].filter(Boolean).join("&");
     const queryStr = query ? `?${query}` : "";
-    const da = await fetch("/api/read" + queryStr, {
+    const da = await this.apiClient.request("/api/read" + queryStr, {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -957,7 +969,7 @@ export class NodeStorage {
     const queryStr = query ? `?${query}` : "";
     let da: Response;
     try {
-      da = await fetch("/api/read" + queryStr, {
+      da = await this.apiClient.request("/api/read" + queryStr, {
         method: "GET",
         cache: "force-cache",
         headers,
@@ -1094,7 +1106,7 @@ export class NodeStorage {
     const queryStr = params.length > 0 ? `?${params.join("&")}` : "";
     const url = `/api/read-bulk${queryStr}`;
 
-    const response = await fetch(url, {
+    const response = await this.apiClient.request(url, {
       method: "POST",
       body: JSON.stringify({
         ...(options?.prefix ? { prefix: options.prefix } : { filePaths }),
@@ -1306,7 +1318,7 @@ export class NodeStorage {
   async keys(prefix = ""): Promise<string[]> {
     await this.checkAuth();
     const search = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
-    const da = await fetch(`/api/list${search}`, {
+    const da = await this.apiClient.request(`/api/list${search}`, {
       method: "GET",
       headers: {
         "risu-auth": await this.createAuth(),
@@ -1323,7 +1335,7 @@ export class NodeStorage {
   }
   async removeItem(key: string | string[]) {
     await this.checkAuth();
-    const da = await fetch("/api/remove", {
+    const da = await this.apiClient.request("/api/remove", {
       method: "GET",
       headers: {
         "file-path": Buffer.from(
@@ -1346,7 +1358,7 @@ export class NodeStorage {
   private async authorizeKey(password: string) {
     const keypair = await this.getKeyPair();
     const publicKey = await crypto.subtle.exportKey("jwk", keypair.publicKey);
-    const response = await fetch("/api/login", {
+    const response = await this.apiClient.request("/api/login", {
       method: "POST",
       body: JSON.stringify({
         password,
@@ -1375,7 +1387,7 @@ export class NodeStorage {
     if (!this.authChecked) {
       let response: Response;
       try {
-        response = await fetch("/api/test_auth", {
+        response = await this.apiClient.request("/api/test_auth", {
           headers: {
             "risu-auth": await this.createAuth(),
           },
@@ -1406,8 +1418,9 @@ export class NodeStorage {
       if (data?.status === "unset") {
         const input = await digestPassword(
           await alertInput(language.setNodePassword),
+          this.apiClient,
         );
-        const setRes = await fetch("/api/set_password", {
+        const setRes = await this.apiClient.request("/api/set_password", {
           method: "POST",
           body: JSON.stringify({
             password: input,
@@ -1425,6 +1438,7 @@ export class NodeStorage {
       } else if (data?.status === "incorrect") {
         const input = await digestPassword(
           await alertInput(language.inputNodePassword),
+          this.apiClient,
         );
         await this.authorizeKey(input);
       } else {
@@ -1442,8 +1456,8 @@ export async function getNodeServerProxyAuth() {
   return await sharedNodeStorage.getProxyAuth();
 }
 
-async function digestPassword(message: string) {
-  const response = await fetch("/api/crypto", {
+async function digestPassword(message: string, apiClient: NodeApiClient) {
+  const response = await apiClient.request("/api/crypto", {
     body: JSON.stringify({
       data: message,
     }),

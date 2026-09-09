@@ -185,6 +185,44 @@ describe("NodeStorage.streamItems", () => {
   });
 });
 
+describe("NodeStorage authentication identity", () => {
+  it("uses a separate key-pair namespace for each server origin", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const util = await import("../../util");
+    const keyPair = {} as CryptoKeyPair;
+    vi.mocked(util.base64url).mockImplementation((value: Uint8Array) =>
+      Buffer.from(value).toString("base64url"),
+    );
+    vi.mocked(util.getKeypairStore).mockResolvedValue(keyPair);
+
+    const first = new NodeStorage(
+      new NodeApiClient({
+        version: 1,
+        mode: "remote",
+        baseUrl: "https://one.example",
+        allowInsecureHttp: false,
+      }),
+    );
+    const second = new NodeStorage(
+      new NodeApiClient({
+        version: 1,
+        mode: "remote",
+        baseUrl: "https://two.example",
+        allowInsecureHttp: false,
+      }),
+    );
+
+    await first.getKeyPair();
+    await second.getKeyPair();
+
+    expect(vi.mocked(util.getKeypairStore).mock.calls).toEqual([
+      ["node:aHR0cHM6Ly9vbmUuZXhhbXBsZQ"],
+      ["node:aHR0cHM6Ly90d28uZXhhbXBsZQ"],
+    ]);
+  });
+});
+
 describe("NodeStorage.getItems image cache", () => {
   afterEach(() => {
     vi.restoreAllMocks();

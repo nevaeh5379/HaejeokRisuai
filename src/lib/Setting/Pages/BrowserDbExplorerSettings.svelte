@@ -7,7 +7,7 @@
     import type {
         NodePostgresTableData,
         NodePostgresTableInfo
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import DbTableExplorerTab from './DbExplorer/tabs/DbTableExplorerTab.svelte'
 
     interface Props {

@@ -32,7 +32,7 @@ import type {
   NodePostgresRevisionDetails,
   NodePostgresRevisionDiff,
   NodePostgresTokenUsage,
-} from "../postgres/nodePostgresStorage";
+} from "../postgres/nodeSqlStorage";
 import {
   buildSqlReplaceCommit,
   mergeLegacyModulesIntoCommit,

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createSameOriginNodeApiClient,
   NodeApiClient,
   NodeApiCompatibilityError,
 } from "./nodeApiClient";
@@ -12,6 +13,16 @@ const profile = {
 };
 
 describe("NodeApiClient", () => {
+  it("keeps the Node-hosted web app on explicit same-origin paths", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const client = createSameOriginNodeApiClient(
+      fetcher,
+      "https://server.example",
+    );
+    await client.request("/api/health?full=1");
+    expect(fetcher).toHaveBeenCalledWith("/api/health?full=1", undefined);
+  });
+
   it("resolves every API request against the configured origin", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
     const client = new NodeApiClient(profile, fetcher);

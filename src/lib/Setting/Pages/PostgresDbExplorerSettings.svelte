@@ -28,7 +28,7 @@
         NodePostgresRevision,
         NodePostgresTableInfo,
         NodePostgresTokenUsage,
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
 
     interface Props {
         close?: () => void
@@ -218,7 +218,7 @@
         busy = true
         error = ''
         try {
-            const storage = getNodeStorage().postgres
+            const storage = getNodeStorage().sql
             const config = await storage.getServerConfig()
             configEnabled = config.enabled
             tables = config.enabled ? await storage.listDbTables() : []
@@ -338,7 +338,7 @@
                         {configEnabled}
                         onRefreshAll={refreshTables}
                         onGoToConfig={() => currentTab = 'config'}
-                        loadTableData={(table, options) => getNodeStorage().postgres.getDbTableData(table, options)}
+                        loadTableData={(table, options) => getNodeStorage().sql.getDbTableData(table, options)}
                     />
                 {/if}
             </main>

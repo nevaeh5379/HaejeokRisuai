@@ -18,7 +18,7 @@
         NodePostgresColumnInfo,
         NodePostgresTableData,
         NodePostgresTableInfo
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import DbTableListSidebar from '../components/DbTableListSidebar.svelte'
     import DbTableToolbar from '../components/DbTableToolbar.svelte'
     import DbDataTable from '../components/DbDataTable.svelte'

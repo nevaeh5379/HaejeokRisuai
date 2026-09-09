@@ -7,7 +7,7 @@
     import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import { NodeStorage } from 'src/ts/storage/files/nodeStorage'
-    import type { NodePostgresRevision, NodePostgresServerConfig, NodePostgresTokenUsage } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    import type { NodePostgresRevision, NodePostgresServerConfig, NodePostgresTokenUsage } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/backup/risuSave'
 
     let config = $state<NodePostgresServerConfig|null>(null)
@@ -29,10 +29,10 @@
         busy = true
         loadError = ''
         try {
-            config = await getNodeStorage().postgres.getServerConfig()
+            config = await getNodeStorage().sql.getServerConfig()
             poolMax = config.poolMax
-            revisions = config.enabled ? await getNodeStorage().postgres.listRevisions(20) : []
-            tokenUsage = config.enabled ? await getNodeStorage().postgres.getTokenUsage() : []
+            revisions = config.enabled ? await getNodeStorage().sql.listRevisions(20) : []
+            tokenUsage = config.enabled ? await getNodeStorage().sql.getTokenUsage() : []
         } catch (error) {
             loadError = `${error}`
         } finally {
@@ -46,7 +46,7 @@
         }
         busy = true
         try {
-            await getNodeStorage().postgres.restoreRevision(revision.id)
+            await getNodeStorage().sql.restoreRevision(revision.id)
             alertNormal(language.postgresRestoreSuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {
@@ -66,7 +66,7 @@
         busy = true
         try {
             const storage = getNodeStorage()
-            await storage.postgres.applyDatabaseConfig('postgres', {
+            await storage.sql.applyDatabaseConfig('postgres', {
                 connectionString: connectionString.trim(),
                 poolMax,
             }, false)

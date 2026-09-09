@@ -21,7 +21,7 @@
         readImageFromTarget,
         runStorageAnalysis
     } from './StorageExplorer/utils'
-    import type { NodeBackupConfig } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    import type { NodeBackupConfig } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import type {
         AssetStorageType,
         AssetUsageMap,
@@ -192,7 +192,7 @@
             }
 
             try {
-                backupConfig = await storage.postgres.getBackupStatus()
+                backupConfig = await storage.sql.getBackupStatus()
             } catch {
                 backupConfig = null
             }
@@ -208,7 +208,7 @@
     async function refreshBackupConfig() {
         try {
             const storage = getNodeStorage()
-            backupConfig = await storage.postgres.getBackupStatus()
+            backupConfig = await storage.sql.getBackupStatus()
         } catch {
             backupConfig = null
         }

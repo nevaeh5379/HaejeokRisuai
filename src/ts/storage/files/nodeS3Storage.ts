@@ -13,6 +13,10 @@ import type {
   NodeStorageAssetItem,
   NodeStorageSummary,
 } from "../../../../packages/protocol/storageConfig.cjs";
+import {
+  createSameOriginNodeApiClient,
+  type NodeApiClient,
+} from "../runtime/nodeApiClient";
 export type {
   AssetStorageTarget,
   AssetStorageType,
@@ -35,7 +39,10 @@ async function responseError(response: Response, fallback: string) {
 }
 
 export class NodeS3Storage {
-  constructor(private readonly getAuth: () => Promise<string>) {}
+  constructor(
+    private readonly getAuth: () => Promise<string>,
+    private readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
+  ) {}
 
   private async authHeaders() {
     return {
@@ -44,7 +51,7 @@ export class NodeS3Storage {
   }
 
   async getServerConfig(): Promise<NodeS3ServerConfig> {
-    const response = await fetch("/api/s3-config", {
+    const response = await this.apiClient.request("/api/s3-config", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -61,7 +68,7 @@ export class NodeS3Storage {
   async configureServer(
     update: NodeS3ServerConfigUpdate,
   ): Promise<NodeS3ServerConfig> {
-    const response = await fetch("/api/s3-config", {
+    const response = await this.apiClient.request("/api/s3-config", {
       method: "POST",
       body: JSON.stringify(update),
       headers: {
@@ -82,7 +89,7 @@ export class NodeS3Storage {
   async testConnection(
     config: NodeS3ServerConfigUpdate,
   ): Promise<NodeS3TestResult> {
-    const response = await fetch("/api/s3-test", {
+    const response = await this.apiClient.request("/api/s3-test", {
       method: "POST",
       body: JSON.stringify(config),
       headers: {
@@ -105,7 +112,7 @@ export class NodeS3Storage {
   }
 
   async getStats(): Promise<NodeS3Stats> {
-    const response = await fetch("/api/s3-stats", {
+    const response = await this.apiClient.request("/api/s3-stats", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -119,7 +126,7 @@ export class NodeS3Storage {
   async migrateLocalToS3(
     onProgress?: (event: NodeS3ProgressEvent) => void,
   ): Promise<NodeS3MigrationResult> {
-    const response = await fetch("/api/s3-migrate", {
+    const response = await this.apiClient.request("/api/s3-migrate", {
       method: "POST",
       headers: await this.authHeaders(),
     });
@@ -178,7 +185,7 @@ export class NodeS3Storage {
   async rollbackS3ToLocal(
     onProgress?: (event: NodeS3ProgressEvent) => void,
   ): Promise<NodeS3RollbackResult> {
-    const response = await fetch("/api/s3-rollback", {
+    const response = await this.apiClient.request("/api/s3-rollback", {
       method: "POST",
       headers: await this.authHeaders(),
     });
@@ -235,7 +242,7 @@ export class NodeS3Storage {
   async generateMissingThumbnails(
     onProgress?: (event: NodeS3ProgressEvent) => void,
   ): Promise<NodeS3ThumbnailsResult> {
-    const response = await fetch("/api/s3-generate-thumbnails", {
+    const response = await this.apiClient.request("/api/s3-generate-thumbnails", {
       method: "POST",
       headers: await this.authHeaders(),
     });
@@ -292,7 +299,7 @@ export class NodeS3Storage {
   }
 
   async getStorageSummary(): Promise<NodeStorageSummary> {
-    const response = await fetch("/api/storage-summary", {
+    const response = await this.apiClient.request("/api/storage-summary", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -310,7 +317,7 @@ export class NodeS3Storage {
       target === "active"
         ? "/api/s3-asset-details"
         : `/api/s3-asset-details?target=${target}`;
-    const response = await fetch(url, {
+    const response = await this.apiClient.request(url, {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -325,7 +332,7 @@ export class NodeS3Storage {
     keys: string[],
     target: AssetStorageTarget = "active",
   ): Promise<{ deleted: number }> {
-    const response = await fetch("/api/storage-assets-delete", {
+    const response = await this.apiClient.request("/api/storage-assets-delete", {
       method: "POST",
       body: JSON.stringify({ keys, target }),
       headers: {
@@ -340,7 +347,7 @@ export class NodeS3Storage {
   }
 
   async cleanLocalFs(): Promise<{ deleted: number; freedBytes: number }> {
-    const response = await fetch("/api/storage-local-clean", {
+    const response = await this.apiClient.request("/api/storage-local-clean", {
       method: "POST",
       headers: await this.authHeaders(),
     });
@@ -355,7 +362,7 @@ export class NodeS3Storage {
     count: number;
     source: string;
   }> {
-    const response = await fetch("/api/asset-catalog/resync", {
+    const response = await this.apiClient.request("/api/asset-catalog/resync", {
       method: "POST",
       headers: await this.authHeaders(),
     });

@@ -30,6 +30,10 @@ import {
   type SqlCommitResult,
 } from "../sqlCommit";
 import { BoundedCache } from "../../../memory/boundedCache";
+import {
+  createSameOriginNodeApiClient,
+  type NodeApiClient,
+} from "../../runtime/nodeApiClient";
 
 import type {
   DbVendor,
@@ -169,30 +173,30 @@ async function responseError(response: Response, fallback: string) {
   return new Error(body?.error || `${fallback} (${response.status})`);
 }
 
-export class NodePostgresRevisionConflictError extends Error {
+export class NodeSqlRevisionConflictError extends Error {
   readonly currentRevision: number | null;
   constructor(revision: unknown) {
     super(
       `PostgreSQL data changed in another session (server revision ${revision ?? "unknown"}). Reload before saving again.`,
     );
-    this.name = "NodePostgresRevisionConflictError";
+    this.name = "NodeSqlRevisionConflictError";
     this.currentRevision = Number.isSafeInteger(Number(revision))
       ? Number(revision)
       : null;
   }
 }
 
-export class NodePostgresPayloadTooLargeError extends Error {
+export class NodeSqlPayloadTooLargeError extends Error {
   constructor(message?: string) {
     super(
       message ||
         "PostgreSQL save payload is larger than the Node server allows.",
     );
-    this.name = "NodePostgresPayloadTooLargeError";
+    this.name = "NodeSqlPayloadTooLargeError";
   }
 }
 
-export class NodePostgresStorage implements INodeSqlStorageAdmin {
+export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
@@ -257,7 +261,10 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     globalscript: customscript[];
   } | null = null;
 
-  constructor(private readonly getAuth: () => Promise<string>) {}
+  constructor(
+    private readonly getAuth: () => Promise<string>,
+    private readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
+  ) {}
 
   isEnabled() {
     return this.status === "enabled";
@@ -304,7 +311,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   }
 
   async getServerConfig(): Promise<NodePostgresServerConfig> {
-    const response = await fetch("/api/postgres-config", {
+    const response = await this.apiClient.request("/api/postgres-config", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -325,7 +332,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     update: NodePostgresServerConfigUpdate,
   ): Promise<NodePostgresServerConfig> {
     const encodedBody = await encodeJsonBody(update);
-    const response = await fetch("/api/postgres-config", {
+    const response = await this.apiClient.request("/api/postgres-config", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -360,7 +367,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       storedVendor: DbVendor | null;
     }
   > {
-    const response = await fetch("/api/db-config", {
+    const response = await this.apiClient.request("/api/db-config", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -398,7 +405,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     }
   > {
     const encodedBody = await encodeJsonBody({ vendor, params, migrate });
-    const response = await fetch("/api/db-config", {
+    const response = await this.apiClient.request("/api/db-config", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -431,7 +438,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       storedVendor: DbVendor | null;
     }
   > {
-    const response = await fetch("/api/db-config/retry", {
+    const response = await this.apiClient.request("/api/db-config/retry", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -456,7 +463,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }> {
     const encodedBody = await encodeJsonBody({ vendor, params });
-    const response = await fetch("/api/db-config/test", {
+    const response = await this.apiClient.request("/api/db-config/test", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -485,7 +492,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await fetch("/api/database-v2/migrate-legacy", {
+    const response = await this.apiClient.request("/api/database-v2/migrate-legacy", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -526,7 +533,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
         `"risu-plugins-${enabledOnly ? "runtime-" : ""}${cached.hash}"`;
     }
 
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/plugins${enabledOnly ? "?enabledOnly=1" : ""}`,
       { method: "GET", cache: "no-cache", headers },
     );
@@ -555,7 +562,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/plugins/${encodeURIComponent(pluginName)}/enabled`,
       {
         method: "PATCH",
@@ -568,7 +575,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     );
     if (response.status === 409) {
       const body = await response.json().catch(() => null);
-      throw new NodePostgresRevisionConflictError(body?.revision);
+      throw new NodeSqlRevisionConflictError(body?.revision);
     }
     if (!response.ok) {
       throw await responseError(response, "Plugin toggle failed");
@@ -606,7 +613,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       headers["If-None-Match"] = `"risu-plugin-storage-${cached.hash}"`;
     }
 
-    const response = await fetch("/api/database-v2/plugin-custom-storage", {
+    const response = await this.apiClient.request("/api/database-v2/plugin-custom-storage", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -652,7 +659,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return [];
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       "/api/database-v2/plugin-custom-storage/keys",
       {
         method: "GET",
@@ -691,7 +698,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       headers["If-None-Match"] = `"risu-plugin-key-${cached.hash}"`;
     }
 
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/plugin-custom-storage/keys/${encodeURIComponent(key)}`,
       {
         method: "GET",
@@ -740,7 +747,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (cached?.hash) {
       headers["If-None-Match"] = `"risu-personas-${cached.hash}"`;
     }
-    const response = await fetch("/api/database-v2/personas", {
+    const response = await this.apiClient.request("/api/database-v2/personas", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -776,7 +783,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (cached?.hash) {
       headers["If-None-Match"] = `"risu-presets-${cached.hash}"`;
     }
-    const response = await fetch("/api/database-v2/presets", {
+    const response = await this.apiClient.request("/api/database-v2/presets", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -811,7 +818,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     const headers: Record<string, string> = await this.authHeaders();
     if (cached?.hash)
       headers["If-None-Match"] = `"risu-preset-${id}-${cached.hash}"`;
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/presets/${encodeURIComponent(id)}`,
       {
         method: "GET",
@@ -847,7 +854,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (cached?.hash) {
       headers["If-None-Match"] = `"risu-lorebooks-${cached.hash}"`;
     }
-    const response = await fetch("/api/database-v2/lorebooks", {
+    const response = await this.apiClient.request("/api/database-v2/lorebooks", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -888,7 +895,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (cached?.hash) {
       headers["If-None-Match"] = `"risu-modules-${cached.hash}"`;
     }
-    const response = await fetch("/api/database-v2/modules", {
+    const response = await this.apiClient.request("/api/database-v2/modules", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -923,7 +930,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (cached?.hash) {
       headers["If-None-Match"] = `"risu-prompts-${cached.hash}"`;
     }
-    const response = await fetch("/api/database-v2/prompts", {
+    const response = await this.apiClient.request("/api/database-v2/prompts", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -959,7 +966,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (cached?.hash) {
       headers["If-None-Match"] = `"risu-scripts-${cached.hash}"`;
     }
-    const response = await fetch("/api/database-v2/scripts", {
+    const response = await this.apiClient.request("/api/database-v2/scripts", {
       method: "GET",
       cache: "no-cache",
       headers,
@@ -984,7 +991,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   async loadSettingKey(key: string): Promise<any> {
     if (!(await this.ensureEnabled())) return undefined;
     const headers: Record<string, string> = await this.authHeaders();
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/settings/${encodeURIComponent(key)}`,
       {
         method: "GET",
@@ -1005,7 +1012,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   }
 
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
-    const response = await fetch("/api/database-v2/startup", {
+    const response = await this.apiClient.request("/api/database-v2/startup", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1025,7 +1032,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
 
   async exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null> {
     if (!(await this.ensureEnabled())) return null;
-    const response = await fetch("/api/database-v2/export", {
+    const response = await this.apiClient.request("/api/database-v2/export", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1047,7 +1054,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return null;
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/characters/${encodeURIComponent(characterId)}`,
       {
         method: "GET",
@@ -1077,7 +1084,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return null;
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/characters/${encodeURIComponent(characterId)}/asset-fields`,
       {
         method: "GET",
@@ -1109,7 +1116,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       options?.messageLimit !== undefined
         ? `?messageLimit=${encodeURIComponent(options.messageLimit)}`
         : "";
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}${search}`,
       {
         method: "GET",
@@ -1135,7 +1142,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return [];
     }
     const mode = options.mode === "generation" ? "?mode=generation" : "";
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/messages${mode}`,
       {
         method: "GET",
@@ -1165,7 +1172,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return { messages: [], offset: 0, total: 0, hasMore: false };
     const params = new URLSearchParams({ limit: String(limit) });
     if (before !== undefined) params.set("before", String(before));
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/messages?${params}`,
       {
         method: "GET",
@@ -1184,7 +1191,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
 
   async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
     if (!(await this.ensureEnabled())) return [];
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches`,
       {
         method: "GET",
@@ -1203,7 +1210,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return { branches: [], messages: [], links: [] };
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/graph`,
       {
         method: "GET",
@@ -1235,7 +1242,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       params.set("mode", options.mode);
     }
     const search = params.size > 0 ? `?${params}` : "";
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/messages${search}`,
       {
         method: "GET",
@@ -1259,7 +1266,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(input.chatId)}/branches`,
       {
         method: "POST",
@@ -1288,7 +1295,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/activate`,
       {
         method: "POST",
@@ -1316,7 +1323,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       params.set("activeChatId", activeChatId);
     }
     const search = params.size > 0 ? `?${params.toString()}` : "";
-    const response = await fetch(`/api/database-v2/recent-chats${search}`, {
+    const response = await this.apiClient.request(`/api/database-v2/recent-chats${search}`, {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1342,7 +1349,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       limit !== undefined && limit !== null && limit > 0
         ? `/api/database-v2/revisions?limit=${encodeURIComponent(limit)}`
         : "/api/database-v2/revisions";
-    const response = await fetch(url, {
+    const response = await this.apiClient.request(url, {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1363,7 +1370,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return null;
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/revisions/${encodeURIComponent(revisionId)}/details`,
       {
         method: "GET",
@@ -1392,7 +1399,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return null;
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/revisions/diff?base=${encodeURIComponent(baseId)}&target=${encodeURIComponent(targetId)}`,
       {
         method: "GET",
@@ -1417,7 +1424,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return null;
     }
     const encodedBody = await encodeJsonBody({ revisionId });
-    const response = await fetch("/api/database-v2/revisions/preview-restore", {
+    const response = await this.apiClient.request("/api/database-v2/revisions/preview-restore", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -1445,7 +1452,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       throw new Error("PostgreSQL storage is disabled");
     }
     const encodedBody = await encodeJsonBody({ revisionId });
-    const response = await fetch("/api/database-v2/revisions/restore", {
+    const response = await this.apiClient.request("/api/database-v2/revisions/restore", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -1469,7 +1476,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return null;
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/cold-storage/${encodeURIComponent(key)}`,
       {
         method: "GET",
@@ -1494,7 +1501,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return { items: [] };
     }
-    const response = await fetch("/api/database-v2/cold-storage", {
+    const response = await this.apiClient.request("/api/database-v2/cold-storage", {
       method: "GET",
       headers: await this.authHeaders(),
     });
@@ -1515,7 +1522,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return false;
     }
     const encodedBody = await encodeJsonBody({ data: value });
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/cold-storage/${encodeURIComponent(key)}`,
       {
         method: "PUT",
@@ -1543,7 +1550,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return 0;
     }
     const encodedBody = await encodeJsonBody({ keys });
-    const response = await fetch("/api/database-v2/cold-storage", {
+    const response = await this.apiClient.request("/api/database-v2/cold-storage", {
       method: "DELETE",
       body: encodedBody.body,
       headers: {
@@ -1569,7 +1576,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return 0;
     }
     const encodedBody = await encodeJsonBody({ retainedKeys });
-    const response = await fetch("/api/database-v2/cold-storage/prune", {
+    const response = await this.apiClient.request("/api/database-v2/cold-storage/prune", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -1601,7 +1608,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     };
     for (let attempt = 0; attempt < 3; attempt++) {
       const encodedBody = await encodeJsonBody(pending);
-      const response = await fetch("/api/database-v2/commit", {
+      const response = await this.apiClient.request("/api/database-v2/commit", {
         method: "POST",
         body: encodedBody.body,
         headers: {
@@ -1620,11 +1627,11 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
           pending = { ...pending, baseRevision: currentRevision };
           continue;
         }
-        throw new NodePostgresRevisionConflictError(conflict?.revision);
+        throw new NodeSqlRevisionConflictError(conflict?.revision);
       }
       if (response.status === 413) {
         const body = await response.json().catch(() => null);
-        throw new NodePostgresPayloadTooLargeError(body?.error);
+        throw new NodeSqlPayloadTooLargeError(body?.error);
       }
       if (response.status < 200 || response.status >= 300) {
         throw await responseError(response, "SQL commit failed");
@@ -1633,7 +1640,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       this.revision = result.revision;
       return result;
     }
-    throw new NodePostgresRevisionConflictError(this.revision);
+    throw new NodeSqlRevisionConflictError(this.revision);
   }
 
   async replaceDatabase(
@@ -1658,7 +1665,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       scope,
       limit: String(limit),
     });
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/search?${params.toString()}`,
       {
         method: "GET",
@@ -1678,7 +1685,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return [];
     }
-    const response = await fetch("/api/database-v2/token-usage", {
+    const response = await this.apiClient.request("/api/database-v2/token-usage", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1694,7 +1701,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return [];
     }
-    const response = await fetch("/api/database-v2/bot-stats", {
+    const response = await this.apiClient.request("/api/database-v2/bot-stats", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1714,7 +1721,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return [];
     }
     const params = new URLSearchParams({ tag, limit: String(limit) });
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/characters/search?${params.toString()}`,
       {
         method: "GET",
@@ -1741,7 +1748,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       return [];
     }
     const params = new URLSearchParams({ name, limit: String(limit) });
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/characters/search?${params.toString()}`,
       {
         method: "GET",
@@ -1764,7 +1771,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       return [];
     }
-    const response = await fetch("/api/database-v2/tables", {
+    const response = await this.apiClient.request("/api/database-v2/tables", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1810,7 +1817,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     if (options.columns && options.columns.length > 0) {
       params.set("columns", options.columns.join(","));
     }
-    const response = await fetch(
+    const response = await this.apiClient.request(
       `/api/database-v2/tables/${encodeURIComponent(table)}/rows?${params.toString()}`,
       {
         method: "GET",
@@ -1836,7 +1843,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
    * /api/db-backup GET 대응.
    */
   async getBackupStatus(): Promise<NodeBackupConfig> {
-    const response = await fetch("/api/db-backup", {
+    const response = await this.apiClient.request("/api/db-backup", {
       method: "GET",
       cache: "no-cache",
       headers: await this.authHeaders(),
@@ -1856,7 +1863,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }> {
     const encodedBody = await encodeJsonBody({ vendor, params });
-    const response = await fetch("/api/db-backup/test", {
+    const response = await this.apiClient.request("/api/db-backup/test", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -1884,7 +1891,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
     update: NodeBackupConfigUpdate,
   ): Promise<NodeBackupConfig> {
     const encodedBody = await encodeJsonBody(update);
-    const response = await fetch("/api/db-backup", {
+    const response = await this.apiClient.request("/api/db-backup", {
       method: "POST",
       body: encodedBody.body,
       headers: {
@@ -1911,7 +1918,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   async resyncBackup(
     onProgress?: (event: NodeBackupProgressEvent) => void,
   ): Promise<NodeBackupFullSyncResult> {
-    const response = await fetch("/api/db-backup/resync", {
+    const response = await this.apiClient.request("/api/db-backup/resync", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -1977,7 +1984,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
   async restoreFromBackup(
     onProgress?: (event: NodeBackupProgressEvent) => void,
   ): Promise<NodeBackupFullSyncResult> {
-    const response = await fetch("/api/db-backup/restore", {
+    const response = await this.apiClient.request("/api/db-backup/restore", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -2041,7 +2048,7 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
    * /api/db-backup DELETE 대응.
    */
   async removeBackup(): Promise<NodeBackupConfig> {
-    const response = await fetch("/api/db-backup", {
+    const response = await this.apiClient.request("/api/db-backup", {
       method: "DELETE",
       headers: await this.authHeaders(),
     });
