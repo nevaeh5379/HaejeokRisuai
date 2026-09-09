@@ -11,9 +11,12 @@ export interface StorageSyncResumeState {
   createdAt: number;
 }
 
-type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type StorageSyncResumeStorage = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem"
+>;
 
-function defaultStorage(): StorageLike | null {
+function defaultStorage(): StorageSyncResumeStorage | null {
   try {
     return globalThis.localStorage ?? null;
   } catch {
@@ -22,7 +25,7 @@ function defaultStorage(): StorageLike | null {
 }
 
 export function loadStorageSyncResumeState(
-  storage: StorageLike | null = defaultStorage(),
+  storage: StorageSyncResumeStorage | null = defaultStorage(),
 ): StorageSyncResumeState | null {
   if (!storage) return null;
   try {
@@ -48,7 +51,7 @@ export function loadStorageSyncResumeState(
 
 export function saveStorageSyncResumeState(
   state: StorageSyncResumeState,
-  storage: StorageLike | null = defaultStorage(),
+  storage: StorageSyncResumeStorage | null = defaultStorage(),
 ): void {
   if (!storage) return;
   storage.setItem(STORAGE_SYNC_RESUME_KEY, JSON.stringify(state));
@@ -56,7 +59,7 @@ export function saveStorageSyncResumeState(
 
 export function clearStorageSyncResumeState(
   sessionId?: string,
-  storage: StorageLike | null = defaultStorage(),
+  storage: StorageSyncResumeStorage | null = defaultStorage(),
 ): void {
   if (!storage) return;
   if (
