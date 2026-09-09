@@ -20,6 +20,7 @@ import type {
   SqlRecentChatMetadata,
   SqlChatBranchSummary,
   SqlChatBranchGraphData,
+  SqlChatBranchGraphPage,
   SqlCreateChatBranchInput,
   BotPresetSummary,
   StoredBotPreset,
@@ -1249,6 +1250,49 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     }
     const body: { graph?: SqlChatBranchGraphData } = await response.json();
     return body.graph ?? { branches: [], messages: [], links: [] };
+  }
+
+  async loadChatBranchGraphPage(
+    chatId: string,
+    offset: number,
+    limit: number,
+  ): Promise<SqlChatBranchGraphPage> {
+    if (!(await this.ensureEnabled())) {
+      return {
+        branches: [],
+        messages: [],
+        links: [],
+        offset: 0,
+        total: 0,
+        hasMore: false,
+      };
+    }
+    const params = new URLSearchParams({
+      offset: String(Math.max(0, Math.floor(offset))),
+      limit: String(Math.max(1, Math.floor(limit))),
+    });
+    const response = await this.apiClient.request(
+      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/graph/page?${params}`,
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (!response.ok) {
+      throw await responseError(response, "SQL chat branch graph page load failed");
+    }
+    const body: { page?: SqlChatBranchGraphPage } = await response.json();
+    return (
+      body.page ?? {
+        branches: [],
+        messages: [],
+        links: [],
+        offset: 0,
+        total: 0,
+        hasMore: false,
+      }
+    );
   }
 
   async loadBranchMessages(

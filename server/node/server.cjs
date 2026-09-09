@@ -5999,6 +5999,35 @@ app.get(
 );
 
 app.get(
+  "/api/database-v2/chats/:chatId/branches/graph/page",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!postgresStorage.enabled) {
+      res.status(404).send({ error: "SQL storage is not configured", code: "sql_disabled" });
+      return;
+    }
+    try {
+      const offset = normalizePageInteger(req.query.offset, 0);
+      const limit = Math.max(1, normalizePageInteger(req.query.limit, 256, 1000));
+      await sendCompressedJson(req, res, {
+        page: await postgresStorage.loadChatBranchGraphPage(
+          req.params.chatId,
+          offset,
+          limit,
+        ),
+      });
+    } catch (error) {
+      if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
+        res.status(400).send({ error: error.message, code: "invalid_chat_branch_request" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.get(
   "/api/database-v2/chats/:chatId/branches/graph",
   authenticatedRouteLimiter,
   async (req, res, next) => {

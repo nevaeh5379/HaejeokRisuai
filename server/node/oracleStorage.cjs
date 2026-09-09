@@ -3108,6 +3108,134 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
+    this.assertEnabled();
+    assertId(chatId, "chatId");
+    const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
+    const limit = Math.min(1000, Math.max(1, Math.floor(Number(rawLimit) || 256)));
+    const conn = await this.pool.getConnection();
+    try {
+      await this.ensureChatBranchGraph(conn, chatId);
+      const branchesRows = await fetchRows(
+        conn,
+        `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+                branch.head_message_id, branch.reason, branch.created_at,
+                active.branch_id AS active_branch_id
+           FROM chat_branches branch
+      LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
+          WHERE branch.chat_id = :graphChatId
+       ORDER BY branch.created_at, branch.id`,
+        { graphChatId: chatId },
+      );
+      const countRow = await fetchOne(
+        conn,
+        "SELECT COUNT(*) AS total FROM chat_message_branch_links WHERE chat_id = :graphChatId",
+        { graphChatId: chatId },
+      );
+      const total = Number(countRow?.total ?? 0);
+      const messages = await fetchRows(
+        conn,
+        `SELECT messages.*, links.parent_message_id, links.origin_branch_id
+           FROM chat_message_branch_links links
+           JOIN chat_messages messages
+             ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+          WHERE links.chat_id = :graphChatId
+       ORDER BY messages.position, messages.id
+         OFFSET :graphOffset ROWS FETCH NEXT :graphLimit ROWS ONLY`,
+        { graphChatId: chatId, graphOffset: offset, graphLimit: limit },
+        { clobColumns: ["content_text"], blobColumns: ["content_binary"] },
+      );
+      const ids = messages.map((row) => row.id);
+      let attributes = [];
+      let generations = [];
+      let promptInfos = [];
+      let promptToggles = [];
+      let promptItems = [];
+      if (ids.length > 0) {
+        const idsJson = JSON.stringify(ids);
+        const relationJoin = `JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids ON ids.id = source.message_id`;
+        [attributes, generations, promptInfos, promptToggles, promptItems] =
+          await Promise.all([
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_attributes source ${relationJoin} WHERE source.chat_id = :graphChatId ORDER BY source.message_id, source.key_value`,
+              { idsJson, graphChatId: chatId },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_generation source ${relationJoin} WHERE source.chat_id = :graphChatId`,
+              { idsJson, graphChatId: chatId },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_prompt_info source ${relationJoin} WHERE source.chat_id = :graphChatId`,
+              { idsJson, graphChatId: chatId },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_prompt_toggles source ${relationJoin} WHERE source.chat_id = :graphChatId ORDER BY source.message_id, source.position`,
+              { idsJson, graphChatId: chatId },
+              { clobColumns: ["toggle_value"] },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_prompt_items source ${relationJoin} WHERE source.chat_id = :graphChatId ORDER BY source.message_id, source.position`,
+              { idsJson, graphChatId: chatId },
+            ),
+          ]);
+      }
+      const relations = {
+        attributes: groupMessageRows(attributes),
+        generation: new Map(
+          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        ),
+        promptInfo: new Map(
+          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        ),
+        promptToggles: groupMessageRows(promptToggles),
+        promptItems: groupMessageRows(promptItems),
+      };
+      const rebuilt = messages.map((row) => {
+        const key = `${row.chat_id}\0${row.id}`;
+        return rebuildMessage(row, {
+          attributes: relations.attributes.get(key),
+          generation: relations.generation.get(key),
+          promptInfo: relations.promptInfo.get(key),
+          promptToggles: relations.promptToggles.get(key),
+          promptItems: relations.promptItems.get(key),
+        });
+      });
+      const branches = branchesRows.map((row) => ({
+        id: row.id,
+        chatId: row.chat_id,
+        parentBranchId: row.parent_branch_id ?? undefined,
+        forkMessageId: row.fork_message_id ?? undefined,
+        headMessageId: row.head_message_id ?? undefined,
+        reason: row.reason,
+        createdAt: Number(row.created_at) || 0,
+      }));
+      await conn.commit();
+      return {
+        branches,
+        activeBranchId: branchesRows[0]?.active_branch_id ?? undefined,
+        messages: rebuilt,
+        links: messages.map((row) => ({
+          messageId: row.id,
+          parentMessageId: row.parent_message_id ?? undefined,
+          originBranchId: row.origin_branch_id,
+        })),
+        offset,
+        total,
+        hasMore: offset + messages.length < total,
+      };
+    } catch (error) {
+      try { await conn.rollback(); } catch (e) {}
+      throw error;
+    } finally {
+      try { await conn.close(); } catch (e) {}
+    }
+  }
+
   async loadChatBranchGraph(chatId) {
     this.assertEnabled();
     assertId(chatId, "chatId");

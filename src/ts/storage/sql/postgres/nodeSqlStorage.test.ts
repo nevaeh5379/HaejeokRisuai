@@ -897,6 +897,45 @@ describe("NodeSqlStorage browser client", () => {
     );
   });
 
+  it("loads paged branch graph messages through bounded offsets", async () => {
+    const page = {
+      branches: [
+        {
+          id: "root",
+          chatId: "chat-123",
+          reason: "root",
+          createdAt: 0,
+          headMessageId: "msg-2",
+        },
+      ],
+      activeBranchId: "root",
+      messages: [{ chatId: "msg-2", role: "char", data: "hello" }],
+      links: [
+        { messageId: "msg-2", parentMessageId: "msg-1", originBranchId: "root" },
+      ],
+      offset: 256,
+      total: 600,
+      hasMore: true,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ page }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodeSqlStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    await expect(
+      storage.loadChatBranchGraphPage("chat-123", 256, 128),
+    ).resolves.toEqual(page);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/chats/chat-123/branches/graph/page?offset=256&limit=128",
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      headers: { "risu-auth": "test-auth" },
+    });
+  });
+
   it("loads character details on demand", async () => {
     const fetchMock = vi
       .fn()
