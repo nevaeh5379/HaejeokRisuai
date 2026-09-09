@@ -175,7 +175,7 @@ html.tauri-macos-vibrancy {
   --risu-macos-sidebar-menu-control-radius: 0.74rem;
   --risu-macos-chrome-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 60%,
+    var(--risu-theme-darkbg) 72%,
     transparent
   );
   --risu-macos-content-tint: color-mix(
@@ -575,7 +575,7 @@ html.tauri-macos-vibrancy .default-chat-screen {
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass {
   --risu-macos-chrome-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 72%,
+    var(--risu-theme-darkbg) 84%,
     transparent
   );
   --risu-macos-content-tint: var(--risu-theme-bgcolor);
