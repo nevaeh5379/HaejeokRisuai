@@ -1575,9 +1575,9 @@ export class NodeStorage {
     if (data?.status !== "unset" && data?.status !== "incorrect") {
       throw new Error("The storage server returned an invalid auth status.");
     }
-    if (!password) {
-      throw new Error("Enter the storage server password.");
-    }
+    // An empty password is a valid explicit choice. It is still hashed before
+    // registration, so the server stores the SHA-256 digest rather than an
+    // ambiguous empty/unset value.
     const digest = await digestPassword(password, this.apiClient);
     if (data.status === "unset") {
       const setResponse = await this.apiClient.request("/api/set_password", {

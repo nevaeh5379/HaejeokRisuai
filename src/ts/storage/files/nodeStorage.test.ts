@@ -185,6 +185,51 @@ describe("NodeStorage.streamItems", () => {
   });
 });
 
+describe("NodeStorage password connection", () => {
+  it("accepts an explicitly empty password and hashes it before setup", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const digest =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          apiVersion: 1,
+          features: {
+            sqlStorage: true,
+            assetStorage: true,
+            dataChangeEvents: true,
+            storageSync: true,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ status: "unset" }))
+      .mockResolvedValueOnce(new Response(digest))
+      .mockResolvedValueOnce(Response.json({ status: "success" }));
+    const client = new NodeApiClient(
+      {
+        version: 1,
+        mode: "remote",
+        baseUrl: "https://sync.example",
+        allowInsecureHttp: false,
+      },
+      fetcher,
+    );
+    const storage = new NodeStorage(client);
+    vi.spyOn(storage, "createAuth").mockResolvedValue("test-auth");
+    const authorize = vi
+      .spyOn(storage as any, "authorizeKey")
+      .mockResolvedValue(undefined);
+
+    await expect(storage.connectWithPassword("")).resolves.toBeUndefined();
+    expect(JSON.parse(fetcher.mock.calls[3][1]?.body as string)).toEqual({
+      password: digest,
+    });
+    expect(authorize).toHaveBeenCalledWith(digest);
+  });
+});
+
 describe("NodeStorage authentication identity", () => {
   it("uses a separate key-pair namespace for each server origin", async () => {
     const { NodeStorage } = await import("./nodeStorage");
