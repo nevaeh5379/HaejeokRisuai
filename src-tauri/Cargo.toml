@@ -40,7 +40,7 @@ tokio = { version = "1.47.1", features = ["time"] }
 tauri-plugin-deep-link = "2.4.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSColor", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAppearance", "NSColor", "NSWindow"] }
 window-vibrancy = "0.8.0"
 
 [features]

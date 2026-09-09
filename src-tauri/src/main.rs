@@ -39,6 +39,26 @@ use tauri::{AppHandle, Emitter};
 use tauri::menu::{MenuItemBuilder, MenuItemKind, Submenu, SubmenuBuilder};
 
 #[tauri::command]
+fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), String> {
+    let dark = match appearance.as_str() {
+        "dark" => true,
+        "light" => false,
+        _ => return Err(format!("Unsupported Risu appearance: {appearance}")),
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        macos_vibrancy::set_risu_native_appearance(&app, dark).map_err(|error| error.to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, dark);
+        Ok(())
+    }
+}
+
+#[tauri::command]
 async fn native_request(url: String, body: String, header: String, method: String) -> String {
     let headers_json: Value = match serde_json::from_str(&header) {
         Ok(h) => h,
@@ -1124,6 +1144,7 @@ fn main() {
             streamed_fetch,
             oauth_login,
             sqlite_transaction::sqlite_execute_transaction,
+            set_risu_native_appearance,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,
             mark_sidebar_menu_window_ready,

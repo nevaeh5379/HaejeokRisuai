@@ -1,9 +1,15 @@
 use std::{
     collections::HashSet,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
-use objc2_app_kit::{NSColor, NSTitlebarSeparatorStyle, NSWindow};
+use objc2_app_kit::{
+    NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
+    NSColor, NSTitlebarSeparatorStyle, NSWindow,
+};
 use tauri::{
     plugin::{Builder, TauriPlugin},
     window::{Effect, EffectState, EffectsBuilder},
@@ -12,6 +18,7 @@ use tauri::{
 use window_vibrancy::{apply_liquid_glass, LiquidGlassOptions, NSGlassEffectViewStyle};
 
 const LIQUID_GLASS_CLASS: &str = "tauri-macos-liquid-glass";
+static RISU_DARK_APPEARANCE: AtomicBool = AtomicBool::new(true);
 
 fn supports_vibrancy(label: &str) -> bool {
     label == "main" || label.starts_with("chat-window-") || label.starts_with("sidebar-menu-")
@@ -35,12 +42,60 @@ fn sync_liquid_glass_dom_state<R: Runtime>(window: &Window<R>, active: bool) {
     }
 }
 
+fn apply_risu_appearance(ns_window: &NSWindow, dark: bool) {
+    // SAFETY: AppKit exports these process-lifetime appearance-name constants.
+    let appearance_name = unsafe {
+        if dark {
+            NSAppearanceNameDarkAqua
+        } else {
+            NSAppearanceNameAqua
+        }
+    };
+    if let Some(appearance) = NSAppearance::appearanceNamed(appearance_name) {
+        ns_window.setAppearance(Some(&appearance));
+    }
+}
+
+pub fn set_risu_native_appearance<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    dark: bool,
+) -> tauri::Result<()> {
+    RISU_DARK_APPEARANCE.store(dark, Ordering::Relaxed);
+
+    for window in app.webview_windows().into_values() {
+        if !supports_vibrancy(window.label()) {
+            continue;
+        }
+
+        let label = window.label().to_string();
+        let window_for_main_thread = window.clone();
+        window.run_on_main_thread(move || match window_for_main_thread.ns_window() {
+            Ok(ns_window) => {
+                // SAFETY: Tauri's `ns_window` is an NSWindow pointer on macOS.
+                let ns_window: &NSWindow = unsafe { &*ns_window.cast() };
+                apply_risu_appearance(ns_window, dark);
+                eprintln!(
+                    "[macOS vibrancy] Synced Risu {} appearance to {}",
+                    if dark { "dark" } else { "light" },
+                    label
+                );
+            }
+            Err(error) => {
+                eprintln!("[macOS vibrancy] Failed to sync Risu appearance to {label}: {error}")
+            }
+        })?;
+    }
+
+    Ok(())
+}
+
 fn configure_native_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
     let ns_window = window.ns_window()?;
     // SAFETY: Tauri's `ns_window` is an NSWindow pointer on macOS and this
     // callback is invoked on the window/main thread.
     let ns_window: &NSWindow = unsafe { &*ns_window.cast() };
 
+    apply_risu_appearance(ns_window, RISU_DARK_APPEARANCE.load(Ordering::Relaxed));
     ns_window.setTitlebarAppearsTransparent(true);
     ns_window.setTitlebarSeparatorStyle(NSTitlebarSeparatorStyle::None);
     ns_window.setOpaque(false);

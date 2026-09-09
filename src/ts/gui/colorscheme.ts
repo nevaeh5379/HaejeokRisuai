@@ -6,6 +6,7 @@ import { alertError } from "../alert";
 import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { isTauriMacOS } from "../platform";
 
 export interface ColorScheme {
   bgcolor: string;
@@ -18,6 +19,20 @@ export interface ColorScheme {
   darkBorderc: string;
   darkbutton: string;
   type: "light" | "dark";
+}
+
+
+async function syncTauriNativeAppearance(type: "light" | "dark") {
+  if (!isTauriMacOS) {
+    return;
+  }
+
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_risu_native_appearance", { appearance: type });
+  } catch (error) {
+    console.warn("Failed to sync macOS native appearance with Risu theme:", error);
+  }
 }
 
 export const defaultColorScheme: ColorScheme = {
@@ -315,6 +330,7 @@ export function updateColorScheme() {
       colorScheme.darkbutton,
     );
     ColorSchemeTypeStore.set(colorScheme.type);
+    void syncTauriNativeAppearance(colorScheme.type);
     updateTextThemeAndCSS();
   } catch (error) {}
 }
