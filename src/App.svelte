@@ -372,7 +372,7 @@
             {#if (!$DynamicGUI)}
                 <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: !$sideBarStore }} />
             {:else}
-                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
+                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-50 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
                 </div>
