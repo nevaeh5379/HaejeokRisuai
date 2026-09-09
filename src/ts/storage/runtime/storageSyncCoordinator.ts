@@ -4,6 +4,7 @@ import type {
   NodeStorageSyncAssetManifestEntry,
   NodeStorageSyncAssetPlan,
   NodeStorageSyncAssetPlanEntry,
+  NodeStorageSyncFinalizePreflight,
   NodeStorageSyncSession,
   NodeStorageSyncSqlPlan,
   NodeStorageSyncSqlPlanInput,
@@ -77,6 +78,10 @@ export interface StorageSyncRemoteTarget {
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlValidation>;
+  preflightStorageSyncFinalize(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncFinalizePreflight>;
 }
 
 export type StorageSyncStagePhase =
@@ -548,6 +553,21 @@ export async function stageLocalStorageToRemote(
   if (finalSession.status !== "sql-ready") {
     throw new StorageSyncPlanMismatchError(
       "Remote sync session did not reach the SQL-ready state.",
+    );
+  }
+
+  const preflight = await target.preflightStorageSyncFinalize(
+    session.id,
+    signal,
+  );
+  if (
+    preflight.status !== "ready" ||
+    preflight.targetRevision !== session.summary.revision ||
+    preflight.sourceRevision !== sourceRevision ||
+    preflight.recordCount !== sqlSourcePlan.recordCount
+  ) {
+    throw new StorageSyncPlanMismatchError(
+      "Remote finalize preflight does not match the staged source and target.",
     );
   }
 

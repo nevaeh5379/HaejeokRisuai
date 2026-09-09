@@ -116,6 +116,10 @@ const {
   StorageSyncSessionPersistence,
 } = require("./storageSyncPersistence.cjs");
 const {
+  StorageSyncFinalizeError,
+  preflightStorageSyncFinalize,
+} = require("./storageSyncFinalize.cjs");
+const {
   describeStorageTarget,
   readStorageStartupSettings,
   runStartupStage,
@@ -384,7 +388,9 @@ if (!existsSync(savePath)) {
   mkdirSync(savePath);
 }
 const storageSyncRoot = path.join(savePath, "__storage_sync");
-const storageSyncPersistence = new StorageSyncSessionPersistence(storageSyncRoot);
+const storageSyncPersistence = new StorageSyncSessionPersistence(
+  storageSyncRoot,
+);
 const storageSyncStaging = new StorageSyncStagingStore(storageSyncRoot);
 const storageSyncSqlStaging = new StorageSyncSqlStagingStore(storageSyncRoot);
 const storageSyncSessions = new StorageSyncSessionManager({
@@ -3076,6 +3082,49 @@ app.post(
     try {
       res.send(await storageSyncSqlStaging.validate(session));
     } catch (error) {
+      if (error instanceof StorageSyncSqlError) {
+        sendStorageSyncSqlError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.post(
+  "/api/storage-sync/sessions/:sessionId/finalize/preflight",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = await getStorageSyncSession(req.params.sessionId);
+    if (!session) {
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    try {
+      res.send(
+        await preflightStorageSyncFinalize({
+          session,
+          sqlStaging: storageSyncSqlStaging,
+          assetStaging: storageSyncStaging,
+          sqlStorage: postgresStorage,
+          assetStorage: assetStorageManager.getStorage(),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof StorageSyncFinalizeError) {
+        res.status(error.code === "target_changed" ? 409 : 400).send({
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+      if (error instanceof StorageSyncAssetError) {
+        sendStorageSyncAssetError(res, error);
+        return;
+      }
       if (error instanceof StorageSyncSqlError) {
         sendStorageSyncSqlError(res, error);
         return;
@@ -5795,7 +5844,9 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res.status(404).send({ error: "SQL storage is not configured", code: "sql_disabled" });
+      res
+        .status(404)
+        .send({ error: "SQL storage is not configured", code: "sql_disabled" });
       return;
     }
     try {
@@ -6040,12 +6091,17 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     if (!postgresStorage.enabled) {
-      res.status(404).send({ error: "SQL storage is not configured", code: "sql_disabled" });
+      res
+        .status(404)
+        .send({ error: "SQL storage is not configured", code: "sql_disabled" });
       return;
     }
     try {
       const offset = normalizePageInteger(req.query.offset, 0);
-      const limit = Math.max(1, normalizePageInteger(req.query.limit, 256, 1000));
+      const limit = Math.max(
+        1,
+        normalizePageInteger(req.query.limit, 256, 1000),
+      );
       await sendCompressedJson(req, res, {
         page: await postgresStorage.loadChatBranchGraphPage(
           req.params.chatId,
@@ -6054,8 +6110,13 @@ app.get(
         ),
       });
     } catch (error) {
-      if (error instanceof PostgresPayloadError || error instanceof StoragePayloadError) {
-        res.status(400).send({ error: error.message, code: "invalid_chat_branch_request" });
+      if (
+        error instanceof PostgresPayloadError ||
+        error instanceof StoragePayloadError
+      ) {
+        res
+          .status(400)
+          .send({ error: error.message, code: "invalid_chat_branch_request" });
         return;
       }
       next(error);

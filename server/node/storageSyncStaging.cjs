@@ -403,6 +403,35 @@ class StorageSyncStagingStore {
     return serializeAssetPlan(session);
   }
 
+  async verifySkippedAssets(session, activeStorage) {
+    if (session.role !== "target" || !session.assets) {
+      throw new StorageSyncAssetError(
+        "Storage sync asset manifest has not been planned",
+      );
+    }
+    const skipped = Object.values(session.assets).filter(
+      (asset) => asset.state === "skipped",
+    );
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(STORAGE_SYNC_MAX_CONCURRENCY, skipped.length) },
+      async () => {
+        while (cursor < skipped.length) {
+          const asset = skipped[cursor++];
+          const digest = await hashActiveAsset(activeStorage, asset);
+          if (digest !== asset.sha256) {
+            throw new StorageSyncAssetError(
+              `Target asset changed while sync was staging: ${asset.key}`,
+              "target_asset_changed",
+            );
+          }
+        }
+      },
+    );
+    await Promise.all(workers);
+    return { verifiedCount: skipped.length };
+  }
+
   async cleanupAssets(sessionId) {
     await Promise.all([
       fs.promises.rm(path.join(this.sessionDirectory(sessionId), "assets"), {

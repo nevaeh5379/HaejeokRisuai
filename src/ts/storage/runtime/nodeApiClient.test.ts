@@ -302,4 +302,29 @@ describe("NodeApiClient", () => {
       message: "SQL checksum mismatch",
     });
   });
+  it("runs finalize preflight through the configured server", async () => {
+    const fetcher = vi.fn(async (_input: string, _init?: RequestInit) =>
+      Response.json({
+        status: "ready",
+        targetRevision: 11,
+        sourceRevision: 7,
+        recordCount: 42,
+        skippedAssetsVerified: 3,
+      }),
+    );
+    const client = new NodeApiClient(profile, fetcher);
+    await expect(
+      client.preflightStorageSyncFinalize("session-1", "sync-auth"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      targetRevision: 11,
+      sourceRevision: 7,
+      recordCount: 42,
+    });
+    expect(fetcher.mock.calls[0][0]).toContain("/finalize/preflight");
+    expect(fetcher.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ "risu-auth": "sync-auth" }),
+    });
+  });
 });

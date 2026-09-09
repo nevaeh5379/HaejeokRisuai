@@ -9,6 +9,7 @@ import {
   type NodeStorageSyncAssetChunkResult,
   type NodeStorageSyncAssetManifestEntry,
   type NodeStorageSyncAssetPlan,
+  type NodeStorageSyncFinalizePreflight,
   type NodeStorageSyncSqlPlan,
   type NodeStorageSyncSqlPlanInput,
   type NodeStorageSyncSqlValidation,
@@ -1534,6 +1535,17 @@ export class NodeStorage {
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlValidation> {
     return await this.apiClient.validateStorageSyncSql(
+      id,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async preflightStorageSyncFinalize(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncFinalizePreflight> {
+    return await this.apiClient.preflightStorageSyncFinalize(
       id,
       await this.getCachedAuth(),
       signal,

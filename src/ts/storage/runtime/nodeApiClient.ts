@@ -102,6 +102,14 @@ export interface NodeStorageSyncSqlValidation {
   counts: Record<string, number>;
 }
 
+export interface NodeStorageSyncFinalizePreflight {
+  status: "ready";
+  targetRevision: number;
+  sourceRevision: number;
+  recordCount: number;
+  skippedAssetsVerified: number;
+}
+
 export class NodeStorageSyncRevisionConflictError extends Error {
   constructor(readonly currentRevision: number) {
     super(
@@ -130,6 +138,17 @@ export class NodeStorageSyncSqlError extends Error {
   ) {
     super(message);
     this.name = "NodeStorageSyncSqlError";
+  }
+}
+
+export class NodeStorageSyncFinalizeError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "NodeStorageSyncFinalizeError";
   }
 }
 
@@ -345,6 +364,25 @@ function validateStorageSyncSqlValidation(
   return result as NodeStorageSyncSqlValidation;
 }
 
+function validateStorageSyncFinalizePreflight(
+  value: unknown,
+): NodeStorageSyncFinalizePreflight {
+  const result = value as Partial<NodeStorageSyncFinalizePreflight> | null;
+  if (
+    !result ||
+    result.status !== "ready" ||
+    !isNonNegativeSafeInteger(result.targetRevision) ||
+    !isNonNegativeSafeInteger(result.sourceRevision) ||
+    !isNonNegativeSafeInteger(result.recordCount) ||
+    !isNonNegativeSafeInteger(result.skippedAssetsVerified)
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid finalize preflight result.",
+    );
+  }
+  return result as NodeStorageSyncFinalizePreflight;
+}
+
 async function storageSyncAssetError(response: Response): Promise<never> {
   const body = await response.json().catch(() => ({}));
   throw new NodeStorageSyncAssetError(
@@ -363,6 +401,17 @@ async function storageSyncSqlError(response: Response): Promise<never> {
       ? body.error
       : `Storage sync SQL request failed (HTTP ${response.status}).`,
     typeof body?.code === "string" ? body.code : "storage_sync_sql_error",
+    response.status,
+  );
+}
+
+async function storageSyncFinalizeError(response: Response): Promise<never> {
+  const body = await response.json().catch(() => ({}));
+  throw new NodeStorageSyncFinalizeError(
+    typeof body?.error === "string"
+      ? body.error
+      : `Storage sync finalize preflight failed (HTTP ${response.status}).`,
+    typeof body?.code === "string" ? body.code : "storage_sync_finalize_error",
     response.status,
   );
 }
@@ -618,6 +667,24 @@ export class NodeApiClient {
     );
     if (!response.ok) return await storageSyncSqlError(response);
     return validateStorageSyncSqlValidation(await response.json());
+  }
+
+  async preflightStorageSyncFinalize(
+    id: string,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncFinalizePreflight> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/finalize/preflight`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "risu-auth": auth },
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncFinalizeError(response);
+    return validateStorageSyncFinalizePreflight(await response.json());
   }
 
   async cancelStorageSyncSession(id: string, auth: string): Promise<void> {

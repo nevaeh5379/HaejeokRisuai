@@ -269,6 +269,19 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
       counts: { meta: 1 },
     };
   }
+
+  async preflightStorageSyncFinalize(id: string) {
+    expect(id).toBe(this.session.id);
+    if (!this.sqlPlan) throw new Error("sql plan missing");
+    this.log.push("preflight-finalize");
+    return {
+      status: "ready" as const,
+      targetRevision: this.session.summary.revision,
+      sourceRevision: this.session.peerRevision ?? 0,
+      recordCount: this.sqlPlan.recordCount,
+      skippedAssetsVerified: this.assetPlan?.skippedCount ?? 0,
+    };
+  }
 }
 
 describe("stageLocalStorageToRemote", () => {
