@@ -766,6 +766,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       new Set(["m1", "m2", "m-alt-page"]),
     );
     expect(links).toHaveLength(3);
+    expect(links.find((link) => link.messageId === "m1")?.position).toBe(0);
+    expect(links.find((link) => link.messageId === "m2")?.position).toBe(1);
+    expect(links.find((link) => link.messageId === "m-alt-page")?.position).toBe(1);
     expect(messages.find((message) => message.chatId === "m1")?.promptInfo?.promptName).toBe(
       "preset",
     );

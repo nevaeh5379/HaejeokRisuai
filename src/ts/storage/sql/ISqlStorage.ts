@@ -84,6 +84,7 @@ export interface SqlChatBranchSummary {
 
 export interface SqlChatBranchGraphLink {
   messageId: string;
+  position?: number;
   parentMessageId?: string;
   originBranchId: string;
 }

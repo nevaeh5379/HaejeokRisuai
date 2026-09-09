@@ -3221,6 +3221,7 @@ class OracleStorage extends SqlStorageBase {
         messages: rebuilt,
         links: messages.map((row) => ({
           messageId: row.id,
+          position: Number(row.position) || 0,
           parentMessageId: row.parent_message_id ?? undefined,
           originBranchId: row.origin_branch_id,
         })),

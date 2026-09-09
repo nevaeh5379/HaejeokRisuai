@@ -394,6 +394,7 @@ export function rebuildBranchGraphLinks(
     seen.add(messageId);
     links.push({
       messageId,
+      position: Number(row.message_position) || 0,
       parentMessageId:
         row.graph_parent_message_id == null
           ? undefined

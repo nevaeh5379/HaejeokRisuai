@@ -911,7 +911,12 @@ describe("NodeSqlStorage browser client", () => {
       activeBranchId: "root",
       messages: [{ chatId: "msg-2", role: "char", data: "hello" }],
       links: [
-        { messageId: "msg-2", parentMessageId: "msg-1", originBranchId: "root" },
+        {
+          messageId: "msg-2",
+          position: 7,
+          parentMessageId: "msg-1",
+          originBranchId: "root",
+        },
       ],
       offset: 256,
       total: 600,
