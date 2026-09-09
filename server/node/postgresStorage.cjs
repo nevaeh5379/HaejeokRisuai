@@ -3857,6 +3857,14 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
+  async listSettingKeys() {
+    this.assertEnabled();
+    const result = await this.pool.query(
+      "SELECT key FROM system.settings ORDER BY key",
+    );
+    return result.rows.map((row) => row.key);
+  }
+
   async loadSettingKeys(keys) {
     this.assertEnabled();
     const client = await this.pool.connect();

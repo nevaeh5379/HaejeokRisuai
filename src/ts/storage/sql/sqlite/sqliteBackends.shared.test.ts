@@ -168,6 +168,21 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     database.close();
   });
 
+  it("lists persisted setting keys without hydrating setting values", async () => {
+    const { storage, database, queryLog } = makeFreshHarness(make);
+    const commit = createEmptySqlCommit(0, "setting-key-list");
+    commit.root.upserts.push(
+      { key: "alpha-setting", value: { nested: true } },
+      { key: "beta-setting", value: "value" },
+    );
+    await storage.commit(commit);
+    queryLog.clear();
+    const keys = await storage.listSettingKeys?.();
+    expect(keys).toEqual(expect.arrayContaining(["alpha-setting", "beta-setting"]));
+    expect(queryLog.touching("setting_extension_nodes")).toBe(0);
+    database.close();
+  });
+
   it("shallow load keeps characters, chats, and deferred settings lazy", async () => {
     const { storage, database, queryLog } = makeFreshHarness(make);
     const source = await seed(storage);

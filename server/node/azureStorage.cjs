@@ -2402,6 +2402,14 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
+  async listSettingKeys() {
+    const pool = await this.getPool();
+    const result = await pool.request().query(
+      "SELECT [key] FROM [system].[settings] ORDER BY [key]",
+    );
+    return result.recordset.map((row) => row.key);
+  }
+
   async loadSettingKeys(keys) {
     const pool = await this.getPool();
     if (!Array.isArray(keys) || keys.length === 0) {

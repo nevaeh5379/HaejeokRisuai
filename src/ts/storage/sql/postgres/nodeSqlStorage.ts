@@ -1000,6 +1000,20 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     return body.globalscript ?? [];
   }
 
+  async listSettingKeys(): Promise<string[]> {
+    if (!(await this.ensureEnabled())) return [];
+    const response = await this.apiClient.request("/api/database-v2/settings", {
+      method: "GET",
+      cache: "no-cache",
+      headers: await this.authHeaders(),
+    });
+    if (!response.ok) {
+      throw await responseError(response, "SQL setting key list failed");
+    }
+    const body: { keys?: string[] } = await response.json();
+    return Array.isArray(body.keys) ? body.keys : [];
+  }
+
   async loadSettingKey(key: string): Promise<any> {
     if (!(await this.ensureEnabled())) return undefined;
     const headers: Record<string, string> = await this.authHeaders();

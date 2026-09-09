@@ -1411,6 +1411,14 @@ export class WebSqliteStorage implements ISqlStorage {
     }
   }
 
+  async listSettingKeys(): Promise<string[]> {
+    return (
+      await this.selectRows<{ key: string }>(
+        "SELECT key FROM system_settings ORDER BY key",
+      )
+    ).map((row) => row.key);
+  }
+
   async loadSettingKey(key: string): Promise<any> {
     return this.loadSettingValue(key);
   }

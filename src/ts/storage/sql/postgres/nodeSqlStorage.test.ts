@@ -123,6 +123,26 @@ describe("NodeSqlStorage browser client", () => {
     );
   });
 
+  it("lists persisted setting keys through the lightweight endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ keys: ["alpha-setting", "beta-setting"] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = new NodeSqlStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    await expect(storage.listSettingKeys()).resolves.toEqual([
+      "alpha-setting",
+      "beta-setting",
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/database-v2/settings",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "risu-auth": "test-auth" }),
+      }),
+    );
+  });
+
   it("keeps SQL disabled in the browser while the server is in recovery mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

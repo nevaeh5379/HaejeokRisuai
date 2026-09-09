@@ -3438,6 +3438,20 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async listSettingKeys() {
+    this.assertEnabled();
+    const conn = await this.pool.getConnection();
+    try {
+      const rows = await fetchRows(
+        conn,
+        "SELECT key FROM system_settings ORDER BY key",
+      );
+      return rows.map((row) => row.key);
+    } finally {
+      try { await conn.close(); } catch (e) {}
+    }
+  }
+
   async loadSettingKeys(keys) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();

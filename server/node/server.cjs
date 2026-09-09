@@ -5754,6 +5754,23 @@ app.get(
 );
 
 app.get(
+  "/api/database-v2/settings",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!postgresStorage.enabled) {
+      res.status(404).send({ error: "SQL storage is not configured", code: "sql_disabled" });
+      return;
+    }
+    try {
+      res.send({ keys: await postgresStorage.listSettingKeys() });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.get(
   "/api/database-v2/settings/:key",
   authenticatedRouteLimiter,
   async (req, res, next) => {

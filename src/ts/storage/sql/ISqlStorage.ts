@@ -264,6 +264,8 @@ export interface ISqlStorage {
   // ── Settings ─────────────────────────────────────────────────────────
 
   loadSettingKey(key: string): Promise<any>;
+  /** Enumerates every persisted root setting key without hydrating values. */
+  listSettingKeys?(): Promise<string[]>;
   /** Batched multi-key read; backends may collapse it into one query. */
   loadSettingKeys?(keys: string[]): Promise<Map<string, unknown>>;
 
