@@ -4,7 +4,7 @@ set -eu
 # RisuAI Node/storage or static-web installer and lifecycle manager.
 # Keep this file POSIX-sh compatible: it is used on Linux, macOS, and WSL.
 
-program_version=2.3.0
+program_version=2.4.0
 config_version=3
 project_name=risuai-rustfs
 
@@ -94,6 +94,7 @@ Usage:
   ./risuai.sh [install] [options]
   ./risuai.sh start|stop|restart|rebuild|down|status|doctor|config
   ./risuai.sh dev [web|node|server|services] [options]
+  ./risuai.sh native install|build|start|stop|restart|rebuild|status|config|logs
   ./risuai.sh logs [--follow|--no-follow] [--tail N] [SERVICE]
   ./risuai.sh db status|password|sync-password|shell|backup|optimize
   ./risuai.sh recovery|help|version
@@ -106,8 +107,14 @@ Deployment modes:
   proxy    An existing reverse proxy on the host or a container network
 
 Application runtimes:
-  node     Node server with PostgreSQL and RustFS (default)
+  node     Containerized Node server with PostgreSQL and RustFS (default)
   static   Browser-only web build served by Caddy; no Node server or storage services
+
+Native deployment (separate from --runtime):
+  native install ...                 Configure, build, and start without Docker/Podman
+  native build|start|stop|restart    Manage the host Node server directly
+  native rebuild|status|config|logs  Rebuild, inspect, or view native logs
+  Run `./risuai.sh native help` for database-specific options.
 
 Developer commands:
   dev [web]                         Run the Vite browser development server (default)
@@ -189,6 +196,9 @@ Examples:
     --proxy-network reverse-proxy -y
   ./risuai.sh dev
   ./risuai.sh dev node
+  ./risuai.sh native install --db-vendor postgres --database-url postgresql://user:pass@db/risuai
+  ./risuai.sh native install --db-vendor oracle --env-file .env.oracle
+  ./risuai.sh native install --db-vendor azure --env-file .env.azure
 EOF
 }
 
@@ -256,7 +266,7 @@ EOF
 }
 
 short_usage() {
-    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|recovery|help|version]\n' "${0##*/}" >&2
+    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|native|recovery|help|version]\n' "${0##*/}" >&2
 }
 
 # Capture user inputs, then remove deployment interpolation variables from the
@@ -298,7 +308,7 @@ unset CLOUDFLARE_TOKEN CLOUDFLARE_TOKEN_FILE CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 
 
 action=install
 case "${1:-}" in
-    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|recovery|help|version)
+    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|native|recovery|help|version)
         action=$1
         shift
         ;;
@@ -2094,6 +2104,11 @@ esac
 if [ "$action" = doctor ]; then run_doctor "$@"; exit $?; fi
 if [ "$action" = db ]; then manage_database "$@"; exit $?; fi
 if [ "$action" = dev ]; then manage_development "$@"; exit $?; fi
+if [ "$action" = native ]; then
+    required_file "$script_dir/tooling/native-deploy.cjs" "native deployment manager"
+    command -v node >/dev/null 2>&1 || die "Node.js is required for native deployment"
+    exec node "$script_dir/tooling/native-deploy.cjs" "$@"
+fi
 if [ "$action" != install ]; then manage_existing_installation "$@"; exit $?; fi
 
 # ------------------------------ install ------------------------------
