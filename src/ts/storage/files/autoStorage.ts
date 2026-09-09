@@ -6,6 +6,10 @@ import { OpfsStorage } from "./opfsStorage";
 import { TauriAssetStorage } from "./tauriAssetStorage";
 import type { NodeApiClient } from "../runtime/nodeApiClient";
 import type { StorageProfile } from "../runtime/storageProfile";
+import {
+  createStorageSyncAssetReader,
+  type StorageSyncAssetReader,
+} from "../runtime/storageSyncAssetReader";
 
 export class AutoStorage {
   /** @deprecated Haejeok RisuAI does not support Risu Account storage. */
@@ -43,6 +47,11 @@ export class AutoStorage {
     return await (this.realStorage as any).removeItem(key);
   }
 
+  async getStorageSyncAssetReader(): Promise<StorageSyncAssetReader> {
+    await this.Init();
+    return createStorageSyncAssetReader(this.realStorage);
+  }
+
   async hasStoredData(): Promise<boolean> {
     await this.Init();
     if (this.realStorage instanceof TauriAssetStorage) {
@@ -71,7 +80,10 @@ export class AutoStorage {
     }
     const profile =
       options?.profile ??
-      ({ version: 1, mode: isNodeServer ? "remote" : "local" } as StorageProfile);
+      ({
+        version: 1,
+        mode: isNodeServer ? "remote" : "local",
+      } as StorageProfile);
     this.profile = profile;
 
     // Remove legacy account-sync markers. Haejeok RisuAI intentionally does

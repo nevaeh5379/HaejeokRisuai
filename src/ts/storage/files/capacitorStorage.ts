@@ -104,6 +104,37 @@ export class CapacitorStorage {
       .filter((key): key is string => key !== null);
   }
 
+  async listSyncAssetKeys(prefix = "assets/"): Promise<string[]> {
+    return (await this.keys()).filter((key) => key.startsWith(prefix)).sort();
+  }
+
+  async getSyncAssetSize(key: string): Promise<number> {
+    await this.init();
+    const result = await Filesystem.stat({
+      path: `${ROOT}/${keyToFilename(key)}`,
+      directory: Directory.Data,
+    });
+    return result.size;
+  }
+
+  async readSyncAssetChunk(
+    key: string,
+    offset: number,
+    length: number,
+  ): Promise<Uint8Array> {
+    await this.init();
+    const result = await Filesystem.readFile({
+      path: `${ROOT}/${keyToFilename(key)}`,
+      directory: Directory.Data,
+      offset,
+      length,
+    });
+    if (typeof result.data === "string") {
+      return Buffer.from(result.data, "base64");
+    }
+    return new Uint8Array(await result.data.arrayBuffer());
+  }
+
   async removeItem(key: string | string[]): Promise<void> {
     await this.init();
     const keys = Array.isArray(key) ? key : [key];

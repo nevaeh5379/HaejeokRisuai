@@ -44,6 +44,35 @@ export class OpfsStorage {
     }
     return entries;
   }
+
+  async listSyncAssetKeys(prefix = "assets/"): Promise<string[]> {
+    return (await this.keys()).filter((key) => key.startsWith(prefix)).sort();
+  }
+
+  private async getFile(key: string): Promise<File> {
+    await this.Init();
+    const handle = await this.opfs.getFileHandle(
+      Buffer.from(key, "utf-8").toString("hex"),
+      { create: false },
+    );
+    return await handle.getFile();
+  }
+
+  async getSyncAssetSize(key: string): Promise<number> {
+    return (await this.getFile(key)).size;
+  }
+
+  async readSyncAssetChunk(
+    key: string,
+    offset: number,
+    length: number,
+  ): Promise<Uint8Array> {
+    const file = await this.getFile(key);
+    return new Uint8Array(
+      await file.slice(offset, offset + length).arrayBuffer(),
+    );
+  }
+
   async removeItem(key: string) {
     try {
       await this.Init();
