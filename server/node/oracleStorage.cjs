@@ -3735,6 +3735,70 @@ class OracleStorage extends SqlStorageBase {
   // sync: 변경사항 동기화 (가장 복잡한 메서드)
   // ============================================================
 
+  // Destructive storage sync must never auto-rebase. The revision is checked
+  // again while the metadata row is locked in the same transaction that will
+  // apply the replacement.
+  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+    this.assertEnabled();
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      throw new StoragePayloadError(
+        "Storage sync finalize revision must be a non-negative integer",
+      );
+    }
+    if (typeof callback !== "function") {
+      throw new StoragePayloadError("Storage sync finalize callback is required");
+    }
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.execute("SET CONSTRAINTS ALL DEFERRED");
+      const metaRow = await fetchOne(
+        conn,
+        "SELECT revision FROM system_storage_meta WHERE singleton = 1 FOR UPDATE",
+      );
+      const currentRevision = Number(metaRow?.revision) || 0;
+      if (currentRevision !== expectedRevision) {
+        throw new StorageRevisionConflictError(
+          currentRevision,
+          `Oracle data changed in another session (server revision ${currentRevision}). Refresh the sync preview before finalizing.`,
+        );
+      }
+      const nextRevision = currentRevision + 1;
+      const revisionId = await beginAuditRevision(conn, {
+        storageRevision: nextRevision,
+        databaseInitialized: true,
+        scope: "database",
+        action: "storage-sync:replace",
+      });
+      const result = await callback(conn, {
+        currentRevision,
+        nextRevision,
+        revisionId,
+      });
+      await conn.execute(
+        `UPDATE system_storage_meta
+         SET revision = :1, initialized = 1, updated_at = SYSTIMESTAMP
+         WHERE singleton = 1`,
+        [nextRevision],
+      );
+      await conn.commit();
+      return {
+        success: true,
+        revision: nextRevision,
+        revisionId,
+        ...(result || {}),
+      };
+    } catch (error) {
+      try {
+        await conn.rollback();
+      } catch {}
+      throw error;
+    } finally {
+      try {
+        await conn.close();
+      } catch {}
+    }
+  }
+
   async sync(rawPayload, options = {}) {
     this.assertEnabled();
     const onProgress =

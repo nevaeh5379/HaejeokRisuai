@@ -455,3 +455,72 @@ describe("OracleStorage persistent branch API", () => {
     }
   });
 });
+
+
+describe("Oracle storage sync finalize concurrency", () => {
+  function storageAtRevision(revision: number) {
+    const queries: string[] = [];
+    const connection = {
+      execute: vi.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes("SELECT revision FROM system_storage_meta")) {
+          return { rows: [{ REVISION: revision }] };
+        }
+        if (sql.includes("INSERT INTO system_revisions")) {
+          return { outBinds: { "6": [41] } };
+        }
+        return { rows: [] };
+      }),
+      commit: vi.fn(async () => {}),
+      rollback: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+    const storage = new OracleStorage({
+      enabled: true,
+      user: "u",
+      password: "p",
+      tnsAlias: "db",
+    }) as any;
+    storage.pool = { getConnection: vi.fn(async () => connection) };
+    return { storage, connection, queries };
+  }
+
+  it("locks and rechecks the target revision before finalize apply", async () => {
+    const { storage, connection, queries } = storageAtRevision(7);
+    const callback = vi.fn(async (_conn: unknown, context: any) => {
+      queries.push("CALLBACK");
+      expect(context).toMatchObject({
+        currentRevision: 7,
+        nextRevision: 8,
+        revisionId: 41,
+      });
+      return { applied: 2 };
+    });
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).resolves.toMatchObject({ revision: 8, revisionId: 41, applied: 2 });
+    expect(queries.findIndex((sql) => sql.includes("FOR UPDATE"))).toBeLessThan(
+      queries.indexOf("CALLBACK"),
+    );
+    expect(connection.commit).toHaveBeenCalledOnce();
+    expect(connection.rollback).not.toHaveBeenCalled();
+    expect(connection.close).toHaveBeenCalledOnce();
+  });
+
+  it("rolls back instead of rebasing a stale finalize revision", async () => {
+    const { storage, connection } = storageAtRevision(8);
+    const callback = vi.fn();
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).rejects.toMatchObject({
+      name: "StorageRevisionConflictError",
+      revision: 8,
+    });
+    expect(callback).not.toHaveBeenCalled();
+    expect(connection.rollback).toHaveBeenCalledOnce();
+    expect(connection.commit).not.toHaveBeenCalled();
+    expect(connection.close).toHaveBeenCalledOnce();
+  });
+});

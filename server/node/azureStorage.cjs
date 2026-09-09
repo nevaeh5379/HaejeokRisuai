@@ -2683,6 +2683,62 @@ class AzureStorage extends SqlStorageBase {
     return database;
   }
 
+  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+    this.assertEnabled();
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      throw new StoragePayloadError(
+        "Storage sync finalize revision must be a non-negative integer",
+      );
+    }
+    if (typeof callback !== "function") {
+      throw new StoragePayloadError("Storage sync finalize callback is required");
+    }
+    return await this.withTransaction(async (tx) => {
+      const metaRes = await tx
+        .request()
+        .query(
+          "SELECT revision FROM [system].[storage_meta] WITH (UPDLOCK, HOLDLOCK) WHERE singleton = 1",
+        );
+      const currentRevision = Number(metaRes.recordset[0]?.revision) || 0;
+      if (currentRevision !== expectedRevision) {
+        throw new StorageRevisionConflictError(currentRevision);
+      }
+      const nextRevision = currentRevision + 1;
+      const revReq = tx.request();
+      revReq.input("storage_rev", sql.BigInt, nextRevision);
+      revReq.input("db_init", sql.Bit, 1);
+      revReq.input("scope", sql.NVarChar(32), "database");
+      revReq.input("action", sql.NVarChar(64), "storage-sync:replace");
+      const revRes = await revReq.query(`
+        INSERT INTO [system].[revisions] (storage_revision, database_initialized, scope, action)
+        OUTPUT INSERTED.id
+        VALUES (@storage_rev, @db_init, @scope, @action);
+      `);
+      const revisionId = revRes.recordset[0].id;
+      const ctxReq = tx.request();
+      ctxReq.input("rev_id", sql.NVarChar(128), String(revisionId));
+      await ctxReq.query(
+        `EXEC sp_set_session_context @key = N'risu_revision_id', @value = @rev_id;`,
+      );
+      const result = await callback(tx, {
+        currentRevision,
+        nextRevision,
+        revisionId,
+      });
+      const updateReq = tx.request();
+      updateReq.input("next_rev", sql.BigInt, nextRevision);
+      await updateReq.query(
+        "UPDATE [system].[storage_meta] SET revision = @next_rev, initialized = 1, updated_at = SYSDATETIMEOFFSET() WHERE singleton = 1",
+      );
+      return {
+        success: true,
+        revision: nextRevision,
+        revisionId: String(revisionId),
+        ...(result || {}),
+      };
+    });
+  }
+
   async sync(rawPayload, options = {}) {
     const payload = validateSyncPayload(rawPayload);
     const { onProgress } = options;
