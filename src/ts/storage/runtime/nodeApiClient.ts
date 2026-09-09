@@ -1,0 +1,98 @@
+import type { StorageProfile } from "./storageProfile";
+
+export const CLIENT_STORAGE_API_VERSION = 1;
+
+export interface NodeClientCapabilities {
+  apiVersion: number;
+  features: {
+    sqlStorage: boolean;
+    assetStorage: boolean;
+    dataChangeEvents: boolean;
+    modelExecution?: boolean;
+    vectorSearch?: boolean;
+  };
+}
+
+export type NodeApiFetch = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export class NodeApiCompatibilityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NodeApiCompatibilityError";
+  }
+}
+
+function validateCapabilities(value: unknown): NodeClientCapabilities {
+  if (!value || typeof value !== "object") {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned invalid capabilities.",
+    );
+  }
+  const capabilities = value as Partial<NodeClientCapabilities>;
+  if (capabilities.apiVersion !== CLIENT_STORAGE_API_VERSION) {
+    throw new NodeApiCompatibilityError(
+      `The storage server API is incompatible (server ${String(capabilities.apiVersion ?? "unknown")}, client ${CLIENT_STORAGE_API_VERSION}). Upgrade the server before connecting.`,
+    );
+  }
+  if (
+    !capabilities.features ||
+    capabilities.features.sqlStorage !== true ||
+    capabilities.features.assetStorage !== true ||
+    capabilities.features.dataChangeEvents !== true
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server does not provide the required SQL, asset, and data-change features.",
+    );
+  }
+  return capabilities as NodeClientCapabilities;
+}
+
+export class NodeApiClient {
+  readonly baseUrl: string;
+  private readonly fetcher: NodeApiFetch;
+
+  constructor(
+    profile: Extract<StorageProfile, { mode: "remote" }>,
+    fetcher: NodeApiFetch = (input, init) => fetch(input, init),
+  ) {
+    this.baseUrl = profile.baseUrl;
+    this.fetcher = fetcher;
+  }
+
+  resolve(path: string): string {
+    if (!path.startsWith("/")) {
+      throw new TypeError("Node API paths must start with '/'.");
+    }
+    const url = new URL(path, `${this.baseUrl}/`);
+    if (url.origin !== this.baseUrl) {
+      throw new TypeError("Node API paths must stay on the configured server.");
+    }
+    return url.toString();
+  }
+
+  request(path: string, init?: RequestInit): Promise<Response> {
+    return this.fetcher(this.resolve(path), init);
+  }
+
+  async getCapabilities(signal?: AbortSignal): Promise<NodeClientCapabilities> {
+    const response = await this.request("/api/client-capabilities", {
+      method: "GET",
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new NodeApiCompatibilityError(
+          "This server is too old for remote storage. Upgrade the server before connecting.",
+        );
+      }
+      throw new Error(
+        `Could not read storage server capabilities (HTTP ${response.status}).`,
+      );
+    }
+    return validateCapabilities(await response.json());
+  }
+}
