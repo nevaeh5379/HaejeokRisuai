@@ -221,4 +221,66 @@ describe("NodeApiClient", () => {
       message: "expected offset 4",
     });
   });
+
+  it("plans and uploads the resumable SQL stream", async () => {
+    const digest = "c".repeat(64);
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          formatVersion: 1,
+          size: 3,
+          recordCount: 1,
+          sha256: digest,
+          offset: 0,
+          state: "pending",
+          status: "receiving-sql",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          formatVersion: 1,
+          size: 3,
+          recordCount: 1,
+          sha256: digest,
+          offset: 3,
+          state: "ready",
+          status: "sql-ready",
+        }),
+      );
+    const client = new NodeApiClient(profile, fetcher);
+    await expect(
+      client.planStorageSyncSql(
+        "session-1",
+        { formatVersion: 1, size: 3, recordCount: 1, sha256: digest },
+        "sync-auth",
+      ),
+    ).resolves.toMatchObject({ offset: 0, state: "pending" });
+    await expect(
+      client.uploadStorageSyncSqlChunk(
+        "session-1",
+        0,
+        new Uint8Array([1, 2, 3]),
+        "sync-auth",
+      ),
+    ).resolves.toMatchObject({ offset: 3, state: "ready" });
+    expect(fetcher.mock.calls[1][0]).toContain("/sql?offset=0");
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "PUT" });
+  });
+
+  it("preserves structured SQL staging errors", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json(
+        { error: "SQL checksum mismatch", code: "sql_checksum_mismatch" },
+        { status: 422 },
+      ),
+    );
+    await expect(
+      client.getStorageSyncSqlPlan("session-1", "sync-auth"),
+    ).rejects.toMatchObject({
+      code: "sql_checksum_mismatch",
+      status: 422,
+      message: "SQL checksum mismatch",
+    });
+  });
 });

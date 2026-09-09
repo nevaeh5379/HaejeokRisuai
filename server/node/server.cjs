@@ -108,6 +108,10 @@ const {
   StorageSyncAssetError,
   StorageSyncStagingStore,
 } = require("./storageSyncStaging.cjs");
+const {
+  StorageSyncSqlError,
+  StorageSyncSqlStagingStore,
+} = require("./storageSyncSqlStaging.cjs");
 const storageSyncSessions = new StorageSyncSessionManager();
 const {
   describeStorageTarget,
@@ -169,10 +173,11 @@ function isStreamingAssetWriteRequest(req) {
   );
 }
 
-function isStorageSyncAssetChunkRequest(req) {
+function isStorageSyncChunkRequest(req) {
   return (
     req.method === "PUT" &&
-    /^\/api\/storage-sync\/sessions\/[^/]+\/assets\/[^/]+$/.test(req.path)
+    (/^\/api\/storage-sync\/sessions\/[^/]+\/assets\/[^/]+$/.test(req.path) ||
+      /^\/api\/storage-sync\/sessions\/[^/]+\/sql$/.test(req.path))
   );
 }
 
@@ -349,7 +354,7 @@ app.use((req, res, next) => {
   defaultJsonParser(req, res, next);
 });
 app.use((req, res, next) => {
-  if (isStreamingAssetWriteRequest(req) || isStorageSyncAssetChunkRequest(req)) {
+  if (isStreamingAssetWriteRequest(req) || isStorageSyncChunkRequest(req)) {
     return next();
   }
   rawBodyParser(req, res, next);
@@ -377,6 +382,9 @@ if (!existsSync(savePath)) {
   mkdirSync(savePath);
 }
 const storageSyncStaging = new StorageSyncStagingStore(
+  path.join(savePath, "__storage_sync"),
+);
+const storageSyncSqlStaging = new StorageSyncSqlStagingStore(
   path.join(savePath, "__storage_sync"),
 );
 configureVectorIndexPersistence(path.join(savePath, "__vector_indexes"));
@@ -2757,7 +2765,6 @@ app.get(
   },
 );
 
-
 app.post(
   "/api/storage-sync/sessions",
   authenticatedRouteLimiter,
@@ -2785,7 +2792,9 @@ app.post(
         return;
       }
       if (error instanceof StorageSyncValidationError) {
-        res.status(400).send({ error: error.message, code: "invalid_sync_session" });
+        res
+          .status(400)
+          .send({ error: error.message, code: "invalid_sync_session" });
         return;
       }
       next(error);
@@ -2800,7 +2809,9 @@ app.get(
     if (!(await checkAuth(req, res))) return;
     const session = storageSyncSessions.get(req.params.sessionId);
     if (!session) {
-      res.status(404).send({ error: "Storage sync session not found or expired" });
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
       return;
     }
     res.send(session);
@@ -2827,7 +2838,9 @@ app.post(
     if (!(await checkAuth(req, res))) return;
     const session = storageSyncSessions.get(req.params.sessionId);
     if (!session) {
-      res.status(404).send({ error: "Storage sync session not found or expired" });
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
       return;
     }
     try {
@@ -2854,7 +2867,9 @@ app.get(
     if (!(await checkAuth(req, res))) return;
     const session = storageSyncSessions.get(req.params.sessionId);
     if (!session) {
-      res.status(404).send({ error: "Storage sync session not found or expired" });
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
       return;
     }
     try {
@@ -2877,11 +2892,15 @@ app.put(
   async (req, res, next) => {
     const session = storageSyncSessions.get(req.params.sessionId);
     if (!session) {
-      res.status(404).send({ error: "Storage sync session not found or expired" });
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
       return;
     }
     if (!req.is("application/octet-stream") || !Buffer.isBuffer(req.body)) {
-      res.status(415).send({ error: "Content-Type must be application/octet-stream" });
+      res
+        .status(415)
+        .send({ error: "Content-Type must be application/octet-stream" });
       return;
     }
     try {
@@ -2891,10 +2910,113 @@ app.put(
         Number(req.query.offset),
         req.body,
       );
-      res.send({ id: asset.id, offset: asset.offset, state: asset.state, status: session.status });
+      res.send({
+        id: asset.id,
+        offset: asset.offset,
+        state: asset.state,
+        status: session.status,
+      });
     } catch (error) {
       if (error instanceof StorageSyncAssetError) {
         sendStorageSyncAssetError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+function sendStorageSyncSqlError(res, error) {
+  const code = error.code || "storage_sync_sql_error";
+  const status =
+    code === "offset_mismatch" ||
+    code === "sql_upload_in_progress" ||
+    code === "assets_not_ready"
+      ? 409
+      : code === "sql_checksum_mismatch"
+        ? 422
+        : 400;
+  res.status(status).send({ error: error.message, code });
+}
+
+app.post(
+  "/api/storage-sync/sessions/:sessionId/sql/plan",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    try {
+      res.send(await storageSyncSqlStaging.plan(session, req.body));
+    } catch (error) {
+      if (error instanceof StorageSyncSqlError) {
+        sendStorageSyncSqlError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.get(
+  "/api/storage-sync/sessions/:sessionId/sql/plan",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    try {
+      res.send(storageSyncSqlStaging.getPlan(session));
+    } catch (error) {
+      if (error instanceof StorageSyncSqlError) {
+        sendStorageSyncSqlError(res, error);
+        return;
+      }
+      throw error;
+    }
+  },
+);
+
+app.put(
+  "/api/storage-sync/sessions/:sessionId/sql",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  storageSyncChunkParser,
+  async (req, res, next) => {
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    if (!req.is("application/octet-stream") || !Buffer.isBuffer(req.body)) {
+      res
+        .status(415)
+        .send({ error: "Content-Type must be application/octet-stream" });
+      return;
+    }
+    try {
+      res.send(
+        await storageSyncSqlStaging.writeChunk(
+          session,
+          Number(req.query.offset),
+          req.body,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof StorageSyncSqlError) {
+        sendStorageSyncSqlError(res, error);
         return;
       }
       next(error);
@@ -2909,7 +3031,9 @@ app.delete(
     if (!(await checkAuth(req, res))) return;
     const session = storageSyncSessions.cancel(req.params.sessionId);
     if (!session) {
-      res.status(404).send({ error: "Storage sync session not found or expired" });
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
       return;
     }
     try {

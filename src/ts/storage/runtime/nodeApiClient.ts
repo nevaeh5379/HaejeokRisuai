@@ -30,7 +30,12 @@ export interface NodeStorageSyncSummary {
 
 export type StorageSyncDirection = "local-to-remote" | "remote-to-local";
 export type NodeStorageSyncSessionStatus =
-  "created" | "planning-assets" | "receiving-assets" | "assets-ready";
+  | "created"
+  | "planning-assets"
+  | "receiving-assets"
+  | "assets-ready"
+  | "receiving-sql"
+  | "sql-ready";
 export type NodeStorageSyncAssetState =
   "skipped" | "pending" | "receiving" | "ready";
 
@@ -76,6 +81,21 @@ export interface NodeStorageSyncAssetChunkResult {
   status: NodeStorageSyncSessionStatus;
 }
 
+export type NodeStorageSyncSqlState = "pending" | "receiving" | "ready";
+
+export interface NodeStorageSyncSqlPlanInput {
+  formatVersion: 1;
+  size: number;
+  recordCount: number;
+  sha256: string;
+}
+
+export interface NodeStorageSyncSqlPlan extends NodeStorageSyncSqlPlanInput {
+  offset: number;
+  state: NodeStorageSyncSqlState;
+  status: NodeStorageSyncSessionStatus;
+}
+
 export class NodeStorageSyncRevisionConflictError extends Error {
   constructor(readonly currentRevision: number) {
     super(
@@ -93,6 +113,17 @@ export class NodeStorageSyncAssetError extends Error {
   ) {
     super(message);
     this.name = "NodeStorageSyncAssetError";
+  }
+}
+
+export class NodeStorageSyncSqlError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "NodeStorageSyncSqlError";
   }
 }
 
@@ -172,6 +203,8 @@ function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
     "planning-assets",
     "receiving-assets",
     "assets-ready",
+    "receiving-sql",
+    "sql-ready",
   ];
   if (
     !session ||
@@ -263,6 +296,27 @@ function validateStorageSyncAssetChunkResult(
   return result as NodeStorageSyncAssetChunkResult;
 }
 
+function validateStorageSyncSqlPlan(value: unknown): NodeStorageSyncSqlPlan {
+  const plan = value as Partial<NodeStorageSyncSqlPlan> | null;
+  if (
+    !plan ||
+    plan.formatVersion !== 1 ||
+    !isNonNegativeSafeInteger(plan.size) ||
+    !isNonNegativeSafeInteger(plan.recordCount) ||
+    typeof plan.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(plan.sha256) ||
+    !isNonNegativeSafeInteger(plan.offset) ||
+    Number(plan.offset) > Number(plan.size) ||
+    !["pending", "receiving", "ready"].includes(String(plan.state)) ||
+    !["receiving-sql", "sql-ready"].includes(String(plan.status))
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid storage sync SQL plan.",
+    );
+  }
+  return plan as NodeStorageSyncSqlPlan;
+}
+
 async function storageSyncAssetError(response: Response): Promise<never> {
   const body = await response.json().catch(() => ({}));
   throw new NodeStorageSyncAssetError(
@@ -270,6 +324,17 @@ async function storageSyncAssetError(response: Response): Promise<never> {
       ? body.error
       : `Storage sync asset request failed (HTTP ${response.status}).`,
     typeof body?.code === "string" ? body.code : "storage_sync_asset_error",
+    response.status,
+  );
+}
+
+async function storageSyncSqlError(response: Response): Promise<never> {
+  const body = await response.json().catch(() => ({}));
+  throw new NodeStorageSyncSqlError(
+    typeof body?.error === "string"
+      ? body.error
+      : `Storage sync SQL request failed (HTTP ${response.status}).`,
+    typeof body?.code === "string" ? body.code : "storage_sync_sql_error",
     response.status,
   );
 }
@@ -448,6 +513,65 @@ export class NodeApiClient {
     );
     if (!response.ok) return await storageSyncAssetError(response);
     return validateStorageSyncAssetChunkResult(await response.json());
+  }
+
+  async planStorageSyncSql(
+    id: string,
+    plan: NodeStorageSyncSqlPlanInput,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlPlan> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/sql/plan`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify(plan),
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncSqlError(response);
+    return validateStorageSyncSqlPlan(await response.json());
+  }
+
+  async getStorageSyncSqlPlan(
+    id: string,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlPlan> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/sql/plan`,
+      { cache: "no-store", headers: { "risu-auth": auth }, signal },
+    );
+    if (!response.ok) return await storageSyncSqlError(response);
+    return validateStorageSyncSqlPlan(await response.json());
+  }
+
+  async uploadStorageSyncSqlChunk(
+    id: string,
+    offset: number,
+    data: Uint8Array,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlPlan> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/sql?offset=${encodeURIComponent(String(offset))}`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/octet-stream",
+          "risu-auth": auth,
+        },
+        body: data as BodyInit,
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncSqlError(response);
+    return validateStorageSyncSqlPlan(await response.json());
   }
 
   async cancelStorageSyncSession(id: string, auth: string): Promise<void> {

@@ -9,6 +9,8 @@ import {
   type NodeStorageSyncAssetChunkResult,
   type NodeStorageSyncAssetManifestEntry,
   type NodeStorageSyncAssetPlan,
+  type NodeStorageSyncSqlPlan,
+  type NodeStorageSyncSqlPlanInput,
   type NodeStorageSyncSession,
   type NodeStorageSyncSummary,
   type StorageSyncDirection,
@@ -1476,6 +1478,45 @@ export class NodeStorage {
     return await this.apiClient.uploadStorageSyncAssetChunk(
       id,
       assetId,
+      offset,
+      data,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async planStorageSyncSql(
+    id: string,
+    plan: NodeStorageSyncSqlPlanInput,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlPlan> {
+    return await this.apiClient.planStorageSyncSql(
+      id,
+      plan,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async getStorageSyncSqlPlan(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlPlan> {
+    return await this.apiClient.getStorageSyncSqlPlan(
+      id,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async uploadStorageSyncSqlChunk(
+    id: string,
+    offset: number,
+    data: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSqlPlan> {
+    return await this.apiClient.uploadStorageSyncSqlChunk(
+      id,
       offset,
       data,
       await this.getCachedAuth(),
