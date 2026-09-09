@@ -1,9 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod sqlite_transaction;
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
+mod sqlite_transaction;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -13,16 +13,8 @@ fn greet(name: &str) -> String {
 use base64::{engine::general_purpose, Engine as _};
 use oauth2::basic::BasicClient;
 use oauth2::{
-    AuthorizationCode,
-    AuthUrl,
-    ClientId,
-    ClientSecret,
-    CsrfToken,
-    PkceCodeChallenge,
-    RedirectUrl,
-    Scope,
-    TokenResponse,
-    TokenUrl
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
+    Scope, TokenResponse, TokenUrl,
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
@@ -30,13 +22,16 @@ use serde_json::json;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Write;
-use std::{path::Path, time::Duration};
 use std::sync::{Arc, Mutex};
-use tauri::path::BaseDirectory;
-use tauri::{Listener, Manager};
-use tauri::{AppHandle, Emitter};
+use std::{path::Path, time::Duration};
 #[cfg(target_os = "macos")]
-use tauri::menu::{MenuItemBuilder, MenuItemKind, Submenu, SubmenuBuilder};
+use tauri::menu::{
+    AboutMetadata, MenuBuilder, MenuItemBuilder, MenuItemKind, PredefinedMenuItem, Submenu,
+    SubmenuBuilder,
+};
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Emitter};
+use tauri::{Listener, Manager};
 
 #[tauri::command]
 fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), String> {
@@ -120,7 +115,10 @@ async fn native_request(url: String, body: String, header: String, method: Strin
                 encoded, header_json, status
             )
         }
-        Err(e) => format!(r#"{{"success":false,"body":"{}","status":400}}"#, e.to_string()),
+        Err(e) => format!(
+            r#"{{"success":false,"body":"{}","status":400}}"#,
+            e.to_string()
+        ),
     }
 }
 
@@ -130,11 +128,20 @@ use oauth2::{
     StandardTokenResponse,
 };
 
-use oauth2::basic::{
-    BasicErrorResponseType, BasicTokenType,
-};
+use oauth2::basic::{BasicErrorResponseType, BasicTokenType};
 
-fn get_oauth_client() -> oauth2::Client<StandardErrorResponse<BasicErrorResponseType>, StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>, StandardTokenIntrospectionResponse<EmptyExtraTokenFields, BasicTokenType>, StandardRevocableToken, StandardErrorResponse<RevocationErrorResponseType>, EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
+fn get_oauth_client() -> oauth2::Client<
+    StandardErrorResponse<BasicErrorResponseType>,
+    StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
+    StandardTokenIntrospectionResponse<EmptyExtraTokenFields, BasicTokenType>,
+    StandardRevocableToken,
+    StandardErrorResponse<RevocationErrorResponseType>,
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointSet,
+> {
     let auth_url = AuthUrl::new("http://authorize".to_string()).unwrap();
     let token_url = TokenUrl::new("http://token".to_string()).unwrap();
     let redirection_url = RedirectUrl::new("http://redirect".to_string()).unwrap();
@@ -148,10 +155,8 @@ fn get_oauth_client() -> oauth2::Client<StandardErrorResponse<BasicErrorResponse
     return client;
 }
 
-
 #[tauri::command]
 async fn oauth_login(app: AppHandle) -> Result<String, String> {
-
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
     let client = get_oauth_client();
     // Write pkce_verifier to a file or session for later use.
@@ -172,7 +177,7 @@ async fn oauth_login(app: AppHandle) -> Result<String, String> {
         .build()
         .expect("Client should build");
 
-    app.emit("oauth_open_url",auth_url.to_string()).unwrap();
+    app.emit("oauth_open_url", auth_url.to_string()).unwrap();
 
     let auth_code = Arc::new(Mutex::new(String::new()));
     let auth_code_clone = Arc::clone(&auth_code);
@@ -206,10 +211,8 @@ async fn oauth_login(app: AppHandle) -> Result<String, String> {
         .request_async(&http_client)
         .await;
 
-
     return Ok(token_result.unwrap().access_token().secret().to_string());
 }
-
 
 #[tauri::command]
 fn check_auth(fpath: String, auth: String) -> bool {
@@ -493,50 +496,39 @@ async fn streamed_fetch(
     let timeout_secs = timeout_secs.unwrap_or(240);
     let builder: reqwest::RequestBuilder;
     if method == "POST" {
-
         let body_decoded = general_purpose::STANDARD.decode(body.as_bytes()).unwrap();
 
         builder = client
-        .post(&url)
-        .headers(headers)
-        .timeout(Duration::from_secs(timeout_secs))
-        .body(body_decoded)
-    }
-    else if method == "GET" {
+            .post(&url)
+            .headers(headers)
+            .timeout(Duration::from_secs(timeout_secs))
+            .body(body_decoded)
+    } else if method == "GET" {
         builder = client
-        .get(&url)
-        .headers(headers)
-        .timeout(Duration::from_secs(timeout_secs));
-    }
-    else if method == "PUT" {
-
+            .get(&url)
+            .headers(headers)
+            .timeout(Duration::from_secs(timeout_secs));
+    } else if method == "PUT" {
         let body_decoded = general_purpose::STANDARD.decode(body.as_bytes()).unwrap();
 
         builder = client
-        .put(&url)
-        .headers(headers)
-        .timeout(Duration::from_secs(timeout_secs))
-        .body(body_decoded)
-    }
-    else if method == "DELETE" {
-
+            .put(&url)
+            .headers(headers)
+            .timeout(Duration::from_secs(timeout_secs))
+            .body(body_decoded)
+    } else if method == "DELETE" {
         let body_decoded = general_purpose::STANDARD.decode(body.as_bytes()).unwrap();
 
         builder = client
-        .delete(&url)
-        .headers(headers)
-        .timeout(Duration::from_secs(timeout_secs))
-        .body(body_decoded)
-    }
-    else {
+            .delete(&url)
+            .headers(headers)
+            .timeout(Duration::from_secs(timeout_secs))
+            .body(body_decoded)
+    } else {
         return format!(r#"{{"success":false, body:"Invalid method"}}"#);
     }
 
-
-
-    let response = builder
-        .send()
-        .await;
+    let response = builder.send().await;
 
     match response {
         Ok(mut resp) => {
@@ -590,7 +582,6 @@ async fn streamed_fetch(
     }
 }
 
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AppMenuEntry {
@@ -604,6 +595,27 @@ struct AppNavigationMenuModel {
     open_tabs: Vec<AppMenuEntry>,
     recent_chats: Vec<AppMenuEntry>,
     recent_bots: Vec<AppMenuEntry>,
+}
+
+#[cfg(target_os = "macos")]
+fn locale_uses_korean(locale: Option<&str>) -> bool {
+    locale
+        .and_then(|locale| locale.split(['-', '_']).next())
+        .is_some_and(|language| language.eq_ignore_ascii_case("ko"))
+}
+
+#[cfg(target_os = "macos")]
+fn app_menu_uses_korean() -> bool {
+    locale_uses_korean(tauri_plugin_os::locale().as_deref())
+}
+
+#[cfg(target_os = "macos")]
+fn app_menu_label(korean: bool, english: &'static str, korean_text: &'static str) -> &'static str {
+    if korean {
+        korean_text
+    } else {
+        english
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -665,12 +677,13 @@ fn replace_app_menu_entries(
 fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        let korean = app_menu_uses_korean();
         replace_app_menu_entries(
             &app,
             "risu.menu.chat.open-tabs",
             &model.open_tabs,
             "risu.empty.open-tabs",
-            "No Open Tabs",
+            app_menu_label(korean, "No Open Tabs", "열린 탭 없음"),
         )
         .map_err(|e| e.to_string())?;
         replace_app_menu_entries(
@@ -678,7 +691,7 @@ fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> 
             "risu.menu.chat.recent-chats",
             &model.recent_chats,
             "risu.empty.recent-chats",
-            "No Recent Chats",
+            app_menu_label(korean, "No Recent Chats", "최근 채팅 없음"),
         )
         .map_err(|e| e.to_string())?;
         replace_app_menu_entries(
@@ -686,7 +699,7 @@ fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> 
             "risu.menu.bots.recent",
             &model.recent_bots,
             "risu.empty.recent-bots",
-            "No Recent Bots",
+            app_menu_label(korean, "No Recent Bots", "최근 봇 없음"),
         )
         .map_err(|e| e.to_string())?;
     }
@@ -699,67 +712,236 @@ fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> 
 
 #[cfg(target_os = "macos")]
 fn install_haejeok_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
-    let no_tabs = MenuItemBuilder::with_id("risu.empty.open-tabs", "No Open Tabs")
-        .enabled(false)
-        .build(app)?;
-    let open_tabs = SubmenuBuilder::with_id(app, "risu.menu.chat.open-tabs", "Open Tabs")
-        .item(&no_tabs)
+    let korean = app_menu_uses_korean();
+    let label = |english, korean_text| app_menu_label(korean, english, korean_text);
+    let package = app.package_info();
+    let app_name = package.name.clone();
+    let about_metadata = AboutMetadata {
+        name: Some(app_name.clone()),
+        version: Some(package.version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        authors: app
+            .config()
+            .bundle
+            .publisher
+            .clone()
+            .map(|publisher| vec![publisher]),
+        ..Default::default()
+    };
+
+    let about_text = if korean {
+        format!("{app_name}에 관하여")
+    } else {
+        format!("About {app_name}")
+    };
+    let hide_text = if korean {
+        format!("{app_name} 가리기")
+    } else {
+        format!("Hide {app_name}")
+    };
+    let quit_text = if korean {
+        format!("{app_name} 종료")
+    } else {
+        format!("Quit {app_name}")
+    };
+    let about = PredefinedMenuItem::about(app, Some(&about_text), Some(about_metadata))?;
+    let app_services = PredefinedMenuItem::services(app, Some(label("Services", "서비스")))?;
+    let hide = PredefinedMenuItem::hide(app, Some(&hide_text))?;
+    let hide_others =
+        PredefinedMenuItem::hide_others(app, Some(label("Hide Others", "기타 가리기")))?;
+    let quit = PredefinedMenuItem::quit(app, Some(&quit_text))?;
+    let app_menu = SubmenuBuilder::new(app, &app_name)
+        .item(&about)
+        .separator()
+        .item(&app_services)
+        .separator()
+        .item(&hide)
+        .item(&hide_others)
+        .separator()
+        .item(&quit)
         .build()?;
-    let no_recent_chats = MenuItemBuilder::with_id("risu.empty.recent-chats", "No Recent Chats")
-        .enabled(false)
-        .build(app)?;
-    let recent_chats = SubmenuBuilder::with_id(app, "risu.menu.chat.recent-chats", "Recent Chats")
-        .item(&no_recent_chats)
+
+    let close_window =
+        PredefinedMenuItem::close_window(app, Some(label("Close Window", "윈도우 닫기")))?;
+    let file_menu = SubmenuBuilder::new(app, label("File", "파일"))
+        .item(&close_window)
         .build()?;
-    let chat_menu = SubmenuBuilder::with_id(app, "risu.menu.chat", "Chat")
+
+    let undo = PredefinedMenuItem::undo(app, Some(label("Undo", "실행 취소")))?;
+    let redo = PredefinedMenuItem::redo(app, Some(label("Redo", "다시 실행")))?;
+    let cut = PredefinedMenuItem::cut(app, Some(label("Cut", "오려두기")))?;
+    let copy = PredefinedMenuItem::copy(app, Some(label("Copy", "복사")))?;
+    let paste = PredefinedMenuItem::paste(app, Some(label("Paste", "붙여넣기")))?;
+    let select_all = PredefinedMenuItem::select_all(app, Some(label("Select All", "모두 선택")))?;
+    let edit_menu = SubmenuBuilder::new(app, label("Edit", "편집"))
+        .item(&undo)
+        .item(&redo)
+        .separator()
+        .item(&cut)
+        .item(&copy)
+        .item(&paste)
+        .item(&select_all)
+        .build()?;
+
+    let fullscreen =
+        PredefinedMenuItem::fullscreen(app, Some(label("Toggle Full Screen", "전체 화면 전환")))?;
+    let view_menu = SubmenuBuilder::new(app, label("View", "보기"))
+        .item(&fullscreen)
+        .build()?;
+
+    let no_tabs = MenuItemBuilder::with_id(
+        "risu.empty.open-tabs",
+        label("No Open Tabs", "열린 탭 없음"),
+    )
+    .enabled(false)
+    .build(app)?;
+    let open_tabs = SubmenuBuilder::with_id(
+        app,
+        "risu.menu.chat.open-tabs",
+        label("Open Tabs", "열린 탭"),
+    )
+    .item(&no_tabs)
+    .build()?;
+    let no_recent_chats = MenuItemBuilder::with_id(
+        "risu.empty.recent-chats",
+        label("No Recent Chats", "최근 채팅 없음"),
+    )
+    .enabled(false)
+    .build(app)?;
+    let recent_chats = SubmenuBuilder::with_id(
+        app,
+        "risu.menu.chat.recent-chats",
+        label("Recent Chats", "최근 채팅"),
+    )
+    .item(&no_recent_chats)
+    .build()?;
+    let chat_menu = SubmenuBuilder::with_id(app, "risu.menu.chat", label("Chat", "채팅"))
         .items(&[&open_tabs, &recent_chats])
         .build()?;
 
-    let no_recent_bots = MenuItemBuilder::with_id("risu.empty.recent-bots", "No Recent Bots")
-        .enabled(false)
+    let no_recent_bots = MenuItemBuilder::with_id(
+        "risu.empty.recent-bots",
+        label("No Recent Bots", "최근 봇 없음"),
+    )
+    .enabled(false)
+    .build(app)?;
+    let recent_bots = SubmenuBuilder::with_id(
+        app,
+        "risu.menu.bots.recent",
+        label("Recent Bots", "최근 봇"),
+    )
+    .item(&no_recent_bots)
+    .build()?;
+    let bot_settings =
+        MenuItemBuilder::with_id("risu.bots.settings", label("Bot Settings…", "봇 설정…"))
+            .accelerator("CmdOrCtrl+Shift+B")
+            .build(app)?;
+    let personas = MenuItemBuilder::with_id("risu.bots.personas", label("Personas…", "페르소나…"))
         .build(app)?;
-    let recent_bots = SubmenuBuilder::with_id(app, "risu.menu.bots.recent", "Recent Bots")
-        .item(&no_recent_bots)
-        .build()?;
-    let bot_settings = MenuItemBuilder::with_id("risu.bots.settings", "Bot Settings…")
-        .accelerator("CmdOrCtrl+Shift+B")
-        .build(app)?;
-    let personas = MenuItemBuilder::with_id("risu.bots.personas", "Personas…").build(app)?;
-    let lorebook = MenuItemBuilder::with_id("risu.bots.lorebook", "Global Lorebook…").build(app)?;
-    let prompts = MenuItemBuilder::with_id("risu.bots.prompts", "Prompt Templates…").build(app)?;
-    let bots = SubmenuBuilder::with_id(app, "risu.menu.bots", "Bots")
+    let lorebook = MenuItemBuilder::with_id(
+        "risu.bots.lorebook",
+        label("Global Lorebook…", "전역 로어북…"),
+    )
+    .build(app)?;
+    let prompts = MenuItemBuilder::with_id(
+        "risu.bots.prompts",
+        label("Prompt Templates…", "프롬프트 템플릿…"),
+    )
+    .build(app)?;
+    let bots = SubmenuBuilder::with_id(app, "risu.menu.bots", label("Bots", "봇"))
         .items(&[&recent_bots, &bot_settings, &personas, &lorebook, &prompts])
         .build()?;
 
-    let modules = MenuItemBuilder::with_id("risu.modules.settings", "Module Settings…")
-        .accelerator("CmdOrCtrl+Shift+M")
-        .build(app)?;
-    let plugins =
-        MenuItemBuilder::with_id("risu.modules.plugins", "Plugin Settings…").build(app)?;
-    let modules_menu = SubmenuBuilder::with_id(app, "risu.menu.modules", "Modules")
+    let modules = MenuItemBuilder::with_id(
+        "risu.modules.settings",
+        label("Module Settings…", "모듈 설정…"),
+    )
+    .accelerator("CmdOrCtrl+Shift+M")
+    .build(app)?;
+    let plugins = MenuItemBuilder::with_id(
+        "risu.modules.plugins",
+        label("Plugin Settings…", "플러그인 설정…"),
+    )
+    .build(app)?;
+    let modules_menu = SubmenuBuilder::with_id(app, "risu.menu.modules", label("Modules", "모듈"))
         .items(&[&modules, &plugins])
         .build()?;
 
-    let settings = MenuItemBuilder::with_id("risu.tools.settings", "Settings…")
+    let settings = MenuItemBuilder::with_id("risu.tools.settings", label("Settings…", "설정…"))
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
-    let advanced =
-        MenuItemBuilder::with_id("risu.tools.advanced", "Advanced Settings…").build(app)?;
-    let hotkeys = MenuItemBuilder::with_id("risu.tools.hotkeys", "Hotkey Settings…").build(app)?;
-    let account_files =
-        MenuItemBuilder::with_id("risu.tools.account-files", "Account & Files…").build(app)?;
-    let tools = SubmenuBuilder::with_id(app, "risu.menu.tools", "Tools")
+    let advanced = MenuItemBuilder::with_id(
+        "risu.tools.advanced",
+        label("Advanced Settings…", "고급 설정…"),
+    )
+    .build(app)?;
+    let hotkeys = MenuItemBuilder::with_id(
+        "risu.tools.hotkeys",
+        label("Hotkey Settings…", "단축키 설정…"),
+    )
+    .build(app)?;
+    let account_files = MenuItemBuilder::with_id(
+        "risu.tools.account-files",
+        label("Account & Files…", "계정 및 파일…"),
+    )
+    .build(app)?;
+    let tools = SubmenuBuilder::with_id(app, "risu.menu.tools", label("Tools", "도구"))
         .items(&[&settings, &advanced, &hotkeys, &account_files])
         .build()?;
 
-    if let Some(menu) = app.menu() {
-        let insert_at = menu.items()?.len().saturating_sub(2);
-        menu.insert(&chat_menu, insert_at)?;
-        menu.insert(&bots, insert_at + 1)?;
-        menu.insert(&modules_menu, insert_at + 2)?;
-        menu.insert(&tools, insert_at + 3)?;
-    }
+    let minimize = PredefinedMenuItem::minimize(app, Some(label("Minimize", "최소화")))?;
+    let maximize = PredefinedMenuItem::maximize(app, Some(label("Zoom", "확대/축소")))?;
+    let window_close =
+        PredefinedMenuItem::close_window(app, Some(label("Close Window", "윈도우 닫기")))?;
+    let window_menu = SubmenuBuilder::with_id(
+        app,
+        tauri::menu::WINDOW_SUBMENU_ID,
+        label("Window", "윈도우"),
+    )
+    .item(&minimize)
+    .item(&maximize)
+    .separator()
+    .item(&window_close)
+    .build()?;
+    let help_menu =
+        SubmenuBuilder::with_id(app, tauri::menu::HELP_SUBMENU_ID, label("Help", "도움말"))
+            .build()?;
+
+    let menu = MenuBuilder::new(app)
+        .items(&[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &chat_menu,
+            &bots,
+            &modules_menu,
+            &tools,
+            &window_menu,
+            &help_menu,
+        ])
+        .build()?;
+    let _ = app.set_menu(menu)?;
     Ok(())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod app_menu_tests {
+    use super::locale_uses_korean;
+
+    #[test]
+    fn recognizes_korean_bcp47_locales() {
+        assert!(locale_uses_korean(Some("ko")));
+        assert!(locale_uses_korean(Some("ko-KR")));
+        assert!(locale_uses_korean(Some("KO_kr")));
+    }
+
+    #[test]
+    fn leaves_non_korean_or_missing_locales_in_english() {
+        assert!(!locale_uses_korean(Some("en-KR")));
+        assert!(!locale_uses_korean(Some("ja-JP")));
+        assert!(!locale_uses_korean(None));
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -972,15 +1154,15 @@ async fn toggle_sidebar_menu_window(
 
     let suppress_reopen = !first_open
         && state
-        .last_blur_hide
-        .lock()
-        .map(|mut hidden| {
-            hidden
-                .remove(&popup_label)
-                .map(|at| at.elapsed() < Duration::from_millis(300))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
+            .last_blur_hide
+            .lock()
+            .map(|mut hidden| {
+                hidden
+                    .remove(&popup_label)
+                    .map(|at| at.elapsed() < Duration::from_millis(300))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
     if suppress_reopen {
         eprintln!("[TauriSidebarMenu] Suppressed blur-trigger reopen {popup_label}");
         return Ok("closed".to_string());
