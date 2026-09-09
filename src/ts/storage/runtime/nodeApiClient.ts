@@ -28,6 +28,31 @@ export interface NodeStorageSyncSummary {
   assets: { count: number; sizeBytes: number };
 }
 
+export type StorageSyncDirection = "local-to-remote" | "remote-to-local";
+
+export interface NodeStorageSyncSession {
+  id: string;
+  direction: StorageSyncDirection;
+  role: "source" | "target";
+  status: "created" | "cancelled";
+  serverRevision: number;
+  peerRevision: number | null;
+  summary: NodeStorageSyncSummary;
+  createdAt: number;
+  expiresAt: number;
+  chunkSizeBytes: number;
+  maxConcurrency: number;
+}
+
+export class NodeStorageSyncRevisionConflictError extends Error {
+  constructor(readonly currentRevision: number) {
+    super(
+      `Storage revision changed to ${currentRevision}. Refresh the sync preview before continuing.`,
+    );
+    this.name = "NodeStorageSyncRevisionConflictError";
+  }
+}
+
 export type NodeApiFetch = (
   input: string,
   init?: RequestInit,
@@ -93,6 +118,33 @@ function validateStorageSyncSummary(value: unknown): NodeStorageSyncSummary {
   return summary as NodeStorageSyncSummary;
 }
 
+function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
+  const session = value as Partial<NodeStorageSyncSession> | null;
+  if (
+    !session ||
+    typeof session.id !== "string" ||
+    !session.id ||
+    !["local-to-remote", "remote-to-local"].includes(
+      String(session.direction),
+    ) ||
+    !["source", "target"].includes(String(session.role)) ||
+    session.status !== "created" ||
+    !Number.isSafeInteger(session.serverRevision) ||
+    (session.peerRevision !== null &&
+      !Number.isSafeInteger(session.peerRevision)) ||
+    !Number.isSafeInteger(session.createdAt) ||
+    !Number.isSafeInteger(session.expiresAt) ||
+    !Number.isSafeInteger(session.chunkSizeBytes) ||
+    !Number.isSafeInteger(session.maxConcurrency)
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid storage sync session.",
+    );
+  }
+  validateStorageSyncSummary(session.summary);
+  return session as NodeStorageSyncSession;
+}
+
 export class NodeApiClient {
   readonly baseUrl: string;
   private readonly fetcher: NodeApiFetch;
@@ -139,16 +191,15 @@ export class NodeApiClient {
     return validateCapabilities(await response.json());
   }
 
-  async getStorageSyncSummary(signal?: AbortSignal): Promise<NodeStorageSyncSummary> {
-    const capabilities = await this.getCapabilities(signal);
-    if (capabilities.features.storageSync !== true) {
-      throw new NodeApiCompatibilityError(
-        "This server does not support local/self-hosted storage sync. Upgrade the server before syncing.",
-      );
-    }
+  async getStorageSyncSummary(
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSummary> {
+    await this.requireStorageSyncCapability(signal);
     const response = await this.request("/api/storage-sync/summary", {
       method: "GET",
       cache: "no-store",
+      headers: { "risu-auth": auth },
       signal,
     });
     if (!response.ok) {
@@ -157,6 +208,80 @@ export class NodeApiClient {
       );
     }
     return validateStorageSyncSummary(await response.json());
+  }
+
+  async createStorageSyncSession(
+    options: {
+      direction: StorageSyncDirection;
+      expectedRevision: number;
+      peerRevision?: number | null;
+    },
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSession> {
+    await this.requireStorageSyncCapability(signal);
+    const response = await this.request("/api/storage-sync/sessions", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "content-type": "application/json",
+        "risu-auth": auth,
+      },
+      body: JSON.stringify(options),
+      signal,
+    });
+    if (response.status === 409) {
+      const body = await response.json().catch(() => ({}));
+      throw new NodeStorageSyncRevisionConflictError(
+        Number.isSafeInteger(body?.currentRevision) ? body.currentRevision : 0,
+      );
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Could not create storage sync session (HTTP ${response.status}).`,
+      );
+    }
+    return validateStorageSyncSession(await response.json());
+  }
+
+  async getStorageSyncSession(
+    id: string,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSession> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}`,
+      { cache: "no-store", headers: { "risu-auth": auth }, signal },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Could not read storage sync session (HTTP ${response.status}).`,
+      );
+    }
+    return validateStorageSyncSession(await response.json());
+  }
+
+  async cancelStorageSyncSession(id: string, auth: string): Promise<void> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}`,
+      { method: "DELETE", headers: { "risu-auth": auth } },
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Could not cancel storage sync session (HTTP ${response.status}).`,
+      );
+    }
+  }
+
+  private async requireStorageSyncCapability(
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const capabilities = await this.getCapabilities(signal);
+    if (capabilities.features.storageSync !== true) {
+      throw new NodeApiCompatibilityError(
+        "This server does not support local/self-hosted storage sync. Upgrade the server before syncing.",
+      );
+    }
   }
 }
 

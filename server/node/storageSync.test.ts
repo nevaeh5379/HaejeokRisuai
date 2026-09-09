@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 const {
   STORAGE_SYNC_PROTOCOL_VERSION,
+  STORAGE_SYNC_CHUNK_SIZE_BYTES,
+  STORAGE_SYNC_MAX_CONCURRENCY,
+  StorageSyncRevisionConflictError,
+  StorageSyncSessionManager,
   createStorageSyncSummary,
 } = require("./storageSync.cjs");
 
@@ -68,5 +72,62 @@ describe("storage sync summary", () => {
       total: 0,
     });
     expect(summary.assets).toEqual({ count: 4, sizeBytes: 0 });
+  });
+
+  it("creates revision-pinned sessions with bounded transfer limits", () => {
+    const manager = new StorageSyncSessionManager({
+      randomId: () => "sync-session-1",
+      now: () => 1000,
+    });
+    const session = manager.create({
+      direction: "local-to-remote",
+      expectedRevision: 7,
+      peerRevision: 3,
+      summary: { revision: 7 },
+    });
+    expect(session).toMatchObject({
+      id: "sync-session-1",
+      direction: "local-to-remote",
+      role: "target",
+      serverRevision: 7,
+      peerRevision: 3,
+      chunkSizeBytes: STORAGE_SYNC_CHUNK_SIZE_BYTES,
+      maxConcurrency: STORAGE_SYNC_MAX_CONCURRENCY,
+    });
+    expect(manager.get(session.id)).toBe(session);
+  });
+
+  it("rejects a session when the server revision changed after preview", () => {
+    const manager = new StorageSyncSessionManager();
+    expect(() =>
+      manager.create({
+        direction: "remote-to-local",
+        expectedRevision: 4,
+        summary: { revision: 5 },
+      }),
+    ).toThrow(StorageSyncRevisionConflictError);
+  });
+
+  it("expires and cancels sessions without touching active storage", () => {
+    let now = 10;
+    const manager = new StorageSyncSessionManager({
+      randomId: () => "session",
+      now: () => now,
+    });
+    const session = manager.create({
+      direction: "remote-to-local",
+      expectedRevision: 1,
+      summary: { revision: 1 },
+    });
+    expect(manager.cancel(session.id)?.status).toBe("cancelled");
+    expect(manager.get(session.id)).toBeNull();
+
+    manager.create({
+      direction: "remote-to-local",
+      expectedRevision: 1,
+      summary: { revision: 1 },
+    });
+    now = Number.MAX_SAFE_INTEGER;
+    expect(manager.get("session")).toBeNull();
   });
 });

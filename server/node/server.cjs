@@ -97,7 +97,13 @@ const {
   searchVectorIndex,
 } = require("./vectorIndex.cjs");
 const { matchLoreBatch } = require("./loreMatch.cjs");
-const { createStorageSyncSummary } = require("./storageSync.cjs");
+const {
+  StorageSyncRevisionConflictError,
+  StorageSyncSessionManager,
+  StorageSyncValidationError,
+  createStorageSyncSummary,
+} = require("./storageSync.cjs");
+const storageSyncSessions = new StorageSyncSessionManager();
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -2727,6 +2733,70 @@ app.get(
     } catch (error) {
       next(error);
     }
+  },
+);
+
+
+app.post(
+  "/api/storage-sync/sessions",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      const summary = await createStorageSyncSummary(
+        postgresStorage,
+        assetStorageManager.getStorage(),
+      );
+      const session = storageSyncSessions.create({
+        direction: req.body?.direction,
+        expectedRevision: req.body?.expectedRevision,
+        peerRevision: req.body?.peerRevision ?? null,
+        summary,
+      });
+      res.status(201).send(session);
+    } catch (error) {
+      if (error instanceof StorageSyncRevisionConflictError) {
+        res.status(409).send({
+          error: error.message,
+          code: "revision_conflict",
+          currentRevision: error.currentRevision,
+        });
+        return;
+      }
+      if (error instanceof StorageSyncValidationError) {
+        res.status(400).send({ error: error.message, code: "invalid_sync_session" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.get(
+  "/api/storage-sync/sessions/:sessionId",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = storageSyncSessions.get(req.params.sessionId);
+    if (!session) {
+      res.status(404).send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    res.send(session);
+  },
+);
+
+app.delete(
+  "/api/storage-sync/sessions/:sessionId",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = storageSyncSessions.cancel(req.params.sessionId);
+    if (!session) {
+      res.status(404).send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    res.status(204).end();
   },
 );
 

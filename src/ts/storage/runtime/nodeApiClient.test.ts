@@ -45,17 +45,15 @@ describe("NodeApiClient", () => {
   });
 
   it("requires SQL, asset, and data-change capabilities", async () => {
-    const client = new NodeApiClient(
-      profile,
-      async () =>
-        Response.json({
-          apiVersion: 1,
-          features: {
-            sqlStorage: true,
-            assetStorage: false,
-            dataChangeEvents: true,
-          },
-        }),
+    const client = new NodeApiClient(profile, async () =>
+      Response.json({
+        apiVersion: 1,
+        features: {
+          sqlStorage: true,
+          assetStorage: false,
+          dataChangeEvents: true,
+        },
+      }),
     );
     await expect(client.getCapabilities()).rejects.toThrow(
       /does not provide the required/,
@@ -90,7 +88,9 @@ describe("NodeApiClient", () => {
       });
     });
     const client = new NodeApiClient(profile, fetcher);
-    await expect(client.getStorageSyncSummary()).resolves.toMatchObject({
+    await expect(
+      client.getStorageSyncSummary("sync-auth"),
+    ).resolves.toMatchObject({
       revision: 9,
       records: { total: 14 },
       assets: { count: 6, sizeBytes: 700 },
@@ -109,8 +109,42 @@ describe("NodeApiClient", () => {
       }),
     );
     const client = new NodeApiClient(profile, fetcher);
-    await expect(client.getStorageSyncSummary()).rejects.toThrow(/does not support/);
+    await expect(client.getStorageSyncSummary("sync-auth")).rejects.toThrow(
+      /does not support/,
+    );
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("creates sync sessions with auth and surfaces revision conflicts", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          apiVersion: 1,
+          features: {
+            sqlStorage: true,
+            assetStorage: true,
+            dataChangeEvents: true,
+            storageSync: true,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { code: "revision_conflict", currentRevision: 12 },
+          { status: 409 },
+        ),
+      );
+    const client = new NodeApiClient(profile, fetcher);
+    await expect(
+      client.createStorageSyncSession(
+        { direction: "local-to-remote", expectedRevision: 11, peerRevision: 4 },
+        "sync-auth",
+      ),
+    ).rejects.toMatchObject({ currentRevision: 12 });
+    expect(fetcher.mock.calls[1][1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ "risu-auth": "sync-auth" }),
+    });
+  });
 });

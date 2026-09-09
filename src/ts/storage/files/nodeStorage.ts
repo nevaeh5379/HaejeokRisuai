@@ -6,6 +6,9 @@ import { NodeS3Storage } from "./nodeS3Storage";
 import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
+  type NodeStorageSyncSession,
+  type NodeStorageSyncSummary,
+  type StorageSyncDirection,
 } from "../runtime/nodeApiClient";
 import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.cjs";
 import type {
@@ -329,10 +332,13 @@ export class NodeStorage {
   ): Promise<NodeProviderCapabilities> {
     if (this.nodeProviderCapabilities) return this.nodeProviderCapabilities;
     const auth = await this.getCachedAuth();
-    const response = await this.apiClient.request("/api/chat-executor/providers", {
-      headers: { "risu-auth": auth },
-      signal: abortSignal ?? undefined,
-    });
+    const response = await this.apiClient.request(
+      "/api/chat-executor/providers",
+      {
+        headers: { "risu-auth": auth },
+        signal: abortSignal ?? undefined,
+      },
+    );
     if (!response.ok) {
       const message = await response.text();
       throw new Error(
@@ -366,15 +372,18 @@ export class NodeStorage {
     abortSignal?: AbortSignal | null,
   ): Promise<NodeProviderExecutionResult> {
     const auth = await this.getCachedAuth();
-    const response = await this.apiClient.request("/api/chat-executor/provider", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "risu-auth": auth,
+    const response = await this.apiClient.request(
+      "/api/chat-executor/provider",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify(request),
+        signal: abortSignal ?? undefined,
       },
-      body: JSON.stringify(request),
-      signal: abortSignal ?? undefined,
-    });
+    );
     if (!response.ok) {
       const message = await response.text();
       throw new Error(
@@ -401,15 +410,18 @@ export class NodeStorage {
     abortSignal?: AbortSignal | null,
   ): Promise<NodeProviderTransportResult> {
     const auth = await this.getCachedAuth();
-    const response = await this.apiClient.request("/api/chat-executor/transport", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "risu-auth": auth,
+    const response = await this.apiClient.request(
+      "/api/chat-executor/transport",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify(request),
+        signal: abortSignal ?? undefined,
       },
-      body: JSON.stringify(request),
-      signal: abortSignal ?? undefined,
-    });
+    );
     if (!response.ok) {
       const message = await response.text();
       throw new Error(
@@ -437,14 +449,17 @@ export class NodeStorage {
     request: NodeChatContinuationRequest,
   ): Promise<NodeChatContinuationDecision> {
     const auth = await this.getCachedAuth();
-    const response = await this.apiClient.request("/api/chat-executor/continuation", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "risu-auth": auth,
+    const response = await this.apiClient.request(
+      "/api/chat-executor/continuation",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": auth,
+        },
+        body: JSON.stringify(request),
       },
-      body: JSON.stringify(request),
-    });
+    );
     if (!response.ok) {
       const message = await response.text();
       throw new Error(
@@ -608,14 +623,17 @@ export class NodeStorage {
   ): Promise<void> {
     const auth = await this.getCachedAuth();
     for (let offset = 0; offset < entries.length; offset += 64) {
-      const response = await this.apiClient.request("/api/vector-index/upsert", {
-        method: "POST",
-        headers: { "content-type": "application/json", "risu-auth": auth },
-        body: JSON.stringify({
-          indexId,
-          entries: entries.slice(offset, offset + 64),
-        } satisfies VectorIndexUpsertRequest),
-      });
+      const response = await this.apiClient.request(
+        "/api/vector-index/upsert",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "risu-auth": auth },
+          body: JSON.stringify({
+            indexId,
+            entries: entries.slice(offset, offset + 64),
+          } satisfies VectorIndexUpsertRequest),
+        },
+      );
       if (!response.ok)
         throw new Error(
           `Vector index upsert failed (${response.status}): ${await response.text()}`,
@@ -742,10 +760,13 @@ export class NodeStorage {
 
   async cancelHypaMemorySession(sessionId: string): Promise<void> {
     try {
-      await this.apiClient.request(`/api/hypa-memory/${encodeURIComponent(sessionId)}`, {
-        method: "DELETE",
-        headers: { "risu-auth": await this.getCachedAuth() },
-      });
+      await this.apiClient.request(
+        `/api/hypa-memory/${encodeURIComponent(sessionId)}`,
+        {
+          method: "DELETE",
+          headers: { "risu-auth": await this.getCachedAuth() },
+        },
+      );
     } catch {
       // Best-effort cleanup only. Server sessions also expire automatically.
     }
@@ -1383,6 +1404,48 @@ export class NodeStorage {
     this.authChecked = true;
   }
 
+  async getStorageSyncSummary(
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSummary> {
+    return await this.apiClient.getStorageSyncSummary(
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async createStorageSyncSession(
+    options: {
+      direction: StorageSyncDirection;
+      expectedRevision: number;
+      peerRevision?: number | null;
+    },
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSession> {
+    return await this.apiClient.createStorageSyncSession(
+      options,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async getStorageSyncSession(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncSession> {
+    return await this.apiClient.getStorageSyncSession(
+      id,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async cancelStorageSyncSession(id: string): Promise<void> {
+    await this.apiClient.cancelStorageSyncSession(
+      id,
+      await this.getCachedAuth(),
+    );
+  }
+
   async connectWithPassword(password: string): Promise<void> {
     await this.apiClient.getCapabilities();
     const response = await this.apiClient.request("/api/test_auth", {
@@ -1489,9 +1552,8 @@ const sharedNodeStorage = new NodeStorage();
 
 export async function getNodeServerProxyAuth() {
   try {
-    const { getActiveStorageRuntime } = await import(
-      "../runtime/activeStorageRuntime"
-    );
+    const { getActiveStorageRuntime } =
+      await import("../runtime/activeStorageRuntime");
     const storage = getActiveStorageRuntime().assets.realStorage;
     if (storage instanceof NodeStorage) {
       return await storage.getProxyAuth();
