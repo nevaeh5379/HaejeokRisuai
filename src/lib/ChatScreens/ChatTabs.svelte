@@ -594,8 +594,8 @@
         class="rs-chat-tab-list shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
-        class:pl-14={!$MobileGUI && reserveSidebarSpace}
-        class:pl-2={$MobileGUI || !reserveSidebarSpace}
+        class:pl-14={!$MobileGUI && reserveSidebarSpace && !isTauriMacOS}
+        class:pl-2={$MobileGUI || !reserveSidebarSpace || isTauriMacOS}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:macos-aux-titlebar-tabs={reserveMacOSTrafficLights}

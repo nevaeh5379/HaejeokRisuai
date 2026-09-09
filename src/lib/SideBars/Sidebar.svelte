@@ -1076,6 +1076,7 @@
   class:px-2={$DynamicGUI && !btwRuntime.open}
   class:px-4={!$DynamicGUI && !btwRuntime.open}
   class:dynamic-sidebar={$DynamicGUI}
+  class:macos-sidebar-drag-layout={isTauriMacOS && !btwRuntime.open}
   class:hidden={hidden}
   class:flex={!hidden}
   class:max-w-[calc(100%-8rem)]={$DynamicGUI}
@@ -1088,7 +1089,7 @@
 >
   {#if isTauriMacOS && !btwRuntime.open}
     <div
-      class="absolute top-0 left-0 right-1 h-5 z-20"
+      class="rs-sidebar-panel-drag-row h-5 min-h-5 w-full shrink-0"
       data-tauri-drag-region="true"
       aria-hidden="true"
     ></div>
@@ -1128,7 +1129,7 @@
         </div>
       </div>
     {:else}
-      <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button onclick={() => {
           void loadSideChatList()
           devTool = false
