@@ -13,6 +13,7 @@
     import { onDestroy, onMount } from "svelte";
     import { settingsStore } from "src/ts/stores/domain";
     import { RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from "src/ts/dragTypes";
+    import { downloadFile } from "src/ts/files/downloadFile";
 
     interface Props {
         value?: triggerscript[];
@@ -2602,21 +2603,10 @@
                         }}>
                             <PlusIcon />
                         </button>
-                        <button class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor focus:bg-bgcolor" onclick={() => {
+                        <button class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor focus:bg-bgcolor" onclick={async () => {
                             const triggersToExport = value.slice(1);
                             const jsonData = JSON.stringify(triggersToExport, null, 2);
-                            
-                            const blob = new Blob([jsonData], { type: 'application/json' });
-                            const url = URL.createObjectURL(blob);
-                            
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `triggers-${new Date().getTime()}.json`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            
-                            URL.revokeObjectURL(url);
+                            await downloadFile(`triggers-${new Date().getTime()}.json`, jsonData);
                         }}>
                             <DownloadIcon />
                         </button>

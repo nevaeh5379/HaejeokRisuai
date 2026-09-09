@@ -18,6 +18,7 @@ import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } f
     import { hotReloadPluginFiles } from "src/ts/plugins/apiV3/developMode";
     import { onMount } from "svelte";
     import { deferredSettingsLoader } from "src/ts/stores/domain/deferredSettingsLoader";
+    import { downloadFile } from "src/ts/files/downloadFile";
 
     let showParams = $state([])
     let isLoading = $state(!deferredSettingsLoader.isLoaded("plugins"))
@@ -294,10 +295,10 @@ import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } f
                     await hotReloadPluginFiles()
                     break;
                 case 1:{
-                    const a = document.createElement('a');
-                    a.href = '/plugin_start.7z';
-                    a.download = 'plugin_starter.7z';
-                    document.body.appendChild(a);
+                    const response = await fetch('/plugin_start.7z');
+                    if (!response.ok) throw new Error(`Failed to load plugin template (${response.status})`);
+                    await downloadFile('plugin_starter.7z', await response.arrayBuffer());
+                    break;
                 }
             }
         }}

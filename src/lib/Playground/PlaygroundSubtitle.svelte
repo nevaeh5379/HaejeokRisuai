@@ -522,8 +522,6 @@ import { language } from "src/lang";
             'WebVTT',
             'SRT'
         ]))
-        const a = document.createElement('a')
-
         // WebVTT
         if(sel === 0){
             downloadFile('subtitle.vtt', outputText)
