@@ -290,8 +290,10 @@ CREATE TABLE IF NOT EXISTS cold_extension_nodes (
 CREATE INDEX IF NOT EXISTS cold_nodes_parent_idx ON cold_extension_nodes (archive_id, parent_node_id, node_order);
 
 -- The only business-value JSON exception. One row per top-level plugin key.
+-- JSON is encoded/decoded by the application layer instead of SQLite JSON1 so
+-- Android builds without SQLite JSON1 can use the same relational schema.
 CREATE TABLE IF NOT EXISTS plugin_custom_storage (
     key TEXT PRIMARY KEY,
-    value TEXT NOT NULL CHECK (json_valid(value)),
+    value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -95,7 +95,8 @@ describe("typed relational node codec", () => {
       /\b(?:system_settings|characters|chats|messages|cold_storage)\s*\([^;]*\b(?:data|value|payload)\s+TEXT/is,
     );
     expect(sqliteSchemaSql).toMatch(
-      /plugin_custom_storage[\s\S]*json_valid\(value\)/,
+      /plugin_custom_storage[\s\S]{0,250}value TEXT NOT NULL/,
     );
+    expect(sqliteSchemaSql).not.toMatch(/\bjson_valid\s*\(/i);
   });
 });
