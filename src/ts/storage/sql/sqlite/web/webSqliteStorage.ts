@@ -88,7 +88,7 @@ import {
   ensureSqliteBranchGraphStatements,
   mapSqliteChatBranchRow,
   type SqliteChatBranchRow,
-} from "../sqliteBranchStorage";
+} from "@risuai/storage-sqlite/sqliteBranchStorage";
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
 

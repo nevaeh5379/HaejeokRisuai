@@ -87,7 +87,7 @@ import {
   mapSqliteChatBranchRow,
   SQLITE_BRANCH_SCHEMA_STATEMENTS,
   type SqliteChatBranchRow,
-} from "./sqliteBranchStorage";
+} from "@risuai/storage-sqlite/sqliteBranchStorage";
 
 const STARTUP_SETTING_TEXT_LIMIT = 256 * 1024;
 
