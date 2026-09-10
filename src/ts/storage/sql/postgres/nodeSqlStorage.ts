@@ -35,6 +35,10 @@ import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
 } from "@risuai/storage-remote/nodeApiClient";
+import {
+  RemoteDatabaseAdminClient,
+  type RemoteDatabaseConfig,
+} from "@risuai/storage-remote/remoteDatabaseAdminClient";
 
 import type {
   DbVendor,
@@ -202,6 +206,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
   private readonly clientId = getNodeClientSessionId();
+  private readonly databaseAdmin: RemoteDatabaseAdminClient;
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
@@ -265,7 +270,13 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   constructor(
     private readonly getAuth: () => Promise<string>,
     private readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
-  ) {}
+  ) {
+    this.databaseAdmin = new RemoteDatabaseAdminClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
+  }
 
   isEnabled() {
     return this.status === "enabled";
@@ -312,18 +323,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
 
   async getServerConfig(): Promise<NodePostgresServerConfig> {
-    const response = await this.apiClient.request("/api/postgres-config", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL configuration load failed",
-      );
-    }
-    const config: NodePostgresServerConfig = await response.json();
+    const config = await this.databaseAdmin.getPostgresConfig();
     this.status = config.enabled ? "enabled" : "disabled";
     this.revision = config.revision ?? 0;
     return config;
@@ -332,25 +332,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   async configureServer(
     update: NodePostgresServerConfigUpdate,
   ): Promise<NodePostgresServerConfig> {
-    const encodedBody = await encodeJsonBody(update);
-    const response = await this.apiClient.request("/api/postgres-config", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL configuration update failed",
-      );
-    }
-    const config: NodePostgresServerConfig = await response.json();
+    const config = await this.databaseAdmin.configurePostgres(update);
     this.status = config.enabled ? "enabled" : "disabled";
     this.revision = config.revision ?? 0;
     return config;
@@ -358,25 +340,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   // ── 범용 DB 설정 API (postgres / oracle / azure 공통) ──
 
-  /**
-   * 현재 DB 설정 조회 (vendor, enabled, 마스킹된 연결 정보).
-   * /api/db-config GET 대응.
-   */
-  async getDatabaseConfig(): Promise<
-    NodePostgresServerConfig & {
-      params: Record<string, any>;
-      storedVendor: DbVendor | null;
-    }
-  > {
-    const response = await this.apiClient.request("/api/db-config", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "DB configuration load failed");
-    }
-    const config = await response.json();
+  async getDatabaseConfig(): Promise<RemoteDatabaseConfig> {
+    const config = await this.databaseAdmin.getDatabaseConfig();
     this.status =
       config.runtime?.status === "ready"
         ? "enabled"
@@ -385,106 +350,45 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           : config.enabled
             ? "enabled"
             : "disabled";
-    if (config.revision != null) {
-      this.revision = config.revision;
-    }
+    if (config.revision != null) this.revision = config.revision;
     return config;
   }
 
-  /**
-   * DB 설정 적용 (vendor + params + migrate). 서버가 storage를 재생성.
-   * /api/db-config POST 대응.
-   */
   async applyDatabaseConfig(
     vendor: DbVendor,
     params: Record<string, any>,
     migrate = false,
-  ): Promise<
-    NodePostgresServerConfig & {
-      params: Record<string, any>;
-      storedVendor: DbVendor | null;
-    }
-  > {
-    const encodedBody = await encodeJsonBody({ vendor, params, migrate });
-    const response = await this.apiClient.request("/api/db-config", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "DB configuration update failed");
-    }
-    const body = await response.json();
+  ): Promise<RemoteDatabaseConfig> {
+    const config = await this.databaseAdmin.applyDatabaseConfig(
+      vendor,
+      params,
+      migrate,
+    );
     this.status =
-      body.runtime?.status === "ready" || body.enabled
+      config.runtime?.status === "ready" || config.enabled
         ? "enabled"
-        : body.runtime?.status === "degraded"
+        : config.runtime?.status === "degraded"
           ? "degraded"
           : "disabled";
-    if (body.revision != null) {
-      this.revision = body.revision;
-    }
-    return body;
+    if (config.revision != null) this.revision = config.revision;
+    return config;
   }
 
-  async retryDatabaseConnection(): Promise<
-    NodePostgresServerConfig & {
-      params: Record<string, any>;
-      storedVendor: DbVendor | null;
-    }
-  > {
-    const response = await this.apiClient.request("/api/db-config/retry", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "DB reconnection failed");
-    }
-    const body = await response.json();
-    this.status = body.runtime?.status === "ready" ? "enabled" : "degraded";
-    if (body.revision != null) this.revision = body.revision;
-    return body;
+  async retryDatabaseConnection(): Promise<RemoteDatabaseConfig> {
+    const config = await this.databaseAdmin.retryDatabaseConnection();
+    this.status =
+      config.runtime?.status === "ready" ? "enabled" : "degraded";
+    if (config.revision != null) this.revision = config.revision;
+    return config;
   }
 
-  /**
-   * 연결 테스트 (실제 storage 재생성 없이 연결만 확인).
-   * /api/db-config/test POST 대응.
-   */
   async testConnection(
     vendor: DbVendor,
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }> {
-    const encodedBody = await encodeJsonBody({ vendor, params });
-    const response = await this.apiClient.request("/api/db-config/test", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "DB connection test failed");
-    }
-    return await response.json();
+    return await this.databaseAdmin.testConnection(vendor, params);
   }
 
-  /**
-   * 명시적 로컬 → SQL 마이그레이션 트리거.
-   * /api/database-v2/migrate-legacy POST 대응.
-   */
   async migrateLegacyData(): Promise<{
     success: boolean;
     migrated: number;
@@ -493,17 +397,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await this.apiClient.request("/api/database-v2/migrate-legacy", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "Legacy migration failed");
-    }
-    return await response.json();
+    return await this.databaseAdmin.migrateLegacyData();
   }
 
   getRevision(): number {

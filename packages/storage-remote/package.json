@@ -8,6 +8,7 @@
     "./remoteAssetClient": "./src/remoteAssetClient.ts",
     "./remoteAuthIdentity": "./src/remoteAuthIdentity.ts",
     "./remoteAuthController": "./src/remoteAuthController.ts",
+    "./remoteDatabaseAdminClient": "./src/remoteDatabaseAdminClient.ts",
     "./remoteStorageSyncClient": "./src/remoteStorageSyncClient.ts",
     "./keypairStore": "./src/keypairStore.ts",
     "./types": "./src/types.ts"
