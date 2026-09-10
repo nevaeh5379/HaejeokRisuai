@@ -53,6 +53,7 @@ import {
   getSqlStorage,
 } from "../storage/sql/sqlStorageFactory";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
+import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
   makeLegacyCompatibleDatabase,
   type ColdStorageValueMap,
@@ -941,17 +942,19 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
 
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
   try {
-    if (isNodeServer && !forageStorage.isAccount) {
-      await flushDurableStores();
-      await saveNodeLocalBackupStream(mode);
-      return;
-    }
-    await saveLocalBackupWithOptions({
-      mode,
-      partial: false,
-      assetScope: "all",
-      accountReadDelayMs: 1000,
-      encryptAccountBackup: true,
+    await runExclusiveLocalBackupOperation("save", async () => {
+      if (isNodeServer && !forageStorage.isAccount) {
+        await flushDurableStores();
+        await saveNodeLocalBackupStream(mode);
+        return;
+      }
+      await saveLocalBackupWithOptions({
+        mode,
+        partial: false,
+        assetScope: "all",
+        accountReadDelayMs: 1000,
+        encryptAccountBackup: true,
+      });
     });
   } catch (error) {
     console.error("SaveLocalBackup failed:", error);
@@ -964,17 +967,19 @@ export async function SavePartialLocalBackup() {
   try {
     if (!(await alertConfirm(language.partialBackupFirstConfirm))) return;
     if (!(await alertConfirm(language.partialBackupSecondConfirm))) return;
-    if (isNodeServer && !forageStorage.isAccount) {
-      await flushDurableStores();
-      await saveNodeLocalBackupStream("partial");
-      return;
-    }
-    await saveLocalBackupWithOptions({
-      mode: "native",
-      partial: true,
-      assetScope: "essential",
-      accountReadDelayMs: 100,
-      encryptAccountBackup: false,
+    await runExclusiveLocalBackupOperation("partial-save", async () => {
+      if (isNodeServer && !forageStorage.isAccount) {
+        await flushDurableStores();
+        await saveNodeLocalBackupStream("partial");
+        return;
+      }
+      await saveLocalBackupWithOptions({
+        mode: "native",
+        partial: true,
+        assetScope: "essential",
+        accountReadDelayMs: 100,
+        encryptAccountBackup: false,
+      });
     });
   } catch (error) {
     console.error("SavePartialLocalBackup failed:", error);
@@ -1014,7 +1019,7 @@ export async function restoreInlayBackupEntry(
   return { status: "restored" };
 }
 
-async function restoreLocalBackupSource(
+async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 0, end: 90 },
 ) {
@@ -1655,6 +1660,16 @@ async function restoreLocalBackupSource(
       ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s).`
       : "Success",
   );
+}
+
+async function restoreLocalBackupSource(
+  file: LocalBackupSource,
+  parserProgress: { start: number; end: number } = { start: 0, end: 90 },
+) {
+  return await runExclusiveLocalBackupOperation("restore", async () => {
+    await flushDurableStores();
+    return await restoreLocalBackupSourceUnlocked(file, parserProgress);
+  });
 }
 
 export async function restoreLocalBackupFile(file: File) {
