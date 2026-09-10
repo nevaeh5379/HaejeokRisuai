@@ -76,3 +76,24 @@ test("rejects extracting a client-visible write method", () => {
     );
   });
 });
+
+test("rejects indirect primary mutation helpers outside the mutation service", () => {
+  withFixture(
+    `finalizeStorageSyncReplacement({ sqlStorage: postgresStorage });`,
+    (file) => {
+      assert.throws(
+        () => checkServerStorageMutations(file),
+        /direct finalizeStorageSyncReplacement\(\) call is forbidden/,
+      );
+    },
+  );
+  withFixture(
+    `applyStorageSyncPostgresRecords({ sqlStorage: postgresStorage });`,
+    (file) => {
+      assert.throws(
+        () => checkServerStorageMutations(file),
+        /direct applyStorageSyncPostgresRecords\(\) call is forbidden/,
+      );
+    },
+  );
+});

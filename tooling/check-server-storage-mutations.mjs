@@ -62,6 +62,11 @@ const INTERNAL_WRITE_METHODS = new Set([
   "upsertColdStorage",
 ]);
 
+const INDIRECT_CLIENT_VISIBLE_MUTATION_HELPERS = new Set([
+  "applyStorageSyncPostgresRecords",
+  "finalizeStorageSyncReplacement",
+]);
+
 const CLIENT_VISIBLE_WRITE_METHODS = new Set([
   "activateChatBranch",
   "createChatBranch",
@@ -104,6 +109,16 @@ export function checkServerStorageMutations(
   const violations = [];
 
   function visit(node) {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      INDIRECT_CLIENT_VISIBLE_MUTATION_HELPERS.has(node.expression.text)
+    ) {
+      violations.push(
+        `${locationOf(sourceFile, node)} direct ${node.expression.text}() call is forbidden; ` +
+          "route the operation through databaseMutations",
+      );
+    }
     if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&
