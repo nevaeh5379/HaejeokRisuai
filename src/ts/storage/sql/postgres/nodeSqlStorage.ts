@@ -39,6 +39,8 @@ import {
   RemoteDatabaseAdminClient,
   type RemoteDatabaseConfig,
 } from "@risuai/storage-remote/remoteDatabaseAdminClient";
+import { RemoteColdStorageClient } from "@risuai/storage-remote/remoteColdStorageClient";
+import { RemoteDatabaseBackupClient } from "@risuai/storage-remote/remoteDatabaseBackupClient";
 
 import type {
   DbVendor,
@@ -207,6 +209,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private revision = 0;
   private readonly clientId = getNodeClientSessionId();
   private readonly databaseAdmin: RemoteDatabaseAdminClient;
+  private readonly coldStorageClient: RemoteColdStorageClient;
+  private readonly backupClient: RemoteDatabaseBackupClient;
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
@@ -272,6 +276,16 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     private readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
   ) {
     this.databaseAdmin = new RemoteDatabaseAdminClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
+    this.coldStorageClient = new RemoteColdStorageClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
+    this.backupClient = new RemoteDatabaseBackupClient(
       this.apiClient,
       this.getAuth,
       this.clientId,
@@ -1344,128 +1358,29 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
 
   async getColdStorageItem(key: string): Promise<unknown | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const response = await this.apiClient.request(
-      `/api/database-v2/cold-storage/${encodeURIComponent(key)}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
-      return null;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL cold storage load failed",
-      );
-    }
-    const body: { data: unknown } = await response.json();
-    return body.data;
+    if (!(await this.ensureEnabled())) return null;
+    return await this.coldStorageClient.getItem(key);
   }
 
   async listColdStorageItems(): Promise<{ items: string[] }> {
-    if (!(await this.ensureEnabled())) {
-      return { items: [] };
-    }
-    const response = await this.apiClient.request("/api/database-v2/cold-storage", {
-      method: "GET",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL cold storage list failed",
-      );
-    }
-    const body: { items: { key: string }[] } = await response.json();
-    return {
-      items: body.items.map((item) => item.key),
-    };
+    if (!(await this.ensureEnabled())) return { items: [] };
+    return { items: await this.coldStorageClient.listItems() };
   }
 
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
-    if (!(await this.ensureEnabled())) {
-      return false;
-    }
-    const encodedBody = await encodeJsonBody({ data: value });
-    const response = await this.apiClient.request(
-      `/api/database-v2/cold-storage/${encodeURIComponent(key)}`,
-      {
-        method: "PUT",
-        body: encodedBody.body,
-        headers: {
-          "content-type": "application/json",
-          ...(encodedBody.contentEncoding
-            ? { "content-encoding": encodedBody.contentEncoding }
-            : {}),
-          ...(await this.authHeaders()),
-        },
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL cold storage save failed",
-      );
-    }
+    if (!(await this.ensureEnabled())) return false;
+    await this.coldStorageClient.setItem(key, value);
     return true;
   }
 
   async removeColdStorageItems(keys: string[]): Promise<number> {
-    if (!(await this.ensureEnabled()) || keys.length === 0) {
-      return 0;
-    }
-    const encodedBody = await encodeJsonBody({ keys });
-    const response = await this.apiClient.request("/api/database-v2/cold-storage", {
-      method: "DELETE",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL cold storage delete failed",
-      );
-    }
-    const body: { deleted: number } = await response.json();
-    return body.deleted;
+    if (!(await this.ensureEnabled()) || keys.length === 0) return 0;
+    return await this.coldStorageClient.removeItems(keys);
   }
 
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
-    if (!(await this.ensureEnabled())) {
-      return 0;
-    }
-    const encodedBody = await encodeJsonBody({ retainedKeys });
-    const response = await this.apiClient.request("/api/database-v2/cold-storage/prune", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL cold storage cleanup failed",
-      );
-    }
-    const body: { deleted: number } = await response.json();
-    return body.deleted;
+    if (!(await this.ensureEnabled())) return 0;
+    return await this.coldStorageClient.prune(retainedKeys);
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {
@@ -1592,223 +1507,37 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   // ── 백업 데이터베이스 API ──
 
-  /**
-   * 백업 DB 설정 + 실시간 상태 조회 (revision lag, 마지막 미러/스냅샷 시점).
-   * /api/db-backup GET 대응.
-   */
   async getBackupStatus(): Promise<NodeBackupConfig> {
-    const response = await this.apiClient.request("/api/db-backup", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "Backup database status load failed");
-    }
-    return await response.json();
+    return await this.backupClient.getStatus();
   }
 
-  /**
-   * 백업 DB 연결 테스트 (실제 저장소 생성 없이 연결만 확인).
-   * /api/db-backup/test POST 대응.
-   */
   async testBackupConnection(
     vendor: DbVendor,
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }> {
-    const encodedBody = await encodeJsonBody({ vendor, params });
-    const response = await this.apiClient.request("/api/db-backup/test", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "Backup database connection test failed",
-      );
-    }
-    return await response.json();
+    return await this.backupClient.testConnection(vendor, params);
   }
 
-  /**
-   * 백업 DB 설정 적용 + 초기화 + 최초 전체 백업 트리거.
-   * /api/db-backup POST 대응.
-   */
   async configureBackup(
     update: NodeBackupConfigUpdate,
   ): Promise<NodeBackupConfig> {
-    const encodedBody = await encodeJsonBody(update);
-    const response = await this.apiClient.request("/api/db-backup", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "Backup database configuration failed",
-      );
-    }
-    return await response.json();
+    return await this.backupClient.configure(update);
   }
 
-  /**
-   * 수동 전체 백업: 메인 DB 전체를 백업 DB에 replaceAll 적요 (실시간 진행상황 콜백 지원).
-   * /api/db-backup/resync POST 대응.
-   */
   async resyncBackup(
     onProgress?: (event: NodeBackupProgressEvent) => void,
   ): Promise<NodeBackupFullSyncResult> {
-    const response = await this.apiClient.request("/api/db-backup/resync", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || "Backup full sync failed");
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return await response.json();
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalResult: NodeBackupFullSyncResult = { success: true };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "progress") {
-            onProgress?.(parsed);
-          } else if (parsed.type === "done") {
-            finalResult = {
-              success: parsed.success !== false,
-              lastFullSyncAt: parsed.lastFullSyncAt,
-              settingsCount: parsed.settingsCount,
-              charactersCount: parsed.charactersCount,
-              chatsCount: parsed.chatsCount,
-              messagesCount: parsed.messagesCount,
-              revision: parsed.revision,
-              changed: parsed.changed,
-            };
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.error || "Backup full sync failed");
-          }
-        } catch (err: any) {
-          if (err?.message && !err.message.includes("JSON")) {
-            throw err;
-          }
-        }
-      }
-    }
-
-    return finalResult;
+    return await this.backupClient.resync(onProgress);
   }
 
-  /**
-   * 백업 DB에서 데이터를 읽어와 메인 DB로 복원 (덮어쓰기).
-   * /api/db-backup/restore POST 대응.
-   */
   async restoreFromBackup(
     onProgress?: (event: NodeBackupProgressEvent) => void,
   ): Promise<NodeBackupFullSyncResult> {
-    const response = await this.apiClient.request("/api/db-backup/restore", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error || "Backup restore failed");
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return await response.json();
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalResult: NodeBackupFullSyncResult = { success: true };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "progress") {
-            onProgress?.(parsed);
-          } else if (parsed.type === "done") {
-            finalResult = {
-              success: parsed.success !== false,
-              lastFullSyncAt: parsed.lastFullSyncAt,
-              settingsCount: parsed.settingsCount,
-              charactersCount: parsed.charactersCount,
-              chatsCount: parsed.chatsCount,
-              messagesCount: parsed.messagesCount,
-              revision: parsed.revision,
-              changed: parsed.changed,
-            };
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.error || "Backup restore failed");
-          }
-        } catch (err: any) {
-          if (err?.message && !err.message.includes("JSON")) {
-            throw err;
-          }
-        }
-      }
-    }
-
-    return finalResult;
+    return await this.backupClient.restore(onProgress);
   }
 
-  /**
-   * 백업 DB 설정 해제 (풀 close + 설정 제거).
-   * /api/db-backup DELETE 대응.
-   */
   async removeBackup(): Promise<NodeBackupConfig> {
-    const response = await this.apiClient.request("/api/db-backup", {
-      method: "DELETE",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "Backup database removal failed");
-    }
-    return await response.json();
+    return await this.backupClient.remove();
   }
+
 }
