@@ -1,4 +1,3 @@
-// @ts-nocheck -- removed after the staged TypeScript migration compiles cleanly.
 const express = require("express");
 const app = express();
 const {
@@ -16,7 +15,7 @@ if (process.env.TRUST_PROXY) {
 // mid-write) surface as unhandled 'error' events on the underlying socket and
 // can crash the whole server. Log and swallow them so the migration worker
 // can record the failure and the process stays alive.
-process.on("uncaughtException", (err) => {
+process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
   if (
     err &&
     (err.code === "EPIPE" ||
@@ -28,7 +27,7 @@ process.on("uncaughtException", (err) => {
   }
   console.error("[Server] Uncaught exception:", err);
 });
-process.on("unhandledRejection", (err) => {
+process.on("unhandledRejection", (err: any) => {
   if (
     err &&
     (err.code === "EPIPE" ||
@@ -778,7 +777,7 @@ let backupSnapshotTimer = null;
 let backupMirrorChain = Promise.resolve();
 
 function delayMs(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 // 전체 payload 구성은 backupFullPayload.cjs 모듈에서 (테스트 가능성)
@@ -787,7 +786,10 @@ const { buildFullBackupPayload } = require("./backupFullPayload.cjs");
 // 직렬 큐: 백업 DB로의 모든 쓰기는 순서를 보장하며 하나씩 수행.
 // 실패는 재시도(백오프) 후 상태 기록만 남기고 큐는 계속 진행 (메인 저장에는 영향 없음).
 // 반환되는 promise는 task별 결과를 전달: 성공 시 resolve, 최종 실패 시 reject.
-function enqueueBackupWrite(task, label = "write") {
+function enqueueBackupWrite<T>(
+  task: () => Promise<T>,
+  label = "write",
+): Promise<T | null> {
   const execute = async () => {
     if (!backupStorage?.enabled) return null;
     backupRuntime.inFlight = true;
@@ -810,7 +812,7 @@ function enqueueBackupWrite(task, label = "write") {
     }
     throw lastError;
   };
-  return new Promise((resolve, reject) => {
+  return new Promise<T | null>((resolve, reject) => {
     backupMirrorChain = backupMirrorChain.then(async () => {
       try {
         const result = await execute();
@@ -850,7 +852,7 @@ async function mirrorSyncPayloadToBackup(payload) {
   });
 }
 
-async function mirrorFullBackupToBackup(onProgress) {
+async function mirrorFullBackupToBackup(onProgress?: (event: any) => void) {
   onProgress?.({
     stage: "reading",
     message: "Reading data from main database...",
@@ -962,7 +964,7 @@ async function runBackupSnapshot() {
   return await mirrorFullBackupToBackup();
 }
 
-async function restoreBackupToMainDatabase(onProgress) {
+async function restoreBackupToMainDatabase(onProgress?: (event: any) => void) {
   onProgress?.({
     stage: "reading",
     message: "Reading data from backup database...",
@@ -1847,7 +1849,10 @@ function normalizeProxyResponseHeaders(headers) {
   return normalized;
 }
 
-function requestLocalTargetStream(targetUrl, arg) {
+function requestLocalTargetStream(
+  targetUrl,
+  arg,
+): Promise<{ status: number; headers: Record<string, string>; body: any }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(targetUrl);
     const client = parsedUrl.protocol === "https:" ? https : http;
@@ -2023,7 +2028,7 @@ async function runProxyStreamJob(job, arg) {
       signal: job.abortController.signal,
     });
 
-    const filteredHeaders = {};
+    const filteredHeaders: Record<string, string> = {};
     for (const [key, value] of Object.entries(upstreamResponse.headers)) {
       if (
         key === "content-security-policy" ||
@@ -2661,7 +2666,7 @@ async function hubProxyFunc(req, res) {
         req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
       redirect: "manual",
       duplex: "half",
-    });
+    } as RequestInit & { duplex: "half" });
 
     for (const [key, value] of response.headers.entries()) {
       // Skip encoding-related headers to prevent double decoding
@@ -2691,7 +2696,7 @@ async function hubProxyFunc(req, res) {
           req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
         redirect: "manual",
         duplex: "half",
-      });
+      } as RequestInit & { duplex: "half" });
       for (const [key, value] of redirectResponse.headers.entries()) {
         if (excludedHeaders.includes(key.toLowerCase())) {
           continue;
@@ -3052,7 +3057,7 @@ function sendStorageSyncSqlError(res, error) {
       : code === "sql_checksum_mismatch" || validationError
         ? 422
         : 400;
-  const body = { error: error.message, code };
+  const body: Record<string, any> = { error: error.message, code };
   if (Number.isSafeInteger(error.recordIndex) && error.recordIndex >= 0) {
     body.recordIndex = error.recordIndex;
   }
@@ -3224,7 +3229,7 @@ function sendStorageSyncFinalizeError(res, error) {
         : code === "invalid_finalize_session"
           ? 400
           : 500;
-  const body = { error: error.message, code };
+  const body: Record<string, any> = { error: error.message, code };
   if (Number.isSafeInteger(error.currentRevision)) {
     body.currentRevision = error.currentRevision;
   }
@@ -3437,7 +3442,7 @@ const S3_BULK_UPLOAD_CONCURRENCY = Math.min(
   ),
 );
 function createBulkProtocolError(message) {
-  const error = new Error(message);
+  const error = new Error(message) as Error & { statusCode: number };
   error.statusCode = 400;
   return error;
 }
@@ -4609,9 +4614,9 @@ function maskSecret(value) {
 
 function getDbConfigResponse() {
   const stored = readStoredDbConfig(savePath);
-  const params = stored.params || {};
+  const params = (stored.params || {}) as Record<string, any>;
   // vendor별 마스킹된 params 구성
-  const maskedParams = {};
+  const maskedParams: Record<string, any> = {};
   const effectiveVendor = stored.vendor || dbVendor;
   if (effectiveVendor === "postgres") {
     const connectionString =
@@ -4850,8 +4855,8 @@ app.post(
 // /api/db-backup DELETE:  백업 설정 해제
 // ─────────────────────────────────────────────────────────────────────────────
 
-function maskBackupParams(vendor, params = {}) {
-  const masked = {};
+function maskBackupParams(vendor, params: Record<string, any> = {}) {
+  const masked: Record<string, any> = {};
   if (vendor === "postgres") {
     masked.connectionString = maskPostgresConnectionString(
       params.connectionString || "",
@@ -7928,7 +7933,11 @@ app.post("/api/write", authenticatedRouteLimiter, async (req, res, next) => {
     for await (const chunk of req) {
       received += chunk.length;
       if (received > maxBytes) {
-        const error = new Error("Asset exceeds the 100 MB upload limit");
+        const error = new Error(
+          "Asset exceeds the 100 MB upload limit",
+        ) as Error & {
+          statusCode: number;
+        };
         error.statusCode = 413;
         throw error;
       }
@@ -7959,8 +7968,16 @@ const oauthData = {
   config: {},
   code_verifier: "",
 };
+function getRequestUrl(req) {
+  const host = req.get("host");
+  if (!host) throw new Error("Request host is required for OAuth2");
+  return new URL(req.originalUrl || req.url, `${req.protocol}://${host}`);
+}
 app.get("/api/oauth_login", loginRouteLimiter, async (req, res) => {
-  const redirect_uri = new URL(req.url).host + "/api/oauth_callback";
+  const redirect_uri = new URL(
+    "/api/oauth_callback",
+    getRequestUrl(req),
+  ).toString();
 
   if (!redirect_uri) {
     res.status(400).send({ error: "redirect_uri is required" });
@@ -8058,7 +8075,7 @@ app.get("/api/oauth_callback", loginRouteLimiter, async (req, res) => {
 
   let tokens = await getOpenidClient().authorizationCodeGrant(
     oauthData.config,
-    getCurrentUrl(),
+    getRequestUrl(req),
     {
       pkceCodeVerifier: oauthData.code_verifier,
     },
@@ -8289,7 +8306,7 @@ let activeHttpServer = null;
 let shutdownInProgress = false;
 
 function listenHttpServer(server, port, host = null) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const onError = (error) => {
       server.off("listening", onListening);
       reject(error);
