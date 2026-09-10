@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { preflightStorageSyncFinalize } = require("./storageSyncFinalize.cjs");
+const {
+  StorageSyncFinalizeGate,
+  finalizeStorageSyncReplacement,
+  preflightStorageSyncFinalize,
+} = require("./storageSyncFinalize.cjs");
 
 function summary() {
   return {
@@ -24,6 +28,7 @@ function session() {
     direction: "local-to-remote",
     role: "target",
     status: "sql-ready",
+    serverRevision: 7,
     peerRevision: 12,
     summary: summary(),
   } as any;
@@ -108,5 +113,124 @@ describe("preflightStorageSyncFinalize", () => {
     await expect(
       preflightStorageSyncFinalize({ session: session(), ...deps }),
     ).rejects.toMatchObject({ code: "source_revision_mismatch" });
+  });
+});
+
+describe("StorageSyncFinalizeGate", () => {
+  it("drains in-flight requests before finalize and rejects a second finalize", async () => {
+    const gate = new StorageSyncFinalizeGate();
+    const leaveRequest = gate.enterRequest();
+    expect(leaveRequest).toBeTypeOf("function");
+
+    const pendingAcquire = gate.acquire("session-a");
+    expect(gate.status()).toMatchObject({
+      sessionId: "session-a",
+      phase: "draining",
+      activeRequests: 1,
+    });
+    await expect(gate.acquire("session-b")).rejects.toThrow(/already running/);
+    expect(gate.enterRequest()).toBeNull();
+
+    leaveRequest();
+    const release = await pendingAcquire;
+    expect(gate.status()).toMatchObject({
+      phase: "finalizing",
+      activeRequests: 0,
+    });
+    release();
+    expect(gate.isLocked()).toBe(false);
+
+    const releaseB = await gate.acquire("session-b");
+    releaseB();
+  });
+});
+
+function finalizeDependencies(options: { failTransaction?: boolean } = {}) {
+  const deps = dependencies();
+  const order: string[] = [];
+  deps.assetStaging.applyReadyAssets = vi.fn(async () => {
+    order.push("assets");
+    return { applied: 1 };
+  });
+  deps.sqlStorage.runStorageSyncFinalizeTransaction = vi.fn(
+    async (_revision: number, callback: any) => {
+      order.push("transaction");
+      if (options.failTransaction) {
+        const error = Object.assign(new Error("stale"), { revision: 8 });
+        throw error;
+      }
+      const callbackResult = await callback(
+        {},
+        {
+          currentRevision: 7,
+          nextRevision: 8,
+          revisionId: 41,
+          previousRevisionId: 40,
+          databaseInitialized: true,
+        },
+      );
+      return { revision: 8, revisionId: 41, ...callbackResult };
+    },
+  );
+  const recoveryStore = {
+    prepare: vi.fn(async () => {
+      order.push("recovery");
+      return { version: 1, id: "session-1", assets: [] };
+    }),
+    attachDatabaseRecoveryPoint: vi.fn(() => order.push("db-recovery")),
+    read: vi.fn(() => ({ version: 1, id: "session-1", assets: [] })),
+    restoreAssets: vi.fn(async () => order.push("restore-assets")),
+    promote: vi.fn(async () => order.push("promote")),
+  };
+  const applySqlRecords = vi.fn(async () => {
+    order.push("sql");
+    return { applied: 25 };
+  });
+  return {
+    ...deps,
+    recoveryStore,
+    applySqlRecords,
+    gate: new StorageSyncFinalizeGate(),
+    order,
+  };
+}
+
+describe("finalizeStorageSyncReplacement", () => {
+  it("promotes recovery only after assets and SQL commit succeed", async () => {
+    const deps = finalizeDependencies();
+    await expect(
+      finalizeStorageSyncReplacement({ session: session(), ...deps }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      revision: 8,
+      revisionId: 41,
+      assetsApplied: 1,
+      recoveryPromoted: true,
+    });
+    expect(deps.order).toEqual([
+      "recovery",
+      "assets",
+      "transaction",
+      "db-recovery",
+      "sql",
+      "promote",
+    ]);
+    expect(deps.recoveryStore.restoreAssets).not.toHaveBeenCalled();
+    expect(deps.gate.isLocked()).toBe(false);
+  });
+  it("restores assets and releases the gate when the DB revision loses the race", async () => {
+    const deps = finalizeDependencies({ failTransaction: true });
+    await expect(
+      finalizeStorageSyncReplacement({ session: session(), ...deps }),
+    ).rejects.toMatchObject({ code: "target_changed", currentRevision: 8 });
+    expect(deps.order).toEqual([
+      "recovery",
+      "assets",
+      "transaction",
+      "restore-assets",
+    ]);
+    expect(deps.recoveryStore.promote).not.toHaveBeenCalled();
+    expect(deps.applySqlRecords).not.toHaveBeenCalled();
+    expect(deps.gate.isLocked()).toBe(false);
   });
 });

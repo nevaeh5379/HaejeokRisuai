@@ -135,4 +135,31 @@ describe("StorageSyncSessionPersistence", () => {
     expect(sql.getPlan(restored)).toMatchObject({ state: "receiving", offset: sqlPrefix.length });
   });
 
+  it("restores finalized results without hydrating removed staging payloads", () => {
+    const persistence = makePersistence();
+    const current = {
+      ...session("finalized"),
+      status: "finalized",
+      finalizedResult: {
+        status: "completed",
+        revision: 8,
+        revisionId: 41,
+        sourceRevision: 3,
+        recordCount: 12,
+        recoveryId: "finalized",
+        recoveryPromoted: true,
+      },
+    };
+    persistence.saveBase(current);
+    const restored = persistence.loadActiveSessions();
+    expect(restored).toEqual([
+      expect.objectContaining({
+        id: "finalized",
+        status: "finalized",
+        finalizedResult: current.finalizedResult,
+      }),
+    ]);
+    expect(restored[0].needsHydration).toBeUndefined();
+  });
+
 });

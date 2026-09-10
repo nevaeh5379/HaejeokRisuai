@@ -35,7 +35,8 @@ export type NodeStorageSyncSessionStatus =
   | "receiving-assets"
   | "assets-ready"
   | "receiving-sql"
-  | "sql-ready";
+  | "sql-ready"
+  | "finalized";
 export type NodeStorageSyncAssetState =
   "skipped" | "pending" | "receiving" | "ready";
 
@@ -51,6 +52,7 @@ export interface NodeStorageSyncSession {
   expiresAt: number;
   chunkSizeBytes: number;
   maxConcurrency: number;
+  finalizedResult?: NodeStorageSyncFinalizeResult;
 }
 
 export interface NodeStorageSyncAssetManifestEntry {
@@ -108,6 +110,20 @@ export interface NodeStorageSyncFinalizePreflight {
   sourceRevision: number;
   recordCount: number;
   skippedAssetsVerified: number;
+}
+
+export interface NodeStorageSyncFinalizeResult {
+  status: "completed";
+  revision: number;
+  revisionId: number | string;
+  targetRevisionBefore: number;
+  sourceRevision: number;
+  recordCount: number;
+  assetsApplied: number;
+  recoveryId: string;
+  recoveryPromoted: boolean;
+  recoveryWarning: string | null;
+  cleanupWarning?: string | null;
 }
 
 export class NodeStorageSyncRevisionConflictError extends Error {
@@ -230,6 +246,7 @@ function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
     "assets-ready",
     "receiving-sql",
     "sql-ready",
+    "finalized",
   ];
   if (
     !session ||
@@ -253,6 +270,9 @@ function validateStorageSyncSession(value: unknown): NodeStorageSyncSession {
     );
   }
   validateStorageSyncSummary(session.summary);
+  if (session.status === "finalized") {
+    validateStorageSyncFinalizeResult(session.finalizedResult);
+  }
   return session as NodeStorageSyncSession;
 }
 
@@ -383,6 +403,42 @@ function validateStorageSyncFinalizePreflight(
   return result as NodeStorageSyncFinalizePreflight;
 }
 
+function validateStorageSyncFinalizeResult(
+  value: unknown,
+): NodeStorageSyncFinalizeResult {
+  const result = value as Partial<NodeStorageSyncFinalizeResult> | null;
+  if (
+    !result ||
+    result.status !== "completed" ||
+    !isNonNegativeSafeInteger(result.revision) ||
+    !(
+      typeof result.revisionId === "string" ||
+      isNonNegativeSafeInteger(result.revisionId)
+    ) ||
+    !isNonNegativeSafeInteger(result.targetRevisionBefore) ||
+    !isNonNegativeSafeInteger(result.sourceRevision) ||
+    !isNonNegativeSafeInteger(result.recordCount) ||
+    !isNonNegativeSafeInteger(result.assetsApplied) ||
+    typeof result.recoveryId !== "string" ||
+    !result.recoveryId ||
+    typeof result.recoveryPromoted !== "boolean" ||
+    !(
+      result.recoveryWarning === null ||
+      typeof result.recoveryWarning === "string"
+    ) ||
+    !(
+      result.cleanupWarning === undefined ||
+      result.cleanupWarning === null ||
+      typeof result.cleanupWarning === "string"
+    )
+  ) {
+    throw new NodeApiCompatibilityError(
+      "The storage server returned an invalid finalize result.",
+    );
+  }
+  return result as NodeStorageSyncFinalizeResult;
+}
+
 async function storageSyncAssetError(response: Response): Promise<never> {
   const body = await response.json().catch(() => ({}));
   throw new NodeStorageSyncAssetError(
@@ -410,7 +466,7 @@ async function storageSyncFinalizeError(response: Response): Promise<never> {
   throw new NodeStorageSyncFinalizeError(
     typeof body?.error === "string"
       ? body.error
-      : `Storage sync finalize preflight failed (HTTP ${response.status}).`,
+      : `Storage sync finalize request failed (HTTP ${response.status}).`,
     typeof body?.code === "string" ? body.code : "storage_sync_finalize_error",
     response.status,
   );
@@ -685,6 +741,24 @@ export class NodeApiClient {
     );
     if (!response.ok) return await storageSyncFinalizeError(response);
     return validateStorageSyncFinalizePreflight(await response.json());
+  }
+
+  async finalizeStorageSync(
+    id: string,
+    auth: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncFinalizeResult> {
+    const response = await this.request(
+      `/api/storage-sync/sessions/${encodeURIComponent(id)}/finalize`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "risu-auth": auth },
+        signal,
+      },
+    );
+    if (!response.ok) return await storageSyncFinalizeError(response);
+    return validateStorageSyncFinalizeResult(await response.json());
   }
 
   async cancelStorageSyncSession(id: string, auth: string): Promise<void> {

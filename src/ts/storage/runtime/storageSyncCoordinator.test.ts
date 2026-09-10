@@ -3,6 +3,7 @@ import type { ISqlStorage } from "../sql/ISqlStorage";
 import type {
   NodeStorageSyncAssetManifestEntry,
   NodeStorageSyncAssetPlan,
+  NodeStorageSyncFinalizeResult,
   NodeStorageSyncSession,
   NodeStorageSyncSqlPlan,
   NodeStorageSyncSummary,
@@ -10,11 +11,13 @@ import type {
 import {
   StorageSyncSourceAssetsChangedError,
   stageLocalStorageToRemote,
+  syncLocalStorageToRemote,
   type StorageSyncRemoteTarget,
 } from "./storageSyncCoordinator";
 import type { StorageSyncAssetReader } from "./storageSyncAssetReader";
 import { measureStorageSyncSqlSource } from "./storageSyncSource";
 import {
+  loadStorageSyncResumeState,
   saveStorageSyncResumeState,
   type StorageSyncResumeStorage,
 } from "./storageSyncResumeState";
@@ -80,6 +83,7 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
   readonly skipKeys = new Set<string>();
   readonly resumeAssetOffsets = new Map<string, number>();
   resumeSqlOffset = 0;
+  private finalizedResult: NodeStorageSyncFinalizeResult | null = null;
   private assetPlan: NodeStorageSyncAssetPlan | null = null;
   private sqlPlan: NodeStorageSyncSqlPlan | null = null;
   private session: NodeStorageSyncSession;
@@ -98,6 +102,25 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
       chunkSizeBytes: 8,
       maxConcurrency: 2,
     };
+  }
+
+  markFinalized(result?: Partial<NodeStorageSyncFinalizeResult>) {
+    const completed: NodeStorageSyncFinalizeResult = {
+      status: "completed",
+      revision: 12,
+      revisionId: 41,
+      targetRevisionBefore: TARGET_SUMMARY.revision,
+      sourceRevision: this.session.peerRevision ?? 7,
+      recordCount: 1,
+      assetsApplied: 0,
+      recoveryId: this.session.id,
+      recoveryPromoted: true,
+      recoveryWarning: null,
+      ...result,
+    };
+    this.finalizedResult = completed;
+    this.session.status = "finalized";
+    this.session.finalizedResult = completed;
   }
 
   getStorageSyncServerOrigin() {
@@ -282,6 +305,20 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
       skippedAssetsVerified: this.assetPlan?.skippedCount ?? 0,
     };
   }
+
+  async finalizeStorageSync(id: string) {
+    expect(id).toBe(this.session.id);
+    this.log.push("finalize");
+    if (!this.finalizedResult) {
+      if (!this.sqlPlan) throw new Error("sql plan missing");
+      this.markFinalized({
+        sourceRevision: this.session.peerRevision ?? 0,
+        recordCount: this.sqlPlan.recordCount,
+        assetsApplied: this.assetPlan?.missingCount ?? 0,
+      });
+    }
+    return structuredClone(this.finalizedResult!);
+  }
 }
 
 describe("stageLocalStorageToRemote", () => {
@@ -387,5 +424,60 @@ describe("stageLocalStorageToRemote", () => {
 
     expect(target.log).toContain("plan-sql");
     expect(target.log.some((entry) => entry.startsWith("sql:"))).toBe(true);
+  });
+});
+
+
+describe("syncLocalStorageToRemote", () => {
+  it("finalizes a staged transfer and clears its resume identity", async () => {
+    const target = new FakeRemoteTarget("finalize-1");
+    const resumeStorage = memoryResumeStorage();
+    const phases: string[] = [];
+
+    const result = await syncLocalStorageToRemote({
+      sourceSql: sourceSql(),
+      sourceAssets: assetReader({ "assets/a.bin": new Uint8Array([1, 2, 3]) }),
+      target,
+      flushPendingWrites: async () => {},
+      resumeStorage,
+      onProgress: (progress) => phases.push(progress.phase),
+    });
+
+    expect(result.resumedFinalized).toBe(false);
+    expect(result.finalized).toMatchObject({ status: "completed", revision: 12 });
+    expect(target.log.at(-1)).toBe("finalize");
+    expect(phases.slice(-2)).toEqual(["finalizing", "completed"]);
+    expect(loadStorageSyncResumeState(resumeStorage)).toBeNull();
+  });
+
+  it("recovers a completed result after the original finalize response was lost", async () => {
+    const target = new FakeRemoteTarget("lost-response");
+    target.markFinalized({ sourceRevision: 7, recordCount: 1 });
+    const resumeStorage = memoryResumeStorage();
+    saveStorageSyncResumeState(
+      {
+        version: 1,
+        serverOrigin: target.getStorageSyncServerOrigin(),
+        sessionId: "lost-response",
+        direction: "local-to-remote",
+        sourceRevision: 7,
+        createdAt: 1,
+      },
+      resumeStorage,
+    );
+
+    const result = await syncLocalStorageToRemote({
+      sourceSql: sourceSql(),
+      sourceAssets: assetReader({}),
+      target,
+      flushPendingWrites: async () => {},
+      resumeStorage,
+    });
+
+    expect(result.resumedFinalized).toBe(true);
+    expect(result.staged).toBeUndefined();
+    expect(target.log).not.toContain("plan-assets");
+    expect(target.log).not.toContain("finalize");
+    expect(loadStorageSyncResumeState(resumeStorage)).toBeNull();
   });
 });

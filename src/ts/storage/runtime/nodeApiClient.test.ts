@@ -327,4 +327,36 @@ describe("NodeApiClient", () => {
       headers: expect.objectContaining({ "risu-auth": "sync-auth" }),
     });
   });
+
+  it("finalizes a staged session and validates idempotent completed results", async () => {
+    const fetcher = vi.fn(async (_input: string, _init?: RequestInit) =>
+      Response.json({
+        status: "completed",
+        revision: 12,
+        revisionId: 44,
+        targetRevisionBefore: 11,
+        sourceRevision: 7,
+        recordCount: 42,
+        assetsApplied: 3,
+        recoveryId: "session-1",
+        recoveryPromoted: true,
+        recoveryWarning: null,
+      }),
+    );
+    const client = new NodeApiClient(profile, fetcher);
+    await expect(
+      client.finalizeStorageSync("session-1", "sync-auth"),
+    ).resolves.toMatchObject({
+      status: "completed",
+      revision: 12,
+      sourceRevision: 7,
+      assetsApplied: 3,
+    });
+    expect(fetcher.mock.calls[0][0]).toContain("/finalize");
+    expect(fetcher.mock.calls[0][0]).not.toContain("/finalize/preflight");
+    expect(fetcher.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ "risu-auth": "sync-auth" }),
+    });
+  });
 });

@@ -10,6 +10,15 @@ function isNonNegativeSafeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
+function normalizeFinalizedResult(value) {
+  if (!value || typeof value !== "object" || value.status !== "completed") return null;
+  if (!isNonNegativeSafeInteger(value.revision)) return null;
+  if (!isNonNegativeSafeInteger(value.sourceRevision)) return null;
+  if (!isNonNegativeSafeInteger(value.recordCount)) return null;
+  if (typeof value.recoveryId !== "string" || !SESSION_ID_PATTERN.test(value.recoveryId)) return null;
+  return value;
+}
+
 function normalizeStoredSession(raw) {
   if (!raw || typeof raw !== "object") return null;
   if (raw.version !== STORAGE_SYNC_SESSION_FILE_VERSION) return null;
@@ -35,11 +44,13 @@ function normalizeStoredSession(raw) {
     return null;
   if (!raw.summary || Number(raw.summary.revision) !== raw.serverRevision)
     return null;
+  const finalizedResult = normalizeFinalizedResult(raw.finalizedResult);
+  const finalized = raw.status === "finalized" && finalizedResult !== null;
   return {
     id: raw.id,
     direction: raw.direction,
     role: raw.role,
-    status: "created",
+    status: finalized ? "finalized" : "created",
     serverRevision: raw.serverRevision,
     peerRevision: raw.peerRevision,
     summary: raw.summary,
@@ -47,7 +58,7 @@ function normalizeStoredSession(raw) {
     expiresAt: raw.expiresAt,
     chunkSizeBytes: raw.chunkSizeBytes,
     maxConcurrency: raw.maxConcurrency,
-    needsHydration: true,
+    ...(finalized ? { finalizedResult } : { needsHydration: true }),
   };
 }
 
@@ -64,6 +75,9 @@ function serializeSessionBase(session) {
     expiresAt: session.expiresAt,
     chunkSizeBytes: session.chunkSizeBytes,
     maxConcurrency: session.maxConcurrency,
+    ...(session.status === "finalized" && session.finalizedResult
+      ? { status: "finalized", finalizedResult: session.finalizedResult }
+      : {}),
   };
 }
 
@@ -130,6 +144,7 @@ class StorageSyncSessionPersistence {
 module.exports = {
   STORAGE_SYNC_SESSION_FILE_VERSION,
   StorageSyncSessionPersistence,
+  normalizeFinalizedResult,
   normalizeStoredSession,
   serializeSessionBase,
   writeJsonAtomic,

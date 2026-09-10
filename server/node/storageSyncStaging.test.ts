@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
 const {
@@ -248,6 +249,50 @@ describe("storage sync asset staging", () => {
     const restored = targetSession(session.id);
     await store.hydrateSession(restored);
     expect(store.getPlan(restored).assets[0]).toMatchObject({ offset: 0, state: "pending" });
+  });
+
+  it("streams ready assets to the target without consuming staging files", async () => {
+    const store = await tempStore();
+    const session = targetSession("finalize-assets");
+    const bodies = [Buffer.from("alpha"), Buffer.from("bravo"), Buffer.from("charlie")];
+    const manifest = bodies.map((body, index) => ({
+      key: `assets/${index}.bin`,
+      size: body.length,
+      sha256: sha256(body),
+    }));
+    const plan = await store.planAssets(session, manifest, {
+      openReadStream: async () => ({ exists: false }),
+    });
+    for (let index = 0; index < plan.assets.length; index++) {
+      await store.writeAssetChunk(session, plan.assets[index].id, 0, bodies[index]);
+    }
+
+    const written = new Map<string, Buffer>();
+    let active = 0;
+    let maxActive = 0;
+    const activeStorage = {
+      createWriteStream(hex: string) {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        const chunks: Buffer[] = [];
+        const stream = new Writable({
+          write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
+          final(callback) {
+            written.set(Buffer.from(hex, "hex").toString("utf8"), Buffer.concat(chunks));
+            active--;
+            callback();
+          },
+        });
+        return { stream, done: async () => ({ success: true }), abort: async () => {} };
+      },
+    };
+    await expect(store.applyReadyAssets(session, activeStorage)).resolves.toEqual({ applied: 3 });
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect([...written.keys()].sort()).toEqual(manifest.map((item) => item.key).sort());
+    for (let index = 0; index < plan.assets.length; index++) {
+      expect(written.get(manifest[index].key)?.equals(bodies[index])).toBe(true);
+      await expect(fs.promises.stat(store.assetPath(session.id, plan.assets[index].id))).resolves.toBeTruthy();
+    }
   });
 
 });

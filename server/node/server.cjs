@@ -99,6 +99,7 @@ const {
 const { matchLoreBatch } = require("./loreMatch.cjs");
 const {
   STORAGE_SYNC_CHUNK_SIZE_BYTES,
+  STORAGE_SYNC_SESSION_TTL_MS,
   StorageSyncRevisionConflictError,
   StorageSyncSessionManager,
   StorageSyncValidationError,
@@ -117,8 +118,18 @@ const {
 } = require("./storageSyncPersistence.cjs");
 const {
   StorageSyncFinalizeError,
+  StorageSyncFinalizeGate,
+  finalizeStorageSyncReplacement,
   preflightStorageSyncFinalize,
 } = require("./storageSyncFinalize.cjs");
+const {
+  StorageSyncRecoveryError,
+  StorageSyncRecoveryStore,
+} = require("./storageSyncRecovery.cjs");
+const {
+  StorageSyncPostgresApplyError,
+  applyStorageSyncPostgresRecords,
+} = require("./storageSyncPostgresApply.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -393,6 +404,10 @@ const storageSyncPersistence = new StorageSyncSessionPersistence(
 );
 const storageSyncStaging = new StorageSyncStagingStore(storageSyncRoot);
 const storageSyncSqlStaging = new StorageSyncSqlStagingStore(storageSyncRoot);
+const storageSyncRecovery = new StorageSyncRecoveryStore(
+  path.join(savePath, "__storage_sync_recovery"),
+);
+const storageSyncFinalizeGate = new StorageSyncFinalizeGate();
 const storageSyncSessions = new StorageSyncSessionManager({
   initialSessions: storageSyncPersistence.loadActiveSessions(),
   onCreate: (session) => storageSyncPersistence.saveBase(session),
@@ -668,6 +683,62 @@ app.use("/api", (req, res, next) => {
     code: "storage_unavailable",
     runtime: getPrimaryStorageRuntimeResponse(),
   });
+});
+
+const finalizeSafeApiPrefixes = [
+  "/api/client-capabilities",
+  "/api/health",
+  "/api/test_auth",
+  "/api/login",
+  "/api/crypto",
+  "/api/set_password",
+];
+
+function requestApiPath(req) {
+  return String(req.originalUrl || req.url || "").split("?", 1)[0];
+}
+
+function isFinalizeSafeApiRequest(req) {
+  const requestPath = requestApiPath(req);
+  if (requestPath === "/api/realtime/events") return true;
+  if (/^\/api\/model-jobs\/[^/]+\/stream$/.test(requestPath)) return true;
+  return finalizeSafeApiPrefixes.some(
+    (prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`),
+  );
+}
+
+function isFinalizeControlRequest(req) {
+  return /^\/api\/storage-sync\/sessions\/[^/]+\/finalize$/.test(
+    requestApiPath(req),
+  );
+}
+
+// Finalize briefly replaces assets before the SQL transaction commits. Every
+// ordinary request takes a reader slot. Finalize blocks new readers, drains the
+// ones already in flight, and only then mutates assets/SQL.
+app.use("/api", (req, res, next) => {
+  if (isFinalizeSafeApiRequest(req) || isFinalizeControlRequest(req)) {
+    next();
+    return;
+  }
+  const leave = storageSyncFinalizeGate.enterRequest();
+  if (!leave) {
+    res.status(423).send({
+      error: "Storage sync finalize is in progress; retry after it completes.",
+      code: "storage_sync_finalizing",
+      finalize: storageSyncFinalizeGate.status(),
+    });
+    return;
+  }
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    leave();
+  };
+  res.once("finish", finish);
+  res.once("close", finish);
+  next();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2772,7 +2843,7 @@ app.get("/api/client-capabilities", (req, res) => {
       sqlStorage: true,
       assetStorage: true,
       dataChangeEvents: true,
-      storageSync: true,
+      storageSync: dbVendor === "postgres",
       modelExecution: false,
       vectorSearch: false,
     },
@@ -3119,6 +3190,109 @@ app.post(
           error: error.message,
           code: error.code,
         });
+        return;
+      }
+      if (error instanceof StorageSyncAssetError) {
+        sendStorageSyncAssetError(res, error);
+        return;
+      }
+      if (error instanceof StorageSyncSqlError) {
+        sendStorageSyncSqlError(res, error);
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+function sendStorageSyncFinalizeError(res, error) {
+  const code = error.code || "storage_sync_finalize_error";
+  const status =
+    code === "finalize_in_progress"
+      ? 423
+      : code === "target_changed" ||
+          code === "source_revision_mismatch" ||
+          code === "sql_not_ready" ||
+          code === "assets_not_ready"
+        ? 409
+        : code === "invalid_finalize_session"
+          ? 400
+          : 500;
+  const body = { error: error.message, code };
+  if (Number.isSafeInteger(error.currentRevision)) {
+    body.currentRevision = error.currentRevision;
+  }
+  res.status(status).send(body);
+}
+
+app.post(
+  "/api/storage-sync/sessions/:sessionId/finalize",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    const session = await getStorageSyncSession(req.params.sessionId);
+    if (!session) {
+      res
+        .status(404)
+        .send({ error: "Storage sync session not found or expired" });
+      return;
+    }
+    if (session.status === "finalized" && session.finalizedResult) {
+      res.send(session.finalizedResult);
+      return;
+    }
+    if (dbVendor !== "postgres") {
+      res.status(501).send({
+        error: `Storage sync finalize is not implemented for ${dbVendor} yet`,
+        code: "storage_sync_finalize_unsupported_vendor",
+      });
+      return;
+    }
+    try {
+      const result = await finalizeStorageSyncReplacement({
+        session,
+        sqlStaging: storageSyncSqlStaging,
+        assetStaging: storageSyncStaging,
+        sqlStorage: postgresStorage,
+        assetStorage: assetStorageManager.getStorage(),
+        recoveryStore: storageSyncRecovery,
+        applySqlRecords: applyStorageSyncPostgresRecords,
+        gate: storageSyncFinalizeGate,
+      });
+      session.status = "finalized";
+      session.finalizedResult = result;
+      session.expiresAt = Date.now() + STORAGE_SYNC_SESSION_TTL_MS;
+      let cleanupWarning = null;
+      try {
+        storageSyncPersistence.saveBase(session);
+        await Promise.all([
+          storageSyncStaging.cleanupAssets(session.id),
+          storageSyncSqlStaging.cleanupSql(session.id),
+        ]);
+        delete session.assets;
+        delete session.sql;
+        delete session.activeUploads;
+        delete session.sqlUploadInProgress;
+      } catch (error) {
+        cleanupWarning = error?.message || String(error);
+        console.warn("[storage-sync] Finalized staging cleanup failed:", cleanupWarning);
+      }
+      const response = cleanupWarning ? { ...result, cleanupWarning } : result;
+      session.finalizedResult = response;
+      try {
+        storageSyncPersistence.saveBase(session);
+      } catch {}
+      res.send(response);
+    } catch (error) {
+      if (
+        error instanceof StorageSyncFinalizeError ||
+        error instanceof StorageSyncPostgresApplyError
+      ) {
+        sendStorageSyncFinalizeError(res, error);
+        return;
+      }
+      if (error instanceof StorageSyncRecoveryError) {
+        res.status(500).send({ error: error.message, code: error.code });
         return;
       }
       if (error instanceof StorageSyncAssetError) {

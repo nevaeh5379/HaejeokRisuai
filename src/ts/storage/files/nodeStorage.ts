@@ -10,6 +10,7 @@ import {
   type NodeStorageSyncAssetManifestEntry,
   type NodeStorageSyncAssetPlan,
   type NodeStorageSyncFinalizePreflight,
+  type NodeStorageSyncFinalizeResult,
   type NodeStorageSyncSqlPlan,
   type NodeStorageSyncSqlPlanInput,
   type NodeStorageSyncSqlValidation,
@@ -1546,6 +1547,17 @@ export class NodeStorage {
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncFinalizePreflight> {
     return await this.apiClient.preflightStorageSyncFinalize(
+      id,
+      await this.getCachedAuth(),
+      signal,
+    );
+  }
+
+  async finalizeStorageSync(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncFinalizeResult> {
+    return await this.apiClient.finalizeStorageSync(
       id,
       await this.getCachedAuth(),
       signal,

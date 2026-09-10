@@ -394,6 +394,45 @@ class StorageSyncStagingStore {
     return true;
   }
 
+
+  async applyReadyAssets(session, activeStorage) {
+    if (session.role !== "target" || !session.assets) {
+      throw new StorageSyncAssetError("Storage sync assets are not planned");
+    }
+    const assets = Object.values(session.assets).filter((asset) => asset.state === "ready");
+    if (assets.length === 0) return { applied: 0 };
+    if (typeof activeStorage?.createWriteStream !== "function") {
+      throw new StorageSyncAssetError(
+        "Active asset storage cannot stream finalized assets",
+        "asset_finalize_write_unsupported",
+      );
+    }
+    let cursor = 0;
+    const workers = Array.from(
+      { length: Math.min(STORAGE_SYNC_MAX_CONCURRENCY, assets.length) },
+      async () => {
+        while (cursor < assets.length) {
+          const asset = assets[cursor++];
+          const writer = activeStorage.createWriteStream(keyToHex(asset.key), {
+            generateThumbnail: false,
+          });
+          try {
+            await require("stream/promises").pipeline(
+              fs.createReadStream(this.assetPath(session.id, asset.id)),
+              writer.stream,
+            );
+            await writer.done();
+          } catch (error) {
+            await writer.abort?.().catch(() => {});
+            throw error;
+          }
+        }
+      },
+    );
+    await Promise.all(workers);
+    return { applied: assets.length };
+  }
+
   getPlan(session) {
     if (!session.assets) {
       throw new StorageSyncAssetError(

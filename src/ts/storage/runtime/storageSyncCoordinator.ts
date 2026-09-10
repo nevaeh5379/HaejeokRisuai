@@ -6,6 +6,7 @@ import type {
   NodeStorageSyncAssetPlan,
   NodeStorageSyncAssetPlanEntry,
   NodeStorageSyncFinalizePreflight,
+  NodeStorageSyncFinalizeResult,
   NodeStorageSyncSession,
   NodeStorageSyncSqlPlan,
   NodeStorageSyncSqlPlanInput,
@@ -24,6 +25,7 @@ import {
   type StorageSyncSqlSourcePlan,
 } from "./storageSyncSource";
 import {
+  clearStorageSyncResumeState,
   loadStorageSyncResumeState,
   saveStorageSyncResumeState,
   type StorageSyncResumeStorage,
@@ -83,10 +85,20 @@ export interface StorageSyncRemoteTarget {
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncFinalizePreflight>;
+  finalizeStorageSync(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<NodeStorageSyncFinalizeResult>;
 }
 
 export type StorageSyncStagePhase =
-  "preview" | "assets" | "sql" | "verifying" | "staged";
+  | "preview"
+  | "assets"
+  | "sql"
+  | "verifying"
+  | "staged"
+  | "finalizing"
+  | "completed";
 
 export interface StorageSyncStageProgress {
   phase: StorageSyncStagePhase;
@@ -103,6 +115,16 @@ export interface LocalToRemoteStageResult {
   sourceRevision: number;
   targetRevision: number;
 }
+export class StorageSyncAlreadyFinalizedError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly result: NodeStorageSyncFinalizeResult,
+  ) {
+    super("The saved storage sync session has already finalized successfully.");
+    this.name = "StorageSyncAlreadyFinalizedError";
+  }
+}
+
 export class StorageSyncPlanMismatchError extends Error {
   constructor(message: string) {
     super(message);
@@ -488,6 +510,17 @@ export async function stageLocalStorageToRemote(
     signal,
   );
   assertResumeSession(session, sourceRevision);
+  if (session.status === "finalized" && session.finalizedResult) {
+    if (session.finalizedResult.sourceRevision !== sourceRevision) {
+      throw new StorageSyncResumeConflictError(
+        "The finalized sync result belongs to a different local source revision.",
+      );
+    }
+    throw new StorageSyncAlreadyFinalizedError(
+      session.id,
+      session.finalizedResult,
+    );
+  }
   assertTargetUnchanged(session.summary, targetSummary);
 
   const plannedAssets = await target.planStorageSyncAssets(
@@ -597,4 +630,45 @@ export async function stageLocalStorageToRemote(
     sourceRevision,
     targetRevision: targetSummary.revision,
   };
+}
+
+export interface LocalToRemoteSyncResult {
+  finalized: NodeStorageSyncFinalizeResult;
+  staged?: LocalToRemoteStageResult;
+  resumedFinalized: boolean;
+}
+
+export async function syncLocalStorageToRemote(
+  options: StageLocalToRemoteOptions,
+): Promise<LocalToRemoteSyncResult> {
+  const { target, resumeStorage, signal, onProgress } = options;
+  try {
+    const staged = await stageLocalStorageToRemote(options);
+    throwIfAborted(signal);
+    onProgress?.({ phase: "finalizing" });
+    const finalized = await target.finalizeStorageSync(
+      staged.session.id,
+      signal,
+    );
+    if (
+      finalized.sourceRevision !== staged.sourceRevision ||
+      finalized.targetRevisionBefore !== staged.targetRevision ||
+      finalized.recordCount !== staged.sqlSourcePlan.recordCount
+    ) {
+      throw new StorageSyncPlanMismatchError(
+        "Remote finalize result does not match the staged source and target.",
+      );
+    }
+    clearStorageSyncResumeState(staged.session.id, resumeStorage);
+    onProgress?.({ phase: "completed" });
+    return { finalized, staged, resumedFinalized: false };
+  } catch (error) {
+    if (!(error instanceof StorageSyncAlreadyFinalizedError)) throw error;
+    clearStorageSyncResumeState(error.sessionId, resumeStorage);
+    onProgress?.({ phase: "completed" });
+    return {
+      finalized: error.result,
+      resumedFinalized: true,
+    };
+  }
 }

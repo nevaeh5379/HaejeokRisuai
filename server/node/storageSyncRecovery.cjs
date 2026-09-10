@@ -194,7 +194,7 @@ class StorageSyncRecoveryStore {
     const assets = (assetPlan?.assets || []).filter(
       (asset) => asset.state === "ready",
     );
-    if (typeof activeStorage?.openReadStream !== "function") {
+    if (assets.length > 0 && typeof activeStorage?.openReadStream !== "function") {
       throw new StorageSyncRecoveryError(
         "Active asset storage cannot stream recovery snapshots",
         "recovery_asset_read_unsupported",
