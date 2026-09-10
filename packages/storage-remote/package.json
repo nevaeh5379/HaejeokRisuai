@@ -14,6 +14,7 @@
     "./remoteBulkAssetClient": "./src/remoteBulkAssetClient.ts",
     "./remoteColdStorageClient": "./src/remoteColdStorageClient.ts",
     "./remoteStorageSyncClient": "./src/remoteStorageSyncClient.ts",
+    "./remoteSyncAssetReader": "./src/remoteSyncAssetReader.ts",
     "./remoteSqlCommitClient": "./src/remoteSqlCommitClient.ts",
     "./remoteSqlReadClient": "./src/remoteSqlReadClient.ts",
     "./keypairStore": "./src/keypairStore.ts",
