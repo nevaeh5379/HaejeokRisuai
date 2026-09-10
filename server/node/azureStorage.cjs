@@ -674,7 +674,10 @@ class AzureStorage extends SqlStorageBase {
     return {
       revision: Number(row.revision) || 0,
       initialized: Boolean(row.initialized),
-      records: { ...records, total: Object.values(records).reduce((a, b) => a + b, 0) },
+      records: {
+        ...records,
+        total: Object.values(records).reduce((a, b) => a + b, 0),
+      },
     };
   }
 
@@ -2181,7 +2184,10 @@ class AzureStorage extends SqlStorageBase {
   async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
-    const limit = Math.min(1000, Math.max(1, Math.floor(Number(rawLimit) || 256)));
+    const limit = Math.min(
+      1000,
+      Math.max(1, Math.floor(Number(rawLimit) || 256)),
+    );
     return await this.withTransaction(async (tx) => {
       await this.ensureChatBranchGraph(tx, chatId);
       let request = tx.request();
@@ -2225,8 +2231,16 @@ class AzureStorage extends SqlStorageBase {
         const idsPayload = JSON.stringify(ids);
         const relationQuery = async (query) => {
           const relationRequest = tx.request();
-          relationRequest.input("graphRelationChatId", sql.NVarChar(450), chatId);
-          relationRequest.input("graphMessageIds", sql.NVarChar(sql.MAX), idsPayload);
+          relationRequest.input(
+            "graphRelationChatId",
+            sql.NVarChar(450),
+            chatId,
+          );
+          relationRequest.input(
+            "graphMessageIds",
+            sql.NVarChar(sql.MAX),
+            idsPayload,
+          );
           return await relationRequest.query(query);
         };
         const relationJoin = `INNER JOIN OPENJSON(@graphMessageIds) WITH (id NVARCHAR(450) '$') ids ON ids.id = source.message_id`;
@@ -2285,7 +2299,8 @@ class AzureStorage extends SqlStorageBase {
       }));
       return {
         branches,
-        activeBranchId: branchResult.recordset[0]?.active_branch_id ?? undefined,
+        activeBranchId:
+          branchResult.recordset[0]?.active_branch_id ?? undefined,
         messages,
         links: rows.map((row) => ({
           messageId: row.id,
@@ -2526,9 +2541,9 @@ class AzureStorage extends SqlStorageBase {
 
   async listSettingKeys() {
     const pool = await this.getPool();
-    const result = await pool.request().query(
-      "SELECT [key] FROM [system].[settings] ORDER BY [key]",
-    );
+    const result = await pool
+      .request()
+      .query("SELECT [key] FROM [system].[settings] ORDER BY [key]");
     return result.recordset.map((row) => row.key);
   }
 
@@ -2691,18 +2706,30 @@ class AzureStorage extends SqlStorageBase {
       );
     }
     if (typeof callback !== "function") {
-      throw new StoragePayloadError("Storage sync finalize callback is required");
+      throw new StoragePayloadError(
+        "Storage sync finalize callback is required",
+      );
     }
     return await this.withTransaction(async (tx) => {
       const metaRes = await tx
         .request()
         .query(
-          "SELECT revision FROM [system].[storage_meta] WITH (UPDLOCK, HOLDLOCK) WHERE singleton = 1",
+          "SELECT revision, initialized FROM [system].[storage_meta] WITH (UPDLOCK, HOLDLOCK) WHERE singleton = 1",
         );
       const currentRevision = Number(metaRes.recordset[0]?.revision) || 0;
       if (currentRevision !== expectedRevision) {
         throw new StorageRevisionConflictError(currentRevision);
       }
+      const previousReq = tx.request();
+      previousReq.input("current_rev", sql.BigInt, currentRevision);
+      const previousRes = await previousReq.query(
+        "SELECT TOP (1) id FROM [system].[revisions] WHERE storage_revision = @current_rev ORDER BY id DESC",
+      );
+      const previousRevisionId =
+        previousRes.recordset[0]?.id == null
+          ? null
+          : Number(previousRes.recordset[0].id);
+      const databaseInitialized = Boolean(metaRes.recordset[0]?.initialized);
       const nextRevision = currentRevision + 1;
       const revReq = tx.request();
       revReq.input("storage_rev", sql.BigInt, nextRevision);
@@ -2724,6 +2751,8 @@ class AzureStorage extends SqlStorageBase {
         currentRevision,
         nextRevision,
         revisionId,
+        previousRevisionId,
+        databaseInitialized,
       });
       const updateReq = tx.request();
       updateReq.input("next_rev", sql.BigInt, nextRevision);

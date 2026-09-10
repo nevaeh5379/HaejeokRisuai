@@ -1213,7 +1213,10 @@ class OracleStorage extends SqlStorageBase {
       return {
         revision: Number(row?.revision) || 0,
         initialized: num1ToBool(row?.initialized),
-        records: { ...records, total: Object.values(records).reduce((a, b) => a + b, 0) },
+        records: {
+          ...records,
+          total: Object.values(records).reduce((a, b) => a + b, 0),
+        },
       };
     } finally {
       await conn.close();
@@ -3112,7 +3115,10 @@ class OracleStorage extends SqlStorageBase {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
-    const limit = Math.min(1000, Math.max(1, Math.floor(Number(rawLimit) || 256)));
+    const limit = Math.min(
+      1000,
+      Math.max(1, Math.floor(Number(rawLimit) || 256)),
+    );
     const conn = await this.pool.getConnection();
     try {
       await this.ensureChatBranchGraph(conn, chatId);
@@ -3230,10 +3236,14 @@ class OracleStorage extends SqlStorageBase {
         hasMore: offset + messages.length < total,
       };
     } catch (error) {
-      try { await conn.rollback(); } catch (e) {}
+      try {
+        await conn.rollback();
+      } catch (e) {}
       throw error;
     } finally {
-      try { await conn.close(); } catch (e) {}
+      try {
+        await conn.close();
+      } catch (e) {}
     }
   }
 
@@ -3577,7 +3587,9 @@ class OracleStorage extends SqlStorageBase {
       );
       return rows.map((row) => row.key);
     } finally {
-      try { await conn.close(); } catch (e) {}
+      try {
+        await conn.close();
+      } catch (e) {}
     }
   }
 
@@ -3746,14 +3758,16 @@ class OracleStorage extends SqlStorageBase {
       );
     }
     if (typeof callback !== "function") {
-      throw new StoragePayloadError("Storage sync finalize callback is required");
+      throw new StoragePayloadError(
+        "Storage sync finalize callback is required",
+      );
     }
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET CONSTRAINTS ALL DEFERRED");
       const metaRow = await fetchOne(
         conn,
-        "SELECT revision FROM system_storage_meta WHERE singleton = 1 FOR UPDATE",
+        "SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1 FOR UPDATE",
       );
       const currentRevision = Number(metaRow?.revision) || 0;
       if (currentRevision !== expectedRevision) {
@@ -3762,6 +3776,14 @@ class OracleStorage extends SqlStorageBase {
           `Oracle data changed in another session (server revision ${currentRevision}). Refresh the sync preview before finalizing.`,
         );
       }
+      const previousRevision = await fetchOne(
+        conn,
+        "SELECT id FROM system_revisions WHERE storage_revision = :1 ORDER BY id DESC FETCH FIRST 1 ROW ONLY",
+        [currentRevision],
+      );
+      const previousRevisionId =
+        previousRevision?.id == null ? null : Number(previousRevision.id);
+      const databaseInitialized = Boolean(metaRow?.initialized);
       const nextRevision = currentRevision + 1;
       const revisionId = await beginAuditRevision(conn, {
         storageRevision: nextRevision,
@@ -3773,6 +3795,8 @@ class OracleStorage extends SqlStorageBase {
         currentRevision,
         nextRevision,
         revisionId,
+        previousRevisionId,
+        databaseInitialized,
       });
       await conn.execute(
         `UPDATE system_storage_meta

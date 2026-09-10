@@ -456,15 +456,21 @@ describe("OracleStorage persistent branch API", () => {
   });
 });
 
-
 describe("Oracle storage sync finalize concurrency", () => {
   function storageAtRevision(revision: number) {
     const queries: string[] = [];
     const connection = {
       execute: vi.fn(async (sql: string) => {
         queries.push(sql);
-        if (sql.includes("SELECT revision FROM system_storage_meta")) {
-          return { rows: [{ REVISION: revision }] };
+        if (
+          sql.includes("SELECT revision, initialized FROM system_storage_meta")
+        ) {
+          return { rows: [{ REVISION: revision, INITIALIZED: 1 }] };
+        }
+        if (
+          sql.includes("SELECT id FROM system_revisions WHERE storage_revision")
+        ) {
+          return { rows: [{ ID: 40 }] };
         }
         if (sql.includes("INSERT INTO system_revisions")) {
           return { outBinds: { "6": [41] } };
@@ -493,6 +499,8 @@ describe("Oracle storage sync finalize concurrency", () => {
         currentRevision: 7,
         nextRevision: 8,
         revisionId: 41,
+        previousRevisionId: 40,
+        databaseInitialized: true,
       });
       return { applied: 2 };
     });

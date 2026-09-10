@@ -791,7 +791,10 @@ class PostgresStorage extends SqlStorageBase {
     return {
       revision: Number(row.revision) || 0,
       initialized: Boolean(row.initialized),
-      records: { ...records, total: Object.values(records).reduce((a, b) => a + b, 0) },
+      records: {
+        ...records,
+        total: Object.values(records).reduce((a, b) => a + b, 0),
+      },
     };
   }
 
@@ -3548,7 +3551,10 @@ class PostgresStorage extends SqlStorageBase {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
-    const limit = Math.min(1000, Math.max(1, Math.floor(Number(rawLimit) || 256)));
+    const limit = Math.min(
+      1000,
+      Math.max(1, Math.floor(Number(rawLimit) || 256)),
+    );
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -4161,12 +4167,21 @@ class PostgresStorage extends SqlStorageBase {
     try {
       await client.query("BEGIN");
       const metaResult = await client.query(
-        "SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
+        "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
       const currentRevision = Number(metaResult.rows[0].revision);
       if (currentRevision !== expectedRevision) {
         throw new PostgresRevisionConflictError(currentRevision);
       }
+      const previousRevisionResult = await client.query(
+        "SELECT id FROM system.revisions WHERE storage_revision = $1 ORDER BY id DESC LIMIT 1",
+        [currentRevision],
+      );
+      const previousRevisionId =
+        previousRevisionResult.rows[0]?.id == null
+          ? null
+          : Number(previousRevisionResult.rows[0].id);
+      const databaseInitialized = Boolean(metaResult.rows[0].initialized);
       const nextRevision = currentRevision + 1;
       const revisionId = await beginAuditRevision(client, {
         storageRevision: nextRevision,
@@ -4178,6 +4193,8 @@ class PostgresStorage extends SqlStorageBase {
         currentRevision,
         nextRevision,
         revisionId,
+        previousRevisionId,
+        databaseInitialized,
       });
       await client.query(
         `UPDATE system.storage_meta
@@ -4615,7 +4632,7 @@ class PostgresStorage extends SqlStorageBase {
       onProgress?.({ stage: "start", message: "Starting transaction" });
       await client.query("BEGIN");
       const metaResult = await client.query(
-        "SELECT revision FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
+        "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
       );
       const currentRevision = Number(metaResult.rows[0].revision);
       if (payload.baseRevision !== currentRevision) {

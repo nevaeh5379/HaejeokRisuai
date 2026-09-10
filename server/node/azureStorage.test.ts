@@ -412,7 +412,6 @@ describe("AzureStorage persistent branch API", () => {
   });
 });
 
-
 describe("Azure storage sync finalize concurrency", () => {
   function storageAtRevision(revision: number) {
     const queries: string[] = [];
@@ -422,8 +421,15 @@ describe("Azure storage sync finalize concurrency", () => {
       }),
       query: vi.fn(async (sqlText: string) => {
         queries.push(sqlText);
-        if (sqlText.includes("SELECT revision FROM [system].[storage_meta]")) {
-          return { recordset: [{ revision }] };
+        if (
+          sqlText.includes(
+            "SELECT revision, initialized FROM [system].[storage_meta]",
+          )
+        ) {
+          return { recordset: [{ revision, initialized: true }] };
+        }
+        if (sqlText.includes("SELECT TOP (1) id FROM [system].[revisions]")) {
+          return { recordset: [{ id: 40 }] };
         }
         if (sqlText.includes("INSERT INTO [system].[revisions]")) {
           return { recordset: [{ id: 41 }] };
@@ -447,6 +453,8 @@ describe("Azure storage sync finalize concurrency", () => {
         currentRevision: 7,
         nextRevision: 8,
         revisionId: 41,
+        previousRevisionId: 40,
+        databaseInitialized: true,
       });
       return { applied: 4 };
     });

@@ -54,8 +54,15 @@ describe("PostgreSQL storage sync finalize concurrency", () => {
     const client = {
       query: vi.fn(async (sql: string) => {
         queries.push(sql);
-        if (sql.includes("SELECT revision FROM system.storage_meta")) {
-          return { rows: [{ revision }] };
+        if (
+          sql.includes("SELECT revision, initialized FROM system.storage_meta")
+        ) {
+          return { rows: [{ revision, initialized: true }] };
+        }
+        if (
+          sql.includes("SELECT id FROM system.revisions WHERE storage_revision")
+        ) {
+          return { rows: [{ id: "40" }] };
         }
         if (sql.includes("WITH inserted AS")) {
           return { rows: [{ id: "41" }] };
@@ -79,6 +86,8 @@ describe("PostgreSQL storage sync finalize concurrency", () => {
         currentRevision: 7,
         nextRevision: 8,
         revisionId: 41,
+        previousRevisionId: 40,
+        databaseInitialized: true,
       });
       return { applied: 3 };
     });
