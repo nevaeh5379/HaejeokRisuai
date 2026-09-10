@@ -17,7 +17,7 @@ import {
   applySqliteCommit,
   countSqliteCommitStatements,
 } from "@risuai/storage-sqlite/sqliteCommit";
-import type { SqliteTransactionStatement } from "../sqliteStorageUtils";
+import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";

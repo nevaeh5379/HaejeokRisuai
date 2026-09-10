@@ -50,7 +50,10 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import { applySqliteCommit, writeSqliteColdStorage } from "@risuai/storage-sqlite/sqliteCommit";
+import {
+  applySqliteCommit,
+  writeSqliteColdStorage,
+} from "@risuai/storage-sqlite/sqliteCommit";
 import {
   rebuildRelationalValue,
   decodedText,
@@ -72,11 +75,13 @@ import {
   buildBranchMessageRowsQuery,
   buildMessageRowsQuery,
   buildCharacterAssetFieldsQuery,
-  rebuildBranchGraphMessages,
   rebuildBranchGraphLinks,
-  rebuildMessageRows,
   type MessageLoadMode,
   type SettingNodeRow,
+} from "@risuai/storage-sqlite/sqliteQueries";
+import {
+  rebuildBranchGraphMessages,
+  rebuildMessageRows,
 } from "../sqliteStorageUtils";
 import {
   buildSqliteLegacyBranchMigrationStatements,
@@ -275,8 +280,7 @@ export class WebSqliteStorage implements ISqlStorage {
       revision: Number.isSafeInteger(Number(row?.revision))
         ? Number(row?.revision)
         : this.revision,
-      initialized:
-        row?.initialized === true || Number(row?.initialized) === 1,
+      initialized: row?.initialized === true || Number(row?.initialized) === 1,
       records: {
         ...records,
         total: Object.values(records).reduce((a, b) => a + b, 0),
@@ -1134,11 +1138,7 @@ export class WebSqliteStorage implements ISqlStorage {
     };
   }
 
-  async loadChatBranchGraphPage(
-    chatId: string,
-    offset: number,
-    limit: number,
-  ) {
+  async loadChatBranchGraphPage(chatId: string, offset: number, limit: number) {
     await this.ensureBranchGraph(chatId);
     const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const normalizedLimit = normalizeSqliteLimit(limit);

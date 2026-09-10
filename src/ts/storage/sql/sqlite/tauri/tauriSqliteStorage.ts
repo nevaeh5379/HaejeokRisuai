@@ -7,7 +7,7 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import { splitSqliteStatements } from "@risuai/storage-sqlite/sqliteSchemaStatements";
 import { SqlRevisionConflictError } from "../../sqlCommit";
-import type { SqliteTransactionStatement } from "../sqliteStorageUtils";
+import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 
 type SqlDatabase = import("@tauri-apps/plugin-sql").default;
 

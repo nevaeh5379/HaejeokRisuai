@@ -50,7 +50,10 @@ import {
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
 } from "@risuai/storage-sqlite/relationalNodeCodec";
-import { applySqliteCommit, writeSqliteColdStorage } from "@risuai/storage-sqlite/sqliteCommit";
+import {
+  applySqliteCommit,
+  writeSqliteColdStorage,
+} from "@risuai/storage-sqlite/sqliteCommit";
 import {
   SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
   SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
@@ -71,10 +74,12 @@ import {
   buildMessageRowsQuery,
   normalizeSqliteLimit,
   normalizeSqlitePageEnd,
-  rebuildBranchGraphMessages,
   rebuildBranchGraphLinks,
-  rebuildMessageRows,
   type SqliteTransactionStatement,
+} from "@risuai/storage-sqlite/sqliteQueries";
+import {
+  rebuildBranchGraphMessages,
+  rebuildMessageRows,
 } from "./sqliteStorageUtils";
 import {
   buildSqliteLegacyBranchMigrationStatements,

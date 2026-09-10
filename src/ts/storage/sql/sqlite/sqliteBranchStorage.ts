@@ -5,7 +5,7 @@ import {
   RELATIONAL_NODE_COLUMNS,
 } from "@risuai/storage-sqlite/relationalNodeCodec";
 import { messageExtensionData } from "@risuai/storage-sqlite/sqliteCommit";
-import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
+import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 
 // Kept separate from sqlite-schema.sql because native backends validate and
 // reuse existing relational-schema-v3 databases without replaying that file.
