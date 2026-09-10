@@ -8,6 +8,7 @@
     "./sqliteLastMessageTime": "./src/sqliteLastMessageTime.ts",
     "./sqliteCommit": "./src/sqliteCommit.ts",
     "./sqliteQueries": "./src/sqliteQueries.ts",
+    "./sqliteMessageMapper": "./src/sqliteMessageMapper.ts",
     "./sqlite-schema.sql": "./src/sqlite-schema.sql"
   },
   "scripts": {
