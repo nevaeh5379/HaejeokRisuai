@@ -1,9 +1,12 @@
 import { language } from "src/lang";
 import { alertError, alertInput, waitAlert } from "../../alert";
-import { base64url, getKeypairStore, saveKeypairStore } from "../../util";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
+import {
+  digestRemotePassword,
+  RemoteAuthIdentity,
+} from "@risuai/storage-remote/remoteAuthIdentity";
 import { RemoteStorageSyncClient } from "@risuai/storage-remote/remoteStorageSyncClient";
 import {
   StorageSyncAssetReadError,
@@ -194,6 +197,7 @@ export class NodeStorage {
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
   private readonly assetClient: RemoteAssetClient;
+  private readonly authIdentity: RemoteAuthIdentity;
   private readonly syncClient: RemoteStorageSyncClient;
 
   constructor(
@@ -203,6 +207,7 @@ export class NodeStorage {
       await this.ensureAuthFresh();
       return await this.createAuth();
     };
+    this.authIdentity = new RemoteAuthIdentity(apiClient);
     this.sql = new NodeSqlStorage(getAuth, apiClient);
     this.s3 = new NodeS3Storage(getAuth, apiClient);
     this.assetClient = new RemoteAssetClient(apiClient, () =>
@@ -262,43 +267,8 @@ export class NodeStorage {
       // bounded cache will eventually evict it if the browser cache is damaged.
     }
   }
-  JSONStringlifyAndbase64Url(obj: any) {
-    return base64url(Buffer.from(JSON.stringify(obj), "utf-8"));
-  }
-
-  async createAuth() {
-    const keyPair = await this.getKeyPair();
-    const date = Math.floor(Date.now() / 1000);
-
-    const header = {
-      alg: "ES256",
-      typ: "JWT",
-    };
-    const payload = {
-      iat: date,
-      exp: date + 5 * 60, //5 minutes expiration
-      pub: await crypto.subtle.exportKey("jwk", keyPair.publicKey),
-    };
-    const sig = await crypto.subtle.sign(
-      {
-        name: "ECDSA",
-        hash: "SHA-256",
-      },
-      keyPair.privateKey,
-      Buffer.from(
-        this.JSONStringlifyAndbase64Url(header) +
-          "." +
-          this.JSONStringlifyAndbase64Url(payload),
-      ),
-    );
-    const sigString = base64url(new Uint8Array(sig));
-    return (
-      this.JSONStringlifyAndbase64Url(header) +
-      "." +
-      this.JSONStringlifyAndbase64Url(payload) +
-      "." +
-      sigString
-    );
+  async createAuth(): Promise<string> {
+    return await this.authIdentity.createAuth();
   }
 
   private cachedAuthToken: string = "";
@@ -789,27 +759,7 @@ export class NodeStorage {
   }
 
   async getKeyPair(): Promise<CryptoKeyPair> {
-    const keyStoreName = `node:${base64url(
-      Buffer.from(this.apiClient.baseUrl, "utf-8"),
-    )}`;
-    const storedKey = await getKeypairStore(keyStoreName);
-
-    if (storedKey) {
-      return storedKey;
-    }
-
-    const keyPair = await crypto.subtle.generateKey(
-      {
-        name: "ECDSA",
-        namedCurve: "P-256",
-      },
-      false,
-      ["sign", "verify"],
-    );
-
-    await saveKeypairStore(keyStoreName, keyPair);
-
-    return keyPair;
+    return await this.authIdentity.getKeyPair();
   }
 
   async setItem(key: string, value: Uint8Array) {
@@ -1549,7 +1499,7 @@ export class NodeStorage {
     // An empty password is a valid explicit choice. It is still hashed before
     // registration, so the server stores the SHA-256 digest rather than an
     // ambiguous empty/unset value.
-    const digest = await digestPassword(password, this.apiClient);
+    const digest = await digestRemotePassword(password, this.apiClient);
     if (data.status === "unset") {
       const setResponse = await this.apiClient.request("/api/set_password", {
         method: "POST",
@@ -1601,7 +1551,7 @@ export class NodeStorage {
       }
 
       if (data?.status === "unset") {
-        const input = await digestPassword(
+        const input = await digestRemotePassword(
           await alertInput(language.setNodePassword),
           this.apiClient,
         );
@@ -1621,7 +1571,7 @@ export class NodeStorage {
         }
         await this.authorizeKey(input);
       } else if (data?.status === "incorrect") {
-        const input = await digestPassword(
+        const input = await digestRemotePassword(
           await alertInput(language.inputNodePassword),
           this.apiClient,
         );
@@ -1656,30 +1606,4 @@ export async function getNodeServerProxyAuth() {
     // Some early Node-only callers run before the active runtime is installed.
   }
   return await sharedNodeStorage.getProxyAuth();
-}
-
-async function digestPassword(message: string, apiClient: NodeApiClient) {
-  const response = await apiClient.request("/api/crypto", {
-    body: JSON.stringify({
-      data: message,
-    }),
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  if (response.status < 200 || response.status >= 300) {
-    let message = `Password crypto failed (${response.status})`;
-    try {
-      const body = await response.json();
-      if (body?.error) {
-        message = body.error;
-      }
-    } catch {}
-    throw message;
-  }
-  const crypt = await response.text();
-
-  return crypt;
 }
