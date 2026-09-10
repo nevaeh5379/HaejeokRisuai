@@ -531,6 +531,7 @@ let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(
 );
 const databaseMutations = createDatabaseMutations({
   getStorage: () => postgresStorage,
+  finalizeStorageSyncReplacement,
   realtimeEventHub,
 });
 // vendor 확정 후 환경 변수 관리 여부 갱신
@@ -3260,16 +3261,18 @@ app.post(
       return;
     }
     try {
-      const result = await finalizeStorageSyncReplacement({
-        session,
-        sqlStaging: storageSyncSqlStaging,
-        assetStaging: storageSyncStaging,
-        sqlStorage: postgresStorage,
-        assetStorage: assetStorageManager.getStorage(),
-        recoveryStore: storageSyncRecovery,
-        applySqlRecords: applyStorageSyncPostgresRecords,
-        gate: storageSyncFinalizeGate,
-      });
+      const result = await databaseMutations.storageSyncFinalize(
+        {
+          session,
+          sqlStaging: storageSyncSqlStaging,
+          assetStaging: storageSyncStaging,
+          assetStorage: assetStorageManager.getStorage(),
+          recoveryStore: storageSyncRecovery,
+          applySqlRecords: applyStorageSyncPostgresRecords,
+          gate: storageSyncFinalizeGate,
+        },
+        req.headers["x-risu-client-id"],
+      );
       session.status = "finalized";
       session.finalizedResult = result;
       session.expiresAt = Date.now() + STORAGE_SYNC_SESSION_TTL_MS;

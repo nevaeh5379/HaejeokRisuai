@@ -22,6 +22,10 @@ type ServerMutationStorage = {
 type MutationArgs = {
   commit: [payload: any, rawSourceClientId: unknown, options?: any];
   restoreBackup: [payload: any, options: any, rawSourceClientId: unknown];
+  storageSyncFinalize: [
+    options: Record<string, any>,
+    rawSourceClientId: unknown,
+  ];
   togglePlugin: [input: any, rawSourceClientId: unknown];
   createChatBranch: [input: any, rawSourceClientId: unknown];
   activateChatBranch: [
@@ -65,6 +69,9 @@ type DatabaseMutationApi = {
 
 type DatabaseMutationDependencies = {
   getStorage: () => ServerMutationStorage;
+  finalizeStorageSyncReplacement: (
+    options: Record<string, any>,
+  ) => Promise<any>;
   realtimeEventHub: {
     broadcast: (event: string, data: Record<string, unknown>) => void;
   };
@@ -72,6 +79,7 @@ type DatabaseMutationDependencies = {
 
 function createDatabaseMutations({
   getStorage,
+  finalizeStorageSyncReplacement,
   realtimeEventHub,
 }: DatabaseMutationDependencies): DatabaseMutationApi {
   const storage = () => getStorage();
@@ -99,6 +107,18 @@ function createDatabaseMutations({
         await storage().sync(payload, options),
       describe: (_result, _payload, _options, rawSourceClientId) => ({
         action: "backup-restore",
+        details: { replaceAll: true },
+        rawSourceClientId,
+      }),
+    },
+    storageSyncFinalize: {
+      mutate: async (options) =>
+        await finalizeStorageSyncReplacement({
+          ...options,
+          sqlStorage: storage(),
+        }),
+      describe: (_result, _options, rawSourceClientId) => ({
+        action: "storage-sync-finalize",
         details: { replaceAll: true },
         rawSourceClientId,
       }),
@@ -220,6 +240,7 @@ function createDatabaseMutations({
   return {
     commit: (...args) => execute("commit", ...args),
     restoreBackup: (...args) => execute("restoreBackup", ...args),
+    storageSyncFinalize: (...args) => execute("storageSyncFinalize", ...args),
     togglePlugin: (...args) => execute("togglePlugin", ...args),
     createChatBranch: (...args) => execute("createChatBranch", ...args),
     activateChatBranch: (...args) => execute("activateChatBranch", ...args),

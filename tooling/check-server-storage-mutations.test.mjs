@@ -40,3 +40,39 @@ test("rejects unclassified storage calls", () => {
     );
   });
 });
+
+test("rejects aliasing the primary storage", () => {
+  withFixture(`const storage = postgresStorage;\nstorage.sync({});`, (file) => {
+    assert.throws(
+      () => checkServerStorageMutations(file),
+      /aliasing postgresStorage is forbidden/,
+    );
+  });
+});
+
+test("allows the previous storage alias only for close", () => {
+  withFixture(
+    `const previousStorage = postgresStorage;\npreviousStorage.close();`,
+    (file) => {
+      assert.equal(checkServerStorageMutations(file), true);
+    },
+  );
+  withFixture(
+    `const previousStorage = postgresStorage;\npreviousStorage.sync({});`,
+    (file) => {
+      assert.throws(
+        () => checkServerStorageMutations(file),
+        /previousStorage\.sync\(\) is forbidden/,
+      );
+    },
+  );
+});
+
+test("rejects extracting a client-visible write method", () => {
+  withFixture(`const write = postgresStorage.saveMessage;`, (file) => {
+    assert.throws(
+      () => checkServerStorageMutations(file),
+      /extracting postgresStorage\.saveMessage is forbidden/,
+    );
+  });
+});

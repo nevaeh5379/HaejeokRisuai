@@ -76,6 +76,14 @@ const CLIENT_VISIBLE_WRITE_METHODS = new Set([
   "updateSetting",
 ]);
 
+function isPrimaryStorageReference(node) {
+  return ts.isIdentifier(node) && node.text === "postgresStorage";
+}
+
+function isSafePreviousStorageAlias(node) {
+  return ts.isIdentifier(node) && node.text === "previousStorage";
+}
+
 function locationOf(sourceFile, node) {
   const { line, character } = sourceFile.getLineAndCharacterOfPosition(
     node.getStart(sourceFile),
@@ -97,12 +105,50 @@ export function checkServerStorageMutations(
 
   function visit(node) {
     if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      isPrimaryStorageReference(node.initializer)
+    ) {
+      if (!isSafePreviousStorageAlias(node.name)) {
+        violations.push(
+          `${locationOf(sourceFile, node)} aliasing postgresStorage is forbidden; ` +
+            "use databaseMutations for client-visible writes",
+        );
+      }
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      ts.isPropertyAccessExpression(node.initializer) &&
+      isPrimaryStorageReference(node.initializer.expression)
+    ) {
+      const method = node.initializer.name.text;
+      if (CLIENT_VISIBLE_WRITE_METHODS.has(method)) {
+        violations.push(
+          `${locationOf(sourceFile, node)} extracting postgresStorage.${method} is forbidden; ` +
+            "use databaseMutations",
+        );
+      }
+    }
+    if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === "postgresStorage"
+      (node.expression.expression.text === "postgresStorage" ||
+        node.expression.expression.text === "previousStorage")
     ) {
+      const receiver = node.expression.expression.text;
       const method = node.expression.name.text;
+      if (receiver === "previousStorage") {
+        if (method !== "close") {
+          violations.push(
+            `${locationOf(sourceFile, node)} previousStorage.${method}() is forbidden; ` +
+              "the previous primary storage alias may only be closed",
+          );
+        }
+        ts.forEachChild(node, visit);
+        return;
+      }
       if (CLIENT_VISIBLE_WRITE_METHODS.has(method)) {
         violations.push(
           `${locationOf(sourceFile, node)} direct write postgresStorage.${method}() ` +

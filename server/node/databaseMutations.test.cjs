@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createDatabaseMutations } = require("./databaseMutations.cjs");
 
-function createHarness() {
+function createHarness(finalizeStorageSyncReplacement) {
   let revision = 40;
   const calls = [];
   const events = [];
@@ -29,8 +29,16 @@ function createHarness() {
   return {
     calls,
     events,
+    storage,
     mutations: createDatabaseMutations({
       getStorage: () => storage,
+      finalizeStorageSyncReplacement:
+        finalizeStorageSyncReplacement ??
+        (async (options) => ({
+          revision: 99,
+          status: "completed",
+          options,
+        })),
       realtimeEventHub,
     }),
   };
@@ -93,7 +101,7 @@ test("database mutations always emit realtime changes", async () => {
 });
 
 test("commit and restore expose revision-aware invalidation", async () => {
-  const { events, mutations } = createHarness();
+  const { events, mutations, storage } = createHarness();
 
   await mutations.commit(
     { action: "message-edit", messages: [{ chatId: "chat-2" }] },
@@ -101,10 +109,30 @@ test("commit and restore expose revision-aware invalidation", async () => {
   );
   await mutations.restoreRevision(12, "writer");
   await mutations.restoreBackup({ replaceAll: true }, undefined, "writer");
+  const finalizeResult = await mutations.storageSyncFinalize(
+    { session: { id: "sync-1" } },
+    "writer",
+  );
 
   assert.equal(events[0].data.action, "message-edit");
   assert.deepEqual(events[0].data.chatIds, ["chat-2"]);
   assert.equal(events[0].data.revision, 41);
   assert.equal(events[1].data.replaceAll, true);
   assert.equal(events[2].data.replaceAll, true);
+  assert.equal(events[3].data.action, "storage-sync-finalize");
+  assert.equal(events[3].data.revision, 99);
+  assert.equal(events[3].data.replaceAll, true);
+  assert.equal(finalizeResult.options.sqlStorage, storage);
+});
+
+test("storage sync finalize does not broadcast before a failed transaction", async () => {
+  const { events, mutations } = createHarness(async () => {
+    throw new Error("transaction rolled back");
+  });
+
+  await assert.rejects(
+    mutations.storageSyncFinalize({ session: { id: "sync-fail" } }, "writer"),
+    /transaction rolled back/,
+  );
+  assert.equal(events.length, 0);
 });
