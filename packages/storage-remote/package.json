@@ -17,6 +17,7 @@
     "./remoteSyncAssetReader": "./src/remoteSyncAssetReader.ts",
     "./remoteSqlCommitClient": "./src/remoteSqlCommitClient.ts",
     "./remoteSqlReadClient": "./src/remoteSqlReadClient.ts",
+    "./remoteSqlDocumentClient": "./src/remoteSqlDocumentClient.ts",
     "./keypairStore": "./src/keypairStore.ts",
     "./types": "./src/types.ts"
   },

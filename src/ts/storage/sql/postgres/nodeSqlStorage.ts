@@ -47,6 +47,7 @@ import {
   NodeSqlRevisionConflictError,
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
+import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
 
 import type {
   DbVendor,
@@ -165,27 +166,6 @@ export function isSqlVendorParamsComplete(
   );
 }
 
-async function encodeJsonBody(payload: unknown): Promise<{
-  body: BodyInit;
-  contentEncoding?: string;
-}> {
-  const json = JSON.stringify(payload);
-  if (json.length < 64 * 1024 || typeof CompressionStream === "undefined") {
-    return { body: json };
-  }
-  const input = new Blob([json]).stream();
-  const compressed = input.pipeThrough(new CompressionStream("gzip"));
-  return {
-    body: await new Response(compressed).arrayBuffer(),
-    contentEncoding: "gzip",
-  };
-}
-
-async function responseError(response: Response, fallback: string) {
-  const body = await response.json().catch(() => null);
-  return new Error(body?.error || `${fallback} (${response.status})`);
-}
-
 export {
   NodeSqlPayloadTooLargeError,
   NodeSqlRevisionConflictError,
@@ -201,6 +181,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private readonly backupClient: RemoteDatabaseBackupClient;
   private readonly commitClient: RemoteSqlCommitClient;
   private readonly readClient: RemoteSqlReadClient;
+  private readonly documentClient: RemoteSqlDocumentClient;
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
@@ -290,6 +271,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.getAuth,
       this.clientId,
     );
+    this.documentClient = new RemoteSqlDocumentClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
   }
 
   isEnabled() {
@@ -322,13 +308,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (Number.isSafeInteger(revision) && revision > this.revision) {
       this.revision = revision;
     }
-  }
-
-  private async authHeaders() {
-    return {
-      "risu-auth": await this.getAuth(),
-      "x-risu-client-id": this.clientId,
-    };
   }
 
   private async ensureEnabled() {
@@ -390,8 +369,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   async retryDatabaseConnection(): Promise<RemoteDatabaseConfig> {
     const config = await this.databaseAdmin.retryDatabaseConnection();
-    this.status =
-      config.runtime?.status === "ready" ? "enabled" : "degraded";
+    this.status = config.runtime?.status === "ready" ? "enabled" : "degraded";
     if (config.revision != null) this.revision = config.revision;
     return config;
   }
@@ -434,7 +412,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     enabledOnly?: boolean;
   }): Promise<any[] | null> {
     if (!(await this.ensureEnabled())) return null;
-
     const enabledOnly = options?.enabledOnly === true;
     const cacheKey = enabledOnly ? "runtime-cache" : "cache";
     let cached: { hash: string; plugins: any[] } | null = enabledOnly
@@ -447,30 +424,20 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] =
-        `"risu-plugins-${enabledOnly ? "runtime-" : ""}${cached.hash}"`;
-    }
-
-    const response = await this.apiClient.request(
-      `/api/database-v2/plugins${enabledOnly ? "?enabledOnly=1" : ""}`,
-      { method: "GET", cache: "no-cache", headers },
+    const result = await this.documentClient.loadPlugins(
+      enabledOnly,
+      cached?.hash,
     );
-
-    if (response.status === 304 && cached) {
+    if (result.status === "not-modified" && cached) {
       if (enabledOnly) this.memoryRuntimePluginsCache = cached;
       else this.memoryPluginsCache = cached;
       return cached.plugins ?? [];
     }
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw await responseError(response, "PostgreSQL plugins load failed");
-    }
-
-    const body: { plugins: any[]; hash: string } = await response.json();
-    const entry = { hash: body.hash, plugins: body.plugins ?? [] };
+    if (result.status !== "ok") return null;
+    const entry = {
+      hash: result.body.hash,
+      plugins: (result.body.plugins ?? []) as any[],
+    };
     if (enabledOnly) this.memoryRuntimePluginsCache = entry;
     else this.memoryPluginsCache = entry;
     try {
@@ -483,25 +450,19 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await this.apiClient.request(
-      `/api/database-v2/plugins/${encodeURIComponent(pluginName)}/enabled`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ enabled, baseRevision: this.revision }),
-        headers: {
-          "content-type": "application/json",
-          ...(await this.authHeaders()),
-        },
-      },
-    );
-    if (response.status === 409) {
-      const body = await response.json().catch(() => null);
-      throw new NodeSqlRevisionConflictError(body?.revision);
+    let body: { revision?: number };
+    try {
+      body = await this.documentClient.setPluginEnabled(
+        pluginName,
+        enabled,
+        this.revision,
+      );
+    } catch (error) {
+      if (error && typeof error === "object" && "revision" in error) {
+        throw new NodeSqlRevisionConflictError((error as any).revision);
+      }
+      throw error;
     }
-    if (!response.ok) {
-      throw await responseError(response, "Plugin toggle failed");
-    }
-    const body: { revision?: number } = await response.json();
     if (body.revision != null) this.applyRemoteRevision(body.revision);
     this.memoryPluginsCache = null;
     this.memoryRuntimePluginsCache = null;
@@ -514,13 +475,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
 
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    let cached: {
-      hash: string;
-      pluginCustomStorage: Record<string, any>;
-    } | null = this.memoryPluginStorageCache;
+    if (!(await this.ensureEnabled())) return null;
+    let cached = this.memoryPluginStorageCache;
     if (!cached) {
       try {
         cached = await this.pluginStorageCacheForage.getItem("cache");
@@ -528,44 +484,21 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-plugin-storage-${cached.hash}"`;
-    }
-
-    const response = await this.apiClient.request("/api/database-v2/plugin-custom-storage", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-
-    if (response.status === 304 && cached) {
+    const result = await this.documentClient.loadPluginStorage(cached?.hash);
+    if (result.status === "not-modified" && cached) {
       this.memoryPluginStorageCache = cached;
       return cached.pluginCustomStorage ?? {};
     }
-
-    if (response.status === 404) {
-      return null;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL plugin custom storage load failed",
-      );
-    }
-
-    const body: { pluginCustomStorage: Record<string, any>; hash: string } =
-      await response.json();
+    if (result.status !== "ok") return null;
     const entry = {
-      hash: body.hash,
-      pluginCustomStorage: body.pluginCustomStorage ?? {},
+      hash: result.body.hash,
+      pluginCustomStorage: result.body.pluginCustomStorage ?? {},
     };
     this.memoryPluginStorageCache = entry;
     try {
       await this.pluginStorageCacheForage.setItem("cache", entry);
     } catch {}
-    return body.pluginCustomStorage ?? {};
+    return entry.pluginCustomStorage;
   }
 
   private pluginKeyCacheForage = localforage.createInstance({
@@ -577,34 +510,12 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   >({ maxEntries: 64 });
 
   async listPluginCustomStorageKeys(): Promise<string[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const response = await this.apiClient.request(
-      "/api/database-v2/plugin-custom-storage/keys",
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
-      return [];
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL list plugin custom storage keys failed",
-      );
-    }
-    const body: { keys: string[] } = await response.json();
-    return body.keys ?? [];
+    if (!(await this.ensureEnabled())) return [];
+    return await this.documentClient.listPluginStorageKeys();
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {
-    if (!(await this.ensureEnabled())) {
-      return undefined;
-    }
+    if (!(await this.ensureEnabled())) return undefined;
     let cached = this.memoryPluginKeyCache.get(key);
     if (!cached) {
       try {
@@ -613,45 +524,18 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = undefined;
       }
     }
-
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-plugin-key-${cached.hash}"`;
-    }
-
-    const response = await this.apiClient.request(
-      `/api/database-v2/plugin-custom-storage/keys/${encodeURIComponent(key)}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers,
-      },
+    const result = await this.documentClient.loadPluginStorageKey(
+      key,
+      cached?.hash,
     );
-
-    if (response.status === 304 && cached) {
-      return cached.value;
-    }
-    if (response.status === 404) {
-      return undefined;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        `PostgreSQL plugin custom storage key '${key}' load failed`,
-      );
-    }
-
-    const body: { key: string; value: any; hash: string } =
-      await response.json();
-    const entry = {
-      hash: body.hash,
-      value: body.value,
-    };
+    if (result.status === "not-modified" && cached) return cached.value;
+    if (result.status !== "ok") return undefined;
+    const entry = { hash: result.body.hash, value: result.body.value };
     this.memoryPluginKeyCache.set(key, entry);
     try {
       await this.pluginKeyCacheForage.setItem(key, entry);
     } catch {}
-    return body.value;
+    return entry.value;
   }
 
   async loadPersonas(): Promise<RisuPersona[]> {
@@ -664,30 +548,21 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-personas-${cached.hash}"`;
-    }
-    const response = await this.apiClient.request("/api/database-v2/personas", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (response.status === 304 && cached) {
+    const result = await this.documentClient.loadPersonas<RisuPersona>(
+      cached?.hash,
+    );
+    if (result.status === "not-modified" && cached)
       return cached.personas ?? [];
-    }
-    if (response.status === 404) return [];
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL personas load failed");
-    }
-    const body: { personas: RisuPersona[]; hash: string } =
-      await response.json();
-    const entry = { hash: body.hash, personas: body.personas ?? [] };
+    if (result.status !== "ok") return [];
+    const entry = {
+      hash: result.body.hash,
+      personas: result.body.personas ?? [],
+    };
     this.memoryPersonasCache = entry;
     try {
       await this.personasCacheForage.setItem("cache", entry);
     } catch {}
-    return body.personas ?? [];
+    return entry.personas;
   }
 
   async listBotPresets(): Promise<BotPresetSummary[]> {
@@ -700,30 +575,20 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-presets-${cached.hash}"`;
-    }
-    const response = await this.apiClient.request("/api/database-v2/presets", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (response.status === 304 && cached) {
-      return cached.presets ?? [];
-    }
-    if (response.status === 404) return [];
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL bot presets load failed");
-    }
-    const body: { presets: BotPresetSummary[]; hash: string } =
-      await response.json();
-    const entry = { hash: body.hash, presets: body.presets ?? [] };
+    const result = await this.documentClient.listBotPresets<BotPresetSummary>(
+      cached?.hash,
+    );
+    if (result.status === "not-modified" && cached) return cached.presets ?? [];
+    if (result.status !== "ok") return [];
+    const entry = {
+      hash: result.body.hash,
+      presets: result.body.presets ?? [],
+    };
     this.memoryBotPresetsCache = entry;
     try {
       await this.botPresetsCacheForage.setItem("cache", entry);
     } catch {}
-    return body.presets ?? [];
+    return entry.presets;
   }
 
   async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
@@ -736,29 +601,18 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
           undefined;
       } catch {}
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash)
-      headers["If-None-Match"] = `"risu-preset-${id}-${cached.hash}"`;
-    const response = await this.apiClient.request(
-      `/api/database-v2/presets/${encodeURIComponent(id)}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers,
-      },
+    const result = await this.documentClient.loadBotPreset<StoredBotPreset>(
+      id,
+      cached?.hash,
     );
-    if (response.status === 304 && cached) return cached.preset;
-    if (response.status === 404) return null;
-    if (response.status < 200 || response.status >= 300)
-      throw await responseError(response, "Bot preset load failed");
-    const body: { preset: StoredBotPreset; hash: string } =
-      await response.json();
-    const entry = { hash: body.hash, preset: body.preset };
+    if (result.status === "not-modified" && cached) return cached.preset;
+    if (result.status !== "ok") return null;
+    const entry = { hash: result.body.hash, preset: result.body.preset };
     this.memoryBotPresetCache.set(id, entry);
     void this.botPresetsCacheForage
       .setItem(`preset:${id}`, entry)
       .catch(() => {});
-    return body.preset;
+    return entry.preset;
   }
 
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
@@ -771,35 +625,22 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-lorebooks-${cached.hash}"`;
-    }
-    const response = await this.apiClient.request("/api/database-v2/lorebooks", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (response.status === 304 && cached) {
+    type LorebookRecord = { name: string; data: loreBook[] };
+    const result = await this.documentClient.loadLorebooks<LorebookRecord>(
+      cached?.hash,
+    );
+    if (result.status === "not-modified" && cached)
       return cached.loreBook ?? [];
-    }
-    if (response.status === 404) return [];
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL global lorebooks load failed",
-      );
-    }
-    const body: {
-      loreBook: { name: string; data: loreBook[] }[];
-      hash: string;
-    } = await response.json();
-    const entry = { hash: body.hash, loreBook: body.loreBook ?? [] };
+    if (result.status !== "ok") return [];
+    const entry = {
+      hash: result.body.hash,
+      loreBook: result.body.loreBook ?? [],
+    };
     this.memoryLoreBookCache = entry;
     try {
       await this.loreBookCacheForage.setItem("cache", entry);
     } catch {}
-    return body.loreBook ?? [];
+    return entry.loreBook;
   }
 
   async loadModules(): Promise<RisuModule[]> {
@@ -812,29 +653,20 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-modules-${cached.hash}"`;
-    }
-    const response = await this.apiClient.request("/api/database-v2/modules", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (response.status === 304 && cached) {
-      return cached.modules ?? [];
-    }
-    if (response.status === 404) return [];
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL modules load failed");
-    }
-    const body: { modules: RisuModule[]; hash: string } = await response.json();
-    const entry = { hash: body.hash, modules: body.modules ?? [] };
+    const result = await this.documentClient.loadModules<RisuModule>(
+      cached?.hash,
+    );
+    if (result.status === "not-modified" && cached) return cached.modules ?? [];
+    if (result.status !== "ok") return [];
+    const entry = {
+      hash: result.body.hash,
+      modules: result.body.modules ?? [],
+    };
     this.memoryModulesCache = entry;
     try {
       await this.modulesCacheForage.setItem("cache", entry);
     } catch {}
-    return body.modules ?? [];
+    return entry.modules;
   }
 
   async loadPrompts(): Promise<Record<string, any>> {
@@ -847,30 +679,20 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-prompts-${cached.hash}"`;
-    }
-    const response = await this.apiClient.request("/api/database-v2/prompts", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (response.status === 304 && cached) {
-      return cached.prompts ?? {};
-    }
-    if (response.status === 404) return {};
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL prompts load failed");
-    }
-    const body: { prompts: Record<string, any>; hash: string } =
-      await response.json();
-    const entry = { hash: body.hash, prompts: body.prompts ?? {} };
+    const result = await this.documentClient.loadPrompts<Record<string, any>>(
+      cached?.hash,
+    );
+    if (result.status === "not-modified" && cached) return cached.prompts ?? {};
+    if (result.status !== "ok") return {};
+    const entry = {
+      hash: result.body.hash,
+      prompts: result.body.prompts ?? {},
+    };
     this.memoryPromptsCache = entry;
     try {
       await this.promptsCacheForage.setItem("cache", entry);
     } catch {}
-    return body.prompts ?? {};
+    return entry.prompts;
   }
 
   async loadScripts(): Promise<customscript[]> {
@@ -883,30 +705,21 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const headers: Record<string, string> = await this.authHeaders();
-    if (cached?.hash) {
-      headers["If-None-Match"] = `"risu-scripts-${cached.hash}"`;
-    }
-    const response = await this.apiClient.request("/api/database-v2/scripts", {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (response.status === 304 && cached) {
+    const result = await this.documentClient.loadScripts<customscript>(
+      cached?.hash,
+    );
+    if (result.status === "not-modified" && cached)
       return cached.globalscript ?? [];
-    }
-    if (response.status === 404) return [];
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL scripts load failed");
-    }
-    const body: { globalscript: customscript[]; hash: string } =
-      await response.json();
-    const entry = { hash: body.hash, globalscript: body.globalscript ?? [] };
+    if (result.status !== "ok") return [];
+    const entry = {
+      hash: result.body.hash,
+      globalscript: result.body.globalscript ?? [],
+    };
     this.memoryScriptsCache = entry;
     try {
       await this.scriptsCacheForage.setItem("cache", entry);
     } catch {}
-    return body.globalscript ?? [];
+    return entry.globalscript;
   }
 
   async listSettingKeys(): Promise<string[]> {
@@ -942,7 +755,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     characterId: string,
   ): Promise<character | groupChat | null> {
     if (!(await this.ensureEnabled())) return null;
-    return await this.readClient.loadCharacter<character | groupChat>(characterId);
+    return await this.readClient.loadCharacter<character | groupChat>(
+      characterId,
+    );
   }
 
   async loadCharacterAssetFields(
@@ -996,8 +811,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       return { branches: [], messages: [], links: [] };
     }
     return (
-      (await this.readClient.loadChatBranchGraph<SqlChatBranchGraphData>(chatId)) ??
-      { branches: [], messages: [], links: [] }
+      (await this.readClient.loadChatBranchGraph<SqlChatBranchGraphData>(
+        chatId,
+      )) ?? { branches: [], messages: [], links: [] }
     );
   }
 
@@ -1250,5 +1066,4 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   async removeBackup(): Promise<NodeBackupConfig> {
     return await this.backupClient.remove();
   }
-
 }
