@@ -1,0 +1,11 @@
+{
+  "name": "@risuai/storage-core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./storageSyncAsset": "./src/storageSyncAsset.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}
