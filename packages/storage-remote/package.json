@@ -10,6 +10,7 @@
     "./remoteAuthController": "./src/remoteAuthController.ts",
     "./remoteDatabaseAdminClient": "./src/remoteDatabaseAdminClient.ts",
     "./remoteDatabaseBackupClient": "./src/remoteDatabaseBackupClient.ts",
+    "./remoteComputeClient": "./src/remoteComputeClient.ts",
     "./remoteColdStorageClient": "./src/remoteColdStorageClient.ts",
     "./remoteStorageSyncClient": "./src/remoteStorageSyncClient.ts",
     "./remoteSqlCommitClient": "./src/remoteSqlCommitClient.ts",
