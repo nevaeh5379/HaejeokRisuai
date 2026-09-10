@@ -6386,6 +6386,12 @@ app.post(
         ...(req.body || {}),
         chatId: req.params.chatId,
       });
+      realtimeEventHub.broadcast("database-change", {
+        action: "chat-branch-create",
+        sourceClientId: normalizeClientId(req.headers["x-risu-client-id"]),
+        chatIds: [req.params.chatId],
+        charactersChanged: false,
+      });
       res.send({ branch });
     } catch (error) {
       if (
@@ -6418,6 +6424,12 @@ app.post(
         req.params.chatId,
         req.params.branchId,
       );
+      realtimeEventHub.broadcast("database-change", {
+        action: "chat-branch-activate",
+        sourceClientId: normalizeClientId(req.headers["x-risu-client-id"]),
+        chatIds: [req.params.chatId],
+        charactersChanged: false,
+      });
       res.send({ success: true });
     } catch (error) {
       if (
@@ -7745,9 +7757,9 @@ app.get("/api/read", authenticatedRouteLimiter, async (req, res, next) => {
           res.setHeader("Content-Length", chunkSize);
 
           if (result.filePath) {
-            fsSync.createReadStream(result.filePath, { start, end: chunkEnd }).pipe(
-              res,
-            );
+            fsSync
+              .createReadStream(result.filePath, { start, end: chunkEnd })
+              .pipe(res);
             return;
           } else if (result.buffer) {
             res.send(result.buffer.subarray(start, chunkEnd + 1));
@@ -8151,9 +8163,20 @@ async function getHttpsOptions() {
 
 function setupProxyStreamWebSocket(server) {
   const wsServer = new WebSocketServer({ noServer: true });
+  const realtimeWsServer = new WebSocketServer({ noServer: true });
   server.on("upgrade", async (req, socket, head) => {
     try {
       const reqUrl = new URL(req.url, `http://${req.headers.host}`);
+      const auth =
+        reqUrl.searchParams.get("risu-auth") || req.headers["risu-auth"];
+
+      if (reqUrl.pathname === "/api/realtime/ws") {
+        realtimeWsServer.handleUpgrade(req, socket, head, (ws) => {
+          realtimeWsServer.emit("connection", ws, req);
+        });
+        return;
+      }
+
       if (
         !reqUrl.pathname.startsWith("/proxy-stream-jobs/") ||
         !reqUrl.pathname.endsWith("/ws")
@@ -8162,8 +8185,6 @@ function setupProxyStreamWebSocket(server) {
         return;
       }
 
-      const auth =
-        reqUrl.searchParams.get("risu-auth") || req.headers["risu-auth"];
       if (
         !(await isAuthorizedProxyRequest({ headers: { "risu-auth": auth } }))
       ) {
@@ -8188,6 +8209,37 @@ function setupProxyStreamWebSocket(server) {
       socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
       socket.destroy();
     }
+  });
+
+  realtimeWsServer.on("connection", (ws) => {
+    const authTimer = setTimeout(
+      () => ws.close(1008, "Authentication timeout"),
+      10_000,
+    );
+    authTimer.unref?.();
+    ws.once("message", async (raw) => {
+      try {
+        const message = JSON.parse(raw.toString());
+        if (message?.type !== "authenticate")
+          throw new Error("Authentication required");
+        const authorized = await isAuthorizedProxyRequest({
+          headers: { "risu-auth": message.auth },
+        });
+        if (!authorized) {
+          ws.close(1008, "Unauthorized");
+          return;
+        }
+        clearTimeout(authTimer);
+        realtimeEventHub.connectWebSocket(ws, {
+          clientId: message.clientId,
+          lastEventId: message.lastEventId,
+        });
+      } catch {
+        clearTimeout(authTimer);
+        ws.close(1008, "Invalid authentication message");
+      }
+    });
+    ws.once("close", () => clearTimeout(authTimer));
   });
 
   wsServer.on("connection", (ws, _req, jobId) => {

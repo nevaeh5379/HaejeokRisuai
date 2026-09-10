@@ -196,3 +196,40 @@ test("realtime hub snapshots active generation lifecycle state", () => {
   assert.deepEqual(hub.listActiveGenerations(), []);
   req.emit("close");
 });
+
+class FakeWebSocket extends EventEmitter {
+  constructor() {
+    super();
+    this.readyState = 1;
+    this.frames = [];
+    this.pings = 0;
+  }
+  send(frame) {
+    this.frames.push(JSON.parse(String(frame)));
+  }
+  ping() {
+    this.pings += 1;
+  }
+}
+
+test("realtime hub replays and broadcasts the same protocol over WebSocket", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
+  hub.broadcast("database-change", { revision: 1, chatIds: ["chat-a"] });
+  const ws = new FakeWebSocket();
+
+  hub.connectWebSocket(ws, { clientId: "device-b", lastEventId: 0 });
+  assert.equal(ws.frames[0].id, 1);
+  assert.equal(ws.frames[0].event, "database-change");
+  assert.equal(ws.frames[1].event, "ready");
+  assert.equal(ws.frames[1].data.clientId, "device-b");
+
+  hub.broadcast("database-change", { revision: 2, chatIds: ["chat-a"] });
+  const latest = ws.frames.at(-1);
+  assert.equal(latest.id, 2);
+  assert.equal(latest.event, "database-change");
+  assert.equal(latest.data.revision, 2);
+  assert.equal(hub.clientCount(), 1);
+
+  ws.emit("close");
+  assert.equal(hub.clientCount(), 0);
+});

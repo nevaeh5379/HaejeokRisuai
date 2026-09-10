@@ -1,6 +1,6 @@
 import { alertError } from "../alert";
 import { notifyChatResponse } from "../chatNotifications";
-import { isNodeServer } from "../platform";
+import { isCapacitor, isNodeServer, isTauri } from "../platform";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { NodeSqlStorage } from "../storage/sql/postgres/nodeSqlStorage";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
@@ -28,6 +28,7 @@ import {
   NodeRealtimeChangeQueue,
   type DatabaseChangeEvent,
 } from "./nodeRealtimeChangeQueue";
+import { consumeNodeRealtimeWebSocket } from "./nodeRealtimeWebSocket";
 
 type ModelJobEvent = {
   phase?: "created" | "terminal";
@@ -387,12 +388,8 @@ async function dispatchEvent(
     }
     return;
   }
-  if (!allowNodeFeatures) {
-    if (eventName === "resync-required") scheduleFullResync();
-    return;
-  }
   if (eventName === "model-job") {
-    await applyModelJob(data as ModelJobEvent);
+    if (allowNodeFeatures) await applyModelJob(data as ModelJobEvent);
   } else if (eventName === "generation-state") {
     applyGenerationState(data as GenerationStateEvent);
   } else if (eventName === "ready") {
@@ -469,6 +466,27 @@ async function connect(
   streamController = controller;
   try {
     const auth = await getNodeServerProxyAuth();
+    if (isTauri || isCapacitor) {
+      await consumeNodeRealtimeWebSocket({
+        apiClient,
+        auth,
+        clientId: storage.getClientId(),
+        lastEventId,
+        signal: controller.signal,
+        onFrame: async (frame) => {
+          await dispatchEvent(
+            storage,
+            frame.event!,
+            JSON.stringify(frame.data ?? null),
+            allowNodeFeatures,
+          );
+          if (Number.isSafeInteger(frame.id) && Number(frame.id) >= 0) {
+            lastEventId = Number(frame.id);
+          }
+        },
+      });
+      return;
+    }
     const headers: Record<string, string> = {
       "risu-auth": auth,
       "x-risu-client-id": storage.getClientId(),
