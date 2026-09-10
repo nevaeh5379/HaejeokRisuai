@@ -2,7 +2,7 @@ import { language } from "src/lang";
 import { alertError, alertInput, waitAlert } from "../../alert";
 import { base64url, getKeypairStore, saveKeypairStore } from "../../util";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
-import { NodeS3Storage } from "./nodeS3Storage";
+import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
 import {
   StorageSyncAssetReadError,
   validateStorageSyncAssetChunkRange,
@@ -72,7 +72,7 @@ export {
   type NodeStorageAssetItem,
   type NodeStorageAssetDetails,
   type NodeStorageSummary,
-} from "./nodeS3Storage";
+} from "@risuai/storage-remote/nodeS3Storage";
 
 export type NodeStorageBulkReadProgress = {
   completedFiles: number;

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./nodeApiClient": "./src/nodeApiClient.ts",
+    "./nodeS3Storage": "./src/nodeS3Storage.ts",
     "./keypairStore": "./src/keypairStore.ts",
     "./types": "./src/types.ts"
   },
