@@ -19,15 +19,13 @@
     let busy = $state(false)
     let error = $state('')
 
-    async function getBrowserStorage() {
+    async function getLocalStorage() {
         const storage = await getSqlStorage()
-        if (storage.backendKind !== 'web-sqlite') {
-            throw new Error('Browser SQLite storage is not available')        }
         if (!storage.listDbTables || !storage.getDbTableData) {
-            throw new Error('This SQLite backend does not support table exploration')
+            throw new Error('This local SQL backend does not support table exploration')
         }
         if (!storage.isEnabled() && !(await storage.init())) {
-            throw new Error('Browser SQLite storage failed to initialize')
+            throw new Error('Local SQL storage failed to initialize')
         }
         return storage
     }
@@ -36,7 +34,7 @@
         busy = true
         error = ''
         try {
-            const storage = await getBrowserStorage()
+            const storage = await getLocalStorage()
             tables = await storage.listDbTables!()
         } catch (err) {
             error = `${err}`
@@ -57,7 +55,7 @@
             columns?: string[]
         }
     ): Promise<NodePostgresTableData> {
-        const storage = await getBrowserStorage()
+        const storage = await getLocalStorage()
         return storage.getDbTableData!(table, options)
     }
 
@@ -85,7 +83,7 @@
                 </div>
                 <div class="min-w-0">
                     <h2 class="text-sm sm:text-base font-bold truncate text-textcolor">{language.postgresDbExplorer}</h2>
-                    <p class="hidden sm:block text-xs text-textcolor2 truncate">Browser SQLite · WASM / OPFS</p>
+                    <p class="hidden sm:block text-xs text-textcolor2 truncate">Local SQLite · active backend</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">

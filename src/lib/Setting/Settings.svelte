@@ -29,7 +29,7 @@
     import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
     import PluginStorageExplorerSettings from "./Pages/PluginStorageExplorerSettings.svelte";
     import StorageSettings from "./Pages/StorageSettings.svelte";
-    import { isNodeServer, isTauri } from "src/ts/platform";
+    import { isNodeServer } from "src/ts/platform";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
         scrollToSettingAnchor,
@@ -44,7 +44,7 @@
     let desktopBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider' }>({ submenu: 0, modelTab: 'main' })
     let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
     let isMobile = $derived(innerWidth < 768 || $MobileGUI)
-    const hasBrowserExplorers = !isNodeServer && !isTauri
+    const hasLocalExplorers = !isNodeServer
 
     $effect(() => {
         if (!isMobile && $SettingsMenuIndex === -1) {
@@ -290,7 +290,7 @@
             <ActivityIcon />
             <span>{language.advancedSettings}</span>
         </button>
-        {#if isNodeServer || hasBrowserExplorers}
+        {#if isNodeServer || hasLocalExplorers}
             <button class="flex gap-2 items-center hover:text-textcolor"
                 class:text-textcolor={dbExplorerOpen}
                 class:text-textcolor2={!dbExplorerOpen}
@@ -635,7 +635,7 @@
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
-                    {#if isNodeServer || hasBrowserExplorers}
+                    {#if isNodeServer || hasLocalExplorers}
                         <button
                             class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                             onclick={() => { storageExplorerOpen = false; pluginStorageExplorerOpen = false; dbExplorerOpen = true; }}
@@ -875,14 +875,14 @@
 {#if dbExplorerOpen}
     {#if isNodeServer}
         <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
-    {:else if hasBrowserExplorers}
+    {:else if hasLocalExplorers}
         <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
     {/if}
 {/if}
 {#if storageExplorerOpen}
     {#if isNodeServer}
         <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
-    {:else if hasBrowserExplorers}
+    {:else if hasLocalExplorers}
         <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
     {/if}
 {/if}

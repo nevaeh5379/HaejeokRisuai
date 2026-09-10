@@ -32,6 +32,9 @@ import type {
   NodePostgresRevisionDetails,
   NodePostgresRevisionDiff,
   NodePostgresTokenUsage,
+  NodePostgresColumnInfo,
+  NodePostgresTableData,
+  NodePostgresTableInfo,
 } from "../postgres/nodeSqlStorage";
 import {
   buildSqlReplaceCommit,
@@ -708,8 +711,7 @@ export abstract class NativeSqliteStorageBase {
       revision: Number.isSafeInteger(Number(row?.revision))
         ? Number(row?.revision)
         : this.revision,
-      initialized:
-        row?.initialized === true || Number(row?.initialized) === 1,
+      initialized: row?.initialized === true || Number(row?.initialized) === 1,
       records: {
         ...records,
         total: Object.values(records).reduce((a, b) => a + b, 0),
@@ -1244,11 +1246,7 @@ export abstract class NativeSqliteStorageBase {
     };
   }
 
-  async loadChatBranchGraphPage(
-    chatId: string,
-    offset: number,
-    limit: number,
-  ) {
+  async loadChatBranchGraphPage(chatId: string, offset: number, limit: number) {
     await this.ensureBranchGraph(chatId);
     const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const normalizedLimit = normalizeSqliteLimit(limit);
@@ -1961,6 +1959,106 @@ export abstract class NativeSqliteStorageBase {
             : 0,
       };
     });
+  }
+
+  private quoteExplorerIdentifier(identifier: string): string {
+    return `"${identifier.replace(/"/g, '""')}"`;
+  }
+
+  private async getDbExplorerColumns(
+    table: string,
+  ): Promise<NodePostgresColumnInfo[]> {
+    const rows = await this.selectRows<{
+      name: string;
+      type: string;
+      notnull: number;
+      pk: number;
+    }>(`PRAGMA table_info(${this.quoteExplorerIdentifier(table)})`);
+    if (rows.length === 0) throw new Error(`SQLite table not found: ${table}`);
+    return rows.map((row) => ({
+      name: String(row.name ?? ""),
+      dataType: String(row.type ?? "UNKNOWN") || "UNKNOWN",
+      nullable: Number(row.notnull ?? 0) === 0,
+      primaryKey: Number(row.pk ?? 0) > 0,
+    }));
+  }
+
+  async listDbTables(): Promise<NodePostgresTableInfo[]> {
+    if (!this._enabled && !(await this.init())) return [];
+    const rows = await this.selectRows<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    );
+    const counts = await this.selectRowSets(
+      rows.map((row) => ({
+        sql: `SELECT COUNT(*) AS total FROM ${this.quoteExplorerIdentifier(String(row.name))}`,
+        bind: [],
+      })),
+    );
+    return rows.map((row, index) => ({
+      name: String(row.name),
+      rowCount: Number(counts[index]?.[0]?.total ?? 0),
+    }));
+  }
+
+  async getDbTableData(
+    table: string,
+    options: {
+      offset?: number;
+      limit?: number;
+      sortColumn?: string;
+      sortOrder?: "asc" | "desc";
+      search?: string;
+      columns?: string[];
+    } = {},
+  ): Promise<NodePostgresTableData> {
+    if (!this._enabled && !(await this.init())) {
+      throw new Error(`${this.backendName} is not available`);
+    }
+    const allColumns = await this.getDbExplorerColumns(table);
+    const columnNames = new Set(allColumns.map((column) => column.name));
+    const requested = options.columns?.filter((name) => columnNames.has(name));
+    const columns = requested?.length
+      ? allColumns.filter((column) => requested.includes(column.name))
+      : allColumns;
+    if (columns.length === 0)
+      throw new Error(`SQLite table has no columns: ${table}`);
+    const offset = Math.max(0, Math.floor(options.offset ?? 0));
+    const limit = normalizeSqliteLimit(options.limit ?? 50);
+    const quotedTable = this.quoteExplorerIdentifier(table);
+    const search = options.search?.trim() ?? "";
+    const where = search
+      ? ` WHERE ${allColumns.map((column) => `CAST(${this.quoteExplorerIdentifier(column.name)} AS TEXT) LIKE ? COLLATE NOCASE`).join(" OR ")}`
+      : "";
+    const searchBinds = search ? allColumns.map(() => `%${search}%`) : [];
+    const sortColumn =
+      options.sortColumn && columnNames.has(options.sortColumn)
+        ? options.sortColumn
+        : "";
+    const orderBy = sortColumn
+      ? ` ORDER BY ${this.quoteExplorerIdentifier(sortColumn)} ${options.sortOrder === "desc" ? "DESC" : "ASC"}`
+      : "";
+    const selection = columns
+      .map((column) => this.quoteExplorerIdentifier(column.name))
+      .join(", ");
+    const [countRows, dataRows] = await this.selectRowSets([
+      {
+        sql: `SELECT COUNT(*) AS total FROM ${quotedTable}${where}`,
+        bind: searchBinds,
+      },
+      {
+        sql: `SELECT ${selection} FROM ${quotedTable}${where}${orderBy} LIMIT ? OFFSET ?`,
+        bind: [...searchBinds, limit, offset],
+      },
+    ]);
+    return {
+      table,
+      columns,
+      allColumns,
+      rows: dataRows ?? [],
+      offset,
+      limit,
+      total: Number(countRows?.[0]?.total ?? 0),
+    };
   }
 
   async searchCharactersByTag(

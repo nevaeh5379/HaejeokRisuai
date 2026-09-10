@@ -52,6 +52,11 @@ export class AutoStorage {
     return createStorageSyncAssetReader(this.realStorage);
   }
 
+  async listAssetKeys(prefix = "assets/"): Promise<string[]> {
+    const reader = await this.getStorageSyncAssetReader();
+    return await reader.listKeys(prefix);
+  }
+
   async hasStoredData(): Promise<boolean> {
     await this.Init();
     if (this.realStorage instanceof TauriAssetStorage) {
