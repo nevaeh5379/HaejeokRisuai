@@ -11,7 +11,8 @@
     "./sqliteMessageMapper": "./src/sqliteMessageMapper.ts",
     "./sqliteBranchStorage": "./src/sqliteBranchStorage.ts",
     "./sqliteAdminQueries": "./src/sqliteAdminQueries.ts",
-    "./sqlite-schema.sql": "./src/sqlite-schema.sql"
+    "./sqlite-schema.sql": "./src/sqlite-schema.sql",
+    "./sqlitePersistenceQueries": "./src/sqlitePersistenceQueries.ts"
   },
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit"

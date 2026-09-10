@@ -90,6 +90,19 @@ import {
   type SqliteSelectRows,
 } from "@risuai/storage-sqlite/sqliteAdminQueries";
 import {
+  buildSqliteColdStorageDelete,
+  findSqliteColdStoragePruneKeys,
+  getSqliteColdStorageItem,
+  getSqliteRevisionDetails,
+  getSqliteRevisionDiff,
+  listSqliteColdStorageItems,
+  listSqlitePluginCustomStorageKeys,
+  listSqliteRevisions,
+  loadSqlitePluginCustomStorage,
+  loadSqlitePluginCustomStorageKey,
+  previewSqliteRevisionRestore,
+} from "@risuai/storage-sqlite/sqlitePersistenceQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "../sqliteStorageUtils";
@@ -1433,40 +1446,22 @@ export class WebSqliteStorage implements ISqlStorage {
       : plugins;
   }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    const rows = await this.selectRows(
-      "SELECT key, value FROM plugin_custom_storage",
-    );
-    if (rows.length === 0) return null;
-    const s: Record<string, any> = {};
-    for (const r of rows) {
-      try {
-        s[r.key as string] = JSON.parse(r.value as string);
-      } catch {
-        s[r.key as string] = r.value;
-      }
-    }
-    return s;
+    return (await loadSqlitePluginCustomStorage(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    )) as Record<string, any> | null;
   }
 
   async listPluginCustomStorageKeys(): Promise<string[]> {
-    return (
-      await this.selectRows(
-        "SELECT key FROM plugin_custom_storage ORDER BY key",
-      )
-    ).map((row) => row.key as string);
+    return await listSqlitePluginCustomStorageKeys(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {
-    const row = await this.selectOne(
-      "SELECT value FROM plugin_custom_storage WHERE key = ?",
-      [key],
+    return await loadSqlitePluginCustomStorageKey(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      key,
     );
-    if (!row) return undefined;
-    try {
-      return JSON.parse(row.value as string);
-    } catch {
-      return row.value;
-    }
   }
 
   async listSettingKeys(): Promise<string[]> {
@@ -1482,21 +1477,19 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async getColdStorageItem(key: string): Promise<unknown | null> {
-    const r = await this.selectOne(
-      "SELECT archive_id FROM cold_archives WHERE archive_id = ?",
-      [key],
+    return await getSqliteColdStorageItem(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      this.loadNodeValue.bind(this),
+      key,
     );
-    return r
-      ? this.loadNodeValue("cold_extension_nodes", "archive_id = ?", [key])
-      : null;
   }
+
   async listColdStorageItems(): Promise<{ items: string[] }> {
-    return {
-      items: (
-        await this.selectRows("SELECT archive_id FROM cold_archives")
-      ).map((r) => r.archive_id as string),
-    };
+    return await listSqliteColdStorageItems(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
+
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
     return this.writeQueue.run(async () => {
       await this.run("BEGIN IMMEDIATE");
@@ -1518,115 +1511,56 @@ export class WebSqliteStorage implements ISqlStorage {
       }
     });
   }
+
   async removeColdStorageItems(keys: string[]): Promise<number> {
-    if (keys.length === 0) return 0;
+    const statement = buildSqliteColdStorageDelete(keys);
+    if (!statement) return 0;
     return this.writeQueue.run(async () => {
-      const ph = keys.map(() => "?").join(",");
-      await this.run(
-        `DELETE FROM cold_archives WHERE archive_id IN (${ph})`,
-        keys,
-      );
+      await this.run(statement.sql, statement.bind ?? []);
       return keys.length;
     });
   }
+
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
     return this.writeQueue.run(async () => {
-      const all = (
-        await this.selectRows("SELECT archive_id FROM cold_archives")
-      ).map((r) => r.archive_id as string);
-      const removed = all.filter((k) => !retainedKeys.includes(k));
-      if (removed.length === 0) return 0;
-      const ph = removed.map(() => "?").join(",");
-      await this.run(
-        `DELETE FROM cold_archives WHERE archive_id IN (${ph})`,
-        removed,
+      const toDelete = await findSqliteColdStoragePruneKeys(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        retainedKeys,
       );
-      return removed.length;
+      const statement = buildSqliteColdStorageDelete(toDelete);
+      if (!statement) return 0;
+      await this.run(statement.sql, statement.bind ?? []);
+      return toDelete.length;
     });
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    const normalizedLimit =
-      limit !== undefined && Number.isFinite(limit) && limit > 0
-        ? normalizeSqliteLimit(limit)
-        : undefined;
-    const sql =
-      "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC" +
-      (normalizedLimit !== undefined ? " LIMIT ?" : "");
-    const rows = await this.selectRows(
-      sql,
-      normalizedLimit !== undefined ? [normalizedLimit] : [],
+    return await listSqliteRevisions(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      limit,
     );
-    return rows.map((r) => ({
-      id: Number(r.id),
-      storage_revision:
-        r.storage_revision != null ? Number(r.storage_revision) : null,
-      database_initialized:
-        r.database_initialized != null ? Boolean(r.database_initialized) : null,
-      scope: r.scope as "database" | "cold-storage" | "restore",
-      action: r.action as string,
-      restored_from_revision:
-        r.restored_from_revision != null
-          ? Number(r.restored_from_revision)
-          : null,
-      created_at: r.created_at as string,
-      change_count: 0,
-    }));
   }
 
   async getRevisionDetails(
     revisionId: number,
   ): Promise<NodePostgresRevisionDetails | null> {
-    const rows = await this.selectRows(
-      "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions WHERE id = ?",
-      [revisionId],
+    return await getSqliteRevisionDetails(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      revisionId,
     );
-    if (rows.length === 0) return null;
-    const r = rows[0];
-    return {
-      id: Number(r.id),
-      storage_revision:
-        r.storage_revision != null ? Number(r.storage_revision) : null,
-      database_initialized:
-        r.database_initialized != null ? Boolean(r.database_initialized) : null,
-      scope: r.scope as "database" | "cold-storage" | "restore",
-      action: r.action as string,
-      restored_from_revision:
-        r.restored_from_revision != null
-          ? Number(r.restored_from_revision)
-          : null,
-      created_at: r.created_at as string,
-      change_count: 0,
-      tableSummaries: [],
-      auditLogs: [],
-    };
   }
 
   async getRevisionDiff(
     baseId: number,
     targetId: number,
   ): Promise<NodePostgresRevisionDiff | null> {
-    return {
-      baseRevisionId: baseId,
-      targetRevisionId: targetId,
-      totalChanges: 0,
-      tables: [],
-    };
+    return getSqliteRevisionDiff(baseId, targetId);
   }
 
   async previewRestoreRevision(
     revisionId: number,
   ): Promise<NodePostgresRestorePreview | null> {
-    return {
-      targetRevisionId: revisionId,
-      currentRevisionId: this.revision,
-      revisionsToRevert: Math.max(0, this.revision - revisionId),
-      totalOperations: 0,
-      restoreInsertCount: 0,
-      restoreDeleteCount: 0,
-      restoreUpdateCount: 0,
-      affectedTables: [],
-    };
+    return previewSqliteRevisionRestore(this.revision, revisionId);
   }
 
   async restoreRevision(
