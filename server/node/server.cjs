@@ -64,9 +64,9 @@ const { createModelJobManager } = require("./modelJobs.cjs");
 const { createPushNotificationManager } = require("./pushNotifications.cjs");
 const {
   createRealtimeEventHub,
-  describeSqlCommitChange,
   normalizeClientId,
 } = require("./realtimeEvents.cjs");
+const { createDatabaseMutations } = require("./databaseMutations.cjs");
 const { createNodeChatExecutor } = require("./chatExecutor.cjs");
 const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
@@ -529,6 +529,10 @@ let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(
     postgresConfig: postgresServerConfig,
   },
 );
+const databaseMutations = createDatabaseMutations({
+  getStorage: () => postgresStorage,
+  realtimeEventHub,
+});
 // vendor 확정 후 환경 변수 관리 여부 갱신
 storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
 
@@ -1041,9 +1045,10 @@ async function restoreBackupToMainDatabase(onProgress) {
     });
   };
 
-  const syncResult = await postgresStorage.sync(
+  const syncResult = await databaseMutations.restoreBackup(
     { ...payload, baseRevision: state.revision ?? 0 },
     { onProgress: handleStorageProgress },
+    null,
   );
 
   const finalResult = {
@@ -5535,21 +5540,15 @@ app.patch(
         return;
       }
       plugin.enabled = enabled;
-      const result = await postgresStorage.sync({
-        baseRevision,
-        action: "plugin-toggle",
-        root: {
-          upserts: [{ key: "plugins", value: plugins }],
-          deletes: [],
+      const result = await databaseMutations.togglePlugin(
+        {
+          baseRevision,
+          plugins,
+          pluginName: req.params.pluginName,
+          enabled,
         },
-      });
-      realtimeEventHub.broadcast("database-change", {
-        revision: result.revision,
-        action: "plugin-toggle",
-        sourceClientId: normalizeClientId(req.headers["x-risu-client-id"]),
-        pluginName: req.params.pluginName,
-        pluginEnabled: enabled,
-      });
+        req.headers["x-risu-client-id"],
+      );
       res.send({ success: true, revision: result.revision });
     } catch (error) {
       if (
@@ -6382,16 +6381,13 @@ app.post(
       return;
     }
     try {
-      const branch = await postgresStorage.createChatBranch({
-        ...(req.body || {}),
-        chatId: req.params.chatId,
-      });
-      realtimeEventHub.broadcast("database-change", {
-        action: "chat-branch-create",
-        sourceClientId: normalizeClientId(req.headers["x-risu-client-id"]),
-        chatIds: [req.params.chatId],
-        charactersChanged: false,
-      });
+      const branch = await databaseMutations.createChatBranch(
+        {
+          ...(req.body || {}),
+          chatId: req.params.chatId,
+        },
+        req.headers["x-risu-client-id"],
+      );
       res.send({ branch });
     } catch (error) {
       if (
@@ -6420,16 +6416,11 @@ app.post(
       return;
     }
     try {
-      await postgresStorage.activateChatBranch(
+      await databaseMutations.activateChatBranch(
         req.params.chatId,
         req.params.branchId,
+        req.headers["x-risu-client-id"],
       );
-      realtimeEventHub.broadcast("database-change", {
-        action: "chat-branch-activate",
-        sourceClientId: normalizeClientId(req.headers["x-risu-client-id"]),
-        chatIds: [req.params.chatId],
-        charactersChanged: false,
-      });
       res.send({ success: true });
     } catch (error) {
       if (
@@ -6628,8 +6619,9 @@ app.post(
       return;
     }
     try {
-      const result = await postgresStorage.restoreRevision(
+      const result = await databaseMutations.restoreRevision(
         req.body?.revisionId,
+        req.headers["x-risu-client-id"],
       );
       // 메인 DB 상태가 통째로 바뀌므로 백업에는 전체 재동기를 트리거.
       if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
@@ -6670,13 +6662,10 @@ app.post(
     }
 
     try {
-      const result = await postgresStorage.sync(req.body);
-      realtimeEventHub.broadcast("database-change", {
-        revision: result.revision,
-        action: req.body?.action || "sync",
-        sourceClientId: normalizeClientId(req.headers["x-risu-client-id"]),
-        ...describeSqlCommitChange(req.body),
-      });
+      const result = await databaseMutations.commit(
+        req.body,
+        req.headers["x-risu-client-id"],
+      );
       // Keep at most one large parsed mutation alive: wait for the serial
       // mirror, while preserving primary-write success if the backup fails.
       if (backupStorage?.enabled && backupConfig.mirroring?.enabled) {
@@ -6732,9 +6721,10 @@ app.put(
       return;
     }
     try {
-      const result = await postgresStorage.updateSetting(
+      const result = await databaseMutations.updateSetting(
         req.params.key,
         req.body.value,
+        req.headers["x-risu-client-id"],
       );
       res.send(result);
     } catch (error) {
@@ -6756,7 +6746,10 @@ app.delete(
       return;
     }
     try {
-      const result = await postgresStorage.deleteSetting(req.params.key);
+      const result = await databaseMutations.deleteSetting(
+        req.params.key,
+        req.headers["x-risu-client-id"],
+      );
       res.send(result);
     } catch (error) {
       next(error);
@@ -6778,9 +6771,10 @@ app.post(
       return;
     }
     try {
-      const result = await postgresStorage.saveBotPreset(
+      const result = await databaseMutations.saveBotPreset(
         req.body.preset,
         req.body.position,
+        req.headers["x-risu-client-id"],
       );
       res.send(result);
     } catch (error) {
@@ -6803,7 +6797,10 @@ app.post(
       return;
     }
     try {
-      const result = await postgresStorage.saveModule(req.body.module);
+      const result = await databaseMutations.saveModule(
+        req.body.module,
+        req.headers["x-risu-client-id"],
+      );
       res.send(result);
     } catch (error) {
       next(error);
@@ -6824,7 +6821,10 @@ app.delete(
       return;
     }
     try {
-      const result = await postgresStorage.deleteModule(req.params.id);
+      const result = await databaseMutations.deleteModule(
+        req.params.id,
+        req.headers["x-risu-client-id"],
+      );
       res.send(result);
     } catch (error) {
       next(error);
@@ -6846,9 +6846,10 @@ app.post(
       return;
     }
     try {
-      const result = await postgresStorage.saveMessage(
+      const result = await databaseMutations.saveMessage(
         req.params.chatId,
         req.body.message,
+        req.headers["x-risu-client-id"],
       );
       res.send(result);
     } catch (error) {
@@ -6870,9 +6871,10 @@ app.delete(
       return;
     }
     try {
-      const result = await postgresStorage.deleteMessage(
+      const result = await databaseMutations.deleteMessage(
         req.params.chatId,
         req.params.messageId,
+        req.headers["x-risu-client-id"],
       );
       res.send(result);
     } catch (error) {
