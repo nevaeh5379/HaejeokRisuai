@@ -3,6 +3,7 @@ import { alertError, alertInput, waitAlert } from "../../alert";
 import { base64url, getKeypairStore, saveKeypairStore } from "../../util";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
+import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
 import {
   StorageSyncAssetReadError,
   validateStorageSyncAssetChunkRange,
@@ -191,6 +192,7 @@ export class NodeStorage {
   private syncAssetSizePromise: Promise<Map<string, number>> | null = null;
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
+  private readonly assetClient: RemoteAssetClient;
 
   constructor(
     readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
@@ -201,6 +203,9 @@ export class NodeStorage {
     };
     this.sql = new NodeSqlStorage(getAuth, apiClient);
     this.s3 = new NodeS3Storage(getAuth, apiClient);
+    this.assetClient = new RemoteAssetClient(apiClient, () =>
+      this.getCachedAuth(),
+    );
   }
 
   private async openBulkImageCache(): Promise<Cache | null> {
@@ -324,26 +329,7 @@ export class NodeStorage {
       target?: AssetStorageTarget;
     },
   ): Promise<string> {
-    const auth = await this.getCachedAuth();
-    const hex = Buffer.from(key, "utf-8").toString("hex");
-    const params: string[] = [];
-    if (options?.thumbnail) {
-      params.push("thumb=1");
-    }
-    if (options?.size === "display") {
-      params.push("size=display");
-    }
-    if (options?.width) {
-      params.push(`width=${options.width}`);
-    }
-    if (options?.height) {
-      params.push(`height=${options.height}`);
-    }
-    if (options?.target && options.target !== "active") {
-      params.push(`target=${options.target}`);
-    }
-    params.push(`auth=${encodeURIComponent(auth)}`);
-    return this.apiClient.resolve(`/api/read?path=${hex}&${params.join("&")}`);
+    return await this.assetClient.getDirectUrl(key, options);
   }
 
   async getProxyAuth() {
@@ -825,26 +811,7 @@ export class NodeStorage {
   }
 
   async setItem(key: string, value: Uint8Array) {
-    await this.checkAuth();
-    const da = await this.apiClient.request("/api/write", {
-      method: "POST",
-      body: value as any,
-      headers: {
-        "content-type": "application/octet-stream",
-        "file-path": Buffer.from(key, "utf-8").toString("hex"),
-        "risu-auth": await this.createAuth(),
-      },
-    });
-    let data: { error?: string } = {};
-    try {
-      data = await da.json();
-    } catch {}
-    if (da.status < 200 || da.status >= 300) {
-      throw new Error(data?.error ?? `setItem Error: ${da.status}`);
-    }
-    if (data.error) {
-      throw data.error;
-    }
+    await this.assetClient.setItem(key, value);
     await this.invalidateBulkImageCache([key]);
   }
 
@@ -960,38 +927,10 @@ export class NodeStorage {
       target?: AssetStorageTarget;
     },
   ): Promise<{ data: Buffer; contentType: string } | null> {
-    await this.checkAuth();
-    const headers: Record<string, string> = {
-      "file-path": Buffer.from(key, "utf-8").toString("hex"),
-      "risu-auth": await this.createAuth(),
-    };
-    if (options?.thumbnail) headers["x-thumbnail"] = "true";
-    if (options?.target && options.target !== "active") {
-      headers["x-storage-target"] = options.target;
-    }
-    const params = new URLSearchParams();
-    if (options?.thumbnail) params.set("thumb", "1");
-    if (options?.size) params.set("size", options.size);
-    if (options?.width) params.set("width", String(options.width));
-    if (options?.height) params.set("height", String(options.height));
-    if (options?.target && options.target !== "active") {
-      params.set("target", options.target);
-    }
-    const query = params.size > 0 ? `?${params.toString()}` : "";
-    const response = await this.apiClient.request(`/api/read${query}`, {
-      method: "GET",
-      cache: "no-cache",
-      headers,
-    });
-    if (!response.ok) throw new Error(`getItem Error: ${response.status}`);
-    const data = Buffer.from(await response.arrayBuffer());
-    if (data.length === 0) return null;
-    return {
-      data,
-      contentType:
-        response.headers.get("content-type")?.split(";", 1)[0]?.trim() ||
-        "application/octet-stream",
-    };
+    const result = await this.assetClient.getItemWithMetadata(key, options);
+    return result
+      ? { data: Buffer.from(result.data), contentType: result.contentType }
+      : null;
   }
 
   async getItem(
@@ -1010,47 +949,10 @@ export class NodeStorage {
 
   async getItemFromBrowserCache(
     key: string,
-    options?: {
-      thumbnail?: boolean;
-      target?: AssetStorageTarget;
-    },
+    options?: { thumbnail?: boolean; target?: AssetStorageTarget },
   ): Promise<Buffer | null> {
-    await this.checkAuth();
-    const headers: Record<string, string> = {
-      "file-path": Buffer.from(key, "utf-8").toString("hex"),
-      "risu-auth": await this.createAuth(),
-    };
-    if (options?.thumbnail) {
-      headers["x-thumbnail"] = "true";
-    }
-    if (options?.target && options.target !== "active") {
-      headers["x-storage-target"] = options.target;
-    }
-    const targetParam =
-      options?.target && options.target !== "active"
-        ? `&target=${options.target}`
-        : "";
-    const thumbParam = options?.thumbnail ? "?thumb=1" : "";
-    const query = [thumbParam, targetParam].filter(Boolean).join("&");
-    const queryStr = query ? `?${query}` : "";
-    let da: Response;
-    try {
-      da = await this.apiClient.request("/api/read" + queryStr, {
-        method: "GET",
-        cache: "force-cache",
-        headers,
-      });
-    } catch {
-      return null;
-    }
-    if (da.status < 200 || da.status >= 300) {
-      return null;
-    }
-    const data = Buffer.from(await da.arrayBuffer());
-    if (data.length == 0) {
-      return null;
-    }
-    return data;
+    const data = await this.assetClient.getItemFromBrowserCache(key, options);
+    return data ? Buffer.from(data) : null;
   }
 
   async getItems(
@@ -1480,42 +1382,11 @@ export class NodeStorage {
   }
 
   async keys(prefix = ""): Promise<string[]> {
-    await this.checkAuth();
-    const search = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
-    const da = await this.apiClient.request(`/api/list${search}`, {
-      method: "GET",
-      headers: {
-        "risu-auth": await this.createAuth(),
-      },
-    });
-    if (da.status < 200 || da.status >= 300) {
-      throw "listItem Error";
-    }
-    const data = await da.json();
-    if (data.error) {
-      throw data.error;
-    }
-    return data.content;
+    return await this.assetClient.keys(prefix);
   }
+
   async removeItem(key: string | string[]) {
-    await this.checkAuth();
-    const da = await this.apiClient.request("/api/remove", {
-      method: "GET",
-      headers: {
-        "file-path": Buffer.from(
-          Array.isArray(key) ? key.join("$$") : key,
-          "utf-8",
-        ).toString("hex"),
-        "risu-auth": await this.createAuth(),
-      },
-    });
-    if (da.status < 200 || da.status >= 300) {
-      throw "removeItem Error";
-    }
-    const data = await da.json();
-    if (data.error) {
-      throw data.error;
-    }
+    await this.assetClient.removeItem(key);
     await this.invalidateBulkImageCache(Array.isArray(key) ? key : [key]);
   }
 
