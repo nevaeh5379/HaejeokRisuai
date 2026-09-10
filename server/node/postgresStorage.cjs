@@ -4622,30 +4622,142 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
+  async clearStorageSyncColdStorage(client) {
+    await client.query("DELETE FROM cold.archives");
+  }
+
+  async applyStorageSyncColdStorageRecord(client, key, value) {
+    const normalizedKey = normalizeColdStorageKey(key);
+    const splitValue = splitColdStorageValue(value);
+    return await this.upsertColdStorageWithClient(
+      client,
+      normalizedKey,
+      splitValue,
+    );
+  }
+
+  async applyStorageSyncBranchRecords(client, branches, activeBranches) {
+    const branchRows = (branches || []).map((record) => {
+      assertId(record.chatId, "branch.chatId");
+      assertId(record.data?.id, "branch.id");
+      const reason = record.data?.reason;
+      if (!["root", "manual", "reroll"].includes(reason)) {
+        throw new PostgresPayloadError("Invalid chat branch reason");
+      }
+      return {
+        chat_id: record.chatId,
+        id: record.data.id,
+        parent_branch_id: record.data.parentBranchId ?? null,
+        fork_message_id: record.data.forkMessageId ?? null,
+        head_message_id: record.data.headMessageId ?? null,
+        reason,
+        created_at: Number(record.data.createdAt) || 0,
+      };
+    });
+    await bulkInsert(
+      client,
+      "chat.branches",
+      [
+        "chat_id",
+        "id",
+        "parent_branch_id",
+        "fork_message_id",
+        "head_message_id",
+        "reason",
+        "created_at",
+      ],
+      ["text", "text", "text", "text", "text", "text", "bigint"],
+      branchRows,
+      buildUpsertClause(
+        "chat.branches",
+        ["chat_id", "id"],
+        [
+          "parent_branch_id",
+          "fork_message_id",
+          "head_message_id",
+          "reason",
+          "created_at",
+        ],
+      ),
+    );
+    for (const record of activeBranches || []) {
+      assertId(record.chatId, "active-branch.chatId");
+      assertId(record.branchId, "active-branch.branchId");
+      await client.query(
+        `INSERT INTO chat.active_branches (chat_id, branch_id) VALUES ($1, $2)
+         ON CONFLICT (chat_id) DO UPDATE SET branch_id = EXCLUDED.branch_id`,
+        [record.chatId, record.branchId],
+      );
+    }
+  }
+
+  async applyStorageSyncMessageLinks(client, records) {
+    const rows = (records || []).map((record) => ({
+      chat_id: record.chatId,
+      message_id: record.id,
+      parent_message_id: record.parentMessageId ?? null,
+      origin_branch_id: record.originBranchId,
+    }));
+    await bulkInsert(
+      client,
+      "chat.message_branch_links",
+      ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
+      ["text", "text", "text", "text"],
+      rows,
+      buildUpsertClause(
+        "chat.message_branch_links",
+        ["chat_id", "message_id"],
+        ["parent_message_id", "origin_branch_id"],
+      ),
+    );
+  }
+
   async sync(rawPayload, options = {}) {
     this.assertEnabled();
     const onProgress =
       typeof options === "function" ? options : options?.onProgress;
     const payload = validateSyncPayload(rawPayload);
-    const client = await this.pool.connect();
+    const external =
+      typeof options === "object" && options !== null
+        ? options.externalTransaction
+        : null;
+    const client = external?.client || (await this.pool.connect());
+    const ownsTransaction = !external;
     try {
-      onProgress?.({ stage: "start", message: "Starting transaction" });
-      await client.query("BEGIN");
-      const metaResult = await client.query(
-        "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
-      );
-      const currentRevision = Number(metaResult.rows[0].revision);
-      if (payload.baseRevision !== currentRevision) {
-        throw new PostgresRevisionConflictError(currentRevision);
+      let currentRevision;
+      let nextRevision;
+      if (ownsTransaction) {
+        onProgress?.({ stage: "start", message: "Starting transaction" });
+        await client.query("BEGIN");
+        const metaResult = await client.query(
+          "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
+        );
+        currentRevision = Number(metaResult.rows[0].revision);
+        if (payload.baseRevision !== currentRevision) {
+          throw new PostgresRevisionConflictError(currentRevision);
+        }
+        nextRevision = currentRevision + 1;
+        await beginAuditRevision(client, {
+          storageRevision: nextRevision,
+          databaseInitialized: true,
+          scope: "database",
+          action:
+            payload.action || (payload.replaceAll ? "replace-all" : "sync"),
+        });
+      } else {
+        currentRevision = Number(external.currentRevision);
+        nextRevision = Number(external.nextRevision);
+        if (
+          !Number.isSafeInteger(currentRevision) ||
+          !Number.isSafeInteger(nextRevision) ||
+          nextRevision !== currentRevision + 1 ||
+          payload.baseRevision !== currentRevision
+        ) {
+          throw new PostgresPayloadError(
+            "Invalid external sync transaction context",
+          );
+        }
       }
-
-      const nextRevision = currentRevision + 1;
-      await beginAuditRevision(client, {
-        storageRevision: nextRevision,
-        databaseInitialized: true,
-        scope: "database",
-        action: payload.action || (payload.replaceAll ? "replace-all" : "sync"),
-      });
 
       if (payload.replaceAll) {
         await client.query("DELETE FROM system.settings");
@@ -4661,7 +4773,11 @@ class PostgresStorage extends SqlStorageBase {
             "SELECT module_id, position FROM system.module_records ORDER BY position",
           )
         ).rows;
-        if (!payload.replaceAll && existing.length === 0) {
+        if (
+          !payload.replaceAll &&
+          existing.length === 0 &&
+          !external?.storageSyncImport
+        ) {
           const legacySettings = (
             await client.query(
               "SELECT key, text_val, num_val, bool_val FROM system.settings WHERE key = 'modules'",
@@ -4800,7 +4916,7 @@ class PostgresStorage extends SqlStorageBase {
           }
         }
         let activeId = payload.presets.activeId;
-        if (activeId === undefined) {
+        if (activeId === undefined && !external?.storageSyncImport) {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = originalIds.indexOf(currentActiveId);
             activeId =
@@ -5729,7 +5845,9 @@ class PostgresStorage extends SqlStorageBase {
           true,
         ),
       );
-      await this.linkIncomingMessagesToActiveBranches(client, splitMessages);
+      if (!external?.storageSyncImport) {
+        await this.linkIncomingMessagesToActiveBranches(client, splitMessages);
+      }
 
       // 1. message_attributes
       const msgAttrRows = splitMessages.flatMap((item) =>
@@ -5958,17 +6076,19 @@ class PostgresStorage extends SqlStorageBase {
         );
       }
 
-      onProgress?.({
-        stage: "finalizing",
-        message: "Updating metadata and committing",
-      });
-      await client.query(
-        `UPDATE system.storage_meta
-                 SET revision = $1, initialized = TRUE, updated_at = NOW()
-                 WHERE singleton = TRUE`,
-        [nextRevision],
-      );
-      await client.query("COMMIT");
+      if (ownsTransaction) {
+        onProgress?.({
+          stage: "finalizing",
+          message: "Updating metadata and committing",
+        });
+        await client.query(
+          `UPDATE system.storage_meta
+                   SET revision = $1, initialized = TRUE, updated_at = NOW()
+                   WHERE singleton = TRUE`,
+          [nextRevision],
+        );
+        await client.query("COMMIT");
+      }
       if (
         changedSettingKeys.includes("plugins") ||
         payload.rootDeletes.includes("plugins")
@@ -5995,10 +6115,10 @@ class PostgresStorage extends SqlStorageBase {
         },
       };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => {});
+      if (ownsTransaction) await client.query("ROLLBACK").catch(() => {});
       throw error;
     } finally {
-      client.release();
+      if (ownsTransaction) client.release();
     }
   }
 

@@ -496,3 +496,31 @@ describe("PostgreSQL sync payload validation", () => {
     expect(typeof PostgresStorage.prototype.previewRestore).toBe("function");
   });
 });
+
+describe("PostgreSQL external storage sync transaction", () => {
+  it("reuses the caller transaction without BEGIN, COMMIT, or revision writes", async () => {
+    const storage = new PostgresStorage({
+      connectionString: "postgres://external-sync-test",
+    });
+    const connect = vi.fn(async () => {
+      throw new Error("external sync must not open another connection");
+    });
+    storage.pool = { connect };
+    const client = { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) };
+
+    await expect(
+      storage.sync(
+        { baseRevision: 7 },
+        {
+          externalTransaction: {
+            client,
+            currentRevision: 7,
+            nextRevision: 8,
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ revision: 8 });
+    expect(connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+  });
+});
