@@ -7,6 +7,14 @@ vi.mock("../../alert", () => ({
   waitAlert: vi.fn(),
 }));
 
+function markAuthFresh(storage: {
+  authChecked: boolean;
+  authValidatedAt?: number;
+}) {
+  storage.authChecked = true;
+  storage.authValidatedAt = Date.now();
+}
+
 function createHeaderPacket(
   fileId: number,
   name: string,
@@ -101,7 +109,7 @@ describe("NodeStorage.streamItems", () => {
     );
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
 
     const events: string[] = [];
@@ -157,7 +165,7 @@ describe("NodeStorage.streamItems", () => {
     );
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
     const progress: any[] = [];
 
@@ -214,7 +222,7 @@ describe("NodeStorage password connection", () => {
     const storage = new NodeStorage(client);
     vi.spyOn(storage, "createAuth").mockResolvedValue("test-auth");
     const authorize = vi
-      .spyOn(storage as any, "authorizeKey")
+      .spyOn((storage as any).authController, "authorizeKey")
       .mockResolvedValue(undefined);
 
     await expect(storage.connectWithPassword("")).resolves.toBeUndefined();
@@ -313,7 +321,7 @@ describe("NodeStorage native asset reads", () => {
         fetcher,
       ),
     );
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("native-auth");
 
     const item = await storage.getItemWithMetadata("assets/avatar.png", {
@@ -352,7 +360,7 @@ describe("NodeStorage.getItems image cache", () => {
     vi.stubGlobal("caches", memoryCache.storage);
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
 
     const first = await storage.getItems(["assets/image.png"], undefined, {
@@ -399,7 +407,7 @@ describe("NodeStorage.getItems image cache", () => {
     vi.stubGlobal("caches", memoryCache.storage);
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
     const options = { size: "thumb" as const, width: 128, height: 128 };
 

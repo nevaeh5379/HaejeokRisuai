@@ -3,10 +3,8 @@ import { alertError, alertInput, waitAlert } from "../../alert";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
-import {
-  digestRemotePassword,
-  RemoteAuthIdentity,
-} from "@risuai/storage-remote/remoteAuthIdentity";
+import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
+import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
 import { RemoteStorageSyncClient } from "@risuai/storage-remote/remoteStorageSyncClient";
 import {
   StorageSyncAssetReadError,
@@ -182,12 +180,7 @@ export type NodeVectorCacheClearResult = {
   query: { entries: number; bytes: number };
 };
 
-const NODE_AUTH_REVALIDATE_MS = 60_000;
-
 export class NodeStorage {
-  authChecked = false;
-  private authValidatedAt = 0;
-  private authValidationPromise: Promise<void> | null = null;
   private nodeProviderCapabilities: NodeProviderCapabilities | null = null;
   private syncAssetSizeCache: {
     expiresAt: number;
@@ -198,6 +191,7 @@ export class NodeStorage {
   readonly s3: NodeS3Storage;
   private readonly assetClient: RemoteAssetClient;
   private readonly authIdentity: RemoteAuthIdentity;
+  private readonly authController: RemoteAuthController;
   private readonly syncClient: RemoteStorageSyncClient;
 
   constructor(
@@ -208,6 +202,23 @@ export class NodeStorage {
       return await this.createAuth();
     };
     this.authIdentity = new RemoteAuthIdentity(apiClient);
+    this.authController = new RemoteAuthController(
+      apiClient,
+      this.authIdentity,
+      {
+        createAuth: () => this.createAuth(),
+        requestPassword: (reason) =>
+          alertInput(
+            reason === "set-password"
+              ? language.setNodePassword
+              : language.inputNodePassword,
+          ),
+        reportError: async (message, waitForDismissal) => {
+          alertError(message);
+          if (waitForDismissal) await waitAlert();
+        },
+      },
+    );
     this.sql = new NodeSqlStorage(getAuth, apiClient);
     this.s3 = new NodeS3Storage(getAuth, apiClient);
     this.assetClient = new RemoteAssetClient(apiClient, () =>
@@ -271,24 +282,28 @@ export class NodeStorage {
     return await this.authIdentity.createAuth();
   }
 
-  private cachedAuthToken: string = "";
-  private cachedAuthTokenExpiresAt: number = 0;
+  get authChecked(): boolean {
+    return this.authController.authChecked;
+  }
+
+  set authChecked(value: boolean) {
+    this.authController.authChecked = value;
+  }
+
+  private get authValidatedAt(): number {
+    return this.authController.authValidatedAt;
+  }
+
+  private set authValidatedAt(value: number) {
+    this.authController.authValidatedAt = value;
+  }
 
   private async ensureAuthFresh(): Promise<void> {
-    const stale = Date.now() - this.authValidatedAt >= NODE_AUTH_REVALIDATE_MS;
-    if (!this.authChecked || stale) {
-      await this.checkAuth(stale);
-    }
+    await this.authController.ensureFresh();
   }
 
   async getCachedAuth(): Promise<string> {
-    await this.ensureAuthFresh();
-    const now = Math.floor(Date.now() / 1000);
-    if (!this.cachedAuthToken || this.cachedAuthTokenExpiresAt - now < 60) {
-      this.cachedAuthToken = await this.createAuth();
-      this.cachedAuthTokenExpiresAt = now + 4 * 60;
-    }
-    return this.cachedAuthToken;
+    return await this.authController.getCachedAuth();
   }
 
   async getDirectUrl(
@@ -1342,33 +1357,8 @@ export class NodeStorage {
     await this.invalidateBulkImageCache(Array.isArray(key) ? key : [key]);
   }
 
-  private async authorizeKey(password: string) {
-    const keypair = await this.getKeyPair();
-    const publicKey = await crypto.subtle.exportKey("jwk", keypair.publicKey);
-    const response = await this.apiClient.request("/api/login", {
-      method: "POST",
-      body: JSON.stringify({
-        password,
-        publicKey,
-      }),
-      headers: {
-        "content-type": "application/json",
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      let message = `Login failed (${response.status})`;
-      try {
-        const body = await response.json();
-        if (body?.error) {
-          message = body.error;
-        }
-      } catch {}
-      alertError(message);
-      await waitAlert();
-      throw message;
-    }
-    this.authChecked = true;
-    this.authValidatedAt = Date.now();
+  private async authorizeKey(password: string): Promise<void> {
+    await this.authController.authorizeKey(password);
   }
 
   getStorageSyncServerOrigin(): string {
@@ -1480,113 +1470,11 @@ export class NodeStorage {
   }
 
   async connectWithPassword(password: string): Promise<void> {
-    await this.apiClient.getCapabilities();
-    const response = await this.apiClient.request("/api/test_auth", {
-      headers: { "risu-auth": await this.createAuth() },
-    });
-    if (!response.ok) {
-      throw new Error(`Authentication check failed (${response.status}).`);
-    }
-    const data = await response.json();
-    if (data?.status === "success") {
-      this.authChecked = true;
-      this.authValidatedAt = Date.now();
-      return;
-    }
-    if (data?.status !== "unset" && data?.status !== "incorrect") {
-      throw new Error("The storage server returned an invalid auth status.");
-    }
-    // An empty password is a valid explicit choice. It is still hashed before
-    // registration, so the server stores the SHA-256 digest rather than an
-    // ambiguous empty/unset value.
-    const digest = await digestRemotePassword(password, this.apiClient);
-    if (data.status === "unset") {
-      const setResponse = await this.apiClient.request("/api/set_password", {
-        method: "POST",
-        body: JSON.stringify({ password: digest }),
-        headers: { "content-type": "application/json" },
-      });
-      if (!setResponse.ok) {
-        throw new Error(
-          `Setting the storage server password failed (${setResponse.status}).`,
-        );
-      }
-    }
-    await this.authorizeKey(digest);
+    await this.authController.connectWithPassword(password);
   }
 
-  private async checkAuth(force = false) {
-    if (this.authChecked && !force) return;
-    if (this.authValidationPromise) return await this.authValidationPromise;
-
-    this.authValidationPromise = (async () => {
-      let response: Response;
-      try {
-        response = await this.apiClient.request("/api/test_auth", {
-          headers: {
-            "risu-auth": await this.createAuth(),
-          },
-        });
-      } catch (error) {
-        alertError(
-          language.errors.networkFetch ||
-            "Failed to connect to backend server.",
-        );
-        throw error;
-      }
-
-      if (!response.ok) {
-        const message = `Backend server responded with status ${response.status}. Please make sure the backend server (pnpm dev:server) is running.`;
-        alertError(message);
-        throw new Error(message);
-      }
-
-      let data: any;
-      try {
-        data = await response.json();
-      } catch (error) {
-        const message = "Invalid JSON response from backend server.";
-        alertError(message);
-        throw new Error(message);
-      }
-
-      if (data?.status === "unset") {
-        const input = await digestRemotePassword(
-          await alertInput(language.setNodePassword),
-          this.apiClient,
-        );
-        const setRes = await this.apiClient.request("/api/set_password", {
-          method: "POST",
-          body: JSON.stringify({
-            password: input,
-          }),
-          headers: {
-            "content-type": "application/json",
-          },
-        });
-        if (setRes.status < 200 || setRes.status >= 300) {
-          throw new Error(
-            `Setting the Node server password failed (${setRes.status})`,
-          );
-        }
-        await this.authorizeKey(input);
-      } else if (data?.status === "incorrect") {
-        const input = await digestRemotePassword(
-          await alertInput(language.inputNodePassword),
-          this.apiClient,
-        );
-        await this.authorizeKey(input);
-      } else {
-        this.authChecked = true;
-        this.authValidatedAt = Date.now();
-      }
-    })();
-
-    try {
-      await this.authValidationPromise;
-    } finally {
-      this.authValidationPromise = null;
-    }
+  private async checkAuth(force = false): Promise<void> {
+    await this.authController.checkAuth(force);
   }
 
   listItem = this.keys;
