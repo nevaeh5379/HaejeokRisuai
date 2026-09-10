@@ -26,6 +26,8 @@ function encodeJson(value: unknown): string {
 }
 
 export class RemoteAuthIdentity {
+  private keyPairPromise: Promise<CryptoKeyPair> | null = null;
+
   constructor(
     private readonly apiClient: NodeApiClient,
     private readonly loadKeyPair: RemoteKeyPairLoader = getKeypairStore,
@@ -33,6 +35,16 @@ export class RemoteAuthIdentity {
   ) {}
 
   async getKeyPair(): Promise<CryptoKeyPair> {
+    if (!this.keyPairPromise) {
+      this.keyPairPromise = this.loadOrCreateKeyPair().catch((error) => {
+        this.keyPairPromise = null;
+        throw error;
+      });
+    }
+    return await this.keyPairPromise;
+  }
+
+  private async loadOrCreateKeyPair(): Promise<CryptoKeyPair> {
     const name = remoteAuthKeyStoreName(this.apiClient.baseUrl);
     const stored = await this.loadKeyPair(name);
     if (stored) return stored;

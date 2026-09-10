@@ -22,6 +22,7 @@ export class RemoteAuthController {
   private validationPromise: Promise<void> | null = null;
   private cachedAuthToken = "";
   private cachedAuthTokenExpiresAt = 0;
+  private authTokenPromise: Promise<string> | null = null;
   private readonly revalidateMs: number;
 
   constructor(
@@ -40,11 +41,23 @@ export class RemoteAuthController {
   async getCachedAuth(): Promise<string> {
     await this.ensureFresh();
     const now = Math.floor(Date.now() / 1000);
-    if (!this.cachedAuthToken || this.cachedAuthTokenExpiresAt - now < 60) {
-      this.cachedAuthToken = await this.options.createAuth();
-      this.cachedAuthTokenExpiresAt = now + 4 * 60;
+    if (this.cachedAuthToken && this.cachedAuthTokenExpiresAt - now >= 60) {
+      return this.cachedAuthToken;
     }
-    return this.cachedAuthToken;
+    if (!this.authTokenPromise) {
+      this.authTokenPromise = this.options
+        .createAuth()
+        .then((token) => {
+          this.cachedAuthToken = token;
+          this.cachedAuthTokenExpiresAt =
+            Math.floor(Date.now() / 1000) + 4 * 60;
+          return token;
+        })
+        .finally(() => {
+          this.authTokenPromise = null;
+        });
+    }
+    return await this.authTokenPromise;
   }
 
   async authorizeKey(passwordDigest: string): Promise<void> {

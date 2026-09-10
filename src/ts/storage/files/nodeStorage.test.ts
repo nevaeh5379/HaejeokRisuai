@@ -268,6 +268,29 @@ describe("NodeStorage auth revalidation", () => {
     expect(first).toContain("auth=fresh-auth");
     expect(second).toContain("auth=fresh-auth");
   });
+
+  it("shares one signed token across concurrent SQL requests", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const storage = new NodeStorage();
+    markAuthFresh(storage as any);
+    const createAuth = vi
+      .spyOn(storage, "createAuth")
+      .mockImplementation(async () => {
+        await Promise.resolve();
+        return "shared-auth";
+      });
+    const getSqlAuth = (storage.sql as any).getAuth as () => Promise<string>;
+
+    const tokens = await Promise.all([
+      getSqlAuth(),
+      getSqlAuth(),
+      getSqlAuth(),
+      getSqlAuth(),
+    ]);
+
+    expect(tokens).toEqual(Array(4).fill("shared-auth"));
+    expect(createAuth).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("NodeStorage authentication identity", () => {
@@ -280,6 +303,33 @@ describe("NodeStorage authentication identity", () => {
     expect(remoteAuthKeyStoreName("https://two.example")).toBe(
       "node:aHR0cHM6Ly90d28uZXhhbXBsZQ",
     );
+  });
+
+  it("loads one key pair for concurrent signing requests", async () => {
+    const { RemoteAuthIdentity } =
+      await import("@risuai/storage-remote/remoteAuthIdentity");
+    const keyPair = {
+      privateKey: { type: "private" },
+      publicKey: { type: "public" },
+    } as unknown as CryptoKeyPair;
+    const loadKeyPair = vi.fn(async () => {
+      await Promise.resolve();
+      return keyPair;
+    });
+    const identity = new RemoteAuthIdentity(
+      { baseUrl: "https://sync.example" } as any,
+      loadKeyPair,
+      vi.fn(),
+    );
+
+    const pairs = await Promise.all([
+      identity.getKeyPair(),
+      identity.getKeyPair(),
+      identity.getKeyPair(),
+    ]);
+
+    expect(pairs).toEqual([keyPair, keyPair, keyPair]);
+    expect(loadKeyPair).toHaveBeenCalledTimes(1);
   });
 });
 

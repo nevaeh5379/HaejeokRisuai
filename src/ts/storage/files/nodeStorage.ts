@@ -110,10 +110,7 @@ export class NodeStorage {
   constructor(
     readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
   ) {
-    const getAuth = async () => {
-      await this.ensureAuthFresh();
-      return await this.createAuth();
-    };
+    const getAuth = () => this.getCachedAuth();
     this.authIdentity = new RemoteAuthIdentity(apiClient);
     this.authController = new RemoteAuthController(
       apiClient,
