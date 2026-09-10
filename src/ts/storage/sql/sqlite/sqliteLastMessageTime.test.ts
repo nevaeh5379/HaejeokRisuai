@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import { SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL } from "./sqliteLastMessageTime";
+import { SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL } from "@risuai/storage-sqlite/sqliteLastMessageTime";
 
 describe("SQLite last-message-time trigger", () => {
   it("backfills existing chats and guards direct message writes", () => {

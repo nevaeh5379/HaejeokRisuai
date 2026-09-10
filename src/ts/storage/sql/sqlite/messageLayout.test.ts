@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flattenRelationalValue } from "./relationalNodeCodec";
+import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
 import { makeMessage } from "./sqliteTestFixtures";
 
 /**

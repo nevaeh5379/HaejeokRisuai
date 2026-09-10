@@ -3,7 +3,7 @@ import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   isSqlitePragmaStatement,
   splitSqliteStatements,
-} from "./sqliteSchemaStatements";
+} from "@risuai/storage-sqlite/sqliteSchemaStatements";
 
 describe("splitSqliteStatements", () => {
   it("keeps trigger bodies and quoted/comment semicolons intact", () => {

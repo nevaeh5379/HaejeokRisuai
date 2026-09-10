@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmptySqlCommit } from "../sqlCommit";
-import { applySqliteCommit } from "./sqliteCommit";
-import { flattenRelationalValue } from "./relationalNodeCodec";
+import { applySqliteCommit } from "@risuai/storage-sqlite/sqliteCommit";
+import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
 import { rebuildMessageRows } from "./sqliteStorageUtils";
 
 describe("message SQL core/extension split", () => {

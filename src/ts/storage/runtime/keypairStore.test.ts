@@ -3,7 +3,7 @@ import {
   getKeypairStore,
   openKeypairStoreDB,
   saveKeypairStore,
-} from "./keypairStore";
+} from "@risuai/storage-remote/keypairStore";
 
 afterEach(() => {
   vi.unstubAllGlobals();

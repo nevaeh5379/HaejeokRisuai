@@ -30,7 +30,7 @@ import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   flattenRelationalValue,
   type RelationalNodeRow,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import {
   makeWebStorage,
   makeTauriStorage,

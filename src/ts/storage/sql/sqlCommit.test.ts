@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySqliteCommit } from "./sqlite/sqliteCommit";
+import { applySqliteCommit } from "@risuai/storage-sqlite/sqliteCommit";
 import {
   buildSqlReplaceCommit,
   createEmptySqlCommit,

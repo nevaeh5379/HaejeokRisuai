@@ -5,7 +5,7 @@ import { createEmptySqlCommit, SqlRevisionConflictError } from "../sqlCommit";
 import {
   flattenRelationalValue,
   rebuildRelationalValue,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import {
   makeWebStorage,
   makeTauriStorage,

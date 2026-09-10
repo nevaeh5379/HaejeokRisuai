@@ -5,7 +5,7 @@ import {
   MAX_RELATIONAL_NODE_DEPTH,
   rebuildRelationalValue,
   RELATIONAL_SCHEMA_LAYOUT,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 
 describe("typed relational node codec", () => {
   it("round trips nested values without JSON serialization", () => {
