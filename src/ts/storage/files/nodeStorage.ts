@@ -173,8 +173,12 @@ export type NodeVectorCacheClearResult = {
   query: { entries: number; bytes: number };
 };
 
+const NODE_AUTH_REVALIDATE_MS = 60_000;
+
 export class NodeStorage {
   authChecked = false;
+  private authValidatedAt = 0;
+  private authValidationPromise: Promise<void> | null = null;
   private nodeProviderCapabilities: NodeProviderCapabilities | null = null;
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
@@ -183,7 +187,7 @@ export class NodeStorage {
     readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
   ) {
     const getAuth = async () => {
-      await this.checkAuth();
+      await this.ensureAuthFresh();
       return await this.createAuth();
     };
     this.sql = new NodeSqlStorage(getAuth, apiClient);
@@ -284,10 +288,17 @@ export class NodeStorage {
   private cachedAuthToken: string = "";
   private cachedAuthTokenExpiresAt: number = 0;
 
+  private async ensureAuthFresh(): Promise<void> {
+    const stale = Date.now() - this.authValidatedAt >= NODE_AUTH_REVALIDATE_MS;
+    if (!this.authChecked || stale) {
+      await this.checkAuth(stale);
+    }
+  }
+
   async getCachedAuth(): Promise<string> {
+    await this.ensureAuthFresh();
     const now = Math.floor(Date.now() / 1000);
     if (!this.cachedAuthToken || this.cachedAuthTokenExpiresAt - now < 60) {
-      await this.checkAuth();
       this.cachedAuthToken = await this.createAuth();
       this.cachedAuthTokenExpiresAt = now + 4 * 60;
     }
@@ -327,7 +338,7 @@ export class NodeStorage {
   }
 
   async getProxyAuth() {
-    await this.checkAuth();
+    await this.ensureAuthFresh();
     const auth = await this.createAuth();
     if (typeof localStorage !== "undefined") {
       localStorage.setItem("risuauth", auth);
@@ -1410,6 +1421,7 @@ export class NodeStorage {
       throw message;
     }
     this.authChecked = true;
+    this.authValidatedAt = Date.now();
   }
 
   getStorageSyncServerOrigin(): string {
@@ -1582,6 +1594,7 @@ export class NodeStorage {
     const data = await response.json();
     if (data?.status === "success") {
       this.authChecked = true;
+      this.authValidatedAt = Date.now();
       return;
     }
     if (data?.status !== "unset" && data?.status !== "incorrect") {
@@ -1606,8 +1619,11 @@ export class NodeStorage {
     await this.authorizeKey(digest);
   }
 
-  private async checkAuth() {
-    if (!this.authChecked) {
+  private async checkAuth(force = false) {
+    if (this.authChecked && !force) return;
+    if (this.authValidationPromise) return await this.authValidationPromise;
+
+    this.authValidationPromise = (async () => {
       let response: Response;
       try {
         response = await this.apiClient.request("/api/test_auth", {
@@ -1666,7 +1682,14 @@ export class NodeStorage {
         await this.authorizeKey(input);
       } else {
         this.authChecked = true;
+        this.authValidatedAt = Date.now();
       }
+    })();
+
+    try {
+      await this.authValidationPromise;
+    } finally {
+      this.authValidationPromise = null;
     }
   }
 

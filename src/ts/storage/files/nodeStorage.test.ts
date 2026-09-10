@@ -230,6 +230,43 @@ describe("NodeStorage password connection", () => {
   });
 });
 
+describe("NodeStorage auth revalidation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("revalidates a stale registered key before issuing direct asset URLs", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        Response.json({ status: "success" }),
+    );
+    const storage = new NodeStorage(
+      new NodeApiClient(
+        {
+          version: 1,
+          mode: "remote",
+          baseUrl: "https://sync.example",
+          allowInsecureHttp: false,
+        },
+        fetcher,
+      ),
+    );
+    storage.authChecked = true;
+    (storage as any).authValidatedAt = Date.now() - 61_000;
+    vi.spyOn(storage, "createAuth").mockResolvedValue("fresh-auth");
+
+    const first = await storage.getDirectUrl("assets/a.png");
+    const second = await storage.getDirectUrl("assets/b.png");
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toContain("/api/test_auth");
+    expect(first).toContain("auth=fresh-auth");
+    expect(second).toContain("auth=fresh-auth");
+  });
+});
+
 describe("NodeStorage authentication identity", () => {
   it("uses a separate key-pair namespace for each server origin", async () => {
     const { NodeStorage } = await import("./nodeStorage");
