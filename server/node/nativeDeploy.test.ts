@@ -15,6 +15,7 @@ const nativeDeploy = require("../../tooling/native-deploy.cjs") as {
   databaseEnv: (config: any) => Record<string, string>;
   runtimeEnv: (config: any) => Record<string, string>;
   maskedConfig: (config: any) => any;
+  summarizeBuildOutput: (outputDir: string) => { files: number; bytes: number };
 };
 
 const tempDirs: string[] = [];
@@ -128,6 +129,24 @@ describe("native deployment configuration", () => {
     );
     expect(config.allowedOrigins).toBe(
       "https://chat.example.com,http://localhost:5174",
+    );
+  });
+  it("verifies and summarizes native frontend asset output", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "risu-native-dist-"));
+    tempDirs.push(dir);
+    fs.mkdirSync(path.join(dir, "assets", "nested"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "index.html"), "<main>ok</main>");
+    fs.writeFileSync(path.join(dir, "assets", "app.js"), "1234");
+    fs.writeFileSync(path.join(dir, "assets", "nested", "app.css"), "12");
+
+    expect(nativeDeploy.summarizeBuildOutput(dir)).toMatchObject({
+      files: 2,
+      bytes: 6,
+    });
+
+    fs.rmSync(path.join(dir, "assets"), { recursive: true, force: true });
+    expect(() => nativeDeploy.summarizeBuildOutput(dir)).toThrow(
+      /did not produce/,
     );
   });
 });

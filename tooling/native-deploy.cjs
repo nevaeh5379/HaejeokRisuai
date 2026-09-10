@@ -268,6 +268,34 @@ function runtimeEnv(config) {
   };
 }
 
+function summarizeBuildOutput(outputDir = path.join(root, "dist")) {
+  const indexPath = path.join(outputDir, "index.html");
+  const assetsDir = path.join(outputDir, "assets");
+  if (!fs.existsSync(indexPath) || !fs.statSync(indexPath).isFile()) {
+    fail(`Native build did not produce ${indexPath}`);
+  }
+  if (!fs.existsSync(assetsDir) || !fs.statSync(assetsDir).isDirectory()) {
+    fail(`Native build did not produce ${assetsDir}`);
+  }
+  let files = 0;
+  let bytes = 0;
+  const stack = [assetsDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) stack.push(fullPath);
+      else if (entry.isFile()) {
+        files += 1;
+        bytes += fs.statSync(fullPath).size;
+      }
+    }
+  }
+  if (files === 0)
+    fail(`Native build produced an empty asset directory: ${assetsDir}`);
+  return { files, bytes, outputDir, assetsDir, indexPath };
+}
+
 function runBuild() {
   console.log("==> Building native RisuAI");
   const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -278,6 +306,10 @@ function runBuild() {
   });
   if (result.status !== 0)
     fail(`Native build failed with exit code ${result.status ?? "unknown"}`);
+  const output = summarizeBuildOutput();
+  console.log(
+    `OK: Native frontend assets ready (${output.files} files, ${(output.bytes / 1024 / 1024).toFixed(1)} MiB)`,
+  );
 }
 
 async function testDatabase(config) {
@@ -456,6 +488,7 @@ if (require.main === module) {
 module.exports = {
   parseEnvFile,
   parseInstallArgs,
+  summarizeBuildOutput,
   databaseEnv,
   runtimeEnv,
   maskedConfig,
