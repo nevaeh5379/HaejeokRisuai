@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./storageSyncAsset": "./src/storageSyncAsset.ts"
+    "./storageSyncAsset": "./src/storageSyncAsset.ts",
+    "./sqlCommitCompatibility": "./src/sqlCommitCompatibility.ts"
   },
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit"

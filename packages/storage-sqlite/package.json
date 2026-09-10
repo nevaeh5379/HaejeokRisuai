@@ -17,7 +17,8 @@
     "./sqliteDocumentQueries": "./src/sqliteDocumentQueries.ts",
     "./sqliteStartupQueries": "./src/sqliteStartupQueries.ts",
     "./sqliteSnapshotQueries": "./src/sqliteSnapshotQueries.ts",
-    "./sqliteEntityQueries": "./src/sqliteEntityQueries.ts"
+    "./sqliteEntityQueries": "./src/sqliteEntityQueries.ts",
+    "./sqliteCommitPreparation": "./src/sqliteCommitPreparation.ts"
   },
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit"

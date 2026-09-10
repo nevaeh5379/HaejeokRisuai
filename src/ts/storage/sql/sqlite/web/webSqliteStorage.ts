@@ -46,7 +46,6 @@ import {
 import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   buildSqlReplaceCommit,
-  mergeLegacyModulesIntoCommit,
   SqlRevisionConflictError,
   type SqlCommit,
   type SqlCommitResult,
@@ -121,6 +120,10 @@ import {
   loadSqliteStartupProjection,
 } from "@risuai/storage-sqlite/sqliteStartupQueries";
 import { exportSqliteDatabaseSnapshot } from "@risuai/storage-sqlite/sqliteSnapshotQueries";
+import {
+  prepareSqliteModuleCommit,
+  validateSqlitePresetCommit,
+} from "@risuai/storage-sqlite/sqliteCommitPreparation";
 import {
   listSqliteRecentChats,
   loadSqliteCharacterDocument,
@@ -422,44 +425,10 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   private async validatePresetCommit(commit: SqlCommit): Promise<void> {
-    if (!commit.presets) return;
-    const originalIds = (
-      await this.selectRows(
-        "SELECT preset_id FROM bot_presets ORDER BY position",
-      )
-    ).map((row) => row.preset_id as string);
-    const ids = new Set(originalIds);
-    if (commit.replaceAll) ids.clear();
-    for (const id of commit.presets.deletes) ids.delete(id);
-    for (const entry of commit.presets.upserts) ids.add(entry.id);
-    if (ids.size === 0) throw new Error("At least one bot preset must remain");
-    if (
-      commit.presets.order &&
-      (commit.presets.order.length !== ids.size ||
-        new Set(commit.presets.order).size !== ids.size ||
-        commit.presets.order.some((id) => !ids.has(id)))
-    ) {
-      throw new Error("Preset order must contain every preset ID exactly once");
-    }
-    if (
-      commit.presets.activeId !== undefined &&
-      !ids.has(commit.presets.activeId)
-    )
-      throw new Error("Active bot preset does not exist");
-    if (commit.presets.activeId === undefined) {
-      const current = (await this.loadSettingValue("activeBotPresetId")) as
-        string | undefined;
-      if (!current || !ids.has(current)) {
-        const index = originalIds.indexOf(current ?? "");
-        commit.presets.activeId =
-          originalIds.slice(index + 1).find((id) => ids.has(id)) ||
-          originalIds
-            .slice(0, Math.max(0, index))
-            .reverse()
-            .find((id) => ids.has(id)) ||
-          (commit.presets.order || Array.from(ids))[0];
-      }
-    }
+    await validateSqlitePresetCommit(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      commit,
+    );
   }
 
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
@@ -527,17 +496,10 @@ export class WebSqliteStorage implements ISqlStorage {
       const currentRevision = Number(meta?.revision) || 0;
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
-      if (commit.modules && !commit.replaceAll) {
-        const moduleCount = await this.selectOne(
-          "SELECT COUNT(*) AS count FROM module_records",
-        );
-        if (Number(moduleCount?.count) === 0) {
-          mergeLegacyModulesIntoCommit(
-            commit,
-            await this.loadSettingValue("modules"),
-          );
-        }
-      }
+      await prepareSqliteModuleCommit(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        commit,
+      );
       await this.validatePresetCommit(commit);
       const statements: SqliteBatchStatement[] = [];
       const append = async (sql: string, bind: unknown[] = []) => {
