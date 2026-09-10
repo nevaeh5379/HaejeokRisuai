@@ -229,6 +229,62 @@ async function removeThumbnailsForHex(thumbDir, hexPath) {
   );
 }
 
+function detectContentTypeFromHeader(header, fallback) {
+  const data = Buffer.isBuffer(header) ? header : Buffer.from(header || []);
+  if (
+    data.length >= 8 &&
+    data.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
+  )
+    return "image/png";
+  if (
+    data.length >= 3 &&
+    data[0] === 0xff &&
+    data[1] === 0xd8 &&
+    data[2] === 0xff
+  )
+    return "image/jpeg";
+  if (
+    data.length >= 12 &&
+    data.subarray(0, 4).toString("ascii") === "RIFF" &&
+    data.subarray(8, 12).toString("ascii") === "WEBP"
+  )
+    return "image/webp";
+  if (
+    data.length >= 6 &&
+    /^GIF8[79]a$/.test(data.subarray(0, 6).toString("ascii"))
+  )
+    return "image/gif";
+  if (data.length >= 12 && data.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brands = data
+      .subarray(8, Math.min(data.length, 40))
+      .toString("ascii");
+    if (brands.includes("avif") || brands.includes("avis")) return "image/avif";
+  }
+  if (data.length >= 2 && data.subarray(0, 2).toString("ascii") === "BM")
+    return "image/bmp";
+  if (data.length >= 4 && data.subarray(0, 4).equals(Buffer.from([0, 0, 1, 0])))
+    return "image/x-icon";
+  if (
+    data.length >= 4 &&
+    (data.subarray(0, 4).equals(Buffer.from("49492a00", "hex")) ||
+      data.subarray(0, 4).equals(Buffer.from("4d4d002a", "hex")))
+  )
+    return "image/tiff";
+  return fallback;
+}
+
+async function detectFileContentType(fullPath, fallback, size) {
+  if (!Number.isFinite(size) || size <= 0) return fallback;
+  const handle = await fs.promises.open(fullPath, "r");
+  try {
+    const header = Buffer.alloc(Math.min(64, size));
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return detectContentTypeFromHeader(header.subarray(0, bytesRead), fallback);
+  } finally {
+    await handle.close();
+  }
+}
+
 function getContentType(key) {
   const ext = key.split(".").pop()?.toLowerCase();
   switch (ext) {
@@ -339,6 +395,10 @@ class LocalFsStorage {
     }
     const key = hexToKey(hexPath);
     const stat = await fs.promises.stat(fullPath);
+    const extensionContentType = getContentType(key);
+    const contentType = isImageKey(key)
+      ? await detectFileContentType(fullPath, extensionContentType, stat.size)
+      : extensionContentType;
     return {
       exists: true,
       filePath: fullPath,
@@ -355,7 +415,7 @@ class LocalFsStorage {
         return this._stream;
       },
       contentLength: stat.size,
-      contentType: getContentType(key),
+      contentType,
     };
   }
 
@@ -2944,6 +3004,7 @@ module.exports = {
   hexToKey,
   keyToHex,
   getContentType,
+  detectContentTypeFromHeader,
   isImageKey,
   createThumbnailBuffer,
   runWithConcurrency,

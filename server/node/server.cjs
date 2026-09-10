@@ -3275,7 +3275,10 @@ app.post(
         delete session.sqlUploadInProgress;
       } catch (error) {
         cleanupWarning = error?.message || String(error);
-        console.warn("[storage-sync] Finalized staging cleanup failed:", cleanupWarning);
+        console.warn(
+          "[storage-sync] Finalized staging cleanup failed:",
+          cleanupWarning,
+        );
       }
       const response = cleanupWarning ? { ...result, cleanupWarning } : result;
       session.finalizedResult = response;
@@ -7756,12 +7759,12 @@ app.get("/api/read", authenticatedRouteLimiter, async (req, res, next) => {
       if (result.contentLength) {
         res.setHeader("Content-Length", result.contentLength);
       }
-      if (result.filePath) {
-        res.sendFile(result.filePath);
-      } else if (result.buffer) {
+      if (result.buffer) {
         res.send(result.buffer);
       } else if (result.stream) {
-        result.stream.pipe(res);
+        await pipeline(result.stream, res);
+      } else if (result.filePath) {
+        await pipeline(fs.createReadStream(result.filePath), res);
       } else {
         res.send();
       }

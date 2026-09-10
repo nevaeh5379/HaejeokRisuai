@@ -143,6 +143,23 @@ describe("LocalFsStorage", () => {
     expect(await storage.exists(hex)).toBe(false);
   });
 
+  it("sniffs image bytes when the logical extension is stale", async () => {
+    const key = "assets/compressed.png";
+    const hex = keyToHex(key);
+    const webp = Buffer.concat([
+      Buffer.from("RIFF", "ascii"),
+      Buffer.alloc(4),
+      Buffer.from("WEBP", "ascii"),
+      Buffer.from("VP8 ", "ascii"),
+    ]);
+    fs.writeFileSync(path.join(tmpDir, hex), webp);
+
+    const result = await storage.read(hex);
+    expect(result.exists).toBe(true);
+    expect(result.contentType).toBe("image/webp");
+    expect(result.contentLength).toBe(webp.length);
+  });
+
   it("opens a single lazy stream and preserves the asset contents", async () => {
     const hex = keyToHex("assets/lazy.bin");
     const payload = Buffer.from("lazy asset contents");

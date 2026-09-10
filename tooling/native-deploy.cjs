@@ -296,7 +296,35 @@ function summarizeBuildOutput(outputDir = path.join(root, "dist")) {
   return { files, bytes, outputDir, assetsDir, indexPath };
 }
 
-function runBuild() {
+function summarizeUserAssets(savePath) {
+  const resolved = path.resolve(savePath);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    return { objects: 0, bytes: 0, savePath: resolved };
+  }
+  let objects = 0;
+  let bytes = 0;
+  for (const entry of fs.readdirSync(resolved, { withFileTypes: true })) {
+    if (!entry.isFile() || !/^(?:[0-9a-fA-F]{2})+$/.test(entry.name)) continue;
+    let key;
+    try {
+      key = Buffer.from(entry.name, "hex").toString("utf8");
+    } catch {
+      continue;
+    }
+    if (!key.startsWith("assets/")) continue;
+    objects += 1;
+    bytes += fs.statSync(path.join(resolved, entry.name)).size;
+  }
+  return { objects, bytes, savePath: resolved };
+}
+
+function formatStorageSize(bytes) {
+  return bytes >= 1024 ** 3
+    ? `${(bytes / 1024 ** 3).toFixed(1)} GiB`
+    : `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+}
+
+function runBuild(config = null) {
   console.log("==> Building native RisuAI");
   const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const result = spawnSync(command, ["build"], {
@@ -308,8 +336,19 @@ function runBuild() {
     fail(`Native build failed with exit code ${result.status ?? "unknown"}`);
   const output = summarizeBuildOutput();
   console.log(
-    `OK: Native frontend assets ready (${output.files} files, ${(output.bytes / 1024 / 1024).toFixed(1)} MiB)`,
+    `OK: Frontend bundle ready (${output.files} files, ${(output.bytes / 1024 / 1024).toFixed(1)} MiB)`,
   );
+  const activeConfig =
+    config ||
+    (fs.existsSync(configPath)
+      ? JSON.parse(fs.readFileSync(configPath, "utf8"))
+      : null);
+  if (activeConfig?.savePath) {
+    const userAssets = summarizeUserAssets(activeConfig.savePath);
+    console.log(
+      `OK: User asset storage ready (${userAssets.objects.toLocaleString("en-US")} objects, ${formatStorageSize(userAssets.bytes)} at ${userAssets.savePath})`,
+    );
+  }
 }
 
 async function testDatabase(config) {
@@ -451,7 +490,7 @@ async function main(argv) {
   if (command === "install") {
     const { options, config } = parseInstallArgs(args);
     if (!options.skipDbCheck) await testDatabase(config);
-    if (options.build) runBuild();
+    if (options.build) runBuild(config);
     writeConfig(config);
     console.log(`OK: Saved native configuration to ${configPath}`);
     if (options.start) await startNative(config);
@@ -467,9 +506,10 @@ async function main(argv) {
     return startNative();
   }
   if (command === "rebuild") {
+    const config = readConfig();
     await stopNative();
-    runBuild();
-    return startNative();
+    runBuild(config);
+    return startNative(config);
   }
   if (command === "status") return showStatus();
   if (command === "config")
@@ -489,6 +529,7 @@ module.exports = {
   parseEnvFile,
   parseInstallArgs,
   summarizeBuildOutput,
+  summarizeUserAssets,
   databaseEnv,
   runtimeEnv,
   maskedConfig,

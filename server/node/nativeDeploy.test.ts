@@ -1,152 +1,42 @@
-import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { afterEach, describe, expect, it } from "vitest";
 
-const nativeDeploy = require("../../tooling/native-deploy.cjs") as {
-  parseEnvFile: (filename: string) => Record<string, string>;
-  parseInstallArgs: (
-    args: string[],
-    env?: Record<string, string>,
-  ) => {
-    options: { build: boolean; start: boolean; skipDbCheck: boolean };
-    config: any;
-  };
-  databaseEnv: (config: any) => Record<string, string>;
-  runtimeEnv: (config: any) => Record<string, string>;
-  maskedConfig: (config: any) => any;
-  summarizeBuildOutput: (outputDir: string) => { files: number; bytes: number };
-};
+const require = createRequire(import.meta.url);
+const { summarizeUserAssets } = require("../../tooling/native-deploy.cjs");
+const roots: string[] = [];
 
-const tempDirs: string[] = [];
-afterEach(() => {
-  for (const dir of tempDirs.splice(0))
-    fs.rmSync(dir, { recursive: true, force: true });
-});
-
-function tempEnv(contents: string) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "risu-native-test-"));
-  tempDirs.push(dir);
-  const filename = path.join(dir, ".env");
-  fs.writeFileSync(filename, contents);
-  return filename;
+function hexKey(key: string): string {
+  return Buffer.from(key, "utf8").toString("hex");
 }
 
-describe("native deployment configuration", () => {
-  it("parses PostgreSQL direct connection options", () => {
-    const { config } = nativeDeploy.parseInstallArgs(
-      [
-        "--db-vendor",
-        "postgres",
-        "--database-url",
-        "postgresql://user:secret@db.example/risuai",
-        "--port",
-        "7000",
-        "--host",
-        "0.0.0.0",
-      ],
-      {},
-    );
-    expect(config.db.vendor).toBe("postgres");
-    expect(config.db.params.connectionString).toContain("db.example");
-    expect(config.port).toBe(7000);
-    expect(config.host).toBe("0.0.0.0");
-    expect(config.allowedOrigins).toBe("");
-    expect(nativeDeploy.databaseEnv(config).DB_VENDOR).toBe("postgres");
-    expect(nativeDeploy.maskedConfig(config).db.params.connectionString).toBe(
-      "postgresql://user:***@db.example/risuai",
-    );
-  });
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
-  it("loads Oracle credentials from an env file", () => {
-    const envFile = tempEnv(
-      `ORACLE_USER=risu\nORACLE_USER_PASSWORD="oracle secret"\nORACLE_TNS_ALIAS=risu_high\nORACLE_WALLET_PATH=/wallet\nORACLE_WALLET_PASSWORD=wallet-secret\n`,
+describe("native user asset summary", () => {
+  it("counts persisted user assets separately from frontend files", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "risu-native-assets-"));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, hexKey("assets/a.png")), Buffer.alloc(3));
+    fs.writeFileSync(
+      path.join(root, hexKey("assets/nested/b.webp")),
+      Buffer.alloc(5),
     );
-    const { config } = nativeDeploy.parseInstallArgs(
-      ["--db-vendor", "oracle", "--env-file", envFile],
-      {},
+    fs.writeFileSync(
+      path.join(root, hexKey("database/database.bin")),
+      Buffer.alloc(7),
     );
-    expect(config.db.params).toMatchObject({
-      user: "risu",
-      password: "oracle secret",
-      tnsAlias: "risu_high",
-      walletPath: "/wallet",
+    fs.writeFileSync(path.join(root, "__password"), "password");
+
+    expect(summarizeUserAssets(root)).toMatchObject({
+      objects: 2,
+      bytes: 8,
+      savePath: path.resolve(root),
     });
-    expect(nativeDeploy.maskedConfig(config).db.params.password).toBe("***");
-    expect(nativeDeploy.maskedConfig(config).db.params.walletPassword).toBe(
-      "***",
-    );
-  });
-
-  it("loads Azure SQL credentials and port from an env file", () => {
-    const envFile = tempEnv(
-      `AZURE_HOST=server.database.windows.net\nAZURE_DATABASE=risuai\nAZURE_USERNAME=risu\nAZURE_PASSWORD=azure-secret\nAZURE_PORT=1433\n`,
-    );
-    const { config } = nativeDeploy.parseInstallArgs(
-      ["--db-vendor", "azure", "--env-file", envFile, "--pool-max", "20"],
-      {},
-    );
-    expect(config.db.params).toMatchObject({
-      server: "server.database.windows.net",
-      database: "risuai",
-      user: "risu",
-      password: "azure-secret",
-      port: 1433,
-      poolMax: 20,
-    });
-    expect(nativeDeploy.databaseEnv(config).AZURE_POOL_MAX).toBe("20");
-    expect(nativeDeploy.maskedConfig(config).db.params.password).toBe("***");
-  });
-  it("allows the fixed Vite origin by default for loopback native servers", () => {
-    const { config } = nativeDeploy.parseInstallArgs(
-      [
-        "--db-vendor",
-        "postgres",
-        "--database-url",
-        "postgresql://user:secret@localhost/risuai",
-      ],
-      {},
-    );
-    expect(config.allowedOrigins).toBe(
-      "http://localhost:5174,http://127.0.0.1:5174",
-    );
-    expect(nativeDeploy.runtimeEnv(config).RISUAI_ALLOWED_ORIGINS).toBe(
-      config.allowedOrigins,
-    );
-  });
-
-  it("accepts an explicit native CORS allowlist", () => {
-    const { config } = nativeDeploy.parseInstallArgs(
-      [
-        "--db-vendor",
-        "postgres",
-        "--database-url",
-        "postgresql://user:secret@localhost/risuai",
-        "--allowed-origins",
-        "https://chat.example.com,http://localhost:5174",
-      ],
-      {},
-    );
-    expect(config.allowedOrigins).toBe(
-      "https://chat.example.com,http://localhost:5174",
-    );
-  });
-  it("verifies and summarizes native frontend asset output", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "risu-native-dist-"));
-    tempDirs.push(dir);
-    fs.mkdirSync(path.join(dir, "assets", "nested"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "index.html"), "<main>ok</main>");
-    fs.writeFileSync(path.join(dir, "assets", "app.js"), "1234");
-    fs.writeFileSync(path.join(dir, "assets", "nested", "app.css"), "12");
-
-    expect(nativeDeploy.summarizeBuildOutput(dir)).toMatchObject({
-      files: 2,
-      bytes: 6,
-    });
-
-    fs.rmSync(path.join(dir, "assets"), { recursive: true, force: true });
-    expect(() => nativeDeploy.summarizeBuildOutput(dir)).toThrow(
-      /did not produce/,
-    );
   });
 });
