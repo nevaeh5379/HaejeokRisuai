@@ -4,6 +4,7 @@ import { base64url, getKeypairStore, saveKeypairStore } from "../../util";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
+import { RemoteStorageSyncClient } from "@risuai/storage-remote/remoteStorageSyncClient";
 import {
   StorageSyncAssetReadError,
   validateStorageSyncAssetChunkRange,
@@ -193,6 +194,7 @@ export class NodeStorage {
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
   private readonly assetClient: RemoteAssetClient;
+  private readonly syncClient: RemoteStorageSyncClient;
 
   constructor(
     readonly apiClient: NodeApiClient = createSameOriginNodeApiClient(),
@@ -1420,16 +1422,13 @@ export class NodeStorage {
   }
 
   getStorageSyncServerOrigin(): string {
-    return this.apiClient.baseUrl;
+    return this.syncClient.serverOrigin;
   }
 
   async getStorageSyncSummary(
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSummary> {
-    return await this.apiClient.getStorageSyncSummary(
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.getSummary(signal);
   }
 
   async createStorageSyncSession(
@@ -1440,22 +1439,14 @@ export class NodeStorage {
     },
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSession> {
-    return await this.apiClient.createStorageSyncSession(
-      options,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.createSession(options, signal);
   }
 
   async getStorageSyncSession(
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSession> {
-    return await this.apiClient.getStorageSyncSession(
-      id,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.getSession(id, signal);
   }
 
   async planStorageSyncAssets(
@@ -1463,23 +1454,14 @@ export class NodeStorage {
     assets: NodeStorageSyncAssetManifestEntry[],
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncAssetPlan> {
-    return await this.apiClient.planStorageSyncAssets(
-      id,
-      assets,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.planAssets(id, assets, signal);
   }
 
   async getStorageSyncAssetPlan(
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncAssetPlan> {
-    return await this.apiClient.getStorageSyncAssetPlan(
-      id,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.getAssetPlan(id, signal);
   }
 
   async uploadStorageSyncAssetChunk(
@@ -1489,12 +1471,11 @@ export class NodeStorage {
     data: Uint8Array,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncAssetChunkResult> {
-    return await this.apiClient.uploadStorageSyncAssetChunk(
+    return await this.syncClient.uploadAssetChunk(
       id,
       assetId,
       offset,
       data,
-      await this.getCachedAuth(),
       signal,
     );
   }
@@ -1504,23 +1485,14 @@ export class NodeStorage {
     plan: NodeStorageSyncSqlPlanInput,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlPlan> {
-    return await this.apiClient.planStorageSyncSql(
-      id,
-      plan,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.planSql(id, plan, signal);
   }
 
   async getStorageSyncSqlPlan(
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlPlan> {
-    return await this.apiClient.getStorageSyncSqlPlan(
-      id,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.getSqlPlan(id, signal);
   }
 
   async uploadStorageSyncSqlChunk(
@@ -1529,53 +1501,32 @@ export class NodeStorage {
     data: Uint8Array,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlPlan> {
-    return await this.apiClient.uploadStorageSyncSqlChunk(
-      id,
-      offset,
-      data,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.uploadSqlChunk(id, offset, data, signal);
   }
 
   async validateStorageSyncSql(
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncSqlValidation> {
-    return await this.apiClient.validateStorageSyncSql(
-      id,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.validateSql(id, signal);
   }
 
   async preflightStorageSyncFinalize(
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncFinalizePreflight> {
-    return await this.apiClient.preflightStorageSyncFinalize(
-      id,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.preflightFinalize(id, signal);
   }
 
   async finalizeStorageSync(
     id: string,
     signal?: AbortSignal,
   ): Promise<NodeStorageSyncFinalizeResult> {
-    return await this.apiClient.finalizeStorageSync(
-      id,
-      await this.getCachedAuth(),
-      signal,
-    );
+    return await this.syncClient.finalize(id, signal);
   }
 
   async cancelStorageSyncSession(id: string): Promise<void> {
-    await this.apiClient.cancelStorageSyncSession(
-      id,
-      await this.getCachedAuth(),
-    );
+    await this.syncClient.cancelSession(id);
   }
 
   async connectWithPassword(password: string): Promise<void> {
