@@ -5,6 +5,20 @@ const {
   normalizeClientId,
 } = require("./realtimeEvents.cjs");
 
+type ServerMutationStorage = {
+  sync: (payload: any, options?: any) => Promise<any>;
+  createChatBranch: (input: any) => Promise<any>;
+  activateChatBranch: (chatId: string, branchId: string) => Promise<void>;
+  restoreRevision: (revisionId: any) => Promise<any>;
+  updateSetting: (key: string, value: any) => Promise<any>;
+  deleteSetting: (key: string) => Promise<any>;
+  saveBotPreset: (preset: any, position: any) => Promise<any>;
+  saveModule: (moduleData: any) => Promise<any>;
+  deleteModule: (moduleId: string) => Promise<any>;
+  saveMessage: (chatId: string, message: any) => Promise<any>;
+  deleteMessage: (chatId: string, messageId: string) => Promise<any>;
+};
+
 type MutationArgs = {
   commit: [payload: any, rawSourceClientId: unknown, options?: any];
   restoreBackup: [payload: any, options: any, rawSourceClientId: unknown];
@@ -50,7 +64,7 @@ type DatabaseMutationApi = {
 };
 
 type DatabaseMutationDependencies = {
-  getStorage: () => any;
+  getStorage: () => ServerMutationStorage;
   realtimeEventHub: {
     broadcast: (event: string, data: Record<string, unknown>) => void;
   };
