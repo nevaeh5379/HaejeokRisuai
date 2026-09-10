@@ -5,158 +5,219 @@ const {
   normalizeClientId,
 } = require("./realtimeEvents.cjs");
 
-function createDatabaseMutations({ getStorage, realtimeEventHub }) {
+type MutationArgs = {
+  commit: [payload: any, rawSourceClientId: unknown, options?: any];
+  restoreBackup: [payload: any, options: any, rawSourceClientId: unknown];
+  togglePlugin: [input: any, rawSourceClientId: unknown];
+  createChatBranch: [input: any, rawSourceClientId: unknown];
+  activateChatBranch: [
+    chatId: string,
+    branchId: string,
+    rawSourceClientId: unknown,
+  ];
+  restoreRevision: [revisionId: any, rawSourceClientId: unknown];
+  updateSetting: [key: string, value: any, rawSourceClientId: unknown];
+  deleteSetting: [key: string, rawSourceClientId: unknown];
+  saveBotPreset: [preset: any, position: any, rawSourceClientId: unknown];
+  saveModule: [moduleData: any, rawSourceClientId: unknown];
+  deleteModule: [moduleId: string, rawSourceClientId: unknown];
+  saveMessage: [chatId: string, message: any, rawSourceClientId: unknown];
+  deleteMessage: [
+    chatId: string,
+    messageId: string,
+    rawSourceClientId: unknown,
+  ];
+};
+type MutationName = keyof MutationArgs;
+
+type DatabaseChangeDescriptor = {
+  action: string;
+  details?: Record<string, unknown>;
+  rawSourceClientId: unknown;
+};
+
+type MutationDefinition<K extends MutationName> = {
+  mutate: (...args: MutationArgs[K]) => Promise<any>;
+  describe: (result: any, ...args: MutationArgs[K]) => DatabaseChangeDescriptor;
+};
+
+type MutationDefinitionRegistry = {
+  [K in MutationName]: MutationDefinition<K>;
+};
+
+type DatabaseMutationApi = {
+  [K in MutationName]: (...args: MutationArgs[K]) => Promise<any>;
+};
+
+type DatabaseMutationDependencies = {
+  getStorage: () => any;
+  realtimeEventHub: {
+    broadcast: (event: string, data: Record<string, unknown>) => void;
+  };
+};
+
+function createDatabaseMutations({
+  getStorage,
+  realtimeEventHub,
+}: DatabaseMutationDependencies): DatabaseMutationApi {
   const storage = () => getStorage();
-  function emit(action, result, details, rawSourceClientId) {
+  function emit(result: any, descriptor: DatabaseChangeDescriptor) {
     realtimeEventHub.broadcast("database-change", {
       ...(result?.revision == null ? {} : { revision: result.revision }),
-      action,
-      sourceClientId: normalizeClientId(rawSourceClientId),
-      ...details,
+      action: descriptor.action,
+      sourceClientId: normalizeClientId(descriptor.rawSourceClientId),
+      ...(descriptor.details ?? {}),
     });
   }
 
-  async function commit(payload, rawSourceClientId, options) {
-    const result = await storage().sync(payload, options);
-    emit(
-      payload?.action || "sync",
-      result,
-      describeSqlCommitChange(payload),
-      rawSourceClientId,
-    );
-    return result;
-  }
-  async function restoreBackup(payload, options, rawSourceClientId) {
-    const result = await storage().sync(payload, options);
-    emit("backup-restore", result, { replaceAll: true }, rawSourceClientId);
-    return result;
-  }
-
-  async function togglePlugin(input, rawSourceClientId) {
-    const result = await storage().sync({
-      baseRevision: input.baseRevision,
-      action: "plugin-toggle",
-      root: {
-        upserts: [{ key: "plugins", value: input.plugins }],
-        deletes: [],
-      },
-    });
-    emit(
-      "plugin-toggle",
-      result,
-      {
-        pluginName: input.pluginName,
-        pluginEnabled: input.enabled,
-      },
-      rawSourceClientId,
-    );
-    return result;
-  }
-  async function createChatBranch(input, rawSourceClientId) {
-    const result = await storage().createChatBranch(input);
-    emit(
-      "chat-branch-create",
-      result,
-      { chatIds: [input.chatId], charactersChanged: false },
-      rawSourceClientId,
-    );
-    return result;
-  }
-
-  async function activateChatBranch(chatId, branchId, rawSourceClientId) {
-    const result = await storage().activateChatBranch(chatId, branchId);
-    emit(
-      "chat-branch-activate",
-      result,
-      { chatIds: [chatId], charactersChanged: false },
-      rawSourceClientId,
-    );
-    return result;
-  }
-
-  async function restoreRevision(revisionId, rawSourceClientId) {
-    const result = await storage().restoreRevision(revisionId);
-    emit("revision-restore", result, { replaceAll: true }, rawSourceClientId);
-    return result;
-  }
-  async function updateSetting(key, value, rawSourceClientId) {
-    const result = await storage().updateSetting(key, value);
-    emit(
-      "setting-update",
-      result,
-      { rootChanged: true, rootUpsertKeys: [key] },
-      rawSourceClientId,
-    );
-    return result;
-  }
-
-  async function deleteSetting(key, rawSourceClientId) {
-    const result = await storage().deleteSetting(key);
-    emit(
-      "setting-delete",
-      result,
-      { rootChanged: true, rootDeleteKeys: [key] },
-      rawSourceClientId,
-    );
-    return result;
-  }
-
-  async function saveBotPreset(preset, position, rawSourceClientId) {
-    const result = await storage().saveBotPreset(preset, position);
-    emit("preset-save", result, { presetsChanged: true }, rawSourceClientId);
-    return result;
-  }
-
-  async function saveModule(moduleData, rawSourceClientId) {
-    const result = await storage().saveModule(moduleData);
-    emit("module-save", result, { modulesChanged: true }, rawSourceClientId);
-    return result;
-  }
-  async function deleteModule(moduleId, rawSourceClientId) {
-    const result = await storage().deleteModule(moduleId);
-    emit("module-delete", result, { modulesChanged: true }, rawSourceClientId);
-    return result;
-  }
-
-  async function saveMessage(chatId, message, rawSourceClientId) {
-    const result = await storage().saveMessage(chatId, message);
-    emit(
-      "message-save",
-      result,
-      { chatIds: [chatId], charactersChanged: false },
-      rawSourceClientId,
-    );
-    return result;
-  }
-
-  async function deleteMessage(chatId, messageId, rawSourceClientId) {
-    const result = await storage().deleteMessage(chatId, messageId);
-    emit(
-      "message-delete",
-      result,
-      { chatIds: [chatId], charactersChanged: false },
-      rawSourceClientId,
-    );
+  const definitions = {
+    commit: {
+      mutate: async (payload, _source, options) =>
+        await storage().sync(payload, options),
+      describe: (_result, payload, rawSourceClientId) => ({
+        action: payload?.action || "sync",
+        details: describeSqlCommitChange(payload),
+        rawSourceClientId,
+      }),
+    },
+    restoreBackup: {
+      mutate: async (payload, options) =>
+        await storage().sync(payload, options),
+      describe: (_result, _payload, _options, rawSourceClientId) => ({
+        action: "backup-restore",
+        details: { replaceAll: true },
+        rawSourceClientId,
+      }),
+    },
+    togglePlugin: {
+      mutate: async (input) =>
+        await storage().sync({
+          baseRevision: input.baseRevision,
+          action: "plugin-toggle",
+          root: {
+            upserts: [{ key: "plugins", value: input.plugins }],
+            deletes: [],
+          },
+        }),
+      describe: (_result, input, rawSourceClientId) => ({
+        action: "plugin-toggle",
+        details: {
+          pluginName: input.pluginName,
+          pluginEnabled: input.enabled,
+        },
+        rawSourceClientId,
+      }),
+    },
+    createChatBranch: {
+      mutate: async (input) => await storage().createChatBranch(input),
+      describe: (_result, input, rawSourceClientId) => ({
+        action: "chat-branch-create",
+        details: { chatIds: [input.chatId], charactersChanged: false },
+        rawSourceClientId,
+      }),
+    },
+    activateChatBranch: {
+      mutate: async (chatId, branchId) =>
+        await storage().activateChatBranch(chatId, branchId),
+      describe: (_result, chatId, _branchId, rawSourceClientId) => ({
+        action: "chat-branch-activate",
+        details: { chatIds: [chatId], charactersChanged: false },
+        rawSourceClientId,
+      }),
+    },
+    restoreRevision: {
+      mutate: async (revisionId) => await storage().restoreRevision(revisionId),
+      describe: (_result, _revisionId, rawSourceClientId) => ({
+        action: "revision-restore",
+        details: { replaceAll: true },
+        rawSourceClientId,
+      }),
+    },
+    updateSetting: {
+      mutate: async (key, value) => await storage().updateSetting(key, value),
+      describe: (_result, key, _value, rawSourceClientId) => ({
+        action: "setting-update",
+        details: { rootChanged: true, rootUpsertKeys: [key] },
+        rawSourceClientId,
+      }),
+    },
+    deleteSetting: {
+      mutate: async (key) => await storage().deleteSetting(key),
+      describe: (_result, key, rawSourceClientId) => ({
+        action: "setting-delete",
+        details: { rootChanged: true, rootDeleteKeys: [key] },
+        rawSourceClientId,
+      }),
+    },
+    saveBotPreset: {
+      mutate: async (preset, position) =>
+        await storage().saveBotPreset(preset, position),
+      describe: (_result, _preset, _position, rawSourceClientId) => ({
+        action: "preset-save",
+        details: { presetsChanged: true },
+        rawSourceClientId,
+      }),
+    },
+    saveModule: {
+      mutate: async (moduleData) => await storage().saveModule(moduleData),
+      describe: (_result, _moduleData, rawSourceClientId) => ({
+        action: "module-save",
+        details: { modulesChanged: true },
+        rawSourceClientId,
+      }),
+    },
+    deleteModule: {
+      mutate: async (moduleId) => await storage().deleteModule(moduleId),
+      describe: (_result, _moduleId, rawSourceClientId) => ({
+        action: "module-delete",
+        details: { modulesChanged: true },
+        rawSourceClientId,
+      }),
+    },
+    saveMessage: {
+      mutate: async (chatId, message) =>
+        await storage().saveMessage(chatId, message),
+      describe: (_result, chatId, _message, rawSourceClientId) => ({
+        action: "message-save",
+        details: { chatIds: [chatId], charactersChanged: false },
+        rawSourceClientId,
+      }),
+    },
+    deleteMessage: {
+      mutate: async (chatId, messageId) =>
+        await storage().deleteMessage(chatId, messageId),
+      describe: (_result, chatId, _messageId, rawSourceClientId) => ({
+        action: "message-delete",
+        details: { chatIds: [chatId], charactersChanged: false },
+        rawSourceClientId,
+      }),
+    },
+  } satisfies MutationDefinitionRegistry;
+  async function execute<K extends MutationName>(
+    name: K,
+    ...args: MutationArgs[K]
+  ): Promise<any> {
+    const definition = definitions[name] as MutationDefinition<K>;
+    const result = await definition.mutate(...args);
+    emit(result, definition.describe(result, ...args));
     return result;
   }
 
   return {
-    activateChatBranch,
-    commit,
-    createChatBranch,
-    deleteMessage,
-    deleteModule,
-    deleteSetting,
-    restoreBackup,
-    restoreRevision,
-    saveBotPreset,
-    saveMessage,
-    saveModule,
-    togglePlugin,
-    updateSetting,
-  };
+    commit: (...args) => execute("commit", ...args),
+    restoreBackup: (...args) => execute("restoreBackup", ...args),
+    togglePlugin: (...args) => execute("togglePlugin", ...args),
+    createChatBranch: (...args) => execute("createChatBranch", ...args),
+    activateChatBranch: (...args) => execute("activateChatBranch", ...args),
+    restoreRevision: (...args) => execute("restoreRevision", ...args),
+    updateSetting: (...args) => execute("updateSetting", ...args),
+    deleteSetting: (...args) => execute("deleteSetting", ...args),
+    saveBotPreset: (...args) => execute("saveBotPreset", ...args),
+    saveModule: (...args) => execute("saveModule", ...args),
+    deleteModule: (...args) => execute("deleteModule", ...args),
+    saveMessage: (...args) => execute("saveMessage", ...args),
+    deleteMessage: (...args) => execute("deleteMessage", ...args),
+  } satisfies DatabaseMutationApi;
 }
 
-module.exports = {
-  createDatabaseMutations,
-};
+module.exports = { createDatabaseMutations };

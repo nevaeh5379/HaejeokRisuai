@@ -51,8 +51,18 @@ test("database mutations always emit realtime changes", async () => {
   await mutations.deleteModule("module-1", source);
   await mutations.saveMessage("chat-1", { id: "message-1" }, source);
   await mutations.deleteMessage("chat-1", "message-1", source);
+  await mutations.togglePlugin(
+    {
+      baseRevision: 48,
+      plugins: [{ name: "plugin-1", enabled: true }],
+      pluginName: "plugin-1",
+      enabled: true,
+    },
+    source,
+  );
+  await mutations.saveBotPreset({ id: "preset-1", name: "Preset" }, 0, source);
 
-  assert.equal(events.length, 8);
+  assert.equal(events.length, 10);
   assert.deepEqual(
     events.map(({ data }) => data.action),
     [
@@ -64,6 +74,8 @@ test("database mutations always emit realtime changes", async () => {
       "module-delete",
       "message-save",
       "message-delete",
+      "plugin-toggle",
+      "preset-save",
     ],
   );
   for (const { event, data } of events) {
@@ -75,6 +87,9 @@ test("database mutations always emit realtime changes", async () => {
   assert.deepEqual(events[3].data.rootDeleteKeys, ["language"]);
   assert.equal(events[4].data.modulesChanged, true);
   assert.deepEqual(events[6].data.chatIds, ["chat-1"]);
+  assert.equal(events[8].data.pluginName, "plugin-1");
+  assert.equal(events[8].data.pluginEnabled, true);
+  assert.equal(events[9].data.presetsChanged, true);
 });
 
 test("commit and restore expose revision-aware invalidation", async () => {
