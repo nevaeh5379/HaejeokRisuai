@@ -234,4 +234,4 @@ function createDatabaseMutations({
   } satisfies DatabaseMutationApi;
 }
 
-module.exports = { createDatabaseMutations };
+export { createDatabaseMutations };

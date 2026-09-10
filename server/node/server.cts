@@ -66,7 +66,7 @@ const {
   createRealtimeEventHub,
   normalizeClientId,
 } = require("./realtimeEvents.cjs");
-const { createDatabaseMutations } = require("./databaseMutations.cjs");
+import { createDatabaseMutations } from "./databaseMutations.cjs";
 const { createNodeChatExecutor } = require("./chatExecutor.cjs");
 const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
