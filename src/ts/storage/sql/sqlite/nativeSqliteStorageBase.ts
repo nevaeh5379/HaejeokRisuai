@@ -119,6 +119,7 @@ import {
   loadSqliteStartupProjection,
   rebuildSqliteSettingRows,
 } from "@risuai/storage-sqlite/sqliteStartupQueries";
+import { exportSqliteDatabaseSnapshot } from "@risuai/storage-sqlite/sqliteSnapshotQueries";
 import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
@@ -345,174 +346,13 @@ export abstract class NativeSqliteStorageBase {
       const ok = await this.init();
       if (!ok) return null;
     }
-
-    const db: CanonicalDatabase = {} as CanonicalDatabase;
-
-    const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
-    const settingQuery = buildSqliteSettingRowsQuery(deferredKeyList);
-    const characterQuery: SqliteTransactionStatement = {
-      sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-      bind: [],
-    };
-    const metaQuery: SqliteTransactionStatement = {
-      sql: "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-      bind: [],
-    };
-
-    // Backends may collapse these independent startup reads into one native
-    // bridge call. Capacitor does so to avoid three serial JS/native hops.
-    const [settingRows, characterRows, metaRows] = await this.selectRowSets([
-      settingQuery,
-      characterQuery,
-      metaQuery,
-    ]);
-    const settings = rebuildSqliteSettingRows(settingRows, deferredKeyList);
-    for (const [key, value] of settings.values) {
-      (db as Record<string, unknown>)[key] = value;
-    }
-
-    // Merge plugin_custom_storage table
-    const pluginStorageRows = await this.selectRows<{
-      key: string;
-      value: string;
-    }>("SELECT key, value FROM plugin_custom_storage");
-    const pluginCustomStorage: Record<string, unknown> = {};
-    for (const row of pluginStorageRows) {
-      try {
-        pluginCustomStorage[row.key] = JSON.parse(row.value);
-      } catch {
-        pluginCustomStorage[row.key] = row.value;
-      }
-    }
-    db.pluginCustomStorage = pluginCustomStorage;
-
-    // Load characters
-    const charRows = characterRows as Array<{
-      id: string;
-      position: number;
-      kind: string;
-      name: string;
-      image: string | null;
-      trash_time: number | null;
-      creation_time: number | null;
-      modification_time: number | null;
-      last_interaction_time: number | null;
-      details_loaded: number;
-    }>;
-
-    const characters: (character | groupChat)[] = [];
-    for (const row of charRows) {
-      const fullChar = ((await this.loadNodeValue(
-        "character_extension_nodes",
-        "character_id = ?",
-        [row.id],
-      )) ?? {}) as character | groupChat;
-      fullChar.chaId = row.id;
-      fullChar.name = row.name ?? fullChar.name ?? "";
-      fullChar.type =
-        (row.kind as "character" | "group") ?? fullChar.type ?? "character";
-      fullChar.image = row.image ?? fullChar.image ?? "";
-      fullChar.trashTime = row.trash_time ?? fullChar.trashTime;
-      fullChar.lastInteraction =
-        row.last_interaction_time ?? fullChar.lastInteraction;
-      if (fullChar.type === "character") {
-        fullChar.creation_date = row.creation_time ?? fullChar.creation_date;
-        fullChar.modification_date =
-          row.modification_time ?? fullChar.modification_date;
-      }
-      fullChar.detailsLoaded = true;
-      const chatRows = await this.selectRows<{
-        id: string;
-        name: string;
-        note: string;
-        folder_id: string | null;
-        last_message_time: number | null;
-      }>(
-        "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-        [row.id],
-      );
-      const chatValues = chatRows.length
-        ? await this.rebuildGroupedNodeValues(
-            await this.selectRows(
-              `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
-                      object_key_encoded, value_type, text_value, encoded_text_value,
-                      number_value, boolean_value
-               FROM chat_extension_nodes
-               WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
-               ORDER BY chat_id, node_id`,
-              [row.id],
-            ),
-            "chat_id",
-          )
-        : new Map<string, unknown>();
-      const chats: Chat[] = chatRows.map((chatRow) => {
-        const chatData = (chatValues.get(chatRow.id) ?? {}) as Chat;
-        chatData.id = chatRow.id;
-        chatData.name = chatRow.name ?? "";
-        chatData.note = chatRow.note ?? "";
-        chatData.folderId = chatRow.folder_id ?? undefined;
-        chatData.lastDate = chatRow.last_message_time ?? undefined;
-        chatData.message = [];
-        chatData.messagesLoaded = false;
-        chatData.detailsLoaded = true;
-        return chatData;
-      });
-      for (const chat of chats) {
-        if (!chat.id) continue;
-        chat.message = await this.loadChatMessages(chat.id);
-        chat.messageOffset = 0;
-        chat.messageTotal = chat.message.length;
-        chat.messagesLoaded = true;
-        chat.messagesFullyLoaded = true;
-        chat.detailsLoaded = true;
-      }
-      fullChar.chats = chats;
-      characters.push(fullChar);
-    }
-    db.characters = characters;
-    db.modules = await this.loadModules();
-
-    const presetRows = await this.selectRows<{
-      preset_id: string;
-      data: string;
-    }>("SELECT preset_id, data FROM bot_presets ORDER BY position");
-    if (presetRows.length > 0) {
-      const presets: botPreset[] = [];
-      for (const row of presetRows) {
-        try {
-          presets.push(
-            typeof row.data === "string"
-              ? JSON.parse(row.data)
-              : (row.data as botPreset),
-          );
-        } catch {}
-      }
-      db.botPresets = presets;
-      if (db.activeBotPresetId) {
-        const activeIndex = presetRows.findIndex(
-          (row) => row.preset_id === db.activeBotPresetId,
-        );
-        db.botPresetsId = activeIndex >= 0 ? activeIndex : 0;
-      } else {
-        db.botPresetsId = 0;
-      }
-    } else {
-      db.botPresets = [];
-      db.botPresetsId = 0;
-    }
-
-    const metaRow = metaRows[0] as { initialized?: number } | undefined;
-    const isInitialized =
-      metaRow?.initialized === 1 ||
-      characters.length > 0 ||
-      settings.keyCount > 0 ||
-      (db.modules?.length ?? 0) > 0 ||
-      (db.botPresets?.length ?? 0) > 0;
-
-    if (!isInitialized) {
-      return { revision: this.revision, database: null };
-    }
-    return { revision: this.revision, database: db };
+    return (await exportSqliteDatabaseSnapshot({
+      selectRows: this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets: this.selectRowSets.bind(this) as SqliteSelectRowSets,
+      revision: this.revision,
+      legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
+      loadChatMessages: (chatId) => this.loadChatMessages(chatId),
+    })) as SqlDatabaseSnapshotResult;
   }
 
   protected async commitInternal(

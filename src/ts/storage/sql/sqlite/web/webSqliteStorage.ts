@@ -119,6 +119,7 @@ import {
   getSqliteStorageSyncSummary,
   loadSqliteStartupProjection,
 } from "@risuai/storage-sqlite/sqliteStartupQueries";
+import { exportSqliteDatabaseSnapshot } from "@risuai/storage-sqlite/sqliteSnapshotQueries";
 import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
@@ -531,171 +532,13 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const db: CanonicalDatabase = {} as CanonicalDatabase;
-
-    const settingsRows = await this.selectRows<{
-      key: string;
-      domain: string;
-      value_type: string;
-      text_value: string | null;
-      encoded_text_value: string | null;
-      number_value: number | null;
-      boolean_value: number | null;
-    }>(
-      "SELECT key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_settings",
-    );
-    const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
-    const deferredKeys = new Set<string>(deferredKeyList);
-    const settingNodeQuery = buildDeferredSettingsQuery(deferredKeyList);
-    const settingNodeRows = await this.selectRows(
-      settingNodeQuery.sql,
-      settingNodeQuery.bind,
-    );
-    const settingValues = groupSettingNodeRows(
-      settingNodeRows as SettingNodeRow[],
-    );
-    for (const row of settingsRows) {
-      const key = row.key;
-      if (deferredKeys.has(key)) continue;
-      if (settingValues.has(key)) {
-        (db as Record<string, unknown>)[key] = settingValues.get(key);
-      } else {
-        switch (row.value_type) {
-          case "string":
-            (db as Record<string, unknown>)[key] = decodedText(
-              row.text_value,
-              row.encoded_text_value,
-            );
-            break;
-          case "number":
-            (db as Record<string, unknown>)[key] = Number(row.number_value);
-            break;
-          case "boolean":
-            (db as Record<string, unknown>)[key] = Boolean(row.boolean_value);
-            break;
-          case "null":
-            (db as Record<string, unknown>)[key] = null;
-            break;
-          case "undefined":
-            (db as Record<string, unknown>)[key] = undefined;
-            break;
-        }
-      }
-    }
-
-    if (
-      !db.pluginCustomStorage ||
-      Object.keys(db.pluginCustomStorage).length === 0
-    ) {
-      const pluginStorageRows = await this.selectRows<{
-        key: string;
-        value: string;
-      }>("SELECT key, value FROM plugin_custom_storage");
-      if (pluginStorageRows.length > 0) {
-        db.pluginCustomStorage = {};
-        for (const row of pluginStorageRows) {
-          try {
-            db.pluginCustomStorage[row.key] = JSON.parse(row.value);
-          } catch {
-            db.pluginCustomStorage[row.key] = row.value;
-          }
-        }
-      }
-    }
-    db.pluginCustomStorage ??= {};
-
-    const charRows = await this.selectRows<{
-      id: string;
-      position: number;
-      kind: string;
-      name: string;
-      image: string | null;
-      trash_time: number | null;
-      creation_time: number | null;
-      modification_time: number | null;
-      last_interaction_time: number | null;
-      details_loaded: number;
-    }>(
-      "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-    );
-    const characters: (character | groupChat)[] = [];
-    for (const row of charRows) {
-      const fullChar = ((await this.loadNodeValue(
-        "character_extension_nodes",
-        "character_id = ?",
-        [row.id],
-      )) ?? {}) as character | groupChat;
-      fullChar.chaId = row.id;
-      fullChar.name = (row.name as string) ?? fullChar.name ?? "";
-      fullChar.type =
-        (row.kind as "character" | "group") ?? fullChar.type ?? "character";
-      fullChar.image = (row.image as string) ?? fullChar.image ?? "";
-      fullChar.trashTime = (row.trash_time as number) ?? fullChar.trashTime;
-      fullChar.lastInteraction =
-        (row.last_interaction_time as number) ?? fullChar.lastInteraction;
-      if (fullChar.type === "character") {
-        fullChar.creation_date =
-          (row.creation_time as number) ?? fullChar.creation_date;
-        fullChar.modification_date =
-          (row.modification_time as number) ?? fullChar.modification_date;
-      }
-      fullChar.detailsLoaded = true;
-      const chats = await this.loadCharacterChats(row.id);
-      for (const chat of chats) {
-        if (!chat.id) continue;
-        chat.message = await this.loadChatMessages(chat.id);
-        chat.messageOffset = 0;
-        chat.messageTotal = chat.message.length;
-        chat.messagesLoaded = true;
-        chat.messagesFullyLoaded = true;
-        chat.detailsLoaded = true;
-      }
-      fullChar.chats = chats;
-      characters.push(fullChar);
-    }
-    db.characters = characters;
-    db.modules = await this.loadModules();
-
-    const presetRows = await this.selectRows<{
-      preset_id: string;
-      data: string;
-    }>("SELECT preset_id, data FROM bot_presets ORDER BY position");
-    if (presetRows.length > 0) {
-      const presets: botPreset[] = [];
-      for (const row of presetRows) {
-        try {
-          presets.push(
-            typeof row.data === "string"
-              ? JSON.parse(row.data)
-              : (row.data as botPreset),
-          );
-        } catch {}
-      }
-      db.botPresets = presets;
-      if (db.activeBotPresetId) {
-        const activeIndex = presetRows.findIndex(
-          (row) => row.preset_id === db.activeBotPresetId,
-        );
-        db.botPresetsId = activeIndex >= 0 ? activeIndex : 0;
-      } else {
-        db.botPresetsId = 0;
-      }
-    } else {
-      db.botPresets = [];
-      db.botPresetsId = 0;
-    }
-
-    const metaRow = await this.selectOne(
-      "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-    );
-    const isInit =
-      metaRow?.initialized === 1 ||
-      characters.length > 0 ||
-      settingsRows.length > 0 ||
-      (db.modules?.length ?? 0) > 0 ||
-      (db.botPresets?.length ?? 0) > 0;
-    if (!isInit) return { revision: this.revision, database: null };
-    return { revision: this.revision, database: db };
+    return (await exportSqliteDatabaseSnapshot({
+      selectRows: this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets: ((queries) => this.selectBatch(queries)) as SqliteSelectRowSets,
+      revision: this.revision,
+      legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
+      loadChatMessages: (chatId) => this.loadChatMessages(chatId),
+    })) as SqlDatabaseSnapshotResult;
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {
