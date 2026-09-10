@@ -10,6 +10,7 @@
     "./sqliteQueries": "./src/sqliteQueries.ts",
     "./sqliteMessageMapper": "./src/sqliteMessageMapper.ts",
     "./sqliteBranchStorage": "./src/sqliteBranchStorage.ts",
+    "./sqliteAdminQueries": "./src/sqliteAdminQueries.ts",
     "./sqlite-schema.sql": "./src/sqlite-schema.sql"
   },
   "scripts": {

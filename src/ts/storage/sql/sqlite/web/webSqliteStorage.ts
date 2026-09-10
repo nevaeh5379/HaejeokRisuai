@@ -80,6 +80,16 @@ import {
   type SettingNodeRow,
 } from "@risuai/storage-sqlite/sqliteQueries";
 import {
+  getSqliteBotChatStats,
+  getSqliteDbTableData,
+  getSqliteTokenUsage,
+  listSqliteDbTables,
+  searchSqliteCharacters,
+  searchSqliteMessages,
+  type SqliteSelectRowSets,
+  type SqliteSelectRows,
+} from "@risuai/storage-sqlite/sqliteAdminQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "../sqliteStorageUtils";
@@ -1630,207 +1640,36 @@ export class WebSqliteStorage implements ISqlStorage {
     scope: "all" | "active" | "cold" = "all",
     limit: number = 50,
   ): Promise<NodePostgresMessageSearchResult[]> {
-    const rows = await this.selectRows(
-      `SELECT chat_id, id, position, role, sent_time, sender_name, content_text
-             FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
-      [`%${query}%`, normalizeSqliteLimit(limit)],
+    void scope;
+    return await searchSqliteMessages(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      query,
+      limit,
     );
-    return rows.map((r) => {
-      return {
-        storageState: "active" as const,
-        archiveId: null,
-        characterId: null,
-        characterName: null,
-        chatId: r.chat_id as string,
-        chatName: "",
-        messageId: r.id as string,
-        position: Number(r.position),
-        role: r.role as "user" | "char",
-        sentTime: r.sent_time != null ? Number(r.sent_time) : null,
-        senderName: (r.sender_name as string) ?? null,
-        snippet: String(r.content_text ?? "").slice(0, 200),
-      };
-    });
   }
+
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    return (
-      await this.selectRows(
-        `SELECT COALESCE(generation_model, 'unknown') AS model,
-            COUNT(*) AS message_count, COALESCE(SUM(input_tokens), 0) AS input_tokens,
-            COALESCE(SUM(output_tokens), 0) AS output_tokens FROM messages
-            WHERE generation_model IS NOT NULL GROUP BY generation_model`,
-      )
-    ).map((row) => ({
-      model: row.model as string,
-      messageCount: Number(row.message_count),
-      totalInputTokens: Number(row.input_tokens),
-      totalOutputTokens: Number(row.output_tokens),
-    }));
+    return await getSqliteTokenUsage(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
+
   async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    const chars = (await this.selectRows(
-      "SELECT id, name, image, kind, last_interaction_time FROM characters ORDER BY position ASC",
-    )) as {
-      id: string;
-      name: string;
-      image: string | null;
-      kind: string;
-      last_interaction_time: number | null;
-    }[];
-    const chatRows = (await this.selectRows(
-      "SELECT id, character_id, last_message_time FROM chats",
-    )) as {
-      id: string;
-      character_id: string;
-      last_message_time: number | null;
-    }[];
-    const msgRows = (await this.selectRows(
-      "SELECT chat_id, role, sent_time, length(COALESCE(content_text, content_encoded, '')) AS content_length FROM messages",
-    )) as {
-      chat_id: string;
-      role: string;
-      sent_time: number | null;
-      content_length: number;
-    }[];
-
-    const chatsByChar = new Map<
-      string,
-      { id: string; lastMessageTime: number | null }[]
-    >();
-    for (const ch of chatRows) {
-      let list = chatsByChar.get(ch.character_id);
-      if (!list) {
-        list = [];
-        chatsByChar.set(ch.character_id, list);
-      }
-      list.push({
-        id: ch.id,
-        lastMessageTime:
-          ch.last_message_time != null ? Number(ch.last_message_time) : null,
-      });
-    }
-
-    const msgsByChat = new Map<
-      string,
-      { role: string; sentTime: number | null; len: number }[]
-    >();
-    for (const m of msgRows) {
-      let list = msgsByChat.get(m.chat_id);
-      if (!list) {
-        list = [];
-        msgsByChat.set(m.chat_id, list);
-      }
-      list.push({
-        role: m.role,
-        sentTime: m.sent_time != null ? Number(m.sent_time) : null,
-        len: Number(m.content_length),
-      });
-    }
-
-    return chars.map((c) => {
-      const charChats = chatsByChar.get(c.id) || [];
-      let totalMessages = 0;
-      let userMessages = 0;
-      let botMessages = 0;
-      let longestSessionMessages = 0;
-      let lastActiveDate: number | null =
-        c.last_interaction_time != null
-          ? Number(c.last_interaction_time)
-          : null;
-      let totalBotLen = 0;
-      let totalUserLen = 0;
-
-      for (const ch of charChats) {
-        if (
-          ch.lastMessageTime != null &&
-          (lastActiveDate == null || ch.lastMessageTime > lastActiveDate)
-        ) {
-          lastActiveDate = ch.lastMessageTime;
-        }
-        const msgs = msgsByChat.get(ch.id) || [];
-        if (msgs.length > longestSessionMessages) {
-          longestSessionMessages = msgs.length;
-        }
-        totalMessages += msgs.length;
-        for (const m of msgs) {
-          if (
-            m.sentTime != null &&
-            (lastActiveDate == null || m.sentTime > lastActiveDate)
-          ) {
-            lastActiveDate = m.sentTime;
-          }
-          if (m.role === "user") {
-            userMessages++;
-            totalUserLen += m.len;
-          } else {
-            botMessages++;
-            totalBotLen += m.len;
-          }
-        }
-      }
-
-      const isGroup = c.kind === "group";
-      const totalSessions = charChats.length;
-      return {
-        id: c.id,
-        name: c.name || (isGroup ? "Group" : "Character"),
-        avatarKey: c.image ?? undefined,
-        image: c.image ?? undefined,
-        isGroup,
-        totalSessions,
-        totalMessages,
-        userMessages,
-        botMessages,
-        longestSessionMessages,
-        lastActiveDate,
-        avgBotMessageLen:
-          botMessages > 0 ? Math.round(totalBotLen / botMessages) : 0,
-        avgUserMessageLen:
-          userMessages > 0 ? Math.round(totalUserLen / userMessages) : 0,
-        avgMessagesPerSession:
-          totalSessions > 0
-            ? Number((totalMessages / totalSessions).toFixed(1))
-            : 0,
-      };
-    });
-  }
-  private quoteExplorerIdentifier(identifier: string): string {
-    return `"${identifier.replace(/"/g, '""')}"`;
-  }
-
-  private async getDbExplorerColumns(
-    table: string,
-  ): Promise<NodePostgresColumnInfo[]> {
-    const exists = await this.selectOne(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? AND name NOT LIKE 'sqlite_%'",
-      [table],
+    return await getSqliteBotChatStats(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (!exists) throw new Error(`SQLite table not found: ${table}`);
-    const rows = await this.selectRows(
-      `PRAGMA table_info(${this.quoteExplorerIdentifier(table)})`,
-    );
-    return rows.map((row) => ({
-      name: String(row.name ?? ""),
-      dataType: String(row.type ?? "UNKNOWN") || "UNKNOWN",
-      nullable: Number(row.notnull ?? 0) === 0,
-      primaryKey: Number(row.pk ?? 0) > 0,
-    }));
   }
 
   async listDbTables(): Promise<NodePostgresTableInfo[]> {
     if (!this._enabled && !(await this.init())) return [];
-    const rows = await this.selectRows(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    const selectRowSets: SqliteSelectRowSets = async (queries) =>
+      (await this.selectBatchResults(queries)).map(
+        (result) => result.rows ?? [],
+      );
+    return await listSqliteDbTables(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets,
     );
-    const results = await this.selectBatchResults(
-      rows.map((row) => ({
-        sql: `SELECT COUNT(*) AS total FROM ${this.quoteExplorerIdentifier(String(row.name))}`,
-      })),
-    );
-    return rows.map((row, index) => ({
-      name: String(row.name),
-      rowCount: Number(results[index]?.rows?.[0]?.total ?? 0),
-    }));
   }
 
   async getDbTableData(
@@ -1847,91 +1686,39 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!this._enabled && !(await this.init())) {
       throw new Error("Browser SQLite storage is not available");
     }
-    const allColumns = await this.getDbExplorerColumns(table);
-    const columnNames = new Set(allColumns.map((column) => column.name));
-    const requestedColumns = options.columns?.filter((name) =>
-      columnNames.has(name),
-    );
-    const columns = requestedColumns?.length
-      ? allColumns.filter((column) => requestedColumns.includes(column.name))
-      : allColumns;
-    if (columns.length === 0)
-      throw new Error(`SQLite table has no columns: ${table}`);
-
-    const offset = Math.max(0, Math.floor(options.offset ?? 0));
-    const limit = normalizeSqliteLimit(options.limit ?? 50);
-    const quotedTable = this.quoteExplorerIdentifier(table);
-    const search = options.search?.trim() ?? "";
-    const where = search
-      ? ` WHERE ${allColumns
-          .map(
-            (column) =>
-              `CAST(${this.quoteExplorerIdentifier(column.name)} AS TEXT) LIKE ? COLLATE NOCASE`,
-          )
-          .join(" OR ")}`
-      : "";
-    const searchBinds = search ? allColumns.map(() => `%${search}%`) : [];
-    const sortColumn =
-      options.sortColumn && columnNames.has(options.sortColumn)
-        ? options.sortColumn
-        : "";
-    const orderBy = sortColumn
-      ? ` ORDER BY ${this.quoteExplorerIdentifier(sortColumn)} ${options.sortOrder === "desc" ? "DESC" : "ASC"}`
-      : "";
-    const selection = columns
-      .map((column) => this.quoteExplorerIdentifier(column.name))
-      .join(", ");
-
-    const [countResult, rowsResult] = await this.selectBatchResults([
-      {
-        sql: `SELECT COUNT(*) AS total FROM ${quotedTable}${where}`,
-        bind: searchBinds,
-      },
-      {
-        sql: `SELECT ${selection} FROM ${quotedTable}${where}${orderBy} LIMIT ? OFFSET ?`,
-        bind: [...searchBinds, limit, offset],
-      },
-    ]);
-    return {
+    const selectRowSets: SqliteSelectRowSets = async (queries) =>
+      (await this.selectBatchResults(queries)).map(
+        (result) => result.rows ?? [],
+      );
+    return await getSqliteDbTableData(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets,
       table,
-      columns,
-      allColumns,
-      rows: rowsResult.rows ?? [],
-      offset,
-      limit,
-      total: Number(countResult.rows?.[0]?.total ?? 0),
-    };
+      options,
+    );
   }
 
   async searchCharactersByTag(
     tag: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    const rows = await this.selectRows(
-      `SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
-            JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`,
-      [`%${tag}%`, normalizeSqliteLimit(limit)],
+    return await searchSqliteCharacters(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      "tag",
+      tag,
+      limit,
     );
-    return rows.map((r) => ({
-      id: r.id as string,
-      name: r.name as string,
-      image: (r.image as string) ?? null,
-      kind: (r.kind as "character" | "group") ?? "character",
-    }));
   }
+
   async searchCharactersByName(
     name: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    const rows = await this.selectRows(
-      "SELECT id, name, image, kind FROM characters WHERE name LIKE ? LIMIT ?",
-      [`%${name}%`, normalizeSqliteLimit(limit)],
+    return await searchSqliteCharacters(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      "name",
+      name,
+      limit,
     );
-    return rows.map((r) => ({
-      id: r.id as string,
-      name: r.name as string,
-      image: (r.image as string) ?? null,
-      kind: (r.kind as "character" | "group") ?? "character",
-    }));
   }
 }
