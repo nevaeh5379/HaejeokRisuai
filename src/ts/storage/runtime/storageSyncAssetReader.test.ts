@@ -4,6 +4,7 @@ import {
   StorageSyncAssetReadError,
   buildStorageSyncAssetManifest,
   createStorageSyncAssetReader,
+  summarizeStorageSyncAssets,
 } from "./storageSyncAssetReader";
 
 class FakeBoundedStorage {
@@ -72,5 +73,42 @@ describe("storage sync asset reader", () => {
       reader.readChunk("assets/a.bin", 0, STORAGE_SYNC_ASSET_CHUNK_BYTES + 1),
     ).rejects.toMatchObject({ code: "invalid_asset_range" });
     expect(storage.active).toBe(0);
+  });
+  it("summarizes asset bytes without reading file contents and bounds stat concurrency", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const reader = {
+      listKeys: async () => [
+        "assets/c.bin",
+        "other.bin",
+        "assets/a.bin",
+        "assets/b.bin",
+      ],
+      getSize: async (key: string) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        active -= 1;
+        return (
+          {
+            "assets/a.bin": 2,
+            "assets/b.bin": 3,
+            "assets/c.bin": 5,
+          }[key] ?? 0
+        );
+      },
+      readChunk: async () => {
+        throw new Error("readChunk should not be called during preview");
+      },
+    };
+
+    await expect(
+      summarizeStorageSyncAssets(reader, "assets/", 2),
+    ).resolves.toEqual({
+      count: 3,
+      sizeBytes: 10,
+    });
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(maxActive).toBeGreaterThan(1);
   });
 });

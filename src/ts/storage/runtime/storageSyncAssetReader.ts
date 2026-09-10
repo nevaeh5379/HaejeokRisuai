@@ -85,6 +85,38 @@ export async function hashStorageSyncAsset(
   }
   return { key, size, sha256: digestToHex(await hash.digest()) };
 }
+export interface StorageSyncAssetSummary {
+  count: number;
+  sizeBytes: number;
+}
+
+export async function summarizeStorageSyncAssets(
+  reader: StorageSyncAssetReader,
+  prefix = "assets/",
+  concurrency = 8,
+): Promise<StorageSyncAssetSummary> {
+  const keys = [...new Set(await reader.listKeys(prefix))]
+    .filter((key) => key.startsWith(prefix))
+    .sort();
+  const workerCount = Math.max(
+    1,
+    Math.min(Math.floor(concurrency) || 1, keys.length || 1),
+  );
+  let cursor = 0;
+  let sizeBytes = 0;
+  const worker = async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= keys.length) return;
+      const size = await reader.getSize(keys[index]);
+      assertNonNegativeInteger(size, "Asset size");
+      sizeBytes += size;
+    }
+  };
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return { count: keys.length, sizeBytes };
+}
+
 export async function buildStorageSyncAssetManifest(
   reader: StorageSyncAssetReader,
   prefix = "assets/",
