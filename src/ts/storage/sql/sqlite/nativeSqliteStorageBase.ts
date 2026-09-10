@@ -114,6 +114,12 @@ import {
   loadSqliteSettingValues,
 } from "@risuai/storage-sqlite/sqliteDocumentQueries";
 import {
+  buildSqliteSettingRowsQuery,
+  getSqliteStorageSyncSummary,
+  loadSqliteStartupProjection,
+  rebuildSqliteSettingRows,
+} from "@risuai/storage-sqlite/sqliteStartupQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "./sqliteStorageUtils";
@@ -124,8 +130,6 @@ import {
   SQLITE_BRANCH_SCHEMA_STATEMENTS,
   type SqliteChatBranchRow,
 } from "@risuai/storage-sqlite/sqliteBranchStorage";
-
-const STARTUP_SETTING_TEXT_LIMIT = 256 * 1024;
 
 export abstract class NativeSqliteStorageBase {
   protected revision = 0;
@@ -299,183 +303,40 @@ export abstract class NativeSqliteStorageBase {
     }
   }
 
-  private buildSettingRowsQuery(
-    deferredKeyList: readonly string[] = [],
-    shallow = false,
-  ): SqliteTransactionStatement {
-    const textValue = shallow
-      ? `CASE WHEN length(n.text_value) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.text_value END`
-      : "n.text_value";
-    const encodedTextValue = shallow
-      ? `CASE WHEN length(n.encoded_text_value) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.encoded_text_value END`
-      : "n.encoded_text_value";
-    const objectKey = shallow
-      ? `CASE WHEN length(n.object_key) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.object_key END`
-      : "n.object_key";
-    const encodedObjectKey = shallow
-      ? `CASE WHEN length(n.object_key_encoded) > ${STARTUP_SETTING_TEXT_LIMIT} THEN NULL ELSE n.object_key_encoded END`
-      : "n.object_key_encoded";
-    const oversizedMarker = shallow
-      ? `CASE WHEN length(n.text_value) > ${STARTUP_SETTING_TEXT_LIMIT}
-                    OR length(n.encoded_text_value) > ${STARTUP_SETTING_TEXT_LIMIT}
-                    OR length(n.object_key) > ${STARTUP_SETTING_TEXT_LIMIT}
-                    OR length(n.object_key_encoded) > ${STARTUP_SETTING_TEXT_LIMIT}
-               THEN 1 ELSE 0 END AS startup_oversized,`
-      : "";
-    return {
-      sql: `SELECT s.key AS setting_key, s.domain AS setting_domain, s.value_type AS setting_value_type,
-              s.text_value AS setting_text_value, s.encoded_text_value AS setting_encoded_text_value,
-              s.number_value AS setting_number_value, s.boolean_value AS setting_boolean_value,
-              n.node_id, n.parent_node_id, n.node_order,
-              ${objectKey} AS object_key, ${encodedObjectKey} AS object_key_encoded,
-              n.value_type, ${textValue} AS text_value,
-              ${encodedTextValue} AS encoded_text_value, n.number_value, n.boolean_value,
-              ${oversizedMarker}
-              0 AS startup_projection
-         FROM system_settings s
-         LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key${
-           deferredKeyList.length
-             ? ` AND s.key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
-             : ""
-         }
-         ORDER BY s.key, n.node_id`,
-      bind: [...deferredKeyList],
-    };
-  }
-
-  private rebuildSettingRows(
-    rows: Record<string, unknown>[],
-    deferredKeyList: readonly string[] = [],
-  ): {
-    values: Map<string, unknown>;
-    keyCount: number;
-    deferredKeys: Set<string>;
-  } {
-    const deferredKeys = new Set(deferredKeyList);
-    const grouped = new Map<string, Record<string, unknown>[]>();
-    const rootRows = new Map<string, Record<string, unknown>>();
-    for (const row of rows) {
-      const key = String(row.setting_key ?? "");
-      if (!rootRows.has(key)) rootRows.set(key, row);
-      if (Number(row.startup_oversized) === 1) deferredKeys.add(key);
-      const nodes = grouped.get(key) ?? [];
-      if (row.node_id !== null && row.node_id !== undefined) nodes.push(row);
-      grouped.set(key, nodes);
-    }
-    const values = new Map<string, unknown>();
-    for (const [key, nodes] of grouped) {
-      if (deferredKeys.has(key)) continue;
-      if (nodes.length) {
-        values.set(key, rebuildRelationalValue(nodes));
-      } else {
-        const root = rootRows.get(key);
-        if (!root) {
-          values.set(key, undefined);
-          continue;
-        }
-        const valType = root.setting_value_type ?? root.value_type;
-        switch (valType) {
-          case "string":
-            values.set(
-              key,
-              decodedText(
-                root.setting_text_value ?? root.text_value,
-                root.setting_encoded_text_value ?? root.encoded_text_value,
-              ),
-            );
-            break;
-          case "number":
-            values.set(
-              key,
-              Number(root.setting_number_value ?? root.number_value),
-            );
-            break;
-          case "boolean":
-            values.set(
-              key,
-              Boolean(root.setting_boolean_value ?? root.boolean_value),
-            );
-            break;
-          case "null":
-            values.set(key, null);
-            break;
-          case "undefined":
-            values.set(key, undefined);
-            break;
-          default:
-            values.set(key, undefined);
-            break;
-        }
-      }
-    }
-    return { values, keyCount: grouped.size, deferredKeys };
-  }
-
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
     if (!this._enabled) {
       const ok = await this.init();
       if (!ok) return null;
     }
-
-    const deferredKeys = [...DEFERRED_STARTUP_SETTING_KEYS];
-    const settingsStoreExcludedKeys = new Set<string>(
+    const projection = await loadSqliteStartupProjection(
+      this.selectRowSets.bind(this) as SqliteSelectRowSets,
+      this.revision,
+      DEFERRED_STARTUP_SETTING_KEYS,
       SETTINGS_STORE_EXCLUDED_KEYS,
     );
-    const excludedKeys = [
-      ...new Set([...deferredKeys, ...SETTINGS_STORE_EXCLUDED_KEYS]),
-    ];
-    const settingQuery = this.buildSettingRowsQuery(excludedKeys, true);
-    const characterQuery: SqliteTransactionStatement = {
-      sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-      bind: [],
-    };
-    const metaQuery: SqliteTransactionStatement = {
-      sql: "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-      bind: [],
-    };
-    const [settingRows, characterRows, metaRows] = await this.selectRowSets([
-      settingQuery,
-      characterQuery,
-      metaQuery,
-    ]);
-    const rebuilt = this.rebuildSettingRows(settingRows, excludedKeys);
-    const settings: Partial<DatabaseSettings> = {};
-    for (const [key, value] of rebuilt.values) {
-      if (!settingsStoreExcludedKeys.has(key)) {
-        (settings as Record<string, unknown>)[key] = value;
-      }
-    }
-    const characters = (characterRows as Array<Record<string, unknown>>).map(
-      (row) =>
-        ({
-          chaId: String(row.id ?? ""),
-          type: (row.kind as "character" | "group") ?? "character",
-          name: String(row.name ?? ""),
-          image: String(row.image ?? ""),
-          trashTime: (row.trash_time as number | null) ?? undefined,
-          creationDate: (row.creation_time as number | null) ?? undefined,
-          modificationDate:
-            (row.modification_time as number | null) ?? undefined,
-          lastInteraction:
-            (row.last_interaction_time as number | null) ?? undefined,
-          detailsLoaded: false,
-          chats: [],
-          chatPage: 0,
-        }) as unknown as character | groupChat,
-    );
-    const metaRow = metaRows[0] as { initialized?: number } | undefined;
-    const initialized =
-      metaRow?.initialized === 1 ||
-      characters.length > 0 ||
-      rebuilt.keyCount > 0;
     return {
-      status: initialized ? "ready" : "empty",
-      revision: this.revision,
-      settings,
-      characters,
-      deferredSettingKeys: [...rebuilt.deferredKeys].filter(
-        (key) => !settingsStoreExcludedKeys.has(key),
+      status: projection.status,
+      revision: projection.revision,
+      settings: Object.fromEntries(
+        projection.settings,
+      ) as Partial<DatabaseSettings>,
+      characters: projection.characters.map(
+        (row) =>
+          ({
+            chaId: row.id,
+            type: row.kind,
+            name: row.name,
+            image: row.image,
+            trashTime: row.trashTime,
+            creationDate: row.creationDate,
+            modificationDate: row.modificationDate,
+            lastInteraction: row.lastInteraction,
+            detailsLoaded: false,
+            chats: [],
+            chatPage: 0,
+          }) as unknown as character | groupChat,
       ),
+      deferredSettingKeys: projection.deferredSettingKeys,
     };
   }
 
@@ -488,7 +349,7 @@ export abstract class NativeSqliteStorageBase {
     const db: CanonicalDatabase = {} as CanonicalDatabase;
 
     const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
-    const settingQuery = this.buildSettingRowsQuery(deferredKeyList);
+    const settingQuery = buildSqliteSettingRowsQuery(deferredKeyList);
     const characterQuery: SqliteTransactionStatement = {
       sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
       bind: [],
@@ -505,7 +366,7 @@ export abstract class NativeSqliteStorageBase {
       characterQuery,
       metaQuery,
     ]);
-    const settings = this.rebuildSettingRows(settingRows, deferredKeyList);
+    const settings = rebuildSqliteSettingRows(settingRows, deferredKeyList);
     for (const [key, value] of settings.values) {
       (db as Record<string, unknown>)[key] = value;
     }
@@ -734,30 +595,10 @@ export abstract class NativeSqliteStorageBase {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const row = await this.selectOne<Record<string, unknown>>(`
-      SELECT revision, initialized,
-             (SELECT COUNT(*) FROM system_settings) AS settings_count,
-             (SELECT COUNT(*) FROM characters) AS characters_count,
-             (SELECT COUNT(*) FROM chats) AS chats_count,
-             (SELECT COUNT(*) FROM messages) AS messages_count
-        FROM system_storage_meta WHERE singleton = 1
-    `);
-    const records = {
-      settings: Number(row?.settings_count) || 0,
-      characters: Number(row?.characters_count) || 0,
-      chats: Number(row?.chats_count) || 0,
-      messages: Number(row?.messages_count) || 0,
-    };
-    return {
-      revision: Number.isSafeInteger(Number(row?.revision))
-        ? Number(row?.revision)
-        : this.revision,
-      initialized: row?.initialized === true || Number(row?.initialized) === 1,
-      records: {
-        ...records,
-        total: Object.values(records).reduce((a, b) => a + b, 0),
-      },
-    };
+    return await getSqliteStorageSyncSummary(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      this.revision,
+    );
   }
 
   protected async selectOne<T extends Record<string, unknown>>(

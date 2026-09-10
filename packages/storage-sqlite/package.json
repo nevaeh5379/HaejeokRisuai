@@ -14,7 +14,8 @@
     "./sqlite-schema.sql": "./src/sqlite-schema.sql",
     "./sqlitePersistenceQueries": "./src/sqlitePersistenceQueries.ts",
     "./sqliteNodeValues": "./src/sqliteNodeValues.ts",
-    "./sqliteDocumentQueries": "./src/sqliteDocumentQueries.ts"
+    "./sqliteDocumentQueries": "./src/sqliteDocumentQueries.ts",
+    "./sqliteStartupQueries": "./src/sqliteStartupQueries.ts"
   },
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit"

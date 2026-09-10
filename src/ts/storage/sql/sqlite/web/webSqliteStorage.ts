@@ -116,6 +116,10 @@ import {
   loadSqliteSettingValues,
 } from "@risuai/storage-sqlite/sqliteDocumentQueries";
 import {
+  getSqliteStorageSyncSummary,
+  loadSqliteStartupProjection,
+} from "@risuai/storage-sqlite/sqliteStartupQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "../sqliteStorageUtils";
@@ -298,30 +302,10 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const row = await this.selectOne(`
-      SELECT revision, initialized,
-             (SELECT COUNT(*) FROM system_settings) AS settings_count,
-             (SELECT COUNT(*) FROM characters) AS characters_count,
-             (SELECT COUNT(*) FROM chats) AS chats_count,
-             (SELECT COUNT(*) FROM messages) AS messages_count
-        FROM system_storage_meta WHERE singleton = 1
-    `);
-    const records = {
-      settings: Number(row?.settings_count) || 0,
-      characters: Number(row?.characters_count) || 0,
-      chats: Number(row?.chats_count) || 0,
-      messages: Number(row?.messages_count) || 0,
-    };
-    return {
-      revision: Number.isSafeInteger(Number(row?.revision))
-        ? Number(row?.revision)
-        : this.revision,
-      initialized: row?.initialized === true || Number(row?.initialized) === 1,
-      records: {
-        ...records,
-        total: Object.values(records).reduce((a, b) => a + b, 0),
-      },
-    };
+    return await getSqliteStorageSyncSummary(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      this.revision,
+    );
   }
 
   async init(): Promise<boolean> {
@@ -510,63 +494,35 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-
-    const settingsRows = await this.selectRows(
-      "SELECT key FROM system_settings",
-    );
-    const deferredKeys = new Set<string>(DEFERRED_STARTUP_SETTING_KEYS);
-    const settingsStoreExcludedKeys = new Set<string>(
+    const projection = await loadSqliteStartupProjection(
+      ((queries) => this.selectBatch(queries)) as SqliteSelectRowSets,
+      this.revision,
+      DEFERRED_STARTUP_SETTING_KEYS,
       SETTINGS_STORE_EXCLUDED_KEYS,
     );
-    const excludedKeys = [...deferredKeys, ...settingsStoreExcludedKeys];
-    const settingNodeQuery = buildDeferredSettingsQuery(excludedKeys);
-    const settingNodeRows = await this.selectRows(
-      settingNodeQuery.sql,
-      settingNodeQuery.bind,
-    );
-    const settingValues = groupSettingNodeRows(
-      settingNodeRows as SettingNodeRow[],
-    );
-    const settings: Partial<DatabaseSettings> = {};
-    for (const row of settingsRows) {
-      const key = row.key as string;
-      if (deferredKeys.has(key) || settingsStoreExcludedKeys.has(key)) continue;
-      (settings as Record<string, unknown>)[key] = settingValues.get(key);
-    }
-
-    const charRows = await this.selectRows(
-      "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-    );
-    const characters: (character | groupChat)[] = charRows.map(
-      (row) =>
-        ({
-          chaId: row.id as string,
-          type: (row.kind as "character" | "group") ?? "character",
-          name: (row.name as string) ?? "",
-          image: (row.image as string) ?? "",
-          trashTime: (row.trash_time as number) ?? undefined,
-          creationDate: (row.creation_time as number) ?? undefined,
-          modificationDate: (row.modification_time as number) ?? undefined,
-          lastInteraction: (row.last_interaction_time as number) ?? undefined,
-          detailsLoaded: false,
-          chats: [],
-          chatPage: 0,
-        }) as unknown as character | groupChat,
-    );
-
-    const metaRow = await this.selectOne(
-      "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-    );
-    const initialized =
-      metaRow?.initialized === 1 ||
-      characters.length > 0 ||
-      settingsRows.length > 0;
     return {
-      status: initialized ? "ready" : "empty",
-      revision: this.revision,
-      settings,
-      characters,
-      deferredSettingKeys: [...deferredKeys],
+      status: projection.status,
+      revision: projection.revision,
+      settings: Object.fromEntries(
+        projection.settings,
+      ) as Partial<DatabaseSettings>,
+      characters: projection.characters.map(
+        (row) =>
+          ({
+            chaId: row.id,
+            type: row.kind,
+            name: row.name,
+            image: row.image,
+            trashTime: row.trashTime,
+            creationDate: row.creationDate,
+            modificationDate: row.modificationDate,
+            lastInteraction: row.lastInteraction,
+            detailsLoaded: false,
+            chats: [],
+            chatPage: 0,
+          }) as unknown as character | groupChat,
+      ),
+      deferredSettingKeys: projection.deferredSettingKeys,
     };
   }
 
