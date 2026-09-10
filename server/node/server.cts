@@ -1,3 +1,4 @@
+// @ts-nocheck -- removed after the staged TypeScript migration compiles cleanly.
 const express = require("express");
 const app = express();
 const {

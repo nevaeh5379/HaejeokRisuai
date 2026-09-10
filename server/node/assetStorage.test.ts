@@ -65,7 +65,10 @@ describe("AssetStorage utilities", () => {
 
 describe("asset read route streams", () => {
   it("uses node:fs streams instead of fs/promises for file-backed responses", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "server/node/server.cjs"), "utf8");
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "server/node/server.cts"),
+      "utf8",
+    );
     const start = source.indexOf('app.get("/api/read"');
     const end = source.indexOf('app.get("/api/remove"', start);
     const route = source.slice(start, end);

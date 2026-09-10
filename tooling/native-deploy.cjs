@@ -393,7 +393,7 @@ async function startNative(config = readConfig()) {
   const logFd = fs.openSync(logPath, "a");
   const child = spawn(
     process.execPath,
-    [path.join(root, "server/node/server.cjs")],
+    [path.join(root, "server/node/bootstrap.cjs")],
     {
       cwd: root,
       env: runtimeEnv(config),
