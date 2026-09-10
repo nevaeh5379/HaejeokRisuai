@@ -7,7 +7,7 @@ import {
   readDir,
   remove,
 } from "@tauri-apps/plugin-fs";
-import { changeFullscreen, checkNullish, sleep } from "./util";
+import { changeFullscreen, checkNullish, Semaphore, sleep } from "./util";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
@@ -495,6 +495,66 @@ const browserAssetUrls = new BoundedCache<string, string>({
   },
 });
 
+const remoteNativeAssetSemaphore = new Semaphore(4);
+const remoteNativeAssetLoads = new Map<string, Promise<string>>();
+
+async function getRemoteNativeNodeAssetSrc(
+  storage: NodeStorage,
+  loc: string,
+  cacheKey: string,
+  options?: {
+    thumbnail?: boolean;
+    display?: boolean;
+    transient?: boolean;
+    width?: number;
+    height?: number;
+  },
+): Promise<string> {
+  if (!options?.transient) {
+    const cached = browserAssetUrls.get(cacheKey);
+    if (cached && isLiveObjectUrl(cached)) return cached;
+    if (cached) browserAssetUrls.delete(cacheKey);
+  }
+
+  const existing = remoteNativeAssetLoads.get(cacheKey);
+  if (existing) return await existing;
+
+  const load = (async () => {
+    await remoteNativeAssetSemaphore.acquire();
+    try {
+      const item = await storage.getItemWithMetadata(loc, {
+        thumbnail: options?.thumbnail === true,
+        size: options?.display
+          ? "display"
+          : options?.thumbnail
+            ? "thumb"
+            : "full",
+        width: options?.width,
+        height: options?.height,
+      });
+      if (!item) return "";
+      const blob = new Blob([item.data as any], { type: item.contentType });
+      const url = URL.createObjectURL(blob);
+      trackObjectUrl(url);
+      if (!options?.transient) {
+        browserAssetWeights.set(cacheKey, item.data.byteLength);
+        browserAssetUrls.set(cacheKey, url);
+      }
+      return url;
+    } finally {
+      remoteNativeAssetSemaphore.release();
+    }
+  })();
+  remoteNativeAssetLoads.set(cacheKey, load);
+  try {
+    return await load;
+  } finally {
+    if (remoteNativeAssetLoads.get(cacheKey) === load) {
+      remoteNativeAssetLoads.delete(cacheKey);
+    }
+  }
+}
+
 export async function getFileSrc(
   loc: string,
   options?: {
@@ -553,10 +613,18 @@ export async function getFileSrc(
     return convertFileSrc(loc);
   }
   if (isNodeServer || forageStorage.realStorage instanceof NodeStorage) {
+    const nodeStorage = forageStorage.realStorage as NodeStorage;
+    if (!isNodeServer && (isTauri || isCapacitor)) {
+      return await getRemoteNativeNodeAssetSrc(
+        nodeStorage,
+        loc,
+        cacheVariantKey,
+        options,
+      );
+    }
     if (isThumb) {
       return await thumbnailBatchLoader.load(loc);
     }
-    const nodeStorage = forageStorage.realStorage as NodeStorage;
     return await nodeStorage.getDirectUrl(loc, options);
   }
   try {

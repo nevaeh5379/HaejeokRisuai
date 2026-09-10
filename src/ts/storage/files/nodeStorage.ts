@@ -950,45 +950,62 @@ export class NodeStorage {
     await this.invalidateBulkImageCache(items.keys());
   }
 
-  async getItem(
+  async getItemWithMetadata(
     key: string,
     options?: {
       thumbnail?: boolean;
+      size?: "thumb" | "display" | "full";
+      width?: number;
+      height?: number;
       target?: AssetStorageTarget;
     },
-  ): Promise<Buffer> {
+  ): Promise<{ data: Buffer; contentType: string } | null> {
     await this.checkAuth();
     const headers: Record<string, string> = {
       "file-path": Buffer.from(key, "utf-8").toString("hex"),
       "risu-auth": await this.createAuth(),
     };
-    if (options?.thumbnail) {
-      headers["x-thumbnail"] = "true";
-    }
+    if (options?.thumbnail) headers["x-thumbnail"] = "true";
     if (options?.target && options.target !== "active") {
       headers["x-storage-target"] = options.target;
     }
-    const targetParam =
-      options?.target && options.target !== "active"
-        ? `&target=${options.target}`
-        : "";
-    const thumbParam = options?.thumbnail ? "?thumb=1" : "";
-    const query = [thumbParam, targetParam].filter(Boolean).join("&");
-    const queryStr = query ? `?${query}` : "";
-    const da = await this.apiClient.request("/api/read" + queryStr, {
+    const params = new URLSearchParams();
+    if (options?.thumbnail) params.set("thumb", "1");
+    if (options?.size) params.set("size", options.size);
+    if (options?.width) params.set("width", String(options.width));
+    if (options?.height) params.set("height", String(options.height));
+    if (options?.target && options.target !== "active") {
+      params.set("target", options.target);
+    }
+    const query = params.size > 0 ? `?${params.toString()}` : "";
+    const response = await this.apiClient.request(`/api/read${query}`, {
       method: "GET",
       cache: "no-cache",
       headers,
     });
-    if (da.status < 200 || da.status >= 300) {
-      throw "getItem Error";
-    }
+    if (!response.ok) throw new Error(`getItem Error: ${response.status}`);
+    const data = Buffer.from(await response.arrayBuffer());
+    if (data.length === 0) return null;
+    return {
+      data,
+      contentType:
+        response.headers.get("content-type")?.split(";", 1)[0]?.trim() ||
+        "application/octet-stream",
+    };
+  }
 
-    const data = Buffer.from(await da.arrayBuffer());
-    if (data.length == 0) {
-      return null;
-    }
-    return data;
+  async getItem(
+    key: string,
+    options?: {
+      thumbnail?: boolean;
+      size?: "thumb" | "display" | "full";
+      width?: number;
+      height?: number;
+      target?: AssetStorageTarget;
+    },
+  ): Promise<Buffer> {
+    const result = await this.getItemWithMetadata(key, options);
+    return result?.data ?? null;
   }
 
   async getItemFromBrowserCache(

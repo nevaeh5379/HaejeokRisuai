@@ -2,7 +2,7 @@ import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { forageStorage, getFileSrc } from "./globalApi.svelte";
 import { NodeStorage } from "./storage/files/nodeStorage";
 import { getMimeType } from "./media/mimeType";
-import { isCapacitor } from "./platform";
+import { isCapacitor, isTauri } from "./platform";
 import { getImageCacheLimit } from "./memory/imageCacheLimits";
 
 // Character images can be multi-megabyte blobs. Keep Map compatibility for the
@@ -326,9 +326,14 @@ export async function getCharImagesBatch(
     result.set(loc, "/none.webp");
   };
 
-  // NodeStorage: use bounded POST /api/read-bulk batches. Never fall back to
-  // one direct GET per image, since that can create hundreds of requests.
-  if (forageStorage.realStorage instanceof NodeStorage) {
+  const remoteNativeNodeStorage =
+    forageStorage.realStorage instanceof NodeStorage && (isTauri || isCapacitor);
+
+  // Browser/Node-hosted NodeStorage can use the streaming bulk endpoint. Native
+  // remote profiles intentionally avoid it: Tauri/Capacitor HTTP transports do
+  // not share the WebView's streaming/CORS semantics, so getFileSrc() fetches
+  // bounded native HTTP responses and returns Blob URLs instead.
+  if (forageStorage.realStorage instanceof NodeStorage && !remoteNativeNodeStorage) {
     const nodeStorage = forageStorage.realStorage as NodeStorage;
     try {
       const directLocs = uncachedLocs.filter((loc) =>
@@ -419,9 +424,11 @@ export async function getCharImagesBatch(
     (options.thumbnail === true ||
       options.size === "thumb" ||
       options.size === "display");
-  const fallbackWorkerCount = usesNativeTransform
-    ? Math.min(3, uncachedLocs.length)
-    : uncachedLocs.length;
+  const fallbackWorkerCount = remoteNativeNodeStorage
+    ? Math.min(4, uncachedLocs.length)
+    : usesNativeTransform
+      ? Math.min(3, uncachedLocs.length)
+      : uncachedLocs.length;
   await Promise.all(
     Array.from({ length: fallbackWorkerCount }, async () => {
       while (fallbackCursor < uncachedLocs.length) {

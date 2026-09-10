@@ -305,6 +305,59 @@ describe("NodeStorage authentication identity", () => {
   });
 });
 
+describe("NodeStorage native asset reads", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("preserves server MIME metadata and transformed query options", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe("/api/read");
+        expect(url.searchParams.get("size")).toBe("display");
+        expect(url.searchParams.get("width")).toBe("512");
+        expect(url.searchParams.get("height")).toBe("768");
+        expect(url.search.startsWith("??")).toBe(false);
+        const headers = new Headers(init?.headers);
+        expect(headers.get("risu-auth")).toBe("native-auth");
+        expect(headers.get("file-path")).toBe(
+          Buffer.from("assets/avatar.png", "utf8").toString("hex"),
+        );
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "content-type": "image/webp; charset=binary" },
+        });
+      },
+    );
+    const storage = new NodeStorage(
+      new NodeApiClient(
+        {
+          version: 1,
+          mode: "remote",
+          baseUrl: "https://sync.example",
+          allowInsecureHttp: false,
+        },
+        fetcher,
+      ),
+    );
+    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    vi.spyOn(storage, "createAuth").mockResolvedValue("native-auth");
+
+    const item = await storage.getItemWithMetadata("assets/avatar.png", {
+      size: "display",
+      width: 512,
+      height: 768,
+    });
+
+    expect(item?.data).toEqual(Buffer.from([1, 2, 3]));
+    expect(item?.contentType).toBe("image/webp");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("NodeStorage.getItems image cache", () => {
   afterEach(() => {
     vi.restoreAllMocks();
