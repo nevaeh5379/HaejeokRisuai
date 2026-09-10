@@ -394,6 +394,66 @@ describe("NodeStorage.getItems image cache", () => {
   });
 });
 
+describe("NodeStorage storage sync asset reader", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("reuses asset metadata and reads bounded HTTP ranges", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const payload = new Uint8Array([12, 13, 14]);
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        expect(url).toContain("/api/read?path=");
+        expect(new Headers(init?.headers).get("range")).toBe("bytes=2-4");
+        expect(new Headers(init?.headers).get("risu-auth")).toBe("sync-auth");
+        return new Response(payload, {
+          status: 206,
+          headers: {
+            "content-range": "bytes 2-4/6",
+            "content-length": "3",
+          },
+        });
+      },
+    );
+    const client = new NodeApiClient(
+      {
+        version: 1,
+        mode: "remote",
+        baseUrl: "https://sync.example",
+        allowInsecureHttp: false,
+      },
+      fetcher,
+    );
+    const storage = new NodeStorage(client);
+    vi.spyOn(storage as any, "getCachedAuth").mockResolvedValue("sync-auth");
+    const details = vi.spyOn(storage.s3, "getAssetDetails").mockResolvedValue({
+      storageType: "fs",
+      totalObjects: 3,
+      totalSizeBytes: 14,
+      assets: [
+        { key: "assets/z.bin", size: 6, mtime: 1 },
+        { key: "other.bin", size: 3, mtime: 1 },
+        { key: "assets/a.bin", size: 5, mtime: 1 },
+      ],
+    });
+
+    await expect(storage.listSyncAssetKeys("assets/")).resolves.toEqual([
+      "assets/a.bin",
+      "assets/z.bin",
+    ]);
+    await expect(storage.getSyncAssetSize("assets/z.bin")).resolves.toBe(6);
+    await expect(
+      storage.readSyncAssetChunk("assets/z.bin", 2, 3),
+    ).resolves.toEqual(payload);
+    expect(details).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("NodeStorage vector index requests", () => {
   afterEach(() => {
     vi.restoreAllMocks();

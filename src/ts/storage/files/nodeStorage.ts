@@ -4,6 +4,10 @@ import { base64url, getKeypairStore, saveKeypairStore } from "../../util";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "./nodeS3Storage";
 import {
+  StorageSyncAssetReadError,
+  validateStorageSyncAssetChunkRange,
+} from "../runtime/storageSyncAssetReader";
+import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
   type NodeStorageSyncAssetChunkResult,
@@ -180,6 +184,11 @@ export class NodeStorage {
   private authValidatedAt = 0;
   private authValidationPromise: Promise<void> | null = null;
   private nodeProviderCapabilities: NodeProviderCapabilities | null = null;
+  private syncAssetSizeCache: {
+    expiresAt: number;
+    sizes: Map<string, number>;
+  } | null = null;
+  private syncAssetSizePromise: Promise<Map<string, number>> | null = null;
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
 
@@ -1353,6 +1362,104 @@ export class NodeStorage {
         `Bulk response completed ${completedFiles} of ${totalFiles} files`,
       );
     }
+  }
+
+  private async loadSyncAssetSizes(
+    force = false,
+  ): Promise<Map<string, number>> {
+    const now = Date.now();
+    if (
+      !force &&
+      this.syncAssetSizeCache &&
+      this.syncAssetSizeCache.expiresAt > now
+    ) {
+      return this.syncAssetSizeCache.sizes;
+    }
+    if (this.syncAssetSizePromise) return await this.syncAssetSizePromise;
+    this.syncAssetSizePromise = (async () => {
+      const details = await this.s3.getAssetDetails("active");
+      const sizes = new Map<string, number>();
+      for (const asset of details.assets ?? []) {
+        if (
+          typeof asset?.key !== "string" ||
+          !Number.isSafeInteger(asset.size) ||
+          asset.size < 0
+        )
+          continue;
+        sizes.set(asset.key, asset.size);
+      }
+      this.syncAssetSizeCache = { expiresAt: Date.now() + 30_000, sizes };
+      return sizes;
+    })();
+    try {
+      return await this.syncAssetSizePromise;
+    } finally {
+      this.syncAssetSizePromise = null;
+    }
+  }
+
+  async listSyncAssetKeys(prefix = "assets/"): Promise<string[]> {
+    const sizes = await this.loadSyncAssetSizes();
+    return [...sizes.keys()].filter((key) => key.startsWith(prefix)).sort();
+  }
+
+  async getSyncAssetSize(key: string): Promise<number> {
+    let sizes = await this.loadSyncAssetSizes();
+    if (!sizes.has(key)) sizes = await this.loadSyncAssetSizes(true);
+    const size = sizes.get(key);
+    if (size === undefined) {
+      throw new StorageSyncAssetReadError(
+        `Remote asset '${key}' was not found.`,
+        "asset_missing",
+      );
+    }
+    return size;
+  }
+
+  async readSyncAssetChunk(
+    key: string,
+    offset: number,
+    length: number,
+  ): Promise<Uint8Array> {
+    validateStorageSyncAssetChunkRange(offset, length);
+    const size = await this.getSyncAssetSize(key);
+    if (offset >= size) {
+      throw new StorageSyncAssetReadError(
+        `Asset '${key}' offset ${offset} is outside its ${size}-byte range.`,
+        "invalid_asset_range",
+      );
+    }
+    const expected = Math.min(length, size - offset);
+    const end = offset + expected - 1;
+    const hex = Buffer.from(key, "utf8").toString("hex");
+    const response = await this.apiClient.request(
+      `/api/read?path=${encodeURIComponent(hex)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          range: `bytes=${offset}-${end}`,
+          "risu-auth": await this.getCachedAuth(),
+        },
+      },
+    );
+    if (
+      response.status !== 206 &&
+      !(response.ok && offset === 0 && expected === size)
+    ) {
+      throw new StorageSyncAssetReadError(
+        `Remote asset range read failed (${response.status}).`,
+        "asset_read_failed",
+      );
+    }
+    const data = new Uint8Array(await response.arrayBuffer());
+    if (data.byteLength !== expected) {
+      throw new StorageSyncAssetReadError(
+        `Remote asset '${key}' changed while it was being read.`,
+        "asset_changed",
+      );
+    }
+    return data;
   }
 
   async keys(prefix = ""): Promise<string[]> {
