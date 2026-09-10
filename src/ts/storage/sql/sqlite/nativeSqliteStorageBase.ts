@@ -106,6 +106,14 @@ import {
   loadSqliteSettingValue,
 } from "@risuai/storage-sqlite/sqliteNodeValues";
 import {
+  listSqliteBotPresets,
+  listSqliteSettingKeys,
+  loadSqliteBotPreset,
+  loadSqliteModules,
+  loadSqlitePrompts,
+  loadSqliteSettingValues,
+} from "@risuai/storage-sqlite/sqliteDocumentQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "./sqliteStorageUtils";
@@ -1469,61 +1477,27 @@ export abstract class NativeSqliteStorageBase {
   }
 
   /**
-   * Reads several setting keys in one grouped query. Startup previously
-   * issued one bridge round trip per key (personas, personaPrompt,
-   * customModels, modules, plugins); this collapses them into a single
-   * native query on Android/Tauri.
+   * Reads several setting keys in one grouped query so native backends avoid
+   * one bridge round trip per startup setting.
    */
   async loadSettingKeys(keys: string[]): Promise<Map<string, unknown>> {
-    if (keys.length === 0) return new Map();
-    const rows = await this.selectRows(
-      `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
-              n.object_key, n.object_key_encoded, n.value_type, n.text_value,
-              n.encoded_text_value, n.number_value, n.boolean_value
-         FROM system_settings s
-         LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key
-        WHERE s.key IN (${keys.map(() => "?").join(",")})
-        ORDER BY s.key, n.node_id`,
-      [...keys],
+    return await loadSqliteSettingValues(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      keys,
     );
-    const grouped = this.rebuildGroupedNodeValues(rows, "setting_key");
-    const result = new Map<string, unknown>();
-    for (const key of keys) {
-      result.set(key, grouped.has(key) ? grouped.get(key) : undefined);
-    }
-    return result;
   }
 
   async listBotPresets(): Promise<BotPresetSummary[]> {
-    const rows = await this.selectRows<{
-      preset_id: string;
-      position: number;
-      name: string;
-      image: string;
-      api_type: string;
-      ai_model: string;
-      content_hash: string;
-    }>(
-      "SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position",
+    return await listSqliteBotPresets(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    return rows.map((row) => ({
-      id: row.preset_id,
-      position: Number(row.position),
-      name: row.name,
-      image: row.image,
-      apiType: row.api_type,
-      aiModel: row.ai_model,
-      hash: row.content_hash,
-    }));
   }
 
   async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    const row = await this.selectOne<{ data: string }>(
-      "SELECT data FROM bot_presets WHERE preset_id = ?",
-      [id],
+    return await loadSqliteBotPreset<botPreset>(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      id,
     );
-    if (!row) return null;
-    return { ...(JSON.parse(row.data) as botPreset), id };
   }
 
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
@@ -1538,48 +1512,15 @@ export abstract class NativeSqliteStorageBase {
   }
 
   async loadModules(): Promise<RisuModule[]> {
-    const rows = await this.selectRows<{ module_id: string }>(
-      "SELECT module_id FROM module_records ORDER BY position",
+    return await loadSqliteModules<RisuModule>(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (rows.length === 0) {
-      return (
-        ((await this.loadSettingValue("modules")) as
-          RisuModule[] | undefined) ?? []
-      );
-    }
-    const nodeRows = await this.selectRows(
-      `SELECT module_id, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-         FROM module_extension_nodes
-        ORDER BY module_id, node_id`,
-    );
-    const values = this.rebuildGroupedNodeValues(nodeRows, "module_id");
-    return rows.map(({ module_id }) => ({
-      ...(values.get(module_id) as RisuModule),
-      id: module_id,
-    }));
   }
 
   async loadPrompts(): Promise<Record<string, any>> {
-    // Single grouped query instead of one bridge round trip per prompt key.
-    const rows = await this.selectRows(
-      `SELECT s.key AS setting_key, n.node_id, n.parent_node_id, n.node_order,
-              n.object_key, n.object_key_encoded, n.value_type, n.text_value,
-              n.encoded_text_value, n.number_value, n.boolean_value
-         FROM system_settings s
-         LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key
-        WHERE s.domain = 'prompt'
-        ORDER BY s.key, n.node_id`,
+    return await loadSqlitePrompts(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    const prompts: Record<string, any> = {};
-    for (const [key, value] of this.rebuildGroupedNodeValues(
-      rows,
-      "setting_key",
-    )) {
-      prompts[key] = value;
-    }
-    return prompts;
   }
 
   async loadScripts(): Promise<customscript[]> {
@@ -1619,11 +1560,9 @@ export abstract class NativeSqliteStorageBase {
   }
 
   async listSettingKeys(): Promise<string[]> {
-    return (
-      await this.selectRows<{ key: string }>(
-        "SELECT key FROM system_settings ORDER BY key",
-      )
-    ).map((row) => row.key);
+    return await listSqliteSettingKeys(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
 
   async loadSettingKey(key: string): Promise<any> {

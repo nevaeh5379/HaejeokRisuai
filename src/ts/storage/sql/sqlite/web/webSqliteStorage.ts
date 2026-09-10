@@ -108,6 +108,14 @@ import {
   loadSqliteSettingValue,
 } from "@risuai/storage-sqlite/sqliteNodeValues";
 import {
+  listSqliteBotPresets,
+  listSqliteSettingKeys,
+  loadSqliteBotPreset,
+  loadSqliteModules,
+  loadSqlitePrompts,
+  loadSqliteSettingValues,
+} from "@risuai/storage-sqlite/sqliteDocumentQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "../sqliteStorageUtils";
@@ -1348,28 +1356,18 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
   async listBotPresets(): Promise<BotPresetSummary[]> {
-    return (
-      await this.selectRows(
-        "SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position",
-      )
-    ).map((row) => ({
-      id: row.preset_id as string,
-      position: Number(row.position),
-      name: row.name as string,
-      image: row.image as string,
-      apiType: row.api_type as string,
-      aiModel: row.ai_model as string,
-      hash: row.content_hash as string,
-    }));
-  }
-  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    const row = await this.selectOne(
-      "SELECT data FROM bot_presets WHERE preset_id = ?",
-      [id],
+    return await listSqliteBotPresets(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (!row) return null;
-    return { ...(JSON.parse(row.data as string) as botPreset), id };
   }
+
+  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
+    return await loadSqliteBotPreset<botPreset>(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      id,
+    );
+  }
+
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
     return (
       ((await this.loadSettingValue("loreBook")) as
@@ -1377,51 +1375,17 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
   async loadModules(): Promise<RisuModule[]> {
-    const rows = await this.selectRows(
-      "SELECT module_id FROM module_records ORDER BY position",
+    return await loadSqliteModules<RisuModule>(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (rows.length === 0) {
-      return (
-        ((await this.loadSettingValue("modules")) as
-          RisuModule[] | undefined) ?? []
-      );
-    }
-    const nodeRows = await this.selectRows(
-      `SELECT module_id, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-         FROM module_extension_nodes
-        ORDER BY module_id, node_id`,
-    );
-    const values = this.rebuildGroupedNodeValues(nodeRows, "module_id");
-    return rows.map((row) => {
-      const id = row.module_id as string;
-      return { ...(values.get(id) as RisuModule), id };
-    });
   }
+
   async loadPrompts(): Promise<Record<string, any>> {
-    const rows = await this.selectRows(
-      "SELECT key FROM system_settings WHERE domain = 'prompt'",
+    return await loadSqlitePrompts(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (rows.length === 0) return {};
-    const nodeRows = await this.selectRows(
-      `SELECT setting_key, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-       FROM setting_extension_nodes
-       WHERE setting_key IN (SELECT key FROM system_settings WHERE domain = 'prompt')
-       ORDER BY setting_key, node_id`,
-    );
-    const values = this.rebuildGroupedNodeValues(nodeRows, "setting_key");
-    const prompts: Record<string, any> = {};
-    for (const row of rows) {
-      const key = row.key as string;
-      prompts[key] = values.has(key)
-        ? values.get(key)
-        : await this.loadSettingValue(key);
-    }
-    return prompts;
   }
+
   async loadScripts(): Promise<customscript[]> {
     return (
       ((await this.loadSettingValue("globalscript")) as
@@ -1458,11 +1422,9 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async listSettingKeys(): Promise<string[]> {
-    return (
-      await this.selectRows<{ key: string }>(
-        "SELECT key FROM system_settings ORDER BY key",
-      )
-    ).map((row) => row.key);
+    return await listSqliteSettingKeys(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
 
   async loadSettingKey(key: string): Promise<any> {
