@@ -3591,30 +3591,36 @@ class PostgresStorage extends SqlStorageBase {
       let promptToggles = [];
       let promptItems = [];
       if (ids.length > 0) {
-        [attributes, generations, promptInfos, promptToggles, promptItems] = (
-          await Promise.all([
-            client.query(
-              "SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key",
-              [chatId, ids],
-            ),
-            client.query(
-              "SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])",
-              [chatId, ids],
-            ),
-            client.query(
-              "SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])",
-              [chatId, ids],
-            ),
-            client.query(
-              "SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
-              [chatId, ids],
-            ),
-            client.query(
-              "SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
-              [chatId, ids],
-            ),
-          ])
-        ).map((result) => result.rows);
+        attributes = (
+          await client.query(
+            "SELECT * FROM chat.message_attributes WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, key",
+            [chatId, ids],
+          )
+        ).rows;
+        generations = (
+          await client.query(
+            "SELECT * FROM chat.message_generation WHERE chat_id = $1 AND message_id = ANY($2::text[])",
+            [chatId, ids],
+          )
+        ).rows;
+        promptInfos = (
+          await client.query(
+            "SELECT * FROM chat.message_prompt_info WHERE chat_id = $1 AND message_id = ANY($2::text[])",
+            [chatId, ids],
+          )
+        ).rows;
+        promptToggles = (
+          await client.query(
+            "SELECT * FROM chat.message_prompt_toggles WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
+            [chatId, ids],
+          )
+        ).rows;
+        promptItems = (
+          await client.query(
+            "SELECT * FROM chat.message_prompt_items WHERE chat_id = $1 AND message_id = ANY($2::text[]) ORDER BY message_id, position",
+            [chatId, ids],
+          )
+        ).rows;
       }
       const relations = {
         attributes: groupMessageRows(attributes),

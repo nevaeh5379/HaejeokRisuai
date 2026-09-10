@@ -67,6 +67,22 @@ describe("PresetStore active ownership", () => {
     expect(storage.loadBotPreset).toHaveBeenCalledTimes(1);
   });
 
+  it("refreshes the active preset document and summaries", async () => {
+    let remote = structuredClone(stored);
+    storage.loadBotPreset = vi.fn(async () => structuredClone(remote));
+    await presetStore.init(storage);
+
+    remote = { ...remote, name: "Remote", mainPrompt: "remote prompt" };
+    const refreshed = await presetStore.refreshFromStorage();
+
+    expect(refreshed).toMatchObject({
+      name: "Remote",
+      mainPrompt: "remote prompt",
+    });
+    expect(storage.loadBotPreset).toHaveBeenCalledTimes(2);
+    expect(storage.commit).not.toHaveBeenCalled();
+  });
+
   it("rejects settings and other domain writes through the preset state", () => {
     for (const key of ["theme", "askRemoval", "modules", "characters"]) {
       expect(() => Reflect.set(presetStore.state, key, null)).toThrow(

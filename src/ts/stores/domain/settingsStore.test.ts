@@ -50,6 +50,22 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
 
+  it("keeps a pending local setting over a remote hydration", async () => {
+    settingsStore.init({ theme: "dark" } as any, mockStorage);
+    settingsStore.set("theme", "light" as any);
+
+    expect(settingsStore.hydrateRemoteSettingKey("theme", "cherry")).toBe(
+      false,
+    );
+    expect(settingsStore.state.theme).toBe("light");
+
+    await settingsStore.flush();
+    expect(committed.at(-1)?.root.upserts).toContainEqual({
+      key: "theme",
+      value: "light",
+    });
+  });
+
   it("hydrates deferred SQL domains without scheduling a write", async () => {
     mockStorage.loadLorebooks = vi.fn(async () => [
       { name: "Stored Lore", data: [{ key: "x", content: "y" }] },
@@ -588,6 +604,7 @@ describe("SettingsStore Reactivity and Persistence", () => {
       "modules",
       "enabledModules",
       "moduleFolders",
+      "moduleOrder",
       "activeBotPresetId",
       "botPresets",
       "botPresetsId",

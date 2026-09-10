@@ -41,10 +41,21 @@ function describeSqlCommitChange(payload) {
   const pluginStorageDeleteKeys = (
     payload?.pluginStorage?.deletes ?? []
   ).filter((key) => typeof key === "string" && key);
+  const presetUpserts = payload?.presets?.upserts ?? [];
+  const presetDeletes = payload?.presets?.deletes ?? [];
+  const moduleUpserts = payload?.modules?.upserts ?? [];
+  const moduleDeletes = payload?.modules?.deletes ?? [];
 
   return {
+    replaceAll: payload?.replaceAll === true,
     chatIds: [...chatIds],
     characterIds: [...characterIds],
+    charactersChanged: Boolean(
+      payload?.replaceAll ||
+      (payload?.characters?.length ?? 0) > 0 ||
+      (payload?.characterDeletes?.length ?? 0) > 0 ||
+      payload?.characterIds !== undefined,
+    ),
     rootUpsertKeys: [...new Set(rootUpsertKeys)],
     rootDeleteKeys: [...new Set(rootDeleteKeys)],
     rootChanged: Boolean(
@@ -53,6 +64,19 @@ function describeSqlCommitChange(payload) {
     pluginStorageUpsertKeys: [...new Set(pluginStorageUpsertKeys)],
     pluginStorageDeleteKeys: [...new Set(pluginStorageDeleteKeys)],
     pluginStorageCleared: payload?.pluginStorage?.clear === true,
+    presetsChanged: Boolean(
+      payload?.replaceAll ||
+      presetUpserts.length ||
+      presetDeletes.length ||
+      payload?.presets?.order !== undefined ||
+      payload?.presets?.activeId !== undefined,
+    ),
+    modulesChanged: Boolean(
+      payload?.replaceAll ||
+      moduleUpserts.length ||
+      moduleDeletes.length ||
+      payload?.modules?.order !== undefined,
+    ),
   };
 }
 

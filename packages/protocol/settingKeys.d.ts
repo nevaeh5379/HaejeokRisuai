@@ -81,6 +81,7 @@ export type ProtocolSettingKeys = {
     | "modules"
     | "enabledModules"
     | "moduleFolders"
+    | "moduleOrder"
     | "activeBotPresetId";
   PRESET_STORE_SETTING_KEYS:
     | "apiType"

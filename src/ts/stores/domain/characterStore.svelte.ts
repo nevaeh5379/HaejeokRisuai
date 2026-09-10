@@ -892,6 +892,77 @@ class CharacterStore
     });
   }
 
+  /**
+   * Replaces the lightweight character index after a remote commit while
+   * retaining hydrated objects already in use. Only changed, previously warm
+   * characters are re-hydrated; cold characters remain summaries.
+   */
+  async refreshRemoteCharacters(changedIds: readonly string[]): Promise<void> {
+    const storage = this.storage || (await getSqlStorage());
+    await this.flush();
+    if (this.hasPendingWrites()) {
+      throw new Error(
+        "Cannot refresh characters while local changes are pending",
+      );
+    }
+
+    for (const id of changedIds) {
+      await this.characterDetailPromises.get(id);
+    }
+    const startup = await storage.loadStartupData();
+    if (!startup || startup.status !== "ready") {
+      throw new Error(
+        "Cannot refresh characters from an empty remote database",
+      );
+    }
+
+    const changed = new Set(changedIds);
+    const currentById = new Map(
+      this.characters.map((character) => [character.chaId, character] as const),
+    );
+    const selectedCharacterId = this.characters[this.selectedId]?.chaId;
+    const warmChangedIds: string[] = [];
+
+    this.arrayDispose?.();
+    this.arrayDispose = null;
+    this.activeDispose?.();
+    this.activeDispose = null;
+
+    const nextCharacters = startup.characters.map((summary) => {
+      summary.chaId ||= uuidv4();
+      const current = currentById.get(summary.chaId);
+      if (!current || current.detailsLoaded === false) return summary;
+
+      const chats = current.chats;
+      const chatPage = current.chatPage;
+      Object.assign(current, summary, {
+        chats,
+        chatPage,
+        detailsLoaded: true,
+      });
+      if (changed.has(summary.chaId)) warmChangedIds.push(summary.chaId);
+      return current;
+    });
+
+    this.characters = nextCharacters;
+    this.selectedId = selectedCharacterId
+      ? this.characters.findIndex(
+          (character) => character.chaId === selectedCharacterId,
+        )
+      : -1;
+    this.charIdsSnapshot = this.characters
+      .map((character) => character.chaId)
+      .join(",");
+    this.hydratedCharacterLru = this.hydratedCharacterLru.filter((id) =>
+      this.characters.some((character) => character.chaId === id),
+    );
+    this.observeArray();
+    this.observeActive();
+
+    // Sequential loads cap temporary decoded data on low-memory devices.
+    for (const id of warmChangedIds) await this.ensureCharacterDetails(id);
+  }
+
   async ensureCharacterDetails(chaId: string): Promise<void> {
     this.cancelInactiveCharacterDetailRelease();
     if (this.characterDetailPromises.has(chaId)) {

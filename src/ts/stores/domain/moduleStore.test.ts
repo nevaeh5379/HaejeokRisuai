@@ -22,9 +22,30 @@ describe("moduleStore ordering and folder positions", () => {
     moduleStore.resetForTesting();
   });
 
+  it("refreshes module-owned state from remote storage", async () => {
+    let modules: RisuModule[] = [{ id: "m1", name: "Before", description: "" }];
+    mockStorage.loadModules = vi.fn(async () => structuredClone(modules));
+    mockStorage.loadSettingKey = vi.fn(async (key: string) =>
+      key === "enabledModules" ? ["m1"] : [],
+    );
+    await moduleStore.init(mockStorage);
+
+    modules = [{ id: "m1", name: "After", description: "" }];
+    await moduleStore.refreshFromStorage();
+
+    expect(moduleStore.getById("m1")?.name).toBe("After");
+    expect(moduleStore.enabledModules).toEqual(["m1"]);
+    expect(mockStorage.commit).not.toHaveBeenCalled();
+  });
+
   it("generates default root order when moduleOrder is missing (legacy migration)", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
-    const mod2: RisuModule = { id: "m2", name: "Module 2", description: "", folderId: "f1" };
+    const mod2: RisuModule = {
+      id: "m2",
+      name: "Module 2",
+      description: "",
+      folderId: "f1",
+    };
     const mod3: RisuModule = { id: "m3", name: "Module 3", description: "" };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
@@ -113,8 +134,18 @@ describe("moduleStore ordering and folder positions", () => {
   });
 
   it("allows reordering modules inside a folder", async () => {
-    const mod1: RisuModule = { id: "m1", name: "Module 1", description: "", folderId: "f1" };
-    const mod2: RisuModule = { id: "m2", name: "Module 2", description: "", folderId: "f1" };
+    const mod1: RisuModule = {
+      id: "m1",
+      name: "Module 1",
+      description: "",
+      folderId: "f1",
+    };
+    const mod2: RisuModule = {
+      id: "m2",
+      name: "Module 2",
+      description: "",
+      folderId: "f1",
+    };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
     mockStorage.loadModules = vi.fn(async () => [mod1, mod2]);
@@ -134,7 +165,12 @@ describe("moduleStore ordering and folder positions", () => {
 
   it("handles folder deletion by restoring contained modules to root at the folder's position", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
-    const mod2: RisuModule = { id: "m2", name: "Module 2", description: "", folderId: "f1" };
+    const mod2: RisuModule = {
+      id: "m2",
+      name: "Module 2",
+      description: "",
+      folderId: "f1",
+    };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
 
     mockStorage.loadModules = vi.fn(async () => [mod1, mod2]);
@@ -202,8 +238,18 @@ describe("moduleStore ordering and folder positions", () => {
 
   it("moves a module into a specific folder index, between folders, and back to root next to folder", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
-    const mod2: RisuModule = { id: "m2", name: "Module 2", description: "", folderId: "f1" };
-    const mod3: RisuModule = { id: "m3", name: "Module 3", description: "", folderId: "f1" };
+    const mod2: RisuModule = {
+      id: "m2",
+      name: "Module 2",
+      description: "",
+      folderId: "f1",
+    };
+    const mod3: RisuModule = {
+      id: "m3",
+      name: "Module 3",
+      description: "",
+      folderId: "f1",
+    };
     const folder1: ModuleFolder = { id: "f1", name: "Folder 1", color: "" };
     const folder2: ModuleFolder = { id: "f2", name: "Folder 2", color: "" };
 
@@ -219,13 +265,20 @@ describe("moduleStore ordering and folder positions", () => {
     // 1. Move m1 from root into folder1 at index 1 (between m2 and m3)
     await moduleStore.moveModule("m1", "f1", 1);
     expect(moduleStore.getById("m1")?.folderId).toBe("f1");
-    expect(moduleStore.modulesInFolder("f1").map((m) => m.id)).toEqual(["m2", "m1", "m3"]);
+    expect(moduleStore.modulesInFolder("f1").map((m) => m.id)).toEqual([
+      "m2",
+      "m1",
+      "m3",
+    ]);
     expect(moduleStore.order).toEqual(["folder:f1", "folder:f2"]);
 
     // 2. Move m1 from folder1 into folder2 at index 0
     await moduleStore.moveModule("m1", "f2", 0);
     expect(moduleStore.getById("m1")?.folderId).toBe("f2");
-    expect(moduleStore.modulesInFolder("f1").map((m) => m.id)).toEqual(["m2", "m3"]);
+    expect(moduleStore.modulesInFolder("f1").map((m) => m.id)).toEqual([
+      "m2",
+      "m3",
+    ]);
     expect(moduleStore.modulesInFolder("f2").map((m) => m.id)).toEqual(["m1"]);
 
     // 3. Move m1 out of folder2 without targetIndex -> should be placed right next to folder:f2
@@ -249,7 +302,13 @@ describe("moduleStore ordering and folder positions", () => {
     moduleStore.upsertModules([mod2]);
 
     expect(moduleStore.order).toEqual(["m1", "m2"]);
-    expect(moduleStore.getRootItems().map((item) => item.type === "module" ? item.module.id : item.folder.id)).toEqual(["m1", "m2"]);
+    expect(
+      moduleStore
+        .getRootItems()
+        .map((item) =>
+          item.type === "module" ? item.module.id : item.folder.id,
+        ),
+    ).toEqual(["m1", "m2"]);
 
     await moduleStore.flush();
     expect(committed.at(-1)?.root.upserts).toContainEqual({
@@ -269,8 +328,9 @@ describe("moduleStore ordering and folder positions", () => {
     await moduleStore.init(mockStorage);
     moduleStore.order.push("missing-module");
 
-    expect(moduleStore.getRootItems()).toEqual([{ type: "module", module: mod1 }]);
+    expect(moduleStore.getRootItems()).toEqual([
+      { type: "module", module: mod1 },
+    ]);
     expect(moduleStore.order).toEqual(["m1", "missing-module"]);
   });
 });
-

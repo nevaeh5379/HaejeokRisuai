@@ -394,6 +394,17 @@ class SettingsStore
     }
   }
 
+  /**
+   * Applies a value announced by another client without discarding an edit
+   * that is still queued on this device. Local pending state is committed
+   * against the advanced server revision and therefore remains last-writer.
+   */
+  hydrateRemoteSettingKey(key: string, value: unknown, exists = true): boolean {
+    if (this.dirtyKeys.has(key) || this.pendingDeletes.has(key)) return false;
+    this.hydrateSettingKey(key, value, exists);
+    return true;
+  }
+
   delete(key: SettingsKey): void {
     const keyStr = String(key);
     assertPublicSettingsKey(keyStr);

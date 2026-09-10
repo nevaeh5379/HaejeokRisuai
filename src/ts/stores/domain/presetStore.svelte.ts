@@ -271,6 +271,50 @@ class PresetStore
       this.error = error instanceof Error ? error.message : String(error);
     }
   }
+
+  async refreshFromStorage(): Promise<StoredBotPreset | undefined> {
+    const storage = this.storage;
+    if (!storage) return undefined;
+    await this.flush();
+    if (this.hasPendingWrites()) {
+      throw new Error("Cannot refresh presets while local changes are pending");
+    }
+
+    this.listStatus = "loading";
+    this.activeStatus = "loading";
+    this.error = null;
+    try {
+      const [summaries, storedActiveId] = await Promise.all([
+        storage.listBotPresets(),
+        storage.loadSettingKey("activeBotPresetId"),
+      ]);
+      if (summaries.length === 0) {
+        throw new Error("Remote storage has no bot preset");
+      }
+      const activeId =
+        typeof storedActiveId === "string" &&
+        summaries.some((summary) => summary.id === storedActiveId)
+          ? storedActiveId
+          : summaries.some((summary) => summary.id === this.activeId)
+            ? this.activeId
+            : summaries[0].id;
+
+      this.presetCache.clear();
+      this.summaries = summaries;
+      this.activeId = activeId;
+      const activePreset = await this.load(activeId, true);
+      this.cache.delete(activeId);
+      this.listStatus = "ready";
+      this.activeStatus = "ready";
+      return activePreset;
+    } catch (error) {
+      this.listStatus = "error";
+      this.activeStatus = "error";
+      this.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  }
+
   async savePreset(preset: botPreset, position?: number): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
     const id =

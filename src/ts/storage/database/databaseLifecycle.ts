@@ -30,5 +30,7 @@ export function installStartupData(
     unloadedKeys: startup.deferredSettingKeys ?? [],
     hydrateSettingKey: (key, value, exists) =>
       settingsStore.hydrateSettingKey(key, value, exists),
+    hydrateRemoteSettingKey: (key, value, exists) =>
+      settingsStore.hydrateRemoteSettingKey(key, value, exists),
   });
 }

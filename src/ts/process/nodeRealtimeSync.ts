@@ -7,6 +7,15 @@ import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
+import { moduleStore } from "../stores/domain/moduleStore.svelte";
+import { personaStore } from "../stores/domain/personaStore.svelte";
+import { presetStore } from "../stores/domain/presetStore.svelte";
+import {
+  PRESET_STORE_SETTING_KEYS,
+  SETTINGS_STORE_EXCLUDED_KEYS,
+  getSqlDeferredDomain,
+} from "../storage/sql/sqlDeferredSettings";
+import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
@@ -15,22 +24,10 @@ import {
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
 } from "./chatRuntimeState";
-
-type DatabaseChangeEvent = {
-  revision?: number;
-  action?: string;
-  sourceClientId?: string | null;
-  chatIds?: string[];
-  characterIds?: string[];
-  rootUpsertKeys?: string[];
-  rootDeleteKeys?: string[];
-  rootChanged?: boolean;
-  pluginStorageUpsertKeys?: string[];
-  pluginStorageDeleteKeys?: string[];
-  pluginStorageCleared?: boolean;
-  pluginName?: string;
-  pluginEnabled?: boolean;
-};
+import {
+  NodeRealtimeChangeQueue,
+  type DatabaseChangeEvent,
+} from "./nodeRealtimeChangeQueue";
 
 type ModelJobEvent = {
   phase?: "created" | "terminal";
@@ -61,7 +58,28 @@ let streamController: AbortController | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastEventId: number | null = null;
 let resyncReloadScheduled = false;
+let databaseChangeQueue: NodeRealtimeChangeQueue | null = null;
 const activeModelJobsByChat = new Map<string, string>();
+
+const PERSONA_ROOT_KEYS = new Set([
+  "personas",
+  "selectedPersona",
+  "username",
+  "userIcon",
+  "userNote",
+  "personaPrompt",
+]);
+const MODULE_ROOT_KEYS = new Set([
+  "modules",
+  "enabledModules",
+  "moduleFolders",
+  "moduleOrder",
+]);
+const PRESET_ROOT_KEYS = new Set<string>([
+  "activeBotPresetId",
+  ...PRESET_STORE_SETTING_KEYS,
+]);
+const EXCLUDED_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
 function scheduleFullResync(): void {
   if (resyncReloadScheduled) return;
@@ -69,65 +87,92 @@ function scheduleFullResync(): void {
   queueMicrotask(() => window.location.reload());
 }
 
+function uniqueStrings(values: readonly (string | undefined)[]): string[] {
+  return [
+    ...new Set(values.filter((value): value is string => Boolean(value))),
+  ];
+}
+
+async function loadSettingValues(
+  storage: NodeSqlStorage,
+  keys: readonly string[],
+): Promise<Map<string, unknown>> {
+  const values = new Map<string, unknown>();
+  for (let offset = 0; offset < keys.length; offset += 4) {
+    const batch = keys.slice(offset, offset + 4);
+    const loaded = await Promise.all(
+      batch.map(
+        async (key) => [key, await storage.loadSettingKey(key)] as const,
+      ),
+    );
+    for (const [key, value] of loaded) values.set(key, value);
+  }
+  return values;
+}
+
 async function applyDatabaseChange(
   storage: NodeSqlStorage,
   change: DatabaseChangeEvent,
 ): Promise<void> {
-  if (Number.isSafeInteger(change.revision)) {
-    storage.applyRemoteRevision(change.revision!);
+  if (change.replaceAll) {
+    scheduleFullResync();
+    return;
   }
-  if (change.sourceClientId === storage.getClientId()) return;
 
-  const characterIds = Array.isArray(change.characterIds)
-    ? [...new Set(change.characterIds.filter(Boolean))]
-    : [];
-  const chatIds = Array.isArray(change.chatIds)
-    ? [...new Set(change.chatIds.filter(Boolean))]
-    : [];
-  const rootUpsertKeys = Array.isArray(change.rootUpsertKeys)
-    ? [...new Set(change.rootUpsertKeys.filter(Boolean))]
-    : [];
-  const rootDeleteKeys = Array.isArray(change.rootDeleteKeys)
-    ? [...new Set(change.rootDeleteKeys.filter(Boolean))]
-    : [];
-  const pluginStorageUpsertKeys = Array.isArray(change.pluginStorageUpsertKeys)
-    ? [...new Set(change.pluginStorageUpsertKeys.filter(Boolean))]
-    : [];
-  const pluginStorageDeleteKeys = Array.isArray(change.pluginStorageDeleteKeys)
-    ? [...new Set(change.pluginStorageDeleteKeys.filter(Boolean))]
-    : [];
+  const characterIds = uniqueStrings(change.characterIds ?? []);
+  const chatIds = uniqueStrings(change.chatIds ?? []);
+  const rootUpsertKeys = uniqueStrings(change.rootUpsertKeys ?? []);
+  const rootDeleteKeys = uniqueStrings(change.rootDeleteKeys ?? []);
+  const rootKeys = uniqueStrings([...rootUpsertKeys, ...rootDeleteKeys]);
+  const pluginStorageUpsertKeys = uniqueStrings(
+    change.pluginStorageUpsertKeys ?? [],
+  );
+  const pluginStorageDeleteKeys = uniqueStrings(
+    change.pluginStorageDeleteKeys ?? [],
+  );
+
+  const personaChanged = rootKeys.some((key) => PERSONA_ROOT_KEYS.has(key));
+  const modulesChanged =
+    change.modulesChanged || rootKeys.some((key) => MODULE_ROOT_KEYS.has(key));
+  const presetsChanged =
+    change.presetsChanged || rootKeys.some((key) => PRESET_ROOT_KEYS.has(key));
+  const deferredKeys = rootKeys.filter(
+    (key) => getSqlDeferredDomain(key) !== null && !PRESET_ROOT_KEYS.has(key),
+  );
+  const regularUpsertKeys = rootUpsertKeys.filter(
+    (key) =>
+      !EXCLUDED_SETTINGS_KEYS.has(key) &&
+      !PRESET_ROOT_KEYS.has(key) &&
+      getSqlDeferredDomain(key) === null &&
+      deferredSettingsLoader.isLoaded(key),
+  );
+  const regularDeleteKeys = rootDeleteKeys.filter(
+    (key) =>
+      !EXCLUDED_SETTINGS_KEYS.has(key) &&
+      !PRESET_ROOT_KEYS.has(key) &&
+      getSqlDeferredDomain(key) === null &&
+      deferredSettingsLoader.isLoaded(key),
+  );
 
   if (
-    change.action === "plugin-toggle" &&
-    typeof change.pluginName === "string" &&
-    typeof change.pluginEnabled === "boolean"
+    change.rootChanged &&
+    rootKeys.length === 0 &&
+    !personaChanged &&
+    !modulesChanged &&
+    !presetsChanged
   ) {
-    if (deferredSettingsLoader.isLoaded("plugins")) {
-      settingsStore.hydrate((state) => {
-        const plugin = state.plugins?.find(
-          (candidate) => candidate?.name === change.pluginName,
-        );
-        if (plugin) plugin.enabled = change.pluginEnabled;
-      });
-    }
-    try {
-      const { loadPlugins } = await import("../plugins/plugins.svelte");
-      await loadPlugins();
-    } catch (error) {
-      console.warn("[NodeRealtimeSync] failed to apply plugin toggle", error);
-    }
+    scheduleFullResync();
+    return;
   }
 
-  const rootValues = await Promise.all(
-    rootUpsertKeys.map(
-      async (key) => [key, await storage.loadSettingKey(key)] as const,
-    ),
-  );
+  const rootValues = await loadSettingValues(storage, regularUpsertKeys);
   for (const [key, value] of rootValues) {
-    settingsStore.hydrateSettingKey(key, value, value !== undefined);
+    settingsStore.hydrateRemoteSettingKey(key, value, value !== undefined);
   }
-  for (const key of rootDeleteKeys)
-    settingsStore.hydrateSettingKey(key, undefined, false);
+  for (const key of regularDeleteKeys) {
+    settingsStore.hydrateRemoteSettingKey(key, undefined, false);
+  }
+  await deferredSettingsLoader.refreshLoadedKeys(deferredKeys);
 
   if (change.pluginStorageCleared) {
     settingsStore.hydrateRemotePluginCustomStorageClear();
@@ -135,28 +180,69 @@ async function applyDatabaseChange(
   for (const key of pluginStorageDeleteKeys) {
     settingsStore.hydrateRemotePluginCustomStorageDelete(key);
   }
-  const pluginStorageValues = await Promise.all(
-    pluginStorageUpsertKeys.map(
-      async (key) =>
-        [key, await storage.loadPluginCustomStorageKey(key)] as const,
-    ),
-  );
-  for (const [key, value] of pluginStorageValues) {
-    if (value === undefined)
-      settingsStore.hydrateRemotePluginCustomStorageDelete(key);
-    else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
+  for (let offset = 0; offset < pluginStorageUpsertKeys.length; offset += 4) {
+    const keys = pluginStorageUpsertKeys.slice(offset, offset + 4);
+    const pluginStorageValues = await Promise.all(
+      keys.map(
+        async (key) =>
+          [key, await storage.loadPluginCustomStorageKey(key)] as const,
+      ),
+    );
+    for (const [key, value] of pluginStorageValues) {
+      if (value === undefined)
+        settingsStore.hydrateRemotePluginCustomStorageDelete(key);
+      else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
+    }
   }
 
-  await Promise.all(
-    characterIds.map((characterId) =>
-      characterStore.ensureCharacterDetails(characterId),
-    ),
+  // Domain refreshes stay sequential so large persona/module/preset documents
+  // are never decoded at the same time on low-memory Android devices.
+  if (personaChanged) await personaStore.refreshFromStorage();
+  if (modulesChanged) await moduleStore.refreshFromStorage();
+  if (presetsChanged) {
+    const activePreset = await presetStore.refreshFromStorage();
+    if (activePreset) {
+      presetStore.replaceActivePresetState(
+        createPresetSettingsState(
+          {
+            ...settingsStore.getStateRecord(),
+            ...presetStore.getStateRecord(),
+          },
+          activePreset,
+        ),
+      );
+    }
+  }
+
+  if (
+    change.pluginsChanged ||
+    change.action === "plugin-toggle" ||
+    rootKeys.includes("plugins")
+  ) {
+    const { loadPlugins } = await import("../plugins/plugins.svelte");
+    await loadPlugins();
+  }
+
+  const characterIndexChanged =
+    change.charactersChanged ?? characterIds.length > 0;
+  if (characterIndexChanged) {
+    await characterStore.refreshRemoteCharacters(characterIds);
+  }
+
+  await characterStore.flush();
+  if (characterStore.hasPendingWrites()) {
+    throw new Error("Cannot refresh chats while local changes are pending");
+  }
+  const refreshableChatIds = chatIds.filter(
+    (chatId) => !isLocalChatGenerationActive(chatId),
   );
-  await Promise.all(
-    chatIds
-      .filter((chatId) => !isLocalChatGenerationActive(chatId))
-      .map((chatId) => characterStore.refreshChat(chatId)),
-  );
+  for (let offset = 0; offset < refreshableChatIds.length; offset += 2) {
+    await Promise.all(
+      refreshableChatIds
+        .slice(offset, offset + 2)
+        .map((chatId) => characterStore.refreshChat(chatId)),
+    );
+  }
 }
 
 async function applyModelJob(event: ModelJobEvent): Promise<void> {
@@ -292,7 +378,13 @@ async function dispatchEvent(
     return;
   }
   if (eventName === "database-change") {
-    await applyDatabaseChange(storage, data as DatabaseChangeEvent);
+    const change = data as DatabaseChangeEvent;
+    if (Number.isSafeInteger(change.revision)) {
+      storage.applyRemoteRevision(change.revision!);
+    }
+    if (change.sourceClientId !== storage.getClientId()) {
+      databaseChangeQueue?.enqueue(change);
+    }
     return;
   }
   if (!allowNodeFeatures) {
@@ -410,6 +502,11 @@ export async function initNodeRealtimeSync(): Promise<void> {
   if (!runtime.nodeApiClient) return;
   const apiClient = runtime.nodeApiClient;
   const allowNodeFeatures = isNodeServer;
+  databaseChangeQueue = new NodeRealtimeChangeQueue(
+    (change) => applyDatabaseChange(storage, change),
+    (error) =>
+      console.error("[NodeRealtimeSync] database refresh failed", error),
+  );
   started = true;
   window.addEventListener("online", () => {
     if (!streamController) void connect(storage, apiClient, allowNodeFeatures);

@@ -109,6 +109,16 @@ class ModuleStore
     });
   }
 
+  async refreshFromStorage(): Promise<void> {
+    const storage = this.storage;
+    if (!storage || !this.loaded) return;
+    await this.flush();
+    if (this.hasPendingWrites()) {
+      throw new Error("Cannot refresh modules while local changes are pending");
+    }
+    await this.init(storage);
+  }
+
   getById(id: string): RisuModule | undefined {
     return this.modules.find((module) => module.id === id);
   }
@@ -315,7 +325,10 @@ class ModuleStore
     await this.moveRootItem(idx, targetIdx);
   }
 
-  async moveRootModule(moduleId: string, direction: "up" | "down"): Promise<void> {
+  async moveRootModule(
+    moduleId: string,
+    direction: "up" | "down",
+  ): Promise<void> {
     const current = this.sanitizeRootOrder(this.moduleOrder);
     const idx = current.indexOf(moduleId);
     if (idx < 0) return;
@@ -324,7 +337,10 @@ class ModuleStore
     await this.moveRootItem(idx, targetIdx);
   }
 
-  async moveFolderModule(moduleId: string, direction: "up" | "down"): Promise<void> {
+  async moveFolderModule(
+    moduleId: string,
+    direction: "up" | "down",
+  ): Promise<void> {
     const module = this.getById(moduleId);
     if (!module || !module.folderId) return;
     const folderModules = this.modulesInFolder(module.folderId);
@@ -346,7 +362,10 @@ class ModuleStore
     }
   }
 
-  async reorderFolderModules(folderId: string, moduleIds: string[]): Promise<void> {
+  async reorderFolderModules(
+    folderId: string,
+    moduleIds: string[],
+  ): Promise<void> {
     const folderModules = this.modulesInFolder(folderId);
     const idSet = new Set(folderModules.map((m) => m.id));
     const orderedFolderModules: RisuModule[] = [];
