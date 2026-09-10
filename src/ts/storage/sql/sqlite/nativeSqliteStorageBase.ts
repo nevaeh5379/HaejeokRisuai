@@ -128,6 +128,13 @@ import {
   loadSqliteCharacterDocument,
 } from "@risuai/storage-sqlite/sqliteEntityQueries";
 import {
+  buildSqliteChatLoadPlan,
+  buildSqliteMessagePagePlan,
+  hydrateSqliteChatDocument,
+  sqliteChatLoadStatements,
+  type SqliteChatRow,
+} from "@risuai/storage-sqlite/sqliteChatQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "./sqliteStorageUtils";
@@ -615,16 +622,7 @@ export abstract class NativeSqliteStorageBase {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const requestedLimit = options?.messageLimit;
-    const limit =
-      requestedLimit === undefined
-        ? undefined
-        : normalizeSqliteLimit(requestedLimit);
-    // For a paged initial load, selecting the newest N rows does not require
-    // knowing the total first. That lets chat core metadata, extension nodes,
-    // count, and recent messages share one native query batch.
-    const messageQuery = buildBranchMessageRowsQuery(chatId, undefined, limit);
-    const totalQuery = buildBranchMessageCountQuery(chatId);
+    const plan = buildSqliteChatLoadPlan(chatId, options?.messageLimit);
     const [
       chatRows,
       chatNodeRows,
@@ -632,51 +630,20 @@ export abstract class NativeSqliteStorageBase {
       messageRows,
       activeBranchRows,
       branchCountRows,
-    ] = await this.selectRowSets([
-      {
-        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: `SELECT node_id, parent_node_id, node_order, object_key,
-                     object_key_encoded, value_type, text_value, encoded_text_value,
-                     number_value, boolean_value
-                FROM chat_extension_nodes
-               WHERE chat_id = ?
-               ORDER BY node_id`,
-        bind: [chatId],
-      },
-      totalQuery,
-      messageQuery,
-      {
-        sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-        bind: [chatId],
-      },
-    ]);
-    const chatRow = chatRows[0] as
-      | {
-          id: string;
-          name: string;
-          note: string;
-          folder_id: string | null;
-          last_message_time: number | null;
-        }
-      | undefined;
+    ] = await this.selectRowSets(sqliteChatLoadStatements(plan));
+    const chatRow = chatRows[0] as SqliteChatRow | undefined;
     if (!chatRow) return null;
     const activeBranch = activeBranchRows[0] as
-      { branch_id: string } | undefined;
+      | { branch_id: string }
+      | undefined;
     const branchCount = Number(
       (branchCountRows[0] as { total?: number } | undefined)?.total ?? 0,
     );
-    const chatData = (
+    const extension = (
       chatNodeRows.length ? rebuildRelationalValue(chatNodeRows) : {}
-    ) as any;
+    ) as Record<string, unknown>;
     if (
-      await this.migrateLegacyBranchGraphIfNeeded(chatId, chatData, branchCount)
+      await this.migrateLegacyBranchGraphIfNeeded(chatId, extension, branchCount)
     ) {
       return this.loadChat(chatId, options);
     }
@@ -684,25 +651,16 @@ export abstract class NativeSqliteStorageBase {
       await this.ensureBranchGraph(chatId);
       return this.loadChat(chatId, options);
     }
-    chatData.id = chatRow.id;
-    chatData.name = chatRow.name ?? "";
-    chatData.note = chatRow.note ?? "";
-    chatData.folderId = chatRow.folder_id ?? undefined;
-    chatData.lastDate = chatRow.last_message_time ?? undefined;
-    chatData.activeBranchId = activeBranch?.branch_id;
-    if (activeBranch) delete chatData.branchState;
-
     const total = Number(
       (totalRows[0] as { total?: number } | undefined)?.total ?? 0,
     );
-    chatData.message = rebuildMessageRows(messageRows);
-    const offset = Math.max(0, total - chatData.message.length);
-    chatData.messageOffset = offset;
-    chatData.messageTotal = total;
-    chatData.messagesFullyLoaded = offset === 0;
-    chatData.messagesLoaded = true;
-    chatData.detailsLoaded = true;
-    return chatData;
+    return hydrateSqliteChatDocument(
+      chatRow,
+      extension,
+      rebuildMessageRows(messageRows),
+      total,
+      activeBranch.branch_id,
+    ) as unknown as Chat;
   }
 
   async loadChatMessages(
@@ -730,25 +688,19 @@ export abstract class NativeSqliteStorageBase {
       totalQuery.sql,
       totalQuery.bind,
     );
-    const total = Number(totalRow?.total ?? 0);
-    const end = normalizeSqlitePageEnd(before, total);
-    const normalizedLimit = normalizeSqliteLimit(limit);
-    const offset = Math.max(0, end - normalizedLimit);
-    const pageQuery = buildBranchMessageRowsQuery(
+    const page = buildSqliteMessagePagePlan(
       chatId,
-      undefined,
-      end - offset,
-      "full",
-      offset,
-    );
-    const messages = rebuildMessageRows(
-      await this.selectRows(pageQuery.sql, pageQuery.bind),
+      before,
+      Number(totalRow?.total ?? 0),
+      limit,
     );
     return {
-      messages,
-      offset,
-      total,
-      hasMore: offset > 0,
+      messages: rebuildMessageRows(
+        await this.selectRows(page.statement.sql, page.statement.bind),
+      ),
+      offset: page.offset,
+      total: page.total,
+      hasMore: page.hasMore,
     };
   }
 

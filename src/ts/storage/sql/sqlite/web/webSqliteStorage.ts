@@ -129,6 +129,13 @@ import {
   loadSqliteCharacterDocument,
 } from "@risuai/storage-sqlite/sqliteEntityQueries";
 import {
+  buildSqliteChatLoadPlan,
+  buildSqliteMessagePagePlan,
+  hydrateSqliteChatDocument,
+  sqliteChatLoadStatements,
+  type SqliteChatRow,
+} from "@risuai/storage-sqlite/sqliteChatQueries";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "../sqliteStorageUtils";
@@ -630,17 +637,7 @@ export class WebSqliteStorage implements ISqlStorage {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const requestedLimit = options?.messageLimit;
-    const limit =
-      requestedLimit === undefined
-        ? undefined
-        : normalizeSqliteLimit(requestedLimit);
-    const messageStatement = buildBranchMessageRowsQuery(
-      chatId,
-      undefined,
-      limit,
-    );
-    const totalStatement = buildBranchMessageCountQuery(chatId);
+    const plan = buildSqliteChatLoadPlan(chatId, options?.messageLimit);
     const [
       chatResult,
       nodeResult,
@@ -649,61 +646,37 @@ export class WebSqliteStorage implements ISqlStorage {
       activeBranchResult,
       branchCountResult,
     ] = await this.selectBatchResults([
-      {
-        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: `SELECT node_id, parent_node_id, node_order, object_key,
-                       object_key_encoded, value_type, text_value, encoded_text_value,
-                       number_value, boolean_value
-                FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
-        bind: [chatId],
-        transform: "relational",
-      },
-      totalStatement,
-      {
-        ...messageStatement,
-        transform: "messages",
-      },
-      {
-        sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-        bind: [chatId],
-      },
+      plan.chat,
+      { ...plan.extension, transform: "relational" },
+      plan.total,
+      { ...plan.messages, transform: "messages" },
+      plan.activeBranch,
+      plan.branchCount,
     ]);
-    const cr = chatResult.rows?.[0];
-    if (!cr) return null;
+    const chatRow = chatResult.rows?.[0] as SqliteChatRow | undefined;
+    if (!chatRow) return null;
     const activeBranch = activeBranchResult.rows?.[0] as
-      { branch_id: string } | undefined;
+      | { branch_id: string }
+      | undefined;
     const branchCount = Number(branchCountResult.rows?.[0]?.total ?? 0);
-    const cd = (nodeResult.value ?? {}) as any;
-    if (await this.migrateLegacyBranchGraphIfNeeded(chatId, cd, branchCount)) {
+    const extension = (nodeResult.value ?? {}) as Record<string, unknown>;
+    if (
+      await this.migrateLegacyBranchGraphIfNeeded(chatId, extension, branchCount)
+    ) {
       return this.loadChat(chatId, options);
     }
     if (!activeBranch) {
       await this.ensureBranchGraph(chatId);
       return this.loadChat(chatId, options);
     }
-    cd.id = cr.id;
-    cd.name = (cr.name as string) ?? "";
-    cd.note = (cr.note as string) ?? "";
-    cd.folderId = (cr.folder_id as string) ?? undefined;
-    cd.lastDate = (cr.last_message_time as number) ?? undefined;
-    cd.activeBranchId = activeBranch?.branch_id;
-    if (activeBranch) delete cd.branchState;
     const total = Number(totalResult.rows?.[0]?.total ?? 0);
-    cd.message = (messageResult.value ?? []) as Message[];
-    const offset = Math.max(0, total - cd.message.length);
-    cd.messageOffset = offset;
-    cd.messageTotal = total;
-    cd.messagesFullyLoaded = offset === 0;
-    cd.messagesLoaded = true;
-    cd.detailsLoaded = true;
-    return cd;
+    return hydrateSqliteChatDocument(
+      chatRow,
+      extension,
+      (messageResult.value ?? []) as Message[],
+      total,
+      activeBranch.branch_id,
+    ) as unknown as Chat;
   }
 
   async loadChatMessages(
@@ -734,25 +707,20 @@ export class WebSqliteStorage implements ISqlStorage {
       totalStatement.sql,
       totalStatement.bind,
     );
-    const total = Number(totalRow?.total ?? 0);
-    const end = normalizeSqlitePageEnd(before, total);
-    const normalizedLimit = normalizeSqliteLimit(limit);
-    const offset = Math.max(0, end - normalizedLimit);
-    const pageQuery = buildBranchMessageRowsQuery(
+    const page = buildSqliteMessagePagePlan(
       chatId,
-      undefined,
-      end - offset,
-      "full",
-      offset,
+      before,
+      Number(totalRow?.total ?? 0),
+      limit,
     );
     const [result] = await this.selectBatchResults([
-      { ...pageQuery, transform: "messages" },
+      { ...page.statement, transform: "messages" },
     ]);
     return {
       messages: (result.value ?? []) as Message[],
-      offset,
-      total,
-      hasMore: offset > 0,
+      offset: page.offset,
+      total: page.total,
+      hasMore: page.hasMore,
     };
   }
 
