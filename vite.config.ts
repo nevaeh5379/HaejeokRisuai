@@ -269,6 +269,7 @@ export default defineConfig(({command, mode}) => {
         '@risuai/protocol':resolve(process.cwd(), 'packages/protocol'),
         '@risuai/backup-core':resolve(process.cwd(), 'packages/backup-core'),
         '@risuai/storage-remote':resolve(process.cwd(), 'packages/storage-remote/src'),
+        '@risuai/storage-sqlite':resolve(process.cwd(), 'packages/storage-sqlite/src'),
       }
     },
     worker: {

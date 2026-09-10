@@ -12,6 +12,7 @@ export default defineConfig({
       '@risuai/chat-core': resolve(process.cwd(), 'packages/chat-core'),
       '@risuai/protocol': resolve(process.cwd(), 'packages/protocol'),
       '@risuai/storage-remote': resolve(process.cwd(), 'packages/storage-remote/src'),
+      '@risuai/storage-sqlite': resolve(process.cwd(), 'packages/storage-sqlite/src'),
       '@risuai/backup-core': resolve(process.cwd(), 'packages/backup-core'),
     },
     conditions: ['browser'],

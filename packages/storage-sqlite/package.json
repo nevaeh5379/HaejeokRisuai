@@ -1,0 +1,13 @@
+{
+  "name": "@risuai/storage-sqlite",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./relationalNodeCodec": "./src/relationalNodeCodec.ts",
+    "./sqliteSchemaStatements": "./src/sqliteSchemaStatements.ts",
+    "./sqliteLastMessageTime": "./src/sqliteLastMessageTime.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

@@ -17,7 +17,8 @@
       "@risuai/chat-core/*": ["./packages/chat-core/*"],
       "@risuai/protocol/*": ["./packages/protocol/*"],
       "@risuai/backup-core/*": ["./packages/backup-core/*"],
-      "@risuai/storage-remote/*": ["./packages/storage-remote/src/*"]
+      "@risuai/storage-remote/*": ["./packages/storage-remote/src/*"],
+      "@risuai/storage-sqlite/*": ["./packages/storage-sqlite/src/*"]
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,
