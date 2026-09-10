@@ -101,6 +101,11 @@ import {
   previewSqliteRevisionRestore,
 } from "@risuai/storage-sqlite/sqlitePersistenceQueries";
 import {
+  groupSqliteNodeValues,
+  loadSqliteNodeValue,
+  loadSqliteSettingValue,
+} from "@risuai/storage-sqlite/sqliteNodeValues";
+import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "./sqliteStorageUtils";
@@ -755,24 +760,24 @@ export abstract class NativeSqliteStorageBase {
     return rows[0] ?? null;
   }
 
-  protected async loadNodeValue(
+  protected loadNodeValue(
     table: string,
     ownerWhere: string,
     bind: unknown[],
   ): Promise<unknown> {
-    const rows = await this.selectRows(
-      `SELECT node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value, number_value,
-              boolean_value FROM ${table} WHERE ${ownerWhere} ORDER BY node_id`,
+    return loadSqliteNodeValue(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      table,
+      ownerWhere,
       bind,
     );
-    return rows.length ? rebuildRelationalValue(rows) : undefined;
   }
 
   protected loadSettingValue(key: string): Promise<unknown> {
-    return this.loadNodeValue("setting_extension_nodes", "setting_key = ?", [
+    return loadSqliteSettingValue(
+      this.selectRows.bind(this) as SqliteSelectRows,
       key,
-    ]);
+    );
   }
 
   protected async prepareModuleCommit(commit: SqlCommit): Promise<void> {
@@ -797,20 +802,7 @@ export abstract class NativeSqliteStorageBase {
     rows: Record<string, unknown>[],
     ownerKey: string,
   ): Map<string, unknown> {
-    const grouped = new Map<string, Record<string, unknown>[]>();
-    for (const row of rows) {
-      const owner = String(row[ownerKey] ?? "");
-      if (!owner) continue;
-      const list = grouped.get(owner) ?? [];
-      list.push(row);
-      grouped.set(owner, list);
-    }
-    return new Map(
-      Array.from(grouped, ([owner, nodes]) => [
-        owner,
-        rebuildRelationalValue(nodes),
-      ]),
-    );
+    return groupSqliteNodeValues(rows, ownerKey);
   }
 
   protected async validatePresetCommit(commit: SqlCommit): Promise<void> {
