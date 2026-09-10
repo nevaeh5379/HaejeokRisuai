@@ -1,7 +1,7 @@
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
-import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   isSqlitePragmaStatement,
   splitSqliteStatements,

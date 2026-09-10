@@ -26,7 +26,7 @@ import {
   PROMPT_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
 } from "../sqlDeferredSettings";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   flattenRelationalValue,
   type RelationalNodeRow,

@@ -42,7 +42,7 @@ import {
   LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
 } from "../../sqlDeferredSettings";
-import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   buildSqlReplaceCommit,
   mergeLegacyModulesIntoCommit,

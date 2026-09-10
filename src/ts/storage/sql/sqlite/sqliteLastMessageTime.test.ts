@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import { SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL } from "./sqliteLastMessageTime";
 
 describe("SQLite last-message-time trigger", () => {

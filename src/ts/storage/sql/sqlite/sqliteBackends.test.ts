@@ -1,6 +1,6 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import { createEmptySqlCommit, SqlRevisionConflictError } from "../sqlCommit";
 import {
   flattenRelationalValue,

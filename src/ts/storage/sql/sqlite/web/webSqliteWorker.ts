@@ -26,7 +26,7 @@
  */
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   isSqlitePragmaStatement,
   splitSqliteStatements,

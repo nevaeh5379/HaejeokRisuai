@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   flattenRelationalValue,
   MAX_RELATIONAL_NODE_DEPTH,
