@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync, unzipSync } from "node:zlib";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  decodePluginStorageValue,
+  encodePluginStorageValue,
+} from "../../src/ts/storage/sql/pluginStorageValueCodec";
 
 const require = createRequire(import.meta.url);
 const { PostgresRevisionConflictError, PostgresStorage } =
@@ -723,6 +727,38 @@ describePostgres("PostgreSQL structured storage integration", () => {
     expect((await storage.exportDatabaseSnapshot()).database?.theme).toBe(
       "first",
     );
+  });
+
+  it("round-trips SQL-unsupported Unicode in plugin storage", async () => {
+    const value = {
+      summary: "memory before\0memory after",
+      nested: ["ordinary", "another\0NUL"],
+    };
+
+    await storage.sync({
+      baseRevision: 0,
+      replaceAll: true,
+      root: { upserts: [], deletes: [] },
+      pluginStorage: {
+        upserts: [
+          { key: "wiglore-memory", value: encodePluginStorageValue(value) },
+        ],
+        deletes: [],
+      },
+      characterIds: [],
+      characters: [],
+      chats: [],
+      chatManifests: [],
+      messages: [],
+      messageManifests: [],
+    });
+
+    const snapshot = await storage.exportDatabaseSnapshot();
+    expect(
+      decodePluginStorageValue(
+        snapshot.database?.pluginCustomStorage?.["wiglore-memory"],
+      ),
+    ).toEqual(value);
   });
 
   it("stores cold data in relational chat and message tables and prunes it with one set operation", async () => {

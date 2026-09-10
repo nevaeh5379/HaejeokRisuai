@@ -30,6 +30,11 @@ import {
   type SqlCommitResult,
 } from "../sqlCommit";
 import { BoundedCache } from "../../../memory/boundedCache";
+import {
+  decodePluginStorageRecord,
+  decodePluginStorageValue,
+  encodePluginStorageValue,
+} from "../pluginStorageValueCodec";
 
 import type {
   DbVendor,
@@ -629,15 +634,18 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
 
     const body: { pluginCustomStorage: Record<string, any>; hash: string } =
       await response.json();
+    const pluginCustomStorage = decodePluginStorageRecord(
+      body.pluginCustomStorage ?? {},
+    );
     const entry = {
       hash: body.hash,
-      pluginCustomStorage: body.pluginCustomStorage ?? {},
+      pluginCustomStorage,
     };
     this.memoryPluginStorageCache = entry;
     try {
       await this.pluginStorageCacheForage.setItem("cache", entry);
     } catch {}
-    return body.pluginCustomStorage ?? {};
+    return pluginCustomStorage;
   }
 
   private pluginKeyCacheForage = localforage.createInstance({
@@ -717,13 +725,13 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       await response.json();
     const entry = {
       hash: body.hash,
-      value: body.value,
+      value: decodePluginStorageValue(body.value),
     };
     this.memoryPluginKeyCache.set(key, entry);
     try {
       await this.pluginKeyCacheForage.setItem(key, entry);
     } catch {}
-    return body.value;
+    return entry.value;
   }
 
   async loadPersonas(): Promise<RisuPersona[]> {
@@ -1037,6 +1045,11 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       );
     }
     const body = (await response.json()) as SqlDatabaseSnapshotResult;
+    if (body.database?.pluginCustomStorage) {
+      body.database.pluginCustomStorage = decodePluginStorageRecord(
+        body.database.pluginCustomStorage,
+      );
+    }
     this.revision = body.revision;
     return body;
   }
@@ -1600,7 +1613,19 @@ export class NodePostgresStorage implements INodeSqlStorageAdmin {
       baseRevision: Math.max(commit.baseRevision, this.revision),
     };
     for (let attempt = 0; attempt < 3; attempt++) {
-      const encodedBody = await encodeJsonBody(pending);
+      const wireCommit = pending.pluginStorage
+        ? {
+            ...pending,
+            pluginStorage: {
+              ...pending.pluginStorage,
+              upserts: pending.pluginStorage.upserts.map((upsert) => ({
+                ...upsert,
+                value: encodePluginStorageValue(upsert.value),
+              })),
+            },
+          }
+        : pending;
+      const encodedBody = await encodeJsonBody(wireCommit);
       const response = await fetch("/api/database-v2/commit", {
         method: "POST",
         body: encodedBody.body,
