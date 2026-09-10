@@ -3,6 +3,18 @@ import type {
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
 } from "@risuai/protocol/storageConfig.cjs";
+import type {
+  NodePostgresRevision,
+  NodePostgresRevisionDetails,
+  NodePostgresRevisionDiff,
+  NodePostgresRestorePreview,
+  NodePostgresMessageSearchResult,
+  NodePostgresTokenUsage,
+  NodePostgresBotChatStats,
+  NodePostgresCharacterSearchResult,
+  NodePostgresTableInfo,
+  NodePostgresTableData,
+} from "@risuai/protocol/databaseApi.cjs";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export type RemoteDatabaseConfig = NodePostgresServerConfig & {
@@ -179,5 +191,238 @@ export class RemoteDatabaseAdminClient {
       throw await responseError(response, "Legacy migration failed");
     }
     return await response.json();
+  }
+
+  async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
+    const url =
+      limit !== undefined && limit !== null && limit > 0
+        ? `/api/database-v2/revisions?limit=${encodeURIComponent(limit)}`
+        : "/api/database-v2/revisions";
+    const response = await this.apiClient.request(url, {
+      method: "GET",
+      cache: "no-cache",
+      headers: await this.authHeaders(),
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(
+        response,
+        "PostgreSQL revision history load failed",
+      );
+    }
+    const body: { revisions: NodePostgresRevision[] } = await response.json();
+    return body.revisions;
+  }
+
+  async getRevisionDetails(
+    revisionId: number,
+  ): Promise<NodePostgresRevisionDetails | null> {
+    const response = await this.apiClient.request(
+      `/api/database-v2/revisions/${encodeURIComponent(revisionId)}/details`,
+      { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
+    );
+    if (response.status === 404) return null;
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(
+        response,
+        "PostgreSQL revision details load failed",
+      );
+    }
+    const body: { details: NodePostgresRevisionDetails } =
+      await response.json();
+    return body.details;
+  }
+
+  async getRevisionDiff(
+    baseId: number,
+    targetId: number,
+  ): Promise<NodePostgresRevisionDiff> {
+    const response = await this.apiClient.request(
+      `/api/database-v2/revisions/diff?base=${encodeURIComponent(baseId)}&target=${encodeURIComponent(targetId)}`,
+      { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(
+        response,
+        "PostgreSQL revision diff load failed",
+      );
+    }
+    const body: { diff: NodePostgresRevisionDiff } = await response.json();
+    return body.diff;
+  }
+
+  async previewRestoreRevision(
+    revisionId: number,
+  ): Promise<NodePostgresRestorePreview> {
+    const encodedBody = await encodeJsonBody({ revisionId });
+    const response = await this.apiClient.request(
+      "/api/database-v2/revisions/preview-restore",
+      {
+        method: "POST",
+        body: encodedBody.body,
+        headers: {
+          "content-type": "application/json",
+          ...(encodedBody.contentEncoding
+            ? { "content-encoding": encodedBody.contentEncoding }
+            : {}),
+          ...(await this.authHeaders()),
+        },
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(
+        response,
+        "PostgreSQL revision preview restore failed",
+      );
+    }
+    const body: { preview: NodePostgresRestorePreview } = await response.json();
+    return body.preview;
+  }
+
+  async restoreRevision(
+    revisionId: number,
+  ): Promise<{ revision: number; revisionId: number }> {
+    const encodedBody = await encodeJsonBody({ revisionId });
+    const response = await this.apiClient.request(
+      "/api/database-v2/revisions/restore",
+      {
+        method: "POST",
+        body: encodedBody.body,
+        headers: {
+          "content-type": "application/json",
+          ...(encodedBody.contentEncoding
+            ? { "content-encoding": encodedBody.contentEncoding }
+            : {}),
+          ...(await this.authHeaders()),
+        },
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL revision restore failed");
+    }
+    return await response.json();
+  }
+
+  async searchMessages(
+    query: string,
+    scope: "all" | "active" | "cold" = "all",
+    limit = 50,
+  ): Promise<NodePostgresMessageSearchResult[]> {
+    const params = new URLSearchParams({
+      q: query,
+      scope,
+      limit: String(limit),
+    });
+    const response = await this.apiClient.request(
+      `/api/database-v2/search?${params.toString()}`,
+      { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL message search failed");
+    }
+    const body: { results: NodePostgresMessageSearchResult[] } =
+      await response.json();
+    return body.results;
+  }
+
+  async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
+    const response = await this.apiClient.request(
+      "/api/database-v2/token-usage",
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL token usage load failed");
+    }
+    const body: { usage: NodePostgresTokenUsage[] } = await response.json();
+    return body.usage;
+  }
+
+  async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
+    const response = await this.apiClient.request(
+      "/api/database-v2/bot-stats",
+      {
+        method: "GET",
+        cache: "no-cache",
+        headers: await this.authHeaders(),
+      },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL bot stats load failed");
+    }
+    const body: { stats: NodePostgresBotChatStats[] } = await response.json();
+    return body.stats;
+  }
+
+  async searchCharacters(
+    field: "tag" | "name",
+    value: string,
+    limit = 100,
+  ): Promise<NodePostgresCharacterSearchResult[]> {
+    const params = new URLSearchParams({
+      [field]: value,
+      limit: String(limit),
+    });
+    const response = await this.apiClient.request(
+      `/api/database-v2/characters/search?${params.toString()}`,
+      { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(
+        response,
+        `PostgreSQL character ${field} search failed`,
+      );
+    }
+    const body: { results: NodePostgresCharacterSearchResult[] } =
+      await response.json();
+    return body.results;
+  }
+
+  async listDbTables(): Promise<NodePostgresTableInfo[] | null> {
+    const response = await this.apiClient.request("/api/database-v2/tables", {
+      method: "GET",
+      cache: "no-cache",
+      headers: await this.authHeaders(),
+    });
+    if (response.status === 404) return null;
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL table list load failed");
+    }
+    const body: { tables: NodePostgresTableInfo[] } = await response.json();
+    return body.tables;
+  }
+
+  async getDbTableData(
+    table: string,
+    options: {
+      offset?: number;
+      limit?: number;
+      sortColumn?: string;
+      sortOrder?: "asc" | "desc";
+      search?: string;
+      columns?: string[];
+    } = {},
+  ): Promise<NodePostgresTableData | null> {
+    const params = new URLSearchParams({
+      offset: String(options.offset ?? 0),
+      limit: String(options.limit ?? 50),
+    });
+    if (options.sortColumn) params.set("sort", options.sortColumn);
+    if (options.sortOrder) params.set("dir", options.sortOrder);
+    if (options.search) params.set("search", options.search);
+    if (options.columns?.length)
+      params.set("columns", options.columns.join(","));
+    const response = await this.apiClient.request(
+      `/api/database-v2/tables/${encodeURIComponent(table)}/rows?${params.toString()}`,
+      { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
+    );
+    if (response.status === 404) return null;
+    if (response.status < 200 || response.status >= 300) {
+      throw await responseError(response, "PostgreSQL table data load failed");
+    }
+    const body: { data: NodePostgresTableData } = await response.json();
+    return body.data;
   }
 }

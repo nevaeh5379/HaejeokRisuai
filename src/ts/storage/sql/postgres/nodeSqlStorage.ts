@@ -1306,107 +1306,30 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const url =
-      limit !== undefined && limit !== null && limit > 0
-        ? `/api/database-v2/revisions?limit=${encodeURIComponent(limit)}`
-        : "/api/database-v2/revisions";
-    const response = await this.apiClient.request(url, {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL revision history load failed",
-      );
-    }
-    const body: { revisions: NodePostgresRevision[] } = await response.json();
-    return body.revisions;
+    if (!(await this.ensureEnabled())) return [];
+    return await this.databaseAdmin.listRevisions(limit);
   }
 
   async getRevisionDetails(
     revisionId: number,
   ): Promise<NodePostgresRevisionDetails | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const response = await this.apiClient.request(
-      `/api/database-v2/revisions/${encodeURIComponent(revisionId)}/details`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
-      return null;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL revision details load failed",
-      );
-    }
-    const body: { details: NodePostgresRevisionDetails } =
-      await response.json();
-    return body.details;
+    if (!(await this.ensureEnabled())) return null;
+    return await this.databaseAdmin.getRevisionDetails(revisionId);
   }
 
   async getRevisionDiff(
     baseId: number,
     targetId: number,
   ): Promise<NodePostgresRevisionDiff | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const response = await this.apiClient.request(
-      `/api/database-v2/revisions/diff?base=${encodeURIComponent(baseId)}&target=${encodeURIComponent(targetId)}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL revision diff load failed",
-      );
-    }
-    const body: { diff: NodePostgresRevisionDiff } = await response.json();
-    return body.diff;
+    if (!(await this.ensureEnabled())) return null;
+    return await this.databaseAdmin.getRevisionDiff(baseId, targetId);
   }
 
   async previewRestoreRevision(
     revisionId: number,
   ): Promise<NodePostgresRestorePreview | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const encodedBody = await encodeJsonBody({ revisionId });
-    const response = await this.apiClient.request("/api/database-v2/revisions/preview-restore", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL revision preview restore failed",
-      );
-    }
-    const body: { preview: NodePostgresRestorePreview } = await response.json();
-    return body.preview;
+    if (!(await this.ensureEnabled())) return null;
+    return await this.databaseAdmin.previewRestoreRevision(revisionId);
   }
 
   async restoreRevision(
@@ -1415,23 +1338,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("PostgreSQL storage is disabled");
     }
-    const encodedBody = await encodeJsonBody({ revisionId });
-    const response = await this.apiClient.request("/api/database-v2/revisions/restore", {
-      method: "POST",
-      body: encodedBody.body,
-      headers: {
-        "content-type": "application/json",
-        ...(encodedBody.contentEncoding
-          ? { "content-encoding": encodedBody.contentEncoding }
-          : {}),
-        ...(await this.authHeaders()),
-      },
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL revision restore failed");
-    }
-    const result: { revision: number; revisionId: number } =
-      await response.json();
+    const result = await this.databaseAdmin.restoreRevision(revisionId);
     this.revision = result.revision;
     return result;
   }
@@ -1621,134 +1528,44 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     scope: "all" | "active" | "cold" = "all",
     limit = 50,
   ): Promise<NodePostgresMessageSearchResult[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const params = new URLSearchParams({
-      q: query,
-      scope,
-      limit: String(limit),
-    });
-    const response = await this.apiClient.request(
-      `/api/database-v2/search?${params.toString()}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL message search failed");
-    }
-    const body: { results: NodePostgresMessageSearchResult[] } =
-      await response.json();
-    return body.results;
+    if (!(await this.ensureEnabled())) return [];
+    return await this.databaseAdmin.searchMessages(query, scope, limit);
   }
 
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const response = await this.apiClient.request("/api/database-v2/token-usage", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL token usage load failed");
-    }
-    const body: { usage: NodePostgresTokenUsage[] } = await response.json();
-    return body.usage;
+    if (!(await this.ensureEnabled())) return [];
+    return await this.databaseAdmin.getTokenUsage();
   }
 
   async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const response = await this.apiClient.request("/api/database-v2/bot-stats", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL bot stats load failed");
-    }
-    const body: { stats: NodePostgresBotChatStats[] } = await response.json();
-    return body.stats;
+    if (!(await this.ensureEnabled())) return [];
+    return await this.databaseAdmin.getBotChatStats();
   }
 
   async searchCharactersByTag(
     tag: string,
     limit = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const params = new URLSearchParams({ tag, limit: String(limit) });
-    const response = await this.apiClient.request(
-      `/api/database-v2/characters/search?${params.toString()}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL character tag search failed",
-      );
-    }
-    const body: { results: NodePostgresCharacterSearchResult[] } =
-      await response.json();
-    return body.results;
+    if (!(await this.ensureEnabled())) return [];
+    return await this.databaseAdmin.searchCharacters("tag", tag, limit);
   }
 
   async searchCharactersByName(
     name: string,
     limit = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const params = new URLSearchParams({ name, limit: String(limit) });
-    const response = await this.apiClient.request(
-      `/api/database-v2/characters/search?${params.toString()}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL character name search failed",
-      );
-    }
-    const body: { results: NodePostgresCharacterSearchResult[] } =
-      await response.json();
-    return body.results;
+    if (!(await this.ensureEnabled())) return [];
+    return await this.databaseAdmin.searchCharacters("name", name, limit);
   }
 
   async listDbTables(): Promise<NodePostgresTableInfo[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const response = await this.apiClient.request("/api/database-v2/tables", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status === 404) {
+    if (!(await this.ensureEnabled())) return [];
+    const tables = await this.databaseAdmin.listDbTables();
+    if (tables === null) {
       this.status = "disabled";
       return [];
     }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL table list load failed");
-    }
-    const body: { tables: NodePostgresTableInfo[] } = await response.json();
-    return body.tables;
+    return tables;
   }
 
   async getDbTableData(
@@ -1765,39 +1582,12 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("PostgreSQL storage is disabled");
     }
-    const params = new URLSearchParams({
-      offset: String(options.offset ?? 0),
-      limit: String(options.limit ?? 50),
-    });
-    if (options.sortColumn) {
-      params.set("sort", options.sortColumn);
-    }
-    if (options.sortOrder) {
-      params.set("dir", options.sortOrder);
-    }
-    if (options.search && options.search.length > 0) {
-      params.set("search", options.search);
-    }
-    if (options.columns && options.columns.length > 0) {
-      params.set("columns", options.columns.join(","));
-    }
-    const response = await this.apiClient.request(
-      `/api/database-v2/tables/${encodeURIComponent(table)}/rows?${params.toString()}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
+    const data = await this.databaseAdmin.getDbTableData(table, options);
+    if (data === null) {
       this.status = "disabled";
       throw new Error("PostgreSQL storage is disabled");
     }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL table data load failed");
-    }
-    const body: { data: NodePostgresTableData } = await response.json();
-    return body.data;
+    return data;
   }
 
   // ── 백업 데이터베이스 API ──
