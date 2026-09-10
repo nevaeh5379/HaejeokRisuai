@@ -41,6 +41,11 @@ import {
 } from "@risuai/storage-remote/remoteDatabaseAdminClient";
 import { RemoteColdStorageClient } from "@risuai/storage-remote/remoteColdStorageClient";
 import { RemoteDatabaseBackupClient } from "@risuai/storage-remote/remoteDatabaseBackupClient";
+import {
+  RemoteSqlCommitClient,
+  NodeSqlPayloadTooLargeError,
+  NodeSqlRevisionConflictError,
+} from "@risuai/storage-remote/remoteSqlCommitClient";
 
 import type {
   DbVendor,
@@ -180,28 +185,10 @@ async function responseError(response: Response, fallback: string) {
   return new Error(body?.error || `${fallback} (${response.status})`);
 }
 
-export class NodeSqlRevisionConflictError extends Error {
-  readonly currentRevision: number | null;
-  constructor(revision: unknown) {
-    super(
-      `PostgreSQL data changed in another session (server revision ${revision ?? "unknown"}). Reload before saving again.`,
-    );
-    this.name = "NodeSqlRevisionConflictError";
-    this.currentRevision = Number.isSafeInteger(Number(revision))
-      ? Number(revision)
-      : null;
-  }
-}
-
-export class NodeSqlPayloadTooLargeError extends Error {
-  constructor(message?: string) {
-    super(
-      message ||
-        "PostgreSQL save payload is larger than the Node server allows.",
-    );
-    this.name = "NodeSqlPayloadTooLargeError";
-  }
-}
+export {
+  NodeSqlPayloadTooLargeError,
+  NodeSqlRevisionConflictError,
+} from "@risuai/storage-remote/remoteSqlCommitClient";
 
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
@@ -211,6 +198,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private readonly databaseAdmin: RemoteDatabaseAdminClient;
   private readonly coldStorageClient: RemoteColdStorageClient;
   private readonly backupClient: RemoteDatabaseBackupClient;
+  private readonly commitClient: RemoteSqlCommitClient;
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
@@ -286,6 +274,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.clientId,
     );
     this.backupClient = new RemoteDatabaseBackupClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
+    this.commitClient = new RemoteSqlCommitClient(
       this.apiClient,
       this.getAuth,
       this.clientId,
@@ -1387,46 +1380,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-
-    let pending: SqlCommit = {
-      ...commit,
-      baseRevision: Math.max(commit.baseRevision, this.revision),
-    };
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const encodedBody = await encodeJsonBody(pending);
-      const response = await this.apiClient.request("/api/database-v2/commit", {
-        method: "POST",
-        body: encodedBody.body,
-        headers: {
-          "content-type": "application/json",
-          ...(encodedBody.contentEncoding
-            ? { "content-encoding": encodedBody.contentEncoding }
-            : {}),
-          ...(await this.authHeaders()),
-        },
-      });
-      if (response.status === 409) {
-        const conflict = await response.json().catch(() => null);
-        const currentRevision = Number(conflict?.revision);
-        if (Number.isSafeInteger(currentRevision) && attempt < 2) {
-          this.applyRemoteRevision(currentRevision);
-          pending = { ...pending, baseRevision: currentRevision };
-          continue;
-        }
-        throw new NodeSqlRevisionConflictError(conflict?.revision);
-      }
-      if (response.status === 413) {
-        const body = await response.json().catch(() => null);
-        throw new NodeSqlPayloadTooLargeError(body?.error);
-      }
-      if (response.status < 200 || response.status >= 300) {
-        throw await responseError(response, "SQL commit failed");
-      }
-      const result = (await response.json()) as SqlCommitResult;
-      this.revision = result.revision;
-      return result;
-    }
-    throw new NodeSqlRevisionConflictError(this.revision);
+    const result = await this.commitClient.commit(commit, this.revision);
+    this.revision = result.revision;
+    return result;
   }
 
   async replaceDatabase(
