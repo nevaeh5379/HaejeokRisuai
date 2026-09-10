@@ -116,6 +116,134 @@ export function mapSqliteChatBranchRow(
   };
 }
 
+export interface SqliteCreateChatBranchInput {
+  chatId: string;
+  id: string;
+  parentBranchId?: string;
+  forkMessageId?: string;
+  reason: "root" | "manual" | "reroll";
+  createdAt: number;
+}
+
+export async function getSqliteActiveBranchId(
+  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+  chatId: string,
+): Promise<string | undefined> {
+  const rows = await selectRows<{ branch_id: string }>(
+    "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
+    [chatId],
+  );
+  return rows[0]?.branch_id;
+}
+
+export async function getSqliteChatBranchCount(
+  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+  chatId: string,
+): Promise<number> {
+  const rows = await selectRows<{ total: number }>(
+    "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
+    [chatId],
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
+export async function listSqliteChatBranches(
+  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+  chatId: string,
+): Promise<SqliteChatBranchSummary[]> {
+  const rows = await selectRows<SqliteChatBranchRow>(
+    `SELECT id, chat_id, parent_branch_id, fork_message_id,
+            head_message_id, reason, created_at
+       FROM chat_branches WHERE chat_id = ? ORDER BY created_at, id`,
+    [chatId],
+  );
+  return rows.map(mapSqliteChatBranchRow);
+}
+
+export async function loadSqliteChatBranchMetadata(
+  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+  chatId: string,
+): Promise<{ branches: SqliteChatBranchSummary[]; activeBranchId?: string }> {
+  const rows = await selectRows<
+    SqliteChatBranchRow & { active_branch_id?: string }
+  >(
+    `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+            branch.head_message_id, branch.reason, branch.created_at,
+            active.branch_id AS active_branch_id
+       FROM chat_branches branch
+  LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
+      WHERE branch.chat_id = ? ORDER BY branch.created_at, branch.id`,
+    [chatId],
+  );
+  return {
+    branches: rows.map(mapSqliteChatBranchRow),
+    activeBranchId: rows[0]?.active_branch_id ?? undefined,
+  };
+}
+
+export function buildSqliteCreateChatBranchStatements(
+  input: SqliteCreateChatBranchInput,
+  parentBranchId: string,
+): SqliteTransactionStatement[] {
+  return [
+    {
+      sql: `INSERT INTO chat_branches
+              (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      bind: [
+        input.chatId,
+        input.id,
+        parentBranchId,
+        input.forkMessageId ?? null,
+        input.forkMessageId ?? null,
+        input.reason,
+        input.createdAt,
+      ],
+    },
+    {
+      sql: `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET branch_id=excluded.branch_id`,
+      bind: [input.chatId, input.id],
+    },
+  ];
+}
+
+export async function loadSqliteChatBranch(
+  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+  chatId: string,
+  branchId: string,
+): Promise<SqliteChatBranchSummary | null> {
+  const rows = await selectRows<SqliteChatBranchRow>(
+    `SELECT id, chat_id, parent_branch_id, fork_message_id,
+            head_message_id, reason, created_at
+       FROM chat_branches WHERE chat_id = ? AND id = ?`,
+    [chatId, branchId],
+  );
+  return rows[0] ? mapSqliteChatBranchRow(rows[0]) : null;
+}
+
+export async function sqliteChatBranchExists(
+  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+  chatId: string,
+  branchId: string,
+): Promise<boolean> {
+  const rows = await selectRows<{ id: string }>(
+    "SELECT id FROM chat_branches WHERE chat_id = ? AND id = ?",
+    [chatId, branchId],
+  );
+  return rows.length > 0;
+}
+
+export function buildSqliteActivateChatBranchStatement(
+  chatId: string,
+  branchId: string,
+): SqliteTransactionStatement {
+  return {
+    sql: "UPDATE chat_active_branches SET branch_id = ? WHERE chat_id = ?",
+    bind: [branchId, chatId],
+  };
+}
+
 const LEGACY_MIGRATION_NODE_BATCH_SIZE = 128;
 
 function nodeInsertStatements(

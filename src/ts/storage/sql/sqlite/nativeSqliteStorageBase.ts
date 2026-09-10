@@ -132,11 +132,17 @@ import {
   rebuildMessageRows,
 } from "./sqliteStorageUtils";
 import {
+  buildSqliteActivateChatBranchStatement,
+  buildSqliteCreateChatBranchStatements,
   buildSqliteLegacyBranchMigrationStatements,
   ensureSqliteBranchGraphStatements,
-  mapSqliteChatBranchRow,
+  getSqliteActiveBranchId,
+  getSqliteChatBranchCount,
+  listSqliteChatBranches,
+  loadSqliteChatBranch,
+  loadSqliteChatBranchMetadata,
+  sqliteChatBranchExists,
   SQLITE_BRANCH_SCHEMA_STATEMENTS,
-  type SqliteChatBranchRow,
 } from "@risuai/storage-sqlite/sqliteBranchStorage";
 
 export abstract class NativeSqliteStorageBase {
@@ -774,14 +780,10 @@ export abstract class NativeSqliteStorageBase {
   ): Promise<boolean> {
     const branchCount =
       knownBranchCount ??
-      Number(
-        (
-          await this.selectOne<{ total: number }>(
-            "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-            [chatId],
-          )
-        )?.total ?? 0,
-      );
+      (await getSqliteChatBranchCount(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+      ));
     if (branchCount > 1) return false;
     const chatData =
       knownChatData ?? (await this.loadLegacyChatExtension(chatId));
@@ -792,13 +794,9 @@ export abstract class NativeSqliteStorageBase {
       return false;
     }
     return this.writeQueue.run(async () => {
-      const currentCount = Number(
-        (
-          await this.selectOne<{ total: number }>(
-            "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-            [chatId],
-          )
-        )?.total ?? 0,
+      const currentCount = await getSqliteChatBranchCount(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
       );
       if (currentCount > 1) return false;
       const plan = buildLegacyBranchMigrationPlan(
@@ -830,27 +828,17 @@ export abstract class NativeSqliteStorageBase {
 
   async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
     await this.ensureBranchGraph(chatId);
-    const rows = await this.selectRows<SqliteChatBranchRow>(
-      `SELECT id, chat_id, parent_branch_id, fork_message_id,
-              head_message_id, reason, created_at
-         FROM chat_branches WHERE chat_id = ? ORDER BY created_at, id`,
-      [chatId],
-    );
-    return rows.map(mapSqliteChatBranchRow);
+    return (await listSqliteChatBranches(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
+    )) as SqlChatBranchSummary[];
   }
 
   async loadChatBranchGraph(chatId: string) {
     await this.ensureBranchGraph(chatId);
-    const branchRows = await this.selectRows<
-      SqliteChatBranchRow & { active_branch_id?: string }
-    >(
-      `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
-              branch.head_message_id, branch.reason, branch.created_at,
-              active.branch_id AS active_branch_id
-         FROM chat_branches branch
-    LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
-        WHERE branch.chat_id = ? ORDER BY branch.created_at, branch.id`,
-      [chatId],
+    const metadata = await loadSqliteChatBranchMetadata(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
     );
     const graphQuery = buildBranchGraphRowsQuery(chatId);
     const graphRows = await this.selectRows<Record<string, unknown>>(
@@ -858,8 +846,8 @@ export abstract class NativeSqliteStorageBase {
       graphQuery.bind,
     );
     return {
-      branches: branchRows.map(mapSqliteChatBranchRow),
-      activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
+      branches: metadata.branches as SqlChatBranchSummary[],
+      activeBranchId: metadata.activeBranchId,
       messages: rebuildBranchGraphMessages(graphRows),
       links: graphRows.map((row) => ({
         messageId: String(row.message_id),
@@ -876,16 +864,9 @@ export abstract class NativeSqliteStorageBase {
     await this.ensureBranchGraph(chatId);
     const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const normalizedLimit = normalizeSqliteLimit(limit);
-    const branchRows = await this.selectRows<
-      SqliteChatBranchRow & { active_branch_id?: string }
-    >(
-      `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
-              branch.head_message_id, branch.reason, branch.created_at,
-              active.branch_id AS active_branch_id
-         FROM chat_branches branch
-    LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
-        WHERE branch.chat_id = ? ORDER BY branch.created_at, branch.id`,
-      [chatId],
+    const metadata = await loadSqliteChatBranchMetadata(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
     );
     const countQuery = buildBranchGraphMessageCountQuery(chatId);
     const countRow = await this.selectOne<{ total: number }>(
@@ -903,8 +884,8 @@ export abstract class NativeSqliteStorageBase {
       pageQuery.bind,
     );
     return {
-      branches: branchRows.map(mapSqliteChatBranchRow),
-      activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
+      branches: metadata.branches as SqlChatBranchSummary[],
+      activeBranchId: metadata.activeBranchId,
       messages: rebuildMessageRows(rows),
       links: rebuildBranchGraphLinks(rows),
       offset: normalizedOffset,
@@ -940,71 +921,51 @@ export abstract class NativeSqliteStorageBase {
     input: SqlCreateChatBranchInput,
   ): Promise<SqlChatBranchSummary> {
     await this.writeQueue.run(async () => {
-      const active = await this.selectOne<{ branch_id: string }>(
-        "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-        [input.chatId],
-      );
-      const parentBranchId = input.parentBranchId ?? active?.branch_id;
+      let parentBranchId =
+        input.parentBranchId ??
+        (await getSqliteActiveBranchId(
+          this.selectRows.bind(this) as SqliteSelectRows,
+          input.chatId,
+        ));
       if (!parentBranchId) {
         await this.executeNativeTransaction(
           null,
           ensureSqliteBranchGraphStatements(input.chatId),
         );
+        parentBranchId = await getSqliteActiveBranchId(
+          this.selectRows.bind(this) as SqliteSelectRows,
+          input.chatId,
+        );
       }
-      const resolvedParent =
-        parentBranchId ??
-        (
-          await this.selectOne<{ branch_id: string }>(
-            "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-            [input.chatId],
-          )
-        )?.branch_id;
-      if (!resolvedParent) throw new Error("Chat branch root does not exist");
-      await this.executeNativeTransaction(null, [
-        {
-          sql: `INSERT INTO chat_branches
-                  (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          bind: [
-            input.chatId,
-            input.id,
-            resolvedParent,
-            input.forkMessageId ?? null,
-            input.forkMessageId ?? null,
-            input.reason,
-            input.createdAt,
-          ],
-        },
-        {
-          sql: `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (?, ?)
-                ON CONFLICT(chat_id) DO UPDATE SET branch_id=excluded.branch_id`,
-          bind: [input.chatId, input.id],
-        },
-      ]);
+      if (!parentBranchId) throw new Error("Chat branch root does not exist");
+      await this.executeNativeTransaction(
+        null,
+        buildSqliteCreateChatBranchStatements(input, parentBranchId),
+      );
     });
-    const row = await this.selectOne<SqliteChatBranchRow>(
-      `SELECT id, chat_id, parent_branch_id, fork_message_id,
-              head_message_id, reason, created_at
-         FROM chat_branches WHERE chat_id = ? AND id = ?`,
-      [input.chatId, input.id],
+    const branch = await loadSqliteChatBranch(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      input.chatId,
+      input.id,
     );
-    if (!row) throw new Error("Failed to create chat branch");
-    return mapSqliteChatBranchRow(row);
+    if (!branch) throw new Error("Failed to create chat branch");
+    return branch as SqlChatBranchSummary;
   }
 
   async activateChatBranch(chatId: string, branchId: string): Promise<void> {
     await this.ensureBranchGraph(chatId);
-    const exists = await this.selectOne<{ id: string }>(
-      "SELECT id FROM chat_branches WHERE chat_id = ? AND id = ?",
-      [chatId, branchId],
-    );
-    if (!exists) throw new Error("Chat branch does not exist");
+    if (
+      !(await sqliteChatBranchExists(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+        branchId,
+      ))
+    ) {
+      throw new Error("Chat branch does not exist");
+    }
     await this.writeQueue.run(() =>
       this.executeNativeTransaction(null, [
-        {
-          sql: "UPDATE chat_active_branches SET branch_id = ? WHERE chat_id = ?",
-          bind: [branchId, chatId],
-        },
+        buildSqliteActivateChatBranchStatement(chatId, branchId),
       ]),
     );
   }
