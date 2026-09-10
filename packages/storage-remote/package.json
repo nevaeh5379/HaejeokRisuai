@@ -14,6 +14,7 @@
     "./remoteColdStorageClient": "./src/remoteColdStorageClient.ts",
     "./remoteStorageSyncClient": "./src/remoteStorageSyncClient.ts",
     "./remoteSqlCommitClient": "./src/remoteSqlCommitClient.ts",
+    "./remoteSqlReadClient": "./src/remoteSqlReadClient.ts",
     "./keypairStore": "./src/keypairStore.ts",
     "./types": "./src/types.ts"
   },

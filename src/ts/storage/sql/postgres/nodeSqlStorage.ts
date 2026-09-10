@@ -46,6 +46,7 @@ import {
   NodeSqlPayloadTooLargeError,
   NodeSqlRevisionConflictError,
 } from "@risuai/storage-remote/remoteSqlCommitClient";
+import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
 
 import type {
   DbVendor,
@@ -199,6 +200,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private readonly coldStorageClient: RemoteColdStorageClient;
   private readonly backupClient: RemoteDatabaseBackupClient;
   private readonly commitClient: RemoteSqlCommitClient;
+  private readonly readClient: RemoteSqlReadClient;
   private pluginsCacheForage = localforage.createInstance({
     name: "risuaiPostgresPlugins",
   });
@@ -279,6 +281,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.clientId,
     );
     this.commitClient = new RemoteSqlCommitClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
+    this.readClient = new RemoteSqlReadClient(
       this.apiClient,
       this.getAuth,
       this.clientId,
@@ -904,55 +911,20 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   async listSettingKeys(): Promise<string[]> {
     if (!(await this.ensureEnabled())) return [];
-    const response = await this.apiClient.request("/api/database-v2/settings", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (!response.ok) {
-      throw await responseError(response, "SQL setting key list failed");
-    }
-    const body: { keys?: string[] } = await response.json();
-    return Array.isArray(body.keys) ? body.keys : [];
+    return await this.readClient.listSettingKeys();
   }
 
   async loadSettingKey(key: string): Promise<any> {
     if (!(await this.ensureEnabled())) return undefined;
-    const headers: Record<string, string> = await this.authHeaders();
-    const response = await this.apiClient.request(
-      `/api/database-v2/settings/${encodeURIComponent(key)}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers,
-      },
-    );
-    if (response.status === 404) return undefined;
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        `PostgreSQL load setting key '${key}' failed`,
-      );
-    }
-    const body: { key: string; value: any; hash: string } =
-      await response.json();
-    return body.value;
+    return await this.readClient.loadSettingKey(key);
   }
 
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
-    const response = await this.apiClient.request("/api/database-v2/startup", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status === 404) {
+    const body = await this.readClient.loadStartupData<SqlStartupDataResult>();
+    if (body === null) {
       this.status = "disabled";
       return null;
     }
-    if (!response.ok) {
-      throw await responseError(response, "SQL startup data load failed");
-    }
-    const body = (await response.json()) as SqlStartupDataResult;
     this.status = "enabled";
     this.revision = body.revision;
     return body;
@@ -960,18 +932,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   async exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null> {
     if (!(await this.ensureEnabled())) return null;
-    const response = await this.apiClient.request("/api/database-v2/export", {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (!response.ok) {
-      throw await responseError(
-        response,
-        "SQL database snapshot export failed",
-      );
-    }
-    const body = (await response.json()) as SqlDatabaseSnapshotResult;
+    const body =
+      await this.readClient.exportDatabaseSnapshot<SqlDatabaseSnapshotResult>();
     this.revision = body.revision;
     return body;
   }
@@ -979,116 +941,33 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   async loadCharacter(
     characterId: string,
   ): Promise<character | groupChat | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const response = await this.apiClient.request(
-      `/api/database-v2/characters/${encodeURIComponent(characterId)}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
-      return null;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL character load failed");
-    }
-    const body: { character: character | groupChat } = await response.json();
-    return body.character ?? null;
+    if (!(await this.ensureEnabled())) return null;
+    return await this.readClient.loadCharacter<character | groupChat>(characterId);
   }
 
-  /**
-   * Reads only the asset-bearing fields of a character (image, emotionImages,
-   * additionalAssets, ccAssets, customBackground, vits…). Used by the storage
-   * explorer's orphan-asset analysis so unhydrated characters still count as
-   * referencing their assets.
-   */
   async loadCharacterAssetFields(
     characterId: string,
   ): Promise<Partial<character> | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const response = await this.apiClient.request(
-      `/api/database-v2/characters/${encodeURIComponent(characterId)}/asset-fields`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
+    if (!(await this.ensureEnabled())) return null;
+    return await this.readClient.loadCharacterAssetFields<Partial<character>>(
+      characterId,
     );
-    if (response.status === 404) {
-      return null;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL character asset fields load failed",
-      );
-    }
-    const body: { assets: Partial<character> } = await response.json();
-    return body.assets ?? null;
   }
 
   async loadChat(
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    if (!(await this.ensureEnabled())) {
-      return null;
-    }
-    const search =
-      options?.messageLimit !== undefined
-        ? `?messageLimit=${encodeURIComponent(options.messageLimit)}`
-        : "";
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}${search}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
-      return null;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "PostgreSQL chat load failed");
-    }
-    const body: { chat: Chat } = await response.json();
-    return body.chat ?? null;
+    if (!(await this.ensureEnabled())) return null;
+    return await this.readClient.loadChat<Chat>(chatId, options);
   }
 
   async loadChatMessages(
     chatId: string,
     options: { mode?: "full" | "generation" } = {},
   ): Promise<Message[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const mode = options.mode === "generation" ? "?mode=generation" : "";
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/messages${mode}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status === 404) {
-      return [];
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL chat messages load failed",
-      );
-    }
-    const body: { messages?: Message[] } = await response.json();
-    return body.messages ?? [];
+    if (!(await this.ensureEnabled())) return [];
+    return await this.readClient.loadChatMessages<Message>(chatId, options);
   }
 
   async loadChatMessagePage(
@@ -1096,61 +975,30 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     before: number | undefined,
     limit: number,
   ) {
-    if (!(await this.ensureEnabled()))
+    if (!(await this.ensureEnabled())) {
       return { messages: [], offset: 0, total: 0, hasMore: false };
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (before !== undefined) params.set("before", String(before));
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/messages?${params}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL chat message page load failed",
-      );
     }
-    return await response.json();
+    return await this.readClient.loadChatMessagePage<{
+      messages: Message[];
+      offset: number;
+      total: number;
+      hasMore: boolean;
+    }>(chatId, before, limit);
   }
 
   async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
     if (!(await this.ensureEnabled())) return [];
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "SQL chat branch list failed");
-    }
-    const body: { branches?: SqlChatBranchSummary[] } = await response.json();
-    return body.branches ?? [];
+    return await this.readClient.listChatBranches<SqlChatBranchSummary>(chatId);
   }
 
   async loadChatBranchGraph(chatId: string): Promise<SqlChatBranchGraphData> {
     if (!(await this.ensureEnabled())) {
       return { branches: [], messages: [], links: [] };
     }
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/graph`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
+    return (
+      (await this.readClient.loadChatBranchGraph<SqlChatBranchGraphData>(chatId)) ??
+      { branches: [], messages: [], links: [] }
     );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "SQL chat branch graph load failed");
-    }
-    const body: { graph?: SqlChatBranchGraphData } = await response.json();
-    return body.graph ?? { branches: [], messages: [], links: [] };
   }
 
   async loadChatBranchGraphPage(
@@ -1158,41 +1006,21 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     offset: number,
     limit: number,
   ): Promise<SqlChatBranchGraphPage> {
-    if (!(await this.ensureEnabled())) {
-      return {
-        branches: [],
-        messages: [],
-        links: [],
-        offset: 0,
-        total: 0,
-        hasMore: false,
-      };
-    }
-    const params = new URLSearchParams({
-      offset: String(Math.max(0, Math.floor(offset))),
-      limit: String(Math.max(1, Math.floor(limit))),
-    });
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/graph/page?${params}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (!response.ok) {
-      throw await responseError(response, "SQL chat branch graph page load failed");
-    }
-    const body: { page?: SqlChatBranchGraphPage } = await response.json();
+    const empty = {
+      branches: [],
+      messages: [],
+      links: [],
+      offset: 0,
+      total: 0,
+      hasMore: false,
+    };
+    if (!(await this.ensureEnabled())) return empty;
     return (
-      body.page ?? {
-        branches: [],
-        messages: [],
-        links: [],
-        offset: 0,
-        total: 0,
-        hasMore: false,
-      }
+      (await this.readClient.loadChatBranchGraphPage<SqlChatBranchGraphPage>(
+        chatId,
+        offset,
+        limit,
+      )) ?? empty
     );
   }
 
@@ -1205,30 +1033,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     } = {},
   ): Promise<Message[]> {
     if (!(await this.ensureEnabled())) return [];
-    const params = new URLSearchParams();
-    if (options.messageLimit !== undefined) {
-      params.set("limit", String(options.messageLimit));
-    }
-    if (options.mode === "generation" || options.mode === "graph") {
-      params.set("mode", options.mode);
-    }
-    const search = params.size > 0 ? `?${params}` : "";
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/messages${search}`,
-      {
-        method: "GET",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
+    return await this.readClient.loadBranchMessages<Message>(
+      chatId,
+      branchId,
+      options,
     );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "SQL chat branch messages load failed",
-      );
-    }
-    const body: { messages?: Message[] } = await response.json();
-    return body.messages ?? [];
   }
 
   async createChatBranch(
@@ -1237,79 +1046,25 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(input.chatId)}/branches`,
-      {
-        method: "POST",
-        cache: "no-cache",
-        headers: {
-          ...(await this.authHeaders()),
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          id: input.id,
-          parentBranchId: input.parentBranchId,
-          forkMessageId: input.forkMessageId,
-          reason: input.reason,
-          createdAt: input.createdAt,
-        }),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "SQL chat branch creation failed");
-    }
-    const body: { branch: SqlChatBranchSummary } = await response.json();
-    return body.branch;
+    return await this.readClient.createChatBranch<SqlChatBranchSummary>(input);
   }
 
   async activateChatBranch(chatId: string, branchId: string): Promise<void> {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const response = await this.apiClient.request(
-      `/api/database-v2/chats/${encodeURIComponent(chatId)}/branches/${encodeURIComponent(branchId)}/activate`,
-      {
-        method: "POST",
-        cache: "no-cache",
-        headers: await this.authHeaders(),
-      },
-    );
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(response, "SQL chat branch activation failed");
-    }
+    await this.readClient.activateChatBranch(chatId, branchId);
   }
 
   async listRecentChats(
     limit?: number,
     activeChatId?: string,
   ): Promise<SqlRecentChatMetadata[]> {
-    if (!(await this.ensureEnabled())) {
-      return [];
-    }
-    const params = new URLSearchParams();
-    if (limit !== undefined && limit !== null && limit > 0) {
-      params.set("limit", String(limit));
-    }
-    if (activeChatId) {
-      params.set("activeChatId", activeChatId);
-    }
-    const search = params.size > 0 ? `?${params.toString()}` : "";
-    const response = await this.apiClient.request(`/api/database-v2/recent-chats${search}`, {
-      method: "GET",
-      cache: "no-cache",
-      headers: await this.authHeaders(),
-    });
-    if (response.status === 404) {
-      return [];
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw await responseError(
-        response,
-        "PostgreSQL recent chats load failed",
-      );
-    }
-    const body: { chats: SqlRecentChatMetadata[] } = await response.json();
-    return body.chats ?? [];
+    if (!(await this.ensureEnabled())) return [];
+    return await this.readClient.listRecentChats<SqlRecentChatMetadata>(
+      limit,
+      activeChatId,
+    );
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
