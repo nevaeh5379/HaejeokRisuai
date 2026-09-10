@@ -7745,7 +7745,7 @@ app.get("/api/read", authenticatedRouteLimiter, async (req, res, next) => {
           res.setHeader("Content-Length", chunkSize);
 
           if (result.filePath) {
-            fs.createReadStream(result.filePath, { start, end: chunkEnd }).pipe(
+            fsSync.createReadStream(result.filePath, { start, end: chunkEnd }).pipe(
               res,
             );
             return;
@@ -7764,7 +7764,7 @@ app.get("/api/read", authenticatedRouteLimiter, async (req, res, next) => {
       } else if (result.stream) {
         await pipeline(result.stream, res);
       } else if (result.filePath) {
-        await pipeline(fs.createReadStream(result.filePath), res);
+        await pipeline(fsSync.createReadStream(result.filePath), res);
       } else {
         res.send();
       }

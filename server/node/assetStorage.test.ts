@@ -63,6 +63,18 @@ describe("AssetStorage utilities", () => {
   });
 });
 
+describe("asset read route streams", () => {
+  it("uses node:fs streams instead of fs/promises for file-backed responses", () => {
+    const source = fs.readFileSync(path.join(process.cwd(), "server/node/server.cjs"), "utf8");
+    const start = source.indexOf('app.get("/api/read"');
+    const end = source.indexOf('app.get("/api/remove"', start);
+    const route = source.slice(start, end);
+
+    expect(route).toContain("fsSync.createReadStream(result.filePath");
+    expect(route).not.toContain("fs.createReadStream(result.filePath");
+  });
+});
+
 describe("streaming asset reads", () => {
   it("keeps the S3 response body as a stream", async () => {
     const storage = new S3AssetStorage({
