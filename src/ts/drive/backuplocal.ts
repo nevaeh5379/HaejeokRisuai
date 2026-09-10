@@ -1662,21 +1662,29 @@ async function restoreLocalBackupSourceUnlocked(
   );
 }
 
+async function runLocalBackupRestore<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  return await runExclusiveLocalBackupOperation("restore", async () => {
+    await flushDurableStores();
+    return await operation();
+  });
+}
+
 async function restoreLocalBackupSource(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 0, end: 90 },
 ) {
-  return await runExclusiveLocalBackupOperation("restore", async () => {
-    await flushDurableStores();
-    return await restoreLocalBackupSourceUnlocked(file, parserProgress);
-  });
+  return await runLocalBackupRestore(() =>
+    restoreLocalBackupSourceUnlocked(file, parserProgress),
+  );
 }
 
 export async function restoreLocalBackupFile(file: File) {
   await restoreLocalBackupSource(file);
 }
 
-async function loadCapacitorLocalBackup() {
+async function loadCapacitorLocalBackupUnlocked() {
   if (!nativeBackup) throw new Error("Native backup importer is unavailable");
   alertProgress(
     "Opening local backup...\nChoose a backup file in the Android file picker.",
@@ -1746,7 +1754,7 @@ async function loadCapacitorLocalBackup() {
       } Streaming database data...`,
       50,
     );
-    await restoreLocalBackupSource(
+    await restoreLocalBackupSourceUnlocked(
       createNativeImportSource(nativeBackup, id, size),
       { start: 50, end: 90 },
     );
@@ -1755,7 +1763,7 @@ async function loadCapacitorLocalBackup() {
   }
 }
 
-async function loadTauriLocalBackup() {
+async function loadTauriLocalBackupUnlocked() {
   const selected = await openDialog({
     multiple: false,
     filters: [
@@ -1771,17 +1779,17 @@ async function loadTauriLocalBackup() {
   if (!path) return;
   alertProgress("Opening local backup...", 0);
   const source = await createTauriImportSource(path);
-  await restoreLocalBackupSource(source);
+  await restoreLocalBackupSourceUnlocked(source);
 }
 
 export async function LoadLocalBackup() {
   try {
     if (isCapacitor) {
-      await loadCapacitorLocalBackup();
+      await runLocalBackupRestore(loadCapacitorLocalBackupUnlocked);
       return;
     }
     if (isTauri) {
-      await loadTauriLocalBackup();
+      await runLocalBackupRestore(loadTauriLocalBackupUnlocked);
       return;
     }
     const input = document.createElement("input");
