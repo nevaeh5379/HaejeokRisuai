@@ -16,7 +16,8 @@
       "src/*": ["./src/*"],
       "@risuai/chat-core/*": ["./packages/chat-core/*"],
       "@risuai/protocol/*": ["./packages/protocol/*"],
-      "@risuai/backup-core/*": ["./packages/backup-core/*"]
+      "@risuai/backup-core/*": ["./packages/backup-core/*"],
+      "@risuai/storage-remote/*": ["./packages/storage-remote/src/*"]
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,

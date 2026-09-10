@@ -1,0 +1,13 @@
+{
+  "name": "@risuai/storage-remote",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./nodeApiClient": "./src/nodeApiClient.ts",
+    "./keypairStore": "./src/keypairStore.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

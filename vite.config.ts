@@ -268,6 +268,7 @@ export default defineConfig(({command, mode}) => {
         '@risuai/chat-core':resolve(process.cwd(), 'packages/chat-core'),
         '@risuai/protocol':resolve(process.cwd(), 'packages/protocol'),
         '@risuai/backup-core':resolve(process.cwd(), 'packages/backup-core'),
+        '@risuai/storage-remote':resolve(process.cwd(), 'packages/storage-remote/src'),
       }
     },
     worker: {
