@@ -9,7 +9,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
-import type { NodeApiClient } from "../storage/runtime/nodeApiClient";
+import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
 import {
   isLocalChatGenerationActive,

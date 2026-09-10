@@ -4,7 +4,7 @@ import type { CapacitorStorage } from "./capacitorStorage";
 import { NodeStorage } from "./nodeStorage";
 import { OpfsStorage } from "./opfsStorage";
 import { TauriAssetStorage } from "./tauriAssetStorage";
-import type { NodeApiClient } from "../runtime/nodeApiClient";
+import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import type { StorageProfile } from "../runtime/storageProfile";
 import {
   createStorageSyncAssetReader,

@@ -1,4 +1,4 @@
-import type { StorageSyncDirection } from "./nodeApiClient";
+import type { StorageSyncDirection } from "@risuai/storage-remote/nodeApiClient";
 
 const STORAGE_SYNC_RESUME_KEY = "risuai.storageSync.resume.v1";
 

@@ -21,7 +21,7 @@ import {
   type NodeStorageSyncSession,
   type NodeStorageSyncSummary,
   type StorageSyncDirection,
-} from "../runtime/nodeApiClient";
+} from "@risuai/storage-remote/nodeApiClient";
 import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.cjs";
 import type {
   NodeChatContinuationDecision,

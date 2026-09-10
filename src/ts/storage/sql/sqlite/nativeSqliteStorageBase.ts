@@ -49,12 +49,12 @@ import {
   RELATIONAL_SCHEMA_LAYOUT,
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
-} from "./relationalNodeCodec";
-import { applySqliteCommit, writeSqliteColdStorage } from "./sqliteCommit";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
+import { applySqliteCommit, writeSqliteColdStorage } from "@risuai/storage-sqlite/sqliteCommit";
 import {
   SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
   SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
-} from "./sqliteLastMessageTime";
+} from "@risuai/storage-sqlite/sqliteLastMessageTime";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,

@@ -50,7 +50,7 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import { applySqliteCommit, writeSqliteColdStorage } from "../sqliteCommit";
+import { applySqliteCommit, writeSqliteColdStorage } from "@risuai/storage-sqlite/sqliteCommit";
 import {
   rebuildRelationalValue,
   decodedText,
@@ -58,7 +58,7 @@ import {
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
   type RelationalNodeRow,
-} from "../relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import {
   AsyncSerialQueue,
   normalizeSqliteLimit,

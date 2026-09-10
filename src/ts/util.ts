@@ -1350,7 +1350,7 @@ export {
   openKeypairStoreDB,
   saveKeypairStore,
   getKeypairStore,
-} from "./storage/runtime/keypairStore";
+} from "@risuai/storage-remote/keypairStore";
 
 export function base64url(source: Uint8Array | ArrayBuffer): string {
   const bytes = source instanceof ArrayBuffer ? new Uint8Array(source) : source;

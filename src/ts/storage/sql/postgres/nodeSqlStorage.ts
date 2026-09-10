@@ -34,7 +34,7 @@ import { BoundedCache } from "../../../memory/boundedCache";
 import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
-} from "../../runtime/nodeApiClient";
+} from "@risuai/storage-remote/nodeApiClient";
 
 import type {
   DbVendor,

@@ -12,7 +12,7 @@ import type {
   NodeStorageSyncSqlPlanInput,
   NodeStorageSyncSqlValidation,
   NodeStorageSyncSummary,
-} from "./nodeApiClient";
+} from "@risuai/storage-remote/nodeApiClient";
 import {
   STORAGE_SYNC_ASSET_CHUNK_BYTES,
   STORAGE_SYNC_ASSET_MAX_CONCURRENCY,

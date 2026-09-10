@@ -3,8 +3,8 @@ import type { LegacyBranchMigrationPlan } from "../../../../../packages/protocol
 import {
   flattenRelationalValue,
   RELATIONAL_NODE_COLUMNS,
-} from "./relationalNodeCodec";
-import { messageExtensionData } from "./sqliteCommit";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
+import { messageExtensionData } from "@risuai/storage-sqlite/sqliteCommit";
 import type { SqliteTransactionStatement } from "./sqliteStorageUtils";
 
 // Kept separate from sqlite-schema.sql because native backends validate and

@@ -7,7 +7,7 @@ import {
   rebuildRelationalValue,
   decodedText,
   type RelationalNodeRow,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import type { Message } from "../../database/schema";
 
 export class AsyncSerialQueue {

@@ -30,18 +30,18 @@ import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   isSqlitePragmaStatement,
   splitSqliteStatements,
-} from "../sqliteSchemaStatements";
+} from "@risuai/storage-sqlite/sqliteSchemaStatements";
 import {
   SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
   SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
-} from "../sqliteLastMessageTime";
+} from "@risuai/storage-sqlite/sqliteLastMessageTime";
 import {
   rebuildRelationalValue,
   decodedText,
   SQLITE_SCHEMA_VERSION,
   RELATIONAL_SCHEMA_LAYOUT,
   SqlSchemaResetRequiredError,
-} from "../relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 
 interface SqliteStmt {
   bind: (params: unknown[]) => void;

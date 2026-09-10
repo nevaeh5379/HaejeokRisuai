@@ -1,6 +1,7 @@
 import { isCapacitor, isNodeServer, isTauri } from "../../platform";
 import { NodeStorage } from "../files/nodeStorage";
-import { createRemoteNodeApiClient, type NodeApiClient } from "./nodeApiClient";
+import { createRemoteNodeApiClient } from "./nodeApiClient";
+import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import {
   normalizeRemoteBaseUrl,
   type StorageProfile,

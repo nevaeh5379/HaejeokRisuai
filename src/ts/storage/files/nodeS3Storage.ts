@@ -16,7 +16,7 @@ import type {
 import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
-} from "../runtime/nodeApiClient";
+} from "@risuai/storage-remote/nodeApiClient";
 export type {
   AssetStorageTarget,
   AssetStorageType,
