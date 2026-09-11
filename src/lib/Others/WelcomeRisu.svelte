@@ -18,7 +18,7 @@ import { onMount } from 'svelte';
     ChevronRight,
     ChevronDown,
     CircleHelp,
-    X,
+    CircleXIcon,
     FileUp,
     FolderCheck,
     ExternalLink,
@@ -1133,10 +1133,10 @@ import { onMount } from 'svelte';
           <button
             type="button"
             onclick={() => { showStorageForm = false; storageError = ''; }}
-            class="p-1.5 rounded-lg text-textcolor2 hover:text-textcolor hover:bg-darkbutton transition-colors"
+            class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
             aria-label="Close"
           >
-            <X class="w-4 h-4" />
+            <CircleXIcon size={settingsStore.state.settingsCloseButtonSize || 24} />
           </button>
         </div>
 
