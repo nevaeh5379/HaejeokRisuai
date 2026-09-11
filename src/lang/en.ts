@@ -662,16 +662,8 @@ export const languageEnglish = {
     modelNamePlaceholder: "e.g. claude-3-7-sonnet, deepseek-chat, gpt-4o",
     nicknameTitle: "Set Nickname",
     completeSetupBtn: "Complete Setup",
-    storageSectionTitle: "Storage Location",
-    storageSectionDesc:
-      "Your chats and assets live in one place. This device is used by default; connect a server anytime.",
-    storageLocalLabel: "This Device",
-    storageLocalDesc: "Everything is stored locally on this device.",
-    storageRemoteLabel: "Self-Hosted Server",
-    storageRemoteDesc:
-      "Use your server's SQL and asset storage from this device.",
-    storageConnectBtn: "Connect",
-    storageConnectedBadge: "Connected",
+    storageRemoteLabel: "Connect Self-Hosted Server",
+    storageConnectedBadge: "Using Server",
     storageServerUrlLabel: "Server Address",
     storageServerUrlPlaceholder: "https://risu.example.com",
     storageServerPasswordLabel: "Server Password",
@@ -683,8 +675,6 @@ export const languageEnglish = {
     storageConnectFail: "Could not connect to the storage server.",
     storageConnectUse: "Connect & Use",
     storageConnectBack: "Back",
-    storageConnectLater:
-      "You can switch storage locations later in Settings > Storage.",
   },
   triggerCategories: {
     Special: "Special",
