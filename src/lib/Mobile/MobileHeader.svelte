@@ -33,6 +33,7 @@
         openMobileSettingsPage,
         mobileBotTargetStore
     } from "src/ts/stores.svelte";
+    import { isTauriMacOS } from "src/ts/platform";
     import { preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders';
     import { getCharImage } from "src/ts/characters";
     import { changeChatTo } from "src/ts/globalApi.svelte";
@@ -157,7 +158,12 @@
     }
 </script>
 
-<header class="w-full pt-[max(env(safe-area-inset-top),0.5rem)] px-3 pb-2 border-b border-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 z-30 select-none shadow-xs">
+<header
+    class="w-full pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 border-b border-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 z-30 select-none shadow-xs pr-3"
+    class:pl-3={!isTauriMacOS}
+    class:pl-20={isTauriMacOS}
+    data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}
+>
     <!-- ================= 1. IN CHAT SIDEBAR OPEN ================= -->
     {#if $selectedCharID !== -1 && $MobileSideBar > 0}
         <div class="flex items-center gap-2 min-w-0 flex-1">
