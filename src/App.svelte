@@ -345,7 +345,7 @@
             <div class="relative w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
                 {#if isTauriMacOS}
                     <div
-                        class="absolute top-0 left-0 right-1 h-10 z-20"
+                        class="absolute top-0 left-0 right-1 h-10 z-[1]"
                         data-tauri-drag-region="true"
                         aria-hidden="true"
                     ></div>

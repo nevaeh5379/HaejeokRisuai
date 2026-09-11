@@ -43,7 +43,7 @@
 <main class="relative w-full h-full overflow-auto bg-bgcolor text-textcolor p-5 flex items-center justify-center">
   {#if isTauriMacOS}
     <div
-      class="absolute top-0 left-0 right-1 h-10 z-20"
+      class="absolute top-0 left-0 right-1 h-10 z-[1]"
       data-tauri-drag-region="true"
       aria-hidden="true"
     ></div>
