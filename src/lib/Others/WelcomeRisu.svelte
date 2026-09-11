@@ -39,6 +39,10 @@ import { onMount } from 'svelte';
   } from 'src/ts/storage/database/migration';
   import { LoadLocalBackup, restoreLocalBackupFile } from 'src/ts/drive/backuplocal';
   import { MobileGUI } from 'src/ts/stores.svelte';
+  import { connectRemoteStorageProfile } from 'src/ts/storage/runtime/storageProfileConnection';
+  import { saveStorageProfile } from 'src/ts/storage/runtime/storageProfile';
+  import { getActiveStorageRuntime } from 'src/ts/storage/runtime/activeStorageRuntime';
+  import { isNodeServer } from 'src/ts/platform';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
   import WelcomeRisuMobile from './WelcomeRisuMobile.svelte';
 
@@ -87,6 +91,24 @@ import { onMount } from 'svelte';
   let migrationProgress = $state('');
   let migrationDone = $state(false);
   let migrationError = $state<string | null>(null);
+
+  // Storage Location State (local by default, self-hosted server optional)
+  let storageMode = $state<'local' | 'remote'>('local');
+  let showStorageForm = $state(false);
+  let storageUrl = $state('');
+  let storagePassword = $state('');
+  let storageAllowInsecureHttp = $state(false);
+  let storageConnecting = $state(false);
+  let storageError = $state('');
+
+  $effect(() => {
+    if (isNodeServer) return;
+    try {
+      storageMode = getActiveStorageRuntime().profile.mode;
+    } catch {
+      storageMode = 'local';
+    }
+  });
 
   // Available Languages
   const languages = [
@@ -310,6 +332,29 @@ import { onMount } from 'svelte';
     }
   }
 
+  async function connectRemoteStorage() {
+    storageConnecting = true;
+    storageError = '';
+    try {
+      const { profile } = await connectRemoteStorageProfile({
+        baseUrl: storageUrl,
+        allowInsecureHttp: storageAllowInsecureHttp,
+        password: storagePassword,
+        pageProtocol: location.protocol,
+      });
+      saveStorageProfile(profile);
+      location.reload();
+    } catch (cause) {
+      storageError =
+        cause instanceof Error
+          ? cause.message
+          : String(cause ?? (l.setup?.storageConnectFail || '저장소 서버에 연결하지 못했어요.'));
+    } finally {
+      storageConnecting = false;
+      storagePassword = '';
+    }
+  }
+
   // Complete onboarding & enter app
   async function finishAndEnterApp() {
     applyPresetToCurrentState(prebuiltPresets.OAI2);
@@ -394,6 +439,12 @@ import { onMount } from 'svelte';
       settingsStore.state.autoTranslate = true;
       settingsStore.state.translatorType = 'google';
       settingsStore.state.useAutoTranslateInput = true;
+    }
+
+    // Persist the storage profile chosen (or defaulted) during onboarding so
+    // the next refresh resolves it directly instead of re-probing.
+    if (!isNodeServer && storageMode === 'local') {
+      saveStorageProfile({ version: 1, mode: 'local' });
     }
 
     await settingsStore.set('didFirstSetup', true);
@@ -565,6 +616,95 @@ import { onMount } from 'svelte';
               </div>
             </button>
           </div>
+
+          <!-- Storage Location Section (integrated server/local choice) -->
+          {#if !isNodeServer}
+            {#if showStorageForm}
+              <div class="flex flex-col gap-3" in:fade={{ duration: 150 }}>
+                <div class="flex items-center justify-between border-b border-borderc pb-2.5">
+                  <button
+                    type="button"
+                    class="text-xs text-textcolor2 hover:text-textcolor flex items-center gap-1 transition-colors"
+                    onclick={() => { showStorageForm = false; storageError = ''; }}
+                  >
+                    <ArrowLeft class="w-3.5 h-3.5" />
+                    <span>{l.setup?.storageConnectBack || '뒤로'}</span>
+                  </button>
+                  <h2 class="font-bold text-xs md:text-sm text-textcolor flex items-center gap-1.5">
+                    <Server class="w-4 h-4 text-blue-400" />
+                    <span>{l.setup?.storageRemoteLabel || '셀프 호스트 서버 연결'}</span>
+                  </h2>
+                </div>
+
+                <form class="space-y-2.5" onsubmit={(event) => { event.preventDefault(); void connectRemoteStorage(); }}>
+                  <label class="block">
+                    <span class="text-xs font-bold">{l.setup?.storageServerUrlLabel || '서버 주소'}</span>
+                    <input
+                      type="url"
+                      bind:value={storageUrl}
+                      placeholder={l.setup?.storageServerUrlPlaceholder || 'https://risu.example.com'}
+                      autocomplete="url"
+                      class="mt-1 w-full px-3 py-2 rounded-lg bg-bgcolor border border-borderc text-textcolor text-xs focus:border-blue-500 outline-none transition-colors"
+                    />
+                  </label>
+                  <label class="block">
+                    <span class="text-xs font-bold">{l.setup?.storageServerPasswordLabel || '서버 비밀번호'}</span>
+                    <input
+                      type="password"
+                      bind:value={storagePassword}
+                      autocomplete="current-password"
+                      class="mt-1 w-full px-3 py-2 rounded-lg bg-bgcolor border border-borderc text-textcolor text-xs focus:border-blue-500 outline-none transition-colors"
+                    />
+                    <span class="block text-[10px] text-textcolor2 mt-0.5">
+                      {l.setup?.storageServerPasswordDesc || '비밀번호는 저장하지 않고 공개키 등록에만 사용해요.'}
+                    </span>
+                  </label>
+                  <label class="flex items-start gap-2 text-xs">
+                    <input class="mt-0.5" type="checkbox" bind:checked={storageAllowInsecureHttp} />
+                    <span>{l.setup?.storageInsecureHttpLabel || '안전하지 않은 HTTP 허용'}</span>
+                  </label>
+                  {#if storageError}
+                    <p class="rounded-lg bg-red-500/10 border border-red-500/40 p-2.5 text-xs text-red-300 break-words">{storageError}</p>
+                  {/if}
+                  <button
+                    type="submit"
+                    class="w-full px-4 py-2 rounded-lg bg-selected font-bold text-xs text-textcolor disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    disabled={storageConnecting || !storageUrl.trim()}
+                  >
+                    {#if storageConnecting}
+                      <RefreshCw class="w-3 h-3 animate-spin" />
+                      <span>{l.setup?.storageConnecting || '연결 확인 중...'}</span>
+                    {:else}
+                      <span>{l.setup?.storageConnectUse || '연결하고 사용'}</span>
+                    {/if}
+                  </button>
+                </form>
+              </div>
+            {:else}
+              <div class="flex items-center justify-between gap-3 rounded-xl border border-borderc/30 bg-darkbutton/20 px-3.5 py-2.5">
+                <span class="flex items-center gap-2 min-w-0 text-xs text-textcolor2">
+                  <Server class="w-3.5 h-3.5 shrink-0" />
+                  <span class="truncate">
+                    {l.setup?.storageSectionDesc || '대화와 자산은 기본적으로 이 기기에 저장돼요. 셀프 호스트 서버로 언제든 바꿀 수 있어요.'}
+                  </span>
+                </span>
+                {#if storageMode === 'remote'}
+                  <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-semibold whitespace-nowrap shrink-0">
+                    {l.setup?.storageConnectedBadge || '서버 사용 중'}
+                  </span>
+                {:else}
+                  <button
+                    type="button"
+                    class="px-3 py-1.5 rounded-lg bg-darkbutton hover:bg-selected border border-borderc/60 text-textcolor text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0"
+                    onclick={() => { showStorageForm = true; storageError = ''; }}
+                  >
+                    <Server class="w-3 h-3 text-textcolor2" />
+                    <span>{l.setup?.storageRemoteLabel || '셀프 호스트 서버 연결'}</span>
+                  </button>
+                {/if}
+              </div>
+            {/if}
+          {/if}
 
           <!-- Option 3: Skip / Explore directly -->
           <div class="flex justify-end mt-1">

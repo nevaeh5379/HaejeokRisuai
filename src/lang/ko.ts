@@ -583,6 +583,27 @@ export const languageKorean = {
     modelNamePlaceholder: "예: claude-3-7-sonnet, deepseek-chat, gpt-4o",
     nicknameTitle: "닉네임 설정",
     completeSetupBtn: "설정 완료하기",
+    storageSectionTitle: "저장 위치",
+    storageSectionDesc:
+      "대화와 자산은 한 곳에 함께 저장된답니다. 기본값은 이 기기이며, 서버는 언제든 연결할 수 있어요.",
+    storageLocalLabel: "이 기기",
+    storageLocalDesc: "모든 데이터를 현재 기기에만 저장해요.",
+    storageRemoteLabel: "셀프 호스트 서버",
+    storageRemoteDesc: "서버의 SQL과 자산 저장소를 이 기기에서 함께 사용해요.",
+    storageConnectBtn: "연결",
+    storageConnectedBadge: "연결됨",
+    storageServerUrlLabel: "서버 주소",
+    storageServerUrlPlaceholder: "https://risu.example.com",
+    storageServerPasswordLabel: "서버 비밀번호",
+    storageServerPasswordDesc:
+      "비밀번호는 저장하지 않고 공개키 등록에만 사용해요.",
+    storageInsecureHttpLabel:
+      "안전하지 않은 HTTP 허용 — 네트워크에서 내용과 인증이 노출될 수 있어요.",
+    storageConnecting: "연결 확인 중...",
+    storageConnectFail: "저장소 서버에 연결하지 못했어요.",
+    storageConnectUse: "연결하고 사용",
+    storageConnectBack: "뒤로",
+    storageConnectLater: "저장 위치는 나중에 설정 > 저장소에서 바꿀 수 있어요.",
   },
   triggerCategories: {
     Special: "특수",

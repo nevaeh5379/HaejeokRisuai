@@ -55,6 +55,7 @@ import {
   describeStorageStartupError,
   storageProfileGate,
 } from "../storage/runtime/storageProfileGate";
+
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { getCurrentStorageProfilePlatform } from "../storage/runtime/storageProfileConnection";
 
@@ -96,8 +97,11 @@ async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> 
     saveStorageProfile(local);
     return local;
   }
-  storageProfileGate.set({ status: "required" });
-  return null;
+  // Fresh install: default to local storage and let the welcome UI offer
+  // connecting a self-hosted server instead of a blocking pre-welcome gate.
+  // The profile is not persisted until onboarding finishes so a refresh
+  // retries the same decision path.
+  return local;
 }
 
 /**

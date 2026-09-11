@@ -3,7 +3,6 @@ import type { StorageProfile } from "./storageProfile";
 
 export type StorageProfileGateState =
   | { status: "idle" }
-  | { status: "required"; draft?: Extract<StorageProfile, { mode: "remote" }> }
   | {
       status: "failure";
       profile: Extract<StorageProfile, { mode: "remote" }>;
