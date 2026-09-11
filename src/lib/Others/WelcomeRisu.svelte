@@ -572,22 +572,22 @@ import { onMount } from 'svelte';
               onclick={() => {
                 currentStage = 'migration';
               }}
-              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between group"
+              class="text-left p-3.5 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex items-center justify-between group"
             >
-              <div class="flex items-start justify-between w-full mb-2.5">
-                <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
                   <Database class="w-4 h-4" />
                 </div>
-                <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc/30 font-medium whitespace-nowrap shrink-0">
-                  {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
-                </span>
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-bold text-sm md:text-base text-textcolor break-keep">
+                    {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
+                  </span>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc/30 font-medium whitespace-nowrap shrink-0">
+                    {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
+                  </span>
+                </div>
               </div>
-              <div class="flex items-center justify-between w-full mt-3">
-                <span class="font-bold text-sm md:text-base text-textcolor break-keep">
-                  {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
-                </span>
-                <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
-              </div>
+              <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
             </button>
 
             <!-- Option 2: Quick AI Setup -->
@@ -596,22 +596,22 @@ import { onMount } from 'svelte';
                 currentStage = 'quick-setup';
                 quickStep = 1;
               }}
-              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between group"
+              class="text-left p-3.5 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex items-center justify-between group"
             >
-              <div class="flex items-start justify-between w-full mb-2.5">
-                <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
                   <Bot class="w-4 h-4" />
                 </div>
-                <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium whitespace-nowrap shrink-0">
-                  {l.setup?.badgeNewRecommended || '추천'}
-                </span>
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-bold text-sm md:text-base text-textcolor break-keep">
+                    {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
+                  </span>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium whitespace-nowrap shrink-0">
+                    {l.setup?.badgeNewRecommended || '추천'}
+                  </span>
+                </div>
               </div>
-              <div class="flex items-center justify-between w-full mt-3">
-                <span class="font-bold text-sm md:text-base text-textcolor break-keep">
-                  {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
-                </span>
-                <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
-              </div>
+              <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
             </button>
           </div>
 
