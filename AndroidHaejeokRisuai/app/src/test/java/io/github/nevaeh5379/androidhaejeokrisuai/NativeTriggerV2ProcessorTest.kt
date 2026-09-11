@@ -1,0 +1,524 @@
+package io.github.nevaeh5379.androidhaejeokrisuai
+
+import io.github.nevaeh5379.androidhaejeokrisuai.data.CharacterProfile
+import io.github.nevaeh5379.androidhaejeokrisuai.data.GenerationSettings
+import io.github.nevaeh5379.androidhaejeokrisuai.data.LoreEntry
+import io.github.nevaeh5379.androidhaejeokrisuai.data.MessageRecord
+import io.github.nevaeh5379.androidhaejeokrisuai.data.PersonaProfile
+import io.github.nevaeh5379.androidhaejeokrisuai.data.TriggerScript
+import io.github.nevaeh5379.androidhaejeokrisuai.data.effectivePersonaPrompt
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptBuilder
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativePromptMessage
+import io.github.nevaeh5379.androidhaejeokrisuai.generation.NativeTriggerProcessor
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class NativeTriggerV2ProcessorTest {
+    private val settings = GenerationSettings(username = "Alice")
+    private fun run(effects: List<Map<String, Any?>>, variables: Map<String, String> = emptyMap()) =
+        NativeTriggerProcessor.run(
+            mode = "start",
+            settings = settings,
+            character = CharacterProfile(
+                id = "c",
+                name = "Lua",
+                triggerScripts = listOf(TriggerScript("v2", "start", effects = effects)),
+            ),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = variables,
+            chatId = "chat",
+        )
+
+    private fun runRequest(
+        effects: List<Map<String, Any?>>,
+        variables: Map<String, String> = emptyMap(),
+        requestState: List<NativePromptMessage> = listOf(
+            NativePromptMessage("system", "system-old"),
+            NativePromptMessage("user", "user-old"),
+        ),
+    ) = NativeTriggerProcessor.run(
+        mode = "request",
+        settings = settings,
+        character = CharacterProfile(
+            id = "c",
+            name = "Lua",
+            triggerScripts = listOf(TriggerScript("request", "request", effects = effects)),
+        ),
+        messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+        variables = variables,
+        chatId = "chat",
+        requestState = requestState,
+    )
+
+    @Test
+    fun ifElseUsesNumericEqualityAndSkipsOppositeBranch() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2If", "condition" to "=", "targetType" to "value",
+                "target" to "1", "source" to "number", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "=", "var" to "result",
+                "valueType" to "value", "value" to "true-branch", "indent" to 1,
+            ),
+            mapOf("type" to "v2EndIndent", "indent" to 1),
+            mapOf("type" to "v2Else", "indent" to 0),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "=", "var" to "result",
+                "valueType" to "value", "value" to "false-branch", "indent" to 1,
+            ),
+            mapOf("type" to "v2EndIndent", "indent" to 1),
+        )
+        assertEquals("true-branch", run(effects, mapOf("number" to "1.0")).variables["result"])
+        assertEquals("false-branch", run(effects, mapOf("number" to "2")).variables["result"])
+    }
+    @Test
+    fun loopNTimesAndLocalVariablesMatchV2ScopeRules() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "=", "var" to "count",
+                "valueType" to "value", "value" to "0", "indent" to 0,
+            ),
+            mapOf("type" to "v2LoopNTimes", "value" to "3", "valueType" to "value", "indent" to 0),
+            mapOf(
+                "type" to "v2DeclareLocalVar", "var" to "shadow", "value" to "5",
+                "valueType" to "value", "indent" to 1,
+            ),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "+=", "var" to "shadow",
+                "valueType" to "value", "value" to "1", "indent" to 1,
+            ),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "+=", "var" to "count",
+                "valueType" to "value", "value" to "1", "indent" to 1,
+            ),
+            mapOf("type" to "v2EndIndent", "indent" to 1, "endOfLoop" to true),
+        )
+        val result = run(effects, mapOf("shadow" to "99"))
+        assertEquals("3", result.variables["count"])
+        assertEquals("99", result.variables["shadow"])
+    }
+    @Test
+    fun advancedMembershipAndApproximateComparisonFollowRisuRules() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2IfAdvanced", "condition" to "∈", "sourceType" to "value",
+                "source" to "b", "targetType" to "value", "target" to "[\"a\",\"b\"]", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "=", "var" to "member",
+                "valueType" to "value", "value" to "yes", "indent" to 1,
+            ),
+            mapOf("type" to "v2EndIndent", "indent" to 1),
+            mapOf(
+                "type" to "v2IfAdvanced", "condition" to "≒", "sourceType" to "value",
+                "source" to "Hello World", "targetType" to "value", "target" to "helloworld", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2SetVar", "operator" to "=", "var" to "approx",
+                "valueType" to "value", "value" to "yes", "indent" to 1,
+            ),
+            mapOf("type" to "v2EndIndent", "indent" to 1),
+        )
+        val result = run(effects)
+        assertEquals("yes", result.variables["member"])
+        assertEquals("yes", result.variables["approx"])
+    }
+    @Test
+    fun stopTriggerOnlyStopsCurrentTriggerWhileStopPromptSetsRequestFlag() {
+        val first = TriggerScript(
+            comment = "first",
+            type = "start",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetVar", "operator" to "=", "var" to "before", "valueType" to "value", "value" to "yes", "indent" to 0),
+                mapOf("type" to "v2StopTrigger", "indent" to 0),
+                mapOf("type" to "v2SetVar", "operator" to "=", "var" to "skipped", "valueType" to "value", "value" to "bad", "indent" to 0),
+            ),
+        )
+        val second = TriggerScript(
+            comment = "second",
+            type = "start",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2StopPromptSending", "indent" to 0),
+                mapOf("type" to "v2SetVar", "operator" to "=", "var" to "after", "valueType" to "value", "value" to "yes", "indent" to 0),
+            ),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = settings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(first, second)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(), chatId = "chat",
+        )
+        assertEquals("yes", result.variables["before"])
+        assertNull(result.variables["skipped"])
+        assertEquals("yes", result.variables["after"])
+        assertTrue(result.stopSending)
+    }
+
+    @Test
+    fun v2CutChatSupportsNegativeIndexes() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2CutChat", "start" to "-1", "startType" to "value",
+                "end" to "999", "endType" to "value", "indent" to 0,
+            ),
+        )
+        val trigger = TriggerScript("v2", "start", effects = effects)
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = settings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(trigger)),
+            messages = listOf(
+                MessageRecord("a", "chat", "user", "a"),
+                MessageRecord("b", "chat", "char", "b"),
+            ),
+            variables = emptyMap(), chatId = "chat",
+        )
+        assertEquals(listOf("b"), result.messages.map(MessageRecord::id))
+        assertFalse(result.stopSending)
+    }
+
+    @Test
+    fun pureMessageStringArrayAndRegexEffectsComposeInOneProgram() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2GetMessageCount", "outputVar" to "count", "indent" to 0),
+            mapOf("type" to "v2GetLastMessage", "outputVar" to "last", "indent" to 0),
+            mapOf("type" to "v2MakeArrayVar", "var" to "arr", "indent" to 0),
+            mapOf("type" to "v2PushArrayVar", "var" to "arr", "valueType" to "value", "value" to "a", "indent" to 0),
+            mapOf("type" to "v2PushArrayVar", "var" to "arr", "valueType" to "value", "value" to "b", "indent" to 0),
+            mapOf("type" to "v2GetArrayVarLength", "var" to "arr", "outputVar" to "len", "indent" to 0),
+            mapOf("type" to "v2PopArrayVar", "var" to "arr", "outputVar" to "popped", "indent" to 0),
+            mapOf("type" to "v2UnshiftArrayVar", "var" to "arr", "valueType" to "value", "value" to "z", "indent" to 0),
+            mapOf("type" to "v2JoinArrayVar", "var" to "arr", "varType" to "var", "delimiter" to "|", "delimiterType" to "value", "outputVar" to "joined", "indent" to 0),
+            mapOf("type" to "v2SplitString", "source" to "a,b,", "sourceType" to "value", "delimiter" to ",", "delimiterType" to "value", "outputVar" to "split", "indent" to 0),
+            mapOf("type" to "v2RegexTest", "value" to "abc123", "valueType" to "value", "regex" to "\\d+", "regexType" to "value", "flags" to "", "flagsType" to "value", "outputVar" to "matched", "indent" to 0),
+            mapOf("type" to "v2ExtractRegex", "value" to "abc123", "valueType" to "value", "regex" to "([a-z]+)(\\d+)", "regexType" to "value", "flags" to "", "flagsType" to "value", "result" to "$2-$1-$$-$&", "resultType" to "value", "outputVar" to "extracted", "indent" to 0),
+        )
+        val result = run(effects)
+        assertEquals("1", result.variables["count"])
+        assertEquals("hello", result.variables["last"])
+        assertEquals("2", result.variables["len"])
+        assertEquals("b", result.variables["popped"])
+        assertEquals("z|a", result.variables["joined"])
+        assertEquals("[\"a\",\"b\",\"\"]", result.variables["split"])
+        assertEquals("1", result.variables["matched"])
+        assertEquals("123-abc-$-abc123", result.variables["extracted"])
+    }
+
+    @Test
+    fun dictAndCalculateEffectsPreserveRisuStateSemantics() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2MakeDictVar", "var" to "dict", "indent" to 0),
+            mapOf("type" to "v2SetDictVar", "var" to "dict", "varType" to "var", "key" to "score", "keyType" to "value", "value" to "7", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetDictVar", "var" to "dict", "varType" to "var", "key" to "name", "keyType" to "value", "value" to "Alice", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2HasDictKey", "var" to "dict", "varType" to "var", "key" to "name", "keyType" to "value", "outputVar" to "has", "indent" to 0),
+            mapOf("type" to "v2GetDictSize", "var" to "dict", "varType" to "var", "outputVar" to "size", "indent" to 0),
+            mapOf("type" to "v2GetDictKeys", "var" to "dict", "varType" to "var", "outputVar" to "keys", "indent" to 0),
+            mapOf("type" to "v2GetDictValues", "var" to "dict", "varType" to "var", "outputVar" to "values", "indent" to 0),
+            mapOf("type" to "v2GetDictVar", "var" to "dict", "varType" to "var", "key" to "score", "keyType" to "value", "outputVar" to "got", "indent" to 0),
+            mapOf("type" to "v2Calculate", "expression" to "(\$score+3)*2>=20 && 1", "expressionType" to "value", "outputVar" to "calc", "indent" to 0),
+            mapOf("type" to "v2DeleteDictKey", "var" to "dict", "varType" to "var", "key" to "name", "keyType" to "value", "indent" to 0),
+            mapOf("type" to "v2GetDictSize", "var" to "dict", "varType" to "var", "outputVar" to "size2", "indent" to 0),
+        )
+        val result = run(effects, mapOf("score" to "7"))
+        assertEquals("1", result.variables["has"])
+        assertEquals("2", result.variables["size"])
+        assertEquals("[\"score\",\"name\"]", result.variables["keys"])
+        assertEquals("[\"7\",\"Alice\"]", result.variables["values"])
+        assertEquals("7", result.variables["got"])
+        assertEquals("1", result.variables["calc"])
+        assertEquals("{\"score\":\"7\"}", result.variables["dict"])
+        assertEquals("1", result.variables["size2"])
+    }
+
+    @Test
+    fun replaceStringSupportsFirstGlobalAndCaptureTargetModes() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2ReplaceString", "source" to "a1 b2", "sourceType" to "value",
+                "regex" to "([a-z])(\\d)", "regexType" to "value", "result" to "$2", "resultType" to "value",
+                "replacement" to "X", "replacementType" to "value", "flags" to "g", "flagsType" to "value",
+                "outputVar" to "global", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2ReplaceString", "source" to "a1 b2", "sourceType" to "value",
+                "regex" to "([a-z])(\\d)", "regexType" to "value", "result" to "$1-$2", "resultType" to "value",
+                "replacement" to "ignored", "replacementType" to "value", "flags" to "", "flagsType" to "value",
+                "outputVar" to "first", "indent" to 0,
+            ),
+            mapOf(
+                "type" to "v2ReplaceString", "source" to "untouched", "sourceType" to "value",
+                "regex" to "[", "regexType" to "value", "result" to "$&", "resultType" to "value",
+                "replacement" to "x", "replacementType" to "value", "flags" to "", "flagsType" to "value",
+                "outputVar" to "invalid", "indent" to 0,
+            ),
+        )
+        val result = run(effects)
+        assertEquals("aX bX", result.variables["global"])
+        assertEquals("a-1 b2", result.variables["first"])
+        assertEquals("untouched", result.variables["invalid"])
+    }
+
+    @Test
+    fun mutableCharacterAndAuthorStateIsVisibleImmediately() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2SetCharacterDesc", "value" to "new {{user}}", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetAuthorNote", "value" to "note-new", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetReplaceGlobalNote", "value" to "global-new", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2GetCharacterDesc", "outputVar" to "desc", "indent" to 0),
+            mapOf("type" to "v2GetAuthorNote", "outputVar" to "note", "indent" to 0),
+            mapOf("type" to "v2GetReplaceGlobalNote", "outputVar" to "global", "indent" to 0),
+            mapOf("type" to "v2SystemPrompt", "location" to "promptend", "value" to "{{description}}|{{authornote}}", "valueType" to "value", "indent" to 0),
+        )
+        val trigger = TriggerScript("mutable", "start", effects = effects)
+        val result = NativeTriggerProcessor.run(
+            mode = "start",
+            settings = settings,
+            character = CharacterProfile("c", "Lua", description = "old", replaceGlobalNote = "global-old", triggerScripts = listOf(trigger)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(),
+            chatId = "chat",
+            authorNote = "note-old",
+        )
+        assertEquals("new Alice", result.runtimePatch.characterDescription)
+        assertEquals("note-new", result.runtimePatch.authorNote)
+        assertEquals("global-new", result.runtimePatch.replaceGlobalNote)
+        assertEquals("new Alice", result.variables["desc"])
+        assertEquals("note-new", result.variables["note"])
+        assertEquals("global-new", result.variables["global"])
+        assertEquals("new Alice|note-new\n\n", result.promptInjection.promptEnd)
+    }
+
+    @Test
+    fun readOnlyPersonaLorebookAndQuickSearchEffectsUseNativeRuntimeState() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2GetPersonaDesc", "outputVar" to "persona", "indent" to 0),
+            mapOf("type" to "v2QuickSearchChat", "value" to "SECRET", "valueType" to "value", "depth" to "2", "depthType" to "value", "condition" to "loose", "outputVar" to "found", "indent" to 0),
+            mapOf("type" to "v2GetAllLorebooks", "outputVar" to "all", "indent" to 0),
+            mapOf("type" to "v2GetLorebookByName", "name" to "combat|world", "nameType" to "value", "outputVar" to "indices", "indent" to 0),
+            mapOf("type" to "v2GetLorebookByIndex", "index" to "1", "indexType" to "value", "outputVar" to "second", "indent" to 0),
+            mapOf("type" to "v2GetLorebook", "target" to "dragon", "targetType" to "value", "outputVar" to "bykey", "indent" to 0),
+            mapOf("type" to "v2GetLorebookIndexViaName", "name" to "Combat", "nameType" to "value", "outputVar" to "exactIndex", "indent" to 0),
+            mapOf("type" to "v2GetLorebookCountNew", "outputVar" to "count", "indent" to 0),
+        )
+        val trigger = TriggerScript("read", "start", effects = effects)
+        val character = CharacterProfile(
+            "c", "Lua",
+            globalLore = listOf(
+                LoreEntry(key = "dragon", comment = "World", content = "Dragons exist."),
+                LoreEntry(key = "sword", comment = "Combat", content = "Swords are sharp."),
+            ),
+            triggerScripts = listOf(trigger),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "start",
+            settings = settings.copy(personaPrompt = "A curious traveler"),
+            character = character,
+            messages = listOf(
+                MessageRecord("m0", "chat", "user", "old secret"),
+                MessageRecord("m1", "chat", "char", "ordinary"),
+                MessageRecord("m2", "chat", "user", "SECRET door"),
+            ),
+            variables = emptyMap(), chatId = "chat",
+        )
+        assertEquals("A curious traveler", result.variables["persona"])
+        assertEquals("1", result.variables["found"])
+        assertEquals("[\"Dragons exist.\",\"Swords are sharp.\"]", result.variables["all"])
+        assertEquals("[0,1]", result.variables["indices"])
+        assertEquals("Swords are sharp.", result.variables["second"])
+        assertEquals("Dragons exist.", result.variables["bykey"])
+        assertEquals("1", result.variables["exactIndex"])
+        assertEquals("2", result.variables["count"])
+    }
+
+    @Test
+    fun lorebookMutationsPreserveUnknownRawFieldsAndRefreshTypedView() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf(
+                "type" to "v2ModifyLorebookByIndex", "index" to "0", "indexType" to "value",
+                "name" to "{{slot}} Plus", "nameType" to "value", "key" to "{{slot}}-new", "keyType" to "value",
+                "content" to "{{slot}} edited", "contentType" to "value", "insertOrder" to "{{slot}}", "insertOrderType" to "value",
+                "indent" to 0,
+            ),
+            mapOf("type" to "v2SetLorebookAlwaysActive", "index" to "0", "indexType" to "value", "value" to true, "indent" to 0),
+            mapOf("type" to "v2GetLorebookByIndex", "index" to "0", "indexType" to "value", "outputVar" to "edited", "indent" to 0),
+            mapOf(
+                "type" to "v2CreateLorebook", "name" to "Created", "nameType" to "value",
+                "key" to "new-key", "keyType" to "value", "content" to "new content", "contentType" to "value",
+                "insertOrder" to "not-a-number", "insertOrderType" to "value", "indent" to 0,
+            ),
+            mapOf("type" to "v2GetLorebookCountNew", "outputVar" to "countBeforeDelete", "indent" to 0),
+            mapOf("type" to "v2DeleteLorebookByIndex", "index" to "1", "indexType" to "value", "indent" to 0),
+            mapOf("type" to "v2GetLorebookCountNew", "outputVar" to "countAfterDelete", "indent" to 0),
+        )
+        val originalRaw = linkedMapOf<String, Any?>(
+            "key" to "dragon", "comment" to "World", "content" to "Dragons exist.",
+            "insertorder" to 5, "alwaysActive" to false, "secondkey" to "", "selective" to false,
+            "extensionFlag" to mapOf("vendor" to "preserve-me"),
+        )
+        val trigger = TriggerScript("lore mutation", "start", effects = effects)
+        val character = CharacterProfile(
+            "c", "Lua", globalLore = listOf(LoreEntry(key = "dragon", comment = "World", content = "Dragons exist.", insertOrder = 5)),
+            globalLoreRaw = listOf(originalRaw), triggerScripts = listOf(trigger),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = settings, character = character,
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")), variables = emptyMap(), chatId = "chat",
+        )
+        val raw = result.runtimePatch.globalLoreRaw!!
+        assertEquals(1, raw.size)
+        assertEquals(mapOf("vendor" to "preserve-me"), raw[0]["extensionFlag"])
+        assertEquals("World Plus", raw[0]["comment"])
+        assertEquals("dragon-new", raw[0]["key"])
+        assertEquals("Dragons exist. edited", raw[0]["content"])
+        assertEquals(true, raw[0]["alwaysActive"])
+        assertEquals("Dragons exist. edited", result.variables["edited"])
+        assertEquals("2", result.variables["countBeforeDelete"])
+        assertEquals("1", result.variables["countAfterDelete"])
+        val patched = result.runtimePatch.applyTo(character)
+        assertEquals("World Plus", patched.globalLore.single().comment)
+        assertTrue(patched.globalLore.single().alwaysActive)
+    }
+
+    @Test
+    fun requestStateEffectsMutateContentRoleAndExposeGetters() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2GetRequestState", "index" to "1", "indexType" to "value", "outputVar" to "savedContent", "indent" to 0),
+            mapOf("type" to "v2SetRequestState", "index" to "0", "indexType" to "value", "value" to "savedContent", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2GetRequestStateLength", "outputVar" to "length", "indent" to 0),
+            mapOf("type" to "v2SetRequestState", "index" to "1", "indexType" to "value", "value" to "length", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2GetRequestStateRole", "index" to "0", "indexType" to "value", "outputVar" to "savedRole", "indent" to 0),
+            mapOf("type" to "v2SetRequestStateRole", "index" to "1", "indexType" to "value", "value" to "savedRole", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2SetRequestStateRole", "index" to "0", "indexType" to "value", "value" to "invalid-role", "valueType" to "value", "indent" to 0),
+        )
+        val state = runRequest(effects).requestState!!
+        assertEquals("user-old", state[0].content)
+        assertEquals("system", state[0].role)
+        assertEquals("2", state[1].content)
+        assertEquals("system", state[1].role)
+    }
+
+    @Test
+    fun requestVariablesStayTemporaryAndUnsafeEffectsAreSkipped() {
+        val effects = listOf(
+            mapOf("type" to "v2Header", "indent" to 0),
+            mapOf("type" to "v2SetVar", "operator" to "=", "var" to "temp", "value" to "temporary", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetRequestState", "index" to "0", "indexType" to "value", "value" to "temp", "valueType" to "var", "indent" to 0),
+            mapOf("type" to "v2SetCharacterDesc", "value" to "must-not-persist", "valueType" to "value", "indent" to 0),
+            mapOf("type" to "v2SetAuthorNote", "value" to "must-not-persist", "valueType" to "value", "indent" to 0),
+        )
+        val result = runRequest(effects, variables = mapOf("persistent" to "keep"))
+        assertEquals("temporary", result.requestState!![0].content)
+        assertEquals(mapOf("persistent" to "keep"), result.variables)
+        assertFalse(result.runtimePatch.hasCharacterChanges)
+        assertNull(result.runtimePatch.authorNote)
+    }
+
+    @Test
+    fun requestTempVariablesAreVisibleToFollowingTriggerConditions() {
+        val first = TriggerScript(
+            comment = "seed", type = "request",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetVar", "operator" to "=", "var" to "gate", "value" to "open", "valueType" to "value", "indent" to 0),
+            ),
+        )
+        val second = TriggerScript(
+            comment = "consume", type = "request",
+            conditions = listOf(mapOf("type" to "var", "var" to "gate", "operator" to "=", "value" to "open")),
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetRequestState", "index" to "0", "indexType" to "value", "value" to "condition-passed", "valueType" to "value", "indent" to 0),
+            ),
+        )
+        val result = NativeTriggerProcessor.run(
+            mode = "request", settings = settings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(first, second)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(), chatId = "chat",
+            requestState = listOf(NativePromptMessage("user", "old")),
+        )
+        assertEquals("condition-passed", result.requestState!!.single().content)
+        assertTrue(result.variables.isEmpty())
+    }
+
+    @Test
+    fun personaSetterUpdatesLegacyAndSelectedPersonaForSameTurnGeneration() {
+        val trigger = TriggerScript(
+            comment = "persona", type = "start",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2GetPersonaDesc", "outputVar" to "before", "indent" to 0),
+                mapOf("type" to "v2SetPersonaDesc", "value" to "Changed {{user}}", "valueType" to "value", "indent" to 0),
+                mapOf("type" to "v2GetPersonaDesc", "outputVar" to "after", "indent" to 0),
+            ),
+        )
+        val baseSettings = settings.copy(
+            personaPrompt = "",
+            selectedPersona = 1,
+            personas = listOf(
+                PersonaProfile(personaPrompt = "first", name = "First"),
+                PersonaProfile(
+                    personaPrompt = "selected-old", name = "Second",
+                    raw = mapOf("embeddedModule" to mapOf("vendor" to "keep-me")),
+                ),
+            ),
+        )
+        val character = CharacterProfile("c", "Lua", triggerScripts = listOf(trigger))
+        val history = listOf(MessageRecord("m", "chat", "user", "hello"))
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = baseSettings, character = character,
+            messages = history, variables = emptyMap(), chatId = "chat",
+        )
+        assertEquals("selected-old", result.variables["before"])
+        assertEquals("Changed Alice", result.variables["after"])
+        assertTrue(result.runtimePatch.hasSettingChanges)
+
+        val patched = result.runtimePatch.applyTo(baseSettings)
+        assertEquals("Changed Alice", patched.personaPrompt)
+        assertEquals("Changed Alice", patched.personas[1].personaPrompt)
+        assertEquals(mapOf("vendor" to "keep-me"), patched.personas[1].raw["embeddedModule"])
+        assertEquals("Changed Alice", patched.effectivePersonaPrompt())
+        assertTrue(
+            NativePromptBuilder.build(patched, character, history)
+                .any { "Changed Alice" in it.content },
+        )
+    }
+
+    @Test
+    fun personaSetterIsNoOpWhenSelectedPersonaDoesNotExist() {
+        val trigger = TriggerScript(
+            comment = "persona", type = "start",
+            effects = listOf(
+                mapOf("type" to "v2Header", "indent" to 0),
+                mapOf("type" to "v2SetPersonaDesc", "value" to "ignored", "valueType" to "value", "indent" to 0),
+            ),
+        )
+        val baseSettings = settings.copy(personaPrompt = "legacy", selectedPersona = 7, personas = emptyList())
+        val result = NativeTriggerProcessor.run(
+            mode = "start", settings = baseSettings,
+            character = CharacterProfile("c", "Lua", triggerScripts = listOf(trigger)),
+            messages = listOf(MessageRecord("m", "chat", "user", "hello")),
+            variables = emptyMap(), chatId = "chat",
+        )
+        assertFalse(result.runtimePatch.hasSettingChanges)
+        assertEquals("legacy", result.runtimePatch.applyTo(baseSettings).personaPrompt)
+    }
+
+}
+
