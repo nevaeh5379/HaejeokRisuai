@@ -660,6 +660,37 @@ function isEssentialBackupAsset(
   return Boolean(findBackupAssetInfo(assetMap, key));
 }
 
+type NodeBackupAssetStorage = Pick<NodeStorage, "keys" | "streamItems">;
+type StreamingBackupWriter = Pick<LocalWriter, "startBackup" | "write">;
+
+export async function streamNodeBackupAssets(
+  storage: NodeBackupAssetStorage,
+  writer: StreamingBackupWriter,
+  keys: string[],
+  onProgress?: Parameters<NodeStorage["streamItems"]>[2],
+): Promise<{ writtenKeys: string[]; missingKeys: string[] }> {
+  const writtenKeys = new Set<string>();
+
+  await storage.streamItems(
+    keys,
+    {
+      async onFileStart(name, size) {
+        writtenKeys.add(name);
+        await writer.startBackup(name, size);
+      },
+      async onFileChunk(_name, chunk) {
+        await writer.write(chunk);
+      },
+    },
+    onProgress,
+  );
+
+  return {
+    writtenKeys: [...writtenKeys],
+    missingKeys: keys.filter((key) => !writtenKeys.has(key)),
+  };
+}
+
 function reportBackupAssetProgress(
   label: string,
   current: number,
@@ -690,6 +721,43 @@ async function writeLocalBackupAssets(
   const assetMap = buildBackupAssetMap(db, options.assetScope);
   const missingAssets: string[] = [];
   let lastUiUpdate = 0;
+
+  await forageStorage.Init();
+  const nodeStorage =
+    forageStorage.realStorage instanceof NodeStorage
+      ? forageStorage.realStorage
+      : null;
+
+  if (nodeStorage) {
+    alertProgress(`${label} (Scanning server assets)`, 0);
+    await sleep(10);
+    let keys = await nodeStorage.keys("assets/");
+    if (options.assetScope === "essential") {
+      keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
+    }
+
+    const streamed = await streamNodeBackupAssets(
+      nodeStorage,
+      writer,
+      keys,
+      (progress) => {
+        const current = Math.min(
+          progress.completedFiles + (progress.currentFile ? 1 : 0),
+          progress.totalFiles,
+        );
+        reportBackupAssetProgress(
+          label,
+          current,
+          progress.totalFiles,
+          progress.currentFile ?? "",
+          assetMap,
+          missingAssets.length,
+        );
+      },
+    );
+    missingAssets.push(...streamed.missingKeys);
+    return { missingAssets, assetMap };
+  }
 
   if (isTauri) {
     alertProgress(`${label} (Scanning assets)`, 0);

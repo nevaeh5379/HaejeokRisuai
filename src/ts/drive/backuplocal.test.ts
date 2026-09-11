@@ -7,6 +7,7 @@ import {
   ensureTauriBackupAssetsDirectory,
   normalizeLocalBackupAssetPath,
   restoreInlayBackupEntry,
+  streamNodeBackupAssets,
 } from "./backuplocal";
 
 describe("createNativeImportSource", () => {
@@ -63,6 +64,56 @@ describe("createNativeImportSource", () => {
 
     await expect(source.stream().getReader().read()).rejects.toThrow(
       "incomplete chunk",
+    );
+  });
+});
+
+describe("streamNodeBackupAssets", () => {
+  it("streams remote assets into the backup and reports omitted entries", async () => {
+    const first = new Uint8Array([1, 2]);
+    const second = new Uint8Array([3, 4, 5]);
+    const storage = {
+      keys: vi.fn(),
+      streamItems: vi.fn(async (keys, handlers) => {
+        expect(keys).toEqual([
+          "assets/first.png",
+          "assets/missing.png",
+          "assets/second.mp3",
+        ]);
+        await handlers.onFileStart("assets/first.png", 2n);
+        await handlers.onFileChunk("assets/first.png", first);
+        await handlers.onFileEnd?.("assets/first.png");
+        await handlers.onFileStart("assets/second.mp3", 3n);
+        await handlers.onFileChunk("assets/second.mp3", second);
+        await handlers.onFileEnd?.("assets/second.mp3");
+      }),
+    };
+    const entries = new Map<string, Uint8Array[]>();
+    const writer = {
+      startBackup: vi.fn(async (name: string) => {
+        entries.set(name, []);
+      }),
+      write: vi.fn(async (chunk: Uint8Array) => {
+        const current = [...entries.keys()].at(-1);
+        if (current) entries.get(current)?.push(chunk);
+      }),
+    };
+
+    const result = await streamNodeBackupAssets(storage as any, writer, [
+      "assets/first.png",
+      "assets/missing.png",
+      "assets/second.mp3",
+    ]);
+
+    expect(result).toEqual({
+      writtenKeys: ["assets/first.png", "assets/second.mp3"],
+      missingKeys: ["assets/missing.png"],
+    });
+    expect(Buffer.concat(entries.get("assets/first.png") ?? [])).toEqual(
+      Buffer.from(first),
+    );
+    expect(Buffer.concat(entries.get("assets/second.mp3") ?? [])).toEqual(
+      Buffer.from(second),
     );
   });
 });
