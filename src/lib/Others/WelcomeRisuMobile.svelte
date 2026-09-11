@@ -49,6 +49,7 @@ import { onMount } from 'svelte';
   import { getActiveStorageRuntime } from 'src/ts/storage/runtime/activeStorageRuntime';
   import { isNodeServer, isTauriMacOS } from 'src/ts/platform';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
+  import Help from './Help.svelte';
 
   type Stage = 'gateway' | 'migration' | 'quick-setup' | 'done';
 
@@ -99,7 +100,6 @@ import { onMount } from 'svelte';
   // Storage Location State (local by default, self-hosted server optional)
   let storageMode = $state<'local' | 'remote'>('local');
   let showStorageForm = $state(false);
-  let showStorageHelp = $state(false);
   let storageUrl = $state('');
   let storagePassword = $state('');
   let storageAllowInsecureHttp = $state(false);
@@ -1187,11 +1187,11 @@ import { onMount } from 'svelte';
       ></button>
 
       <div
-        class="bg-darkbg border border-borderc/60 rounded-2xl p-4 sm:p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3.5 relative z-10"
+        class="bg-darkbg border border-borderc/20 rounded-2xl p-4 sm:p-5 w-full max-w-sm shadow-2xl flex flex-col gap-3.5 relative z-10"
         in:scale={{ duration: 180, start: 0.96 }}
       >
         <!-- Modal Header -->
-        <div class="flex items-center justify-between border-b border-borderc/40 pb-2.5">
+        <div class="flex items-center justify-between border-b border-borderc/15 pb-2.5">
           <h2 class="font-bold text-sm text-textcolor flex items-center gap-2">
             <div class="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <Server class="w-4 h-4" />
@@ -1220,59 +1220,39 @@ import { onMount } from 'svelte';
               bind:value={storageUrl}
               placeholder={l.setup?.storageServerUrlPlaceholder || 'https://risu.example.com'}
               autocomplete="url"
-              class="mt-1 w-full px-3 py-2.5 rounded-xl bg-bgcolor border border-borderc text-textcolor text-xs focus:border-blue-500 outline-none transition-colors"
+              class="mt-1 w-full px-3 py-2.5 rounded-xl bg-darkbutton/30 border border-borderc/20 text-textcolor text-xs focus:border-borderc/50 outline-none transition-colors"
             />
           </label>
 
           <label class="block">
-            <span class="text-xs font-bold text-textcolor">{l.setup?.storageServerPasswordLabel || '서버 비밀번호'}</span>
+            <span class="text-xs font-bold text-textcolor flex items-center gap-1.5">
+              <span>{l.setup?.storageServerPasswordLabel || '서버 비밀번호'}</span>
+              <Help text={l.setup?.storageServerPasswordDesc || '비밀번호는 저장하지 않고 공개키 등록에만 사용해요.'} />
+            </span>
             <input
               type="password"
               bind:value={storagePassword}
               autocomplete="current-password"
-              class="mt-1 w-full px-3 py-2.5 rounded-xl bg-bgcolor border border-borderc text-textcolor text-xs focus:border-blue-500 outline-none transition-colors"
+              class="mt-1 w-full px-3 py-2.5 rounded-xl bg-darkbutton/30 border border-borderc/20 text-textcolor text-xs focus:border-borderc/50 outline-none transition-colors"
             />
           </label>
 
-          <label class="flex items-center gap-2 text-xs text-textcolor cursor-pointer select-none">
-            <input type="checkbox" bind:checked={storageAllowInsecureHttp} class="rounded" />
-            <span>{l.setup?.storageInsecureHttpLabel || '안전하지 않은 HTTP 허용'}</span>
-          </label>
-
-          <!-- Collapsible Help -->
-          <div class="border-t border-borderc/30 pt-2">
-            <button
-              type="button"
-              onclick={() => (showStorageHelp = !showStorageHelp)}
-              class="text-[11px] text-textcolor2 hover:text-textcolor flex items-center gap-1.5 transition-colors select-none"
-            >
-              <CircleHelp class="w-3.5 h-3.5 text-textcolor2" />
-              <span>{l.setup?.storageHelpTitle || '도움말'}</span>
-              <ChevronDown class="w-3 h-3 transition-transform duration-150 {showStorageHelp ? 'rotate-180' : ''}" />
-            </button>
-            {#if showStorageHelp}
-              <div in:fade={{ duration: 120 }} class="mt-2 text-[11px] text-textcolor2 bg-bgcolor/60 border border-borderc/30 rounded-xl p-2.5 space-y-1.5 leading-relaxed">
-                <p>• {l.setup?.storageServerPasswordDesc || '비밀번호는 저장하지 않고 공개키 등록에만 사용해요.'}</p>
-                <p>• {l.setup?.storageInsecureHttpHelp || '안전하지 않은 HTTP를 허용하면 비암호화 통신이 가능하지만, 네트워크에서 내용과 인증이 노출될 수 있어요.'}</p>
-              </div>
-            {/if}
+          <div class="flex items-center gap-1.5 text-xs text-textcolor select-none">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" bind:checked={storageAllowInsecureHttp} class="rounded" />
+              <span>{l.setup?.storageInsecureHttpLabel || '안전하지 않은 HTTP 허용'}</span>
+            </label>
+            <Help text={l.setup?.storageInsecureHttpHelp || 'HTTP 허용 시 비암호화 통신이 가능하지만, 네트워크 상에서 내용과 인증 정보가 노출될 수 있어요.'} />
           </div>
 
           {#if storageError}
-            <p class="rounded-xl bg-red-500/10 border border-red-500/40 p-2.5 text-xs text-red-300 break-words">{storageError}</p>
+            <p class="rounded-xl bg-red-500/10 border border-red-500/30 p-2.5 text-xs text-red-300 break-words">{storageError}</p>
           {/if}
 
-          <div class="flex items-center justify-end gap-2 pt-1 border-t border-borderc/30">
-            <button
-              type="button"
-              onclick={() => { showStorageForm = false; storageError = ''; }}
-              class="px-3.5 py-2 rounded-xl bg-darkbutton hover:bg-selected/30 text-textcolor2 hover:text-textcolor text-xs font-semibold transition-colors"
-            >
-              {language.cancel || '취소'}
-            </button>
+          <div class="pt-1">
             <button
               type="submit"
-              class="px-4 py-2 rounded-xl bg-selected font-bold text-xs text-textcolor disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors"
+              class="w-full py-2.5 rounded-xl bg-selected hover:bg-selected/90 font-bold text-xs text-textcolor disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors"
               disabled={storageConnecting || !storageUrl.trim()}
             >
               {#if storageConnecting}
