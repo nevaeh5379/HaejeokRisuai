@@ -78,6 +78,24 @@ describe("asset read route streams", () => {
   });
 });
 
+describe("bulk asset read route", () => {
+  it("uses bounded prefetching before writing ordered asset packets", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "server/node/server.cts"),
+      "utf8",
+    );
+    const start = source.indexOf('"/api/read-bulk"');
+    const end = source.indexOf("function normalizeCharxEntryName", start);
+    const route = source.slice(start, end);
+
+    expect(route).toContain("prefetchInOrder(");
+    expect(route).toContain("BULK_READ_PREFETCH_CONCURRENCY");
+    expect(route.indexOf("prefetchInOrder(")).toBeLessThan(
+      route.indexOf("for await (const prefetched"),
+    );
+  });
+});
+
 describe("streaming asset reads", () => {
   it("keeps the S3 response body as a stream", async () => {
     const storage = new S3AssetStorage({

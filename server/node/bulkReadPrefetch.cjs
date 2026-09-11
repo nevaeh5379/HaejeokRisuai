@@ -12,7 +12,7 @@ function normalizePrefetchConcurrency(value) {
 }
 
 async function* prefetchInOrder(items, load, concurrency) {
-  const values = Array.from(items);
+  const values = Array.isArray(items) ? items : Array.from(items);
   const limit = normalizePrefetchConcurrency(concurrency);
   const pending = new Map();
   let nextToStart = 0;
