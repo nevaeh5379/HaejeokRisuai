@@ -48,6 +48,81 @@ const { rebuildSettings, splitSetting } =
     };
   };
 
+describe("PostgreSQL storage sync finalize concurrency", () => {
+  function storageAtRevision(revision: number) {
+    const queries: string[] = [];
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        queries.push(sql);
+        if (
+          sql.includes("SELECT revision, initialized FROM system.storage_meta")
+        ) {
+          return { rows: [{ revision, initialized: true }] };
+        }
+        if (
+          sql.includes("SELECT id FROM system.revisions WHERE storage_revision")
+        ) {
+          return { rows: [{ id: "40" }] };
+        }
+        if (sql.includes("WITH inserted AS")) {
+          return { rows: [{ id: "41" }] };
+        }
+        return { rows: [], rowCount: 1 };
+      }),
+      release: vi.fn(),
+    };
+    const storage = new PostgresStorage({
+      connectionString: "postgres://sync-test",
+    });
+    storage.pool = { connect: vi.fn(async () => client) };
+    return { storage, client, queries };
+  }
+
+  it("locks and rechecks the target revision inside the finalize transaction", async () => {
+    const { storage, client, queries } = storageAtRevision(7);
+    const callback = vi.fn(async (_client: unknown, context: any) => {
+      queries.push("CALLBACK");
+      expect(context).toMatchObject({
+        currentRevision: 7,
+        nextRevision: 8,
+        revisionId: 41,
+        previousRevisionId: 40,
+        databaseInitialized: true,
+      });
+      return { applied: 3 };
+    });
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).resolves.toMatchObject({
+      revision: 8,
+      revisionId: 41,
+      applied: 3,
+    });
+    expect(queries.findIndex((sql) => sql.includes("FOR UPDATE"))).toBeLessThan(
+      queries.indexOf("CALLBACK"),
+    );
+    expect(queries.at(-1)).toBe("COMMIT");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it("aborts instead of rebasing when another write wins the revision race", async () => {
+    const { storage, client, queries } = storageAtRevision(8);
+    const callback = vi.fn();
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).rejects.toMatchObject({
+      name: "PostgresRevisionConflictError",
+      revision: 8,
+    });
+    expect(callback).not.toHaveBeenCalled();
+    expect(queries).toContain("ROLLBACK");
+    expect(queries).not.toContain("COMMIT");
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+});
+
 describe("PostgreSQL sync payload validation", () => {
   it("accepts a normalized incremental payload", () => {
     const result = validateSyncPayload({
@@ -419,5 +494,33 @@ describe("PostgreSQL sync payload validation", () => {
     );
     expect(typeof PostgresStorage.prototype.getRevisionDiff).toBe("function");
     expect(typeof PostgresStorage.prototype.previewRestore).toBe("function");
+  });
+});
+
+describe("PostgreSQL external storage sync transaction", () => {
+  it("reuses the caller transaction without BEGIN, COMMIT, or revision writes", async () => {
+    const storage = new PostgresStorage({
+      connectionString: "postgres://external-sync-test",
+    });
+    const connect = vi.fn(async () => {
+      throw new Error("external sync must not open another connection");
+    });
+    storage.pool = { connect };
+    const client = { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) };
+
+    await expect(
+      storage.sync(
+        { baseRevision: 7 },
+        {
+          externalTransaction: {
+            client,
+            currentRevision: 7,
+            nextRevision: 8,
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ revision: 8 });
+    expect(connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
   });
 });

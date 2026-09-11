@@ -49,6 +49,14 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    import { isTauriMacOS } from "src/ts/platform";
+    import {
+      closeTauriSidebarMenuPopup,
+      listenTauriSidebarMenuActions,
+      toggleTauriSidebarMenuPopup,
+      isTauriMacOSRuntime,
+      type TauriSidebarMenuAction,
+    } from "src/ts/tauriSidebarMenu";
     import { get } from 'svelte/store';
     import { onMount } from 'svelte';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
@@ -95,6 +103,63 @@
     CharEmotion.set({});
   }
 
+  function runSidebarMenuAction(action: TauriSidebarMenuAction) {
+    if (action === "settings") {
+      const wasOpen = get(settingsOpen)
+      reseter()
+      settingsOpen.set(!wasOpen)
+      return
+    }
+    if (action === "home") {
+      reseter()
+      selectedCharID.set(-1)
+      PlaygroundStore.set(0)
+      OpenRealmStore.set(false)
+      return
+    }
+    if (action === "playground") {
+      const selected = get(selectedCharID)
+      const playground = get(PlaygroundStore)
+      reseter()
+      if (selected === -1 && playground !== 0) {
+        PlaygroundStore.set(0)
+        return
+      }
+      selectedCharID.set(-1)
+      PlaygroundStore.set(1)
+      return
+    }
+    if (action === "search") {
+      reseter()
+      messageSearchOpen.set(true)
+      return
+    }
+    if (action === "grid") {
+      reseter()
+      openGrid()
+      return
+    }
+    if (action.startsWith("plugin:")) {
+      const id = action.slice("plugin:".length)
+      const menu = additionalHamburgerMenu.find((item) => item.id === id)
+      if (!menu) return
+      reseter()
+      menu.callback()
+    }
+  }
+
+  async function toggleHamburgerMenu(event: MouseEvent) {
+    const result = await toggleTauriSidebarMenuPopup(
+      event.currentTarget as HTMLElement,
+      additionalHamburgerMenu,
+    )
+    if (result !== "unavailable") {
+      menuMode = 0
+      return
+    }
+    menuMode = 1 - menuMode
+  }
+
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   let charImages: sortType[] = $state([]);
@@ -122,6 +187,21 @@
       ric(warm, { timeout: 3000 })
     } else {
       setTimeout(warm, 800)
+    }
+
+    let disposed = false
+    let unlistenSidebarMenu: (() => void) | undefined
+    if (isTauriMacOSRuntime()) {
+      void listenTauriSidebarMenuActions(runSidebarMenuAction).then((unlisten) => {
+        if (disposed) unlisten()
+        else unlistenSidebarMenu = unlisten
+      })
+    }
+
+    return () => {
+      disposed = true
+      unlistenSidebarMenu?.()
+      void closeTauriSidebarMenuPopup()
     }
   })
 
@@ -442,7 +522,7 @@
 </script>
 {#if settingsStore.state.menuSideBar}
 <div
-  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar rs-sidebar-titlebar-inset"
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
@@ -450,6 +530,13 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
+{#if isTauriMacOS}
+  <div
+    class="absolute top-0 left-0 right-1 h-7 z-20"
+    data-tauri-drag-region="true"
+    aria-hidden="true"
+  ></div>
+{/if}
 <button
   class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
   class:text-textcolor2={!(
@@ -516,6 +603,7 @@
 {:else}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  class:rs-sidebar-titlebar-inset={!settingsStore.state.hamburgerButtonBottom}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
@@ -523,12 +611,25 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
+  {#if isTauriMacOS}
+    {#if !settingsStore.state.hamburgerButtonBottom}
+      <div
+        class="absolute top-0 left-0 right-1 h-7 z-20"
+        data-tauri-drag-region="true"
+        aria-hidden="true"
+      ></div>
+    {:else}
+      <div
+        class="absolute inset-y-0 left-0 w-1.5 z-20"
+        data-tauri-drag-region="true"
+        aria-hidden="true"
+      ></div>
+    {/if}
+  {/if}
   {#if !settingsStore.state.hamburgerButtonBottom}
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={() => {
-      menuMode = 1 - menuMode;
-    }}><ListIcon />
+    onclick={toggleHamburgerMenu}><ListIcon />
   </button>
   <div class="mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
@@ -593,7 +694,8 @@
     {/if}
   </div>
   {/if}
-  <div class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
+  <div class="rs-sidebar-scroll flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
+    class:rs-sidebar-scroll-floating-menu={settingsStore.state.hamburgerButtonBottom}>
     <div class="h-4 min-h-4 w-14" role="listitem" ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)){ return }
       e.preventDefault()
@@ -885,9 +987,9 @@
     </div>
   </div>
   {#if settingsStore.state.hamburgerButtonBottom}
-  <div class="border-t border-t-selected w-full relative text-white ">
+  <div class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
+      <div class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
@@ -899,7 +1001,7 @@
           }
         }}><Settings /></BarIcon
       >
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter();
@@ -907,7 +1009,7 @@
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter()
@@ -919,7 +1021,7 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter();
@@ -927,7 +1029,7 @@
         }}><SearchIcon /></BarIcon
       >
       {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
+        <div class="rs-sidebar-menu-gap mt-2"></div>
         <BarIcon
           onClick={() => {
             reseter();
@@ -937,7 +1039,7 @@
           </BarIcon
         >
       {/each}
-      <div class="mt-2"></div>
+      <div class="rs-sidebar-menu-gap mt-2"></div>
       <BarIcon
         onClick={() => {
           reseter();
@@ -948,16 +1050,14 @@
     {/if}
   </div>
   <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={() => {
-      menuMode = 1 - menuMode;
-    }}><ListIcon />
+    class="rs-sidebar-menu-button flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+    onclick={toggleHamburgerMenu}><ListIcon />
   </button>
   {/if}
 </div>
 {/if}
 <div
-  class="setting-area h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
+  class="setting-area rs-sidebar-panel relative h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
   class:overflow-hidden={btwRuntime.open}
   class:overflow-y-auto={!btwRuntime.open}
   class:py-0={btwRuntime.open}
@@ -979,10 +1079,14 @@
   class:hidden={hidden}
   class:flex={!hidden}
   class:max-w-[calc(100%-8rem)]={$DynamicGUI}
-  onanimationend={() => {
-    if($sideBarClosing){
-      $sideBarClosing = false
-      sideBarStore.set(false)
+  onanimationend={(event) => {
+    if ($sideBarClosing && event.target === event.currentTarget) {
+      // Let the browser paint the closing animation's 100% frame before the
+      // sidebar is removed from layout. Hiding it in the animationend task can
+      // skip that final frame and look like a last-moment snap on macOS.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => sideBarStore.set(false))
+      })
     }
   }}
 >
@@ -1021,21 +1125,21 @@
         </div>
       </div>
     {:else}
-      <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-darkborderc relative bottom-6 rounded-b-md flex bg-darkbutton/20 overflow-hidden">
         <button onclick={() => {
           void loadSideChatList()
           devTool = false
           botMakerMode.set(false)
-        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
+        }} class="grow border-r border-r-darkborderc rounded-bl-md transition-colors hover:bg-selected/30 cursor-pointer" class:font-semibold={!$botMakerMode && !devTool} class:bg-selected={!$botMakerMode && !devTool} class:text-textcolor={!$botMakerMode && !devTool} class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
         <button onclick={() => {
           void loadCharConfig()
           devTool = false
           botMakerMode.set(true)
-        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
+        }} class="grow rounded-br-md transition-colors hover:bg-selected/30 cursor-pointer" class:font-semibold={$botMakerMode && !devTool} class:bg-selected={$botMakerMode && !devTool} class:text-textcolor={$botMakerMode && !devTool} class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
         {#if settingsStore.state.enableDevTools}
           <button onclick={() => {
             devTool = true
-          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool}>
+          }} class="border-l border-l-darkborderc rounded-br-md px-1 transition-colors hover:bg-selected/30 cursor-pointer" class:bg-selected={devTool} class:text-textcolor={devTool} class:text-textcolor2={!devTool}>
             <WrenchIcon size={18} />
           </button>
         {/if}
@@ -1192,6 +1296,7 @@
   .risu-sidebar-close:not(.dynamic-sidebar) {
     animation-name: sidebar-transition-close-non-dynamic;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
   }
   .risu-sidebar.dynamic-sidebar {
@@ -1204,6 +1309,7 @@
   .risu-sidebar-close.dynamic-sidebar {
     animation-name: sidebar-transition-close;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
     will-change: transform;
   }
@@ -1216,6 +1322,7 @@
   .risu-sub-sidebar-close:not(.dynamic-sidebar) {
     animation-name: sub-sidebar-transition-close-width;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
   }
   .risu-sub-sidebar.dynamic-sidebar {
@@ -1226,6 +1333,7 @@
   .risu-sub-sidebar-close.dynamic-sidebar {
     animation-name: sub-sidebar-transition-close;
     animation-duration: var(--risu-animation-speed);
+    animation-fill-mode: forwards;
     position: relative;
     will-change: transform;
   }

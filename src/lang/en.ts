@@ -579,7 +579,7 @@ export const languageEnglish = {
     gatewayMigrationTitle: "Restore Data",
     gatewayMigrationDesc:
       "Restore characters, chats, and presets from a database.bin or backup file.",
-    gatewayQuickSetupTitle: "Quick AI Setup",
+    gatewayQuickSetupTitle: "Quick Setup",
     gatewayQuickSetupDesc:
       "Set your nickname and configure AI models (Claude, OpenAI, Gemini, etc.) in a few easy steps.",
     gatewaySkipTitle: "Skip & Explore",
@@ -662,6 +662,21 @@ export const languageEnglish = {
     modelNamePlaceholder: "e.g. claude-3-7-sonnet, deepseek-chat, gpt-4o",
     nicknameTitle: "Set Nickname",
     completeSetupBtn: "Complete Setup",
+    storageRemoteLabel: "Connect Self-Hosted Server (Beta)",
+    storageConnectedBadge: "Using Server",
+    storageServerUrlLabel: "Server Address",
+    storageServerUrlPlaceholder: "https://risu.example.com",
+    storageServerPasswordLabel: "Server Password",
+    storageServerPasswordDesc:
+      "The password is not stored; it is only used to register this device's public key.",
+    storageInsecureHttpLabel: "Allow insecure HTTP",
+    storageInsecureHttpHelp:
+      "Allowing HTTP enables unencrypted communication, but data and authentication may be exposed on the network.",
+    storageHelpTitle: "Help",
+    storageConnecting: "Verifying connection...",
+    storageConnectFail: "Could not connect to the storage server.",
+    storageConnectUse: "Connect",
+    storageConnectBack: "Back",
   },
   triggerCategories: {
     Special: "Special",

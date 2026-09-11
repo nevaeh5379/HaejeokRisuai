@@ -197,7 +197,7 @@ describe("local backup format", () => {
   });
 
   it("limits partial export assets to the essential profile image set", async () => {
-    // The helper lives inside server.cjs; extract it the same way
+    // The helper lives inside server.cts; extract it the same way
     // partial exports use it (plain function on the module scope).
     const { collectEssentialBackupAssetKeys } = extractServerPartialHelper();
     const database = {
@@ -261,17 +261,17 @@ describe("local backup format", () => {
   });
 });
 
-// server.cjs starts an actual server when required, so instead of importing it
+// server.cts starts an actual server when required, so instead of importing it
 // the partial-scope helper is duplicated here via a tiny regex extraction that
 // keeps the test in sync with the production routine.
 function extractServerPartialHelper() {
   const fs = require("node:fs");
   const path = require("node:path");
-  const source = fs.readFileSync(path.join(__dirname, "server.cjs"), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "server.cts"), "utf8");
   const start = source.indexOf("function collectEssentialBackupAssetKeys(");
   const end = source.indexOf("\n}", start);
   if (start < 0 || end < 0)
-    throw new Error("partial-scope helper not found in server.cjs");
+    throw new Error("partial-scope helper not found in server.cts");
   const factory = new Function(
     `${source.slice(start, end + 2)}; return collectEssentialBackupAssetKeys;`,
   );

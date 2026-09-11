@@ -2,19 +2,24 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS } from './ts/platform';
+    import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
-    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
+    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
+    import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
 
 
   
+    const auxiliaryChatLaunch = isTauri ? parseTauriChatWorkspaceLaunch(location.search) : null
+    const detachedChatWindow = auxiliaryChatLaunch !== null
+    const detachedChatPresentation = auxiliaryChatLaunch?.presentation ?? {}
     let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -105,6 +110,7 @@
 
     const legalLoader = () => import('./lib/Others/Legal.svelte')
     const sqlQuickSetupLoader = () => import('./lib/Others/SqlQuickSetup.svelte')
+    const storageProfileSetupLoader = () => import('./lib/Others/StorageProfileSetup.svelte')
     const customGUISettingMenuLoader = () => import('./lib/Setting/Pages/CustomGUISettingMenu.svelte')
     const welcomeLoader = () => import('./lib/Others/WelcomeRisu.svelte')
     const settingsLoader = () => import('./lib/Setting/Settings.svelte')
@@ -157,6 +163,9 @@
 
     const getMainDropEffect = (e:DragEvent): DataTransfer['dropEffect'] => {
         const types = Array.from(e.dataTransfer?.types ?? [])
+        if(types.includes(RISU_CHAT_TAB_DRAG_TYPE)){
+            return 'move'
+        }
         if(types.includes(RISU_SIDEBAR_DRAG_TYPE)){
             return 'none'
         }
@@ -174,7 +183,10 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" class:tauri-native={isTauri} ondragover={(e) => {
+<main
+    class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
+    class:tauri-native={isTauri}
+    ondragover={(e) => {
     const dropEffect = getMainDropEffect(e)
     e.preventDefault()
     e.dataTransfer.dropEffect = dropEffect
@@ -308,11 +320,36 @@
             </div>
             <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg">RisyGTP 9+ Mytho Ultra Free</span>
         </div>
+    {:else if detachedChatWindow && !$loadedStore}
+        <div class="w-full h-full min-w-0 flex flex-col bg-bgcolor text-textcolor">
+            <div class="h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1">
+                <div class="h-8 min-w-32 max-w-72 rounded-t-md border border-b-0 border-darkborderc bg-selected px-3 text-left">
+                    <span class="block truncate text-xs font-medium">{detachedChatPresentation.characterName || 'RisuAI'}</span>
+                    <span class="block truncate text-[10px] opacity-70">{detachedChatPresentation.chatName || 'Chat'}</span>
+                </div>
+            </div>
+            <div class="grow min-h-0 bg-bgcolor/95 relative overflow-hidden">
+                <div class="absolute inset-x-4 top-5 space-y-3 opacity-30" aria-hidden="true">
+                    <div class="h-14 rounded-xl bg-selected animate-pulse"></div>
+                    <div class="h-20 rounded-xl bg-selected animate-pulse"></div>
+                    <div class="h-12 rounded-xl bg-selected animate-pulse"></div>
+                </div>
+            </div>
+        </div>
     {:else if !$loadedStore}
-        {#if isNodeServer && $sqlConfiguredStore === false}
+        {#if $storageProfileGate.status !== 'idle'}
+            <LazyComponent loader={storageProfileSetupLoader} />
+        {:else if isNodeServer && $sqlConfiguredStore === false}
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
-            <div class="w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
+            <div class="relative w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
+                {#if isTauriMacOS}
+                    <div
+                        class="absolute top-0 left-0 right-1 h-10 z-[1]"
+                        data-tauri-drag-region="true"
+                        aria-hidden="true"
+                    ></div>
+                {/if}
                 <div class="airisu-loading-step motion-reduce:animate-none">
                     <AirisuMascot variant="progress" className="w-36 sm:w-44 drop-shadow-xl" eager />
                 </div>
@@ -323,6 +360,8 @@
                 <span class="text-sm mt-1.5 text-center text-textcolor2">{LoadingStatusState.text}</span>
             </div>
         {/if}
+    {:else if detachedChatWindow}
+        <LazyComponent loader={chatScreenLoader} props={{ detached: true }} />
     {:else if $CustomGUISettingMenuStore}
         <LazyComponent loader={customGUISettingMenuLoader} />
     {:else if !didFirstSetup}
@@ -337,24 +376,25 @@
         </div>
     {:else}
         {#if gridOpen}
-            <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
+            <div class="grow h-full min-w-0">
+                <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
+            </div>
         {:else}
             {#if (!$DynamicGUI)}
                 <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: !$sideBarStore }} />
             {:else}
-                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
+                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-50 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
-
-
-
                 </div>
             {/if}
-            {#if $selectedCharID < 0 && $PlaygroundStore === 0}
-                <LazyComponent loader={mainMenuLoader} />
-            {:else}
-                <LazyComponent loader={chatScreenLoader} />
-            {/if}
+            <div class="grow h-full min-w-0">
+                {#if $selectedCharID < 0 && $PlaygroundStore === 0}
+                    <LazyComponent loader={mainMenuLoader} />
+                {:else}
+                    <LazyComponent loader={chatScreenLoader} />
+                {/if}
+            </div>
         {/if}
     {/if}
     {#if $settingsOpen && !$MobileGUI}

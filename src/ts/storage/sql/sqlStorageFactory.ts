@@ -71,7 +71,7 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
 /**
  * Returns the appropriate SQL storage backend for the current environment.
  *
- * - Node server: NodePostgresStorage (external PostgreSQL/Oracle/Azure)
+ * - Node server: NodeSqlStorage (external PostgreSQL/Oracle/Azure)
  * - Tauri desktop: TauriSqliteStorage (local SQLite via tauri-plugin-sql)
  * - Web browser: WebSqliteStorage (SQLite WASM with OPFS)
  *
@@ -83,23 +83,19 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
     return storageSingleton;
   }
 
-  if (isNodeServer) {
-    // Node server uses NodePostgresStorage via NodeStorage
-    const { forageStorage } = await import("../../globalApi.svelte");
-    const { NodeStorage } = await import("../files/nodeStorage");
-    if (forageStorage.realStorage instanceof NodeStorage) {
-      storageSingleton = wrapWithSerializedCommits(
-        forageStorage.realStorage.postgres as unknown as ISqlStorage,
-      );
-      return storageSingleton;
-    }
-    // Fallback: create a standalone NodePostgresStorage
-    const { NodePostgresStorage } =
-      await import("./postgres/nodePostgresStorage");
+  const { forageStorage } = await import("../../globalApi.svelte");
+  const { NodeStorage } = await import("../files/nodeStorage");
+  if (forageStorage.realStorage instanceof NodeStorage) {
     storageSingleton = wrapWithSerializedCommits(
-      new NodePostgresStorage(async () => "") as unknown as ISqlStorage,
+      forageStorage.realStorage.sql as unknown as ISqlStorage,
     );
     return storageSingleton;
+  }
+
+  if (isNodeServer) {
+    throw new Error(
+      "Node SQL storage requires the initialized Node asset storage runtime.",
+    );
   }
 
   if (isCapacitor) {

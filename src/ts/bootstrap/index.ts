@@ -4,7 +4,7 @@ import { changeLanguage } from "../../lang";
 import { installStartupData } from "../storage/database/databaseLifecycle";
 import { forageStorage } from "../globalApi.svelte";
 import { registerModelDynamic } from "../model/modellist";
-import { isCapacitor, isTauri } from "../platform";
+import { isCapacitor, isNodeServer, isTauri } from "../platform";
 import { initNodeRealtimeSync } from "../process/nodeRealtimeSync";
 import { initDurableModelJobRecovery } from "../process/modelJobRecovery";
 import { syncChatResponsePush } from "../network/pushSubscriptions";
@@ -37,6 +37,72 @@ import {
   updateErrorHandling,
   warnNightlyIfNeeded,
 } from "./startupUiChecks";
+import {
+  createRemoteNodeApiClient,
+  type NodeApiClient,
+} from "../storage/runtime/nodeApiClient";
+import {
+  loadStorageProfile,
+  normalizeRemoteBaseUrl,
+  saveStorageProfile,
+  type StorageProfile,
+} from "../storage/runtime/storageProfile";
+import {
+  ActiveStorageRuntime,
+  installActiveStorageRuntime,
+} from "../storage/runtime/activeStorageRuntime";
+import {
+  describeStorageStartupError,
+  storageProfileGate,
+} from "../storage/runtime/storageProfileGate";
+
+import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
+import { getCurrentStorageProfilePlatform } from "../storage/runtime/storageProfileConnection";
+
+async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> {
+  if (isNodeServer) {
+    return {
+      version: 1,
+      mode: "remote",
+      baseUrl: location.origin,
+      allowInsecureHttp: location.protocol === "http:",
+    };
+  }
+  const stored = loadStorageProfile();
+  if (stored) {
+    if (stored.mode === "remote") {
+      return {
+        ...stored,
+        baseUrl: normalizeRemoteBaseUrl(stored.baseUrl, {
+          allowInsecureHttp: stored.allowInsecureHttp,
+          platform: getCurrentStorageProfilePlatform(),
+          pageProtocol: globalThis.location?.protocol,
+        }),
+      };
+    }
+    return stored;
+  }
+  const local = { version: 1, mode: "local" } as const;
+  await forageStorage.Init({ profile: local });
+  const localSql = await getSqlStorage();
+  const initialized = await localSql.init();
+  if (!initialized) {
+    saveStorageProfile(local);
+    return local;
+  }
+  const startup = await localSql.loadStartupData();
+  const hasExistingData =
+    startup?.status === "ready" || (await forageStorage.hasStoredData());
+  if (hasExistingData) {
+    saveStorageProfile(local);
+    return local;
+  }
+  // Fresh install: default to local storage and let the welcome UI offer
+  // connecting a self-hosted server instead of a blocking pre-welcome gate.
+  // The profile is not persisted until onboarding finishes so a refresh
+  // retries the same decision path.
+  return local;
+}
 
 /**
  * Loads the application data.
@@ -56,19 +122,36 @@ import {
 export async function loadData() {
   const loaded = get(loadedStore);
   if (!loaded) {
+    let storageProfile: StorageProfile | null = null;
     try {
       startupPhase.set("core-loading");
+      storageProfile = await resolveBootstrapStorageProfile();
+      if (!storageProfile) return;
+      let nodeApiClient: NodeApiClient | null = null;
+      if (storageProfile.mode === "remote") {
+        nodeApiClient = await createRemoteNodeApiClient(
+          storageProfile,
+          getCurrentStorageProfilePlatform(),
+        );
+        await nodeApiClient.getCapabilities();
+      }
       // ── Step 0: Initialise forageStorage (needed for asset access
       // and Node server's NodeStorage which provides the SQL admin) ──
-      if (!isTauri) {
-        await forageStorage.Init();
-      }
+      await forageStorage.Init({ profile: storageProfile, nodeApiClient });
 
       // ── Step 1: Initialise SQL storage backend ────────────────────
       const storage = await initSqlStorageOrGate();
       if (!storage) {
         return;
       }
+      installActiveStorageRuntime(
+        new ActiveStorageRuntime({
+          profile: storageProfile,
+          sql: storage,
+          assets: forageStorage,
+          nodeApiClient,
+        }),
+      );
 
       // ── Step 2: Load startup domains ─────────────────────────────
       LoadingStatusState.text = "Loading Database...";
@@ -119,7 +202,16 @@ export async function loadData() {
       // Doing this later can overwrite a character the user selected while
       // the remaining startup work is still loading.
       selectedCharID.set(-1);
-      const revealShell = createShellRevealer();
+      const auxiliaryChatWindow =
+        isTauri &&
+        (() => {
+          const params = new URLSearchParams(location.search);
+          return (
+            params.get("risuWindow") === "chat-workspace" &&
+            params.get("workspaceWindowId")?.startsWith("chat-window-")
+          );
+        })();
+      const revealShell = createShellRevealer(Boolean(auxiliaryChatWindow));
 
       // ── Step 6: Service worker (web only) ─────────────────────────
       const serviceWorkerReady = startServiceWorker();
@@ -151,6 +243,25 @@ export async function loadData() {
       initDurableModelJobRecovery();
       void syncChatResponsePush();
       void initNodeRealtimeSync();
+      if (isTauri) {
+        const {
+          initializeTauriChatWorkspaceRuntime,
+          restoreTauriChatWorkspaceWindowState,
+        } = await import("../tauriChatWindows");
+        const restored = await restoreTauriChatWorkspaceWindowState();
+        if (auxiliaryChatWindow && !restored) {
+          console.error(
+            "[TauriChatWorkspace] Auxiliary window failed to restore its chat target",
+          );
+          const { getCurrentWebviewWindow } =
+            await import("@tauri-apps/api/webviewWindow");
+          await getCurrentWebviewWindow().close();
+          return;
+        }
+        await initializeTauriChatWorkspaceRuntime();
+        const { initializeTauriAppMenu } = await import("../tauriAppMenu");
+        await initializeTauriAppMenu();
+      }
       revealShell();
       if (presetStore.activeStatus === "ready") {
         startupPhase.set("chat-ready");
@@ -166,6 +277,14 @@ export async function loadData() {
         }
       });
     } catch (error) {
+      if (storageProfile?.mode === "remote" && !isNodeServer) {
+        storageProfileGate.set({
+          status: "failure",
+          profile: storageProfile,
+          error: describeStorageStartupError(error),
+        });
+        return;
+      }
       alertError(error);
     }
   }

@@ -16,7 +16,7 @@
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
     import { onDestroy } from "svelte";
-    import { isCapacitor } from "src/ts/platform";
+    import { isCapacitor, isTauriMacOS } from "src/ts/platform";
     import { indexMainMenuCharacters } from "./mainMenuCharacters";
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
@@ -344,10 +344,17 @@
     }
 </script>
 <svelte:window bind:innerWidth on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} />
-<div class="h-full w-full flex flex-col overflow-y-auto items-center">
+<div class="rs-main-menu relative h-full w-full flex flex-col overflow-y-auto items-center">
+    {#if isTauriMacOS}
+      <div
+        class="absolute top-0 left-0 right-1 h-5 z-20"
+        data-tauri-drag-region="true"
+        aria-hidden="true"
+      ></div>
+    {/if}
     {#if !$OpenRealmStore}
       <Title />
-      <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
+      <h3 class="text-textcolor2 mt-1" data-tauri-drag-region={isTauriMacOS ? "true" : undefined}>Version {getVersionString()}</h3>
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-6xl">
       {#if !$OpenRealmStore}

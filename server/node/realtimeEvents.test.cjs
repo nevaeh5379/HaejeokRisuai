@@ -8,7 +8,7 @@ const {
   describeSqlCommitChange,
 } = require("./realtimeEvents.cjs");
 
-test("describeSqlCommitChange extracts affected chat and character ids", () => {
+test("describeSqlCommitChange extracts affected domains and entity ids", () => {
   const change = describeSqlCommitChange({
     action: "message",
     root: {
@@ -19,7 +19,9 @@ test("describeSqlCommitChange extracts affected chat and character ids", () => {
       deletes: ["oldSetting", "oldSetting"],
     },
     characters: [{ id: "char-a" }],
+    characterTouches: [{ id: "char-touched", lastInteraction: 1 }],
     characterDeletes: ["char-deleted"],
+    characterIds: ["char-a"],
     chats: [{ id: "chat-a", characterId: "char-a" }],
     chatDeletes: ["chat-deleted"],
     messages: [
@@ -35,16 +37,39 @@ test("describeSqlCommitChange extracts affected chat and character ids", () => {
       deletes: ["plugin-b", "plugin-b"],
       clear: true,
     },
+    presets: {
+      upserts: [{ id: "preset-a", data: {} }],
+      deletes: ["preset-b"],
+      order: ["preset-a"],
+      activeId: "preset-a",
+    },
+    modules: {
+      upserts: [{ id: "module-a", data: {} }],
+      deletes: ["module-b"],
+    },
   });
 
   assert.deepEqual(change.chatIds.sort(), ["chat-a", "chat-b", "chat-deleted"]);
   assert.deepEqual(change.characterIds, ["char-a", "char-deleted"]);
+  assert.equal(change.charactersChanged, true);
   assert.deepEqual(change.rootUpsertKeys, ["temperature"]);
   assert.deepEqual(change.rootDeleteKeys, ["oldSetting"]);
   assert.equal(change.rootChanged, true);
   assert.deepEqual(change.pluginStorageUpsertKeys, ["plugin-a"]);
   assert.deepEqual(change.pluginStorageDeleteKeys, ["plugin-b"]);
   assert.equal(change.pluginStorageCleared, true);
+  assert.equal(change.presetsChanged, true);
+  assert.equal(change.modulesChanged, true);
+});
+
+test("character touches do not request a full character-index refresh", () => {
+  const change = describeSqlCommitChange({
+    action: "character-touch",
+    characterTouches: [{ id: "char-a", lastInteraction: 123 }],
+  });
+
+  assert.deepEqual(change.characterIds, []);
+  assert.equal(change.charactersChanged, false);
 });
 
 class FakeResponse extends EventEmitter {
@@ -170,4 +195,41 @@ test("realtime hub snapshots active generation lifecycle state", () => {
   );
   assert.deepEqual(hub.listActiveGenerations(), []);
   req.emit("close");
+});
+
+class FakeWebSocket extends EventEmitter {
+  constructor() {
+    super();
+    this.readyState = 1;
+    this.frames = [];
+    this.pings = 0;
+  }
+  send(frame) {
+    this.frames.push(JSON.parse(String(frame)));
+  }
+  ping() {
+    this.pings += 1;
+  }
+}
+
+test("realtime hub replays and broadcasts the same protocol over WebSocket", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
+  hub.broadcast("database-change", { revision: 1, chatIds: ["chat-a"] });
+  const ws = new FakeWebSocket();
+
+  hub.connectWebSocket(ws, { clientId: "device-b", lastEventId: 0 });
+  assert.equal(ws.frames[0].id, 1);
+  assert.equal(ws.frames[0].event, "database-change");
+  assert.equal(ws.frames[1].event, "ready");
+  assert.equal(ws.frames[1].data.clientId, "device-b");
+
+  hub.broadcast("database-change", { revision: 2, chatIds: ["chat-a"] });
+  const latest = ws.frames.at(-1);
+  assert.equal(latest.id, 2);
+  assert.equal(latest.event, "database-change");
+  assert.equal(latest.data.revision, 2);
+  assert.equal(hub.clientCount(), 1);
+
+  ws.emit("close");
+  assert.equal(hub.clientCount(), 0);
 });

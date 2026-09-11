@@ -19,6 +19,7 @@ type HydrateSettingKey = (
 class DeferredSettingsLoader {
   private storage: ISqlStorage | null = null;
   private hydrateSettingKey: HydrateSettingKey | null = null;
+  private hydrateRemoteSettingKey: HydrateSettingKey | null = null;
   private unloadedKeys = new Set<string>();
   private domainLoads = new Map<SqlDeferredDomain, Promise<void>>();
   private keyLoads = new Map<string, Promise<void>>();
@@ -28,10 +29,13 @@ class DeferredSettingsLoader {
     storage: ISqlStorage;
     unloadedKeys?: readonly string[];
     hydrateSettingKey: HydrateSettingKey;
+    hydrateRemoteSettingKey?: HydrateSettingKey;
   }): void {
     this.generation += 1;
     this.storage = options.storage;
     this.hydrateSettingKey = options.hydrateSettingKey;
+    this.hydrateRemoteSettingKey =
+      options.hydrateRemoteSettingKey ?? options.hydrateSettingKey;
     this.unloadedKeys = new Set(options.unloadedKeys ?? []);
     this.domainLoads.clear();
     this.keyLoads.clear();
@@ -41,6 +45,7 @@ class DeferredSettingsLoader {
     this.generation += 1;
     this.storage = null;
     this.hydrateSettingKey = null;
+    this.hydrateRemoteSettingKey = null;
     this.unloadedKeys.clear();
     this.domainLoads.clear();
     this.keyLoads.clear();
@@ -113,6 +118,71 @@ class DeferredSettingsLoader {
     }
   }
 
+  /**
+   * Refreshes only deferred values that are already resident. Unopened
+   * lorebooks/scripts/prompts stay lazy, while in-flight first loads are
+   * allowed to finish before a post-notification refresh closes the race.
+   */
+  async refreshLoadedKeys(keys: Iterable<string>): Promise<void> {
+    const requested = [...new Set(keys)].filter(Boolean);
+    if (requested.length === 0) return;
+    const generation = this.generation;
+    const domains = new Map<SqlDeferredDomain, Set<string>>();
+    const individualKeys: string[] = [];
+
+    for (const key of requested) {
+      const domain = getSqlDeferredDomain(key);
+      if (!domain) {
+        individualKeys.push(key);
+        continue;
+      }
+      const domainKeys = domains.get(domain) ?? new Set<string>();
+      domainKeys.add(key);
+      domains.set(domain, domainKeys);
+    }
+
+    // Keep large deferred domains sequential on low-memory Android devices.
+    for (const [domain, domainKeys] of domains) {
+      const activeLoad = this.domainLoads.get(domain);
+      if (activeLoad) await activeLoad;
+      if (generation !== this.generation) return;
+      const loadedKeys = [...domainKeys].filter((key) => this.isLoaded(key));
+      if (loadedKeys.length === 0) continue;
+      const { storage, hydrateRemoteSettingKey } = this.requireInitialized();
+
+      if (domain === "loreBook") {
+        const loreBooks = await storage.loadLorebooks();
+        if (generation !== this.generation) return;
+        hydrateRemoteSettingKey("loreBook", loreBooks);
+        continue;
+      }
+      if (domain === "scripts") {
+        const scripts = await storage.loadScripts();
+        if (generation !== this.generation) return;
+        hydrateRemoteSettingKey("globalscript", scripts);
+        continue;
+      }
+
+      const prompts = await storage.loadPrompts();
+      if (generation !== this.generation) return;
+      for (const key of loadedKeys) {
+        const exists = Object.prototype.hasOwnProperty.call(prompts, key);
+        hydrateRemoteSettingKey(key, prompts[key], exists);
+      }
+    }
+
+    for (const key of individualKeys) {
+      const activeLoad = this.keyLoads.get(key);
+      if (activeLoad) await activeLoad;
+      if (generation !== this.generation) return;
+      if (!this.isLoaded(key)) continue;
+      const { storage, hydrateRemoteSettingKey } = this.requireInitialized();
+      const value = await storage.loadSettingKey(key);
+      if (generation !== this.generation) return;
+      hydrateRemoteSettingKey(key, value, value !== undefined);
+    }
+  }
+
   private async ensureDomain(domain: SqlDeferredDomain): Promise<void> {
     const existing = this.domainLoads.get(domain);
     if (existing) return existing;
@@ -163,13 +233,19 @@ class DeferredSettingsLoader {
   private requireInitialized(): {
     storage: ISqlStorage;
     hydrateSettingKey: HydrateSettingKey;
+    hydrateRemoteSettingKey: HydrateSettingKey;
   } {
-    if (!this.storage || !this.hydrateSettingKey) {
+    if (
+      !this.storage ||
+      !this.hydrateSettingKey ||
+      !this.hydrateRemoteSettingKey
+    ) {
       throw new Error("DeferredSettingsLoader is not initialized");
     }
     return {
       storage: this.storage,
       hydrateSettingKey: this.hydrateSettingKey,
+      hydrateRemoteSettingKey: this.hydrateRemoteSettingKey,
     };
   }
 }

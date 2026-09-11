@@ -1,11 +1,11 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import { createEmptySqlCommit, SqlRevisionConflictError } from "../sqlCommit";
 import {
   flattenRelationalValue,
   rebuildRelationalValue,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import {
   makeWebStorage,
   makeTauriStorage,
@@ -543,6 +543,30 @@ describe("TauriSqliteStorage", () => {
     expect(limitedCall).toBeDefined();
     // messageLimit 0 normalizes to 1 row.
     expect(chat?.message).toHaveLength(1);
+    database.close();
+  });
+  it("exposes native SQLite tables through the database explorer contract", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    database.exec(`
+      INSERT INTO system_settings (key, domain, value_type, text_value)
+      VALUES ('explorer-key', 'settings', 'string', 'hello');
+    `);
+    const storage = makeTauriStorage(database);
+
+    const tables = await storage.listDbTables();
+    expect(
+      tables.find((table) => table.name === "system_settings"),
+    ).toMatchObject({
+      rowCount: 1,
+    });
+    const page = await storage.getDbTableData("system_settings", {
+      search: "explorer-key",
+      limit: 10,
+    });
+    expect(page.total).toBe(1);
+    expect(page.rows[0]).toMatchObject({ key: "explorer-key" });
+    expect(page.columns.some((column) => column.name === "key")).toBe(true);
     database.close();
   });
 });

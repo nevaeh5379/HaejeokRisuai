@@ -20,7 +20,7 @@ import {
   flattenRelationalValue,
   rebuildRelationalValue,
   type RelationalNodeRow,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import { rebuildMessageRows } from "./sqliteStorageUtils";
 
 // Re-export so migrated suites keep working with a single import.

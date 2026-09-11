@@ -28,7 +28,8 @@
     import BrowserDbExplorerSettings from "./Pages/BrowserDbExplorerSettings.svelte";
     import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
     import PluginStorageExplorerSettings from "./Pages/PluginStorageExplorerSettings.svelte";
-    import { isNodeServer, isTauri } from "src/ts/platform";
+    import StorageSettings from "./Pages/StorageSettings.svelte";
+    import { isNodeServer } from "src/ts/platform";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
         scrollToSettingAnchor,
@@ -43,7 +44,7 @@
     let desktopBotTarget = $state<{ submenu: number; modelTab?: 'main' | 'sub' | 'provider' }>({ submenu: 0, modelTab: 'main' })
     let innerWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1200)
     let isMobile = $derived(innerWidth < 768 || $MobileGUI)
-    const hasBrowserExplorers = !isNodeServer && !isTauri
+    const hasLocalExplorers = !isNodeServer
 
     $effect(() => {
         if (!isMobile && $SettingsMenuIndex === -1) {
@@ -78,6 +79,7 @@
             case 13: return language.promptTemplate;
             case 14: return language.modules;
             case 15: return language.hotkey;
+            case 17: return "저장소";
             case 77: return language.supporterThanks;
             default: return language.settings;
         }
@@ -261,6 +263,15 @@
         <span>{language.account} & {language.files}</span>
     </button>
     <button class="flex gap-2 items-center hover:text-textcolor"
+        class:text-textcolor={$SettingsMenuIndex === 17}
+        class:text-textcolor2={$SettingsMenuIndex !== 17}
+        onclick={() => {
+            $SettingsMenuIndex = 17
+    }}>
+        <HardDriveIcon />
+        <span>저장소</span>
+    </button>
+    <button class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 15}
             class:text-textcolor2={$SettingsMenuIndex !== 15}
             onclick={() => {
@@ -279,7 +290,7 @@
             <ActivityIcon />
             <span>{language.advancedSettings}</span>
         </button>
-        {#if isNodeServer || hasBrowserExplorers}
+        {#if isNodeServer || hasLocalExplorers}
             <button class="flex gap-2 items-center hover:text-textcolor"
                 class:text-textcolor={dbExplorerOpen}
                 class:text-textcolor2={!dbExplorerOpen}
@@ -587,6 +598,18 @@
                     </div>
                     <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                 </button>
+                <button
+                    class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
+                    onclick={() => { $SettingsMenuIndex = 17; }}
+                >
+                    <div class="flex items-center gap-3.5 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
+                            <HardDriveIcon size={18} />
+                        </div>
+                        <span class="text-base font-medium text-textcolor truncate">저장소</span>
+                    </div>
+                    <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
+                </button>
                 {#if !$isLite}
                     <button
                         class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
@@ -612,7 +635,7 @@
                         </div>
                         <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                     </button>
-                    {#if isNodeServer || hasBrowserExplorers}
+                    {#if isNodeServer || hasLocalExplorers}
                         <button
                             class="w-full flex items-center justify-between py-3.5 px-4 text-left transition-colors active:bg-textcolor/10 cursor-pointer"
                             onclick={() => { storageExplorerOpen = false; pluginStorageExplorerOpen = false; dbExplorerOpen = true; }}
@@ -738,6 +761,8 @@
         }}/>
     {:else if $SettingsMenuIndex === 15 && window.innerWidth >= 768}
         <HotkeySettings/>
+    {:else if $SettingsMenuIndex === 17}
+        <StorageSettings/>
     {:else if $SettingsMenuIndex === 77}
         <ThanksPage/>
     {/if}
@@ -759,10 +784,15 @@
         </div>
     {:else}
         <!-- Standalone Mobile Modal (Dynamic GUI) -->
-        <div class="fixed inset-0 z-40 bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
+        <div class="fixed inset-0 z-[60] bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
             <!-- Mobile Header (Safe Area Aware) -->
-            <div class="w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20">
-                <div class="flex items-center gap-2 min-w-0">
+            <div class="relative w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20 rs-setting-mobile-header">
+                <div
+                    class="absolute inset-0 rs-setting-mobile-drag-region"
+                    data-tauri-drag-region="true"
+                    aria-hidden="true"
+                ></div>
+                <div class="z-10 flex items-center gap-2 min-w-0 rs-setting-mobile-heading-group">
                     {#if $SettingsMenuIndex !== -1}
                         <button
                             class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
@@ -775,12 +805,12 @@
                             <CircleArrowLeft size={settingsStore.state.settingsCloseButtonSize || 24} />
                         </button>
                     {/if}
-                    <h1 class="font-bold text-lg text-textcolor truncate m-0">
+                    <h1 class="font-bold text-lg text-textcolor truncate m-0 rs-setting-mobile-title">
                         {$SettingsMenuIndex === -1 ? language.settings : currentMenuTitle}
                     </h1>
                 </div>
                 <button
-                    class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
+                    class="relative z-10 hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
                     onclick={() => {
                         settingsOpen.set(false);
                     }}
@@ -809,7 +839,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
+        class="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
         role="presentation"
         onclick={(e) => {
             if (e.target === e.currentTarget) {
@@ -850,14 +880,14 @@
 {#if dbExplorerOpen}
     {#if isNodeServer}
         <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
-    {:else if hasBrowserExplorers}
+    {:else if hasLocalExplorers}
         <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
     {/if}
 {/if}
 {#if storageExplorerOpen}
     {#if isNodeServer}
         <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
-    {:else if hasBrowserExplorers}
+    {:else if hasLocalExplorers}
         <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
     {/if}
 {/if}

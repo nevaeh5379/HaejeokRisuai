@@ -34,6 +34,11 @@ export {
   listColdDataKeysFromDb,
 } from "./coldstorageData";
 
+function getActiveNodeStorage(): NodeStorage | null {
+  const storage = forageStorage.realStorage;
+  return storage instanceof NodeStorage ? storage : null;
+}
+
 async function decompress(data: Uint8Array) {
   return new Promise<Uint8Array>((resolve, reject) => {
     fflateDecompress(data, (err, decompressed) => {
@@ -46,13 +51,13 @@ async function decompress(data: Uint8Array) {
 }
 
 export async function getColdStorageItem(key: string) {
-  if (isNodeServer) {
+  const nodeStorage = getActiveNodeStorage();
+  if (nodeStorage) {
     try {
-      const storage = forageStorage.realStorage as NodeStorage;
-      if (storage.postgres.isEnabled()) {
-        return await storage.postgres.getColdStorageItem(key);
+      if (nodeStorage.sql.isEnabled()) {
+        return await nodeStorage.sql.getColdStorageItem(key);
       }
-      const f = await storage.getItem("coldstorage/" + key);
+      const f = await nodeStorage.getItem("coldstorage/" + key);
       if (!f) {
         return null;
       }
@@ -123,11 +128,11 @@ export async function setColdStorageItem(
 ): Promise<boolean> {
   console.log("setting cold storage item", key);
 
-  if (isNodeServer) {
+  const nodeStorage = getActiveNodeStorage();
+  if (nodeStorage) {
     try {
-      const storage = forageStorage.realStorage as NodeStorage;
-      if (storage.postgres.isEnabled()) {
-        return await storage.postgres.setColdStorageItem(key, value);
+      if (nodeStorage.sql.isEnabled()) {
+        return await nodeStorage.sql.setColdStorageItem(key, value);
       }
     } catch (error) {
       console.error("Cold storage PostgreSQL write failed:", error);
@@ -140,10 +145,9 @@ export async function setColdStorageItem(
     return false;
   }
 
-  if (isNodeServer) {
+  if (nodeStorage) {
     try {
-      const storage = forageStorage.realStorage as NodeStorage;
-      await storage.setItem("coldstorage/" + key, compressed);
+      await nodeStorage.setItem("coldstorage/" + key, compressed);
       return true;
     } catch (error) {
       console.error("Cold storage node write failed:", error);
@@ -182,12 +186,12 @@ export async function setColdStorageItem(
 }
 
 export async function listColdStorageItems(): Promise<{ items: string[] }> {
-  if (isNodeServer) {
-    const storage = forageStorage.realStorage as NodeStorage;
-    if (storage.postgres.isEnabled()) {
-      return await storage.postgres.listColdStorageItems();
+  const nodeStorage = getActiveNodeStorage();
+  if (nodeStorage) {
+    if (nodeStorage.sql.isEnabled()) {
+      return await nodeStorage.sql.listColdStorageItems();
     }
-    const fullKeys = await storage.keys();
+    const fullKeys = await nodeStorage.keys();
     const keys = fullKeys
       .filter((k) => k.startsWith("coldstorage/"))
       .map((k) => k.replace("coldstorage/", ""));
@@ -221,19 +225,17 @@ export async function listColdStorageItems(): Promise<{ items: string[] }> {
 
 export async function cleanColdStorage() {
   const actualUsedKeys = await listColdDataKeys();
-  if (isNodeServer) {
-    const storage = forageStorage.realStorage as NodeStorage;
-    if (storage.postgres.isEnabled()) {
-      const deleted = await storage.postgres.pruneColdStorage(actualUsedKeys);
-      console.log(
-        "Cleaned PostgreSQL cold storage, retained keys:",
-        actualUsedKeys,
-        "deleted:",
-        deleted,
-      );
-      alertClear();
-      return;
-    }
+  const nodeStorage = getActiveNodeStorage();
+  if (nodeStorage?.sql.isEnabled()) {
+    const deleted = await nodeStorage.sql.pruneColdStorage(actualUsedKeys);
+    console.log(
+      "Cleaned PostgreSQL cold storage, retained keys:",
+      actualUsedKeys,
+      "deleted:",
+      deleted,
+    );
+    alertClear();
+    return;
   }
   const allKeys = (await listColdStorageItems()).items;
   const unusedKeys = allKeys.filter((k) => !actualUsedKeys.includes(k));
@@ -246,7 +248,7 @@ export async function cleanColdStorage() {
     unusedKeys,
   );
 
-  if (isNodeServer) {
+  if (nodeStorage) {
     await removeColdStorageItems(unusedKeys);
   } else {
     for (let i = 0; i < unusedKeys.length; i++) {
@@ -262,15 +264,15 @@ export async function cleanColdStorage() {
 }
 
 async function removeColdStorageItems(keys: string[]) {
-  if (isNodeServer) {
+  const nodeStorage = getActiveNodeStorage();
+  if (nodeStorage) {
     try {
-      const storage = forageStorage.realStorage as NodeStorage;
-      if (storage.postgres.isEnabled()) {
-        await storage.postgres.removeColdStorageItems(keys);
+      if (nodeStorage.sql.isEnabled()) {
+        await nodeStorage.sql.removeColdStorageItems(keys);
         return;
       }
       const deleteKeys = keys.map((k) => "coldstorage/" + k);
-      await storage.removeItem(deleteKeys);
+      await nodeStorage.removeItem(deleteKeys);
     } catch (error) {
       console.error(error);
     }

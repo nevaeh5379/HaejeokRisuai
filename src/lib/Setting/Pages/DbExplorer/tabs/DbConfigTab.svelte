@@ -16,7 +16,7 @@
         type NodeBackupProgressEvent,
         type NodePostgresServerConfig,
         type SqlVendorFormValues,
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/backup/risuSave'
 
     interface Props {
@@ -104,10 +104,10 @@
         loadError = ''
         try {
             const storage = getNodeStorage()
-            config = await storage.postgres.getServerConfig()
+            config = await storage.sql.getServerConfig()
             poolMax = config.poolMax
             try {
-                dbConfig = await storage.postgres.getDatabaseConfig()
+                dbConfig = await storage.sql.getDatabaseConfig()
                 vendorPoolMax = dbConfig.params?.poolMax || 10
                 selectedVendor = dbConfig.vendor || dbConfig.storedVendor || 'postgres'
                 if (dbConfig.params) {
@@ -181,7 +181,7 @@
         try {
             const storage = getNodeStorage()
 
-            await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
+            await storage.sql.applyDatabaseConfig(vendor, params, migrate)
             alertNormal(language.postgresApplySuccess)
             onConfigChanged?.()
             setTimeout(() => location.reload(), 300)
@@ -214,7 +214,7 @@
         }
         busy = true
         try {
-            const result = await getNodeStorage().postgres.testConnection(vendor, params)
+            const result = await getNodeStorage().sql.testConnection(vendor, params)
             if (result.success) {
                 alertNormal(language.sqlConnectionSuccess)
             } else {
@@ -255,7 +255,7 @@
     async function refreshBackup() {
         backupLoadError = ''
         try {
-            backup = await getNodeStorage().postgres.getBackupStatus()
+            backup = await getNodeStorage().sql.getBackupStatus()
             if (backup.configured && backup.vendor) {
                 backupVendor = backup.vendor
                 const p = backup.params || {}
@@ -292,7 +292,7 @@
         }
         backupTesting = true
         try {
-            const result = await getNodeStorage().postgres.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
+            const result = await getNodeStorage().sql.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
             if (result.success) {
                 alertNormal(language.sqlConnectionSuccess)
             } else {
@@ -319,7 +319,7 @@
         }
         backupApplying = true
         try {
-            backup = await getNodeStorage().postgres.configureBackup({
+            backup = await getNodeStorage().sql.configureBackup({
                 vendor: backupVendor,
                 params: buildBackupParams(backupVendor),
                 mirroring: { enabled: backupMirroring },
@@ -345,7 +345,7 @@
             message: language.sqlBackupProgressReading,
         }
         try {
-            await getNodeStorage().postgres.resyncBackup((event) => {
+            await getNodeStorage().sql.resyncBackup((event) => {
                 backupProgressData = event
             })
             alertNormal(language.sqlBackupResyncSuccess)
@@ -371,7 +371,7 @@
             message: language.sqlBackupProgressRestoring,
         }
         try {
-            await getNodeStorage().postgres.restoreFromBackup((event) => {
+            await getNodeStorage().sql.restoreFromBackup((event) => {
                 backupProgressData = event
             })
             alertNormal(language.sqlBackupRestoreToMainSuccess)
@@ -389,7 +389,7 @@
         }
         backupRemoving = true
         try {
-            await getNodeStorage().postgres.removeBackup()
+            await getNodeStorage().sql.removeBackup()
             alertNormal(language.sqlBackupRemoveSuccess)
             backup = null
             backupVendor = null

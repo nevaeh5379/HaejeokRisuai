@@ -653,6 +653,34 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
+  async getStorageSyncSummary() {
+    const pool = await this.getPool();
+    const result = await pool.request().query(`
+      SELECT meta.revision, meta.initialized,
+             (SELECT COUNT(*) FROM [system].[settings]) AS settings_count,
+             (SELECT COUNT(*) FROM [character].[characters]) AS characters_count,
+             (SELECT COUNT(*) FROM [chat].[chats]) AS chats_count,
+             (SELECT COUNT(*) FROM [chat].[messages]) AS messages_count
+        FROM [system].[storage_meta] meta
+       WHERE meta.singleton = 1
+    `);
+    const row = result.recordset[0] || {};
+    const records = {
+      settings: Number(row.settings_count) || 0,
+      characters: Number(row.characters_count) || 0,
+      chats: Number(row.chats_count) || 0,
+      messages: Number(row.messages_count) || 0,
+    };
+    return {
+      revision: Number(row.revision) || 0,
+      initialized: Boolean(row.initialized),
+      records: {
+        ...records,
+        total: Object.values(records).reduce((a, b) => a + b, 0),
+      },
+    };
+  }
+
   async isAssetCatalogInitialized(sourceId) {
     const pool = await this.getPool();
     const result = await pool
@@ -2153,6 +2181,140 @@ class AzureStorage extends SqlStorageBase {
     }));
   }
 
+  async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
+    assertId(chatId, "chatId");
+    const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
+    const limit = Math.min(
+      1000,
+      Math.max(1, Math.floor(Number(rawLimit) || 256)),
+    );
+    return await this.withTransaction(async (tx) => {
+      await this.ensureChatBranchGraph(tx, chatId);
+      let request = tx.request();
+      request.input("graphChatId", sql.NVarChar(450), chatId);
+      const branchResult = await request.query(`
+        SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+               branch.head_message_id, branch.reason, branch.created_at,
+               active.branch_id AS active_branch_id
+          FROM [chat].[branches] branch
+     LEFT JOIN [chat].[active_branches] active ON active.chat_id = branch.chat_id
+         WHERE branch.chat_id = @graphChatId
+      ORDER BY branch.created_at, branch.id`);
+
+      request = tx.request();
+      request.input("graphChatId", sql.NVarChar(450), chatId);
+      const countResult = await request.query(
+        "SELECT COUNT(*) AS total FROM [chat].[message_branch_links] WHERE chat_id = @graphChatId",
+      );
+      const total = Number(countResult.recordset[0]?.total ?? 0);
+
+      request = tx.request();
+      request.input("graphChatId", sql.NVarChar(450), chatId);
+      request.input("graphOffset", sql.Int, offset);
+      request.input("graphLimit", sql.Int, limit);
+      const messageResult = await request.query(`
+        SELECT messages.*, links.parent_message_id, links.origin_branch_id
+          FROM [chat].[message_branch_links] links
+          JOIN [chat].[messages] messages
+            ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+         WHERE links.chat_id = @graphChatId
+      ORDER BY messages.position, messages.id
+        OFFSET @graphOffset ROWS FETCH NEXT @graphLimit ROWS ONLY`);
+      const rows = messageResult.recordset;
+      const ids = rows.map((row) => row.id);
+      let attributes = [];
+      let generations = [];
+      let promptInfos = [];
+      let promptToggles = [];
+      let promptItems = [];
+      if (ids.length > 0) {
+        const idsPayload = JSON.stringify(ids);
+        const relationQuery = async (query) => {
+          const relationRequest = tx.request();
+          relationRequest.input(
+            "graphRelationChatId",
+            sql.NVarChar(450),
+            chatId,
+          );
+          relationRequest.input(
+            "graphMessageIds",
+            sql.NVarChar(sql.MAX),
+            idsPayload,
+          );
+          return await relationRequest.query(query);
+        };
+        const relationJoin = `INNER JOIN OPENJSON(@graphMessageIds) WITH (id NVARCHAR(450) '$') ids ON ids.id = source.message_id`;
+        const results = await Promise.all([
+          relationQuery(
+            `SELECT source.* FROM [chat].[message_attributes] source ${relationJoin} WHERE source.chat_id = @graphRelationChatId ORDER BY source.message_id, source.[key]`,
+          ),
+          relationQuery(
+            `SELECT source.* FROM [chat].[message_generation] source ${relationJoin} WHERE source.chat_id = @graphRelationChatId`,
+          ),
+          relationQuery(
+            `SELECT source.* FROM [chat].[message_prompt_info] source ${relationJoin} WHERE source.chat_id = @graphRelationChatId`,
+          ),
+          relationQuery(
+            `SELECT source.* FROM [chat].[message_prompt_toggles] source ${relationJoin} WHERE source.chat_id = @graphRelationChatId ORDER BY source.message_id, source.position`,
+          ),
+          relationQuery(
+            `SELECT source.* FROM [chat].[message_prompt_items] source ${relationJoin} WHERE source.chat_id = @graphRelationChatId ORDER BY source.message_id, source.position`,
+          ),
+        ]);
+        attributes = results[0].recordset ?? [];
+        generations = results[1].recordset ?? [];
+        promptInfos = results[2].recordset ?? [];
+        promptToggles = results[3].recordset ?? [];
+        promptItems = results[4].recordset ?? [];
+      }
+      const relations = {
+        attributes: groupMessageRows(attributes),
+        generation: new Map(
+          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        ),
+        promptInfo: new Map(
+          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        ),
+        promptToggles: groupMessageRows(promptToggles),
+        promptItems: groupMessageRows(promptItems),
+      };
+      const messages = rows.map((row) => {
+        const key = `${row.chat_id}\0${row.id}`;
+        return rebuildMessage(row, {
+          attributes: relations.attributes.get(key) || [],
+          generation: relations.generation.get(key) || null,
+          promptInfo: relations.promptInfo.get(key) || null,
+          promptToggles: relations.promptToggles.get(key) || [],
+          promptItems: relations.promptItems.get(key) || [],
+        });
+      });
+      const branches = branchResult.recordset.map((row) => ({
+        id: row.id,
+        chatId: row.chat_id,
+        parentBranchId: row.parent_branch_id ?? undefined,
+        forkMessageId: row.fork_message_id ?? undefined,
+        headMessageId: row.head_message_id ?? undefined,
+        reason: row.reason,
+        createdAt: Number(row.created_at) || 0,
+      }));
+      return {
+        branches,
+        activeBranchId:
+          branchResult.recordset[0]?.active_branch_id ?? undefined,
+        messages,
+        links: rows.map((row) => ({
+          messageId: row.id,
+          position: Number(row.position) || 0,
+          parentMessageId: row.parent_message_id ?? undefined,
+          originBranchId: row.origin_branch_id,
+        })),
+        offset,
+        total,
+        hasMore: offset + rows.length < total,
+      };
+    });
+  }
+
   async loadChatBranchGraph(chatId) {
     assertId(chatId, "chatId");
     const pool = await this.getPool();
@@ -2377,6 +2539,14 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
+  async listSettingKeys() {
+    const pool = await this.getPool();
+    const result = await pool
+      .request()
+      .query("SELECT [key] FROM [system].[settings] ORDER BY [key]");
+    return result.recordset.map((row) => row.key);
+  }
+
   async loadSettingKeys(keys) {
     const pool = await this.getPool();
     if (!Array.isArray(keys) || keys.length === 0) {
@@ -2526,6 +2696,76 @@ class AzureStorage extends SqlStorageBase {
   async getDatabaseSnapshot() {
     const { database } = await this.exportDatabaseSnapshot();
     return database;
+  }
+
+  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+    this.assertEnabled();
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      throw new StoragePayloadError(
+        "Storage sync finalize revision must be a non-negative integer",
+      );
+    }
+    if (typeof callback !== "function") {
+      throw new StoragePayloadError(
+        "Storage sync finalize callback is required",
+      );
+    }
+    return await this.withTransaction(async (tx) => {
+      const metaRes = await tx
+        .request()
+        .query(
+          "SELECT revision, initialized FROM [system].[storage_meta] WITH (UPDLOCK, HOLDLOCK) WHERE singleton = 1",
+        );
+      const currentRevision = Number(metaRes.recordset[0]?.revision) || 0;
+      if (currentRevision !== expectedRevision) {
+        throw new StorageRevisionConflictError(currentRevision);
+      }
+      const previousReq = tx.request();
+      previousReq.input("current_rev", sql.BigInt, currentRevision);
+      const previousRes = await previousReq.query(
+        "SELECT TOP (1) id FROM [system].[revisions] WHERE storage_revision = @current_rev ORDER BY id DESC",
+      );
+      const previousRevisionId =
+        previousRes.recordset[0]?.id == null
+          ? null
+          : Number(previousRes.recordset[0].id);
+      const databaseInitialized = Boolean(metaRes.recordset[0]?.initialized);
+      const nextRevision = currentRevision + 1;
+      const revReq = tx.request();
+      revReq.input("storage_rev", sql.BigInt, nextRevision);
+      revReq.input("db_init", sql.Bit, 1);
+      revReq.input("scope", sql.NVarChar(32), "database");
+      revReq.input("action", sql.NVarChar(64), "storage-sync:replace");
+      const revRes = await revReq.query(`
+        INSERT INTO [system].[revisions] (storage_revision, database_initialized, scope, action)
+        OUTPUT INSERTED.id
+        VALUES (@storage_rev, @db_init, @scope, @action);
+      `);
+      const revisionId = revRes.recordset[0].id;
+      const ctxReq = tx.request();
+      ctxReq.input("rev_id", sql.NVarChar(128), String(revisionId));
+      await ctxReq.query(
+        `EXEC sp_set_session_context @key = N'risu_revision_id', @value = @rev_id;`,
+      );
+      const result = await callback(tx, {
+        currentRevision,
+        nextRevision,
+        revisionId,
+        previousRevisionId,
+        databaseInitialized,
+      });
+      const updateReq = tx.request();
+      updateReq.input("next_rev", sql.BigInt, nextRevision);
+      await updateReq.query(
+        "UPDATE [system].[storage_meta] SET revision = @next_rev, initialized = 1, updated_at = SYSDATETIMEOFFSET() WHERE singleton = 1",
+      );
+      return {
+        success: true,
+        revision: nextRevision,
+        revisionId: String(revisionId),
+        ...(result || {}),
+      };
+    });
   }
 
   async sync(rawPayload, options = {}) {

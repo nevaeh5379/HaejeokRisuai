@@ -63,8 +63,7 @@
         error = ''
         try {
             await forageStorage.Init()
-            keys = (await forageStorage.keys())
-                .filter((key) => key.startsWith('assets/'))
+            keys = (await forageStorage.listAssetKeys('assets/'))
                 .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
             const estimate = await navigator.storage?.estimate?.()
             storageUsage = estimate?.usage ?? null
@@ -127,7 +126,7 @@
                 </div>
                 <div class="min-w-0">
                     <h2 class="font-bold truncate">{language.storageExplorer}</h2>
-                    <p class="text-xs text-textcolor2 truncate">Browser local asset storage</p>
+                    <p class="text-xs text-textcolor2 truncate">Local asset storage</p>
                 </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">

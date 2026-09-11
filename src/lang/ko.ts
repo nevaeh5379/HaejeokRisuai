@@ -501,7 +501,7 @@ export const languageKorean = {
     irisStep4: "모든 준비가 끝났어요! 이제 함께 즐거운 대화를 시작해볼까요?",
     gatewayMigrationTitle: "데이터 가져오기",
     gatewayMigrationDesc: "백업 파일에서 기존 캐릭터와 대화를 복원합니다.",
-    gatewayQuickSetupTitle: "AI 빠른 설정",
+    gatewayQuickSetupTitle: "빠른 설정",
     gatewayQuickSetupDesc: "닉네임과 사용할 AI 모델을 빠르게 설정합니다.",
     gatewaySkipTitle: "직접 설정할래요 (건너뛰기)",
     gatewaySkipDesc:
@@ -583,6 +583,21 @@ export const languageKorean = {
     modelNamePlaceholder: "예: claude-3-7-sonnet, deepseek-chat, gpt-4o",
     nicknameTitle: "닉네임 설정",
     completeSetupBtn: "설정 완료하기",
+    storageRemoteLabel: "셀프 호스트 서버 연결 (베타)",
+    storageConnectedBadge: "서버 사용 중",
+    storageServerUrlLabel: "서버 주소",
+    storageServerUrlPlaceholder: "https://risu.example.com",
+    storageServerPasswordLabel: "서버 비밀번호",
+    storageServerPasswordDesc:
+      "비밀번호는 저장하지 않고 공개키 등록에만 사용해요.",
+    storageInsecureHttpLabel: "안전하지 않은 HTTP 허용",
+    storageInsecureHttpHelp:
+      "HTTP 허용 시 비암호화 통신이 가능하지만, 네트워크 상에서 내용과 인증 정보가 노출될 수 있어요.",
+    storageHelpTitle: "도움말",
+    storageConnecting: "연결 확인 중...",
+    storageConnectFail: "저장소 서버에 연결하지 못했어요.",
+    storageConnectUse: "연결",
+    storageConnectBack: "뒤로",
   },
   triggerCategories: {
     Special: "특수",

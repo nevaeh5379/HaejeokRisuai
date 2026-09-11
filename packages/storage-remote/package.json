@@ -1,0 +1,27 @@
+{
+  "name": "@risuai/storage-remote",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./nodeApiClient": "./src/nodeApiClient.ts",
+    "./nodeS3Storage": "./src/nodeS3Storage.ts",
+    "./remoteAssetClient": "./src/remoteAssetClient.ts",
+    "./remoteAuthIdentity": "./src/remoteAuthIdentity.ts",
+    "./remoteAuthController": "./src/remoteAuthController.ts",
+    "./remoteDatabaseAdminClient": "./src/remoteDatabaseAdminClient.ts",
+    "./remoteDatabaseBackupClient": "./src/remoteDatabaseBackupClient.ts",
+    "./remoteComputeClient": "./src/remoteComputeClient.ts",
+    "./remoteBulkAssetClient": "./src/remoteBulkAssetClient.ts",
+    "./remoteColdStorageClient": "./src/remoteColdStorageClient.ts",
+    "./remoteStorageSyncClient": "./src/remoteStorageSyncClient.ts",
+    "./remoteSyncAssetReader": "./src/remoteSyncAssetReader.ts",
+    "./remoteSqlCommitClient": "./src/remoteSqlCommitClient.ts",
+    "./remoteSqlReadClient": "./src/remoteSqlReadClient.ts",
+    "./remoteSqlDocumentClient": "./src/remoteSqlDocumentClient.ts",
+    "./keypairStore": "./src/keypairStore.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

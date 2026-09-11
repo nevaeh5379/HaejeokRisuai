@@ -51,7 +51,7 @@
         busy = true
         error = ''
         try {
-            const storage = getNodeStorage().postgres
+            const storage = getNodeStorage().sql
             if (typeof storage.previewRestoreRevision === 'function') {
                 preview = await storage.previewRestoreRevision(revision.id)
             } else {
@@ -76,7 +76,7 @@
         if (!revision || restoring) return
         restoring = true
         try {
-            await getNodeStorage().postgres.restoreRevision(revision.id)
+            await getNodeStorage().sql.restoreRevision(revision.id)
             alertNormal(language.postgresRestoreSuccess)
             onSuccess?.()
             setTimeout(() => location.reload(), 300)

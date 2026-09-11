@@ -1,13 +1,41 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
+import { LocalWriter } from "../globalApi.svelte";
 import type { Database } from "../storage/database/schema";
 import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
   createNativeImportSource,
+  createNodeBackupAssetRequest,
   ensureTauriBackupAssetsDirectory,
+  listBackupAssetKeys,
   normalizeLocalBackupAssetPath,
   restoreInlayBackupEntry,
+  streamNodeBackupAssets,
 } from "./backuplocal";
+
+describe("LocalWriter backup entry names", () => {
+  it("preserves a validated nested asset path", async () => {
+    const writer = new LocalWriter();
+    const chunks: Uint8Array[] = [];
+    vi.spyOn(writer, "write").mockImplementation(async (chunk) => {
+      chunks.push(chunk);
+    });
+
+    await writer.startBackup("assets/icon/image/2.png", 3);
+
+    expect(new TextDecoder().decode(chunks[1])).toBe("assets/icon/image/2.png");
+  });
+
+  it("rejects unsafe backup entry paths", async () => {
+    const writer = new LocalWriter();
+    const write = vi.spyOn(writer, "write").mockResolvedValue();
+
+    await expect(writer.startBackup("assets/../secret", 1)).rejects.toThrow(
+      "Invalid backup entry path",
+    );
+    expect(write).not.toHaveBeenCalled();
+  });
+});
 
 describe("createNativeImportSource", () => {
   it("pulls bounded chunks instead of assembling the native file eagerly", async () => {
@@ -64,6 +92,135 @@ describe("createNativeImportSource", () => {
     await expect(source.stream().getReader().read()).rejects.toThrow(
       "incomplete chunk",
     );
+  });
+});
+
+describe("streamNodeBackupAssets", () => {
+  it("streams remote assets into the backup and reports omitted entries", async () => {
+    const first = new Uint8Array([1, 2]);
+    const second = new Uint8Array([3, 4, 5]);
+    const storage = {
+      keys: vi.fn(),
+      streamItems: vi.fn(async (keys, handlers) => {
+        expect(keys).toEqual([
+          "assets/first.png",
+          "assets/missing.png",
+          "assets/second.mp3",
+        ]);
+        await handlers.onFileStart("assets/first.png", 2n);
+        await handlers.onFileChunk("assets/first.png", first);
+        await handlers.onFileEnd?.("assets/first.png");
+        await handlers.onFileStart("assets/second.mp3", 3n);
+        await handlers.onFileChunk("assets/second.mp3", second);
+        await handlers.onFileEnd?.("assets/second.mp3");
+      }),
+    };
+    const entries = new Map<string, Uint8Array[]>();
+    const writer = {
+      startBackup: vi.fn(async (name: string) => {
+        entries.set(name, []);
+      }),
+      write: vi.fn(async (chunk: Uint8Array) => {
+        const current = [...entries.keys()].at(-1);
+        if (current) entries.get(current)?.push(chunk);
+      }),
+    };
+
+    const result = await streamNodeBackupAssets(storage as any, writer, [
+      "assets/first.png",
+      "assets/missing.png",
+      "assets/second.mp3",
+    ]);
+
+    expect(result).toEqual({
+      writtenKeys: ["assets/first.png", "assets/second.mp3"],
+      missingKeys: ["assets/missing.png"],
+    });
+    expect(Buffer.concat(entries.get("assets/first.png") ?? [])).toEqual(
+      Buffer.from(first),
+    );
+    expect(Buffer.concat(entries.get("assets/second.mp3") ?? [])).toEqual(
+      Buffer.from(second),
+    );
+  });
+
+  it("forwards server-side listing options to the bulk stream", async () => {
+    const storage = {
+      keys: vi.fn(),
+      streamItems: vi.fn(async () => undefined),
+    };
+    const writer = {
+      startBackup: vi.fn(async () => undefined),
+      write: vi.fn(async () => undefined),
+    };
+
+    await streamNodeBackupAssets(
+      storage as any,
+      writer,
+      [],
+      undefined,
+      { prefix: "assets/" },
+    );
+
+    expect(storage.streamItems).toHaveBeenCalledWith(
+      [],
+      expect.any(Object),
+      undefined,
+      { prefix: "assets/" },
+    );
+  });
+});
+
+describe("createNodeBackupAssetRequest", () => {
+  it("lets the server list all assets inside the bulk stream request", async () => {
+    const storage = {
+      keys: vi.fn(async () => ["assets/should-not-be-loaded.png"]),
+    };
+
+    await expect(
+      createNodeBackupAssetRequest(storage as any, "all", new Map()),
+    ).resolves.toEqual({
+      keys: [],
+      options: { prefix: "assets/" },
+    });
+    expect(storage.keys).not.toHaveBeenCalled();
+  });
+
+  it("loads and filters keys client-side for essential backups", async () => {
+    const storage = {
+      keys: vi.fn(async () => [
+        "assets/keep.png",
+        "assets/other.png",
+        "assets/audio.mp3",
+      ]),
+    };
+    const assetMap = new Map([
+      ["assets/keep.png", { charName: "Character", assetName: "Main" }],
+    ]);
+
+    await expect(
+      createNodeBackupAssetRequest(storage as any, "essential", assetMap),
+    ).resolves.toEqual({ keys: ["assets/keep.png"] });
+    expect(storage.keys).toHaveBeenCalledWith("assets/");
+  });
+});
+
+describe("listBackupAssetKeys", () => {
+  it("uses recursive asset listing for Tauri storage", async () => {
+    const storage = {
+      keys: vi.fn(async () => ["assets/root.png"]),
+      listAssetKeys: vi.fn(async () => [
+        "assets/nested/deep.bin",
+        "assets/root.png",
+      ]),
+    };
+
+    await expect(listBackupAssetKeys(storage, true)).resolves.toEqual([
+      "assets/nested/deep.bin",
+      "assets/root.png",
+    ]);
+    expect(storage.listAssetKeys).toHaveBeenCalledWith("assets/");
+    expect(storage.keys).not.toHaveBeenCalled();
   });
 });
 

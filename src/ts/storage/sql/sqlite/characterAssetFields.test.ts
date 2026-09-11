@@ -7,7 +7,7 @@ import {
   makeCapacitorStorage,
 } from "./sqliteTestHarness";
 import { buildFullDatabase } from "./sqliteTestFixtures";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import { CHARACTER_ASSET_FIELD_KEYS } from "./sqliteStorageUtils";
 import type { ISqlStorage } from "../ISqlStorage";
 

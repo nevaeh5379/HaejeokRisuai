@@ -41,10 +41,21 @@ function describeSqlCommitChange(payload) {
   const pluginStorageDeleteKeys = (
     payload?.pluginStorage?.deletes ?? []
   ).filter((key) => typeof key === "string" && key);
+  const presetUpserts = payload?.presets?.upserts ?? [];
+  const presetDeletes = payload?.presets?.deletes ?? [];
+  const moduleUpserts = payload?.modules?.upserts ?? [];
+  const moduleDeletes = payload?.modules?.deletes ?? [];
 
   return {
+    replaceAll: payload?.replaceAll === true,
     chatIds: [...chatIds],
     characterIds: [...characterIds],
+    charactersChanged: Boolean(
+      payload?.replaceAll ||
+      (payload?.characters?.length ?? 0) > 0 ||
+      (payload?.characterDeletes?.length ?? 0) > 0 ||
+      payload?.characterIds !== undefined,
+    ),
     rootUpsertKeys: [...new Set(rootUpsertKeys)],
     rootDeleteKeys: [...new Set(rootDeleteKeys)],
     rootChanged: Boolean(
@@ -53,6 +64,19 @@ function describeSqlCommitChange(payload) {
     pluginStorageUpsertKeys: [...new Set(pluginStorageUpsertKeys)],
     pluginStorageDeleteKeys: [...new Set(pluginStorageDeleteKeys)],
     pluginStorageCleared: payload?.pluginStorage?.clear === true,
+    presetsChanged: Boolean(
+      payload?.replaceAll ||
+      presetUpserts.length ||
+      presetDeletes.length ||
+      payload?.presets?.order !== undefined ||
+      payload?.presets?.activeId !== undefined,
+    ),
+    modulesChanged: Boolean(
+      payload?.replaceAll ||
+      moduleUpserts.length ||
+      moduleDeletes.length ||
+      payload?.modules?.order !== undefined,
+    ),
   };
 }
 
@@ -77,18 +101,25 @@ function createRealtimeEventHub({
     return { id, event, data: { ...data, eventId: id } };
   }
 
+  function sendToClient(client, record) {
+    if (client.ws) {
+      if (client.ws.readyState !== 1) return false;
+      client.ws.send(JSON.stringify(record));
+      return true;
+    }
+    if (client.res.destroyed || client.res.writableEnded) return false;
+    writeEvent(client.res, record);
+    return true;
+  }
+
   function broadcast(event, data) {
     const record = makeBroadcastEvent(event, data);
     history.push(record);
     if (history.length > historyLimit)
       history.splice(0, history.length - historyLimit);
     for (const client of [...clients]) {
-      if (client.res.destroyed || client.res.writableEnded) {
-        clients.delete(client);
-        continue;
-      }
       try {
-        writeEvent(client.res, record);
+        if (!sendToClient(client, record)) clients.delete(client);
       } catch {
         clients.delete(client);
       }
@@ -141,6 +172,41 @@ function createRealtimeEventHub({
     return [...activeGenerations.values()];
   }
 
+  function replayClient(client, rawLastEventId) {
+    const lastEventId = Number(rawLastEventId);
+    const hasLastEventId =
+      Number.isSafeInteger(lastEventId) && lastEventId >= 0;
+    const oldestRetainedId = history[0]?.id ?? sequence + 1;
+    const replayGap =
+      hasLastEventId &&
+      (lastEventId > sequence ||
+        (lastEventId < sequence && lastEventId < oldestRetainedId - 1));
+
+    if (replayGap) {
+      sendToClient(client, {
+        event: "resync-required",
+        data: { latestEventId: sequence, oldestRetainedId },
+      });
+    } else if (hasLastEventId) {
+      for (const record of history) {
+        if (record.id > lastEventId) sendToClient(client, record);
+      }
+    }
+  }
+
+  function readyClient(client) {
+    clients.add(client);
+    sendToClient(client, {
+      event: "ready",
+      data: {
+        clientId: client.clientId,
+        connectedAt: Date.now(),
+        latestEventId: sequence,
+        activeGenerations: listActiveGenerations(),
+      },
+    });
+  }
+
   function connect(req, res) {
     res.status(200);
     res.set("content-type", "text/event-stream; charset=utf-8");
@@ -153,38 +219,11 @@ function createRealtimeEventHub({
       clientId: normalizeClientId(req.headers["x-risu-client-id"]),
     };
     const rawLastEventId = req.headers["last-event-id"];
-    const lastEventId = Number(
+    replayClient(
+      client,
       Array.isArray(rawLastEventId) ? rawLastEventId[0] : rawLastEventId,
     );
-    const hasLastEventId =
-      Number.isSafeInteger(lastEventId) && lastEventId >= 0;
-    const oldestRetainedId = history[0]?.id ?? sequence + 1;
-    const replayGap =
-      hasLastEventId &&
-      (lastEventId > sequence ||
-        (lastEventId < sequence && lastEventId < oldestRetainedId - 1));
-
-    if (replayGap) {
-      writeEvent(res, {
-        event: "resync-required",
-        data: { latestEventId: sequence, oldestRetainedId },
-      });
-    } else if (hasLastEventId) {
-      for (const record of history) {
-        if (record.id > lastEventId) writeEvent(res, record);
-      }
-    }
-
-    clients.add(client);
-    writeEvent(res, {
-      event: "ready",
-      data: {
-        clientId: client.clientId,
-        connectedAt: Date.now(),
-        latestEventId: sequence,
-        activeGenerations: listActiveGenerations(),
-      },
-    });
+    readyClient(client);
 
     const heartbeat = setInterval(() => {
       if (res.destroyed || res.writableEnded) return;
@@ -200,8 +239,33 @@ function createRealtimeEventHub({
     res.once("close", close);
   }
 
+  function connectWebSocket(ws, options = {}) {
+    const client = {
+      ws,
+      clientId: normalizeClientId(options.clientId),
+    };
+    replayClient(client, options.lastEventId);
+    readyClient(client);
+
+    const heartbeat = setInterval(() => {
+      if (ws.readyState !== 1) return;
+      try {
+        ws.ping?.();
+      } catch {}
+    }, heartbeatMs);
+    heartbeat.unref?.();
+
+    const close = () => {
+      clearInterval(heartbeat);
+      clients.delete(client);
+    };
+    ws.once("close", close);
+    ws.once("error", close);
+  }
+
   return {
     connect,
+    connectWebSocket,
     broadcast,
     updateGenerationState,
     listActiveGenerations,

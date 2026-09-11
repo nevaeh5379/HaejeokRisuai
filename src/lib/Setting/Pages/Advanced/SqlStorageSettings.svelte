@@ -19,7 +19,7 @@
         type NodePostgresServerConfig,
         type NodePostgresTokenUsage,
         type SqlVendorFormValues,
-    } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import { encodeRisuSaveLegacy } from 'src/ts/storage/backup/risuSave'
 
     let config = $state<NodePostgresServerConfig|null>(null)
@@ -103,11 +103,11 @@
         try {
             const storage = getNodeStorage()
             // 레거시 /api/postgres-config (호환성)
-            config = await storage.postgres.getServerConfig()
+            config = await storage.sql.getServerConfig()
             poolMax = config.poolMax
             // 범용 /api/db-config
             try {
-                dbConfig = await storage.postgres.getDatabaseConfig()
+                dbConfig = await storage.sql.getDatabaseConfig()
                 vendorPoolMax = dbConfig.params?.poolMax || 10
                 selectedVendor = dbConfig.vendor || dbConfig.storedVendor || 'postgres'
                 // vendor별 폼 채우기 (마스킹된 값은 그대로 표시, 비밀번호는 빈 칸)
@@ -128,8 +128,8 @@
             } catch (e) {
                 // /api/db-config 미지원 서버일 수 있음 - 레거시 폼으로 폴백
             }
-            revisions = config.enabled ? await storage.postgres.listRevisions(20) : []
-            tokenUsage = config.enabled ? await storage.postgres.getTokenUsage() : []
+            revisions = config.enabled ? await storage.sql.listRevisions(20) : []
+            tokenUsage = config.enabled ? await storage.sql.getTokenUsage() : []
         } catch (error) {
             loadError = `${error}`
         } finally {
@@ -143,7 +143,7 @@
         }
         busy = true
         try {
-            await getNodeStorage().postgres.restoreRevision(revision.id)
+            await getNodeStorage().sql.restoreRevision(revision.id)
             alertNormal(language.postgresRestoreSuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {
@@ -202,7 +202,7 @@
         try {
             const storage = getNodeStorage()
 
-            await storage.postgres.applyDatabaseConfig(vendor, params, migrate)
+            await storage.sql.applyDatabaseConfig(vendor, params, migrate)
             alertNormal(language.postgresApplySuccess)
             setTimeout(() => location.reload(), 300)
         } catch (error) {
@@ -234,7 +234,7 @@
         }
         busy = true
         try {
-            const result = await getNodeStorage().postgres.testConnection(vendor, params)
+            const result = await getNodeStorage().sql.testConnection(vendor, params)
             if (result.success) {
                 alertNormal(language.sqlConnectionSuccess)
             } else {
@@ -275,7 +275,7 @@
     async function refreshBackup() {
         backupLoadError = ''
         try {
-            backup = await getNodeStorage().postgres.getBackupStatus()
+            backup = await getNodeStorage().sql.getBackupStatus()
             if (backup.configured && backup.vendor) {
                 backupVendor = backup.vendor
                 const p = backup.params || {}
@@ -313,7 +313,7 @@
         }
         backupTesting = true
         try {
-            const result = await getNodeStorage().postgres.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
+            const result = await getNodeStorage().sql.testBackupConnection(backupVendor, buildBackupParams(backupVendor))
             if (result.success) {
                 alertNormal(language.sqlConnectionSuccess)
             } else {
@@ -340,7 +340,7 @@
         }
         backupApplying = true
         try {
-            backup = await getNodeStorage().postgres.configureBackup({
+            backup = await getNodeStorage().sql.configureBackup({
                 vendor: backupVendor,
                 params: buildBackupParams(backupVendor),
                 mirroring: { enabled: backupMirroring },
@@ -366,7 +366,7 @@
             message: language.sqlBackupProgressReading,
         }
         try {
-            const result = await getNodeStorage().postgres.resyncBackup((event) => {
+            const result = await getNodeStorage().sql.resyncBackup((event) => {
                 backupProgressData = event
             })
             alertNormal(language.sqlBackupResyncSuccess)
@@ -387,7 +387,7 @@
         }
         backupRemoving = true
         try {
-            await getNodeStorage().postgres.removeBackup()
+            await getNodeStorage().sql.removeBackup()
             alertNormal(language.sqlBackupRemoveSuccess)
             backup = null
             backupVendor = null

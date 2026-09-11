@@ -1,5 +1,4 @@
 import localforage from "localforage";
-import { isNodeServer } from "../../platform";
 import { forageStorage } from "../../globalApi.svelte";
 import { NodeStorage } from "../../storage/files/nodeStorage";
 import { BoundedCache } from "../../memory/boundedCache";
@@ -83,7 +82,6 @@ function rememberInCache(id: string, asset: InlayAsset) {
 let remoteAvailable: boolean | null = null;
 
 export async function getRemoteNodeStorage(): Promise<NodeStorage | null> {
-  if (!isNodeServer) return null;
   if (remoteAvailable === false) return null;
   try {
     await forageStorage.Init();

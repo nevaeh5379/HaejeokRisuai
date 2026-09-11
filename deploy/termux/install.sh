@@ -77,7 +77,8 @@ curl -fL "${ARCHIVE_URL}.sha256" -o "$CHECKSUM" || \
 mkdir -p "$STAGED_APP"
 tar -xzf "$ARCHIVE" -C "$STAGED_APP"
 [ -f "$STAGED_APP/dist/index.html" ] || fail "Runtime bundle is missing dist/index.html."
-[ -f "$STAGED_APP/server/node/server.cjs" ] || fail "Runtime bundle is missing the Node server."
+[ -f "$STAGED_APP/server/node/server.cjs" ] || fail "Runtime bundle is missing the compiled Node server."
+[ -f "$STAGED_APP/server/node/bootstrap.cjs" ] || fail "Runtime bundle is missing the Node server bootstrap."
 [ -f "$STAGED_APP/package.json" ] || fail "Runtime bundle is missing package.json."
 [ -f "$STAGED_APP/package-lock.json" ] || fail "Runtime bundle is missing package-lock.json."
 
@@ -262,7 +263,7 @@ while ! pg_isready -h 127.0.0.1 -p "\$HAEJEOK_DB_PORT" -U "\$HAEJEOK_DB_USER" -d
   sleep 1
 done
 cd "\$HAEJEOK_APP_DIR"
-exec node server/node/server.cjs 2>&1
+NODE_ENV=production exec node server/node/bootstrap.cjs 2>&1
 EOF
 chmod 755 "$RISUAI_SERVICE/run"
 install_service_logger "$RISUAI_SERVICE"

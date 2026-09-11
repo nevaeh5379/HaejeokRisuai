@@ -6,11 +6,14 @@ vi.mock("../../alert", () => ({
   alertInput: vi.fn(),
   waitAlert: vi.fn(),
 }));
-vi.mock("../../util", () => ({
-  base64url: vi.fn(),
-  getKeypairStore: vi.fn(),
-  saveKeypairStore: vi.fn(),
-}));
+
+function markAuthFresh(storage: {
+  authChecked: boolean;
+  authValidatedAt?: number;
+}) {
+  storage.authChecked = true;
+  storage.authValidatedAt = Date.now();
+}
 
 function createHeaderPacket(
   fileId: number,
@@ -106,7 +109,7 @@ describe("NodeStorage.streamItems", () => {
     );
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
 
     const events: string[] = [];
@@ -162,7 +165,7 @@ describe("NodeStorage.streamItems", () => {
     );
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
     const progress: any[] = [];
 
@@ -182,6 +185,204 @@ describe("NodeStorage.streamItems", () => {
       totalFiles: 1,
       assetListSource: "catalog",
     });
+  });
+});
+
+describe("NodeStorage password connection", () => {
+  it("accepts an explicitly empty password and hashes it before setup", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const digest =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          apiVersion: 1,
+          features: {
+            sqlStorage: true,
+            assetStorage: true,
+            dataChangeEvents: true,
+            storageSync: true,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ status: "unset" }))
+      .mockResolvedValueOnce(new Response(digest))
+      .mockResolvedValueOnce(Response.json({ status: "success" }));
+    const client = new NodeApiClient(
+      {
+        version: 1,
+        mode: "remote",
+        baseUrl: "https://sync.example",
+        allowInsecureHttp: false,
+      },
+      fetcher,
+    );
+    const storage = new NodeStorage(client);
+    vi.spyOn(storage, "createAuth").mockResolvedValue("test-auth");
+    const authorize = vi
+      .spyOn((storage as any).authController, "authorizeKey")
+      .mockResolvedValue(undefined);
+
+    await expect(storage.connectWithPassword("")).resolves.toBeUndefined();
+    expect(JSON.parse(fetcher.mock.calls[3][1]?.body as string)).toEqual({
+      password: digest,
+    });
+    expect(authorize).toHaveBeenCalledWith(digest);
+  });
+});
+
+describe("NodeStorage auth revalidation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("revalidates a stale registered key before issuing direct asset URLs", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        Response.json({ status: "success" }),
+    );
+    const storage = new NodeStorage(
+      new NodeApiClient(
+        {
+          version: 1,
+          mode: "remote",
+          baseUrl: "https://sync.example",
+          allowInsecureHttp: false,
+        },
+        fetcher,
+      ),
+    );
+    storage.authChecked = true;
+    (storage as any).authValidatedAt = Date.now() - 61_000;
+    vi.spyOn(storage, "createAuth").mockResolvedValue("fresh-auth");
+
+    const first = await storage.getDirectUrl("assets/a.png");
+    const second = await storage.getDirectUrl("assets/b.png");
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toContain("/api/test_auth");
+    expect(first).toContain("auth=fresh-auth");
+    expect(second).toContain("auth=fresh-auth");
+  });
+
+  it("shares one signed token across concurrent SQL requests", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const storage = new NodeStorage();
+    markAuthFresh(storage as any);
+    const createAuth = vi
+      .spyOn(storage, "createAuth")
+      .mockImplementation(async () => {
+        await Promise.resolve();
+        return "shared-auth";
+      });
+    const getSqlAuth = (storage.sql as any).getAuth as () => Promise<string>;
+
+    const tokens = await Promise.all([
+      getSqlAuth(),
+      getSqlAuth(),
+      getSqlAuth(),
+      getSqlAuth(),
+    ]);
+
+    expect(tokens).toEqual(Array(4).fill("shared-auth"));
+    expect(createAuth).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("NodeStorage authentication identity", () => {
+  it("uses a separate key-pair namespace for each server origin", async () => {
+    const { remoteAuthKeyStoreName } =
+      await import("@risuai/storage-remote/remoteAuthIdentity");
+    expect(remoteAuthKeyStoreName("https://one.example")).toBe(
+      "node:aHR0cHM6Ly9vbmUuZXhhbXBsZQ",
+    );
+    expect(remoteAuthKeyStoreName("https://two.example")).toBe(
+      "node:aHR0cHM6Ly90d28uZXhhbXBsZQ",
+    );
+  });
+
+  it("loads one key pair for concurrent signing requests", async () => {
+    const { RemoteAuthIdentity } =
+      await import("@risuai/storage-remote/remoteAuthIdentity");
+    const keyPair = {
+      privateKey: { type: "private" },
+      publicKey: { type: "public" },
+    } as unknown as CryptoKeyPair;
+    const loadKeyPair = vi.fn(async () => {
+      await Promise.resolve();
+      return keyPair;
+    });
+    const identity = new RemoteAuthIdentity(
+      { baseUrl: "https://sync.example" } as any,
+      loadKeyPair,
+      vi.fn(),
+    );
+
+    const pairs = await Promise.all([
+      identity.getKeyPair(),
+      identity.getKeyPair(),
+      identity.getKeyPair(),
+    ]);
+
+    expect(pairs).toEqual([keyPair, keyPair, keyPair]);
+    expect(loadKeyPair).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("NodeStorage native asset reads", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("preserves server MIME metadata and transformed query options", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe("/api/read");
+        expect(url.searchParams.get("size")).toBe("display");
+        expect(url.searchParams.get("width")).toBe("512");
+        expect(url.searchParams.get("height")).toBe("768");
+        expect(url.search.startsWith("??")).toBe(false);
+        const headers = new Headers(init?.headers);
+        expect(headers.get("risu-auth")).toBe("native-auth");
+        expect(headers.get("file-path")).toBe(
+          Buffer.from("assets/avatar.png", "utf8").toString("hex"),
+        );
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "content-type": "image/webp; charset=binary" },
+        });
+      },
+    );
+    const storage = new NodeStorage(
+      new NodeApiClient(
+        {
+          version: 1,
+          mode: "remote",
+          baseUrl: "https://sync.example",
+          allowInsecureHttp: false,
+        },
+        fetcher,
+      ),
+    );
+    markAuthFresh(storage as any);
+    vi.spyOn(storage, "createAuth").mockResolvedValue("native-auth");
+
+    const item = await storage.getItemWithMetadata("assets/avatar.png", {
+      size: "display",
+      width: 512,
+      height: 768,
+    });
+
+    expect(item?.data).toEqual(Buffer.from([1, 2, 3]));
+    expect(item?.contentType).toBe("image/webp");
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -209,7 +410,7 @@ describe("NodeStorage.getItems image cache", () => {
     vi.stubGlobal("caches", memoryCache.storage);
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
 
     const first = await storage.getItems(["assets/image.png"], undefined, {
@@ -256,7 +457,7 @@ describe("NodeStorage.getItems image cache", () => {
     vi.stubGlobal("caches", memoryCache.storage);
 
     const storage = new NodeStorage();
-    vi.spyOn(storage as any, "checkAuth").mockResolvedValue(undefined);
+    markAuthFresh(storage as any);
     vi.spyOn(storage, "createAuth").mockResolvedValue("auth");
     const options = { size: "thumb" as const, width: 128, height: 128 };
 
@@ -271,6 +472,66 @@ describe("NodeStorage.getItems image cache", () => {
     expect(refreshed.get("assets/image.png")).toEqual(newPayload);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(memoryCache.cache.delete).toHaveBeenCalled();
+  });
+});
+
+describe("NodeStorage storage sync asset reader", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("reuses asset metadata and reads bounded HTTP ranges", async () => {
+    const { NodeStorage } = await import("./nodeStorage");
+    const { NodeApiClient } = await import("../runtime/nodeApiClient");
+    const payload = new Uint8Array([12, 13, 14]);
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        expect(url).toContain("/api/read?path=");
+        expect(new Headers(init?.headers).get("range")).toBe("bytes=2-4");
+        expect(new Headers(init?.headers).get("risu-auth")).toBe("sync-auth");
+        return new Response(payload, {
+          status: 206,
+          headers: {
+            "content-range": "bytes 2-4/6",
+            "content-length": "3",
+          },
+        });
+      },
+    );
+    const client = new NodeApiClient(
+      {
+        version: 1,
+        mode: "remote",
+        baseUrl: "https://sync.example",
+        allowInsecureHttp: false,
+      },
+      fetcher,
+    );
+    const storage = new NodeStorage(client);
+    vi.spyOn(storage as any, "getCachedAuth").mockResolvedValue("sync-auth");
+    const details = vi.spyOn(storage.s3, "getAssetDetails").mockResolvedValue({
+      storageType: "fs",
+      totalObjects: 3,
+      totalSizeBytes: 14,
+      assets: [
+        { key: "assets/z.bin", size: 6, mtime: 1 },
+        { key: "other.bin", size: 3, mtime: 1 },
+        { key: "assets/a.bin", size: 5, mtime: 1 },
+      ],
+    });
+
+    await expect(storage.listSyncAssetKeys("assets/")).resolves.toEqual([
+      "assets/a.bin",
+      "assets/z.bin",
+    ]);
+    await expect(storage.getSyncAssetSize("assets/z.bin")).resolves.toBe(6);
+    await expect(
+      storage.readSyncAssetChunk("assets/z.bin", 2, 3),
+    ).resolves.toEqual(payload);
+    expect(details).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 

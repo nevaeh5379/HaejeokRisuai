@@ -26,11 +26,11 @@ import {
   PROMPT_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
 } from "../sqlDeferredSettings";
-import sqliteSchemaSql from "./sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   flattenRelationalValue,
   type RelationalNodeRow,
-} from "./relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import {
   makeWebStorage,
   makeTauriStorage,
@@ -42,6 +42,7 @@ import type { Database, character, Chat, Message } from "../../database/schema";
 import { installStartupData } from "../../database/databaseLifecycle";
 import { settingsStore } from "../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../stores/domain/deferredSettingsLoader";
+import { iterateStorageSyncSqlRecords } from "../../runtime/storageSyncSource";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 
@@ -73,6 +74,47 @@ function makeFreshHarness(make: MakeStorage) {
 // ── Contract suites ──────────────────────────────────────────────────
 
 describe.each(backendFactories)("$name contracts", ({ make }) => {
+  it("reads storage sync counts without exporting the aggregate database", async () => {
+    const { storage } = makeFreshHarness(make);
+    const empty = await storage.getStorageSyncSummary();
+    expect(empty).toMatchObject({
+      revision: 0,
+      initialized: false,
+      records: { characters: 0, chats: 0, messages: 0 },
+    });
+
+    await seed(storage);
+    const summary = await storage.getStorageSyncSummary();
+    expect(summary).toMatchObject({
+      revision: storage.getRevision(),
+      initialized: true,
+      records: { characters: 2, chats: 2, messages: 3 },
+    });
+    expect(summary?.records.total).toBe(
+      (summary?.records.settings ?? 0) + 2 + 2 + 3,
+    );
+  });
+
+  it("streams the seeded database through bounded sync records", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    const records = [];
+    for await (const record of iterateStorageSyncSqlRecords(storage, {
+      expectedRevision: storage.getRevision(),
+      pageSize: 1,
+    })) {
+      records.push(record);
+    }
+    expect(records[0]).toMatchObject({ type: "meta", revision: storage.getRevision() });
+    expect(records.filter((record) => record.type === "character")).toHaveLength(2);
+    expect(records.filter((record) => record.type === "chat")).toHaveLength(2);
+    expect(records.filter((record) => record.type === "message")).toHaveLength(3);
+    expect(records.some((record) => record.type === "module")).toBe(true);
+    const chat = records.find((record) => record.type === "chat" && record.id === "chat-1");
+    expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
+    database.close();
+  });
+
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
     const { storage, database } = makeFreshHarness(make);
     const source = await seed(storage);
@@ -144,6 +186,21 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     commit.root.upserts.push({ key: "exotic", value: exotic });
     await storage.commit(commit);
     expect(await (storage as any).loadSettingValue("exotic")).toEqual(exotic);
+    database.close();
+  });
+
+  it("lists persisted setting keys without hydrating setting values", async () => {
+    const { storage, database, queryLog } = makeFreshHarness(make);
+    const commit = createEmptySqlCommit(0, "setting-key-list");
+    commit.root.upserts.push(
+      { key: "alpha-setting", value: { nested: true } },
+      { key: "beta-setting", value: "value" },
+    );
+    await storage.commit(commit);
+    queryLog.clear();
+    const keys = await storage.listSettingKeys?.();
+    expect(keys).toEqual(expect.arrayContaining(["alpha-setting", "beta-setting"]));
+    expect(queryLog.touching("setting_extension_nodes")).toBe(0);
     database.close();
   });
 
@@ -693,6 +750,54 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       graph.messages.every((message) => message.promptInfo === undefined),
     ).toBe(true);
     expect(queryLog.touching("message_extension_nodes")).toBeLessThanOrEqual(1);
+    database.close();
+  });
+
+  it("pages fully hydrated branch graph messages without loading the whole graph", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    const [root] = await storage.listChatBranches!("chat-1");
+    await storage.createChatBranch!({
+      id: "reroll-page",
+      chatId: "chat-1",
+      parentBranchId: root.id,
+      forkMessageId: "m1",
+      reason: "reroll",
+      createdAt: 201,
+    });
+    const append = createEmptySqlCommit(storage.getRevision(), "graph-page-message");
+    append.messages.push({
+      id: "m-alt-page",
+      chatId: "chat-1",
+      position: 1,
+      data: makeMessage("m-alt-page", "char", "page alternative", {
+        promptInfo: { promptName: "alt", promptToggles: [], promptText: [] },
+      }),
+    });
+    await storage.commit(append);
+
+    expect(storage.loadChatBranchGraphPage).toBeTypeOf("function");
+    const first = await storage.loadChatBranchGraphPage!("chat-1", 0, 2);
+    const second = await storage.loadChatBranchGraphPage!("chat-1", 2, 2);
+    expect(first).toMatchObject({ total: 3, offset: 0, hasMore: true });
+    expect(second).toMatchObject({ total: 3, offset: 2, hasMore: false });
+    const messages = [...first.messages, ...second.messages];
+    const links = [...first.links, ...second.links];
+    expect(new Set(messages.map((message) => message.chatId))).toEqual(
+      new Set(["m1", "m2", "m-alt-page"]),
+    );
+    expect(links).toHaveLength(3);
+    expect(links.find((link) => link.messageId === "m1")?.position).toBe(0);
+    expect(links.find((link) => link.messageId === "m2")?.position).toBe(1);
+    expect(links.find((link) => link.messageId === "m-alt-page")?.position).toBe(1);
+    expect(messages.find((message) => message.chatId === "m1")?.promptInfo?.promptName).toBe(
+      "preset",
+    );
+    expect(
+      messages.find((message) => message.chatId === "m-alt-page")?.promptInfo?.promptName,
+    ).toBe("alt");
+    expect(first.branches).toHaveLength(2);
+    expect(first.activeBranchId).toBe("reroll-page");
     database.close();
   });
 

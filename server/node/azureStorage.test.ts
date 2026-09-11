@@ -411,3 +411,72 @@ describe("AzureStorage persistent branch API", () => {
     }
   });
 });
+
+describe("Azure storage sync finalize concurrency", () => {
+  function storageAtRevision(revision: number) {
+    const queries: string[] = [];
+    const makeRequest = () => ({
+      input: vi.fn(function () {
+        return this;
+      }),
+      query: vi.fn(async (sqlText: string) => {
+        queries.push(sqlText);
+        if (
+          sqlText.includes(
+            "SELECT revision, initialized FROM [system].[storage_meta]",
+          )
+        ) {
+          return { recordset: [{ revision, initialized: true }] };
+        }
+        if (sqlText.includes("SELECT TOP (1) id FROM [system].[revisions]")) {
+          return { recordset: [{ id: 40 }] };
+        }
+        if (sqlText.includes("INSERT INTO [system].[revisions]")) {
+          return { recordset: [{ id: 41 }] };
+        }
+        return { recordset: [] };
+      }),
+    });
+    const tx = { request: vi.fn(() => makeRequest()) };
+    const storage = new AzureStorage({ enabled: true }) as any;
+    vi.spyOn(storage, "withTransaction").mockImplementation(
+      async (callback: (tx: any) => Promise<unknown>) => await callback(tx),
+    );
+    return { storage, tx, queries };
+  }
+
+  it("uses an update lock and verifies the revision inside finalize", async () => {
+    const { storage, queries } = storageAtRevision(7);
+    const callback = vi.fn(async (_tx: unknown, context: any) => {
+      queries.push("CALLBACK");
+      expect(context).toMatchObject({
+        currentRevision: 7,
+        nextRevision: 8,
+        revisionId: 41,
+        previousRevisionId: 40,
+        databaseInitialized: true,
+      });
+      return { applied: 4 };
+    });
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).resolves.toMatchObject({ revision: 8, revisionId: "41", applied: 4 });
+    expect(
+      queries.findIndex((sql) => sql.includes("UPDLOCK, HOLDLOCK")),
+    ).toBeLessThan(queries.indexOf("CALLBACK"));
+  });
+
+  it("rejects a stale finalize revision without invoking apply", async () => {
+    const { storage } = storageAtRevision(8);
+    const callback = vi.fn();
+
+    await expect(
+      storage.runStorageSyncFinalizeTransaction(7, callback),
+    ).rejects.toMatchObject({
+      name: "StorageRevisionConflictError",
+      revision: 8,
+    });
+    expect(callback).not.toHaveBeenCalled();
+  });
+});

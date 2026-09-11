@@ -16,7 +16,7 @@
     } from '@lucide/svelte'
     import { language } from 'src/lang'
     import { formatBytes } from './utils'
-    import type { NodeBackupConfig } from 'src/ts/storage/sql/postgres/nodePostgresStorage'
+    import type { NodeBackupConfig } from 'src/ts/storage/sql/postgres/nodeSqlStorage'
     import type { NodeS3ServerConfig, NodeStorageSummary, TabType, ViewTarget } from './types'
 
     interface Props {

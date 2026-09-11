@@ -162,12 +162,20 @@ vi.mock("src/ts/storage/files/nodeStorage", async (importOriginal) => {
   };
 });
 
-async function enableNodeServerMode() {
-  remoteMocks.nodeServerMode.value = true;
+async function enableRemoteStorage(nodeServerMode: boolean) {
+  remoteMocks.nodeServerMode.value = nodeServerMode;
   remoteMocks.remoteFailureCount.value = 0;
   const { NodeStorage } = await import("src/ts/storage/files/nodeStorage");
   remoteMocks.forageStorage.realStorage = new NodeStorage();
   resetRemoteAvailability();
+}
+
+async function enableNodeServerMode() {
+  await enableRemoteStorage(true);
+}
+
+async function enableRemoteClientMode() {
+  await enableRemoteStorage(false);
 }
 
 function disableNodeServerMode() {
@@ -793,7 +801,7 @@ describe("set -> remove -> get", () => {
   });
 });
 
-describe("remote inlay storage (node server)", () => {
+describe("remote inlay storage", () => {
   function makeAsset(name: string): InlayAsset {
     return {
       data: new Blob(["remote-bytes"], { type: "image/png" }),
@@ -818,6 +826,23 @@ describe("remote inlay storage (node server)", () => {
   test("does not touch the server outside node mode", async () => {
     await setInlayAsset("local-id", makeAsset("local.png"));
     expect(remoteStore.size).toBe(0);
+  });
+
+  test("uses active remote storage on a client platform", async () => {
+    await enableRemoteClientMode();
+    remoteStore.set(
+      getInlayServerKey("client-remote-id"),
+      await encodeInlayAssetBackup(makeAsset("client-remote.png")),
+    );
+
+    const entries = await listInlayAssets();
+
+    expect(entries).toEqual([
+      [
+        "client-remote-id",
+        expect.objectContaining({ name: "client-remote.png" }),
+      ],
+    ]);
   });
 
   test("keeps the local cache when the server upload fails", async () => {

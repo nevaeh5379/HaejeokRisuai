@@ -24,7 +24,7 @@ import type {
   NodePostgresTokenUsage,
   NodePostgresCharacterSearchResult,
   NodePostgresBotChatStats,
-} from "./postgres/nodePostgresStorage";
+} from "./postgres/nodeSqlStorage";
 
 export type SqlBackendKind =
   "node" | "web-sqlite" | "tauri-sqlite" | "capacitor-sqlite";
@@ -44,6 +44,18 @@ export interface SqlDatabaseSnapshotResult {
   revision: number;
   /** Canonical aggregate for storage/backup work; legacy persona mirrors are absent. */
   database: CanonicalDatabase | null;
+}
+
+export interface SqlStorageSyncSummary {
+  revision: number;
+  initialized: boolean;
+  records: {
+    settings: number;
+    characters: number;
+    chats: number;
+    messages: number;
+    total: number;
+  };
 }
 
 export interface SqlChatLoadOptions {
@@ -72,6 +84,7 @@ export interface SqlChatBranchSummary {
 
 export interface SqlChatBranchGraphLink {
   messageId: string;
+  position?: number;
   parentMessageId?: string;
   originBranchId: string;
 }
@@ -81,6 +94,12 @@ export interface SqlChatBranchGraphData {
   activeBranchId?: string;
   messages: Message[];
   links: SqlChatBranchGraphLink[];
+}
+
+export interface SqlChatBranchGraphPage extends SqlChatBranchGraphData {
+  offset: number;
+  total: number;
+  hasMore: boolean;
 }
 
 export interface SqlCreateChatBranchInput {
@@ -170,6 +189,7 @@ export interface ISqlStorage {
   // ── Startup / snapshot / save ───────────────────────────────────────
 
   loadStartupData(): Promise<SqlStartupDataResult | null>;
+  getStorageSyncSummary(): Promise<SqlStorageSyncSummary | null>;
   exportDatabaseSnapshot(): Promise<SqlDatabaseSnapshotResult | null>;
 
   commit(commit: SqlCommit): Promise<SqlCommitResult>;
@@ -212,6 +232,11 @@ export interface ISqlStorage {
    */
   listChatBranches?(chatId: string): Promise<SqlChatBranchSummary[]>;
   loadChatBranchGraph?(chatId: string): Promise<SqlChatBranchGraphData>;
+  loadChatBranchGraphPage?(
+    chatId: string,
+    offset: number,
+    limit: number,
+  ): Promise<SqlChatBranchGraphPage>;
   loadBranchMessages?(
     chatId: string,
     branchId: string,
@@ -251,6 +276,8 @@ export interface ISqlStorage {
   // ── Settings ─────────────────────────────────────────────────────────
 
   loadSettingKey(key: string): Promise<any>;
+  /** Enumerates every persisted root setting key without hydrating values. */
+  listSettingKeys?(): Promise<string[]>;
   /** Batched multi-key read; backends may collapse it into one query. */
   loadSettingKeys?(keys: string[]): Promise<Map<string, unknown>>;
 
@@ -300,7 +327,7 @@ export interface ISqlStorage {
   // ── Optional table explorer ──────────────────────────────────────────
 
   listDbTables?(): Promise<
-    import("./postgres/nodePostgresStorage").NodePostgresTableInfo[]
+    import("./postgres/nodeSqlStorage").NodePostgresTableInfo[]
   >;
   getDbTableData?(
     table: string,
@@ -312,7 +339,7 @@ export interface ISqlStorage {
       search?: string;
       columns?: string[];
     },
-  ): Promise<import("./postgres/nodePostgresStorage").NodePostgresTableData>;
+  ): Promise<import("./postgres/nodeSqlStorage").NodePostgresTableData>;
 }
 
 /**
@@ -329,21 +356,21 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
   getDatabaseConfig(): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
-      storedVendor: import("./postgres/nodePostgresStorage").DbVendor | null;
+      storedVendor: import("./postgres/nodeSqlStorage").DbVendor | null;
     }
   >;
   applyDatabaseConfig(
-    vendor: import("./postgres/nodePostgresStorage").DbVendor,
+    vendor: import("./postgres/nodeSqlStorage").DbVendor,
     params: Record<string, any>,
     migrate: boolean,
   ): Promise<
     NodePostgresServerConfig & {
       params: Record<string, any>;
-      storedVendor: import("./postgres/nodePostgresStorage").DbVendor | null;
+      storedVendor: import("./postgres/nodeSqlStorage").DbVendor | null;
     }
   >;
   testConnection(
-    vendor: import("./postgres/nodePostgresStorage").DbVendor,
+    vendor: import("./postgres/nodeSqlStorage").DbVendor,
     params: Record<string, any>,
   ): Promise<{ success: boolean; error?: string }>;
   migrateLegacyData(): Promise<{
@@ -352,7 +379,7 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
     skipped: number;
   }>;
   listDbTables(): Promise<
-    import("./postgres/nodePostgresStorage").NodePostgresTableInfo[]
+    import("./postgres/nodeSqlStorage").NodePostgresTableInfo[]
   >;
   getDbTableData(
     table: string,
@@ -364,7 +391,7 @@ export interface INodeSqlStorageAdmin extends ISqlStorage {
       search?: string;
       columns?: string[];
     },
-  ): Promise<import("./postgres/nodePostgresStorage").NodePostgresTableData>;
+  ): Promise<import("./postgres/nodeSqlStorage").NodePostgresTableData>;
 }
 
 /**

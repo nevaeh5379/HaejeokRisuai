@@ -120,7 +120,7 @@ describe("legacy branch migration wiring", () => {
   }
 
   it("exposes the branch graph batch endpoint", () => {
-    const source = read("server.cjs");
+    const source = read("server.cts");
     expect(source).toContain("/api/database-v2/chats/:chatId/branches/graph");
     expect(source).toContain("loadChatBranchGraph(req.params.chatId)");
   });

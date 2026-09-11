@@ -1,11 +1,11 @@
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
-import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   isSqlitePragmaStatement,
   splitSqliteStatements,
-} from "../sqliteSchemaStatements";
+} from "@risuai/storage-sqlite/sqliteSchemaStatements";
 import {
   buildSqlReplaceRootCommit,
   iterateSqlReplaceEntityCommits,
@@ -16,8 +16,8 @@ import {
 import {
   applySqliteCommit,
   countSqliteCommitStatements,
-} from "../sqliteCommit";
-import type { SqliteTransactionStatement } from "../sqliteStorageUtils";
+} from "@risuai/storage-sqlite/sqliteCommit";
+import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";

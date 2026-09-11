@@ -109,6 +109,18 @@ class PersonaStore
     }
   }
 
+  async refreshFromStorage(): Promise<void> {
+    const storage = this.storage;
+    if (!storage || !this.loaded) return;
+    await this.flush();
+    if (this.hasPendingWrites()) {
+      throw new Error(
+        "Cannot refresh personas while local changes are pending",
+      );
+    }
+    await this.init(storage);
+  }
+
   get(index: number): RisuPersona | undefined {
     return this.personas[index];
   }

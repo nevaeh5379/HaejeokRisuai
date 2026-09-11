@@ -63,6 +63,39 @@ describe("AssetStorage utilities", () => {
   });
 });
 
+describe("asset read route streams", () => {
+  it("uses node:fs streams instead of fs/promises for file-backed responses", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "server/node/server.cts"),
+      "utf8",
+    );
+    const start = source.indexOf('app.get("/api/read"');
+    const end = source.indexOf('app.get("/api/remove"', start);
+    const route = source.slice(start, end);
+
+    expect(route).toContain("fsSync.createReadStream(result.filePath");
+    expect(route).not.toContain("fs.createReadStream(result.filePath");
+  });
+});
+
+describe("bulk asset read route", () => {
+  it("uses bounded prefetching before writing ordered asset packets", () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "server/node/server.cts"),
+      "utf8",
+    );
+    const start = source.indexOf('"/api/read-bulk"');
+    const end = source.indexOf("function normalizeCharxEntryName", start);
+    const route = source.slice(start, end);
+
+    expect(route).toContain("prefetchInOrder(");
+    expect(route).toContain("BULK_READ_PREFETCH_CONCURRENCY");
+    expect(route.indexOf("prefetchInOrder(")).toBeLessThan(
+      route.indexOf("for await (const prefetched"),
+    );
+  });
+});
+
 describe("streaming asset reads", () => {
   it("keeps the S3 response body as a stream", async () => {
     const storage = new S3AssetStorage({
@@ -141,6 +174,23 @@ describe("LocalFsStorage", () => {
 
     await storage.remove(hex);
     expect(await storage.exists(hex)).toBe(false);
+  });
+
+  it("sniffs image bytes when the logical extension is stale", async () => {
+    const key = "assets/compressed.png";
+    const hex = keyToHex(key);
+    const webp = Buffer.concat([
+      Buffer.from("RIFF", "ascii"),
+      Buffer.alloc(4),
+      Buffer.from("WEBP", "ascii"),
+      Buffer.from("VP8 ", "ascii"),
+    ]);
+    fs.writeFileSync(path.join(tmpDir, hex), webp);
+
+    const result = await storage.read(hex);
+    expect(result.exists).toBe(true);
+    expect(result.contentType).toBe("image/webp");
+    expect(result.contentLength).toBe(webp.length);
   });
 
   it("opens a single lazy stream and preserves the asset contents", async () => {

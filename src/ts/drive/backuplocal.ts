@@ -3,7 +3,6 @@ import {
   mkdir,
   open as openFile,
   readFile,
-  readDir,
   writeFile,
 } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
@@ -46,18 +45,14 @@ import {
   setColdStorageItem,
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { flushDurableStores } from "../stores/domain/flushDurableStores";
 import { NodeStorage } from "../storage/files/nodeStorage";
 import {
   getSqlBranchStorage,
   getSqlStorage,
 } from "../storage/sql/sqlStorageFactory";
-import { presetStore } from "../stores/domain/presetStore.svelte";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { messageStore } from "../stores/domain/messageStore.svelte";
-import { personaStore } from "../stores/domain/personaStore.svelte";
-import { moduleStore } from "../stores/domain/moduleStore.svelte";
-import type { FlushableStore } from "../stores/domain/storeContracts";
 import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
+import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
   makeLegacyCompatibleDatabase,
   type ColdStorageValueMap,
@@ -592,21 +587,6 @@ function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
   return db as PortableDatabase;
 }
 
-async function flushDurableStores(): Promise<void> {
-  const stores: readonly FlushableStore[] = [
-    characterStore,
-    presetStore,
-    settingsStore,
-    messageStore,
-    personaStore,
-    moduleStore,
-  ];
-  await Promise.all(stores.map((store) => store.flush()));
-  if (stores.some((store) => store.hasPendingWrites())) {
-    throw new Error("Cannot create a backup while database writes are pending");
-  }
-}
-
 export async function createBackupDatabaseSnapshot(
   onProgress?: (msg: string) => void,
 ): Promise<PortableDatabase> {
@@ -679,6 +659,70 @@ function isEssentialBackupAsset(
   return Boolean(findBackupAssetInfo(assetMap, key));
 }
 
+type NodeBackupAssetStorage = Pick<NodeStorage, "keys" | "streamItems">;
+type StreamingBackupWriter = Pick<LocalWriter, "startBackup" | "write">;
+type NodeBackupAssetStreamOptions = Parameters<NodeStorage["streamItems"]>[3];
+
+export async function createNodeBackupAssetRequest(
+  storage: Pick<NodeBackupAssetStorage, "keys">,
+  scope: BackupAssetScope,
+  assetMap: Map<string, BackupAssetInfo>,
+): Promise<{ keys: string[]; options?: NodeBackupAssetStreamOptions }> {
+  if (scope === "all") {
+    return { keys: [], options: { prefix: "assets/" } };
+  }
+
+  const keys = await storage.keys("assets/");
+  return {
+    keys: keys.filter((key) => isEssentialBackupAsset(assetMap, key)),
+  };
+}
+
+export async function streamNodeBackupAssets(
+  storage: NodeBackupAssetStorage,
+  writer: StreamingBackupWriter,
+  keys: string[],
+  onProgress?: Parameters<NodeStorage["streamItems"]>[2],
+  options?: NodeBackupAssetStreamOptions,
+): Promise<{ writtenKeys: string[]; missingKeys: string[] }> {
+  const writtenKeys = new Set<string>();
+
+  await storage.streamItems(
+    keys,
+    {
+      async onFileStart(name, size) {
+        writtenKeys.add(name);
+        await writer.startBackup(name, size);
+      },
+      async onFileChunk(_name, chunk) {
+        await writer.write(chunk);
+      },
+    },
+    onProgress,
+    options,
+  );
+
+  return {
+    writtenKeys: [...writtenKeys],
+    missingKeys: keys.filter((key) => !writtenKeys.has(key)),
+  };
+}
+
+type BackupAssetKeyStorage = Pick<
+  typeof forageStorage,
+  "keys" | "listAssetKeys"
+>;
+
+export async function listBackupAssetKeys(
+  storage: BackupAssetKeyStorage = forageStorage,
+  useRecursiveListing = isTauri,
+): Promise<string[]> {
+  if (useRecursiveListing) {
+    return await storage.listAssetKeys("assets/");
+  }
+  return (await storage.keys()).filter((key) => key?.startsWith("assets/"));
+}
+
 function reportBackupAssetProgress(
   label: string,
   current: number,
@@ -710,51 +754,46 @@ async function writeLocalBackupAssets(
   const missingAssets: string[] = [];
   let lastUiUpdate = 0;
 
-  if (isTauri) {
-    alertProgress(`${label} (Scanning assets)`, 0);
-    await sleep(10);
-    await ensureTauriBackupAssetsDirectory();
-    let assets = (
-      await readDir("assets", { baseDir: BaseDirectory.AppData })
-    ).filter((asset) => asset.isFile && Boolean(asset.name));
-    if (options.assetScope === "essential") {
-      assets = assets.filter((asset) =>
-        isEssentialBackupAsset(assetMap, asset.name ?? ""),
-      );
-    }
+  await forageStorage.Init();
+  const nodeStorage =
+    forageStorage.realStorage instanceof NodeStorage
+      ? forageStorage.realStorage
+      : null;
 
-    for (let index = 0; index < assets.length; index++) {
-      const key = assets[index].name;
-      if (!key) continue;
-      const now = Date.now();
-      if (
-        now - lastUiUpdate > 30 ||
-        index === 0 ||
-        index === assets.length - 1
-      ) {
-        lastUiUpdate = now;
+  if (nodeStorage) {
+    alertProgress(`${label} (Scanning server assets)`, 0);
+    await sleep(10);
+    const request = await createNodeBackupAssetRequest(
+      nodeStorage,
+      options.assetScope,
+      assetMap,
+    );
+
+    const streamed = await streamNodeBackupAssets(
+      nodeStorage,
+      writer,
+      request.keys,
+      (progress) => {
+        const current = Math.min(
+          progress.completedFiles + (progress.currentFile ? 1 : 0),
+          progress.totalFiles,
+        );
         reportBackupAssetProgress(
           label,
-          index + 1,
-          assets.length,
-          key,
+          current,
+          progress.totalFiles,
+          progress.currentFile ?? "",
           assetMap,
           missingAssets.length,
         );
-        await sleep(0);
-      }
-      const data = await readFile(`assets/${key}`, {
-        baseDir: BaseDirectory.AppData,
-      });
-      if (data) await writer.writeBackup(key, data);
-      else missingAssets.push(key);
-    }
+      },
+      request.options,
+    );
+    missingAssets.push(...streamed.missingKeys);
     return { missingAssets, assetMap };
   }
 
-  let keys = (await forageStorage.keys()).filter((key) =>
-    key?.startsWith("assets/"),
-  );
+  let keys = await listBackupAssetKeys();
   if (options.assetScope === "essential") {
     keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
   }
@@ -961,17 +1000,19 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
 
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
   try {
-    if (isNodeServer && !forageStorage.isAccount) {
-      await flushDurableStores();
-      await saveNodeLocalBackupStream(mode);
-      return;
-    }
-    await saveLocalBackupWithOptions({
-      mode,
-      partial: false,
-      assetScope: "all",
-      accountReadDelayMs: 1000,
-      encryptAccountBackup: true,
+    await runExclusiveLocalBackupOperation("save", async () => {
+      if (isNodeServer && !forageStorage.isAccount) {
+        await flushDurableStores();
+        await saveNodeLocalBackupStream(mode);
+        return;
+      }
+      await saveLocalBackupWithOptions({
+        mode,
+        partial: false,
+        assetScope: "all",
+        accountReadDelayMs: 1000,
+        encryptAccountBackup: true,
+      });
     });
   } catch (error) {
     console.error("SaveLocalBackup failed:", error);
@@ -984,17 +1025,19 @@ export async function SavePartialLocalBackup() {
   try {
     if (!(await alertConfirm(language.partialBackupFirstConfirm))) return;
     if (!(await alertConfirm(language.partialBackupSecondConfirm))) return;
-    if (isNodeServer && !forageStorage.isAccount) {
-      await flushDurableStores();
-      await saveNodeLocalBackupStream("partial");
-      return;
-    }
-    await saveLocalBackupWithOptions({
-      mode: "native",
-      partial: true,
-      assetScope: "essential",
-      accountReadDelayMs: 100,
-      encryptAccountBackup: false,
+    await runExclusiveLocalBackupOperation("partial-save", async () => {
+      if (isNodeServer && !forageStorage.isAccount) {
+        await flushDurableStores();
+        await saveNodeLocalBackupStream("partial");
+        return;
+      }
+      await saveLocalBackupWithOptions({
+        mode: "native",
+        partial: true,
+        assetScope: "essential",
+        accountReadDelayMs: 100,
+        encryptAccountBackup: false,
+      });
     });
   } catch (error) {
     console.error("SavePartialLocalBackup failed:", error);
@@ -1034,7 +1077,7 @@ export async function restoreInlayBackupEntry(
   return { status: "restored" };
 }
 
-async function restoreLocalBackupSource(
+async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 0, end: 90 },
 ) {
@@ -1677,11 +1720,29 @@ async function restoreLocalBackupSource(
   );
 }
 
+async function runLocalBackupRestore<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  return await runExclusiveLocalBackupOperation("restore", async () => {
+    await flushDurableStores();
+    return await operation();
+  });
+}
+
+async function restoreLocalBackupSource(
+  file: LocalBackupSource,
+  parserProgress: { start: number; end: number } = { start: 0, end: 90 },
+) {
+  return await runLocalBackupRestore(() =>
+    restoreLocalBackupSourceUnlocked(file, parserProgress),
+  );
+}
+
 export async function restoreLocalBackupFile(file: File) {
   await restoreLocalBackupSource(file);
 }
 
-async function loadCapacitorLocalBackup() {
+async function loadCapacitorLocalBackupUnlocked() {
   if (!nativeBackup) throw new Error("Native backup importer is unavailable");
   alertProgress(
     "Opening local backup...\nChoose a backup file in the Android file picker.",
@@ -1751,7 +1812,7 @@ async function loadCapacitorLocalBackup() {
       } Streaming database data...`,
       50,
     );
-    await restoreLocalBackupSource(
+    await restoreLocalBackupSourceUnlocked(
       createNativeImportSource(nativeBackup, id, size),
       { start: 50, end: 90 },
     );
@@ -1760,7 +1821,7 @@ async function loadCapacitorLocalBackup() {
   }
 }
 
-async function loadTauriLocalBackup() {
+async function loadTauriLocalBackupUnlocked() {
   const selected = await openDialog({
     multiple: false,
     filters: [
@@ -1776,17 +1837,17 @@ async function loadTauriLocalBackup() {
   if (!path) return;
   alertProgress("Opening local backup...", 0);
   const source = await createTauriImportSource(path);
-  await restoreLocalBackupSource(source);
+  await restoreLocalBackupSourceUnlocked(source);
 }
 
 export async function LoadLocalBackup() {
   try {
     if (isCapacitor) {
-      await loadCapacitorLocalBackup();
+      await runLocalBackupRestore(loadCapacitorLocalBackupUnlocked);
       return;
     }
     if (isTauri) {
-      await loadTauriLocalBackup();
+      await runLocalBackupRestore(loadTauriLocalBackupUnlocked);
       return;
     }
     const input = document.createElement("input");

@@ -1190,6 +1190,39 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async getStorageSyncSummary() {
+    this.assertEnabled();
+    const conn = await this.pool.getConnection();
+    try {
+      const row = await fetchOne(
+        conn,
+        `SELECT meta.revision, meta.initialized,
+                (SELECT COUNT(*) FROM system_settings) AS settings_count,
+                (SELECT COUNT(*) FROM character_characters) AS characters_count,
+                (SELECT COUNT(*) FROM chat_chats) AS chats_count,
+                (SELECT COUNT(*) FROM chat_messages) AS messages_count
+           FROM system_storage_meta meta
+          WHERE meta.singleton = 1`,
+      );
+      const records = {
+        settings: Number(row?.settings_count) || 0,
+        characters: Number(row?.characters_count) || 0,
+        chats: Number(row?.chats_count) || 0,
+        messages: Number(row?.messages_count) || 0,
+      };
+      return {
+        revision: Number(row?.revision) || 0,
+        initialized: num1ToBool(row?.initialized),
+        records: {
+          ...records,
+          total: Object.values(records).reduce((a, b) => a + b, 0),
+        },
+      };
+    } finally {
+      await conn.close();
+    }
+  }
+
   async isAssetCatalogInitialized(sourceId) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
@@ -3078,6 +3111,142 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
+    this.assertEnabled();
+    assertId(chatId, "chatId");
+    const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
+    const limit = Math.min(
+      1000,
+      Math.max(1, Math.floor(Number(rawLimit) || 256)),
+    );
+    const conn = await this.pool.getConnection();
+    try {
+      await this.ensureChatBranchGraph(conn, chatId);
+      const branchesRows = await fetchRows(
+        conn,
+        `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
+                branch.head_message_id, branch.reason, branch.created_at,
+                active.branch_id AS active_branch_id
+           FROM chat_branches branch
+      LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
+          WHERE branch.chat_id = :graphChatId
+       ORDER BY branch.created_at, branch.id`,
+        { graphChatId: chatId },
+      );
+      const countRow = await fetchOne(
+        conn,
+        "SELECT COUNT(*) AS total FROM chat_message_branch_links WHERE chat_id = :graphChatId",
+        { graphChatId: chatId },
+      );
+      const total = Number(countRow?.total ?? 0);
+      const messages = await fetchRows(
+        conn,
+        `SELECT messages.*, links.parent_message_id, links.origin_branch_id
+           FROM chat_message_branch_links links
+           JOIN chat_messages messages
+             ON messages.chat_id = links.chat_id AND messages.id = links.message_id
+          WHERE links.chat_id = :graphChatId
+       ORDER BY messages.position, messages.id
+         OFFSET :graphOffset ROWS FETCH NEXT :graphLimit ROWS ONLY`,
+        { graphChatId: chatId, graphOffset: offset, graphLimit: limit },
+        { clobColumns: ["content_text"], blobColumns: ["content_binary"] },
+      );
+      const ids = messages.map((row) => row.id);
+      let attributes = [];
+      let generations = [];
+      let promptInfos = [];
+      let promptToggles = [];
+      let promptItems = [];
+      if (ids.length > 0) {
+        const idsJson = JSON.stringify(ids);
+        const relationJoin = `JOIN JSON_TABLE(:idsJson, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$')) ids ON ids.id = source.message_id`;
+        [attributes, generations, promptInfos, promptToggles, promptItems] =
+          await Promise.all([
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_attributes source ${relationJoin} WHERE source.chat_id = :graphChatId ORDER BY source.message_id, source.key_value`,
+              { idsJson, graphChatId: chatId },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_generation source ${relationJoin} WHERE source.chat_id = :graphChatId`,
+              { idsJson, graphChatId: chatId },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_prompt_info source ${relationJoin} WHERE source.chat_id = :graphChatId`,
+              { idsJson, graphChatId: chatId },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_prompt_toggles source ${relationJoin} WHERE source.chat_id = :graphChatId ORDER BY source.message_id, source.position`,
+              { idsJson, graphChatId: chatId },
+              { clobColumns: ["toggle_value"] },
+            ),
+            fetchRows(
+              conn,
+              `SELECT source.* FROM chat_message_prompt_items source ${relationJoin} WHERE source.chat_id = :graphChatId ORDER BY source.message_id, source.position`,
+              { idsJson, graphChatId: chatId },
+            ),
+          ]);
+      }
+      const relations = {
+        attributes: groupMessageRows(attributes),
+        generation: new Map(
+          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        ),
+        promptInfo: new Map(
+          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        ),
+        promptToggles: groupMessageRows(promptToggles),
+        promptItems: groupMessageRows(promptItems),
+      };
+      const rebuilt = messages.map((row) => {
+        const key = `${row.chat_id}\0${row.id}`;
+        return rebuildMessage(row, {
+          attributes: relations.attributes.get(key),
+          generation: relations.generation.get(key),
+          promptInfo: relations.promptInfo.get(key),
+          promptToggles: relations.promptToggles.get(key),
+          promptItems: relations.promptItems.get(key),
+        });
+      });
+      const branches = branchesRows.map((row) => ({
+        id: row.id,
+        chatId: row.chat_id,
+        parentBranchId: row.parent_branch_id ?? undefined,
+        forkMessageId: row.fork_message_id ?? undefined,
+        headMessageId: row.head_message_id ?? undefined,
+        reason: row.reason,
+        createdAt: Number(row.created_at) || 0,
+      }));
+      await conn.commit();
+      return {
+        branches,
+        activeBranchId: branchesRows[0]?.active_branch_id ?? undefined,
+        messages: rebuilt,
+        links: messages.map((row) => ({
+          messageId: row.id,
+          position: Number(row.position) || 0,
+          parentMessageId: row.parent_message_id ?? undefined,
+          originBranchId: row.origin_branch_id,
+        })),
+        offset,
+        total,
+        hasMore: offset + messages.length < total,
+      };
+    } catch (error) {
+      try {
+        await conn.rollback();
+      } catch (e) {}
+      throw error;
+    } finally {
+      try {
+        await conn.close();
+      } catch (e) {}
+    }
+  }
+
   async loadChatBranchGraph(chatId) {
     this.assertEnabled();
     assertId(chatId, "chatId");
@@ -3408,6 +3577,22 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
+  async listSettingKeys() {
+    this.assertEnabled();
+    const conn = await this.pool.getConnection();
+    try {
+      const rows = await fetchRows(
+        conn,
+        "SELECT key FROM system_settings ORDER BY key",
+      );
+      return rows.map((row) => row.key);
+    } finally {
+      try {
+        await conn.close();
+      } catch (e) {}
+    }
+  }
+
   async loadSettingKeys(keys) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
@@ -3561,6 +3746,82 @@ class OracleStorage extends SqlStorageBase {
   // ============================================================
   // sync: 변경사항 동기화 (가장 복잡한 메서드)
   // ============================================================
+
+  // Destructive storage sync must never auto-rebase. The revision is checked
+  // again while the metadata row is locked in the same transaction that will
+  // apply the replacement.
+  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+    this.assertEnabled();
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      throw new StoragePayloadError(
+        "Storage sync finalize revision must be a non-negative integer",
+      );
+    }
+    if (typeof callback !== "function") {
+      throw new StoragePayloadError(
+        "Storage sync finalize callback is required",
+      );
+    }
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.execute("SET CONSTRAINTS ALL DEFERRED");
+      const metaRow = await fetchOne(
+        conn,
+        "SELECT revision, initialized FROM system_storage_meta WHERE singleton = 1 FOR UPDATE",
+      );
+      const currentRevision = Number(metaRow?.revision) || 0;
+      if (currentRevision !== expectedRevision) {
+        throw new StorageRevisionConflictError(
+          currentRevision,
+          `Oracle data changed in another session (server revision ${currentRevision}). Refresh the sync preview before finalizing.`,
+        );
+      }
+      const previousRevision = await fetchOne(
+        conn,
+        "SELECT id FROM system_revisions WHERE storage_revision = :1 ORDER BY id DESC FETCH FIRST 1 ROW ONLY",
+        [currentRevision],
+      );
+      const previousRevisionId =
+        previousRevision?.id == null ? null : Number(previousRevision.id);
+      const databaseInitialized = Boolean(metaRow?.initialized);
+      const nextRevision = currentRevision + 1;
+      const revisionId = await beginAuditRevision(conn, {
+        storageRevision: nextRevision,
+        databaseInitialized: true,
+        scope: "database",
+        action: "storage-sync:replace",
+      });
+      const result = await callback(conn, {
+        currentRevision,
+        nextRevision,
+        revisionId,
+        previousRevisionId,
+        databaseInitialized,
+      });
+      await conn.execute(
+        `UPDATE system_storage_meta
+         SET revision = :1, initialized = 1, updated_at = SYSTIMESTAMP
+         WHERE singleton = 1`,
+        [nextRevision],
+      );
+      await conn.commit();
+      return {
+        success: true,
+        revision: nextRevision,
+        revisionId,
+        ...(result || {}),
+      };
+    } catch (error) {
+      try {
+        await conn.rollback();
+      } catch {}
+      throw error;
+    } finally {
+      try {
+        await conn.close();
+      } catch {}
+    }
+  }
 
   async sync(rawPayload, options = {}) {
     this.assertEnabled();

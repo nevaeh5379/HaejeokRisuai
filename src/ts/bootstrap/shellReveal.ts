@@ -8,8 +8,9 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
  *
  * Returns the `revealShell` callback; calling it more than once is a no-op.
  */
-export function createShellRevealer(): () => void {
-  const deferShellUntilRuntimeReady = settingsStore.state.lowSpecMode === true;
+export function createShellRevealer(forceDeferred = false): () => void {
+  const deferShellUntilRuntimeReady =
+    forceDeferred || settingsStore.state.lowSpecMode === true;
   let shellReady = false;
   const revealShell = () => {
     if (shellReady) return;

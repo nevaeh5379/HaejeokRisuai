@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-color-type="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" sizes="16x16" href="/logo_16.png" />
@@ -10,7 +10,25 @@
     <link rel="stylesheet" href="/highlights.css" />
     <meta name="description" content="An AI frontend for both light and core users.">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("risuWindow") === "sidebar-menu") {
+          document.documentElement.classList.add("tauri-sidebar-menu-bootstrap");
+        }
+      } catch {}
+    </script>
     <style>
+      html.tauri-sidebar-menu-bootstrap,
+      html.tauri-sidebar-menu-bootstrap body,
+      html.tauri-sidebar-menu-bootstrap #app {
+        background: transparent !important;
+      }
+
+      html.tauri-sidebar-menu-bootstrap #preloading {
+        display: none !important;
+      }
+
       @keyframes airisu-preload-step {
         0%, 100% {
           transform: translate3d(-5px, 0, 0) rotate(-1deg);

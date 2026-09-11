@@ -4,7 +4,7 @@ set -eu
 # RisuAI Node/storage or static-web installer and lifecycle manager.
 # Keep this file POSIX-sh compatible: it is used on Linux, macOS, and WSL.
 
-program_version=2.3.0
+program_version=2.4.0
 config_version=3
 project_name=risuai-rustfs
 
@@ -94,6 +94,7 @@ Usage:
   ./risuai.sh [install] [options]
   ./risuai.sh start|stop|restart|rebuild|down|status|doctor|config
   ./risuai.sh dev [web|node|server|services] [options]
+  ./risuai.sh native install|build|start|stop|restart|rebuild|status|config|logs
   ./risuai.sh logs [--follow|--no-follow] [--tail N] [SERVICE]
   ./risuai.sh db status|password|sync-password|shell|backup|optimize
   ./risuai.sh recovery|help|version
@@ -106,8 +107,14 @@ Deployment modes:
   proxy    An existing reverse proxy on the host or a container network
 
 Application runtimes:
-  node     Node server with PostgreSQL and RustFS (default)
+  node     Containerized Node server with PostgreSQL and RustFS (default)
   static   Browser-only web build served by Caddy; no Node server or storage services
+
+Native deployment (separate from --runtime):
+  native install ...                 Configure, build, and start without Docker/Podman
+  native build|start|stop|restart    Manage the host Node server directly
+  native rebuild|status|config|logs  Rebuild, inspect, or view native logs
+  Run `./risuai.sh native help` for database-specific options.
 
 Developer commands:
   dev [web]                         Run the Vite browser development server (default)
@@ -189,6 +196,9 @@ Examples:
     --proxy-network reverse-proxy -y
   ./risuai.sh dev
   ./risuai.sh dev node
+  ./risuai.sh native install --db-vendor postgres --database-url postgresql://user:pass@db/risuai
+  ./risuai.sh native install --db-vendor oracle --env-file .env.oracle
+  ./risuai.sh native install --db-vendor azure --env-file .env.azure
 EOF
 }
 
@@ -256,7 +266,7 @@ EOF
 }
 
 short_usage() {
-    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|recovery|help|version]\n' "${0##*/}" >&2
+    printf 'Usage: %s [install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|native|recovery|help|version]\n' "${0##*/}" >&2
 }
 
 # Capture user inputs, then remove deployment interpolation variables from the
@@ -298,7 +308,7 @@ unset CLOUDFLARE_TOKEN CLOUDFLARE_TOKEN_FILE CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 
 
 action=install
 case "${1:-}" in
-    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|recovery|help|version)
+    install|start|stop|restart|rebuild|down|status|logs|doctor|config|db|dev|native|recovery|help|version)
         action=$1
         shift
         ;;
@@ -1809,11 +1819,12 @@ dev_prepare_environment() {
     RISU_SAVE_PATH=${RISU_SAVE_PATH:-$(dev_env_value RISU_SAVE_PATH "$script_dir/.risuai/dev-save")}
     TRUST_PROXY=${TRUST_PROXY:-$(dev_env_value TRUST_PROXY 1)}
     VITE_BACKEND_URL=${VITE_BACKEND_URL:-$(dev_env_value VITE_BACKEND_URL "http://127.0.0.1:$PORT")}
+    RISUAI_ALLOWED_ORIGINS=${RISUAI_ALLOWED_ORIGINS:-$(dev_env_value RISUAI_ALLOWED_ORIGINS "http://localhost:5174,http://127.0.0.1:5174")}
     export POSTGRES_PASSWORD POSTGRES_PORT RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
     export RUSTFS_API_PORT RUSTFS_CONSOLE_PORT PORT DATABASE_URL RISU_POSTGRES_POOL_MAX
     export RISU_STORAGE_TYPE RISU_S3_ENDPOINT RISU_S3_BUCKET RISU_S3_ACCESS_KEY_ID
     export RISU_S3_SECRET_ACCESS_KEY RISU_S3_REGION RISU_S3_FORCE_PATH_STYLE RISU_S3_AUTO_CREATE_BUCKET
-    export RISU_SAVE_PATH TRUST_PROXY VITE_BACKEND_URL
+    export RISU_SAVE_PATH TRUST_PROXY VITE_BACKEND_URL RISUAI_ALLOWED_ORIGINS
 }
 
 dev_require_dependencies() {
@@ -1956,10 +1967,10 @@ EOF
             cd "$script_dir"
             if [ "$dev_action" = server ]; then
                 info "Starting PostgreSQL-backed Node development server on port $PORT"
-                exec node server/node/server.cjs
+                exec node server/node/bootstrap.cjs
             fi
             info "Starting Node backend and Vite development server"
-            node server/node/server.cjs &
+            node server/node/bootstrap.cjs &
             dev_backend_pid=$!
             trap 'dev_cleanup_backend; exit 129' 1
             trap 'dev_cleanup_backend; exit 130' 2
@@ -2094,6 +2105,11 @@ esac
 if [ "$action" = doctor ]; then run_doctor "$@"; exit $?; fi
 if [ "$action" = db ]; then manage_database "$@"; exit $?; fi
 if [ "$action" = dev ]; then manage_development "$@"; exit $?; fi
+if [ "$action" = native ]; then
+    required_file "$script_dir/tooling/native-deploy.cjs" "native deployment manager"
+    command -v node >/dev/null 2>&1 || die "Node.js is required for native deployment"
+    exec node "$script_dir/tooling/native-deploy.cjs" "$@"
+fi
 if [ "$action" != install ]; then manage_existing_installation "$@"; exit $?; fi
 
 # ------------------------------ install ------------------------------

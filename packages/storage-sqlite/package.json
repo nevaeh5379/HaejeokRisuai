@@ -1,0 +1,27 @@
+{
+  "name": "@risuai/storage-sqlite",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./relationalNodeCodec": "./src/relationalNodeCodec.ts",
+    "./sqliteSchemaStatements": "./src/sqliteSchemaStatements.ts",
+    "./sqliteLastMessageTime": "./src/sqliteLastMessageTime.ts",
+    "./sqliteCommit": "./src/sqliteCommit.ts",
+    "./sqliteQueries": "./src/sqliteQueries.ts",
+    "./sqliteMessageMapper": "./src/sqliteMessageMapper.ts",
+    "./sqliteBranchStorage": "./src/sqliteBranchStorage.ts",
+    "./sqliteAdminQueries": "./src/sqliteAdminQueries.ts",
+    "./sqlite-schema.sql": "./src/sqlite-schema.sql",
+    "./sqlitePersistenceQueries": "./src/sqlitePersistenceQueries.ts",
+    "./sqliteNodeValues": "./src/sqliteNodeValues.ts",
+    "./sqliteDocumentQueries": "./src/sqliteDocumentQueries.ts",
+    "./sqliteStartupQueries": "./src/sqliteStartupQueries.ts",
+    "./sqliteSnapshotQueries": "./src/sqliteSnapshotQueries.ts",
+    "./sqliteEntityQueries": "./src/sqliteEntityQueries.ts",
+    "./sqliteCommitPreparation": "./src/sqliteCommitPreparation.ts",
+    "./sqliteChatQueries": "./src/sqliteChatQueries.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  }
+}

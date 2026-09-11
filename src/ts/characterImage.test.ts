@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => {
     NodeStorage,
     storage,
     forageStorage: { realStorage: storage },
-    getFileSrc: vi.fn(async () => "/api/read"),
+    getFileSrc: vi.fn(async (_loc: string, _options?: any) => "/api/read"),
+    platform: { isTauri: false, isCapacitor: false },
     settingsState: {
       hideAllImages: false,
       lowSpecMode: false,
@@ -37,6 +38,19 @@ vi.mock(
     ({
       forageStorage: mocks.forageStorage,
       getFileSrc: mocks.getFileSrc,
+    }) as any,
+);
+
+vi.mock(
+  import("./platform"),
+  () =>
+    ({
+      get isTauri() {
+        return mocks.platform.isTauri;
+      },
+      get isCapacitor() {
+        return mocks.platform.isCapacitor;
+      },
     }) as any,
 );
 
@@ -69,6 +83,8 @@ describe("getAssetsBatch", () => {
     fullImageBlobCache.clear();
     mocks.forageStorage.realStorage = mocks.storage;
     mocks.settingsState.hideAllImages = false;
+    mocks.platform.isTauri = false;
+    mocks.platform.isCapacitor = false;
   });
 
   it("resolves full-size asset previews without the bounded character blob cache", async () => {
@@ -116,6 +132,41 @@ describe("getCharImagesBatch", () => {
     mocks.forageStorage.realStorage = mocks.storage;
     mocks.settingsState.lowSpecMode = false;
     mocks.settingsState.fullResolutionImageCacheEntries = 4;
+    mocks.platform.isTauri = false;
+    mocks.platform.isCapacitor = false;
+  });
+
+  it("uses bounded Blob fetches for Tauri remote character images", async () => {
+    mocks.platform.isTauri = true;
+    let active = 0;
+    let maxActive = 0;
+    mocks.getFileSrc.mockImplementation(async (loc: string) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return `blob:${loc}`;
+    });
+    const locations = Array.from(
+      { length: 9 },
+      (_, index) => `assets/native-${index}.png`,
+    );
+
+    const result = await getCharImagesBatch(locations, { size: "display" });
+
+    expect(mocks.storage.getItems).not.toHaveBeenCalled();
+    expect(mocks.storage.getDirectUrl).not.toHaveBeenCalled();
+    expect(mocks.getFileSrc).toHaveBeenCalledTimes(9);
+    expect(maxActive).toBeLessThanOrEqual(4);
+    expect(maxActive).toBeGreaterThan(1);
+    expect(mocks.getFileSrc).toHaveBeenCalledWith("assets/native-0.png", {
+      thumbnail: false,
+      display: true,
+      transient: true,
+    });
+    expect(result.get("assets/native-0.png")).toBe(
+      "blob:assets/native-0.png",
+    );
   });
 
   it("never falls back to one direct request per local image", async () => {

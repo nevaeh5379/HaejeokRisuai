@@ -160,6 +160,687 @@ body {
   overflow-x: hidden;
 }
 
+/* macOS native material: keep the native window transparent, then layer
+ * coherent app chrome and readable content surfaces above it. */
+html.tauri-macos-vibrancy,
+html.tauri-macos-vibrancy body,
+html.tauri-macos-vibrancy #app {
+  background: transparent;
+}
+
+html.tauri-macos-vibrancy {
+  --risu-macos-titlebar-height: 28px;
+  --risu-macos-traffic-lights-width: 5rem;
+  --risu-macos-settings-titlebar-clearance: 44px;
+  --risu-macos-sidebar-menu-radius: 1rem;
+  --risu-macos-sidebar-menu-control-radius: 0.74rem;
+  --risu-macos-chrome-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 92%,
+    transparent
+  );
+  --risu-macos-content-tint: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 96%,
+    transparent
+  );
+}
+
+html.tauri-macos-vibrancy main.tauri-native {
+  position: relative;
+  box-sizing: border-box;
+  padding-top: 0;
+  background-color: transparent;
+}
+
+/* Left-side navigation and recent-session panels are one continuous piece of
+ * macOS chrome, matching the title bar instead of becoming opaque web cards. */
+html.tauri-macos-vibrancy .rs-sidebar,
+html.tauri-macos-vibrancy .rs-sidebar-panel {
+  background-color: var(--risu-macos-chrome-tint) !important;
+}
+
+/* Only the narrow icon rail needs traffic-light clearance. The adjacent
+ * chat/character panel starts at y=0, so its header naturally becomes part of
+ * the macOS titlebar chrome without wasting another 28px above it. */
+html.tauri-macos-vibrancy .rs-sidebar {
+  padding-top: 0;
+}
+
+/* Keep the rail itself at y=0 so the scroll viewport extends under the native
+ * titlebar. Only the initial scroll content is inset; that spacer scrolls away,
+ * allowing character cards to pass naturally behind the traffic lights. */
+html.tauri-macos-vibrancy .rs-sidebar.rs-sidebar-titlebar-inset {
+  padding-top: var(--risu-macos-titlebar-height);
+}
+
+/* Floating settings must start below the native traffic lights. Their configured
+ * y-position is 22px; 44px leaves room for the controls and a small gap. */
+html.tauri-macos-vibrancy .rs-setting-backdrop {
+  padding-top: var(--risu-macos-settings-titlebar-clearance);
+}
+
+html.tauri-macos-vibrancy .rs-setting-cont-2 {
+  max-height: calc(
+    100vh - var(--risu-macos-settings-titlebar-clearance) - 2rem
+  );
+}
+
+/* Narrow Tauri windows use the standalone mobile settings header. Keep its
+ * leading controls and title to the right of the native traffic-light group. */
+html.tauri-macos-vibrancy .rs-setting-mobile-header {
+  padding-left: var(--risu-macos-traffic-lights-width);
+}
+
+html.tauri-macos-vibrancy .rs-setting-mobile-title {
+  position: absolute;
+  left: 50%;
+  max-width: calc(
+    100% - var(--risu-macos-traffic-lights-width) -
+      var(--risu-macos-traffic-lights-width) - 5rem
+  );
+  pointer-events: none;
+  transform: translateX(-50%);
+  user-select: none;
+}
+
+html.tauri-macos-vibrancy
+  .rs-sidebar:not(.rs-sidebar-titlebar-inset)
+  .rs-sidebar-scroll {
+  padding-top: var(--risu-macos-titlebar-height);
+}
+
+/* The bottom hamburger is floating chrome on macOS, not a footer. Keep the
+ * avatar viewport full-height and reserve only scrollable breathing room so the
+ * final character/add controls can move above the floating button. */
+html.tauri-macos-vibrancy .rs-sidebar-scroll.rs-sidebar-scroll-floating-menu {
+  padding-bottom: 5rem;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-anchor {
+  position: absolute;
+  left: 0;
+  bottom: 3.25rem;
+  width: 100%;
+  height: 0;
+  border-top: 0 !important;
+  z-index: 30;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover {
+  left: 50%;
+  width: 3.8rem !important;
+  min-width: 3.8rem !important;
+  max-height: calc(100vh - 7rem);
+  padding: 0.62rem 0.48rem !important;
+  gap: 0.28rem;
+  border: 1px solid
+    color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent) !important;
+  border-radius: var(--risu-macos-sidebar-menu-radius) !important;
+  background: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 46%,
+    transparent
+  ) !important;
+  box-shadow:
+    0 10px 28px rgb(0 0 0 / 0.22),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  overflow-x: hidden;
+  overflow-y: auto;
+  transform: translateX(-50%);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > .rs-sidebar-menu-gap {
+  display: none;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button {
+  width: 2.45rem !important;
+  min-width: 2.45rem !important;
+  height: 2.45rem !important;
+  min-height: 2.45rem !important;
+  border: 0 !important;
+  border-radius: var(--risu-macos-sidebar-menu-control-radius) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 11%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button:active {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 17%,
+    transparent
+  ) !important;
+  transform: scale(0.96);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--risu-theme-textcolor) 34%, transparent);
+  outline-offset: -2px;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover > button svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-button {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  margin: 0 !important;
+  transform: translateX(-50%);
+  z-index: 31;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar,
+html.tauri-macos-vibrancy .rs-sidebar-panel {
+  border-right: 0 !important;
+  box-shadow: none;
+}
+
+/* DynamicGUI turns the sidebar into an overlay at <= 1024px. An overlay must
+ * be an opaque surface so content behind it never bleeds through or competes
+ * with sidebar text. Wide-window chrome keeps the native vibrancy above. */
+html.tauri-macos-vibrancy .rs-sidebar.dynamic-sidebar,
+html.tauri-macos-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  background-color: var(--risu-theme-darkbg) !important;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  box-shadow: 10px 0 28px rgb(0 0 0 / 0.28);
+}
+
+html.tauri-macos-vibrancy
+  .rs-sidebar-panel.dynamic-sidebar
+  .rs-recent-session-search,
+html.tauri-macos-vibrancy
+  .rs-sidebar-panel.dynamic-sidebar
+  .rs-recent-session-card {
+  background-color: var(--risu-theme-bgcolor) !important;
+}
+
+html.tauri-macos-vibrancy .rs-recent-session-search,
+html.tauri-macos-vibrancy .rs-recent-session-card {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 62%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy .default-chat-pane.has-chat-tabs > .rs-chat-tab-strip-shell {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 40;
+}
+
+html.tauri-macos-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .default-chat-screen {
+  box-sizing: border-box;
+  padding-top: 3rem;
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-list {
+  box-sizing: border-box;
+  height: 48px !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 44%,
+    transparent
+  ) !important;
+  border-bottom-color: transparent !important;
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+/* Keep native traffic-light clearance outside the horizontal tab scroller.
+ * This is real layout space, so scrollLeft can never move a tab underneath
+ * the macOS window controls. */
+html.tauri-macos-vibrancy .rs-chat-tab-strip-shell {
+  display: flex;
+  width: 100%;
+  height: 48px;
+  min-width: 0;
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 44%,
+    transparent
+  );
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  background-color: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-spacer {
+  display: none;
+  width: var(--risu-macos-traffic-lights-width);
+  min-width: var(--risu-macos-traffic-lights-width);
+  height: 48px;
+  flex: 0 0 var(--risu-macos-traffic-lights-width);
+}
+
+html.tauri-macos-vibrancy
+  .rs-chat-tab-strip-shell.macos-traffic-light-clearance
+  > .rs-chat-tab-traffic-light-spacer {
+  display: block;
+}
+
+@media (max-width: 1024px) {
+  html.tauri-macos-vibrancy .rs-chat-tab-traffic-light-spacer {
+    display: block;
+  }
+}
+
+/* macOS native material makes the last frame of the legacy width/right
+ * sidebar animation conspicuous. The panel also carries Tailwind px-2/px-4;
+ * width: 0 alone therefore still leaves an outer box until display:none.
+ * Collapse the inline padding with the width so the painted 100% frame really
+ * has zero layout width. */
+html.tauri-macos-vibrancy .rs-sidebar-panel {
+  --risu-macos-sidebar-inline-padding: 0px;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.px-2 {
+  --risu-macos-sidebar-inline-padding: 0.5rem;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.px-4 {
+  --risu-macos-sidebar-inline-padding: 1rem;
+}
+
+@keyframes risu-macos-sidebar-panel-open {
+  0% {
+    width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  100% {
+    width: var(--sidebar-size);
+    min-width: var(--sidebar-size);
+    padding-left: var(--risu-macos-sidebar-inline-padding);
+    padding-right: var(--risu-macos-sidebar-inline-padding);
+  }
+}
+
+@keyframes risu-macos-sidebar-panel-close {
+  0% {
+    width: var(--sidebar-size);
+    min-width: var(--sidebar-size);
+    padding-left: var(--risu-macos-sidebar-inline-padding);
+    padding-right: var(--risu-macos-sidebar-inline-padding);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes risu-macos-sidebar-rail-close {
+  0% {
+    width: 5rem;
+    min-width: 5rem;
+    max-width: 5rem;
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes risu-macos-sidebar-panel-close-overlay {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(calc(-100% - 5rem));
+    opacity: 0;
+  }
+}
+
+@keyframes risu-macos-sidebar-rail-close-overlay {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar:not(.dynamic-sidebar) {
+  animation-name: risu-macos-sidebar-panel-open;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar-close:not(.dynamic-sidebar) {
+  animation-name: risu-macos-sidebar-panel-close;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar.risu-sub-sidebar-close:not(.dynamic-sidebar) {
+  animation-name: risu-macos-sidebar-rail-close;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar-close.dynamic-sidebar {
+  animation-name: risu-macos-sidebar-panel-close-overlay;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar.risu-sub-sidebar-close.dynamic-sidebar {
+  animation-name: risu-macos-sidebar-rail-close-overlay;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
+  top: 60px !important;
+  left: 0 !important;
+  width: 3rem !important;
+  height: 3rem !important;
+  transition:
+    opacity 150ms ease,
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab {
+  --risu-macos-tab-surface: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 68%,
+    transparent
+  );
+  position: relative;
+  height: 34px !important;
+  margin-inline: 2px;
+  border-radius: 9px !important;
+  background-color: var(--risu-macos-tab-surface) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkborderc) 32%,
+    transparent
+  );
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab-list [data-tab-add] {
+  align-self: center;
+  margin-bottom: 0 !important;
+}
+
+html.tauri-macos-vibrancy .rs-chat-tab[data-active="true"] {
+  --risu-macos-tab-surface: color-mix(
+    in srgb,
+    var(--risu-theme-selected) 76%,
+    transparent
+  );
+  z-index: 2;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 18%,
+    transparent
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+/* Reading surfaces still show a little native material, but not enough for the
+ * desktop wallpaper to dominate the UI. */
+html.tauri-macos-vibrancy .rs-main-menu,
+html.tauri-macos-vibrancy .default-chat-screen {
+  background-color: var(--risu-macos-content-tint);
+}
+
+/* macOS 26+ already supplies a native Liquid Glass substrate behind the
+ * WebView. Keep Risu's surfaces as tints rather than replacing that material.
+ * DOM overlays still retain a lighter local blur because native window glass
+ * cannot blur sibling WebView content underneath a tab bar or popover. */
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass {
+  --risu-macos-chrome-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 92%,
+    transparent
+  );
+  --risu-macos-content-tint: var(--risu-theme-bgcolor);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-recent-session-search,
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-recent-session-card {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 76%,
+    transparent
+  ) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab-list {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 72%,
+    transparent
+  ) !important;
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab-strip-shell {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 72%,
+    transparent
+  );
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass
+  .rs-chat-tab-strip-shell
+  > .rs-chat-tab-list {
+  background-color: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-chat-tab {
+  --risu-macos-tab-surface: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 52%,
+    transparent
+  );
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass
+  .rs-chat-tab[data-active="true"] {
+  --risu-macos-tab-surface: color-mix(
+    in srgb,
+    var(--risu-theme-selected) 68%,
+    transparent
+  );
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-sidebar-menu-popover {
+  background: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 30%,
+    transparent
+  ) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 14%,
+    transparent
+  ) !important;
+  box-shadow:
+    0 10px 28px rgb(0 0 0 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-popup-list {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 38%,
+    transparent
+  ) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 14%,
+    transparent
+  ) !important;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.2);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-backdrop {
+  background-color: rgb(0 0 0 / 0.4) !important;
+  backdrop-filter: blur(1px) !important;
+  -webkit-backdrop-filter: blur(1px) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-2 {
+  background-color: var(--risu-theme-bgcolor) !important;
+  border-color: var(--risu-theme-darkborderc) !important;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.3);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-3 {
+  background-color: var(--risu-theme-darkbg) !important;
+  border-right-color: var(--risu-theme-darkborderc) !important;
+}
+
+html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-4 {
+  background-color: var(--risu-theme-bgcolor) !important;
+}
+
+
+/* Dedicated macOS Liquid Glass sidebar menu window. The WebView stays fully
+ * transparent so the native NSGlassEffectView is the actual surface. */
+html.tauri-sidebar-menu-popup,
+html.tauri-sidebar-menu-popup body,
+html.tauri-sidebar-menu-popup #app {
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-popup {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 7px;
+  color: var(--risu-popup-text, #f5f5f5);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 18px;
+  background: transparent;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item {
+  display: flex;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item:hover {
+  background: rgb(255 255 255 / 0.13);
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item:active {
+  background: rgb(255 255 255 / 0.2);
+  transform: scale(0.96);
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 0.32);
+  outline-offset: -2px;
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item > svg,
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item > div {
+  width: 20px;
+  height: 20px;
+}
+
+html.tauri-sidebar-menu-popup:not(.tauri-macos-liquid-glass)
+  .rs-native-sidebar-menu-popup {
+  background: color-mix(
+    in srgb,
+    var(--risu-popup-darkbg, #21222c) 76%,
+    transparent
+  );
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+}
+
 /* WebKitGTK renders Lucide's default stroke heavier than browser engines do. */
 .tauri-native svg.lucide-icon[stroke-width="2"] {
   stroke-width: 1.5;
@@ -333,27 +1014,33 @@ body {
     1px 1px 0 white;
 }
 
-::-webkit-scrollbar {
+/* Leave WKWebView scrollbars untouched on macOS Tauri so WebKit can use
+ * the system-native overlay scrollbar appearance and auto-hide behavior. */
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
 /* Track */
-::-webkit-scrollbar-track {
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar-track,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar-track {
   background: transparent;
 }
 
 /* Handle */
-::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar-thumb,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar-thumb {
   background: rgba(136, 136, 136, 0.5);
 }
 
 /* Handle on hover */
-::-webkit-scrollbar-thumb:hover {
+html:not(.tauri-macos-vibrancy)::-webkit-scrollbar-thumb:hover,
+html:not(.tauri-macos-vibrancy) *::-webkit-scrollbar-thumb:hover {
   background: rgba(85, 85, 85, 0.5);
 }
 
-.n-scroll::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy) .n-scroll::-webkit-scrollbar-thumb {
   visibility: hidden;
   opacity: 0;
   transition:
@@ -361,14 +1048,75 @@ body {
     opacity 0.5s linear;
 }
 
-.n-scroll:hover::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy) .n-scroll:hover::-webkit-scrollbar-thumb {
   visibility: visible;
   opacity: 1;
 }
 
-.n-scroll:focus::-webkit-scrollbar-thumb {
+html:not(.tauri-macos-vibrancy) .n-scroll:focus::-webkit-scrollbar-thumb {
   visibility: visible;
   opacity: 1;
+}
+
+html.tauri-macos-vibrancy .scrollbar-thin,
+html.tauri-macos-vibrancy .rs-native-sidebar-menu-popup {
+  /* `scrollbar-width: thin` is wider than our WebKit overlay treatment on
+   * current WKWebView builds, so let the pseudo-elements own the geometry. */
+  scrollbar-width: auto !important;
+}
+
+/* Compact macOS overlay-style scrollbars. Keep a 7px mouse hit area and paint
+ * a ~3px thumb. It stays invisible until the pointer is over the actual
+ * scroller, avoiding a permanent rail on dark surfaces. */
+html.tauri-macos-vibrancy::-webkit-scrollbar,
+html.tauri-macos-vibrancy *::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+  -webkit-appearance: none;
+}
+
+html.tauri-macos-vibrancy::-webkit-scrollbar-track,
+html.tauri-macos-vibrancy *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html.tauri-macos-vibrancy::-webkit-scrollbar-thumb,
+html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb {
+  min-height: 18px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: content-box;
+}
+
+html.tauri-macos-vibrancy:hover::-webkit-scrollbar-thumb,
+html.tauri-macos-vibrancy *:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 32%, transparent);
+  background-clip: content-box;
+}
+
+html.tauri-macos-vibrancy::-webkit-scrollbar-thumb:hover,
+html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb:hover,
+html.tauri-macos-vibrancy::-webkit-scrollbar-thumb:active,
+html.tauri-macos-vibrancy *::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 52%, transparent);
+  background-clip: content-box;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 28%, transparent);
+  background-clip: content-box;
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:hover,
+html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--risu-theme-textcolor) 46%, transparent);
+  background-clip: content-box;
 }
 
 * {
@@ -402,6 +1150,44 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Light theme elevation & shadows (strictly isolated to light mode, zero impact on dark themes) */
+html[data-color-type="light"] .shadow-xs {
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.06),
+    0 1px 1px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] .shadow-sm {
+  box-shadow:
+    0 1px 3px 0 rgb(0 0 0 / 0.07),
+    0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] .shadow-md {
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.08),
+    0 2px 4px -2px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] button.shadow-xs:not(:disabled):not(.bg-selected):not(.bg-transparent),
+html[data-color-type="light"] .x-risu-button-default:not(:disabled):not(.bg-selected) {
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.06),
+    0 1px 1px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] button.shadow-xs:hover:not(:disabled):not(.bg-selected):not(.bg-transparent),
+html[data-color-type="light"] .x-risu-button-default:hover:not(:disabled):not(.bg-selected) {
+  box-shadow:
+    0 2px 4px -1px rgb(0 0 0 / 0.08),
+    0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] button.shadow-xs:active:not(:disabled),
+html[data-color-type="light"] button.bg-selected.shadow-xs {
+  box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.06);
 }
 
 .x-risu-button-default {

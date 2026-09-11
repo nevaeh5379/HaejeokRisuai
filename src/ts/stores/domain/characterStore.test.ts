@@ -95,6 +95,39 @@ describe("CharacterStore", () => {
     expect(mockStorage.loadCharacter).not.toHaveBeenCalled();
   });
 
+  it("refreshes the remote character index while keeping cold entries lazy", async () => {
+    const warm = makeChar("warm", 1);
+    const removed = makeChar("removed", 0);
+    const added = makeChar("added", 0);
+    added.detailsLoaded = false;
+    const refreshedWarm = makeChar("warm remote", 1);
+    refreshedWarm.chaId = warm.chaId;
+    refreshedWarm.detailsLoaded = true;
+    mockStorage.loadStartupData = vi.fn(async () => ({
+      status: "ready" as const,
+      revision: 2,
+      settings: {},
+      characters: [
+        { ...warm, name: "warm summary", chats: [], detailsLoaded: false },
+        added,
+      ],
+    }));
+    mockStorage.loadCharacter = vi.fn(async (id: string) =>
+      id === warm.chaId ? refreshedWarm : null,
+    );
+    characterStore.init([warm, removed], mockStorage);
+    characterStore.select(0);
+
+    await characterStore.refreshRemoteCharacters([warm.chaId!]);
+
+    expect(
+      characterStore.characters.map((character) => character.chaId),
+    ).toEqual([warm.chaId, added.chaId]);
+    expect(characterStore.characters[0].name).toBe("warm remote");
+    expect(characterStore.characters[1].detailsLoaded).toBe(false);
+    expect(characterStore.selectedId).toBe(0);
+  });
+
   it("persists interaction timestamps without rewriting the character tree", async () => {
     const char = makeChar("touch", 1);
     const charId = char.chaId!;

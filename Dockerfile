@@ -13,18 +13,24 @@ RUN corepack install --global pnpm@10.34.1
 
 # ------------------------------------------------------------------------------------------
 
-FROM base AS deps
-# Install only prod deps
+FROM base AS prod-deps
+# Install only production dependencies. This layer changes only when dependency manifests change.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
 # ------------------------------------------------------------------------------------------
 
-FROM deps AS builder
+FROM base AS build-deps
+# Keep development dependencies independent from application source changes.
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+# ------------------------------------------------------------------------------------------
+
+FROM build-deps AS builder
+COPY . .
+
+# The build number changes every release, so keep it after dependency installation.
 ARG HAEJEOK_BUILD_NUMBER
 ENV HAEJEOK_BUILD_NUMBER=${HAEJEOK_BUILD_NUMBER}
-COPY . .
-# Install including dev deps
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm build
 
 # ------------------------------------------------------------------------------------------
@@ -33,7 +39,7 @@ FROM base AS runtime
 WORKDIR /app
 
 COPY package.json .
-COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/dist ./dist

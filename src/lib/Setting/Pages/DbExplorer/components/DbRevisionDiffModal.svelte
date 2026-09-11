@@ -63,7 +63,7 @@
         busy = true
         error = ''
         try {
-            const storage = getNodeStorage().postgres
+            const storage = getNodeStorage().sql
             if (typeof storage.getRevisionDiff === 'function') {
                 diffResult = await storage.getRevisionDiff(currentBaseId, currentTargetId)
             } else {

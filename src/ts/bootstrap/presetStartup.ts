@@ -56,5 +56,7 @@ export function initPresetDomain(storage: ISqlStorage): Promise<void> {
       }
       performance.mark("active-preset-ready");
     })
-    .catch(() => undefined);
+    .catch((error) => {
+      console.error("[PRESET DOMAIN INIT ERROR]:", error);
+    });
 }

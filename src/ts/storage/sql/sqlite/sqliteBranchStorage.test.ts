@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSqliteLegacyBranchMigrationStatements } from "./sqliteBranchStorage";
+import { buildSqliteLegacyBranchMigrationStatements } from "@risuai/storage-sqlite/sqliteBranchStorage";
 import type { LegacyBranchMigrationPlan } from "../../../../../packages/protocol/legacyBranchMigration.cjs";
 
 describe("SQLite legacy branch migration archival behavior", () => {

@@ -88,9 +88,12 @@ jobs:
           BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
           IMAGE: ${{ env.DOCKERHUB_IMAGE }}
         run: |
+          CACHE_REF="${IMAGE}:buildcache-${ARCH}"
           docker buildx build \
             --platform "${PLATFORM}" \
             --build-arg "HAEJEOK_BUILD_NUMBER=${BUILD_NUMBER}" \
+            --cache-from "type=registry,ref=${CACHE_REF}" \
+            --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.ref.name=${IMAGE}" \
             --label "org.opencontainers.image.version=${BUILD_TAG}" \

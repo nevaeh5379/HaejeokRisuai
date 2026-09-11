@@ -22,6 +22,7 @@ import type {
   SqlChatBranchSummary,
   SqlCreateChatBranchInput,
   StoredBotPreset,
+  SqlRecentChatMetadata,
 } from "../../ISqlStorage";
 import type {
   NodePostgresRevision,
@@ -35,22 +36,24 @@ import type {
   NodePostgresTableInfo,
   NodePostgresColumnInfo,
   NodePostgresTableData,
-} from "../../postgres/nodePostgresStorage";
+} from "../../postgres/nodeSqlStorage";
 import {
   DEFERRED_STARTUP_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
   LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
 } from "../../sqlDeferredSettings";
-import sqliteSchemaSql from "../sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import {
   buildSqlReplaceCommit,
-  mergeLegacyModulesIntoCommit,
   SqlRevisionConflictError,
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import { applySqliteCommit, writeSqliteColdStorage } from "../sqliteCommit";
+import {
+  applySqliteCommit,
+  writeSqliteColdStorage,
+} from "@risuai/storage-sqlite/sqliteCommit";
 import {
   rebuildRelationalValue,
   decodedText,
@@ -58,7 +61,7 @@ import {
   SQLITE_SCHEMA_VERSION,
   SqlSchemaResetRequiredError,
   type RelationalNodeRow,
-} from "../relationalNodeCodec";
+} from "@risuai/storage-sqlite/relationalNodeCodec";
 import {
   AsyncSerialQueue,
   normalizeSqliteLimit,
@@ -66,21 +69,88 @@ import {
   buildDeferredSettingsQuery,
   groupSettingNodeRows,
   buildBranchGraphRowsQuery,
+  buildBranchGraphMessageCountQuery,
+  buildBranchGraphMessageRowsPageQuery,
   buildBranchMessageCountQuery,
   buildBranchMessageRowsQuery,
   buildMessageRowsQuery,
   buildCharacterAssetFieldsQuery,
-  rebuildBranchGraphMessages,
-  rebuildMessageRows,
+  rebuildBranchGraphLinks,
   type MessageLoadMode,
   type SettingNodeRow,
+} from "@risuai/storage-sqlite/sqliteQueries";
+import {
+  getSqliteBotChatStats,
+  getSqliteDbTableData,
+  getSqliteTokenUsage,
+  listSqliteDbTables,
+  searchSqliteCharacters,
+  searchSqliteMessages,
+  type SqliteSelectRowSets,
+  type SqliteSelectRows,
+} from "@risuai/storage-sqlite/sqliteAdminQueries";
+import {
+  buildSqliteColdStorageDelete,
+  findSqliteColdStoragePruneKeys,
+  getSqliteColdStorageItem,
+  getSqliteRevisionDetails,
+  getSqliteRevisionDiff,
+  listSqliteColdStorageItems,
+  listSqlitePluginCustomStorageKeys,
+  listSqliteRevisions,
+  loadSqlitePluginCustomStorage,
+  loadSqlitePluginCustomStorageKey,
+  previewSqliteRevisionRestore,
+} from "@risuai/storage-sqlite/sqlitePersistenceQueries";
+import {
+  groupSqliteNodeValues,
+  loadSqliteNodeValue,
+  loadSqliteSettingValue,
+} from "@risuai/storage-sqlite/sqliteNodeValues";
+import {
+  listSqliteBotPresets,
+  listSqliteSettingKeys,
+  loadSqliteBotPreset,
+  loadSqliteModules,
+  loadSqlitePrompts,
+  loadSqliteSettingValues,
+} from "@risuai/storage-sqlite/sqliteDocumentQueries";
+import {
+  getSqliteStorageSyncSummary,
+  loadSqliteStartupProjection,
+} from "@risuai/storage-sqlite/sqliteStartupQueries";
+import { exportSqliteDatabaseSnapshot } from "@risuai/storage-sqlite/sqliteSnapshotQueries";
+import {
+  prepareSqliteModuleCommit,
+  validateSqlitePresetCommit,
+} from "@risuai/storage-sqlite/sqliteCommitPreparation";
+import {
+  listSqliteRecentChats,
+  loadSqliteCharacterDocument,
+} from "@risuai/storage-sqlite/sqliteEntityQueries";
+import {
+  buildSqliteChatLoadPlan,
+  buildSqliteMessagePagePlan,
+  hydrateSqliteChatDocument,
+  sqliteChatLoadStatements,
+  type SqliteChatRow,
+} from "@risuai/storage-sqlite/sqliteChatQueries";
+import {
+  rebuildBranchGraphMessages,
+  rebuildMessageRows,
 } from "../sqliteStorageUtils";
 import {
+  buildSqliteActivateChatBranchStatement,
+  buildSqliteCreateChatBranchStatements,
   buildSqliteLegacyBranchMigrationStatements,
   ensureSqliteBranchGraphStatements,
-  mapSqliteChatBranchRow,
-  type SqliteChatBranchRow,
-} from "../sqliteBranchStorage";
+  getSqliteActiveBranchId,
+  getSqliteChatBranchCount,
+  listSqliteChatBranches,
+  loadSqliteChatBranch,
+  loadSqliteChatBranchMetadata,
+  sqliteChatBranchExists,
+} from "@risuai/storage-sqlite/sqliteBranchStorage";
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
 
@@ -249,6 +319,17 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.revision;
   }
 
+  async getStorageSyncSummary() {
+    if (!this._enabled) {
+      const ok = await this.init();
+      if (!ok) return null;
+    }
+    return await getSqliteStorageSyncSummary(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      this.revision,
+    );
+  }
+
   async init(): Promise<boolean> {
     if (this.initialized) return this._enabled;
     if (!this.initPromise) {
@@ -319,45 +400,33 @@ export class WebSqliteStorage implements ISqlStorage {
     await this.rpc.exec(sql, bind);
   }
 
-  private async loadNodeValue(
+  private loadNodeValue(
     table: string,
     ownerWhere: string,
     bind: unknown[],
   ): Promise<unknown> {
-    const rows = await this.selectRows(
-      `SELECT node_id, parent_node_id, node_order, object_key,
-            object_key_encoded, value_type, text_value, encoded_text_value, number_value,
-            boolean_value FROM ${table} WHERE ${ownerWhere} ORDER BY node_id`,
+    return loadSqliteNodeValue(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      table,
+      ownerWhere,
       bind,
     );
-    return rows.length ? rebuildRelationalValue(rows) : undefined;
   }
 
-  private async loadSettingValue(key: string): Promise<unknown> {
-    return this.loadNodeValue("setting_extension_nodes", "setting_key = ?", [
+  private loadSettingValue(key: string): Promise<unknown> {
+    return loadSqliteSettingValue(
+      this.selectRows.bind(this) as SqliteSelectRows,
       key,
-    ]);
+    );
   }
 
   private rebuildGroupedNodeValues(
     rows: Record<string, unknown>[],
     ownerKey: string,
   ): Map<string, unknown> {
-    const grouped = new Map<string, Record<string, unknown>[]>();
-    for (const row of rows) {
-      const owner = String(row[ownerKey] ?? "");
-      if (!owner) continue;
-      const list = grouped.get(owner) ?? [];
-      list.push(row);
-      grouped.set(owner, list);
-    }
-    return new Map(
-      Array.from(grouped, ([owner, nodes]) => [
-        owner,
-        rebuildRelationalValue(nodes),
-      ]),
-    );
+    return groupSqliteNodeValues(rows, ownerKey);
   }
+
   private messageRowsStatement(
     chatId: string,
     limit?: number,
@@ -368,78 +437,11 @@ export class WebSqliteStorage implements ISqlStorage {
     return buildMessageRowsQuery(chatId, limit, offset, newest, mode);
   }
 
-  private async loadCharacterChats(characterId: string): Promise<Chat[]> {
-    const chatRows = await this.selectRows(
-      "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
-      [characterId],
-    );
-    if (chatRows.length === 0) return [];
-    const nodeRows = await this.selectRows(
-      `SELECT chat_id, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-       FROM chat_extension_nodes
-       WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)
-       ORDER BY chat_id, node_id`,
-      [characterId],
-    );
-    const values = this.rebuildGroupedNodeValues(nodeRows, "chat_id");
-    return chatRows.map((row) => {
-      const id = row.id as string;
-      const loaded = values.get(id);
-      const chat =
-        loaded && typeof loaded === "object" ? (loaded as Chat) : ({} as Chat);
-      chat.id = id;
-      chat.name = (row.name as string) ?? "";
-      chat.note = (row.note as string) ?? "";
-      chat.folderId = (row.folder_id as string) ?? undefined;
-      chat.lastDate = (row.last_message_time as number) ?? undefined;
-      chat.message = [];
-      chat.messagesLoaded = false;
-      chat.detailsLoaded = true;
-      return chat;
-    });
-  }
-
   private async validatePresetCommit(commit: SqlCommit): Promise<void> {
-    if (!commit.presets) return;
-    const originalIds = (
-      await this.selectRows(
-        "SELECT preset_id FROM bot_presets ORDER BY position",
-      )
-    ).map((row) => row.preset_id as string);
-    const ids = new Set(originalIds);
-    if (commit.replaceAll) ids.clear();
-    for (const id of commit.presets.deletes) ids.delete(id);
-    for (const entry of commit.presets.upserts) ids.add(entry.id);
-    if (ids.size === 0) throw new Error("At least one bot preset must remain");
-    if (
-      commit.presets.order &&
-      (commit.presets.order.length !== ids.size ||
-        new Set(commit.presets.order).size !== ids.size ||
-        commit.presets.order.some((id) => !ids.has(id)))
-    ) {
-      throw new Error("Preset order must contain every preset ID exactly once");
-    }
-    if (
-      commit.presets.activeId !== undefined &&
-      !ids.has(commit.presets.activeId)
-    )
-      throw new Error("Active bot preset does not exist");
-    if (commit.presets.activeId === undefined) {
-      const current = (await this.loadSettingValue("activeBotPresetId")) as
-        string | undefined;
-      if (!current || !ids.has(current)) {
-        const index = originalIds.indexOf(current ?? "");
-        commit.presets.activeId =
-          originalIds.slice(index + 1).find((id) => ids.has(id)) ||
-          originalIds
-            .slice(0, Math.max(0, index))
-            .reverse()
-            .find((id) => ids.has(id)) ||
-          (commit.presets.order || Array.from(ids))[0];
-      }
-    }
+    await validateSqlitePresetCommit(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      commit,
+    );
   }
 
   async loadStartupData(): Promise<SqlStartupDataResult | null> {
@@ -447,63 +449,35 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-
-    const settingsRows = await this.selectRows(
-      "SELECT key FROM system_settings",
-    );
-    const deferredKeys = new Set<string>(DEFERRED_STARTUP_SETTING_KEYS);
-    const settingsStoreExcludedKeys = new Set<string>(
+    const projection = await loadSqliteStartupProjection(
+      ((queries) => this.selectBatch(queries)) as SqliteSelectRowSets,
+      this.revision,
+      DEFERRED_STARTUP_SETTING_KEYS,
       SETTINGS_STORE_EXCLUDED_KEYS,
     );
-    const excludedKeys = [...deferredKeys, ...settingsStoreExcludedKeys];
-    const settingNodeQuery = buildDeferredSettingsQuery(excludedKeys);
-    const settingNodeRows = await this.selectRows(
-      settingNodeQuery.sql,
-      settingNodeQuery.bind,
-    );
-    const settingValues = groupSettingNodeRows(
-      settingNodeRows as SettingNodeRow[],
-    );
-    const settings: Partial<DatabaseSettings> = {};
-    for (const row of settingsRows) {
-      const key = row.key as string;
-      if (deferredKeys.has(key) || settingsStoreExcludedKeys.has(key)) continue;
-      (settings as Record<string, unknown>)[key] = settingValues.get(key);
-    }
-
-    const charRows = await this.selectRows(
-      "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-    );
-    const characters: (character | groupChat)[] = charRows.map(
-      (row) =>
-        ({
-          chaId: row.id as string,
-          type: (row.kind as "character" | "group") ?? "character",
-          name: (row.name as string) ?? "",
-          image: (row.image as string) ?? "",
-          trashTime: (row.trash_time as number) ?? undefined,
-          creationDate: (row.creation_time as number) ?? undefined,
-          modificationDate: (row.modification_time as number) ?? undefined,
-          lastInteraction: (row.last_interaction_time as number) ?? undefined,
-          detailsLoaded: false,
-          chats: [],
-          chatPage: 0,
-        }) as unknown as character | groupChat,
-    );
-
-    const metaRow = await this.selectOne(
-      "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-    );
-    const initialized =
-      metaRow?.initialized === 1 ||
-      characters.length > 0 ||
-      settingsRows.length > 0;
     return {
-      status: initialized ? "ready" : "empty",
-      revision: this.revision,
-      settings,
-      characters,
-      deferredSettingKeys: [...deferredKeys],
+      status: projection.status,
+      revision: projection.revision,
+      settings: Object.fromEntries(
+        projection.settings,
+      ) as Partial<DatabaseSettings>,
+      characters: projection.characters.map(
+        (row) =>
+          ({
+            chaId: row.id,
+            type: row.kind,
+            name: row.name,
+            image: row.image,
+            trashTime: row.trashTime,
+            creationDate: row.creationDate,
+            modificationDate: row.modificationDate,
+            lastInteraction: row.lastInteraction,
+            detailsLoaded: false,
+            chats: [],
+            chatPage: 0,
+          }) as unknown as character | groupChat,
+      ),
+      deferredSettingKeys: projection.deferredSettingKeys,
     };
   }
 
@@ -512,171 +486,14 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const db: CanonicalDatabase = {} as CanonicalDatabase;
-
-    const settingsRows = await this.selectRows<{
-      key: string;
-      domain: string;
-      value_type: string;
-      text_value: string | null;
-      encoded_text_value: string | null;
-      number_value: number | null;
-      boolean_value: number | null;
-    }>(
-      "SELECT key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_settings",
-    );
-    const deferredKeyList = [...LEGACY_PERSONA_MIRROR_KEYS];
-    const deferredKeys = new Set<string>(deferredKeyList);
-    const settingNodeQuery = buildDeferredSettingsQuery(deferredKeyList);
-    const settingNodeRows = await this.selectRows(
-      settingNodeQuery.sql,
-      settingNodeQuery.bind,
-    );
-    const settingValues = groupSettingNodeRows(
-      settingNodeRows as SettingNodeRow[],
-    );
-    for (const row of settingsRows) {
-      const key = row.key;
-      if (deferredKeys.has(key)) continue;
-      if (settingValues.has(key)) {
-        (db as Record<string, unknown>)[key] = settingValues.get(key);
-      } else {
-        switch (row.value_type) {
-          case "string":
-            (db as Record<string, unknown>)[key] = decodedText(
-              row.text_value,
-              row.encoded_text_value,
-            );
-            break;
-          case "number":
-            (db as Record<string, unknown>)[key] = Number(row.number_value);
-            break;
-          case "boolean":
-            (db as Record<string, unknown>)[key] = Boolean(row.boolean_value);
-            break;
-          case "null":
-            (db as Record<string, unknown>)[key] = null;
-            break;
-          case "undefined":
-            (db as Record<string, unknown>)[key] = undefined;
-            break;
-        }
-      }
-    }
-
-    if (
-      !db.pluginCustomStorage ||
-      Object.keys(db.pluginCustomStorage).length === 0
-    ) {
-      const pluginStorageRows = await this.selectRows<{
-        key: string;
-        value: string;
-      }>("SELECT key, value FROM plugin_custom_storage");
-      if (pluginStorageRows.length > 0) {
-        db.pluginCustomStorage = {};
-        for (const row of pluginStorageRows) {
-          try {
-            db.pluginCustomStorage[row.key] = JSON.parse(row.value);
-          } catch {
-            db.pluginCustomStorage[row.key] = row.value;
-          }
-        }
-      }
-    }
-    db.pluginCustomStorage ??= {};
-
-    const charRows = await this.selectRows<{
-      id: string;
-      position: number;
-      kind: string;
-      name: string;
-      image: string | null;
-      trash_time: number | null;
-      creation_time: number | null;
-      modification_time: number | null;
-      last_interaction_time: number | null;
-      details_loaded: number;
-    }>(
-      "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
-    );
-    const characters: (character | groupChat)[] = [];
-    for (const row of charRows) {
-      const fullChar = ((await this.loadNodeValue(
-        "character_extension_nodes",
-        "character_id = ?",
-        [row.id],
-      )) ?? {}) as character | groupChat;
-      fullChar.chaId = row.id;
-      fullChar.name = (row.name as string) ?? fullChar.name ?? "";
-      fullChar.type =
-        (row.kind as "character" | "group") ?? fullChar.type ?? "character";
-      fullChar.image = (row.image as string) ?? fullChar.image ?? "";
-      fullChar.trashTime = (row.trash_time as number) ?? fullChar.trashTime;
-      fullChar.lastInteraction =
-        (row.last_interaction_time as number) ?? fullChar.lastInteraction;
-      if (fullChar.type === "character") {
-        fullChar.creation_date =
-          (row.creation_time as number) ?? fullChar.creation_date;
-        fullChar.modification_date =
-          (row.modification_time as number) ?? fullChar.modification_date;
-      }
-      fullChar.detailsLoaded = true;
-      const chats = await this.loadCharacterChats(row.id);
-      for (const chat of chats) {
-        if (!chat.id) continue;
-        chat.message = await this.loadChatMessages(chat.id);
-        chat.messageOffset = 0;
-        chat.messageTotal = chat.message.length;
-        chat.messagesLoaded = true;
-        chat.messagesFullyLoaded = true;
-        chat.detailsLoaded = true;
-      }
-      fullChar.chats = chats;
-      characters.push(fullChar);
-    }
-    db.characters = characters;
-    db.modules = await this.loadModules();
-
-    const presetRows = await this.selectRows<{
-      preset_id: string;
-      data: string;
-    }>("SELECT preset_id, data FROM bot_presets ORDER BY position");
-    if (presetRows.length > 0) {
-      const presets: botPreset[] = [];
-      for (const row of presetRows) {
-        try {
-          presets.push(
-            typeof row.data === "string"
-              ? JSON.parse(row.data)
-              : (row.data as botPreset),
-          );
-        } catch {}
-      }
-      db.botPresets = presets;
-      if (db.activeBotPresetId) {
-        const activeIndex = presetRows.findIndex(
-          (row) => row.preset_id === db.activeBotPresetId,
-        );
-        db.botPresetsId = activeIndex >= 0 ? activeIndex : 0;
-      } else {
-        db.botPresetsId = 0;
-      }
-    } else {
-      db.botPresets = [];
-      db.botPresetsId = 0;
-    }
-
-    const metaRow = await this.selectOne(
-      "SELECT initialized FROM system_storage_meta WHERE singleton = 1",
-    );
-    const isInit =
-      metaRow?.initialized === 1 ||
-      characters.length > 0 ||
-      settingsRows.length > 0 ||
-      (db.modules?.length ?? 0) > 0 ||
-      (db.botPresets?.length ?? 0) > 0;
-    if (!isInit) return { revision: this.revision, database: null };
-    return { revision: this.revision, database: db };
+    return (await exportSqliteDatabaseSnapshot({
+      selectRows: this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets: ((queries) =>
+        this.selectBatch(queries)) as SqliteSelectRowSets,
+      revision: this.revision,
+      legacyPersonaMirrorKeys: LEGACY_PERSONA_MIRROR_KEYS,
+      loadChatMessages: (chatId) => this.loadChatMessages(chatId),
+    })) as SqlDatabaseSnapshotResult;
   }
 
   async commit(commit: SqlCommit): Promise<SqlCommitResult> {
@@ -693,17 +510,10 @@ export class WebSqliteStorage implements ISqlStorage {
       const currentRevision = Number(meta?.revision) || 0;
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
-      if (commit.modules && !commit.replaceAll) {
-        const moduleCount = await this.selectOne(
-          "SELECT COUNT(*) AS count FROM module_records",
-        );
-        if (Number(moduleCount?.count) === 0) {
-          mergeLegacyModulesIntoCommit(
-            commit,
-            await this.loadSettingValue("modules"),
-          );
-        }
-      }
+      await prepareSqliteModuleCommit(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        commit,
+      );
       await this.validatePresetCommit(commit);
       const statements: SqliteBatchStatement[] = [];
       const append = async (sql: string, bind: unknown[] = []) => {
@@ -758,19 +568,10 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadCharacter(
     characterId: string,
   ): Promise<character | groupChat | null> {
-    const row = await this.selectOne("SELECT id FROM characters WHERE id = ?", [
+    return (await loadSqliteCharacterDocument(
+      this.selectRows.bind(this) as SqliteSelectRows,
       characterId,
-    ]);
-    if (!row) return null;
-    const fc = ((await this.loadNodeValue(
-      "character_extension_nodes",
-      "character_id = ?",
-      [characterId],
-    )) ?? {}) as any;
-    fc.chaId = characterId;
-    fc.detailsLoaded = true;
-    fc.chats = await this.loadCharacterChats(characterId);
-    return fc;
+    )) as unknown as character | groupChat | null;
   }
 
   async loadCharacterForSelection(
@@ -836,17 +637,7 @@ export class WebSqliteStorage implements ISqlStorage {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const requestedLimit = options?.messageLimit;
-    const limit =
-      requestedLimit === undefined
-        ? undefined
-        : normalizeSqliteLimit(requestedLimit);
-    const messageStatement = buildBranchMessageRowsQuery(
-      chatId,
-      undefined,
-      limit,
-    );
-    const totalStatement = buildBranchMessageCountQuery(chatId);
+    const plan = buildSqliteChatLoadPlan(chatId, options?.messageLimit);
     const [
       chatResult,
       nodeResult,
@@ -855,61 +646,37 @@ export class WebSqliteStorage implements ISqlStorage {
       activeBranchResult,
       branchCountResult,
     ] = await this.selectBatchResults([
-      {
-        sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: `SELECT node_id, parent_node_id, node_order, object_key,
-                       object_key_encoded, value_type, text_value, encoded_text_value,
-                       number_value, boolean_value
-                FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
-        bind: [chatId],
-        transform: "relational",
-      },
-      totalStatement,
-      {
-        ...messageStatement,
-        transform: "messages",
-      },
-      {
-        sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-        bind: [chatId],
-      },
-      {
-        sql: "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-        bind: [chatId],
-      },
+      plan.chat,
+      { ...plan.extension, transform: "relational" },
+      plan.total,
+      { ...plan.messages, transform: "messages" },
+      plan.activeBranch,
+      plan.branchCount,
     ]);
-    const cr = chatResult.rows?.[0];
-    if (!cr) return null;
+    const chatRow = chatResult.rows?.[0] as SqliteChatRow | undefined;
+    if (!chatRow) return null;
     const activeBranch = activeBranchResult.rows?.[0] as
-      { branch_id: string } | undefined;
+      | { branch_id: string }
+      | undefined;
     const branchCount = Number(branchCountResult.rows?.[0]?.total ?? 0);
-    const cd = (nodeResult.value ?? {}) as any;
-    if (await this.migrateLegacyBranchGraphIfNeeded(chatId, cd, branchCount)) {
+    const extension = (nodeResult.value ?? {}) as Record<string, unknown>;
+    if (
+      await this.migrateLegacyBranchGraphIfNeeded(chatId, extension, branchCount)
+    ) {
       return this.loadChat(chatId, options);
     }
     if (!activeBranch) {
       await this.ensureBranchGraph(chatId);
       return this.loadChat(chatId, options);
     }
-    cd.id = cr.id;
-    cd.name = (cr.name as string) ?? "";
-    cd.note = (cr.note as string) ?? "";
-    cd.folderId = (cr.folder_id as string) ?? undefined;
-    cd.lastDate = (cr.last_message_time as number) ?? undefined;
-    cd.activeBranchId = activeBranch?.branch_id;
-    if (activeBranch) delete cd.branchState;
     const total = Number(totalResult.rows?.[0]?.total ?? 0);
-    cd.message = (messageResult.value ?? []) as Message[];
-    const offset = Math.max(0, total - cd.message.length);
-    cd.messageOffset = offset;
-    cd.messageTotal = total;
-    cd.messagesFullyLoaded = offset === 0;
-    cd.messagesLoaded = true;
-    cd.detailsLoaded = true;
-    return cd;
+    return hydrateSqliteChatDocument(
+      chatRow,
+      extension,
+      (messageResult.value ?? []) as Message[],
+      total,
+      activeBranch.branch_id,
+    ) as unknown as Chat;
   }
 
   async loadChatMessages(
@@ -940,25 +707,20 @@ export class WebSqliteStorage implements ISqlStorage {
       totalStatement.sql,
       totalStatement.bind,
     );
-    const total = Number(totalRow?.total ?? 0);
-    const end = normalizeSqlitePageEnd(before, total);
-    const normalizedLimit = normalizeSqliteLimit(limit);
-    const offset = Math.max(0, end - normalizedLimit);
-    const pageQuery = buildBranchMessageRowsQuery(
+    const page = buildSqliteMessagePagePlan(
       chatId,
-      undefined,
-      end - offset,
-      "full",
-      offset,
+      before,
+      Number(totalRow?.total ?? 0),
+      limit,
     );
     const [result] = await this.selectBatchResults([
-      { ...pageQuery, transform: "messages" },
+      { ...page.statement, transform: "messages" },
     ]);
     return {
       messages: (result.value ?? []) as Message[],
-      offset,
-      total,
-      hasMore: offset > 0,
+      offset: page.offset,
+      total: page.total,
+      hasMore: page.hasMore,
     };
   }
 
@@ -1009,14 +771,10 @@ export class WebSqliteStorage implements ISqlStorage {
   ): Promise<boolean> {
     const branchCount =
       knownBranchCount ??
-      Number(
-        (
-          await this.selectOne(
-            "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-            [chatId],
-          )
-        )?.total ?? 0,
-      );
+      (await getSqliteChatBranchCount(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+      ));
     if (branchCount > 1) return false;
     const chatData =
       knownChatData ?? (await this.loadLegacyChatExtension(chatId));
@@ -1026,13 +784,9 @@ export class WebSqliteStorage implements ISqlStorage {
     ) {
       return false;
     }
-    const currentCount = Number(
-      (
-        await this.selectOne(
-          "SELECT COUNT(*) AS total FROM chat_branches WHERE chat_id = ?",
-          [chatId],
-        )
-      )?.total ?? 0,
+    const currentCount = await getSqliteChatBranchCount(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
     );
     if (currentCount > 1) return false;
     const plan = buildLegacyBranchMigrationPlan(
@@ -1057,27 +811,17 @@ export class WebSqliteStorage implements ISqlStorage {
 
   async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
     await this.ensureBranchGraph(chatId);
-    const rows = await this.selectRows<SqliteChatBranchRow>(
-      `SELECT id, chat_id, parent_branch_id, fork_message_id,
-              head_message_id, reason, created_at
-         FROM chat_branches WHERE chat_id = ? ORDER BY created_at, id`,
-      [chatId],
-    );
-    return rows.map(mapSqliteChatBranchRow);
+    return (await listSqliteChatBranches(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
+    )) as SqlChatBranchSummary[];
   }
 
   async loadChatBranchGraph(chatId: string) {
     await this.ensureBranchGraph(chatId);
-    const branchRows = await this.selectRows<
-      SqliteChatBranchRow & { active_branch_id?: string }
-    >(
-      `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
-              branch.head_message_id, branch.reason, branch.created_at,
-              active.branch_id AS active_branch_id
-         FROM chat_branches branch
-    LEFT JOIN chat_active_branches active ON active.chat_id = branch.chat_id
-        WHERE branch.chat_id = ? ORDER BY branch.created_at, branch.id`,
-      [chatId],
+    const metadata = await loadSqliteChatBranchMetadata(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
     );
     const graphQuery = buildBranchGraphRowsQuery(chatId);
     const graphRows = await this.selectRows<Record<string, unknown>>(
@@ -1085,8 +829,8 @@ export class WebSqliteStorage implements ISqlStorage {
       graphQuery.bind,
     );
     return {
-      branches: branchRows.map(mapSqliteChatBranchRow),
-      activeBranchId: branchRows[0]?.active_branch_id ?? undefined,
+      branches: metadata.branches as SqlChatBranchSummary[],
+      activeBranchId: metadata.activeBranchId,
       messages: rebuildBranchGraphMessages(graphRows),
       links: graphRows.map((row) => ({
         messageId: String(row.message_id),
@@ -1096,6 +840,40 @@ export class WebSqliteStorage implements ISqlStorage {
             : String(row.graph_parent_message_id),
         originBranchId: String(row.graph_origin_branch_id),
       })),
+    };
+  }
+
+  async loadChatBranchGraphPage(chatId: string, offset: number, limit: number) {
+    await this.ensureBranchGraph(chatId);
+    const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
+    const normalizedLimit = normalizeSqliteLimit(limit);
+    const metadata = await loadSqliteChatBranchMetadata(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      chatId,
+    );
+    const countQuery = buildBranchGraphMessageCountQuery(chatId);
+    const countRow = (await this.selectOne(
+      countQuery.sql,
+      countQuery.bind,
+    )) as { total?: number } | null;
+    const total = Number(countRow?.total ?? 0);
+    const pageQuery = buildBranchGraphMessageRowsPageQuery(
+      chatId,
+      normalizedOffset,
+      normalizedLimit,
+    );
+    const rows = await this.selectRows<Record<string, unknown>>(
+      pageQuery.sql,
+      pageQuery.bind,
+    );
+    return {
+      branches: metadata.branches as SqlChatBranchSummary[],
+      activeBranchId: metadata.activeBranchId,
+      messages: rebuildMessageRows(rows),
+      links: rebuildBranchGraphLinks(rows),
+      offset: normalizedOffset,
+      total,
+      hasMore: normalizedOffset + normalizedLimit < total,
     };
   }
 
@@ -1129,120 +907,50 @@ export class WebSqliteStorage implements ISqlStorage {
     input: SqlCreateChatBranchInput,
   ): Promise<SqlChatBranchSummary> {
     await this.ensureBranchGraph(input.chatId);
-    const active = (await this.selectOne(
-      "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
-      [input.chatId],
-    )) as { branch_id: string } | null;
-    const parentBranchId = input.parentBranchId ?? active?.branch_id;
+    const parentBranchId =
+      input.parentBranchId ??
+      (await getSqliteActiveBranchId(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        input.chatId,
+      ));
     if (!parentBranchId) throw new Error("Chat branch root does not exist");
-    await this.runBranchTransaction([
-      {
-        sql: `INSERT INTO chat_branches
-                (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        bind: [
-          input.chatId,
-          input.id,
-          parentBranchId,
-          input.forkMessageId ?? null,
-          input.forkMessageId ?? null,
-          input.reason,
-          input.createdAt,
-        ],
-      },
-      {
-        sql: `INSERT INTO chat_active_branches (chat_id, branch_id) VALUES (?, ?)
-              ON CONFLICT(chat_id) DO UPDATE SET branch_id=excluded.branch_id`,
-        bind: [input.chatId, input.id],
-      },
-    ]);
-    const row = await this.selectOne(
-      `SELECT id, chat_id, parent_branch_id, fork_message_id,
-              head_message_id, reason, created_at
-         FROM chat_branches WHERE chat_id = ? AND id = ?`,
-      [input.chatId, input.id],
+    await this.runBranchTransaction(
+      buildSqliteCreateChatBranchStatements(input, parentBranchId),
     );
-    if (!row) throw new Error("Failed to create chat branch");
-    return mapSqliteChatBranchRow(row as SqliteChatBranchRow);
+    const branch = await loadSqliteChatBranch(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      input.chatId,
+      input.id,
+    );
+    if (!branch) throw new Error("Failed to create chat branch");
+    return branch as SqlChatBranchSummary;
   }
 
   async activateChatBranch(chatId: string, branchId: string): Promise<void> {
     await this.ensureBranchGraph(chatId);
-    const exists = await this.selectOne(
-      "SELECT id FROM chat_branches WHERE chat_id = ? AND id = ?",
-      [chatId, branchId],
-    );
-    if (!exists) throw new Error("Chat branch does not exist");
+    if (
+      !(await sqliteChatBranchExists(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        chatId,
+        branchId,
+      ))
+    ) {
+      throw new Error("Chat branch does not exist");
+    }
     await this.runBranchTransaction([
-      {
-        sql: "UPDATE chat_active_branches SET branch_id = ? WHERE chat_id = ?",
-        bind: [branchId, chatId],
-      },
+      buildSqliteActivateChatBranchStatement(chatId, branchId),
     ]);
   }
 
   async listRecentChats(
     limit = 50,
     activeChatId?: string,
-  ): Promise<import("../../ISqlStorage").SqlRecentChatMetadata[]> {
-    const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 100));
-    const rows = await this.selectRows<{
-      character_id: string;
-      character_name: string;
-      character_image: string | null;
-      character_kind: string;
-      chat_id: string;
-      chat_position: number;
-      chat_name: string;
-      folder_id: string | null;
-      last_message_time: number | null;
-      last_message_text: string | null;
-      last_message_encoded: string | null;
-    }>(
-      `SELECT c.id AS character_id,
-              c.name AS character_name,
-              c.image AS character_image,
-              c.kind AS character_kind,
-              ch.id AS chat_id,
-              ch.position AS chat_position,
-              ch.name AS chat_name,
-              ch.folder_id AS folder_id,
-              ch.last_message_time AS last_message_time,
-              m.content_text AS last_message_text,
-              m.content_encoded AS last_message_encoded
-         FROM chats ch
-         JOIN characters c ON c.id = ch.character_id
-    LEFT JOIN messages m ON m.chat_id = ch.id
-       AND m.id = (
-              SELECT m2.id FROM messages m2
-               WHERE m2.chat_id = ch.id
-               ORDER BY m2.position DESC, m2.sent_time DESC, m2.id DESC
-               LIMIT 1
-            )
-        WHERE c.trash_time IS NULL
-        ORDER BY CASE
-              WHEN ch.id = ? THEN MAX(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0)
-              ELSE COALESCE(ch.last_message_time, c.last_interaction_time, 0)
-            END DESC, ch.id
-        LIMIT ?`,
-      activeChatId ? [activeChatId, normalizedLimit] : [null, normalizedLimit],
-    );
-    return rows.map((row) => ({
-      characterId: row.character_id,
-      characterName: (row.character_name as string) ?? "",
-      characterImage: row.character_image ?? null,
-      characterType:
-        row.character_kind === "group"
-          ? ("group" as const)
-          : ("character" as const),
-      chatId: row.chat_id,
-      chatPosition: Number(row.chat_position) || 0,
-      chatName: (row.chat_name as string) ?? "",
-      folderId: row.folder_id ?? null,
-      lastDate:
-        row.last_message_time == null ? null : Number(row.last_message_time),
-      lastMessage: decodedText(row.last_message_text, row.last_message_encoded),
-    }));
+  ): Promise<SqlRecentChatMetadata[]> {
+    return (await listSqliteRecentChats(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      limit,
+      activeChatId,
+    )) as SqlRecentChatMetadata[];
   }
 
   async loadPersonas(): Promise<RisuPersona[]> {
@@ -1252,28 +960,18 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
   async listBotPresets(): Promise<BotPresetSummary[]> {
-    return (
-      await this.selectRows(
-        "SELECT preset_id, position, name, image, api_type, ai_model, content_hash FROM bot_presets ORDER BY position",
-      )
-    ).map((row) => ({
-      id: row.preset_id as string,
-      position: Number(row.position),
-      name: row.name as string,
-      image: row.image as string,
-      apiType: row.api_type as string,
-      aiModel: row.ai_model as string,
-      hash: row.content_hash as string,
-    }));
-  }
-  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    const row = await this.selectOne(
-      "SELECT data FROM bot_presets WHERE preset_id = ?",
-      [id],
+    return await listSqliteBotPresets(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (!row) return null;
-    return { ...(JSON.parse(row.data as string) as botPreset), id };
   }
+
+  async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
+    return await loadSqliteBotPreset<botPreset>(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      id,
+    );
+  }
+
   async loadLorebooks(): Promise<{ name: string; data: loreBook[] }[]> {
     return (
       ((await this.loadSettingValue("loreBook")) as
@@ -1281,51 +979,17 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
   async loadModules(): Promise<RisuModule[]> {
-    const rows = await this.selectRows(
-      "SELECT module_id FROM module_records ORDER BY position",
+    return await loadSqliteModules<RisuModule>(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (rows.length === 0) {
-      return (
-        ((await this.loadSettingValue("modules")) as
-          RisuModule[] | undefined) ?? []
-      );
-    }
-    const nodeRows = await this.selectRows(
-      `SELECT module_id, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-         FROM module_extension_nodes
-        ORDER BY module_id, node_id`,
-    );
-    const values = this.rebuildGroupedNodeValues(nodeRows, "module_id");
-    return rows.map((row) => {
-      const id = row.module_id as string;
-      return { ...(values.get(id) as RisuModule), id };
-    });
   }
+
   async loadPrompts(): Promise<Record<string, any>> {
-    const rows = await this.selectRows(
-      "SELECT key FROM system_settings WHERE domain = 'prompt'",
+    return await loadSqlitePrompts(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (rows.length === 0) return {};
-    const nodeRows = await this.selectRows(
-      `SELECT setting_key, node_id, parent_node_id, node_order, object_key,
-              object_key_encoded, value_type, text_value, encoded_text_value,
-              number_value, boolean_value
-       FROM setting_extension_nodes
-       WHERE setting_key IN (SELECT key FROM system_settings WHERE domain = 'prompt')
-       ORDER BY setting_key, node_id`,
-    );
-    const values = this.rebuildGroupedNodeValues(nodeRows, "setting_key");
-    const prompts: Record<string, any> = {};
-    for (const row of rows) {
-      const key = row.key as string;
-      prompts[key] = values.has(key)
-        ? values.get(key)
-        : await this.loadSettingValue(key);
-    }
-    return prompts;
   }
+
   async loadScripts(): Promise<customscript[]> {
     return (
       ((await this.loadSettingValue("globalscript")) as
@@ -1343,40 +1007,28 @@ export class WebSqliteStorage implements ISqlStorage {
       : plugins;
   }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    const rows = await this.selectRows(
-      "SELECT key, value FROM plugin_custom_storage",
-    );
-    if (rows.length === 0) return null;
-    const s: Record<string, any> = {};
-    for (const r of rows) {
-      try {
-        s[r.key as string] = JSON.parse(r.value as string);
-      } catch {
-        s[r.key as string] = r.value;
-      }
-    }
-    return s;
+    return (await loadSqlitePluginCustomStorage(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    )) as Record<string, any> | null;
   }
 
   async listPluginCustomStorageKeys(): Promise<string[]> {
-    return (
-      await this.selectRows(
-        "SELECT key FROM plugin_custom_storage ORDER BY key",
-      )
-    ).map((row) => row.key as string);
+    return await listSqlitePluginCustomStorageKeys(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {
-    const row = await this.selectOne(
-      "SELECT value FROM plugin_custom_storage WHERE key = ?",
-      [key],
+    return await loadSqlitePluginCustomStorageKey(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      key,
     );
-    if (!row) return undefined;
-    try {
-      return JSON.parse(row.value as string);
-    } catch {
-      return row.value;
-    }
+  }
+
+  async listSettingKeys(): Promise<string[]> {
+    return await listSqliteSettingKeys(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
 
   async loadSettingKey(key: string): Promise<any> {
@@ -1384,21 +1036,19 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async getColdStorageItem(key: string): Promise<unknown | null> {
-    const r = await this.selectOne(
-      "SELECT archive_id FROM cold_archives WHERE archive_id = ?",
-      [key],
+    return await getSqliteColdStorageItem(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      this.loadNodeValue.bind(this),
+      key,
     );
-    return r
-      ? this.loadNodeValue("cold_extension_nodes", "archive_id = ?", [key])
-      : null;
   }
+
   async listColdStorageItems(): Promise<{ items: string[] }> {
-    return {
-      items: (
-        await this.selectRows("SELECT archive_id FROM cold_archives")
-      ).map((r) => r.archive_id as string),
-    };
+    return await listSqliteColdStorageItems(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
+
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
     return this.writeQueue.run(async () => {
       await this.run("BEGIN IMMEDIATE");
@@ -1420,115 +1070,56 @@ export class WebSqliteStorage implements ISqlStorage {
       }
     });
   }
+
   async removeColdStorageItems(keys: string[]): Promise<number> {
-    if (keys.length === 0) return 0;
+    const statement = buildSqliteColdStorageDelete(keys);
+    if (!statement) return 0;
     return this.writeQueue.run(async () => {
-      const ph = keys.map(() => "?").join(",");
-      await this.run(
-        `DELETE FROM cold_archives WHERE archive_id IN (${ph})`,
-        keys,
-      );
+      await this.run(statement.sql, statement.bind ?? []);
       return keys.length;
     });
   }
+
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
     return this.writeQueue.run(async () => {
-      const all = (
-        await this.selectRows("SELECT archive_id FROM cold_archives")
-      ).map((r) => r.archive_id as string);
-      const removed = all.filter((k) => !retainedKeys.includes(k));
-      if (removed.length === 0) return 0;
-      const ph = removed.map(() => "?").join(",");
-      await this.run(
-        `DELETE FROM cold_archives WHERE archive_id IN (${ph})`,
-        removed,
+      const toDelete = await findSqliteColdStoragePruneKeys(
+        this.selectRows.bind(this) as SqliteSelectRows,
+        retainedKeys,
       );
-      return removed.length;
+      const statement = buildSqliteColdStorageDelete(toDelete);
+      if (!statement) return 0;
+      await this.run(statement.sql, statement.bind ?? []);
+      return toDelete.length;
     });
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    const normalizedLimit =
-      limit !== undefined && Number.isFinite(limit) && limit > 0
-        ? normalizeSqliteLimit(limit)
-        : undefined;
-    const sql =
-      "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions ORDER BY created_at DESC, id DESC" +
-      (normalizedLimit !== undefined ? " LIMIT ?" : "");
-    const rows = await this.selectRows(
-      sql,
-      normalizedLimit !== undefined ? [normalizedLimit] : [],
+    return await listSqliteRevisions(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      limit,
     );
-    return rows.map((r) => ({
-      id: Number(r.id),
-      storage_revision:
-        r.storage_revision != null ? Number(r.storage_revision) : null,
-      database_initialized:
-        r.database_initialized != null ? Boolean(r.database_initialized) : null,
-      scope: r.scope as "database" | "cold-storage" | "restore",
-      action: r.action as string,
-      restored_from_revision:
-        r.restored_from_revision != null
-          ? Number(r.restored_from_revision)
-          : null,
-      created_at: r.created_at as string,
-      change_count: 0,
-    }));
   }
 
   async getRevisionDetails(
     revisionId: number,
   ): Promise<NodePostgresRevisionDetails | null> {
-    const rows = await this.selectRows(
-      "SELECT id, storage_revision, database_initialized, scope, action, restored_from_revision, created_at FROM system_revisions WHERE id = ?",
-      [revisionId],
+    return await getSqliteRevisionDetails(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      revisionId,
     );
-    if (rows.length === 0) return null;
-    const r = rows[0];
-    return {
-      id: Number(r.id),
-      storage_revision:
-        r.storage_revision != null ? Number(r.storage_revision) : null,
-      database_initialized:
-        r.database_initialized != null ? Boolean(r.database_initialized) : null,
-      scope: r.scope as "database" | "cold-storage" | "restore",
-      action: r.action as string,
-      restored_from_revision:
-        r.restored_from_revision != null
-          ? Number(r.restored_from_revision)
-          : null,
-      created_at: r.created_at as string,
-      change_count: 0,
-      tableSummaries: [],
-      auditLogs: [],
-    };
   }
 
   async getRevisionDiff(
     baseId: number,
     targetId: number,
   ): Promise<NodePostgresRevisionDiff | null> {
-    return {
-      baseRevisionId: baseId,
-      targetRevisionId: targetId,
-      totalChanges: 0,
-      tables: [],
-    };
+    return getSqliteRevisionDiff(baseId, targetId);
   }
 
   async previewRestoreRevision(
     revisionId: number,
   ): Promise<NodePostgresRestorePreview | null> {
-    return {
-      targetRevisionId: revisionId,
-      currentRevisionId: this.revision,
-      revisionsToRevert: Math.max(0, this.revision - revisionId),
-      totalOperations: 0,
-      restoreInsertCount: 0,
-      restoreDeleteCount: 0,
-      restoreUpdateCount: 0,
-      affectedTables: [],
-    };
+    return previewSqliteRevisionRestore(this.revision, revisionId);
   }
 
   async restoreRevision(
@@ -1542,207 +1133,36 @@ export class WebSqliteStorage implements ISqlStorage {
     scope: "all" | "active" | "cold" = "all",
     limit: number = 50,
   ): Promise<NodePostgresMessageSearchResult[]> {
-    const rows = await this.selectRows(
-      `SELECT chat_id, id, position, role, sent_time, sender_name, content_text
-             FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
-      [`%${query}%`, normalizeSqliteLimit(limit)],
+    void scope;
+    return await searchSqliteMessages(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      query,
+      limit,
     );
-    return rows.map((r) => {
-      return {
-        storageState: "active" as const,
-        archiveId: null,
-        characterId: null,
-        characterName: null,
-        chatId: r.chat_id as string,
-        chatName: "",
-        messageId: r.id as string,
-        position: Number(r.position),
-        role: r.role as "user" | "char",
-        sentTime: r.sent_time != null ? Number(r.sent_time) : null,
-        senderName: (r.sender_name as string) ?? null,
-        snippet: String(r.content_text ?? "").slice(0, 200),
-      };
-    });
   }
+
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    return (
-      await this.selectRows(
-        `SELECT COALESCE(generation_model, 'unknown') AS model,
-            COUNT(*) AS message_count, COALESCE(SUM(input_tokens), 0) AS input_tokens,
-            COALESCE(SUM(output_tokens), 0) AS output_tokens FROM messages
-            WHERE generation_model IS NOT NULL GROUP BY generation_model`,
-      )
-    ).map((row) => ({
-      model: row.model as string,
-      messageCount: Number(row.message_count),
-      totalInputTokens: Number(row.input_tokens),
-      totalOutputTokens: Number(row.output_tokens),
-    }));
+    return await getSqliteTokenUsage(
+      this.selectRows.bind(this) as SqliteSelectRows,
+    );
   }
+
   async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    const chars = (await this.selectRows(
-      "SELECT id, name, image, kind, last_interaction_time FROM characters ORDER BY position ASC",
-    )) as {
-      id: string;
-      name: string;
-      image: string | null;
-      kind: string;
-      last_interaction_time: number | null;
-    }[];
-    const chatRows = (await this.selectRows(
-      "SELECT id, character_id, last_message_time FROM chats",
-    )) as {
-      id: string;
-      character_id: string;
-      last_message_time: number | null;
-    }[];
-    const msgRows = (await this.selectRows(
-      "SELECT chat_id, role, sent_time, length(COALESCE(content_text, content_encoded, '')) AS content_length FROM messages",
-    )) as {
-      chat_id: string;
-      role: string;
-      sent_time: number | null;
-      content_length: number;
-    }[];
-
-    const chatsByChar = new Map<
-      string,
-      { id: string; lastMessageTime: number | null }[]
-    >();
-    for (const ch of chatRows) {
-      let list = chatsByChar.get(ch.character_id);
-      if (!list) {
-        list = [];
-        chatsByChar.set(ch.character_id, list);
-      }
-      list.push({
-        id: ch.id,
-        lastMessageTime:
-          ch.last_message_time != null ? Number(ch.last_message_time) : null,
-      });
-    }
-
-    const msgsByChat = new Map<
-      string,
-      { role: string; sentTime: number | null; len: number }[]
-    >();
-    for (const m of msgRows) {
-      let list = msgsByChat.get(m.chat_id);
-      if (!list) {
-        list = [];
-        msgsByChat.set(m.chat_id, list);
-      }
-      list.push({
-        role: m.role,
-        sentTime: m.sent_time != null ? Number(m.sent_time) : null,
-        len: Number(m.content_length),
-      });
-    }
-
-    return chars.map((c) => {
-      const charChats = chatsByChar.get(c.id) || [];
-      let totalMessages = 0;
-      let userMessages = 0;
-      let botMessages = 0;
-      let longestSessionMessages = 0;
-      let lastActiveDate: number | null =
-        c.last_interaction_time != null
-          ? Number(c.last_interaction_time)
-          : null;
-      let totalBotLen = 0;
-      let totalUserLen = 0;
-
-      for (const ch of charChats) {
-        if (
-          ch.lastMessageTime != null &&
-          (lastActiveDate == null || ch.lastMessageTime > lastActiveDate)
-        ) {
-          lastActiveDate = ch.lastMessageTime;
-        }
-        const msgs = msgsByChat.get(ch.id) || [];
-        if (msgs.length > longestSessionMessages) {
-          longestSessionMessages = msgs.length;
-        }
-        totalMessages += msgs.length;
-        for (const m of msgs) {
-          if (
-            m.sentTime != null &&
-            (lastActiveDate == null || m.sentTime > lastActiveDate)
-          ) {
-            lastActiveDate = m.sentTime;
-          }
-          if (m.role === "user") {
-            userMessages++;
-            totalUserLen += m.len;
-          } else {
-            botMessages++;
-            totalBotLen += m.len;
-          }
-        }
-      }
-
-      const isGroup = c.kind === "group";
-      const totalSessions = charChats.length;
-      return {
-        id: c.id,
-        name: c.name || (isGroup ? "Group" : "Character"),
-        avatarKey: c.image ?? undefined,
-        image: c.image ?? undefined,
-        isGroup,
-        totalSessions,
-        totalMessages,
-        userMessages,
-        botMessages,
-        longestSessionMessages,
-        lastActiveDate,
-        avgBotMessageLen:
-          botMessages > 0 ? Math.round(totalBotLen / botMessages) : 0,
-        avgUserMessageLen:
-          userMessages > 0 ? Math.round(totalUserLen / userMessages) : 0,
-        avgMessagesPerSession:
-          totalSessions > 0
-            ? Number((totalMessages / totalSessions).toFixed(1))
-            : 0,
-      };
-    });
-  }
-  private quoteExplorerIdentifier(identifier: string): string {
-    return `"${identifier.replace(/"/g, '""')}"`;
-  }
-
-  private async getDbExplorerColumns(
-    table: string,
-  ): Promise<NodePostgresColumnInfo[]> {
-    const exists = await this.selectOne(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? AND name NOT LIKE 'sqlite_%'",
-      [table],
+    return await getSqliteBotChatStats(
+      this.selectRows.bind(this) as SqliteSelectRows,
     );
-    if (!exists) throw new Error(`SQLite table not found: ${table}`);
-    const rows = await this.selectRows(
-      `PRAGMA table_info(${this.quoteExplorerIdentifier(table)})`,
-    );
-    return rows.map((row) => ({
-      name: String(row.name ?? ""),
-      dataType: String(row.type ?? "UNKNOWN") || "UNKNOWN",
-      nullable: Number(row.notnull ?? 0) === 0,
-      primaryKey: Number(row.pk ?? 0) > 0,
-    }));
   }
 
   async listDbTables(): Promise<NodePostgresTableInfo[]> {
     if (!this._enabled && !(await this.init())) return [];
-    const rows = await this.selectRows(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    const selectRowSets: SqliteSelectRowSets = async (queries) =>
+      (await this.selectBatchResults(queries)).map(
+        (result) => result.rows ?? [],
+      );
+    return await listSqliteDbTables(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets,
     );
-    const results = await this.selectBatchResults(
-      rows.map((row) => ({
-        sql: `SELECT COUNT(*) AS total FROM ${this.quoteExplorerIdentifier(String(row.name))}`,
-      })),
-    );
-    return rows.map((row, index) => ({
-      name: String(row.name),
-      rowCount: Number(results[index]?.rows?.[0]?.total ?? 0),
-    }));
   }
 
   async getDbTableData(
@@ -1759,91 +1179,39 @@ export class WebSqliteStorage implements ISqlStorage {
     if (!this._enabled && !(await this.init())) {
       throw new Error("Browser SQLite storage is not available");
     }
-    const allColumns = await this.getDbExplorerColumns(table);
-    const columnNames = new Set(allColumns.map((column) => column.name));
-    const requestedColumns = options.columns?.filter((name) =>
-      columnNames.has(name),
-    );
-    const columns = requestedColumns?.length
-      ? allColumns.filter((column) => requestedColumns.includes(column.name))
-      : allColumns;
-    if (columns.length === 0)
-      throw new Error(`SQLite table has no columns: ${table}`);
-
-    const offset = Math.max(0, Math.floor(options.offset ?? 0));
-    const limit = normalizeSqliteLimit(options.limit ?? 50);
-    const quotedTable = this.quoteExplorerIdentifier(table);
-    const search = options.search?.trim() ?? "";
-    const where = search
-      ? ` WHERE ${allColumns
-          .map(
-            (column) =>
-              `CAST(${this.quoteExplorerIdentifier(column.name)} AS TEXT) LIKE ? COLLATE NOCASE`,
-          )
-          .join(" OR ")}`
-      : "";
-    const searchBinds = search ? allColumns.map(() => `%${search}%`) : [];
-    const sortColumn =
-      options.sortColumn && columnNames.has(options.sortColumn)
-        ? options.sortColumn
-        : "";
-    const orderBy = sortColumn
-      ? ` ORDER BY ${this.quoteExplorerIdentifier(sortColumn)} ${options.sortOrder === "desc" ? "DESC" : "ASC"}`
-      : "";
-    const selection = columns
-      .map((column) => this.quoteExplorerIdentifier(column.name))
-      .join(", ");
-
-    const [countResult, rowsResult] = await this.selectBatchResults([
-      {
-        sql: `SELECT COUNT(*) AS total FROM ${quotedTable}${where}`,
-        bind: searchBinds,
-      },
-      {
-        sql: `SELECT ${selection} FROM ${quotedTable}${where}${orderBy} LIMIT ? OFFSET ?`,
-        bind: [...searchBinds, limit, offset],
-      },
-    ]);
-    return {
+    const selectRowSets: SqliteSelectRowSets = async (queries) =>
+      (await this.selectBatchResults(queries)).map(
+        (result) => result.rows ?? [],
+      );
+    return await getSqliteDbTableData(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      selectRowSets,
       table,
-      columns,
-      allColumns,
-      rows: rowsResult.rows ?? [],
-      offset,
-      limit,
-      total: Number(countResult.rows?.[0]?.total ?? 0),
-    };
+      options,
+    );
   }
 
   async searchCharactersByTag(
     tag: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    const rows = await this.selectRows(
-      `SELECT DISTINCT c.id, c.name, c.image, c.kind FROM characters c
-            JOIN character_tags t ON t.character_id = c.id WHERE t.tag LIKE ? LIMIT ?`,
-      [`%${tag}%`, normalizeSqliteLimit(limit)],
+    return await searchSqliteCharacters(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      "tag",
+      tag,
+      limit,
     );
-    return rows.map((r) => ({
-      id: r.id as string,
-      name: r.name as string,
-      image: (r.image as string) ?? null,
-      kind: (r.kind as "character" | "group") ?? "character",
-    }));
   }
+
   async searchCharactersByName(
     name: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    const rows = await this.selectRows(
-      "SELECT id, name, image, kind FROM characters WHERE name LIKE ? LIMIT ?",
-      [`%${name}%`, normalizeSqliteLimit(limit)],
+    return await searchSqliteCharacters(
+      this.selectRows.bind(this) as SqliteSelectRows,
+      "name",
+      name,
+      limit,
     );
-    return rows.map((r) => ({
-      id: r.id as string,
-      name: r.name as string,
-      image: (r.image as string) ?? null,
-      kind: (r.kind as "character" | "group") ?? "character",
-    }));
   }
 }

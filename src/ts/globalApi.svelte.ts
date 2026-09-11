@@ -7,7 +7,7 @@ import {
   readDir,
   remove,
 } from "@tauri-apps/plugin-fs";
-import { changeFullscreen, checkNullish, sleep } from "./util";
+import { changeFullscreen, checkNullish, Semaphore, sleep } from "./util";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
@@ -51,6 +51,7 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
+import { normalizeBackupEntryName } from "@risuai/backup-core/entryPolicy.cjs";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -78,6 +79,7 @@ import {
   getNodeServerProxyAuth,
   NodeStorage,
 } from "./storage/files/nodeStorage";
+import { TauriAssetStorage } from "./storage/files/tauriAssetStorage";
 import { generateClientThumbnail } from "./media/thumbnail";
 import { getMimeType } from "./media/mimeType";
 import { BoundedCache } from "./memory/boundedCache";
@@ -494,6 +496,66 @@ const browserAssetUrls = new BoundedCache<string, string>({
   },
 });
 
+const remoteNativeAssetSemaphore = new Semaphore(4);
+const remoteNativeAssetLoads = new Map<string, Promise<string>>();
+
+async function getRemoteNativeNodeAssetSrc(
+  storage: NodeStorage,
+  loc: string,
+  cacheKey: string,
+  options?: {
+    thumbnail?: boolean;
+    display?: boolean;
+    transient?: boolean;
+    width?: number;
+    height?: number;
+  },
+): Promise<string> {
+  if (!options?.transient) {
+    const cached = browserAssetUrls.get(cacheKey);
+    if (cached && isLiveObjectUrl(cached)) return cached;
+    if (cached) browserAssetUrls.delete(cacheKey);
+  }
+
+  const existing = remoteNativeAssetLoads.get(cacheKey);
+  if (existing) return await existing;
+
+  const load = (async () => {
+    await remoteNativeAssetSemaphore.acquire();
+    try {
+      const item = await storage.getItemWithMetadata(loc, {
+        thumbnail: options?.thumbnail === true,
+        size: options?.display
+          ? "display"
+          : options?.thumbnail
+            ? "thumb"
+            : "full",
+        width: options?.width,
+        height: options?.height,
+      });
+      if (!item) return "";
+      const blob = new Blob([item.data as any], { type: item.contentType });
+      const url = URL.createObjectURL(blob);
+      trackObjectUrl(url);
+      if (!options?.transient) {
+        browserAssetWeights.set(cacheKey, item.data.byteLength);
+        browserAssetUrls.set(cacheKey, url);
+      }
+      return url;
+    } finally {
+      remoteNativeAssetSemaphore.release();
+    }
+  })();
+  remoteNativeAssetLoads.set(cacheKey, load);
+  try {
+    return await load;
+  } finally {
+    if (remoteNativeAssetLoads.get(cacheKey) === load) {
+      remoteNativeAssetLoads.delete(cacheKey);
+    }
+  }
+}
+
 export async function getFileSrc(
   loc: string,
   options?: {
@@ -521,7 +583,7 @@ export async function getFileSrc(
     : isDisplay
       ? `display${resizeKey}_${loc}`
       : loc;
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     if (loc.startsWith("assets")) {
       if (appDataDirPath === "") {
         appDataDirPath = await appDataDir();
@@ -552,10 +614,18 @@ export async function getFileSrc(
     return convertFileSrc(loc);
   }
   if (isNodeServer || forageStorage.realStorage instanceof NodeStorage) {
+    const nodeStorage = forageStorage.realStorage as NodeStorage;
+    if (!isNodeServer && (isTauri || isCapacitor)) {
+      return await getRemoteNativeNodeAssetSrc(
+        nodeStorage,
+        loc,
+        cacheVariantKey,
+        options,
+      );
+    }
     if (isThumb) {
       return await thumbnailBatchLoader.load(loc);
     }
-    const nodeStorage = forageStorage.realStorage as NodeStorage;
     return await nodeStorage.getDirectUrl(loc, options);
   }
   try {
@@ -686,7 +756,7 @@ let appDataDirPath = "";
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the image file.
  */
 export async function readImage(data: string) {
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     if (data.startsWith("assets")) {
       if (appDataDirPath === "") {
         appDataDirPath = await appDataDir();
@@ -730,7 +800,7 @@ export async function saveAsset(
       fileExtension = ext;
     }
   }
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     await writeFile(`assets/${id}.${fileExtension}`, data, {
       baseDir: BaseDirectory.AppData,
     });
@@ -755,7 +825,7 @@ export async function saveAsset(
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the loaded asset file.
  */
 export async function loadAsset(id: string) {
-  if (isTauri) {
+  if (forageStorage.realStorage instanceof TauriAssetStorage) {
     return await readFile(id, { baseDir: BaseDirectory.AppData });
   } else {
     return (await forageStorage.getItem(id)) as unknown as Uint8Array;
@@ -1852,7 +1922,11 @@ export class LocalWriter {
     if (normalizedLength < 0n || normalizedLength > 0xffffffffn) {
       throw new Error(`Backup entry is too large: ${name}`);
     }
-    const encodedName = new TextEncoder().encode(getBasename(name));
+    const normalizedName = normalizeBackupEntryName(name);
+    if (!normalizedName) {
+      throw new Error(`Invalid backup entry path: ${name}`);
+    }
+    const encodedName = new TextEncoder().encode(normalizedName);
     const nameLength = new Uint32Array([encodedName.byteLength]);
     await this.write(new Uint8Array(nameLength.buffer));
     await this.write(encodedName);

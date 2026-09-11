@@ -1,4 +1,4 @@
-import { isNodeServer } from "../platform";
+import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 
@@ -14,15 +14,24 @@ function createLifecycleId(): string {
   );
 }
 
+function getRealtimeApiClient() {
+  try {
+    return getActiveStorageRuntime().nodeApiClient;
+  } catch {
+    return null;
+  }
+}
+
 async function publishState(
   chatId: string,
   lifecycleId: string,
   state: GenerationLifecycleState,
   error?: string,
 ): Promise<void> {
-  if (!isNodeServer || !chatId || !lifecycleId) return;
+  const apiClient = getRealtimeApiClient();
+  if (!apiClient || !chatId || !lifecycleId) return;
   try {
-    await fetch("/api/realtime/generation-state", {
+    await apiClient.request("/api/realtime/generation-state", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -40,7 +49,7 @@ async function publishState(
 export async function beginNodeGenerationLifecycle(
   chatId: string,
 ): Promise<string | null> {
-  if (!isNodeServer || !chatId) return null;
+  if (!chatId || !getRealtimeApiClient()) return null;
   const lifecycleId = createLifecycleId();
   activeLifecycles.set(chatId, lifecycleId);
   await publishState(chatId, lifecycleId, "started");

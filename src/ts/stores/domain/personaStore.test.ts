@@ -39,6 +39,22 @@ describe("PersonaStore", () => {
     expect(personaStore.activePersona?.personaPrompt).toBe("B prompt");
   });
 
+  it("refreshes persona-owned state from remote storage", async () => {
+    let personas = [{ name: "Before", icon: "", personaPrompt: "old" }];
+    storage.loadPersonas = vi.fn(async () => structuredClone(personas));
+    storage.loadSettingKey = vi.fn(async () => 0);
+    await personaStore.init(storage);
+
+    personas = [{ name: "After", icon: "", personaPrompt: "new" }];
+    await personaStore.refreshFromStorage();
+
+    expect(personaStore.activePersona).toMatchObject({
+      name: "After",
+      personaPrompt: "new",
+    });
+    expect(storage.commit).not.toHaveBeenCalled();
+  });
+
   it("fails fast instead of repairing an invalid selected persona index", async () => {
     storage.loadPersonas = vi.fn(async () => [
       { name: "A", icon: "", personaPrompt: "A prompt" },
