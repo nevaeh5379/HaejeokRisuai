@@ -1705,12 +1705,14 @@ async function restoreLocalBackupSourceUnlocked(
     });
     await relaunch();
   } else {
-    location.search = "";
+    await storage.close?.();
     alertStore.set({
       type: "wait",
       msg: completionMessage,
     });
-    location.reload();
+    const cleanUrl = new URL(location.href);
+    cleanUrl.search = "";
+    location.replace(cleanUrl);
   }
 
   alertNormal(

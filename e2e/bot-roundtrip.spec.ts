@@ -1,10 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from "./fixtures";
 
 test('test', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
-  await page.goto('http://127.0.0.1:5174/');
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
-  await page.getByRole('button', { name: 'Recommended Quick AI Setup' }).click();
+  await page.goto("/");
+  await page.getByRole("button", { name: /Quick Setup/i }).click();
   await page.getByRole('textbox', { name: 'Enter your nickname (e.g.' }).click();
   await page.getByRole('textbox', { name: 'Enter your nickname (e.g.' }).fill('iris');
   await page.getByRole('button', { name: 'Next' }).click();

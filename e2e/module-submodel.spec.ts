@@ -131,8 +131,8 @@ test.describe("Per-module auxiliary model (E2E)", () => {
     await expect(subModelBadge).toBeVisible();
 
     // 8. Click Edit on the created module and verify ModelList preserves the model
-    const moduleRow = page.locator("div.pl-3.pt-3").filter({ hasText: "E2E Test Module" }).first();
-    const editButton = moduleRow.locator("button:has(svg.lucide-square-pen)").first();
+    const moduleRow = page.locator("[data-module-id]").filter({ hasText: "E2E Test Module" }).first();
+    const editButton = moduleRow.getByTestId("edit-module");
     await expect(editButton).toBeVisible();
     await editButton.click();
 

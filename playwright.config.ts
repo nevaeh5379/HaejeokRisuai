@@ -43,6 +43,10 @@ export default defineConfig({
   // Retry flaky tests on CI only
   retries: process.env.CI ? 2 : 0,
 
+  // Stop the CI matrix after the first exhausted retry instead of spending an
+  // hour timing out every test that depends on the same broken app state.
+  maxFailures: process.env.CI ? 1 : 0,
+
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }]]
     : [["html", { open: "never" }]],

@@ -68,6 +68,7 @@ interface SahPoolUtil {
   ) => Promise<number>;
   reserveMinimumCapacity: (minimum: number) => Promise<number>;
   unlink: (filename: string) => boolean;
+  pauseVfs: () => SahPoolUtil;
 }
 
 interface Sqlite3Module {
@@ -96,6 +97,7 @@ let db: SqliteDb | null = null;
 let revision = 0;
 let enabled = false;
 let activeVfs: "opfs-sahpool" | "opfs" | null = null;
+let activeSahPool: SahPoolUtil | null = null;
 
 async function getOpfsRoot(): Promise<FileSystemDirectoryHandle> {
   if (!navigator.storage?.getDirectory) {
@@ -168,8 +170,15 @@ async function openPersistentDatabase(
       directory: SAH_POOL_DIRECTORY,
       initialCapacity: SAH_POOL_CAPACITY,
     });
+    activeSahPool = pool;
     await pool.reserveMinimumCapacity(SAH_POOL_CAPACITY);
   } catch (error) {
+    try {
+      activeSahPool?.pauseVfs();
+    } catch {
+      // Preserve the acquisition error below.
+    }
+    activeSahPool = null;
     // Never fall back to the legacy OPFS database here. Once migration has
     // completed that copy is intentionally stale, so doing so in a second tab
     // could silently fork user data. SAH-pool lock failures must remain errors.
@@ -527,12 +536,13 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
       case "close": {
         try {
           db?.close();
-        } catch {
-          // Ignore close failures.
+        } finally {
+          db = null;
+          enabled = false;
+          activeVfs = null;
+          activeSahPool?.pauseVfs();
+          activeSahPool = null;
         }
-        db = null;
-        enabled = false;
-        activeVfs = null;
         (self as any).postMessage({ id: msg.id, ok: true });
         break;
       }

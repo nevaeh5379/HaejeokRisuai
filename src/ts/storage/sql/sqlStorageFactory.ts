@@ -4,6 +4,7 @@ import { beginSave } from "./saveActivity.svelte";
 import { isCapacitor, isTauri, isNodeServer } from "../../platform";
 
 let storageSingleton: ISqlStorage | null = null;
+let storageCreationPromise: Promise<ISqlStorage> | null = null;
 
 export type SqlBranchStorage = ISqlStorage &
   Required<
@@ -78,18 +79,13 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
  * The instance is cached for the lifetime of the page. Commits are serialised
  * so concurrent domain stores don't race on the shared revision.
  */
-export async function getSqlStorage(): Promise<ISqlStorage> {
-  if (storageSingleton) {
-    return storageSingleton;
-  }
-
+async function createSqlStorage(): Promise<ISqlStorage> {
   const { forageStorage } = await import("../../globalApi.svelte");
   const { NodeStorage } = await import("../files/nodeStorage");
   if (forageStorage.realStorage instanceof NodeStorage) {
-    storageSingleton = wrapWithSerializedCommits(
+    return wrapWithSerializedCommits(
       forageStorage.realStorage.sql as unknown as ISqlStorage,
     );
-    return storageSingleton;
   }
 
   if (isNodeServer) {
@@ -101,21 +97,30 @@ export async function getSqlStorage(): Promise<ISqlStorage> {
   if (isCapacitor) {
     const { CapacitorSqliteStorage } =
       await import("./sqlite/capacitor/capacitorSqliteStorage");
-    storageSingleton = wrapWithSerializedCommits(new CapacitorSqliteStorage());
-    return storageSingleton;
+    return wrapWithSerializedCommits(new CapacitorSqliteStorage());
   }
 
   if (isTauri) {
     const { TauriSqliteStorage } =
       await import("./sqlite/tauri/tauriSqliteStorage");
-    storageSingleton = wrapWithSerializedCommits(new TauriSqliteStorage());
-    return storageSingleton;
+    return wrapWithSerializedCommits(new TauriSqliteStorage());
   }
 
   // Web browser
   const { WebSqliteStorage } = await import("./sqlite/web/webSqliteStorage");
-  storageSingleton = wrapWithSerializedCommits(new WebSqliteStorage());
-  return storageSingleton;
+  return wrapWithSerializedCommits(new WebSqliteStorage());
+}
+
+export async function getSqlStorage(): Promise<ISqlStorage> {
+  if (storageSingleton) return storageSingleton;
+
+  storageCreationPromise ??= createSqlStorage();
+  try {
+    storageSingleton = await storageCreationPromise;
+    return storageSingleton;
+  } finally {
+    storageCreationPromise = null;
+  }
 }
 
 /**

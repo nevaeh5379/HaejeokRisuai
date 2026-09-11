@@ -620,7 +620,7 @@
         <div class="border-t-1 border-selected/50"></div>
     {/if}
 
-    <div class="pl-3 pt-2.5 pr-3 text-left flex items-center">
+    <div data-module-id={rmodule.id} class="pl-3 pt-2.5 pr-3 text-left flex items-center">
         {#if moduleSearch === ''}
             <div
                 class="{isRoot ? 'root-drag-handle' : 'module-drag-handle'} w-10 h-10 -ml-2 mr-1 flex items-center justify-center cursor-grab active:cursor-grabbing text-textcolor2 hover:text-textcolor shrink-0 touch-none select-none rounded hover:bg-textcolor/5 active:bg-textcolor/10"
@@ -674,7 +674,7 @@
                     }}>
                         <Share2Icon size={18}/>
                     </button>
-                    <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
+                    <button data-testid="edit-module" aria-label={`${language.edit}: ${rmodule.name}`} class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
                         e.stopPropagation()
                         tempModule = rmodule
                         mode = 2

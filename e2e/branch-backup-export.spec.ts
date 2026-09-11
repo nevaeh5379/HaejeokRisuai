@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
-async function waitForAppReady(page: Page) {
-  await page.goto("/");
+async function waitForAppReady(page: Page, navigate = true) {
+  if (navigate) await page.goto("/");
   await page.waitForFunction(
     () =>
       !document.body.innerText.includes("Initialising Database") &&
@@ -127,41 +127,23 @@ async function seedBranchedChat(page: Page) {
 }
 
 async function captureNativeBackup(page: Page) {
-  return await page.evaluate(async () => {
-    let downloadUrl = "";
-    const controller = navigator.serviceWorker.controller!;
-    const originalPostMessage = controller.postMessage.bind(controller);
-    controller.postMessage = (data: any, transfer: any) => {
-      if (data?.type === "REGISTER_STREAM_DOWNLOAD" && data.id) {
-        downloadUrl = `/sw/download?id=${data.id}`;
-      }
-      return originalPostMessage(data, transfer);
-    };
-
+  const downloadPromise = page.waitForEvent("download");
+  const savePromise = page.evaluate(async () => {
     const backupUrl = "/src/ts/drive/backuplocal.ts";
     const { SaveLocalBackup } = (await import(
       /* @vite-ignore */ backupUrl
     )) as {
       SaveLocalBackup: (mode?: "native" | "compatible") => Promise<void>;
     };
-    let saveDone = false;
-    const savePromise = SaveLocalBackup("native").finally(() => {
-      saveDone = true;
-    });
-    while (!downloadUrl && !saveDone)
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    if (!downloadUrl) {
-      throw new Error(
-        `Native backup finished before registering a download: ${document.body.innerText.slice(-1200)}`,
-      );
-    }
-    const response = await fetch(downloadUrl);
-    if (!response.ok)
-      throw new Error(`Backup stream failed: ${response.status}`);
-    const bytes = Array.from(new Uint8Array(await response.arrayBuffer()));
-    await savePromise;
-    return bytes;
+    await SaveLocalBackup("native");
   });
+
+  const download = await downloadPromise;
+  const path = await download.path();
+  if (!path) throw new Error("Native backup download did not produce a file");
+  const bytes = Array.from(await readFile(path));
+  await savePromise;
+  return bytes;
 }
 
 async function decodeBackupDatabase(page: Page, bytes: number[]) {
@@ -238,6 +220,9 @@ test.describe("persistent branch export boundaries", () => {
       "alternative-preset",
     );
 
+    // OPFS sync access handles are exclusive per origin. Close the source page
+    // before opening the restored database in a fresh browser context.
+    await page.close();
     const freshContext = await browser.newContext();
     await freshContext.addInitScript(() => {
       localStorage.setItem("haejeok_tos_2026_08_23", "true");
@@ -245,6 +230,7 @@ test.describe("persistent branch export boundaries", () => {
     const freshPage = await freshContext.newPage();
     try {
       await waitForAppReady(freshPage);
+      const reloadPromise = freshPage.waitForEvent("load");
       await freshPage.evaluate(async (source) => {
         const backupUrl = "/src/ts/drive/backuplocal.ts";
         const { restoreLocalBackupFile } = (await import(
@@ -254,8 +240,8 @@ test.describe("persistent branch export boundaries", () => {
           new File([new Uint8Array(source)], "branch-backup.risubackup"),
         );
       }, backupBytes);
-      await freshPage.waitForTimeout(2500);
-      await waitForAppReady(freshPage);
+      await reloadPromise;
+      await waitForAppReady(freshPage, false);
 
       const restoredGraph = await freshPage.evaluate(async (chatId) => {
         const factoryUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";

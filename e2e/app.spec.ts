@@ -28,7 +28,7 @@ test.describe("app smoke", () => {
     // `didFirstSetup` is false and the app renders the welcome screen.
     // These are the three english gateway buttons of WelcomeRisu.svelte.
     await expect(page.getByText("Restore Data")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("Quick AI Setup")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Quick Setup", { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Skip & Explore")).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -185,6 +185,8 @@ export interface ISqlStorage {
    * serve reads/writes.
    */
   init(): Promise<boolean>;
+  /** Release backend resources before a page reload or application shutdown. */
+  close?(): Promise<void>;
 
   // ── Startup / snapshot / save ───────────────────────────────────────
 

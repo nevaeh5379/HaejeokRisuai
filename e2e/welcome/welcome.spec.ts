@@ -10,10 +10,10 @@ import { expect, test } from "../fixtures";
 test("welcome flow: quick setup opens and navigates back", async ({ page }) => {
   await page.goto("/");
 
-  // Step 1: from the gateway, pick "Quick AI Setup" (a big button whose
+  // Step 1: from the gateway, pick "Quick Setup" (a big button whose
   // title text is one of several labels inside it — clicking the text
   // still clicks the button because the text is a child of it).
-  const quickSetup = page.getByText("Quick AI Setup");
+  const quickSetup = page.getByText("Quick Setup", { exact: true });
   await expect(quickSetup).toBeVisible();
   await quickSetup.click();
 
