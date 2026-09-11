@@ -13,7 +13,7 @@ edition = "2021"
 tauri-build = { version = "2.2.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.11.1", features = ["protocol-asset", "devtools", "macos-private-api"] }
+tauri = { version = "2.11.1", features = ["protocol-asset", "devtools"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "json"] }
@@ -40,6 +40,7 @@ tokio = { version = "1.47.1", features = ["time"] }
 tauri-plugin-deep-link = "2.4.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+tauri = { version = "2.11.1", features = ["macos-private-api"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAppearance", "NSColor", "NSWindow"] }
 window-vibrancy = "0.8.0"
 
