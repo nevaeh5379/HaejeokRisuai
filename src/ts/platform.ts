@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { isTauri as detectTauri } from "@tauri-apps/api/core";
 import * as tauriOs from "@tauri-apps/plugin-os";
 
 type UserAgentDataLike = {
@@ -20,9 +21,7 @@ const browserNavigator =
     ? (navigator as BrowserNavigator)
     : ({} as BrowserNavigator);
 
-export const isTauri: boolean =
-  typeof window !== "undefined" &&
-  !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+export const isTauri: boolean = detectTauri();
 export const isTauriMacOS: boolean = isTauri && tauriOs.type() === "macos";
 export const isTauriWindows: boolean = isTauri && tauriOs.type() === "windows";
 export const isCapacitor: boolean = !isTauri && Capacitor.isNativePlatform();

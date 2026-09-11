@@ -1,3 +1,4 @@
+import { isTauri as detectTauri } from "@tauri-apps/api/core";
 import type { MenuDef } from "./stores.svelte";
 import {
   type as tauriOsType,
@@ -62,10 +63,7 @@ export function supportsTauriLiquidGlassVersion(version: string): boolean {
 }
 
 export function isTauriMacOSRuntime(): boolean {
-  if (
-    typeof window === "undefined" ||
-    !(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
-  ) {
+  if (!detectTauri()) {
     return false;
   }
 
