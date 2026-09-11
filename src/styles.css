@@ -176,12 +176,12 @@ html.tauri-macos-vibrancy {
   --risu-macos-sidebar-menu-control-radius: 0.74rem;
   --risu-macos-chrome-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 72%,
+    var(--risu-theme-darkbg) 80%,
     transparent
   );
   --risu-macos-content-tint: color-mix(
     in srgb,
-    var(--risu-theme-bgcolor) 90%,
+    var(--risu-theme-bgcolor) 94%,
     transparent
   );
 }
