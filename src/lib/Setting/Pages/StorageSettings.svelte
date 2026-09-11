@@ -247,7 +247,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
       </div>
 
       {#if serverFormOpen}
-        <div class="flex flex-col gap-4 border-t border-textcolor/10 bg-textcolor/5 p-4 sm:p-5">
+        <div class="flex flex-col gap-4 border-t border-textcolor/10 p-4 sm:p-5">
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
               <span class="text-sm font-bold">서버 주소</span>
@@ -259,26 +259,28 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
             </label>
           </div>
 
-          <label class="flex w-fit items-center gap-2 text-sm text-textcolor2">
-            <input type="checkbox" bind:checked={allowInsecureHttp} onchange={resetVerification} />
-            <ShieldAlert size={15} />
-            <span>HTTP 허용</span>
-            <Help name="HTTP 연결" text={insecureHttpHelp} />
-          </label>
-
           {#if connectionState !== 'idle'}
             <div class="rounded-xl border p-3 text-sm {connectionState === 'ok' ? 'border-green-500/40 bg-green-500/10' : 'border-draculared/40 bg-draculared/10 text-draculared'}">
               {connectionMessage}
             </div>
           {/if}
 
-          <div class="flex flex-wrap justify-end gap-2">
-            <button type="button" class="rounded-lg border border-textcolor/15 bg-textcolor/5 px-4 py-2 text-sm font-medium hover:bg-textcolor/10 disabled:opacity-50" disabled={checking || syncBusy || !remoteUrl.trim()} onclick={() => void verifyRemote()}>
-              {checking ? '확인 중…' : '연결 확인'}
-            </button>
-            <button type="button" class="rounded-lg bg-selected px-4 py-2 text-sm font-bold disabled:opacity-50" disabled={checking || syncBusy || !remoteUrl.trim()} onclick={() => void applyRemote()}>
-              {activeProfile.mode === 'remote' ? '연결 다시 적용' : '이 서버 사용'}
-            </button>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <label class="flex w-fit items-center gap-2 text-sm text-textcolor2">
+              <input type="checkbox" bind:checked={allowInsecureHttp} onchange={resetVerification} />
+              <ShieldAlert size={15} />
+              <span>HTTP 허용</span>
+              <Help name="HTTP 연결" text={insecureHttpHelp} />
+            </label>
+
+            <div class="flex flex-wrap justify-end gap-2">
+              <button type="button" class="rounded-lg border border-textcolor/15 bg-textcolor/5 px-4 py-2 text-sm font-medium hover:bg-textcolor/10 disabled:opacity-50" disabled={checking || syncBusy || !remoteUrl.trim()} onclick={() => void verifyRemote()}>
+                {checking ? '확인 중…' : '연결 확인'}
+              </button>
+              <button type="button" class="rounded-lg bg-selected px-4 py-2 text-sm font-bold disabled:opacity-50" disabled={checking || syncBusy || !remoteUrl.trim()} onclick={() => void applyRemote()}>
+                {activeProfile.mode === 'remote' ? '연결 다시 적용' : '이 서버 사용'}
+              </button>
+            </div>
           </div>
         </div>
       {/if}
