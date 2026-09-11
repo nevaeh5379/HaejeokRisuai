@@ -608,8 +608,8 @@ import { onMount } from 'svelte';
               class="text-left p-4 rounded-2xl border border-borderc/40 bg-darkbutton/30 hover:bg-selected/30 active:bg-selected/40 transition-all flex items-center justify-between shadow-sm"
             >
               <div class="flex items-center gap-3.5 min-w-0">
-                <div class="p-3 rounded-2xl bg-darkbutton border border-borderc/30 text-textcolor shrink-0">
-                  <Zap class="w-5 h-5 text-textcolor" />
+                <div class="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                  <Zap class="w-5 h-5" />
                 </div>
                 <span class="font-bold text-sm text-textcolor whitespace-nowrap truncate">
                   {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
@@ -626,8 +626,8 @@ import { onMount } from 'svelte';
               class="text-left p-4 rounded-2xl border border-borderc/40 bg-darkbutton/30 hover:bg-selected/30 active:bg-selected/40 transition-all flex items-center justify-between shadow-sm"
             >
               <div class="flex items-center gap-3.5 min-w-0">
-                <div class="p-3 rounded-2xl bg-darkbutton border border-borderc/30 text-textcolor shrink-0">
-                  <Database class="w-5 h-5 text-textcolor" />
+                <div class="p-3 rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
+                  <Database class="w-5 h-5" />
                 </div>
                 <span class="font-bold text-sm text-textcolor whitespace-nowrap truncate">
                   {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
