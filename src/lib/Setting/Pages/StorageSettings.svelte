@@ -6,7 +6,7 @@
   import { connectRemoteStorageProfile } from 'src/ts/storage/runtime/storageProfileConnection';
   import { saveStorageProfile } from 'src/ts/storage/runtime/storageProfile';
   import Help from 'src/lib/Others/Help.svelte';
-  import { ArrowRight, Check, Database, FolderSync, HardDrive, Server, ShieldAlert } from '@lucide/svelte';
+  import { ArrowRight, Check, ChevronDown, Database, FolderSync, HardDrive, Server, ShieldAlert } from '@lucide/svelte';
 
   type RemoteConnection = Awaited<ReturnType<typeof connectRemoteStorageProfile>>;
   type SyncPreview = {
@@ -181,7 +181,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
     } as const)[progress.phase];
   }
 </script>
-<div class="flex max-w-3xl flex-col gap-6 pb-6">
+<div class="flex max-w-3xl flex-col gap-5 pb-6">
   <header class="flex items-center gap-3">
     <span class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-textcolor/5 text-textcolor2">
       <Database size={22} />
@@ -191,30 +191,6 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
       <Help name="저장소" text={storageHelp} />
     </div>
   </header>
-
-  <section class="overflow-hidden rounded-2xl border border-textcolor/10 bg-darkbg">
-    <div class="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
-      <div class="flex min-w-0 items-center gap-3">
-        <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-selected/15 text-textcolor">
-          {#if activeProfile.mode === 'remote'}
-            <Server size={20} />
-          {:else}
-            <HardDrive size={20} />
-          {/if}
-        </span>
-        <div class="min-w-0">
-          <div class="text-xs font-medium text-textcolor2">현재 저장 위치</div>
-          <div class="truncate font-bold">{activeProfile.mode === 'remote' ? '셀프 호스트' : '이 기기'}</div>
-          {#if activeProfile.mode === 'remote'}
-            <div class="truncate text-xs text-textcolor2">{activeProfile.baseUrl}</div>
-          {/if}
-        </div>
-      </div>
-      <span class="inline-flex items-center gap-1.5 rounded-full bg-selected/15 px-3 py-1 text-xs font-bold">
-        <Check size={13} /> 사용 중
-      </span>
-    </div>
-  </section>
 
   {#if isNodeServer}
     <section class="flex items-center gap-3 rounded-xl border border-textcolor/10 bg-textcolor/5 p-4">
@@ -254,10 +230,19 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
         >
           <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-bgcolor"><Server size={20} /></span>
           <span class="min-w-0 flex-1">
-            <span class="block font-bold">셀프 호스트</span>
-            <span class="block truncate text-xs text-textcolor2">{activeProfile.mode === 'remote' ? '연결 설정' : '연결하기'}</span>
+            <span class="flex items-center gap-2">
+              <span class="font-bold">셀프 호스트</span>
+              {#if activeProfile.mode === 'remote'}
+                <span class="inline-flex items-center gap-1 rounded-full bg-selected/15 px-2 py-0.5 text-[11px] font-bold"><Check size={11} /> 사용 중</span>
+              {/if}
+            </span>
+            <span class="block truncate text-xs text-textcolor2">{activeProfile.mode === 'remote' ? activeProfile.baseUrl : '연결하기'}</span>
           </span>
-          {#if activeProfile.mode === 'remote'}<Check class="shrink-0" size={18} />{:else}<ArrowRight class="shrink-0 text-textcolor2" size={18} />{/if}
+          {#if activeProfile.mode === 'remote'}
+            <ChevronDown class="shrink-0 text-textcolor2 transition-transform {serverFormOpen ? 'rotate-180' : ''}" size={18} />
+          {:else}
+            <ArrowRight class="shrink-0 text-textcolor2" size={18} />
+          {/if}
         </button>
       </div>
 
