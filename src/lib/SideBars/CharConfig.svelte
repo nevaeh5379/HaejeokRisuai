@@ -245,20 +245,20 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         <div class="flex flex-col flex-1 min-h-0 h-full">
             <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterStore.characters[$selectedCharID].name} />
 
-            <div class="flex w-full rounded-md border border-selected mb-3 shrink-0">
+            <div class="flex w-full rounded-md border border-darkborderc mb-3 shrink-0 overflow-hidden">
                 <button onclick={() => {
                     charMainTab = 0
-                }} class="p-2 flex-1 transition-colors" class:bg-selected={charMainTab === 0} class:font-semibold={charMainTab === 0} class:text-textcolor={charMainTab === 0} class:text-textcolor2={charMainTab !== 0}>
+                }} class="p-2 flex-1 transition-colors hover:bg-selected/40" class:bg-selected={charMainTab === 0} class:font-semibold={charMainTab === 0} class:text-textcolor={charMainTab === 0} class:text-textcolor2={charMainTab !== 0}>
                     <span>{language.description}</span>
                 </button>
                 <button onclick={() => {
                     charMainTab = 1
-                }} class="p-2 flex-1 border-r border-l border-selected transition-colors" class:bg-selected={charMainTab === 1} class:font-semibold={charMainTab === 1} class:text-textcolor={charMainTab === 1} class:text-textcolor2={charMainTab !== 1}>
+                }} class="p-2 flex-1 border-r border-l border-darkborderc transition-colors hover:bg-selected/40" class:bg-selected={charMainTab === 1} class:font-semibold={charMainTab === 1} class:text-textcolor={charMainTab === 1} class:text-textcolor2={charMainTab !== 1}>
                     <span>{language.firstMessage}</span>
                 </button>
                 <button onclick={() => {
                     charMainTab = 2
-                }} class="p-2 flex-1 transition-colors" class:bg-selected={charMainTab === 2} class:font-semibold={charMainTab === 2} class:text-textcolor={charMainTab === 2} class:text-textcolor2={charMainTab !== 2}>
+                }} class="p-2 flex-1 transition-colors hover:bg-selected/40" class:bg-selected={charMainTab === 2} class:font-semibold={charMainTab === 2} class:text-textcolor={charMainTab === 2} class:text-textcolor2={charMainTab !== 2}>
                     <span>{language.authorNote}</span>
                 </button>
             </div>
@@ -373,20 +373,20 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         <h2 class="mb-2 text-2xl font-bold mt-2">{language.characterDisplay}</h2>
     {/if}
 
-    <div class="flex w-full rounded-md border border-selected mb-4">
+    <div class="flex w-full rounded-md border border-darkborderc mb-4 overflow-hidden">
         <button onclick={() => {
             viewSubMenu = 0
-        }} class="p-2 flex-1 transition-colors" class:bg-selected={viewSubMenu === 0} class:font-semibold={viewSubMenu === 0} class:text-textcolor={viewSubMenu === 0} class:text-textcolor2={viewSubMenu !== 0}>
+        }} class="p-2 flex-1 transition-colors hover:bg-selected/40" class:bg-selected={viewSubMenu === 0} class:font-semibold={viewSubMenu === 0} class:text-textcolor={viewSubMenu === 0} class:text-textcolor2={viewSubMenu !== 0}>
             <span>{characterStore.characters[$selectedCharID].type !== 'group' ? language.charIcon : language.groupIcon}</span>
         </button>
         <button onclick={() => {
             viewSubMenu = 1
-        }} class="p-2 flex-1 border-r border-l border-selected transition-colors" class:bg-selected={viewSubMenu === 1} class:font-semibold={viewSubMenu === 1} class:text-textcolor={viewSubMenu === 1} class:text-textcolor2={viewSubMenu !== 1}>
+        }} class="p-2 flex-1 border-r border-l border-darkborderc transition-colors hover:bg-selected/40" class:bg-selected={viewSubMenu === 1} class:font-semibold={viewSubMenu === 1} class:text-textcolor={viewSubMenu === 1} class:text-textcolor2={viewSubMenu !== 1}>
             <span>{language.viewScreen}</span>
         </button>
         <button onclick={() => {
             viewSubMenu = 2
-        }} class="p-2 flex-1 transition-colors" class:bg-selected={viewSubMenu === 2} class:font-semibold={viewSubMenu === 2} class:text-textcolor={viewSubMenu === 2} class:text-textcolor2={viewSubMenu !== 2}>
+        }} class="p-2 flex-1 transition-colors hover:bg-selected/40" class:bg-selected={viewSubMenu === 2} class:font-semibold={viewSubMenu === 2} class:text-textcolor={viewSubMenu === 2} class:text-textcolor2={viewSubMenu !== 2}>
             <span>{language.additionalAssets}</span>
         </button>
     </div>
@@ -514,7 +514,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             <span class="text-textcolor mt-6">{language.emotionImage} <Help key="emotion"/></span>
             <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
-            <div class="w-full max-w-full border border-selected p-2 rounded-md">
+            <div class="w-full max-w-full border border-darkborderc p-2 rounded-md">
 
                 <table class="w-full max-w-full tabler">
                     <tbody>
@@ -986,7 +986,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     {/if}
         {#if characterStore.characters[$selectedCharID].type !== 'group'}
         <span class="text-textcolor mt-2">Bias <Help key="bias"/></span>
-        <div class="w-full max-w-full border border-selected rounded-md p-2 mb-2">
+        <div class="w-full max-w-full border border-darkborderc rounded-md p-2 mb-2">
 
         <table class="w-full max-w-full tabler mt-2">
             <tbody>
@@ -1080,7 +1080,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         </div>
 
         <span class="text-textcolor mt-2">{language.altGreet}</span>
-        <div class="w-full max-w-full border border-selected rounded-md p-2">
+        <div class="w-full max-w-full border border-darkborderc rounded-md p-2">
             <table class="contain w-full max-w-full tabler mt-2">
                 <tbody>
                 <tr>
