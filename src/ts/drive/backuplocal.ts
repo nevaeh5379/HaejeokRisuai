@@ -3,7 +3,6 @@ import {
   mkdir,
   open as openFile,
   readFile,
-  readDir,
   writeFile,
 } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
@@ -691,6 +690,21 @@ export async function streamNodeBackupAssets(
   };
 }
 
+type BackupAssetKeyStorage = Pick<
+  typeof forageStorage,
+  "keys" | "listAssetKeys"
+>;
+
+export async function listBackupAssetKeys(
+  storage: BackupAssetKeyStorage = forageStorage,
+  useRecursiveListing = isTauri,
+): Promise<string[]> {
+  if (useRecursiveListing) {
+    return await storage.listAssetKeys("assets/");
+  }
+  return (await storage.keys()).filter((key) => key?.startsWith("assets/"));
+}
+
 function reportBackupAssetProgress(
   label: string,
   current: number,
@@ -759,51 +773,7 @@ async function writeLocalBackupAssets(
     return { missingAssets, assetMap };
   }
 
-  if (isTauri) {
-    alertProgress(`${label} (Scanning assets)`, 0);
-    await sleep(10);
-    await ensureTauriBackupAssetsDirectory();
-    let assets = (
-      await readDir("assets", { baseDir: BaseDirectory.AppData })
-    ).filter((asset) => asset.isFile && Boolean(asset.name));
-    if (options.assetScope === "essential") {
-      assets = assets.filter((asset) =>
-        isEssentialBackupAsset(assetMap, asset.name ?? ""),
-      );
-    }
-
-    for (let index = 0; index < assets.length; index++) {
-      const key = assets[index].name;
-      if (!key) continue;
-      const now = Date.now();
-      if (
-        now - lastUiUpdate > 30 ||
-        index === 0 ||
-        index === assets.length - 1
-      ) {
-        lastUiUpdate = now;
-        reportBackupAssetProgress(
-          label,
-          index + 1,
-          assets.length,
-          key,
-          assetMap,
-          missingAssets.length,
-        );
-        await sleep(0);
-      }
-      const data = await readFile(`assets/${key}`, {
-        baseDir: BaseDirectory.AppData,
-      });
-      if (data) await writer.writeBackup(key, data);
-      else missingAssets.push(key);
-    }
-    return { missingAssets, assetMap };
-  }
-
-  let keys = (await forageStorage.keys()).filter((key) =>
-    key?.startsWith("assets/"),
-  );
+  let keys = await listBackupAssetKeys();
   if (options.assetScope === "essential") {
     keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
   }

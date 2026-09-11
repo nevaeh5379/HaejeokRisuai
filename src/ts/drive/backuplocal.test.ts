@@ -1,14 +1,40 @@
 import { BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { describe, expect, it, vi } from "vitest";
+import { LocalWriter } from "../globalApi.svelte";
 import type { Database } from "../storage/database/schema";
 import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
   createNativeImportSource,
   ensureTauriBackupAssetsDirectory,
+  listBackupAssetKeys,
   normalizeLocalBackupAssetPath,
   restoreInlayBackupEntry,
   streamNodeBackupAssets,
 } from "./backuplocal";
+
+describe("LocalWriter backup entry names", () => {
+  it("preserves a validated nested asset path", async () => {
+    const writer = new LocalWriter();
+    const chunks: Uint8Array[] = [];
+    vi.spyOn(writer, "write").mockImplementation(async (chunk) => {
+      chunks.push(chunk);
+    });
+
+    await writer.startBackup("assets/icon/image/2.png", 3);
+
+    expect(new TextDecoder().decode(chunks[1])).toBe("assets/icon/image/2.png");
+  });
+
+  it("rejects unsafe backup entry paths", async () => {
+    const writer = new LocalWriter();
+    const write = vi.spyOn(writer, "write").mockResolvedValue();
+
+    await expect(writer.startBackup("assets/../secret", 1)).rejects.toThrow(
+      "Invalid backup entry path",
+    );
+    expect(write).not.toHaveBeenCalled();
+  });
+});
 
 describe("createNativeImportSource", () => {
   it("pulls bounded chunks instead of assembling the native file eagerly", async () => {
@@ -115,6 +141,25 @@ describe("streamNodeBackupAssets", () => {
     expect(Buffer.concat(entries.get("assets/second.mp3") ?? [])).toEqual(
       Buffer.from(second),
     );
+  });
+});
+
+describe("listBackupAssetKeys", () => {
+  it("uses recursive asset listing for Tauri storage", async () => {
+    const storage = {
+      keys: vi.fn(async () => ["assets/root.png"]),
+      listAssetKeys: vi.fn(async () => [
+        "assets/nested/deep.bin",
+        "assets/root.png",
+      ]),
+    };
+
+    await expect(listBackupAssetKeys(storage, true)).resolves.toEqual([
+      "assets/nested/deep.bin",
+      "assets/root.png",
+    ]);
+    expect(storage.listAssetKeys).toHaveBeenCalledWith("assets/");
+    expect(storage.keys).not.toHaveBeenCalled();
   });
 });
 

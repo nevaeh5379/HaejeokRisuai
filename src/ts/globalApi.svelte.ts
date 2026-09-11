@@ -51,6 +51,7 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
+import { normalizeBackupEntryName } from "@risuai/backup-core/entryPolicy.cjs";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -1921,7 +1922,11 @@ export class LocalWriter {
     if (normalizedLength < 0n || normalizedLength > 0xffffffffn) {
       throw new Error(`Backup entry is too large: ${name}`);
     }
-    const encodedName = new TextEncoder().encode(getBasename(name));
+    const normalizedName = normalizeBackupEntryName(name);
+    if (!normalizedName) {
+      throw new Error(`Invalid backup entry path: ${name}`);
+    }
+    const encodedName = new TextEncoder().encode(normalizedName);
     const nameLength = new Uint32Array([encodedName.byteLength]);
     await this.write(new Uint8Array(nameLength.buffer));
     await this.write(encodedName);
