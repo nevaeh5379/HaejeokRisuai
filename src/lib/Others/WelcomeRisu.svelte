@@ -578,14 +578,9 @@ import { onMount } from 'svelte';
                 <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
                   <Database class="w-4 h-4" />
                 </div>
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="font-bold text-sm md:text-base text-textcolor break-keep">
-                    {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
-                  </span>
-                  <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc/30 font-medium whitespace-nowrap shrink-0">
-                    {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
-                  </span>
-                </div>
+                <span class="font-bold text-sm md:text-base text-textcolor break-keep">
+                  {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
+                </span>
               </div>
               <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
             </button>
@@ -602,14 +597,9 @@ import { onMount } from 'svelte';
                 <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
                   <Bot class="w-4 h-4" />
                 </div>
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="font-bold text-sm md:text-base text-textcolor break-keep">
-                    {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
-                  </span>
-                  <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium whitespace-nowrap shrink-0">
-                    {l.setup?.badgeNewRecommended || '추천'}
-                  </span>
-                </div>
+                <span class="font-bold text-sm md:text-base text-textcolor break-keep">
+                  {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
+                </span>
               </div>
               <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
             </button>
