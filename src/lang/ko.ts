@@ -590,11 +590,13 @@ export const languageKorean = {
     storageServerPasswordLabel: "서버 비밀번호",
     storageServerPasswordDesc:
       "비밀번호는 저장하지 않고 공개키 등록에만 사용해요.",
-    storageInsecureHttpLabel:
-      "안전하지 않은 HTTP 허용 — 네트워크에서 내용과 인증이 노출될 수 있어요.",
+    storageInsecureHttpLabel: "안전하지 않은 HTTP 허용",
+    storageInsecureHttpHelp:
+      "HTTP 허용 시 비암호화 통신이 가능하지만, 네트워크 상에서 내용과 인증 정보가 노출될 수 있어요.",
+    storageHelpTitle: "도움말",
     storageConnecting: "연결 확인 중...",
     storageConnectFail: "저장소 서버에 연결하지 못했어요.",
-    storageConnectUse: "연결하고 사용",
+    storageConnectUse: "연결",
     storageConnectBack: "뒤로",
   },
   triggerCategories: {

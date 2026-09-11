@@ -669,11 +669,13 @@ export const languageEnglish = {
     storageServerPasswordLabel: "Server Password",
     storageServerPasswordDesc:
       "The password is not stored; it is only used to register this device's public key.",
-    storageInsecureHttpLabel:
-      "Allow insecure HTTP — traffic and authentication are exposed on the network.",
+    storageInsecureHttpLabel: "Allow insecure HTTP",
+    storageInsecureHttpHelp:
+      "Allowing HTTP enables unencrypted communication, but data and authentication may be exposed on the network.",
+    storageHelpTitle: "Help",
     storageConnecting: "Verifying connection...",
     storageConnectFail: "Could not connect to the storage server.",
-    storageConnectUse: "Connect & Use",
+    storageConnectUse: "Connect",
     storageConnectBack: "Back",
   },
   triggerCategories: {
