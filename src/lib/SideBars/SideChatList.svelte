@@ -284,7 +284,7 @@
             <!-- chat folder -->
             {#each chara.chatFolders as folder, i}
             <div data-risu-chat-folder-idx={i}
-                class="flex flex-col mb-2 border border-darkborderc/40 bg-darkbutton/20 cursor-pointer rounded-xl overflow-hidden shadow-xs">
+                class="flex flex-col mb-2 border border-darkborderc bg-darkbutton/20 cursor-pointer rounded-xl overflow-hidden shadow-xs">
                 <!-- folder header -->
                 <button 
                     onclick={() => {
@@ -604,7 +604,7 @@
         style="height: {bottomHeight}px;"
         class="flex flex-col shrink-0 min-h-[80px] overflow-hidden"
     >
-        <div class="flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc/40 gap-2 mb-2">
+        <div class="flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc gap-2 mb-2">
             <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
                 const { exportAllChats } = await import('src/ts/characters')
                 await exportAllChats()

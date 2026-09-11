@@ -25,7 +25,7 @@
     {@render children?.()}
 {:else if styled}
     <div class="flex flex-col mt-2">
-        <button class="hover:bg-selected px-6 py-2 text-lg rounded-t-md border-selected border"
+        <button class="bg-darkbutton/50 hover:bg-selected px-6 py-2 text-lg rounded-t-md border-darkborderc border transition-colors"
             class:bg-selected={open}
             class:rounded-b-md={!open}
             onclick={() => {
@@ -37,7 +37,7 @@
             <Help key={help} />
         {/if}</button>
         {#if open}
-            <div class={"flex flex-col border border-selected p-2 rounded-b-md " + className}>
+            <div class={"flex flex-col border-x border-b border-darkborderc p-2 rounded-b-md bg-darkbg/50 " + className}>
                 {@render children?.()}
             </div>
         {/if}
