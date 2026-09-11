@@ -265,7 +265,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
                 type="password"
                 bind:value={password}
                 oninput={resetVerification}
-                placeholder={usesRegisteredKey ? '비밀번호는 저장하지 않습니다' : '서버 비밀번호 입력'}
+                placeholder={usesRegisteredKey ? '다시 인증할 때만 입력' : '서버 비밀번호 입력'}
                 autocomplete="current-password"
               />
             </label>
