@@ -467,11 +467,12 @@ import { onMount } from 'svelte';
   <!-- Header: Brand & Language Bar -->
   <header
     class="w-full max-w-4xl flex items-center justify-between py-2 px-1 mb-3 z-10"
+    class:pl-16={isTauriMacOS}
     data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}
   >
-    <div class="flex items-center gap-2" data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}>
-      <img src="/logo_192.png" alt="Haejeok RisuAI" class="w-6 h-6 object-contain pointer-events-none" />
-      <span class="font-bold text-base md:text-lg tracking-tight text-textcolor pointer-events-none">Haejeok RisuAI</span>
+    <div class="flex items-center gap-2 min-w-0" data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}>
+      <img src="/logo_192.png" alt="Haejeok RisuAI" class="w-6 h-6 object-contain pointer-events-none shrink-0" />
+      <span class="font-bold text-base md:text-lg tracking-tight text-textcolor pointer-events-none truncate">Haejeok RisuAI</span>
     </div>
 
     <!-- Language Selector Pills -->

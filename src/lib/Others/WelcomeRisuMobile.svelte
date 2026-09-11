@@ -451,15 +451,16 @@ import { onMount } from 'svelte';
   <!-- Top Navigation & Language Bar -->
   <header
     class="w-full flex items-center justify-between py-1.5 px-0.5 shrink-0 z-30"
+    class:pl-16={isTauriMacOS}
     data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}
   >
-    <div class="flex items-center gap-2" data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}>
-      <img src="/logo_192.png" alt="Haejeok RisuAI" class="w-6 h-6 object-contain pointer-events-none" />
-      <span class="font-bold text-sm tracking-tight text-textcolor pointer-events-none">Haejeok RisuAI</span>
+    <div class="flex items-center gap-2 min-w-0" data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}>
+      <img src="/logo_192.png" alt="Haejeok RisuAI" class="w-6 h-6 object-contain pointer-events-none shrink-0" />
+      <span class="font-bold text-sm tracking-tight text-textcolor pointer-events-none truncate">Haejeok RisuAI</span>
     </div>
 
     <!-- Mobile Compact Language Selector Button -->
-    <div class="relative">
+    <div class="relative shrink-0">
       <button
         onclick={() => (langMenuOpen = !langMenuOpen)}
         class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-darkbg border border-borderc text-xs font-medium text-textcolor shadow-sm active:scale-95 transition-all"
