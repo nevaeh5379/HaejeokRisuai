@@ -2,6 +2,7 @@
   import { storageProfileGate } from 'src/ts/storage/runtime/storageProfileGate';
   import { saveStorageProfile } from 'src/ts/storage/runtime/storageProfile';
   import { connectRemoteStorageProfile } from 'src/ts/storage/runtime/storageProfileConnection';
+  import { isTauriMacOS } from 'src/ts/platform';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
 
   const initial = $storageProfileGate;
@@ -39,7 +40,14 @@
   }
 </script>
 
-<main class="w-full h-full overflow-auto bg-bgcolor text-textcolor p-5 flex items-center justify-center">
+<main class="relative w-full h-full overflow-auto bg-bgcolor text-textcolor p-5 flex items-center justify-center">
+  {#if isTauriMacOS}
+    <div
+      class="absolute top-0 left-0 right-1 h-5 z-20"
+      data-tauri-drag-region="true"
+      aria-hidden="true"
+    ></div>
+  {/if}
   <section class="w-full max-w-2xl rounded-2xl border border-borderc bg-darkbg p-5 md:p-7 shadow-xl">
     <div class="flex gap-4 items-center mb-5">
       <AirisuMascot variant="error" className="w-24 h-24 object-contain" eager />

@@ -42,7 +42,7 @@ import { onMount } from 'svelte';
   import { connectRemoteStorageProfile } from 'src/ts/storage/runtime/storageProfileConnection';
   import { saveStorageProfile } from 'src/ts/storage/runtime/storageProfile';
   import { getActiveStorageRuntime } from 'src/ts/storage/runtime/activeStorageRuntime';
-  import { isNodeServer } from 'src/ts/platform';
+  import { isNodeServer, isTauriMacOS } from 'src/ts/platform';
   import AirisuMascot from '../UI/AirisuMascot.svelte';
   import WelcomeRisuMobile from './WelcomeRisuMobile.svelte';
 
@@ -457,9 +457,16 @@ import { onMount } from 'svelte';
   <WelcomeRisuMobile />
 {:else}
 <div class="relative w-full h-full min-h-screen bg-bgcolor text-textcolor flex flex-col items-center justify-center p-3 md:p-6 overflow-y-auto selection:bg-blue-600 selection:text-white">
+  {#if isTauriMacOS}
+    <div
+      class="absolute top-0 left-0 right-1 h-5 z-20"
+      data-tauri-drag-region="true"
+      aria-hidden="true"
+    ></div>
+  {/if}
   <!-- Header: Brand & Language Bar -->
   <header class="w-full max-w-4xl flex items-center justify-between py-2 px-1 mb-3 z-10">
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2" data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}>
       <img src="/logo_192.png" alt="Haejeok RisuAI" class="w-6 h-6 object-contain" />
       <span class="font-bold text-base md:text-lg tracking-tight text-textcolor">Haejeok RisuAI</span>
     </div>

@@ -2,7 +2,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
@@ -342,7 +342,14 @@
         {:else if isNodeServer && $sqlConfiguredStore === false}
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
-            <div class="w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
+            <div class="relative w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
+                {#if isTauriMacOS}
+                    <div
+                        class="absolute top-0 left-0 right-1 h-5 z-20"
+                        data-tauri-drag-region="true"
+                        aria-hidden="true"
+                    ></div>
+                {/if}
                 <div class="airisu-loading-step motion-reduce:animate-none">
                     <AirisuMascot variant="progress" className="w-36 sm:w-44 drop-shadow-xl" eager />
                 </div>
