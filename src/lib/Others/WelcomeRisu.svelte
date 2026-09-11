@@ -572,24 +572,21 @@ import { onMount } from 'svelte';
               onclick={() => {
                 currentStage = 'migration';
               }}
-              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between"
+              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between group"
             >
               <div class="flex items-start justify-between w-full mb-2.5">
                 <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   <Database class="w-4 h-4" />
                 </div>
-                <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc/30 font-medium">
+                <span class="text-[11px] px-2 py-0.5 rounded bg-darkbg text-textcolor2 border border-borderc/30 font-medium whitespace-nowrap shrink-0">
                   {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
                 </span>
               </div>
-              <div>
-                <h2 class="font-bold text-sm md:text-base text-textcolor break-keep">
+              <div class="flex items-center justify-between w-full mt-3">
+                <span class="font-bold text-sm md:text-base text-textcolor break-keep">
                   {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
-                </h2>
-              </div>
-              <div class="flex items-center text-xs text-blue-400 font-semibold mt-3 gap-1">
-                <span>{l.setup?.actionRestore || '불러오기'}</span>
-                <ChevronRight class="w-3.5 h-3.5" />
+                </span>
+                <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </button>
 
@@ -599,7 +596,7 @@ import { onMount } from 'svelte';
                 currentStage = 'quick-setup';
                 quickStep = 1;
               }}
-              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between"
+              class="text-left p-4 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 hover:border-borderc transition-all flex flex-col justify-between group"
             >
               <div class="flex items-start justify-between w-full mb-2.5">
                 <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -609,14 +606,11 @@ import { onMount } from 'svelte';
                   {l.setup?.badgeNewRecommended || '추천'}
                 </span>
               </div>
-              <div>
-                <h2 class="font-bold text-sm md:text-base text-textcolor break-keep">
+              <div class="flex items-center justify-between w-full mt-3">
+                <span class="font-bold text-sm md:text-base text-textcolor break-keep">
                   {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
-                </h2>
-              </div>
-              <div class="flex items-center text-xs text-emerald-400 font-semibold mt-3 gap-1">
-                <span>{l.setup?.actionStart || '시작하기'}</span>
-                <ChevronRight class="w-3.5 h-3.5" />
+                </span>
+                <ChevronRight class="w-4 h-4 text-textcolor2 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </button>
           </div>
