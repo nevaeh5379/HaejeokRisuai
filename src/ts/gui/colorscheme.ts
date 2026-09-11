@@ -63,15 +63,15 @@ const colorShemes = {
     type: "dark",
   },
   light: {
-    bgcolor: "#ffffff",
-    darkbg: "#f0f0f0",
-    borderc: "#0f172a",
-    selected: "#e0e0e0",
-    draculared: "#ff5555",
-    textcolor: "#0f172a",
-    textcolor2: "#64748b",
-    darkBorderc: "#d1d5db",
-    darkbutton: "#e5e7eb",
+    bgcolor: "#f8f9fa",
+    darkbg: "#f0f2f5",
+    borderc: "#2563eb",
+    selected: "#cbd5e1",
+    draculared: "#dc2626",
+    textcolor: "#1e293b",
+    textcolor2: "#475569",
+    darkBorderc: "#94a3b8",
+    darkbutton: "#e2e8f0",
     type: "light",
   },
   cherry: {
@@ -398,10 +398,10 @@ export function updateTextThemeAndCSS() {
         root.style.setProperty("--FontColorQuote1", "#8BE9FD");
         root.style.setProperty("--FontColorQuote2", "#FFB86C");
       } else {
-        root.style.setProperty("--FontColorStandard", "#0f172a");
-        root.style.setProperty("--FontColorItalic", "#64748b");
+        root.style.setProperty("--FontColorStandard", "#1e293b");
+        root.style.setProperty("--FontColorItalic", "#475569");
         root.style.setProperty("--FontColorBold", "#0f172a");
-        root.style.setProperty("--FontColorItalicBold", "#64748b");
+        root.style.setProperty("--FontColorItalicBold", "#334155");
         root.style.setProperty("--FontColorQuote1", "#1d4ed8");
         root.style.setProperty("--FontColorQuote2", "#c2410c");
       }
