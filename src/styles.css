@@ -1152,6 +1152,44 @@ html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:active {
   text-overflow: ellipsis;
 }
 
+/* Light theme elevation & shadows (strictly isolated to light mode, zero impact on dark themes) */
+html[data-color-type="light"] .shadow-xs {
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.06),
+    0 1px 1px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] .shadow-sm {
+  box-shadow:
+    0 1px 3px 0 rgb(0 0 0 / 0.07),
+    0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] .shadow-md {
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.08),
+    0 2px 4px -2px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] button.shadow-xs:not(:disabled):not(.bg-selected):not(.bg-transparent),
+html[data-color-type="light"] .x-risu-button-default:not(:disabled):not(.bg-selected) {
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.06),
+    0 1px 1px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] button.shadow-xs:hover:not(:disabled):not(.bg-selected):not(.bg-transparent),
+html[data-color-type="light"] .x-risu-button-default:hover:not(:disabled):not(.bg-selected) {
+  box-shadow:
+    0 2px 4px -1px rgb(0 0 0 / 0.08),
+    0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+
+html[data-color-type="light"] button.shadow-xs:active:not(:disabled),
+html[data-color-type="light"] button.bg-selected.shadow-xs {
+  box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.06);
+}
+
 .x-risu-button-default {
   @apply border text-textcolor rounded-md shadow-xs focus:outline-hidden focus:ring-2 transition-colors duration-200 border-darkborderc px-4 py-2 bg-darkbutton hover:bg-borderc focus:ring-borderc;
 }

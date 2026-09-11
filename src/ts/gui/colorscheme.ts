@@ -70,8 +70,8 @@ const colorShemes = {
     draculared: "#dc2626",
     textcolor: "#1f2328",
     textcolor2: "#656d76",
-    darkBorderc: "#d8dee4",
-    darkbutton: "#f5f7f9",
+    darkBorderc: "#e2e8f0",
+    darkbutton: "#ffffff",
     type: "light",
   },
   cherry: {
@@ -338,6 +338,7 @@ export function updateColorScheme() {
       "--risu-theme-darkbutton",
       colorScheme.darkbutton,
     );
+    document.documentElement.setAttribute("data-color-type", colorScheme.type);
     ColorSchemeTypeStore.set(colorScheme.type);
     void syncTauriNativeAppearance(colorScheme.type);
     updateTextThemeAndCSS();
