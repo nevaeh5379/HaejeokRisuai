@@ -443,7 +443,8 @@ import { onMount } from 'svelte';
 <div class="relative w-full h-full min-h-[100dvh] bg-bgcolor text-textcolor flex flex-col justify-between p-3.5 selection:bg-blue-600 selection:text-white overflow-x-hidden overflow-y-auto">
   {#if isTauriMacOS}
     <div
-      class="absolute top-0 left-0 right-1 h-5 z-40"
+      class="absolute top-0 left-0 h-10 z-40"
+      style="width: calc(100% - 9rem)"
       data-tauri-drag-region="true"
       aria-hidden="true"
     ></div>
