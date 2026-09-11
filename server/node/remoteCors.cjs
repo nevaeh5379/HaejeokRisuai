@@ -12,7 +12,17 @@ const ALLOWED_HEADERS = [
 ];
 const EXPOSED_HEADERS = ["content-length", "content-type", "etag"];
 
-function normalizeOrigin(value) {
+// Native shells (Tauri, Capacitor) always send a fixed Origin header that
+// cannot be forged by browsers, so they are trusted without configuration.
+// Tauri sends tauri://localhost (macOS/Linux) or http://tauri.localhost
+// (Windows); Capacitor sends capacitor://localhost or the configured scheme.
+const NATIVE_APP_ORIGINS = new Set([
+  "tauri://localhost",
+  "http://tauri.localhost",
+  "capacitor://localhost",
+]);
+
+function normalizeConfiguredOrigin(value) {
   const url = new URL(String(value).trim());
   if (
     (url.protocol !== "https:" && url.protocol !== "http:") ||
@@ -36,7 +46,7 @@ function parseAllowedOrigins(value = "") {
         "RISUAI_ALLOWED_ORIGINS requires exact origins and does not accept '*'.",
       );
     }
-    origins.add(normalizeOrigin(item));
+    origins.add(normalizeConfiguredOrigin(item));
   }
   return origins;
 }
@@ -75,20 +85,25 @@ function createRemoteCorsMiddleware(allowedOrigins) {
     }
 
     appendVaryOrigin(res);
-    let origin;
-    try {
-      origin = normalizeOrigin(originValue);
-    } catch {
-      res.status(403).send({ error: "Origin is not allowed", code: "cors_denied" });
-      return;
-    }
-    const sameOrigin = origin === requestOrigin(req);
-    if (!sameOrigin && !configured.has(origin)) {
-      res.status(403).send({ error: "Origin is not allowed", code: "cors_denied" });
-      return;
+    // Native app origins never need configuration and never take the
+    // configured-origin path; normalizeConfiguredOrigin would reject the
+    // tauri:// scheme outright.
+    if (!NATIVE_APP_ORIGINS.has(String(originValue).trim())) {
+      let origin;
+      try {
+        origin = normalizeConfiguredOrigin(originValue);
+      } catch {
+        res.status(403).send({ error: "Origin is not allowed", code: "cors_denied" });
+        return;
+      }
+      const sameOrigin = origin === requestOrigin(req);
+      if (!sameOrigin && !configured.has(origin)) {
+        res.status(403).send({ error: "Origin is not allowed", code: "cors_denied" });
+        return;
+      }
     }
 
-    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Origin", originValue);
     res.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS.join(", "));
     res.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS.join(", "));
     res.setHeader("Access-Control-Expose-Headers", EXPOSED_HEADERS.join(", "));
@@ -119,6 +134,7 @@ function createRemoteCorsMiddleware(allowedOrigins) {
 module.exports = {
   ALLOWED_HEADERS,
   ALLOWED_METHODS,
+  NATIVE_APP_ORIGINS,
   createRemoteCorsMiddleware,
   parseAllowedOrigins,
 };

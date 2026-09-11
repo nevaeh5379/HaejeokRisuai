@@ -214,7 +214,9 @@ Remote clients hosted on a different origin must be listed exactly in the
 comma-separated `RISUAI_ALLOWED_ORIGINS` environment variable. For example,
 `RISUAI_ALLOWED_ORIGINS=https://chat.example.com,http://localhost:5174`.
 Wildcards are rejected. Same-origin requests and native requests without an
-`Origin` header continue to work without configuration.
+`Origin` header continue to work without configuration. Native app origins
+sent by the desktop/mobile shells (`tauri://localhost`, `http://tauri.localhost`,
+`capacitor://localhost`) are trusted automatically.
 
 Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 

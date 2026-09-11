@@ -77,6 +77,30 @@ describe("remote API CORS", () => {
     expect(res.body).toMatchObject({ code: "cors_denied" });
   });
 
+  it("allows native app origins (Tauri/Capacitor) without configuration", () => {
+    for (const origin of [
+      "tauri://localhost",
+      "http://tauri.localhost",
+      "capacitor://localhost",
+    ]) {
+      const middleware = createRemoteCorsMiddleware(new Set());
+      const { res, headers } = response();
+      const next = vi.fn();
+      middleware(request(origin), res, next);
+      expect(next).toHaveBeenCalledOnce();
+      expect(headers.get("access-control-allow-origin")).toBe(origin);
+    }
+  });
+
+  it("still rejects other non-http(s) origins", () => {
+    const middleware = createRemoteCorsMiddleware(new Set());
+    const { res } = response();
+    const next = vi.fn();
+    middleware(request("ftp://attacker.example"), res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+  });
+
   it("answers valid preflight and rejects unknown headers", () => {
     const middleware = createRemoteCorsMiddleware(
       new Set(["https://app.example"]),
@@ -100,5 +124,14 @@ describe("remote API CORS", () => {
     expect(() => parseAllowedOrigins("https://example.com/path")).toThrow(
       /Invalid CORS origin/,
     );
+  });
+
+  it("answers preflights from native app origins", () => {
+    const middleware = createRemoteCorsMiddleware(new Set());
+    const req = request("tauri://localhost", "OPTIONS");
+    req.headers["access-control-request-headers"] = "content-type, risu-auth";
+    const { res } = response();
+    middleware(req, res, vi.fn());
+    expect(res.statusCode).toBe(204);
   });
 });
