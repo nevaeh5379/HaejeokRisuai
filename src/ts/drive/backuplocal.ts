@@ -661,12 +661,29 @@ function isEssentialBackupAsset(
 
 type NodeBackupAssetStorage = Pick<NodeStorage, "keys" | "streamItems">;
 type StreamingBackupWriter = Pick<LocalWriter, "startBackup" | "write">;
+type NodeBackupAssetStreamOptions = Parameters<NodeStorage["streamItems"]>[3];
+
+export async function createNodeBackupAssetRequest(
+  storage: Pick<NodeBackupAssetStorage, "keys">,
+  scope: BackupAssetScope,
+  assetMap: Map<string, BackupAssetInfo>,
+): Promise<{ keys: string[]; options?: NodeBackupAssetStreamOptions }> {
+  if (scope === "all") {
+    return { keys: [], options: { prefix: "assets/" } };
+  }
+
+  const keys = await storage.keys("assets/");
+  return {
+    keys: keys.filter((key) => isEssentialBackupAsset(assetMap, key)),
+  };
+}
 
 export async function streamNodeBackupAssets(
   storage: NodeBackupAssetStorage,
   writer: StreamingBackupWriter,
   keys: string[],
   onProgress?: Parameters<NodeStorage["streamItems"]>[2],
+  options?: NodeBackupAssetStreamOptions,
 ): Promise<{ writtenKeys: string[]; missingKeys: string[] }> {
   const writtenKeys = new Set<string>();
 
@@ -682,6 +699,7 @@ export async function streamNodeBackupAssets(
       },
     },
     onProgress,
+    options,
   );
 
   return {
@@ -745,15 +763,16 @@ async function writeLocalBackupAssets(
   if (nodeStorage) {
     alertProgress(`${label} (Scanning server assets)`, 0);
     await sleep(10);
-    let keys = await nodeStorage.keys("assets/");
-    if (options.assetScope === "essential") {
-      keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
-    }
+    const request = await createNodeBackupAssetRequest(
+      nodeStorage,
+      options.assetScope,
+      assetMap,
+    );
 
     const streamed = await streamNodeBackupAssets(
       nodeStorage,
       writer,
-      keys,
+      request.keys,
       (progress) => {
         const current = Math.min(
           progress.completedFiles + (progress.currentFile ? 1 : 0),
@@ -768,6 +787,7 @@ async function writeLocalBackupAssets(
           missingAssets.length,
         );
       },
+      request.options,
     );
     missingAssets.push(...streamed.missingKeys);
     return { missingAssets, assetMap };

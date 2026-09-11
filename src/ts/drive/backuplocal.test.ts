@@ -5,6 +5,7 @@ import type { Database } from "../storage/database/schema";
 import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
   createNativeImportSource,
+  createNodeBackupAssetRequest,
   ensureTauriBackupAssetsDirectory,
   listBackupAssetKeys,
   normalizeLocalBackupAssetPath,
@@ -141,6 +142,66 @@ describe("streamNodeBackupAssets", () => {
     expect(Buffer.concat(entries.get("assets/second.mp3") ?? [])).toEqual(
       Buffer.from(second),
     );
+  });
+
+  it("forwards server-side listing options to the bulk stream", async () => {
+    const storage = {
+      keys: vi.fn(),
+      streamItems: vi.fn(async () => undefined),
+    };
+    const writer = {
+      startBackup: vi.fn(async () => undefined),
+      write: vi.fn(async () => undefined),
+    };
+
+    await streamNodeBackupAssets(
+      storage as any,
+      writer,
+      [],
+      undefined,
+      { prefix: "assets/" },
+    );
+
+    expect(storage.streamItems).toHaveBeenCalledWith(
+      [],
+      expect.any(Object),
+      undefined,
+      { prefix: "assets/" },
+    );
+  });
+});
+
+describe("createNodeBackupAssetRequest", () => {
+  it("lets the server list all assets inside the bulk stream request", async () => {
+    const storage = {
+      keys: vi.fn(async () => ["assets/should-not-be-loaded.png"]),
+    };
+
+    await expect(
+      createNodeBackupAssetRequest(storage as any, "all", new Map()),
+    ).resolves.toEqual({
+      keys: [],
+      options: { prefix: "assets/" },
+    });
+    expect(storage.keys).not.toHaveBeenCalled();
+  });
+
+  it("loads and filters keys client-side for essential backups", async () => {
+    const storage = {
+      keys: vi.fn(async () => [
+        "assets/keep.png",
+        "assets/other.png",
+        "assets/audio.mp3",
+      ]),
+    };
+    const assetMap = new Map([
+      ["assets/keep.png", { charName: "Character", assetName: "Main" }],
+    ]);
+
+    await expect(
+      createNodeBackupAssetRequest(storage as any, "essential", assetMap),
+    ).resolves.toEqual({ keys: ["assets/keep.png"] });
+    expect(storage.keys).toHaveBeenCalledWith("assets/");
   });
 });
 
