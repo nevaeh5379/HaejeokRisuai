@@ -36,22 +36,23 @@
   let syncProgress = $state<StorageSyncStageProgress | null>(null);
   let syncMessage = $state('');
   let serverFormOpen = $state(false);
+  let usesRegisteredKey = $derived(activeProfile.mode === 'remote' && remoteUrl.trim() === activeProfile.baseUrl);
 
-  const storageHelp = `저장 위치는 **SQL 데이터와 모든 자산**에 함께 적용된답니다.
+  const storageHelp = `저장 위치는 **SQL 데이터와 모든 자산**에 함께 적용됩니다.
 
 - SQL: 설정, 캐릭터, 채팅, 메시지
 - 자산: 이미지, 음성, 첨부 파일, 플러그인 파일
 
-저장 위치를 바꿔도 반대편 데이터는 삭제하지 않으며, 새 위치는 앱을 다시 불러온 뒤 적용된답니다.`;
-  const serverConnectionHelp = `새 셀프 호스트 서버는 연결 검사와 인증이 모두 성공한 뒤에만 저장 위치로 사용할 수 있답니다.
+저장 위치를 바꿔도 반대편 데이터는 삭제되지 않습니다. 새 위치는 앱을 다시 불러온 뒤 적용됩니다.`;
+  const serverConnectionHelp = `새 셀프 호스트 서버는 연결 검사와 인증이 모두 성공한 뒤에만 저장 위치로 사용할 수 있습니다.
 
-서버 비밀번호는 저장하지 않으며, 해당 서버에서 사용할 P-256 키를 등록할 때만 사용하와요. 빈 비밀번호를 입력해도 빈 값 그대로 인증을 시도한답니다.`;
-  const insecureHttpHelp = `HTTP 연결은 전송 내용을 암호화하지 않으므로 신뢰할 수 있는 로컬 네트워크에서만 사용하시와요.
+서버 비밀번호는 저장하지 않습니다. 처음 연결하거나 기기 인증 키(P-256)를 다시 등록할 때만 사용합니다. 등록된 인증 키가 유효하면 비밀번호를 입력하지 않아도 연결을 확인할 수 있습니다.`;
+  const insecureHttpHelp = `HTTP 연결은 전송 내용을 암호화하지 않으므로 신뢰할 수 있는 로컬 네트워크에서만 사용하세요.
 
-HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-content 정책에 따라 차단될 수 있답니다.`;
-  const syncHelp = `이 기기의 현재 데이터를 셀프 호스트 서버로 **한 방향 복사**한답니다. 저장 위치는 바뀌지 않사와요.
+HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-content 정책에 따라 차단될 수 있습니다.`;
+  const syncHelp = `이 기기의 현재 데이터를 셀프 호스트 서버로 **한 방향 복사**합니다. 저장 위치는 바뀌지 않습니다.
 
-미리보기는 양쪽 데이터를 읽기만 하며, 실행하면 서버의 SQL과 자산을 이 기기의 데이터로 교체한답니다. 서버의 기존 데이터는 recovery snapshot으로 보존되며, 전송 중 원본이나 대상이 바뀌면 적용 전에 중단하와요.`;
+미리보기는 양쪽 데이터를 읽기만 합니다. 실행하면 서버의 SQL과 자산을 이 기기의 데이터로 교체합니다. 서버의 기존 데이터는 recovery snapshot으로 보존되며, 전송 중 원본이나 대상이 바뀌면 적용 전에 중단됩니다.`;
 
   function resetVerification() {
     connectionState = 'idle';
@@ -75,7 +76,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
       });
       verifiedConnection = result;
       connectionState = 'ok';
-      connectionMessage = '서버 연결과 인증을 확인했사와요.';
+      connectionMessage = '서버 연결과 인증을 확인했습니다.';
       return result;
     } catch (cause) {
       verifiedConnection = null;
@@ -112,7 +113,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
         local: { revision: localSql.revision, records: localSql.records, assets: localAssets },
         remote: { revision: remote.revision, records: remote.records, assets: remote.assets },
       };
-      syncMessage = '읽기 전용 미리보기를 갱신했사와요. 아직 어느 쪽 데이터도 변경하지 않았답니다.';
+      syncMessage = '읽기 전용 미리보기를 갱신했습니다. 아직 어느 쪽 데이터도 변경하지 않았습니다.';
     } catch (cause) {
       syncPreview = null;
       syncMessage = cause instanceof Error ? cause.message : String(cause);
@@ -127,7 +128,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
     const connection = verifiedConnection;
     if (!connection) return;
     const confirmed = confirm(
-      `셀프 호스트 서버의 현재 데이터(리비전 ${syncPreview.remote.revision})를 이 기기의 로컬 데이터(리비전 ${syncPreview.local.revision})로 완전히 교체하시겠사와요?\n\n서버의 기존 데이터는 recovery snapshot으로 보존되며, 이 기기의 로컬 데이터는 변경하지 않사와요.`,
+      `셀프 호스트 서버의 현재 데이터(리비전 ${syncPreview.remote.revision})를 이 기기의 로컬 데이터(리비전 ${syncPreview.local.revision})로 완전히 교체할까요?\n\n서버의 기존 데이터는 recovery snapshot으로 보존되며, 이 기기의 로컬 데이터는 변경하지 않습니다.`,
     );
     if (!confirmed) return;
     syncBusy = true;
@@ -144,8 +145,8 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
       });
       syncPreview = null;
       syncMessage = result.resumedFinalized
-        ? '이미 완료된 동기화 결과를 서버에서 복구했사와요. 데이터 재적용은 하지 않았답니다.'
-        : `동기화가 완료됐사와요. 서버 리비전은 ${result.finalized.revision}(으)로 갱신됐답니다.`;
+        ? '이미 완료된 동기화 결과를 서버에서 복구했습니다. 데이터는 다시 적용하지 않았습니다.'
+        : `동기화가 완료되었습니다. 서버 리비전이 ${result.finalized.revision}(으)로 갱신되었습니다.`;
     } catch (cause) {
       syncMessage = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -156,7 +157,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
 
   function switchLocal() {
     if (activeProfile.mode === 'local') return;
-    if (!confirm('셀프 호스트 데이터는 그대로 보존하고 이 기기의 별도 로컬 저장소로 전환하시겠사와요?')) return;
+    if (!confirm('셀프 호스트 데이터는 그대로 보존하고 이 기기의 별도 로컬 저장소로 전환할까요?')) return;
     saveStorageProfile({ version: 1, mode: 'local' });
     location.reload();
   }
@@ -196,7 +197,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
     <section class="flex items-center gap-3 rounded-xl border border-textcolor/10 bg-textcolor/5 p-4">
       <Server class="shrink-0 text-textcolor2" size={20} />
       <div class="min-w-0 flex-1 font-medium">Node 서버에서 관리하는 저장소</div>
-      <Help name="Node 서버 저장소" text="Node 서버가 제공하는 웹앱은 같은 출처의 서버 SQL·자산 저장소만 사용하며, 클라이언트에서 로컬 모드로 바꿀 수 없답니다." />
+      <Help name="Node 서버 저장소" text="Node 서버가 제공하는 웹앱은 같은 출처의 서버 SQL·자산 저장소만 사용하며, 클라이언트에서 로컬 모드로 바꿀 수 없습니다." />
     </section>
   {:else}
     <section class="overflow-hidden rounded-2xl border border-textcolor/10 bg-darkbg">
@@ -254,8 +255,19 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
               <input class="mt-1.5 w-full rounded-lg border border-textcolor/15 bg-bgcolor px-3 py-2 outline-none transition-colors placeholder:text-textcolor2/60 focus:border-selected" bind:value={remoteUrl} oninput={resetVerification} placeholder="https://risu.example.com" autocomplete="url" />
             </label>
             <label class="block">
-              <span class="inline-flex items-center gap-1.5 text-sm font-bold">서버 비밀번호 <Help name="서버 비밀번호" text={serverConnectionHelp} /></span>
-              <input class="mt-1.5 w-full rounded-lg border border-textcolor/15 bg-bgcolor px-3 py-2 outline-none transition-colors focus:border-selected" type="password" bind:value={password} oninput={resetVerification} autocomplete="current-password" />
+              <span class="flex flex-wrap items-center gap-1.5 text-sm font-bold">
+                서버 비밀번호
+                <Help name="서버 비밀번호" text={serverConnectionHelp} />
+                {#if usesRegisteredKey}<span class="rounded-full bg-textcolor/5 px-2 py-0.5 text-[11px] font-medium text-textcolor2">인증 키 등록됨</span>{/if}
+              </span>
+              <input
+                class="mt-1.5 w-full rounded-lg border border-textcolor/15 bg-bgcolor px-3 py-2 outline-none transition-colors placeholder:text-textcolor2/60 focus:border-selected"
+                type="password"
+                bind:value={password}
+                oninput={resetVerification}
+                placeholder={usesRegisteredKey ? '비밀번호는 저장하지 않습니다' : '서버 비밀번호 입력'}
+                autocomplete="current-password"
+              />
             </label>
           </div>
 
@@ -303,7 +315,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
             <FolderSync class="shrink-0 text-textcolor2" size={20} />
             <div class="min-w-0 flex-1">
               <div class="text-xs text-textcolor2">보낼 곳</div>
-              <div class="truncate text-sm font-medium">{remoteUrl.trim() || '셀프 호스트 서버를 선택하시와요'}</div>
+              <div class="truncate text-sm font-medium">{remoteUrl.trim() || '셀프 호스트 서버를 선택하세요'}</div>
             </div>
             <button type="button" class="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-textcolor/10" onclick={() => (serverFormOpen = true)}>서버 선택</button>
           </div>
@@ -353,7 +365,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
         <div class="flex items-center gap-3 p-4 text-sm text-textcolor2 sm:p-5">
           <FolderSync class="shrink-0" size={20} />
           <span class="min-w-0 flex-1">셀프 호스트 → 이 기기</span>
-          <Help name="셀프 호스트에서 로컬로 동기화" text="원격 자산의 bounded Range reader까지 준비됐지만, 로컬 SQLite staging/recovery 적용부는 아직 구현 중이랍니다. 완성 전에는 데이터를 바꾸는 버튼을 노출하지 않사와요." />
+          <Help name="셀프 호스트에서 로컬로 동기화" text="원격 자산의 bounded Range reader는 준비되었지만, 로컬 SQLite staging/recovery 적용부는 아직 구현 중입니다. 완성 전에는 데이터를 변경하는 버튼을 표시하지 않습니다." />
         </div>
       {/if}
     </section>
