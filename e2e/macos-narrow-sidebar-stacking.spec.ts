@@ -89,3 +89,170 @@ test("keeps the narrow macOS sidebar above the chat tab strip", async ({
   expect(stacking?.tabZIndex).toBe("40");
   expect(stacking?.topSurface).toBe("sidebar");
 });
+
+test("keeps settings above the dynamic sidebar and clear of macOS traffic lights", async ({
+  page,
+}) => {
+  await waitForAppReady(page);
+
+  await page.evaluate(async () => {
+    document.documentElement.classList.add("tauri-macos-vibrancy");
+
+    const storesUrl = "/src/ts/stores.svelte.ts";
+    const { settingsOpen, sideBarStore } = (await import(
+      /* @vite-ignore */ storesUrl
+    )) as {
+      settingsOpen: { set: (value: boolean) => void };
+      sideBarStore: { set: (value: boolean) => void };
+    };
+    sideBarStore.set(true);
+    settingsOpen.set(true);
+  });
+
+  const settingsBackdrop = page.locator(".rs-setting-backdrop");
+  const settingsDialog = page.locator(".rs-setting-cont-2");
+  const sidebarLayer = page.locator(".risu-dynamic-sidebar-layer");
+  await expect(settingsBackdrop).toBeVisible();
+  await expect(settingsDialog).toBeVisible();
+  await expect(sidebarLayer).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const backdrop = document.querySelector<HTMLElement>(
+      ".rs-setting-backdrop",
+    );
+    const dialog = document.querySelector<HTMLElement>(".rs-setting-cont-2");
+    const sidebar = document.querySelector<HTMLElement>(
+      ".risu-dynamic-sidebar-layer",
+    );
+    if (!backdrop || !dialog || !sidebar) return null;
+
+    const topSurface = document.elementsFromPoint(40, 100).find((element) => {
+      return (
+        element.closest(".rs-setting-backdrop") ||
+        element.closest(".risu-dynamic-sidebar-layer")
+      );
+    });
+
+    return {
+      backdropZIndex: getComputedStyle(backdrop).zIndex,
+      sidebarZIndex: getComputedStyle(sidebar).zIndex,
+      dialogTop: dialog.getBoundingClientRect().top,
+      titlebarClearance: Number.parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--risu-macos-settings-titlebar-clearance",
+        ),
+      ),
+      topSurface:
+        topSurface?.closest(".rs-setting-backdrop") === backdrop
+          ? "settings"
+          : "sidebar",
+    };
+  });
+
+  expect(layout).not.toBeNull();
+  expect(Number(layout?.backdropZIndex)).toBeGreaterThan(
+    Number(layout?.sidebarZIndex),
+  );
+  expect(layout?.dialogTop).toBeGreaterThanOrEqual(
+    layout?.titlebarClearance ?? Number.NaN,
+  );
+  expect(layout?.topSurface).toBe("settings");
+});
+
+test("centers and enables dragging on the narrow macOS settings header", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 700, height: 600 });
+  await waitForAppReady(page);
+
+  await page.evaluate(async () => {
+    document.documentElement.classList.add("tauri-macos-vibrancy");
+
+    const storesUrl = "/src/ts/stores.svelte.ts";
+    const { settingsOpen, SettingsMenuIndex } = (await import(
+      /* @vite-ignore */ storesUrl
+    )) as {
+      settingsOpen: { set: (value: boolean) => void };
+      SettingsMenuIndex: { set: (value: number) => void };
+    };
+    SettingsMenuIndex.set(1);
+    settingsOpen.set(true);
+  });
+
+  const settings = page.locator(".rs-setting-cont");
+  const title = settings.getByRole("heading");
+  const backButton = settings.getByRole("button", { name: "Back" });
+  const closeButton = settings.getByRole("button", { name: "Close" });
+  const dragRegion = settings.locator(".rs-setting-mobile-drag-region");
+  await expect(settings).toBeVisible();
+  await expect(title).toBeVisible();
+  await expect(backButton).toBeVisible();
+  await expect(closeButton).toBeVisible();
+  await expect(dragRegion).toBeVisible();
+  await expect(dragRegion).toHaveAttribute("data-tauri-drag-region", "true");
+
+  const layout = await page.evaluate(() => {
+    const heading = document.querySelector<HTMLElement>(".rs-setting-cont h1");
+    const back = document.querySelector<HTMLElement>(
+      '.rs-setting-cont button[aria-label="Back"]',
+    );
+    const close = document.querySelector<HTMLElement>(
+      '.rs-setting-cont button[aria-label="Close"]',
+    );
+    const dragRegion = document.querySelector<HTMLElement>(
+      ".rs-setting-mobile-drag-region",
+    );
+    if (!heading || !back || !close || !dragRegion) return null;
+
+    const rootStyle = getComputedStyle(document.documentElement);
+    const rawTrafficLightWidth = rootStyle
+      .getPropertyValue("--risu-macos-traffic-lights-width")
+      .trim();
+    const trafficLightWidth = rawTrafficLightWidth.endsWith("rem")
+      ? Number.parseFloat(rawTrafficLightWidth) *
+        Number.parseFloat(rootStyle.fontSize)
+      : Number.parseFloat(rawTrafficLightWidth);
+
+    const headingRect = heading.getBoundingClientRect();
+    const backRect = back.getBoundingClientRect();
+    const closeRect = close.getBoundingClientRect();
+    const titleHitTarget = document.elementFromPoint(
+      headingRect.left + headingRect.width / 2,
+      headingRect.top + headingRect.height / 2,
+    );
+    const backHitTarget = document.elementFromPoint(
+      backRect.left + backRect.width / 2,
+      backRect.top + backRect.height / 2,
+    );
+    const closeHitTarget = document.elementFromPoint(
+      closeRect.left + closeRect.width / 2,
+      closeRect.top + closeRect.height / 2,
+    );
+    return {
+      titleLeft: headingRect.left,
+      titleCenter: headingRect.left + headingRect.width / 2,
+      viewportCenter: window.innerWidth / 2,
+      backLeft: backRect.left,
+      trafficLightWidth,
+      titleHitsDragRegion:
+        titleHitTarget?.closest(".rs-setting-mobile-drag-region") ===
+        dragRegion,
+      backHitsButton: backHitTarget?.closest("button") === back,
+      closeHitsButton: closeHitTarget?.closest("button") === close,
+    };
+  });
+
+  expect(layout).not.toBeNull();
+  expect(layout?.titleLeft).toBeGreaterThanOrEqual(
+    layout?.trafficLightWidth ?? Number.NaN,
+  );
+  expect(layout?.backLeft).toBeGreaterThanOrEqual(
+    layout?.trafficLightWidth ?? Number.NaN,
+  );
+  expect(
+    Math.abs((layout?.titleCenter ?? 0) - (layout?.viewportCenter ?? 0)),
+  ).toBeLessThanOrEqual(1);
+  expect(layout?.titleHitsDragRegion).toBe(true);
+  expect(layout?.backHitsButton).toBe(true);
+  expect(layout?.closeHitsButton).toBe(true);
+});

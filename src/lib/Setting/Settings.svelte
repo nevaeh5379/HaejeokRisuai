@@ -784,10 +784,15 @@
         </div>
     {:else}
         <!-- Standalone Mobile Modal (Dynamic GUI) -->
-        <div class="fixed inset-0 z-40 bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
+        <div class="fixed inset-0 z-[60] bg-bgcolor flex flex-col w-full h-full text-textcolor overflow-hidden rs-setting-cont">
             <!-- Mobile Header (Safe Area Aware) -->
-            <div class="w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20">
-                <div class="flex items-center gap-2 min-w-0">
+            <div class="relative w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20 rs-setting-mobile-header">
+                <div
+                    class="absolute inset-0 rs-setting-mobile-drag-region"
+                    data-tauri-drag-region="true"
+                    aria-hidden="true"
+                ></div>
+                <div class="z-10 flex items-center gap-2 min-w-0 rs-setting-mobile-heading-group">
                     {#if $SettingsMenuIndex !== -1}
                         <button
                             class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
@@ -800,12 +805,12 @@
                             <CircleArrowLeft size={settingsStore.state.settingsCloseButtonSize || 24} />
                         </button>
                     {/if}
-                    <h1 class="font-bold text-lg text-textcolor truncate m-0">
+                    <h1 class="font-bold text-lg text-textcolor truncate m-0 rs-setting-mobile-title">
                         {$SettingsMenuIndex === -1 ? language.settings : currentMenuTitle}
                     </h1>
                 </div>
                 <button
-                    class="hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
+                    class="relative z-10 hover:text-green-500 text-textcolor transition-colors cursor-pointer shrink-0 p-1 flex items-center justify-center"
                     onclick={() => {
                         settingsOpen.set(false);
                     }}
@@ -834,7 +839,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-        class="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
+        class="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 sm:p-4 md:p-6 rs-setting-backdrop"
         role="presentation"
         onclick={(e) => {
             if (e.target === e.currentTarget) {
