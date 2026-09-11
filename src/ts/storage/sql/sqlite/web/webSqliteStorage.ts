@@ -340,6 +340,20 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.initPromise;
   }
 
+  async close(): Promise<void> {
+    const rpc = this.rpc;
+    this.rpc = null;
+    this.initialized = false;
+    this._enabled = false;
+    if (!rpc) return;
+
+    try {
+      await rpc.close();
+    } finally {
+      rpc.terminate();
+    }
+  }
+
   private async initialize(): Promise<boolean> {
     try {
       const rpc = getWorkerRpc();
@@ -656,12 +670,15 @@ export class WebSqliteStorage implements ISqlStorage {
     const chatRow = chatResult.rows?.[0] as SqliteChatRow | undefined;
     if (!chatRow) return null;
     const activeBranch = activeBranchResult.rows?.[0] as
-      | { branch_id: string }
-      | undefined;
+      { branch_id: string } | undefined;
     const branchCount = Number(branchCountResult.rows?.[0]?.total ?? 0);
     const extension = (nodeResult.value ?? {}) as Record<string, unknown>;
     if (
-      await this.migrateLegacyBranchGraphIfNeeded(chatId, extension, branchCount)
+      await this.migrateLegacyBranchGraphIfNeeded(
+        chatId,
+        extension,
+        branchCount,
+      )
     ) {
       return this.loadChat(chatId, options);
     }

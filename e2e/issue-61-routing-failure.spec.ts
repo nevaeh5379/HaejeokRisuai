@@ -155,10 +155,10 @@ async function editOwner(page: Page) {
     settingsOpen.set(true);
   });
   const row = page
-    .locator("div.pl-3.pt-3")
+    .locator("[data-module-id]")
     .filter({ hasText: "Rule Owner A" })
     .first();
-  await row.locator("button:has(svg.lucide-square-pen)").click();
+  await row.getByTestId("edit-module").click();
   await expect(
     page.getByRole("heading", {
       name: "Auxiliary model request rules",
@@ -373,4 +373,3 @@ test.describe("Issue #61 routing failure reproductions", () => {
     ).toBeVisible();
   });
 });
-

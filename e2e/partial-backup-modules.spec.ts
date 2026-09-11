@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "./fixtures";
 
 /**
@@ -105,59 +106,24 @@ test.describe("partial local backup module persistence", () => {
       ]),
     );
 
-    // 2. Perform partial local backup and capture the downloaded stream from Service Worker
+    // 2. Perform partial local backup and capture the browser download.
+    const downloadPromise = page.waitForEvent("download");
     const saveOutcomePromise = page.evaluate(async () => {
-      let downloadUrl = "";
-      const origPostMessage = navigator.serviceWorker.controller!.postMessage.bind(
-        navigator.serviceWorker.controller,
-      );
-      navigator.serviceWorker.controller!.postMessage = (
-        data: any,
-        transfer: any,
-      ) => {
-        if (data?.type === "REGISTER_STREAM_DOWNLOAD" && data.id) {
-          downloadUrl = `/sw/download?id=${data.id}`;
-        }
-        return origPostMessage(data, transfer);
-      };
-
       const backupUrl = "/src/ts/drive/backuplocal.ts";
       const { SavePartialLocalBackup } = (await import(
         /* @vite-ignore */ backupUrl
       )) as { SavePartialLocalBackup: () => Promise<void> };
-
-      const savePromise = (async () => {
-        try {
-          await SavePartialLocalBackup();
-          return "completed";
-        } catch (error) {
-          return `failed: ${error}`;
-        }
-      })();
-
-      // Wait until writer registers stream download with the service worker
-      while (!downloadUrl) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-
-      // Fetch the full backup stream directly from the Service Worker
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch download stream: ${response.status}`);
-      }
-      const buffer = await response.arrayBuffer();
-      const saveOutcome = await savePromise;
-      if (saveOutcome !== "completed") {
-        throw new Error(`SavePartialLocalBackup failed: ${saveOutcome}`);
-      }
-
-      return Array.from(new Uint8Array(buffer));
+      await SavePartialLocalBackup();
     });
 
     await page.getByRole("button", { name: "YES" }).click();
     await page.getByRole("button", { name: "YES" }).click();
 
-    const backupBytes = await saveOutcomePromise;
+    const download = await downloadPromise;
+    const backupPath = testInfo.outputPath(download.suggestedFilename());
+    await download.saveAs(backupPath);
+    await saveOutcomePromise;
+    const backupBytes = Array.from(await readFile(backupPath));
     expect(backupBytes.length).toBeGreaterThan(0);
 
     // Verify backup container contains database.risudat and decoded modules
@@ -190,7 +156,8 @@ test.describe("partial local backup module persistence", () => {
         cursor += 4 + entry.name.length + 4 + entry.length;
       }
       const dbEntry = entries.find((e) => e.name === "database.risudat");
-      if (!dbEntry) return { entries: entries.map((e) => e.name), modules: null };
+      if (!dbEntry)
+        return { entries: entries.map((e) => e.name), modules: null };
       const dbDataStart = cursor + 4 + dbEntry.name.length + 4;
       const decodedDb = (await decodeRisuSave(
         data.subarray(dbDataStart, dbDataStart + dbEntry.length),
@@ -209,7 +176,9 @@ test.describe("partial local backup module persistence", () => {
       localStorage.setItem("haejeok_tos_2026_08_23", "true");
     });
     const freshPage = await freshContext.newPage();
-    freshPage.on("console", (msg) => console.log("FRESH PAGE LOG:", msg.text()));
+    freshPage.on("console", (msg) =>
+      console.log("FRESH PAGE LOG:", msg.text()),
+    );
 
     try {
       await waitForAppReady(freshPage);
@@ -247,7 +216,8 @@ test.describe("partial local backup module persistence", () => {
       while (Date.now() - startPoll < 30_000) {
         const check = await freshPage.evaluate(async () => {
           try {
-            const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
+            const moduleStoreUrl =
+              "/src/ts/stores/domain/moduleStore.svelte.ts";
             const { moduleStore } = (await import(
               /* @vite-ignore */ moduleStoreUrl
             )) as {
