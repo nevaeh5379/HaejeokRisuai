@@ -519,11 +519,11 @@ import { onMount } from 'svelte';
     </aside>
 
     <!-- Right Column: Interactive Step Stages -->
-    <section class="flex-1 flex flex-col justify-between min-h-[360px]">
+    <section class="flex-1 flex flex-col justify-center min-h-[360px]">
 
       <!-- ================= STAGE 1: GATEWAY ================= -->
       {#if currentStage === 'gateway'}
-        <div class="flex flex-col gap-4" in:fade={{ duration: 150 }}>
+        <div class="flex flex-col gap-4 my-auto" in:fade={{ duration: 150 }}>
           <div>
             <h1 class="text-xl md:text-2xl font-bold tracking-tight text-textcolor flex items-center gap-2">
               <span>{l.setup?.welcomeTitle || 'Haejeok RisuAI에 오신 것을 환영합니다.'}</span>
