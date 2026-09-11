@@ -595,7 +595,7 @@ import { onMount } from 'svelte';
             >
               <div class="flex items-center gap-3 min-w-0">
                 <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                  <Bot class="w-4 h-4" />
+                  <Zap class="w-4 h-4" />
                 </div>
                 <span class="font-bold text-sm md:text-base text-textcolor break-keep">
                   {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
