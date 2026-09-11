@@ -63,15 +63,15 @@ const colorShemes = {
     type: "dark",
   },
   light: {
-    bgcolor: "#f8f9fa",
-    darkbg: "#f0f2f5",
+    bgcolor: "#f4f6f8",
+    darkbg: "#e9ecef",
     borderc: "#2563eb",
-    selected: "#cbd5e1",
+    selected: "#c4cfdc",
     draculared: "#dc2626",
     textcolor: "#1e293b",
     textcolor2: "#475569",
-    darkBorderc: "#94a3b8",
-    darkbutton: "#e2e8f0",
+    darkBorderc: "#8592a6",
+    darkbutton: "#dee2e6",
     type: "light",
   },
   cherry: {
@@ -284,7 +284,16 @@ export function updateColorScheme() {
 
     let colorScheme = db.colorScheme;
 
-    if (colorScheme == null) {
+    if (
+      db.colorSchemeName &&
+      db.colorSchemeName !== "custom" &&
+      colorShemes[db.colorSchemeName as keyof typeof colorShemes]
+    ) {
+      colorScheme = safeStructuredClone(
+        colorShemes[db.colorSchemeName as keyof typeof colorShemes],
+      );
+      db.colorScheme = colorScheme;
+    } else if (colorScheme == null) {
       colorScheme = safeStructuredClone(defaultColorScheme);
     }
 
@@ -474,4 +483,10 @@ export function updateTextThemeAndCSS() {
   } else {
     CustomCSSStore.set("");
   }
+}
+
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    updateColorScheme();
+  });
 }
