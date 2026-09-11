@@ -159,9 +159,9 @@
 </script>
 
 <header
-    class="w-full pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 border-b border-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 z-30 select-none shadow-xs pr-3"
-    class:pl-3={!isTauriMacOS}
-    class:pl-20={isTauriMacOS}
+    class="w-full px-3 pb-2 border-b border-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 z-30 select-none shadow-xs"
+    class:pt-[max(env(safe-area-inset-top),0.5rem)]={!isTauriMacOS}
+    class:pt-9={isTauriMacOS}
     data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}
 >
     <!-- ================= 1. IN CHAT SIDEBAR OPEN ================= -->

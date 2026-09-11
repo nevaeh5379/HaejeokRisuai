@@ -456,10 +456,13 @@ import { onMount } from 'svelte';
 {#if isMobile}
   <WelcomeRisuMobile />
 {:else}
-<div class="relative w-full h-full min-h-screen bg-bgcolor text-textcolor flex flex-col items-center justify-center p-3 md:p-6 overflow-y-auto selection:bg-blue-600 selection:text-white">
+<div
+  class="relative w-full h-full min-h-screen bg-bgcolor text-textcolor flex flex-col items-center justify-center p-3 md:p-6 overflow-y-auto selection:bg-blue-600 selection:text-white"
+  class:pt-9={isTauriMacOS}
+>
   {#if isTauriMacOS}
     <div
-      class="absolute top-0 left-0 right-1 h-10 z-[1]"
+      class="absolute top-0 left-0 right-0 h-9 z-20"
       data-tauri-drag-region="true"
       aria-hidden="true"
     ></div>
@@ -467,7 +470,6 @@ import { onMount } from 'svelte';
   <!-- Header: Brand & Language Bar -->
   <header
     class="w-full max-w-4xl flex items-center justify-between py-2 px-1 mb-3 z-10"
-    class:pl-16={isTauriMacOS}
     data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}
   >
     <div class="flex items-center gap-2 min-w-0" data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}>
