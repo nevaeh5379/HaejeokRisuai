@@ -32,6 +32,11 @@ import {
 } from "../sqlCommit";
 import { BoundedCache } from "../../../memory/boundedCache";
 import {
+  decodePluginStorageRecord,
+  decodePluginStorageValue,
+  encodePluginStorageValue,
+} from "../pluginStorageValueCodec";
+import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
 } from "@risuai/storage-remote/nodeApiClient";
@@ -490,9 +495,12 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       return cached.pluginCustomStorage ?? {};
     }
     if (result.status !== "ok") return null;
+    const pluginCustomStorage = decodePluginStorageRecord(
+      result.body.pluginCustomStorage ?? {},
+    );
     const entry = {
       hash: result.body.hash,
-      pluginCustomStorage: result.body.pluginCustomStorage ?? {},
+      pluginCustomStorage,
     };
     this.memoryPluginStorageCache = entry;
     try {
@@ -530,7 +538,10 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     );
     if (result.status === "not-modified" && cached) return cached.value;
     if (result.status !== "ok") return undefined;
-    const entry = { hash: result.body.hash, value: result.body.value };
+    const entry = {
+      hash: result.body.hash,
+      value: decodePluginStorageValue(result.body.value),
+    };
     this.memoryPluginKeyCache.set(key, entry);
     try {
       await this.pluginKeyCacheForage.setItem(key, entry);
@@ -747,6 +758,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) return null;
     const body =
       await this.readClient.exportDatabaseSnapshot<SqlDatabaseSnapshotResult>();
+    if (body.database?.pluginCustomStorage) {
+      body.database.pluginCustomStorage = decodePluginStorageRecord(
+        body.database.pluginCustomStorage,
+      );
+    }
     this.revision = body.revision;
     return body;
   }
@@ -951,7 +967,19 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (!(await this.ensureEnabled())) {
       throw new Error("SQL storage is not enabled");
     }
-    const result = await this.commitClient.commit(commit, this.revision);
+    const wireCommit = commit.pluginStorage
+      ? {
+          ...commit,
+          pluginStorage: {
+            ...commit.pluginStorage,
+            upserts: commit.pluginStorage.upserts.map((upsert) => ({
+              ...upsert,
+              value: encodePluginStorageValue(upsert.value),
+            })),
+          },
+        }
+      : commit;
+    const result = await this.commitClient.commit(wireCommit, this.revision);
     this.revision = result.revision;
     return result;
   }
