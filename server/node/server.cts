@@ -60,6 +60,10 @@ const zlib = require("zlib");
 const { gzip } = require("zlib");
 const { createJsonStream } = require("./streamJson.cjs");
 const { streamZip } = require("./zipStream.cjs");
+const {
+  normalizePrefetchConcurrency,
+  prefetchInOrder,
+} = require("./bulkReadPrefetch.cjs");
 const { createModelJobManager } = require("./modelJobs.cjs");
 const { createPushNotificationManager } = require("./pushNotifications.cjs");
 const {
@@ -3430,6 +3434,9 @@ function createEndPacket(fileId) {
 }
 
 const BULK_WRITE_CONTENT_TYPE = "application/x-risu-bulk";
+const BULK_READ_PREFETCH_CONCURRENCY = normalizePrefetchConcurrency(
+  process.env.RISUAI_BULK_READ_PREFETCH_CONCURRENCY,
+);
 const BULK_WRITE_MAX_NAME_BYTES = 64 * 1024;
 const BULK_WRITE_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const BULK_WRITE_MAX_FILES = 10000;
@@ -3536,15 +3543,31 @@ app.post(
       "x-risu-total-files, x-risu-asset-list-source",
     );
     let fileId = 0;
-    for (const filePath of filePaths) {
-      if (!isHex(filePath)) continue;
+    const validFilePaths = filePaths.filter(isHex);
+    const prefetchedAssets = prefetchInOrder(
+      validFilePaths,
+      async (filePath) =>
+        useThumb && typeof storage.readThumbnail === "function"
+          ? await storage.readThumbnail(filePath, thumbOptions)
+          : typeof storage.openReadStream === "function"
+            ? await storage.openReadStream(filePath)
+            : await storage.read(filePath),
+      BULK_READ_PREFETCH_CONCURRENCY,
+    );
+
+    for await (const prefetched of prefetchedAssets) {
+      const filePath = prefetched.item;
+      if ("error" in prefetched) {
+        console.error(
+          "Error prefetching %s in read-bulk:",
+          filePath,
+          prefetched.error,
+        );
+        continue;
+      }
+
       try {
-        const result =
-          useThumb && typeof storage.readThumbnail === "function"
-            ? await storage.readThumbnail(filePath, thumbOptions)
-            : typeof storage.openReadStream === "function"
-              ? await storage.openReadStream(filePath)
-              : await storage.read(filePath);
+        const result = prefetched.value;
         if (!result.exists) continue;
 
         const name = Buffer.from(filePath, "hex").toString("utf8");
