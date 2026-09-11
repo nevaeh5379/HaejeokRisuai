@@ -352,7 +352,7 @@
             {#each filteredSessions as session (`${session.characterId ?? session.charIndex}-${session.chatId ?? session.chatIndex}`)}
                 <button
                     type="button"
-                    class="rs-recent-session-card flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors bg-darkbutton/20 hover:bg-selected/50 border border-darkborderc group w-full cursor-pointer overflow-hidden relative shrink-0"
+                    class="rs-recent-session-card flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors bg-bgcolor/40 hover:bg-bgcolor border border-darkborderc/40 hover:border-selected/60 group w-full cursor-pointer overflow-hidden relative shrink-0"
                     onclick={() => void selectSession(session)}
                 >
                     <!-- Avatar with Group Badge -->

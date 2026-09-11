@@ -284,7 +284,7 @@
             <!-- chat folder -->
             {#each chara.chatFolders as folder, i}
             <div data-risu-chat-folder-idx={i}
-                class="flex flex-col mb-2 border border-darkborderc bg-darkbutton/20 cursor-pointer rounded-xl overflow-hidden shadow-xs">
+                class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
                 <!-- folder header -->
                 <button 
                     onclick={() => {
@@ -293,7 +293,7 @@
                             $ReloadGUIPointer += 1
                         }
                     }}
-                    class="flex items-center text-textcolor p-2 cursor-pointer"
+                    class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                     class:bg-red-900={folder.color === 'red'}
                     class:bg-yellow-900={folder.color === 'yellow'}
                     class:bg-green-900={folder.color === 'green'}
@@ -358,7 +358,7 @@
                     </div>
                 </button>
                 <!-- chats in folder -->
-                <div class="risu-chat flex flex-col w-full text-textcolor p-1 cursor-pointer {folder.folded ? 'hidden' : ''}">
+                <div class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded ? 'hidden' : ''}">
                     {#if chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id).length == 0}
                     <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                     <div></div>
@@ -369,7 +369,7 @@
                             changeChatTo(chara.chats.indexOf(chat))
                             $ReloadGUIPointer += 1
                         }
-                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px] hover:bg-selected/40 transition-colors" class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
+                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
                         {#if editMode}
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
@@ -481,7 +481,7 @@
                     $ReloadGUIPointer += 1
                 }
             }}
-            class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px] hover:bg-selected/40 transition-colors"
+            class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"
             class:bg-selected={i === chara.chatPage}>
                 {#if editMode}
                     <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
@@ -593,9 +593,9 @@
         class:bg-selected={isResizing}
         onpointerdown={startResize}
     >
-        <div class="w-full h-px bg-darkborderc group-hover:bg-textcolor2 transition-colors"></div>
-        <div class="absolute px-3 py-0.5 rounded-full bg-darkbg border border-darkborderc group-hover:border-textcolor2 flex items-center justify-center shadow-xs transition-colors pointer-events-none">
-            <div class="w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-textcolor"></div>
+        <div class="w-full h-px bg-selected/40 group-hover:bg-selected transition-colors"></div>
+        <div class="absolute px-3 py-0.5 rounded-full bg-darkbg border border-selected/40 group-hover:border-selected flex items-center justify-center shadow-xs transition-colors pointer-events-none">
+            <div class="w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-selected"></div>
         </div>
     </div>
 
@@ -604,7 +604,7 @@
         style="height: {bottomHeight}px;"
         class="flex flex-col shrink-0 min-h-[80px] overflow-hidden"
     >
-        <div class="flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc gap-2 mb-2">
+        <div class="flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc/40 gap-2 mb-2">
             <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
                 const { exportAllChats } = await import('src/ts/characters')
                 await exportAllChats()

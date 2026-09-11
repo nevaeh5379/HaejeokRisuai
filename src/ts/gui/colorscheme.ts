@@ -63,15 +63,15 @@ const colorShemes = {
     type: "dark",
   },
   light: {
-    bgcolor: "#f6f8fa",
-    darkbg: "#ffffff",
-    borderc: "#2563eb",
-    selected: "#eaedf1",
-    draculared: "#dc2626",
-    textcolor: "#1f2328",
-    textcolor2: "#656d76",
-    darkBorderc: "#e2e8f0",
-    darkbutton: "#ffffff",
+    bgcolor: "#ffffff",
+    darkbg: "#f0f0f0",
+    borderc: "#0f172a",
+    selected: "#e0e0e0",
+    draculared: "#ff5555",
+    textcolor: "#0f172a",
+    textcolor2: "#64748b",
+    darkBorderc: "#d1d5db",
+    darkbutton: "#e5e7eb",
     type: "light",
   },
   cherry: {
@@ -284,16 +284,7 @@ export function updateColorScheme() {
 
     let colorScheme = db.colorScheme;
 
-    if (
-      db.colorSchemeName &&
-      db.colorSchemeName !== "custom" &&
-      colorShemes[db.colorSchemeName as keyof typeof colorShemes]
-    ) {
-      colorScheme = safeStructuredClone(
-        colorShemes[db.colorSchemeName as keyof typeof colorShemes],
-      );
-      db.colorScheme = colorScheme;
-    } else if (colorScheme == null) {
+    if (colorScheme == null) {
       colorScheme = safeStructuredClone(defaultColorScheme);
     }
 
@@ -338,7 +329,6 @@ export function updateColorScheme() {
       "--risu-theme-darkbutton",
       colorScheme.darkbutton,
     );
-    document.documentElement.setAttribute("data-color-type", colorScheme.type);
     ColorSchemeTypeStore.set(colorScheme.type);
     void syncTauriNativeAppearance(colorScheme.type);
     updateTextThemeAndCSS();
@@ -408,10 +398,10 @@ export function updateTextThemeAndCSS() {
         root.style.setProperty("--FontColorQuote1", "#8BE9FD");
         root.style.setProperty("--FontColorQuote2", "#FFB86C");
       } else {
-        root.style.setProperty("--FontColorStandard", "#1e293b");
-        root.style.setProperty("--FontColorItalic", "#475569");
+        root.style.setProperty("--FontColorStandard", "#0f172a");
+        root.style.setProperty("--FontColorItalic", "#64748b");
         root.style.setProperty("--FontColorBold", "#0f172a");
-        root.style.setProperty("--FontColorItalicBold", "#334155");
+        root.style.setProperty("--FontColorItalicBold", "#64748b");
         root.style.setProperty("--FontColorQuote1", "#1d4ed8");
         root.style.setProperty("--FontColorQuote2", "#c2410c");
       }
@@ -484,10 +474,4 @@ export function updateTextThemeAndCSS() {
   } else {
     CustomCSSStore.set("");
   }
-}
-
-if (import.meta.hot) {
-  import.meta.hot.accept(() => {
-    updateColorScheme();
-  });
 }
