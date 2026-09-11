@@ -2,7 +2,7 @@
     onclick={onclick}
     {disabled}
     class="{
-        styled === 'primary' ? ((selected ? 'bg-bg-selected' : 'bg-darkbutton') + " hover:bg-selected focus:ring-selected border-darkborderc")
+        styled === 'primary' ? ((selected ? 'bg-bg-selected' : 'bg-darkbutton') + " hover:bg-selected focus:ring-selected border-darkborderc/40")
         : styled === 'outlined' ? 'bg-transparent hover:bg-darkbg focus:ring-selected border-darkborderc text-textcolor2'
         : ((selected ? 'bg-red-800' : 'bg-red-700') + ' hover:bg-red-500 focus:ring-red-600 border-red-600')
     } border text-textcolor rounded-md shadow-xs focus:outline-hidden focus:ring-2 transition-colors duration-200{className ? (" " + className) : ""}"

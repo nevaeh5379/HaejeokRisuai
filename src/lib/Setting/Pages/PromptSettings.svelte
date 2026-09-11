@@ -160,15 +160,15 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
         {language.promptTemplate}
     </h2>
 
-    <div class="flex w-full rounded-md border border-darkborderc overflow-hidden">
+    <div class="flex w-full rounded-lg bg-darkbutton/60 p-1 mb-4 border border-darkborderc/40 gap-1">
         <button onclick={() => {
             subMenu = 0
-        }} class="p-2 flex-1 transition-colors hover:bg-selected/40" class:bg-selected={subMenu === 0}>
+        }} class="py-1.5 px-2 flex-1 rounded-md text-sm transition-all text-center" class:bg-darkbg={subMenu === 0} class:shadow-xs={subMenu === 0} class:font-semibold={subMenu === 0} class:text-textcolor={subMenu === 0} class:text-textcolor2={subMenu !== 0} class:hover:text-textcolor={subMenu !== 0}>
             <span>{language.template}</span>
         </button>
         <button onclick={() => {
             subMenu = 1
-        }} class="p-2 flex-1 border-l border-darkborderc transition-colors hover:bg-selected/40" class:bg-selected={subMenu === 1}>
+        }} class="py-1.5 px-2 flex-1 rounded-md text-sm transition-all text-center" class:bg-darkbg={subMenu === 1} class:shadow-xs={subMenu === 1} class:font-semibold={subMenu === 1} class:text-textcolor={subMenu === 1} class:text-textcolor2={subMenu !== 1} class:hover:text-textcolor={subMenu !== 1}>
             <span>{language.settings}</span>
         </button>
     </div>

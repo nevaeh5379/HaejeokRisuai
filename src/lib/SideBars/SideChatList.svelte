@@ -284,7 +284,7 @@
             <!-- chat folder -->
             {#each chara.chatFolders as folder, i}
             <div data-risu-chat-folder-idx={i}
-                class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
+                class="flex flex-col mb-2 border border-darkborderc/40 bg-darkbutton/20 cursor-pointer rounded-xl overflow-hidden shadow-xs">
                 <!-- folder header -->
                 <button 
                     onclick={() => {
@@ -293,7 +293,7 @@
                             $ReloadGUIPointer += 1
                         }
                     }}
-                    class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+                    class="flex items-center text-textcolor p-2 cursor-pointer"
                     class:bg-red-900={folder.color === 'red'}
                     class:bg-yellow-900={folder.color === 'yellow'}
                     class:bg-green-900={folder.color === 'green'}
@@ -358,7 +358,7 @@
                     </div>
                 </button>
                 <!-- chats in folder -->
-                <div class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded ? 'hidden' : ''}">
+                <div class="risu-chat flex flex-col w-full text-textcolor p-1 cursor-pointer {folder.folded ? 'hidden' : ''}">
                     {#if chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id).length == 0}
                     <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                     <div></div>
