@@ -623,7 +623,7 @@ import { onMount } from 'svelte';
                 class="w-full flex items-center justify-center gap-2 rounded-xl border border-borderc/40 bg-darkbutton/30 hover:bg-darkbutton/70 px-3.5 py-2.5 text-xs md:text-sm font-bold text-textcolor transition-colors"
               >
                 <Server class="w-4 h-4 text-textcolor2" />
-                <span>{l.setup?.storageRemoteLabel || '셀프 호스트 서버 연결'}</span>
+                <span>{l.setup?.storageRemoteLabel || '셀프 호스트 서버 연결 (베타)'}</span>
                 <ChevronRight class="w-3.5 h-3.5 text-textcolor2" />
               </button>
             {/if}
@@ -1128,7 +1128,7 @@ import { onMount } from 'svelte';
             <div class="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <Server class="w-4 h-4" />
             </div>
-            <span>{l.setup?.storageRemoteLabel || '셀프 호스트 서버 연결'}</span>
+            <span>{l.setup?.storageRemoteLabel || '셀프 호스트 서버 연결 (베타)'}</span>
           </h2>
           <button
             type="button"

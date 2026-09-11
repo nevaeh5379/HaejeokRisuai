@@ -232,7 +232,7 @@ HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-c
           <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-bgcolor"><Server size={20} /></span>
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-2">
-              <span class="font-bold">셀프 호스트</span>
+              <span class="font-bold">셀프 호스트 (베타)</span>
               {#if activeProfile.mode === 'remote'}
                 <span class="inline-flex items-center gap-1 rounded-full bg-selected/15 px-2 py-0.5 text-[11px] font-bold"><Check size={11} /> 사용 중</span>
               {/if}

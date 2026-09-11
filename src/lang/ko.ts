@@ -583,7 +583,7 @@ export const languageKorean = {
     modelNamePlaceholder: "예: claude-3-7-sonnet, deepseek-chat, gpt-4o",
     nicknameTitle: "닉네임 설정",
     completeSetupBtn: "설정 완료하기",
-    storageRemoteLabel: "셀프 호스트 서버 연결",
+    storageRemoteLabel: "셀프 호스트 서버 연결 (베타)",
     storageConnectedBadge: "서버 사용 중",
     storageServerUrlLabel: "서버 주소",
     storageServerUrlPlaceholder: "https://risu.example.com",

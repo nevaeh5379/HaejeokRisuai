@@ -662,7 +662,7 @@ export const languageEnglish = {
     modelNamePlaceholder: "e.g. claude-3-7-sonnet, deepseek-chat, gpt-4o",
     nicknameTitle: "Set Nickname",
     completeSetupBtn: "Complete Setup",
-    storageRemoteLabel: "Connect Self-Hosted Server",
+    storageRemoteLabel: "Connect Self-Hosted Server (Beta)",
     storageConnectedBadge: "Using Server",
     storageServerUrlLabel: "Server Address",
     storageServerUrlPlaceholder: "https://risu.example.com",
