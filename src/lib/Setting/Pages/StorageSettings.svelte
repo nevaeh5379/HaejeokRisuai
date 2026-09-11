@@ -5,6 +5,7 @@
   import { syncLocalStorageToRemote, type StorageSyncStageProgress } from 'src/ts/storage/runtime/storageSyncCoordinator';
   import { connectRemoteStorageProfile } from 'src/ts/storage/runtime/storageProfileConnection';
   import { saveStorageProfile } from 'src/ts/storage/runtime/storageProfile';
+  import Help from 'src/lib/Others/Help.svelte';
 
   type RemoteConnection = Awaited<ReturnType<typeof connectRemoteStorageProfile>>;
   type SyncPreview = {
@@ -33,6 +34,22 @@
   let syncBusy = $state(false);
   let syncProgress = $state<StorageSyncStageProgress | null>(null);
   let syncMessage = $state('');
+
+  const storageHelp = `저장 위치는 **SQL 데이터와 모든 자산**에 함께 적용된답니다.
+
+- SQL: 설정, 캐릭터, 채팅, 메시지
+- 자산: 이미지, 음성, 첨부 파일, 플러그인 파일
+
+저장 위치를 바꿔도 반대편 데이터는 삭제하지 않으며, 새 위치는 앱을 다시 불러온 뒤 적용된답니다.`;
+  const serverConnectionHelp = `새 셀프 호스트 서버는 연결 검사와 인증이 모두 성공한 뒤에만 저장 위치로 사용할 수 있답니다.
+
+서버 비밀번호는 저장하지 않으며, 해당 서버에서 사용할 P-256 키를 등록할 때만 사용하와요. 빈 비밀번호를 입력해도 빈 값 그대로 인증을 시도한답니다.`;
+  const insecureHttpHelp = `HTTP 연결은 전송 내용을 암호화하지 않으므로 신뢰할 수 있는 로컬 네트워크에서만 사용하시와요.
+
+HTTPS 페이지에서 HTTP 서버로 연결하는 것은 브라우저의 mixed-content 정책에 따라 차단될 수 있답니다.`;
+  const syncHelp = `이 기기의 현재 데이터를 셀프 호스트 서버로 **한 방향 복사**한답니다. 저장 위치는 바뀌지 않사와요.
+
+미리보기는 양쪽 데이터를 읽기만 하며, 실행하면 서버의 SQL과 자산을 이 기기의 데이터로 교체한답니다. 서버의 기존 데이터는 recovery snapshot으로 보존되며, 전송 중 원본이나 대상이 바뀌면 적용 전에 중단하와요.`;
 
   function resetVerification() {
     connectionState = 'idle';
@@ -163,9 +180,9 @@
   }
 </script>
 <div class="flex flex-col gap-5 max-w-3xl">
-  <div>
+  <div class="flex items-center gap-2">
     <h2 class="text-2xl font-bold">저장소</h2>
-    <p class="text-sm text-textcolor2 mt-1">SQL 데이터와 이미지·음성·플러그인 자산은 항상 같은 저장 위치를 사용한답니다.</p>
+    <Help name="저장소" text={storageHelp} />
   </div>
 
   <section class="rounded-2xl border border-darkborderc bg-darkbg p-5 flex flex-col gap-3">
@@ -179,19 +196,20 @@
     {#if activeProfile.mode === 'remote'}
       <div class="rounded-xl bg-bgcolor border border-darkborderc px-3 py-2 break-all text-sm">{activeProfile.baseUrl}</div>
     {/if}
-    <p class="text-xs text-textcolor2">저장 위치를 바꿔도 반대편 데이터는 삭제하지 않사와요. 전환은 전체 재로드 후 적용된답니다.</p>
   </section>
 
   {#if isNodeServer}
     <section class="rounded-2xl border border-darkborderc bg-darkbg p-5">
-      <h3 class="font-bold">Node 서버 저장소가 강제되어 있사와요</h3>
-      <p class="text-sm text-textcolor2 mt-2">Node 서버가 제공하는 웹앱은 같은 출처의 서버 SQL·자산 저장소만 사용하며 클라이언트에서 로컬 모드로 바꿀 수 없답니다.</p>
+      <div class="flex items-center gap-2">
+        <h3 class="font-bold">Node 서버 저장소가 강제되어 있사와요</h3>
+        <Help name="Node 서버 저장소" text="Node 서버가 제공하는 웹앱은 같은 출처의 서버 SQL·자산 저장소만 사용하며, 클라이언트에서 로컬 모드로 바꿀 수 없답니다." />
+      </div>
     </section>
   {:else}
     <section class="rounded-2xl border border-darkborderc bg-darkbg p-5 flex flex-col gap-4">
-      <div>
+      <div class="flex items-center gap-2">
         <h3 class="font-bold text-lg">셀프 호스트 서버 연결</h3>
-        <p class="text-sm text-textcolor2 mt-1">새 서버는 연결 검사와 인증이 성공한 뒤에만 활성 프로필로 저장하와요.</p>
+        <Help name="셀프 호스트 서버 연결" text={serverConnectionHelp} />
       </div>
 
       <label class="block">
@@ -205,7 +223,7 @@
       </label>
       <label class="flex items-start gap-2 text-sm">
         <input class="mt-1" type="checkbox" bind:checked={allowInsecureHttp} onchange={resetVerification} />
-        <span>안전하지 않은 HTTP 허용</span>
+        <span>안전하지 않은 HTTP 허용 <Help name="HTTP 연결" text={insecureHttpHelp} /></span>
       </label>
 
       {#if connectionState !== 'idle'}
@@ -229,9 +247,9 @@
 
     {#if activeProfile.mode === 'local'}
       <section class="rounded-2xl border border-darkborderc bg-darkbg p-5 flex flex-col gap-4">
-        <div>
+        <div class="flex items-center gap-2">
           <h3 class="font-bold text-lg">로컬 → 셀프 호스트 동기화</h3>
-          <p class="text-sm text-textcolor2 mt-1">프로필을 전환하지 않고 이 기기의 현재 SQL·자산을 서버에 복사한답니다. 실행 전 미리보기는 데이터를 변경하지 않사와요.</p>
+          <Help name="로컬에서 셀프 호스트로 동기화" text={syncHelp} />
         </div>
 
         <div class="flex flex-wrap gap-2">
@@ -258,7 +276,6 @@
               <div class="text-sm">자산 {syncPreview.remote.assets.count.toLocaleString()}개 · {formatBytes(syncPreview.remote.assets.sizeBytes)}</div>
             </div>
           </div>
-          <p class="text-xs text-textcolor2">실행 시 서버의 기존 DB와 덮어쓰는 자산은 recovery snapshot으로 보존하와요. 동기화 도중 어느 쪽 revision이나 asset이 바뀌면 적용 전에 중단한답니다.</p>
         {/if}
 
         {#if syncProgress}
@@ -277,8 +294,10 @@
       </section>
     {:else}
       <section class="rounded-2xl border border-darkborderc bg-darkbg p-5">
-        <h3 class="font-bold">셀프 호스트 → 로컬 동기화</h3>
-        <p class="text-sm text-textcolor2 mt-2">원격 자산의 bounded Range reader까지 준비됐고, 로컬 SQLite staging/recovery 적용부를 구현 중이랍니다. 완성 전에는 destructive 버튼을 노출하지 않사와요.</p>
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold">셀프 호스트 → 로컬 동기화</h3>
+          <Help name="셀프 호스트에서 로컬로 동기화" text="원격 자산의 bounded Range reader까지 준비됐지만, 로컬 SQLite staging/recovery 적용부는 아직 구현 중이랍니다. 완성 전에는 데이터를 바꾸는 버튼을 노출하지 않사와요." />
+        </div>
       </section>
     {/if}
   {/if}
