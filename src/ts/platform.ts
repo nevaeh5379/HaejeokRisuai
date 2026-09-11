@@ -24,6 +24,7 @@ export const isTauri: boolean =
   typeof window !== "undefined" &&
   !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
 export const isTauriMacOS: boolean = isTauri && tauriOs.type() === "macos";
+export const isTauriWindows: boolean = isTauri && tauriOs.type() === "windows";
 export const isCapacitor: boolean = !isTauri && Capacitor.isNativePlatform();
 export const isNodeServer: boolean = !!(
   globalThis as typeof globalThis & { __NODE__?: boolean }
