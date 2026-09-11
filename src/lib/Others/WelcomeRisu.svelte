@@ -586,9 +586,6 @@ import { onMount } from 'svelte';
                 <h2 class="font-bold text-sm md:text-base text-textcolor break-keep">
                   {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
                 </h2>
-                <p class="text-xs text-textcolor2 mt-1 leading-normal break-keep">
-                  {l.setup?.gatewayMigrationDesc || 'database.bin 또는 .risum 백업 파일에서 캐릭터와 대화를 복원합니다.'}
-                </p>
               </div>
               <div class="flex items-center text-xs text-blue-400 font-semibold mt-3 gap-1">
                 <span>{l.setup?.actionRestore || '불러오기'}</span>
@@ -614,11 +611,8 @@ import { onMount } from 'svelte';
               </div>
               <div>
                 <h2 class="font-bold text-sm md:text-base text-textcolor break-keep">
-                  {l.setup?.gatewayQuickSetupTitle || 'AI 빠른 설정'}
+                  {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
                 </h2>
-                <p class="text-xs text-textcolor2 mt-1 leading-normal break-keep">
-                  {l.setup?.gatewayQuickSetupDesc || '닉네임과 AI 모델을 빠르게 설정합니다.'}
-                </p>
               </div>
               <div class="flex items-center text-xs text-emerald-400 font-semibold mt-3 gap-1">
                 <span>{l.setup?.actionStart || '시작하기'}</span>

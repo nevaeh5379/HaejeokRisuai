@@ -579,7 +579,7 @@ export const languageEnglish = {
     gatewayMigrationTitle: "Restore Data",
     gatewayMigrationDesc:
       "Restore characters, chats, and presets from a database.bin or backup file.",
-    gatewayQuickSetupTitle: "Quick AI Setup",
+    gatewayQuickSetupTitle: "Quick Setup",
     gatewayQuickSetupDesc:
       "Set your nickname and configure AI models (Claude, OpenAI, Gemini, etc.) in a few easy steps.",
     gatewaySkipTitle: "Skip & Explore",

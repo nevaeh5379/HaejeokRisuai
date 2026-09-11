@@ -501,7 +501,7 @@ export const languageKorean = {
     irisStep4: "모든 준비가 끝났어요! 이제 함께 즐거운 대화를 시작해볼까요?",
     gatewayMigrationTitle: "데이터 가져오기",
     gatewayMigrationDesc: "백업 파일에서 기존 캐릭터와 대화를 복원합니다.",
-    gatewayQuickSetupTitle: "AI 빠른 설정",
+    gatewayQuickSetupTitle: "빠른 설정",
     gatewayQuickSetupDesc: "닉네임과 사용할 AI 모델을 빠르게 설정합니다.",
     gatewaySkipTitle: "직접 설정할래요 (건너뛰기)",
     gatewaySkipDesc:

@@ -611,17 +611,12 @@ import { onMount } from 'svelte';
                 <div class="p-3 rounded-2xl bg-darkbutton border border-borderc/30 text-textcolor shrink-0">
                   <Bot class="w-5 h-5 text-textcolor" />
                 </div>
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-bold text-sm text-textcolor whitespace-nowrap truncate">
-                      {l.setup?.gatewayQuickSetupTitle || 'AI 빠른 설정'}
-                    </span>
-                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-selected border border-borderc/30 text-textcolor font-semibold shrink-0 whitespace-nowrap">
-                      {l.setup?.badgeRecommended || '추천'}
-                    </span>
-                  </div>
-                  <span class="text-xs text-textcolor2 mt-0.5 truncate">
-                    닉네임 및 AI 모델 구성
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-bold text-sm text-textcolor whitespace-nowrap truncate">
+                    {l.setup?.gatewayQuickSetupTitle || '빠른 설정'}
+                  </span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full bg-selected border border-borderc/30 text-textcolor font-semibold shrink-0 whitespace-nowrap">
+                    {l.setup?.badgeRecommended || '추천'}
                   </span>
                 </div>
               </div>
@@ -639,17 +634,12 @@ import { onMount } from 'svelte';
                 <div class="p-3 rounded-2xl bg-darkbutton border border-borderc/30 text-textcolor shrink-0">
                   <Database class="w-5 h-5 text-textcolor" />
                 </div>
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-bold text-sm text-textcolor whitespace-nowrap truncate">
-                      {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
-                    </span>
-                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-darkbutton border border-borderc/30 text-textcolor2 font-medium shrink-0 whitespace-nowrap">
-                      {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
-                    </span>
-                  </div>
-                  <span class="text-xs text-textcolor2 mt-0.5 truncate">
-                    기존 캐릭터와 대화 복원
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-bold text-sm text-textcolor whitespace-nowrap truncate">
+                    {l.setup?.gatewayMigrationTitle || '데이터 가져오기'}
+                  </span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full bg-darkbutton border border-borderc/30 text-textcolor2 font-medium shrink-0 whitespace-nowrap">
+                    {detectedLocalDb ? (l.setup?.badgeDetected || '발견됨') : (l.setup?.badgeBackupFile || '백업 파일')}
                   </span>
                 </div>
               </div>
