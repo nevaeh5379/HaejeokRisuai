@@ -216,35 +216,19 @@ html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
     var(--risu-theme-textcolor) 9%,
     var(--risu-theme-bgcolor)
   );
-  --risu-windows-active-tab-start: 0px;
-  --risu-windows-active-tab-width: 0px;
   background-color: var(--risu-windows-sidebar-tint);
-}
-
-/* Seamless bridge between the active tab and the chat screen: cover the 1px
- * top inset border under the active tab and its shoulders with the chat bgcolor. */
-html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  top: 39.5px;
-  left: var(--risu-windows-active-tab-start, 0px);
-  width: var(--risu-windows-active-tab-width, 0px);
-  height: 2.5px;
-  background-color: var(--risu-theme-bgcolor);
-  pointer-events: none;
 }
 
 html.tauri-windows-vibrancy
   .default-chat-pane.has-chat-tabs
   > .default-chat-screen {
-  background-color: var(--risu-theme-bgcolor);
+  background-color: transparent !important;
   width: calc(100% - 16px);
   margin: 0px 8px 8px 8px;
   align-self: center;
   border-radius: var(--risu-windows-chat-radius);
   z-index: 1;
-  box-shadow: inset 0 0 0 1px var(--risu-windows-chat-outline-solid);
+  box-shadow: none;
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
@@ -294,38 +278,35 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
   height: 36px !important;
   margin-bottom: 0;
   border-bottom-width: 0;
-  border-color: var(--risu-windows-chat-outline-solid);
+  border-color: transparent;
   border-radius: 10px 10px 0 0 !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  background-color: transparent !important;
+  box-shadow: none;
 }
 
-/* Exact SVG arcs avoid subpixel seams between the tab border and content
- * outline that CSS radial gradients produce at fractional scale factors. */
-html.tauri-windows-vibrancy .rs-chat-tab-shoulder {
+.rs-chat-pane-surface {
+  display: none;
+}
+
+/* One path owns the active tab and the complete chat surface outline. No CSS
+ * border meets an SVG stroke, so the concave shoulders cannot form a seam. */
+html.tauri-windows-vibrancy .rs-chat-pane-surface {
+  display: block;
   position: absolute;
-  bottom: -0.5px;
-  width: 16px;
-  height: 8px;
-  overflow: visible;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+  shape-rendering: geometricPrecision;
 }
 
-html.tauri-windows-vibrancy .rs-chat-tab-shoulder-left {
-  left: -16px;
-}
-
-html.tauri-windows-vibrancy .rs-chat-tab-shoulder-right {
-  left: calc(100% - 1px);
-}
-
-html.tauri-windows-vibrancy .rs-chat-tab-shoulder-fill {
-  fill: var(--risu-windows-tab-surface);
-}
-
-html.tauri-windows-vibrancy .rs-chat-tab-shoulder-outline {
-  fill: none;
+html.tauri-windows-vibrancy .rs-chat-pane-surface-shape {
+  fill: var(--risu-theme-bgcolor);
   stroke: var(--risu-windows-chat-outline-solid);
   stroke-width: 1;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-list [data-tab-add] {
