@@ -149,6 +149,16 @@
   dialog {
     margin: auto;
   }
+
+  :root {
+    color-scheme: dark;
+  }
+
+  select option,
+  select optgroup {
+    background-color: var(--color-darkbg, var(--risu-theme-darkbg, #21222c));
+    color: var(--color-textcolor, var(--risu-theme-textcolor, #f8f8f2));
+  }
 }
 
 body {

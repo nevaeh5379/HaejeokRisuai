@@ -51,9 +51,9 @@
                 className="w-full disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!preferences.enabled}
             >
-                <option value="acrylic">{language.windowsBackdropAcrylic}</option>
-                <option value="mica">{language.windowsBackdropMica}</option>
-                <option value="tabbed">{language.windowsBackdropTabbed}</option>
+                <option class="bg-darkbg text-textcolor" value="acrylic">{language.windowsBackdropAcrylic}</option>
+                <option class="bg-darkbg text-textcolor" value="mica">{language.windowsBackdropMica}</option>
+                <option class="bg-darkbg text-textcolor" value="tabbed">{language.windowsBackdropTabbed}</option>
             </SelectInput>
         </label>
 

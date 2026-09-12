@@ -329,6 +329,7 @@ export function updateColorScheme() {
       "--risu-theme-darkbutton",
       colorScheme.darkbutton,
     );
+    document.documentElement.style.colorScheme = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
     void syncTauriNativeAppearance(colorScheme.type);
     updateTextThemeAndCSS();
