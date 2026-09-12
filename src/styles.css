@@ -197,15 +197,24 @@ html.tauri-windows-vibrancy .rs-main-content {
 /* Let Acrylic reach the tab strip without leaking through the chat body. The
  * shell owns the tint so the nested list does not compound its opacity. */
 html.tauri-windows-vibrancy
-  .rs-main-content:has(.default-chat-pane.has-chat-tabs),
-html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+  .rs-main-content:has(.default-chat-pane.has-chat-tabs) {
   background-color: transparent;
+}
+
+/* Match the rounded content viewport used by Edge and other Windows 11 apps.
+ * The pane owns the same material tint as the tab strip, so the small corner
+ * cutouts reveal Acrylic/Mica instead of an opaque rectangular backdrop. */
+html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+  background-color: var(--risu-windows-sidebar-tint);
 }
 
 html.tauri-windows-vibrancy
   .default-chat-pane.has-chat-tabs
   > .default-chat-screen {
   background-color: var(--risu-theme-bgcolor);
+  border-radius: 10px 10px 0 0;
+  box-shadow: inset 0 1px
+    color-mix(in srgb, var(--risu-theme-textcolor) 9%, transparent);
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
