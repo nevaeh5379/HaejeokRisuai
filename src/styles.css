@@ -303,7 +303,7 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
  * outline that CSS radial gradients produce at fractional scale factors. */
 html.tauri-windows-vibrancy .rs-chat-tab-shoulder {
   position: absolute;
-  bottom: 0;
+  bottom: -0.5px;
   width: 9px;
   height: 8px;
   overflow: visible;
@@ -315,8 +315,7 @@ html.tauri-windows-vibrancy .rs-chat-tab-shoulder-left {
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-shoulder-right {
-  right: -9px;
-  transform: scaleX(-1);
+  left: 100%;
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-shoulder-fill {

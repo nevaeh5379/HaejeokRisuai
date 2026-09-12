@@ -114,7 +114,7 @@
             const paneRect = pane.getBoundingClientRect();
             const tabRect = activeTab.getBoundingClientRect();
             const outlineInset = 8;
-            const shoulderWidth = 9;
+            const shoulderWidth = 7.5;
             const start = tabRect.left - paneRect.left - shoulderWidth;
             const end = tabRect.right - paneRect.left + shoulderWidth;
             const clampedStart = Math.max(outlineInset, start);
@@ -694,11 +694,11 @@
                 {#if active}
                     <svg class="rs-chat-tab-shoulder rs-chat-tab-shoulder-left" viewBox="0 0 9 8" aria-hidden="true">
                         <path class="rs-chat-tab-shoulder-fill" d="M0 8A8 8 0 0 0 8 0H9V8Z" />
-                        <path class="rs-chat-tab-shoulder-outline" d="M0 8A8 8 0 0 0 8 0" />
+                        <path class="rs-chat-tab-shoulder-outline" d="M0.5 8A8 8 0 0 0 8.5 0" />
                     </svg>
                     <svg class="rs-chat-tab-shoulder rs-chat-tab-shoulder-right" viewBox="0 0 9 8" aria-hidden="true">
-                        <path class="rs-chat-tab-shoulder-fill" d="M0 8A8 8 0 0 0 8 0H9V8Z" />
-                        <path class="rs-chat-tab-shoulder-outline" d="M0 8A8 8 0 0 0 8 0" />
+                        <path class="rs-chat-tab-shoulder-fill" d="M0 0H1A8 8 0 0 0 9 8H0Z" />
+                        <path class="rs-chat-tab-shoulder-outline" d="M0.5 0A8 8 0 0 0 8.5 8" />
                     </svg>
                 {/if}
                 {#if generating}
