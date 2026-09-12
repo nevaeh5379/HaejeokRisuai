@@ -124,6 +124,11 @@ unsafe fn caption_glyph_height(hwnd: HWND) -> i32 {
     -(((10_i64 * dpi as i64 + 48) / 96) as i32).max(1)
 }
 
+unsafe fn caption_corner_radius(hwnd: HWND) -> i32 {
+    let dpi = GetDpiForWindow(hwnd).max(96);
+    ((8_i64 * dpi as i64 + 48) / 96) as i32
+}
+
 unsafe fn button_state(hwnd: HWND) -> isize {
     GetWindowLongPtrW(hwnd, GWLP_USERDATA)
 }
@@ -246,7 +251,8 @@ unsafe fn render_layered_caption_button(
     let previous_font = SelectObject(memory_dc, font.into());
     let _ = SetBkMode(memory_dc, TRANSPARENT);
     let _ = SetTextColor(memory_dc, COLORREF(0x00ff_ffff));
-    let mut glyph = [caption_glyph(kind, IsZoomed(owner).as_bool()) as u16];
+    let maximized = IsZoomed(owner).as_bool();
+    let mut glyph = [caption_glyph(kind, maximized) as u16];
     let mut text_rect = RECT { left: 0, top: 0, right: width, bottom: height };
     DrawTextW(memory_dc, &mut glyph, &mut text_rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
@@ -262,7 +268,10 @@ unsafe fn render_layered_caption_button(
     } else if hot {
         if dark { (255, 255, 255, 20) } else { (0, 0, 0, 18) }
     } else {
-        (0, 0, 0, 0)
+        // A fully transparent layered window is hit-tested only on its opaque
+        // glyph pixels. Alpha 1 is visually transparent but keeps the entire
+        // caption slot available for hover and clicks.
+        (0, 0, 0, 1)
     };
     let (fg_r, fg_g, fg_b): (u32, u32, u32) = if close_hot || dark {
         (255, 255, 255)
@@ -271,7 +280,12 @@ unsafe fn render_layered_caption_button(
     };
 
     let pixels = std::slice::from_raw_parts_mut(bits as *mut u8, (width * height * 4) as usize);
-    for pixel in pixels.chunks_exact_mut(4) {
+    let corner_radius = if kind == CaptionButtonKind::Close && !maximized {
+        caption_corner_radius(owner)
+    } else {
+        0
+    };
+    for (index, pixel) in pixels.chunks_exact_mut(4).enumerate() {
         let mask = pixel[0].max(pixel[1]).max(pixel[2]) as u32;
         let inv = 255 - mask;
         let alpha = mask + bg_a * inv / 255;
@@ -282,6 +296,21 @@ unsafe fn render_layered_caption_button(
         pixel[1] = blend(fg_g, bg_g);
         pixel[2] = blend(fg_r, bg_r);
         pixel[3] = alpha.min(255) as u8;
+
+        // Owned layered windows are not clipped by the DWM-rounded owner.
+        // Clip the close button to the same Windows 11 top-right curve so its
+        // hover fill cannot protrude beyond the window corner.
+        if corner_radius > 0 {
+            let x = index as i32 % width;
+            let y = index as i32 / width;
+            if x >= width - corner_radius && y < corner_radius {
+                let dx = x - (width - corner_radius);
+                let dy = y - corner_radius;
+                if dx * dx + dy * dy > corner_radius * corner_radius {
+                    pixel.fill(0);
+                }
+            }
+        }
     }
 
     let destination = POINT { x: window_rect.left, y: window_rect.top };
