@@ -221,7 +221,7 @@ html.tauri-windows-vibrancy
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
-  background-color: var(--risu-windows-sidebar-tint);
+  background-color: transparent;
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
@@ -257,33 +257,9 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
     transparent
   );
   z-index: 2;
-  border-bottom-width: 0;
-  border-radius: 10px 10px 0 0 !important;
+  border-bottom-width: 1px;
+  border-radius: 10px 10px 6px 6px !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
-}
-
-/* A browser-style active tab: the curved shoulders hide the hard 90-degree
- * join while inactive tabs remain independent rounded buttons. */
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before,
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 9px;
-  height: 9px;
-  pointer-events: none;
-}
-
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before {
-  right: 100%;
-  border-bottom-right-radius: 9px;
-  box-shadow: 4px 4px 0 4px var(--risu-windows-tab-surface);
-}
-
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
-  left: 100%;
-  border-bottom-left-radius: 9px;
-  box-shadow: -4px 4px 0 4px var(--risu-windows-tab-surface);
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-list [data-tab-add] {
