@@ -8,14 +8,33 @@ import type { SettingItem } from "./types";
 import { changeFullscreen } from "../util";
 import { updateAnimationSpeed } from "../gui/animation";
 import { guiSizeText, updateGuisize } from "../gui/guisize";
-import { updateTextThemeAndCSS } from "../gui/colorscheme";
+import { updateColorScheme, updateTextThemeAndCSS } from "../gui/colorscheme";
+import { applyUITheme } from "../gui/uiTheme";
 import { CustomGUISettingMenuStore, syncMobileGUI } from "../stores.svelte";
 
 export const displayThemeSettingsItems: SettingItem[] = [
   {
+    id: "display.uiTheme",
+    type: "select",
+    labelKey: "uiTheme",
+    helpKey: "uiThemeDesc",
+    bindKey: "uiTheme",
+    onChange: () => {
+      applyUITheme();
+      updateColorScheme();
+    },
+    options: {
+      selectOptions: [
+        { value: "default", labelKey: "uiThemeDefault", label: "Default Theme" },
+        { value: "windows", labelKey: "uiThemeWindows", label: "Windows 11 Fluent Theme" },
+      ],
+    },
+    keywords: ["theme", "ui", "windows", "fluent"],
+  },
+  {
     id: "display.theme",
     type: "select",
-    labelKey: "theme",
+    labelKey: "chatTheme",
     bindKey: "theme",
     classes: "mt-4",
     options: {

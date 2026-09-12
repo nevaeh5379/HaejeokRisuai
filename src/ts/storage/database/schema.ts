@@ -99,6 +99,7 @@ export interface DatabaseSettings {
   playMessage: boolean;
   iconsize: number;
   theme: string;
+  uiTheme?: "default" | "windows";
   subModel: string;
   emotionPrompt: string;
   formatversion: number;

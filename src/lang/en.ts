@@ -1584,6 +1584,15 @@ export const languageEnglish = {
   windowsTransparency: "Windows transparency",
   windowsTransparencyDescription:
     "Stored only on this device and applied immediately to sidebars and chat tabs.",
+  uiTheme: "UI Theme",
+  uiThemeDesc:
+    "Select the Default theme or Windows 11 Fluent theme to apply across all UI (window frame, sidebars, tabs, chat, settings, controls, etc.).",
+  uiThemeDefault: "Default Theme",
+  uiThemeWindows: "Windows 11 Fluent Theme",
+  chatTheme: "Chat Screen Layout",
+  windowsNativeTheme: "Windows 11 Fluent Theme",
+  windowsNativeThemeDesc:
+    "Native theme adhering to Microsoft Windows 11 WinUI design guidance with Mica and Acrylic integration.",
   useWindowsTransparency: "Use native transparency",
   windowsBackdropEffect: "Backdrop effect",
   windowsBackdropAcrylic: "Acrylic (Windows 10/11)",

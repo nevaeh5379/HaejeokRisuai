@@ -7,6 +7,8 @@ import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { isTauriMacOS, isTauriWindows } from "../platform";
+import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
+import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
 export interface ColorScheme {
   bgcolor: string;
@@ -242,7 +244,35 @@ const colorShemes = {
     darkbutton: "#374151",
     type: "dark",
   },
+  "fluent-dark": {
+    bgcolor: "#2b2b2b",
+    darkbg: "#202020",
+    borderc: "#60cdff",
+    selected: "#383838",
+    draculared: "#ff99a4",
+    textcolor: "#ffffff",
+    textcolor2: "#a0a0a0",
+    darkBorderc: "#3c3c3c",
+    darkbutton: "#323232",
+    type: "dark",
+  },
+  "fluent-light": {
+    bgcolor: "#ffffff",
+    darkbg: "#f3f3f3",
+    borderc: "#0067c0",
+    selected: "#e8e8e8",
+    draculared: "#c42b1c",
+    textcolor: "#1b1b1b",
+    textcolor2: "#5d5d5d",
+    darkBorderc: "#e0e0e0",
+    darkbutton: "#f9f9f9",
+    type: "light",
+  },
 } as const;
+
+export function isFluentColorScheme(name?: string | null): boolean {
+  return name === "fluent-dark" || name === "fluent-light";
+}
 
 export const ColorSchemeTypeStore = writable("dark" as "dark" | "light");
 
@@ -331,6 +361,11 @@ export function updateColorScheme() {
     );
     document.documentElement.style.colorScheme = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
+    applyUITheme();
+    const isFluent = isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
+    if (isFluent && isTauriWindows) {
+      void ensureFluentWindowsBackdrop();
+    }
     void syncTauriNativeAppearance(colorScheme.type);
     updateTextThemeAndCSS();
   } catch (error) {}
@@ -387,11 +422,29 @@ export function updateTextThemeAndCSS() {
   if (!root) {
     return;
   }
+  const isFluent =
+    isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
   let textTheme = get(isLite) ? "standard" : db.textTheme;
   let colorScheme = get(isLite) ? "dark" : (db.colorScheme?.type ?? "dark");
   switch (textTheme) {
     case "standard": {
-      if (colorScheme === "dark") {
+      if (isFluent) {
+        if (colorScheme === "dark") {
+          root.style.setProperty("--FontColorStandard", "#ffffff");
+          root.style.setProperty("--FontColorItalic", "#c8c8c8");
+          root.style.setProperty("--FontColorBold", "#ffffff");
+          root.style.setProperty("--FontColorItalicBold", "#c8c8c8");
+          root.style.setProperty("--FontColorQuote1", "#60cdff");
+          root.style.setProperty("--FontColorQuote2", "#fce100");
+        } else {
+          root.style.setProperty("--FontColorStandard", "#1b1b1b");
+          root.style.setProperty("--FontColorItalic", "#5d5d5d");
+          root.style.setProperty("--FontColorBold", "#1b1b1b");
+          root.style.setProperty("--FontColorItalicBold", "#5d5d5d");
+          root.style.setProperty("--FontColorQuote1", "#005fb8");
+          root.style.setProperty("--FontColorQuote2", "#c42b1c");
+        }
+      } else if (colorScheme === "dark") {
         root.style.setProperty("--FontColorStandard", "#fafafa");
         root.style.setProperty("--FontColorItalic", "#8C8D93");
         root.style.setProperty("--FontColorBold", "#fafafa");
@@ -457,7 +510,14 @@ export function updateTextThemeAndCSS() {
 
   switch (db.font) {
     case "default": {
-      root.style.setProperty("--risu-font-family", "Arial, sans-serif");
+      if (isFluent) {
+        root.style.setProperty(
+          "--risu-font-family",
+          '"Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Segoe UI Emoji", system-ui, sans-serif',
+        );
+      } else {
+        root.style.setProperty("--risu-font-family", "Arial, sans-serif");
+      }
       break;
     }
     case "timesnewroman": {

@@ -2,6 +2,9 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
     import { language } from "src/lang";
+    import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
+    import { changeColorScheme } from "src/ts/gui/colorscheme";
+    import { isWindowsFluentTheme, setUITheme } from "src/ts/gui/uiTheme";
     import {
         getWindowsTransparencyPreferences,
         applyWindowsTransparencyToDocument,
@@ -26,6 +29,76 @@
 </script>
 
 <section class="mt-5 rounded-lg border border-darkborderc bg-darkbg/35 p-4">
+    <!-- Windows 11 Fluent Theme Section -->
+    <div class="mb-5 border-b border-darkborderc pb-4">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+                <h4 class="text-md font-semibold text-textcolor flex items-center gap-2">
+                    <svg class="w-4 h-4 text-borderc shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M0 2.222L6.5 1.333V7.5H0V2.222zm7.5-1.467L16 0v7.5H7.5V.755zM0 8.5h6.5v6.167L0 13.778V8.5zm7.5 0H16V16l-8.5-.755V8.5z"/>
+                    </svg>
+                    <span>{language.windowsNativeTheme}</span>
+                </h4>
+                <p class="mt-1 text-xs text-textcolor2">
+                    {language.windowsNativeThemeDesc}
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-2 shrink-0">
+                <button
+                    type="button"
+                    class="rounded px-3 py-1.5 text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5"
+                    class:border-borderc={isWindowsFluentTheme() && settingsStore.state.colorSchemeName === "fluent-dark"}
+                    class:bg-selected={isWindowsFluentTheme() && settingsStore.state.colorSchemeName === "fluent-dark"}
+                    class:text-textcolor={true}
+                    class:border-darkborderc={!isWindowsFluentTheme() || settingsStore.state.colorSchemeName !== "fluent-dark"}
+                    class:bg-darkbutton={!isWindowsFluentTheme() || settingsStore.state.colorSchemeName !== "fluent-dark"}
+                    onclick={() => {
+                        setUITheme("windows");
+                        changeColorScheme("fluent-dark");
+                        if (!preferences.enabled) {
+                            updatePreferences({ enabled: true, effect: "mica" });
+                        }
+                    }}
+                >
+                    <span class="w-2.5 h-2.5 rounded-full bg-[#202020] border border-[#60cdff]"></span>
+                    Fluent Dark
+                </button>
+                <button
+                    type="button"
+                    class="rounded px-3 py-1.5 text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5"
+                    class:border-borderc={isWindowsFluentTheme() && settingsStore.state.colorSchemeName === "fluent-light"}
+                    class:bg-selected={isWindowsFluentTheme() && settingsStore.state.colorSchemeName === "fluent-light"}
+                    class:text-textcolor={true}
+                    class:border-darkborderc={!isWindowsFluentTheme() || settingsStore.state.colorSchemeName !== "fluent-light"}
+                    class:bg-darkbutton={!isWindowsFluentTheme() || settingsStore.state.colorSchemeName !== "fluent-light"}
+                    onclick={() => {
+                        setUITheme("windows");
+                        changeColorScheme("fluent-light");
+                        if (!preferences.enabled) {
+                            updatePreferences({ enabled: true, effect: "mica" });
+                        }
+                    }}
+                >
+                    <span class="w-2.5 h-2.5 rounded-full bg-[#f3f3f3] border border-[#005fb8]"></span>
+                    Fluent Light
+                </button>
+                {#if isWindowsFluentTheme()}
+                    <button
+                        type="button"
+                        class="rounded px-2.5 py-1.5 text-xs text-textcolor2 hover:text-textcolor border border-darkborderc hover:bg-darkbutton transition-all cursor-pointer"
+                        onclick={() => {
+                            setUITheme("default");
+                            changeColorScheme("default");
+                        }}
+                        title="기본 테마로 복원"
+                    >
+                        기본 테마
+                    </button>
+                {/if}
+            </div>
+        </div>
+    </div>
+
     <h3 class="text-lg font-semibold text-textcolor">
         {language.windowsTransparency}
     </h3>
