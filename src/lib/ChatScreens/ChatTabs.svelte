@@ -113,10 +113,10 @@
 
             const paneRect = pane.getBoundingClientRect();
             const tabRect = activeTab.getBoundingClientRect();
-            const outlineInset = 8;
-            const shoulderWidth = 7.5;
-            const start = tabRect.left - paneRect.left - shoulderWidth;
-            const end = tabRect.right - paneRect.left + shoulderWidth;
+            const outlineInset = 18;
+            const shoulderFilletWidth = 8;
+            const start = tabRect.left - paneRect.left - shoulderFilletWidth;
+            const end = tabRect.right - paneRect.left + shoulderFilletWidth;
             const clampedStart = Math.max(outlineInset, start);
             const clampedEnd = Math.min(paneRect.width - outlineInset, end);
             const width = Math.max(0, clampedEnd - clampedStart);
@@ -664,7 +664,8 @@
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
         class:pl-14={!$MobileGUI && reserveSidebarSpace && !isTauriMacOS}
-        class:pl-2={$MobileGUI || !reserveSidebarSpace || isTauriMacOS}
+        class:pl-4={!$MobileGUI && !reserveSidebarSpace && isTauriWindows}
+        class:pl-2={$MobileGUI || (!reserveSidebarSpace && !isTauriWindows) || isTauriMacOS}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         style:padding-right={isTauriWindows ? "140px" : undefined}
@@ -692,13 +693,13 @@
                 oncontextmenu={(event) => openContextMenu(event, tab)}
             >
                 {#if active}
-                    <svg class="rs-chat-tab-shoulder rs-chat-tab-shoulder-left" viewBox="0 0 9 8" aria-hidden="true">
-                        <path class="rs-chat-tab-shoulder-fill" d="M0 8A8 8 0 0 0 8 0H9V8Z" />
-                        <path class="rs-chat-tab-shoulder-outline" d="M0.5 8A8 8 0 0 0 8.5 0" />
+                    <svg class="rs-chat-tab-shoulder rs-chat-tab-shoulder-left" viewBox="0 0 16 8" aria-hidden="true">
+                        <path class="rs-chat-tab-shoulder-fill" d="M7.5 8A8 8 0 0 0 15.5 0H16V8Z" />
+                        <path class="rs-chat-tab-shoulder-outline" d="M0 8H7.5A8 8 0 0 0 15.5 0" />
                     </svg>
-                    <svg class="rs-chat-tab-shoulder rs-chat-tab-shoulder-right" viewBox="0 0 9 8" aria-hidden="true">
-                        <path class="rs-chat-tab-shoulder-fill" d="M0 0H1A8 8 0 0 0 9 8H0Z" />
-                        <path class="rs-chat-tab-shoulder-outline" d="M0.5 0A8 8 0 0 0 8.5 8" />
+                    <svg class="rs-chat-tab-shoulder rs-chat-tab-shoulder-right" viewBox="0 0 16 8" aria-hidden="true">
+                        <path class="rs-chat-tab-shoulder-fill" d="M0 0H0.5A8 8 0 0 0 8.5 8H0Z" />
+                        <path class="rs-chat-tab-shoulder-outline" d="M0.5 0A8 8 0 0 0 8.5 8H16" />
                     </svg>
                 {/if}
                 {#if generating}
