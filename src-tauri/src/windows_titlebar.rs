@@ -22,12 +22,12 @@ use windows::{
             },
             Gdi::{
                 BeginPaint, CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC,
-                DeleteObject, DrawTextW, EndPaint, GetMonitorInfoW, MonitorFromRect, SelectObject,
-                SetBkMode, SetTextColor, AC_SRC_ALPHA, AC_SRC_OVER, ANTIALIASED_QUALITY,
-                BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, CLIP_DEFAULT_PRECIS,
-                DEFAULT_CHARSET, DIB_RGB_COLORS, DT_CENTER, DT_SINGLELINE, DT_VCENTER, FW_NORMAL,
-                MONITORINFO, MONITOR_DEFAULTTONEAREST, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
-                TRANSPARENT,
+                DeleteObject, DrawTextW, EndPaint, GetMonitorInfoW, MonitorFromRect,
+                ScreenToClient, SelectObject, SetBkMode, SetTextColor, AC_SRC_ALPHA, AC_SRC_OVER,
+                ANTIALIASED_QUALITY, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION,
+                CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DIB_RGB_COLORS, DT_CENTER, DT_SINGLELINE,
+                DT_VCENTER, FW_NORMAL, MONITORINFO, MONITOR_DEFAULTTONEAREST, OUT_DEFAULT_PRECIS,
+                PAINTSTRUCT, TRANSPARENT,
             },
         },
         System::LibraryLoader::GetModuleHandleW,
@@ -35,22 +35,23 @@ use windows::{
             Controls::WM_MOUSELEAVE,
             HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
             Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT},
-            Shell::{DefSubclassProc, SetWindowSubclass},
+            Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, GetPropW, GetWindow,
                 GetWindowLongPtrW, GetWindowRect, IsZoomed, LoadCursorW, PostMessageW,
-                RegisterClassExW, RemovePropW, SetPropW, SetWindowLongPtrW, SetWindowPos,
-                UpdateLayeredWindow, GWLP_USERDATA, GW_OWNER, HTBOTTOM, HTBOTTOMLEFT,
-                HTBOTTOMRIGHT, HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON, HTMINBUTTON, HTRIGHT, HTTOP,
-                HTTOPLEFT, HTTOPRIGHT, HWND_TOP, IDC_ARROW, NCCALCSIZE_PARAMS, SC_CLOSE,
-                SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CXSIZEFRAME,
-                SM_CYSIZEFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-                SWP_NOZORDER, SWP_SHOWWINDOW, ULW_ALPHA, WINDOW_EX_STYLE, WINDOW_STYLE,
-                WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-                WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDOWN,
-                WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_SETTINGCHANGE,
-                WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_WINDOWPOSCHANGED, WNDCLASSEXW,
-                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+                RegisterClassExW, RemovePropW, SetCursor, SetPropW, SetWindowLongPtrW,
+                SetWindowPos, UpdateLayeredWindow, GWLP_USERDATA, GW_OWNER, HTBOTTOM,
+                HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON,
+                HTMINBUTTON, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTTRANSPARENT, HWND_TOP,
+                IDC_ARROW, NCCALCSIZE_PARAMS, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
+                SM_CXPADDEDBORDER, SM_CXSIZEFRAME, SM_CYSIZEFRAME, SWP_FRAMECHANGED,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, ULW_ALPHA,
+                WINDOW_EX_STYLE, WINDOW_STYLE, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
+                WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY,
+                WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
+                WM_PAINT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED,
+                WM_WINDOWPOSCHANGED, WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
             },
         },
     },
@@ -58,6 +59,8 @@ use windows::{
 
 const RISU_FRAME_SUBCLASS_ID: usize = 0x5249_5355;
 const RISU_CAPTION_SUBCLASS_ID: usize = 0x5249_5340;
+const RISU_SNAP_SUBCLASS_ID: usize = 0x5249_5330;
+const PROP_SNAP_CHILD: PCWSTR = w!("RisuSnapChild");
 const BUTTON_STATE_HOVER: isize = 1;
 const BUTTON_STATE_PRESSED: isize = 2;
 const BACKDROP_OFF: u8 = 0;
@@ -449,10 +452,13 @@ unsafe extern "system" fn caption_button_proc(
     };
 
     match message {
-        // Keep pointer input on the caption-button overlay. Passing this hit
-        // through reaches the WebView's drag region and turns button clicks
-        // into window drags instead of delivering the button messages below.
-        WM_NCHITTEST => LRESULT(HTCLIENT as isize),
+        WM_NCHITTEST => {
+            if kind == CaptionButtonKind::Maximize {
+                LRESULT(HTTRANSPARENT as isize)
+            } else {
+                LRESULT(HTCLIENT as isize)
+            }
+        },
         WM_MOUSEMOVE => {
             update_button_state(hwnd, kind, BUTTON_STATE_HOVER, true);
             track_button_leave(hwnd, false);
@@ -538,7 +544,16 @@ unsafe fn ensure_caption_window_class() -> Result<HINSTANCE, String> {
 
 unsafe fn create_caption_button(parent: HWND, kind: CaptionButtonKind) -> Result<HWND, String> {
     let instance = ensure_caption_window_class()?;
-    let ex_style = WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0);
+    let ex_style = if kind == CaptionButtonKind::Maximize {
+        WINDOW_EX_STYLE(
+            WS_EX_TOOLWINDOW.0
+                | WS_EX_NOACTIVATE.0
+                | WS_EX_LAYERED.0
+                | WS_EX_TRANSPARENT.0,
+        )
+    } else {
+        WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0)
+    };
     let style = WINDOW_STYLE(WS_POPUP.0 | WS_VISIBLE.0);
     let child = CreateWindowExW(
         ex_style,
@@ -574,6 +589,147 @@ unsafe fn create_caption_button(parent: HWND, kind: CaptionButtonKind) -> Result
     }
 
     Ok(child)
+}
+
+unsafe fn create_snap_child(parent: HWND) -> Result<HWND, String> {
+    let child = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("STATIC"),
+        PCWSTR::null(),
+        WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | WS_CLIPSIBLINGS.0),
+        0,
+        0,
+        1,
+        1,
+        Some(parent),
+        None,
+        None,
+        None,
+    )
+    .map_err(|error| format!("CreateWindowExW(snap child) failed: {error}"))?;
+
+    if !SetWindowSubclass(
+        child,
+        Some(snap_child_proc),
+        RISU_SNAP_SUBCLASS_ID,
+        parent.0 as usize,
+    )
+    .as_bool()
+    {
+        let _ = DestroyWindow(child);
+        return Err("SetWindowSubclass failed for snap child".to_string());
+    }
+
+    if let Err(error) = SetPropW(parent, PROP_SNAP_CHILD, Some(HANDLE(child.0))) {
+        let _ = DestroyWindow(child);
+        return Err(format!("SetPropW(snap child) failed: {error}"));
+    }
+
+    Ok(child)
+}
+
+unsafe fn get_snap_child(parent: HWND) -> Option<HWND> {
+    let handle = GetPropW(parent, PROP_SNAP_CHILD);
+    if handle.0.is_null() {
+        None
+    } else {
+        Some(HWND(handle.0))
+    }
+}
+
+unsafe extern "system" fn snap_child_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    subclass_id: usize,
+    ref_data: usize,
+) -> LRESULT {
+    let parent = HWND(ref_data as *mut _);
+
+    match message {
+        WM_NCDESTROY => {
+            let _ = RemoveWindowSubclass(hwnd, Some(snap_child_proc), subclass_id);
+            let _ = RemovePropW(parent, PROP_SNAP_CHILD);
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        }
+        WM_NCHITTEST => {
+            if let Some(max_btn) = get_caption_button(parent, CaptionButtonKind::Maximize) {
+                if button_state(max_btn) & BUTTON_STATE_HOVER == 0 {
+                    update_button_state(
+                        max_btn,
+                        CaptionButtonKind::Maximize,
+                        BUTTON_STATE_HOVER,
+                        true,
+                    );
+                    track_button_leave(hwnd, true);
+                }
+            }
+            LRESULT(HTMAXBUTTON as isize)
+        }
+        WM_NCMOUSELEAVE => {
+            if let Some(max_btn) = get_caption_button(parent, CaptionButtonKind::Maximize) {
+                update_button_state(
+                    max_btn,
+                    CaptionButtonKind::Maximize,
+                    BUTTON_STATE_HOVER,
+                    false,
+                );
+                update_button_state(
+                    max_btn,
+                    CaptionButtonKind::Maximize,
+                    BUTTON_STATE_PRESSED,
+                    false,
+                );
+            }
+            LRESULT(0)
+        }
+        WM_NCLBUTTONDOWN => {
+            if wparam.0 == HTMAXBUTTON as usize {
+                if let Some(max_btn) = get_caption_button(parent, CaptionButtonKind::Maximize) {
+                    update_button_state(
+                        max_btn,
+                        CaptionButtonKind::Maximize,
+                        BUTTON_STATE_PRESSED,
+                        true,
+                    );
+                }
+                return LRESULT(0);
+            }
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        }
+        WM_NCLBUTTONUP => {
+            if wparam.0 == HTMAXBUTTON as usize {
+                if let Some(max_btn) = get_caption_button(parent, CaptionButtonKind::Maximize) {
+                    update_button_state(
+                        max_btn,
+                        CaptionButtonKind::Maximize,
+                        BUTTON_STATE_PRESSED,
+                        false,
+                    );
+                }
+                let command = if IsZoomed(parent).as_bool() {
+                    SC_RESTORE
+                } else {
+                    SC_MAXIMIZE
+                };
+                let _ = PostMessageW(
+                    Some(parent),
+                    WM_SYSCOMMAND,
+                    WPARAM(command as usize),
+                    LPARAM(0),
+                );
+                return LRESULT(0);
+            }
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        }
+        WM_SETCURSOR => {
+            let cursor = LoadCursorW(None, IDC_ARROW).unwrap_or_default();
+            let _ = SetCursor(Some(cursor));
+            LRESULT(1)
+        }
+        _ => DefSubclassProc(hwnd, message, wparam, lparam),
+    }
 }
 
 unsafe fn get_caption_button(parent: HWND, kind: CaptionButtonKind) -> Option<HWND> {
@@ -617,11 +773,12 @@ unsafe fn reposition_caption_buttons(parent: HWND) {
             continue;
         };
         let x = right - border_inset - width * (3 - index as i32);
+        let y = top + border_inset;
         let _ = SetWindowPos(
             child,
             Some(HWND_TOP),
             x,
-            top + border_inset,
+            y,
             width,
             height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
@@ -629,27 +786,23 @@ unsafe fn reposition_caption_buttons(parent: HWND) {
         if let Err(error) = render_layered_caption_button(child, kind) {
             eprintln!("[Windows titlebar] Failed to render {kind:?}: {error}");
         }
+
+        if kind == CaptionButtonKind::Maximize {
+            if let Some(snap_child) = get_snap_child(parent) {
+                let mut client_pt = POINT { x, y };
+                let _ = ScreenToClient(parent, &mut client_pt);
+                let _ = SetWindowPos(
+                    snap_child,
+                    Some(HWND_TOP),
+                    client_pt.x,
+                    client_pt.y,
+                    width,
+                    height,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                );
+            }
+        }
     }
-}
-unsafe fn hit_test_caption_buttons(hwnd: HWND, lparam: LPARAM) -> Option<LRESULT> {
-    let mut rect = RECT::default();
-    if GetWindowRect(hwnd, &mut rect).is_err() {
-        return None;
-    }
-    let (width, height) = caption_metrics(hwnd);
-    let x = signed_low_word(lparam.0);
-    let y = signed_high_word(lparam.0);
-    if y < rect.top || y >= rect.top + height || x < rect.right - width * 3 || x >= rect.right {
-        return None;
-    }
-    let slot = (x - (rect.right - width * 3)) / width;
-    let hit = match slot {
-        0 => HTMINBUTTON,
-        1 => HTMAXBUTTON,
-        2 => HTCLOSE,
-        _ => return None,
-    };
-    Some(LRESULT(hit as isize))
 }
 
 unsafe fn update_caption_visual_state(parent: HWND, hit: u32, flag: isize, enabled: bool) {
@@ -686,12 +839,19 @@ unsafe fn hit_test_resize_border(hwnd: HWND, lparam: LPARAM) -> Option<LRESULT> 
         return None;
     }
 
+    let (button_width, height) = caption_metrics(hwnd);
+    let x = signed_low_word(lparam.0);
+    let y = signed_high_word(lparam.0);
+
+    // Caption button area must not be intercepted by resize border
+    if x >= rect.right - button_width * 3 && y < rect.top + height {
+        return None;
+    }
+
     let dpi = GetDpiForWindow(hwnd);
     let padded = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
     let frame_x = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + padded;
     let frame_y = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + padded;
-    let x = signed_low_word(lparam.0);
-    let y = signed_high_word(lparam.0);
     let left = x >= rect.left && x < rect.left + frame_x;
     let right = x < rect.right && x >= rect.right - frame_x;
     let top = y >= rect.top && y < rect.top + frame_y;
@@ -737,6 +897,10 @@ unsafe fn render_caption_buttons(parent: HWND) {
 }
 
 unsafe fn destroy_caption_buttons(parent: HWND) {
+    if let Some(snap) = get_snap_child(parent) {
+        let _ = RemovePropW(parent, PROP_SNAP_CHILD);
+        let _ = DestroyWindow(snap);
+    }
     for kind in [
         CaptionButtonKind::Minimize,
         CaptionButtonKind::Maximize,
@@ -765,9 +929,22 @@ unsafe extern "system" fn custom_frame_proc(
             }
             LRESULT(0)
         }
-        WM_NCHITTEST => hit_test_caption_buttons(hwnd, lparam)
-            .or_else(|| hit_test_resize_border(hwnd, lparam))
-            .unwrap_or_else(|| DefSubclassProc(hwnd, message, wparam, lparam)),
+        WM_NCHITTEST => {
+            let mut rect = RECT::default();
+            if GetWindowRect(hwnd, &mut rect).is_ok() {
+                let (width, height) = caption_metrics(hwnd);
+                let x = signed_low_word(lparam.0);
+                let y = signed_high_word(lparam.0);
+                if x >= rect.right - width * 3 && x < rect.right && y >= rect.top && y < rect.top + height {
+                    return LRESULT(HTCLIENT as isize);
+                }
+            }
+            if let Some(hit) = hit_test_resize_border(hwnd, lparam) {
+                hit
+            } else {
+                DefSubclassProc(hwnd, message, wparam, lparam)
+            }
+        }
         WM_NCMOUSEMOVE => {
             update_caption_visual_state(hwnd, wparam.0 as u32, BUTTON_STATE_HOVER, true);
             track_button_leave(hwnd, true);
@@ -850,6 +1027,7 @@ fn install_custom_frame<R: Runtime>(window: &Window<R>) -> Result<(), String> {
         ] {
             create_caption_button(hwnd, kind)?;
         }
+        create_snap_child(hwnd)?;
         SetWindowPos(
             hwnd,
             None,

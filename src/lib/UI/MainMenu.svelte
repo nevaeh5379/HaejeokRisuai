@@ -348,7 +348,9 @@
 <div class="rs-main-menu relative h-full w-full flex flex-col overflow-y-auto items-center">
     {#if isTauriMacOS || isTauriWindows}
       <div
-        class="absolute top-0 left-0 right-1 h-8 z-20"
+        class="absolute top-0 left-0 h-8 z-20"
+        class:right-1={!isTauriWindows}
+        class:right-36={isTauriWindows}
         use:windowDragRegion
         aria-hidden="true"
       ></div>
