@@ -1886,11 +1886,25 @@ annotation {
 .theme-windows-fluent .rs-sidebar-panel .char-grid,
 .theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler),
 .theme-windows-fluent .rs-script-list {
+  flex-shrink: 0 !important;
+  min-height: fit-content !important;
   border-radius: 6px !important;
   border: 1px solid var(--fluent-card-stroke) !important;
   background-color: var(--fluent-card-bg) !important;
   overflow: hidden !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Flush WinUI 3 DataGrid card styling */
+.theme-windows-fluent .rs-charconfig-card:has(> table),
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) {
+  padding: 0 !important;
+}
+
+.theme-windows-fluent .rs-charconfig-card:has(> table) > table,
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) > table {
+  margin-top: 0 !important;
+  border-collapse: collapse !important;
 }
 
 .theme-windows-fluent .rs-sidebar-panel table th {
@@ -1901,16 +1915,55 @@ annotation {
   font-weight: 600 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.5px !important;
-  padding: 8px 10px !important;
+  padding: 8px 12px !important;
 }
 
 .theme-windows-fluent .rs-sidebar-panel table td {
   border-bottom: 1px solid var(--fluent-card-stroke) !important;
-  padding: 6px 10px !important;
+  padding: 8px 12px !important;
+  color: var(--risu-theme-textcolor) !important;
 }
 
 .theme-windows-fluent .rs-sidebar-panel table tr:last-child td {
   border-bottom: none !important;
+}
+
+/* Table empty message row */
+.theme-windows-fluent .rs-sidebar-panel table td[colspan] {
+  text-align: center !important;
+  color: var(--risu-theme-textcolor2) !important;
+  padding: 14px 10px !important;
+  font-size: 13px !important;
+}
+
+/* Table Action Buttons (+, Trash, Move Up/Down) */
+.theme-windows-fluent .rs-sidebar-panel table th button,
+.theme-windows-fluent .rs-sidebar-panel table td button,
+.theme-windows-fluent .rs-sidebar-panel table th div button {
+  border: none !important;
+  border-width: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  padding: 4px !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--risu-theme-textcolor) !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table th button:hover,
+.theme-windows-fluent .rs-sidebar-panel table td button:hover,
+.theme-windows-fluent .rs-sidebar-panel table th div button:hover {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table th button:active,
+.theme-windows-fluent .rs-sidebar-panel table td button:active,
+.theme-windows-fluent .rs-sidebar-panel table th div button:active {
+  transform: scale(0.92) !important;
 }
 
 /* Table inputs seamlessly integrate */
@@ -1987,16 +2040,34 @@ annotation {
 }
 
 /* Chat list items - WinUI 3 ListView Item */
-.theme-windows-fluent .rs-sidechat-item {
+.theme-windows-fluent .rs-sidechat-item,
+.theme-windows-fluent button.rs-sidechat-item {
   position: relative !important;
   border-radius: 4px !important;
   padding: 6px 10px !important;
   margin: 1px 0 !important;
   min-height: 36px !important;
   font-size: 13px !important;
-  border: 1px solid transparent !important;
+  border: none !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
   outline: none !important;
+  box-shadow: none !important;
   transition: background-color 100ms ease !important;
+}
+
+/* Chat Folders */
+.theme-windows-fluent .rs-sidechat-folder {
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  background-color: transparent !important;
+}
+
+.theme-windows-fluent .rs-sidechat-folder > button {
+  border: none !important;
+  border-width: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .theme-windows-fluent .rs-sidechat-item:not(.bg-selected) {
