@@ -49,7 +49,8 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
-    import { isTauriMacOS } from "src/ts/platform";
+    import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
+    import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import {
       closeTauriSidebarMenuPopup,
       listenTauriSidebarMenuActions,
@@ -530,10 +531,10 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-{#if isTauriMacOS}
+{#if isTauriMacOS || isTauriWindows}
   <div
-    class="absolute top-0 left-0 right-1 h-7 z-20"
-    data-tauri-drag-region="true"
+    class="absolute top-0 left-0 right-1 h-8 z-20"
+    use:windowDragRegion
     aria-hidden="true"
   ></div>
 {/if}
@@ -611,17 +612,17 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-  {#if isTauriMacOS}
+  {#if isTauriMacOS || isTauriWindows}
     {#if !settingsStore.state.hamburgerButtonBottom}
       <div
-        class="absolute top-0 left-0 right-1 h-7 z-20"
-        data-tauri-drag-region="true"
+        class="absolute top-0 left-0 right-1 h-8 z-20"
+        use:windowDragRegion
         aria-hidden="true"
       ></div>
     {:else}
       <div
         class="absolute inset-y-0 left-0 w-1.5 z-20"
-        data-tauri-drag-region="true"
+        use:windowDragRegion
         aria-hidden="true"
       ></div>
     {/if}

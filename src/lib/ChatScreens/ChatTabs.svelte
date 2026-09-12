@@ -17,7 +17,8 @@
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
-    import { isTauri, isTauriMacOS } from 'src/ts/platform';
+    import { isTauri, isTauriMacOS, isTauriWindows } from 'src/ts/platform';
+    import { windowDragRegion } from 'src/ts/nativeWindowChrome';
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
@@ -588,7 +589,7 @@
     >
         <div
             class="rs-chat-tab-traffic-light-spacer"
-            data-tauri-drag-region="true"
+            use:windowDragRegion
             aria-hidden="true"
         ></div>
         <div
@@ -606,6 +607,7 @@
         class:pl-2={$MobileGUI || !reserveSidebarSpace || isTauriMacOS}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
+        style:padding-right={isTauriWindows ? "140px" : undefined}
         class:macos-aux-titlebar-tabs={reserveMacOSTrafficLights}
         class:macos-main-titlebar-tabs-closed={reserveMainMacOSTrafficLights}
     >
@@ -660,7 +662,7 @@
         {/each}
         <div
             class="rs-chat-tab-window-drag-surface min-w-8 flex-1 self-stretch"
-            data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
+            use:windowDragRegion
             aria-hidden="true"
         ></div>
         <button

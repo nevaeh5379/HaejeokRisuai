@@ -4,6 +4,8 @@
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
 mod sqlite_transaction;
+#[cfg(target_os = "windows")]
+mod windows_titlebar;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -1294,6 +1296,11 @@ fn main() {
     #[cfg(target_os = "macos")]
     {
         builder = builder.plugin(macos_vibrancy::init());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.plugin(windows_titlebar::init());
     }
 
     #[cfg(target_os = "macos")]
