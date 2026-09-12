@@ -3,7 +3,12 @@ import "katex/dist/katex.min.css";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 import { Buffer } from "node:buffer";
-import { isTauri, isTauriMacOS, waitForTauriRuntimeReady } from "./ts/platform";
+import {
+  isTauri,
+  isTauriMacOS,
+  isTauriWindows,
+  waitForTauriRuntimeReady,
+} from "./ts/platform";
 import {
   parseTauriSidebarMenuLaunch,
   readTauriSidebarMenuPopupPayload,
@@ -13,6 +18,9 @@ if (typeof window !== "undefined") {
   window.Buffer = Buffer;
   if (isTauriMacOS) {
     document.documentElement.classList.add("tauri-macos-vibrancy");
+  }
+  if (isTauriWindows) {
+    document.documentElement.classList.add("tauri-windows-vibrancy");
   }
 }
 

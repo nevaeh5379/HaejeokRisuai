@@ -381,7 +381,7 @@
         </div>
     {:else}
         {#if gridOpen}
-            <div class="grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0">
                 <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
             </div>
         {:else}
@@ -393,7 +393,7 @@
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
                 </div>
             {/if}
-            <div class="grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0">
                 {#if $selectedCharID < 0 && $PlaygroundStore === 0}
                     <LazyComponent loader={mainMenuLoader} />
                 {:else}

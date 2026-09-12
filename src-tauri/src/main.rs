@@ -50,18 +50,7 @@ fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), 
 
     #[cfg(target_os = "windows")]
     {
-        let theme = if dark {
-            tauri::Theme::Dark
-        } else {
-            tauri::Theme::Light
-        };
-
-        for window in app.webview_windows().into_values() {
-            window
-                .set_theme(Some(theme))
-                .map_err(|error| error.to_string())?;
-        }
-        Ok(())
+        windows_titlebar::set_risu_native_appearance(&app, dark)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]

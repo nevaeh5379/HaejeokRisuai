@@ -2,7 +2,8 @@ use std::mem::size_of;
 
 use tauri::{
     plugin::{Builder, TauriPlugin},
-    Runtime, Window,
+    window::{Effect, EffectsBuilder},
+    AppHandle, Manager, Runtime, Theme, Window,
 };
 use windows::{
     core::{w, PCWSTR},
@@ -104,6 +105,34 @@ impl CaptionButtonKind {
 
 fn supports_custom_frame(label: &str) -> bool {
     label == "main" || label.starts_with("chat-window-")
+}
+
+fn apply_native_backdrop<R: Runtime>(window: &Window<R>, dark: bool) -> Result<(), String> {
+    let effect = if dark {
+        Effect::MicaDark
+    } else {
+        Effect::MicaLight
+    };
+    window
+        .set_effects(EffectsBuilder::new().effect(effect).build())
+        .map_err(|error| error.to_string())
+}
+
+pub fn set_risu_native_appearance<R: Runtime>(
+    app: &AppHandle<R>,
+    dark: bool,
+) -> Result<(), String> {
+    let theme = if dark { Theme::Dark } else { Theme::Light };
+    for window in app.webview_windows().into_values() {
+        if !supports_custom_frame(window.label()) {
+            continue;
+        }
+        window
+            .set_theme(Some(theme))
+            .map_err(|error| error.to_string())?;
+        apply_native_backdrop(&window.as_ref().window(), dark)?;
+    }
+    Ok(())
 }
 
 fn signed_low_word(value: isize) -> i32 {
@@ -730,6 +759,8 @@ fn install_custom_frame<R: Runtime>(window: &Window<R>) -> Result<(), String> {
             &initial_dark_mode as *const _ as *const core::ffi::c_void,
             size_of::<i32>() as u32,
         );
+
+        apply_native_backdrop(window, true)?;
 
         let corner_preference = DWMWCP_ROUND;
         let _ = DwmSetWindowAttribute(

@@ -168,6 +168,51 @@ html.tauri-macos-vibrancy #app {
   background: transparent;
 }
 
+/* Windows native material uses the system Mica backdrop as the substrate.
+ * Only persistent sidebar chrome exposes it; content remains an opaque,
+ * readable app surface and overlay sidebars stay opaque. */
+html.tauri-windows-vibrancy,
+html.tauri-windows-vibrancy body,
+html.tauri-windows-vibrancy #app {
+  background: transparent;
+}
+
+html.tauri-windows-vibrancy {
+  --risu-windows-sidebar-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 62%,
+    transparent
+  );
+}
+
+html.tauri-windows-vibrancy main.tauri-native {
+  background-color: transparent;
+}
+
+html.tauri-windows-vibrancy .rs-main-content {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+html.tauri-windows-vibrancy .rs-sidebar,
+html.tauri-windows-vibrancy .rs-sidebar-panel {
+  background-color: var(--risu-windows-sidebar-tint) !important;
+  border-right-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 10%,
+    transparent
+  ) !important;
+  box-shadow: none;
+}
+
+html.tauri-windows-vibrancy .rs-sidebar.dynamic-sidebar,
+html.tauri-windows-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  background-color: var(--risu-theme-darkbg) !important;
+}
+
+html.tauri-windows-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  box-shadow: 10px 0 28px rgb(0 0 0 / 0.28);
+}
+
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
   --risu-macos-traffic-lights-width: 5rem;
