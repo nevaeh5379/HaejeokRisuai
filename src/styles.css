@@ -180,7 +180,7 @@ html.tauri-windows-vibrancy #app {
 html.tauri-windows-vibrancy {
   --risu-windows-sidebar-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 30%,
+    var(--risu-theme-darkbg) 85%,
     transparent
   );
 }
@@ -191,6 +191,48 @@ html.tauri-windows-vibrancy main.tauri-native {
 
 html.tauri-windows-vibrancy .rs-main-content {
   background-color: var(--risu-theme-bgcolor);
+}
+
+/* Let Acrylic reach the tab strip without leaking through the chat body. The
+ * shell owns the tint so the nested list does not compound its opacity. */
+html.tauri-windows-vibrancy
+  .rs-main-content:has(.default-chat-pane.has-chat-tabs),
+html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+  background-color: transparent;
+}
+
+html.tauri-windows-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .default-chat-screen {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
+  background-color: var(--risu-windows-sidebar-tint);
+}
+
+html.tauri-windows-vibrancy
+  .rs-chat-tab-strip-shell
+  > .rs-chat-tab-list {
+  background-color: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 85%,
+    transparent
+  ) !important;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-selected) 85%,
+    transparent
+  ) !important;
 }
 
 html.tauri-windows-vibrancy .rs-sidebar,
