@@ -506,10 +506,20 @@ unsafe fn reposition_caption_buttons(parent: HWND) {
         return;
     }
     let (width, height) = caption_metrics(parent);
-    let border_inset = if IsZoomed(parent).as_bool() {
-        0
+    let maximized = IsZoomed(parent).as_bool();
+    let (right, top, border_inset) = if maximized {
+        let monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+        let mut info = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(monitor, &mut info).as_bool() {
+            (info.rcWork.right, info.rcWork.top, 0)
+        } else {
+            (rect.right, rect.top, 0)
+        }
     } else {
-        caption_border_inset(parent)
+        (rect.right, rect.top, caption_border_inset(parent))
     };
     let kinds = [
         CaptionButtonKind::Minimize,
@@ -521,12 +531,12 @@ unsafe fn reposition_caption_buttons(parent: HWND) {
         let Some(child) = get_caption_button(parent, kind) else {
             continue;
         };
-        let x = rect.right - border_inset - width * (3 - index as i32);
+        let x = right - border_inset - width * (3 - index as i32);
         let _ = SetWindowPos(
             child,
             Some(HWND_TOP),
             x,
-            rect.top + border_inset,
+            top + border_inset,
             width,
             height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
