@@ -129,6 +129,11 @@ unsafe fn caption_corner_radius(hwnd: HWND) -> i32 {
     ((8_i64 * dpi as i64 + 48) / 96) as i32
 }
 
+unsafe fn caption_border_inset(hwnd: HWND) -> i32 {
+    let dpi = GetDpiForWindow(hwnd).max(96);
+    ((dpi as i64 + 95) / 96) as i32
+}
+
 unsafe fn button_state(hwnd: HWND) -> isize {
     GetWindowLongPtrW(hwnd, GWLP_USERDATA)
 }
@@ -281,7 +286,7 @@ unsafe fn render_layered_caption_button(
 
     let pixels = std::slice::from_raw_parts_mut(bits as *mut u8, (width * height * 4) as usize);
     let corner_radius = if kind == CaptionButtonKind::Close && !maximized {
-        caption_corner_radius(owner)
+        caption_corner_radius(owner).saturating_sub(caption_border_inset(owner))
     } else {
         0
     };
@@ -498,6 +503,11 @@ unsafe fn reposition_caption_buttons(parent: HWND) {
         return;
     }
     let (width, height) = caption_metrics(parent);
+    let border_inset = if IsZoomed(parent).as_bool() {
+        0
+    } else {
+        caption_border_inset(parent)
+    };
     let kinds = [
         CaptionButtonKind::Minimize,
         CaptionButtonKind::Maximize,
@@ -508,12 +518,12 @@ unsafe fn reposition_caption_buttons(parent: HWND) {
         let Some(child) = get_caption_button(parent, kind) else {
             continue;
         };
-        let x = rect.right - width * (3 - index as i32);
+        let x = rect.right - border_inset - width * (3 - index as i32);
         let _ = SetWindowPos(
             child,
             Some(HWND_TOP),
             x,
-            rect.top,
+            rect.top + border_inset,
             width,
             height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
