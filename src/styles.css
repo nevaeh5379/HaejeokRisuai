@@ -205,12 +205,44 @@ html.tauri-windows-vibrancy
  * The pane owns the same material tint as the tab strip, so the small corner
  * cutouts reveal Acrylic/Mica instead of an opaque rectangular backdrop. */
 html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+  --risu-windows-chat-radius: 10px;
   --risu-windows-chat-outline: color-mix(
     in srgb,
     var(--risu-theme-textcolor) 9%,
     transparent
   );
+  --risu-windows-chat-outline-solid: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 9%,
+    var(--risu-theme-bgcolor)
+  );
+  --risu-windows-active-tab-start: 0px;
+  --risu-windows-active-tab-end: 0px;
   background-color: var(--risu-windows-sidebar-tint);
+}
+
+html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 40px;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent var(--risu-windows-chat-radius),
+    var(--risu-windows-chat-outline-solid) var(--risu-windows-chat-radius),
+    var(--risu-windows-chat-outline-solid) var(--risu-windows-active-tab-start),
+    transparent var(--risu-windows-active-tab-start),
+    transparent var(--risu-windows-active-tab-end),
+    var(--risu-windows-chat-outline-solid) var(--risu-windows-active-tab-end),
+    var(--risu-windows-chat-outline-solid) calc(100% - var(--risu-windows-chat-radius)),
+    transparent calc(100% - var(--risu-windows-chat-radius)),
+    transparent 100%
+  );
 }
 
 html.tauri-windows-vibrancy
@@ -220,11 +252,17 @@ html.tauri-windows-vibrancy
   width: calc(100% - 16px);
   margin: 0px 8px 8px 8px;
   align-self: center;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--risu-windows-chat-outline);
+  border-radius: var(--risu-windows-chat-radius);
+  z-index: 1;
+  box-shadow:
+    inset 1px 0 var(--risu-windows-chat-outline-solid),
+    inset -1px 0 var(--risu-windows-chat-outline-solid),
+    inset 0 -1px var(--risu-windows-chat-outline-solid);
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
+  position: relative;
+  z-index: 3;
   background-color: transparent;
 }
 
@@ -262,42 +300,40 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
   height: 36px !important;
   margin-bottom: 0;
   border-bottom-width: 0;
+  border-color: var(--risu-windows-chat-outline-solid);
   border-radius: 10px 10px 0 0 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
-/* Blend the open active tab into the bar with small concave shoulders. A
- * radial fill avoids the rectangular protrusions produced by box-shadows. */
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before,
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
-  content: "";
+/* Exact SVG arcs avoid subpixel seams between the tab border and content
+ * outline that CSS radial gradients produce at fractional scale factors. */
+html.tauri-windows-vibrancy .rs-chat-tab-shoulder {
   position: absolute;
   bottom: 0;
-  width: 8px;
+  width: 9px;
   height: 8px;
+  overflow: visible;
   pointer-events: none;
 }
 
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before {
-  right: 100%;
-  background: radial-gradient(
-    circle at 0 0,
-    transparent 6.5px,
-    var(--risu-windows-chat-outline) 7px,
-    var(--risu-windows-chat-outline) 7.5px,
-    var(--risu-windows-tab-surface) 8px
-  );
+html.tauri-windows-vibrancy .rs-chat-tab-shoulder-left {
+  left: -9px;
 }
 
-html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
-  left: 100%;
-  background: radial-gradient(
-    circle at 100% 0,
-    transparent 6.5px,
-    var(--risu-windows-chat-outline) 7px,
-    var(--risu-windows-chat-outline) 7.5px,
-    var(--risu-windows-tab-surface) 8px
-  );
+html.tauri-windows-vibrancy .rs-chat-tab-shoulder-right {
+  right: -9px;
+  transform: scaleX(-1);
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab-shoulder-fill {
+  fill: var(--risu-windows-tab-surface);
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab-shoulder-outline {
+  fill: none;
+  stroke: var(--risu-windows-chat-outline-solid);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-list [data-tab-add] {
