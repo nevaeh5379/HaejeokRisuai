@@ -96,61 +96,6 @@
     let nativeDragMarker: HTMLElement | undefined;
     let dockPreviewTimer: ReturnType<typeof setInterval> | null = null;
     let dockPreviewUpdatePromise: Promise<void> | null = null;
-    let tabListElement: HTMLElement | null = null;
-    let outlineSyncFrame: number | null = null;
-
-    function syncWindowsActiveTabOutline() {
-        if (!isTauriWindows || !tabListElement) return;
-        if (outlineSyncFrame !== null) cancelAnimationFrame(outlineSyncFrame);
-        outlineSyncFrame = requestAnimationFrame(() => {
-            outlineSyncFrame = null;
-            const pane = tabListElement?.closest<HTMLElement>('.default-chat-pane');
-            const activeTab = tabListElement?.querySelector<HTMLElement>('.rs-chat-tab[data-active="true"]');
-            if (!pane || !activeTab) return;
-
-            const paneRect = pane.getBoundingClientRect();
-            const tabRect = activeTab.getBoundingClientRect();
-            const outlineInset = 8;
-            const shoulderWidth = 8;
-            const outlineWidth = Math.max(0, paneRect.width - outlineInset * 2);
-            const start = Math.max(
-                0,
-                tabRect.left - paneRect.left - outlineInset - shoulderWidth,
-            );
-            const end = Math.min(
-                outlineWidth,
-                tabRect.right - paneRect.left - outlineInset + shoulderWidth,
-            );
-            pane.style.setProperty('--risu-windows-active-tab-start', `${start}px`);
-            pane.style.setProperty('--risu-windows-active-tab-end', `${end}px`);
-        });
-    }
-
-    function windowsTabOutlineGeometry(node: HTMLElement) {
-        if (!isTauriWindows) return;
-        tabListElement = node;
-        const observer = new ResizeObserver(syncWindowsActiveTabOutline);
-        observer.observe(node);
-        window.addEventListener('resize', syncWindowsActiveTabOutline);
-        syncWindowsActiveTabOutline();
-
-        return {
-            destroy() {
-                observer.disconnect();
-                window.removeEventListener('resize', syncWindowsActiveTabOutline);
-                if (outlineSyncFrame !== null) cancelAnimationFrame(outlineSyncFrame);
-                node.closest<HTMLElement>('.default-chat-pane')?.style.removeProperty('--risu-windows-active-tab-start');
-                node.closest<HTMLElement>('.default-chat-pane')?.style.removeProperty('--risu-windows-active-tab-end');
-                if (tabListElement === node) tabListElement = null;
-            },
-        };
-    }
-
-    $effect(() => {
-        chatTabsStore.getGroup(groupId)?.activeTabId;
-        groupTabs.length;
-        syncWindowsActiveTabOutline();
-    });
 
     onDestroy(() => {
         clearTabDrag();
@@ -649,7 +594,6 @@
         ></div>
         <div
         data-chat-tab-list
-        use:windowsTabOutlineGeometry
         data-group-id={groupId}
         role="tablist"
         tabindex="-1"

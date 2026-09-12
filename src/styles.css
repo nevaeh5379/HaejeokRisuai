@@ -216,33 +216,7 @@ html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
     var(--risu-theme-textcolor) 9%,
     var(--risu-theme-bgcolor)
   );
-  --risu-windows-active-tab-start: 0px;
-  --risu-windows-active-tab-end: 0px;
   background-color: var(--risu-windows-sidebar-tint);
-}
-
-html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  top: 40px;
-  left: 8px;
-  right: 8px;
-  height: 1px;
-  pointer-events: none;
-  background: linear-gradient(
-    to right,
-    transparent 0,
-    transparent var(--risu-windows-chat-radius),
-    var(--risu-windows-chat-outline-solid) var(--risu-windows-chat-radius),
-    var(--risu-windows-chat-outline-solid) var(--risu-windows-active-tab-start),
-    transparent var(--risu-windows-active-tab-start),
-    transparent var(--risu-windows-active-tab-end),
-    var(--risu-windows-chat-outline-solid) var(--risu-windows-active-tab-end),
-    var(--risu-windows-chat-outline-solid) calc(100% - var(--risu-windows-chat-radius)),
-    transparent calc(100% - var(--risu-windows-chat-radius)),
-    transparent 100%
-  );
 }
 
 html.tauri-windows-vibrancy
@@ -254,10 +228,7 @@ html.tauri-windows-vibrancy
   align-self: center;
   border-radius: var(--risu-windows-chat-radius);
   z-index: 1;
-  box-shadow:
-    inset 1px 0 var(--risu-windows-chat-outline-solid),
-    inset -1px 0 var(--risu-windows-chat-outline-solid),
-    inset 0 -1px var(--risu-windows-chat-outline-solid);
+  box-shadow: inset 0 0 0 1px var(--risu-windows-chat-outline-solid);
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
@@ -275,6 +246,13 @@ html.tauri-windows-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
   border-bottom-width: 0 !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  scrollbar-width: none;
+}
+
+html.tauri-windows-vibrancy
+  .rs-chat-tab-strip-shell
+  > .rs-chat-tab-list::-webkit-scrollbar {
+  display: none;
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab {
@@ -297,8 +275,8 @@ html.tauri-windows-vibrancy .rs-chat-tab {
 html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
   --risu-windows-tab-surface: var(--risu-theme-bgcolor);
   z-index: 2;
-  height: 36px !important;
-  margin-bottom: 0;
+  height: 37px !important;
+  margin-bottom: -1px;
   border-bottom-width: 0;
   border-color: var(--risu-windows-chat-outline-solid);
   border-radius: 10px 10px 0 0 !important;
