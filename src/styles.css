@@ -252,17 +252,43 @@ html.tauri-windows-vibrancy .rs-chat-tab {
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
-  --risu-windows-tab-surface: color-mix(
-    in srgb,
-    var(--risu-theme-selected) var(--risu-windows-material-opacity),
-    transparent
-  );
+  --risu-windows-tab-surface: var(--risu-theme-bgcolor);
   z-index: 2;
   height: 36px !important;
   margin-bottom: 0;
   border-bottom-width: 0;
   border-radius: 10px 10px 0 0 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+/* Blend the open active tab into the bar with small concave shoulders. A
+ * radial fill avoids the rectangular protrusions produced by box-shadows. */
+html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before,
+html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before {
+  right: 100%;
+  background: radial-gradient(
+    circle at 0 0,
+    transparent 7.5px,
+    var(--risu-windows-tab-surface) 8px
+  );
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
+  left: 100%;
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent 7.5px,
+    var(--risu-windows-tab-surface) 8px
+  );
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-list [data-tab-add] {
