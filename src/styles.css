@@ -1725,8 +1725,14 @@ annotation {
   display: none !important;
 }
 
-/* Mode tabs (Chat / Character / DevTools) - WinUI 3 Segmented Control */
-.theme-windows-fluent .rs-sidebar-mode-tabs {
+/* ==========================================================================
+   WinUI 3 Segmented Controls & Tabs (Mode tabs, CharConfig tabs, LoreBook tabs)
+   ========================================================================== */
+
+.theme-windows-fluent .rs-segmented-control,
+.theme-windows-fluent .rs-sidebar-mode-tabs,
+.theme-windows-fluent .rs-charconfig-tabs,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) {
   position: static !important;
   bottom: auto !important;
   border: 1px solid var(--fluent-card-stroke) !important;
@@ -1739,47 +1745,207 @@ annotation {
   height: 34px !important;
   min-height: 34px !important;
   box-sizing: border-box !important;
+  display: flex !important;
 }
 
-.theme-windows-fluent .rs-sidebar-mode-tabs button {
+.theme-windows-fluent .rs-segmented-control button,
+.theme-windows-fluent .rs-sidebar-mode-tabs button,
+.theme-windows-fluent .rs-charconfig-tabs button,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button {
   border: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
   outline: none !important;
   border-radius: 4px !important;
   font-size: 12.5px !important;
   font-weight: 500 !important;
   height: 100% !important;
-  padding: 0 12px !important;
+  padding: 0 10px !important;
+  box-shadow: none !important;
   transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease !important;
 }
 
+.theme-windows-fluent .rs-segmented-control button:focus,
+.theme-windows-fluent .rs-segmented-control button:focus-visible,
 .theme-windows-fluent .rs-sidebar-mode-tabs button:focus,
-.theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible {
+.theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-tabs button:focus,
+.theme-windows-fluent .rs-charconfig-tabs button:focus-visible,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:focus,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:focus-visible {
   outline: none !important;
 }
 
+/* Inactive tabs */
+.theme-windows-fluent .rs-segmented-control button:not(.bg-selected),
+.theme-windows-fluent .rs-charconfig-tabs button:not(.bg-selected),
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:not(.bg-selected),
 .theme-windows-fluent .rs-sidebar-mode-tabs button.text-textcolor2 {
   background-color: transparent !important;
   color: var(--risu-theme-textcolor2) !important;
 }
 
+.theme-windows-fluent .rs-segmented-control button:not(.bg-selected):hover,
+.theme-windows-fluent .rs-charconfig-tabs button:not(.bg-selected):hover,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:not(.bg-selected):hover,
 .theme-windows-fluent .rs-sidebar-mode-tabs button.text-textcolor2:hover {
   background-color: var(--fluent-subtle-fill-secondary) !important;
   color: var(--risu-theme-textcolor) !important;
 }
 
+/* Active tabs - Light mode: clean white card with subtle drop shadow */
+.theme-windows-fluent.theme-windows-fluent-light .rs-segmented-control button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light .rs-charconfig-tabs button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
 .theme-windows-fluent.theme-windows-fluent-light .rs-sidebar-mode-tabs button:not(.text-textcolor2) {
   background-color: #ffffff !important;
-  color: #1a1a1a !important;
+  color: #1f1f1f !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
   font-weight: 600 !important;
 }
 
+/* Active tabs - Dark mode: translucent elevated card */
+.theme-windows-fluent.theme-windows-fluent-dark .rs-segmented-control button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-segmented-control button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark .rs-charconfig-tabs button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-charconfig-tabs button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
 .theme-windows-fluent.theme-windows-fluent-dark .rs-sidebar-mode-tabs button:not(.text-textcolor2),
 .theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidebar-mode-tabs button:not(.text-textcolor2) {
   background-color: rgba(255, 255, 255, 0.10) !important;
   color: #ffffff !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
   font-weight: 600 !important;
+}
+
+/* ==========================================================================
+   Character Configuration Section (WinUI 3 Pane Styling)
+   ========================================================================== */
+
+/* Character Sub-navigation (CommandBar / TabStrip Style) */
+.theme-windows-fluent .rs-charconfig-subnav {
+  padding: 3px !important;
+  margin-bottom: 10px !important;
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+}
+
+.theme-windows-fluent .rs-charconfig-subnav button {
+  flex: 1 !important;
+  height: 34px !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  color: var(--risu-theme-textcolor2) !important;
+  transition: all 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-charconfig-subnav button:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-charconfig-subnav button.text-textcolor {
+  background-color: #ffffff !important;
+  color: var(--risu-theme-borderc) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
+}
+
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-charconfig-subnav button.text-textcolor {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+  color: var(--risu-theme-borderc) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Character Token Pill Badge */
+.theme-windows-fluent .rs-charconfig-token-badge {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 9999px !important;
+  padding: 1px 8px !important;
+  font-size: 11px !important;
+  font-family: monospace !important;
+  color: var(--risu-theme-textcolor2) !important;
+}
+
+/* Character Config Cards, Containers, Tables & Scripts */
+.theme-windows-fluent .rs-charconfig-card,
+.theme-windows-fluent .rs-sidebar-panel .char-grid,
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler),
+.theme-windows-fluent .rs-script-list {
+  border-radius: 6px !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  background-color: var(--fluent-card-bg) !important;
+  overflow: hidden !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table th {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  color: var(--risu-theme-textcolor2) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  padding: 8px 10px !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td {
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  padding: 6px 10px !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table tr:last-child td {
+  border-bottom: none !important;
+}
+
+/* Table inputs seamlessly integrate */
+.theme-windows-fluent .rs-sidebar-panel table td input,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textinput,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-numberinput {
+  box-shadow: none !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td input:focus,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textinput:focus,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-numberinput:focus {
+  background-color: var(--fluent-card-bg) !important;
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+}
+
+/* Group character talkness meter buttons */
+.theme-windows-fluent .char-grid button.border-r-bgcolor {
+  border-right-color: var(--fluent-card-bg) !important;
+}
+
+.theme-windows-fluent .char-grid button.bg-selected {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent .char-grid button.bg-green-500 {
+  background-color: var(--risu-theme-borderc) !important;
+}
+
+/* Remove unwanted horizontal dividers in the avatar navigation rail */
+.theme-windows-fluent .rs-sidebar div.border-b-selected {
+  border-bottom: none !important;
 }
 
 /* Side Chat Container */
@@ -2126,44 +2292,86 @@ annotation {
   transform: scale(0.97);
 }
 
-/* Form Controls (Buttons, Inputs, Checkboxes) */
+/* Form Controls (Buttons, Inputs, Checkboxes, Selects, Sliders) */
+.theme-windows-fluent .rs-button,
 .theme-windows-fluent button.bg-darkbutton {
   border-radius: 4px !important;
   border: 1px solid var(--fluent-control-border) !important;
   border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
   background-color: var(--fluent-card-bg) !important;
+  color: var(--risu-theme-textcolor) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
   transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease !important;
 }
 
+.theme-windows-fluent .rs-button:hover:not(:disabled),
 .theme-windows-fluent button.bg-darkbutton:hover:not(:disabled) {
   background-color: var(--fluent-subtle-fill-secondary) !important;
 }
 
+.theme-windows-fluent .rs-button:active:not(:disabled),
 .theme-windows-fluent button.bg-darkbutton:active:not(:disabled) {
   background-color: var(--fluent-subtle-fill-tertiary) !important;
   transform: translateY(0.5px) scale(0.99) !important;
 }
 
+/* Universal WinUI 3 TextBoxes & Inputs */
 .theme-windows-fluent input[type="text"],
 .theme-windows-fluent input[type="password"],
 .theme-windows-fluent input[type="search"],
-.theme-windows-fluent textarea {
-  border-radius: 4px;
-  border: 1px solid var(--fluent-control-border);
-  border-bottom: 1px solid var(--fluent-control-border-bottom);
+.theme-windows-fluent input[type="number"],
+.theme-windows-fluent select,
+.theme-windows-fluent textarea,
+.theme-windows-fluent .rs-textinput,
+.theme-windows-fluent .rs-numberinput,
+.theme-windows-fluent .rs-selectinput,
+.theme-windows-fluent .rs-textareainput,
+.theme-windows-fluent div:has(> textarea.absolute),
+.theme-windows-fluent div.n-scroll {
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  background-color: var(--fluent-card-bg) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .theme-windows-fluent input[type="text"]:focus,
 .theme-windows-fluent input[type="password"]:focus,
 .theme-windows-fluent input[type="search"]:focus,
-.theme-windows-fluent textarea:focus {
-  border-color: var(--fluent-control-border);
+.theme-windows-fluent input[type="number"]:focus,
+.theme-windows-fluent select:focus,
+.theme-windows-fluent textarea:focus,
+.theme-windows-fluent .rs-textinput:focus,
+.theme-windows-fluent .rs-numberinput:focus,
+.theme-windows-fluent .rs-selectinput:focus,
+.theme-windows-fluent .rs-textareainput:focus-within,
+.theme-windows-fluent div:has(> textarea.absolute):focus-within,
+.theme-windows-fluent div.n-scroll:focus-within {
+  border-color: var(--fluent-control-border) !important;
   border-bottom: 2px solid var(--risu-theme-borderc) !important;
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
 }
 
+/* WinUI 3 Sliders */
+.theme-windows-fluent div[role="slider"] {
+  border-radius: 9999px !important;
+  border: 1px solid var(--fluent-control-border) !important;
+  height: 24px !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+  transition: border-color 120ms ease !important;
+}
+
+.theme-windows-fluent div[role="slider"]:hover {
+  border-color: var(--risu-theme-borderc) !important;
+}
+
+/* WinUI 3 Checkbox */
 .theme-windows-fluent label input[type="checkbox"] + span {
   width: 18px !important;
   height: 18px !important;
@@ -2193,11 +2401,6 @@ annotation {
   stroke-width: 2.5 !important;
 }
 
-.theme-windows-fluent select {
-  border-radius: 4px;
-  border: 1px solid var(--fluent-control-border);
-}
-
 /* Windows 11 Fluent Semantic Dividers & Boundaries Across All UI */
 .theme-windows-fluent hr,
 .theme-windows-fluent .border-darkborderc,
@@ -2225,30 +2428,55 @@ annotation {
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-/* Fluent Focus Visual (Only on keyboard navigation, suppressed on mouse click) */
-.theme-windows-fluent :focus:not(:focus-visible) {
-  outline: none !important;
-}
-
-.theme-windows-fluent :focus-visible {
-  outline: 2px solid var(--risu-theme-borderc) !important;
-  outline-offset: 1px !important;
-}
-
-.theme-windows-fluent button:active,
+/* Fluent Focus Visual & Click Outline Suppression */
+.theme-windows-fluent button:focus,
+.theme-windows-fluent [role="button"]:focus,
+.theme-windows-fluent input:focus,
+.theme-windows-fluent select:focus,
+.theme-windows-fluent textarea:focus,
+.theme-windows-fluent .rs-segmented-control button,
+.theme-windows-fluent .rs-segmented-control button:focus,
 .theme-windows-fluent .rs-sidebar-mode-tabs button,
 .theme-windows-fluent .rs-sidebar-mode-tabs button:focus,
-.theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-tabs button,
+.theme-windows-fluent .rs-charconfig-tabs button:focus,
+.theme-windows-fluent .rs-charconfig-subnav button,
+.theme-windows-fluent .rs-charconfig-subnav button:focus,
 .theme-windows-fluent .rs-sidechat-item,
 .theme-windows-fluent .rs-sidechat-item:focus,
-.theme-windows-fluent .rs-sidechat-item:focus-visible,
 .theme-windows-fluent .rs-sidechat-actions [role="button"],
 .theme-windows-fluent .rs-sidechat-actions [role="button"]:focus,
-.theme-windows-fluent .rs-sidechat-actions [role="button"]:focus-visible,
 .theme-windows-fluent .rs-sidechat-toolbar button,
 .theme-windows-fluent .rs-sidechat-toolbar button:focus,
+.theme-windows-fluent .rs-button:focus {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  box-shadow: none !important;
+}
+
+.theme-windows-fluent :focus:not(:focus-visible) {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+
+/* Specifically suppress focus-visible on tabs and icon buttons to prevent click outline */
+.theme-windows-fluent .rs-segmented-control button:focus-visible,
+.theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-subnav button:focus-visible,
+.theme-windows-fluent .rs-sidechat-item:focus-visible,
+.theme-windows-fluent .rs-sidechat-actions [role="button"]:focus-visible,
 .theme-windows-fluent .rs-sidechat-toolbar button:focus-visible {
   outline: none !important;
+}
+
+/* Keyboard navigation only focus visual */
+.theme-windows-fluent button:focus-visible:not(:active),
+.theme-windows-fluent [role="button"]:focus-visible:not(:active) {
+  outline: 2px solid var(--risu-theme-borderc) !important;
+  outline-offset: 1px !important;
 }
 
 /* Windows 11 Minimalist Scrollbars */

@@ -210,7 +210,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
 </script>
 
 {#if licensed !== 'private' && !$MobileGUI}
-    <div class="flex mb-2" class:gap-2={iconButtonSize === 24} class:gap-1={iconButtonSize < 24}>
+    <div class="rs-charconfig-subnav flex mb-2" class:gap-2={iconButtonSize === 24} class:gap-1={iconButtonSize < 24}>
         <button class={$CharConfigSubMenu === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {$CharConfigSubMenu = 0}}>
             <UserIcon size={iconButtonSize} />
         </button>
@@ -245,7 +245,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         <div class="flex flex-col flex-1 min-h-0 h-full">
             <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterStore.characters[$selectedCharID].name} />
 
-            <div class="flex w-full rounded-md border border-selected mb-3 shrink-0">
+            <div class="rs-segmented-control flex w-full rounded-md border border-selected mb-3 shrink-0">
                 <button onclick={() => {
                     charMainTab = 0
                 }} class="p-2 flex-1" class:bg-selected={charMainTab === 0}>
@@ -266,7 +266,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             {#if charMainTab === 0}
                 <div class="flex items-center justify-between mb-1 shrink-0">
                     <span class="text-textcolor flex items-center gap-1">{language.description} <Help key="charDesc"/></span>
-                    <span class="text-textcolor2 text-sm">{tokens.desc ?? '…'} {language.tokens}</span>
+                    <span class="rs-charconfig-token-badge text-textcolor2 text-sm">{tokens.desc ?? '…'} {language.tokens}</span>
                 </div>
                 <div class="flex-1 min-h-0 flex flex-col mb-1">
                     <TextAreaInput height="full" className="flex-1 h-full min-h-0" highlight autocomplete="off" bind:value={(characterStore.characters[$selectedCharID] as character).desc}></TextAreaInput>
@@ -274,7 +274,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             {:else if charMainTab === 1}
                 <div class="flex items-center justify-between mb-1 shrink-0">
                     <span class="text-textcolor flex items-center gap-1">{language.firstMessage} <Help key="charFirstMessage"/></span>
-                    <span class="text-textcolor2 text-sm">{tokens.firstMsg ?? '…'} {language.tokens}</span>
+                    <span class="rs-charconfig-token-badge text-textcolor2 text-sm">{tokens.firstMsg ?? '…'} {language.tokens}</span>
                 </div>
                 <div class="flex-1 min-h-0 flex flex-col mb-1">
                     <TextAreaInput height="full" className="flex-1 h-full min-h-0" highlight autocomplete="off" bind:value={characterStore.characters[$selectedCharID].firstMessage}></TextAreaInput>
@@ -282,7 +282,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             {:else if charMainTab === 2}
                 <div class="flex items-center justify-between mb-1 shrink-0">
                     <span class="text-textcolor flex items-center gap-1">{language.authorNote} <Help key="chatNote"/></span>
-                    <span class="text-textcolor2 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+                    <span class="rs-charconfig-token-badge text-textcolor2 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
                 </div>
                 <div class="flex-1 min-h-0 flex flex-col mb-1">
                     <TextAreaInput
@@ -300,7 +300,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     {:else if licensed !== 'private' && characterStore.characters[$selectedCharID].type === 'group'}
         <TextInput size="xl" marginBottom placeholder="Group Name" bind:value={characterStore.characters[$selectedCharID].name} />
         <span class="text-textcolor">{language.character}</span>
-        <div class="p-4 gap-2 bg-bgcolor rounded-lg char-grid">
+        <div class="rs-charconfig-card p-4 gap-2 bg-bgcolor rounded-lg char-grid">
             {#if (characterStore.characters[$selectedCharID] as groupChat).characters.length === 0}
                 <span class="text-textcolor2">No Character</span>
             {:else}
@@ -373,7 +373,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         <h2 class="mb-2 text-2xl font-bold mt-2">{language.characterDisplay}</h2>
     {/if}
 
-    <div class="flex w-full rounded-md border border-selected mb-4">
+    <div class="rs-segmented-control flex w-full rounded-md border border-selected mb-4">
         <button onclick={() => {
             viewSubMenu = 0
         }} class="p-2 flex-1" class:bg-selected={viewSubMenu === 0}>
@@ -401,7 +401,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                 {/await}
             </button>
         {:else}
-            <div class="p-2 border-darkborderc border rounded-md flex flex-wrap gap-2">
+            <div class="rs-charconfig-card p-2 border-darkborderc border rounded-md flex flex-wrap gap-2">
                 {#if characterStore.characters[$selectedCharID].image !== '' && characterStore.characters[$selectedCharID].image}
                     <button onclick={() => {
                         if(
@@ -514,7 +514,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             <span class="text-textcolor mt-6">{language.emotionImage} <Help key="emotion"/></span>
             <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
-            <div class="w-full max-w-full border border-selected p-2 rounded-md">
+            <div class="rs-charconfig-card w-full max-w-full border border-selected p-2 rounded-md">
 
                 <table class="w-full max-w-full tabler">
                     <tbody>
@@ -986,7 +986,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     {/if}
         {#if characterStore.characters[$selectedCharID].type !== 'group'}
         <span class="text-textcolor mt-2">Bias <Help key="bias"/></span>
-        <div class="w-full max-w-full border border-selected rounded-md p-2 mb-2">
+        <div class="rs-charconfig-card w-full max-w-full border border-selected rounded-md p-2 mb-2">
 
         <table class="w-full max-w-full tabler mt-2">
             <tbody>
@@ -1080,7 +1080,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         </div>
 
         <span class="text-textcolor mt-2">{language.altGreet}</span>
-        <div class="w-full max-w-full border border-selected rounded-md p-2">
+        <div class="rs-charconfig-card w-full max-w-full border border-selected rounded-md p-2">
             <table class="contain w-full max-w-full tabler mt-2">
                 <tbody>
                 <tr>
