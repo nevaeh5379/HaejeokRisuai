@@ -33,11 +33,12 @@ use windows::{
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, GetPropW, GetWindow,
-                GetWindowLongPtrW, GetWindowRect, IsZoomed, PostMessageW, RegisterClassExW,
+                GetWindowLongPtrW, GetWindowRect, IsZoomed, LoadCursorW, PostMessageW,
+                RegisterClassExW,
                 RemovePropW, SetPropW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow,
                 GW_OWNER, HTCLOSE, HTCLIENT, HTMAXBUTTON, HTMINBUTTON, HTBOTTOM, HTBOTTOMLEFT,
                 HTBOTTOMRIGHT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
-                HWND_TOP, NCCALCSIZE_PARAMS, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
+                HWND_TOP, IDC_ARROW, NCCALCSIZE_PARAMS, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
                 SM_CXPADDEDBORDER, SM_CXSIZEFRAME, SM_CYSIZEFRAME,
                 SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
                 SWP_NOZORDER, SWP_SHOWWINDOW, ULW_ALPHA, WINDOW_EX_STYLE, WINDOW_STYLE,
@@ -426,10 +427,12 @@ unsafe extern "system" fn caption_window_proc(
 unsafe fn ensure_caption_window_class() -> Result<HINSTANCE, String> {
     let module = GetModuleHandleW(None).map_err(|error| error.to_string())?;
     let instance = HINSTANCE(module.0);
+    let cursor = LoadCursorW(None, IDC_ARROW).map_err(|error| error.to_string())?;
     let class = WNDCLASSEXW {
         cbSize: size_of::<WNDCLASSEXW>() as u32,
         lpfnWndProc: Some(caption_window_proc),
         hInstance: instance,
+        hCursor: cursor,
         lpszClassName: w!("RisuAICaptionButton"),
         ..Default::default()
     };
@@ -706,6 +709,18 @@ fn install_custom_frame<R: Runtime>(window: &Window<R>) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
     unsafe {
+        // The bootstrap screen uses the app's default dark palette. The
+        // persisted light/dark preference is applied by the frontend after
+        // storage loads, so start native chrome in dark mode to avoid a black
+        // glyph flashing over the initial dark title bar.
+        let initial_dark_mode: i32 = 1;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &initial_dark_mode as *const _ as *const core::ffi::c_void,
+            size_of::<i32>() as u32,
+        );
+
         let corner_preference = DWMWCP_ROUND;
         let _ = DwmSetWindowAttribute(
             hwnd,
