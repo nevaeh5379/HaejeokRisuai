@@ -205,6 +205,11 @@ html.tauri-windows-vibrancy
  * The pane owns the same material tint as the tab strip, so the small corner
  * cutouts reveal Acrylic/Mica instead of an opaque rectangular backdrop. */
 html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+  --risu-windows-chat-outline: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 9%,
+    transparent
+  );
   background-color: var(--risu-windows-sidebar-tint);
 }
 
@@ -216,8 +221,7 @@ html.tauri-windows-vibrancy
   margin: 0px 8px 8px 8px;
   align-self: center;
   border-radius: 10px;
-  box-shadow: 0 0 0 1px
-    color-mix(in srgb, var(--risu-theme-textcolor) 9%, transparent);
+  box-shadow: 0 0 0 1px var(--risu-windows-chat-outline);
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
@@ -246,6 +250,7 @@ html.tauri-windows-vibrancy .rs-chat-tab {
   margin-bottom: 4px;
   margin-inline: 2px;
   border-radius: 9px !important;
+  border-color: var(--risu-windows-chat-outline);
   border-bottom-width: 1px;
   background-color: var(--risu-windows-tab-surface) !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
@@ -277,7 +282,9 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::before {
   right: 100%;
   background: radial-gradient(
     circle at 0 0,
-    transparent 7.5px,
+    transparent 6.5px,
+    var(--risu-windows-chat-outline) 7px,
+    var(--risu-windows-chat-outline) 7.5px,
     var(--risu-windows-tab-surface) 8px
   );
 }
@@ -286,7 +293,9 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"]::after {
   left: 100%;
   background: radial-gradient(
     circle at 100% 0,
-    transparent 7.5px,
+    transparent 6.5px,
+    var(--risu-windows-chat-outline) 7px,
+    var(--risu-windows-chat-outline) 7.5px,
     var(--risu-windows-tab-surface) 8px
   );
 }
