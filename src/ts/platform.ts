@@ -14,6 +14,15 @@ type BrowserNavigator = Navigator & {
   standalone?: boolean;
 };
 
+type TauriAwareWindow = Window & {
+  chrome?: {
+    webview?: unknown;
+  };
+  __TAURI_INTERNALS__?: {
+    invoke?: unknown;
+  };
+};
+
 export type RisuEnvironmentLabel = "local" | "node" | "web" | "web(dev)";
 
 const browserNavigator =
@@ -21,9 +30,28 @@ const browserNavigator =
     ? (navigator as BrowserNavigator)
     : ({} as BrowserNavigator);
 
-export const isTauri: boolean = detectTauri();
-export const isTauriMacOS: boolean = isTauri && tauriOs.type() === "macos";
-export const isTauriWindows: boolean = isTauri && tauriOs.type() === "windows";
+const isWindowsWebViewHost =
+  typeof window !== "undefined" &&
+  Boolean((window as TauriAwareWindow).chrome?.webview);
+
+export const isTauri: boolean = detectTauri() || isWindowsWebViewHost;
+
+function getTauriOsTypeSafe(): string | null {
+  if (!isTauri) return null;
+  try {
+    return tauriOs.type();
+  } catch {
+    const osName = getBrowserOSName();
+    if (osName === "Windows") return "windows";
+    if (osName === "macOS") return "macos";
+    if (osName === "Linux") return "linux";
+    return null;
+  }
+}
+
+const tauriOsType = getTauriOsTypeSafe();
+export const isTauriMacOS: boolean = tauriOsType === "macos";
+export const isTauriWindows: boolean = tauriOsType === "windows";
 export const isCapacitor: boolean = !isTauri && Capacitor.isNativePlatform();
 export const isNodeServer: boolean = !!(
   globalThis as typeof globalThis & { __NODE__?: boolean }
@@ -41,6 +69,25 @@ export const isMobile: boolean =
 export const isFirefox: boolean =
   typeof browserNavigator.userAgent === "string" &&
   browserNavigator.userAgent.includes("Firefox");
+
+export function isTauriRuntimeReady(): boolean {
+  if (!isTauri) return true;
+  if (typeof window === "undefined") return false;
+  const internals = (window as TauriAwareWindow).__TAURI_INTERNALS__;
+  return typeof internals?.invoke === "function";
+}
+
+export async function waitForTauriRuntimeReady(
+  timeoutMs = 2_000,
+): Promise<boolean> {
+  if (isTauriRuntimeReady()) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (isTauriRuntimeReady()) return true;
+  }
+  return false;
+}
 
 function normalizeOSVersion(version?: string | null): string | null {
   if (!version) {

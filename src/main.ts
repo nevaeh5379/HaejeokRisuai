@@ -3,7 +3,7 @@ import "katex/dist/katex.min.css";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 import { Buffer } from "node:buffer";
-import { isTauriMacOS } from "./ts/platform";
+import { isTauri, isTauriMacOS, waitForTauriRuntimeReady } from "./ts/platform";
 import {
   parseTauriSidebarMenuLaunch,
   readTauriSidebarMenuPopupPayload,
@@ -24,6 +24,10 @@ window.addEventListener("vite:preloadError", (event) => {
 });
 
 async function start() {
+  if (isTauri && !(await waitForTauriRuntimeReady())) {
+    throw new Error("Tauri runtime initialization timed out");
+  }
+
   const sidebarMenuLaunch = isTauriMacOS
     ? parseTauriSidebarMenuLaunch(location.search)
     : null;
