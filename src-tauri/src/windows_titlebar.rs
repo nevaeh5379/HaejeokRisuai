@@ -35,8 +35,8 @@ use windows::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, GetPropW, GetWindow,
                 GetWindowLongPtrW, GetWindowRect, IsZoomed, PostMessageW, RegisterClassExW,
                 RemovePropW, SetPropW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow,
-                GW_OWNER, HTCLOSE, HTMAXBUTTON, HTMINBUTTON, HTBOTTOM, HTBOTTOMLEFT,
-                HTBOTTOMRIGHT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTTRANSPARENT,
+                GW_OWNER, HTCLOSE, HTCLIENT, HTMAXBUTTON, HTMINBUTTON, HTBOTTOM, HTBOTTOMLEFT,
+                HTBOTTOMRIGHT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
                 HWND_TOP, NCCALCSIZE_PARAMS, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
                 SM_CXPADDEDBORDER, SM_CXSIZEFRAME, SM_CYSIZEFRAME,
                 SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -45,7 +45,7 @@ use windows::{
                 WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDOWN,
                 WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_SETTINGCHANGE,
                 WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_WINDOWPOSCHANGED, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE, WNDCLASSEXW,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE, WNDCLASSEXW,
                 GWLP_USERDATA,
             },
         },
@@ -334,7 +334,10 @@ unsafe extern "system" fn caption_button_proc(
     };
 
     match message {
-        WM_NCHITTEST => LRESULT(HTTRANSPARENT as isize),
+        // Keep pointer input on the caption-button overlay. Passing this hit
+        // through reaches the WebView's drag region and turns button clicks
+        // into window drags instead of delivering the button messages below.
+        WM_NCHITTEST => LRESULT(HTCLIENT as isize),
         WM_MOUSEMOVE => {
             update_button_state(hwnd, kind, BUTTON_STATE_HOVER, true);
             track_button_leave(hwnd, false);
@@ -413,9 +416,7 @@ unsafe fn create_caption_button(
     kind: CaptionButtonKind,
 ) -> Result<HWND, String> {
     let instance = ensure_caption_window_class()?;
-    let ex_style = WINDOW_EX_STYLE(
-        WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0,
-    );
+    let ex_style = WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0);
     let style = WINDOW_STYLE(WS_POPUP.0 | WS_VISIBLE.0);
     let child = CreateWindowExW(
         ex_style,
