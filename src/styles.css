@@ -212,8 +212,9 @@ html.tauri-windows-vibrancy
   .default-chat-pane.has-chat-tabs
   > .default-chat-screen {
   background-color: var(--risu-theme-bgcolor);
-  width: calc(100% - 8px);
-  margin: 3px 4px 4px;
+  width: calc(100% - 16px);
+  margin: 8px;
+  align-self: center;
   border-radius: 10px;
   box-shadow: 0 0 0 1px
     color-mix(in srgb, var(--risu-theme-textcolor) 9%, transparent);
