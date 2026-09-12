@@ -1,4 +1,7 @@
-use std::mem::size_of;
+use std::{
+    mem::size_of,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 use tauri::{
     plugin::{Builder, TauriPlugin},
@@ -13,42 +16,41 @@ use windows::{
             LRESULT, POINT, RECT, SIZE, WPARAM,
         },
         Graphics::{
-            Dwm::{DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND},
+            Dwm::{
+                DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+            },
             Gdi::{
                 BeginPaint, CreateCompatibleDC, CreateDIBSection, CreateFontW, DeleteDC,
                 DeleteObject, DrawTextW, EndPaint, GetMonitorInfoW, MonitorFromRect, SelectObject,
-                SetBkMode, SetTextColor, ANTIALIASED_QUALITY, BITMAPINFO, BITMAPINFOHEADER,
-                BI_RGB, BLENDFUNCTION, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DIB_RGB_COLORS,
-                DT_CENTER, DT_SINGLELINE, DT_VCENTER, FW_NORMAL, MONITORINFO,
-                MONITOR_DEFAULTTONEAREST, OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
-                AC_SRC_ALPHA, AC_SRC_OVER,
+                SetBkMode, SetTextColor, AC_SRC_ALPHA, AC_SRC_OVER, ANTIALIASED_QUALITY,
+                BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, CLIP_DEFAULT_PRECIS,
+                DEFAULT_CHARSET, DIB_RGB_COLORS, DT_CENTER, DT_SINGLELINE, DT_VCENTER, FW_NORMAL,
+                MONITORINFO, MONITOR_DEFAULTTONEAREST, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
+                TRANSPARENT,
             },
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             Controls::WM_MOUSELEAVE,
             HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
-            Input::KeyboardAndMouse::{
-                TrackMouseEvent, TRACKMOUSEEVENT, TME_LEAVE, TME_NONCLIENT,
-            },
+            Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT},
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, GetPropW, GetWindow,
                 GetWindowLongPtrW, GetWindowRect, IsZoomed, LoadCursorW, PostMessageW,
-                RegisterClassExW,
-                RemovePropW, SetPropW, SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow,
-                GW_OWNER, HTCLOSE, HTCLIENT, HTMAXBUTTON, HTMINBUTTON, HTBOTTOM, HTBOTTOMLEFT,
-                HTBOTTOMRIGHT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
-                HWND_TOP, IDC_ARROW, NCCALCSIZE_PARAMS, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
-                SM_CXPADDEDBORDER, SM_CXSIZEFRAME, SM_CYSIZEFRAME,
-                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                RegisterClassExW, RemovePropW, SetPropW, SetWindowLongPtrW, SetWindowPos,
+                UpdateLayeredWindow, GWLP_USERDATA, GW_OWNER, HTBOTTOM, HTBOTTOMLEFT,
+                HTBOTTOMRIGHT, HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON, HTMINBUTTON, HTRIGHT, HTTOP,
+                HTTOPLEFT, HTTOPRIGHT, HWND_TOP, IDC_ARROW, NCCALCSIZE_PARAMS, SC_CLOSE,
+                SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER, SM_CXSIZEFRAME,
+                SM_CYSIZEFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
                 SWP_NOZORDER, SWP_SHOWWINDOW, ULW_ALPHA, WINDOW_EX_STYLE, WINDOW_STYLE,
                 WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
                 WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDOWN,
                 WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_SETTINGCHANGE,
-                WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_WINDOWPOSCHANGED, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE, WNDCLASSEXW,
-                GWLP_USERDATA,
+                WM_SIZE, WM_SYSCOMMAND, WM_THEMECHANGED, WM_WINDOWPOSCHANGED, WNDCLASSEXW,
+                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
             },
         },
     },
@@ -58,6 +60,11 @@ const RISU_FRAME_SUBCLASS_ID: usize = 0x5249_5355;
 const RISU_CAPTION_SUBCLASS_ID: usize = 0x5249_5340;
 const BUTTON_STATE_HOVER: isize = 1;
 const BUTTON_STATE_PRESSED: isize = 2;
+const BACKDROP_OFF: u8 = 0;
+const BACKDROP_ACRYLIC: u8 = 1;
+const BACKDROP_MICA: u8 = 2;
+const BACKDROP_TABBED: u8 = 3;
+static RISU_BACKDROP_EFFECT: AtomicU8 = AtomicU8::new(BACKDROP_ACRYLIC);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptionButtonKind {
@@ -108,9 +115,34 @@ fn supports_custom_frame(label: &str) -> bool {
 }
 
 fn apply_native_backdrop<R: Runtime>(window: &Window<R>) -> Result<(), String> {
-    window
-        .set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build())
-        .map_err(|error| error.to_string())
+    let result = match RISU_BACKDROP_EFFECT.load(Ordering::Relaxed) {
+        BACKDROP_OFF => window.set_effects(None),
+        BACKDROP_MICA => window.set_effects(EffectsBuilder::new().effect(Effect::Mica).build()),
+        BACKDROP_TABBED => window.set_effects(EffectsBuilder::new().effect(Effect::Tabbed).build()),
+        _ => window.set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build()),
+    };
+    result.map_err(|error| error.to_string())
+}
+
+pub fn set_risu_windows_backdrop<R: Runtime>(
+    app: &AppHandle<R>,
+    effect: &str,
+) -> Result<(), String> {
+    let effect = match effect {
+        "off" => BACKDROP_OFF,
+        "acrylic" => BACKDROP_ACRYLIC,
+        "mica" => BACKDROP_MICA,
+        "tabbed" => BACKDROP_TABBED,
+        _ => return Err(format!("Unsupported Windows backdrop effect: {effect}")),
+    };
+    RISU_BACKDROP_EFFECT.store(effect, Ordering::Relaxed);
+
+    for window in app.webview_windows().into_values() {
+        if supports_custom_frame(window.label()) {
+            apply_native_backdrop(&window.as_ref().window())?;
+        }
+    }
+    Ok(())
 }
 
 pub fn set_risu_native_appearance<R: Runtime>(
@@ -163,12 +195,7 @@ unsafe fn button_state(hwnd: HWND) -> isize {
     GetWindowLongPtrW(hwnd, GWLP_USERDATA)
 }
 
-unsafe fn update_button_state(
-    hwnd: HWND,
-    kind: CaptionButtonKind,
-    flag: isize,
-    enabled: bool,
-) {
+unsafe fn update_button_state(hwnd: HWND, kind: CaptionButtonKind, flag: isize, enabled: bool) {
     let current = button_state(hwnd);
     let next = if enabled {
         current | flag
@@ -186,7 +213,11 @@ unsafe fn update_button_state(
 unsafe fn track_button_leave(hwnd: HWND, nonclient: bool) {
     let mut tracking = TRACKMOUSEEVENT {
         cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
-        dwFlags: if nonclient { TME_LEAVE | TME_NONCLIENT } else { TME_LEAVE },
+        dwFlags: if nonclient {
+            TME_LEAVE | TME_NONCLIENT
+        } else {
+            TME_LEAVE
+        },
         hwndTrack: hwnd,
         dwHoverTime: 0,
     };
@@ -217,10 +248,7 @@ fn caption_glyph(kind: CaptionButtonKind, maximized: bool) -> char {
     }
 }
 
-unsafe fn render_layered_caption_button(
-    hwnd: HWND,
-    kind: CaptionButtonKind,
-) -> Result<(), String> {
+unsafe fn render_layered_caption_button(hwnd: HWND, kind: CaptionButtonKind) -> Result<(), String> {
     let owner = button_owner(hwnd).ok_or_else(|| "Caption button has no owner".to_string())?;
     let mut window_rect = RECT::default();
     GetWindowRect(hwnd, &mut window_rect).map_err(|error| error.to_string())?;
@@ -283,8 +311,18 @@ unsafe fn render_layered_caption_button(
     let _ = SetTextColor(memory_dc, COLORREF(0x00ff_ffff));
     let maximized = IsZoomed(owner).as_bool();
     let mut glyph = [caption_glyph(kind, maximized) as u16];
-    let mut text_rect = RECT { left: 0, top: 0, right: width, bottom: height };
-    DrawTextW(memory_dc, &mut glyph, &mut text_rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    let mut text_rect = RECT {
+        left: 0,
+        top: 0,
+        right: width,
+        bottom: height,
+    };
+    DrawTextW(
+        memory_dc,
+        &mut glyph,
+        &mut text_rect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+    );
 
     let state = button_state(hwnd);
     let hot = state & BUTTON_STATE_HOVER != 0;
@@ -292,11 +330,23 @@ unsafe fn render_layered_caption_button(
     let dark = window_uses_dark_mode(owner);
     let close_hot = kind == CaptionButtonKind::Close && (hot || pressed);
     let (bg_r, bg_g, bg_b, bg_a): (u32, u32, u32, u32) = if close_hot {
-        if pressed { (183, 25, 16, 255) } else { (196, 43, 28, 255) }
+        if pressed {
+            (183, 25, 16, 255)
+        } else {
+            (196, 43, 28, 255)
+        }
     } else if pressed {
-        if dark { (255, 255, 255, 28) } else { (0, 0, 0, 24) }
+        if dark {
+            (255, 255, 255, 28)
+        } else {
+            (0, 0, 0, 24)
+        }
     } else if hot {
-        if dark { (255, 255, 255, 20) } else { (0, 0, 0, 18) }
+        if dark {
+            (255, 255, 255, 20)
+        } else {
+            (0, 0, 0, 18)
+        }
     } else {
         // A fully transparent layered window is hit-tested only on its opaque
         // glyph pixels. Alpha 1 is visually transparent but keeps the entire
@@ -343,8 +393,14 @@ unsafe fn render_layered_caption_button(
         }
     }
 
-    let destination = POINT { x: window_rect.left, y: window_rect.top };
-    let size = SIZE { cx: width, cy: height };
+    let destination = POINT {
+        x: window_rect.left,
+        y: window_rect.top,
+    };
+    let size = SIZE {
+        cx: width,
+        cy: height,
+    };
     let source = POINT { x: 0, y: 0 };
     let blend = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
@@ -420,7 +476,12 @@ unsafe extern "system" fn caption_button_proc(
             update_button_state(hwnd, kind, BUTTON_STATE_PRESSED, false);
             if let Some(owner) = button_owner(hwnd) {
                 let command = kind.system_command(owner);
-                let _ = PostMessageW(Some(owner), WM_SYSCOMMAND, WPARAM(command as usize), LPARAM(0));
+                let _ = PostMessageW(
+                    Some(owner),
+                    WM_SYSCOMMAND,
+                    WPARAM(command as usize),
+                    LPARAM(0),
+                );
             }
             LRESULT(0)
         }
@@ -465,17 +526,17 @@ unsafe fn ensure_caption_window_class() -> Result<HINSTANCE, String> {
     if atom == 0 {
         let error = GetLastError();
         if error != ERROR_CLASS_ALREADY_EXISTS {
-            return Err(format!("RegisterClassExW failed with Win32 error {}", error.0));
+            return Err(format!(
+                "RegisterClassExW failed with Win32 error {}",
+                error.0
+            ));
         }
     }
 
     Ok(instance)
 }
 
-unsafe fn create_caption_button(
-    parent: HWND,
-    kind: CaptionButtonKind,
-) -> Result<HWND, String> {
+unsafe fn create_caption_button(parent: HWND, kind: CaptionButtonKind) -> Result<HWND, String> {
     let instance = ensure_caption_window_class()?;
     let ex_style = WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0);
     let style = WINDOW_STYLE(WS_POPUP.0 | WS_VISIBLE.0);
@@ -593,7 +654,11 @@ unsafe fn hit_test_caption_buttons(hwnd: HWND, lparam: LPARAM) -> Option<LRESULT
 
 unsafe fn update_caption_visual_state(parent: HWND, hit: u32, flag: isize, enabled: bool) {
     let target = CaptionButtonKind::from_hit_test(hit);
-    for kind in [CaptionButtonKind::Minimize, CaptionButtonKind::Maximize, CaptionButtonKind::Close] {
+    for kind in [
+        CaptionButtonKind::Minimize,
+        CaptionButtonKind::Maximize,
+        CaptionButtonKind::Close,
+    ] {
         if let Some(child) = get_caption_button(parent, kind) {
             update_button_state(child, kind, flag, enabled && target == Some(kind));
         }
@@ -601,7 +666,11 @@ unsafe fn update_caption_visual_state(parent: HWND, hit: u32, flag: isize, enabl
 }
 
 unsafe fn clear_caption_visual_state(parent: HWND, flag: isize) {
-    for kind in [CaptionButtonKind::Minimize, CaptionButtonKind::Maximize, CaptionButtonKind::Close] {
+    for kind in [
+        CaptionButtonKind::Minimize,
+        CaptionButtonKind::Maximize,
+        CaptionButtonKind::Close,
+    ] {
         if let Some(child) = get_caption_button(parent, kind) {
             update_button_state(child, kind, flag, false);
         }
@@ -717,7 +786,12 @@ unsafe extern "system" fn custom_frame_proc(
             clear_caption_visual_state(hwnd, BUTTON_STATE_PRESSED);
             if let Some(kind) = CaptionButtonKind::from_hit_test(wparam.0 as u32) {
                 let command = kind.system_command(hwnd);
-                let _ = PostMessageW(Some(hwnd), WM_SYSCOMMAND, WPARAM(command as usize), LPARAM(0));
+                let _ = PostMessageW(
+                    Some(hwnd),
+                    WM_SYSCOMMAND,
+                    WPARAM(command as usize),
+                    LPARAM(0),
+                );
                 LRESULT(0)
             } else {
                 DefSubclassProc(hwnd, message, wparam, lparam)

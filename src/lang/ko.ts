@@ -1487,6 +1487,17 @@ export const languageKorean = {
   remindLater5Days: "5일 뒤에 다시 알림",
   remindLater1Week: "1주일 뒤에 다시 알림",
   display: "소리 및 디스플레이",
+  windowsTransparency: "Windows 반투명",
+  windowsTransparencyDescription:
+    "이 기기에만 저장되며 사이드바와 채팅 탭에 즉시 적용됩니다.",
+  useWindowsTransparency: "네이티브 반투명 사용",
+  windowsBackdropEffect: "배경 효과",
+  windowsBackdropAcrylic: "아크릴 (Windows 10/11)",
+  windowsBackdropMica: "미카 (Windows 11)",
+  windowsBackdropTabbed: "탭 미카 (Windows 11)",
+  windowsMaterialOpacity: "배경 불투명도",
+  windowsBackdropCompatibility:
+    "미카 효과는 Windows 11이 필요합니다. 폭넓은 호환성에는 아크릴을 권장합니다.",
   useCustomBackground: "커스텀 배경",
   translateInput: "입력창 번역하기",
   autoTranslation: "자동 번역",

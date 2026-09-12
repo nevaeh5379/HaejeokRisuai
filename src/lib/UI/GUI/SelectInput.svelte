@@ -13,6 +13,7 @@
     class:py-3={size === 'lg'}
     bind:value
     onchange={onchange}
+    {disabled}
 >
     {@render children?.()}
 </select>
@@ -26,6 +27,7 @@
         onchange?: (event: Event & {
             currentTarget: EventTarget & HTMLSelectElement;
         }) => any;
+        disabled?: boolean;
     }
 
     let {
@@ -34,7 +36,8 @@
         className = "",
         size = 'md',
         children,
-        onchange
+        onchange,
+        disabled = false
     }: Props = $props();
 
 </script>

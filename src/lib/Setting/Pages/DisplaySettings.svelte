@@ -7,6 +7,8 @@
         displaySizeSettingsItems,
         displayThemeSettingsItems,
     } from "src/ts/setting/displaySettingsData.svelte";
+    import { isTauriWindows } from "src/ts/platform";
+    import WindowsTransparencySettings from "./WindowsTransparencySettings.svelte";
 
     interface Props {
         targetSubmenu?: number;
@@ -57,6 +59,9 @@
 
 {#if submenu === 0 || submenu === -1}
     <SettingRenderer items={displayThemeSettingsItems} />
+    {#if isTauriWindows}
+        <WindowsTransparencySettings />
+    {/if}
 {/if}
 
 {#if submenu === 1 || submenu === -1}

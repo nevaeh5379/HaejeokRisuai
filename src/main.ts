@@ -13,6 +13,10 @@ import {
   parseTauriSidebarMenuLaunch,
   readTauriSidebarMenuPopupPayload,
 } from "./ts/tauriSidebarMenu";
+import {
+  applyWindowsTransparencyToDocument,
+  initializeWindowsTransparency,
+} from "./ts/windowsTransparency";
 
 if (typeof window !== "undefined") {
   window.Buffer = Buffer;
@@ -20,7 +24,7 @@ if (typeof window !== "undefined") {
     document.documentElement.classList.add("tauri-macos-vibrancy");
   }
   if (isTauriWindows) {
-    document.documentElement.classList.add("tauri-windows-vibrancy");
+    applyWindowsTransparencyToDocument();
   }
 }
 
@@ -35,6 +39,7 @@ async function start() {
   if (isTauri && !(await waitForTauriRuntimeReady())) {
     throw new Error("Tauri runtime initialization timed out");
   }
+  await initializeWindowsTransparency();
 
   const sidebarMenuLaunch = isTauriMacOS
     ? parseTauriSidebarMenuLaunch(location.search)

@@ -61,6 +61,20 @@ fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), 
 }
 
 #[tauri::command]
+fn set_risu_windows_backdrop(app: AppHandle, effect: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows_titlebar::set_risu_windows_backdrop(&app, &effect)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, effect);
+        Ok(())
+    }
+}
+
+#[tauri::command]
 async fn native_request(url: String, body: String, header: String, method: String) -> String {
     let headers_json: Value = match serde_json::from_str(&header) {
         Ok(h) => h,
@@ -1339,6 +1353,7 @@ fn main() {
             oauth_login,
             sqlite_transaction::sqlite_execute_transaction,
             set_risu_native_appearance,
+            set_risu_windows_backdrop,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,
             mark_sidebar_menu_window_ready,

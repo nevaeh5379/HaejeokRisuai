@@ -1530,7 +1530,8 @@ export const languageEnglish = {
   lowSpecMode: "Low-spec Mode",
   waitingMinigame: "Waiting Minigame",
   dinoPressStart: "Tap or press Space to start",
-  dinoWaitingDescription: "Chrome Dino — play while waiting for the AI response",
+  dinoWaitingDescription:
+    "Chrome Dino — play while waiting for the AI response",
   dinoResponseArrived: "AI response has arrived!",
   dinoScore: "Score",
   dinoGameOver: "Game Over",
@@ -1580,6 +1581,17 @@ export const languageEnglish = {
   remindLater5Days: "Remind in 5 days",
   remindLater1Week: "Remind in 1 week",
   display: "Display & Audio",
+  windowsTransparency: "Windows transparency",
+  windowsTransparencyDescription:
+    "Stored only on this device and applied immediately to sidebars and chat tabs.",
+  useWindowsTransparency: "Use native transparency",
+  windowsBackdropEffect: "Backdrop effect",
+  windowsBackdropAcrylic: "Acrylic (Windows 10/11)",
+  windowsBackdropMica: "Mica (Windows 11)",
+  windowsBackdropTabbed: "Tabbed Mica (Windows 11)",
+  windowsMaterialOpacity: "Background opacity",
+  windowsBackdropCompatibility:
+    "Mica effects require Windows 11. Acrylic is recommended for wider compatibility.",
   useCustomBackground: "Custom Background",
   translateInput: "Translate Input",
   autoTranslation: "Auto Translation",
