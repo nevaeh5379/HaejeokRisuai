@@ -216,7 +216,23 @@ html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
     var(--risu-theme-textcolor) 9%,
     var(--risu-theme-bgcolor)
   );
+  --risu-windows-active-tab-start: 0px;
+  --risu-windows-active-tab-width: 0px;
   background-color: var(--risu-windows-sidebar-tint);
+}
+
+/* Seamless bridge between the active tab and the chat screen: cover the 1px
+ * top inset border under the active tab and its shoulders with the chat bgcolor. */
+html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 39.5px;
+  left: var(--risu-windows-active-tab-start, 0px);
+  width: var(--risu-windows-active-tab-width, 0px);
+  height: 2.5px;
+  background-color: var(--risu-theme-bgcolor);
+  pointer-events: none;
 }
 
 html.tauri-windows-vibrancy
@@ -275,8 +291,8 @@ html.tauri-windows-vibrancy .rs-chat-tab {
 html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
   --risu-windows-tab-surface: var(--risu-theme-bgcolor);
   z-index: 2;
-  height: 37px !important;
-  margin-bottom: -1px;
+  height: 36px !important;
+  margin-bottom: 0;
   border-bottom-width: 0;
   border-color: var(--risu-windows-chat-outline-solid);
   border-radius: 10px 10px 0 0 !important;
