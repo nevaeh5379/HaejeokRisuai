@@ -107,14 +107,9 @@ fn supports_custom_frame(label: &str) -> bool {
     label == "main" || label.starts_with("chat-window-")
 }
 
-fn apply_native_backdrop<R: Runtime>(window: &Window<R>, dark: bool) -> Result<(), String> {
-    let effect = if dark {
-        Effect::MicaDark
-    } else {
-        Effect::MicaLight
-    };
+fn apply_native_backdrop<R: Runtime>(window: &Window<R>) -> Result<(), String> {
     window
-        .set_effects(EffectsBuilder::new().effect(effect).build())
+        .set_effects(EffectsBuilder::new().effect(Effect::Acrylic).build())
         .map_err(|error| error.to_string())
 }
 
@@ -130,7 +125,7 @@ pub fn set_risu_native_appearance<R: Runtime>(
         window
             .set_theme(Some(theme))
             .map_err(|error| error.to_string())?;
-        apply_native_backdrop(&window.as_ref().window(), dark)?;
+        apply_native_backdrop(&window.as_ref().window())?;
     }
     Ok(())
 }
@@ -760,7 +755,7 @@ fn install_custom_frame<R: Runtime>(window: &Window<R>) -> Result<(), String> {
             size_of::<i32>() as u32,
         );
 
-        apply_native_backdrop(window, true)?;
+        apply_native_backdrop(window)?;
 
         let corner_preference = DWMWCP_ROUND;
         let _ = DwmSetWindowAttribute(

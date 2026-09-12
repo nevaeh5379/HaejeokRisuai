@@ -168,7 +168,7 @@ html.tauri-macos-vibrancy #app {
   background: transparent;
 }
 
-/* Windows native material uses the system Mica backdrop as the substrate.
+/* Windows native material uses the system Acrylic backdrop as the substrate.
  * Only persistent sidebar chrome exposes it; content remains an opaque,
  * readable app surface and overlay sidebars stay opaque. */
 html.tauri-windows-vibrancy,
@@ -180,7 +180,7 @@ html.tauri-windows-vibrancy #app {
 html.tauri-windows-vibrancy {
   --risu-windows-sidebar-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 62%,
+    var(--risu-theme-darkbg) 30%,
     transparent
   );
 }
