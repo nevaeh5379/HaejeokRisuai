@@ -213,7 +213,7 @@ html.tauri-windows-vibrancy
   > .default-chat-screen {
   background-color: var(--risu-theme-bgcolor);
   width: calc(100% - 16px);
-  margin: 8px;
+  margin: 0px 8px 8px 8px;
   align-self: center;
   border-radius: 10px;
   box-shadow: 0 0 0 1px
@@ -226,9 +226,9 @@ html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
   box-sizing: border-box;
-  align-items: center !important;
+  align-items: flex-end !important;
   padding-top: 4px !important;
-  padding-bottom: 4px !important;
+  padding-bottom: 0 !important;
   background-color: transparent !important;
   border-bottom-width: 0 !important;
   backdrop-filter: none;
@@ -243,6 +243,7 @@ html.tauri-windows-vibrancy .rs-chat-tab {
   );
   position: relative;
   height: 32px !important;
+  margin-bottom: 4px;
   margin-inline: 2px;
   border-radius: 9px !important;
   border-bottom-width: 1px;
@@ -257,14 +258,16 @@ html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
     transparent
   );
   z-index: 2;
-  border-bottom-width: 1px;
-  border-radius: 10px 10px 6px 6px !important;
+  height: 36px !important;
+  margin-bottom: 0;
+  border-bottom-width: 0;
+  border-radius: 10px 10px 0 0 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-list [data-tab-add] {
-  align-self: center;
-  margin-bottom: 0 !important;
+  align-self: flex-end;
+  margin-bottom: 4px !important;
 }
 
 html.tauri-windows-vibrancy .rs-sidebar,
