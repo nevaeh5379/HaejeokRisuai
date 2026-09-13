@@ -1,4 +1,5 @@
 import { alertError } from "../alert";
+import { chatTabsStore } from "../chatTabs.svelte";
 import { changeLanguage } from "../../lang";
 import { notifyChatResponse } from "../chatNotifications";
 import { applyStartupAppearance } from "../bootstrap/appAppearance";
@@ -263,6 +264,26 @@ async function applyDatabaseChange(
     change.charactersChanged ?? characterIds.length > 0;
   if (characterIndexChanged) {
     await characterStore.refreshRemoteCharacters(characterIds);
+    // Remote deletions can remove characters/chats that local chat tabs are
+    // still referencing; prune those tabs so activating one can never
+    // deadlock the chat screen on its loading gate.
+    const characters = characterStore.characters;
+    const validCharacterIds = new Set(
+      characters
+        .map((character) => character.chaId)
+        .filter(Boolean) as string[],
+    );
+    const validChatIds = new Set(
+      characters.flatMap((character) =>
+        (character.chats ?? [])
+          .map((chat) => chat?.id)
+          .filter(Boolean) as string[],
+      ),
+    );
+    chatTabsStore.pruneInvalidTargets(
+      (characterId, chatId) =>
+        validCharacterIds.has(characterId) && validChatIds.has(chatId),
+    );
   }
 
   await characterStore.flush();

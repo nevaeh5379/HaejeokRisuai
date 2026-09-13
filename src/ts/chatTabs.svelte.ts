@@ -256,6 +256,117 @@ export class ChatTabsStore {
     return tab;
   }
 
+  /**
+   * Removes every tab that references a deleted chat and repairs the
+   * affected groups (active-tab promotion / empty-group removal), so a
+   * deleted chat can never leave a stale tab behind. Call this wherever
+   * chats are removed from the store.
+   */
+  pruneChat(chatId: string): {
+    activeChanged: boolean;
+    activeTab: ChatTab | null;
+  } {
+    if (!chatId) {
+      return { activeChanged: false, activeTab: this.activeTab ?? null };
+    }
+    return this.removeTabsMatching((tab) => tab.chatId === chatId);
+  }
+
+  /** Removes every tab that references a deleted character. */
+  pruneCharacter(characterId: string): {
+    activeChanged: boolean;
+    activeTab: ChatTab | null;
+  } {
+    if (!characterId) {
+      return { activeChanged: false, activeTab: this.activeTab ?? null };
+    }
+    return this.removeTabsMatching((tab) => tab.characterId === characterId);
+  }
+
+  /**
+   * Removes every tab whose character/chat pair no longer exists according
+   * to `isValid`. Used by remote synchronization, where deletions can arrive
+   * from other devices without a local removal event.
+   */
+  pruneInvalidTargets(
+    isValid: (characterId: string, chatId: string) => boolean,
+  ): {
+    activeChanged: boolean;
+    activeTab: ChatTab | null;
+  } {
+    return this.removeTabsMatching(
+      (tab) => !isValid(tab.characterId, tab.chatId),
+    );
+  }
+
+  private removeTabsMatching(
+    matches: (tab: ChatTab) => boolean,
+  ): {
+    activeChanged: boolean;
+    activeTab: ChatTab | null;
+  } {
+    const removed = this.tabs.filter(matches);
+    if (removed.length === 0) {
+      return { activeChanged: false, activeTab: this.activeTab ?? null };
+    }
+    const removedIds = new Set(removed.map((tab) => tab.id));
+    this.tabs = this.tabs.filter((tab) => !removedIds.has(tab.id));
+
+    let focusedResult: {
+      activeChanged: boolean;
+      activeTab: ChatTab | null;
+    } = { activeChanged: false, activeTab: this.activeTab ?? null };
+
+    for (const groupId of new Set(removed.map((tab) => tab.groupId))) {
+      const groupIndex = this.groups.findIndex(
+        (group) => group.id === groupId,
+      );
+      if (groupIndex < 0) continue;
+      const group = this.groups[groupIndex];
+      const wasFocused = this.focusedGroupId === group.id;
+      const remaining = this.tabsForGroup(group.id);
+
+      if (remaining.length === 0) {
+        if (this.groups.length > 1) {
+          this.groups.splice(groupIndex, 1);
+          if (wasFocused) {
+            const nextGroup =
+              this.groups[Math.min(groupIndex, this.groups.length - 1)] ??
+              this.groups[0];
+            this.focusedGroupId = nextGroup.id;
+            focusedResult = {
+              activeChanged: true,
+              activeTab: this.activeTabForGroup(nextGroup.id) ?? null,
+            };
+          }
+        } else {
+          // The last group survives with no active tab; the pane falls back
+          // to the selectedCharID/chatPage selection like before tabs existed.
+          group.activeTabId = null;
+          if (wasFocused) {
+            focusedResult = { activeChanged: true, activeTab: null };
+          }
+        }
+        continue;
+      }
+
+      if (
+        group.activeTabId &&
+        remaining.some((tab) => tab.id === group.activeTabId)
+      ) {
+        continue;
+      }
+      const next = remaining[0] ?? null;
+      group.activeTabId = next?.id ?? null;
+      if (next) next.unread = false;
+      if (wasFocused) {
+        focusedResult = { activeChanged: true, activeTab: next };
+      }
+    }
+
+    return focusedResult;
+  }
+
   detach(tabId: string): {
     activeChanged: boolean;
     activeTab: ChatTab | null;
@@ -492,29 +603,52 @@ export const chatTabsStore = new ChatTabsStore();
 let navigationSequence = 0;
 
 export async function navigateToChatTab(tabId: string): Promise<boolean> {
-  const tab = chatTabsStore.setActive(tabId);
+  const tab = chatTabsStore.tabs.find((item) => item.id === tabId);
   if (!tab) return false;
+
+  // Validate the target BEFORE activating the tab. Activating first would
+  // leave a stale tab (deleted character/chat) as the active one, which
+  // deadlocks the chat screen on its "loading chat data" gate.
   const characterIndex = characterStore.characters.findIndex(
     (character) => character.chaId === tab.characterId,
   );
-  if (characterIndex < 0) return false;
+  if (characterIndex < 0) {
+    chatTabsStore.pruneCharacter(tab.characterId);
+    return false;
+  }
+  const character = characterStore.characters[characterIndex];
+  const chatIndex =
+    character?.chats?.findIndex((chat) => chat.id === tab.chatId) ?? -1;
+  if (chatIndex < 0) {
+    chatTabsStore.pruneChat(tab.chatId);
+    return false;
+  }
   const sequence = ++navigationSequence;
 
   chatTabsStore.navigating = true;
   try {
+    chatTabsStore.setActive(tabId);
     if (get(selectedCharID) !== characterIndex) {
       const { changeChar } = await import("./characters");
       await changeChar(characterIndex);
     }
     if (sequence !== navigationSequence || chatTabsStore.activeTabId !== tabId)
       return false;
-    const character = characterStore.characters[characterIndex];
-    const chatIndex =
-      character?.chats?.findIndex((chat) => chat.id === tab.chatId) ?? -1;
-    if (chatIndex < 0) return false;
-    if (character.chatPage !== chatIndex) {
+    // Re-verify after changeChar: realtime sync may have removed the chat
+    // while the character was hydrating.
+    const freshChatIndex =
+      characterStore.characters[characterIndex]?.chats?.findIndex(
+        (chat) => chat.id === tab.chatId,
+      ) ?? -1;
+    if (freshChatIndex < 0) {
+      if (sequence === navigationSequence) {
+        chatTabsStore.pruneChat(tab.chatId);
+      }
+      return false;
+    }
+    if (characterStore.characters[characterIndex].chatPage !== freshChatIndex) {
       const { changeChatTo } = await import("./globalApi.svelte");
-      changeChatTo(chatIndex);
+      changeChatTo(freshChatIndex);
     }
     tab.unread = false;
     return true;
@@ -529,4 +663,24 @@ export async function openChatTargetInTab(
 ): Promise<boolean> {
   const tab = chatTabsStore.openTarget(characterId, chatId);
   return navigateToChatTab(tab.id);
+}
+
+/**
+ * Drops tabs that reference a deleted chat and, when the focused pane's
+ * active tab was among them, follows the promoted replacement tab so the
+ * selection stays consistent with the tab state.
+ */
+export function pruneChatTargets(chatId: string): void {
+  const result = chatTabsStore.pruneChat(chatId);
+  if (result.activeChanged && result.activeTab) {
+    void navigateToChatTab(result.activeTab.id);
+  }
+}
+
+/** Drops tabs that reference a deleted character (same rules as chats). */
+export function pruneCharacterTargets(characterId: string): void {
+  const result = chatTabsStore.pruneCharacter(characterId);
+  if (result.activeChanged && result.activeTab) {
+    void navigateToChatTab(result.activeTab.id);
+  }
 }

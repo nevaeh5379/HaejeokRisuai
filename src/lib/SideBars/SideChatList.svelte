@@ -19,7 +19,7 @@
     import Toggles from "./Toggles.svelte";
     import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
     import { getProtectedChatIds } from "src/ts/memory/chatWorkingSet";
-    import { chatTabsStore } from "src/ts/chatTabs.svelte";
+    import { chatTabsStore, pruneChatTargets } from "src/ts/chatTabs.svelte";
     import { duplicateChat } from "src/ts/characters";
 
     interface Props {
@@ -462,6 +462,12 @@
                                     let chats = chara.chats
                                     chats.splice(chara.chats.indexOf(chat), 1)
                                     chara.chats = chats
+                                    // Keep chat tabs consistent with the store: a tab that
+                                    // still referenced the deleted chat would deadlock the
+                                    // chat screen on its loading gate once activated.
+                                    if (chat.id) {
+                                        pruneChatTargets(chat.id)
+                                    }
                                 }
                             }}>
                                 <TrashIcon size={18}/>
@@ -575,6 +581,11 @@
                             let chats = chara.chats
                             chats.splice(i, 1)
                             chara.chats = chats
+                            // Keep chat tabs consistent with the store (see the
+                            // folder chat deletion above).
+                            if (chat.id) {
+                                pruneChatTargets(chat.id)
+                            }
                         }
                     }}>
                         <TrashIcon size={18}/>

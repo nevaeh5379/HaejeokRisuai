@@ -54,6 +54,7 @@ import { translateHTML } from "./translator/translator";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
+import { chatTabsStore } from "./chatTabs.svelte";
 import {
   cancelInactiveChatMessageRelease,
   releaseInactiveChatMessages,
@@ -1278,7 +1279,14 @@ export async function removeChar(
     chars[index].trashTime = Date.now();
     characterStore.markCharacterDirty(chars[index].chaId);
   } else {
+    const removedChaId = chars[index].chaId;
     chars.splice(index, 1);
+    // Drop tabs referencing the deleted character so a stale tab can never
+    // become the active one and deadlock the chat screen (removeChar
+    // deselects right after, so no navigation is needed here).
+    if (removedChaId) {
+      chatTabsStore.pruneCharacter(removedChaId);
+    }
   }
   checkCharOrder();
   characterStore.characters = chars;

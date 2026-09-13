@@ -934,7 +934,13 @@ class CharacterStore
       if (!current || current.detailsLoaded === false) return summary;
 
       const chats = current.chats;
-      const chatPage = current.chatPage;
+      // Remote deletions can shrink the chat list; keep the page within
+      // bounds so the active chat always resolves (toChatSummary applies the
+      // same clamp).
+      const chatPage = Math.min(
+        Math.max(current.chatPage ?? 0, 0),
+        Math.max(chats.length - 1, 0),
+      );
       Object.assign(current, summary, {
         chats,
         chatPage,

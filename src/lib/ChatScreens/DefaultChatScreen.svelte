@@ -120,6 +120,39 @@
     let isFocusedPane = $derived(chatTabsStore.focusedGroupId === paneGroupId)
 
     $effect(() => {
+        // The "loading chat data" fallback must only ever be a transient
+        // hydration state. If the selection or the active tab points at a
+        // missing character/chat for more than a grace period, that is an
+        // invariant violation — log it so deadlocks surface in diagnostics
+        // without spamming during navigation frames.
+        if (
+            selectedCharacterIndex < 0 &&
+            !paneTab
+        ) return; // main-menu state, not a gate
+        if (
+            selectedCharacterIndex >= 0 &&
+            currentCharacter &&
+            selectedChatIndex >= 0 &&
+            currentChatSession
+        ) return; // healthy
+        const stalePaneTab = paneTab
+            ? { characterId: paneTab.characterId, chatId: paneTab.chatId }
+            : null;
+        const timer = setTimeout(() => {
+            console.error(
+                "[DefaultChatScreen] chat data gate stuck — invalid selection",
+                {
+                    selectedCharacterIndex,
+                    selectedChatIndex,
+                    hasCharacter: Boolean(currentCharacter),
+                    paneTab: stalePaneTab,
+                },
+            );
+        }, 2000);
+        return () => clearTimeout(timer);
+    })
+
+    $effect(() => {
         // new generation session begins → show the minigame again
         if (currentChatGenerating && !minigameWasGenerating) {
             minigameDismissed = false
