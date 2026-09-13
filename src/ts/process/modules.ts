@@ -80,6 +80,32 @@ export interface ModuleFolder {
   color: string;
 }
 
+export interface ModuleSandboxMember {
+  /** Stable runtime identity for this placement of a module definition. */
+  instanceId: string;
+  moduleId: string;
+  enabled?: boolean;
+}
+
+export interface ModuleSandboxGroup {
+  id: string;
+  name: string;
+  members: ModuleSandboxMember[];
+  /** Blank uses the active preset's global auxiliary model. */
+  subModel?: string;
+}
+
+export interface ResolvedModuleSandboxMember extends ModuleSandboxMember {
+  module: RisuModule;
+}
+
+export interface ResolvedModuleSandbox {
+  id: string;
+  name: string;
+  subModel?: string;
+  members: ResolvedModuleSandboxMember[];
+}
+
 export async function exportModule(
   module: RisuModule,
   arg: {
@@ -493,6 +519,31 @@ export function getModules(
   );
 }
 
+/**
+ * Resolves only enabled first-class sandbox groups. Module definitions stay
+ * shared; each member keeps a separate instance id for runtime isolation.
+ */
+export function getActiveModuleSandboxes(): ResolvedModuleSandbox[] {
+  const enabled = new Set(moduleStore.enabledSandboxGroups);
+  const definitions = new Map(
+    moduleStore.list.map((module) => [module.id, module] as const),
+  );
+
+  return moduleStore.sandboxGroups
+    .filter((group) => enabled.has(group.id))
+    .map((group) => ({
+      id: group.id,
+      name: group.name,
+      subModel: group.subModel,
+      members: group.members.flatMap((member) => {
+        if (member.enabled === false) return [];
+        const module = definitions.get(member.moduleId);
+        return module ? [{ ...member, module }] : [];
+      }),
+    }))
+    .filter((group) => group.members.length > 0);
+}
+
 export interface ModuleLorebookSource {
   lorebook: loreBook;
   sourceModuleId: string;
@@ -581,6 +632,29 @@ export function getModuleTriggers(
         return trigger;
       }),
     );
+  }
+
+  // First-class groups intentionally do not flatten into getModules(). A
+  // definition can appear in multiple groups and must execute once per group.
+  if (overrideIds === undefined) {
+    for (const group of getActiveModuleSandboxes()) {
+      const sandboxModuleIds = group.members.map((member) => member.moduleId);
+      for (const member of group.members) {
+        if (!member.module.trigger) continue;
+        triggers = triggers.concat(
+          member.module.trigger.map((value) => ({
+            ...value,
+            sourceModuleId: member.module.id,
+            lowLevelAccess: member.module.lowLevelAccess,
+            subModel: group.subModel,
+            sandboxGroupId: group.id,
+            sandboxGroupName: group.name,
+            sandboxInstanceId: member.instanceId,
+            sandboxModuleIds,
+          })),
+        );
+      }
+    }
   }
   return triggers;
 }

@@ -75,6 +75,9 @@ interface BasicScriptingEngineState {
   subModel?: string;
   sourceModuleId?: string;
   sandboxOwnerModuleId?: string;
+  sandboxGroupId?: string;
+  sandboxInstanceId?: string;
+  sandboxModuleIds?: string[];
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -110,16 +113,29 @@ export async function runScripted(
     subModel?: string;
     sourceModuleId?: string;
     sandboxOwnerModuleId?: string;
+    sandboxGroupId?: string;
+    sandboxInstanceId?: string;
+    sandboxModuleIds?: string[];
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
   const char = arg.char ?? characterStore.currentCharacter;
   const data = arg.data ?? "";
-  const setVar =
+  const baseSetVar =
     arg.setVar ??
     ((key: string, value: string) => setChatVar(key, value, arg.chatTarget));
-  const getVar =
+  const baseGetVar =
     arg.getVar ?? ((key: string) => getChatVar(key, arg.chatTarget));
+  const sandboxVariablePrefix = arg.sandboxGroupId
+    ? `__module_sandbox:${arg.sandboxGroupId}:`
+    : "";
+  const setVar = sandboxVariablePrefix
+    ? (key: string, value: string) =>
+        baseSetVar(sandboxVariablePrefix + key, value)
+    : baseSetVar;
+  const getVar = sandboxVariablePrefix
+    ? (key: string) => baseGetVar(sandboxVariablePrefix + key)
+    : baseGetVar;
   const meta = arg.meta ?? {};
   const mode = arg.mode ?? "manual";
 
@@ -134,6 +150,7 @@ export async function runScripted(
     type,
     arg.sourceModuleId,
     arg.sandboxOwnerModuleId,
+    arg.sandboxGroupId,
   );
   const executionToken = Symbol();
   let invocationAccessKey: string | undefined;
@@ -154,6 +171,9 @@ export async function runScripted(
     ScriptingEngineState.subModel = arg.subModel;
     ScriptingEngineState.sourceModuleId = arg.sourceModuleId;
     ScriptingEngineState.sandboxOwnerModuleId = arg.sandboxOwnerModuleId;
+    ScriptingEngineState.sandboxGroupId = arg.sandboxGroupId;
+    ScriptingEngineState.sandboxInstanceId = arg.sandboxInstanceId;
+    ScriptingEngineState.sandboxModuleIds = arg.sandboxModuleIds;
     const getScriptingCharacter = () => {
       const scriptingChar = ScriptingEngineState.char;
       if (scriptingChar && scriptingChar.type !== "simple")
@@ -916,12 +936,14 @@ export async function runScripted(
           })),
           ...getModuleLorebooksWithSource(
             selectedChar,
-            ScriptingEngineState.sandboxOwnerModuleId
-              ? [
-                  ScriptingEngineState.sourceModuleId,
-                  ScriptingEngineState.sandboxOwnerModuleId,
-                ].filter((id): id is string => Boolean(id))
-              : undefined,
+            ScriptingEngineState.sandboxModuleIds?.length
+              ? ScriptingEngineState.sandboxModuleIds
+              : ScriptingEngineState.sandboxOwnerModuleId
+                ? [
+                    ScriptingEngineState.sourceModuleId,
+                    ScriptingEngineState.sandboxOwnerModuleId,
+                  ].filter((id): id is string => Boolean(id))
+                : undefined,
             ScriptingEngineState.chat,
           ),
         ];
@@ -1144,6 +1166,7 @@ export async function runScripted(
                 sandboxOwner?.subModel ?? ScriptingEngineState.subModel,
               sourceModuleId: ScriptingEngineState.sourceModuleId,
               moduleSandboxOwnerId: sandboxOwner?.id,
+              moduleSandboxGroupId: ScriptingEngineState.sandboxGroupId,
             },
             "otherAx",
           );
@@ -1473,6 +1496,9 @@ function releaseScriptingExecutionContext(engineState: ScriptingEngineState) {
   engineState.messagesMutated = false;
   engineState.stopSending = false;
   engineState.sandboxOwnerModuleId = undefined;
+  engineState.sandboxGroupId = undefined;
+  engineState.sandboxInstanceId = undefined;
+  engineState.sandboxModuleIds = undefined;
 }
 
 function disposeScriptingEngineState(engineState: ScriptingEngineState) {
@@ -1509,10 +1535,13 @@ function acquireScriptingEngineState(
   type: "lua" | "py",
   sourceModuleId?: string,
   sandboxOwnerModuleId?: string,
+  sandboxGroupId?: string,
 ): ScriptingEngineState {
-  const sandboxKey = sandboxOwnerModuleId
-    ? `${mode}:module:${sourceModuleId ?? "unknown"}:${sandboxOwnerModuleId}`
-    : mode;
+  const sandboxKey = sandboxGroupId
+    ? `${mode}:group:${sandboxGroupId}`
+    : sandboxOwnerModuleId
+      ? `${mode}:module:${sourceModuleId ?? "unknown"}:${sandboxOwnerModuleId}`
+      : mode;
   const key = `${type}:${sandboxKey}`;
   let engineState = ScriptingEngines.get(key);
   if (engineState) {
@@ -1761,6 +1790,9 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
             subModel: trigger.subModel,
             sourceModuleId: trigger.sourceModuleId,
             sandboxOwnerModuleId,
+            sandboxGroupId: trigger.sandboxGroupId,
+            sandboxInstanceId: trigger.sandboxInstanceId,
+            sandboxModuleIds: trigger.sandboxModuleIds,
           });
           data = runResult.res ?? data;
         }
@@ -1829,6 +1861,9 @@ export async function runLuaButtonTrigger(
             subModel: trigger.subModel,
             sourceModuleId: trigger.sourceModuleId,
             sandboxOwnerModuleId,
+            sandboxGroupId: trigger.sandboxGroupId,
+            sandboxInstanceId: trigger.sandboxInstanceId,
+            sandboxModuleIds: trigger.sandboxModuleIds,
           });
         }
       }

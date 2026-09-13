@@ -28,6 +28,8 @@ export function createDatabaseSnapshot(): Database {
     enabledModules: moduleStore.enabledModules,
     moduleFolders: moduleStore.moduleFolders,
     moduleOrder: moduleStore.moduleOrder,
+    moduleSandboxGroups: moduleStore.sandboxGroups,
+    enabledModuleSandboxGroups: moduleStore.enabledSandboxGroups,
     activeBotPresetId: presetStore.activeId || undefined,
   };
   try {

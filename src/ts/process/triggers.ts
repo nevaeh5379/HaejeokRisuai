@@ -41,6 +41,11 @@ export interface triggerscript {
   sourceModuleId?: string;
   /** Runtime-only owners that execute this module trigger in isolated Lua sandboxes. */
   sandboxOwnerModuleIds?: string[];
+  /** First-class sandbox provenance. Never persisted with the module definition. */
+  sandboxGroupId?: string;
+  sandboxGroupName?: string;
+  sandboxInstanceId?: string;
+  sandboxModuleIds?: string[];
 }
 
 export type triggerCondition =
@@ -1728,6 +1733,7 @@ export async function runTrigger(
                 ? trigger.subModel
                 : undefined,
               sourceModuleId: trigger.sourceModuleId,
+              moduleSandboxGroupId: trigger.sandboxGroupId,
             },
             "submodel",
           );
@@ -1823,6 +1829,9 @@ export async function runTrigger(
                 : undefined,
               sourceModuleId: trigger.sourceModuleId,
               sandboxOwnerModuleId,
+              sandboxGroupId: trigger.sandboxGroupId,
+              sandboxInstanceId: trigger.sandboxInstanceId,
+              sandboxModuleIds: trigger.sandboxModuleIds,
             });
 
             if (triggerCodeResult.stopSending) {
@@ -2248,6 +2257,7 @@ export async function runTrigger(
                   ? trigger.subModel
                   : undefined,
               sourceModuleId: trigger.sourceModuleId,
+              moduleSandboxGroupId: trigger.sandboxGroupId,
             },
             effect.model,
           );

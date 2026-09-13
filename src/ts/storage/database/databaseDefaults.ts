@@ -114,6 +114,8 @@ export type NormalizedDatabaseInput = DatabaseInput &
       | "modules"
       | "enabledModules"
       | "moduleFolders"
+      | "moduleSandboxGroups"
+      | "enabledModuleSandboxGroups"
     >
   >;
 
@@ -131,6 +133,8 @@ function normalizeAggregateDomains(data: Database): void {
   data.enabledModules ??= [];
   data.moduleFolders ??= [];
   data.moduleOrder ??= [];
+  data.moduleSandboxGroups ??= [];
+  data.enabledModuleSandboxGroups ??= [];
 
   if (!Array.isArray(data.personas) || data.personas.length === 0) {
     data.personas = [

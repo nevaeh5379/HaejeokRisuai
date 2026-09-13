@@ -219,6 +219,72 @@ test("isolates Lua globals between backend-owner sandboxes", async () => {
   expect((await runFor("owner-b")).res).toBe(1);
 });
 
+test("shares Lua globals inside a group and isolates them between groups", async () => {
+  requestChatDataMock.mockClear();
+  const code = `
+    counter = counter or 0
+    onStart = async(function(id)
+      counter = counter + 1
+      axLLM(id, {{role = "user", content = "sandbox request"}})
+      return counter
+    end)
+  `;
+  const runFor = (groupId: string, instanceId: string, subModel: string) =>
+    runScripted(code, {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      lowLevelAccess: true,
+      sourceModuleId: "lightboard",
+      sandboxGroupId: groupId,
+      sandboxInstanceId: instanceId,
+      sandboxModuleIds: ["lightboard", `${groupId}-module`],
+      subModel,
+    });
+
+  expect(
+    (await runFor("illustration", "lightboard-a", "image-model")).res,
+  ).toBe(1);
+  expect(
+    (await runFor("illustration", "illustration-helper", "image-model")).res,
+  ).toBe(2);
+  expect((await runFor("weather", "lightboard-b", "weather-model")).res).toBe(
+    1,
+  );
+  expect(requestChatDataMock).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      staticModel: "weather-model",
+      sourceModuleId: "lightboard",
+      moduleSandboxGroupId: "weather",
+    }),
+    "otherAx",
+  );
+});
+
+test("scopes Lua lorebooks to first-class sandbox members", async () => {
+  moduleLorebooks.mockClear();
+  moduleLorebooks.mockReturnValue([]);
+  const char = { type: "character", globalLore: [] } as never;
+  const chat = { message: [], localLore: [] } as never;
+  await runScripted(
+    `function onStart(id) return #getLoreBooks(id, "missing") end`,
+    {
+      char,
+      chat,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxGroupId: "illustration",
+      sandboxInstanceId: "lightboard-a",
+      sandboxModuleIds: ["lightboard", "illustration-module"],
+    },
+  );
+  expect(moduleLorebooks).toHaveBeenLastCalledWith(
+    char,
+    ["lightboard", "illustration-module"],
+    chat,
+  );
+});
+
 test("scopes Lua module lorebooks to the backend-owner sandbox", async () => {
   moduleLorebooks.mockClear();
   moduleLorebooks.mockReturnValue([]);

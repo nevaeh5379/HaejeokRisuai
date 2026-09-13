@@ -1,4 +1,29 @@
 export const languageEnglish = {
+  moduleSandboxGroups: {
+    title: "Module bundles",
+    description:
+      "Build isolated module environments. The same module can run as a separate instance in each bundle.",
+    library: "Module blocks",
+    canvas: "Sandbox canvas",
+    create: "New bundle",
+    defaultName: "New module bundle",
+    active: "Active",
+    inactive: "Inactive",
+    noGroups: "Create a bundle, then add module blocks.",
+    noModules: "No modules are installed.",
+    addHint: "Select a bundle and add blocks from the library.",
+    selected: "Selected bundle",
+    model: "Bundle auxiliary model",
+    globalModel: "Default (global auxiliary model)",
+    isolated:
+      "Lua state, lorebooks, variables, and model routing are isolated inside this boundary.",
+    emptyGroup: "Add a module block from the library.",
+    instance: "Instance",
+    missingModule: "Missing module",
+    removeGroupConfirm: "Remove this module bundle?",
+    legacyWarning:
+      "Modules enabled individually still use the legacy shared environment. Disable their individual global toggle to avoid duplicate execution.",
+  },
   moduleRequestRules: {
     title: "Auxiliary model request rules",
     description:

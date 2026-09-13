@@ -40,6 +40,8 @@ export interface requestDataArgument {
   sourceModuleId?: string;
   /** Authoritative module owner selected by an isolated Lua sandbox. */
   moduleSandboxOwnerId?: string;
+  /** Authoritative first-class sandbox group selected by the host runtime. */
+  moduleSandboxGroupId?: string;
   escape?: boolean;
   tools?: MCPTool[];
   rememberToolUsage?: boolean;

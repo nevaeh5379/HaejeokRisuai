@@ -10,8 +10,12 @@ import type {
 } from "../../process/memory/hypav3Preset";
 import type { TranslatorPreset } from "../../translator/presets";
 import type { OnnxModelFiles } from "../../process/transformers";
-import type { RisuModule, ModuleFolder } from "../../process/modules";
-export type { RisuModule, ModuleFolder };
+import type {
+  RisuModule,
+  ModuleFolder,
+  ModuleSandboxGroup,
+} from "../../process/modules";
+export type { RisuModule, ModuleFolder, ModuleSandboxGroup };
 import type { SerializableHypaV2Data } from "../../process/memory/hypav2";
 import { LLMFlags, LLMFormat, LLMTokenizer } from "../../model/types";
 import type { HypaModel } from "../../process/memory/hypamemory";
@@ -588,6 +592,8 @@ export interface ModuleStoreData {
   enabledModules: string[];
   moduleFolders: ModuleFolder[];
   moduleOrder?: string[];
+  moduleSandboxGroups: ModuleSandboxGroup[];
+  enabledModuleSandboxGroups: string[];
 }
 
 /** PresetStore-owned selection metadata. */

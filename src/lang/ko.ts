@@ -1,4 +1,29 @@
 export const languageKorean = {
+  moduleSandboxGroups: {
+    title: "모듈 묶음",
+    description:
+      "서로 격리된 모듈 실행 환경을 조립합니다. 같은 모듈도 묶음마다 별도 인스턴스로 실행됩니다.",
+    library: "모듈 블록",
+    canvas: "샌드박스 캔버스",
+    create: "새 묶음",
+    defaultName: "새 모듈 묶음",
+    active: "활성",
+    inactive: "비활성",
+    noGroups: "묶음을 만든 다음 모듈 블록을 추가하세요.",
+    noModules: "설치된 모듈이 없습니다.",
+    addHint: "묶음을 선택하고 보관함에서 블록을 추가하세요.",
+    selected: "선택된 묶음",
+    model: "묶음 보조 모델",
+    globalModel: "기본값 (전역 보조 모델)",
+    isolated:
+      "Lua 상태, 로어북, 변수, 모델 라우팅은 이 경계 안에서만 공유됩니다.",
+    emptyGroup: "보관함에서 모듈 블록을 추가하세요.",
+    instance: "인스턴스",
+    missingModule: "누락된 모듈",
+    removeGroupConfirm: "이 모듈 묶음을 삭제할까요?",
+    legacyWarning:
+      "개별 활성화된 모듈은 기존 공유 환경에서도 실행됩니다. 중복 실행을 피하려면 해당 모듈의 전역 활성화를 끄세요.",
+  },
   moduleRequestRules: {
     title: "보조모델 요청 규칙",
     description:

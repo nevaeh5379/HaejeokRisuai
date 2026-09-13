@@ -185,6 +185,50 @@ describe("requestChatData", () => {
     );
   });
 
+  it("keeps an authoritative first-class group model", async () => {
+    settingsStore.state.enableModuleSubModel = true;
+    mocks.getModules.mockReturnValue([
+      {
+        id: "other-owner",
+        name: "Other Owner",
+        subModel: "wrong-model",
+        subModelRequestRules: [
+          {
+            enabled: true,
+            phrases: ["same prompt"],
+            sourceModuleId: "backend",
+          },
+        ],
+      },
+    ] as any);
+    mocks.executeChatRequestFallbacks.mockImplementation(
+      async (_options, callbacks) =>
+        callbacks.executeAttempt({ fallbackModel: "" }),
+    );
+
+    await requestChatData(
+      {
+        currentChar: {},
+        tools: [],
+        formated: [{ role: "user", content: "same prompt" }],
+        sourceModuleId: "backend",
+        moduleSandboxGroupId: "illustration-group",
+        staticModel: "illustration-model",
+      } as any,
+      "otherAx",
+    );
+
+    expect(mocks.getModules).not.toHaveBeenCalled();
+    expect(mocks.requestChatDataMain).toHaveBeenCalledWith(
+      expect.objectContaining({
+        staticModel: "illustration-model",
+        moduleSandboxGroupId: "illustration-group",
+      }),
+      "otherAx",
+      null,
+    );
+  });
+
   it("reads fallback models from the active preset", async () => {
     const response = await requestChatData(
       {

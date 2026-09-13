@@ -36,6 +36,7 @@ export async function requestChatData(
   const useModuleRules =
     db.enableModuleSubModel &&
     !arg.moduleSandboxOwnerId &&
+    !arg.moduleSandboxGroupId &&
     (model === "submodel" || model === "otherAx");
   // Snapshot configuration before asynchronous hooks or character switches.
   const ruleModules =
