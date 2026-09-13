@@ -1742,8 +1742,9 @@ annotation {
   gap: 3px !important;
   margin-top: 0 !important;
   margin-bottom: 8px !important;
-  height: 34px !important;
   min-height: 34px !important;
+  height: auto !important;
+  align-items: stretch !important;
   box-sizing: border-box !important;
   display: flex !important;
 }
@@ -1761,8 +1762,16 @@ annotation {
   border-radius: 4px !important;
   font-size: 12.5px !important;
   font-weight: 500 !important;
-  height: 100% !important;
-  padding: 0 10px !important;
+  min-height: 28px !important;
+  height: auto !important;
+  padding: 4px 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+  word-break: keep-all !important;
   box-shadow: none !important;
   transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease !important;
 }
@@ -1899,15 +1908,23 @@ annotation {
 .theme-windows-fluent .rs-charconfig-card:has(> table),
 .theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) {
   padding: 0 !important;
+  overflow: hidden !important;
 }
 
 .theme-windows-fluent .rs-charconfig-card:has(> table) > table,
-.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) > table {
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) > table,
+.theme-windows-fluent .rs-sidebar-panel table.tabler {
   margin-top: 0 !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   border-collapse: collapse !important;
+  table-layout: fixed !important;
 }
 
-.theme-windows-fluent .rs-sidebar-panel table th {
+/* Header row styling */
+.theme-windows-fluent .rs-sidebar-panel table tr:first-child th,
+.theme-windows-fluent .rs-sidebar-panel table thead th {
   background-color: var(--fluent-subtle-fill-secondary) !important;
   border-bottom: 1px solid var(--fluent-card-stroke) !important;
   color: var(--risu-theme-textcolor2) !important;
@@ -1916,15 +1933,46 @@ annotation {
   text-transform: uppercase !important;
   letter-spacing: 0.5px !important;
   padding: 8px 12px !important;
+  text-align: left !important;
 }
 
+/* Action column in table header (w-8 or header containing button) */
+.theme-windows-fluent .rs-sidebar-panel table tr:first-child th.w-8,
+.theme-windows-fluent .rs-sidebar-panel table tr:first-child th:last-child:has(button) {
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  text-align: center !important;
+  padding: 6px 4px !important;
+}
+
+/* Table body cells */
 .theme-windows-fluent .rs-sidebar-panel table td {
   border-bottom: 1px solid var(--fluent-card-stroke) !important;
-  padding: 8px 12px !important;
+  padding: 6px 8px !important;
   color: var(--risu-theme-textcolor) !important;
+  vertical-align: middle !important;
 }
 
-.theme-windows-fluent .rs-sidebar-panel table tr:last-child td {
+/* Table action cell in body (th tag used in CharConfig for action column) */
+.theme-windows-fluent .rs-sidebar-panel table tbody tr:not(:first-child) th,
+.theme-windows-fluent .rs-sidebar-panel table tr:has(td) th {
+  background-color: transparent !important;
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  padding: 6px 4px !important;
+  font-size: 13px !important;
+  font-weight: normal !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  vertical-align: middle !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  text-align: center !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table tr:last-child td,
+.theme-windows-fluent .rs-sidebar-panel table tr:last-child th {
   border-bottom: none !important;
 }
 
@@ -1937,6 +1985,7 @@ annotation {
 }
 
 /* Table Action Buttons (+, Trash, Move Up/Down) */
+.theme-windows-fluent .rs-sidebar-panel table button,
 .theme-windows-fluent .rs-sidebar-panel table th button,
 .theme-windows-fluent .rs-sidebar-panel table td button,
 .theme-windows-fluent .rs-sidebar-panel table th div button {
@@ -1945,7 +1994,11 @@ annotation {
   background: transparent !important;
   box-shadow: none !important;
   cursor: pointer !important;
-  padding: 4px !important;
+  padding: 0 !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
   border-radius: 4px !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -1954,16 +2007,50 @@ annotation {
   transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
 }
 
+.theme-windows-fluent .rs-sidebar-panel table button:hover,
 .theme-windows-fluent .rs-sidebar-panel table th button:hover,
 .theme-windows-fluent .rs-sidebar-panel table td button:hover,
 .theme-windows-fluent .rs-sidebar-panel table th div button:hover {
   background-color: var(--fluent-subtle-fill-tertiary) !important;
 }
 
+.theme-windows-fluent .rs-sidebar-panel table button:active,
 .theme-windows-fluent .rs-sidebar-panel table th button:active,
 .theme-windows-fluent .rs-sidebar-panel table td button:active,
 .theme-windows-fluent .rs-sidebar-panel table th div button:active {
   transform: scale(0.92) !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table button:disabled,
+.theme-windows-fluent .rs-sidebar-panel table th button:disabled,
+.theme-windows-fluent .rs-sidebar-panel table td button:disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table .flex-col {
+  gap: 3px !important;
+}
+
+/* Table textareainput integration */
+.theme-windows-fluent .rs-sidebar-panel table td:has(.rs-textareainput) {
+  padding: 8px !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textareainput {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-radius: 4px !important;
+  background-color: var(--fluent-card-bg) !important;
+  box-shadow: none !important;
+  transition: all 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textareainput:focus-within {
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+  box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
 }
 
 /* Table inputs seamlessly integrate */
