@@ -128,10 +128,9 @@ export async function setWindowsTransparencyPreferences(
 export async function ensureFluentWindowsBackdrop(): Promise<void> {
   if (!isTauriWindows) return;
   const preferences = getWindowsTransparencyPreferences();
-  if (preferences.enabled && preferences.effect !== "mica") {
-    await setWindowsTransparencyPreferences({
-      ...preferences,
-      effect: "mica",
-    });
+  try {
+    await syncNativeBackdrop(preferences);
+  } catch (error) {
+    console.warn("Failed to apply the Windows transparency preference:", error);
   }
 }

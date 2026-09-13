@@ -92,6 +92,19 @@ const PRESET_ROOT_KEYS = new Set<string>([
 ]);
 const EXCLUDED_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
+function pruneInvalidChatTabs(): void {
+  const validTargets = new Set<string>();
+  for (const character of characterStore.characters) {
+    if (!character.chaId) continue;
+    for (const chat of character.chats ?? []) {
+      if (chat?.id) validTargets.add(`${character.chaId}\0${chat.id}`);
+    }
+  }
+  chatTabsStore.pruneInvalidTargets((characterId, chatId) =>
+    validTargets.has(`${characterId}\0${chatId}`),
+  );
+}
+
 async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
   const selectedCharacterId = characterStore.currentCharacter?.chaId;
   const startup = await storage.loadStartupData();
@@ -104,6 +117,7 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
   );
 
   installStartupData(startup, storage);
+  pruneInvalidChatTabs();
   await initPresetDomain(storage);
   await changeLanguage(settingsStore.state.language);
   await initRuntimeSettings(storage);
@@ -267,23 +281,7 @@ async function applyDatabaseChange(
     // Remote deletions can remove characters/chats that local chat tabs are
     // still referencing; prune those tabs so activating one can never
     // deadlock the chat screen on its loading gate.
-    const characters = characterStore.characters;
-    const validCharacterIds = new Set(
-      characters
-        .map((character) => character.chaId)
-        .filter(Boolean) as string[],
-    );
-    const validChatIds = new Set(
-      characters.flatMap((character) =>
-        (character.chats ?? [])
-          .map((chat) => chat?.id)
-          .filter(Boolean) as string[],
-      ),
-    );
-    chatTabsStore.pruneInvalidTargets(
-      (characterId, chatId) =>
-        validCharacterIds.has(characterId) && validChatIds.has(chatId),
-    );
+    pruneInvalidChatTabs();
   }
 
   await characterStore.flush();
