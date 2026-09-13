@@ -38,6 +38,90 @@ describe("moduleStore ordering and folder positions", () => {
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
 
+  it("detects direct nested edits and saves only the changed module", async () => {
+    mockStorage.loadModules = vi.fn(
+      async () =>
+        [
+          {
+            id: "m1",
+            name: "First",
+            description: "",
+            lorebook: [{ content: "Before", key: "key" }],
+          },
+          { id: "m2", name: "Second", description: "x".repeat(1024 * 1024) },
+        ] as RisuModule[],
+    );
+    await moduleStore.init(mockStorage);
+
+    moduleStore.getById("m1")!.lorebook![0].content = "After";
+    expect(moduleStore.hasPendingWrites()).toBe(true);
+    await moduleStore.flush();
+
+    expect(committed.at(-1)?.modules?.upserts.map((entry) => entry.id)).toEqual(
+      ["m1"],
+    );
+    expect(committed.at(-1)?.modules?.upserts[0].data).toMatchObject({
+      lorebook: [{ content: "After" }],
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+    const count = committed.length;
+    await moduleStore.flush();
+    expect(committed).toHaveLength(count);
+  });
+
+  it("preserves edits made while a module commit is in flight", async () => {
+    mockStorage.loadModules = vi.fn(async () => [
+      { id: "m1", name: "Initial", description: "" },
+    ]);
+    await moduleStore.init(mockStorage);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalCommit = mockStorage.commit;
+    mockStorage.commit = vi.fn(async (commit: SqlCommit) => {
+      await gate;
+      return originalCommit(commit);
+    });
+
+    moduleStore.getById("m1")!.name = "First edit";
+    const saving = moduleStore.flush();
+    moduleStore.getById("m1")!.name = "Second edit";
+    release();
+    await saving;
+
+    expect(committed[0].modules?.upserts[0].data).toMatchObject({
+      name: "First edit",
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(true);
+    await moduleStore.flush();
+    expect(committed.at(-1)?.modules?.upserts[0].data).toMatchObject({
+      name: "Second edit",
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("keeps a failed module edit pending so it can be retried", async () => {
+    mockStorage.loadModules = vi.fn(async () => [
+      { id: "m1", name: "Initial", description: "" },
+    ]);
+    await moduleStore.init(mockStorage);
+    const originalCommit = mockStorage.commit;
+    mockStorage.commit = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Storage full"))
+      .mockImplementation(originalCommit);
+    moduleStore.getById("m1")!.name = "Unsaved";
+
+    await expect(moduleStore.flush()).rejects.toThrow("Storage full");
+    expect(moduleStore.hasPendingWrites()).toBe(true);
+    await moduleStore.flush();
+    expect(committed.at(-1)?.modules?.upserts[0].data).toMatchObject({
+      name: "Unsaved",
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+  });
+
   it("generates default root order when moduleOrder is missing (legacy migration)", async () => {
     const mod1: RisuModule = { id: "m1", name: "Module 1", description: "" };
     const mod2: RisuModule = {

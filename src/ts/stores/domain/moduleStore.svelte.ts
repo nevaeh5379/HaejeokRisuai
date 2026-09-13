@@ -9,6 +9,7 @@ import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
 import { buildModuleDelta } from "./moduleCommit";
 import { StoreCommitQueue } from "./storeCommitQueue";
+import isEqual from "lodash/isEqual";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 function fingerprintOf(value: unknown): string {
@@ -39,7 +40,6 @@ class ModuleStore
   private dirtySandboxGroups = false;
   private committedModules: RisuModule[] = [];
   // Fingerprint baselines, taken once at init/commit — never on reactive runs.
-  private committedModulesFingerprint = "";
   private committedEnabledFingerprint = "";
   private committedFoldersFingerprint = "";
   private committedOrderFingerprint = "";
@@ -65,13 +65,15 @@ class ModuleStore
   async init(storage: ISqlStorage): Promise<void> {
     this.disposeObserver();
     this.storage = storage;
-    const [modules, enabled, folders, order, sandboxGroups] = await Promise.all([
+    const [modules, enabled, folders, order, sandboxGroups] = await Promise.all(
+      [
         storage.loadModules(),
         storage.loadSettingKey("enabledModules"),
         storage.loadSettingKey("moduleFolders"),
         storage.loadSettingKey("moduleOrder"),
         storage.loadSettingKey("moduleSandboxGroups"),
-      ]);
+      ],
+    );
     this.modules = [...modules];
     this.enabledModules = Array.isArray(enabled)
       ? enabled.filter((id): id is string => typeof id === "string")
@@ -95,7 +97,6 @@ class ModuleStore
       : [];
     this.loaded = true;
     this.committedModules = $state.snapshot(this.modules);
-    this.committedModulesFingerprint = fingerprintOf(this.modules);
     this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
     this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
@@ -680,7 +681,6 @@ class ModuleStore
     const storage = this.storage;
     if (!storage) {
       this.committedModules = $state.snapshot(this.modules);
-      this.committedModulesFingerprint = fingerprintOf(this.modules);
       this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
       this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
       this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
@@ -694,11 +694,18 @@ class ModuleStore
     let moduleSnapshot: RisuModule[] | undefined;
     // Only serialise domains known (or verified) to be dirty — a no-op flush
     // on a large library must not clone and stringify the whole domain.
-    if (
-      this.dirtyModules ||
-      fingerprintOf(this.modules) !== this.committedModulesFingerprint
-    ) {
-      moduleSnapshot = $state.snapshot(this.modules);
+    if (this.dirtyModules || !isEqual(this.modules, this.committedModules)) {
+      // Reuse unchanged snapshots: editing one module must not clone every
+      // installed lorebook. Never retain live proxies in the commit baseline.
+      const previousById = new Map(
+        this.committedModules.map((module) => [module.id, module]),
+      );
+      moduleSnapshot = this.modules.map((module) => {
+        const previous = previousById.get(module.id);
+        return previous && isEqual(previous, module)
+          ? previous
+          : $state.snapshot(module);
+      });
       commit.modules = buildModuleDelta(this.committedModules, moduleSnapshot);
     }
     if (
@@ -743,12 +750,16 @@ class ModuleStore
     );
     await operation;
     if (moduleSnapshot) this.committedModules = moduleSnapshot;
-    this.committedModulesFingerprint = fingerprintOf(this.modules);
     this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
     this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
     this.committedSandboxGroupsFingerprint = fingerprintOf(this.sandboxGroups);
     this.clearDirty();
+    // An edit can arrive while storage is writing. The baseline above is the
+    // persisted snapshot, so keep such edits pending for the next commit.
+    if (!isEqual(this.modules, this.committedModules)) {
+      this.markModulesDirty();
+    }
   }
 
   hasPendingWrites(): boolean {
@@ -762,10 +773,10 @@ class ModuleStore
     );
   }
 
-  /** O(modules) clone+stringify — call only from flush/backup paths. */
+  /** Compare module content without allocating a library-sized JSON string. */
   private hasPendingContentChange(): boolean {
     return (
-      fingerprintOf(this.modules) !== this.committedModulesFingerprint ||
+      !isEqual(this.modules, this.committedModules) ||
       fingerprintOf(this.enabledModules) !== this.committedEnabledFingerprint ||
       fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint ||
       fingerprintOf(this.moduleOrder) !== this.committedOrderFingerprint ||
@@ -817,7 +828,6 @@ class ModuleStore
     this.sandboxGroups = [];
     this.loaded = false;
     this.committedModules = [];
-    this.committedModulesFingerprint = "";
     this.committedEnabledFingerprint = "";
     this.committedFoldersFingerprint = "";
     this.committedOrderFingerprint = "";

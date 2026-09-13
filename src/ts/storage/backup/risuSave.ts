@@ -136,13 +136,17 @@ const risuSaveCacheForage = localforage.createInstance({
 });
 
 export class RisuSaveDecoder {
-  private blocks: {
-    name: string;
-    type: RisuSaveType;
-    compression: boolean;
-    content: string;
-  }[] = [];
   async decode(data: Uint8Array): Promise<PortableDatabase> {
+    const blocks: {
+      name: string;
+      type: RisuSaveType;
+      compression: boolean;
+      content: string | Uint8Array;
+      load?: () => Promise<{
+        type: RisuSaveType;
+        content: string | Uint8Array;
+      } | null>;
+    }[] = [];
     let offset = magicRisuSaveHeader.length;
     let db: PortableDatabase = {} as PortableDatabase;
     const loadedBlocks = new Set<string>();
@@ -159,55 +163,79 @@ export class RisuSaveDecoder {
         );
         offset += nameLength;
 
-        const newArrayBuf = new ArrayBuffer(4);
-        const lengthSubUint8Buf = data.slice(offset, offset + 4);
-        new Uint8Array(newArrayBuf).set(lengthSubUint8Buf);
-        const length = new Uint32Array(newArrayBuf)[0];
+        if (offset + 4 > data.length) break;
+        const length = new DataView(
+          data.buffer,
+          data.byteOffset + offset,
+          4,
+        ).getUint32(0, true);
         offset += 4;
+        if (length > data.length - offset) break;
 
-        let blockData = data.subarray(offset, offset + length);
+        const blockData = data.subarray(offset, offset + length);
         offset += length;
 
-        if (compression) {
-          //decode using DecompressionStream
-          await checkCompressionStreams();
-          const cs = new DecompressionStream("gzip");
-          const writer = cs.writable.getWriter();
-          writer.write(blockData as any);
-          writer.close();
-          const buf = await new Response(cs.readable).arrayBuffer();
-          blockData = new Uint8Array(buf);
-        }
-
         loadedBlocks.add(name);
-        this.blocks.push({
+        blocks.push({
           name,
           type,
           compression,
-          content: new TextDecoder().decode(blockData),
+          content: blockData,
         });
       } catch (error) {
         continue;
       }
     }
-    // Peak memory: each parsed block used to keep its full source string in
-    // this.blocks for the whole decode. Blocks are consumed in order below,
-    // so release each block's string as soon as it has been applied. This
-    // halves the decode-time footprint for large backups on low-RAM devices.
+    // Index byte views first so directory resolution sees every local block.
+    // Decompress and parse only the current block, never all source strings.
     const releaseBlock = (index: number) => {
-      if (this.blocks[index]) {
-        this.blocks[index] = undefined as any;
+      if (blocks[index]) {
+        blocks[index] = undefined as any;
       }
     };
     let directory: string[] = [];
-    for (let i = 0; i < this.blocks.length; i++) {
+    for (let i = 0; i < blocks.length; i++) {
       const key = i;
-      const block = this.blocks[key];
+      const block = blocks[key];
       if (!block) continue;
       try {
+        if (block.load) {
+          const loaded = await block.load();
+          block.load = undefined;
+          if (!loaded) continue;
+          block.type = loaded.type;
+          block.content = loaded.content;
+        }
+        let content: string;
+        if (typeof block.content === "string") {
+          content = block.content;
+        } else if (block.compression) {
+          await checkCompressionStreams();
+          const cs = new DecompressionStream("gzip");
+          const writer = cs.writable.getWriter();
+          // Start consuming before awaiting writes to respect stream backpressure.
+          const text = new Response(cs.readable).text();
+          try {
+            await Promise.all([
+              writer.write(block.content as any).then(() => writer.close()),
+              text,
+            ]);
+          } catch (error) {
+            // Directory entries can recover corrupt compressed local blocks.
+            loadedBlocks.delete(block.name);
+            continue;
+          }
+          content = await text;
+        } else {
+          content = new TextDecoder().decode(block.content);
+        }
+        const parsed =
+          block.type === RisuSaveType.CONFIG ? undefined : JSON.parse(content);
+        content = "";
+        block.content = "";
         switch (block.type) {
           case RisuSaveType.ROOT: {
-            const rootData = JSON.parse(block.content);
+            const rootData = parsed;
             releaseBlock(key);
             for (const rootKey in rootData) {
               if (!db[rootKey] && !rootKey.startsWith("__")) {
@@ -216,8 +244,13 @@ export class RisuSaveDecoder {
               if (rootKey === "__directory") {
                 directory = rootData[rootKey];
                 for (const dirKey of directory) {
-                  if (!loadedBlocks.has(dirKey)) {
-                    try {
+                  blocks.push({
+                    name: dirKey,
+                    type: RisuSaveType.CONFIG,
+                    compression: false,
+                    content: "",
+                    load: async () => {
+                      if (loadedBlocks.has(dirKey)) return null;
                       const dirData: {
                         type: RisuSaveType;
                         data: string;
@@ -227,21 +260,15 @@ export class RisuSaveDecoder {
                       )) as any;
 
                       if (dirData) {
-                        this.blocks.push({
-                          name: dirData.name,
-                          type: dirData.type,
-                          compression: false,
-                          content: dirData.data,
-                        });
                         loadedBlocks.add(dirKey);
+                        return {
+                          type: dirData.type,
+                          content: dirData.data,
+                        };
                       }
-                    } catch (error) {
-                      console.error(
-                        `Error loading directory block ${dirKey}:`,
-                        error,
-                      );
-                    }
-                  }
+                      return null;
+                    },
+                  });
                 }
               }
             }
@@ -250,17 +277,17 @@ export class RisuSaveDecoder {
           case RisuSaveType.CHARACTER_WITH_CHAT:
           case RisuSaveType.CHARACTER_WITHOUT_CHAT: {
             db.characters ??= [];
-            db.characters.push(JSON.parse(block.content));
+            db.characters.push(parsed);
             releaseBlock(key);
             break;
           }
           case RisuSaveType.BOTPRESET: {
-            db.botPresets = JSON.parse(block.content);
+            db.botPresets = parsed;
             releaseBlock(key);
             break;
           }
           case RisuSaveType.MODULES: {
-            db.modules = JSON.parse(block.content);
+            db.modules = parsed;
             releaseBlock(key);
             break;
           }
@@ -270,17 +297,17 @@ export class RisuSaveDecoder {
             break;
           }
           case RisuSaveType.PLUGINS: {
-            db.plugins = JSON.parse(block.content);
+            db.plugins = parsed;
             releaseBlock(key);
             break;
           }
           case RisuSaveType.LOADOUTS: {
-            db.loadouts = JSON.parse(block.content);
+            db.loadouts = parsed;
             releaseBlock(key);
             break;
           }
           case RisuSaveType.PLUGIN_STORAGE: {
-            db.pluginCustomStorage = JSON.parse(block.content);
+            db.pluginCustomStorage = parsed;
             releaseBlock(key);
             break;
           }
@@ -289,43 +316,43 @@ export class RisuSaveDecoder {
               v: number;
               type: RisuSaveType;
               name: string;
-            } = JSON.parse(block.content);
+            } = parsed;
             const fileName = `remotes/${remoteInfo.name}.local.bin`;
-            let remoteData: Uint8Array | null = null;
-            if (isTauri) {
-              try {
-                if (
-                  await exists(fileName, { baseDir: BaseDirectory.AppData })
-                ) {
-                  remoteData = await readFile(fileName, {
-                    baseDir: BaseDirectory.AppData,
-                  });
-                }
-              } catch (error) {
-                console.error(
-                  `Error reading remote file ${fileName} in Tauri:`,
-                  error,
-                );
-              }
-            } else {
-              const stored = await forageStorage.getItem(fileName);
-              if (stored) {
-                remoteData = stored as Uint8Array;
-              }
-            }
-
-            if (!remoteData) {
-              console.warn(`Remote file ${fileName} not found.`);
-              break;
-            }
-            const decoded = new TextDecoder().decode(remoteData);
-
-            //add to blocks for further processing
-            this.blocks.push({
+            blocks.push({
               name: remoteInfo.name,
               type: remoteInfo.type,
               compression: false,
-              content: decoded,
+              content: "",
+              load: async () => {
+                let remoteData: Uint8Array | null = null;
+                if (isTauri) {
+                  try {
+                    if (
+                      await exists(fileName, { baseDir: BaseDirectory.AppData })
+                    ) {
+                      remoteData = await readFile(fileName, {
+                        baseDir: BaseDirectory.AppData,
+                      });
+                    }
+                  } catch (error) {
+                    console.error(
+                      `Error reading remote file ${fileName} in Tauri:`,
+                      error,
+                    );
+                  }
+                } else {
+                  const stored = await forageStorage.getItem(fileName);
+                  if (stored) {
+                    remoteData = stored as Uint8Array;
+                  }
+                }
+
+                if (!remoteData) {
+                  console.warn(`Remote file ${fileName} not found.`);
+                  return null;
+                }
+                return { type: remoteInfo.type, content: remoteData };
+              },
             });
             releaseBlock(key);
             break;
@@ -334,7 +361,7 @@ export class RisuSaveDecoder {
             const componentData: {
               data: any;
               key: string;
-            } = JSON.parse(block.content);
+            } = parsed;
             db[componentData.key] = componentData.data;
             releaseBlock(key);
             break;
@@ -354,6 +381,8 @@ export class RisuSaveDecoder {
             "Failed to decode root block, cannot proceed with decoding RisuSave data",
           );
         }
+      } finally {
+        releaseBlock(key);
       }
     }
     //to fix botpreset bugs
@@ -361,7 +390,7 @@ export class RisuSaveDecoder {
       db.botPresets = [presetTemplate];
       db.botPresetsId = 0;
     }
-    this.blocks = [];
+    blocks.length = 0;
     return db;
   }
 }
@@ -403,9 +432,9 @@ export async function decodeRisuSave(data: Uint8Array) {
       const dec = unpackr.decode(realData);
       return dec;
     } catch (error) {
-      const buf = Buffer.from(fflate.decompressSync(Buffer.from(data)));
+      const buf = fflate.decompressSync(data);
       try {
-        return JSON.parse(buf.toString("utf-8"));
+        return JSON.parse(new TextDecoder().decode(buf));
       } catch (error) {
         return unpackr.decode(buf);
       }
