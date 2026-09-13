@@ -679,6 +679,10 @@
         updateInputSizeAll()
     });
 
+    $effect(() => {
+        updateInputSizeAll()
+    });
+
     async function updateInputTransateMessage(reverse: boolean) {
         if(!settingsStore.state.useAutoTranslateInput){
             return

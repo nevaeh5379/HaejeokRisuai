@@ -2435,12 +2435,13 @@ annotation {
 
 .theme-windows-fluent .rs-chat-input-row {
   display: flex !important;
-  align-items: flex-end !important;
+  align-items: center !important;
   background-color: var(--fluent-card-bg) !important;
   border: 1px solid var(--fluent-card-stroke) !important;
   border-bottom: 2px solid var(--fluent-control-border-bottom) !important;
   border-radius: 8px !important;
   padding: 4px 6px !important;
+  min-height: 44px !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
   box-sizing: border-box !important;
   width: 100% !important;
@@ -2462,14 +2463,16 @@ annotation {
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  padding: 8px 12px !important;
+  box-sizing: border-box !important;
+  padding: 7px 10px !important;
   margin: 0 !important;
   font-size: 14px !important;
-  line-height: 1.45 !important;
+  line-height: 20px !important;
   color: var(--risu-theme-textcolor) !important;
   outline: none !important;
   resize: none !important;
-  min-height: 24px !important;
+  min-height: 34px !important;
+  align-self: center !important;
 }
 
 /* Menu Button (Left-aligned in Composer) */
@@ -2486,9 +2489,9 @@ annotation {
   border-radius: 4px !important;
   background-color: transparent !important;
   box-shadow: none !important;
-  margin: 0 2px 2px 2px !important;
+  margin: 0 2px !important;
   color: var(--risu-theme-textcolor2) !important;
-  align-self: flex-end !important;
+  align-self: center !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -2519,9 +2522,9 @@ annotation {
   border-radius: 4px !important;
   background-color: transparent !important;
   box-shadow: none !important;
-  margin: 0 2px 2px 0 !important;
+  margin: 0 2px !important;
   color: var(--risu-theme-textcolor2) !important;
-  align-self: flex-end !important;
+  align-self: center !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -2553,9 +2556,9 @@ annotation {
   border-radius: 4px !important;
   background-color: transparent !important;
   box-shadow: none !important;
-  margin: 0 2px 2px 2px !important;
+  margin: 0 2px !important;
   color: var(--risu-theme-borderc) !important;
-  align-self: flex-end !important;
+  align-self: center !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -2588,9 +2591,9 @@ annotation {
   border-radius: 4px !important;
   background-color: transparent !important;
   box-shadow: none !important;
-  margin: 0 2px 2px 2px !important;
+  margin: 0 2px !important;
   color: var(--risu-theme-draculared) !important;
-  align-self: flex-end !important;
+  align-self: center !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -2617,9 +2620,9 @@ annotation {
   border-radius: 4px !important;
   background-color: transparent !important;
   box-shadow: none !important;
-  margin: 0 2px 2px 2px !important;
+  margin: 0 2px !important;
   color: var(--risu-theme-textcolor2) !important;
-  align-self: flex-end !important;
+  align-self: center !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
