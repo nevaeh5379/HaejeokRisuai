@@ -2890,6 +2890,104 @@ annotation {
   background-color: rgba(128, 128, 128, 0.65);
 }
 
+/* ==========================================================================
+   Windows 11 Fluent — Elevation Polish
+   --------------------------------------------------------------------------
+   On the pure-white WinUI light canvas the `bg-darkbg` chips (#f3f3f3) and
+   the borderless search field blend into the background, so interactive
+   surfaces are hard to tell apart. Give the main menu's search / sort / filter
+   controls a WinUI-style stroke plus a soft drop shadow, and lift the generic
+   WinUI buttons a little more than the near-invisible default shadow. The
+   recent sessions list gets the same treatment.
+   Everything here is scoped under `.theme-windows-fluent` (the Windows UI
+   theme), so the default theme is completely unaffected.
+   ========================================================================== */
+
+.theme-windows-fluent {
+  --fluent-surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
+  --fluent-surface-shadow-hover: 0 2px 10px rgba(0, 0, 0, 0.26), 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+
+.theme-windows-fluent.theme-windows-fluent-light {
+  --fluent-main-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --fluent-main-control-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --fluent-main-control-stroke: color-mix(in srgb, var(--risu-theme-textcolor) 14%, transparent);
+  --fluent-main-control-stroke-hover: color-mix(in srgb, var(--risu-theme-borderc) 50%, var(--fluent-main-control-stroke));
+  --fluent-surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --fluent-surface-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Main menu search field, filter chips and sort selector */
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search,
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-chip,
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort {
+  border: 1px solid var(--fluent-main-control-stroke) !important;
+  box-shadow: var(--fluent-main-control-shadow) !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-chip:hover,
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort:hover {
+  border-color: var(--fluent-main-control-stroke-hover) !important;
+  box-shadow: var(--fluent-main-control-shadow-hover) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search:focus-within {
+  border-color: var(--risu-theme-borderc) !important;
+  box-shadow: var(--fluent-main-control-shadow-hover), 0 0 0 1px var(--risu-theme-borderc) !important;
+}
+
+/* Keep the field flush with its chip instead of nesting a second WinUI
+   textbox (white background + own border) inside the search container. */
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search input[type="text"],
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort select {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Lift the generic WinUI buttons off the white canvas a bit more. */
+.theme-windows-fluent.theme-windows-fluent-light .rs-button,
+.theme-windows-fluent.theme-windows-fluent-light button.bg-darkbutton {
+  box-shadow: var(--fluent-main-control-shadow) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-button:hover:not(:disabled),
+.theme-windows-fluent.theme-windows-fluent-light button.bg-darkbutton:hover:not(:disabled) {
+  box-shadow: var(--fluent-main-control-shadow-hover) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Recent sessions list (sidebar Details pane)
+   The cards use `bg-bgcolor/40` on an already white panel and the title turns
+   `text-selected` on hover — both wash out in the light theme. Give the cards
+   a proper surface stroke + shadow and use the accent for hover feedback.
+   -------------------------------------------------------------------------- */
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-search {
+  box-shadow: var(--fluent-surface-shadow) !important;
+}
+
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card {
+  border-color: var(--fluent-card-stroke) !important;
+  box-shadow: var(--fluent-surface-shadow) !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card:hover {
+  border-color: color-mix(in srgb, var(--risu-theme-borderc) 45%, var(--fluent-card-stroke)) !important;
+  box-shadow: var(--fluent-surface-shadow-hover) !important;
+}
+
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card:hover .rs-recent-session-title {
+  color: var(--risu-theme-borderc) !important;
+}
+
+/* `bg-selected text-white` group badge is unreadable on the light canvas */
+.theme-windows-fluent.theme-windows-fluent-light .rs-recent-sessions .rs-recent-group-badge {
+  background-color: var(--risu-theme-borderc) !important;
+  color: #ffffff !important;
+}
+
 /* Windows High Contrast Mode Support */
 @media (forced-colors: active) {
   .theme-windows-fluent :focus-visible {

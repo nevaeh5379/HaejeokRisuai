@@ -364,12 +364,12 @@
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">{language.character}</h1>
-        <button class="text-sm font-medium px-3 py-1.5 bg-darkbg rounded-md hover:bg-selected transition-colors" onclick={() => {
+        <button class="rs-main-chip text-sm font-medium px-3 py-1.5 bg-darkbg rounded-md hover:bg-selected transition-colors" onclick={() => {
           $OpenRealmStore = true
         }}>Get More</button>
       </div>
       <div class="flex items-center gap-2 mb-4 flex-wrap">
-        <div class="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md flex-1 min-w-[180px] max-w-md">
+        <div class="rs-main-search flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md flex-1 min-w-[180px] max-w-md">
           <SearchIcon class="w-4 h-4 text-textcolor2 shrink-0" />
           <input
             type="text"
@@ -379,20 +379,20 @@
           />
         </div>
         <button
-          class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showFavoritesOnly ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
+          class="rs-main-chip flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showFavoritesOnly ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
           onclick={() => (showFavoritesOnly = !showFavoritesOnly)}
         >
           <StarIcon class="w-4 h-4" fill={showFavoritesOnly ? 'currentColor' : 'none'} />
           Favorites
         </button>
         <button
-          class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showHidden ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
+          class="rs-main-chip flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showHidden ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
           title={showHidden ? 'Showing hidden characters' : 'Click to show hidden characters'}
           onclick={() => (showHidden = !showHidden)}
         >
           {showHidden ? 'Show Hidden' : 'Hide Hidden'}
         </button>
-        <div class="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md shrink-0">
+        <div class="rs-main-sort flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md shrink-0">
           <SortAscIcon class="w-4 h-4 text-textcolor2" />
           <select
             class="bg-transparent text-textcolor2 outline-none cursor-pointer text-sm appearance-none"

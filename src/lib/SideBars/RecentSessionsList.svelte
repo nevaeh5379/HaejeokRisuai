@@ -369,7 +369,7 @@
                         />
                         {#if session.isGroup}
                             <div
-                                class="absolute -bottom-1 -right-1 bg-selected text-white rounded-full p-0.5 shadow"
+                                class="rs-recent-group-badge absolute -bottom-1 -right-1 bg-selected text-white rounded-full p-0.5 shadow"
                                 title="Group Chat"
                             >
                                 <UsersIcon size={10} />
@@ -382,7 +382,7 @@
                         <!-- Top Line: Character Name & Ago Text -->
                         <div class="flex items-center justify-between gap-1 w-full">
                             <span
-                                class="font-semibold text-xs text-textcolor truncate group-hover:text-selected transition-colors"
+                                class="rs-recent-session-title font-semibold text-xs text-textcolor truncate group-hover:text-selected transition-colors"
                             >
                                 {session.characterName}
                             </span>
