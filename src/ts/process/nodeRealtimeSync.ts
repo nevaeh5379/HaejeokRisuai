@@ -84,7 +84,6 @@ const MODULE_ROOT_KEYS = new Set([
   "moduleFolders",
   "moduleOrder",
   "moduleSandboxGroups",
-  "enabledModuleSandboxGroups",
 ]);
 const PRESET_ROOT_KEYS = new Set<string>([
   "activeBotPresetId",

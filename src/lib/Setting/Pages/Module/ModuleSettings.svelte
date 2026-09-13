@@ -28,6 +28,7 @@
         id: v4(),
     })
     let mode = $state(0)
+    let moduleTab = $state<'modules' | 'bundles'>('modules')
     let moduleSearch = $state('')
     let charConversionMode = $state(false)
     let openFolders = $state<Set<string>>(new Set())
@@ -472,11 +473,22 @@
     })
 </script>
 {#if mode === 0}
-    <h2 class="mb-2 text-2xl font-bold mt-2">{language.modules}</h2>
+    <h2 class="sr-only">{language.modules}</h2>
+    <div class="mt-2 mb-4 flex border-b border-darkborderc">
+        <button
+            type="button"
+            class="px-4 py-2 border-b-2 cursor-pointer {moduleTab === 'modules' ? 'border-blue-500 text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+            onclick={() => moduleTab = 'modules'}
+        >{language.modules}</button>
+        <button
+            type="button"
+            class="px-4 py-2 border-b-2 cursor-pointer {moduleTab === 'bundles' ? 'border-blue-500 text-textcolor' : 'border-transparent text-textcolor2 hover:text-textcolor'}"
+            onclick={() => moduleTab = 'bundles'}
+        >{language.moduleSandboxGroups.tab}</button>
+    </div>
 
-    <ModuleSandboxGroups />
-
-    <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
+    {#if moduleTab === 'modules'}
+    <TextInput placeholder={language.search} bind:value={moduleSearch} />
 
     <div bind:this={rootEle} class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
         {#if modules.length === 0 && moduleFolders.length === 0}
@@ -600,6 +612,9 @@
             <HardDriveUpload  />
         </button>
     </div>
+    {:else}
+        <ModuleSandboxGroups />
+    {/if}
 {:else if mode === 1}
     <h2 class="mb-2 text-2xl font-bold mt-2">{language.createModule}</h2>
     <ModuleMenu bind:currentModule={tempModule}/>

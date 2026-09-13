@@ -93,6 +93,8 @@ export interface ModuleSandboxGroup {
   members: ModuleSandboxMember[];
   /** Blank uses the active preset's global auxiliary model. */
   subModel?: string;
+  /** Position of the bundle node on the editor canvas. */
+  position?: { x: number; y: number };
 }
 
 export interface ResolvedModuleSandboxMember extends ModuleSandboxMember {
@@ -520,17 +522,15 @@ export function getModules(
 }
 
 /**
- * Resolves only enabled first-class sandbox groups. Module definitions stay
+ * Resolves first-class sandbox groups. Module definitions stay
  * shared; each member keeps a separate instance id for runtime isolation.
  */
-export function getActiveModuleSandboxes(): ResolvedModuleSandbox[] {
-  const enabled = new Set(moduleStore.enabledSandboxGroups);
+export function getModuleSandboxes(): ResolvedModuleSandbox[] {
   const definitions = new Map(
     moduleStore.list.map((module) => [module.id, module] as const),
   );
 
   return moduleStore.sandboxGroups
-    .filter((group) => enabled.has(group.id))
     .map((group) => ({
       id: group.id,
       name: group.name,
@@ -637,7 +637,7 @@ export function getModuleTriggers(
   // First-class groups intentionally do not flatten into getModules(). A
   // definition can appear in multiple groups and must execute once per group.
   if (overrideIds === undefined) {
-    for (const group of getActiveModuleSandboxes()) {
+    for (const group of getModuleSandboxes()) {
       const sandboxModuleIds = group.members.map((member) => member.moduleId);
       for (const member of group.members) {
         if (!member.module.trigger) continue;

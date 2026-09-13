@@ -593,7 +593,6 @@ export interface ModuleStoreData {
   moduleFolders: ModuleFolder[];
   moduleOrder?: string[];
   moduleSandboxGroups: ModuleSandboxGroup[];
-  enabledModuleSandboxGroups: string[];
 }
 
 /** PresetStore-owned selection metadata. */

@@ -83,7 +83,6 @@ export type ProtocolSettingKeys = {
     | "moduleFolders"
     | "moduleOrder"
     | "moduleSandboxGroups"
-    | "enabledModuleSandboxGroups"
     | "activeBotPresetId";
   PRESET_STORE_SETTING_KEYS:
     | "apiType"

@@ -33,28 +33,27 @@ describe("module sandbox group storage", () => {
           },
         ];
       }
-      if (key === "enabledModuleSandboxGroups") return ["group-a"];
       return [];
     });
 
     await moduleStore.init(storage);
 
     expect(moduleStore.sandboxGroups[0]?.name).toBe("Illustration");
-    expect(moduleStore.enabledSandboxGroups).toEqual(["group-a"]);
   });
 
-  it("persists group membership and activation as small root settings", async () => {
+  it("persists group membership and canvas position as a small root setting", async () => {
     await moduleStore.init(storage);
-    const group = await moduleStore.addSandboxGroup("Illustration");
+    const group = await moduleStore.addSandboxGroup("Illustration", {
+      x: 120,
+      y: 80,
+    });
     await moduleStore.addModuleToSandbox(group.id, "lightboard");
 
     const upserts = commits.flatMap((commit) => commit.root.upserts);
     expect(upserts.some((entry) => entry.key === "moduleSandboxGroups")).toBe(
       true,
     );
-    expect(
-      upserts.some((entry) => entry.key === "enabledModuleSandboxGroups"),
-    ).toBe(true);
     expect(moduleStore.sandboxGroups[0].members[0].moduleId).toBe("lightboard");
+    expect(moduleStore.sandboxGroups[0].position).toEqual({ x: 120, y: 80 });
   });
 });

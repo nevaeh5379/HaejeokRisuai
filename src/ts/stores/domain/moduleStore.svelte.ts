@@ -27,7 +27,6 @@ class ModuleStore
   moduleFolders = $state<ModuleFolder[]>([]);
   moduleOrder = $state<string[]>([]);
   sandboxGroups = $state<ModuleSandboxGroup[]>([]);
-  enabledSandboxGroups = $state<string[]>([]);
   loaded = $state(false);
 
   private storage: ISqlStorage | null = null;
@@ -38,7 +37,6 @@ class ModuleStore
   private dirtyFolders = false;
   private dirtyOrder = false;
   private dirtySandboxGroups = false;
-  private dirtyEnabledSandboxGroups = false;
   private committedModules: RisuModule[] = [];
   // Fingerprint baselines, taken once at init/commit — never on reactive runs.
   private committedModulesFingerprint = "";
@@ -46,7 +44,6 @@ class ModuleStore
   private committedFoldersFingerprint = "";
   private committedOrderFingerprint = "";
   private committedSandboxGroupsFingerprint = "";
-  private committedEnabledSandboxGroupsFingerprint = "";
 
   get list(): RisuModule[] {
     return this.modules;
@@ -68,14 +65,12 @@ class ModuleStore
   async init(storage: ISqlStorage): Promise<void> {
     this.disposeObserver();
     this.storage = storage;
-    const [modules, enabled, folders, order, sandboxGroups, enabledSandboxes] =
-      await Promise.all([
+    const [modules, enabled, folders, order, sandboxGroups] = await Promise.all([
         storage.loadModules(),
         storage.loadSettingKey("enabledModules"),
         storage.loadSettingKey("moduleFolders"),
         storage.loadSettingKey("moduleOrder"),
         storage.loadSettingKey("moduleSandboxGroups"),
-        storage.loadSettingKey("enabledModuleSandboxGroups"),
       ]);
     this.modules = [...modules];
     this.enabledModules = Array.isArray(enabled)
@@ -98,9 +93,6 @@ class ModuleStore
             Array.isArray(group.members),
         )
       : [];
-    this.enabledSandboxGroups = Array.isArray(enabledSandboxes)
-      ? enabledSandboxes.filter((id): id is string => typeof id === "string")
-      : [];
     this.loaded = true;
     this.committedModules = $state.snapshot(this.modules);
     this.committedModulesFingerprint = fingerprintOf(this.modules);
@@ -108,15 +100,11 @@ class ModuleStore
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
     this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
     this.committedSandboxGroupsFingerprint = fingerprintOf(this.sandboxGroups);
-    this.committedEnabledSandboxGroupsFingerprint = fingerprintOf(
-      this.enabledSandboxGroups,
-    );
     this.dirtyModules = false;
     this.dirtyEnabled = false;
     this.dirtyFolders = false;
     this.dirtyOrder = false;
     this.dirtySandboxGroups = false;
-    this.dirtyEnabledSandboxGroups = false;
     // Baselines come from the synchronous assignments above — effect runs
     // must never serialise modules (they can embed MB-sized lorebooks).
     // Content is verified once per flush / hasPendingWrites.
@@ -128,7 +116,6 @@ class ModuleStore
         trackDeep(this.moduleFolders);
         trackDeep(this.moduleOrder);
         trackDeep(this.sandboxGroups);
-        trackDeep(this.enabledSandboxGroups);
         if (initial) {
           initial = false;
           return;
@@ -138,7 +125,6 @@ class ModuleStore
         this.dirtyFolders = true;
         this.dirtyOrder = true;
         this.dirtySandboxGroups = true;
-        this.dirtyEnabledSandboxGroups = true;
         this.scheduleCommit();
       });
     });
@@ -543,55 +529,40 @@ class ModuleStore
     return this.sandboxGroups.find((group) => group.id === id);
   }
 
-  async addSandboxGroup(name: string): Promise<ModuleSandboxGroup> {
+  async addSandboxGroup(
+    name: string,
+    position?: { x: number; y: number },
+  ): Promise<ModuleSandboxGroup> {
     const group: ModuleSandboxGroup = {
       id: crypto.randomUUID(),
       name,
       members: [],
       subModel: "",
+      position,
     };
     this.sandboxGroups.push(group);
-    this.enabledSandboxGroups.push(group.id);
     this.dirtySandboxGroups = true;
-    this.dirtyEnabledSandboxGroups = true;
     await this.flush();
     return group;
   }
 
   async updateSandboxGroup(
     id: string,
-    update: Partial<Pick<ModuleSandboxGroup, "name" | "subModel">>,
+    update: Partial<Pick<ModuleSandboxGroup, "name" | "subModel" | "position">>,
   ): Promise<void> {
     const group = this.getSandboxGroup(id);
     if (!group) throw new Error(`Module sandbox group not found: ${id}`);
     if (update.name !== undefined) group.name = update.name;
     if (update.subModel !== undefined) group.subModel = update.subModel;
+    if (update.position !== undefined) group.position = update.position;
     this.dirtySandboxGroups = true;
     await this.flush();
   }
 
   async removeSandboxGroup(id: string): Promise<void> {
     this.sandboxGroups = this.sandboxGroups.filter((group) => group.id !== id);
-    this.enabledSandboxGroups = this.enabledSandboxGroups.filter(
-      (groupId) => groupId !== id,
-    );
     this.dirtySandboxGroups = true;
-    this.dirtyEnabledSandboxGroups = true;
     await this.flush();
-  }
-
-  async toggleSandboxGroup(
-    id: string,
-    forceEnabled?: boolean,
-  ): Promise<boolean> {
-    const enabled = new Set(this.enabledSandboxGroups);
-    const shouldEnable = forceEnabled ?? !enabled.has(id);
-    if (shouldEnable) enabled.add(id);
-    else enabled.delete(id);
-    this.enabledSandboxGroups = [...enabled];
-    this.dirtyEnabledSandboxGroups = true;
-    await this.flush();
-    return shouldEnable;
   }
 
   async addModuleToSandbox(groupId: string, moduleId: string): Promise<void> {
@@ -702,7 +673,6 @@ class ModuleStore
       !this.dirtyFolders &&
       !this.dirtyOrder &&
       !this.dirtySandboxGroups &&
-      !this.dirtyEnabledSandboxGroups &&
       !this.hasPendingContentChange()
     )
       return;
@@ -716,9 +686,6 @@ class ModuleStore
       this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
       this.committedSandboxGroupsFingerprint = fingerprintOf(
         this.sandboxGroups,
-      );
-      this.committedEnabledSandboxGroupsFingerprint = fingerprintOf(
-        this.enabledSandboxGroups,
       );
       this.clearDirty();
       return;
@@ -771,16 +738,6 @@ class ModuleStore
         value: $state.snapshot(this.sandboxGroups),
       });
     }
-    if (
-      this.dirtyEnabledSandboxGroups ||
-      fingerprintOf(this.enabledSandboxGroups) !==
-        this.committedEnabledSandboxGroupsFingerprint
-    ) {
-      commit.root.upserts.push({
-        key: "enabledModuleSandboxGroups",
-        value: $state.snapshot(this.enabledSandboxGroups),
-      });
-    }
     const operation = this.queue.enqueue(() =>
       commitSqlChanges(storage, commit),
     );
@@ -791,9 +748,6 @@ class ModuleStore
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
     this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
     this.committedSandboxGroupsFingerprint = fingerprintOf(this.sandboxGroups);
-    this.committedEnabledSandboxGroupsFingerprint = fingerprintOf(
-      this.enabledSandboxGroups,
-    );
     this.clearDirty();
   }
 
@@ -804,7 +758,6 @@ class ModuleStore
       this.dirtyFolders ||
       this.dirtyOrder ||
       this.dirtySandboxGroups ||
-      this.dirtyEnabledSandboxGroups ||
       this.hasPendingContentChange()
     );
   }
@@ -817,9 +770,7 @@ class ModuleStore
       fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint ||
       fingerprintOf(this.moduleOrder) !== this.committedOrderFingerprint ||
       fingerprintOf(this.sandboxGroups) !==
-        this.committedSandboxGroupsFingerprint ||
-      fingerprintOf(this.enabledSandboxGroups) !==
-        this.committedEnabledSandboxGroupsFingerprint
+        this.committedSandboxGroupsFingerprint
     );
   }
 
@@ -844,7 +795,6 @@ class ModuleStore
     this.dirtyFolders = false;
     this.dirtyOrder = false;
     this.dirtySandboxGroups = false;
-    this.dirtyEnabledSandboxGroups = false;
   }
 
   private scheduleCommit(): void {
@@ -865,7 +815,6 @@ class ModuleStore
     this.moduleFolders = [];
     this.moduleOrder = [];
     this.sandboxGroups = [];
-    this.enabledSandboxGroups = [];
     this.loaded = false;
     this.committedModules = [];
     this.committedModulesFingerprint = "";
@@ -873,7 +822,6 @@ class ModuleStore
     this.committedFoldersFingerprint = "";
     this.committedOrderFingerprint = "";
     this.committedSandboxGroupsFingerprint = "";
-    this.committedEnabledSandboxGroupsFingerprint = "";
     this.clearDirty();
     this.queue.reset();
   }

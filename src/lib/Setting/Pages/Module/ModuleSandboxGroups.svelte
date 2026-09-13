@@ -1,51 +1,144 @@
 <script lang="ts">
-  import {
-    Box,
-    Boxes,
-    ChevronDown,
-    ChevronUp,
-    Circle,
-    CircleCheck,
-    Plus,
-    ShieldCheck,
-    Trash2,
-    X,
-  } from "@lucide/svelte";
   import { language } from "src/lang";
   import ModelList from "src/lib/UI/ModelList.svelte";
-  import { alertConfirm } from "src/ts/alert";
+  import { alertConfirm, alertInput } from "src/ts/alert";
+  import type { ModuleSandboxGroup } from "src/ts/process/modules";
   import { moduleStore } from "src/ts/stores/domain/moduleStore.svelte";
 
-  let selectedGroupId = $state("");
+  type Position = { x: number; y: number };
+  type DragState = {
+    groupId: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origin: Position;
+  };
+
   let groups = $derived(moduleStore.sandboxGroups);
   let modules = $derived(moduleStore.list);
-  let selectedGroup = $derived(
-    groups.find((group) => group.id === selectedGroupId) ?? groups[0],
-  );
+  let positions = $state<Record<string, Position>>({});
+  let moduleChoice = $state<Record<string, string>>({});
+  let dragging = $state<DragState | null>(null);
 
-  $effect(() => {
-    if (!selectedGroupId && groups[0]) selectedGroupId = groups[0].id;
-    if (
-      selectedGroupId &&
-      groups.length > 0 &&
-      !groups.some((group) => group.id === selectedGroupId)
-    ) {
-      selectedGroupId = groups[0].id;
-    }
+  let canvasWidth = $derived.by(() => {
+    let width = 1200;
+    groups.forEach((group, index) => {
+      width = Math.max(width, groupPosition(group, index).x + 360);
+    });
+    return width;
   });
 
-  async function createGroup() {
-    const number = groups.length + 1;
-    const group = await moduleStore.addSandboxGroup(
-      `${language.moduleSandboxGroups.defaultName} ${number}`,
+  let canvasHeight = $derived.by(() => {
+    let height = 720;
+    groups.forEach((group, index) => {
+      height = Math.max(height, groupPosition(group, index).y + 520);
+    });
+    return height;
+  });
+
+  function defaultPosition(index: number): Position {
+    return {
+      x: 32 + (index % 3) * 340,
+      y: 32 + Math.floor(index / 3) * 360,
+    };
+  }
+
+  function groupPosition(group: ModuleSandboxGroup, index: number): Position {
+    const position = positions[group.id] ?? group.position;
+    if (
+      position &&
+      Number.isFinite(position.x) &&
+      Number.isFinite(position.y)
+    ) {
+      return position;
+    }
+    return defaultPosition(index);
+  }
+
+  async function createGroup(position = defaultPosition(groups.length)) {
+    await moduleStore.addSandboxGroup(
+      `${language.moduleSandboxGroups.bundle} ${groups.length + 1}`,
+      position,
     );
-    selectedGroupId = group.id;
+  }
+
+  async function createGroupAt(event: MouseEvent) {
+    if (event.target !== event.currentTarget) return;
+    const canvas = event.currentTarget as HTMLDivElement;
+    const rect = canvas.getBoundingClientRect();
+    await createGroup({
+      x: Math.max(0, Math.round(event.clientX - rect.left - 150)),
+      y: Math.max(0, Math.round(event.clientY - rect.top - 24)),
+    });
   }
 
   async function removeGroup(id: string) {
     if (!(await alertConfirm(language.moduleSandboxGroups.removeGroupConfirm)))
       return;
     await moduleStore.removeSandboxGroup(id);
+    delete positions[id];
+    delete moduleChoice[id];
+  }
+
+  async function renameGroup(group: ModuleSandboxGroup) {
+    const name = await alertInput(
+      language.moduleSandboxGroups.title,
+      undefined,
+      group.name,
+    );
+    if (!name?.trim()) return;
+    await moduleStore.updateSandboxGroup(group.id, { name: name.trim() });
+  }
+
+  async function addModule(groupId: string) {
+    const moduleId = moduleChoice[groupId];
+    if (!moduleId) return;
+    await moduleStore.addModuleToSandbox(groupId, moduleId);
+    moduleChoice[groupId] = "";
+  }
+
+  function startDrag(
+    event: PointerEvent,
+    group: ModuleSandboxGroup,
+    index: number,
+  ) {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select")) return;
+    const origin = groupPosition(group, index);
+    dragging = {
+      groupId: group.id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: { ...origin },
+    };
+    positions[group.id] = { ...origin };
+    event.preventDefault();
+  }
+
+  function moveDrag(event: PointerEvent) {
+    if (!dragging || event.pointerId !== dragging.pointerId) return;
+    positions[dragging.groupId] = {
+      x: Math.max(
+        0,
+        Math.round(dragging.origin.x + event.clientX - dragging.startX),
+      ),
+      y: Math.max(
+        0,
+        Math.round(dragging.origin.y + event.clientY - dragging.startY),
+      ),
+    };
+  }
+
+  async function endDrag(event: PointerEvent) {
+    if (!dragging || event.pointerId !== dragging.pointerId) return;
+    const completed = dragging;
+    dragging = null;
+    const position = positions[completed.groupId];
+    if (position) {
+      await moduleStore.updateSandboxGroup(completed.groupId, { position });
+    }
   }
 
   function moduleName(moduleId: string) {
@@ -56,202 +149,109 @@
   }
 </script>
 
-<section class="mt-4 rounded-xl border border-darkborderc bg-darkbg/40 overflow-hidden">
-  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-darkborderc bg-darkbutton/70 px-4 py-3">
-    <div class="min-w-0">
-      <h3 class="flex items-center gap-2 text-lg font-semibold">
-        <Boxes size={20} />
-        {language.moduleSandboxGroups.title}
-      </h3>
-      <p class="mt-1 text-sm text-textcolor2">
-        {language.moduleSandboxGroups.description}
-      </p>
-    </div>
-    <button
-      type="button"
-      class="flex min-h-11 items-center gap-2 rounded-lg border border-darkborderc bg-darkbutton px-3 py-2 hover:bg-selected cursor-pointer"
-      onclick={createGroup}
-    >
-      <Plus size={18} />
-      {language.moduleSandboxGroups.create}
-    </button>
-  </div>
+<svelte:window
+  onpointermove={moveDrag}
+  onpointerup={endDrag}
+  onpointercancel={endDrag}
+/>
 
-  <div class="grid grid-cols-1 lg:grid-cols-[minmax(12rem,0.7fr)_minmax(0,2fr)]">
-    <aside class="border-b border-darkborderc p-3 lg:border-r lg:border-b-0">
-      <div class="flex items-center gap-2 font-medium">
-        <Box size={18} />
-        {language.moduleSandboxGroups.library}
-      </div>
-      <p class="mt-1 mb-3 text-xs text-textcolor2">
-        {language.moduleSandboxGroups.addHint}
-      </p>
+<div class="flex justify-end pb-3">
+  <button
+    type="button"
+    class="rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm hover:bg-selected cursor-pointer"
+    onclick={() => createGroup()}
+  >{language.moduleSandboxGroups.new}</button>
+</div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
-        {#each modules as module (module.id)}
-          {@const alreadyAdded = selectedGroup?.members.some((member) => member.moduleId === module.id)}
+<div class="h-[70vh] min-h-[32rem] overflow-auto rounded-lg border border-darkborderc bg-darkbg">
+  <div
+    class="relative text-textcolor/10"
+    style={`width: ${canvasWidth}px; height: ${canvasHeight}px; background-image: radial-gradient(currentColor 1px, transparent 1px); background-size: 24px 24px;`}
+    role="region"
+    aria-label={language.moduleSandboxGroups.title}
+    ondblclick={createGroupAt}
+  >
+    {#each groups as group, index (group.id)}
+      {@const position = groupPosition(group, index)}
+      <section
+        data-testid="module-sandbox-node"
+        class="absolute w-[19rem] overflow-hidden rounded-lg border border-darkborderc bg-bgcolor text-textcolor shadow-lg {dragging?.groupId === group.id ? 'z-20 shadow-xl' : 'z-10'}"
+        style={`left: ${position.x}px; top: ${position.y}px;`}
+      >
+        <div
+          class="flex min-h-12 touch-none items-center gap-2 border-b border-darkborderc bg-darkbutton px-3 cursor-grab active:cursor-grabbing"
+          role="toolbar"
+          tabindex="0"
+          aria-label={group.name}
+          onpointerdown={(event) => startDrag(event, group, index)}
+        >
+          <span class="min-w-0 grow truncate font-semibold">{group.name}</span>
           <button
             type="button"
-            class="flex min-h-12 items-center gap-2 rounded-lg border border-darkborderc bg-bgcolor px-3 py-2 text-left transition-colors hover:bg-selected disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
-            disabled={!selectedGroup || alreadyAdded}
-            onclick={() => selectedGroup && moduleStore.addModuleToSandbox(selectedGroup.id, module.id)}
-          >
-            {#if alreadyAdded}
-              <CircleCheck size={17} class="text-green-500 shrink-0" />
-            {:else}
-              <Plus size={17} class="text-textcolor2 shrink-0" />
-            {/if}
-            <span class="min-w-0">
-              <span class="block truncate font-medium">{module.name}</span>
-              <span class="block truncate text-xs text-textcolor2">{module.description}</span>
-            </span>
-          </button>
-        {:else}
-          <p class="text-sm text-textcolor2">{language.moduleSandboxGroups.noModules}</p>
-        {/each}
-      </div>
-    </aside>
+            class="shrink-0 rounded px-2 py-1 text-xs text-textcolor2 hover:bg-textcolor/10 hover:text-textcolor cursor-pointer"
+            onclick={() => renameGroup(group)}
+          >{language.edit}</button>
+          <button
+            type="button"
+            class="shrink-0 rounded px-2 py-1 text-xs text-textcolor2 hover:bg-textcolor/10 hover:text-draculared cursor-pointer"
+            onclick={() => removeGroup(group.id)}
+          >{language.moduleSandboxGroups.remove}</button>
+        </div>
 
-    <div class="min-w-0 p-3">
-      <div class="mb-3 flex items-center justify-between gap-2">
-        <div class="font-medium">{language.moduleSandboxGroups.canvas}</div>
-        {#if selectedGroup}
-          <span class="truncate text-xs text-textcolor2">
-            {language.moduleSandboxGroups.selected}: {selectedGroup.name}
-          </span>
-        {/if}
-      </div>
-
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        {#each groups as group (group.id)}
-          {@const isEnabled = moduleStore.enabledSandboxGroups.includes(group.id)}
-          <article
-            class="overflow-hidden rounded-xl border bg-bgcolor transition-colors {selectedGroupId === group.id ? 'border-blue-500 ring-2 ring-blue-500/15' : 'border-darkborderc'}"
-          >
-            <div class="border-b border-darkborderc bg-darkbutton/60 p-3">
-              <div class="flex items-start gap-2">
-                <button
-                  type="button"
-                  class="min-w-0 grow text-left cursor-pointer"
-                  onclick={() => selectedGroupId = group.id}
-                >
-                  <input
-                    aria-label={language.moduleSandboxGroups.title}
-                    class="w-full rounded-md border border-transparent bg-transparent px-1 py-1 font-semibold hover:border-darkborderc focus:border-blue-500"
-                    value={group.name}
-                    onclick={(event) => event.stopPropagation()}
-                    onchange={(event) => moduleStore.updateSandboxGroup(group.id, { name: event.currentTarget.value.trim() || language.moduleSandboxGroups.defaultName })}
-                  />
-                  <span class="mt-1 block text-xs text-textcolor2">
-                    {group.members.length} {language.moduleSandboxGroups.library}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  aria-pressed={isEnabled}
-                  class="flex min-h-10 shrink-0 items-center gap-1 rounded-lg border border-darkborderc px-2 py-1.5 cursor-pointer {isEnabled ? 'bg-blue-500/15 text-blue-500' : 'bg-darkbutton text-textcolor2'}"
-                  onclick={() => moduleStore.toggleSandboxGroup(group.id)}
-                >
-                  {#if isEnabled}<CircleCheck size={17} />{:else}<Circle size={17} />{/if}
-                  {isEnabled ? language.moduleSandboxGroups.active : language.moduleSandboxGroups.inactive}
-                </button>
-
-                <button
-                  type="button"
-                  class="flex size-10 shrink-0 items-center justify-center rounded-lg text-textcolor2 hover:bg-textcolor/10 hover:text-draculared cursor-pointer"
-                  aria-label={language.remove}
-                  onclick={() => removeGroup(group.id)}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-
-              <div class="mt-3 flex flex-wrap items-end justify-between gap-2">
-                <label class="text-xs text-textcolor2">
-                  {language.moduleSandboxGroups.model}
-                  <div class="mt-1 text-textcolor">
-                    <ModelList
-                      value={group.subModel}
-                      onChange={(value) => moduleStore.updateSandboxGroup(group.id, { subModel: value })}
-                      blankable
-                      noneText={language.moduleSandboxGroups.globalModel}
-                      noMargin
-                    />
-                  </div>
-                </label>
-                <span class="flex items-center gap-1 text-xs text-green-500">
-                  <ShieldCheck size={16} />
-                  {isEnabled ? language.moduleSandboxGroups.active : language.moduleSandboxGroups.inactive}
-                </span>
-              </div>
-            </div>
-
-            <div class="relative flex flex-col gap-2 p-3">
-              <div class="absolute top-5 bottom-5 left-[1.45rem] w-px bg-darkborderc"></div>
-              {#each group.members as member, index (member.instanceId)}
-                {@const definition = modules.find((module) => module.id === member.moduleId)}
-                <div class="relative z-[1] ml-3 rounded-lg border border-darkborderc bg-selected/25 p-3">
-                  <span class="absolute -left-[1.05rem] top-4 size-3 rounded-full border-[3px] border-blue-500 bg-bgcolor"></span>
-                  <div class="flex items-center gap-2">
-                    <Box size={17} class="shrink-0" />
-                    <div class="min-w-0 grow">
-                      <div class="truncate font-medium">{definition?.name ?? moduleName(member.moduleId)}</div>
-                      <div class="truncate font-mono text-[11px] text-textcolor2">
-                        {language.moduleSandboxGroups.instance} {member.instanceId.slice(0, 8)}
-                      </div>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={index === 0}
-                        class="flex size-9 items-center justify-center rounded-md hover:bg-textcolor/10 disabled:opacity-30 cursor-pointer"
-                        aria-label="Move up"
-                        onclick={() => moduleStore.moveSandboxModule(group.id, member.instanceId, 'up')}
-                      ><ChevronUp size={16} /></button>
-                      <button
-                        type="button"
-                        disabled={index === group.members.length - 1}
-                        class="flex size-9 items-center justify-center rounded-md hover:bg-textcolor/10 disabled:opacity-30 cursor-pointer"
-                        aria-label="Move down"
-                        onclick={() => moduleStore.moveSandboxModule(group.id, member.instanceId, 'down')}
-                      ><ChevronDown size={16} /></button>
-                      <button
-                        type="button"
-                        class="flex size-9 items-center justify-center rounded-md text-textcolor2 hover:bg-textcolor/10 hover:text-draculared cursor-pointer"
-                        aria-label={language.remove}
-                        onclick={() => moduleStore.removeModuleFromSandbox(group.id, member.instanceId)}
-                      ><X size={16} /></button>
-                    </div>
-                  </div>
-                  {#if !definition}
-                    <div class="mt-2 text-xs text-draculared">{language.moduleSandboxGroups.missingModule}: {member.moduleId}</div>
-                  {/if}
-                </div>
-              {:else}
-                <div class="ml-3 rounded-lg border border-dashed border-darkborderc p-4 text-center text-sm text-textcolor2">
-                  {language.moduleSandboxGroups.emptyGroup}
-                </div>
-              {/each}
-            </div>
-
-            <div class="flex items-start gap-2 border-t border-dashed border-darkborderc px-3 py-2 text-xs text-textcolor2">
-              <ShieldCheck size={15} class="mt-0.5 shrink-0" />
-              <span>{language.moduleSandboxGroups.isolated}</span>
-            </div>
-          </article>
-        {:else}
-          <div class="rounded-lg border border-dashed border-darkborderc p-6 text-center text-textcolor2 xl:col-span-2">
-            {language.moduleSandboxGroups.noGroups}
+        <div class="border-b border-darkborderc p-3">
+          <div class="mb-1 text-xs text-textcolor2">
+            {language.moduleSandboxGroups.modelShort}
           </div>
-        {/each}
-      </div>
+          <ModelList
+            value={group.subModel}
+            onChange={(value) =>
+              moduleStore.updateSandboxGroup(group.id, { subModel: value })}
+            blankable
+            noneText={language.moduleSandboxGroups.defaultShort}
+            noMargin
+          />
+        </div>
 
-      {#if groups.length > 0}
-        <p class="mt-3 text-xs text-textcolor2">
-          {language.moduleSandboxGroups.legacyWarning}
-        </p>
-      {/if}
-    </div>
+        <div class="flex flex-col gap-2 p-3">
+          {#each group.members as member (member.instanceId)}
+            <div class="flex min-h-10 items-center gap-2 rounded-md border border-darkborderc bg-selected/30 px-3 py-2">
+              <span class="min-w-0 grow truncate text-sm font-medium">
+                {moduleName(member.moduleId)}
+              </span>
+              <button
+                type="button"
+                class="shrink-0 rounded px-2 py-1 text-xs text-textcolor2 hover:bg-textcolor/10 hover:text-draculared cursor-pointer"
+                onclick={() =>
+                  moduleStore.removeModuleFromSandbox(
+                    group.id,
+                    member.instanceId,
+                  )}
+              >{language.moduleSandboxGroups.remove}</button>
+            </div>
+          {/each}
+        </div>
+
+        <div class="flex gap-2 border-t border-darkborderc p-3">
+          <select
+            aria-label={language.modules}
+            class="min-w-0 grow rounded-md border border-darkborderc bg-darkbutton px-2 py-2 text-sm"
+            value={moduleChoice[group.id] ?? ""}
+            onchange={(event) =>
+              (moduleChoice[group.id] = event.currentTarget.value)}
+          >
+            <option value="">{language.modules}</option>
+            {#each modules.filter((module) => !group.members.some((member) => member.moduleId === module.id)) as module (module.id)}
+              <option value={module.id}>{module.name}</option>
+            {/each}
+          </select>
+          <button
+            type="button"
+            disabled={!moduleChoice[group.id]}
+            class="rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm hover:bg-selected disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+            onclick={() => addModule(group.id)}
+          >{language.moduleSandboxGroups.add}</button>
+        </div>
+      </section>
+    {/each}
   </div>
-</section>
+</div>

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import {
-  getActiveModuleSandboxes,
+  getModuleSandboxes,
   getModuleTriggers,
   type RisuModule,
 } from "./modules";
@@ -32,9 +32,7 @@ describe("module sandbox groups", () => {
         members: [{ instanceId: "lightboard-b", moduleId: "lightboard" }],
       },
     ];
-    moduleStore.enabledSandboxGroups = ["illustration-group", "weather-group"];
-
-    const groups = getActiveModuleSandboxes();
+    const groups = getModuleSandboxes();
     expect(groups).toHaveLength(2);
     expect(groups[0].members[0].module).toBe(groups[1].members[0].module);
     expect(groups[0].members[0].module).toEqual(lightboard);
@@ -73,8 +71,6 @@ describe("module sandbox groups", () => {
         members: [{ instanceId: "lightboard-b", moduleId: "lightboard" }],
       },
     ];
-    moduleStore.enabledSandboxGroups = ["illustration-group", "weather-group"];
-
     const triggers = getModuleTriggers(undefined, undefined);
     expect(triggers).toHaveLength(2);
     expect(triggers.map((trigger) => trigger.sandboxGroupId)).toEqual([
@@ -91,7 +87,7 @@ describe("module sandbox groups", () => {
     ]);
   });
 
-  it("keeps disabled groups and missing definitions out of runtime", () => {
+  it("keeps missing definitions out of runtime", () => {
     moduleStore.modules = [];
     moduleStore.sandboxGroups = [
       {
@@ -100,8 +96,6 @@ describe("module sandbox groups", () => {
         members: [{ instanceId: "missing-instance", moduleId: "missing" }],
       },
     ];
-    moduleStore.enabledSandboxGroups = ["missing-group"];
-
-    expect(getActiveModuleSandboxes()).toEqual([]);
+    expect(getModuleSandboxes()).toEqual([]);
   });
 });
