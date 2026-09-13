@@ -2421,33 +2421,164 @@ annotation {
   transition: background-color 120ms ease;
 }
 
-/* Chat Screen & Composer */
+/* Chat Screen & Composer (WinUI 3 Modern TextBox & Action Buttons) */
 .theme-windows-fluent .chat-message-container,
 .theme-windows-fluent .chat-body {
   border-radius: 8px;
 }
 
+/* Chat Input Textarea (WinUI 3 TextBox) */
+.theme-windows-fluent textarea.text-input-area,
 .theme-windows-fluent textarea.input-text,
-.theme-windows-fluent textarea#messageInput {
-  border-radius: 4px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+.theme-windows-fluent textarea#messageInput,
+.theme-windows-fluent textarea#messageInputTranslate {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  border-radius: 6px !important;
+  background-color: var(--fluent-card-bg) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  margin-left: 16px !important;
+  margin-right: 6px !important;
+  color: var(--risu-theme-textcolor) !important;
+  resize: none !important;
+  box-sizing: border-box !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease !important;
 }
 
+.theme-windows-fluent textarea#messageInputTranslate {
+  margin-right: 16px !important;
+}
+
+.theme-windows-fluent textarea.text-input-area:focus,
+.theme-windows-fluent textarea.input-text:focus,
+.theme-windows-fluent textarea#messageInput:focus,
+.theme-windows-fluent textarea#messageInputTranslate:focus {
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+  box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
+  outline: none !important;
+}
+
+/* Chat Input Action Button (Send / Abort / Loading) */
 .theme-windows-fluent .button-icon-send,
-.theme-windows-fluent button.button-icon-send {
+.theme-windows-fluent button.button-icon-send,
+.theme-windows-fluent textarea.text-input-area + button {
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
   background-color: var(--risu-theme-borderc) !important;
   color: #ffffff !important;
-  border-radius: 4px;
-  margin-left: 2px;
-  transition: opacity 120ms ease, transform 120ms ease;
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-self: flex-end !important;
+  margin-left: 0 !important;
+  margin-right: 6px !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: opacity 120ms ease, transform 120ms ease, filter 120ms ease !important;
 }
 
-.theme-windows-fluent .button-icon-send:hover {
-  opacity: 0.9;
+.theme-windows-fluent .button-icon-send:hover,
+.theme-windows-fluent button.button-icon-send:hover {
+  filter: brightness(1.1) !important;
+  opacity: 1 !important;
 }
 
-.theme-windows-fluent .button-icon-send:active {
-  transform: scale(0.97);
+.theme-windows-fluent .button-icon-send:active,
+.theme-windows-fluent button.button-icon-send:active {
+  transform: scale(0.94) !important;
+}
+
+/* Menu Button & Playground Plus Button (WinUI 3 Standard Button, last in composer) */
+.theme-windows-fluent textarea.text-input-area ~ button:last-child,
+.theme-windows-fluent textarea.text-input-area ~ div:last-child {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  border-radius: 6px !important;
+  background-color: var(--fluent-card-bg) !important;
+  color: var(--risu-theme-textcolor) !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-self: flex-end !important;
+  margin-left: 0 !important;
+  margin-right: 16px !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 120ms ease, transform 120ms ease !important;
+}
+
+.theme-windows-fluent textarea.text-input-area ~ button:last-child:hover,
+.theme-windows-fluent textarea.text-input-area ~ div:last-child:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent textarea.text-input-area ~ button:last-child:active,
+.theme-windows-fluent textarea.text-input-area ~ div:last-child:active {
+  transform: scale(0.94) !important;
+}
+
+/* Chat Generating Abort Button */
+.theme-windows-fluent textarea.text-input-area ~ button[aria-labelledby="cancel"],
+.theme-windows-fluent textarea.text-input-area + button[aria-labelledby="cancel"] {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-radius: 6px !important;
+  background-color: var(--fluent-card-bg) !important;
+  color: var(--risu-theme-draculared) !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-self: flex-end !important;
+  margin-left: 0 !important;
+  margin-right: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Chat Input Sticker Toggle Button */
+.theme-windows-fluent div:has(> textarea.text-input-area) > div:first-child,
+.theme-windows-fluent div:has(> .button-icon-send) > div:first-child:has(svg.lucide-laugh) {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  border-radius: 6px !important;
+  background-color: var(--fluent-card-bg) !important;
+  color: var(--risu-theme-textcolor2) !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-self: flex-end !important;
+  margin-left: 16px !important;
+  margin-right: 6px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 120ms ease, color 120ms ease !important;
+}
+
+.theme-windows-fluent div:has(> textarea.text-input-area) > div:first-child ~ textarea.text-input-area,
+.theme-windows-fluent div:has(> .button-icon-send) > div:first-child:has(svg.lucide-laugh) ~ textarea.text-input-area {
+  margin-left: 0 !important;
 }
 
 /* Form Controls (Buttons, Inputs, Checkboxes, Selects, Sliders) */
