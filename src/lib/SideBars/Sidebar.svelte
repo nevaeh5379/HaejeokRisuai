@@ -161,6 +161,36 @@
     menuMode = 1 - menuMode
   }
 
+  // Dismiss the CSS flyout when clicking outside of it. The macOS native popup
+  // closes itself on window blur, but the CSS popover (used elsewhere, including
+  // the Windows theme) needs an explicit outside-click handler.
+  $effect(() => {
+    if (menuMode !== 1) {
+      return
+    }
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (
+        target?.closest('.rs-sidebar-menu-button') ||
+        target?.closest('.rs-sidebar-menu-popover')
+      ) {
+        return
+      }
+      menuMode = 0
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        menuMode = 0
+      }
+    }
+    window.addEventListener('pointerdown', closeOnPointerDown, true)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOnPointerDown, true)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  })
+
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   let charImages: sortType[] = $state([]);
