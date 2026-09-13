@@ -2421,164 +2421,263 @@ annotation {
   transition: background-color 120ms ease;
 }
 
-/* Chat Screen & Composer (WinUI 3 Modern TextBox & Action Buttons) */
+/* Chat Screen & Composer (WinUI 3 Modern Card Composer) */
 .theme-windows-fluent .chat-message-container,
 .theme-windows-fluent .chat-body {
   border-radius: 8px;
 }
 
-/* Chat Input Textarea (WinUI 3 TextBox) */
-.theme-windows-fluent textarea.text-input-area,
-.theme-windows-fluent textarea.input-text,
-.theme-windows-fluent textarea#messageInput,
-.theme-windows-fluent textarea#messageInputTranslate {
-  border: 1px solid var(--fluent-control-border) !important;
-  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
-  border-radius: 6px !important;
-  background-color: var(--fluent-card-bg) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-  padding: 8px 12px !important;
-  font-size: 14px !important;
-  line-height: 1.45 !important;
-  margin-left: 16px !important;
-  margin-right: 6px !important;
-  color: var(--risu-theme-textcolor) !important;
-  resize: none !important;
+.theme-windows-fluent .rs-chat-input-area-container {
+  padding-left: 16px !important;
+  padding-right: 16px !important;
   box-sizing: border-box !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row {
+  display: flex !important;
+  align-items: flex-end !important;
+  background-color: var(--fluent-card-bg) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-bottom: 2px solid var(--fluent-control-border-bottom) !important;
+  border-radius: 8px !important;
+  padding: 4px 6px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
   transition: border-color 120ms ease, box-shadow 120ms ease !important;
 }
 
-.theme-windows-fluent textarea#messageInputTranslate {
-  margin-right: 16px !important;
-}
-
-.theme-windows-fluent textarea.text-input-area:focus,
-.theme-windows-fluent textarea.input-text:focus,
-.theme-windows-fluent textarea#messageInput:focus,
-.theme-windows-fluent textarea#messageInputTranslate:focus {
+.theme-windows-fluent .rs-chat-input-row:focus-within {
   border-color: var(--fluent-control-border) !important;
   border-bottom: 2px solid var(--risu-theme-borderc) !important;
-  box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
-  outline: none !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* Chat Input Action Button (Send / Abort / Loading) */
-.theme-windows-fluent .button-icon-send,
-.theme-windows-fluent button.button-icon-send,
-.theme-windows-fluent textarea.text-input-area + button {
-  border: 1px solid transparent !important;
-  border-radius: 6px !important;
-  background-color: var(--risu-theme-borderc) !important;
-  color: #ffffff !important;
-  width: 40px !important;
-  min-width: 40px !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  align-self: flex-end !important;
-  margin-left: 0 !important;
-  margin-right: 6px !important;
-  box-sizing: border-box !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  transition: opacity 120ms ease, transform 120ms ease, filter 120ms ease !important;
-}
-
-.theme-windows-fluent .button-icon-send:hover,
-.theme-windows-fluent button.button-icon-send:hover {
-  filter: brightness(1.1) !important;
-  opacity: 1 !important;
-}
-
-.theme-windows-fluent .button-icon-send:active,
-.theme-windows-fluent button.button-icon-send:active {
-  transform: scale(0.94) !important;
-}
-
-/* Menu Button & Playground Plus Button (WinUI 3 Standard Button, last in composer) */
-.theme-windows-fluent textarea.text-input-area ~ button:last-child,
-.theme-windows-fluent textarea.text-input-area ~ div:last-child {
-  border: 1px solid var(--fluent-control-border) !important;
-  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
-  border-radius: 6px !important;
-  background-color: var(--fluent-card-bg) !important;
+/* Chat Input Textarea (Integrated into Composer Card) */
+.theme-windows-fluent .rs-chat-input-row textarea.rs-chat-textarea,
+.theme-windows-fluent .rs-chat-input-row textarea.text-input-area {
+  order: 3 !important;
+  flex: 1 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
   color: var(--risu-theme-textcolor) !important;
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-  height: 40px !important;
-  min-height: 40px !important;
+  outline: none !important;
+  resize: none !important;
+  min-height: 24px !important;
+}
+
+/* Menu Button (Left-aligned in Composer) */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn {
+  order: 1 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px 2px 2px !important;
+  color: var(--risu-theme-textcolor2) !important;
   align-self: flex-end !important;
-  margin-left: 0 !important;
-  margin-right: 16px !important;
-  box-sizing: border-box !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: background-color 120ms ease, transform 120ms ease !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
 }
 
-.theme-windows-fluent textarea.text-input-area ~ button:last-child:hover,
-.theme-windows-fluent textarea.text-input-area ~ div:last-child:hover {
+.theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn:active {
+  transform: scale(0.92) !important;
+}
+
+/* Sticker Button (Adjacent to Menu on Left) */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn {
+  order: 2 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px 2px 0 !important;
+  color: var(--risu-theme-textcolor2) !important;
+  align-self: flex-end !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn:active {
+  transform: scale(0.92) !important;
+}
+
+/* Send Action Button (Right-aligned, Accent Ghost Button) */
+.theme-windows-fluent .rs-chat-input-row .button-icon-send,
+.theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn {
+  order: 4 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px 2px 2px !important;
+  color: var(--risu-theme-borderc) !important;
+  align-self: flex-end !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .button-icon-send:hover,
+.theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn:hover {
+  background-color: color-mix(in srgb, var(--risu-theme-borderc) 12%, transparent) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .button-icon-send:active,
+.theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn:active {
+  transform: scale(0.92) !important;
+  background-color: color-mix(in srgb, var(--risu-theme-borderc) 20%, transparent) !important;
+}
+
+/* Abort / Cancel Button */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn {
+  order: 4 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px 2px 2px !important;
+  color: var(--risu-theme-draculared) !important;
+  align-self: flex-end !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn:hover {
+  background-color: color-mix(in srgb, var(--risu-theme-draculared) 12%, transparent) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn:active {
+  transform: scale(0.92) !important;
+}
+
+/* Loading Runtime Button */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-loading-btn {
+  order: 4 !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 10px !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px 2px 2px !important;
+  color: var(--risu-theme-textcolor2) !important;
+  align-self: flex-end !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+}
+
+/* Icon Sizing in Composer */
+.theme-windows-fluent .rs-chat-input-row svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* Menu Popover (Flyout) */
+.theme-windows-fluent .rs-chat-menu-popover {
+  left: 16px !important;
+  right: auto !important;
+  bottom: 64px !important;
+  background-color: var(--fluent-card-bg) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14) !important;
+  backdrop-filter: blur(20px) !important;
+  padding: 6px !important;
+  gap: 2px !important;
+}
+
+.theme-windows-fluent .rs-chat-menu-popover > div {
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  transition: background-color 100ms ease, color 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-menu-popover > div:hover {
   background-color: var(--fluent-subtle-fill-secondary) !important;
 }
 
-.theme-windows-fluent textarea.text-input-area ~ button:last-child:active,
-.theme-windows-fluent textarea.text-input-area ~ div:last-child:active {
-  transform: scale(0.94) !important;
+/* Secondary/Translate Input */
+.theme-windows-fluent textarea.input-text,
+.theme-windows-fluent textarea#messageInput,
+.theme-windows-fluent textarea#messageInputTranslate {
+  border-radius: 6px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-/* Chat Generating Abort Button */
-.theme-windows-fluent textarea.text-input-area ~ button[aria-labelledby="cancel"],
-.theme-windows-fluent textarea.text-input-area + button[aria-labelledby="cancel"] {
+.theme-windows-fluent textarea#messageInputTranslate {
   border: 1px solid var(--fluent-control-border) !important;
-  border-radius: 6px !important;
+  border-bottom: 2px solid var(--fluent-control-border-bottom) !important;
   background-color: var(--fluent-card-bg) !important;
-  color: var(--risu-theme-draculared) !important;
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  align-self: flex-end !important;
-  margin-left: 0 !important;
-  margin-right: 6px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  color: var(--risu-theme-textcolor) !important;
+  box-sizing: border-box !important;
 }
 
-/* Chat Input Sticker Toggle Button */
-.theme-windows-fluent div:has(> textarea.text-input-area) > div:first-child,
-.theme-windows-fluent div:has(> .button-icon-send) > div:first-child:has(svg.lucide-laugh) {
-  border: 1px solid var(--fluent-control-border) !important;
-  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
-  border-radius: 6px !important;
-  background-color: var(--fluent-card-bg) !important;
-  color: var(--risu-theme-textcolor2) !important;
-  width: 40px !important;
-  min-width: 40px !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  align-self: flex-end !important;
-  margin-left: 16px !important;
-  margin-right: 6px !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  transition: background-color 120ms ease, color 120ms ease !important;
-}
-
-.theme-windows-fluent div:has(> textarea.text-input-area) > div:first-child ~ textarea.text-input-area,
-.theme-windows-fluent div:has(> .button-icon-send) > div:first-child:has(svg.lucide-laugh) ~ textarea.text-input-area {
-  margin-left: 0 !important;
+.theme-windows-fluent textarea#messageInputTranslate:focus {
+  border-bottom-color: var(--risu-theme-borderc) !important;
+  box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
+  outline: none !important;
 }
 
 /* Form Controls (Buttons, Inputs, Checkboxes, Selects, Sliders) */
