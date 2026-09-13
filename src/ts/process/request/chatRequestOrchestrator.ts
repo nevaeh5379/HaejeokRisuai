@@ -34,7 +34,10 @@ export async function requestChatData(
     ? resolveChatTarget(arg.triggerTarget)?.chat
     : requestCharacter?.chats?.[requestCharacter.chatPage];
   const useModuleRules =
-    db.enableModuleSubModel && (model === "submodel" || model === "otherAx");
+    db.enableModuleSubModel &&
+    !arg.moduleSandboxOwnerId &&
+    !arg.moduleSandboxGroupId &&
+    (model === "submodel" || model === "otherAx");
   // Snapshot configuration before asynchronous hooks or character switches.
   const ruleModules =
     useModuleRules && requestCharacter && (!arg.triggerTarget || requestChat)

@@ -17,7 +17,8 @@
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
-    import { isTauri, isTauriMacOS } from 'src/ts/platform';
+    import { isTauri, isTauriMacOS, isTauriWindows } from 'src/ts/platform';
+    import { windowDragRegion } from 'src/ts/nativeWindowChrome';
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
@@ -56,6 +57,9 @@
     let { groupId, reserveSidebarSpace = false, allowSplit = false }: Props = $props();
     let showTabs = $derived(settingsStore.state.showChatTabs ?? true);
     let groupTabs = $derived(chatTabsStore.tabsForGroup(groupId));
+    let windowsPaneSurfaceLayoutKey = $derived(
+        `${chatTabsStore.getGroup(groupId)?.activeTabId ?? ''}:${groupTabs.map((tab) => tab.id).join(',')}:${reserveSidebarSpace}:${$MobileGUI}`,
+    );
     let currentWorkspaceWindowId = $derived(getCurrentChatWorkspaceWindowId());
     let isFirstWorkspaceGroup = $derived(chatTabsStore.groups[0]?.id === groupId);
     let reserveMainMacOSTrafficLights = $derived(
@@ -95,6 +99,118 @@
     let nativeDragMarker: HTMLElement | undefined;
     let dockPreviewTimer: ReturnType<typeof setInterval> | null = null;
     let dockPreviewUpdatePromise: Promise<void> | null = null;
+    function windowsChatPaneSurface(node: SVGSVGElement, _layoutKey: string) {
+        const pane = node.closest<HTMLElement>('.default-chat-pane');
+        const shape = node.querySelector<SVGPathElement>('[data-chat-pane-shape]');
+        if (!pane || !shape) return;
+
+        let updateFrame: number | null = null;
+        let observedTab: HTMLElement | null = null;
+        let observedScreen: HTMLElement | null = null;
+
+        const observer = new ResizeObserver(() => scheduleUpdate());
+
+        const observeElement = (
+            current: HTMLElement | null,
+            next: HTMLElement | null,
+        ) => {
+            if (current === next) return current;
+            if (current) observer.unobserve(current);
+            if (next) observer.observe(next);
+            return next;
+        };
+
+        const update = () => {
+            updateFrame = null;
+            const activeTab = pane.querySelector<HTMLElement>(
+                '.rs-chat-tab[data-active="true"]',
+            );
+            const chatScreen = pane.querySelector<HTMLElement>(
+                ':scope > .default-chat-screen',
+            );
+
+            observedTab = observeElement(observedTab, activeTab);
+            observedScreen = observeElement(observedScreen, chatScreen);
+            if (!activeTab || !chatScreen) {
+                shape.removeAttribute('d');
+                return;
+            }
+
+            const paneRect = pane.getBoundingClientRect();
+            const tabRect = activeTab.getBoundingClientRect();
+            const screenRect = chatScreen.getBoundingClientRect();
+            const pixelRatio = window.devicePixelRatio || 1;
+            const snap = (value: number) =>
+                Math.round(value * pixelRatio) / pixelRatio;
+
+            const paneWidth = Math.max(1, snap(paneRect.width));
+            const paneHeight = Math.max(1, snap(paneRect.height));
+            const bodyLeft = snap(screenRect.left - paneRect.left);
+            const bodyRight = snap(screenRect.right - paneRect.left);
+            const bodyTop = snap(screenRect.top - paneRect.top);
+            const bodyBottom = snap(screenRect.bottom - paneRect.top);
+            const bodyRadius = Math.min(
+                10,
+                (bodyRight - bodyLeft) / 2,
+                (bodyBottom - bodyTop) / 2,
+            );
+
+            const shoulderWidth = 8;
+            const shoulderControl = 4.42;
+            const tabTopRadius = 10;
+            const tabLeft = snap(tabRect.left - paneRect.left);
+            const tabRight = snap(tabRect.right - paneRect.left);
+            const tabTop = snap(tabRect.top - paneRect.top);
+            const shoulderTop = bodyTop - shoulderWidth;
+            const shoulderLeft = tabLeft - shoulderWidth;
+            const shoulderRight = tabRight + shoulderWidth;
+            const topLeft = tabLeft + tabTopRadius;
+            const topRight = tabRight - tabTopRadius;
+
+            node.setAttribute('viewBox', `0 0 ${paneWidth} ${paneHeight}`);
+            shape.setAttribute('d', [
+                `M ${shoulderLeft} ${bodyTop}`,
+                `C ${shoulderLeft + shoulderControl} ${bodyTop} ${tabLeft} ${bodyTop - shoulderControl} ${tabLeft} ${shoulderTop}`,
+                `V ${tabTop + tabTopRadius}`,
+                `Q ${tabLeft} ${tabTop} ${topLeft} ${tabTop}`,
+                `H ${topRight}`,
+                `Q ${tabRight} ${tabTop} ${tabRight} ${tabTop + tabTopRadius}`,
+                `V ${shoulderTop}`,
+                `C ${tabRight} ${bodyTop - shoulderControl} ${shoulderRight - shoulderControl} ${bodyTop} ${shoulderRight} ${bodyTop}`,
+                `H ${bodyRight - bodyRadius}`,
+                `Q ${bodyRight} ${bodyTop} ${bodyRight} ${bodyTop + bodyRadius}`,
+                `V ${bodyBottom - bodyRadius}`,
+                `Q ${bodyRight} ${bodyBottom} ${bodyRight - bodyRadius} ${bodyBottom}`,
+                `H ${bodyLeft + bodyRadius}`,
+                `Q ${bodyLeft} ${bodyBottom} ${bodyLeft} ${bodyBottom - bodyRadius}`,
+                `V ${bodyTop + bodyRadius}`,
+                `Q ${bodyLeft} ${bodyTop} ${bodyLeft + bodyRadius} ${bodyTop}`,
+                `H ${shoulderLeft}`,
+                'Z',
+            ].join(' '));
+        };
+
+        const scheduleUpdate = () => {
+            if (updateFrame !== null) return;
+            updateFrame = requestAnimationFrame(update);
+        };
+
+        const tabList = pane.querySelector<HTMLElement>('[data-chat-tab-list]');
+        observer.observe(pane);
+        tabList?.addEventListener('scroll', scheduleUpdate, { passive: true });
+        scheduleUpdate();
+
+        return {
+            update() {
+                scheduleUpdate();
+            },
+            destroy() {
+                observer.disconnect();
+                tabList?.removeEventListener('scroll', scheduleUpdate);
+                if (updateFrame !== null) cancelAnimationFrame(updateFrame);
+            },
+        };
+    }
 
     onDestroy(() => {
         clearTabDrag();
@@ -588,7 +704,7 @@
     >
         <div
             class="rs-chat-tab-traffic-light-spacer"
-            data-tauri-drag-region="true"
+            use:windowDragRegion
             aria-hidden="true"
         ></div>
         <div
@@ -603,9 +719,11 @@
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
         class:pl-14={!$MobileGUI && reserveSidebarSpace && !isTauriMacOS}
-        class:pl-2={$MobileGUI || !reserveSidebarSpace || isTauriMacOS}
+        class:pl-8={!$MobileGUI && !reserveSidebarSpace && isTauriWindows}
+        class:pl-2={$MobileGUI || (!reserveSidebarSpace && !isTauriWindows) || isTauriMacOS}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
+        style:padding-right={isTauriWindows ? "140px" : undefined}
         class:macos-aux-titlebar-tabs={reserveMacOSTrafficLights}
         class:macos-main-titlebar-tabs-closed={reserveMainMacOSTrafficLights}
     >
@@ -660,7 +778,7 @@
         {/each}
         <div
             class="rs-chat-tab-window-drag-surface min-w-8 flex-1 self-stretch"
-            data-tauri-drag-region={isTauriMacOS ? "true" : undefined}
+            use:windowDragRegion
             aria-hidden="true"
         ></div>
         <button
@@ -674,6 +792,17 @@
         </button>
         </div>
     </div>
+    {#if isTauriWindows}
+        <svg
+            class="rs-chat-pane-surface"
+            viewBox="0 0 1 1"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+            use:windowsChatPaneSurface={windowsPaneSurfaceLayoutKey}
+        >
+            <path data-chat-pane-shape class="rs-chat-pane-surface-shape" />
+        </svg>
+    {/if}
 {/if}
 
 {#if contextMenu && showTabs}

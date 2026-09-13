@@ -1,6 +1,6 @@
 import type { RisuModule } from "../../process/modules";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
-import { snapshotFingerprint } from "./reactiveUtils";
+import isEqual from "lodash/isEqual";
 
 export function buildModuleDelta(
   previous: RisuModule[],
@@ -14,7 +14,7 @@ export function buildModuleDelta(
   return {
     upserts: current.flatMap((module, position) => {
       const old = previousById.get(module.id);
-      if (old && snapshotFingerprint(old) === snapshotFingerprint(module)) {
+      if (old && isEqual(old, module)) {
         return [];
       }
       return [{ id: module.id, position, data: module }];

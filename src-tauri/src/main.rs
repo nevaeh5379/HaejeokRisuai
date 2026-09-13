@@ -4,6 +4,8 @@
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
 mod sqlite_transaction;
+#[cfg(target_os = "windows")]
+mod windows_titlebar;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -46,9 +48,28 @@ fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), 
         macos_vibrancy::set_risu_native_appearance(&app, dark).map_err(|error| error.to_string())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows_titlebar::set_risu_native_appearance(&app, dark)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, dark);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn set_risu_windows_backdrop(app: AppHandle, effect: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows_titlebar::set_risu_windows_backdrop(&app, &effect)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, effect);
         Ok(())
     }
 }
@@ -1280,6 +1301,11 @@ fn main() {
         builder = builder.plugin(macos_vibrancy::init());
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.plugin(windows_titlebar::init());
+    }
+
     #[cfg(target_os = "macos")]
     {
         builder = builder
@@ -1327,6 +1353,7 @@ fn main() {
             oauth_login,
             sqlite_transaction::sqlite_execute_transaction,
             set_risu_native_appearance,
+            set_risu_windows_backdrop,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,
             mark_sidebar_menu_window_ready,

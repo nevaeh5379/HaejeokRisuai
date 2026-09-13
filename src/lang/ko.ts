@@ -1,4 +1,16 @@
 export const languageKorean = {
+  moduleSandboxGroups: {
+    tab: "묶음",
+    new: "새 묶음",
+    bundle: "묶음",
+    modelShort: "모델",
+    defaultShort: "기본",
+    add: "추가",
+    remove: "삭제",
+    title: "모듈 묶음",
+    missingModule: "누락된 모듈",
+    removeGroupConfirm: "이 모듈 묶음을 삭제할까요?",
+  },
   moduleRequestRules: {
     title: "보조모델 요청 규칙",
     description:
@@ -1487,6 +1499,26 @@ export const languageKorean = {
   remindLater5Days: "5일 뒤에 다시 알림",
   remindLater1Week: "1주일 뒤에 다시 알림",
   display: "소리 및 디스플레이",
+  windowsTransparency: "Windows 반투명",
+  windowsTransparencyDescription:
+    "이 기기에만 저장되며 사이드바와 채팅 탭에 즉시 적용됩니다.",
+  uiTheme: "UI 테마",
+  uiThemeDesc:
+    "창 프레임, 사이드바, 탭, 대화창, 설정 모달 등 앱의 모든 UI에 적용할 기본 테마 또는 Windows 11 Fluent 테마를 선택합니다.",
+  uiThemeDefault: "기본 테마",
+  uiThemeWindows: "Windows 11 Fluent 테마",
+  chatTheme: "채팅 화면 레이아웃",
+  windowsNativeTheme: "Windows 11 Fluent 테마",
+  windowsNativeThemeDesc:
+    "Microsoft Windows 11 WinUI 가이드라인을 따르는 네이티브 테마입니다. Mica 및 Acrylic 효과와 조화를 이룹니다.",
+  useWindowsTransparency: "네이티브 반투명 사용",
+  windowsBackdropEffect: "배경 효과",
+  windowsBackdropAcrylic: "아크릴 (Windows 10/11)",
+  windowsBackdropMica: "미카 (Windows 11)",
+  windowsBackdropTabbed: "탭 미카 (Windows 11)",
+  windowsMaterialOpacity: "배경 불투명도",
+  windowsBackdropCompatibility:
+    "미카 효과는 Windows 11이 필요합니다. 폭넓은 호환성에는 아크릴을 권장합니다.",
   useCustomBackground: "커스텀 배경",
   translateInput: "입력창 번역하기",
   autoTranslation: "자동 번역",

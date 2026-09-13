@@ -53,7 +53,7 @@
 </script>
 
 {#if !globalMode}
-    <div class="flex w-full rounded-md border border-selected">
+    <div class="rs-segmented-control flex w-full rounded-md border border-selected">
         <button onclick={() => {
             submenu = 0
         }} class="p-2 flex-1" class:bg-selected={submenu === 0}>

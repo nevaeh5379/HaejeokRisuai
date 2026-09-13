@@ -2,7 +2,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
@@ -11,6 +11,8 @@
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
+    import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
+    import { windowDragRegion } from './ts/nativeWindowChrome';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
@@ -249,6 +251,9 @@
     }
 
 }}>
+    {#if isTauriWindows}
+        <NativeWindowResizeHandles />
+    {/if}
     {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
@@ -322,7 +327,7 @@
         </div>
     {:else if detachedChatWindow && !$loadedStore}
         <div class="w-full h-full min-w-0 flex flex-col bg-bgcolor text-textcolor">
-            <div class="h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1">
+            <div class="h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1" use:windowDragRegion>
                 <div class="h-8 min-w-32 max-w-72 rounded-t-md border border-b-0 border-darkborderc bg-selected px-3 text-left">
                     <span class="block truncate text-xs font-medium">{detachedChatPresentation.characterName || 'RisuAI'}</span>
                     <span class="block truncate text-[10px] opacity-70">{detachedChatPresentation.chatName || 'Chat'}</span>
@@ -343,10 +348,10 @@
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
             <div class="relative w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
-                {#if isTauriMacOS}
+                {#if isTauriMacOS || isTauriWindows}
                     <div
                         class="absolute top-0 left-0 right-1 h-10 z-[1]"
-                        data-tauri-drag-region="true"
+                        use:windowDragRegion
                         aria-hidden="true"
                     ></div>
                 {/if}
@@ -376,7 +381,7 @@
         </div>
     {:else}
         {#if gridOpen}
-            <div class="grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0">
                 <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
             </div>
         {:else}
@@ -388,7 +393,7 @@
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
                 </div>
             {/if}
-            <div class="grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0">
                 {#if $selectedCharID < 0 && $PlaygroundStore === 0}
                     <LazyComponent loader={mainMenuLoader} />
                 {:else}

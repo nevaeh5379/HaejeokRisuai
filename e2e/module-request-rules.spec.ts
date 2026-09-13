@@ -206,7 +206,7 @@ test.describe("shared backend auxiliary request rules", () => {
     await boot(page);
   });
 
-  test("routes each owner's Lua request and preserves the backend on conflict or disabled rules", async ({
+  test("isolates each owner's Lua request and ignores cross-sandbox rule conflicts", async ({
     page,
   }) => {
     await seed(page, true);
@@ -235,16 +235,9 @@ test.describe("shared backend auxiliary request rules", () => {
       { OWNER_B, PHRASE_A, BACKEND },
     );
     await invoke(page, "weather");
-    expect(requests.at(-1)?.model).toBe("gpt-4-turbo");
-    await editOwner(page);
-    await page.getByText("Recent request decisions", { exact: true }).click();
-    await expect(
-      page
-        .getByText(
-          /Multiple modules matched; existing model selection retained/,
-        )
-        .first(),
-    ).toBeVisible();
+    // Owner B may have a conflicting phrase rule, but its sandbox cannot see
+    // Owner A's lorebook and therefore cannot hijack the request.
+    expect(requests.at(-1)?.model).toBe("gpt-4o-mini");
 
     await page.evaluate(async () => {
       const path = "/src/ts/stores/domain/settingsStore.svelte.ts";

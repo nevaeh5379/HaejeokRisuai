@@ -540,15 +540,29 @@ public class NativeSqlitePlugin extends Plugin {
         long offset,
         long count
     ) {
-        if (count <= 0) return;
-        long pageCount = Math.min(count, QUERY_FALLBACK_PAGE_ROWS);
+        // Iterate over pages: recursing into the remaining query kept one
+        // stack frame (and page wrapper) per 128 rows until the entire result
+        // finished. Large restored node tables could exhaust the Java stack.
+        while (count > 0) {
+            long pageCount = Math.min(count, QUERY_FALLBACK_PAGE_ROWS);
+            appendQueryPage(output, innerSql, bind, columns, offset, pageCount);
+            offset += pageCount;
+            count -= pageCount;
+        }
+    }
+
+    private void appendQueryPage(
+        JSArray output,
+        String innerSql,
+        List<Object> bind,
+        String[] columns,
+        long offset,
+        long pageCount
+    ) {
         String pageSql = wrapQueryRange(innerSql, offset, pageCount);
         try {
             JSArray page = queryRowsDirect(pageSql, bind);
             for (int index = 0; index < page.length(); index++) output.put(page.opt(index));
-            if (count > pageCount) {
-                appendQueryRange(output, innerSql, bind, columns, offset + pageCount, count - pageCount);
-            }
             return;
         } catch (RuntimeException error) {
             if (!isCursorWindowRowTooLarge(error)) throw error;
@@ -556,16 +570,14 @@ public class NativeSqlitePlugin extends Plugin {
 
         if (pageCount == 1) {
             output.put(queryOversizedRowAtOffset(innerSql, bind, columns, offset));
-            if (count > 1) appendQueryRange(output, innerSql, bind, columns, offset + 1, count - 1);
             return;
         }
 
         long left = pageCount / 2;
-        appendQueryRange(output, innerSql, bind, columns, offset, left);
-        appendQueryRange(output, innerSql, bind, columns, offset + left, pageCount - left);
-        if (count > pageCount) {
-            appendQueryRange(output, innerSql, bind, columns, offset + pageCount, count - pageCount);
-        }
+        // Only split a single overflowing page. Recursion is bounded by
+        // log2(QUERY_FALLBACK_PAGE_ROWS), independent of the result row count.
+        appendQueryPage(output, innerSql, bind, columns, offset, left);
+        appendQueryPage(output, innerSql, bind, columns, offset + left, pageCount - left);
     }
 
     private JSObject queryOversizedRowAtOffset(

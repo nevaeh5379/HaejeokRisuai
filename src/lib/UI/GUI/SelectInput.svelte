@@ -1,6 +1,6 @@
 <select
     id={id}
-    class={"border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')}
+    class={"rs-selectinput border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 [&>option]:bg-darkbg [&>option]:text-textcolor [&>optgroup]:bg-darkbg [&>optgroup]:text-textcolor" + ((className) ? (' ' + className) : '')}
     class:text-sm={size === 'sm'}
     class:text-md={size === 'md'}
     class:text-lg={size === 'lg'}
@@ -13,6 +13,7 @@
     class:py-3={size === 'lg'}
     bind:value
     onchange={onchange}
+    {disabled}
 >
     {@render children?.()}
 </select>
@@ -26,6 +27,7 @@
         onchange?: (event: Event & {
             currentTarget: EventTarget & HTMLSelectElement;
         }) => any;
+        disabled?: boolean;
     }
 
     let {
@@ -34,7 +36,8 @@
         className = "",
         size = 'md',
         children,
-        onchange
+        onchange,
+        disabled = false
     }: Props = $props();
 
 </script>

@@ -1,4 +1,16 @@
 export const languageEnglish = {
+  moduleSandboxGroups: {
+    tab: "Bundles",
+    new: "New bundle",
+    bundle: "Bundle",
+    modelShort: "Model",
+    defaultShort: "Default",
+    add: "Add",
+    remove: "Remove",
+    title: "Module bundles",
+    missingModule: "Missing module",
+    removeGroupConfirm: "Remove this module bundle?",
+  },
   moduleRequestRules: {
     title: "Auxiliary model request rules",
     description:
@@ -1530,7 +1542,8 @@ export const languageEnglish = {
   lowSpecMode: "Low-spec Mode",
   waitingMinigame: "Waiting Minigame",
   dinoPressStart: "Tap or press Space to start",
-  dinoWaitingDescription: "Chrome Dino — play while waiting for the AI response",
+  dinoWaitingDescription:
+    "Chrome Dino — play while waiting for the AI response",
   dinoResponseArrived: "AI response has arrived!",
   dinoScore: "Score",
   dinoGameOver: "Game Over",
@@ -1580,6 +1593,26 @@ export const languageEnglish = {
   remindLater5Days: "Remind in 5 days",
   remindLater1Week: "Remind in 1 week",
   display: "Display & Audio",
+  windowsTransparency: "Windows transparency",
+  windowsTransparencyDescription:
+    "Stored only on this device and applied immediately to sidebars and chat tabs.",
+  uiTheme: "UI Theme",
+  uiThemeDesc:
+    "Select the Default theme or Windows 11 Fluent theme to apply across all UI (window frame, sidebars, tabs, chat, settings, controls, etc.).",
+  uiThemeDefault: "Default Theme",
+  uiThemeWindows: "Windows 11 Fluent Theme",
+  chatTheme: "Chat Screen Layout",
+  windowsNativeTheme: "Windows 11 Fluent Theme",
+  windowsNativeThemeDesc:
+    "Native theme adhering to Microsoft Windows 11 WinUI design guidance with Mica and Acrylic integration.",
+  useWindowsTransparency: "Use native transparency",
+  windowsBackdropEffect: "Backdrop effect",
+  windowsBackdropAcrylic: "Acrylic (Windows 10/11)",
+  windowsBackdropMica: "Mica (Windows 11)",
+  windowsBackdropTabbed: "Tabbed Mica (Windows 11)",
+  windowsMaterialOpacity: "Background opacity",
+  windowsBackdropCompatibility:
+    "Mica effects require Windows 11. Acrylic is recommended for wider compatibility.",
   useCustomBackground: "Custom Background",
   translateInput: "Translate Input",
   autoTranslation: "Auto Translation",

@@ -874,25 +874,29 @@
     </div>
 {/if}
 
-{#if openLoreList}
-    <Lorepreset close={() => {openLoreList = false}} />
-{/if}
-{#if dbExplorerOpen}
-    {#if isNodeServer}
-        <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
-    {:else if hasLocalExplorers}
-        <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
-    {/if}
-{/if}
-{#if storageExplorerOpen}
-    {#if isNodeServer}
-        <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
-    {:else if hasLocalExplorers}
-        <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
-    {/if}
-{/if}
-{#if pluginStorageExplorerOpen}
-    <PluginStorageExplorerSettings close={() => {pluginStorageExplorerOpen = false}} />
+{#if openLoreList || dbExplorerOpen || storageExplorerOpen || pluginStorageExplorerOpen}
+    <div class="fixed inset-0 z-[70]">
+        {#if openLoreList}
+            <Lorepreset close={() => {openLoreList = false}} />
+        {/if}
+        {#if dbExplorerOpen}
+            {#if isNodeServer}
+                <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+            {:else if hasLocalExplorers}
+                <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+            {/if}
+        {/if}
+        {#if storageExplorerOpen}
+            {#if isNodeServer}
+                <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+            {:else if hasLocalExplorers}
+                <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+            {/if}
+        {/if}
+        {#if pluginStorageExplorerOpen}
+            <PluginStorageExplorerSettings close={() => {pluginStorageExplorerOpen = false}} />
+        {/if}
+    </div>
 {/if}
 
 <style>

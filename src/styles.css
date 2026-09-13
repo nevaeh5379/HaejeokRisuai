@@ -149,6 +149,16 @@
   dialog {
     margin: auto;
   }
+
+  :root {
+    color-scheme: dark;
+  }
+
+  select option,
+  select optgroup {
+    background-color: var(--color-darkbg, var(--risu-theme-darkbg, #21222c));
+    color: var(--color-textcolor, var(--risu-theme-textcolor, #f8f8f2));
+  }
 }
 
 body {
@@ -166,6 +176,172 @@ html.tauri-macos-vibrancy,
 html.tauri-macos-vibrancy body,
 html.tauri-macos-vibrancy #app {
   background: transparent;
+}
+
+/* Windows native material uses the system Acrylic backdrop as the substrate.
+ * Only persistent sidebar chrome exposes it; content remains an opaque,
+ * readable app surface and overlay sidebars stay opaque. */
+html.tauri-windows-vibrancy,
+html.tauri-windows-vibrancy body,
+html.tauri-windows-vibrancy #app {
+  background: transparent;
+}
+
+html.tauri-windows-vibrancy {
+  --risu-windows-material-opacity: 95%;
+  --risu-windows-sidebar-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) var(--risu-windows-material-opacity),
+    transparent
+  );
+}
+
+html.tauri-windows-vibrancy main.tauri-native {
+  background-color: transparent;
+}
+
+html.tauri-windows-vibrancy .rs-main-content {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+/* Let Acrylic reach the tab strip without leaking through the chat body. The
+ * shell owns the tint so the nested list does not compound its opacity. */
+html.tauri-windows-vibrancy
+  .rs-main-content:has(.default-chat-pane.has-chat-tabs) {
+  background-color: transparent;
+}
+
+/* Match the rounded content viewport used by Edge and other Windows 11 apps.
+ * The pane owns the same material tint as the tab strip, so the small corner
+ * cutouts reveal Acrylic/Mica instead of an opaque rectangular backdrop. */
+html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+  --risu-windows-chat-radius: 10px;
+  --risu-windows-chat-outline: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 9%,
+    transparent
+  );
+  --risu-windows-chat-outline-solid: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 9%,
+    var(--risu-theme-bgcolor)
+  );
+  background-color: var(--risu-windows-sidebar-tint);
+}
+
+html.tauri-windows-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .default-chat-screen {
+  background-color: transparent !important;
+  width: calc(100% - 16px);
+  margin: 0px 8px 8px 8px;
+  align-self: center;
+  border-radius: var(--risu-windows-chat-radius);
+  z-index: 1;
+  box-shadow: none;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
+  position: relative;
+  z-index: 3;
+  background-color: transparent;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
+  box-sizing: border-box;
+  align-items: flex-end !important;
+  padding-top: 4px !important;
+  padding-bottom: 0 !important;
+  background-color: transparent !important;
+  border-bottom-width: 0 !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  scrollbar-width: none;
+}
+
+html.tauri-windows-vibrancy
+  .rs-chat-tab-strip-shell
+  > .rs-chat-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab {
+  --risu-windows-tab-surface: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) var(--risu-windows-material-opacity),
+    transparent
+  );
+  position: relative;
+  height: 32px !important;
+  margin-bottom: 4px;
+  margin-inline: 2px;
+  border-radius: 9px !important;
+  border-color: var(--risu-windows-chat-outline);
+  border-bottom-width: 1px;
+  background-color: var(--risu-windows-tab-surface) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab[data-active="true"] {
+  --risu-windows-tab-surface: var(--risu-theme-bgcolor);
+  z-index: 2;
+  height: 36px !important;
+  margin-bottom: 0;
+  border-bottom-width: 0;
+  border-color: transparent;
+  border-radius: 10px 10px 0 0 !important;
+  background-color: transparent !important;
+  box-shadow: none;
+}
+
+.rs-chat-pane-surface {
+  display: none;
+}
+
+/* One path owns the active tab and the complete chat surface outline. No CSS
+ * border meets an SVG stroke, so the concave shoulders cannot form a seam. */
+html.tauri-windows-vibrancy .rs-chat-pane-surface {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+html.tauri-windows-vibrancy .rs-chat-pane-surface-shape {
+  fill: var(--risu-theme-bgcolor);
+  stroke: var(--risu-windows-chat-outline-solid);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+html.tauri-windows-vibrancy .rs-chat-tab-list [data-tab-add] {
+  align-self: flex-end;
+  margin-bottom: 4px !important;
+}
+
+html.tauri-windows-vibrancy .rs-sidebar,
+html.tauri-windows-vibrancy .rs-sidebar-panel {
+  background-color: var(--risu-windows-sidebar-tint) !important;
+  border-right-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 10%,
+    transparent
+  ) !important;
+  box-shadow: none;
+}
+
+html.tauri-windows-vibrancy .rs-sidebar.dynamic-sidebar,
+html.tauri-windows-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  background-color: var(--risu-theme-darkbg) !important;
+}
+
+html.tauri-windows-vibrancy .rs-sidebar-panel.dynamic-sidebar {
+  box-shadow: 10px 0 28px rgb(0 0 0 / 0.28);
 }
 
 html.tauri-macos-vibrancy {
@@ -383,7 +559,9 @@ html.tauri-macos-vibrancy .rs-recent-session-card {
   ) !important;
 }
 
-html.tauri-macos-vibrancy .default-chat-pane.has-chat-tabs > .rs-chat-tab-strip-shell {
+html.tauri-macos-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .rs-chat-tab-strip-shell {
   position: absolute;
   inset: 0 0 auto 0;
   z-index: 40;
@@ -560,11 +738,13 @@ html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar:not(.dynamic-sidebar) {
   animation-name: risu-macos-sidebar-panel-open;
 }
 
-html.tauri-macos-vibrancy .rs-sidebar-panel.risu-sidebar-close:not(.dynamic-sidebar) {
+html.tauri-macos-vibrancy
+  .rs-sidebar-panel.risu-sidebar-close:not(.dynamic-sidebar) {
   animation-name: risu-macos-sidebar-panel-close;
 }
 
-html.tauri-macos-vibrancy .rs-sidebar.risu-sub-sidebar-close:not(.dynamic-sidebar) {
+html.tauri-macos-vibrancy
+  .rs-sidebar.risu-sub-sidebar-close:not(.dynamic-sidebar) {
   animation-name: risu-macos-sidebar-rail-close;
 }
 
@@ -758,7 +938,6 @@ html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-3 {
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass .rs-setting-cont-4 {
   background-color: var(--risu-theme-bgcolor) !important;
 }
-
 
 /* Dedicated macOS Liquid Glass sidebar menu window. The WebView stays fully
  * transparent so the native NSGlassEffectView is the actual surface. */
@@ -1299,4 +1478,1519 @@ html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:active {
 
 annotation {
   display: none;
+}
+
+/* ==========================================================================
+   Windows 11 Fluent Design System / WinUI 3 Theme
+   ========================================================================== */
+
+:root {
+  --fluent-font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Segoe UI Emoji", system-ui, sans-serif;
+  --fluent-icon-font: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+}
+
+/* Base Window Typography & Smooth Rendering */
+.theme-windows-fluent,
+.theme-windows-fluent body,
+.theme-windows-fluent #app {
+  font-family: var(--fluent-font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Windows 11 Fluent Tokens & Geometry via Tailwind v4 radius tokens
+   - 4px for controls (rounded-md)
+   - 8px for flyouts, dialogs, modals (rounded-xl, rounded-2xl)
+   - rounded-full remains 9999px for pills and avatars
+*/
+.theme-windows-fluent {
+  --radius-xs: 2px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --fluent-subtle-fill-secondary: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 5%,
+    transparent
+  );
+  --fluent-subtle-fill-tertiary: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 8%,
+    transparent
+  );
+  --fluent-card-stroke: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 11%,
+    transparent
+  );
+  --fluent-card-bg: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 80%,
+    transparent
+  );
+  --fluent-control-border: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 15%,
+    transparent
+  );
+  --fluent-control-border-bottom: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 25%,
+    transparent
+  );
+  --fluent-checkbox-border: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 45%,
+    transparent
+  );
+}
+
+.theme-windows-fluent.theme-windows-fluent-light {
+  --fluent-card-bg: #ffffff;
+}
+
+.theme-windows-fluent.theme-windows-fluent-dark {
+  --fluent-card-bg: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 85%,
+    rgba(255, 255, 255, 0.05)
+  );
+}
+
+/* Persistent Mica Window Material & Native Backdrop Blending */
+.theme-windows-fluent body,
+.theme-windows-fluent #app {
+  background-color: var(--risu-theme-darkbg);
+}
+
+.theme-windows-fluent.tauri-windows-vibrancy body,
+.theme-windows-fluent.tauri-windows-vibrancy #app {
+  background: transparent !important;
+}
+
+.theme-windows-fluent.tauri-windows-vibrancy .rs-main-content {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) var(--risu-windows-material-opacity, 95%),
+    transparent
+  );
+}
+
+/* Main Left Sidebar (WinUI 3 NavigationView) */
+.theme-windows-fluent .rs-sidebar {
+  border-right: 1px solid var(--fluent-card-stroke) !important;
+  background-color: var(--risu-theme-darkbg);
+}
+
+.theme-windows-fluent.tauri-windows-vibrancy .rs-sidebar {
+  background-color: transparent !important;
+}
+
+.theme-windows-fluent .rs-sidebar-scroll {
+  scrollbar-width: thin;
+}
+
+.theme-windows-fluent .rs-sidebar [role="listitem"] {
+  border-radius: 6px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  transition: background-color 120ms cubic-bezier(0, 0, 0, 1);
+}
+
+.theme-windows-fluent .rs-sidebar [role="listitem"]:hover {
+  background-color: var(--fluent-subtle-fill-secondary);
+}
+
+/* WinUI 3 Navigation View Selection Indicator (Signature Vertical Accent Bar) */
+.theme-windows-fluent .rs-sidebar .rs-sidebar-indicator {
+  left: 0px !important;
+  width: 3px !important;
+  border-radius: 1.5px !important;
+  background-color: var(--risu-theme-borderc) !important;
+  transform-origin: center;
+  transition: height 160ms cubic-bezier(0, 0, 0, 1), opacity 160ms ease, transform 160ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidebar .rs-sidebar-indicator-active {
+  height: 24px !important;
+  opacity: 1 !important;
+  transform: scaleY(1) !important;
+}
+
+.theme-windows-fluent .rs-sidebar [role="listitem"]:hover .rs-sidebar-indicator:not(.rs-sidebar-indicator-active) {
+  height: 12px !important;
+  opacity: 0.6 !important;
+  transform: scaleY(1) !important;
+}
+
+/* Avatar squircle geometry */
+.theme-windows-fluent .rs-sidebar .sidebar-avatar {
+  border-radius: 6px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: transform 120ms ease;
+}
+
+.theme-windows-fluent .rs-sidebar [role="listitem"]:active .sidebar-avatar {
+  transform: scale(0.96);
+}
+
+/* Add character button (+) */
+.theme-windows-fluent .rs-sidebar button:has(svg path[d*="M12 6v6"]) {
+  border-radius: 6px !important;
+  border: 1px dashed var(--fluent-control-border) !important;
+  background-color: transparent !important;
+  color: var(--risu-theme-textcolor2) !important;
+  transition: all 120ms ease;
+}
+
+.theme-windows-fluent .rs-sidebar button:has(svg path[d*="M12 6v6"]):hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border-color: var(--risu-theme-borderc) !important;
+  color: var(--risu-theme-borderc) !important;
+  transform: scale(1.02);
+}
+
+/* Hamburger toggle button (top & bottom) - WinUI 3 PaneToggleButton */
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-button {
+  background-color: transparent !important;
+  color: var(--risu-theme-textcolor) !important;
+  border-radius: 4px !important;
+  width: 44px !important;
+  height: 36px !important;
+  min-width: 44px !important;
+  min-height: 36px !important;
+  transition: background-color 120ms ease, transform 100ms ease;
+}
+
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-button:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-button:active {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+  transform: scale(0.97);
+}
+
+/* Hamburger Flyout Popover Menu */
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-popover {
+  border-radius: 8px !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  backdrop-filter: blur(30px) saturate(125%) !important;
+  -webkit-backdrop-filter: blur(30px) saturate(125%) !important;
+  background-color: var(--risu-theme-darkbg) !important;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+  padding: 6px 0 !important;
+  z-index: 50 !important;
+}
+
+/* BarIcon inside the Popover Menu */
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-popover .ico {
+  background-color: transparent !important;
+  color: var(--risu-theme-textcolor) !important;
+  border-radius: 4px !important;
+  width: 44px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  box-shadow: none !important;
+  transition: background-color 120ms ease, transform 100ms ease;
+}
+
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-popover .ico:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent .rs-sidebar .rs-sidebar-menu-popover .ico:active {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+  transform: scale(0.96);
+}
+
+/* ==========================================================================
+   Expanded Sidebar Panel (WinUI 3 Details Pane)
+   ========================================================================== */
+
+.theme-windows-fluent .rs-sidebar-panel {
+  border-right: 1px solid var(--fluent-card-stroke) !important;
+  background-color: var(--risu-theme-bgcolor) !important;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+/* Hide empty top button */
+.theme-windows-fluent .rs-sidebar-panel > button:first-child {
+  display: none !important;
+}
+
+/* ==========================================================================
+   WinUI 3 Segmented Controls & Tabs (Mode tabs, CharConfig tabs, LoreBook tabs)
+   ========================================================================== */
+
+.theme-windows-fluent .rs-segmented-control,
+.theme-windows-fluent .rs-sidebar-mode-tabs,
+.theme-windows-fluent .rs-charconfig-tabs,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) {
+  position: static !important;
+  bottom: auto !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 6px !important;
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  padding: 3px !important;
+  gap: 3px !important;
+  margin-top: 0 !important;
+  margin-bottom: 8px !important;
+  min-height: 34px !important;
+  height: auto !important;
+  align-items: stretch !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+}
+
+.theme-windows-fluent .rs-segmented-control button,
+.theme-windows-fluent .rs-sidebar-mode-tabs button,
+.theme-windows-fluent .rs-charconfig-tabs button,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button {
+  border: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  outline: none !important;
+  border-radius: 4px !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  min-height: 28px !important;
+  height: auto !important;
+  padding: 4px 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+  word-break: keep-all !important;
+  box-shadow: none !important;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-segmented-control button:focus,
+.theme-windows-fluent .rs-segmented-control button:focus-visible,
+.theme-windows-fluent .rs-sidebar-mode-tabs button:focus,
+.theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-tabs button:focus,
+.theme-windows-fluent .rs-charconfig-tabs button:focus-visible,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:focus,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:focus-visible {
+  outline: none !important;
+}
+
+/* Inactive tabs */
+.theme-windows-fluent .rs-segmented-control button:not(.bg-selected),
+.theme-windows-fluent .rs-charconfig-tabs button:not(.bg-selected),
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:not(.bg-selected),
+.theme-windows-fluent .rs-sidebar-mode-tabs button.text-textcolor2 {
+  background-color: transparent !important;
+  color: var(--risu-theme-textcolor2) !important;
+}
+
+.theme-windows-fluent .rs-segmented-control button:not(.bg-selected):hover,
+.theme-windows-fluent .rs-charconfig-tabs button:not(.bg-selected):hover,
+.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:not(.bg-selected):hover,
+.theme-windows-fluent .rs-sidebar-mode-tabs button.text-textcolor2:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+/* Active tabs - Light mode: clean white card with subtle drop shadow */
+.theme-windows-fluent.theme-windows-fluent-light .rs-segmented-control button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light .rs-charconfig-tabs button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light .rs-sidebar-mode-tabs button:not(.text-textcolor2) {
+  background-color: #ffffff !important;
+  color: #1f1f1f !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  font-weight: 600 !important;
+}
+
+/* Active tabs - Dark mode: translucent elevated card */
+.theme-windows-fluent.theme-windows-fluent-dark .rs-segmented-control button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-segmented-control button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark .rs-charconfig-tabs button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-charconfig-tabs button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark .rs-sidebar-mode-tabs button:not(.text-textcolor2),
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidebar-mode-tabs button:not(.text-textcolor2) {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+  font-weight: 600 !important;
+}
+
+/* ==========================================================================
+   Character Configuration Section (WinUI 3 Pane Styling)
+   ========================================================================== */
+
+/* Character Sub-navigation (CommandBar / TabStrip Style) */
+.theme-windows-fluent .rs-charconfig-subnav {
+  padding: 3px !important;
+  margin-bottom: 10px !important;
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+}
+
+.theme-windows-fluent .rs-charconfig-subnav button {
+  flex: 1 !important;
+  height: 34px !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  color: var(--risu-theme-textcolor2) !important;
+  transition: all 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-charconfig-subnav button:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-charconfig-subnav button.text-textcolor {
+  background-color: #ffffff !important;
+  color: var(--risu-theme-borderc) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
+}
+
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-charconfig-subnav button.text-textcolor {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+  color: var(--risu-theme-borderc) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Character Token Pill Badge */
+.theme-windows-fluent .rs-charconfig-token-badge {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 9999px !important;
+  padding: 1px 8px !important;
+  font-size: 11px !important;
+  font-family: monospace !important;
+  color: var(--risu-theme-textcolor2) !important;
+}
+
+/* Character Config Cards, Containers, Tables & Scripts */
+.theme-windows-fluent .rs-charconfig-card,
+.theme-windows-fluent .rs-sidebar-panel .char-grid,
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler),
+.theme-windows-fluent .rs-script-list {
+  flex-shrink: 0 !important;
+  min-height: fit-content !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  background-color: var(--fluent-card-bg) !important;
+  overflow: hidden !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Flush WinUI 3 DataGrid card styling */
+.theme-windows-fluent .rs-charconfig-card:has(> table),
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.theme-windows-fluent .rs-charconfig-card:has(> table) > table,
+.theme-windows-fluent .rs-sidebar-panel div:has(> table.tabler) > table,
+.theme-windows-fluent .rs-sidebar-panel table.tabler {
+  margin-top: 0 !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  border-collapse: collapse !important;
+  table-layout: fixed !important;
+}
+
+/* Header row styling */
+.theme-windows-fluent .rs-sidebar-panel table tr:first-child th,
+.theme-windows-fluent .rs-sidebar-panel table thead th {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  color: var(--risu-theme-textcolor2) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+}
+
+/* Action column in table header (w-8 or header containing button) */
+.theme-windows-fluent .rs-sidebar-panel table tr:first-child th.w-8,
+.theme-windows-fluent .rs-sidebar-panel table tr:first-child th:last-child:has(button) {
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  text-align: center !important;
+  padding: 6px 4px !important;
+}
+
+/* Table body cells */
+.theme-windows-fluent .rs-sidebar-panel table td {
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  padding: 6px 8px !important;
+  color: var(--risu-theme-textcolor) !important;
+  vertical-align: middle !important;
+}
+
+/* Table action cell in body (th tag used in CharConfig for action column) */
+.theme-windows-fluent .rs-sidebar-panel table tbody tr:not(:first-child) th,
+.theme-windows-fluent .rs-sidebar-panel table tr:has(td) th {
+  background-color: transparent !important;
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  padding: 6px 4px !important;
+  font-size: 13px !important;
+  font-weight: normal !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  vertical-align: middle !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  text-align: center !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table tr:last-child td,
+.theme-windows-fluent .rs-sidebar-panel table tr:last-child th {
+  border-bottom: none !important;
+}
+
+/* Table empty message row */
+.theme-windows-fluent .rs-sidebar-panel table td[colspan] {
+  text-align: center !important;
+  color: var(--risu-theme-textcolor2) !important;
+  padding: 14px 10px !important;
+  font-size: 13px !important;
+}
+
+/* Table Action Buttons (+, Trash, Move Up/Down) */
+.theme-windows-fluent .rs-sidebar-panel table button,
+.theme-windows-fluent .rs-sidebar-panel table th button,
+.theme-windows-fluent .rs-sidebar-panel table td button,
+.theme-windows-fluent .rs-sidebar-panel table th div button {
+  border: none !important;
+  border-width: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--risu-theme-textcolor) !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table button:hover,
+.theme-windows-fluent .rs-sidebar-panel table th button:hover,
+.theme-windows-fluent .rs-sidebar-panel table td button:hover,
+.theme-windows-fluent .rs-sidebar-panel table th div button:hover {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table button:active,
+.theme-windows-fluent .rs-sidebar-panel table th button:active,
+.theme-windows-fluent .rs-sidebar-panel table td button:active,
+.theme-windows-fluent .rs-sidebar-panel table th div button:active {
+  transform: scale(0.92) !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table button:disabled,
+.theme-windows-fluent .rs-sidebar-panel table th button:disabled,
+.theme-windows-fluent .rs-sidebar-panel table td button:disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table .flex-col {
+  gap: 3px !important;
+}
+
+/* Table textareainput integration */
+.theme-windows-fluent .rs-sidebar-panel table td:has(.rs-textareainput) {
+  padding: 8px !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textareainput {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-radius: 4px !important;
+  background-color: var(--fluent-card-bg) !important;
+  box-shadow: none !important;
+  transition: all 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textareainput:focus-within {
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+  box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
+}
+
+/* Table inputs seamlessly integrate */
+.theme-windows-fluent .rs-sidebar-panel table td input,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textinput,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-numberinput {
+  box-shadow: none !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel table td input:focus,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-textinput:focus,
+.theme-windows-fluent .rs-sidebar-panel table td .rs-numberinput:focus {
+  background-color: var(--fluent-card-bg) !important;
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+}
+
+/* Group character talkness meter buttons */
+.theme-windows-fluent .char-grid button.border-r-bgcolor {
+  border-right-color: var(--fluent-card-bg) !important;
+}
+
+.theme-windows-fluent .char-grid button.bg-selected {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent .char-grid button.bg-green-500 {
+  background-color: var(--risu-theme-borderc) !important;
+}
+
+/* Remove unwanted horizontal dividers in the avatar navigation rail */
+.theme-windows-fluent .rs-sidebar div.border-b-selected {
+  border-bottom: none !important;
+}
+
+/* Side Chat Container */
+.theme-windows-fluent .rs-sidechat-container {
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+/* "New Chat" Button - WinUI 3 Button */
+.theme-windows-fluent .rs-sidechat-new-btn {
+  position: static !important;
+  bottom: auto !important;
+  margin: 2px 0 8px 0 !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 12px !important;
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  background-color: var(--fluent-card-bg) !important;
+  color: var(--risu-theme-textcolor) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidechat-new-btn:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-new-btn:active {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+  transform: translateY(0.5px) scale(0.99) !important;
+}
+
+/* Chat list items - WinUI 3 ListView Item */
+.theme-windows-fluent .rs-sidechat-item,
+.theme-windows-fluent button.rs-sidechat-item {
+  position: relative !important;
+  border-radius: 4px !important;
+  padding: 6px 10px !important;
+  margin: 1px 0 !important;
+  min-height: 36px !important;
+  font-size: 13px !important;
+  border: none !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+  transition: background-color 100ms ease !important;
+}
+
+/* Chat Folders */
+.theme-windows-fluent .rs-sidechat-folder {
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  background-color: transparent !important;
+}
+
+.theme-windows-fluent .rs-sidechat-folder > button {
+  border: none !important;
+  border-width: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.theme-windows-fluent .rs-sidechat-item:not(.bg-selected) {
+  background-color: transparent !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-sidechat-item:not(.bg-selected):hover {
+  background-color: rgba(0, 0, 0, 0.035) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-dark .rs-sidechat-item:not(.bg-selected):hover,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidechat-item:not(.bg-selected):hover {
+  background-color: rgba(255, 255, 255, 0.045) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-sidechat-item.bg-selected {
+  background-color: rgba(0, 0, 0, 0.055) !important;
+  font-weight: 500 !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-dark .rs-sidechat-item.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidechat-item.bg-selected {
+  background-color: rgba(255, 255, 255, 0.075) !important;
+  font-weight: 500 !important;
+}
+
+/* WinUI 3 Selection Indicator (signature 3px x 16px vertical rounded pill) */
+.theme-windows-fluent .rs-sidechat-item.bg-selected::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 3px !important;
+  height: 16px !important;
+  border-radius: 1.5px !important;
+  background-color: var(--risu-theme-borderc) !important;
+}
+
+/* Secondary list actions: reveal on hover/focus */
+.theme-windows-fluent .rs-sidechat-item .rs-sidechat-actions {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidechat-item:hover .rs-sidechat-actions,
+.theme-windows-fluent .rs-sidechat-item:focus-within .rs-sidechat-actions {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.theme-windows-fluent .rs-sidechat-actions [role="button"] {
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--risu-theme-textcolor2) !important;
+  margin: 0 1px !important;
+  transition: background-color 100ms ease, color 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidechat-actions [role="button"]:hover {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-actions [role="button"]:active {
+  transform: scale(0.96) !important;
+}
+
+/* Chat Folders */
+.theme-windows-fluent .rs-sidechat-folder {
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 4px !important;
+  margin-bottom: 4px !important;
+  background-color: transparent !important;
+}
+
+.theme-windows-fluent .rs-sidechat-folder-header {
+  border-radius: 4px !important;
+  padding: 6px 8px !important;
+  font-size: 13px !important;
+}
+
+.theme-windows-fluent .rs-sidechat-folder-header:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+/* Separator / Splitter */
+.theme-windows-fluent .rs-sidechat-separator {
+  height: 11px !important;
+  margin: 3px 0 !important;
+}
+
+.theme-windows-fluent .rs-sidechat-separator > div:first-child {
+  height: 1px !important;
+  background-color: var(--fluent-card-stroke) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-separator > div:last-child {
+  background-color: var(--fluent-card-bg) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  padding: 1px 8px !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-separator > div:last-child > div {
+  background-color: var(--risu-theme-textcolor2) !important;
+  opacity: 0.5 !important;
+  width: 20px !important;
+  height: 2px !important;
+}
+
+.theme-windows-fluent .rs-sidechat-separator:hover > div:first-child {
+  background-color: var(--risu-theme-borderc) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-separator:hover > div:last-child {
+  border-color: var(--risu-theme-borderc) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-separator:hover > div:last-child > div {
+  background-color: var(--risu-theme-borderc) !important;
+  opacity: 1 !important;
+}
+
+/* Bottom CommandBar Toolbar */
+.theme-windows-fluent .rs-sidechat-toolbar {
+  border-bottom: 1px solid var(--fluent-card-stroke) !important;
+  padding: 4px 0 6px 0 !important;
+  margin-bottom: 6px !important;
+  gap: 2px !important;
+}
+
+.theme-windows-fluent .rs-sidechat-toolbar button {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--risu-theme-textcolor2) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  margin: 0 !important;
+  transition: all 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidechat-toolbar button:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent .rs-sidechat-toolbar button:active {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+  transform: scale(0.96) !important;
+}
+
+/* Chat Tabs (WinUI 3 TabView) */
+.theme-windows-fluent .rs-chat-tab-list {
+  border-bottom: 1px solid var(--fluent-card-stroke);
+}
+
+.theme-windows-fluent .rs-chat-tab {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  font-size: 13px;
+  font-weight: 400;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.theme-windows-fluent .rs-chat-tab:not([data-active="true"]) {
+  background-color: transparent !important;
+  color: var(--risu-theme-textcolor2);
+}
+
+.theme-windows-fluent .rs-chat-tab:not([data-active="true"]):hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor);
+}
+
+.theme-windows-fluent .rs-chat-tab[data-active="true"] {
+  background-color: var(--risu-theme-selected) !important;
+  border-color: var(--fluent-card-stroke) !important;
+  color: var(--risu-theme-textcolor) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.theme-windows-fluent .rs-chat-tab [aria-label="Close chat tab"] {
+  border-radius: 4px;
+  transition: background-color 100ms ease;
+}
+
+.theme-windows-fluent .rs-chat-tab [aria-label="Close chat tab"]:hover {
+  background-color: var(--fluent-subtle-fill-tertiary);
+}
+
+.theme-windows-fluent [data-tab-add] {
+  border-radius: 4px;
+  transition: background-color 120ms ease;
+}
+
+.theme-windows-fluent [data-tab-add]:hover {
+  background-color: var(--fluent-subtle-fill-secondary);
+}
+
+/* Settings Modal (WinUI 3 Settings Dialog) */
+.theme-windows-fluent .rs-setting-backdrop {
+  backdrop-filter: blur(20px) saturate(125%);
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+.theme-windows-fluent .rs-setting-cont-2 {
+  border-radius: 8px;
+  border: 1px solid var(--fluent-card-stroke);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.theme-windows-fluent .rs-setting-cont-3 {
+  border-right: 1px solid var(--fluent-card-stroke);
+}
+
+.theme-windows-fluent .rs-setting-cont-3 > button {
+  position: relative;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 1px 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  transition: background-color 120ms ease, color 120ms ease;
+  border: 1px solid transparent;
+}
+
+.theme-windows-fluent .rs-setting-cont-3 > button:hover {
+  background-color: var(--fluent-subtle-fill-secondary);
+}
+
+.theme-windows-fluent .rs-setting-cont-3 > button.text-textcolor {
+  background-color: var(--fluent-subtle-fill-tertiary);
+  font-weight: 500;
+}
+
+.theme-windows-fluent .rs-setting-cont-3 > button.text-textcolor::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 1.5px;
+  background-color: var(--risu-theme-borderc);
+}
+
+.theme-windows-fluent .rs-setting-cont-3 div button {
+  border-radius: 4px;
+  transition: background-color 120ms ease;
+}
+
+/* Chat Screen & Composer (WinUI 3 Modern Card Composer) */
+.theme-windows-fluent .chat-message-container,
+.theme-windows-fluent .chat-body {
+  border-radius: 8px;
+}
+
+.theme-windows-fluent .rs-chat-input-area-container {
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row {
+  display: flex !important;
+  align-items: center !important;
+  background-color: var(--fluent-card-bg) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-bottom: 2px solid var(--fluent-control-border-bottom) !important;
+  border-radius: 8px !important;
+  padding: 4px 6px !important;
+  min-height: 44px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row:focus-within {
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Chat Input Textarea (Integrated into Composer Card) */
+.theme-windows-fluent .rs-chat-input-row textarea.rs-chat-textarea,
+.theme-windows-fluent .rs-chat-input-row textarea.text-input-area {
+  order: 3 !important;
+  flex: 1 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  box-sizing: border-box !important;
+  padding: 7px 10px !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+  color: var(--risu-theme-textcolor) !important;
+  outline: none !important;
+  resize: none !important;
+  min-height: 34px !important;
+  align-self: center !important;
+}
+
+/* Menu Button (Left-aligned in Composer) */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn {
+  order: 1 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px !important;
+  color: var(--risu-theme-textcolor2) !important;
+  align-self: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn:active {
+  transform: scale(0.92) !important;
+}
+
+/* Sticker Button (Adjacent to Menu on Left) */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn {
+  order: 2 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px !important;
+  color: var(--risu-theme-textcolor2) !important;
+  align-self: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+  color: var(--risu-theme-textcolor) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn:active {
+  transform: scale(0.92) !important;
+}
+
+/* Send Action Button (Right-aligned, Accent Ghost Button) */
+.theme-windows-fluent .rs-chat-input-row .button-icon-send,
+.theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn {
+  order: 4 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px !important;
+  color: var(--risu-theme-borderc) !important;
+  align-self: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .button-icon-send:hover,
+.theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn:hover {
+  background-color: color-mix(in srgb, var(--risu-theme-borderc) 12%, transparent) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .button-icon-send:active,
+.theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn:active {
+  transform: scale(0.92) !important;
+  background-color: color-mix(in srgb, var(--risu-theme-borderc) 20%, transparent) !important;
+}
+
+/* Abort / Cancel Button */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn {
+  order: 4 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px !important;
+  color: var(--risu-theme-draculared) !important;
+  align-self: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: background-color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn:hover {
+  background-color: color-mix(in srgb, var(--risu-theme-draculared) 12%, transparent) !important;
+}
+
+.theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn:active {
+  transform: scale(0.92) !important;
+}
+
+/* Loading Runtime Button */
+.theme-windows-fluent .rs-chat-input-row .rs-chat-loading-btn {
+  order: 4 !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 10px !important;
+  border: none !important;
+  border-radius: 4px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  margin: 0 2px !important;
+  color: var(--risu-theme-textcolor2) !important;
+  align-self: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+}
+
+/* Icon Sizing in Composer */
+.theme-windows-fluent .rs-chat-input-row svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* Menu Popover (Flyout) */
+.theme-windows-fluent .rs-chat-menu-popover {
+  left: 16px !important;
+  right: auto !important;
+  bottom: 64px !important;
+  background-color: var(--fluent-card-bg) !important;
+  border: 1px solid var(--fluent-card-stroke) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14) !important;
+  backdrop-filter: blur(20px) !important;
+  padding: 6px !important;
+  gap: 2px !important;
+}
+
+.theme-windows-fluent .rs-chat-menu-popover > div {
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  transition: background-color 100ms ease, color 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-chat-menu-popover > div:hover {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+/* Secondary/Translate Input */
+.theme-windows-fluent textarea.input-text,
+.theme-windows-fluent textarea#messageInput,
+.theme-windows-fluent textarea#messageInputTranslate {
+  border-radius: 6px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.theme-windows-fluent textarea#messageInputTranslate {
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--fluent-control-border-bottom) !important;
+  background-color: var(--fluent-card-bg) !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  color: var(--risu-theme-textcolor) !important;
+  box-sizing: border-box !important;
+}
+
+.theme-windows-fluent textarea#messageInputTranslate:focus {
+  border-bottom-color: var(--risu-theme-borderc) !important;
+  box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
+  outline: none !important;
+}
+
+/* Form Controls (Buttons, Inputs, Checkboxes, Selects, Sliders) */
+.theme-windows-fluent .rs-button,
+.theme-windows-fluent button.bg-darkbutton {
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  background-color: var(--fluent-card-bg) !important;
+  color: var(--risu-theme-textcolor) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease !important;
+}
+
+.theme-windows-fluent .rs-button:hover:not(:disabled),
+.theme-windows-fluent button.bg-darkbutton:hover:not(:disabled) {
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent .rs-button:active:not(:disabled),
+.theme-windows-fluent button.bg-darkbutton:active:not(:disabled) {
+  background-color: var(--fluent-subtle-fill-tertiary) !important;
+  transform: translateY(0.5px) scale(0.99) !important;
+}
+
+/* Universal WinUI 3 TextBoxes & Inputs */
+.theme-windows-fluent input[type="text"],
+.theme-windows-fluent input[type="password"],
+.theme-windows-fluent input[type="search"],
+.theme-windows-fluent input[type="number"],
+.theme-windows-fluent select,
+.theme-windows-fluent textarea,
+.theme-windows-fluent .rs-textinput,
+.theme-windows-fluent .rs-numberinput,
+.theme-windows-fluent .rs-selectinput,
+.theme-windows-fluent .rs-textareainput,
+.theme-windows-fluent div:has(> textarea.absolute),
+.theme-windows-fluent div.n-scroll {
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-control-border) !important;
+  border-bottom: 1px solid var(--fluent-control-border-bottom) !important;
+  background-color: var(--fluent-card-bg) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.theme-windows-fluent input[type="text"]:focus,
+.theme-windows-fluent input[type="password"]:focus,
+.theme-windows-fluent input[type="search"]:focus,
+.theme-windows-fluent input[type="number"]:focus,
+.theme-windows-fluent select:focus,
+.theme-windows-fluent textarea:focus,
+.theme-windows-fluent .rs-textinput:focus,
+.theme-windows-fluent .rs-numberinput:focus,
+.theme-windows-fluent .rs-selectinput:focus,
+.theme-windows-fluent .rs-textareainput:focus-within,
+.theme-windows-fluent div:has(> textarea.absolute):focus-within,
+.theme-windows-fluent div.n-scroll:focus-within {
+  border-color: var(--fluent-control-border) !important;
+  border-bottom: 2px solid var(--risu-theme-borderc) !important;
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+
+/* WinUI 3 Sliders */
+.theme-windows-fluent div[role="slider"] {
+  border-radius: 9999px !important;
+  border: 1px solid var(--fluent-control-border) !important;
+  height: 24px !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+  transition: border-color 120ms ease !important;
+}
+
+.theme-windows-fluent div[role="slider"]:hover {
+  border-color: var(--risu-theme-borderc) !important;
+}
+
+/* WinUI 3 Checkbox */
+.theme-windows-fluent label input[type="checkbox"] + span {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  border-radius: 4px !important;
+  border: 1px solid var(--fluent-checkbox-border) !important;
+  background-color: var(--fluent-card-bg) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: background-color 100ms ease, border-color 100ms ease !important;
+}
+
+.theme-windows-fluent label:hover input[type="checkbox"]:not(:checked) + span {
+  border-color: var(--fluent-control-border-bottom) !important;
+  background-color: var(--fluent-subtle-fill-secondary) !important;
+}
+
+.theme-windows-fluent label input[type="checkbox"]:checked + span {
+  background-color: var(--risu-theme-borderc) !important;
+  border-color: var(--risu-theme-borderc) !important;
+}
+
+.theme-windows-fluent label input[type="checkbox"]:checked + span svg {
+  width: 12px !important;
+  height: 12px !important;
+  stroke: #ffffff !important;
+  stroke-width: 2.5 !important;
+}
+
+/* Windows 11 Fluent Semantic Dividers & Boundaries Across All UI */
+.theme-windows-fluent hr,
+.theme-windows-fluent .border-darkborderc,
+.theme-windows-fluent .border-t-darkborderc,
+.theme-windows-fluent .border-b-darkborderc,
+.theme-windows-fluent .border-l-darkborderc,
+.theme-windows-fluent .border-r-darkborderc,
+.theme-windows-fluent .border-selected,
+.theme-windows-fluent .border-t-selected,
+.theme-windows-fluent .border-b-selected,
+.theme-windows-fluent .border-l-selected,
+.theme-windows-fluent .border-r-selected {
+  border-color: var(--fluent-card-stroke) !important;
+}
+
+/* Transient Acrylic Surfaces (Modals & Flyouts) */
+.theme-windows-fluent dialog,
+.theme-windows-fluent [role="dialog"],
+.theme-windows-fluent [role="menu"],
+.theme-windows-fluent .modal {
+  border-radius: 8px;
+  border: 1px solid var(--fluent-card-stroke);
+  backdrop-filter: blur(30px) saturate(125%);
+  -webkit-backdrop-filter: blur(30px) saturate(125%);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* Fluent Focus Visual & Click Outline Suppression */
+.theme-windows-fluent button:focus,
+.theme-windows-fluent [role="button"]:focus,
+.theme-windows-fluent input:focus,
+.theme-windows-fluent select:focus,
+.theme-windows-fluent textarea:focus,
+.theme-windows-fluent .rs-segmented-control button,
+.theme-windows-fluent .rs-segmented-control button:focus,
+.theme-windows-fluent .rs-sidebar-mode-tabs button,
+.theme-windows-fluent .rs-sidebar-mode-tabs button:focus,
+.theme-windows-fluent .rs-charconfig-tabs button,
+.theme-windows-fluent .rs-charconfig-tabs button:focus,
+.theme-windows-fluent .rs-charconfig-subnav button,
+.theme-windows-fluent .rs-charconfig-subnav button:focus,
+.theme-windows-fluent .rs-sidechat-item,
+.theme-windows-fluent .rs-sidechat-item:focus,
+.theme-windows-fluent .rs-sidechat-actions [role="button"],
+.theme-windows-fluent .rs-sidechat-actions [role="button"]:focus,
+.theme-windows-fluent .rs-sidechat-toolbar button,
+.theme-windows-fluent .rs-sidechat-toolbar button:focus,
+.theme-windows-fluent .rs-button:focus {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  box-shadow: none !important;
+}
+
+.theme-windows-fluent :focus:not(:focus-visible) {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+
+/* Specifically suppress focus-visible on tabs and icon buttons to prevent click outline */
+.theme-windows-fluent .rs-segmented-control button:focus-visible,
+.theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-tabs button:focus-visible,
+.theme-windows-fluent .rs-charconfig-subnav button:focus-visible,
+.theme-windows-fluent .rs-sidechat-item:focus-visible,
+.theme-windows-fluent .rs-sidechat-actions [role="button"]:focus-visible,
+.theme-windows-fluent .rs-sidechat-toolbar button:focus-visible {
+  outline: none !important;
+}
+
+/* Keyboard navigation only focus visual */
+.theme-windows-fluent button:focus-visible:not(:active),
+.theme-windows-fluent [role="button"]:focus-visible:not(:active) {
+  outline: 2px solid var(--risu-theme-borderc) !important;
+  outline-offset: 1px !important;
+}
+
+/* Windows 11 Minimalist Scrollbars */
+.theme-windows-fluent *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.theme-windows-fluent *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.theme-windows-fluent *::-webkit-scrollbar-thumb {
+  background-color: rgba(128, 128, 128, 0.35);
+  border-radius: 9999px;
+  transition: background-color 120ms ease;
+}
+
+.theme-windows-fluent *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(128, 128, 128, 0.65);
+}
+
+/* ==========================================================================
+   Windows 11 Fluent — Elevation Polish
+   --------------------------------------------------------------------------
+   On the pure-white WinUI light canvas the `bg-darkbg` chips (#f3f3f3) and
+   the borderless search field blend into the background, so interactive
+   surfaces are hard to tell apart. Give the main menu's search / sort / filter
+   controls a WinUI-style stroke plus a soft drop shadow, and lift the generic
+   WinUI buttons a little more than the near-invisible default shadow. The
+   recent sessions list gets the same treatment.
+   Everything here is scoped under `.theme-windows-fluent` (the Windows UI
+   theme), so the default theme is completely unaffected.
+   ========================================================================== */
+
+.theme-windows-fluent {
+  --fluent-surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
+  --fluent-surface-shadow-hover: 0 2px 10px rgba(0, 0, 0, 0.26), 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+
+.theme-windows-fluent.theme-windows-fluent-light {
+  --fluent-main-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --fluent-main-control-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --fluent-main-control-stroke: color-mix(in srgb, var(--risu-theme-textcolor) 14%, transparent);
+  --fluent-main-control-stroke-hover: color-mix(in srgb, var(--risu-theme-borderc) 50%, var(--fluent-main-control-stroke));
+  --fluent-surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --fluent-surface-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Main menu search field, filter chips and sort selector */
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search,
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-chip,
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort {
+  border: 1px solid var(--fluent-main-control-stroke) !important;
+  box-shadow: var(--fluent-main-control-shadow) !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-chip:hover,
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort:hover {
+  border-color: var(--fluent-main-control-stroke-hover) !important;
+  box-shadow: var(--fluent-main-control-shadow-hover) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search:focus-within {
+  border-color: var(--risu-theme-borderc) !important;
+  box-shadow: var(--fluent-main-control-shadow-hover), 0 0 0 1px var(--risu-theme-borderc) !important;
+}
+
+/* Keep the field flush with its chip instead of nesting a second WinUI
+   textbox (white background + own border) inside the search container. */
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search input[type="text"],
+.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort select {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Lift the generic WinUI buttons off the white canvas a bit more. */
+.theme-windows-fluent.theme-windows-fluent-light .rs-button,
+.theme-windows-fluent.theme-windows-fluent-light button.bg-darkbutton {
+  box-shadow: var(--fluent-main-control-shadow) !important;
+}
+
+.theme-windows-fluent.theme-windows-fluent-light .rs-button:hover:not(:disabled),
+.theme-windows-fluent.theme-windows-fluent-light button.bg-darkbutton:hover:not(:disabled) {
+  box-shadow: var(--fluent-main-control-shadow-hover) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Recent sessions list (sidebar Details pane)
+   The cards use `bg-bgcolor/40` on an already white panel and the title turns
+   `text-selected` on hover — both wash out in the light theme. Give the cards
+   a proper surface stroke + shadow and use the accent for hover feedback.
+   -------------------------------------------------------------------------- */
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-search {
+  box-shadow: var(--fluent-surface-shadow) !important;
+}
+
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card {
+  border-color: var(--fluent-card-stroke) !important;
+  box-shadow: var(--fluent-surface-shadow) !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+}
+
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card:hover {
+  border-color: color-mix(in srgb, var(--risu-theme-borderc) 45%, var(--fluent-card-stroke)) !important;
+  box-shadow: var(--fluent-surface-shadow-hover) !important;
+}
+
+.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card:hover .rs-recent-session-title {
+  color: var(--risu-theme-borderc) !important;
+}
+
+/* `bg-selected text-white` group badge is unreadable on the light canvas */
+.theme-windows-fluent.theme-windows-fluent-light .rs-recent-sessions .rs-recent-group-badge {
+  background-color: var(--risu-theme-borderc) !important;
+  color: #ffffff !important;
+}
+
+/* Windows High Contrast Mode Support */
+@media (forced-colors: active) {
+  .theme-windows-fluent :focus-visible {
+    outline: 2px solid Highlight !important;
+  }
 }

@@ -120,6 +120,39 @@
     let isFocusedPane = $derived(chatTabsStore.focusedGroupId === paneGroupId)
 
     $effect(() => {
+        // The "loading chat data" fallback must only ever be a transient
+        // hydration state. If the selection or the active tab points at a
+        // missing character/chat for more than a grace period, that is an
+        // invariant violation — log it so deadlocks surface in diagnostics
+        // without spamming during navigation frames.
+        if (
+            selectedCharacterIndex < 0 &&
+            !paneTab
+        ) return; // main-menu state, not a gate
+        if (
+            selectedCharacterIndex >= 0 &&
+            currentCharacter &&
+            selectedChatIndex >= 0 &&
+            currentChatSession
+        ) return; // healthy
+        const stalePaneTab = paneTab
+            ? { characterId: paneTab.characterId, chatId: paneTab.chatId }
+            : null;
+        const timer = setTimeout(() => {
+            console.error(
+                "[DefaultChatScreen] chat data gate stuck — invalid selection",
+                {
+                    selectedCharacterIndex,
+                    selectedChatIndex,
+                    hasCharacter: Boolean(currentCharacter),
+                    paneTab: stalePaneTab,
+                },
+            );
+        }, 2000);
+        return () => clearTimeout(timer);
+    })
+
+    $effect(() => {
         // new generation session begins → show the minigame again
         if (currentChatGenerating && !minigameWasGenerating) {
             minigameDismissed = false
@@ -679,6 +712,10 @@
         updateInputSizeAll()
     });
 
+    $effect(() => {
+        updateInputSizeAll()
+    });
+
     async function updateInputTransateMessage(reverse: boolean) {
         if(!settingsStore.state.useAutoTranslateInput){
             return
@@ -903,139 +940,141 @@
             }
         }}>
             <div
-                    class="{settingsStore.state.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
+                    class="{settingsStore.state.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
                     style="{settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
-                {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
-                    <div onclick={()=>{toggleStickers = !toggleStickers}}
-                         class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
-                        <Laugh/>
-                    </div>
-                {/if}
+                <div class="flex items-stretch w-full rs-chat-input-row">
+                    {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
+                        <div onclick={()=>{toggleStickers = !toggleStickers}}
+                             class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors rs-chat-sticker-btn "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
+                            <Laugh/>
+                        </div>
+                    {/if}
 
-                <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
-                          bind:value={messageInput}
-                          bind:this={inputEle}
-                          onkeydown={(e) => {
-                        if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
-                            if(settingsStore.state.sendWithEnter && (!e.shiftKey)){
-                                send()
-                                e.preventDefault()
-                            }else if(!settingsStore.state.sendWithEnter && e.shiftKey){
-                                send()
-                                e.preventDefault()
-                            }
-                        }
-                        if(e.key.toLocaleLowerCase() === "m" && (e.ctrlKey)){
-                            reroll()
-                            e.preventDefault()
-                        }
-                    }}
-                          onpaste={(e) => {
-                        const items = e.clipboardData?.items
-                        if(!items){
-                            return
-                        }
-                        let canceled = false
-
-                        for(const item of items){
-                            if(item.kind === 'file' && item.type.startsWith('image')){
-                                if(!canceled){
+                    <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
+                              bind:value={messageInput}
+                              bind:this={inputEle}
+                              onkeydown={(e) => {
+                            if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
+                                if(settingsStore.state.sendWithEnter && (!e.shiftKey)){
+                                    send()
                                     e.preventDefault()
-                                    canceled = true
+                                }else if(!settingsStore.state.sendWithEnter && e.shiftKey){
+                                    send()
+                                    e.preventDefault()
                                 }
-                                const file = item.getAsFile()
-                                if(file){
-                                    const reader = new FileReader()
-                                    reader.onload = async (e) => {
-                                        const buf = e.target?.result as ArrayBuffer
-                                        const uint8 = new Uint8Array(buf)
-                                        const { postChatFile } = await import('src/ts/process/files/multisend')
-                                        const results = await postChatFile({
-                                            name: file.name,
-                                            data: uint8
-                                        })
-                                        if(!results) return
-                                        for(const res of results){
-                                            if(res?.type === 'asset'){
-                                                fileInput.push(res.data)
-                                            }
-                                            if(res?.type === 'text'){
-                                                messageInput += `{{file::${res.name}::${res.data}}}`
-                                            }
-                                        }
-                                        updateInputSizeAll()
+                            }
+                            if(e.key.toLocaleLowerCase() === "m" && (e.ctrlKey)){
+                                reroll()
+                                e.preventDefault()
+                            }
+                        }}
+                              onpaste={(e) => {
+                            const items = e.clipboardData?.items
+                            if(!items){
+                                return
+                            }
+                            let canceled = false
+
+                            for(const item of items){
+                                if(item.kind === 'file' && item.type.startsWith('image')){
+                                    if(!canceled){
+                                        e.preventDefault()
+                                        canceled = true
                                     }
-                                    reader.readAsArrayBuffer(file)
+                                    const file = item.getAsFile()
+                                    if(file){
+                                        const reader = new FileReader()
+                                        reader.onload = async (e) => {
+                                            const buf = e.target?.result as ArrayBuffer
+                                            const uint8 = new Uint8Array(buf)
+                                            const { postChatFile } = await import('src/ts/process/files/multisend')
+                                            const results = await postChatFile({
+                                                name: file.name,
+                                                data: uint8
+                                            })
+                                            if(!results) return
+                                            for(const res of results){
+                                                if(res?.type === 'asset'){
+                                                    fileInput.push(res.data)
+                                                }
+                                                if(res?.type === 'text'){
+                                                    messageInput += `{{file::${res.name}::${res.data}}}`
+                                                }
+                                            }
+                                            updateInputSizeAll()
+                                        }
+                                        reader.readAsArrayBuffer(file)
+                                    }
                                 }
                             }
-                        }
-                    }}
-                          oninput={()=>{updateInputSizeAll();updateInputTransateMessage(false)}}
-                          style:height={inputHeight}
-                ></textarea>
+                        }}
+                              oninput={()=>{updateInputSizeAll();updateInputTransateMessage(false)}}
+                              style:height={inputHeight}
+                    ></textarea>
 
 
-                {#if currentChatGenerating || doingChatInputTranslate}
-                    <button
-                            aria-labelledby="cancel"
-                            class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors" onclick={abortChat}
+                    {#if currentChatGenerating || doingChatInputTranslate}
+                        <button
+                                aria-labelledby="cancel"
+                                class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
+                                style:height={inputHeight}
+                        >
+                            <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                        </button>
+                    {:else if $startupPhase !== 'chat-ready'}
+                        <button
+                            onclick={async () => {
+                                if (presetStore.activeStatus === 'error') {
+                                    await presetStore.retryActive()
+                                    if (presetStore.activePreset) $startupPhase = 'chat-ready'
+                                }
+                            }}
+                            disabled={presetStore.activeStatus !== 'error'}
+                            title={presetStore.error ?? 'Chat runtime is loading'}
+                            class="flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs rs-chat-loading-btn"
                             style:height={inputHeight}
-                    >
-                        <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
-                    </button>
-                {:else if $startupPhase !== 'chat-ready'}
-                    <button
-                        onclick={async () => {
-                            if (presetStore.activeStatus === 'error') {
-                                await presetStore.retryActive()
-                                if (presetStore.activePreset) $startupPhase = 'chat-ready'
+                        >
+                            {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
+                        </button>
+                    {:else}
+                        <button
+                                onclick={send}
+                                class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send rs-chat-send-btn"
+                                style:height={inputHeight}
+                        >
+                            <Send />
+                        </button>
+                    {/if}
+                    {#if characterStore.characters[selectedCharacterIndex]?.chaId !== '§playground'}
+                        <button
+                                onclick={(e) => {
+                                openMenu = !openMenu
+                                e.stopPropagation()
+                            }}
+                                class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                                style:height={inputHeight}
+                        >
+                            <MenuIcon />
+                        </button>
+                    {:else}
+                        <div onclick={(e) => {
+                            const currentChat = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]
+                            if (currentChat?.id) {
+                                void messageStore.appendMessage(currentChat.id, {
+                                    role: 'char',
+                                    data: '',
+                                    chatId: v4()
+                                })
                             }
                         }}
-                        disabled={presetStore.activeStatus !== 'error'}
-                        title={presetStore.error ?? 'Chat runtime is loading'}
-                        class="flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs"
-                        style:height={inputHeight}
-                    >
-                        {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
-                    </button>
-                {:else}
-                    <button
-                            onclick={send}
-                            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send"
-                            style:height={inputHeight}
-                    >
-                        <Send />
-                    </button>
-                {/if}
-                {#if characterStore.characters[selectedCharacterIndex]?.chaId !== '§playground'}
-                    <button
-                            onclick={(e) => {
-                            openMenu = !openMenu
-                            e.stopPropagation()
-                        }}
-                            class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-                            style:height={inputHeight}
-                    >
-                        <MenuIcon />
-                    </button>
-                {:else}
-                    <div onclick={(e) => {
-                        const currentChat = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]
-                        if (currentChat?.id) {
-                            void messageStore.appendMessage(currentChat.id, {
-                                role: 'char',
-                                data: '',
-                                chatId: v4()
-                            })
-                        }
-                    }}
-                         class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-                         style:height={inputHeight}
-                    >
-                        <Plus />
-                    </div>
-                {/if}
+                             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                             style:height={inputHeight}
+                        >
+                            <Plus />
+                        </div>
+                    {/if}
+                </div>
             </div>
             {#if minigameActive && settingsStore.state.waitingMinigame !== false && !minigameDismissed}
                 {#await loadDinoGame() then DinoGame}
@@ -1249,7 +1288,7 @@
             {/if}
 
             {#if openMenu}
-                <div class="{settingsStore.state.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md" onclick={(e) => {
+                <div class="{settingsStore.state.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md rs-chat-menu-popover" onclick={(e) => {
                     e.stopPropagation()
                 }}>
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {

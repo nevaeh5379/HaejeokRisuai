@@ -49,7 +49,8 @@
     import LazyComponent from '../Others/LazyComponent.svelte';
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
-    import { isTauriMacOS } from "src/ts/platform";
+    import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
+    import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import {
       closeTauriSidebarMenuPopup,
       listenTauriSidebarMenuActions,
@@ -159,6 +160,36 @@
     }
     menuMode = 1 - menuMode
   }
+
+  // Dismiss the CSS flyout when clicking outside of it. The macOS native popup
+  // closes itself on window blur, but the CSS popover (used elsewhere, including
+  // the Windows theme) needs an explicit outside-click handler.
+  $effect(() => {
+    if (menuMode !== 1) {
+      return
+    }
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (
+        target?.closest('.rs-sidebar-menu-button') ||
+        target?.closest('.rs-sidebar-menu-popover')
+      ) {
+        return
+      }
+      menuMode = 0
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        menuMode = 0
+      }
+    }
+    window.addEventListener('pointerdown', closeOnPointerDown, true)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOnPointerDown, true)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  })
 
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
@@ -530,10 +561,10 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-{#if isTauriMacOS}
+{#if isTauriMacOS || isTauriWindows}
   <div
-    class="absolute top-0 left-0 right-1 h-7 z-20"
-    data-tauri-drag-region="true"
+    class="absolute top-0 left-0 right-1 h-8 z-20"
+    use:windowDragRegion
     aria-hidden="true"
   ></div>
 {/if}
@@ -611,29 +642,29 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-  {#if isTauriMacOS}
+  {#if isTauriMacOS || isTauriWindows}
     {#if !settingsStore.state.hamburgerButtonBottom}
       <div
-        class="absolute top-0 left-0 right-1 h-7 z-20"
-        data-tauri-drag-region="true"
+        class="absolute top-0 left-0 right-1 h-8 z-20"
+        use:windowDragRegion
         aria-hidden="true"
       ></div>
     {:else}
       <div
         class="absolute inset-y-0 left-0 w-1.5 z-20"
-        data-tauri-drag-region="true"
+        use:windowDragRegion
         aria-hidden="true"
       ></div>
     {/if}
   {/if}
   {#if !settingsStore.state.hamburgerButtonBottom}
   <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+    class="rs-sidebar-menu-button rs-sidebar-toggle-button relative z-30 flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={toggleHamburgerMenu}><ListIcon />
   </button>
   <div class="mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
+      <div class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {

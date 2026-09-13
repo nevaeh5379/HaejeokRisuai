@@ -45,6 +45,7 @@ const coreScalarDefaults = {
   playMessage: defaultBoolean(false),
   iconsize: defaultNumber(100),
   theme: defaultString(),
+  uiTheme: defaultString("default"),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
   waifuWidth2: defaultNumber(100),

@@ -16,7 +16,8 @@
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
     import { onDestroy } from "svelte";
-    import { isCapacitor, isTauriMacOS } from "src/ts/platform";
+    import { isCapacitor, isTauriMacOS, isTauriWindows } from "src/ts/platform";
+    import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import { indexMainMenuCharacters } from "./mainMenuCharacters";
 
     const realmLoader = () => import('./Realm/RealmMain.svelte')
@@ -345,28 +346,30 @@
 </script>
 <svelte:window bind:innerWidth on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} />
 <div class="rs-main-menu relative h-full w-full flex flex-col overflow-y-auto items-center">
-    {#if isTauriMacOS}
+    {#if isTauriMacOS || isTauriWindows}
       <div
-        class="absolute top-0 left-0 right-1 h-5 z-20"
-        data-tauri-drag-region="true"
+        class="absolute top-0 left-0 h-8 z-20"
+        class:right-1={!isTauriWindows}
+        class:right-36={isTauriWindows}
+        use:windowDragRegion
         aria-hidden="true"
       ></div>
     {/if}
     {#if !$OpenRealmStore}
       <Title />
-      <h3 class="text-textcolor2 mt-1" data-tauri-drag-region={isTauriMacOS ? "true" : undefined}>Version {getVersionString()}</h3>
+      <h3 class="text-textcolor2 mt-1" use:windowDragRegion>Version {getVersionString()}</h3>
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-6xl">
       {#if !$OpenRealmStore}
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-bold">{language.character}</h1>
-        <button class="text-sm font-medium px-3 py-1.5 bg-darkbg rounded-md hover:bg-selected transition-colors" onclick={() => {
+        <button class="rs-main-chip text-sm font-medium px-3 py-1.5 bg-darkbg rounded-md hover:bg-selected transition-colors" onclick={() => {
           $OpenRealmStore = true
         }}>Get More</button>
       </div>
       <div class="flex items-center gap-2 mb-4 flex-wrap">
-        <div class="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md flex-1 min-w-[180px] max-w-md">
+        <div class="rs-main-search flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md flex-1 min-w-[180px] max-w-md">
           <SearchIcon class="w-4 h-4 text-textcolor2 shrink-0" />
           <input
             type="text"
@@ -376,20 +379,20 @@
           />
         </div>
         <button
-          class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showFavoritesOnly ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
+          class="rs-main-chip flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showFavoritesOnly ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
           onclick={() => (showFavoritesOnly = !showFavoritesOnly)}
         >
           <StarIcon class="w-4 h-4" fill={showFavoritesOnly ? 'currentColor' : 'none'} />
           Favorites
         </button>
         <button
-          class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showHidden ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
+          class="rs-main-chip flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors shrink-0 {showHidden ? 'bg-selected text-textcolor' : 'bg-darkbg text-textcolor2 hover:text-textcolor'}"
           title={showHidden ? 'Showing hidden characters' : 'Click to show hidden characters'}
           onclick={() => (showHidden = !showHidden)}
         >
           {showHidden ? 'Show Hidden' : 'Hide Hidden'}
         </button>
-        <div class="flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md shrink-0">
+        <div class="rs-main-sort flex items-center gap-1.5 text-sm px-3 py-1.5 bg-darkbg rounded-md shrink-0">
           <SortAscIcon class="w-4 h-4 text-textcolor2" />
           <select
             class="bg-transparent text-textcolor2 outline-none cursor-pointer text-sm appearance-none"

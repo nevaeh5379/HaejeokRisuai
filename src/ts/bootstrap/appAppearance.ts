@@ -1,5 +1,6 @@
 import { updateAnimationSpeed } from "../gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "../gui/colorscheme";
+import { applyUITheme } from "../gui/uiTheme";
 import { updateGuisize } from "../gui/guisize";
 import { syncMobileGUI } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -38,6 +39,7 @@ export function updateHeightMode() {
  * theme, animation speed, height mode, GUI size, mobile GUI layout).
  */
 export function applyStartupAppearance(): void {
+  applyUITheme();
   updateColorScheme();
   updateTextThemeAndCSS();
   updateAnimationSpeed();

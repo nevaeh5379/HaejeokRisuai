@@ -80,6 +80,34 @@ export interface ModuleFolder {
   color: string;
 }
 
+export interface ModuleSandboxMember {
+  /** Stable runtime identity for this placement of a module definition. */
+  instanceId: string;
+  moduleId: string;
+  enabled?: boolean;
+}
+
+export interface ModuleSandboxGroup {
+  id: string;
+  name: string;
+  members: ModuleSandboxMember[];
+  /** Blank uses the active preset's global auxiliary model. */
+  subModel?: string;
+  /** Position of the bundle node on the editor canvas. */
+  position?: { x: number; y: number };
+}
+
+export interface ResolvedModuleSandboxMember extends ModuleSandboxMember {
+  module: RisuModule;
+}
+
+export interface ResolvedModuleSandbox {
+  id: string;
+  name: string;
+  subModel?: string;
+  members: ResolvedModuleSandboxMember[];
+}
+
 export async function exportModule(
   module: RisuModule,
   arg: {
@@ -493,22 +521,60 @@ export function getModules(
   );
 }
 
+/**
+ * Resolves first-class sandbox groups. Module definitions stay
+ * shared; each member keeps a separate instance id for runtime isolation.
+ */
+export function getModuleSandboxes(): ResolvedModuleSandbox[] {
+  const definitions = new Map(
+    moduleStore.list.map((module) => [module.id, module] as const),
+  );
+
+  return moduleStore.sandboxGroups
+    .map((group) => ({
+      id: group.id,
+      name: group.name,
+      subModel: group.subModel,
+      members: group.members.flatMap((member) => {
+        if (member.enabled === false) return [];
+        const module = definitions.get(member.moduleId);
+        return module ? [{ ...member, module }] : [];
+      }),
+    }))
+    .filter((group) => group.members.length > 0);
+}
+
+export interface ModuleLorebookSource {
+  lorebook: loreBook;
+  sourceModuleId: string;
+}
+
+export function getModuleLorebooksWithSource(
+  character?: character | groupChat,
+  overrideIds?: string[],
+  chat?: Chat,
+): ModuleLorebookSource[] {
+  const modules = getModules(character, overrideIds, chat);
+  const lorebooks: ModuleLorebookSource[] = [];
+  for (const module of modules) {
+    if (!module?.lorebook) {
+      continue;
+    }
+    for (const lorebook of module.lorebook) {
+      lorebooks.push({ lorebook, sourceModuleId: module.id });
+    }
+  }
+  return lorebooks;
+}
+
 export function getModuleLorebooks(
   character?: character | groupChat,
   overrideIds?: string[],
   chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds, chat);
-  let lorebooks: loreBook[] = [];
-  for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.lorebook) {
-      lorebooks = lorebooks.concat(module.lorebook);
-    }
-  }
-  return lorebooks;
+  return getModuleLorebooksWithSource(character, overrideIds, chat).map(
+    ({ lorebook }) => lorebook,
+  );
 }
 
 export function getModuleAssets(
@@ -537,21 +603,57 @@ export function getModuleTriggers(
   const modules = getModules(character, overrideIds, chat);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
-    if (!module) {
+    if (!module?.trigger) {
       continue;
     }
-    if (module.trigger) {
-      triggers = triggers.concat(
-        module.trigger.map((t) => {
-          const trigger = { ...t };
-          trigger.sourceModuleId = module.id;
-          trigger.lowLevelAccess = module.lowLevelAccess;
-          if (settingsStore.state.enableModuleSubModel && module.subModel) {
-            trigger.subModel = module.subModel;
-          }
-          return trigger;
-        }),
-      );
+    const sandboxOwnerModuleIds = settingsStore.state.enableModuleSubModel
+      ? modules
+          .filter(
+            (candidate) =>
+              candidate.id !== module.id &&
+              Boolean(candidate.subModel) &&
+              candidate.subModelRequestRules?.some(
+                (rule) => rule.enabled && rule.sourceModuleId === module.id,
+              ),
+          )
+          .map((candidate) => candidate.id)
+      : [];
+    triggers = triggers.concat(
+      module.trigger.map((t) => {
+        const trigger = { ...t };
+        trigger.sourceModuleId = module.id;
+        trigger.lowLevelAccess = module.lowLevelAccess;
+        if (settingsStore.state.enableModuleSubModel && module.subModel) {
+          trigger.subModel = module.subModel;
+        }
+        if (sandboxOwnerModuleIds.length > 0) {
+          trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
+        }
+        return trigger;
+      }),
+    );
+  }
+
+  // First-class groups intentionally do not flatten into getModules(). A
+  // definition can appear in multiple groups and must execute once per group.
+  if (overrideIds === undefined) {
+    for (const group of getModuleSandboxes()) {
+      const sandboxModuleIds = group.members.map((member) => member.moduleId);
+      for (const member of group.members) {
+        if (!member.module.trigger) continue;
+        triggers = triggers.concat(
+          member.module.trigger.map((value) => ({
+            ...value,
+            sourceModuleId: member.module.id,
+            lowLevelAccess: member.module.lowLevelAccess,
+            subModel: group.subModel,
+            sandboxGroupId: group.id,
+            sandboxGroupName: group.name,
+            sandboxInstanceId: member.instanceId,
+            sandboxModuleIds,
+          })),
+        );
+      }
     }
   }
   return triggers;

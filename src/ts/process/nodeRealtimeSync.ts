@@ -1,6 +1,12 @@
 import { alertError } from "../alert";
+import { chatTabsStore } from "../chatTabs.svelte";
+import { changeLanguage } from "../../lang";
 import { notifyChatResponse } from "../chatNotifications";
+import { applyStartupAppearance } from "../bootstrap/appAppearance";
+import { initPresetDomain } from "../bootstrap/presetStartup";
+import { initRuntimeSettings } from "../bootstrap/runtimeSettings";
 import { isCapacitor, isNodeServer, isTauri } from "../platform";
+import { installStartupData } from "../storage/database/databaseLifecycle";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { NodeSqlStorage } from "../storage/sql/postgres/nodeSqlStorage";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
@@ -54,11 +60,14 @@ type ReadyEvent = {
   activeGenerations?: GenerationStateEvent[];
 };
 
+type ResyncRequiredEvent = {
+  latestEventId?: number;
+};
+
 let started = false;
 let streamController: AbortController | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastEventId: number | null = null;
-let resyncReloadScheduled = false;
 let databaseChangeQueue: NodeRealtimeChangeQueue | null = null;
 const activeModelJobsByChat = new Map<string, string>();
 
@@ -75,6 +84,7 @@ const MODULE_ROOT_KEYS = new Set([
   "enabledModules",
   "moduleFolders",
   "moduleOrder",
+  "moduleSandboxGroups",
 ]);
 const PRESET_ROOT_KEYS = new Set<string>([
   "activeBotPresetId",
@@ -82,10 +92,50 @@ const PRESET_ROOT_KEYS = new Set<string>([
 ]);
 const EXCLUDED_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
-function scheduleFullResync(): void {
-  if (resyncReloadScheduled) return;
-  resyncReloadScheduled = true;
-  queueMicrotask(() => window.location.reload());
+function pruneInvalidChatTabs(): void {
+  const validTargets = new Set<string>();
+  for (const character of characterStore.characters) {
+    if (!character.chaId) continue;
+    for (const chat of character.chats ?? []) {
+      if (chat?.id) validTargets.add(`${character.chaId}\0${chat.id}`);
+    }
+  }
+  chatTabsStore.pruneInvalidTargets((characterId, chatId) =>
+    validTargets.has(`${characterId}\0${chatId}`),
+  );
+}
+
+async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
+  const selectedCharacterId = characterStore.currentCharacter?.chaId;
+  const startup = await storage.loadStartupData();
+  if (!startup || startup.status !== "ready") {
+    throw new Error("Cannot resync from an empty remote database");
+  }
+
+  const loadedDeferredKeys = (startup.deferredSettingKeys ?? []).filter((key) =>
+    deferredSettingsLoader.isLoaded(key),
+  );
+
+  installStartupData(startup, storage);
+  pruneInvalidChatTabs();
+  await initPresetDomain(storage);
+  await changeLanguage(settingsStore.state.language);
+  await initRuntimeSettings(storage);
+  for (const key of loadedDeferredKeys) {
+    await deferredSettingsLoader.ensureKey(key);
+  }
+  applyStartupAppearance();
+
+  const { selectedCharID } = await import("../stores.svelte");
+  const selectedIndex = selectedCharacterId
+    ? characterStore.characters.findIndex(
+        (character) => character.chaId === selectedCharacterId,
+      )
+    : -1;
+  selectedCharID.set(selectedIndex);
+  if (selectedIndex >= 0 && selectedCharacterId) {
+    await characterStore.ensureCharacterDetails(selectedCharacterId);
+  }
 }
 
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
@@ -116,7 +166,7 @@ async function applyDatabaseChange(
   change: DatabaseChangeEvent,
 ): Promise<void> {
   if (change.replaceAll) {
-    scheduleFullResync();
+    await applyFullResync(storage);
     return;
   }
 
@@ -162,7 +212,7 @@ async function applyDatabaseChange(
     !modulesChanged &&
     !presetsChanged
   ) {
-    scheduleFullResync();
+    await applyFullResync(storage);
     return;
   }
 
@@ -228,6 +278,10 @@ async function applyDatabaseChange(
     change.charactersChanged ?? characterIds.length > 0;
   if (characterIndexChanged) {
     await characterStore.refreshRemoteCharacters(characterIds);
+    // Remote deletions can remove characters/chats that local chat tabs are
+    // still referencing; prune those tabs so activating one can never
+    // deadlock the chat screen on its loading gate.
+    pruneInvalidChatTabs();
   }
 
   await characterStore.flush();
@@ -395,7 +449,17 @@ async function dispatchEvent(
   } else if (eventName === "ready") {
     applyReadyEvent(data as ReadyEvent);
   } else if (eventName === "resync-required") {
-    scheduleFullResync();
+    const event = data as ResyncRequiredEvent;
+    if (
+      Number.isSafeInteger(event.latestEventId) &&
+      event.latestEventId! >= 0
+    ) {
+      lastEventId = event.latestEventId!;
+    }
+    databaseChangeQueue?.enqueue({
+      action: "realtime-resync",
+      replaceAll: true,
+    });
   }
 }
 

@@ -26,6 +26,7 @@
     import { alertConfirm, alertInput, alertNormal, alertSelect } from "src/ts/alert";
     import { language } from "src/lang";
     import { changeChatTo } from "src/ts/globalApi.svelte";
+    import { pruneChatTargets } from "src/ts/chatTabs.svelte";
     import { exportChat, importChat, exportAllChats, duplicateChat } from "src/ts/characters";
     import { getCharImage } from "src/ts/characters";
 
@@ -161,6 +162,7 @@
         }
         if (await alertConfirm(`Delete this chat? (${chatName})`)) {
             const isDeletingCurrent = chara.chatPage === chatIndex;
+            const deletedChatId = chara.chats[chatIndex]?.id;
             chara.chats.splice(chatIndex, 1);
             if (isDeletingCurrent) {
                 changeChatTo(Math.max(0, chatIndex - 1));
@@ -169,6 +171,12 @@
             }
             characterStore.markCharacterDirty(chara.chaId);
             $ReloadGUIPointer += 1;
+            // Keep chat tabs consistent with the store: a tab that still
+            // referenced the deleted chat would deadlock the chat screen on
+            // its loading gate once activated.
+            if (deletedChatId) {
+                pruneChatTargets(deletedChatId);
+            }
         }
     }
 

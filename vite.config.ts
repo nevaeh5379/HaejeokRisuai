@@ -100,6 +100,9 @@ export default defineConfig(({ command, mode }) => {
       host: "0.0.0.0", // listen on all addresses
       port: 5174,
       strictPort: true,
+       watch: {
+      ignored: ['**/src-tauri/**'],
+    },
       fs: {
         allow: [
           searchForWorkspaceRoot(process.cwd()),

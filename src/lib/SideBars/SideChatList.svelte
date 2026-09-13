@@ -2,7 +2,7 @@
     import { tick } from "svelte";
     import { v4 } from "uuid";
     import type Sortable from 'sortablejs/modular/sortable.core.esm.js';
-    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon } from "@lucide/svelte";
+    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PlusIcon } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character, groupChat } from "../../ts/storage/database/schema";
     import { ReloadGUIPointer } from 'src/ts/stores.svelte';
@@ -19,7 +19,7 @@
     import Toggles from "./Toggles.svelte";
     import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
     import { getProtectedChatIds } from "src/ts/memory/chatWorkingSet";
-    import { chatTabsStore } from "src/ts/chatTabs.svelte";
+    import { chatTabsStore, pruneChatTargets } from "src/ts/chatTabs.svelte";
     import { duplicateChat } from "src/ts/characters";
 
     interface Props {
@@ -251,8 +251,8 @@
         }
     })
 </script>
-<div bind:this={parentContainerEl} class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 overflow-hidden">
-    <Button className="relative bottom-2 shrink-0" onclick={async () => {
+<div bind:this={parentContainerEl} class="rs-sidechat-container flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 overflow-hidden">
+    <Button className="rs-sidechat-new-btn relative bottom-2 shrink-0 flex items-center justify-center gap-1.5" onclick={async () => {
         const cha = chara
         const len = chara.chats.length
         const newChat = {
@@ -275,7 +275,10 @@
         }
         changeChatTo(0)
         $ReloadGUIPointer += 1
-    }}>{language.newChat}</Button>
+    }}>
+        <PlusIcon size={16} />
+        <span>{language.newChat}</span>
+    </Button>
 
     {#key sorted}
     <div class="flex flex-col mt-2 overflow-y-auto flex-1 min-h-[80px]" bind:this={listEle}>
@@ -284,7 +287,7 @@
             <!-- chat folder -->
             {#each chara.chatFolders as folder, i}
             <div data-risu-chat-folder-idx={i}
-                class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
+                class="rs-sidechat-folder flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
                 <!-- folder header -->
                 <button 
                     onclick={() => {
@@ -293,7 +296,7 @@
                             $ReloadGUIPointer += 1
                         }
                     }}
-                    class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+                    class="rs-sidechat-folder-header flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                     class:bg-red-900={folder.color === 'red'}
                     class:bg-yellow-900={folder.color === 'yellow'}
                     class:bg-green-900={folder.color === 'green'}
@@ -369,7 +372,7 @@
                             changeChatTo(chara.chats.indexOf(chat))
                             $ReloadGUIPointer += 1
                         }
-                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
+                    }} class="risu-chats rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]" class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
                         {#if editMode}
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
@@ -377,7 +380,7 @@
                                 <span class="truncate">{chat.name}</span>
                             </span>
                         {/if}
-                        <div class="grow flex justify-end">
+                        <div class="rs-sidechat-actions grow flex justify-end">
                             <div role="button" tabindex="0" onkeydown={(e) => {
                                 if(e.key === 'Enter'){
                                     e.currentTarget.click()
@@ -459,6 +462,12 @@
                                     let chats = chara.chats
                                     chats.splice(chara.chats.indexOf(chat), 1)
                                     chara.chats = chats
+                                    // Keep chat tabs consistent with the store: a tab that
+                                    // still referenced the deleted chat would deadlock the
+                                    // chat screen on its loading gate once activated.
+                                    if (chat.id) {
+                                        pruneChatTargets(chat.id)
+                                    }
                                 }
                             }}>
                                 <TrashIcon size={18}/>
@@ -481,7 +490,7 @@
                     $ReloadGUIPointer += 1
                 }
             }}
-            class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"
+            class="rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"
             class:bg-selected={i === chara.chatPage}>
                 {#if editMode}
                     <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
@@ -490,7 +499,7 @@
                         <span class="truncate">{chat.name}</span>
                     </span>
                 {/if}
-                <div class="grow flex justify-end">
+                <div class="rs-sidechat-actions grow flex justify-end">
                     <div role="button" tabindex="0" onkeydown={(e) => {
                         if(e.key === 'Enter'){
                             e.currentTarget.click()
@@ -572,6 +581,11 @@
                             let chats = chara.chats
                             chats.splice(i, 1)
                             chara.chats = chats
+                            // Keep chat tabs consistent with the store (see the
+                            // folder chat deletion above).
+                            if (chat.id) {
+                                pruneChatTargets(chat.id)
+                            }
                         }
                     }}>
                         <TrashIcon size={18}/>
@@ -589,7 +603,7 @@
         bind:this={separatorEl}
         role="separator"
         aria-orientation="horizontal"
-        class="group relative flex items-center justify-center h-3 shrink-0 cursor-row-resize touch-none select-none my-1"
+        class="rs-sidechat-separator group relative flex items-center justify-center h-3 shrink-0 cursor-row-resize touch-none select-none my-1"
         class:bg-selected={isResizing}
         onpointerdown={startResize}
     >
@@ -604,7 +618,7 @@
         style="height: {bottomHeight}px;"
         class="flex flex-col shrink-0 min-h-[80px] overflow-hidden"
     >
-        <div class="flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc/40 gap-2 mb-2">
+        <div class="rs-sidechat-toolbar flex items-center px-1 py-1.5 shrink-0 border-b border-darkborderc/40 gap-2 mb-2">
             <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
                 const { exportAllChats } = await import('src/ts/characters')
                 await exportAllChats()
