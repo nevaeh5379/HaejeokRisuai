@@ -7,6 +7,7 @@ import { beforeAll, expect, test, vi } from "vitest";
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
+const moduleList = vi.hoisted(() => vi.fn(() => []));
 const databaseState = vi.hoisted(() => ({
   value: {
     characters: [
@@ -106,8 +107,9 @@ vi.mock("../stores.svelte", () => ({
 }));
 
 vi.mock("./modules", () => ({
-  getModuleLorebooks: moduleLorebooks,
+  getModuleLorebooksWithSource: moduleLorebooks,
   getModuleTriggers: moduleTriggers,
+  getModules: moduleList,
 }));
 
 vi.mock("./files/inlays", () => ({
@@ -192,6 +194,108 @@ test("module button auxiliary calls carry their execution module", async () => {
     );
   } finally {
     moduleTriggers.mockReset();
+  }
+});
+
+test("isolates Lua globals between backend-owner sandboxes", async () => {
+  const code = `
+    counter = counter or 0
+    function onStart()
+      counter = counter + 1
+      return counter
+    end
+  `;
+  const runFor = (owner: string) =>
+    runScripted(code, {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxOwnerModuleId: owner,
+    });
+
+  expect((await runFor("owner-a")).res).toBe(1);
+  expect((await runFor("owner-a")).res).toBe(2);
+  expect((await runFor("owner-b")).res).toBe(1);
+});
+
+test("scopes Lua module lorebooks to the backend-owner sandbox", async () => {
+  moduleLorebooks.mockClear();
+  moduleLorebooks.mockReturnValue([]);
+  const char = { type: "character", globalLore: [] } as never;
+  const chat = { message: [], localLore: [] } as never;
+  await runScripted(
+    `function onStart(id) return #getLoreBooks(id, "missing") end`,
+    {
+      char,
+      chat,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxOwnerModuleId: "owner-a",
+    },
+  );
+  expect(moduleLorebooks).toHaveBeenLastCalledWith(
+    char,
+    ["lightboard", "owner-a"],
+    chat,
+  );
+});
+
+test("uses the sandbox owner's auxiliary model without request-rule rerouting", async () => {
+  requestChatDataMock.mockClear();
+  moduleList.mockReturnValue([
+    { id: "owner-a", subModel: "owner-model" },
+  ] as never);
+  try {
+    await runScripted(
+      `onStart = async(function(id)
+        return axLLM(id, {{role = "user", content = "sandbox request"}})
+      end)`,
+      {
+        char: { type: "character" } as never,
+        chat: { message: [] } as never,
+        mode: "start",
+        lowLevelAccess: true,
+        sourceModuleId: "lightboard",
+        subModel: "backend-model",
+        sandboxOwnerModuleId: "owner-a",
+      },
+    );
+    expect(requestChatDataMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        staticModel: "owner-model",
+        sourceModuleId: "lightboard",
+        moduleSandboxOwnerId: "owner-a",
+      }),
+      "otherAx",
+    );
+  } finally {
+    moduleList.mockReset();
+  }
+});
+
+test("Lua lorebook results preserve their source module", async () => {
+  moduleLorebooks.mockReturnValue([
+    {
+      sourceModuleId: "owner-a",
+      lorebook: { comment: "owner.code", content: "return 1" },
+    },
+  ] as never);
+  try {
+    const result = await runScripted(
+      `function onStart(id)
+        local books = getLoreBooks(id, "owner.code")
+        return books[1].sourceModuleId
+      end`,
+      {
+        char: { type: "character", globalLore: [] } as never,
+        chat: { message: [], localLore: [] } as never,
+        mode: "start",
+      },
+    );
+    expect(result.res).toBe("owner-a");
+  } finally {
+    moduleLorebooks.mockReset();
   }
 });
 
@@ -546,7 +650,10 @@ test("runs module button actions that read lorebooks before character details hy
   } as any;
   currentChatState.value = { id: "chat-1", message: [] } as any;
   moduleLorebooks.mockReturnValue([
-    { comment: "ChoiceModule.actions", content: "module action" },
+    {
+      sourceModuleId: "choice-module",
+      lorebook: { comment: "ChoiceModule.actions", content: "module action" },
+    },
   ] as never);
   moduleTriggers.mockReturnValue([
     {

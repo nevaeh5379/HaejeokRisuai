@@ -493,22 +493,37 @@ export function getModules(
   );
 }
 
+export interface ModuleLorebookSource {
+  lorebook: loreBook;
+  sourceModuleId: string;
+}
+
+export function getModuleLorebooksWithSource(
+  character?: character | groupChat,
+  overrideIds?: string[],
+  chat?: Chat,
+): ModuleLorebookSource[] {
+  const modules = getModules(character, overrideIds, chat);
+  const lorebooks: ModuleLorebookSource[] = [];
+  for (const module of modules) {
+    if (!module?.lorebook) {
+      continue;
+    }
+    for (const lorebook of module.lorebook) {
+      lorebooks.push({ lorebook, sourceModuleId: module.id });
+    }
+  }
+  return lorebooks;
+}
+
 export function getModuleLorebooks(
   character?: character | groupChat,
   overrideIds?: string[],
   chat?: Chat,
 ) {
-  const modules = getModules(character, overrideIds, chat);
-  let lorebooks: loreBook[] = [];
-  for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.lorebook) {
-      lorebooks = lorebooks.concat(module.lorebook);
-    }
-  }
-  return lorebooks;
+  return getModuleLorebooksWithSource(character, overrideIds, chat).map(
+    ({ lorebook }) => lorebook,
+  );
 }
 
 export function getModuleAssets(
@@ -537,22 +552,35 @@ export function getModuleTriggers(
   const modules = getModules(character, overrideIds, chat);
   let triggers: triggerscript[] = [];
   for (const module of modules) {
-    if (!module) {
+    if (!module?.trigger) {
       continue;
     }
-    if (module.trigger) {
-      triggers = triggers.concat(
-        module.trigger.map((t) => {
-          const trigger = { ...t };
-          trigger.sourceModuleId = module.id;
-          trigger.lowLevelAccess = module.lowLevelAccess;
-          if (settingsStore.state.enableModuleSubModel && module.subModel) {
-            trigger.subModel = module.subModel;
-          }
-          return trigger;
-        }),
-      );
-    }
+    const sandboxOwnerModuleIds = settingsStore.state.enableModuleSubModel
+      ? modules
+          .filter(
+            (candidate) =>
+              candidate.id !== module.id &&
+              Boolean(candidate.subModel) &&
+              candidate.subModelRequestRules?.some(
+                (rule) => rule.enabled && rule.sourceModuleId === module.id,
+              ),
+          )
+          .map((candidate) => candidate.id)
+      : [];
+    triggers = triggers.concat(
+      module.trigger.map((t) => {
+        const trigger = { ...t };
+        trigger.sourceModuleId = module.id;
+        trigger.lowLevelAccess = module.lowLevelAccess;
+        if (settingsStore.state.enableModuleSubModel && module.subModel) {
+          trigger.subModel = module.subModel;
+        }
+        if (sandboxOwnerModuleIds.length > 0) {
+          trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
+        }
+        return trigger;
+      }),
+    );
   }
   return triggers;
 }

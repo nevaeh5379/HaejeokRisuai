@@ -149,6 +149,50 @@ describe("Module subModel feature", () => {
       expect(triggers[1].lowLevelAccess).toBe(false);
     });
 
+    it("creates isolated sandbox owners for modules linked to a shared Lua backend", () => {
+      settingsStore.state.enableModuleSubModel = true;
+      const backend: RisuModule = {
+        id: "lightboard",
+        name: "Lightboard",
+        description: "",
+        trigger: [
+          {
+            comment: "Shared backend",
+            type: "manual",
+            conditions: [],
+            effect: [{ type: "triggerlua", code: "function onStart() end" }],
+          },
+        ],
+      };
+      const ownerA: RisuModule = {
+        id: "owner-a",
+        name: "Owner A",
+        description: "",
+        subModel: "model-a",
+        subModelRequestRules: [
+          { enabled: true, phrases: ["a"], sourceModuleId: "lightboard" },
+        ],
+      };
+      const ownerB: RisuModule = {
+        id: "owner-b",
+        name: "Owner B",
+        description: "",
+        subModel: "model-b",
+        subModelRequestRules: [
+          { enabled: true, phrases: ["b"], sourceModuleId: "lightboard" },
+        ],
+      };
+      moduleStore.modules = [backend, ownerA, ownerB];
+
+      const [trigger] = getModuleTriggers(undefined, [
+        "lightboard",
+        "owner-a",
+        "owner-b",
+      ]);
+      expect(trigger.sourceModuleId).toBe("lightboard");
+      expect(trigger.sandboxOwnerModuleIds).toEqual(["owner-a", "owner-b"]);
+    });
+
     it("does not attach subModel when enableModuleSubModel is false", () => {
       settingsStore.state.enableModuleSubModel = false;
 
@@ -398,6 +442,49 @@ describe("Module subModel feature", () => {
         "return true",
         expect.objectContaining({
           subModel: "module-lua-submodel",
+        }),
+      );
+    });
+
+    it("executes shared trigger Lua once per sandbox owner", async () => {
+      mocks.runScripted.mockClear();
+      const trigger: triggerscript = {
+        comment: "Shared sandbox trigger",
+        type: "manual",
+        lowLevelAccess: true,
+        sourceModuleId: "lightboard",
+        sandboxOwnerModuleIds: ["owner-a", "owner-b"],
+        conditions: [],
+        effect: [{ type: "triggerlua", code: "return true" } as any],
+      };
+      const char: any = {
+        chaId: "char-1",
+        name: "Bot",
+        lowLevelAccess: true,
+        triggerscript: [trigger],
+      };
+      const chat: any = { id: "chat-1", message: [], scriptstate: {} };
+
+      await runTrigger(char, "manual", {
+        chat,
+        manualName: "Shared sandbox trigger",
+      });
+
+      expect(mocks.runScripted).toHaveBeenCalledTimes(2);
+      expect(mocks.runScripted).toHaveBeenNthCalledWith(
+        1,
+        "return true",
+        expect.objectContaining({
+          sourceModuleId: "lightboard",
+          sandboxOwnerModuleId: "owner-a",
+        }),
+      );
+      expect(mocks.runScripted).toHaveBeenNthCalledWith(
+        2,
+        "return true",
+        expect.objectContaining({
+          sourceModuleId: "lightboard",
+          sandboxOwnerModuleId: "owner-b",
         }),
       );
     });

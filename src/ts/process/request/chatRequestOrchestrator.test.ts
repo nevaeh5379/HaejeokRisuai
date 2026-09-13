@@ -141,6 +141,50 @@ describe("requestChatData", () => {
     },
   );
 
+  it("keeps an authoritative sandbox model instead of re-running module rules", async () => {
+    settingsStore.state.enableModuleSubModel = true;
+    mocks.getModules.mockReturnValue([
+      {
+        id: "other-owner",
+        name: "Other Owner",
+        subModel: "wrong-model",
+        subModelRequestRules: [
+          {
+            enabled: true,
+            phrases: ["same prompt"],
+            sourceModuleId: "backend",
+          },
+        ],
+      },
+    ] as any);
+    mocks.executeChatRequestFallbacks.mockImplementation(
+      async (_options, callbacks) =>
+        callbacks.executeAttempt({ fallbackModel: "" }),
+    );
+
+    await requestChatData(
+      {
+        currentChar: {},
+        tools: [],
+        formated: [{ role: "user", content: "same prompt" }],
+        sourceModuleId: "backend",
+        moduleSandboxOwnerId: "owner-a",
+        staticModel: "owner-a-model",
+      } as any,
+      "otherAx",
+    );
+
+    expect(mocks.getModules).not.toHaveBeenCalled();
+    expect(mocks.requestChatDataMain).toHaveBeenCalledWith(
+      expect.objectContaining({
+        staticModel: "owner-a-model",
+        moduleSandboxOwnerId: "owner-a",
+      }),
+      "otherAx",
+      null,
+    );
+  });
+
   it("reads fallback models from the active preset", async () => {
     const response = await requestChatData(
       {
