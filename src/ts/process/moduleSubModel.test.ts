@@ -219,6 +219,37 @@ describe("Module subModel feature", () => {
       expect(triggers).toHaveLength(1);
       expect(triggers[0].subModel).toBeUndefined();
     });
+
+    it("normalizes serialized legacy module triggers", () => {
+      moduleStore.modules = [
+        {
+          id: "legacy-module",
+          name: "Legacy Module",
+          description: "",
+          trigger: [
+            JSON.stringify({
+              comment: "Legacy button",
+              type: "manual",
+              conditions: [],
+              effect: [
+                { type: "triggerlua", code: "function onButtonClick() end" },
+              ],
+            }),
+            "not-json",
+          ] as unknown as triggerscript[],
+        },
+      ];
+
+      expect(getModuleTriggers(undefined, ["legacy-module"])).toEqual([
+        expect.objectContaining({
+          comment: "Legacy button",
+          sourceModuleId: "legacy-module",
+          effect: [
+            { type: "triggerlua", code: "function onButtonClick() end" },
+          ],
+        }),
+      ]);
+    });
   });
 
   describe("runTrigger execution", () => {

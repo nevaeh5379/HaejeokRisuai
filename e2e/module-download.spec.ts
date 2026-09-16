@@ -42,21 +42,18 @@ test("downloads a module as a real CharX archive instead of the HTML app shell",
 }, testInfo) => {
   await boot(page);
 
-  const settingsButton = page.getByRole("button", {
-    name: /Settings|설정/i,
-    exact: true,
+  await page.evaluate(async () => {
+    const path = "/src/ts/stores.svelte.ts";
+    const { settingsOpen, SettingsMenuIndex } = await import(
+      /* @vite-ignore */ path
+    );
+    SettingsMenuIndex.set(14);
+    settingsOpen.set(true);
   });
-  if ((await settingsButton.count()) === 0) {
-    await page.locator("button").first().click();
-  }
-  if ((await settingsButton.count()) > 0) {
-    await settingsButton.first().click();
-  } else {
-    await page.locator("button:has(svg.lucide-settings)").click();
-  }
-  await page
-    .getByRole("button", { name: /Modules|모듈/i, exact: true })
-    .click();
+
+  await expect(
+    page.getByRole("button", { name: /Modules|모듈/i, exact: true }).last(),
+  ).toBeVisible();
 
   await page.locator("button:has(svg.lucide-plus)").first().click();
   const moduleInputs = page.locator('input[placeholder=""]');
@@ -67,6 +64,39 @@ test("downloads a module as a real CharX archive instead of the HTML app shell",
   await page
     .getByRole("button", { name: /Create Module|모듈 만들기/i, exact: true })
     .click();
+
+  await page.evaluate(async () => {
+    const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+    const { moduleStore } = await import(/* @vite-ignore */ path);
+    const module = moduleStore.modules.find(
+      (entry: { name: string }) => entry.name === "E2E Download Module",
+    );
+    module.lorebook = [
+      {
+        key: "roundtrip",
+        comment: "Round-trip lore",
+        content: "round-trip lore content",
+        insertorder: 10,
+        mode: "normal",
+        alwaysActive: false,
+        selective: false,
+      },
+    ];
+    module.regex = [{ type: "editinput", in: "round-trip", out: "preserved" }];
+    module.trigger = [
+      {
+        comment: "Round-trip button",
+        type: "manual",
+        conditions: [],
+        effect: [
+          {
+            type: "triggerlua",
+            code: 'function onButtonClick(id, button) if button == "round-trip" then addChat(id, "user", "preserved") end end',
+          },
+        ],
+      },
+    ];
+  });
 
   const row = page
     .getByText("E2E Download Module", { exact: true })
@@ -94,4 +124,34 @@ test("downloads a module as a real CharX archive instead of the HTML app shell",
   const card = JSON.parse(strFromU8(archive["card.json"]));
   expect(card.spec).toBe("chara_card_v3");
   expect(card.data.name).toBe("E2E Download Module");
+
+  const roundTrip = await page.evaluate(async (encoded) => {
+    const characterCardsUrl = "/src/ts/characterCards.ts";
+    const interchangeabilityUrl = "/src/ts/interchangeability.ts";
+    const { importCharacterProcess } = await import(
+      /* @vite-ignore */ characterCardsUrl
+    );
+    const { convertCharacterToModule } = await import(
+      /* @vite-ignore */ interchangeabilityUrl
+    );
+    const character = await importCharacterProcess({
+      name: "E2E Download Module.module.charx",
+      data: Buffer.from(encoded, "base64"),
+      returnCharacter: true,
+    });
+    if (!character || typeof character === "number") return null;
+    const module = convertCharacterToModule(character);
+    return {
+      lore: module.lorebook?.some(
+        (entry: { comment?: string }) => entry.comment === "Round-trip lore",
+      ),
+      regex: module.regex?.some(
+        (entry: { in?: string }) => entry.in === "round-trip",
+      ),
+      trigger: module.trigger?.some(
+        (entry: { comment?: string }) => entry.comment === "Round-trip button",
+      ),
+    };
+  }, Buffer.from(bytes).toString("base64"));
+  expect(roundTrip).toEqual({ lore: true, regex: true, trigger: true });
 });
