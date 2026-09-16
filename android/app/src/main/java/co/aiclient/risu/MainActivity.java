@@ -6,7 +6,7 @@ import androidx.activity.OnBackPressedCallback;
 
 import com.getcapacitor.BridgeActivity;
 
-import java.util.List;
+import java.util.Arrays;
 
 public class MainActivity extends BridgeActivity {
 
@@ -14,7 +14,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugins(
-                List.of(
+                Arrays.asList(
                         StreamedFetchPlugin.class,
                         StreamFileWriterPlugin.class,
                         NativeBackupPlugin.class,
