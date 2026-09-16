@@ -991,13 +991,21 @@ class CharacterStore
             const activeChatIndex = activeChatId
               ? mergedChats.findIndex((chat) => chat.id === activeChatId)
               : -1;
+            // A startup summary has no chat rows, so its synthetic chatPage=0
+            // is not a live UI selection. Restore the persisted page from the
+            // hydrated character in that case. Idle-evicted summaries keep
+            // their chat rows and must retain the user's current selection.
+            const preferredChatPage =
+              existingChats.length > 0
+                ? currentChatPage
+                : (fullChar.chatPage ?? 0);
             this.characters[idx] = Object.assign(currentCharacter, fullChar, {
               chats: mergedChats,
               chatPage:
                 activeChatIndex >= 0
                   ? activeChatIndex
                   : Math.min(
-                      currentChatPage,
+                      Math.max(preferredChatPage, 0),
                       Math.max(0, mergedChats.length - 1),
                     ),
               detailsLoaded: true,
