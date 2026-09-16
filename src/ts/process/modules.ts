@@ -595,6 +595,20 @@ export function getModuleAssets(
   return assets;
 }
 
+function normalizeModuleTrigger(value: unknown): triggerscript | null {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return { ...(value as triggerscript) };
+}
+
 export function getModuleTriggers(
   character?: character | groupChat,
   overrideIds?: string[],
@@ -619,8 +633,9 @@ export function getModuleTriggers(
           .map((candidate) => candidate.id)
       : [];
     triggers = triggers.concat(
-      module.trigger.map((t) => {
-        const trigger = { ...t };
+      module.trigger.flatMap((value) => {
+        const trigger = normalizeModuleTrigger(value);
+        if (!trigger) return [];
         trigger.sourceModuleId = module.id;
         trigger.lowLevelAccess = module.lowLevelAccess;
         if (settingsStore.state.enableModuleSubModel && module.subModel) {
@@ -629,7 +644,7 @@ export function getModuleTriggers(
         if (sandboxOwnerModuleIds.length > 0) {
           trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
         }
-        return trigger;
+        return [trigger];
       }),
     );
   }
@@ -642,16 +657,22 @@ export function getModuleTriggers(
       for (const member of group.members) {
         if (!member.module.trigger) continue;
         triggers = triggers.concat(
-          member.module.trigger.map((value) => ({
-            ...value,
-            sourceModuleId: member.module.id,
-            lowLevelAccess: member.module.lowLevelAccess,
-            subModel: group.subModel,
-            sandboxGroupId: group.id,
-            sandboxGroupName: group.name,
-            sandboxInstanceId: member.instanceId,
-            sandboxModuleIds,
-          })),
+          member.module.trigger.flatMap((value) => {
+            const trigger = normalizeModuleTrigger(value);
+            if (!trigger) return [];
+            return [
+              {
+                ...trigger,
+                sourceModuleId: member.module.id,
+                lowLevelAccess: member.module.lowLevelAccess,
+                subModel: group.subModel,
+                sandboxGroupId: group.id,
+                sandboxGroupName: group.name,
+                sandboxInstanceId: member.instanceId,
+                sandboxModuleIds,
+              },
+            ];
+          }),
         );
       }
     }
@@ -722,6 +743,10 @@ export async function applyModule() {
     return;
   }
 
+  currentChar.globalLore ??= [];
+  currentChar.customscript ??= [];
+  currentChar.triggerscript ??= [];
+
   if (module.lorebook) {
     for (const lore of module.lorebook) {
       currentChar.globalLore.push(lore);
@@ -733,8 +758,9 @@ export async function applyModule() {
     }
   }
   if (module.trigger) {
-    for (const trigger of module.trigger) {
-      currentChar.triggerscript.push(trigger);
+    for (const value of module.trigger) {
+      const trigger = normalizeModuleTrigger(value);
+      if (trigger) currentChar.triggerscript.push(trigger);
     }
   }
 
