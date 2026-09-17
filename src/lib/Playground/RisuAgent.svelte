@@ -26,14 +26,17 @@
     appendRisuAgentUserMessage,
     createRisuAgentSession,
     ensureRisuAgentCharacter,
+    registerRisuAgentSessionScope,
     removeLastRisuAgentReply,
     resolveRisuAgentSession,
     selectRisuAgentSession,
+    setRisuAgentSessionContext,
   } from "src/ts/agent/risuAgentStore";
   import {
-    clearAllRisuAgentContextScopes,
-    setRisuAgentContextScope,
-  } from "src/ts/process/mcp/risuagent/scope";
+    canMutateRisuAgentSession,
+    resolveRisuAgentSessionContext,
+    type RisuAgentChatContext,
+  } from "src/ts/agent/risuAgentModel";
   import type { character, Chat, Message } from "src/ts/storage/database/schema";
   import LazyComponent from "../Others/LazyComponent.svelte";
 
@@ -44,8 +47,6 @@
   let activeChatId = $state<string | null>(null);
   let showSessions = $state(false);
   let showContextPicker = $state(false);
-  let scopeCharacterId = $state<string | null>(null);
-  let scopeChatId = $state<string | null>(null);
   let inputEl = $state<HTMLTextAreaElement | null>(null);
   let messagesEl = $state<HTMLDivElement | null>(null);
   let abortController: AbortController | null = null;
@@ -76,18 +77,26 @@
   );
   const busy = $derived(sending || isGenerating);
 
+  const activeContext = $derived(resolveRisuAgentSessionContext(activeChat));
+
   const scopeCharacter = $derived.by(() => {
-    if (!scopeCharacterId) return null;
+    const context = activeContext;
+    if (!context) return null;
     const found = characterStore.characters.find(
-      (candidate) => candidate?.chaId === scopeCharacterId,
+      (candidate) => candidate?.chaId === context.characterId,
     );
     if (!found || found.type === "group") return null;
     return found as character;
   });
 
   const scopeChat = $derived.by(() => {
-    if (!scopeChatId || !scopeCharacter) return null;
-    return (scopeCharacter.chats ?? []).find((chat) => chat.id === scopeChatId) ?? null;
+    const context = activeContext;
+    if (!context?.chatId || !scopeCharacter) return null;
+    return (
+      (scopeCharacter.chats ?? []).find(
+        (chat) => chat.id === context.chatId,
+      ) ?? null
+    );
   });
 
   const modelName = $derived(getGenerationModelString());
@@ -105,14 +114,24 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function syncScope() {
-    clearAllRisuAgentContextScopes();
-    if (activeChatId && scopeCharacterId) {
-      setRisuAgentContextScope(activeChatId, {
-        characterId: scopeCharacterId,
-        chatId: scopeChatId ?? undefined,
-      });
-    }
+  function openContextPicker() {
+    if (!canMutateRisuAgentSession(busy)) return;
+    showContextPicker = true;
+  }
+
+  async function attachContext(characterId: string, chatId?: string) {
+    if (!agentChar || !activeChatId) return;
+    if (!canMutateRisuAgentSession(busy)) return;
+    const context: RisuAgentChatContext = chatId
+      ? { characterId, chatId }
+      : { characterId };
+    await setRisuAgentSessionContext(agentChar, activeChatId, context);
+  }
+
+  async function detachContext() {
+    if (!agentChar || !activeChatId) return;
+    if (!canMutateRisuAgentSession(busy)) return;
+    await setRisuAgentSessionContext(agentChar, activeChatId, null);
   }
 
   async function loadChat(chatId: string | null | undefined) {
@@ -127,25 +146,30 @@
       showSessions = false;
       return;
     }
+    // Session switching is disabled while generating so the in-flight request
+    // keeps the scope it started with.
+    if (!canMutateRisuAgentSession(busy)) return;
     activeChatId = chatId;
     selectRisuAgentSession(agentChar, chatId);
     showSessions = false;
-    syncScope();
     await loadChat(chatId);
+    const chat = await resolveChatAfterAwait(chatId);
+    if (chat) registerRisuAgentSessionScope(chat);
     await tick();
     scrollToBottom();
   }
 
   async function newConversation() {
-    if (!agentChar || busy) return;
+    if (!agentChar || !canMutateRisuAgentSession(busy)) return;
     const created = await createRisuAgentSession(agentChar);
     const createdId = created.id ?? null;
     if (!createdId) return;
     activeChatId = createdId;
     selectRisuAgentSession(agentChar, createdId);
     showSessions = false;
-    syncScope();
     await loadChat(createdId);
+    const chat = await resolveChatAfterAwait(createdId);
+    if (chat) registerRisuAgentSessionScope(chat);
     await tick();
     scrollToBottom();
   }
@@ -192,7 +216,9 @@
         }
       }
 
-      syncScope();
+      // Keep the request scope stable: re-register this session's persisted
+      // context without touching any other session.
+      registerRisuAgentSessionScope(chat);
       const { sendChat } = await import("src/ts/process/index.svelte");
       const ok = await sendChat(-1, {
         signal: controller.signal,
@@ -274,8 +300,9 @@
         activeChatId = chatId;
         if (chatId) {
           selectRisuAgentSession(character, chatId);
-          syncScope();
           await loadChat(chatId);
+          const chat = await resolveChatAfterAwait(chatId);
+          if (chat) registerRisuAgentSessionScope(chat);
         }
       } catch (error) {
         if (!disposed) {
@@ -289,16 +316,9 @@
     return () => {
       disposed = true;
       abortController?.abort();
-      clearAllRisuAgentContextScopes();
+      // Deliberately do not clear the scope registry here: an in-flight
+      // generation (or another mounted surface) may still need its own scope.
     };
-  });
-
-  $effect(() => {
-    // Keep the tool scope registry in sync with the visible attachment.
-    void activeChatId;
-    void scopeCharacterId;
-    void scopeChatId;
-    syncScope();
   });
 
   $effect(() => {
@@ -374,11 +394,9 @@
           </span>
         {/if}
         <button
-          class="ml-0.5 shrink-0 text-textcolor2 transition hover:text-draculared"
-          onclick={() => {
-            scopeCharacterId = null;
-            scopeChatId = null;
-          }}
+          class="ml-0.5 shrink-0 text-textcolor2 transition hover:text-draculared disabled:opacity-40"
+          onclick={detachContext}
+          disabled={busy}
           aria-label={language.risuAgent.detachContext}
         >
           <X size={13} />
@@ -386,8 +404,9 @@
       </span>
     {:else}
       <button
-        class="flex items-center gap-1.5 rounded-full border border-dashed border-borderc px-3 py-1 text-xs text-textcolor2 transition hover:border-textcolor2 hover:text-textcolor"
-        onclick={() => (showContextPicker = true)}
+        class="flex items-center gap-1.5 rounded-full border border-dashed border-borderc px-3 py-1 text-xs text-textcolor2 transition hover:border-textcolor2 hover:text-textcolor disabled:opacity-40"
+        onclick={openContextPicker}
+        disabled={busy}
       >
         <Paperclip size={13} />
         {language.risuAgent.attachContext}
@@ -413,11 +432,12 @@
       <div class="min-h-0 grow overflow-y-auto px-2 pb-3">
         {#each agentChats as chat (chat.id)}
           <button
-            class="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm transition hover:bg-darkbutton {chat.id ===
+            class="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm transition hover:bg-darkbutton disabled:opacity-40 {chat.id ===
             activeChatId
               ? 'bg-selected'
               : ''}"
             onclick={() => chat.id && switchSession(chat.id)}
+            disabled={busy}
           >
             <span class="truncate">
               {chat.name || language.risuAgent.session}
@@ -449,11 +469,12 @@
           </button>
           {#each agentChats as chat (chat.id)}
             <button
-              class="mb-1 flex w-full items-center rounded-lg px-3 py-2 text-start text-sm transition hover:bg-darkbutton {chat.id ===
+              class="mb-1 flex w-full items-center rounded-lg px-3 py-2 text-start text-sm transition hover:bg-darkbutton disabled:opacity-40 {chat.id ===
               activeChatId
                 ? 'bg-selected'
                 : ''}"
               onclick={() => chat.id && switchSession(chat.id)}
+              disabled={busy}
             >
               <span class="truncate">
                 {chat.name || language.risuAgent.session}
@@ -604,13 +625,11 @@
   <LazyComponent
     loader={() => import("./RisuAgentContextPicker.svelte")}
     props={{
-      selectedCharacterId: scopeCharacterId,
-      selectedChatId: scopeChatId,
+      selectedCharacterId: activeContext?.characterId ?? null,
+      selectedChatId: activeContext?.chatId ?? null,
       onSelect: (characterId: string, chatId?: string) => {
-        scopeCharacterId = characterId;
-        scopeChatId = chatId ?? null;
         showContextPicker = false;
-        syncScope();
+        void attachContext(characterId, chatId);
       },
       onClose: () => (showContextPicker = false),
     }}

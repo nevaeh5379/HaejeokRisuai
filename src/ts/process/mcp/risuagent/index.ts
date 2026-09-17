@@ -6,9 +6,9 @@ export {
   type RisuAgentReadToolName,
 } from "./client";
 export {
-  clearAllRisuAgentContextScopes,
   clearRisuAgentContextScope,
   getRisuAgentContextScope,
+  resetRisuAgentContextScopesForTesting,
   setRisuAgentContextScope,
   type RisuAgentContextScope,
 } from "./scope";

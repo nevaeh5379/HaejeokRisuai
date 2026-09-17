@@ -6,10 +6,18 @@ import { messageStore } from "../stores/domain/messageStore.svelte";
 import { RISU_AGENT_CHARACTER_ID } from "../systemCharacters";
 import {
   createRisuAgentChat,
+  isHydratedRisuAgentCharacter,
+  normalizeRisuAgentChatContext,
   resolveRisuAgentChatId,
+  resolveRisuAgentSessionContext,
   RISU_AGENT_DISPLAY_NAME,
   RISU_AGENT_SYSTEM_INSTRUCTION,
+  type RisuAgentChatContext,
 } from "./risuAgentModel";
+import {
+  clearRisuAgentContextScope,
+  setRisuAgentContextScope,
+} from "../process/mcp/risuagent/scope";
 
 /** Locate Risu Agent's reserved character without hydrating any other data. */
 export function findRisuAgentCharacterIndex(): number {
@@ -58,16 +66,20 @@ export async function ensureRisuAgentCharacter(): Promise<{
 
   const summary = characterStore.characters[index];
   if (summary && summary.detailsLoaded === false) {
+    // ensureCharacterDetails catches storage errors, so verify afterwards.
     await characterStore.ensureCharacterDetails(RISU_AGENT_CHARACTER_ID);
   }
 
   // Re-resolve after the await; selection/order may have changed.
   index = findRisuAgentCharacterIndex();
   const character = characterStore.characters[index];
-  if (!character || character.type === "group") {
+  if (!character) {
     throw new Error("Risu Agent character is unavailable");
   }
-  return { character, index };
+  if (!isHydratedRisuAgentCharacter(character)) {
+    throw new Error("Risu Agent character details could not be loaded");
+  }
+  return { character: character as character, index };
 }
 
 /** Resolve the session to show, preferring a stable chat id. */
@@ -83,6 +95,46 @@ export function resolveRisuAgentSession(
   );
   if (!chatId) return undefined;
   return chats.find((chat) => chat.id === chatId);
+}
+
+/**
+ * Sync the runtime tool scope for exactly one session from its persisted
+ * metadata. Never touches other sessions, so an in-flight generation keeps the
+ * scope it started with.
+ */
+export function registerRisuAgentSessionScope(chat: Chat): void {
+  if (!chat?.id) return;
+  const context = resolveRisuAgentSessionContext(chat);
+  if (context) {
+    setRisuAgentContextScope(chat.id, {
+      characterId: context.characterId,
+      chatId: context.chatId,
+    });
+  } else {
+    clearRisuAgentContextScope(chat.id);
+  }
+}
+
+/**
+ * Persist the attached context on the session itself (chat row metadata) and
+ * mirror it into the runtime registry for that chat id only.
+ */
+export async function setRisuAgentSessionContext(
+  character: character,
+  chatId: string,
+  scope: RisuAgentChatContext | null,
+): Promise<void> {
+  const chat = (character.chats ?? []).find((item) => item.id === chatId);
+  if (!chat?.id) return;
+  const normalized = normalizeRisuAgentChatContext(scope);
+  if (normalized) {
+    chat.agentContext = normalized;
+  } else {
+    delete chat.agentContext;
+  }
+  characterStore.markChatDirty(chat.id);
+  await characterStore.flush();
+  registerRisuAgentSessionScope(chat);
 }
 
 /**

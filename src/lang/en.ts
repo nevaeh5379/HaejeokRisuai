@@ -1060,6 +1060,8 @@ export const languageEnglish = {
     attachWithoutChat: "Attach character only",
     noChats: "This character has no chats yet.",
     noCharacters: "No characters found.",
+    loadFailed:
+      "Could not load this character's details. Try again.",
     inputPlaceholder: "Message Risu Agent…",
     send: "Send",
     stop: "Stop",

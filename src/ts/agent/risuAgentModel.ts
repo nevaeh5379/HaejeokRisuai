@@ -6,6 +6,54 @@ import {
 
 export { RISU_AGENT_CHARACTER_ID };
 
+/** Small, stable per-session attachment persisted on the chat row. */
+export interface RisuAgentChatContext {
+  characterId: string;
+  chatId?: string;
+}
+
+/** Normalize persisted/raw context down to stable ids, or null. */
+export function normalizeRisuAgentChatContext(
+  value: unknown,
+): RisuAgentChatContext | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as { characterId?: unknown; chatId?: unknown };
+  const characterId =
+    typeof raw.characterId === "string" ? raw.characterId.trim() : "";
+  if (!characterId) return null;
+  const chatId = typeof raw.chatId === "string" ? raw.chatId.trim() : "";
+  return chatId ? { characterId, chatId } : { characterId };
+}
+
+/** Read a chat's persisted agent context, ignoring malformed summaries. */
+export function resolveRisuAgentSessionContext(
+  chat: { agentContext?: unknown } | null | undefined,
+): RisuAgentChatContext | null {
+  if (!chat) return null;
+  return normalizeRisuAgentChatContext(chat.agentContext);
+}
+
+/**
+ * Session/context changes are blocked while a generation is running so an
+ * in-flight request always keeps the scope it started with.
+ */
+export function canMutateRisuAgentSession(busy: boolean): boolean {
+  return !busy;
+}
+
+/**
+ * True only when a character object carries fully loaded details. Lazy
+ * summaries (`detailsLoaded === false`) and group chats are rejected so a
+ * failed hydration is never mistaken for an empty, fully loaded character.
+ */
+export function isHydratedRisuAgentCharacter(
+  char: { type?: string | null; detailsLoaded?: boolean | null } | null | undefined,
+): boolean {
+  if (!char) return false;
+  if (char.type === "group") return false;
+  return char.detailsLoaded !== false;
+}
+
 export const RISU_AGENT_DISPLAY_NAME = "Risu Agent";
 
 /**

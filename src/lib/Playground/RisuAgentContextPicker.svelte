@@ -3,7 +3,7 @@
   import { ArrowLeft, Check, MessageSquare, Search, User, X } from "@lucide/svelte";
   import { language } from "src/lang";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-  import { filterRisuAgentAttachableCharacters } from "src/ts/agent/risuAgentModel";
+  import { filterRisuAgentAttachableCharacters, isHydratedRisuAgentCharacter } from "src/ts/agent/risuAgentModel";
   import type { character } from "src/ts/storage/database/schema";
 
   let {
@@ -23,6 +23,7 @@
     untrack(() => selectedCharacterId) ?? null,
   );
   let loadingChats = $state(false);
+  let loadError = $state(false);
 
   // Only ordinary, non-group characters. Summaries are enough to list names,
   // so nothing is eagerly hydrated here.
@@ -35,26 +36,34 @@
     const found = characterStore.characters.find(
       (candidate) => candidate?.chaId === pickedCharacterId,
     );
-    if (!found || found.type === "group") return null;
+    // A lazy summary is not a fully loaded character. Do not show an empty
+    // chat list as if it were the real thing.
+    if (!isHydratedRisuAgentCharacter(found)) return null;
     return found as character;
   });
 
   const pickedChats = $derived(pickedCharacter?.chats ?? []);
 
   async function pickCharacter(chaId: string) {
-    pickedCharacterId = chaId;
     loadingChats = true;
+    loadError = false;
     try {
       // Chat list lives on the character details; hydrate only this one.
       await characterStore.ensureCharacterDetails(chaId);
     } finally {
       loadingChats = false;
     }
-    // Re-resolve by stable id after the await.
-    const stillThere = characterStore.characters.some(
+    // Re-resolve by stable id after the await and verify hydration actually
+    // succeeded (ensureCharacterDetails swallows storage errors).
+    const found = characterStore.characters.find(
       (candidate) => candidate?.chaId === chaId,
     );
-    if (!stillThere) pickedCharacterId = null;
+    if (!isHydratedRisuAgentCharacter(found)) {
+      pickedCharacterId = null;
+      loadError = true;
+      return;
+    }
+    pickedCharacterId = chaId;
   }
 </script>
 
@@ -154,6 +163,13 @@
             bind:value={search}
           />
         </div>
+        {#if loadError}
+          <div
+            class="mt-2 rounded-lg border border-draculared/40 bg-draculared/10 px-3 py-2 text-xs text-textcolor"
+          >
+            {language.risuAgent.loadFailed}
+          </div>
+        {/if}
       </div>
       <div class="min-h-0 grow overflow-y-auto p-2">
         {#each candidates as candidate (candidate.chaId)}

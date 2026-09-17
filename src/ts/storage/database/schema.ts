@@ -1312,6 +1312,11 @@ export interface Chat {
   /** Persistent side conversations opened through /btw. */
   btwSessions?: BtwSession[];
   activeBtwSessionId?: string;
+  /**
+   * Risu Agent's read-only Risu context attachment for this session. Stores
+   * only stable character/chat ids and persists through the normal chat row.
+   */
+  agentContext?: { characterId: string; chatId?: string };
 }
 
 export interface ChatFolder {

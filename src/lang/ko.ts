@@ -979,6 +979,8 @@ export const languageKorean = {
     attachWithoutChat: "캐릭터만 연결",
     noChats: "이 캐릭터에는 아직 채팅이 없습니다.",
     noCharacters: "캐릭터를 찾을 수 없습니다.",
+    loadFailed:
+      "이 캐릭터의 세부 정보를 불러오지 못했습니다. 다시 시도하세요.",
     inputPlaceholder: "Risu 에이전트에게 메시지 보내기…",
     send: "전송",
     stop: "중지",

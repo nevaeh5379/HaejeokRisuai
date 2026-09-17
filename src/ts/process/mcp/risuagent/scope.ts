@@ -55,7 +55,11 @@ export function clearRisuAgentContextScope(
   scopeByAgentChatId.delete(agentChatId);
 }
 
-/** Test/teardown helper: drop every registered attachment. */
-export function clearAllRisuAgentContextScopes(): void {
+/**
+ * Test-only teardown. Production code must never clear every scope: an
+ * in-flight generation may still need the scope it started with. Use
+ * {@link clearRisuAgentContextScope} for the specific session.
+ */
+export function resetRisuAgentContextScopesForTesting(): void {
   scopeByAgentChatId.clear();
 }

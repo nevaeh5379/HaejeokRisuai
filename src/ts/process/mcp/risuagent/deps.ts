@@ -2,6 +2,7 @@ import type { character } from "../../../storage/database/schema";
 import type { SqlMessagePage } from "../../../storage/sql/ISqlStorage";
 import { characterStore } from "../../../stores/domain/characterStore.svelte";
 import { getSqlStorage } from "../../../storage/sql/sqlStorageFactory";
+import { isHydratedRisuAgentCharacter } from "../../../agent/risuAgentModel";
 
 /**
  * Injectable boundary for the read-only Risu Agent access layer. Production
@@ -27,11 +28,13 @@ export const defaultRisuAgentAccessDependencies: RisuAgentAccessDependencies = {
     const summary = characterStore.getById(characterId);
     if (!summary || summary.type === "group") return null;
     if (summary.detailsLoaded === false) {
+      // ensureCharacterDetails swallows storage failures, so the result must be
+      // verified instead of assuming hydration succeeded.
       await characterStore.ensureCharacterDetails(characterId);
     }
     // Re-resolve after the await: selection/order may have changed.
     const resolved = characterStore.getById(characterId);
-    if (!resolved || resolved.type === "group") return null;
+    if (!isHydratedRisuAgentCharacter(resolved)) return null;
     return resolved as character;
   },
   async loadChatMessagePage(

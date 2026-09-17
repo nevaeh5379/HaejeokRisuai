@@ -1,9 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { Chat } from "../storage/database/schema";
 import {
+  canMutateRisuAgentSession,
   createRisuAgentChat,
   filterRisuAgentAttachableCharacters,
+  isHydratedRisuAgentCharacter,
+  normalizeRisuAgentChatContext,
   resolveRisuAgentChatId,
+  resolveRisuAgentSessionContext,
   RISU_AGENT_CHARACTER_ID,
   RISU_AGENT_SYSTEM_INSTRUCTION,
 } from "./risuAgentModel";
@@ -79,5 +83,42 @@ describe("Risu Agent model helpers", () => {
     expect(filterRisuAgentAttachableCharacters(characters, "", 1)).toHaveLength(
       1,
     );
+  });
+
+  test("normalizes persisted session context to stable ids", () => {
+    expect(normalizeRisuAgentChatContext(null)).toBeNull();
+    expect(normalizeRisuAgentChatContext({})).toBeNull();
+    expect(normalizeRisuAgentChatContext({ characterId: "  " })).toBeNull();
+    expect(
+      normalizeRisuAgentChatContext({ characterId: " char-a ", chatId: " " }),
+    ).toEqual({ characterId: "char-a" });
+    expect(
+      normalizeRisuAgentChatContext({ characterId: "char-a", chatId: "c1" }),
+    ).toEqual({ characterId: "char-a", chatId: "c1" });
+  });
+
+  test("reads session context from a chat summary safely", () => {
+    expect(resolveRisuAgentSessionContext(null)).toBeNull();
+    expect(resolveRisuAgentSessionContext({})).toBeNull();
+    expect(
+      resolveRisuAgentSessionContext({
+        agentContext: { characterId: "char-a", chatId: "c1" },
+      }),
+    ).toEqual({ characterId: "char-a", chatId: "c1" });
+  });
+
+  test("treats lazy summaries and groups as not hydrated", () => {
+    expect(isHydratedRisuAgentCharacter(null)).toBe(false);
+    expect(isHydratedRisuAgentCharacter({ detailsLoaded: false })).toBe(false);
+    expect(isHydratedRisuAgentCharacter({ type: "group" })).toBe(false);
+    expect(isHydratedRisuAgentCharacter({ type: "character" })).toBe(true);
+    expect(
+      isHydratedRisuAgentCharacter({ type: "character", detailsLoaded: true }),
+    ).toBe(true);
+  });
+
+  test("blocks session/context mutation only while busy", () => {
+    expect(canMutateRisuAgentSession(false)).toBe(true);
+    expect(canMutateRisuAgentSession(true)).toBe(false);
   });
 });

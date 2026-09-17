@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  clearAllRisuAgentContextScopes,
   clearRisuAgentContextScope,
   getRisuAgentContextScope,
+  resetRisuAgentContextScopesForTesting,
   setRisuAgentContextScope,
 } from "./scope";
 
-afterEach(() => clearAllRisuAgentContextScopes());
+afterEach(() => resetRisuAgentContextScopesForTesting());
 
 describe("Risu Agent context scope registry", () => {
   test("stores stable ids keyed by the agent session", () => {
@@ -39,7 +39,7 @@ describe("Risu Agent context scope registry", () => {
       characterId: "char-b",
     });
 
-    clearAllRisuAgentContextScopes();
+    resetRisuAgentContextScopesForTesting();
     expect(getRisuAgentContextScope("agent-2")).toBeUndefined();
   });
 
