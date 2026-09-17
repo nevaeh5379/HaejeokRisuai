@@ -52,6 +52,7 @@ test(
         "appium:app": apkPath,
         "appium:appPackage": "co.aiclient.risu",
         "appium:appActivity": ".MainActivity",
+        "appium:enforceAppInstall": true,
         "appium:autoGrantPermissions": true,
         "appium:noReset": false,
         "appium:newCommandTimeout": 120,

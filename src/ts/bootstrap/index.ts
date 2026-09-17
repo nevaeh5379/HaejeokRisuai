@@ -228,6 +228,12 @@ export async function loadData() {
       const runtimeSettingsReady = initRuntimeSettings(storage);
       await Promise.all([runtimeSettingsReady, serviceWorkerReady]);
 
+      if (import.meta.env.VITE_ANDROID_E2E === "TRUE") {
+        const { prepareAndroidE2eFixture } =
+          await import("./androidE2eFixture");
+        if ((await prepareAndroidE2eFixture()) === "reload") return;
+      }
+
       await persistStorageIfStandalone();
       LoadingStatusState.text = "Checking For Format Update...";
       await checkNewFormat();
@@ -272,7 +278,10 @@ export async function loadData() {
           location.reload();
           return;
         }
-        if (isTauri || isCapacitor) {
+        if (
+          (isTauri || isCapacitor) &&
+          import.meta.env.VITE_ANDROID_E2E !== "TRUE"
+        ) {
           void checkRisuUpdate();
         }
       });

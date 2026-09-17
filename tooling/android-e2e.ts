@@ -150,7 +150,9 @@ async function main(): Promise<void> {
 
   if (process.env.ANDROID_E2E_SKIP_BUILD !== "1") {
     const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-    await run(pnpm, ["run", "android:build:debug"]);
+    await run(pnpm, ["run", "android:build:debug"], {
+      env: { ...toolEnv, VITE_ANDROID_E2E: "TRUE" },
+    });
   }
   if (!existsSync(apkPath)) {
     throw new Error(`Android debug APK not found: ${apkPath}`);
@@ -193,7 +195,7 @@ async function main(): Promise<void> {
       projectRoot,
       `node_modules/.bin/tsx${process.platform === "win32" ? ".cmd" : ""}`,
     );
-    await run(tsxBin, ["--test", ...tests], {
+    await run(tsxBin, ["--test", "--test-concurrency=1", ...tests], {
       env: {
         ...process.env,
         ANDROID_E2E_APK: apkPath,
