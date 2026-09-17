@@ -36,6 +36,7 @@ interface NativeIntegrationPlugin {
   updateRecentChatWidget(options: {
     item: AndroidRecentChatWidgetItem | null;
   }): Promise<void>;
+  setSystemBarAppearance(options: { dark: boolean }): Promise<void>;
   requestPinRecentChatWidget(): Promise<{
     supported: boolean;
     accepted: boolean;
@@ -76,6 +77,15 @@ export async function updateAndroidRecentChatWidget(
     await nativeIntegration.updateRecentChatWidget({ item });
   } catch (error) {
     console.warn("[NativeIntegration] Failed to update Android widget:", error);
+  }
+}
+
+export async function syncAndroidSystemBars(dark: boolean): Promise<void> {
+  if (!nativeIntegration) return;
+  try {
+    await nativeIntegration.setSystemBarAppearance({ dark });
+  } catch (error) {
+    console.warn("[NativeIntegration] Failed to sync Android system bars:", error);
   }
 }
 

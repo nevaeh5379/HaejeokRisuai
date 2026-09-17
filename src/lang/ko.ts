@@ -1504,9 +1504,10 @@ export const languageKorean = {
     "이 기기에만 저장되며 사이드바와 채팅 탭에 즉시 적용됩니다.",
   uiTheme: "UI 테마",
   uiThemeDesc:
-    "창 프레임, 사이드바, 탭, 대화창, 설정 모달 등 앱의 모든 UI에 적용할 기본 테마 또는 Windows 11 Fluent 테마를 선택합니다.",
+    "플랫폼에 맞춘 UI 테마를 선택합니다. Android 빌드에서는 터치 컨트롤, 채팅 입력창, 모바일 설정 화면에 Material 스타일을 적용할 수 있습니다.",
   uiThemeDefault: "기본 테마",
   uiThemeWindows: "Windows 11 Fluent 테마",
+  uiThemeAndroid: "Android Material 테마",
   chatTheme: "채팅 화면 레이아웃",
   windowsNativeTheme: "Windows 11 Fluent 테마",
   windowsNativeThemeDesc:

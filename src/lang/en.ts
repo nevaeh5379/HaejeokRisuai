@@ -1598,9 +1598,10 @@ export const languageEnglish = {
     "Stored only on this device and applied immediately to sidebars and chat tabs.",
   uiTheme: "UI Theme",
   uiThemeDesc:
-    "Select the Default theme or Windows 11 Fluent theme to apply across all UI (window frame, sidebars, tabs, chat, settings, controls, etc.).",
+    "Select a platform-aware UI theme. Android builds also offer a Material-style theme for touch controls, chat input, and mobile settings surfaces.",
   uiThemeDefault: "Default Theme",
   uiThemeWindows: "Windows 11 Fluent Theme",
+  uiThemeAndroid: "Android Material Theme",
   chatTheme: "Chat Screen Layout",
   windowsNativeTheme: "Windows 11 Fluent Theme",
   windowsNativeThemeDesc:

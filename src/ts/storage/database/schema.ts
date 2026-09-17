@@ -103,7 +103,7 @@ export interface DatabaseSettings {
   playMessage: boolean;
   iconsize: number;
   theme: string;
-  uiTheme?: "default" | "windows";
+  uiTheme?: "default" | "windows" | "android";
   subModel: string;
   emotionPrompt: string;
   formatversion: number;

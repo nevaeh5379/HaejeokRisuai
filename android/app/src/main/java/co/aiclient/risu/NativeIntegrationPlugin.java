@@ -5,9 +5,13 @@ import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
+
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -84,6 +88,28 @@ public class NativeIntegrationPlugin extends Plugin {
         editor.apply();
         RecentChatWidgetProvider.updateAll(getContext());
         call.resolve();
+    }
+
+    @PluginMethod
+    public void setSystemBarAppearance(PluginCall call) {
+        boolean dark = Boolean.TRUE.equals(call.getBoolean("dark", true));
+        getActivity().runOnUiThread(() -> {
+            android.view.Window window = getActivity().getWindow();
+            WindowCompat.setDecorFitsSystemWindows(window, false);
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.TRANSPARENT);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.setNavigationBarContrastEnforced(false);
+                window.setStatusBarContrastEnforced(false);
+            }
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(
+                window,
+                window.getDecorView()
+            );
+            controller.setAppearanceLightStatusBars(!dark);
+            controller.setAppearanceLightNavigationBars(!dark);
+            call.resolve();
+        });
     }
 
     @PluginMethod

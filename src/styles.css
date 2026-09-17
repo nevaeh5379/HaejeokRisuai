@@ -2994,3 +2994,104 @@ annotation {
     outline: 2px solid Highlight !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Android Material surface treatment
+   Keep Risu's color scheme while adopting Android-sized touch targets,
+   rounded surfaces, and mobile control shapes on native Capacitor builds.
+   -------------------------------------------------------------------------- */
+html.theme-android-material {
+  --risu-android-radius-sm: 12px;
+  --risu-android-radius-md: 16px;
+  --risu-android-radius-lg: 24px;
+  --risu-android-radius-xl: 28px;
+  --risu-android-surface: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 6%,
+    var(--risu-theme-bgcolor)
+  );
+  --risu-android-surface-high: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 10%,
+    var(--risu-theme-bgcolor)
+  );
+  --risu-android-outline: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 24%,
+    transparent
+  );
+}
+
+html.theme-android-material body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+html.theme-android-material .rs-button {
+  min-height: 40px;
+  border-radius: 9999px !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+html.theme-android-material .rs-setting-mobile-header {
+  background: color-mix(
+    in srgb,
+    var(--risu-android-surface-high) 92%,
+    transparent
+  ) !important;
+  border-bottom-color: var(--risu-android-outline) !important;
+}
+
+html.theme-android-material .rs-chat-input-area-container {
+  padding-inline: 0.5rem;
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+
+html.theme-android-material .rs-chat-input-row {
+  border-radius: var(--risu-android-radius-lg);
+  background: var(--risu-android-surface);
+  outline: 1px solid var(--risu-android-outline);
+  overflow: hidden;
+}
+
+html.theme-android-material .rs-chat-textarea {
+  margin-left: 0 !important;
+  border: 0 !important;
+  border-radius: var(--risu-android-radius-lg) 0 0 var(--risu-android-radius-lg) !important;
+  background: transparent !important;
+  padding-inline: 1rem !important;
+}
+
+html.theme-android-material .rs-chat-send-btn,
+html.theme-android-material .rs-chat-cancel-btn,
+html.theme-android-material .rs-chat-loading-btn {
+  min-width: 48px;
+  border: 0 !important;
+  background: var(--risu-android-surface-high);
+}
+
+html.theme-android-material .rs-chat-menu-btn {
+  min-width: 48px;
+  margin-right: 0 !important;
+  border: 0 !important;
+  border-radius: 0 var(--risu-android-radius-lg) var(--risu-android-radius-lg) 0 !important;
+  background: var(--risu-android-surface-high);
+}
+
+html.theme-android-material .rs-chat-send-btn:active,
+html.theme-android-material .rs-chat-menu-btn:active,
+html.theme-android-material .rs-chat-cancel-btn:active,
+html.theme-android-material .rs-button:active:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+html.theme-android-material .rs-sidebar,
+html.theme-android-material .rs-sidebar-panel {
+  background-color: var(--risu-android-surface) !important;
+}
+
+html.theme-android-material :focus-visible {
+  outline: 2px solid var(--risu-theme-borderc);
+  outline-offset: 2px;
+}

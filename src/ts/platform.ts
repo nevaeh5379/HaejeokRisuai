@@ -53,6 +53,8 @@ const tauriOsType = getTauriOsTypeSafe();
 export const isTauriMacOS: boolean = tauriOsType === "macos";
 export const isTauriWindows: boolean = tauriOsType === "windows";
 export const isCapacitor: boolean = !isTauri && Capacitor.isNativePlatform();
+export const isCapacitorAndroid: boolean =
+  isCapacitor && Capacitor.getPlatform() === "android";
 export const isNodeServer: boolean = !!(
   globalThis as typeof globalThis & { __NODE__?: boolean }
 ).__NODE__;

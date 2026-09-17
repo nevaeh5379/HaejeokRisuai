@@ -6,7 +6,8 @@ import { alertError } from "../alert";
 import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { isTauriMacOS, isTauriWindows } from "../platform";
+import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
+import { syncAndroidSystemBars } from "../androidNativeIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
@@ -361,6 +362,9 @@ export function updateColorScheme() {
     );
     document.documentElement.style.colorScheme = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
+    if (isCapacitorAndroid) {
+      void syncAndroidSystemBars(colorScheme.type === "dark");
+    }
     applyUITheme();
     const isFluent = isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
     if (isFluent && isTauriWindows) {
