@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -23,6 +24,13 @@ function getLogLevel():
     return value as ReturnType<typeof getLogLevel>;
   }
   throw new Error(`Unsupported ANDROID_E2E_WDIO_LOG_LEVEL: ${value}`);
+}
+
+function readWindowDump(): string {
+  const args = process.env.ANDROID_E2E_UDID
+    ? ["-s", process.env.ANDROID_E2E_UDID, "shell", "dumpsys", "window"]
+    : ["shell", "dumpsys", "window"];
+  return execFileSync("adb", args, { encoding: "utf8" });
 }
 
 after(async () => {
@@ -66,9 +74,14 @@ test(
       await driver.waitUntil(
         async () => {
           const contexts = (await driver?.getContexts()) as string[];
-          webviewContext = contexts.find((context) =>
-            context.startsWith("WEBVIEW_"),
-          );
+          webviewContext =
+            contexts.find(
+              (context) => context === "WEBVIEW_co.aiclient.risu",
+            ) ??
+            contexts.find(
+              (context) =>
+                context.startsWith("WEBVIEW_") && context !== "WEBVIEW_chrome",
+            );
           return Boolean(webviewContext);
         },
         {
@@ -111,6 +124,49 @@ test(
         "The packaged app rendered an empty document",
       );
       assert.doesNotMatch(state.bodyText, /Legal documents not configured/i);
+
+      await driver.waitUntil(
+        async () =>
+          driver?.execute(() => {
+            const root = document.documentElement;
+            const accent = getComputedStyle(root)
+              .getPropertyValue("--risu-android-system-accent")
+              .trim();
+            return (
+              root.classList.contains("theme-android-material") &&
+              accent.length > 0
+            );
+          }),
+        {
+          timeout: 15_000,
+          interval: 250,
+          timeoutMsg:
+            "Android Material theme or dynamic palette was not applied",
+        },
+      );
+
+      const materialState = await driver.execute(() => {
+        const style = getComputedStyle(document.documentElement);
+        return {
+          accent: style.getPropertyValue("--risu-android-system-accent").trim(),
+          surface: style
+            .getPropertyValue("--risu-android-system-surface")
+            .trim(),
+          background: style.getPropertyValue("--risu-theme-bgcolor").trim(),
+        };
+      });
+      assert.match(materialState.accent, /^#[0-9a-f]{6}$/i);
+      assert.match(materialState.surface, /^#[0-9a-f]{6}$/i);
+      assert.equal(materialState.background, materialState.surface);
+
+      await driver.waitUntil(
+        async () => /type=statusBars[^\n]*visible=false/.test(readWindowDump()),
+        {
+          timeout: 5_000,
+          interval: 250,
+          timeoutMsg: "Android status bar stayed visible in Material mode",
+        },
+      );
     } catch (error) {
       await mkdir(artifactsDir, { recursive: true });
       await driver.saveScreenshot(join(artifactsDir, "app-launch-failure.png"));

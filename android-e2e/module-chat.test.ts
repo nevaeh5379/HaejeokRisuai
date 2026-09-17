@@ -57,9 +57,14 @@ test(
       await driver.waitUntil(
         async () => {
           const contexts = (await driver?.getContexts()) as string[];
-          webviewContext = contexts.find((context) =>
-            context.startsWith("WEBVIEW_"),
-          );
+          webviewContext =
+            contexts.find(
+              (context) => context === "WEBVIEW_co.aiclient.risu",
+            ) ??
+            contexts.find(
+              (context) =>
+                context.startsWith("WEBVIEW_") && context !== "WEBVIEW_chrome",
+            );
           return Boolean(webviewContext);
         },
         {
@@ -87,9 +92,15 @@ test(
             await driver?.switchContext("NATIVE_APP").catch(() => undefined);
             const contexts = (await driver?.getContexts().catch(() => [])) as
               string[] | undefined;
-            const liveWebview = contexts?.find((context) =>
-              context.startsWith("WEBVIEW_"),
-            );
+            const liveWebview =
+              contexts?.find(
+                (context) => context === "WEBVIEW_co.aiclient.risu",
+              ) ??
+              contexts?.find(
+                (context) =>
+                  context.startsWith("WEBVIEW_") &&
+                  context !== "WEBVIEW_chrome",
+              );
             if (liveWebview) {
               await driver?.switchContext(liveWebview).catch(() => undefined);
             }
