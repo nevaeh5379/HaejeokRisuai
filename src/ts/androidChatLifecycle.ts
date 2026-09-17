@@ -7,8 +7,15 @@ interface NativeChatPlugin {
     title?: string;
     body?: string;
     notify: boolean;
+    characterId?: string;
+    chatId?: string;
   }): Promise<void>;
-  showNotification(options: { title?: string; body?: string }): Promise<void>;
+  showNotification(options: {
+    title?: string;
+    body?: string;
+    characterId?: string;
+    chatId?: string;
+  }): Promise<void>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
 }
 
@@ -45,6 +52,8 @@ export async function completeNativeChatRequest(options: {
   title?: string;
   body?: string;
   notify: boolean;
+  characterId?: string;
+  chatId?: string;
 }): Promise<void> {
   if (!nativeChat) return;
   try {
@@ -57,6 +66,8 @@ export async function completeNativeChatRequest(options: {
 export async function showNativeChatNotification(options: {
   title?: string;
   body?: string;
+  characterId?: string;
+  chatId?: string;
 }): Promise<void> {
   if (!nativeChat) return;
   try {

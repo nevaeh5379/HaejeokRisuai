@@ -7,6 +7,7 @@
     <string name="chat_result_ready">Reply received</string>
     <string name="widget_recent_chat_description">Continue your most recent RisuAI chat</string>
     <string name="widget_open_recent_chat">Tap to continue your recent chat</string>
+    <string name="quick_settings_tile_label">RisuAI</string>
     <string name="title_activity_main">Risuai</string>
     <string name="package_name">co.aiclient.risu</string>
     <string name="custom_url_scheme">co.aiclient.risu</string>

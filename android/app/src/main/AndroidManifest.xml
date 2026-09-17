@@ -72,6 +72,17 @@
         </provider>
 
         <service
+            android:name=".RisuQuickSettingsTileService"
+            android:label="@string/quick_settings_tile_label"
+            android:icon="@drawable/ic_stat_risu"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".ChatForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

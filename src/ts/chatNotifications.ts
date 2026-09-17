@@ -140,9 +140,15 @@ export async function notifyChatResponse(
 
   if (usesNativeChatLifecycle()) {
     if (options.completeNativeLifecycle) {
-      await completeNativeChatRequest({ title, body, notify: true });
+      await completeNativeChatRequest({
+        title,
+        body,
+        notify: true,
+        characterId,
+        chatId,
+      });
     } else {
-      await showNativeChatNotification({ title, body });
+      await showNativeChatNotification({ title, body, characterId, chatId });
     }
     void refreshAndroidNativeSurfaces();
     return;

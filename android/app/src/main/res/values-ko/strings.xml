@@ -6,4 +6,5 @@
     <string name="chat_result_ready">답변이 도착했습니다</string>
     <string name="widget_recent_chat_description">가장 최근 해적리스 채팅을 이어갑니다</string>
     <string name="widget_open_recent_chat">눌러서 최근 채팅을 이어가기</string>
+    <string name="quick_settings_tile_label">해적리스</string>
 </resources>
