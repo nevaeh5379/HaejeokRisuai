@@ -103,6 +103,34 @@ describe("RisuAgentAccessClient", () => {
     }
   });
 
+  test("omits chat history when only a character is attached", async () => {
+    const charOnly = new RisuAgentAccessClient(
+      { characterId: "char-a" },
+      deps,
+    );
+    const names = (await charOnly.getToolList()).map((tool) => tool.name);
+
+    expect(names).not.toContain("risu-agent-get-chat-history");
+    // Character summaries are still safe to expose.
+    expect(names).toContain("risu-agent-list-chats");
+  });
+
+  test("rejects chat history when only a character is attached", async () => {
+    const charOnly = new RisuAgentAccessClient(
+      { characterId: "char-a" },
+      deps,
+    );
+
+    const text = textOf(
+      await charOnly.callTool("risu-agent-get-chat-history", {
+        chatId: "chat-a",
+      }),
+    );
+
+    expect(text).toMatch(/No chat is attached/i);
+    expect(deps.loadChatMessagePage).not.toHaveBeenCalled();
+  });
+
   test("rejects mutation tool names before touching any dependency", async () => {
     for (const name of [
       "risu-set-character-info",
@@ -144,6 +172,39 @@ describe("RisuAgentAccessClient", () => {
     }
     expect(deps.resolveCharacter).toHaveBeenCalledWith("char-a");
     expect(deps.resolveCharacter).not.toHaveBeenCalledWith("§risu-agent");
+  });
+
+  test("bounds explicitly requested array fields and reports truncation", async () => {
+    deps.resolveCharacter = vi.fn(async () =>
+      makeCharacter({
+        alternateGreetings: Array.from({ length: 60 }, () =>
+          "g".repeat(3000),
+        ),
+        tags: Array.from({ length: 60 }, () => "t".repeat(3000)),
+      }),
+    );
+
+    const payload = JSON.parse(
+      textOf(
+        await client.callTool("risu-agent-get-character-info", {
+          fields: ["alternateGreetings", "tags"],
+        }),
+      ),
+    );
+
+    expect(payload.truncated).toBe(true);
+    expect(payload.truncatedFields).toEqual(
+      expect.arrayContaining(["alternateGreetings", "tags"]),
+    );
+    expect(payload.fields.alternateGreetings).toHaveLength(50);
+    expect(payload.fields.tags).toHaveLength(50);
+    const items = [
+      ...payload.fields.alternateGreetings,
+      ...payload.fields.tags,
+    ];
+    for (const item of items) {
+      expect(item.length).toBeLessThanOrEqual(2000);
+    }
   });
 
   test("paginates chat history through the bounded page loader only", async () => {
@@ -230,8 +291,7 @@ describe("RisuAgentAccessClient", () => {
     expect(JSON.parse(text).name).toBe("Alice");
   });
 
-  test("lists lorebooks with bounded previews", async () => {
-    const payload = JSON.parse(
+  test("lists lorebooks with bounded previews", async () => {    const payload = JSON.parse(
       textOf(await client.callTool("risu-agent-list-lorebooks", {})),
     );
 

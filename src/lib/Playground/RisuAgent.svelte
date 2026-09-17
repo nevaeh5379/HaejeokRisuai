@@ -29,8 +29,10 @@
     registerRisuAgentSessionScope,
     removeLastRisuAgentReply,
     resolveRisuAgentSession,
+    restoreRisuAgentReply,
     selectRisuAgentSession,
     setRisuAgentSessionContext,
+    type RemovedRisuAgentReply,
   } from "src/ts/agent/risuAgentStore";
   import {
     canMutateRisuAgentSession,
@@ -192,6 +194,10 @@
 
     sending = true;
     errorText = null;
+    // Captured only for regenerate: rolled back if generation does not
+    // succeed, so a failed retry never destroys the prior answer.
+    let removedReply: RemovedRisuAgentReply | null = null;
+    let generationSucceeded = false;
     const controller = new AbortController();
     abortController = controller;
     try {
@@ -200,8 +206,8 @@
       if (!chat) return;
 
       if (options.regenerate) {
-        const removed = await removeLastRisuAgentReply(chat);
-        if (!removed) return;
+        removedReply = await removeLastRisuAgentReply(chat);
+        if (!removedReply) return;
       }
 
       if (options.userText) {
@@ -225,6 +231,7 @@
         targetCharacterId: characterId,
         targetChatId: chatId,
       });
+      generationSucceeded = ok && !controller.signal.aborted;
       if (!ok && !controller.signal.aborted) {
         errorText = language.risuAgent.sendFailed;
       }
@@ -235,6 +242,10 @@
         alertError(message);
       }
     } finally {
+      if (removedReply && !generationSucceeded) {
+        const freshChat = await resolveChatAfterAwait(chatId);
+        if (freshChat) await restoreRisuAgentReply(freshChat, removedReply);
+      }
       abortController = null;
       sending = false;
       const finishedChatId = chatId;

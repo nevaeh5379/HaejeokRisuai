@@ -25,6 +25,8 @@ const RISU_AGENT_READ_TOOL_NAME_SET: ReadonlySet<string> = new Set(
 );
 
 const MAX_FIELD_CHARS = 12_000;
+const MAX_ARRAY_ITEMS = 50;
+const MAX_ARRAY_ITEM_CHARS = 2_000;
 const MAX_LOREBOOK_LIST = 100;
 const MAX_LOREBOOK_PREVIEW_CHARS = 240;
 const MAX_LOREBOOK_CONTENT_CHARS = 8_000;
@@ -64,6 +66,8 @@ const DEFAULT_CHARACTER_FIELDS: CharacterInfoField[] = [
   "systemPrompt",
   "postHistoryInstructions",
 ];
+
+const HISTORY_TOOL_NAME = "risu-agent-get-chat-history";
 
 const TOOL_DEFINITIONS: MCPTool[] = [
   {
@@ -230,6 +234,46 @@ function truncate(
   return { value: text.slice(0, maxChars), truncated: true };
 }
 
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Bound any character-info field, including array fields, so no explicitly
+ * requested field can produce an unbounded payload.
+ */
+function boundFieldValue(value: unknown): {
+  value: unknown;
+  truncated: boolean;
+} {
+  if (typeof value === "string") {
+    const bounded = truncate(value, MAX_FIELD_CHARS);
+    return { value: bounded.value, truncated: bounded.truncated };
+  }
+  if (Array.isArray(value)) {
+    let truncated = value.length > MAX_ARRAY_ITEMS;
+    const items = value.slice(0, MAX_ARRAY_ITEMS).map((item) => {
+      const serialized = typeof item === "string" ? item : safeStringify(item);
+      const bounded = truncate(serialized, MAX_ARRAY_ITEM_CHARS);
+      truncated ||= bounded.truncated;
+      return bounded.value;
+    });
+    return { value: items, truncated };
+  }
+  if (value === null || value === undefined) {
+    return { value: null, truncated: false };
+  }
+  if (typeof value === "object") {
+    const bounded = truncate(safeStringify(value), MAX_FIELD_CHARS);
+    return { value: bounded.value, truncated: bounded.truncated };
+  }
+  return { value, truncated: false };
+}
+
 function lorebookDisplayName(entry: loreBook, index: number): string {
   const comment = entry.comment?.trim();
   return comment && comment.length > 0 ? comment : `Untitled lorebook ${index}`;
@@ -253,7 +297,11 @@ export class RisuAgentAccessClient extends MCPClientLike {
   }
 
   async getToolList(): Promise<MCPTool[]> {
-    return TOOL_DEFINITIONS.map((tool) => ({ ...tool }));
+    // Chat history is only discoverable when a specific chat was explicitly
+    // attached. Attaching only a character never grants chat content access.
+    return TOOL_DEFINITIONS.filter(
+      (tool) => tool.name !== HISTORY_TOOL_NAME || Boolean(this.scope.chatId),
+    ).map((tool) => ({ ...tool }));
   }
 
   async callTool(
@@ -316,36 +364,27 @@ export class RisuAgentAccessClient extends MCPClientLike {
   }
 
   private resolveScopeChatId(char: character, requestedChatId: unknown): string {
+    const attachedChatId = this.scope.chatId;
+    // Attaching only a character must not grant any chat-content access.
+    if (!attachedChatId) {
+      throw new RisuAgentAccessError(
+        "No chat is attached. Attaching only a character does not grant chat content access; attach a specific chat to read its history.",
+      );
+    }
     const requested = normalizeOptionalString(requestedChatId);
     const chats = char.chats ?? [];
-    const attachedChatId = this.scope.chatId;
-    if (attachedChatId) {
-      const attachedChat = chats.find((chat) => chat.id === attachedChatId);
-      if (!attachedChat) {
-        throw new RisuAgentAccessError(
-          "The attached chat is no longer available. Attach a chat again.",
-        );
-      }
-      if (requested && requested !== attachedChatId) {
-        throw new RisuAgentAccessError(
-          "Access denied: only the explicitly attached chat can be read. Attach that chat first.",
-        );
-      }
-      return attachedChatId;
-    }
-
-    const activeChat = chats[char.chatPage ?? 0];
-    if (!activeChat?.id) {
+    const attachedChat = chats.find((chat) => chat.id === attachedChatId);
+    if (!attachedChat) {
       throw new RisuAgentAccessError(
-        "No chat is attached and the character has no active chat to read.",
+        "The attached chat is no longer available. Attach a chat again.",
       );
     }
-    if (requested && requested !== activeChat.id) {
+    if (requested && requested !== attachedChatId) {
       throw new RisuAgentAccessError(
-        "Access denied: no chat is attached. Attach a chat before reading its history.",
+        "Access denied: only the explicitly attached chat can be read. Attach that chat first.",
       );
     }
-    return activeChat.id;
+    return attachedChatId;
   }
 
   private async getCharacterInfo(
@@ -378,14 +417,15 @@ export class RisuAgentAccessClient extends MCPClientLike {
 
     const payload: Record<string, unknown> = {};
     let truncated = false;
+    const truncatedFields: string[] = [];
     for (const field of fields) {
-      const value = char[CHARACTER_FIELD_MAP[field] as keyof character];
-      if (typeof value === "string") {
-        const bounded = truncate(value, MAX_FIELD_CHARS);
-        payload[field] = bounded.value;
-        truncated ||= bounded.truncated;
-      } else {
-        payload[field] = value ?? null;
+      const bounded = boundFieldValue(
+        char[CHARACTER_FIELD_MAP[field] as keyof character],
+      );
+      payload[field] = bounded.value;
+      if (bounded.truncated) {
+        truncated = true;
+        truncatedFields.push(field);
       }
     }
 
@@ -395,6 +435,7 @@ export class RisuAgentAccessClient extends MCPClientLike {
         name: char.name,
         fields: payload,
         truncated,
+        truncatedFields,
       }),
     );
   }

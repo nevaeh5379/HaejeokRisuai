@@ -191,14 +191,53 @@ export async function appendRisuAgentUserMessage(
   return message;
 }
 
-/** Remove the last assistant reply so the standard pipeline can regenerate. */
-export async function removeLastRisuAgentReply(chat: Chat): Promise<boolean> {
+/** A reply removed for regeneration, with enough data to restore it. */
+export interface RemovedRisuAgentReply {
+  message: Message;
+  index: number;
+}
+
+/**
+ * Remove the last assistant reply so the standard pipeline can regenerate.
+ * Returns the removed message and its original position so callers can roll
+ * back if the retry fails.
+ */
+export async function removeLastRisuAgentReply(
+  chat: Chat,
+): Promise<RemovedRisuAgentReply | null> {
   const messages = chat.message ?? [];
   const last = messages[messages.length - 1];
-  if (!last || last.role !== "char") return false;
+  if (!last || last.role !== "char") return null;
+  const index = messages.length - 1;
   chat.message = messages.slice(0, -1);
   if (chat.id && last.chatId) {
     await messageStore.deleteMessage(chat.id, last.chatId);
   }
-  return true;
+  return { message: last, index };
+}
+
+/**
+ * Restore a reply removed by {@link removeLastRisuAgentReply} at its original
+ * in-memory position and in SQL storage. Used when regeneration fails, throws
+ * or is aborted so a failed retry never destroys the prior answer.
+ */
+export async function restoreRisuAgentReply(
+  chat: Chat,
+  removed: RemovedRisuAgentReply,
+): Promise<void> {
+  const messages = chat.message ?? [];
+  if (
+    removed.message.chatId &&
+    messages.some((message) => message.chatId === removed.message.chatId)
+  ) {
+    return;
+  }
+  const insertAt = Math.min(Math.max(removed.index, 0), messages.length);
+  const next = messages.slice();
+  next.splice(insertAt, 0, removed.message);
+  chat.message = next;
+  if (typeof chat.messageTotal === "number") chat.messageTotal += 1;
+  if (chat.id) {
+    await messageStore.appendMessage(chat.id, removed.message);
+  }
 }
