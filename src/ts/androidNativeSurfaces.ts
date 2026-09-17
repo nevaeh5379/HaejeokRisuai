@@ -1,3 +1,4 @@
+import { getCharImage } from "./characterImage";
 import type { SqlRecentChatMetadata } from "./storage/sql/ISqlStorage";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 import { characterStore } from "./stores/domain/characterStore.svelte";
@@ -8,6 +9,52 @@ import {
 } from "./androidNativeIntegration";
 
 const SHORTCUT_LIMIT = 4;
+const WIDGET_LIMIT = 4;
+const RECENT_SCAN_LIMIT = 16;
+const widgetIconCache = new Map<string, string | null>();
+
+async function loadWidgetIcon(
+  imageLocation: string | null,
+): Promise<string | null> {
+  if (!imageLocation || typeof document === "undefined") return null;
+  if (widgetIconCache.has(imageLocation))
+    return widgetIconCache.get(imageLocation) ?? null;
+  try {
+    const source = await getCharImage(imageLocation, "plain", {
+      thumbnail: true,
+    });
+    if (!source || source === "/none.webp") return null;
+    const blob = await (await fetch(source)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const size = 96;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.beginPath();
+    context.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    context.clip();
+    const scale = Math.max(size / bitmap.width, size / bitmap.height);
+    const width = bitmap.width * scale;
+    const height = bitmap.height * scale;
+    context.drawImage(
+      bitmap,
+      (size - width) / 2,
+      (size - height) / 2,
+      width,
+      height,
+    );
+    bitmap.close();
+    const data = canvas.toDataURL("image/webp", 0.82);
+    widgetIconCache.set(imageLocation, data);
+    return data;
+  } catch (error) {
+    console.warn("[NativeIntegration] Failed to prepare widget icon:", error);
+    widgetIconCache.set(imageLocation, null);
+    return null;
+  }
+}
 
 function localRecentChats(limit: number): SqlRecentChatMetadata[] {
   const rows: SqlRecentChatMetadata[] = [];
@@ -28,7 +75,8 @@ function localRecentChats(limit: number): SqlRecentChatMetadata[] {
         chatName: chat.name || `Chat ${index + 1}`,
         folderId: chat.folderId ?? null,
         lastDate,
-        lastMessage: typeof lastMessage?.data === "string" ? lastMessage.data : "",
+        lastMessage:
+          typeof lastMessage?.data === "string" ? lastMessage.data : "",
       });
     }
   }
@@ -43,7 +91,11 @@ export async function loadAndroidRecentChats(
   const storage = getSqlRuntime().storage;
   if (!storage?.listRecentChats) return localRecentChats(limit);
   try {
-    return await storage.listRecentChats(limit, characterStore.currentChat?.id);
+    const recent = await storage.listRecentChats(
+      limit,
+      characterStore.currentChat?.id,
+    );
+    return recent.length > 0 ? recent : localRecentChats(limit);
   } catch (error) {
     console.warn("[NativeIntegration] Recent chat query failed:", error);
     return localRecentChats(limit);
@@ -56,27 +108,34 @@ export function refreshAndroidNativeSurfaces(): Promise<void> {
   if (!usesAndroidNativeIntegration()) return Promise.resolve();
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
-    const recent = await loadAndroidRecentChats(SHORTCUT_LIMIT);
-    const latest = recent[0];
+    const recent = await loadAndroidRecentChats(RECENT_SCAN_LIMIT);
+    const widgetChats: SqlRecentChatMetadata[] = [];
+    const seenCharacters = new Set<string>();
+    for (const chat of recent) {
+      if (seenCharacters.has(chat.characterId)) continue;
+      seenCharacters.add(chat.characterId);
+      widgetChats.push(chat);
+      if (widgetChats.length >= WIDGET_LIMIT) break;
+    }
+    const widgetItems = await Promise.all(
+      widgetChats.map(async (chat) => ({
+        characterId: chat.characterId,
+        chatId: chat.chatId,
+        characterName: chat.characterName || "RisuAI",
+        chatName: chat.chatName || "Chat",
+        lastMessage: chat.lastMessage || "",
+        iconData: await loadWidgetIcon(chat.characterImage),
+      })),
+    );
     await Promise.all([
       updateAndroidShortcuts(
-        recent.map((chat) => ({
+        recent.slice(0, SHORTCUT_LIMIT).map((chat) => ({
           characterId: chat.characterId,
           chatId: chat.chatId,
           label: chat.characterName || chat.chatName || "RisuAI",
         })),
       ),
-      updateAndroidRecentChatWidget(
-        latest
-          ? {
-              characterId: latest.characterId,
-              chatId: latest.chatId,
-              characterName: latest.characterName || "RisuAI",
-              chatName: latest.chatName || "Chat",
-              lastMessage: latest.lastMessage || "",
-            }
-          : null,
-      ),
+      updateAndroidRecentChatWidget(widgetItems),
     ]);
   })().finally(() => {
     refreshPromise = null;

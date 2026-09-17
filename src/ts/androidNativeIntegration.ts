@@ -2,11 +2,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export type AndroidNativeEntry = {
   type:
-    | "share-text"
-    | "process-text"
-    | "open-chat"
-    | "open-character"
-    | "new-chat";
+    "share-text" | "process-text" | "open-chat" | "open-character" | "new-chat";
   text?: string;
   subject?: string;
   mimeType?: string;
@@ -26,6 +22,7 @@ export interface AndroidRecentChatWidgetItem {
   characterName: string;
   chatName: string;
   lastMessage: string;
+  iconData?: string | null;
 }
 
 interface NativeIntegrationPlugin {
@@ -34,7 +31,7 @@ interface NativeIntegrationPlugin {
     items: AndroidShortcutItem[];
   }): Promise<{ updated: number }>;
   updateRecentChatWidget(options: {
-    item: AndroidRecentChatWidgetItem | null;
+    items: AndroidRecentChatWidgetItem[];
   }): Promise<void>;
   setSystemBarAppearance(options: {
     dark: boolean;
@@ -64,6 +61,12 @@ interface NativeIntegrationPlugin {
     supported: boolean;
     accepted: boolean;
   }>;
+  requestPinWidget(options: {
+    type: "recent" | "compact" | "grid" | "strip";
+  }): Promise<{
+    supported: boolean;
+    accepted: boolean;
+  }>;
   requestQuickSettingsTile(): Promise<{
     supported: boolean;
     result: number;
@@ -87,19 +90,25 @@ export async function updateAndroidShortcuts(
   try {
     return (await nativeIntegration.updateShortcuts({ items })).updated;
   } catch (error) {
-    console.warn("[NativeIntegration] Failed to update Android shortcuts:", error);
+    console.warn(
+      "[NativeIntegration] Failed to update Android shortcuts:",
+      error,
+    );
     return 0;
   }
 }
 
 export async function updateAndroidRecentChatWidget(
-  item: AndroidRecentChatWidgetItem | null,
+  items: AndroidRecentChatWidgetItem[],
 ): Promise<void> {
   if (!nativeIntegration) return;
   try {
-    await nativeIntegration.updateRecentChatWidget({ item });
+    await nativeIntegration.updateRecentChatWidget({ items });
   } catch (error) {
-    console.warn("[NativeIntegration] Failed to update Android widget:", error);
+    console.warn(
+      "[NativeIntegration] Failed to update Android widgets:",
+      error,
+    );
   }
 }
 
@@ -111,7 +120,10 @@ export async function syncAndroidSystemBars(
   try {
     await nativeIntegration.setSystemBarAppearance({ dark, hideStatusBar });
   } catch (error) {
-    console.warn("[NativeIntegration] Failed to sync Android system bars:", error);
+    console.warn(
+      "[NativeIntegration] Failed to sync Android system bars:",
+      error,
+    );
   }
 }
 
@@ -121,14 +133,20 @@ export async function applyAndroidDynamicPalette(dark: boolean): Promise<void> {
   if (!root.classList.contains("theme-android-material")) return;
   try {
     const palette = await nativeIntegration.getSystemPalette();
-    if (!root.classList.contains("theme-android-material") || !palette.available) return;
+    if (
+      !root.classList.contains("theme-android-material") ||
+      !palette.available
+    )
+      return;
 
     const accent = dark ? palette.accentDark : palette.accentLight;
     const accentContainer = dark
       ? palette.accentContainerDark
       : palette.accentContainerLight;
     const surface = dark ? palette.surfaceDark : palette.surfaceLight;
-    const surfaceHigh = dark ? palette.surfaceHighDark : palette.surfaceHighLight;
+    const surfaceHigh = dark
+      ? palette.surfaceHighDark
+      : palette.surfaceHighLight;
     const onSurface = dark ? palette.onSurfaceDark : palette.onSurfaceLight;
     const onSurfaceVariant = dark
       ? palette.onSurfaceVariantDark
@@ -157,7 +175,10 @@ export async function applyAndroidDynamicPalette(dark: boolean): Promise<void> {
     set("--risu-theme-darkborderc", outline);
     set("--risu-theme-darkbutton", accentContainer ?? surfaceHigh);
   } catch (error) {
-    console.warn("[NativeIntegration] Failed to read Android dynamic colors:", error);
+    console.warn(
+      "[NativeIntegration] Failed to read Android dynamic colors:",
+      error,
+    );
   }
 }
 
@@ -168,17 +189,29 @@ export async function triggerAndroidHaptic(
   try {
     return (await nativeIntegration.haptic({ type })).performed;
   } catch (error) {
-    console.warn("[NativeIntegration] Failed to perform haptic feedback:", error);
+    console.warn(
+      "[NativeIntegration] Failed to perform haptic feedback:",
+      error,
+    );
     return false;
   }
+}
+
+export type AndroidWidgetType = "recent" | "compact" | "grid" | "strip";
+
+export async function requestAndroidWidget(type: AndroidWidgetType): Promise<{
+  supported: boolean;
+  accepted: boolean;
+}> {
+  if (!nativeIntegration) return { supported: false, accepted: false };
+  return nativeIntegration.requestPinWidget({ type });
 }
 
 export async function requestAndroidRecentChatWidget(): Promise<{
   supported: boolean;
   accepted: boolean;
 }> {
-  if (!nativeIntegration) return { supported: false, accepted: false };
-  return nativeIntegration.requestPinRecentChatWidget();
+  return requestAndroidWidget("recent");
 }
 
 export async function requestAndroidQuickSettingsTile(): Promise<{
@@ -210,7 +243,10 @@ export function installAndroidNativeEntryHandler(
           }
         } while (!disposed);
       } catch (error) {
-        console.warn("[NativeIntegration] Failed to consume Android entry:", error);
+        console.warn(
+          "[NativeIntegration] Failed to consume Android entry:",
+          error,
+        );
       } finally {
         draining = null;
       }

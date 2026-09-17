@@ -3,7 +3,6 @@ package co.aiclient.risu;
 import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Build;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
@@ -15,14 +14,8 @@ public class RisuQuickSettingsTileService extends TileService {
         Tile tile = getQsTile();
         if (tile == null) return;
 
-        SharedPreferences prefs = getSharedPreferences(
-            RecentChatWidgetProvider.PREFS_NAME,
-            MODE_PRIVATE
-        );
-        String characterName = prefs.getString(
-            RecentChatWidgetProvider.KEY_CHARACTER_NAME,
-            null
-        );
+        AndroidWidgetStore.Item item = AndroidWidgetStore.first(this);
+        String characterName = item == null ? null : item.characterName;
         tile.setLabel(getString(R.string.quick_settings_tile_label));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             tile.setSubtitle(characterName == null ? "" : characterName);
@@ -34,12 +27,9 @@ public class RisuQuickSettingsTileService extends TileService {
     @Override
     public void onClick() {
         super.onClick();
-        SharedPreferences prefs = getSharedPreferences(
-            RecentChatWidgetProvider.PREFS_NAME,
-            MODE_PRIVATE
-        );
-        String characterId = prefs.getString(RecentChatWidgetProvider.KEY_CHARACTER_ID, null);
-        String chatId = prefs.getString(RecentChatWidgetProvider.KEY_CHAT_ID, null);
+        AndroidWidgetStore.Item item = AndroidWidgetStore.first(this);
+        String characterId = item == null ? null : item.characterId;
+        String chatId = item == null ? null : item.chatId;
 
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(

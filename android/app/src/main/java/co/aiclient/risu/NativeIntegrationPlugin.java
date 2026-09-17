@@ -75,24 +75,11 @@ public class NativeIntegrationPlugin extends Plugin {
 
     @PluginMethod
     public void updateRecentChatWidget(PluginCall call) {
-        JSObject item = call.getObject("item");
-        android.content.SharedPreferences.Editor editor = getContext()
-            .getSharedPreferences(RecentChatWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .clear();
-        if (item != null) {
-            putPreference(editor, RecentChatWidgetProvider.KEY_CHARACTER_ID, item.getString("characterId"));
-            putPreference(editor, RecentChatWidgetProvider.KEY_CHAT_ID, item.getString("chatId"));
-            putPreference(editor, RecentChatWidgetProvider.KEY_CHARACTER_NAME, item.getString("characterName"));
-            putPreference(editor, RecentChatWidgetProvider.KEY_CHAT_NAME, item.getString("chatName"));
-            String lastMessage = item.getString("lastMessage");
-            if (lastMessage != null && lastMessage.length() > 500) {
-                lastMessage = lastMessage.substring(0, 500);
-            }
-            putPreference(editor, RecentChatWidgetProvider.KEY_LAST_MESSAGE, lastMessage);
-        }
-        editor.apply();
-        RecentChatWidgetProvider.updateAll(getContext());
+        JSArray items = call.getArray("items");
+        AndroidWidgetStore.save(
+            getContext(),
+            items == null ? new JSArray() : items
+        );
         call.resolve();
     }
 
@@ -191,6 +178,20 @@ public class NativeIntegrationPlugin extends Plugin {
 
     @PluginMethod
     public void requestPinRecentChatWidget(PluginCall call) {
+        resolvePinWidget(call, RecentChatWidgetProvider.class);
+    }
+
+    @PluginMethod
+    public void requestPinWidget(PluginCall call) {
+        String type = call.getString("type", "recent");
+        Class<?> providerClass = RecentChatWidgetProvider.class;
+        if ("compact".equals(type)) providerClass = CompactChatWidgetProvider.class;
+        if ("grid".equals(type)) providerClass = BotGridWidgetProvider.class;
+        if ("strip".equals(type)) providerClass = BotStripWidgetProvider.class;
+        resolvePinWidget(call, providerClass);
+    }
+
+    private void resolvePinWidget(PluginCall call, Class<?> providerClass) {
         JSObject result = new JSObject();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             result.put("supported", false);
@@ -201,7 +202,7 @@ public class NativeIntegrationPlugin extends Plugin {
         AppWidgetManager manager = AppWidgetManager.getInstance(getContext());
         boolean supported = manager.isRequestPinAppWidgetSupported();
         boolean accepted = supported && manager.requestPinAppWidget(
-            new ComponentName(getContext(), RecentChatWidgetProvider.class),
+            new ComponentName(getContext(), providerClass),
             null,
             null
         );
@@ -257,14 +258,6 @@ public class NativeIntegrationPlugin extends Plugin {
         if ("confirm".equals(type)) return HapticFeedbackConstants.VIRTUAL_KEY;
         if ("reject".equals(type)) return HapticFeedbackConstants.LONG_PRESS;
         return HapticFeedbackConstants.KEYBOARD_TAP;
-    }
-
-    private static void putPreference(
-        android.content.SharedPreferences.Editor editor,
-        String key,
-        String value
-    ) {
-        if (value != null && !value.trim().isEmpty()) editor.putString(key, value.trim());
     }
 
     private static JSObject parseIntent(Context context, Intent intent) {

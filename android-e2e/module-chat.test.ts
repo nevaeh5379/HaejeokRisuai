@@ -176,15 +176,23 @@ test(
         color: "rgb(1, 2, 3)",
       });
 
-      const actionButton = await driver.$(
-        'button[risu-btn="android-e2e-module-action"]',
-      );
-      await actionButton.click();
       await driver.waitUntil(
         async () =>
-          driver?.execute(() =>
-            document.body.innerText.includes("android module button worked"),
-          ),
+          driver?.execute(() => {
+            if (
+              document.body.innerText.includes("android module button worked")
+            ) {
+              return true;
+            }
+            document
+              .querySelector<HTMLButtonElement>(
+                'button[risu-btn="android-e2e-module-action"]',
+              )
+              ?.click();
+            return document.body.innerText.includes(
+              "android module button worked",
+            );
+          }),
         {
           timeout: 30_000,
           interval: 250,

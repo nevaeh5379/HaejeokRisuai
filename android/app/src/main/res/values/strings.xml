@@ -6,6 +6,11 @@
     <string name="chat_result_channel">Chat replies</string>
     <string name="chat_result_ready">Reply received</string>
     <string name="widget_recent_chat_description">Continue your most recent RisuAI chat</string>
+    <string name="widget_compact_chat_description">Open your most recent RisuAI character</string>
+    <string name="widget_bot_grid_description">Open one of your recently used RisuAI characters</string>
+    <string name="widget_bot_strip_description">Open recent RisuAI characters from a compact row</string>
+    <string name="widget_bot_grid_title">Recent characters</string>
+    <string name="widget_character_icon_description">Character icon</string>
     <string name="widget_open_recent_chat">Tap to continue your recent chat</string>
     <string name="quick_settings_tile_label">RisuAI</string>
     <string name="title_activity_main">Risuai</string>

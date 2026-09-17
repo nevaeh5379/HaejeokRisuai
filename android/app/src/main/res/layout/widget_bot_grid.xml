@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:text="@string/widget_bot_grid_title"
+        android:textColor="@color/widget_on_background"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <LinearLayout android:id="@+id/widget_bot_cell_0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/widget_bot_icon_0" android:layout_width="52dp" android:layout_height="52dp" android:contentDescription="@string/widget_character_icon_description" android:scaleType="centerCrop" />
+            <TextView android:id="@+id/widget_bot_name_0" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:ellipsize="end" android:gravity="center" android:maxLines="1" android:textColor="@color/widget_on_background" android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/widget_bot_cell_1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/widget_bot_icon_1" android:layout_width="52dp" android:layout_height="52dp" android:contentDescription="@string/widget_character_icon_description" android:scaleType="centerCrop" />
+            <TextView android:id="@+id/widget_bot_name_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:ellipsize="end" android:gravity="center" android:maxLines="1" android:textColor="@color/widget_on_background" android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <LinearLayout android:id="@+id/widget_bot_cell_2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/widget_bot_icon_2" android:layout_width="52dp" android:layout_height="52dp" android:contentDescription="@string/widget_character_icon_description" android:scaleType="centerCrop" />
+            <TextView android:id="@+id/widget_bot_name_2" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:ellipsize="end" android:gravity="center" android:maxLines="1" android:textColor="@color/widget_on_background" android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/widget_bot_cell_3" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/widget_bot_icon_3" android:layout_width="52dp" android:layout_height="52dp" android:contentDescription="@string/widget_character_icon_description" android:scaleType="centerCrop" />
+            <TextView android:id="@+id/widget_bot_name_3" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:ellipsize="end" android:gravity="center" android:maxLines="1" android:textColor="@color/widget_on_background" android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

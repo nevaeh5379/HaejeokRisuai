@@ -5,18 +5,19 @@
     } from 'src/ts/androidNativeSurfaces';
     import {
         requestAndroidQuickSettingsTile,
-        requestAndroidRecentChatWidget,
+        requestAndroidWidget,
+        type AndroidWidgetType,
     } from 'src/ts/androidNativeIntegration';
 
     const ko = typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('ko');
     let busy = $state(false);
     let status = $state('');
 
-    async function addWidget() {
+    async function addWidget(type: AndroidWidgetType) {
         busy = true;
         try {
             await refreshAndroidNativeSurfaces();
-            const result = await requestAndroidRecentChatWidget();
+            const result = await requestAndroidWidget(type);
             status = result.supported
                 ? (result.accepted
                     ? (ko ? '홈 화면 위젯 추가 요청을 보냈습니다.' : 'Widget pin request sent.')
@@ -58,8 +59,17 @@
             : 'Connect recent chats to widgets, Quick Settings, and Android sharing.'}
     </p>
     <div class="mt-4 flex flex-wrap gap-2">
-        <Button onclick={addWidget} disabled={busy}>
-            {ko ? '최근 채팅 위젯 추가' : 'Add recent chat widget'}
+        <Button onclick={() => addWidget('recent')} disabled={busy}>
+            {ko ? '최근 채팅 카드 추가' : 'Add recent chat card'}
+        </Button>
+        <Button onclick={() => addWidget('compact')} disabled={busy}>
+            {ko ? '최근 봇 아이콘 추가' : 'Add recent bot icon'}
+        </Button>
+        <Button onclick={() => addWidget('grid')} disabled={busy}>
+            {ko ? '최근 봇 그리드 추가' : 'Add recent bot grid'}
+        </Button>
+        <Button onclick={() => addWidget('strip')} disabled={busy}>
+            {ko ? '최근 봇 가로줄 추가' : 'Add recent bot strip'}
         </Button>
         <Button onclick={addTile} disabled={busy}>
             {ko ? '빠른 설정 타일 추가' : 'Add Quick Settings tile'}
