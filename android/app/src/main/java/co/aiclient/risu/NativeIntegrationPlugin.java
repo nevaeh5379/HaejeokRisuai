@@ -153,7 +153,11 @@ public class NativeIntegrationPlugin extends Plugin {
         boolean hideStatusBar
     ) {
         android.view.Window window = activity.getWindow();
-        WindowCompat.setDecorFitsSystemWindows(window, false);
+        // Only draw the WebView behind system bars while the app explicitly
+        // requests immersive mode. When the status bar is visible, letting the
+        // decor fit system windows keeps Capacitor content below the status bar
+        // and display cutout on phones and foldable cover displays.
+        WindowCompat.setDecorFitsSystemWindows(window, !hideStatusBar);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
