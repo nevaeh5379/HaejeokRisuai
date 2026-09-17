@@ -50,8 +50,8 @@ public class BotStripWidgetProvider extends AppWidgetProvider {
         Bundle options = manager.getAppWidgetOptions(appWidgetId);
         int width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 280);
         int height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110);
-        int visibleCount = width >= 330 ? 4 : width >= 250 ? 3 : 2;
-        boolean showNames = height >= 108;
+        int visibleCount = width >= 390 ? 4 : width >= 285 ? 3 : width >= 165 ? 2 : 1;
+        boolean showNames = height >= 96;
         List<AndroidWidgetStore.Item> items = AndroidWidgetStore.load(context);
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_bot_strip);
 

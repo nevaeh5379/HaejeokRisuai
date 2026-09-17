@@ -11,62 +11,61 @@ import {
 const SHORTCUT_LIMIT = 4;
 const WIDGET_LIMIT = 8;
 const RECENT_SCAN_LIMIT = 32;
-const widgetIconCache = new Map<string, string | null>();
+const widgetArtworkCache = new Map<string, string | null>();
 
-async function loadWidgetIcon(
+async function loadWidgetArtwork(
   imageLocation: string | null,
 ): Promise<string | null> {
   if (!imageLocation || typeof document === "undefined") return null;
-  if (widgetIconCache.has(imageLocation))
-    return widgetIconCache.get(imageLocation) ?? null;
+  if (widgetArtworkCache.has(imageLocation))
+    return widgetArtworkCache.get(imageLocation) ?? null;
   try {
-    const source = await getCharImage(imageLocation, "plain", {
-      thumbnail: true,
-    });
+    // Read the original character artwork. The old thumbnail path was visibly
+    // soft once a widget card became larger than a tiny launcher avatar.
+    const source = await getCharImage(imageLocation, "plain");
     if (!source || source === "/none.webp") return null;
     const blob = await (await fetch(source)).blob();
     const bitmap = await createImageBitmap(blob);
-    const size = 112;
-    const radius = 18;
+    // Preserve each character's own artwork ratio. Only cap the longest edge
+    // so RemoteViews gets a sharp, reasonably sized bitmap instead of a
+    // low-resolution thumbnail or a multi-megabyte original.
+    const maxEdge = 640;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const radius = Math.max(12, Math.round(Math.min(width, height) * 0.055));
     const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext("2d");
     if (!context) return null;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
 
-    // Widgets mirror the spacious character cards instead of tiny circular
-    // launcher-style avatars. Bake rounded corners into the bitmap because
-    // RemoteViews cannot reliably clip ImageViews on every supported API.
     context.beginPath();
     context.moveTo(radius, 0);
-    context.lineTo(size - radius, 0);
-    context.quadraticCurveTo(size, 0, size, radius);
-    context.lineTo(size, size - radius);
-    context.quadraticCurveTo(size, size, size - radius, size);
-    context.lineTo(radius, size);
-    context.quadraticCurveTo(0, size, 0, size - radius);
+    context.lineTo(width - radius, 0);
+    context.quadraticCurveTo(width, 0, width, radius);
+    context.lineTo(width, height - radius);
+    context.quadraticCurveTo(width, height, width - radius, height);
+    context.lineTo(radius, height);
+    context.quadraticCurveTo(0, height, 0, height - radius);
     context.lineTo(0, radius);
     context.quadraticCurveTo(0, 0, radius, 0);
     context.closePath();
     context.clip();
-
-    const scale = Math.max(size / bitmap.width, size / bitmap.height);
-    const width = bitmap.width * scale;
-    const height = bitmap.height * scale;
-    context.drawImage(
-      bitmap,
-      (size - width) / 2,
-      (size - height) / 2,
-      width,
-      height,
-    );
+    context.drawImage(bitmap, 0, 0, width, height);
     bitmap.close();
-    const data = canvas.toDataURL("image/webp", 0.82);
-    widgetIconCache.set(imageLocation, data);
+
+    const data = canvas.toDataURL("image/webp", 0.9);
+    widgetArtworkCache.set(imageLocation, data);
     return data;
   } catch (error) {
-    console.warn("[NativeIntegration] Failed to prepare widget icon:", error);
-    widgetIconCache.set(imageLocation, null);
+    console.warn(
+      "[NativeIntegration] Failed to prepare widget artwork:",
+      error,
+    );
+    widgetArtworkCache.set(imageLocation, null);
     return null;
   }
 }
@@ -139,7 +138,7 @@ export function refreshAndroidNativeSurfaces(): Promise<void> {
         characterName: chat.characterName || "RisuAI",
         chatName: chat.chatName || "Chat",
         lastMessage: chat.lastMessage || "",
-        iconData: await loadWidgetIcon(chat.characterImage),
+        iconData: await loadWidgetArtwork(chat.characterImage),
       })),
     );
     await Promise.all([
