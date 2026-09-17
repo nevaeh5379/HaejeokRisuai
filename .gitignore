@@ -53,6 +53,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+android-e2e/artifacts/
 
 # Due to Cargo.lock makes the project build fail, we ignore it
 Cargo.lock
