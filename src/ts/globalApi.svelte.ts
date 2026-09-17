@@ -2250,7 +2250,7 @@ async function fetchViaProxyJobWs(
   arg: {
     body: Uint8Array;
     headers?: { [key: string]: string };
-    method: "POST" | "GET" | "PUT" | "DELETE";
+    method: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
     signal?: AbortSignal;
     requestTimeoutMs?: number;
     chatId?: string;
@@ -2459,7 +2459,7 @@ export async function fetchNative(
   arg: {
     body?: string | Uint8Array | ArrayBuffer;
     headers?: { [key: string]: string };
-    method?: "POST" | "GET" | "PUT" | "DELETE";
+    method?: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
     signal?: AbortSignal;
     useRisuTk?: boolean;
     chatId?: string;
@@ -2567,7 +2567,7 @@ export async function fetchNative(
         method: arg.method,
         signal: requestSignal,
       });
-    } else if (isTauri) {
+    } else if (isTauri || isCapacitor) {
       fetchIndex++;
       if (requestSignal && requestSignal.aborted) {
         throw new Error("aborted");
@@ -2591,6 +2591,9 @@ export async function fetchNative(
       nativeFetchNotify[fetchId] = notify;
 
       let error = "";
+      if (isCapacitor && !capStreamedFetch) {
+        throw new Error("Capacitor streamed fetch plugin is unavailable");
+      }
       while (!streamedFetchListening) {
         await sleep(100);
       }
@@ -2717,6 +2720,24 @@ export async function fetchNative(
 
       if (error !== "") {
         throw new Error(error);
+      }
+
+      // Fetch responses with these statuses must not have a body. Drain the
+      // native event queue first so a conditional module request (304) also
+      // releases its per-request buffers.
+      if ([101, 204, 205, 304].includes(status)) {
+        while (!resolved) {
+          await new Promise<void>((resolve) => {
+            notifyWaiters = resolve;
+            setTimeout(resolve, 100);
+          });
+        }
+        delete nativeFetchData[fetchId];
+        delete nativeFetchNotify[fetchId];
+        return new Response(null, {
+          headers: new Headers(resHeaders),
+          status,
+        });
       }
 
       return new Response(readableStream, {

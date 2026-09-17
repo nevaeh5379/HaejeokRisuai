@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCapacitorNodeApiFetch,
+  createRemoteNodeApiClient,
   createSameOriginNodeApiClient,
   NodeApiClient,
   NodeApiCompatibilityError,
 } from "./nodeApiClient";
+
+const mocks = vi.hoisted(() => ({
+  fetchNative: vi.fn(),
+}));
+
+vi.mock("../../globalApi.svelte", () => ({
+  fetchNative: mocks.fetchNative,
+}));
 
 const profile = {
   version: 1 as const,
@@ -13,6 +23,59 @@ const profile = {
 };
 
 describe("NodeApiClient", () => {
+  it("uses the chunked native transport for Capacitor remote storage", async () => {
+    const largeModulePayload = {
+      modules: [
+        {
+          id: "large-android-module",
+          name: "Large Android module",
+          description: "x".repeat(2 * 1024 * 1024),
+        },
+      ],
+      hash: "large-module-hash",
+    };
+    mocks.fetchNative.mockResolvedValueOnce(Response.json(largeModulePayload));
+
+    const client = await createRemoteNodeApiClient(profile, "capacitor");
+    const response = await client.request("/api/database-v2/modules", {
+      method: "GET",
+      cache: "no-cache",
+      headers: { "risu-auth": "android-auth" },
+    });
+
+    await expect(response.json()).resolves.toEqual(largeModulePayload);
+    expect(mocks.fetchNative).toHaveBeenCalledWith(
+      "https://storage.example:7443/api/database-v2/modules",
+      {
+        body: undefined,
+        headers: { "risu-auth": "android-auth" },
+        method: "GET",
+        signal: undefined,
+        logFetch: false,
+      },
+    );
+  });
+
+  it("passes remote mutation bodies through the Capacitor adapter", async () => {
+    const streamedFetch = vi.fn(async () => Response.json({ revision: 2 }));
+    const fetcher = createCapacitorNodeApiFetch(streamedFetch);
+
+    await fetcher("https://storage.example/api/database-v2/commit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ baseRevision: 1 }),
+    });
+
+    expect(streamedFetch).toHaveBeenCalledWith(
+      "https://storage.example/api/database-v2/commit",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode('{"baseRevision":1}'),
+      }),
+    );
+  });
+
   it("keeps the Node-hosted web app on explicit same-origin paths", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
     const client = createSameOriginNodeApiClient(
