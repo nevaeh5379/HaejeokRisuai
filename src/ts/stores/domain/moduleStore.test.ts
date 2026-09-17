@@ -22,6 +22,32 @@ describe("moduleStore ordering and folder positions", () => {
     moduleStore.resetForTesting();
   });
 
+  it("loads module domains sequentially for serialized native bridges", async () => {
+    let reading = false;
+    const serializedRead = async <T>(value: T): Promise<T> => {
+      if (reading) throw new Error("concurrent native bridge read");
+      reading = true;
+      await Promise.resolve();
+      reading = false;
+      return value;
+    };
+    const module: RisuModule = {
+      id: "m1",
+      name: "Persisted module",
+      description: "",
+    };
+    mockStorage.loadModules = vi.fn(() => serializedRead([module]));
+    mockStorage.loadSettingKey = vi.fn((key: string) =>
+      serializedRead(key === "enabledModules" ? [module.id] : []),
+    );
+
+    await expect(moduleStore.init(mockStorage)).resolves.toBeUndefined();
+
+    expect(moduleStore.loaded).toBe(true);
+    expect(moduleStore.list).toEqual([module]);
+    expect(moduleStore.enabledModules).toEqual([module.id]);
+  });
+
   it("refreshes module-owned state from remote storage", async () => {
     let modules: RisuModule[] = [{ id: "m1", name: "Before", description: "" }];
     mockStorage.loadModules = vi.fn(async () => structuredClone(modules));

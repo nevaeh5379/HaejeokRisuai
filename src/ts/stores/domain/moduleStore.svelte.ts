@@ -65,15 +65,16 @@ class ModuleStore
   async init(storage: ISqlStorage): Promise<void> {
     this.disposeObserver();
     this.storage = storage;
-    const [modules, enabled, folders, order, sandboxGroups] = await Promise.all(
-      [
-        storage.loadModules(),
-        storage.loadSettingKey("enabledModules"),
-        storage.loadSettingKey("moduleFolders"),
-        storage.loadSettingKey("moduleOrder"),
-        storage.loadSettingKey("moduleSandboxGroups"),
-      ],
-    );
+    // Keep domain reads sequential. Capacitor serializes every result across
+    // the native bridge, and concurrent reads can make a large module payload
+    // overlap with its related settings. One rejected bridge call used to
+    // leave the whole module store uninitialised because runtime hydration is
+    // intentionally best-effort.
+    const modules = await storage.loadModules();
+    const enabled = await storage.loadSettingKey("enabledModules");
+    const folders = await storage.loadSettingKey("moduleFolders");
+    const order = await storage.loadSettingKey("moduleOrder");
+    const sandboxGroups = await storage.loadSettingKey("moduleSandboxGroups");
     this.modules = [...modules];
     this.enabledModules = Array.isArray(enabled)
       ? enabled.filter((id): id is string => typeof id === "string")

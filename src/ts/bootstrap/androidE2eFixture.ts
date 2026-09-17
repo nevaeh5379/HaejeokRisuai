@@ -55,6 +55,12 @@ const promptFixtureModule: RisuModule = {
 };
 
 export async function prepareAndroidE2eFixture(): Promise<"ready" | "reload"> {
+  if (!moduleStore.loaded) {
+    throw new Error(
+      "Android E2E fixture cannot seed modules before ModuleStore hydration",
+    );
+  }
+
   localStorage.setItem(tosAcceptanceKey, "true");
 
   const characterIndex = characterStore.characters.findIndex(
