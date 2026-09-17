@@ -2,10 +2,12 @@ package co.aiclient.risu;
 
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.webkit.WebView;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -16,6 +18,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SplashScreen.installSplashScreen(this);
         // Hybrid E2E tools need a debuggable WebView context to inspect the
         // bundled Capacitor UI. Never expose it from release builds.
         WebView.setWebContentsDebuggingEnabled(
@@ -57,6 +60,15 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         NativeIntegrationPlugin.applySavedSystemBarAppearance(this);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        NativeIntegrationPlugin.applySavedSystemBarAppearance(this);
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().requestApplyInsets();
+        }
     }
 
     @Override
