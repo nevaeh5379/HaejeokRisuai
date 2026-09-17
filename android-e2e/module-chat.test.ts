@@ -77,10 +77,10 @@ test(
             return await driver?.execute(
               () =>
                 localStorage.getItem(
-                  "risu_android_e2e_module_fixture_ready",
+                  "risu_android_e2e_module_rendering_fixture_ready_v5",
                 ) === "true" &&
                 document.body.innerText.includes(
-                  "Android E2E Module Character",
+                  "Android E2E Module Rendering Character",
                 ),
             );
           } catch {
@@ -104,7 +104,7 @@ test(
       );
 
       const openedCharacter = await driver.execute(() => {
-        const name = "Android E2E Module Character";
+        const name = "Android E2E Module Rendering Character";
         const label = [...document.querySelectorAll<HTMLElement>("*")].find(
           (element) =>
             element.children.length === 0 &&
@@ -139,6 +139,32 @@ test(
         },
       );
 
+      await driver.waitUntil(
+        async () =>
+          driver?.execute(() =>
+            Boolean(document.querySelector("#android-e2e-prompt-render")),
+          ),
+        {
+          timeout: 30_000,
+          interval: 250,
+          timeoutMsg:
+            "The prompt-selected module did not render its CBS/HTML/CSS",
+        },
+      );
+      const promptRendering = await driver.execute(() => {
+        const rendered = document.querySelector<HTMLElement>(
+          "#android-e2e-prompt-render",
+        );
+        return {
+          text: rendered?.textContent?.trim(),
+          color: rendered ? getComputedStyle(rendered).color : undefined,
+        };
+      });
+      assert.deepEqual(promptRendering, {
+        text: "android prompt cbs: Android E2E Module Rendering Character",
+        color: "rgb(1, 2, 3)",
+      });
+
       const actionButton = await driver.$(
         'button[risu-btn="android-e2e-module-action"]',
       );
@@ -172,7 +198,8 @@ test(
             );
             return (
               hasHeading &&
-              document.body.innerText.includes("Android E2E Module Actions")
+              document.body.innerText.includes("Android E2E Module Actions") &&
+              document.body.innerText.includes("Android E2E Prompt Rendering")
             );
           }),
         {
@@ -186,7 +213,7 @@ test(
         .execute(() => ({
           bodyText: document.body.innerText.slice(0, 2_000),
           fixtureReady: localStorage.getItem(
-            "risu_android_e2e_module_fixture_ready",
+            "risu_android_e2e_module_rendering_fixture_ready_v5",
           ),
           tosAccepted: localStorage.getItem("haejeok_tos_2026_08_23"),
           href: location.href,

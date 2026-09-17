@@ -58,8 +58,25 @@ import {
 
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { getCurrentStorageProfilePlatform } from "../storage/runtime/storageProfileConnection";
+import { NodeStorage } from "../storage/files/nodeStorage";
 
 async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> {
+  const androidE2eRemoteUrl =
+    import.meta.env.VITE_ANDROID_E2E === "TRUE"
+      ? import.meta.env.VITE_ANDROID_E2E_REMOTE_URL?.trim()
+      : "";
+  if (androidE2eRemoteUrl) {
+    return {
+      version: 1,
+      mode: "remote",
+      baseUrl: normalizeRemoteBaseUrl(androidE2eRemoteUrl, {
+        allowInsecureHttp: true,
+        platform: getCurrentStorageProfilePlatform(),
+        pageProtocol: globalThis.location?.protocol,
+      }),
+      allowInsecureHttp: true,
+    };
+  }
   if (isNodeServer) {
     return {
       version: 1,
@@ -138,6 +155,18 @@ export async function loadData() {
       // ── Step 0: Initialise forageStorage (needed for asset access
       // and Node server's NodeStorage which provides the SQL admin) ──
       await forageStorage.Init({ profile: storageProfile, nodeApiClient });
+      const androidE2eRemotePassword =
+        import.meta.env.VITE_ANDROID_E2E === "TRUE"
+          ? import.meta.env.VITE_ANDROID_E2E_REMOTE_PASSWORD
+          : undefined;
+      if (
+        androidE2eRemotePassword &&
+        forageStorage.realStorage instanceof NodeStorage
+      ) {
+        await forageStorage.realStorage.connectWithPassword(
+          androidE2eRemotePassword,
+        );
+      }
 
       // ── Step 1: Initialise SQL storage backend ────────────────────
       const storage = await initSqlStorageOrGate();

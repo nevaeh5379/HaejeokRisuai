@@ -151,7 +151,13 @@ async function main(): Promise<void> {
   if (process.env.ANDROID_E2E_SKIP_BUILD !== "1") {
     const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
     await run(pnpm, ["run", "android:build:debug"], {
-      env: { ...toolEnv, VITE_ANDROID_E2E: "TRUE" },
+      env: {
+        ...toolEnv,
+        VITE_ANDROID_E2E: "TRUE",
+        VITE_ANDROID_E2E_REMOTE_URL: process.env.ANDROID_E2E_REMOTE_URL ?? "",
+        VITE_ANDROID_E2E_REMOTE_PASSWORD:
+          process.env.ANDROID_E2E_REMOTE_PASSWORD ?? "",
+      },
     });
   }
   if (!existsSync(apkPath)) {
@@ -185,8 +191,10 @@ async function main(): Promise<void> {
 
   try {
     await waitForAppium(appium);
+    const testFilter = process.env.ANDROID_E2E_TEST?.trim();
     const tests = readdirSync(resolve(projectRoot, "android-e2e"))
       .filter((name) => name.endsWith(".test.ts"))
+      .filter((name) => !testFilter || name.includes(testFilter))
       .map((name) => resolve(projectRoot, "android-e2e", name));
     if (tests.length === 0)
       throw new Error("No android-e2e/*.test.ts files were found.");
