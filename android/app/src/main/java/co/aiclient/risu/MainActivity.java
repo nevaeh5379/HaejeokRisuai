@@ -1,5 +1,6 @@
 package co.aiclient.risu;
 
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
 import android.webkit.WebView;
@@ -29,12 +30,14 @@ public class MainActivity extends BridgeActivity {
                         NativeImagePlugin.class,
                         NativeChatPlugin.class,
                         NativeAppControlPlugin.class,
+                        NativeIntegrationPlugin.class,
                         NativeUpdaterPlugin.class
                 ));
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().setWebViewClient(new RisuWebViewClient(getBridge(), getApplicationContext()));
         }
+        handleNativeIntent(getIntent());
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -48,5 +51,21 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNativeIntent(intent);
+    }
+
+    private void handleNativeIntent(Intent intent) {
+        if (!NativeIntegrationPlugin.enqueueIntent(intent)) return;
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        getBridge().getWebView().evaluateJavascript(
+                "window.dispatchEvent(new Event('risu:native-entry-available'))",
+                null
+        );
     }
 }

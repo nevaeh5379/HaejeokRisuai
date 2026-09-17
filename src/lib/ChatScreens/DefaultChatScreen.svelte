@@ -36,6 +36,7 @@
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
+    import { androidComposerPrefill, clearAndroidComposerPrefill } from 'src/ts/androidNativeEntryState';
     import {
         getNextFirstMessageIndex,
         getPreviousFirstMessageIndex,
@@ -687,6 +688,25 @@
     let inputEle:HTMLTextAreaElement = $state()
     let inputTranslateHeight = $state("44px")
     let inputTranslateEle:HTMLTextAreaElement = $state()
+    let lastNativePrefillId = 0
+
+    $effect(() => {
+        const prefill = $androidComposerPrefill
+        if (!prefill || prefill.id === lastNativePrefillId || !isFocusedPane) return
+        if (!currentCharacter?.chaId || !currentChatSession?.id) return
+        if (prefill.characterId && prefill.characterId !== currentCharacter.chaId) return
+        if (prefill.chatId && prefill.chatId !== currentChatSession.id) return
+
+        const incoming = prefill.text.trim()
+        lastNativePrefillId = prefill.id
+        clearAndroidComposerPrefill(prefill.id)
+        if (!incoming) return
+        messageInput = messageInput.trim() ? `${messageInput}\n${incoming}` : incoming
+        void tick().then(() => {
+            updateInputSizeAll()
+            inputEle?.focus()
+        })
+    })
 
     function updateInputSizeAll() {
         updateInputSize()

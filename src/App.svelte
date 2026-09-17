@@ -16,6 +16,8 @@
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
+    import { installAndroidNativeEntryHandler } from './ts/androidNativeIntegration';
+    import { routeAndroidNativeEntry } from './ts/androidNativeEntryRouter';
 
 
   
@@ -34,6 +36,14 @@
 
     onMount(() => {
         if (!isCapacitor) return
+
+        const removeNativeEntryHandler = installAndroidNativeEntryHandler(async (entry) => {
+            try {
+                await routeAndroidNativeEntry(entry)
+            } catch (error) {
+                console.error('[NativeIntegration] Failed to route Android entry:', error)
+            }
+        })
 
         const handleAndroidBack = async () => {
             if ($alertStore.type !== 'none') {
@@ -107,7 +117,10 @@
         }
 
         window.addEventListener('risu:android-back', handleAndroidBack)
-        return () => window.removeEventListener('risu:android-back', handleAndroidBack)
+        return () => {
+            window.removeEventListener('risu:android-back', handleAndroidBack)
+            removeNativeEntryHandler()
+        }
     })
 
     const legalLoader = () => import('./lib/Others/Legal.svelte')
