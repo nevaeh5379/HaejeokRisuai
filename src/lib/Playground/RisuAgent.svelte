@@ -5,6 +5,7 @@
     Bot,
     ChevronDown,
     Cpu,
+    History,
     MessageSquarePlus,
     Paperclip,
     RefreshCw,
@@ -74,6 +75,11 @@
     return chats;
   });
 
+  // Header shows the current conversation instead of permanent branding.
+  const activeChatTitle = $derived(
+    activeChat?.name?.trim() || language.risuAgent.session,
+  );
+
   const isGenerating = $derived(
     Boolean(activeChatId && $activeGenerationChatIds.has(activeChatId)),
   );
@@ -114,6 +120,12 @@
   function scrollToBottom() {
     if (!messagesEl) return;
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function handleEscape(event: KeyboardEvent) {
+    if (event.key === "Escape" && showSessions) {
+      showSessions = false;
+    }
   }
 
   function openContextPicker() {
@@ -344,58 +356,53 @@
   });
 </script>
 
-<div class="flex h-full min-h-0 w-full flex-col bg-bgcolor text-textcolor">
-  <!-- Header -->
-  <header
-    class="flex flex-wrap items-center gap-2 border-b border-borderc px-3 py-2 md:px-4"
-  >
+<svelte:window onkeydown={handleEscape} />
+
+<div class="relative flex h-full min-h-0 w-full flex-col bg-bgcolor text-textcolor">
+  <!-- Compact header: back, conversation history, then quiet controls -->
+  <header class="flex shrink-0 items-center gap-1 px-2 py-2 md:px-3">
     <button
-      class="rounded-lg p-2 text-textcolor2 transition hover:bg-darkbutton hover:text-textcolor"
+      class="shrink-0 rounded-full p-2 text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor"
       onclick={() => PlaygroundStore.set(1)}
       aria-label={language.risuAgent.back}
     >
       <ArrowLeft size={18} />
     </button>
-    <button
-      class="flex items-center gap-2 rounded-lg p-2 text-textcolor2 transition hover:bg-darkbutton hover:text-textcolor lg:hidden"
-      onclick={() => (showSessions = !showSessions)}
-      aria-label={language.risuAgent.conversations}
-    >
-      <ChevronDown size={18} />
-    </button>
 
-    <div class="flex min-w-0 items-center gap-2">
-      <div
-        class="flex h-8 w-8 items-center justify-center rounded-full bg-selected"
+    <!-- Conversation history control + anchored popover -->
+    <div class="relative min-w-0">
+      <button
+        class="flex min-w-0 max-w-[55vw] items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor sm:max-w-xs"
+        onclick={() => (showSessions = !showSessions)}
+        aria-label={language.risuAgent.conversations}
+        aria-expanded={showSessions}
       >
-        <Bot size={18} />
-      </div>
-      <div class="min-w-0">
-        <div class="truncate text-sm font-semibold">
-          {language.risuAgent.title}
-        </div>
-        <div class="truncate text-[11px] text-textcolor2">
-          {language.risuAgent.subtitle}
-        </div>
-      </div>
+        <History size={15} class="shrink-0" />
+        <span class="truncate">{activeChatTitle}</span>
+        <ChevronDown
+          size={14}
+          class="shrink-0 transition {showSessions ? 'rotate-180' : ''}"
+        />
+      </button>
     </div>
 
     <div class="grow"></div>
 
-    <!-- Model chip -->
+    <!-- Model -->
     <button
-      class="flex max-w-[45vw] items-center gap-1.5 rounded-full border border-borderc bg-darkbg px-3 py-1 text-xs text-textcolor2 transition hover:text-textcolor"
+      class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor"
       onclick={() => openPresetList.set(true)}
       title={language.risuAgent.changeModel}
+      aria-label={language.risuAgent.changeModel}
     >
-      <Cpu size={13} />
-      <span class="truncate">{modelName}</span>
+      <Cpu size={14} class="shrink-0" />
+      <span class="hidden max-w-[10rem] truncate sm:inline">{modelName}</span>
     </button>
 
-    <!-- Context chip -->
+    <!-- Context -->
     {#if scopeCharacter}
       <span
-        class="flex max-w-[60vw] items-center gap-1.5 rounded-full border border-borderc bg-darkbg px-3 py-1 text-xs"
+        class="flex min-w-0 max-w-[45vw] items-center gap-1.5 rounded-full bg-textcolor/5 px-2.5 py-1.5 text-xs sm:max-w-xs"
       >
         <User size={13} class="shrink-0 text-textcolor2" />
         <span class="truncate">{scopeCharacter.name}</span>
@@ -405,7 +412,7 @@
           </span>
         {/if}
         <button
-          class="ml-0.5 shrink-0 text-textcolor2 transition hover:text-draculared disabled:opacity-40"
+          class="ml-0.5 shrink-0 rounded-full p-0.5 text-textcolor2 transition hover:text-draculared disabled:opacity-40"
           onclick={detachContext}
           disabled={busy}
           aria-label={language.risuAgent.detachContext}
@@ -415,40 +422,43 @@
       </span>
     {:else}
       <button
-        class="flex items-center gap-1.5 rounded-full border border-dashed border-borderc px-3 py-1 text-xs text-textcolor2 transition hover:border-textcolor2 hover:text-textcolor disabled:opacity-40"
+        class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor disabled:opacity-40"
         onclick={openContextPicker}
         disabled={busy}
+        aria-label={language.risuAgent.attachContext}
       >
-        <Paperclip size={13} />
-        {language.risuAgent.attachContext}
+        <Paperclip size={13} class="shrink-0" />
+        <span class="hidden sm:inline">{language.risuAgent.attachContext}</span>
       </button>
     {/if}
   </header>
 
-  <div class="relative flex min-h-0 grow">
-    <!-- Session rail (desktop) -->
-    <aside
-      class="hidden w-64 shrink-0 flex-col border-r border-borderc lg:flex"
+  <!-- Conversation history popover: anchored dropdown on wide screens,
+       contained overlay on narrow ones. Height-bounded, never a sidebar. -->
+  {#if showSessions}
+    <div
+      class="absolute inset-0 z-30 bg-black/40 lg:bg-transparent"
+      role="presentation"
+      onclick={() => (showSessions = false)}
+    ></div>
+    <div
+      class="absolute left-2 top-14 z-40 flex w-[min(24rem,calc(100%_-_1rem))] flex-col overflow-hidden rounded-2xl bg-darkbg shadow-lg ring-1 ring-textcolor/10 lg:left-3"
     >
-      <div class="p-3">
-        <button
-          class="flex w-full items-center justify-center gap-2 rounded-xl border border-borderc bg-darkbg px-3 py-2 text-sm transition hover:bg-darkbutton"
-          onclick={newConversation}
-          disabled={busy}
-        >
-          <MessageSquarePlus size={16} />
-          {language.risuAgent.newConversation}
-        </button>
+      <div
+        class="px-3 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-textcolor2"
+      >
+        {language.risuAgent.conversations}
       </div>
-      <div class="min-h-0 grow overflow-y-auto px-2 pb-3">
+      <div class="max-h-[min(60vh,20rem)] overflow-y-auto p-1.5">
         {#each agentChats as chat (chat.id)}
           <button
-            class="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm transition hover:bg-darkbutton disabled:opacity-40 {chat.id ===
+            class="flex w-full items-center rounded-xl px-3 py-2 text-start text-sm transition hover:bg-textcolor/5 disabled:opacity-40 {chat.id ===
             activeChatId
-              ? 'bg-selected'
-              : ''}"
+              ? 'bg-textcolor/10 font-medium text-textcolor'
+              : 'text-textcolor2'}"
             onclick={() => chat.id && switchSession(chat.id)}
             disabled={busy}
+            aria-current={chat.id === activeChatId ? "true" : undefined}
           >
             <span class="truncate">
               {chat.name || language.risuAgent.session}
@@ -456,177 +466,148 @@
           </button>
         {/each}
       </div>
-    </aside>
-
-    <!-- Session drawer (narrow) -->
-    {#if showSessions}
-      <div
-        class="absolute inset-0 z-30 bg-black/40 lg:hidden"
-        role="presentation"
-        onclick={() => (showSessions = false)}
-      >
-        <div
-          class="h-full w-72 max-w-[80%] overflow-y-auto border-r border-borderc bg-bgcolor p-3"
-          role="presentation"
-          onclick={(event) => event.stopPropagation()}
+      <div class="p-1.5 pt-0">
+        <button
+          class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor disabled:opacity-40"
+          onclick={newConversation}
+          disabled={busy}
         >
-          <button
-            class="mb-2 flex w-full items-center justify-center gap-2 rounded-xl border border-borderc bg-darkbg px-3 py-2 text-sm transition hover:bg-darkbutton"
-            onclick={newConversation}
-            disabled={busy}
+          <MessageSquarePlus size={15} class="shrink-0" />
+          {language.risuAgent.newConversation}
+        </button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Conversation canvas: single centered column at every breakpoint -->
+  <div
+    bind:this={messagesEl}
+    class="min-h-0 grow overflow-y-auto px-4 pb-4 pt-4 md:px-6 md:pt-8"
+  >
+    <div class="mx-auto flex w-full max-w-3xl flex-col gap-5">
+      {#if loading}
+        <div class="py-16 text-center text-sm text-textcolor2">
+          {language.risuAgent.loading}
+        </div>
+      {:else if messages.length === 0}
+        <div class="py-14 text-center">
+          <div
+            class="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-textcolor/5"
           >
-            <MessageSquarePlus size={16} />
-            {language.risuAgent.newConversation}
-          </button>
-          {#each agentChats as chat (chat.id)}
-            <button
-              class="mb-1 flex w-full items-center rounded-lg px-3 py-2 text-start text-sm transition hover:bg-darkbutton disabled:opacity-40 {chat.id ===
-              activeChatId
-                ? 'bg-selected'
-                : ''}"
-              onclick={() => chat.id && switchSession(chat.id)}
-              disabled={busy}
+            <Bot size={22} class="text-textcolor2" />
+          </div>
+          <div class="text-lg font-semibold">
+            {language.risuAgent.emptyTitle}
+          </div>
+          <div class="mx-auto mt-1 max-w-md text-sm text-textcolor2">
+            {language.risuAgent.emptyBody}
+          </div>
+        </div>
+      {/if}
+
+      {#each messages as message, index (message.chatId ?? index)}
+        {#if message.role === "user"}
+          <div class="flex justify-end">
+            <div
+              class="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-textcolor/10 px-4 py-2.5 text-sm leading-relaxed"
             >
-              <span class="truncate">
-                {chat.name || language.risuAgent.session}
-              </span>
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- Conversation -->
-    <div class="flex min-h-0 min-w-0 grow flex-col">
-      <div
-        bind:this={messagesEl}
-        class="min-h-0 grow overflow-y-auto px-3 py-4 md:px-6"
-      >
-        <div class="mx-auto flex w-full max-w-3xl flex-col gap-4">
-          {#if loading}
-            <div class="py-16 text-center text-sm text-textcolor2">
-              {language.risuAgent.loading}
+              {message.data}
             </div>
-          {:else if messages.length === 0}
-            <div class="py-16 text-center">
-              <div
-                class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-selected"
-              >
-                <Bot size={24} />
-              </div>
-              <div class="text-lg font-semibold">
-                {language.risuAgent.emptyTitle}
-              </div>
-              <div class="mx-auto mt-1 max-w-md text-sm text-textcolor2">
-                {language.risuAgent.emptyBody}
-              </div>
+          </div>
+        {:else if !stripToolCalls(message.data ?? "") && index === messages.length - 1 && busy}
+          <div class="flex items-center gap-2 text-textcolor2">
+            <span
+              class="flex h-7 w-7 items-center justify-center rounded-full bg-textcolor/5"
+            >
+              <Bot size={15} />
+            </span>
+            <span class="flex gap-1">
+              <span
+                class="h-1.5 w-1.5 animate-bounce rounded-full bg-textcolor2 [animation-delay:0ms]"
+              ></span>
+              <span
+                class="h-1.5 w-1.5 animate-bounce rounded-full bg-textcolor2 [animation-delay:150ms]"
+              ></span>
+              <span
+                class="h-1.5 w-1.5 animate-bounce rounded-full bg-textcolor2 [animation-delay:300ms]"
+              ></span>
+            </span>
+          </div>
+        {:else}
+          <div class="flex gap-2.5">
+            <span
+              class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-textcolor/5 text-textcolor2"
+            >
+              <Bot size={15} />
+            </span>
+            <div
+              class="chattext prose prose-sm min-w-0 max-w-none break-words text-sm leading-relaxed text-textcolor"
+            >
+              {@html renderAssistant(message.data)}
             </div>
-          {/if}
+          </div>
+        {/if}
+      {/each}
+    </div>
+  </div>
 
-          {#each messages as message, index (message.chatId ?? index)}
-            {#if message.role === "user"}
-              <div class="flex justify-end">
-                <div
-                  class="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-selected px-4 py-2.5 text-sm leading-relaxed"
-                >
-                  {message.data}
-                </div>
-              </div>
-            {:else if !stripToolCalls(message.data ?? "") && index === messages.length - 1 && busy}
-              <div class="flex items-center gap-2 text-textcolor2">
-                <span
-                  class="flex h-7 w-7 items-center justify-center rounded-full bg-darkbg"
-                >
-                  <Bot size={15} />
-                </span>
-                <span class="flex gap-1">
-                  <span
-                    class="h-1.5 w-1.5 animate-bounce rounded-full bg-textcolor2 [animation-delay:0ms]"
-                  ></span>
-                  <span
-                    class="h-1.5 w-1.5 animate-bounce rounded-full bg-textcolor2 [animation-delay:150ms]"
-                  ></span>
-                  <span
-                    class="h-1.5 w-1.5 animate-bounce rounded-full bg-textcolor2 [animation-delay:300ms]"
-                  ></span>
-                </span>
-              </div>
-            {:else}
-              <div class="flex gap-2">
-                <span
-                  class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-darkbg"
-                >
-                  <Bot size={15} />
-                </span>
-                <div
-                  class="chattext prose prose-sm min-w-0 max-w-none break-words text-sm leading-relaxed text-textcolor"
-                >
-                  {@html renderAssistant(message.data)}
-                </div>
-              </div>
-            {/if}
-          {/each}
-        </div>
-      </div>
-
+  <!-- Floating composer surface -->
+  <div class="shrink-0 px-3 pb-3 md:px-6 md:pb-5">
+    <div class="mx-auto w-full max-w-3xl">
       {#if errorText}
         <div
-          class="mx-auto mb-2 w-full max-w-3xl rounded-lg border border-draculared/40 bg-draculared/10 px-3 py-2 text-xs text-textcolor"
+          class="mb-2 rounded-xl bg-draculared/10 px-3 py-2 text-xs text-textcolor ring-1 ring-draculared/30"
         >
           {errorText}
         </div>
       {/if}
 
-      <!-- Composer -->
-      <div class="border-t border-borderc px-3 pb-3 pt-2 md:px-6 md:pb-4">
-        <div class="mx-auto w-full max-w-3xl">
-          <div
-            class="flex items-end gap-2 rounded-2xl border border-borderc bg-darkbg px-3 py-2"
+      <div
+        class="flex items-end gap-1.5 rounded-3xl bg-textcolor/5 px-2.5 py-2 shadow-sm ring-1 ring-textcolor/10 transition focus-within:ring-textcolor/25"
+      >
+        <textarea
+          bind:this={inputEl}
+          bind:value={input}
+          onkeydown={handleComposerKey}
+          rows="1"
+          placeholder={language.risuAgent.inputPlaceholder}
+          class="max-h-[200px] min-h-[22px] w-full resize-none bg-transparent px-1.5 py-1.5 text-sm leading-relaxed text-textcolor outline-none placeholder:text-textcolor2"
+        ></textarea>
+        {#if busy}
+          <button
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-draculared text-white transition hover:opacity-90"
+            onclick={stop}
+            aria-label={language.risuAgent.stop}
           >
-            <textarea
-              bind:this={inputEl}
-              bind:value={input}
-              onkeydown={handleComposerKey}
-              rows="1"
-              placeholder={language.risuAgent.inputPlaceholder}
-              class="max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-1 text-sm leading-relaxed text-textcolor outline-none placeholder:text-textcolor2"
-            ></textarea>
-            {#if busy}
-              <button
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-draculared text-white transition hover:opacity-90"
-                onclick={stop}
-                aria-label={language.risuAgent.stop}
-              >
-                <Square size={15} />
-              </button>
-            {:else}
-              <button
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-selected text-textcolor transition hover:opacity-90 disabled:opacity-40"
-                onclick={send}
-                disabled={!input.trim()}
-                aria-label={language.risuAgent.send}
-              >
-                <Send size={15} />
-              </button>
-            {/if}
-          </div>
-          <div class="mt-1.5 flex items-center justify-between gap-2">
-            <span class="truncate text-[11px] text-textcolor2">
-              {scopeCharacter
-                ? language.risuAgent.contextAttached
-                : language.risuAgent.noContext}
-            </span>
-            {#if !busy && messages[messages.length - 1]?.role === "char"}
-              <button
-                class="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-textcolor2 transition hover:text-textcolor"
-                onclick={regenerate}
-              >
-                <RefreshCw size={12} />
-                {language.risuAgent.regenerate}
-              </button>
-            {/if}
-          </div>
-        </div>
+            <Square size={14} />
+          </button>
+        {:else}
+          <button
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-textcolor text-bgcolor transition hover:opacity-90 disabled:opacity-30"
+            onclick={send}
+            disabled={!input.trim()}
+            aria-label={language.risuAgent.send}
+          >
+            <Send size={14} />
+          </button>
+        {/if}
+      </div>
+
+      <div class="mt-1.5 flex items-center justify-between gap-2 px-2">
+        <span class="truncate text-[11px] text-textcolor2">
+          {scopeCharacter
+            ? language.risuAgent.contextAttached
+            : language.risuAgent.noContext}
+        </span>
+        {#if !busy && messages[messages.length - 1]?.role === "char"}
+          <button
+            class="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-textcolor2 transition hover:text-textcolor"
+            onclick={regenerate}
+          >
+            <RefreshCw size={12} />
+            {language.risuAgent.regenerate}
+          </button>
+        {/if}
       </div>
     </div>
   </div>
