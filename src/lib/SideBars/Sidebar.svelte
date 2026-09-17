@@ -67,7 +67,13 @@
   let menuMode = $state(0);
   let devTool = $state(false)
 
+  // Risu Agent owns the sidebar panel while its Playground surface is open, so
+  // the ordinary recent-session list never leaks into the agent experience.
+  const risuAgentSidebar = $derived($PlaygroundStore === 20)
+  const compactSidebarPanel = $derived(btwRuntime.open || risuAgentSidebar)
+
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
+  const risuAgentSidebarLoader = () => import('./RisuAgentSidebar.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
   const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
   const btwPanelLoader = () => import('../ChatScreens/BtwPanel.svelte')
@@ -1089,10 +1095,10 @@
 {/if}
 <div
   class="setting-area rs-sidebar-panel relative h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
-  class:overflow-hidden={btwRuntime.open}
-  class:overflow-y-auto={!btwRuntime.open}
-  class:py-0={btwRuntime.open}
-  class:py-6={!btwRuntime.open}
+  class:overflow-hidden={compactSidebarPanel}
+  class:overflow-y-auto={!compactSidebarPanel}
+  class:py-0={compactSidebarPanel}
+  class:py-6={!compactSidebarPanel}
   class:risu-sidebar={!$sideBarClosing}
   class:w-96={$sideBarSize === 0}
   class:w-110={$sideBarSize === 1}
@@ -1103,9 +1109,9 @@
   class:min-w-110={!$DynamicGUI && $sideBarSize === 1}
   class:min-w-124={!$DynamicGUI && $sideBarSize === 2}
   class:min-w-138={!$DynamicGUI && $sideBarSize === 3}
-  class:px-0={btwRuntime.open}
-  class:px-2={$DynamicGUI && !btwRuntime.open}
-  class:px-4={!$DynamicGUI && !btwRuntime.open}
+  class:px-0={compactSidebarPanel}
+  class:px-2={$DynamicGUI && !compactSidebarPanel}
+  class:px-4={!$DynamicGUI && !compactSidebarPanel}
   class:dynamic-sidebar={$DynamicGUI}
   class:hidden={hidden}
   class:flex={!hidden}
@@ -1135,6 +1141,8 @@
   {#if sideBarMode === 0}
     {#if btwRuntime.open}
       <LazyComponent loader={btwPanelLoader} />
+    {:else if risuAgentSidebar}
+      <LazyComponent loader={risuAgentSidebarLoader} />
     {:else if $selectedCharID < 0 || $settingsOpen}
       <LazyComponent loader={recentSessionsLoader} props={{ reseter }} />
     {:else if characterStore.characters[$selectedCharID]?.chaId === '§playground'}

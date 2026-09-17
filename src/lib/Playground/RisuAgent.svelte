@@ -25,16 +25,17 @@
   import { RISU_AGENT_CHARACTER_ID } from "src/ts/systemCharacters";
   import {
     appendRisuAgentUserMessage,
-    createRisuAgentSession,
-    ensureRisuAgentCharacter,
+    getRisuAgentCharacter,
     registerRisuAgentSessionScope,
     removeLastRisuAgentReply,
-    resolveRisuAgentSession,
     restoreRisuAgentReply,
-    selectRisuAgentSession,
     setRisuAgentSessionContext,
     type RemovedRisuAgentReply,
   } from "src/ts/agent/risuAgentStore";
+  import {
+    risuAgentRuntime,
+    sortRisuAgentChats,
+  } from "src/ts/agent/risuAgentRuntime.svelte";
   import {
     canMutateRisuAgentSession,
     resolveRisuAgentSessionContext,
@@ -43,37 +44,31 @@
   import type { character, Chat, Message } from "src/ts/storage/database/schema";
   import LazyComponent from "../Others/LazyComponent.svelte";
 
-  let loading = $state(true);
-  let sending = $state(false);
-  let errorText = $state<string | null>(null);
   let input = $state("");
-  let activeChatId = $state<string | null>(null);
   let showSessions = $state(false);
   let showContextPicker = $state(false);
   let inputEl = $state<HTMLTextAreaElement | null>(null);
   let messagesEl = $state<HTMLDivElement | null>(null);
   let abortController: AbortController | null = null;
 
-  const agentChar = $derived.by((): character | null => {
-    const found = characterStore.characters.find(
-      (candidate) => candidate?.chaId === RISU_AGENT_CHARACTER_ID,
-    );
-    if (!found || found.type === "group") return null;
-    return found as character;
-  });
+  // Shared with the dedicated sidebar so both surfaces always agree on the
+  // active session and on whether generation is in flight.
+  const activeChatId = $derived(risuAgentRuntime.activeChatId);
+  const loading = $derived(risuAgentRuntime.loading);
+  const errorText = $derived(risuAgentRuntime.errorText);
+
+  const agentChar = $derived(getRisuAgentCharacter() ?? null);
 
   const activeChat = $derived.by((): Chat | null => {
     if (!agentChar || !activeChatId) return null;
-    return (agentChar.chats ?? []).find((chat) => chat.id === activeChatId) ?? null;
+    return (
+      (agentChar.chats ?? []).find((chat) => chat.id === activeChatId) ?? null
+    );
   });
 
   const messages = $derived(activeChat?.message ?? ([] as Message[]));
 
-  const agentChats = $derived.by(() => {
-    const chats = [...(agentChar?.chats ?? [])];
-    chats.sort((a, b) => (b.lastDate ?? 0) - (a.lastDate ?? 0));
-    return chats;
-  });
+  const agentChats = $derived(sortRisuAgentChats(agentChar?.chats));
 
   // Header shows the current conversation instead of permanent branding.
   const activeChatTitle = $derived(
@@ -83,7 +78,7 @@
   const isGenerating = $derived(
     Boolean(activeChatId && $activeGenerationChatIds.has(activeChatId)),
   );
-  const busy = $derived(sending || isGenerating);
+  const busy = $derived(risuAgentRuntime.sending || isGenerating);
 
   const activeContext = $derived(resolveRisuAgentSessionContext(activeChat));
 
@@ -148,42 +143,16 @@
     await setRisuAgentSessionContext(agentChar, activeChatId, null);
   }
 
-  async function loadChat(chatId: string | null | undefined) {
-    if (!chatId) return;
-    // Loads only the recent page; the standard pipeline pulls full history
-    // when a generation actually starts.
-    await characterStore.ensureChatMessages(chatId);
-  }
-
   async function switchSession(chatId: string) {
-    if (!agentChar || !chatId || chatId === activeChatId) {
-      showSessions = false;
-      return;
-    }
-    // Session switching is disabled while generating so the in-flight request
-    // keeps the scope it started with.
-    if (!canMutateRisuAgentSession(busy)) return;
-    activeChatId = chatId;
-    selectRisuAgentSession(agentChar, chatId);
     showSessions = false;
-    await loadChat(chatId);
-    const chat = await resolveChatAfterAwait(chatId);
-    if (chat) registerRisuAgentSessionScope(chat);
+    await risuAgentRuntime.switchTo(chatId);
     await tick();
     scrollToBottom();
   }
 
   async function newConversation() {
-    if (!agentChar || !canMutateRisuAgentSession(busy)) return;
-    const created = await createRisuAgentSession(agentChar);
-    const createdId = created.id ?? null;
-    if (!createdId) return;
-    activeChatId = createdId;
-    selectRisuAgentSession(agentChar, createdId);
     showSessions = false;
-    await loadChat(createdId);
-    const chat = await resolveChatAfterAwait(createdId);
-    if (chat) registerRisuAgentSessionScope(chat);
+    await risuAgentRuntime.createNewConversation();
     await tick();
     scrollToBottom();
   }
@@ -204,8 +173,8 @@
     const chatId = activeChatId;
     if (!chatId || busy) return;
 
-    sending = true;
-    errorText = null;
+    risuAgentRuntime.sending = true;
+    risuAgentRuntime.errorText = null;
     // Captured only for regenerate: rolled back if generation does not
     // succeed, so a failed retry never destroys the prior answer.
     let removedReply: RemovedRisuAgentReply | null = null;
@@ -245,12 +214,12 @@
       });
       generationSucceeded = ok && !controller.signal.aborted;
       if (!ok && !controller.signal.aborted) {
-        errorText = language.risuAgent.sendFailed;
+        risuAgentRuntime.errorText = language.risuAgent.sendFailed;
       }
     } catch (error) {
       if (!controller.signal.aborted) {
         const message = error instanceof Error ? error.message : String(error);
-        errorText = message;
+        risuAgentRuntime.errorText = message;
         alertError(message);
       }
     } finally {
@@ -259,7 +228,7 @@
         if (freshChat) await restoreRisuAgentReply(freshChat, removedReply);
       }
       abortController = null;
-      sending = false;
+      risuAgentRuntime.sending = false;
       const finishedChatId = chatId;
       if (finishedChatId) compactChatMessages(finishedChatId);
       await tick();
@@ -308,36 +277,10 @@
   }
 
   onMount(() => {
-    let disposed = false;
-    void (async () => {
-      try {
-        const { character } = await ensureRisuAgentCharacter();
-        if (disposed) return;
-        const existing = resolveRisuAgentSession(character, activeChatId);
-        let chatId = existing?.id ?? null;
-        if (!chatId) {
-          const created = await createRisuAgentSession(character);
-          chatId = created.id ?? null;
-        }
-        if (disposed) return;
-        activeChatId = chatId;
-        if (chatId) {
-          selectRisuAgentSession(character, chatId);
-          await loadChat(chatId);
-          const chat = await resolveChatAfterAwait(chatId);
-          if (chat) registerRisuAgentSessionScope(chat);
-        }
-      } catch (error) {
-        if (!disposed) {
-          errorText = error instanceof Error ? error.message : String(error);
-        }
-      } finally {
-        if (!disposed) loading = false;
-      }
-    })();
+    // Shared with the sidebar, so a concurrent mount still creates one session.
+    void risuAgentRuntime.ensureInitialized();
 
     return () => {
-      disposed = true;
       abortController?.abort();
       // Deliberately do not clear the scope registry here: an in-flight
       // generation (or another mounted surface) may still need its own scope.
@@ -359,7 +302,8 @@
 <svelte:window onkeydown={handleEscape} />
 
 <div class="relative flex h-full min-h-0 w-full flex-col bg-bgcolor text-textcolor">
-  <!-- Compact header: back, conversation history, then quiet controls -->
+  <!-- Compact header: back, current conversation, then quiet controls.
+       Desktop session switching lives in the dedicated app sidebar. -->
   <header class="flex shrink-0 items-center gap-1 px-2 py-2 md:px-3">
     <button
       class="shrink-0 rounded-full p-2 text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor"
@@ -369,10 +313,18 @@
       <ArrowLeft size={18} />
     </button>
 
-    <!-- Conversation history control + anchored popover -->
-    <div class="relative min-w-0">
+    <!-- Desktop: non-interactive current-conversation label -->
+    <div
+      class="hidden min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-sm text-textcolor2 lg:flex"
+    >
+      <History size={15} class="shrink-0" />
+      <span class="truncate">{activeChatTitle}</span>
+    </div>
+
+    <!-- Mobile: history control + contained sheet -->
+    <div class="relative min-w-0 lg:hidden">
       <button
-        class="flex min-w-0 max-w-[55vw] items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor sm:max-w-xs"
+        class="flex min-w-0 max-w-[55vw] items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm text-textcolor2 transition hover:bg-textcolor/5 hover:text-textcolor"
         onclick={() => (showSessions = !showSessions)}
         aria-label={language.risuAgent.conversations}
         aria-expanded={showSessions}
@@ -433,16 +385,15 @@
     {/if}
   </header>
 
-  <!-- Conversation history popover: anchored dropdown on wide screens,
-       contained overlay on narrow ones. Height-bounded, never a sidebar. -->
+  <!-- Mobile-only conversation history sheet: height-bounded, never a rail. -->
   {#if showSessions}
     <div
-      class="absolute inset-0 z-30 bg-black/40 lg:bg-transparent"
+      class="absolute inset-0 z-30 bg-black/40 lg:hidden"
       role="presentation"
       onclick={() => (showSessions = false)}
     ></div>
     <div
-      class="absolute left-2 top-14 z-40 flex w-[min(24rem,calc(100%_-_1rem))] flex-col overflow-hidden rounded-2xl bg-darkbg shadow-lg lg:left-3"
+      class="absolute left-2 top-14 z-40 flex w-[min(24rem,calc(100%_-_1rem))] flex-col overflow-hidden rounded-2xl bg-darkbg shadow-lg lg:hidden"
     >
       <div
         class="px-3 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-textcolor2"
