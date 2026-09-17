@@ -289,8 +289,13 @@ export async function callMCPTool(
 ): Promise<RPCToolCallContent[]> {
   // Risu Agent generation is served exclusively by the scoped, read-only access
   // client. This prevents a hallucinated tool name from falling through to the
-  // general (read + write) Risu Access MCP.
-  if (isRisuAgentCharacterId(context?.currentChar?.chaId)) {
+  // general (read + write) Risu Access MCP. Both the generation character and
+  // the stable chat target are checked so the guard survives a missing
+  // in-flight character object.
+  if (
+    isRisuAgentCharacterId(context?.currentChar?.chaId) ||
+    isRisuAgentCharacterId(context?.chatTarget?.characterId)
+  ) {
     const { RisuAgentAccessClient } = await import("./risuagent");
     const scope = getRisuAgentContextScope(context?.chatTarget?.chatId);
     if (!scope) {
