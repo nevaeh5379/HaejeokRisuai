@@ -3,7 +3,6 @@ import { writable } from "svelte/store";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { moduleStore } from "./stores/domain/moduleStore.svelte";
-import { isCapacitorAndroid } from "./platform";
 
 type AlertData = {
   type:
@@ -57,14 +56,10 @@ type HubType = import("./hubCatalog").hubType;
 export function isMobileGUIActive(
   betaEnabled = settingsStore.state?.betaMobileGUI,
 ): boolean {
-  if (import.meta.env.VITE_RISU_LITE === "TRUE") return true;
-
-  // Native Android is already a touch-first shell. Keeping the mobile layout
-  // behind the old beta toggle made fresh installs and foldables fall back to
-  // the desktop home screen, where edge-to-edge system bars overlap the title.
-  if (isCapacitorAndroid) return true;
-
-  return Boolean(betaEnabled && window.innerWidth <= 800);
+  return Boolean(
+    import.meta.env.VITE_RISU_LITE === "TRUE" ||
+    (betaEnabled && window.innerWidth <= 800),
+  );
 }
 
 export function syncMobileGUI(
