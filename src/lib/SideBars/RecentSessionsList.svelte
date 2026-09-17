@@ -6,7 +6,7 @@
     import { getPreparedNativeThumbnailSrc, preloadThumbnails, preloadThumbnailsDecoded } from 'src/ts/globalApi.svelte';
     import { isCapacitor } from 'src/ts/platform';
     import { shouldEagerLoadRecentSessionThumbnails } from 'src/ts/gui/recentSessionThumbnails';
-    import { isHiddenFromCharacterLists } from 'src/ts/systemCharacters';
+    import { isHiddenFromCharacterLists, isHiddenRecentChatRow } from 'src/ts/systemCharacters';
     import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -164,6 +164,9 @@
             allSessions = rows.flatMap((row) => {
                 const charIndex = indexById.get(row.characterId);
                 const char = charIndex !== undefined ? characterStore.characters[charIndex] : undefined;
+                // The SQL feed is bounded by LIMIT, so reserved/internal and
+                // trashed rows are dropped here rather than by widening it.
+                if (isHiddenRecentChatRow(row.characterId, char)) return [];
                 const folderName = row.folderId
                     ? char?.chatFolders?.find((folder) => folder.id === row.folderId)?.name
                     : undefined;

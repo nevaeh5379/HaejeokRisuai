@@ -18,7 +18,10 @@ import {
   getTauriChatWindowManager,
 } from "./tauriChatWindows";
 import { characterStore } from "./stores/domain/characterStore.svelte";
-import { isHiddenFromCharacterLists } from "./systemCharacters";
+import {
+  isHiddenFromCharacterLists,
+  isHiddenRecentChatRow,
+} from "./systemCharacters";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 
 export const TAURI_APP_MENU_EVENT = "risu://app-menu";
@@ -315,13 +318,30 @@ async function loadRecentChats(
   const activeChatId = characterStore.currentChat?.id;
   try {
     const rows = await storage.listRecentChats(limit, activeChatId);
-    return rows.map((row) => ({
-      characterId: row.characterId,
-      characterName: row.characterName || "Unknown Bot",
-      chatId: row.chatId,
-      chatName: row.chatName || `Chat ${row.chatPosition + 1}`,
-      timestamp: row.lastDate ?? 0,
-    }));
+    const characterById = new Map<
+      string,
+      (typeof characterStore.characters)[number]
+    >();
+    for (const character of characterStore.characters) {
+      if (character?.chaId) characterById.set(character.chaId, character);
+    }
+    // Reserved/internal characters must never appear in the native app menu,
+    // even when the bounded SQL feed returns their row.
+    return rows
+      .filter(
+        (row) =>
+          !isHiddenRecentChatRow(
+            row.characterId,
+            characterById.get(row.characterId),
+          ),
+      )
+      .map((row) => ({
+        characterId: row.characterId,
+        characterName: row.characterName || "Unknown Bot",
+        chatId: row.chatId,
+        chatName: row.chatName || `Chat ${row.chatPosition + 1}`,
+        timestamp: row.lastDate ?? 0,
+      }));
   } catch (error) {
     console.warn("[TauriAppMenu] Recent chat query failed", error);
     return localRecentChats(limit);

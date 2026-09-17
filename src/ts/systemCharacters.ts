@@ -62,3 +62,24 @@ export function isHiddenFromCharacterLists(
   if (!char) return true;
   return Boolean(char.trashTime) || isReservedSystemCharacterId(char.chaId);
 }
+
+/**
+ * Visibility for a SQL recent-chat row.
+ *
+ * The row's `characterId` is authoritative for reserved identities: an
+ * internal character may not be loaded (or may never be loaded, to preserve
+ * lazy hydration), yet its row must still never reach an ordinary recent-session
+ * surface. A character that is simply not loaded is kept, because its trash
+ * flag is unknown at that point.
+ *
+ * Callers filter rows after their existing bounded query, never by widening the
+ * query to fetch more rows.
+ */
+export function isHiddenRecentChatRow(
+  characterId: string | null | undefined,
+  loadedCharacter: CharacterListVisibilityFields | null | undefined,
+): boolean {
+  if (isReservedSystemCharacterId(characterId)) return true;
+  if (!loadedCharacter) return false;
+  return isHiddenFromCharacterLists(loadedCharacter);
+}
