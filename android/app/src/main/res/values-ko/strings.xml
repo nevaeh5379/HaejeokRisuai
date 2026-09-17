@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">해적리스</string>
+    <string name="title_activity_main">해적리스</string>
     <string name="chat_generation_channel">채팅 생성</string>
     <string name="chat_generation_active">답변을 생성하고 있습니다…</string>
     <string name="chat_result_channel">채팅 답변</string>

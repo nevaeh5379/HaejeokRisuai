@@ -1,5 +1,6 @@
 package co.aiclient.risu;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -57,6 +58,7 @@ public class RisuQuickSettingsTileService extends TileService {
     }
 
     @SuppressWarnings("deprecation")
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private void launchAndCollapse(Intent intent, String chatId) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             PendingIntent pendingIntent = PendingIntent.getActivity(
