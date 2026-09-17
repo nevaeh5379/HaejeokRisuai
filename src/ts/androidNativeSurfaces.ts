@@ -2,6 +2,7 @@ import type { SqlRecentChatMetadata } from "./storage/sql/ISqlStorage";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import {
+  updateAndroidRecentChatWidget,
   updateAndroidShortcuts,
   usesAndroidNativeIntegration,
 } from "./androidNativeIntegration";
@@ -56,13 +57,27 @@ export function refreshAndroidNativeSurfaces(): Promise<void> {
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
     const recent = await loadAndroidRecentChats(SHORTCUT_LIMIT);
-    await updateAndroidShortcuts(
-      recent.map((chat) => ({
-        characterId: chat.characterId,
-        chatId: chat.chatId,
-        label: chat.characterName || chat.chatName || "RisuAI",
-      })),
-    );
+    const latest = recent[0];
+    await Promise.all([
+      updateAndroidShortcuts(
+        recent.map((chat) => ({
+          characterId: chat.characterId,
+          chatId: chat.chatId,
+          label: chat.characterName || chat.chatName || "RisuAI",
+        })),
+      ),
+      updateAndroidRecentChatWidget(
+        latest
+          ? {
+              characterId: latest.characterId,
+              chatId: latest.chatId,
+              characterName: latest.characterName || "RisuAI",
+              chatName: latest.chatName || "Chat",
+              lastMessage: latest.lastMessage || "",
+            }
+          : null,
+      ),
+    ]);
   })().finally(() => {
     refreshPromise = null;
   });

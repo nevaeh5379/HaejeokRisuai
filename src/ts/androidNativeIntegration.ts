@@ -20,11 +20,22 @@ export interface AndroidShortcutItem {
   label: string;
 }
 
+export interface AndroidRecentChatWidgetItem {
+  characterId: string;
+  chatId: string;
+  characterName: string;
+  chatName: string;
+  lastMessage: string;
+}
+
 interface NativeIntegrationPlugin {
   consumePendingEntries(): Promise<{ entries: AndroidNativeEntry[] }>;
   updateShortcuts(options: {
     items: AndroidShortcutItem[];
   }): Promise<{ updated: number }>;
+  updateRecentChatWidget(options: {
+    item: AndroidRecentChatWidgetItem | null;
+  }): Promise<void>;
 }
 
 const isAndroidNative =
@@ -46,6 +57,17 @@ export async function updateAndroidShortcuts(
   } catch (error) {
     console.warn("[NativeIntegration] Failed to update Android shortcuts:", error);
     return 0;
+  }
+}
+
+export async function updateAndroidRecentChatWidget(
+  item: AndroidRecentChatWidgetItem | null,
+): Promise<void> {
+  if (!nativeIntegration) return;
+  try {
+    await nativeIntegration.updateRecentChatWidget({ item });
+  } catch (error) {
+    console.warn("[NativeIntegration] Failed to update Android widget:", error);
   }
 }
 

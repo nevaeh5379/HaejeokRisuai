@@ -58,6 +58,37 @@ public class NativeIntegrationPlugin extends Plugin {
         call.resolve(result);
     }
 
+    @PluginMethod
+    public void updateRecentChatWidget(PluginCall call) {
+        JSObject item = call.getObject("item");
+        android.content.SharedPreferences.Editor editor = getContext()
+            .getSharedPreferences(RecentChatWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .clear();
+        if (item != null) {
+            putPreference(editor, RecentChatWidgetProvider.KEY_CHARACTER_ID, item.getString("characterId"));
+            putPreference(editor, RecentChatWidgetProvider.KEY_CHAT_ID, item.getString("chatId"));
+            putPreference(editor, RecentChatWidgetProvider.KEY_CHARACTER_NAME, item.getString("characterName"));
+            putPreference(editor, RecentChatWidgetProvider.KEY_CHAT_NAME, item.getString("chatName"));
+            String lastMessage = item.getString("lastMessage");
+            if (lastMessage != null && lastMessage.length() > 500) {
+                lastMessage = lastMessage.substring(0, 500);
+            }
+            putPreference(editor, RecentChatWidgetProvider.KEY_LAST_MESSAGE, lastMessage);
+        }
+        editor.apply();
+        RecentChatWidgetProvider.updateAll(getContext());
+        call.resolve();
+    }
+
+    private static void putPreference(
+        android.content.SharedPreferences.Editor editor,
+        String key,
+        String value
+    ) {
+        if (value != null && !value.trim().isEmpty()) editor.putString(key, value.trim());
+    }
+
     private static JSObject parseIntent(Context context, Intent intent) {
         String action = intent.getAction();
         if (ACTION_OPEN_CHAT.equals(action)) {
