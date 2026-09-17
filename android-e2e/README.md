@@ -31,6 +31,10 @@ pnpm test:e2e:android
 The command builds the debug APK, starts a project-local Appium server, runs
 every `android-e2e/*.test.ts` file, and stops the server. Logs and failure
 screenshots are written to the ignored `android-e2e/artifacts/` directory.
+On the first WebView run, Appium downloads a Chromedriver matching the device's
+WebView and caches it under `android-e2e/artifacts/chromedrivers/`. Later runs
+reuse that binary. The server listens only on `127.0.0.1`, and only the scoped
+UiAutomator2 Chromedriver-download feature is enabled.
 
 For a previously built APK:
 
@@ -40,13 +44,14 @@ ANDROID_E2E_SKIP_BUILD=1 pnpm test:e2e:android
 
 Useful overrides:
 
-| Variable                     | Purpose                                                  |
-| ---------------------------- | -------------------------------------------------------- |
-| `ANDROID_E2E_APK`            | APK path relative to the repository, or an absolute path |
-| `ANDROID_E2E_UDID`           | Select one device when more than one is connected        |
-| `ANDROID_E2E_DEVICE_NAME`    | Appium device name; defaults to `Android`                |
-| `ANDROID_E2E_APPIUM_PORT`    | Appium port; defaults to `4723`                          |
-| `ANDROID_E2E_WDIO_LOG_LEVEL` | WebdriverIO log level; defaults to `warn`                |
+| Variable                       | Purpose                                                  |
+| ------------------------------ | -------------------------------------------------------- |
+| `ANDROID_E2E_APK`              | APK path relative to the repository, or an absolute path |
+| `ANDROID_E2E_UDID`             | Select one device when more than one is connected        |
+| `ANDROID_E2E_DEVICE_NAME`      | Appium device name; defaults to `Android`                |
+| `ANDROID_E2E_APPIUM_PORT`      | Appium port; defaults to `4723`                          |
+| `ANDROID_E2E_WDIO_LOG_LEVEL`   | WebdriverIO log level; defaults to `warn`                |
+| `ANDROID_E2E_CHROMEDRIVER_DIR` | Persistent directory for matching Chromedriver binaries  |
 
 The initial smoke test deliberately verifies the real Capacitor origin and
 native-platform flag after switching into the WebView. Android-specific

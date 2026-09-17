@@ -11,6 +11,9 @@ const appiumUrl = new URL(
 const apkPath = process.env.ANDROID_E2E_APK;
 const artifactsDir =
   process.env.ANDROID_E2E_ARTIFACTS ?? "android-e2e/artifacts";
+const chromedriverDir =
+  process.env.ANDROID_E2E_CHROMEDRIVER_DIR ??
+  join(artifactsDir, "chromedrivers");
 let driver: WebdriverIO.Browser | undefined;
 
 function getLogLevel():
@@ -31,6 +34,7 @@ test(
   { timeout: 120_000 },
   async () => {
     assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
+    await mkdir(chromedriverDir, { recursive: true });
 
     driver = await remote({
       protocol: appiumUrl.protocol.replace(":", ""),
@@ -52,6 +56,7 @@ test(
         "appium:noReset": false,
         "appium:newCommandTimeout": 120,
         "appium:ensureWebviewsHavePages": true,
+        "appium:chromedriverExecutableDir": chromedriverDir,
       },
     });
 

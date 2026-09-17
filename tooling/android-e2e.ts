@@ -156,10 +156,20 @@ async function main(): Promise<void> {
     throw new Error(`Android debug APK not found: ${apkPath}`);
   }
   mkdirSync(artifactsDir, { recursive: true });
+  const chromedriverDir = resolve(artifactsDir, "chromedrivers");
+  mkdirSync(chromedriverDir, { recursive: true });
   const appiumLog = createWriteStream(resolve(artifactsDir, "appium.log"));
   const appium = spawn(
     appiumBin,
-    ["--address", appiumHost, "--port", String(appiumPort), "--log-timestamp"],
+    [
+      "--address",
+      appiumHost,
+      "--port",
+      String(appiumPort),
+      "--log-timestamp",
+      "--allow-insecure",
+      "uiautomator2:chromedriver_autodownload",
+    ],
     { cwd: projectRoot, env: toolEnv, stdio: ["ignore", "pipe", "pipe"] },
   );
   appium.stdout?.pipe(appiumLog);
@@ -189,6 +199,7 @@ async function main(): Promise<void> {
         ANDROID_E2E_APK: apkPath,
         ANDROID_E2E_APPIUM_URL: appiumUrl,
         ANDROID_E2E_ARTIFACTS: artifactsDir,
+        ANDROID_E2E_CHROMEDRIVER_DIR: chromedriverDir,
       },
     });
   } finally {
