@@ -442,7 +442,7 @@
       onclick={() => (showSessions = false)}
     ></div>
     <div
-      class="absolute left-2 top-14 z-40 flex w-[min(24rem,calc(100%_-_1rem))] flex-col overflow-hidden rounded-2xl bg-darkbg shadow-lg ring-1 ring-textcolor/10 lg:left-3"
+      class="absolute left-2 top-14 z-40 flex w-[min(24rem,calc(100%_-_1rem))] flex-col overflow-hidden rounded-2xl bg-darkbg shadow-lg lg:left-3"
     >
       <div
         class="px-3 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-textcolor2"
@@ -563,7 +563,7 @@
       {/if}
 
       <div
-        class="flex items-end gap-1.5 rounded-3xl bg-textcolor/5 px-2.5 py-2 shadow-sm ring-1 ring-textcolor/10 transition focus-within:ring-textcolor/25"
+        class="flex items-end gap-1.5 rounded-3xl bg-textcolor/5 px-2.5 py-2 shadow-md ring-1 ring-transparent transition focus-within:ring-textcolor/25"
       >
         <textarea
           bind:this={inputEl}

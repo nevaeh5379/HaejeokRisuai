@@ -91,7 +91,7 @@
   }}
 >
   <div
-    class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-bgcolor text-textcolor shadow-xl ring-1 ring-textcolor/10"
+    class="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-bgcolor text-textcolor shadow-xl"
   >
     <div class="flex items-center gap-2 px-3 pb-1 pt-3">
       {#if pickedCharacter}
