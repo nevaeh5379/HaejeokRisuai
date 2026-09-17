@@ -36,6 +36,14 @@ interface NativeIntegrationPlugin {
   updateRecentChatWidget(options: {
     item: AndroidRecentChatWidgetItem | null;
   }): Promise<void>;
+  requestPinRecentChatWidget(): Promise<{
+    supported: boolean;
+    accepted: boolean;
+  }>;
+  requestQuickSettingsTile(): Promise<{
+    supported: boolean;
+    result: number;
+  }>;
 }
 
 const isAndroidNative =
@@ -69,6 +77,22 @@ export async function updateAndroidRecentChatWidget(
   } catch (error) {
     console.warn("[NativeIntegration] Failed to update Android widget:", error);
   }
+}
+
+export async function requestAndroidRecentChatWidget(): Promise<{
+  supported: boolean;
+  accepted: boolean;
+}> {
+  if (!nativeIntegration) return { supported: false, accepted: false };
+  return nativeIntegration.requestPinRecentChatWidget();
+}
+
+export async function requestAndroidQuickSettingsTile(): Promise<{
+  supported: boolean;
+  result: number;
+}> {
+  if (!nativeIntegration) return { supported: false, result: -1 };
+  return nativeIntegration.requestQuickSettingsTile();
 }
 
 export function installAndroidNativeEntryHandler(

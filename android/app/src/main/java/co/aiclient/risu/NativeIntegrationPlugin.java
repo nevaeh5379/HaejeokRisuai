@@ -1,8 +1,13 @@
 package co.aiclient.risu;
 
+import android.app.StatusBarManager;
+import android.appwidget.AppWidgetManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
+import android.os.Build;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -79,6 +84,57 @@ public class NativeIntegrationPlugin extends Plugin {
         editor.apply();
         RecentChatWidgetProvider.updateAll(getContext());
         call.resolve();
+    }
+
+    @PluginMethod
+    public void requestPinRecentChatWidget(PluginCall call) {
+        JSObject result = new JSObject();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            result.put("supported", false);
+            result.put("accepted", false);
+            call.resolve(result);
+            return;
+        }
+        AppWidgetManager manager = AppWidgetManager.getInstance(getContext());
+        boolean supported = manager.isRequestPinAppWidgetSupported();
+        boolean accepted = supported && manager.requestPinAppWidget(
+            new ComponentName(getContext(), RecentChatWidgetProvider.class),
+            null,
+            null
+        );
+        result.put("supported", supported);
+        result.put("accepted", accepted);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void requestQuickSettingsTile(PluginCall call) {
+        JSObject unsupported = new JSObject();
+        unsupported.put("supported", false);
+        unsupported.put("result", -1);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            call.resolve(unsupported);
+            return;
+        }
+        StatusBarManager manager = getContext().getSystemService(StatusBarManager.class);
+        if (manager == null) {
+            call.resolve(unsupported);
+            return;
+        }
+        ComponentName component = new ComponentName(getContext(), RisuQuickSettingsTileService.class);
+        Icon icon = Icon.createWithResource(getContext(), R.drawable.ic_stat_risu);
+        manager.requestAddTileService(
+            component,
+            getContext().getString(R.string.quick_settings_tile_label),
+            icon,
+            getActivity().getMainExecutor(),
+            requestResult -> {
+                JSObject result = new JSObject();
+                result.put("supported", true);
+                result.put("result", requestResult);
+                call.resolve(result);
+            }
+        );
     }
 
     private static void putPreference(
