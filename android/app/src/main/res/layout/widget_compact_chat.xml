@@ -10,8 +10,8 @@
 
     <ImageView
         android:id="@+id/widget_compact_icon"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
         android:contentDescription="@string/widget_character_icon_description"
         android:scaleType="centerCrop" />
 
@@ -24,6 +24,6 @@
         android:gravity="center"
         android:maxLines="1"
         android:textColor="@color/widget_on_background"
-        android:textSize="12sp"
+        android:textSize="13sp"
         android:textStyle="bold" />
 </LinearLayout>

@@ -9,8 +9,8 @@ import {
 } from "./androidNativeIntegration";
 
 const SHORTCUT_LIMIT = 4;
-const WIDGET_LIMIT = 4;
-const RECENT_SCAN_LIMIT = 16;
+const WIDGET_LIMIT = 8;
+const RECENT_SCAN_LIMIT = 32;
 const widgetIconCache = new Map<string, string | null>();
 
 async function loadWidgetIcon(
@@ -26,15 +26,30 @@ async function loadWidgetIcon(
     if (!source || source === "/none.webp") return null;
     const blob = await (await fetch(source)).blob();
     const bitmap = await createImageBitmap(blob);
-    const size = 96;
+    const size = 112;
+    const radius = 18;
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = size;
     const context = canvas.getContext("2d");
     if (!context) return null;
+
+    // Widgets mirror the spacious character cards instead of tiny circular
+    // launcher-style avatars. Bake rounded corners into the bitmap because
+    // RemoteViews cannot reliably clip ImageViews on every supported API.
     context.beginPath();
-    context.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    context.moveTo(radius, 0);
+    context.lineTo(size - radius, 0);
+    context.quadraticCurveTo(size, 0, size, radius);
+    context.lineTo(size, size - radius);
+    context.quadraticCurveTo(size, size, size - radius, size);
+    context.lineTo(radius, size);
+    context.quadraticCurveTo(0, size, 0, size - radius);
+    context.lineTo(0, radius);
+    context.quadraticCurveTo(0, 0, radius, 0);
+    context.closePath();
     context.clip();
+
     const scale = Math.max(size / bitmap.width, size / bitmap.height);
     const width = bitmap.width * scale;
     const height = bitmap.height * scale;

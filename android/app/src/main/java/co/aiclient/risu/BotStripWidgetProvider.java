@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.os.Bundle;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -29,6 +30,16 @@ public class BotStripWidgetProvider extends AppWidgetProvider {
         for (int appWidgetId : appWidgetIds) updateWidget(context, manager, appWidgetId);
     }
 
+    @Override
+    public void onAppWidgetOptionsChanged(
+        Context context,
+        AppWidgetManager manager,
+        int appWidgetId,
+        Bundle newOptions
+    ) {
+        updateWidget(context, manager, appWidgetId);
+    }
+
     static void updateAll(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         ComponentName component = new ComponentName(context, BotStripWidgetProvider.class);
@@ -36,22 +47,29 @@ public class BotStripWidgetProvider extends AppWidgetProvider {
     }
 
     private static void updateWidget(Context context, AppWidgetManager manager, int appWidgetId) {
+        Bundle options = manager.getAppWidgetOptions(appWidgetId);
+        int width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 280);
+        int height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110);
+        int visibleCount = width >= 330 ? 4 : width >= 250 ? 3 : 2;
+        boolean showNames = height >= 108;
         List<AndroidWidgetStore.Item> items = AndroidWidgetStore.load(context);
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_bot_strip);
+
         for (int index = 0; index < CELL_IDS.length; index++) {
-            if (index >= items.size()) {
-                views.setViewVisibility(CELL_IDS[index], View.INVISIBLE);
+            if (index >= items.size() || index >= visibleCount) {
+                views.setViewVisibility(CELL_IDS[index], View.GONE);
                 continue;
             }
             AndroidWidgetStore.Item item = items.get(index);
             views.setViewVisibility(CELL_IDS[index], View.VISIBLE);
             views.setTextViewText(NAME_IDS[index], item.characterName);
+            views.setViewVisibility(NAME_IDS[index], showNames ? View.VISIBLE : View.GONE);
             Bitmap icon = AndroidWidgetStore.decodeIcon(item);
             if (icon != null) views.setImageViewBitmap(ICON_IDS[index], icon);
             else views.setImageViewResource(ICON_IDS[index], R.mipmap.ic_launcher);
             views.setOnClickPendingIntent(
                 CELL_IDS[index],
-                AndroidWidgetStore.openChatIntent(context, item, appWidgetId * 10 + index)
+                AndroidWidgetStore.openChatIntent(context, item, appWidgetId * 100 + index)
             );
         }
         manager.updateAppWidget(appWidgetId, views);
