@@ -6,6 +6,7 @@
     import { getPreparedNativeThumbnailSrc, preloadThumbnails, preloadThumbnailsDecoded } from 'src/ts/globalApi.svelte';
     import { isCapacitor } from 'src/ts/platform';
     import { shouldEagerLoadRecentSessionThumbnails } from 'src/ts/gui/recentSessionThumbnails';
+    import { isHiddenFromCharacterLists } from 'src/ts/systemCharacters';
     import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -108,7 +109,7 @@
         const sessions: SessionItem[] = [];
         for (let charIdx = 0; charIdx < characters.length; charIdx++) {
             const char = characters[charIdx];
-            if (!char || char.trashTime) continue;
+            if (!char || isHiddenFromCharacterLists(char)) continue;
             for (let chatIdx = 0; chatIdx < (char.chats?.length ?? 0); chatIdx++) {
                 const chat = char.chats[chatIdx];
                 if (!chat) continue;

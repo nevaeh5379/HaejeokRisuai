@@ -26,6 +26,10 @@
     } from "@lucide/svelte";
     import { alertConfirm, alertNormal } from "src/ts/alert";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import {
+        isHiddenFromCharacterLists,
+        isReservedSystemCharacterId,
+    } from "src/ts/systemCharacters";
     import { language } from "src/lang";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
 
@@ -94,6 +98,7 @@
         const tagSet = new Set<string>();
         for (const c of characterStore.characters) {
             if (c.trashTime) continue;
+            if (isReservedSystemCharacterId(c.chaId)) continue;
             const tags = (c as any).tags ?? (c as any).category ?? [];
             if (Array.isArray(tags)) {
                 for (const t of tags) {
@@ -140,6 +145,9 @@
         for (let i = 0; i < chars.length; i++) {
             const c = chars[i];
             const isTrash = Boolean(c.trashTime);
+
+            // Reserved/system characters are never part of the ordinary list.
+            if (!showTrash && isHiddenFromCharacterLists(c)) continue;
 
             // Trash filter mode
             if (showTrash) {

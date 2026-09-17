@@ -16,4 +16,21 @@ describe("MainMenu deleted character filtering", () => {
       ["active-after", 2],
     ]);
   });
+
+  it("excludes reserved/system characters while preserving store indexes", () => {
+    const characters = [
+      { chaId: "ordinary", name: "Ordinary" },
+      { chaId: "§risu-agent", name: "Risu Agent" },
+      { chaId: "§playground", name: "Playground" },
+      { chaId: "§temp", name: "Temp" },
+      { chaId: "ordinary-2", name: "Ordinary 2" },
+    ];
+
+    const entries = indexMainMenuCharacters(characters);
+
+    expect(entries.map(({ char, index }) => [char.chaId, index])).toEqual([
+      ["ordinary", 0],
+      ["ordinary-2", 4],
+    ]);
+  });
 });

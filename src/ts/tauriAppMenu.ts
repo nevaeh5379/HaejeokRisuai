@@ -18,6 +18,7 @@ import {
   getTauriChatWindowManager,
 } from "./tauriChatWindows";
 import { characterStore } from "./stores/domain/characterStore.svelte";
+import { isHiddenFromCharacterLists } from "./systemCharacters";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 
 export const TAURI_APP_MENU_EVENT = "risu://app-menu";
@@ -170,7 +171,7 @@ export function buildTauriNavigationMenuModel(
     }));
 
   const recentBots = characters
-    .filter((character) => character.chaId && !character.trashTime)
+    .filter((character) => character.chaId && !isHiddenFromCharacterLists(character))
     .map((character) => ({ character, timestamp: characterRecency(character) }))
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, Math.max(0, recentLimit))
@@ -285,7 +286,7 @@ export async function openTauriAppMenuCommand(
 function localRecentChats(limit: number): TauriRecentChatMenuSource[] {
   const sessions: TauriRecentChatMenuSource[] = [];
   for (const character of characterStore.characters) {
-    if (!character || character.trashTime) continue;
+    if (!character || isHiddenFromCharacterLists(character)) continue;
     for (let index = 0; index < (character.chats?.length ?? 0); index++) {
       const chat = character.chats[index];
       if (!chat?.id) continue;
