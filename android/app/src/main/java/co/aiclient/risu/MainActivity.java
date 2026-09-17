@@ -61,7 +61,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void handleNativeIntent(Intent intent) {
-        if (!NativeIntegrationPlugin.enqueueIntent(intent)) return;
+        if (!NativeIntegrationPlugin.enqueueIntent(getApplicationContext(), intent)) return;
         if (getBridge() == null || getBridge().getWebView() == null) return;
         getBridge().getWebView().evaluateJavascript(
                 "window.dispatchEvent(new Event('risu:native-entry-available'))",

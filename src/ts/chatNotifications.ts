@@ -13,6 +13,7 @@ import {
 } from "./chatTabs.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import { refreshAndroidNativeSurfaces } from "./androidNativeSurfaces";
 
 export interface ChatResponseNotificationOptions {
   chatId?: string;
@@ -143,6 +144,7 @@ export async function notifyChatResponse(
     } else {
       await showNativeChatNotification({ title, body });
     }
+    void refreshAndroidNativeSurfaces();
     return;
   }
   if (typeof Notification === "undefined") return;

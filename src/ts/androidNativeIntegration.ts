@@ -14,8 +14,17 @@ export type AndroidNativeEntry = {
   chatId?: string;
 };
 
+export interface AndroidShortcutItem {
+  characterId: string;
+  chatId: string;
+  label: string;
+}
+
 interface NativeIntegrationPlugin {
   consumePendingEntries(): Promise<{ entries: AndroidNativeEntry[] }>;
+  updateShortcuts(options: {
+    items: AndroidShortcutItem[];
+  }): Promise<{ updated: number }>;
 }
 
 const isAndroidNative =
@@ -27,6 +36,19 @@ const nativeIntegration = isAndroidNative
 export function usesAndroidNativeIntegration(): boolean {
   return nativeIntegration !== null;
 }
+
+export async function updateAndroidShortcuts(
+  items: AndroidShortcutItem[],
+): Promise<number> {
+  if (!nativeIntegration) return 0;
+  try {
+    return (await nativeIntegration.updateShortcuts({ items })).updated;
+  } catch (error) {
+    console.warn("[NativeIntegration] Failed to update Android shortcuts:", error);
+    return 0;
+  }
+}
+
 export function installAndroidNativeEntryHandler(
   handler: (entry: AndroidNativeEntry) => void | Promise<void>,
 ): () => void {

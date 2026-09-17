@@ -18,6 +18,7 @@
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
     import { installAndroidNativeEntryHandler } from './ts/androidNativeIntegration';
     import { routeAndroidNativeEntry } from './ts/androidNativeEntryRouter';
+    import { refreshAndroidNativeSurfaces } from './ts/androidNativeSurfaces';
 
 
   
@@ -43,6 +44,12 @@
             } catch (error) {
                 console.error('[NativeIntegration] Failed to route Android entry:', error)
             }
+        })
+        let nativeSurfacesReady = false
+        const unsubscribeNativeSurfaces = loadedStore.subscribe((loaded) => {
+            if (!loaded || nativeSurfacesReady) return
+            nativeSurfacesReady = true
+            void refreshAndroidNativeSurfaces()
         })
 
         const handleAndroidBack = async () => {
@@ -119,6 +126,7 @@
         window.addEventListener('risu:android-back', handleAndroidBack)
         return () => {
             window.removeEventListener('risu:android-back', handleAndroidBack)
+            unsubscribeNativeSurfaces()
             removeNativeEntryHandler()
         }
     })

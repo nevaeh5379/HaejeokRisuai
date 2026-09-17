@@ -1,5 +1,6 @@
 package co.aiclient.risu;
 
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 
@@ -24,9 +25,9 @@ public class NativeIntegrationPlugin extends Plugin {
     private static final ConcurrentLinkedQueue<JSObject> PENDING_ENTRIES =
         new ConcurrentLinkedQueue<>();
 
-    public static boolean enqueueIntent(Intent intent) {
+    public static boolean enqueueIntent(Context context, Intent intent) {
         if (intent == null || intent.getBooleanExtra(EXTRA_HANDLED, false)) return false;
-        JSObject entry = parseIntent(intent);
+        JSObject entry = parseIntent(context, intent);
         if (entry == null) return false;
         intent.putExtra(EXTRA_HANDLED, true);
         PENDING_ENTRIES.add(entry);
@@ -45,7 +46,19 @@ public class NativeIntegrationPlugin extends Plugin {
         call.resolve(result);
     }
 
-    private static JSObject parseIntent(Intent intent) {
+    @PluginMethod
+    public void updateShortcuts(PluginCall call) {
+        JSArray items = call.getArray("items");
+        int updated = AndroidShortcutManager.update(
+            getContext(),
+            items == null ? new JSArray() : items
+        );
+        JSObject result = new JSObject();
+        result.put("updated", updated);
+        call.resolve(result);
+    }
+
+    private static JSObject parseIntent(Context context, Intent intent) {
         String action = intent.getAction();
         if (ACTION_OPEN_CHAT.equals(action)) {
             return targetEntry("open-chat", intent);
@@ -54,10 +67,10 @@ public class NativeIntegrationPlugin extends Plugin {
             return targetEntry("open-character", intent);
         }
         if (Intent.ACTION_SEND.equals(action)) {
-            return sharedTextEntry(intent, "share-text", Intent.EXTRA_TEXT);
+            return sharedTextEntry(context, intent, "share-text", Intent.EXTRA_TEXT);
         }
         if (Intent.ACTION_PROCESS_TEXT.equals(action)) {
-            return sharedTextEntry(intent, "process-text", Intent.EXTRA_PROCESS_TEXT);
+            return sharedTextEntry(context, intent, "process-text", Intent.EXTRA_PROCESS_TEXT);
         }
         if (Intent.ACTION_VIEW.equals(action)) {
             return deepLinkEntry(intent.getData());
@@ -73,12 +86,20 @@ public class NativeIntegrationPlugin extends Plugin {
         return entry;
     }
 
-    private static JSObject sharedTextEntry(Intent intent, String type, String extraKey) {
+    private static JSObject sharedTextEntry(
+        Context context,
+        Intent intent,
+        String type,
+        String extraKey
+    ) {
         CharSequence raw = intent.getCharSequenceExtra(extraKey);
         if (raw == null) return null;
         String text = limitSharedText(raw.toString());
         if (text.trim().isEmpty()) return null;
         JSObject entry = targetEntry(type, intent);
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            AndroidShortcutManager.applyShareTarget(context, intent, entry);
+        }
         entry.put("text", text);
         putIfPresent(entry, "subject", intent.getStringExtra(Intent.EXTRA_SUBJECT));
         putIfPresent(entry, "mimeType", intent.getType());
