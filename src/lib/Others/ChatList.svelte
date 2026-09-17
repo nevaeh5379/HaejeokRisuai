@@ -16,7 +16,7 @@
     let { close = () => {} } = $props();
 </script>
 
-<div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+<div class="fixed top-0 left-0 w-full h-full z-40 bg-black/50 flex justify-center items-center">
     <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto">
         <div class="flex items-center text-textcolor mb-4">
             <h2 class="mt-0 mb-0">{language.chatList}</h2>
