@@ -7,7 +7,11 @@ vi.mock("./deps", () => ({
   },
 }));
 
-import type { Chat, Message, character } from "../../../storage/database/schema";
+import type {
+  Chat,
+  Message,
+  character,
+} from "../../../storage/database/schema";
 import { RISU_AGENT_READ_TOOL_NAMES, RisuAgentAccessClient } from "./client";
 import type { RisuAgentAccessDependencies } from "./deps";
 
@@ -59,7 +63,9 @@ function makeCharacter(overrides: Partial<character> = {}): character {
   } as character;
 }
 
-function textOf(result: Awaited<ReturnType<RisuAgentAccessClient["callTool"]>>) {
+function textOf(
+  result: Awaited<ReturnType<RisuAgentAccessClient["callTool"]>>,
+) {
   const first = result[0];
   if (!first || first.type !== "text") throw new Error("Expected text result");
   return first.text;
@@ -104,10 +110,7 @@ describe("RisuAgentAccessClient", () => {
   });
 
   test("omits chat history when only a character is attached", async () => {
-    const charOnly = new RisuAgentAccessClient(
-      { characterId: "char-a" },
-      deps,
-    );
+    const charOnly = new RisuAgentAccessClient({ characterId: "char-a" }, deps);
     const names = (await charOnly.getToolList()).map((tool) => tool.name);
 
     expect(names).not.toContain("risu-agent-get-chat-history");
@@ -116,10 +119,7 @@ describe("RisuAgentAccessClient", () => {
   });
 
   test("rejects chat history when only a character is attached", async () => {
-    const charOnly = new RisuAgentAccessClient(
-      { characterId: "char-a" },
-      deps,
-    );
+    const charOnly = new RisuAgentAccessClient({ characterId: "char-a" }, deps);
 
     const text = textOf(
       await charOnly.callTool("risu-agent-get-chat-history", {
@@ -177,9 +177,7 @@ describe("RisuAgentAccessClient", () => {
   test("bounds explicitly requested array fields and reports truncation", async () => {
     deps.resolveCharacter = vi.fn(async () =>
       makeCharacter({
-        alternateGreetings: Array.from({ length: 60 }, () =>
-          "g".repeat(3000),
-        ),
+        alternateGreetings: Array.from({ length: 60 }, () => "g".repeat(3000)),
         tags: Array.from({ length: 60 }, () => "t".repeat(3000)),
       }),
     );
@@ -210,7 +208,10 @@ describe("RisuAgentAccessClient", () => {
   test("paginates chat history through the bounded page loader only", async () => {
     (deps.loadChatMessagePage as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
-        messages: [makeMessage("m2", "user", "two"), makeMessage("m3", "char", "three")],
+        messages: [
+          makeMessage("m2", "user", "two"),
+          makeMessage("m3", "char", "three"),
+        ],
         offset: 1,
         total: 3,
         hasMore: true,
@@ -291,7 +292,8 @@ describe("RisuAgentAccessClient", () => {
     expect(JSON.parse(text).name).toBe("Alice");
   });
 
-  test("lists lorebooks with bounded previews", async () => {    const payload = JSON.parse(
+  test("lists lorebooks with bounded previews", async () => {
+    const payload = JSON.parse(
       textOf(await client.callTool("risu-agent-list-lorebooks", {})),
     );
 

@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const store = vi.hoisted(() => {
+const state = vi.hoisted(() => {
   const characters: any[] = [];
-  return {
+
+  const findChat = (chatId: string) => {
+    for (const char of characters) {
+      const chat = char?.chats?.find(
+        (candidate: any) => candidate?.id === chatId,
+      );
+      if (chat) return chat;
+    }
+    return undefined;
+  };
+
+  const characterStore = {
     characters,
     add: vi.fn((char: any) => {
       characters.push(char);
@@ -17,16 +28,42 @@ const store = vi.hoisted(() => {
       characters.find((char) => char?.chaId === id),
     ),
   };
+
+  // Mirrors the real MessageStore contract: the store owns the in-memory
+  // removal and the messageTotal decrement together.
+  const messageStore = {
+    appendMessage: vi.fn(async (chatId: string, message: any) => {
+      const chat = findChat(chatId);
+      if (!chat) return;
+      chat.message ??= [];
+      const existingIndex = chat.message.findIndex(
+        (candidate: any) => candidate.chatId === message.chatId,
+      );
+      if (existingIndex >= 0) chat.message[existingIndex] = message;
+      else chat.message.push(message);
+    }),
+    deleteMessage: vi.fn(async (chatId: string, messageId: string) => {
+      const chat = findChat(chatId);
+      if (!chat || !Array.isArray(chat.message)) return;
+      const before = chat.message.length;
+      chat.message = chat.message.filter(
+        (candidate: any) => candidate.chatId !== messageId,
+      );
+      const deletedCount = before - chat.message.length;
+      if (deletedCount > 0 && typeof chat.messageTotal === "number") {
+        chat.messageTotal = Math.max(0, chat.messageTotal - deletedCount);
+      }
+    }),
+  };
+
+  return { characters, findChat, characterStore, messageStore };
 });
 
 vi.mock("../stores/domain/characterStore.svelte", () => ({
-  characterStore: store,
+  characterStore: state.characterStore,
 }));
 vi.mock("../stores/domain/messageStore.svelte", () => ({
-  messageStore: {
-    appendMessage: vi.fn(async () => {}),
-    deleteMessage: vi.fn(async () => {}),
-  },
+  messageStore: state.messageStore,
 }));
 
 import {
@@ -55,7 +92,7 @@ function makeAgentSummary() {
 }
 
 beforeEach(() => {
-  store.characters.length = 0;
+  state.characters.length = 0;
   vi.clearAllMocks();
   resetRisuAgentContextScopesForTesting();
 });
@@ -64,13 +101,13 @@ describe("ensureRisuAgentCharacter", () => {
   test("creates and persists the reserved character when missing", async () => {
     const { character } = await ensureRisuAgentCharacter();
 
-    expect(store.add).toHaveBeenCalledTimes(1);
-    expect(store.flush).toHaveBeenCalled();
+    expect(state.characterStore.add).toHaveBeenCalledTimes(1);
+    expect(state.characterStore.flush).toHaveBeenCalled();
     expect(character.chaId).toBe(RISU_AGENT_CHARACTER_ID);
   });
 
   test("throws instead of returning an unhydrated summary", async () => {
-    store.characters.push(makeAgentSummary());
+    state.characters.push(makeAgentSummary());
     // ensureCharacterDetails silently fails and leaves detailsLoaded false.
 
     await expect(ensureRisuAgentCharacter()).rejects.toThrow(
@@ -80,10 +117,12 @@ describe("ensureRisuAgentCharacter", () => {
 
   test("returns the character once hydration actually completes", async () => {
     const summary = makeAgentSummary();
-    store.characters.push(summary);
-    store.ensureCharacterDetails.mockImplementationOnce(async () => {
-      summary.detailsLoaded = true;
-    });
+    state.characters.push(summary);
+    state.characterStore.ensureCharacterDetails.mockImplementationOnce(
+      async () => {
+        summary.detailsLoaded = true;
+      },
+    );
 
     const { character } = await ensureRisuAgentCharacter();
 
@@ -118,7 +157,7 @@ describe("per-session context registry", () => {
       characterId: "char-a",
       chatId: "chat-a",
     });
-    expect(store.markChatDirty).toHaveBeenCalledWith("c1");
+    expect(state.characterStore.markChatDirty).toHaveBeenCalledWith("c1");
     expect(getRisuAgentContextScope("c1")).toEqual({
       characterId: "char-a",
       chatId: "chat-a",
@@ -155,9 +194,19 @@ describe("per-session context registry", () => {
   });
 });
 
+function registerChatInStore(chat: any) {
+  state.characters.push({
+    chaId: "holder",
+    type: "character",
+    name: "Holder",
+    chats: [chat],
+  });
+  return chat;
+}
+
 describe("regenerate rollback", () => {
   function makeChatWithReply() {
-    return {
+    return registerChatInStore({
       id: "agent-chat",
       name: "Chat",
       message: [
@@ -165,10 +214,10 @@ describe("regenerate rollback", () => {
         { chatId: "r1", role: "char", data: "answer" },
       ],
       messageTotal: 2,
-    } as any;
+    });
   }
 
-  test("removing the last reply captures it with its original position", async () => {
+  test("removing the last reply decrements messageTotal exactly once", async () => {
     const chat = makeChatWithReply();
 
     const removed = await removeLastRisuAgentReply(chat);
@@ -178,49 +227,90 @@ describe("regenerate rollback", () => {
       index: 1,
     });
     expect(chat.message.map((m: any) => m.chatId)).toEqual(["u1"]);
+    expect(chat.messageTotal).toBe(1);
     expect(messageStore.deleteMessage).toHaveBeenCalledWith("agent-chat", "r1");
   });
 
   test("returns null when the last message is not an assistant reply", async () => {
-    const chat = {
+    const chat = registerChatInStore({
       id: "agent-chat",
       message: [{ chatId: "u1", role: "user", data: "question" }],
-    } as any;
+      messageTotal: 1,
+    });
 
     expect(await removeLastRisuAgentReply(chat)).toBeNull();
+    expect(chat.messageTotal).toBe(1);
     expect(messageStore.deleteMessage).not.toHaveBeenCalled();
   });
 
-  test("restores a removed reply at its original position and persistence", async () => {
+  test("removes safely and decrements once without chat/message ids", async () => {
+    const chat = registerChatInStore({
+      message: [
+        { chatId: "u1", role: "user", data: "question" },
+        { role: "char", data: "answer" },
+      ],
+      messageTotal: 2,
+    });
+
+    const removed = await removeLastRisuAgentReply(chat);
+
+    expect(removed?.index).toBe(1);
+    expect(messageStore.deleteMessage).not.toHaveBeenCalled();
+    expect(chat.message).toHaveLength(1);
+    expect(chat.messageTotal).toBe(1);
+  });
+
+  test("falls back to a single local decrement when the store cannot resolve the chat", async () => {
+    // Chat id exists but the chat is not registered in the character store.
+    const chat = {
+      id: "orphan-chat",
+      message: [
+        { chatId: "u1", role: "user", data: "question" },
+        { chatId: "r1", role: "char", data: "answer" },
+      ],
+      messageTotal: 2,
+    } as any;
+
+    const removed = await removeLastRisuAgentReply(chat);
+
+    expect(removed?.index).toBe(1);
+    expect(messageStore.deleteMessage).toHaveBeenCalledWith(
+      "orphan-chat",
+      "r1",
+    );
+    expect(chat.message.map((m: any) => m.chatId)).toEqual(["u1"]);
+    expect(chat.messageTotal).toBe(1);
+  });
+
+  test("restores a removed reply to its exact original count and position", async () => {
     const chat = makeChatWithReply();
+    const originalTotal = chat.messageTotal;
     const removed = await removeLastRisuAgentReply(chat);
     expect(removed).not.toBeNull();
+    expect(chat.messageTotal).toBe(originalTotal - 1);
     // A failed retry may have appended a partial/error message.
     chat.message.push({ chatId: "e1", role: "char", data: "error" });
-    const totalBeforeRestore = chat.messageTotal;
 
     await restoreRisuAgentReply(chat, removed!);
 
-    expect(chat.message.map((m: any) => m.chatId)).toEqual([
-      "u1",
-      "r1",
-      "e1",
-    ]);
-    expect(chat.messageTotal).toBe(totalBeforeRestore + 1);
+    expect(chat.message.map((m: any) => m.chatId)).toEqual(["u1", "r1", "e1"]);
+    expect(chat.messageTotal).toBe(originalTotal);
     expect(messageStore.appendMessage).toHaveBeenCalledWith(
       "agent-chat",
       removed!.message,
     );
   });
 
-  test("restoring twice never duplicates the reply", async () => {
+  test("restoring twice never duplicates the reply or overcounts", async () => {
     const chat = makeChatWithReply();
+    const originalTotal = chat.messageTotal;
     const removed = await removeLastRisuAgentReply(chat);
 
     await restoreRisuAgentReply(chat, removed!);
     await restoreRisuAgentReply(chat, removed!);
 
     expect(chat.message.map((m: any) => m.chatId)).toEqual(["u1", "r1"]);
+    expect(chat.messageTotal).toBe(originalTotal);
     expect(messageStore.appendMessage).toHaveBeenCalledTimes(1);
   });
 });

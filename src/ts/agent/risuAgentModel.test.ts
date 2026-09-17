@@ -30,7 +30,9 @@ describe("Risu Agent model helpers", () => {
   });
 
   test("system instruction frames a general assistant with optional read-only Risu tools", () => {
-    expect(RISU_AGENT_SYSTEM_INSTRUCTION).toMatch(/general-purpose AI assistant/i);
+    expect(RISU_AGENT_SYSTEM_INSTRUCTION).toMatch(
+      /general-purpose AI assistant/i,
+    );
     expect(RISU_AGENT_SYSTEM_INSTRUCTION).toMatch(/optional/i);
     expect(RISU_AGENT_SYSTEM_INSTRUCTION).toMatch(/read-only/i);
   });
@@ -76,9 +78,7 @@ describe("Risu Agent model helpers", () => {
       filterRisuAgentAttachableCharacters(characters, "").map((c) => c.chaId),
     ).toEqual(["ordinary-a", "ordinary-b"]);
     expect(
-      filterRisuAgentAttachableCharacters(characters, "bo").map(
-        (c) => c.chaId,
-      ),
+      filterRisuAgentAttachableCharacters(characters, "bo").map((c) => c.chaId),
     ).toEqual(["ordinary-b"]);
     expect(filterRisuAgentAttachableCharacters(characters, "", 1)).toHaveLength(
       1,

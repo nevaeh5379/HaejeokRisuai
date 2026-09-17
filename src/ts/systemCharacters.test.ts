@@ -30,9 +30,9 @@ describe("reserved system characters", () => {
 
   test("hidden helper covers trashed and reserved characters", () => {
     expect(isHiddenFromCharacterLists({ chaId: "ordinary" })).toBe(false);
-    expect(isHiddenFromCharacterLists({ chaId: "ordinary", trashTime: 1 })).toBe(
-      true,
-    );
+    expect(
+      isHiddenFromCharacterLists({ chaId: "ordinary", trashTime: 1 }),
+    ).toBe(true);
     expect(isHiddenFromCharacterLists({ trashTime: 1 })).toBe(true);
     expect(isHiddenFromCharacterLists(null)).toBe(true);
   });

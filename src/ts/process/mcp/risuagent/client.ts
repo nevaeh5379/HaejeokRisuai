@@ -79,7 +79,8 @@ const TOOL_DEFINITIONS: MCPTool[] = [
       properties: {
         fields: {
           type: "array",
-          description: "Specific fields to include. Defaults to a useful subset.",
+          description:
+            "Specific fields to include. Defaults to a useful subset.",
           items: {
             type: "string",
             enum: Object.keys(CHARACTER_FIELD_MAP),
@@ -363,7 +364,10 @@ export class RisuAgentAccessClient extends MCPClientLike {
     );
   }
 
-  private resolveScopeChatId(char: character, requestedChatId: unknown): string {
+  private resolveScopeChatId(
+    char: character,
+    requestedChatId: unknown,
+  ): string {
     const attachedChatId = this.scope.chatId;
     // Attaching only a character must not grant any chat-content access.
     if (!attachedChatId) {

@@ -201,25 +201,57 @@ export interface RemovedRisuAgentReply {
  * Remove the last assistant reply so the standard pipeline can regenerate.
  * Returns the removed message and its original position so callers can roll
  * back if the retry fails.
+ *
+ * Count bookkeeping: `messageTotal` is decremented exactly once. MessageStore
+ * owns the decrement when both ids exist (it removes the message from the
+ * in-memory window and updates the count together); otherwise we remove it
+ * locally and decrement once ourselves. The in-memory array is never mutated
+ * before calling MessageStore, otherwise it would see zero deletions and skip
+ * the decrement, which restore would then overcount.
  */
 export async function removeLastRisuAgentReply(
   chat: Chat,
 ): Promise<RemovedRisuAgentReply | null> {
   const messages = chat.message ?? [];
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== "char") return null;
   const index = messages.length - 1;
-  chat.message = messages.slice(0, -1);
-  if (chat.id && last.chatId) {
-    await messageStore.deleteMessage(chat.id, last.chatId);
+  const last = messages[index];
+  if (!last || last.role !== "char") return null;
+
+  const persisted = Boolean(chat.id && last.chatId);
+  if (persisted) {
+    await messageStore.deleteMessage(chat.id!, last.chatId!);
   }
+
+  // If MessageStore could not own the removal (missing ids, or the chat is not
+  // resolvable from the store), remove it locally and keep the count in sync
+  // exactly once.
+  const current = chat.message ?? [];
+  const stillPresent = current.some(
+    (message) =>
+      message === last || (persisted && message.chatId === last.chatId),
+  );
+  if (stillPresent) {
+    chat.message = current.filter(
+      (message) =>
+        !(message === last || (persisted && message.chatId === last.chatId)),
+    );
+    decrementRisuAgentMessageTotal(chat);
+  }
+
   return { message: last, index };
+}
+
+function decrementRisuAgentMessageTotal(chat: Chat): void {
+  if (typeof chat.messageTotal === "number") {
+    chat.messageTotal = Math.max(0, chat.messageTotal - 1);
+  }
 }
 
 /**
  * Restore a reply removed by {@link removeLastRisuAgentReply} at its original
- * in-memory position and in SQL storage. Used when regeneration fails, throws
- * or is aborted so a failed retry never destroys the prior answer.
+ * in-memory position and in SQL storage, returning `messageTotal` to its
+ * original value exactly once. Used when regeneration fails, throws or is
+ * aborted so a failed retry never destroys the prior answer.
  */
 export async function restoreRisuAgentReply(
   chat: Chat,

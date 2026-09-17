@@ -47,7 +47,8 @@ export function canMutateRisuAgentSession(busy: boolean): boolean {
  * failed hydration is never mistaken for an empty, fully loaded character.
  */
 export function isHydratedRisuAgentCharacter(
-  char: { type?: string | null; detailsLoaded?: boolean | null } | null | undefined,
+  char:
+    { type?: string | null; detailsLoaded?: boolean | null } | null | undefined,
 ): boolean {
   if (!char) return false;
   if (char.type === "group") return false;
@@ -112,10 +113,7 @@ export function resolveRisuAgentChatId(
   let newest: Chat | undefined;
   for (const chat of chats) {
     if (!chat?.id) continue;
-    if (
-      !newest ||
-      (chat.lastDate ?? 0) > (newest.lastDate ?? 0)
-    ) {
+    if (!newest || (chat.lastDate ?? 0) > (newest.lastDate ?? 0)) {
       newest = chat;
     }
   }
