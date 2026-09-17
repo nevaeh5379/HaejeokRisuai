@@ -33,10 +33,7 @@ interface NativeIntegrationPlugin {
   updateRecentChatWidget(options: {
     items: AndroidRecentChatWidgetItem[];
   }): Promise<void>;
-  setSystemBarAppearance(options: {
-    dark: boolean;
-    hideStatusBar: boolean;
-  }): Promise<void>;
+  setSystemBarAppearance(options: { dark: boolean }): Promise<void>;
   getSystemPalette(): Promise<{
     available: boolean;
     accentLight?: string;
@@ -112,13 +109,10 @@ export async function updateAndroidRecentChatWidget(
   }
 }
 
-export async function syncAndroidSystemBars(
-  dark: boolean,
-  hideStatusBar = false,
-): Promise<void> {
+export async function syncAndroidSystemBars(dark: boolean): Promise<void> {
   if (!nativeIntegration) return;
   try {
-    await nativeIntegration.setSystemBarAppearance({ dark, hideStatusBar });
+    await nativeIntegration.setSystemBarAppearance({ dark });
   } catch (error) {
     console.warn(
       "[NativeIntegration] Failed to sync Android system bars:",

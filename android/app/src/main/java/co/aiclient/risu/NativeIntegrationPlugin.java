@@ -36,7 +36,6 @@ public class NativeIntegrationPlugin extends Plugin {
     private static final int MAX_SHARED_TEXT_LENGTH = 256 * 1024;
     private static final String UI_PREFS = "risu_native_ui";
     private static final String PREF_DARK_BARS = "dark_bars";
-    private static final String PREF_HIDE_STATUS_BAR = "hide_status_bar";
     private static final ConcurrentLinkedQueue<JSObject> PENDING_ENTRIES =
         new ConcurrentLinkedQueue<>();
 
@@ -123,14 +122,12 @@ public class NativeIntegrationPlugin extends Plugin {
     @PluginMethod
     public void setSystemBarAppearance(PluginCall call) {
         boolean dark = Boolean.TRUE.equals(call.getBoolean("dark", true));
-        boolean hideStatusBar = Boolean.TRUE.equals(call.getBoolean("hideStatusBar", false));
         getContext().getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(PREF_DARK_BARS, dark)
-            .putBoolean(PREF_HIDE_STATUS_BAR, hideStatusBar)
             .apply();
         getActivity().runOnUiThread(() -> {
-            applySystemBarAppearance(getActivity(), dark, hideStatusBar);
+            applySystemBarAppearance(getActivity(), dark);
             call.resolve();
         });
     }
@@ -140,24 +137,16 @@ public class NativeIntegrationPlugin extends Plugin {
             UI_PREFS,
             Context.MODE_PRIVATE
         );
-        applySystemBarAppearance(
-            activity,
-            prefs.getBoolean(PREF_DARK_BARS, true),
-            prefs.getBoolean(PREF_HIDE_STATUS_BAR, false)
-        );
+        applySystemBarAppearance(activity, prefs.getBoolean(PREF_DARK_BARS, true));
     }
 
     private static void applySystemBarAppearance(
         android.app.Activity activity,
-        boolean dark,
-        boolean hideStatusBar
+        boolean dark
     ) {
         android.view.Window window = activity.getWindow();
-        // Only draw the WebView behind system bars while the app explicitly
-        // requests immersive mode. When the status bar is visible, letting the
-        // decor fit system windows keeps Capacitor content below the status bar
-        // and display cutout on phones and foldable cover displays.
-        WindowCompat.setDecorFitsSystemWindows(window, !hideStatusBar);
+        // Android always runs edge-to-edge with an immersive status bar.
+        WindowCompat.setDecorFitsSystemWindows(window, false);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -173,11 +162,7 @@ public class NativeIntegrationPlugin extends Plugin {
         controller.setSystemBarsBehavior(
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         );
-        if (hideStatusBar) {
-            controller.hide(WindowInsetsCompat.Type.statusBars());
-        } else {
-            controller.show(WindowInsetsCompat.Type.statusBars());
-        }
+        controller.hide(WindowInsetsCompat.Type.statusBars());
     }
 
     @PluginMethod

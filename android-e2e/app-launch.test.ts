@@ -125,6 +125,17 @@ test(
       );
       assert.doesNotMatch(state.bodyText, /Legal documents not configured/i);
 
+      // Immersive status-bar handling belongs to the Android shell itself,
+      // not to any particular web UI theme.
+      await driver.waitUntil(
+        async () => /type=statusBars[^\n]*visible=false/.test(readWindowDump()),
+        {
+          timeout: 5_000,
+          interval: 250,
+          timeoutMsg: "Android status bar stayed visible",
+        },
+      );
+
       await driver.waitUntil(
         async () =>
           driver?.execute(() => {
@@ -158,15 +169,6 @@ test(
       assert.match(materialState.accent, /^#[0-9a-f]{6}$/i);
       assert.match(materialState.surface, /^#[0-9a-f]{6}$/i);
       assert.equal(materialState.background, materialState.surface);
-
-      await driver.waitUntil(
-        async () => /type=statusBars[^\n]*visible=false/.test(readWindowDump()),
-        {
-          timeout: 5_000,
-          interval: 250,
-          timeoutMsg: "Android status bar stayed visible in Material mode",
-        },
-      );
     } catch (error) {
       await mkdir(artifactsDir, { recursive: true });
       await driver.saveScreenshot(join(artifactsDir, "app-launch-failure.png"));

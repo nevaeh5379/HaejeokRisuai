@@ -9,7 +9,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
 import { syncAndroidSystemBars } from "../androidNativeIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
-import { applyUITheme, getUITheme, isWindowsFluentTheme } from "./uiTheme";
+import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
 export interface ColorScheme {
   bgcolor: string;
@@ -24,7 +24,6 @@ export interface ColorScheme {
   type: "light" | "dark";
 }
 
-
 async function syncTauriNativeAppearance(type: "light" | "dark") {
   if (!isTauriMacOS && !isTauriWindows) {
     return;
@@ -34,7 +33,10 @@ async function syncTauriNativeAppearance(type: "light" | "dark") {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_risu_native_appearance", { appearance: type });
   } catch (error) {
-    console.warn("Failed to sync native Tauri appearance with Risu theme:", error);
+    console.warn(
+      "Failed to sync native Tauri appearance with Risu theme:",
+      error,
+    );
   }
 }
 
@@ -363,13 +365,11 @@ export function updateColorScheme() {
     document.documentElement.style.colorScheme = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
     if (isCapacitorAndroid) {
-      void syncAndroidSystemBars(
-        colorScheme.type === "dark",
-        getUITheme() === "android",
-      );
+      void syncAndroidSystemBars(colorScheme.type === "dark");
     }
     applyUITheme();
-    const isFluent = isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
+    const isFluent =
+      isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
     if (isFluent && isTauriWindows) {
       void ensureFluentWindowsBackdrop();
     }
