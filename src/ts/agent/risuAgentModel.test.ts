@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { Chat } from "../storage/database/schema";
 import {
   createRisuAgentChat,
+  filterRisuAgentAttachableCharacters,
   resolveRisuAgentChatId,
   RISU_AGENT_CHARACTER_ID,
   RISU_AGENT_SYSTEM_INSTRUCTION,
@@ -55,5 +56,28 @@ describe("Risu Agent model helpers", () => {
     expect(session.name).toBe("Conversation 3");
     expect(session.message).toEqual([]);
     expect(session.id).toBeUndefined();
+  });
+
+  test("offers only ordinary attachable characters", () => {
+    const characters = [
+      { chaId: "ordinary-a", name: "Alice", type: "character" },
+      { chaId: "§risu-agent", name: "Risu Agent", type: "character" },
+      { chaId: "§playground", name: "Playground", type: "character" },
+      { chaId: "trashed", name: "Old", type: "character", trashTime: 5 },
+      { chaId: "group", name: "Group", type: "group" },
+      { chaId: "ordinary-b", name: "Bob", type: "character" },
+    ];
+
+    expect(
+      filterRisuAgentAttachableCharacters(characters, "").map((c) => c.chaId),
+    ).toEqual(["ordinary-a", "ordinary-b"]);
+    expect(
+      filterRisuAgentAttachableCharacters(characters, "bo").map(
+        (c) => c.chaId,
+      ),
+    ).toEqual(["ordinary-b"]);
+    expect(filterRisuAgentAttachableCharacters(characters, "", 1)).toHaveLength(
+      1,
+    );
   });
 });

@@ -1,5 +1,8 @@
 import type { Chat } from "../storage/database/schema";
-import { RISU_AGENT_CHARACTER_ID } from "../systemCharacters";
+import {
+  isHiddenFromCharacterLists,
+  RISU_AGENT_CHARACTER_ID,
+} from "../systemCharacters";
 
 export { RISU_AGENT_CHARACTER_ID };
 
@@ -69,4 +72,36 @@ export function resolveRisuAgentChatId(
     }
   }
   return newest?.id;
+}
+
+export interface AttachableCharacterFields {
+  chaId?: string | null;
+  name?: string | null;
+  type?: string | null;
+  trashTime?: number | null;
+}
+
+/**
+ * Characters the agent context picker may show: ordinary, non-group, not
+ * trashed, and not reserved/system. Names come from lazy summaries, so this
+ * never hydrates details.
+ */
+export function filterRisuAgentAttachableCharacters<
+  T extends AttachableCharacterFields,
+>(characters: readonly T[], query: string, limit = 200): T[] {
+  const normalized = query.trim().toLowerCase();
+  const result: T[] = [];
+  for (const character of characters) {
+    if (!character || character.type === "group") continue;
+    if (isHiddenFromCharacterLists(character)) continue;
+    if (
+      normalized &&
+      !(character.name ?? "").toLowerCase().includes(normalized)
+    ) {
+      continue;
+    }
+    result.push(character);
+    if (result.length >= limit) break;
+  }
+  return result;
 }
