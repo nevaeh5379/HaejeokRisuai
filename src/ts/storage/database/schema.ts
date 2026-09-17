@@ -23,6 +23,7 @@ import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { Loadout } from "../../loadout";
+import type { RisuAgentPromptConfig } from "../../agent/risuAgentPrompt";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -722,6 +723,12 @@ export interface character {
   customscript: customscript[];
   triggerscript: triggerscript[];
   utilityBot: boolean;
+  /**
+   * Risu Agent's own prompt template/settings, persisted globally on the
+   * reserved agent character. Absent for ordinary characters and for agent
+   * characters created before this feature (which keep the default behavior).
+   */
+  agentPrompt?: RisuAgentPromptConfig;
   exampleMessage: string;
   removedQuotes?: boolean;
   creatorNotes: string;

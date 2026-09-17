@@ -15,6 +15,11 @@ import {
   type RisuAgentChatContext,
 } from "./risuAgentModel";
 import {
+  normalizeRisuAgentPromptConfig,
+  type RisuAgentPromptConfig,
+} from "./risuAgentPrompt";
+import { safeStructuredClone } from "../polyfill";
+import {
   clearRisuAgentContextScope,
   setRisuAgentContextScope,
 } from "../process/mcp/risuagent/scope";
@@ -167,6 +172,38 @@ export function selectRisuAgentSession(
   if (index < 0) return;
   character.chatPage = index;
   characterStore.markCharacterDirty(character.chaId);
+}
+
+/**
+ * Read Risu Agent's prompt configuration from the reserved character.
+ * Returns null when nothing usable is persisted, which means the agent keeps
+ * the default utility-bot prompt behavior.
+ */
+export function getRisuAgentPromptConfig(
+  character: character | null | undefined,
+): RisuAgentPromptConfig | null {
+  return normalizeRisuAgentPromptConfig(character?.agentPrompt);
+}
+
+/**
+ * Persist Risu Agent's prompt configuration globally on the reserved character.
+ * Passing null removes the field entirely, restoring the default behavior
+ * without destroying any conversation data.
+ */
+export async function setRisuAgentPromptConfig(
+  character: character,
+  config: RisuAgentPromptConfig | null,
+): Promise<void> {
+  const normalized = normalizeRisuAgentPromptConfig(config);
+  if (normalized) {
+    // Persistence boundary: store an owned deep clone so later editor mutations
+    // cannot reach the saved character without an explicit save.
+    character.agentPrompt = safeStructuredClone(normalized);
+  } else {
+    delete character.agentPrompt;
+  }
+  characterStore.markCharacterDirty(character.chaId);
+  await characterStore.flush();
 }
 
 /**

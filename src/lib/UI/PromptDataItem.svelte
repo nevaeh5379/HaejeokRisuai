@@ -1,7 +1,8 @@
 <script lang="ts">
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prompt";
+import type { PromptItem, PromptItemChat, PromptRole, PromptSettings } from "src/ts/process/prompt";
+    import { replacePromptItem } from "src/ts/process/promptTemplateReplace";
     import OptionInput from "./GUI/OptionInput.svelte";
     import TextAreaInput from "./GUI/TextAreaInput.svelte";
     import SelectInput from "./GUI/SelectInput.svelte";
@@ -26,6 +27,16 @@ import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prom
         openedItemIndices?: Set<number>;
         currentIndex?: number;
         displayIndex?: number;
+        /**
+         * Owner's prompt settings. Defaults to the active preset so the
+         * ordinary Prompt Settings page behaves exactly as before.
+         */
+        promptSettings?: PromptSettings;
+        /**
+         * Owner's template array, used only for duplicate replacement.
+         * Defaults to the active preset so ordinary behavior is unchanged.
+         */
+        template?: PromptItem[];
     }
 
     let {
@@ -40,8 +51,17 @@ import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prom
         dragOverIndex = $bindable(-1),
         openedItemIndices = $bindable(new Set<number>()),
         currentIndex = -1,
-        displayIndex = -1
+        displayIndex = -1,
+        promptSettings,
+        template
     }: Props = $props();
+
+    // Reusable path: an owner (for example Risu Agent) passes its own template
+    // and settings. Ordinary callers omit both and keep reading the preset.
+    const ownerTemplate = $derived(template ?? presetStore.state.promptTemplate);
+    const ownerPromptSettings = $derived(
+        promptSettings ?? presetStore.state.promptSettings
+    );
 
     const chatPromptChange = () => {
         const currentprompt = promptItem as PromptItemChat
@@ -106,22 +126,9 @@ import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prom
     }
 
     function replacePrompt(prompt:PromptItem){
-        if(JSON.stringify(promptItem) === JSON.stringify(prompt)){
-            return
-        }
-
-        const ind = presetStore.state.promptTemplate.findIndex((item, index) => {
-            return JSON.stringify(item) === JSON.stringify(prompt)
-        })
-
-        if(ind !== -1){
-            presetStore.state.promptTemplate.splice(ind, 1)
-        }
-        const myInd = presetStore.state.promptTemplate.findIndex((item, index) => {
-            return JSON.stringify(item) === JSON.stringify(promptItem)
-        })
-        presetStore.state.promptTemplate.splice(myInd, 0, prompt)
-
+        // `ownerTemplate` is either the active preset (ordinary behavior) or the
+        // caller's own draft (Risu Agent), never both.
+        replacePromptItem(ownerTemplate, promptItem, prompt)
     }
 
     const isPromptDrag = (e:DragEvent) => {
@@ -381,7 +388,7 @@ import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prom
                                         promptItem.rangeEnd = promptItem.rangeEnd === 'end' ? 0 : 'end'
                                     }
                                 }} />
-                                {#if presetStore.state.promptSettings.sendChatAsSystem}
+                                {#if ownerPromptSettings.sendChatAsSystem}
                                     <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem}/>
                                 {/if}
                             </div>
@@ -440,7 +447,7 @@ import type { PromptItem, PromptItemChat, PromptRole } from "src/ts/process/prom
                         <OptionInput value="postEverything">{language.formating.postEverything}</OptionInput>
                         <OptionInput value="chatML">{"chatML"}</OptionInput>
                         <OptionInput value="cache">{language.cachePoint}</OptionInput>
-                        {#if presetStore.state.promptSettings.customChainOfThought}
+                        {#if ownerPromptSettings.customChainOfThought}
                             <OptionInput value="cot">{language.cot}</OptionInput>
                         {/if}
                     </SelectInput>

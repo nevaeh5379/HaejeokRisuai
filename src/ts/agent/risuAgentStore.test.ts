@@ -76,7 +76,10 @@ import {
   removeLastRisuAgentReply,
   restoreRisuAgentReply,
   setRisuAgentSessionContext,
+  getRisuAgentPromptConfig,
+  setRisuAgentPromptConfig,
 } from "./risuAgentStore";
+import { createDefaultRisuAgentPromptSettings } from "./risuAgentPrompt";
 import { RISU_AGENT_CHARACTER_ID } from "./risuAgentModel";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 
@@ -312,5 +315,79 @@ describe("regenerate rollback", () => {
     expect(chat.message.map((m: any) => m.chatId)).toEqual(["u1", "r1"]);
     expect(chat.messageTotal).toBe(originalTotal);
     expect(messageStore.appendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("agent prompt configuration persistence", () => {
+  beforeEach(() => {
+    state.characters.length = 0;
+    vi.clearAllMocks();
+  });
+
+  test("a legacy reserved character has no prompt config (defaults win)", async () => {
+    const { character } = await ensureRisuAgentCharacter();
+    expect((character as any).agentPrompt).toBeUndefined();
+    expect(getRisuAgentPromptConfig(character)).toBeNull();
+  });
+
+  test("persists on the reserved character through dirty/flush", async () => {
+    const { character } = await ensureRisuAgentCharacter();
+    await setRisuAgentPromptConfig(character, {
+      promptTemplate: [
+        { type: "plain", text: "agent only", role: "system" } as any,
+      ],
+      promptSettings: {
+        ...createDefaultRisuAgentPromptSettings(),
+        utilOverride: true,
+      },
+    });
+
+    const saved = getRisuAgentPromptConfig(character);
+    expect(saved?.promptTemplate).toHaveLength(1);
+    expect((saved?.promptTemplate[0] as any).text).toBe("agent only");
+    expect(saved?.promptSettings.utilOverride).toBe(true);
+    expect(state.characterStore.markCharacterDirty).toHaveBeenCalledWith(
+      RISU_AGENT_CHARACTER_ID,
+    );
+    expect(state.characterStore.flush).toHaveBeenCalled();
+  });
+
+  test("the persisted value is an owned clone of the draft", async () => {
+    const { character } = await ensureRisuAgentCharacter();
+    const draft = {
+      promptTemplate: [{ type: "plain", text: "draft", role: "system" } as any],
+      promptSettings: createDefaultRisuAgentPromptSettings(),
+    };
+    await setRisuAgentPromptConfig(character, draft);
+
+    (draft.promptTemplate[0] as any).text = "edited after save";
+    expect(((character as any).agentPrompt.promptTemplate[0] as any).text).toBe(
+      "draft",
+    );
+  });
+
+  test("null and malformed data fall back to defaults without deleting chats", async () => {
+    const { character } = await ensureRisuAgentCharacter();
+    const before = (character.chats ?? []).length;
+
+    await setRisuAgentPromptConfig(character, {
+      promptTemplate: [],
+      promptSettings: {
+        ...createDefaultRisuAgentPromptSettings(),
+        utilOverride: true,
+      },
+    });
+    expect((character as any).agentPrompt).toBeDefined();
+
+    await setRisuAgentPromptConfig(character, null);
+    expect((character as any).agentPrompt).toBeUndefined();
+    expect(getRisuAgentPromptConfig(character)).toBeNull();
+    expect((character.chats ?? []).length).toBe(before);
+
+    (character as any).agentPrompt = {
+      promptTemplate: "not-an-array",
+      promptSettings: 7,
+    };
+    expect(getRisuAgentPromptConfig(character)).toBeNull();
   });
 });

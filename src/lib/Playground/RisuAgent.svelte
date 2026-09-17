@@ -10,6 +10,7 @@
     Paperclip,
     RefreshCw,
     Send,
+    SlidersHorizontal,
     Square,
     User,
     X,
@@ -41,12 +42,17 @@
     resolveRisuAgentSessionContext,
     type RisuAgentChatContext,
   } from "src/ts/agent/risuAgentModel";
+  import {
+    buildRisuAgentGenerationOverrides,
+    isRisuAgentPromptEnabled,
+  } from "src/ts/agent/risuAgentPrompt";
   import type { character, Chat, Message } from "src/ts/storage/database/schema";
   import LazyComponent from "../Others/LazyComponent.svelte";
 
   let input = $state("");
   let showSessions = $state(false);
   let showContextPicker = $state(false);
+  let showPromptEditor = $state(false);
   let inputEl = $state<HTMLTextAreaElement | null>(null);
   let messagesEl = $state<HTMLDivElement | null>(null);
   let abortController: AbortController | null = null;
@@ -103,6 +109,10 @@
   });
 
   const modelName = $derived(getGenerationModelString());
+
+  const promptEnabled = $derived(
+    isRisuAgentPromptEnabled(agentChar?.agentPrompt),
+  );
 
   function stripToolCalls(text: string): string {
     return text.replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/gi, "").trim();
@@ -207,10 +217,16 @@
       // context without touching any other session.
       registerRisuAgentSessionScope(chat);
       const { sendChat } = await import("src/ts/process/index.svelte");
+      // Request-local prompt overrides: cloned here so a concurrent ordinary
+      // chat keeps reading presetStore untouched.
+      const generation = buildRisuAgentGenerationOverrides(
+        getRisuAgentCharacter()?.agentPrompt,
+      );
       const ok = await sendChat(-1, {
         signal: controller.signal,
         targetCharacterId: characterId,
         targetChatId: chatId,
+        generation,
       });
       generationSucceeded = ok && !controller.signal.aborted;
       if (!ok && !controller.signal.aborted) {
@@ -339,6 +355,19 @@
     </div>
 
     <div class="grow"></div>
+
+    <!-- Agent prompt template/settings -->
+    <button
+      class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition hover:bg-textcolor/5 {promptEnabled
+        ? 'text-textcolor'
+        : 'text-textcolor2 hover:text-textcolor'} disabled:opacity-40"
+      onclick={() => (showPromptEditor = true)}
+      disabled={busy}
+      title={language.risuAgent.promptSettings}
+      aria-label={language.risuAgent.promptSettings}
+    >
+      <SlidersHorizontal size={14} class="shrink-0" />
+    </button>
 
     <!-- Model -->
     <button
@@ -563,6 +592,16 @@
     </div>
   </div>
 </div>
+
+{#if showPromptEditor && agentChar}
+  <LazyComponent
+    loader={() => import("./RisuAgentPromptModal.svelte")}
+    props={{
+      agentCharacter: agentChar,
+      onClose: () => (showPromptEditor = false),
+    }}
+  />
+{/if}
 
 {#if showContextPicker}
   <LazyComponent

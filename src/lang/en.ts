@@ -1060,8 +1060,7 @@ export const languageEnglish = {
     attachWithoutChat: "Attach character only",
     noChats: "This character has no chats yet.",
     noCharacters: "No characters found.",
-    loadFailed:
-      "Could not load this character's details. Try again.",
+    loadFailed: "Could not load this character's details. Try again.",
     inputPlaceholder: "Message Risu Agent…",
     send: "Send",
     stop: "Stop",
@@ -1071,6 +1070,12 @@ export const languageEnglish = {
       "Ask anything, or attach a Risu character to help with character creation and worldbuilding.",
     loading: "Loading Risu Agent…",
     noContext: "No Risu context attached",
+    promptSettings: "Risu Agent prompt settings",
+    promptHint:
+      "Applies to Risu Agent only. Ordinary chats keep using your preset.",
+    promptEnabled: "Use this prompt template for Risu Agent",
+    promptSave: "Save",
+    promptReset: "Reset to defaults",
     contextAttached: "Risu context attached",
     sendFailed:
       "Risu Agent could not get a response. Check your model settings and try again.",

@@ -979,8 +979,7 @@ export const languageKorean = {
     attachWithoutChat: "캐릭터만 연결",
     noChats: "이 캐릭터에는 아직 채팅이 없습니다.",
     noCharacters: "캐릭터를 찾을 수 없습니다.",
-    loadFailed:
-      "이 캐릭터의 세부 정보를 불러오지 못했습니다. 다시 시도하세요.",
+    loadFailed: "이 캐릭터의 세부 정보를 불러오지 못했습니다. 다시 시도하세요.",
     inputPlaceholder: "Risu 에이전트에게 메시지 보내기…",
     send: "전송",
     stop: "중지",
@@ -990,6 +989,12 @@ export const languageKorean = {
       "무엇이든 질문하거나, 캐릭터 제작과 세계관 작업을 위해 Risu 캐릭터를 연결하세요.",
     loading: "Risu 에이전트 불러오는 중…",
     noContext: "연결된 Risu 컨텍스트 없음",
+    promptSettings: "Risu 에이전트 프롬프트 설정",
+    promptHint:
+      "Risu 에이전트에만 적용됩니다. 일반 채팅은 프리셋을 그대로 사용합니다.",
+    promptEnabled: "이 프롬프트 템플릿을 Risu 에이전트에 사용",
+    promptSave: "저장",
+    promptReset: "기본값으로 초기화",
     contextAttached: "Risu 컨텍스트 연결됨",
     sendFailed:
       "Risu 에이전트가 응답을 받지 못했습니다. 모델 설정을 확인하고 다시 시도하세요.",
