@@ -3095,3 +3095,23 @@ html.theme-android-material :focus-visible {
   outline: 2px solid var(--risu-theme-borderc);
   outline-offset: 2px;
 }
+
+html.theme-android-material {
+  --risu-android-accent: var(
+    --risu-android-system-accent,
+    var(--risu-theme-borderc)
+  );
+}
+
+html.theme-android-material .rs-chat-send-btn {
+  color: var(--risu-android-accent) !important;
+  background: color-mix(
+    in srgb,
+    var(--risu-android-accent) 16%,
+    var(--risu-android-surface-high)
+  ) !important;
+}
+
+html.theme-android-material :focus-visible {
+  outline-color: var(--risu-android-accent) !important;
+}

@@ -37,6 +37,7 @@
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
     import { androidComposerPrefill, clearAndroidComposerPrefill } from 'src/ts/androidNativeEntryState';
+    import { triggerAndroidHaptic } from 'src/ts/androidNativeIntegration';
     import {
         getNextFirstMessageIndex,
         getPreviousFirstMessageIndex,
@@ -414,6 +415,8 @@
             }
             fileInput = []
         }
+
+        void triggerAndroidHaptic('confirm')
 
         if(messageInput === ''){
             if(characterStore.characters[selectedChar].type !== 'group'){

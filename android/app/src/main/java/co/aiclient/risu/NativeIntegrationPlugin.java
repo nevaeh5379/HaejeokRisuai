@@ -9,8 +9,11 @@ import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
+import android.view.HapticFeedbackConstants;
+import android.view.View;
 
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.JSArray;
@@ -31,6 +34,9 @@ public class NativeIntegrationPlugin extends Plugin {
     public static final String EXTRA_CHAT_ID = "co.aiclient.risu.extra.CHAT_ID";
     private static final String EXTRA_HANDLED = "co.aiclient.risu.extra.NATIVE_ENTRY_HANDLED";
     private static final int MAX_SHARED_TEXT_LENGTH = 256 * 1024;
+    private static final String UI_PREFS = "risu_native_ui";
+    private static final String PREF_DARK_BARS = "dark_bars";
+    private static final String PREF_HIDE_STATUS_BAR = "hide_status_bar";
     private static final ConcurrentLinkedQueue<JSObject> PENDING_ENTRIES =
         new ConcurrentLinkedQueue<>();
 
@@ -91,25 +97,96 @@ public class NativeIntegrationPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getSystemPalette(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean available = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            available = putSystemColor(result, "accentLight", "system_accent1_600");
+            putSystemColor(result, "accentDark", "system_accent1_200");
+            putSystemColor(result, "accentContainerLight", "system_accent1_100");
+            putSystemColor(result, "accentContainerDark", "system_accent1_700");
+            putSystemColor(result, "surfaceLight", "system_neutral1_50");
+            putSystemColor(result, "surfaceDark", "system_neutral1_900");
+            putSystemColor(result, "surfaceHighLight", "system_neutral2_100");
+            putSystemColor(result, "surfaceHighDark", "system_neutral2_800");
+            putSystemColor(result, "onSurfaceLight", "system_neutral1_900");
+            putSystemColor(result, "onSurfaceDark", "system_neutral1_100");
+            putSystemColor(result, "onSurfaceVariantLight", "system_neutral2_700");
+            putSystemColor(result, "onSurfaceVariantDark", "system_neutral2_200");
+            putSystemColor(result, "outlineLight", "system_neutral2_500");
+            putSystemColor(result, "outlineDark", "system_neutral2_400");
+        }
+        result.put("available", available);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void haptic(PluginCall call) {
+        String type = call.getString("type", "selection");
+        int feedback = hapticConstant(type);
+        getActivity().runOnUiThread(() -> {
+            View view = getActivity().getWindow().getDecorView();
+            boolean performed = view.performHapticFeedback(feedback);
+            JSObject result = new JSObject();
+            result.put("performed", performed);
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod
     public void setSystemBarAppearance(PluginCall call) {
         boolean dark = Boolean.TRUE.equals(call.getBoolean("dark", true));
+        boolean hideStatusBar = Boolean.TRUE.equals(call.getBoolean("hideStatusBar", false));
+        getContext().getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_DARK_BARS, dark)
+            .putBoolean(PREF_HIDE_STATUS_BAR, hideStatusBar)
+            .apply();
         getActivity().runOnUiThread(() -> {
-            android.view.Window window = getActivity().getWindow();
-            WindowCompat.setDecorFitsSystemWindows(window, false);
-            window.setStatusBarColor(Color.TRANSPARENT);
-            window.setNavigationBarColor(Color.TRANSPARENT);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.setNavigationBarContrastEnforced(false);
-                window.setStatusBarContrastEnforced(false);
-            }
-            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(
-                window,
-                window.getDecorView()
-            );
-            controller.setAppearanceLightStatusBars(!dark);
-            controller.setAppearanceLightNavigationBars(!dark);
+            applySystemBarAppearance(getActivity(), dark, hideStatusBar);
             call.resolve();
         });
+    }
+
+    public static void applySavedSystemBarAppearance(android.app.Activity activity) {
+        android.content.SharedPreferences prefs = activity.getSharedPreferences(
+            UI_PREFS,
+            Context.MODE_PRIVATE
+        );
+        applySystemBarAppearance(
+            activity,
+            prefs.getBoolean(PREF_DARK_BARS, true),
+            prefs.getBoolean(PREF_HIDE_STATUS_BAR, false)
+        );
+    }
+
+    private static void applySystemBarAppearance(
+        android.app.Activity activity,
+        boolean dark,
+        boolean hideStatusBar
+    ) {
+        android.view.Window window = activity.getWindow();
+        WindowCompat.setDecorFitsSystemWindows(window, false);
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.setNavigationBarContrastEnforced(false);
+            window.setStatusBarContrastEnforced(false);
+        }
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(
+            window,
+            window.getDecorView()
+        );
+        controller.setAppearanceLightStatusBars(!dark);
+        controller.setAppearanceLightNavigationBars(!dark);
+        controller.setSystemBarsBehavior(
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        );
+        if (hideStatusBar) {
+            controller.hide(WindowInsetsCompat.Type.statusBars());
+        } else {
+            controller.show(WindowInsetsCompat.Type.statusBars());
+        }
     }
 
     @PluginMethod
@@ -161,6 +238,25 @@ public class NativeIntegrationPlugin extends Plugin {
                 call.resolve(result);
             }
         );
+    }
+
+    private boolean putSystemColor(JSObject result, String key, String resourceName) {
+        int id = getContext().getResources().getIdentifier(resourceName, "color", "android");
+        if (id == 0) return false;
+        int color = getContext().getColor(id);
+        result.put(key, String.format("#%06X", color & 0x00FFFFFF));
+        return true;
+    }
+
+    private static int hapticConstant(String type) {
+        if ("longPress".equals(type)) return HapticFeedbackConstants.LONG_PRESS;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if ("confirm".equals(type)) return HapticFeedbackConstants.CONFIRM;
+            if ("reject".equals(type)) return HapticFeedbackConstants.REJECT;
+        }
+        if ("confirm".equals(type)) return HapticFeedbackConstants.VIRTUAL_KEY;
+        if ("reject".equals(type)) return HapticFeedbackConstants.LONG_PRESS;
+        return HapticFeedbackConstants.KEYBOARD_TAP;
     }
 
     private static void putPreference(

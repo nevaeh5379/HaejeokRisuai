@@ -36,7 +36,30 @@ interface NativeIntegrationPlugin {
   updateRecentChatWidget(options: {
     item: AndroidRecentChatWidgetItem | null;
   }): Promise<void>;
-  setSystemBarAppearance(options: { dark: boolean }): Promise<void>;
+  setSystemBarAppearance(options: {
+    dark: boolean;
+    hideStatusBar: boolean;
+  }): Promise<void>;
+  getSystemPalette(): Promise<{
+    available: boolean;
+    accentLight?: string;
+    accentDark?: string;
+    accentContainerLight?: string;
+    accentContainerDark?: string;
+    surfaceLight?: string;
+    surfaceDark?: string;
+    surfaceHighLight?: string;
+    surfaceHighDark?: string;
+    onSurfaceLight?: string;
+    onSurfaceDark?: string;
+    onSurfaceVariantLight?: string;
+    onSurfaceVariantDark?: string;
+    outlineLight?: string;
+    outlineDark?: string;
+  }>;
+  haptic(options: {
+    type: "selection" | "confirm" | "reject" | "longPress";
+  }): Promise<{ performed: boolean }>;
   requestPinRecentChatWidget(): Promise<{
     supported: boolean;
     accepted: boolean;
@@ -80,12 +103,73 @@ export async function updateAndroidRecentChatWidget(
   }
 }
 
-export async function syncAndroidSystemBars(dark: boolean): Promise<void> {
+export async function syncAndroidSystemBars(
+  dark: boolean,
+  hideStatusBar = false,
+): Promise<void> {
   if (!nativeIntegration) return;
   try {
-    await nativeIntegration.setSystemBarAppearance({ dark });
+    await nativeIntegration.setSystemBarAppearance({ dark, hideStatusBar });
   } catch (error) {
     console.warn("[NativeIntegration] Failed to sync Android system bars:", error);
+  }
+}
+
+export async function applyAndroidDynamicPalette(dark: boolean): Promise<void> {
+  if (!nativeIntegration || typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (!root.classList.contains("theme-android-material")) return;
+  try {
+    const palette = await nativeIntegration.getSystemPalette();
+    if (!root.classList.contains("theme-android-material") || !palette.available) return;
+
+    const accent = dark ? palette.accentDark : palette.accentLight;
+    const accentContainer = dark
+      ? palette.accentContainerDark
+      : palette.accentContainerLight;
+    const surface = dark ? palette.surfaceDark : palette.surfaceLight;
+    const surfaceHigh = dark ? palette.surfaceHighDark : palette.surfaceHighLight;
+    const onSurface = dark ? palette.onSurfaceDark : palette.onSurfaceLight;
+    const onSurfaceVariant = dark
+      ? palette.onSurfaceVariantDark
+      : palette.onSurfaceVariantLight;
+    const outline = dark ? palette.outlineDark : palette.outlineLight;
+
+    const set = (name: string, value?: string) => {
+      if (value) root.style.setProperty(name, value);
+    };
+    set("--risu-android-system-accent", accent);
+    set("--risu-android-system-accent-container", accentContainer);
+    set("--risu-android-system-surface", surface);
+    set("--risu-android-system-surface-high", surfaceHigh);
+    set("--risu-android-system-on-surface", onSurface);
+    set("--risu-android-system-on-surface-variant", onSurfaceVariant);
+    set("--risu-android-system-outline", outline);
+
+    // Feed the native palette into Risu's existing tokens so every surface,
+    // not just one button, visibly follows Android's wallpaper-derived colors.
+    set("--risu-theme-bgcolor", surface);
+    set("--risu-theme-darkbg", surfaceHigh ?? surface);
+    set("--risu-theme-borderc", accent);
+    set("--risu-theme-selected", accentContainer ?? surfaceHigh);
+    set("--risu-theme-textcolor", onSurface);
+    set("--risu-theme-textcolor2", onSurfaceVariant);
+    set("--risu-theme-darkborderc", outline);
+    set("--risu-theme-darkbutton", accentContainer ?? surfaceHigh);
+  } catch (error) {
+    console.warn("[NativeIntegration] Failed to read Android dynamic colors:", error);
+  }
+}
+
+export async function triggerAndroidHaptic(
+  type: "selection" | "confirm" | "reject" | "longPress",
+): Promise<boolean> {
+  if (!nativeIntegration) return false;
+  try {
+    return (await nativeIntegration.haptic({ type })).performed;
+  } catch (error) {
+    console.warn("[NativeIntegration] Failed to perform haptic feedback:", error);
+    return false;
   }
 }
 

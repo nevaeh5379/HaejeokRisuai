@@ -9,7 +9,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
 import { syncAndroidSystemBars } from "../androidNativeIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
-import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
+import { applyUITheme, getUITheme, isWindowsFluentTheme } from "./uiTheme";
 
 export interface ColorScheme {
   bgcolor: string;
@@ -363,7 +363,10 @@ export function updateColorScheme() {
     document.documentElement.style.colorScheme = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
     if (isCapacitorAndroid) {
-      void syncAndroidSystemBars(colorScheme.type === "dark");
+      void syncAndroidSystemBars(
+        colorScheme.type === "dark",
+        getUITheme() === "android",
+      );
     }
     applyUITheme();
     const isFluent = isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
