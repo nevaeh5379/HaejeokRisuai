@@ -8,6 +8,7 @@ import {
   remove,
 } from "@tauri-apps/plugin-fs";
 import { changeFullscreen, checkNullish, Semaphore, sleep } from "./util";
+import { isHiddenFromCharacterLists } from "./systemCharacters";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { v4 as uuidv4 } from "uuid";
 import { appDataDir, join } from "@tauri-apps/api/path";
@@ -1635,11 +1636,11 @@ export function checkCharOrder() {
   for (let i = 0; i < characterStore.characters.length; i++) {
     const char = characterStore.characters[i];
     const charId = char.chaId;
-    if (!char.trashTime) {
+    if (!isHiddenFromCharacterLists(char)) {
       charIdList.push(charId);
     }
     if (!ordered.includes(charId)) {
-      if (charId !== "§temp" && charId !== "§playground" && !char.trashTime) {
+      if (!isHiddenFromCharacterLists(char)) {
         settingsStore.state.characterOrder.push(charId);
       }
     }

@@ -1,4 +1,5 @@
 import type { FormatingOrderItem } from "../storage/database/schema";
+import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import type { PromptItem, PromptSettings } from "./prompt";
 
 /**
@@ -29,4 +30,12 @@ export function generationOverride<T, K extends keyof ChatGenerationOverrides>(
   if (!overrides || !(key in overrides)) return fallback;
   const value = overrides[key];
   return (value === undefined ? fallback : value) as T;
+}
+
+/**
+ * {@link ChatSendOptions} plus request-local prompt overrides. Kept in src so
+ * the shared chat-core package stays free of application prompt types.
+ */
+export interface ChatSendOptionsWithGeneration extends ChatSendOptions {
+  generation?: ChatGenerationOverrides;
 }

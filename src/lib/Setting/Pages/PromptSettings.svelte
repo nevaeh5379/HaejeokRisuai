@@ -1,11 +1,9 @@
 <script lang="ts">
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lucide/svelte";
+  import PromptTemplateEditor from "src/lib/UI/PromptTemplateEditor.svelte";
+  import { ArrowLeft, PlusIcon, TrashIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import PromptDataItem from "src/lib/UI/PromptDataItem.svelte";
-    import { tokenizePreset, type PromptItem } from "src/ts/process/prompt";
-    import { templateCheck } from "src/ts/process/templates/templateCheck";
 
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
@@ -17,18 +15,9 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
     import Accordion from "src/lib/UI/Accordion.svelte";
     import ModelList from "src/lib/UI/ModelList.svelte";
-    import { onDestroy, onMount } from "svelte";
     import {defaultAutoSuggestPrompt} from "../../../ts/storage/presets/defaultPrompts";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
 
-    let sorted = 0
-    let warns: string[] = $state([])
-    let tokens = $state(0)
-    let extokens = $state(0)
-    let draggedIndex = $state(-1)
-    let dragOverIndex = $state(-1)
-    let openedItemIndices = $state(new Set<number>())
-    executeTokenize(presetStore.state.promptTemplate)
   interface Props {
     onGoBack?: () => void;
     mode?: 'independent'|'inline';
@@ -36,121 +25,6 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
   }
 
   let { onGoBack = () => {}, mode = 'independent', subMenu = $bindable(0) }: Props = $props();
-
-    async function executeTokenize(prest: PromptItem[]){
-        tokens = await tokenizePreset(prest, true)
-        extokens = await tokenizePreset(prest, false)
-    }
-
-    $effect.pre(() => {
-    warns = templateCheck(presetStore.state.promptTemplate)
-  });
-  $effect.pre(() => {
-    executeTokenize(presetStore.state.promptTemplate)
-  });
-
-  function getDisplayTemplate() {
-    return presetStore.state.promptTemplate.map((item: any, i: number) => ({
-      item,
-      originalIndex: i,
-      displayIndex: i
-    }))
-  }
-
-  function getReorderedTemplate() {
-    if (draggedIndex === -1 || dragOverIndex === -1 || draggedIndex === dragOverIndex) {
-      return getDisplayTemplate()
-    }
-
-    const items = getDisplayTemplate()
-    const [movedItem] = items.splice(draggedIndex, 1)
-
-    const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
-    items.splice(adjustedDropIndex, 0, movedItem)
-
-    return items.map((item: any, displayIndex: number) => ({
-      ...item,
-      displayIndex
-    }))
-  }
-
-  function handlePromptDrop() {
-    if (draggedIndex === -1 || dragOverIndex === -1 || draggedIndex === dragOverIndex) {
-      return
-    }
-
-    const templates = [...presetStore.state.promptTemplate]
-    const [movedItem] = templates.splice(draggedIndex, 1)
-
-    const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
-    templates.splice(adjustedDropIndex, 0, movedItem)
-
-    const newOpenedIndices = new Set<number>()
-    openedItemIndices.forEach((index) => {
-      if (index === draggedIndex) {
-        newOpenedIndices.add(adjustedDropIndex)
-      } else if (draggedIndex < adjustedDropIndex) {
-        if (index > draggedIndex && index <= adjustedDropIndex) {
-          newOpenedIndices.add(index - 1)
-        } else {
-          newOpenedIndices.add(index)
-        }
-      } else {
-        if (index >= adjustedDropIndex && index < draggedIndex) {
-          newOpenedIndices.add(index + 1)
-        } else {
-          newOpenedIndices.add(index)
-        }
-      }
-    })
-    openedItemIndices = newOpenedIndices
-
-    presetStore.state.promptTemplate = templates
-    draggedIndex = -1
-    dragOverIndex = -1
-  }
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.ctrlKey && e.altKey && e.key === 'o') {
-      if (openedItemIndices.size === presetStore.state.promptTemplate.length) {
-        openedItemIndices = new Set<number>()
-      } else {
-        openedItemIndices = new Set(presetStore.state.promptTemplate.map((_: any, i: number) => i))
-      }
-    }
-  }
-
-  onMount(() => {
-    document.addEventListener('keydown', handleKeyDown)
-  })
-
-  onDestroy(() => {
-    document.removeEventListener('keydown', handleKeyDown)
-  })
-
-  let addNewPromptOpen = $state(false)
-
-  const promptTypeOptions: { type: string; label: string; defaults: Partial<PromptItem> }[] = [
-    { type: 'plain', label: language.formating.plain, defaults: { type: 'plain', text: '', role: 'system', type2: 'normal' } as any },
-    { type: 'jailbreak', label: language.formating.jailbreak, defaults: { type: 'jailbreak', text: '', role: 'system', type2: 'normal' } as any },
-    { type: 'chat', label: language.Chat, defaults: { type: 'chat', rangeStart: -1000, rangeEnd: 'end' } as any },
-    { type: 'persona', label: language.formating.personaPrompt, defaults: { type: 'persona' } as any },
-    { type: 'description', label: language.formating.description, defaults: { type: 'description' } as any },
-    { type: 'authornote', label: language.formating.authorNote, defaults: { type: 'authornote' } as any },
-    { type: 'lorebook', label: language.formating.lorebook, defaults: { type: 'lorebook' } as any },
-    { type: 'memory', label: language.formating.memory, defaults: { type: 'memory' } as any },
-    { type: 'postEverything', label: language.formating.postEverything, defaults: { type: 'postEverything' } as any },
-    { type: 'chatML', label: 'ChatML', defaults: { type: 'chatML', text: '' } as any },
-    { type: 'cache', label: language.cachePoint ?? 'Cache', defaults: { type: 'cache', name: '', depth: 1, role: 'all' } as any },
-  ]
-
-  function addPromptWithType(defaults: Partial<PromptItem>) {
-    let value = presetStore.state.promptTemplate ?? []
-    value.push(defaults as PromptItem)
-    presetStore.state.promptTemplate = value
-    addNewPromptOpen = false
-  }
-
 </script>
 {#if mode === 'independent'}
     <h2 class="mb-2 text-2xl font-bold mt-2 items-center flex">
@@ -173,145 +47,11 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
         </button>
     </div>
 {/if}
-{#if warns.length > 0 && subMenu === 0}
-    <div class="text-red-500 flex flex-col items-start p-2 rounded-md border-red-500 border mt-4">
-        <h2 class="text-xl font-bold">Warning</h2>
-        <div class="border-b border-b-red-500 mt-1 mb-2 w-full"></div>
-        {#each warns as warn}
-            <span class="ml-4">{warn}</span>
-        {/each}
-    </div>
-{/if}
-
 {#if subMenu === 0}
-    <!-- Toolbar -->
-    <div class="flex items-center justify-between mt-4 mb-1 px-1">
-        <span class="text-xs text-textcolor2">{presetStore.state.promptTemplate.length} items</span>
-        <button
-            class="text-xs px-2 py-1 rounded border border-darkborderc text-textcolor2 hover:text-textcolor hover:bg-selected transition-colors flex items-center gap-1 cursor-pointer"
-            onclick={() => {
-                if (openedItemIndices.size === presetStore.state.promptTemplate.length) {
-                    openedItemIndices = new Set<number>()
-                } else {
-                    openedItemIndices = new Set(presetStore.state.promptTemplate.map((_: any, i: number) => i))
-                }
-            }}
-        >
-            <ChevronsUpDown size={13} />
-            {openedItemIndices.size === presetStore.state.promptTemplate.length ? 'Collapse All' : 'Expand All'}
-        </button>
-    </div>
-    <div class="contain w-full max-w-full flex flex-col p-3 rounded-md">
-        {#if presetStore.state.promptTemplate.length === 0}
-                <div class="text-textcolor2">No Format</div>
-        {/if}
-        {#key sorted}
-            {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex }}
-                <PromptDataItem
-                    bind:promptItem={presetStore.state.promptTemplate[originalIndex]}
-                    isDragging={draggedIndex === originalIndex}
-                    isOpened={openedItemIndices.has(originalIndex)}
-                    bind:draggedIndex
-                    bind:dragOverIndex
-                    bind:openedItemIndices
-                    currentIndex={originalIndex}
-                    displayIndex={displayIndex}
-                    onDrop={handlePromptDrop}
-                    onRemove={() => {
-                        let templates = presetStore.state.promptTemplate
-                        templates.splice(originalIndex, 1)
-                        presetStore.state.promptTemplate = templates
-
-                        const newOpenedIndices = new Set<number>()
-                        openedItemIndices.forEach((index) => {
-                            if (index === originalIndex) {
-                                return
-                            } else if (index > originalIndex) {
-                                newOpenedIndices.add(index - 1)
-                            } else {
-                                newOpenedIndices.add(index)
-                            }
-                        })
-                        openedItemIndices = newOpenedIndices
-
-                        draggedIndex = -1
-                        dragOverIndex = -1
-                    }}
-                    moveDown={() => {
-                        if(originalIndex === presetStore.state.promptTemplate.length - 1){
-                            return
-                        }
-                        let templates = presetStore.state.promptTemplate
-                        let temp = templates[originalIndex]
-                        templates[originalIndex] = templates[originalIndex + 1]
-                        templates[originalIndex + 1] = temp
-                        presetStore.state.promptTemplate = templates
-
-                        const newOpenedIndices = new Set<number>()
-                        openedItemIndices.forEach((index) => {
-                            if (index === originalIndex) {
-                                newOpenedIndices.add(originalIndex + 1)
-                            } else if (index === originalIndex + 1) {
-                                newOpenedIndices.add(originalIndex)
-                            } else {
-                                newOpenedIndices.add(index)
-                            }
-                        })
-                        openedItemIndices = newOpenedIndices
-                    }}
-                    moveUp={() => {
-                        if(originalIndex === 0){
-                            return
-                        }
-                        let templates = presetStore.state.promptTemplate
-                        let temp = templates[originalIndex]
-                        templates[originalIndex] = templates[originalIndex - 1]
-                        templates[originalIndex - 1] = temp
-                        presetStore.state.promptTemplate = templates
-
-                        const newOpenedIndices = new Set<number>()
-                        openedItemIndices.forEach((index) => {
-                            if (index === originalIndex) {
-                                newOpenedIndices.add(originalIndex - 1)
-                            } else if (index === originalIndex - 1) {
-                                newOpenedIndices.add(originalIndex)
-                            } else {
-                                newOpenedIndices.add(index)
-                            }
-                        })
-                        openedItemIndices = newOpenedIndices
-                    }} />
-            {/each}
-        {/key}
-    </div>
-
-    <!-- Add prompt dropdown -->
-    <div class="relative mt-2">
-        <button class="font-medium cursor-pointer hover:text-green-500 flex items-center gap-1 text-sm" onclick={() => {
-            addNewPromptOpen = !addNewPromptOpen
-        }}>
-            <PlusIcon size={18} />
-            <ChevronDown size={14} />
-        </button>
-        {#if addNewPromptOpen}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="fixed inset-0 z-40" onclick={() => { addNewPromptOpen = false }}></div>
-            <div class="absolute left-0 bottom-full mb-1 z-50 bg-darkbg border border-darkborderc rounded-lg shadow-lg py-1 min-w-48 max-h-64 overflow-y-auto">
-                {#each promptTypeOptions as opt}
-                    <button
-                        class="w-full text-left px-3 py-1.5 text-sm text-textcolor hover:bg-selected transition-colors cursor-pointer"
-                        onclick={() => addPromptWithType(opt.defaults)}
-                    >
-                        {opt.label}
-                    </button>
-                {/each}
-            </div>
-        {/if}
-    </div>
-
-    <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
-    <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>
+    <PromptTemplateEditor
+        bind:template={presetStore.state.promptTemplate}
+        promptSettings={presetStore.state.promptSettings}
+    />
 {:else}
     <span class="text-textcolor mt-4">{language.postEndInnerFormat}</span>
     <TextInput bind:value={presetStore.state.promptSettings.postEndInnerFormat}/>

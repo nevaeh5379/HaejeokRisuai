@@ -5,10 +5,8 @@ import {
   createChatGenerationPlan,
   executeChatModelRequest,
 } from "@risuai/chat-core/generation.cjs";
-import type {
-  ChatExecutor,
-  ChatSendOptions,
-} from "@risuai/chat-core/executor.cjs";
+import type { ChatExecutor } from "@risuai/chat-core/executor.cjs";
+import type { ChatSendOptionsWithGeneration } from "./chatGenerationContext";
 import type {
   ChatModelResponse,
   ChatStageTimings,
@@ -56,7 +54,7 @@ export class LocalChatExecutor implements ChatExecutor {
 
   async execute(
     chatProcessIndex = -1,
-    arg: ChatSendOptions = {},
+    arg: ChatSendOptionsWithGeneration = {},
   ): Promise<boolean> {
     const abortSignal = arg.signal ?? new AbortController().signal;
     const errorContext: ChatErrorContext = {
@@ -78,6 +76,7 @@ export class LocalChatExecutor implements ChatExecutor {
         this.execute(chatProcessIndex, {
           chatAdditonalTokens,
           signal,
+          generation: arg.generation,
           targetCharacterId: arg.targetCharacterId,
           targetChatId: arg.targetChatId,
         }),
@@ -112,6 +111,7 @@ export class LocalChatExecutor implements ChatExecutor {
       continued: arg.continue,
       findCharacter,
       throwError,
+      generation: arg.generation,
     });
     if (!prompt.ok) return false;
     currentChat = prompt.currentChat;
@@ -283,12 +283,14 @@ export class LocalChatExecutor implements ChatExecutor {
           continue: true,
           signal: abortSignal,
           usedContinueTokens: resultTokens,
+          generation: arg.generation,
           targetCharacterId: arg.targetCharacterId,
           targetChatId: arg.targetChatId,
         }),
       resendGeneration: () =>
         this.execute(chatProcessIndex, {
           signal: abortSignal,
+          generation: arg.generation,
           targetCharacterId: arg.targetCharacterId,
           targetChatId: arg.targetChatId,
         }),

@@ -17,6 +17,8 @@ import { sleep } from "src/ts/util";
 import { registeredCustomPluginMCPs } from "./pluginmcp";
 import { Mutex } from "../../mutex";
 import type { ChatExecutionTarget } from "../../chatTarget";
+import { isRisuAgentCharacterId } from "../../systemCharacters";
+import { getRisuAgentContextScope } from "./risuagent/scope";
 
 export type MCPToolWithURL = MCPTool & {
   mcpURL: string;
@@ -285,6 +287,32 @@ export async function callMCPTool(
   mcpURL?: string,
   context?: MCPToolCallContext,
 ): Promise<RPCToolCallContent[]> {
+  // Risu Agent generation is served exclusively by the scoped, read-only access
+  // client. This prevents a hallucinated tool name from falling through to the
+  // general (read + write) Risu Access MCP. Both the generation character and
+  // the stable chat target are checked so the guard survives a missing
+  // in-flight character object.
+  if (
+    isRisuAgentCharacterId(context?.currentChar?.chaId) ||
+    isRisuAgentCharacterId(context?.chatTarget?.characterId)
+  ) {
+    const { RisuAgentAccessClient } = await import("./risuagent");
+    const scope = getRisuAgentContextScope(context?.chatTarget?.chatId);
+    if (!scope) {
+      return [
+        {
+          type: "text",
+          text: "Error: No Risu context is attached to this Risu Agent session.",
+        },
+      ];
+    }
+    return await new RisuAgentAccessClient(scope).callTool(
+      methodName,
+      args,
+      context,
+    );
+  }
+
   if (mcpURL) {
     await initializeMCPs([mcpURL]);
     const client = MCPs[mcpURL] ?? callOnlyMCPs[mcpURL];
@@ -311,7 +339,22 @@ export async function callMCPTool(
 }
 
 //Currently just a wrapper for getMCPTools, but can be extended later for more than MCPs
-export async function getTools(character?: character | groupChat) {
+export async function getTools(
+  character?: character | groupChat,
+  targetChatId?: string,
+) {
+  // Risu Agent only receives the read-only tools for its explicitly attached
+  // Risu context. With no attachment it behaves as a plain general assistant
+  // with no tools at all.
+  if (isRisuAgentCharacterId(character?.chaId)) {
+    const scope = getRisuAgentContextScope(targetChatId);
+    if (!scope) return [];
+    const { RisuAgentAccessClient, RISU_AGENT_MCP_URL } = await import(
+      "./risuagent"
+    );
+    const tools = await new RisuAgentAccessClient(scope).getToolList();
+    return tools.map((tool) => ({ ...tool, mcpURL: RISU_AGENT_MCP_URL }));
+  }
   return await getMCPTools(undefined, character);
 }
 

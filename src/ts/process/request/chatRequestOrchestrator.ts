@@ -50,7 +50,9 @@ export async function requestChatData(
           ),
         }))
       : [];
-  const tools = arg.tools ?? (await getTools(requestCharacter));
+  const tools =
+    arg.tools ??
+    (await getTools(requestCharacter, arg.triggerTarget?.chatId));
   fallBackModels.push("");
 
   if (arg.escape) {

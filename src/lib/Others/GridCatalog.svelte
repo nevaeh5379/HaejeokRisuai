@@ -10,6 +10,7 @@
     import Button from "../UI/GUI/Button.svelte";
     import { language } from "src/lang";
     import { parseMultilangString } from "src/ts/util";
+    import { isReservedSystemCharacterId } from "src/ts/systemCharacters";
     import { checkCharOrder, forageStorage } from "src/ts/globalApi.svelte";
     import { NodeStorage } from "src/ts/storage/files/nodeStorage";
     import type { NodePostgresCharacterSearchResult } from "src/ts/storage/sql/postgres/nodeSqlStorage";
@@ -53,7 +54,7 @@
         // In-memory fallback
         const lower = tag.toLowerCase();
         tagResults = characterStore.characters
-            .filter((c) => !c.trashTime && ((c as any).tags ?? []).some((t: string) => t.toLowerCase().includes(lower)))
+            .filter((c) => !c.trashTime && !isReservedSystemCharacterId(c.chaId) && ((c as any).tags ?? []).some((t: string) => t.toLowerCase().includes(lower)))
             .map((c) => ({ id: c.chaId, name: c.name, image: c.image ?? null, kind: c.type === 'group' ? 'group' : 'character' }));
     }
 
@@ -69,6 +70,9 @@
 
         for(let i=0;i<chars.length;i++){
             const c = chars[i]
+            if(!trash && isReservedSystemCharacterId(c.chaId)){
+                continue
+            }
             if(c.trashTime && !trash){
                 continue
             }

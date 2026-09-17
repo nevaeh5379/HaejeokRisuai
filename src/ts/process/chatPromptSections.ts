@@ -49,7 +49,7 @@ function ensurePostEverythingCard(template: PromptItem[]) {
   }
 }
 
-function getUtilityBotTemplate(): PromptItem[] {
+export function getUtilityBotTemplate(): PromptItem[] {
   return [
     { type: "plain", text: "", role: "system", type2: "main" },
     { type: "description" },

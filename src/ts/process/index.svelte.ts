@@ -11,7 +11,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { createLocalChatExecutor } from "./chatLocalExecutor";
 import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
-import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
+import type { ChatSendOptionsWithGeneration } from "./chatGenerationContext";
 import {
   beginNativeChatRequest,
   endNativeChatRequest,
@@ -47,7 +47,7 @@ const localChatExecutor = createLocalChatExecutor({
 
 export async function sendChat(
   chatProcessIndex = -1,
-  arg: ChatSendOptions = {},
+  arg: ChatSendOptionsWithGeneration = {},
 ): Promise<boolean> {
   const keepAlive = !arg.preview && !arg.previewPrompt;
   const selectedIndex = get(selectedCharID);

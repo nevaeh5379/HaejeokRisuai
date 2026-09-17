@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { MobileGUIStack, MobileSideBar, selectedCharID } from "src/ts/stores.svelte";
+    import { MobileGUIStack, MobileSideBar, selectedCharID, PlaygroundStore } from "src/ts/stores.svelte";
     import { WrenchIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { isLite } from "src/ts/lite";
@@ -15,6 +15,12 @@
     const btwPanelLoader = () => import('../ChatScreens/BtwPanel.svelte')
     const mobileChatListLoader = () => import('./MobileChatList.svelte')
     const mobileTogglesLoader = () => import('./MobileToggles.svelte')
+    const risuAgentSidebarLoader = () => import('../SideBars/RisuAgentSidebar.svelte')
+    const risuAgentLoader = () => import('../Playground/RisuAgent.svelte')
+
+    // Risu Agent replaces the character/home stacks while its Playground
+    // surface is open, and its own session list replaces the bot chat list.
+    const risuAgentOpen = $derived($PlaygroundStore === 20)
 
 </script>
 
@@ -84,7 +90,11 @@
             class:p-2={$MobileSideBar !== 4 && $MobileSideBar !== 1 && $MobileSideBar !== 6}
         >
             {#if $MobileSideBar === 1}
-                <LazyComponent loader={mobileChatListLoader} />
+                {#if risuAgentOpen}
+                    <LazyComponent loader={risuAgentSidebarLoader} />
+                {:else}
+                    <LazyComponent loader={mobileChatListLoader} />
+                {/if}
             {:else if $MobileSideBar === 2}
                 <LazyComponent loader={loadCharConfig} />
             {:else if $MobileSideBar === 6}
@@ -95,6 +105,8 @@
                 <LazyComponent loader={btwPanelLoader} />
             {/if}
         </div>
+    {:else if risuAgentOpen}
+        <LazyComponent loader={risuAgentLoader} />
     {:else if $selectedCharID !== -1}
         <LazyComponent loader={chatLoader} />
     {:else if $MobileGUIStack === 0}
