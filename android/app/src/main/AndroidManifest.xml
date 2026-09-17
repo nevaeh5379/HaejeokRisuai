@@ -105,6 +105,11 @@
         </provider>
 
         <service
+            android:name=".BotGridWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
             android:name=".RisuQuickSettingsTileService"
             android:label="@string/quick_settings_tile_label"
             android:icon="@drawable/ic_stat_risu"

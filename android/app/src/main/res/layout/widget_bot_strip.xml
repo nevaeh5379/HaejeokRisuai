@@ -6,128 +6,34 @@
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="6dp">
-    <FrameLayout
-        android:id="@+id/widget_strip_cell_0"
+
+    <TextView
+        android:id="@+id/widget_strip_previous"
+        android:layout_width="28dp"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/widget_previous_characters"
+        android:gravity="center"
+        android:text="‹"
+        android:textColor="#CCFFFFFF"
+        android:textSize="28sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/widget_strip_items"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginHorizontal="3dp"
         android:layout_weight="1"
-        android:visibility="gone">
+        android:gravity="center_vertical"
+        android:orientation="horizontal" />
 
-        <ImageView
-            android:id="@+id/widget_strip_icon_0"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:adjustViewBounds="true"
-            android:contentDescription="@string/widget_character_icon_description"
-            android:scaleType="fitCenter" />
-
-        <TextView
-            android:id="@+id/widget_strip_name_0"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@drawable/widget_card_label"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:paddingHorizontal="8dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="6dp"
-            android:textColor="#FFFFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </FrameLayout>
-    <FrameLayout
-        android:id="@+id/widget_strip_cell_1"
-        android:layout_width="0dp"
+    <TextView
+        android:id="@+id/widget_strip_next"
+        android:layout_width="28dp"
         android:layout_height="match_parent"
-        android:layout_marginHorizontal="3dp"
-        android:layout_weight="1"
-        android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/widget_strip_icon_1"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:adjustViewBounds="true"
-            android:contentDescription="@string/widget_character_icon_description"
-            android:scaleType="fitCenter" />
-
-        <TextView
-            android:id="@+id/widget_strip_name_1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@drawable/widget_card_label"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:paddingHorizontal="8dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="6dp"
-            android:textColor="#FFFFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </FrameLayout>
-    <FrameLayout
-        android:id="@+id/widget_strip_cell_2"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_marginHorizontal="3dp"
-        android:layout_weight="1"
-        android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/widget_strip_icon_2"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:adjustViewBounds="true"
-            android:contentDescription="@string/widget_character_icon_description"
-            android:scaleType="fitCenter" />
-
-        <TextView
-            android:id="@+id/widget_strip_name_2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@drawable/widget_card_label"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:paddingHorizontal="8dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="6dp"
-            android:textColor="#FFFFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </FrameLayout>
-    <FrameLayout
-        android:id="@+id/widget_strip_cell_3"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_marginHorizontal="3dp"
-        android:layout_weight="1"
-        android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/widget_strip_icon_3"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:adjustViewBounds="true"
-            android:contentDescription="@string/widget_character_icon_description"
-            android:scaleType="fitCenter" />
-
-        <TextView
-            android:id="@+id/widget_strip_name_3"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@drawable/widget_card_label"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:paddingHorizontal="8dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="6dp"
-            android:textColor="#FFFFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </FrameLayout>
+        android:contentDescription="@string/widget_next_characters"
+        android:gravity="center"
+        android:text="›"
+        android:textColor="#CCFFFFFF"
+        android:textSize="28sp"
+        android:visibility="gone" />
 </LinearLayout>

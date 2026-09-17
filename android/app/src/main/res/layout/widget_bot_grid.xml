@@ -1,40 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
-    android:gravity="top"
-    android:orientation="horizontal"
     android:padding="6dp">
 
-    <LinearLayout
-        android:id="@+id/widget_bot_column_0"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:paddingHorizontal="3dp" />
+    <GridView
+        android:id="@+id/widget_bot_grid_collection"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:columnWidth="88dp"
+        android:gravity="center_horizontal"
+        android:horizontalSpacing="6dp"
+        android:numColumns="3"
+        android:scrollbars="none"
+        android:stretchMode="columnWidth"
+        android:verticalSpacing="6dp" />
 
-    <LinearLayout
-        android:id="@+id/widget_bot_column_1"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:paddingHorizontal="3dp" />
-    <LinearLayout
-        android:id="@+id/widget_bot_column_2"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:paddingHorizontal="3dp" />
-
-    <LinearLayout
-        android:id="@+id/widget_bot_column_3"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:paddingHorizontal="3dp" />
-</LinearLayout>
+    <TextView
+        android:id="@+id/widget_bot_grid_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="@string/widget_no_recent_characters"
+        android:textColor="#AAFFFFFF"
+        android:textSize="14sp" />
+</FrameLayout>

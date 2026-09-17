@@ -9,7 +9,7 @@ import {
 } from "./androidNativeIntegration";
 
 const SHORTCUT_LIMIT = 4;
-const WIDGET_LIMIT = 8;
+const WIDGET_LIMIT = 18;
 const RECENT_SCAN_LIMIT = 32;
 const widgetArtworkCache = new Map<string, string | null>();
 
