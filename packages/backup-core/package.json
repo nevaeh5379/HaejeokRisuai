@@ -116,6 +116,12 @@
       "import": "./src/node/importDatabase.ts",
       "require": "./dist/node/importDatabase.js",
       "default": "./src/node/importDatabase.ts"
+    },
+    "./node/exportService": {
+      "types": "./src/node/exportService.ts",
+      "import": "./src/node/exportService.ts",
+      "require": "./dist/node/exportService.js",
+      "default": "./src/node/exportService.ts"
     }
   },
   "scripts": {

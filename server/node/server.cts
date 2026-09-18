@@ -147,6 +147,9 @@ const {
   LocalBackupExportJobStore,
 } = require("../../packages/backup-core/dist/node/exportJobStore.js");
 const {
+  LocalBackupExportService,
+} = require("../../packages/backup-core/dist/node/exportService.js");
+const {
   LocalBackupImportJobError,
   LocalBackupImportJobStore,
 } = require("../../packages/backup-core/dist/node/importJobStore.js");
@@ -3982,6 +3985,18 @@ async function handleCharxExport(req, res) {
 app.post("/api/charx-export", authenticatedRouteLimiter, handleCharxExport);
 
 const localBackupJobs = new LocalBackupExportJobStore();
+const localBackupExportService = new LocalBackupExportService(
+  localBackupJobs,
+  {
+    stream: async (job, res, onProgress) =>
+      await streamServerLocalBackup(
+        res,
+        job.mode,
+        job.streamOptions,
+        onProgress,
+      ),
+  },
+);
 
 function sendLocalBackupExportJobError(res, error) {
   if (!(error instanceof LocalBackupExportJobError)) return false;
@@ -4951,27 +4966,13 @@ app.post(
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    const mode = ["compatible", "partial"].includes(req.query.mode)
-      ? req.query.mode
-      : "native";
-    const job = localBackupJobs.create({
-      mode,
-      streamOptions: {
-        pageSize: normalizeLocalBackupInteger(
-          req.query.pageSize,
-          PORTABLE_DATABASE_STREAM_PAGE_SIZE,
-          1,
-          500,
-        ),
-        fragmentRecords: normalizeLocalBackupInteger(
-          req.query.fragmentRecords,
-          PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
-          1,
-          PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-        ),
-      },
-    });
-    res.send({ id: job.id });
+    res.send(
+      localBackupExportService.createJob({
+        mode: req.query.mode,
+        pageSize: req.query.pageSize,
+        fragmentRecords: req.query.fragmentRecords,
+      }),
+    );
   },
 );
 
@@ -4981,7 +4982,7 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     try {
-      res.send(localBackupJobs.progress(req.params.jobId));
+      res.send(localBackupExportService.progress(req.params.jobId));
     } catch (error) {
       if (sendLocalBackupExportJobError(res, error)) return;
       next(error);
@@ -4995,8 +4996,9 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     try {
-      res.send(await localBackupJobs.wait(req.params.jobId));
-      localBackupJobs.remove(req.params.jobId);
+      res.send(
+        await localBackupExportService.waitAndRemove(req.params.jobId),
+      );
     } catch (error) {
       if (sendLocalBackupExportJobError(res, error)) return;
       next(error);
@@ -5010,38 +5012,14 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     const jobId = req.params.jobId;
-    let job;
     try {
-      job = localBackupJobs.beginStreaming(jobId);
+      await localBackupExportService.stream(jobId, res);
     } catch (error) {
       if (sendLocalBackupExportJobError(res, error)) return;
-      next(error);
-      return;
-    }
-
-    try {
-      await streamServerLocalBackup(
-        res,
-        job.mode,
-        job.streamOptions,
-        (progress) => {
-          localBackupJobs.updateProgress(jobId, progress);
-        },
-      );
-      localBackupJobs.updateProgress(jobId, {
-        stage: "finalizing",
-        current: 1,
-        total: 1,
-      });
-      localBackupJobs.settle(jobId, "complete");
-    } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[Local backup] Streaming export failed:", error);
       if (!res.headersSent) res.status(500).send({ error: message });
       else res.destroy(error);
-      try {
-        localBackupJobs.settle(jobId, "error", message);
-      } catch {}
     }
   },
 );
