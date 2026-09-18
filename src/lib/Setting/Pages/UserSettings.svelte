@@ -15,8 +15,11 @@
     import { exportAsDataset } from "src/ts/storage/backup/exportAsDataset";
     import { cleanColdStorage } from "src/ts/process/coldstorage.svelte";
     import { migrateLocalInlaysToServer } from "src/ts/process/files/inlays";
+    import Help from "src/lib/Others/Help.svelte";
+    import { ChevronDownIcon, ChevronRightIcon } from "@lucide/svelte";
 
     let inlayMigrating = $state(false);
+    let localBackupPerformanceOpen = $state(false);
 
     function resetLocalBackupPerformance() {
         settingsStore.state.localBackupDatabasePageRecords = DEFAULT_LOCAL_BACKUP_PERFORMANCE.databasePageRecords;
@@ -59,10 +62,27 @@
 </div>
 
 <div class="mt-3 rounded-xl border border-darkborderc bg-darkbg/40 p-3">
-    <h3 class="m-0 text-sm font-semibold text-textcolor">{language.localBackupPerformanceTitle}</h3>
+    <button
+        type="button"
+        class="flex w-full items-center justify-between text-left"
+        onclick={() => {
+            localBackupPerformanceOpen = !localBackupPerformanceOpen;
+        }}
+    >
+        <h3 class="m-0 text-sm font-semibold text-textcolor">{language.localBackupPerformanceTitle}</h3>
+        {#if localBackupPerformanceOpen}
+            <ChevronDownIcon size={16} class="shrink-0 text-textcolor2" />
+        {:else}
+            <ChevronRightIcon size={16} class="shrink-0 text-textcolor2" />
+        {/if}
+    </button>
+    {#if localBackupPerformanceOpen}
     <div class="mt-3 grid gap-3 md:grid-cols-2">
         <div>
-            <label class="block text-xs font-medium text-textcolor2" for="local-backup-page-records">{language.localBackupDatabasePageRecords}</label>
+            <div class="flex items-center gap-1">
+                <label class="text-xs font-medium text-textcolor2" for="local-backup-page-records">{language.localBackupDatabasePageRecords}</label>
+                <Help key="localBackupDatabasePageRecords" />
+            </div>
             <NumberInput
                 id="local-backup-page-records"
                 bind:value={settingsStore.state.localBackupDatabasePageRecords}
@@ -71,10 +91,12 @@
                 fullwidth={true}
                 className="mt-1"
             />
-            <p class="mt-1 text-xs text-textcolor2">{language.localBackupDatabasePageRecordsDescription}</p>
         </div>
         <div>
-            <label class="block text-xs font-medium text-textcolor2" for="local-backup-fragment-records">{language.localBackupFragmentRecords}</label>
+            <div class="flex items-center gap-1">
+                <label class="text-xs font-medium text-textcolor2" for="local-backup-fragment-records">{language.localBackupFragmentRecords}</label>
+                <Help key="localBackupFragmentRecords" />
+            </div>
             <NumberInput
                 id="local-backup-fragment-records"
                 bind:value={settingsStore.state.localBackupFragmentRecords}
@@ -83,10 +105,12 @@
                 fullwidth={true}
                 className="mt-1"
             />
-            <p class="mt-1 text-xs text-textcolor2">{language.localBackupFragmentRecordsDescription}</p>
         </div>
         <div>
-            <label class="block text-xs font-medium text-textcolor2" for="local-backup-writer-buffer">{language.localBackupWriterBufferKiB}</label>
+            <div class="flex items-center gap-1">
+                <label class="text-xs font-medium text-textcolor2" for="local-backup-writer-buffer">{language.localBackupWriterBufferKiB}</label>
+                <Help key="localBackupWriterBufferKiB" />
+            </div>
             <NumberInput
                 id="local-backup-writer-buffer"
                 bind:value={settingsStore.state.localBackupWriterBufferKiB}
@@ -95,10 +119,12 @@
                 fullwidth={true}
                 className="mt-1"
             />
-            <p class="mt-1 text-xs text-textcolor2">{language.localBackupWriterBufferKiBDescription}</p>
         </div>
         <div>
-            <label class="block text-xs font-medium text-textcolor2" for="local-backup-progress-interval">{language.localBackupProgressUpdateMs}</label>
+            <div class="flex items-center gap-1">
+                <label class="text-xs font-medium text-textcolor2" for="local-backup-progress-interval">{language.localBackupProgressUpdateMs}</label>
+                <Help key="localBackupProgressUpdateMs" />
+            </div>
             <NumberInput
                 id="local-backup-progress-interval"
                 bind:value={settingsStore.state.localBackupProgressUpdateMs}
@@ -107,12 +133,12 @@
                 fullwidth={true}
                 className="mt-1"
             />
-            <p class="mt-1 text-xs text-textcolor2">{language.localBackupProgressUpdateMsDescription}</p>
         </div>
     </div>
     <Button styled="outlined" size="sm" className="mt-3" onclick={resetLocalBackupPerformance}>
         {language.localBackupPerformanceReset}
     </Button>
+    {/if}
 </div>
 
 <div class="mt-2">

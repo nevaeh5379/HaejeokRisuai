@@ -403,6 +403,14 @@ export const languageKorean = {
       "유사도 검색 시 분당 최대 임베딩 모델 요청 수입니다.",
     hypaV3EmbeddingMaxConcurrent:
       "유사도 검색 시 최대 동시 임베딩 모델 요청 수입니다.",
+    localBackupDatabasePageRecords:
+      "한 번의 데이터베이스 페이지 조회로 읽는 최대 레코드 수입니다. 값이 크면 조회 횟수와 임시 메모리 사용량이 함께 달라집니다.",
+    localBackupFragmentRecords:
+      "하나의 데이터베이스 조각으로 직렬화하고 압축하는 최대 레코드 수입니다.",
+    localBackupWriterBufferKiB:
+      "브라우저·데스크톱·안드로이드 파일 출력기로 보내기 전에 모으는 바이트 수입니다.",
+    localBackupProgressUpdateMs:
+      "진행 UI를 갱신하는 최소 간격입니다. 백업 작업 자체를 지연시키지는 않습니다.",
   },
   setup: {
     chooseProvider: "AI 제공자를 선택해 주세요",
@@ -1860,18 +1868,10 @@ export const languageKorean = {
     "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
   localBackupPerformanceTitle: "해적리스 백업 성능",
   localBackupDatabasePageRecords: "데이터베이스 페이지 크기 (레코드)",
-  localBackupDatabasePageRecordsDescription:
-    "한 번의 데이터베이스 페이지 조회로 읽는 최대 레코드 수입니다. 값이 크면 조회 횟수와 임시 메모리 사용량이 함께 달라집니다.",
   localBackupFragmentRecords: "압축 조각 크기 (레코드)",
-  localBackupFragmentRecordsDescription:
-    "하나의 데이터베이스 조각으로 직렬화하고 압축하는 최대 레코드 수입니다.",
   localBackupWriterBufferKiB: "출력 버퍼 (KiB)",
-  localBackupWriterBufferKiBDescription:
-    "브라우저·데스크톱·안드로이드 파일 출력기로 보내기 전에 모으는 바이트 수입니다.",
   localBackupProgressUpdateMs: "진행 표시 갱신 간격 (ms)",
-  localBackupProgressUpdateMsDescription:
-    "진행 UI를 갱신하는 최소 간격입니다. 백업 작업 자체를 지연시키지는 않습니다.",
-  localBackupPerformanceReset: "기본 수치로 복원",
+  localBackupPerformanceReset: "기본값",
   localBackupProgressSelectingDestination: "백업 저장 위치 선택 중",
   localBackupProgressPreparing: "백업 준비 중",
   localBackupProgressDatabase: "데이터베이스 저장 중",

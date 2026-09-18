@@ -482,6 +482,14 @@ export const languageEnglish = {
       "Separator used to split summaries into chunks for similarity search.",
     coldstorage:
       "Coldstorage is a feature that automatically moves old chats and character data to a seperate storage to reduce the size of the main storage and improve performance. This will reduce the transfer time, transfer traffic and improve the performance when loading chats.",
+    localBackupDatabasePageRecords:
+      "Maximum records fetched by one database page query. Larger values reduce database calls and increase temporary memory use.",
+    localBackupFragmentRecords:
+      "Maximum records serialized and compressed into one database fragment.",
+    localBackupWriterBufferKiB:
+      "Bytes accumulated before writing to the browser, desktop, or Android file writer.",
+    localBackupProgressUpdateMs:
+      "Minimum interval between progress UI updates. This does not delay backup work.",
   },
   setup: {
     chooseProvider: "Choose AI Provider",
@@ -1953,18 +1961,10 @@ export const languageEnglish = {
     "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
   localBackupPerformanceTitle: "Haejeok backup performance",
   localBackupDatabasePageRecords: "Database page size (records)",
-  localBackupDatabasePageRecordsDescription:
-    "Maximum records fetched by one database page query. Larger values reduce database calls and increase temporary memory use.",
   localBackupFragmentRecords: "Compressed fragment size (records)",
-  localBackupFragmentRecordsDescription:
-    "Maximum records serialized and compressed into one database fragment.",
   localBackupWriterBufferKiB: "Output buffer (KiB)",
-  localBackupWriterBufferKiBDescription:
-    "Bytes accumulated before writing to the browser, desktop, or Android file writer.",
   localBackupProgressUpdateMs: "Progress update interval (ms)",
-  localBackupProgressUpdateMsDescription:
-    "Minimum interval between progress UI updates. This does not delay backup work.",
-  localBackupPerformanceReset: "Restore numeric defaults",
+  localBackupPerformanceReset: "Defaults",
   localBackupProgressSelectingDestination: "Selecting backup destination",
   localBackupProgressPreparing: "Preparing backup",
   localBackupProgressDatabase: "Saving database",
