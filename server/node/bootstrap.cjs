@@ -19,18 +19,26 @@ const storageSyncApplySource = path.join(
 );
 const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
+  path.join(backupCoreRoot, "dist/assetScope.js"),
   path.join(backupCoreRoot, "dist/compatibility.js"),
+  path.join(backupCoreRoot, "dist/entryPolicy.js"),
   path.join(backupCoreRoot, "dist/portableBranches.js"),
   path.join(backupCoreRoot, "dist/api.js"),
   path.join(backupCoreRoot, "dist/node/databaseStreamStore.js"),
+  path.join(backupCoreRoot, "dist/node/exportJobStore.js"),
+  path.join(backupCoreRoot, "dist/node/legacyFormat.js"),
 ];
 const backupCoreSources = [
   path.join(backupCoreRoot, "build.mjs"),
   path.join(backupCoreRoot, "package.json"),
   path.join(backupCoreRoot, "src/api.ts"),
+  path.join(backupCoreRoot, "src/assetScope.ts"),
   path.join(backupCoreRoot, "src/compatibility.ts"),
+  path.join(backupCoreRoot, "src/entryPolicy.ts"),
   path.join(backupCoreRoot, "src/portableBranches.ts"),
   path.join(backupCoreRoot, "src/node/databaseStreamStore.ts"),
+  path.join(backupCoreRoot, "src/node/exportJobStore.ts"),
+  path.join(backupCoreRoot, "src/node/legacyFormat.ts"),
 ];
 
 function isStale(source, output) {

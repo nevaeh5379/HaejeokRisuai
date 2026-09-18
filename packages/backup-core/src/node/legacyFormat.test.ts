@@ -1,13 +1,12 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
-const require = createRequire(import.meta.url);
-const {
-  createEntryHeader,
+import {
+  createLocalBackupEntryHeader,
+  decodeLegacyBackupDatabase,
+  encodeLegacyBackupDatabase,
   makeLegacyCompatibleDatabase,
-  encodeDatabase,
-  decodeDatabase,
-} = require("./localBackupFormat.cjs");
+} from "./legacyFormat";
+import { collectEssentialBackupAssetKeys } from "../assetScope";
 
 describe("local backup format", () => {
   it("round-trips the legacy compressed database payload", async () => {
@@ -15,12 +14,12 @@ describe("local backup format", () => {
       username: "테스트",
       characters: [{ chaId: "character-1", name: "봇", chats: [] }],
     };
-    const encoded = await encodeDatabase(database);
+    const encoded = await encodeLegacyBackupDatabase(database);
 
     expect([...encoded.subarray(0, 11)]).toEqual([
       0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
     ]);
-    expect(decodeDatabase(encoded)).toEqual(database);
+    expect(decodeLegacyBackupDatabase(encoded)).toEqual(database);
   });
 
   it("removes asset folder metadata without mutating the live database", () => {
@@ -49,17 +48,17 @@ describe("local backup format", () => {
 
   it("encodes the existing little-endian entry framing", () => {
     const name = "assets/example.webp";
-    const header = createEntryHeader(name, 1234);
+    const header = createLocalBackupEntryHeader(name, 1234);
     expect(header.readUInt32LE(0)).toBe(name.length);
     expect(header.subarray(4, 4 + name.length).toString()).toBe(name);
     expect(header.readUInt32LE(4 + name.length)).toBe(1234);
   });
 
   it("rejects traversal while preserving database stream namespaces", () => {
-    expect(() => createEntryHeader("database.stream/../secret", 1)).toThrow(
+    expect(() => createLocalBackupEntryHeader("database.stream/../secret", 1)).toThrow(
       "Invalid local backup entry name",
     );
-    const header = createEntryHeader("database.stream/000000000001.risudat", 9);
+    const header = createLocalBackupEntryHeader("database.stream/000000000001.risudat", 9);
     const nameLength = header.readUInt32LE(0);
     expect(header.subarray(4, 4 + nameLength).toString()).toBe(
       "database.stream/000000000001.risudat",
@@ -211,7 +210,6 @@ describe("local backup format", () => {
   it("limits partial export assets to the essential profile image set", async () => {
     // The helper lives inside server.cts; extract it the same way
     // partial exports use it (plain function on the module scope).
-    const { collectEssentialBackupAssetKeys } = extractServerPartialHelper();
     const database = {
       characters: [
         { name: "main", image: "assets/char-main.png" },
@@ -264,7 +262,6 @@ describe("local backup format", () => {
   });
 
   it("keeps full exports untouched after the partial filter runs", () => {
-    const { collectEssentialBackupAssetKeys } = extractServerPartialHelper();
     const database = { characters: [{ image: "assets/a.png" }] };
     const assetKeys = ["assets/a.png", "assets/b.png"];
     const copy = [...assetKeys];
@@ -272,20 +269,3 @@ describe("local backup format", () => {
     expect(copy).toEqual(assetKeys);
   });
 });
-
-// server.cts starts an actual server when required, so instead of importing it
-// the partial-scope helper is duplicated here via a tiny regex extraction that
-// keeps the test in sync with the production routine.
-function extractServerPartialHelper() {
-  const fs = require("node:fs");
-  const path = require("node:path");
-  const source = fs.readFileSync(path.join(__dirname, "server.cts"), "utf8");
-  const start = source.indexOf("function collectEssentialBackupAssetKeys(");
-  const end = source.indexOf("\n}", start);
-  if (start < 0 || end < 0)
-    throw new Error("partial-scope helper not found in server.cts");
-  const factory = new Function(
-    `${source.slice(start, end + 2)}; return collectEssentialBackupAssetKeys;`,
-  );
-  return { collectEssentialBackupAssetKeys: factory() };
-}

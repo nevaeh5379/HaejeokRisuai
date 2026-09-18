@@ -32,6 +32,24 @@
       "import": "./src/node/databaseStreamStore.ts",
       "require": "./dist/node/databaseStreamStore.js",
       "default": "./src/node/databaseStreamStore.ts"
+    },
+    "./assetScope": {
+      "types": "./src/assetScope.ts",
+      "import": "./src/assetScope.ts",
+      "require": "./dist/assetScope.js",
+      "default": "./src/assetScope.ts"
+    },
+    "./node/legacyFormat": {
+      "types": "./src/node/legacyFormat.ts",
+      "import": "./src/node/legacyFormat.ts",
+      "require": "./dist/node/legacyFormat.js",
+      "default": "./src/node/legacyFormat.ts"
+    },
+    "./node/exportJobStore": {
+      "types": "./src/node/exportJobStore.ts",
+      "import": "./src/node/exportJobStore.ts",
+      "require": "./dist/node/exportJobStore.js",
+      "default": "./src/node/exportJobStore.ts"
     }
   },
   "scripts": {

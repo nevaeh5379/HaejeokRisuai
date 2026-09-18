@@ -75,10 +75,14 @@ const { createNodeChatExecutor } = require("./chatExecutor.cjs");
 const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
 const {
-  createEntryHeader: createLocalBackupEntryHeader,
+  createLocalBackupEntryHeader,
   makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
-  encodeDatabase: encodeLocalBackupDatabase,
-} = require("./localBackupFormat.cjs");
+  encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
+} = require("../../packages/backup-core/dist/node/legacyFormat.js");
+const {
+  collectEssentialBackupAssetKeys,
+  collectStreamedEssentialAssetKeys,
+} = require("../../packages/backup-core/dist/assetScope.js");
 const {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
@@ -138,6 +142,10 @@ const {
   LocalBackupDatabaseStreamError,
   LocalBackupDatabaseStreamStore,
 } = require("../../packages/backup-core/dist/node/databaseStreamStore.js");
+const {
+  LocalBackupExportJobError,
+  LocalBackupExportJobStore,
+} = require("../../packages/backup-core/dist/node/exportJobStore.js");
 const {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
@@ -3943,22 +3951,13 @@ async function handleCharxExport(req, res) {
 
 app.post("/api/charx-export", authenticatedRouteLimiter, handleCharxExport);
 
-const localBackupJobs = new Map();
-const LOCAL_BACKUP_JOB_TTL_MS = 60 * 1000;
+const localBackupJobs = new LocalBackupExportJobStore();
 
-function pruneLocalBackupJobs() {
-  const now = Date.now();
-  for (const [id, job] of localBackupJobs) {
-    if (job.expiresAt <= now) localBackupJobs.delete(id);
-  }
-}
-
-function settleLocalBackupJob(job, status, error = null) {
-  job.status = status;
-  job.error = error;
-  job.expiresAt = Date.now() + LOCAL_BACKUP_JOB_TTL_MS;
-  job.resolveCompletion?.();
-  job.resolveCompletion = null;
+function sendLocalBackupExportJobError(res, error) {
+  if (!(error instanceof LocalBackupExportJobError)) return false;
+  const status = error.code === "job_not_found" ? 404 : 409;
+  res.status(status).send({ error: error.message, code: error.code });
+  return true;
 }
 
 async function writeLocalBackupHeader(output, name, size) {
@@ -4342,62 +4341,6 @@ async function streamPortableServerDatabase(
     counts,
     complete: true,
   };
-}
-
-function collectStreamedEssentialAssetKeys(wanted, record) {
-  const add = (key) => {
-    if (typeof key === "string" && key.startsWith("assets/")) wanted.add(key);
-  };
-  if (record.type === "setting") {
-    if (record.key === "personas" && Array.isArray(record.value)) {
-      for (const persona of record.value) add(persona?.icon);
-    } else if (record.key === "userIcon" || record.key === "customBackground") {
-      add(record.value);
-    } else if (record.key === "characterOrder" && Array.isArray(record.value)) {
-      for (const item of record.value) {
-        if (!item || typeof item === "string") continue;
-        add(item.img);
-        add(item.imgFile);
-      }
-    }
-  } else if (record.type === "module") {
-    add(record.data?.icon);
-  } else if (record.type === "preset") {
-    add(record.data?.image);
-  } else if (record.type === "character") {
-    add(record.data?.image);
-  }
-}
-
-// Profile-image asset keys referenced by the snapshot: character main images,
-// persona icons, user icon, custom background, module icons, folder images, bot preset images.
-// Mirrors the client's essential backup scope so partial exports stay small.
-function collectEssentialBackupAssetKeys(database, assetKeys) {
-  const wanted = new Set();
-  const add = (key) => {
-    if (typeof key === "string" && key.startsWith("assets/")) wanted.add(key);
-  };
-  for (const character of database.characters ?? []) {
-    if (!character) continue;
-    add(character.image);
-  }
-  for (const persona of database.personas ?? []) {
-    if (persona?.icon) add(persona.icon);
-  }
-  add(database.userIcon);
-  add(database.customBackground);
-  for (const mod of database.modules ?? []) {
-    if (mod?.icon) add(mod.icon);
-  }
-  for (const item of database.characterOrder ?? []) {
-    if (typeof item === "string") continue;
-    add(item?.img);
-    add(item?.imgFile);
-  }
-  for (const preset of database.botPresets ?? []) {
-    if (preset?.image) add(preset.image);
-  }
-  return assetKeys.filter((key) => wanted.has(key));
 }
 
 async function streamLegacyServerLocalBackup(
@@ -4803,109 +4746,97 @@ app.post(
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
     const mode = ["compatible", "partial"].includes(req.query.mode)
       ? req.query.mode
       : "native";
-    const streamOptions = {
-      pageSize: normalizeLocalBackupInteger(
-        req.query.pageSize,
-        PORTABLE_DATABASE_STREAM_PAGE_SIZE,
-        1,
-        500,
-      ),
-      fragmentRecords: normalizeLocalBackupInteger(
-        req.query.fragmentRecords,
-        PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
-        1,
-        PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-      ),
-    };
-    const id = crypto.randomBytes(24).toString("base64url");
-    let resolveCompletion;
-    const completion = new Promise((resolve) => {
-      resolveCompletion = resolve;
-    });
-    localBackupJobs.set(id, {
-      status: "pending",
-      error: null,
-      completion,
-      resolveCompletion,
+    const job = localBackupJobs.create({
       mode,
-      streamOptions,
-      progress: { stage: "preparing", current: 0, total: 0 },
-      expiresAt: Date.now() + LOCAL_BACKUP_JOB_TTL_MS,
+      streamOptions: {
+        pageSize: normalizeLocalBackupInteger(
+          req.query.pageSize,
+          PORTABLE_DATABASE_STREAM_PAGE_SIZE,
+          1,
+          500,
+        ),
+        fragmentRecords: normalizeLocalBackupInteger(
+          req.query.fragmentRecords,
+          PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
+          1,
+          PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+        ),
+      },
     });
-    res.send({ id });
+    res.send({ id: job.id });
   },
 );
 
 app.get(
   "/api/local-backup/export/jobs/:jobId/progress",
   authenticatedRouteLimiter,
-  async (req, res) => {
+  async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
-    const job = localBackupJobs.get(req.params.jobId);
-    if (!job)
-      return res
-        .status(404)
-        .send({ error: "Local backup job not found or expired" });
-    res.send({ status: job.status, progress: job.progress });
+    try {
+      res.send(localBackupJobs.progress(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupExportJobError(res, error)) return;
+      next(error);
+    }
   },
 );
 
 app.get(
   "/api/local-backup/export/jobs/:jobId",
   authenticatedRouteLimiter,
-  async (req, res) => {
+  async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
-    const job = localBackupJobs.get(req.params.jobId);
-    if (!job)
-      return res
-        .status(404)
-        .send({ error: "Local backup job not found or expired" });
-    if (job.status === "pending" || job.status === "streaming")
-      await job.completion;
-    res.send({ status: job.status, error: job.error });
-    localBackupJobs.delete(req.params.jobId);
+    try {
+      res.send(await localBackupJobs.wait(req.params.jobId));
+      localBackupJobs.remove(req.params.jobId);
+    } catch (error) {
+      if (sendLocalBackupExportJobError(res, error)) return;
+      next(error);
+    }
   },
 );
 
 app.get(
   "/api/local-backup/export/:jobId",
   authenticatedRouteLimiter,
-  async (req, res) => {
+  async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
-    const job = localBackupJobs.get(req.params.jobId);
-    if (!job)
-      return res
-        .status(404)
-        .send({ error: "Local backup job not found or expired" });
-    if (job.status !== "pending")
-      return res
-        .status(409)
-        .send({ error: "Local backup download was already started" });
-    job.status = "streaming";
-    job.expiresAt = Number.POSITIVE_INFINITY;
+    const jobId = req.params.jobId;
+    let job;
+    try {
+      job = localBackupJobs.beginStreaming(jobId);
+    } catch (error) {
+      if (sendLocalBackupExportJobError(res, error)) return;
+      next(error);
+      return;
+    }
+
     try {
       await streamServerLocalBackup(
         res,
-        job.mode || "native",
+        job.mode,
         job.streamOptions,
         (progress) => {
-          job.progress = progress;
+          localBackupJobs.updateProgress(jobId, progress);
         },
       );
-      job.progress = { stage: "finalizing", current: 1, total: 1 };
-      settleLocalBackupJob(job, "complete");
+      localBackupJobs.updateProgress(jobId, {
+        stage: "finalizing",
+        current: 1,
+        total: 1,
+      });
+      localBackupJobs.settle(jobId, "complete");
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       console.error("[Local backup] Streaming export failed:", error);
-      if (!res.headersSent) res.status(500).send({ error: error.message });
+      if (!res.headersSent) res.status(500).send({ error: message });
       else res.destroy(error);
-      settleLocalBackupJob(job, "error", error.message);
+      try {
+        localBackupJobs.settle(jobId, "error", message);
+      } catch {}
     }
   },
 );

@@ -29,7 +29,7 @@ export default defineConfig({
     conditions: ["browser"],
   },
   test: {
-    include: ["src/**/*.test.ts", "server/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "server/**/*.test.ts", "packages/**/*.test.ts"],
     environment: "happy-dom",
     setupFiles: ["vitest.setup.ts"],
   },

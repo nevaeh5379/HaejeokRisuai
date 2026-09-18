@@ -1,17 +1,23 @@
-"use strict";
-
-const zlib = require("zlib");
-const { promisify } = require("util");
-const { Packr, Unpackr } = require("msgpackr");
+import { promisify } from "node:util";
+import { deflate, inflateSync } from "node:zlib";
+import { Packr, Unpackr } from "msgpackr";
+import { makeLegacyCompatibleDatabase } from "../compatibility";
 
 const RAW_HEADER = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]);
 const COMPRESSED_HEADER = Buffer.from([
   0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
 ]);
+
 const packr = new Packr({ useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });
+const deflateAsync = promisify(deflate) as (
+  input: Uint8Array,
+) => Promise<Buffer>;
 
-function createEntryHeader(name, size) {
+export function createLocalBackupEntryHeader(
+  name: string,
+  size: number,
+): Buffer {
   const normalizedName = String(name).replace(/\\/g, "/");
   const segments = normalizedName.split("/");
   if (
@@ -22,6 +28,7 @@ function createEntryHeader(name, size) {
   ) {
     throw new Error(`Invalid local backup entry name: ${name}`);
   }
+
   const encodedName = Buffer.from(normalizedName, "utf8");
   if (encodedName.length === 0 || encodedName.length > 1024 * 1024) {
     throw new Error(`Invalid local backup entry name: ${name}`);
@@ -29,6 +36,7 @@ function createEntryHeader(name, size) {
   if (!Number.isSafeInteger(size) || size < 0 || size > 0xffffffff) {
     throw new Error(`Local backup entry is too large: ${name}`);
   }
+
   const header = Buffer.alloc(8 + encodedName.length);
   header.writeUInt32LE(encodedName.length, 0);
   encodedName.copy(header, 4);
@@ -36,31 +44,31 @@ function createEntryHeader(name, size) {
   return header;
 }
 
-const {
-  makeLegacyCompatibleDatabase,
-} = require("../../packages/backup-core/dist/compatibility.js");
-
-async function encodeDatabase(database) {
+export async function encodeLegacyBackupDatabase(
+  database: unknown,
+): Promise<Buffer> {
   const packed = packr.encode(database);
-  const compressed = await promisify(zlib.deflate)(packed);
+  const compressed = await deflateAsync(packed);
   return Buffer.concat([COMPRESSED_HEADER, compressed]);
 }
 
-function decodeDatabase(data) {
-  if (data.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)) {
+export function decodeLegacyBackupDatabase(data: Uint8Array): unknown {
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  if (
+    buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)
+  ) {
     return unpackr.decode(
-      zlib.inflateSync(data.subarray(COMPRESSED_HEADER.length)),
+      inflateSync(buffer.subarray(COMPRESSED_HEADER.length)),
     );
   }
-  if (data.subarray(0, RAW_HEADER.length).equals(RAW_HEADER)) {
-    return unpackr.decode(data.subarray(RAW_HEADER.length));
+  if (buffer.subarray(0, RAW_HEADER.length).equals(RAW_HEADER)) {
+    return unpackr.decode(buffer.subarray(RAW_HEADER.length));
   }
-  return unpackr.decode(data);
+  return unpackr.decode(buffer);
 }
 
-module.exports = {
-  createEntryHeader,
+export {
+  COMPRESSED_HEADER as LEGACY_COMPRESSED_DATABASE_HEADER,
+  RAW_HEADER as LEGACY_RAW_DATABASE_HEADER,
   makeLegacyCompatibleDatabase,
-  encodeDatabase,
-  decodeDatabase,
 };
