@@ -307,6 +307,33 @@ export function makeTauriStorage(database: DatabaseSync): TauriSqliteStorage {
       statements,
     });
   };
+  (storage as any).runPortableDatabaseStreamTransaction = async (
+    expectedRevision: number,
+    task: (
+      execute: (sql: string, bind?: unknown[]) => Promise<void>,
+    ) => Promise<number>,
+  ) => {
+    db.run("BEGIN IMMEDIATE");
+    try {
+      const meta = db.selectRows(
+        "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+      );
+      const current = Number(meta[0]?.revision) || 0;
+      if (current !== expectedRevision) {
+        throw new Error(`RISU_SQL_REVISION_CONFLICT:${current}`);
+      }
+      const revision = await task(async (sql, bind = []) => {
+        db.run(sql, bind);
+      });
+      db.run("COMMIT");
+      return revision;
+    } catch (error) {
+      try {
+        db.run("ROLLBACK");
+      } catch {}
+      throw error;
+    }
+  };
   return storage;
 }
 

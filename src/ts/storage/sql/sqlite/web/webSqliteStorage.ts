@@ -54,6 +54,8 @@ import {
   applySqliteCommit,
   writeSqliteColdStorage,
 } from "@risuai/storage-sqlite/sqliteCommit";
+import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
+import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 import {
   rebuildRelationalValue,
   decodedText,
@@ -577,6 +579,54 @@ export class WebSqliteStorage implements ISqlStorage {
     onProgress?.("Replacing local database...");
     await this.commit(buildSqlReplaceCommit(database, this.revision));
     return true;
+  }
+
+  async beginPortableDatabaseStreamRestore(
+    onProgress?: (progress: PortableDatabaseStreamRestoreProgress) => void,
+  ) {
+    if (!this._enabled && !(await this.init())) {
+      throw new Error("SQLite storage is not enabled");
+    }
+    const baseRevision = this.revision;
+    return await createPortableDatabaseStreamSqliteSession({
+      baseRevision,
+      onProgress,
+      onCommitted: (revision) => {
+        this.revision = revision;
+      },
+      runTransaction: (task) =>
+        this.writeQueue.run(async () => {
+          await this.run("BEGIN IMMEDIATE");
+          try {
+            const meta = await this.selectOne(
+              "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+            );
+            const currentRevision = Number(meta?.revision) || 0;
+            if (currentRevision !== baseRevision) {
+              throw new SqlRevisionConflictError(currentRevision);
+            }
+            const pending: SqliteBatchStatement[] = [];
+            const flush = async () => {
+              if (pending.length === 0) return;
+              const chunk = pending.splice(0, pending.length);
+              if (!this.rpc) throw new Error("Database not opened");
+              await this.rpc.execBatch(chunk);
+            };
+            const revision = await task(async (sql, bind = []) => {
+              pending.push({ sql, bind });
+              if (pending.length >= 64) await flush();
+            });
+            await flush();
+            await this.run("COMMIT");
+            return revision;
+          } catch (error) {
+            try {
+              await this.run("ROLLBACK");
+            } catch {}
+            throw error;
+          }
+        }),
+    });
   }
 
   async loadCharacter(

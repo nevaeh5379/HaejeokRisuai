@@ -8,6 +8,8 @@ import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
 import { splitSqliteStatements } from "@risuai/storage-sqlite/sqliteSchemaStatements";
 import { SqlRevisionConflictError } from "../../sqlCommit";
 import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
+import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
+import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 
 type SqlDatabase = import("@tauri-apps/plugin-sql").default;
 
@@ -83,6 +85,84 @@ export class TauriSqliteStorage
   ): Promise<T[]> {
     if (!this.db) throw new Error("Database not opened");
     return this.db.select<T[]>(sql, bind);
+  }
+
+  protected async runPortableDatabaseStreamTransaction(
+    expectedRevision: number,
+    task: (
+      execute: (sql: string, bind?: unknown[]) => Promise<void>,
+    ) => Promise<number>,
+  ): Promise<number> {
+    const transactionId = await invoke<string>(
+      "sqlite_begin_stream_transaction",
+      { expectedRevision },
+    );
+    let pending: SqliteTransactionStatement[] = [];
+    let pendingChars = 0;
+    const flush = async () => {
+      if (pending.length === 0) return;
+      const statements = pending;
+      pending = [];
+      pendingChars = 0;
+      await invoke("sqlite_execute_stream_transaction_chunk", {
+        transactionId,
+        statements,
+      });
+    };
+    try {
+      const revision = await task(async (sql, bind = []) => {
+        pending.push({ sql, bind });
+        pendingChars +=
+          sql.length +
+          bind.reduce<number>(
+            (sum, value) => sum + (typeof value === "string" ? value.length : 0),
+            0,
+          );
+        if (pending.length >= 64 || pendingChars >= 256 * 1024) {
+          await flush();
+        }
+      });
+      await flush();
+      await invoke("sqlite_commit_stream_transaction", { transactionId });
+      return revision;
+    } catch (error) {
+      pending = [];
+      await invoke("sqlite_rollback_stream_transaction", {
+        transactionId,
+      }).catch(() => {});
+      const message = String(error);
+      const marker = "RISU_SQL_REVISION_CONFLICT:";
+      const markerIndex = message.indexOf(marker);
+      if (markerIndex >= 0) {
+        const currentRevision = Number(
+          message.slice(markerIndex + marker.length),
+        );
+        if (Number.isFinite(currentRevision)) {
+          throw new SqlRevisionConflictError(currentRevision);
+        }
+      }
+      throw error;
+    }
+  }
+
+  async beginPortableDatabaseStreamRestore(
+    onProgress?: (progress: PortableDatabaseStreamRestoreProgress) => void,
+  ) {
+    if (!this._enabled && !(await this.init())) {
+      throw new Error("SQLite storage is not enabled");
+    }
+    const baseRevision = this.revision;
+    return await createPortableDatabaseStreamSqliteSession({
+      baseRevision,
+      onProgress,
+      onCommitted: (revision) => {
+        this.revision = revision;
+      },
+      runTransaction: (task) =>
+        this.writeQueue.run(() =>
+          this.runPortableDatabaseStreamTransaction(baseRevision, task),
+        ),
+    });
   }
 
   protected async executeNativeTransaction(

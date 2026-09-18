@@ -30,7 +30,11 @@ export const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS =
 export const PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =
   LOCAL_BACKUP_PERFORMANCE_LIMITS.fragmentRecords.max;
 
-type PersistedRecord = Exclude<StorageSyncSqlRecord, { type: "cold-storage" }>;
+export type PortableDatabaseStreamPersistedRecord = Exclude<
+  StorageSyncSqlRecord,
+  { type: "cold-storage" }
+>;
+type PersistedRecord = PortableDatabaseStreamPersistedRecord;
 type PersistedRecordType = PersistedRecord["type"];
 
 export interface PortableDatabaseStreamFragment {

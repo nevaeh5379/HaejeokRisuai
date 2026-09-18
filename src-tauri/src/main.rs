@@ -1330,6 +1330,7 @@ fn main() {
 
     builder
         .manage(SidebarMenuWindowState::default())
+        .manage(sqlite_transaction::SqliteStreamTransactionState::default())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
@@ -1352,6 +1353,10 @@ fn main() {
             streamed_fetch,
             oauth_login,
             sqlite_transaction::sqlite_execute_transaction,
+            sqlite_transaction::sqlite_begin_stream_transaction,
+            sqlite_transaction::sqlite_execute_stream_transaction_chunk,
+            sqlite_transaction::sqlite_commit_stream_transaction,
+            sqlite_transaction::sqlite_rollback_stream_transaction,
             set_risu_native_appearance,
             set_risu_windows_backdrop,
             update_app_navigation_menu,

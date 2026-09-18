@@ -2,8 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection};
-use std::path::Path;
-use tauri::{Emitter, Manager};
+use std::{collections::HashMap, path::Path};
+use tauri::{Emitter, Manager, State};
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 const REVISION_CONFLICT_PREFIX: &str = "RISU_SQL_REVISION_CONFLICT:";
 const TRANSACTION_PROGRESS_EVENT: &str = "risu-sqlite-transaction-progress";
@@ -22,6 +24,11 @@ pub struct SqliteTransactionStatement {
     sql: String,
     #[serde(default)]
     bind: Vec<JsonValue>,
+}
+
+#[derive(Default)]
+pub struct SqliteStreamTransactionState {
+    connections: Mutex<HashMap<String, SqliteConnection>>,
 }
 
 fn connect_options(db_path: &Path) -> SqliteConnectOptions {
@@ -305,4 +312,103 @@ mod tests {
         drop(connection);
         let _ = std::fs::remove_file(path);
     }
+}
+
+#[tauri::command]
+pub async fn sqlite_begin_stream_transaction(
+    app: tauri::AppHandle,
+    state: State<'_, SqliteStreamTransactionState>,
+    expected_revision: Option<i64>,
+) -> Result<String, String> {
+    let db_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("risuai-local.sqlite3");
+    let mut connection = SqliteConnection::connect_with(&connect_options(&db_path))
+        .await
+        .map_err(|error| error.to_string())?;
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut connection)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if let Some(expected_revision) = expected_revision {
+        let current_revision = sqlx::query_scalar::<_, i64>(
+            "SELECT revision FROM system_storage_meta WHERE singleton = 1",
+        )
+        .fetch_optional(&mut connection)
+        .await
+        .map_err(|error| error.to_string())?
+        .unwrap_or(0);
+        if current_revision != expected_revision {
+            rollback(&mut connection).await;
+            return Err(format!("{REVISION_CONFLICT_PREFIX}{current_revision}"));
+        }
+    }
+
+    let transaction_id = Uuid::new_v4().to_string();
+    state
+        .connections
+        .lock()
+        .await
+        .insert(transaction_id.clone(), connection);
+    Ok(transaction_id)
+}
+
+#[tauri::command]
+pub async fn sqlite_execute_stream_transaction_chunk(
+    state: State<'_, SqliteStreamTransactionState>,
+    transaction_id: String,
+    statements: Vec<SqliteTransactionStatement>,
+) -> Result<usize, String> {
+    let mut connections = state.connections.lock().await;
+    let mut failure = None;
+    if let Some(connection) = connections.get_mut(&transaction_id) {
+        for statement in &statements {
+            if let Err(error) = execute_statement(connection, statement).await {
+                failure = Some(error);
+                break;
+            }
+        }
+    } else {
+        return Err("SQLite streaming transaction was not found".to_owned());
+    }
+    if let Some(error) = failure {
+        if let Some(mut connection) = connections.remove(&transaction_id) {
+            rollback(&mut connection).await;
+        }
+        return Err(error);
+    }
+    Ok(statements.len())
+}
+
+#[tauri::command]
+pub async fn sqlite_commit_stream_transaction(
+    state: State<'_, SqliteStreamTransactionState>,
+    transaction_id: String,
+) -> Result<(), String> {
+    let mut connection = state
+        .connections
+        .lock()
+        .await
+        .remove(&transaction_id)
+        .ok_or_else(|| "SQLite streaming transaction was not found".to_owned())?;
+    if let Err(error) = sqlx::query("COMMIT").execute(&mut connection).await {
+        rollback(&mut connection).await;
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sqlite_rollback_stream_transaction(
+    state: State<'_, SqliteStreamTransactionState>,
+    transaction_id: String,
+) -> Result<(), String> {
+    let connection = state.connections.lock().await.remove(&transaction_id);
+    if let Some(mut connection) = connection {
+        rollback(&mut connection).await;
+    }
+    Ok(())
 }

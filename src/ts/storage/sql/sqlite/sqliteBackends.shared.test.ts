@@ -43,6 +43,11 @@ import { installStartupData } from "../../database/databaseLifecycle";
 import { settingsStore } from "../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../stores/domain/deferredSettingsLoader";
 import { iterateStorageSyncSqlRecords } from "../../runtime/storageSyncSource";
+import {
+  exportPortableDatabaseStream,
+  type PortableDatabaseStreamFragment,
+} from "../../backup/portableDatabaseStream";
+import { hasPortableDatabaseStreamRestore } from "../../backup/portableDatabaseStreamRestore";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 
@@ -113,6 +118,60 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const chat = records.find((record) => record.type === "chat" && record.id === "chat-1");
     expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
     database.close();
+  });
+
+  it("restores portable database fragments without rebuilding an aggregate database when supported", async () => {
+    const sourceHarness = makeFreshHarness(make);
+    await seed(sourceHarness.storage);
+    const fragments: PortableDatabaseStreamFragment[] = [];
+    const manifest = await exportPortableDatabaseStream(
+      sourceHarness.storage,
+      {
+        async writeFragment(fragment) {
+          fragments.push(fragment);
+        },
+        async writeColdStorage() {},
+      },
+      { pageSize: 1, fragmentRecords: 2 },
+    );
+
+    const targetHarness = makeFreshHarness(make);
+    if (!hasPortableDatabaseStreamRestore(targetHarness.storage)) {
+      sourceHarness.database.close();
+      targetHarness.database.close();
+      return;
+    }
+
+    const session =
+      await targetHarness.storage.beginPortableDatabaseStreamRestore();
+    for (const fragment of fragments) {
+      await session.writeFragment(fragment);
+    }
+    await session.finish(manifest);
+
+    const restored = await targetHarness.storage.exportDatabaseSnapshot();
+    expect(restored?.database.language).toBe("en");
+    expect(restored?.database.theme).toBe("dark");
+    expect(restored?.database.modules).toEqual(buildFullDatabase().modules);
+    const chat = await targetHarness.storage.loadChat("chat-1");
+    expect(chat?.message.map((message) => message.data)).toEqual([
+      "one",
+      "two",
+    ]);
+    const sourceGraph =
+      await sourceHarness.storage.loadChatBranchGraph!("chat-1");
+    const restoredGraph =
+      await targetHarness.storage.loadChatBranchGraph!("chat-1");
+    expect(restoredGraph.branches).toEqual(sourceGraph.branches);
+    expect(restoredGraph.activeBranchId).toBe(sourceGraph.activeBranchId);
+    expect(restoredGraph.links).toEqual(sourceGraph.links);
+    expect(
+      restoredGraph.messages.map((message) => message.chatId),
+    ).toEqual(sourceGraph.messages.map((message) => message.chatId));
+    expect(targetHarness.storage.getRevision()).toBe(1);
+
+    sourceHarness.database.close();
+    targetHarness.database.close();
   });
 
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {

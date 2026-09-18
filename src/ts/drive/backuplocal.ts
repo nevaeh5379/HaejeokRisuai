@@ -95,7 +95,12 @@ import {
   PortableDatabaseStreamCollector,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
+  type PortableDatabaseStreamPersistedRecord,
 } from "../storage/backup/portableDatabaseStream";
+import {
+  hasPortableDatabaseStreamRestore,
+  type PortableDatabaseStreamRestoreSession,
+} from "../storage/backup/portableDatabaseStreamRestore";
 import type { StorageSyncSqlRecord } from "../storage/runtime/storageSyncSource";
 import {
   normalizeLocalBackupPerformance,
@@ -247,6 +252,7 @@ function reportLocalBackupRestoreProgress(
     current?: number;
     total?: number;
     percent?: number;
+    detail?: string;
   } = {},
 ) {
   const [start, end] = LOCAL_BACKUP_RESTORE_RANGES[stage];
@@ -261,8 +267,9 @@ function reportLocalBackupRestoreProgress(
         ? clampProgressRatio((percent - start) / (end - start))
         : 1;
   const count = total > 0 ? ` (${current} / ${total})` : "";
+  const detail = options.detail ? `\n${options.detail}` : "";
   alertProgress(
-    `${localBackupRestoreLabel(stage)}${count}`,
+    `${localBackupRestoreLabel(stage)}${count}${detail}`,
     percent,
     {
       steps: LOCAL_BACKUP_RESTORE_STAGE_ORDER.map(localBackupRestoreLabel),
@@ -270,6 +277,35 @@ function reportLocalBackupRestoreProgress(
       currentStepRatio: stepRatio,
     },
   );
+}
+
+function formatBackupBytes(bytes: number): string {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${Math.round(value)} B`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let scaled = value / 1024;
+  let unitIndex = 0;
+  while (scaled >= 1024 && unitIndex < units.length - 1) {
+    scaled /= 1024;
+    unitIndex++;
+  }
+  return `${scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function localBackupRestoreEntryLabel(name: string): string {
+  switch (classifyBackupEntry(name).kind) {
+    case "database":
+    case "databaseStream":
+      return language.localBackupRestoreReadingDatabase;
+    case "asset":
+      return language.localBackupRestoreReadingAssets;
+    case "inlay":
+      return language.localBackupRestoreReadingInlays;
+    case "coldStorage":
+      return language.localBackupRestoreReadingColdStorage;
+    default:
+      return "";
+  }
 }
 
 function getLocalBackupPerformance(): LocalBackupPerformanceSettings {
@@ -1590,6 +1626,73 @@ export async function restoreInlayBackupEntry(
   return { status: "restored" };
 }
 
+interface StreamingRestoreColdStorageInventory {
+  referencedKeys: Set<string>;
+  chatOwners: Map<string, string>;
+  characters: Map<
+    string,
+    {
+      chaId: string;
+      name: string;
+      coldstorage?: string;
+      coldStoragedChats?: string[];
+      chats: Array<{ message: Array<{ data: string }> }>;
+    }
+  >;
+}
+
+function createStreamingRestoreColdStorageInventory(): StreamingRestoreColdStorageInventory {
+  return {
+    referencedKeys: new Set(),
+    chatOwners: new Map(),
+    characters: new Map(),
+  };
+}
+
+function collectStreamingRestoreColdStorageRecord(
+  inventory: StreamingRestoreColdStorageInventory,
+  record: PortableDatabaseStreamPersistedRecord,
+) {
+  if (record.type === "character") {
+    const data = record.data as any;
+    const coldstorage =
+      typeof data?.coldstorage === "string" ? data.coldstorage : undefined;
+    const coldStoragedChats = Array.isArray(data?.coldStoragedChats)
+      ? data.coldStoragedChats.filter(
+          (key: unknown): key is string => typeof key === "string",
+        )
+      : [];
+    if (coldstorage) inventory.referencedKeys.add(coldstorage);
+    for (const key of coldStoragedChats) inventory.referencedKeys.add(key);
+    inventory.characters.set(record.id, {
+      chaId: record.id,
+      name: data?.name ?? "Unknown Character",
+      coldstorage,
+      coldStoragedChats,
+      chats: [],
+    });
+    return;
+  }
+  if (record.type === "chat") {
+    inventory.chatOwners.set(record.id, record.characterId);
+    return;
+  }
+  if (record.type !== "message" || record.position !== 0) return;
+  const data = record.data as any;
+  if (
+    typeof data?.data !== "string" ||
+    !data.data.startsWith(coldStorageHeader)
+  ) {
+    return;
+  }
+  const key = data.data.slice(coldStorageHeader.length);
+  if (!key) return;
+  inventory.referencedKeys.add(key);
+  const owner = inventory.chatOwners.get(record.chatId);
+  const character = owner ? inventory.characters.get(owner) : undefined;
+  character?.chats.push({ message: [{ data: data.data }] });
+}
+
 async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
@@ -1605,6 +1708,13 @@ async function restoreLocalBackupSourceUnlocked(
   let pendingDatabase: Uint8Array | null = null;
   let decodedDatabase: Database | null = null;
   let streamCollector: PortableDatabaseStreamCollector | null = null;
+  let streamingRestoreSession: PortableDatabaseStreamRestoreSession | null =
+    null;
+  let streamingRestoreStorage: Awaited<ReturnType<typeof getSqlStorage>> | null =
+    null;
+  let streamingManifest: PortableDatabaseStreamManifest | null = null;
+  const streamingColdStorage =
+    createStreamingRestoreColdStorageInventory();
   let streamingDecryptionKey: Promise<string> | null = null;
   const restoredColdStorageKeys = new Set<string>();
   const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount;
@@ -1625,7 +1735,9 @@ async function restoreLocalBackupSourceUnlocked(
   const tauriBulkMaxBytes = 64 * 1024 * 1024;
   const tauriBulkWriteConcurrency = 8;
   let pendingTauriAssetBytes = 0;
+  let streamingRestoreFinished = false;
 
+  try {
   const flushTauriAssets = async (): Promise<number> => {
     if (pendingTauriAssets.size === 0) return 0;
     const entries = Array.from(pendingTauriAssets);
@@ -1800,11 +1912,39 @@ async function restoreLocalBackupSourceUnlocked(
             : new Uint8Array(await decryptBuffer(encoded, key));
         }
         const value = await decodeRisuSave(encoded);
-        streamCollector ??= new PortableDatabaseStreamCollector();
+        if (!streamingRestoreSession && !streamCollector) {
+          const storage = await getSqlStorage();
+          if (hasPortableDatabaseStreamRestore(storage)) {
+            streamingRestoreStorage = storage;
+            streamingRestoreSession =
+              await storage.beginPortableDatabaseStreamRestore();
+          } else {
+            streamCollector = new PortableDatabaseStreamCollector();
+          }
+        }
         if (name === PORTABLE_DATABASE_STREAM_MANIFEST) {
-          streamCollector.setManifest(value as PortableDatabaseStreamManifest);
+          const manifest = value as PortableDatabaseStreamManifest;
+          if (streamingRestoreSession) {
+            if (streamingManifest) {
+              throw new Error("Duplicate streaming database manifest");
+            }
+            streamingManifest = manifest;
+          } else {
+            streamCollector!.setManifest(manifest);
+          }
         } else {
-          streamCollector.addFragment(value as PortableDatabaseStreamFragment);
+          const fragment = value as PortableDatabaseStreamFragment;
+          if (streamingRestoreSession) {
+            for (const record of fragment.records) {
+              collectStreamingRestoreColdStorageRecord(
+                streamingColdStorage,
+                record,
+              );
+            }
+            await streamingRestoreSession.writeFragment(fragment);
+          } else {
+            streamCollector!.addFragment(fragment);
+          }
         }
         entriesRestored++;
         currentEntryName = "";
@@ -1948,12 +2088,22 @@ async function restoreLocalBackupSourceUnlocked(
         const readPercent =
           file.size === 0
             ? parserProgress.end
-            : Math.floor(
-                parserProgress.start +
-                  (bytesRead / file.size) *
-                    (parserProgress.end - parserProgress.start),
-              );
-        reportLocalBackupRestoreProgress("reading", { percent: readPercent });
+            : parserProgress.start +
+              (bytesRead / file.size) *
+                (parserProgress.end - parserProgress.start);
+        const entryLabel = entryName
+          ? localBackupRestoreEntryLabel(entryName)
+          : "";
+        const byteProgress =
+          file.size > 0
+            ? `${formatBackupBytes(bytesRead)} / ${formatBackupBytes(file.size)}`
+            : formatBackupBytes(bytesRead);
+        reportLocalBackupRestoreProgress("reading", {
+          percent: readPercent,
+          detail: entryLabel
+            ? `${byteProgress} · ${entryLabel}`
+            : byteProgress,
+        });
       }
 
       let chunkOffset = 0;
@@ -2062,6 +2212,12 @@ async function restoreLocalBackupSourceUnlocked(
       throw new Error("Backup file ended with an incomplete entry");
     }
   } catch (streamErr) {
+    if (streamingRestoreSession) {
+      await streamingRestoreSession.abort().catch(() => {});
+      streamingRestoreSession = null;
+      streamingRestoreStorage = null;
+      streamingManifest = null;
+    }
     // If chunked container failed, try fallback for raw database.bin
     console.warn(
       "Stream backup container parsing failed, trying raw database.bin fallback:",
@@ -2117,103 +2273,143 @@ async function restoreLocalBackupSourceUnlocked(
     );
   }
 
-  if (streamCollector) {
-    if (pendingDatabase || decodedDatabase) {
+  let storage = streamingRestoreStorage ?? (await getSqlStorage());
+
+  if (streamingRestoreSession) {
+    if (pendingDatabase || decodedDatabase || streamCollector) {
       throw new Error("Backup mixes legacy and streaming database formats");
     }
-    decodedDatabase = streamCollector.finish() as Database;
-    streamCollector = null;
-  }
+    if (!streamingManifest) {
+      throw new Error("Streaming database manifest is missing");
+    }
 
-  if (!pendingDatabase && !decodedDatabase) {
-    throw new Error("Backup does not contain a database entry");
-  }
+    const missingColdStorageKeys: string[] = [];
+    for (const key of streamingColdStorage.referencedKeys) {
+      if (restoredColdStorageKeys.has(key)) continue;
+      const existingColdStorage = await getColdStorageItem(key);
+      if (!isColdStorageBackupData(existingColdStorage)) {
+        missingColdStorageKeys.push(key);
+      }
+    }
+    if (
+      !(await confirmIncompleteColdStorageOperation(
+        {
+          characters: [...streamingColdStorage.characters.values()],
+        } as any,
+        missingColdStorageKeys,
+        "restore",
+      ))
+    ) {
+      return;
+    }
 
-  const databaseByteLength = pendingDatabase?.byteLength ?? 0;
-  let db: Uint8Array | null = pendingDatabase;
-  pendingDatabase = null;
-  if (db && encryptionMeta.type === "account" && encryptionMeta.time) {
-    try {
-      db = await decryptLegacyAccountBackup(
-        db,
-        encryptionMeta.time,
-        decryptBuffer,
+    if (ignoredExtensionEntries > 0) {
+      console.info(
+        `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
       );
-    } catch (error) {
-      console.error("Failed to decrypt database backup:", error);
-      const detail = error instanceof Error ? error.message : `${error}`;
-      throw new Error(
-        `This backup is encrypted and could not be decrypted. ${detail}`,
-      );
     }
-  }
-  if (ignoredExtensionEntries > 0) {
-    console.info(
-      `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
-    );
-  }
-  reportLocalBackupRestoreProgress("database", { percent: 90 });
-  const decodedDb =
-    decodedDatabase ?? ((await decodeRisuSave(db as Uint8Array)) as Database);
-  const prepared = preparePortableDatabaseForBranchRestore(
-    normalizeBackupSnapshot(decodedDb as BackupDatabaseDraft),
-  );
-  const dbData = prepared.database as Database;
-  const portableBranchGraphs = prepared.branchGraphs;
-  db = null;
-  console.info("[LocalBackupRestore] Decoded database summary", {
-    databaseBytes: databaseByteLength,
-    characters: Array.isArray(dbData.characters)
-      ? dbData.characters.length
-      : null,
-    personas: Array.isArray(dbData.personas) ? dbData.personas.length : null,
-    modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
-    botPresets: Array.isArray(
-      (dbData as Database & Partial<PortableDatabase>).botPresets,
-    )
-      ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
-      : null,
-    promptTemplate: Array.isArray(dbData.promptTemplate)
-      ? dbData.promptTemplate.length
-      : null,
-  });
-  normalizeDatabaseDefaults(dbData);
-  dbData.pluginCustomStorage ??= {};
-  const missingColdStorageKeys: string[] = [];
-  for (const key of await listColdDataKeys(dbData)) {
-    if (restoredColdStorageKeys.has(key)) {
-      continue;
-    }
-    const existingColdStorage = await getColdStorageItem(key);
-    if (!isColdStorageBackupData(existingColdStorage)) {
-      missingColdStorageKeys.push(key);
-    }
-  }
-  if (
-    !(await confirmIncompleteColdStorageOperation(
-      dbData,
-      missingColdStorageKeys,
-      "restore",
-    ))
-  ) {
-    return;
-  }
-
-  reportLocalBackupRestoreProgress("database", { percent: 91 });
-  const storage = await getSqlStorage();
-  await storage.replaceDatabase(dbData, (_step, syncProgress) => {
-    const ratio =
-      syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
-    reportLocalBackupRestoreProgress("database", {
-      percent: 91 + ratio * 7,
-    });
-  });
-  if (Object.keys(portableBranchGraphs).length > 0) {
+    reportLocalBackupRestoreProgress("database", { percent: 97 });
     reportLocalBackupRestoreProgress("branches", { percent: 98 });
-    await restorePortableDatabaseBranchGraphs(
-      await getSqlBranchStorage(),
-      portableBranchGraphs,
+    await streamingRestoreSession.finish(streamingManifest);
+    streamingRestoreFinished = true;
+    reportLocalBackupRestoreProgress("branches", { percent: 99.5 });
+  } else {
+    if (streamCollector) {
+      if (pendingDatabase || decodedDatabase) {
+        throw new Error("Backup mixes legacy and streaming database formats");
+      }
+      decodedDatabase = streamCollector.finish() as Database;
+      streamCollector = null;
+    }
+
+    if (!pendingDatabase && !decodedDatabase) {
+      throw new Error("Backup does not contain a database entry");
+    }
+
+    const databaseByteLength = pendingDatabase?.byteLength ?? 0;
+    let db: Uint8Array | null = pendingDatabase;
+    pendingDatabase = null;
+    if (db && encryptionMeta.type === "account" && encryptionMeta.time) {
+      try {
+        db = await decryptLegacyAccountBackup(
+          db,
+          encryptionMeta.time,
+          decryptBuffer,
+        );
+      } catch (error) {
+        console.error("Failed to decrypt database backup:", error);
+        const detail = error instanceof Error ? error.message : `${error}`;
+        throw new Error(
+          `This backup is encrypted and could not be decrypted. ${detail}`,
+        );
+      }
+    }
+    if (ignoredExtensionEntries > 0) {
+      console.info(
+        `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
+      );
+    }
+    reportLocalBackupRestoreProgress("database", { percent: 90 });
+    const decodedDb =
+      decodedDatabase ?? ((await decodeRisuSave(db as Uint8Array)) as Database);
+    const prepared = preparePortableDatabaseForBranchRestore(
+      normalizeBackupSnapshot(decodedDb as BackupDatabaseDraft),
     );
+    const dbData = prepared.database as Database;
+    const portableBranchGraphs = prepared.branchGraphs;
+    db = null;
+    console.info("[LocalBackupRestore] Decoded database summary", {
+      databaseBytes: databaseByteLength,
+      characters: Array.isArray(dbData.characters)
+        ? dbData.characters.length
+        : null,
+      personas: Array.isArray(dbData.personas) ? dbData.personas.length : null,
+      modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
+      botPresets: Array.isArray(
+        (dbData as Database & Partial<PortableDatabase>).botPresets,
+      )
+        ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
+        : null,
+      promptTemplate: Array.isArray(dbData.promptTemplate)
+        ? dbData.promptTemplate.length
+        : null,
+    });
+    normalizeDatabaseDefaults(dbData);
+    dbData.pluginCustomStorage ??= {};
+    const missingColdStorageKeys: string[] = [];
+    for (const key of await listColdDataKeys(dbData)) {
+      if (restoredColdStorageKeys.has(key)) continue;
+      const existingColdStorage = await getColdStorageItem(key);
+      if (!isColdStorageBackupData(existingColdStorage)) {
+        missingColdStorageKeys.push(key);
+      }
+    }
+    if (
+      !(await confirmIncompleteColdStorageOperation(
+        dbData,
+        missingColdStorageKeys,
+        "restore",
+      ))
+    ) {
+      return;
+    }
+
+    reportLocalBackupRestoreProgress("database", { percent: 91 });
+    storage = await getSqlStorage();
+    await storage.replaceDatabase(dbData, (_step, syncProgress) => {
+      const ratio =
+        syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
+      reportLocalBackupRestoreProgress("database", {
+        percent: 91 + ratio * 7,
+      });
+    });
+    if (Object.keys(portableBranchGraphs).length > 0) {
+      reportLocalBackupRestoreProgress("branches", { percent: 98 });
+      await restorePortableDatabaseBranchGraphs(
+        await getSqlBranchStorage(),
+        portableBranchGraphs,
+      );
+    }
   }
   reportLocalBackupRestoreProgress("finalizing", { percent: 100 });
 
@@ -2244,6 +2440,11 @@ async function restoreLocalBackupSourceUnlocked(
       ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s).`
       : "Success",
   );
+  } finally {
+    if (streamingRestoreSession && !streamingRestoreFinished) {
+      await streamingRestoreSession.abort().catch(() => {});
+    }
+  }
 }
 
 async function runLocalBackupRestore<T>(
@@ -2282,14 +2483,24 @@ async function loadCapacitorLocalBackupUnlocked() {
           ? 2 + Math.min(43, Math.floor((bytesRead / totalBytes) * 43))
           : 2;
 
+      let detail =
+        totalBytes > 0
+          ? `${formatBackupBytes(bytesRead)} / ${formatBackupBytes(totalBytes)}`
+          : bytesRead > 0
+            ? formatBackupBytes(bytesRead)
+            : "";
       if (event.stage === "committing") {
         const processed = Math.max(0, event.assetsProcessed ?? 0);
         const total = Math.max(0, event.totalAssets ?? 0);
         percent = total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
+        detail =
+          total > 0
+            ? `${processed} / ${total} · ${language.localBackupRestoreReadingAssets}`
+            : language.localBackupRestoreReadingAssets;
       } else if (event.stage === "complete") {
         percent = 50;
       }
-      reportLocalBackupRestoreProgress("reading", { percent });
+      reportLocalBackupRestoreProgress("reading", { percent, detail });
     },
   );
   let selected: Awaited<ReturnType<NativeBackupPlugin["openImport"]>>;
