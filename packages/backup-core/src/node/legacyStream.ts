@@ -6,7 +6,7 @@ import {
   type WriteStream,
 } from "node:fs";
 import { join } from "node:path";
-import { createGunzip } from "node:zlib";
+import { createUnzip } from "node:zlib";
 import { Unpackr } from "msgpackr";
 import settings from "../../../protocol/settings.json";
 import type { LegacyBackupSqlRecord } from "../legacyRecords";
@@ -427,6 +427,7 @@ class RecordTierWriter {
       (stream) =>
         new Promise<void>((resolveDone, rejectDone) => {
           stream.once("finish", resolveDone);
+          stream.once("close", resolveDone);
           stream.once("error", rejectDone);
         }),
     );
@@ -503,6 +504,7 @@ class RecordTierWriter {
     for (const stream of [this.root, this.characters, this.chats, this.messages]) {
       if (!stream.destroyed) stream.destroy();
     }
+    await Promise.allSettled(this.done);
     await Promise.all(
       [
         this.rootPath,
@@ -539,7 +541,7 @@ async function createMessagePackSource(
     return createReadStream(filePath, {
       start: COMPRESSED_HEADER.length,
       highWaterMark: 256 * 1024,
-    }).pipe(createGunzip());
+    }).pipe(createUnzip());
   }
   if (header.equals(RAW_HEADER)) {
     return createReadStream(filePath, {
