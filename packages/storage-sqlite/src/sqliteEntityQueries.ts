@@ -143,12 +143,20 @@ export async function listSqliteRecentChats(
              LIMIT 1
           )
       WHERE c.trash_time IS NULL
-      ORDER BY CASE
+      ORDER BY CASE WHEN ch.id = ? THEN 1 ELSE 0 END DESC,
+          CASE
             WHEN ch.id = ? THEN MAX(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0)
-            ELSE COALESCE(ch.last_message_time, c.last_interaction_time, 0)
+            WHEN ch.last_message_time IS NOT NULL THEN ch.last_message_time
+            -- Old databases can lack per-chat timestamps. Keep one
+            -- representative session per character eligible for the legacy
+            -- character timestamp without making every empty sibling recent.
+            WHEN ch.position = 0 THEN COALESCE(c.last_interaction_time, 0)
+            ELSE 0
           END DESC, ch.id
       LIMIT ?`,
-    activeChatId ? [activeChatId, normalizedLimit] : [null, normalizedLimit],
+    activeChatId
+      ? [activeChatId, activeChatId, normalizedLimit]
+      : [null, null, normalizedLimit],
   );
   return rows.map((row) => ({
     characterId: row.character_id,

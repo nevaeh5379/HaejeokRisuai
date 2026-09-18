@@ -6152,10 +6152,13 @@ class PostgresStorage extends SqlStorageBase {
                FROM chat.chats AS ch
                JOIN character.characters AS c ON c.id = ch.character_id
               WHERE c.trash_time IS NULL
-              ORDER BY CASE
-                        WHEN ch.id = $2 THEN GREATEST(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0)
-                        ELSE COALESCE(ch.last_message_time, c.last_interaction_time, 0)
-                      END DESC, ch.id
+              ORDER BY CASE WHEN ch.id = $2 THEN 1 ELSE 0 END DESC,
+                       CASE
+                         WHEN ch.id = $2 THEN GREATEST(COALESCE(ch.last_message_time, 0), COALESCE(c.last_interaction_time, 0), 0)
+                         WHEN ch.last_message_time IS NOT NULL THEN ch.last_message_time
+                         WHEN ch.position = 0 THEN COALESCE(c.last_interaction_time, 0)
+                         ELSE 0
+                       END DESC, ch.id
               LIMIT $1`,
       [limit, activeChatId],
     );

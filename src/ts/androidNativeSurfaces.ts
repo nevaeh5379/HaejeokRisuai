@@ -1,4 +1,5 @@
 import { getCharImage } from "./characterImage";
+import { resolveRecentChatActiveTarget } from "./recentChatActivity";
 import type { SqlRecentChatMetadata } from "./storage/sql/ISqlStorage";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 import { characterStore } from "./stores/domain/characterStore.svelte";
@@ -86,13 +87,21 @@ async function loadWidgetArtwork(
 
 function localRecentChats(limit: number): SqlRecentChatMetadata[] {
   const rows: SqlRecentChatMetadata[] = [];
+  const activeTarget = resolveRecentChatActiveTarget(
+    characterStore.characters,
+    characterStore.selectedId,
+  );
   for (const character of characterStore.characters) {
     if (!character?.chaId || character.trashTime) continue;
     for (let index = 0; index < (character.chats?.length ?? 0); index++) {
       const chat = character.chats[index];
       if (!chat?.id) continue;
       const lastMessage = chat.message?.at(-1);
-      const lastDate = chat.lastDate ?? lastMessage?.time ?? null;
+      const ownLastDate = chat.lastDate ?? lastMessage?.time ?? null;
+      const lastDate =
+        chat.id === activeTarget?.chatId
+          ? Math.max(ownLastDate ?? 0, activeTarget.timestamp)
+          : ownLastDate;
       rows.push({
         characterId: character.chaId,
         characterName: character.name || "RisuAI",
@@ -119,10 +128,11 @@ export async function loadAndroidRecentChats(
   const storage = getSqlRuntime().storage;
   if (!storage?.listRecentChats) return localRecentChats(limit);
   try {
-    const recent = await storage.listRecentChats(
-      limit,
-      characterStore.currentChat?.id,
+    const activeTarget = resolveRecentChatActiveTarget(
+      characterStore.characters,
+      characterStore.selectedId,
     );
+    const recent = await storage.listRecentChats(limit, activeTarget?.chatId);
     return recent.length > 0 ? recent : localRecentChats(limit);
   } catch (error) {
     console.warn("[NativeIntegration] Recent chat query failed:", error);

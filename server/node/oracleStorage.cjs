@@ -5165,9 +5165,12 @@ class OracleStorage extends SqlStorageBase {
                    FROM chat_chats ch
                    JOIN character_characters c ON c.id = ch.character_id
                   WHERE c.trash_time IS NULL
-                  ORDER BY CASE
+                  ORDER BY CASE WHEN ch.id = :activeChatId THEN 1 ELSE 0 END DESC,
+                           CASE
                              WHEN ch.id = :activeChatId THEN GREATEST(NVL(ch.last_message_time, 0), NVL(c.last_interaction_time, 0))
-                             ELSE NVL(ch.last_message_time, NVL(c.last_interaction_time, 0))
+                             WHEN ch.last_message_time IS NOT NULL THEN ch.last_message_time
+                             WHEN ch.position = 0 THEN NVL(c.last_interaction_time, 0)
+                             ELSE 0
                            END DESC, ch.id
                   FETCH FIRST :limit ROWS ONLY`,
         { limit, activeChatId },
