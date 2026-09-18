@@ -105,7 +105,11 @@ import {
 const alertProgress = (
   msg: string,
   progress: number | string,
-  stepState?: { steps: string[]; currentStep: number },
+  stepState?: {
+    steps: string[];
+    currentStep: number;
+    currentStepRatio?: number;
+  },
 ) => showProgressAlert(msg, progress, "backup", stepState);
 
 type LocalBackupProgressStage =
@@ -159,6 +163,10 @@ function localBackupProgressLabel(stage: LocalBackupProgressStage): string {
   }
 }
 
+function clampProgressRatio(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
 function reportLocalBackupProgress(
   stage: LocalBackupProgressStage,
   options: {
@@ -173,6 +181,12 @@ function reportLocalBackupProgress(
   const current = Math.max(0, Math.min(total, Math.floor(options.current ?? 0)));
   const ratio = total > 0 ? current / total : 0;
   const percent = options.percent ?? start + (end - start) * ratio;
+  const stepRatio =
+    total > 0
+      ? clampProgressRatio(ratio)
+      : end > start
+        ? clampProgressRatio((percent - start) / (end - start))
+        : 1;
   const count = total > 0 ? ` (${current} / ${total})` : "";
   const detail = options.detail ? `\n${options.detail}` : "";
   alertProgress(
@@ -181,6 +195,7 @@ function reportLocalBackupProgress(
     {
       steps: LOCAL_BACKUP_PROGRESS_STAGE_ORDER.map(localBackupProgressLabel),
       currentStep: LOCAL_BACKUP_PROGRESS_STAGE_ORDER.indexOf(stage),
+      currentStepRatio: stepRatio,
     },
   );
 }
@@ -239,6 +254,12 @@ function reportLocalBackupRestoreProgress(
   const current = Math.max(0, Math.min(total, Math.floor(options.current ?? 0)));
   const ratio = total > 0 ? current / total : 0;
   const percent = options.percent ?? start + (end - start) * ratio;
+  const stepRatio =
+    total > 0
+      ? clampProgressRatio(ratio)
+      : end > start
+        ? clampProgressRatio((percent - start) / (end - start))
+        : 1;
   const count = total > 0 ? ` (${current} / ${total})` : "";
   alertProgress(
     `${localBackupRestoreLabel(stage)}${count}`,
@@ -246,6 +267,7 @@ function reportLocalBackupRestoreProgress(
     {
       steps: LOCAL_BACKUP_RESTORE_STAGE_ORDER.map(localBackupRestoreLabel),
       currentStep: LOCAL_BACKUP_RESTORE_STAGE_ORDER.indexOf(stage),
+      currentStepRatio: stepRatio,
     },
   );
 }

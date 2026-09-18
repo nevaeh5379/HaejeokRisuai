@@ -41,6 +41,7 @@ export interface alertData {
   mascot?: "help" | "backup";
   progressSteps?: string[];
   progressStep?: number;
+  progressStepRatio?: number;
 }
 
 type AlertGenerationInfoStoreData = {
@@ -210,6 +211,7 @@ export function alertProgress(
   stepState?: {
     steps: string[];
     currentStep: number;
+    currentStepRatio?: number;
   },
 ) {
   const percentStr =
@@ -223,6 +225,7 @@ export function alertProgress(
     mascot,
     progressSteps: stepState?.steps,
     progressStep: stepState?.currentStep,
+    progressStepRatio: stepState?.currentStepRatio,
   });
 }
 

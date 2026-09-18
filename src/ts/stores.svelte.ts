@@ -38,6 +38,7 @@ type AlertData = {
   mascot?: "help" | "backup";
   progressSteps?: string[];
   progressStep?: number;
+  progressStepRatio?: number;
 };
 
 type PluginSafetyError = {
