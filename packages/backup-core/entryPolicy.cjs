@@ -24,6 +24,11 @@ function classifyBackupEntry(name) {
   if (!normalized) return { kind: "invalid", normalized: null };
   if (normalized === "database.risudat")
     return { kind: "database", normalized };
+  if (
+    normalized === "database.stream/manifest.risudat" ||
+    /^database\.stream\/[0-9]{12}\.risudat$/.test(normalized)
+  )
+    return { kind: "databaseStream", normalized };
   if (normalized === "encryption.risudat")
     return { kind: "encryption", normalized };
   if (COLD_STORAGE_RE.test(normalized))

@@ -48,10 +48,22 @@ describe("local backup format", () => {
   });
 
   it("encodes the existing little-endian entry framing", () => {
-    const header = createEntryHeader("assets/example.webp", 1234);
-    expect(header.readUInt32LE(0)).toBe("example.webp".length);
-    expect(header.subarray(4, 16).toString()).toBe("example.webp");
-    expect(header.readUInt32LE(16)).toBe(1234);
+    const name = "assets/example.webp";
+    const header = createEntryHeader(name, 1234);
+    expect(header.readUInt32LE(0)).toBe(name.length);
+    expect(header.subarray(4, 4 + name.length).toString()).toBe(name);
+    expect(header.readUInt32LE(4 + name.length)).toBe(1234);
+  });
+
+  it("rejects traversal while preserving database stream namespaces", () => {
+    expect(() => createEntryHeader("database.stream/../secret", 1)).toThrow(
+      "Invalid local backup entry name",
+    );
+    const header = createEntryHeader("database.stream/000000000001.risudat", 9);
+    const nameLength = header.readUInt32LE(0);
+    expect(header.subarray(4, 4 + nameLength).toString()).toBe(
+      "database.stream/000000000001.risudat",
+    );
   });
 
   it("expands native branch timelines into independent legacy chats", () => {

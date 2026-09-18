@@ -240,11 +240,15 @@ public class NativeBackupPlugin extends Plugin {
                 }
                 if (
                     kind == BackupEntryPolicy.Kind.DATABASE ||
+                    kind == BackupEntryPolicy.Kind.DATABASE_STREAM ||
                     kind == BackupEntryPolicy.Kind.ENCRYPTION ||
                     kind == BackupEntryPolicy.Kind.COLD_STORAGE ||
                     kind == BackupEntryPolicy.Kind.INLAY
                 ) {
-                    if (kind == BackupEntryPolicy.Kind.DATABASE) state.hasDatabase = true;
+                    if (
+                        kind == BackupEntryPolicy.Kind.DATABASE ||
+                        "database.stream/manifest.risudat".equals(name.replace('\\', '/'))
+                    ) state.hasDatabase = true;
                     BackupContainerCodec.writeEntry(
                         special,
                         data,

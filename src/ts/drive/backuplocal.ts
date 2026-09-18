@@ -38,7 +38,9 @@ import { language } from "src/lang";
 import {
   collectColdStorageBackupPayloads,
   confirmIncompleteColdStorageOperation,
+  coldStorageHeader,
   getColdStorageBackupKey,
+  getColdStorageBackupName,
   getColdStorageItem,
   isColdStorageBackupData,
   listColdDataKeys,
@@ -51,7 +53,10 @@ import {
   getSqlBranchStorage,
   getSqlStorage,
 } from "../storage/sql/sqlStorageFactory";
-import { decryptLegacyAccountBackup } from "./legacyBackupEncryption";
+import {
+  decryptLegacyAccountBackup,
+  fetchLegacyBackupKey,
+} from "./legacyBackupEncryption";
 import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
   makeLegacyCompatibleDatabase,
@@ -77,6 +82,15 @@ import {
   listInlayAssets,
   setInlayAsset,
 } from "../process/files/inlays";
+import {
+  exportPortableDatabaseStream,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PortableDatabaseStreamCollector,
+  type PortableDatabaseStreamFragment,
+  type PortableDatabaseStreamManifest,
+} from "../storage/backup/portableDatabaseStream";
+import type { StorageSyncSqlRecord } from "../storage/runtime/storageSyncSource";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
@@ -745,12 +759,14 @@ async function writeLocalBackupAssets(
   writer: LocalWriter,
   db: PortableDatabase,
   options: LocalBackupExportOptions,
+  precomputedAssetMap?: Map<string, BackupAssetInfo>,
 ): Promise<{
   missingAssets: string[];
   assetMap: Map<string, BackupAssetInfo>;
 }> {
   const label = backupLabel(options.partial);
-  const assetMap = buildBackupAssetMap(db, options.assetScope);
+  const assetMap =
+    precomputedAssetMap ?? buildBackupAssetMap(db, options.assetScope);
   const missingAssets: string[] = [];
   let lastUiUpdate = 0;
 
@@ -905,6 +921,229 @@ async function writeBackupColdStorage(
   }
 }
 
+interface StreamingBackupInventory {
+  assetMap: Map<string, BackupAssetInfo>;
+  referencedColdStorageKeys: Set<string>;
+  exportedColdStorageKeys: Set<string>;
+  unavailableColdStorageKeys: Set<string>;
+  chatOwners: Map<string, string>;
+  coldStorageCharacters: Map<
+    string,
+    {
+      chaId: string;
+      name: string;
+      coldstorage?: string;
+      coldStoragedChats?: string[];
+      chats: Array<{ message: Array<{ data: string }> }>;
+    }
+  >;
+}
+
+function createStreamingBackupInventory(): StreamingBackupInventory {
+  return {
+    assetMap: new Map(),
+    referencedColdStorageKeys: new Set(),
+    exportedColdStorageKeys: new Set(),
+    unavailableColdStorageKeys: new Set(),
+    chatOwners: new Map(),
+    coldStorageCharacters: new Map(),
+  };
+}
+
+function collectStreamingBackupRecord(
+  inventory: StreamingBackupInventory,
+  record: Exclude<StorageSyncSqlRecord, { type: "cold-storage" }>,
+  scope: BackupAssetScope,
+) {
+  const addAsset = (key: unknown, category: string, name: string) => {
+    if (typeof key === "string" && key.length > 0) {
+      inventory.assetMap.set(key, { charName: category, assetName: name });
+    }
+  };
+
+  if (record.type === "setting") {
+    if (record.key === "personas" && Array.isArray(record.value)) {
+      for (const persona of record.value) {
+        addAsset(persona?.icon, "Persona", `${persona?.name ?? "User"} Icon`);
+      }
+    } else if (record.key === "userIcon") {
+      addAsset(record.value, "User Settings", "User Icon");
+    } else if (record.key === "customBackground") {
+      addAsset(record.value, "User Settings", "Custom Background");
+    } else if (
+      scope === "essential" &&
+      record.key === "characterOrder" &&
+      Array.isArray(record.value)
+    ) {
+      for (const item of record.value) {
+        if (!item || typeof item === "string") continue;
+        addAsset(item.img, "Folder", `${item.name ?? "Folder"} Folder Image`);
+        addAsset(
+          item.imgFile,
+          "Folder",
+          `${item.name ?? "Folder"} Folder Image File`,
+        );
+      }
+    }
+    return;
+  }
+
+  if (record.type === "module") {
+    const mod = record.data as any;
+    const moduleName = mod?.name ?? "Unknown Module";
+    addAsset(mod?.icon, "Module", `${moduleName} Icon`);
+    if (scope === "all") {
+      for (const asset of mod?.assets ?? []) {
+        addAsset(
+          asset?.[1],
+          "Module",
+          `${moduleName} - ${asset?.[0] ?? "Asset"}`,
+        );
+      }
+    }
+    return;
+  }
+
+  if (record.type === "preset") {
+    if (scope === "essential") {
+      const preset = record.data as any;
+      addAsset(
+        preset?.image,
+        "Preset",
+        `${preset?.name ?? "Preset"} Preset Image`,
+      );
+    }
+    return;
+  }
+
+  if (record.type === "character") {
+    const character = { ...(record.data as any), chaId: record.id };
+    const characterName = character.name ?? "Unknown Character";
+    addAsset(
+      character.image,
+      characterName,
+      scope === "essential" ? "Profile Image" : "Main Image",
+    );
+    if (scope === "all") {
+      for (const emotion of character.emotionImages ?? []) {
+        addAsset(emotion?.[1], characterName, emotion?.[0] ?? "Emotion");
+      }
+      if (character.type !== "group") {
+        for (const asset of character.additionalAssets ?? []) {
+          addAsset(asset?.[1], characterName, asset?.[0] ?? "Asset");
+        }
+        for (const [name, key] of Object.entries(character.vits?.files ?? {})) {
+          addAsset(key, characterName, name);
+        }
+        for (const asset of character.ccAssets ?? []) {
+          addAsset(asset?.uri, characterName, asset?.name ?? "Asset");
+        }
+      }
+    }
+
+    const coldstorage =
+      typeof character.coldstorage === "string"
+        ? character.coldstorage
+        : undefined;
+    const coldStoragedChats = Array.isArray(character.coldStoragedChats)
+      ? character.coldStoragedChats.filter(
+          (key: unknown): key is string => typeof key === "string",
+        )
+      : [];
+    if (coldstorage) inventory.referencedColdStorageKeys.add(coldstorage);
+    for (const key of coldStoragedChats) {
+      inventory.referencedColdStorageKeys.add(key);
+    }
+    inventory.coldStorageCharacters.set(character.chaId, {
+      chaId: character.chaId,
+      name: characterName,
+      coldstorage,
+      coldStoragedChats,
+      chats: [],
+    });
+    return;
+  }
+
+  if (record.type === "chat") {
+    inventory.chatOwners.set(record.id, record.characterId);
+    return;
+  }
+
+  if (record.type === "message" && record.position === 0) {
+    const firstMessage = record.data as any;
+    if (
+      typeof firstMessage?.data === "string" &&
+      firstMessage.data.startsWith(coldStorageHeader)
+    ) {
+      const key = firstMessage.data.slice(coldStorageHeader.length);
+      if (key) inventory.referencedColdStorageKeys.add(key);
+      const ownerId = inventory.chatOwners.get(record.chatId);
+      const character = ownerId
+        ? inventory.coldStorageCharacters.get(ownerId)
+        : undefined;
+      if (character) {
+        character.chats.push({ message: [{ data: firstMessage.data }] });
+      }
+    }
+  }
+}
+
+async function writeStreamingColdStorage(
+  inventory: StreamingBackupInventory,
+  label: string,
+): Promise<boolean> {
+  alertProgress(`${label} (Checking cold data completeness)`, 88);
+  for (const key of inventory.referencedColdStorageKeys) {
+    if (!inventory.exportedColdStorageKeys.has(key)) {
+      inventory.unavailableColdStorageKeys.add(key);
+    }
+  }
+  return await confirmIncompleteColdStorageOperation(
+    {
+      characters: [...inventory.coldStorageCharacters.values()] as any,
+    },
+    inventory.unavailableColdStorageKeys,
+    "backup",
+  );
+}
+
+function streamingRecordEntryName(index: number) {
+  return `${PORTABLE_DATABASE_STREAM_PREFIX}${String(index).padStart(12, "0")}.risudat`;
+}
+
+async function encodeStreamingDatabaseValue(
+  value: PortableDatabaseStreamFragment | PortableDatabaseStreamManifest,
+  encryptionKey?: string,
+) {
+  let encoded = await encodeRisuSaveLegacyAsync(value, "compression");
+  if (encryptionKey) {
+    encoded = new Uint8Array(await encryptBuffer(encoded, encryptionKey));
+  }
+  return encoded;
+}
+
+async function prepareStreamingBackupEncryption(
+  writer: LocalWriter,
+  options: LocalBackupExportOptions,
+): Promise<string | undefined> {
+  if (
+    !options.encryptAccountBackup ||
+    !forageStorage.isAccount ||
+    !location.origin.endsWith("risuai.xyz")
+  ) {
+    return undefined;
+  }
+  const time = Date.now();
+  const key = (
+    await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()
+  ).key;
+  await writer.writeBackup(
+    "encryption.risudat",
+    new TextEncoder().encode(JSON.stringify({ time, type: "account" })),
+  );
+  return key;
+}
+
 function showMissingBackupAssets(
   missingAssets: string[],
   assetMap: Map<string, BackupAssetInfo>,
@@ -927,6 +1166,11 @@ function showMissingBackupAssets(
 }
 
 async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
+  if (options.mode === "native") {
+    await saveStreamingLocalBackupWithOptions(options);
+    return;
+  }
+
   const label = backupLabel(options.partial);
   alertProgress(`${label} (Preparing database)`, 0);
   await sleep(10);
@@ -952,9 +1196,6 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     db,
     options,
   );
-  if (options.mode === "native" && !options.partial) {
-    await writeLocalBackupInlays(writer, label);
-  }
   await writeBackupColdStorage(writer, coldStoragePayloads, label);
 
   alertProgress(`${label} (Compressing database)`, 92);
@@ -996,6 +1237,91 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
   await sleep(10);
   await writer.close();
   showMissingBackupAssets(missingAssets, assetMap, options.partial);
+}
+
+async function saveStreamingLocalBackupWithOptions(
+  options: LocalBackupExportOptions,
+) {
+  const label = backupLabel(options.partial);
+  alertProgress(`${label} (Preparing streaming database)`, 0);
+  await flushDurableStores();
+  const storage = await getSqlStorage();
+  if (!storage.isEnabled()) {
+    const initialized = await storage.init();
+    if (!initialized || !storage.isEnabled()) {
+      throw new Error("Failed to initialize SQL storage for streaming backup");
+    }
+  }
+
+  const writer = new LocalWriter();
+  if (
+    !(await initializeLocalBackupWriter(writer, options.partial, options.mode))
+  ) {
+    alertClear();
+    return;
+  }
+
+  const inventory = createStreamingBackupInventory();
+  const encryptionKey = await prepareStreamingBackupEncryption(writer, options);
+  let manifest: PortableDatabaseStreamManifest;
+  try {
+    manifest = await exportPortableDatabaseStream(storage, {
+      async writeFragment(fragment) {
+        const encoded = await encodeStreamingDatabaseValue(
+          fragment,
+          encryptionKey,
+        );
+        await writer.writeBackup(
+          streamingRecordEntryName(fragment.index),
+          encoded,
+        );
+      },
+      async writeColdStorage(key, value) {
+        if (!isColdStorageBackupData(value)) {
+          inventory.unavailableColdStorageKeys.add(key);
+          return;
+        }
+        inventory.exportedColdStorageKeys.add(key);
+        await writer.writeBackup(
+          getColdStorageBackupName(key),
+          new TextEncoder().encode(JSON.stringify(value)),
+        );
+      },
+      onRecord(record) {
+        collectStreamingBackupRecord(inventory, record, options.assetScope);
+      },
+      onProgress({ stage, current, total }) {
+        const detail = total > 0 ? ` ${current} / ${total}` : "";
+        alertProgress(`${label} (Streaming ${stage}${detail})`, 5);
+      },
+    });
+
+    if (!(await writeStreamingColdStorage(inventory, label))) {
+      await writer.close();
+      alertClear();
+      return;
+    }
+
+    const { missingAssets, assetMap } = await writeLocalBackupAssets(
+      writer,
+      // Asset selection has already been reduced to its bounded key map.
+      {} as PortableDatabase,
+      options,
+      inventory.assetMap,
+    );
+    if (!options.partial) await writeLocalBackupInlays(writer, label);
+
+    alertProgress(`${label} (Finalizing streamed database)`, 98);
+    await writer.writeBackup(
+      PORTABLE_DATABASE_STREAM_MANIFEST,
+      await encodeStreamingDatabaseValue(manifest, encryptionKey),
+    );
+    await writer.close();
+    showMissingBackupAssets(missingAssets, assetMap, options.partial);
+  } catch (error) {
+    await writer.close().catch(() => {});
+    throw error;
+  }
 }
 
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
@@ -1091,6 +1417,8 @@ async function restoreLocalBackupSourceUnlocked(
 
   let pendingDatabase: Uint8Array | null = null;
   let decodedDatabase: Database | null = null;
+  let streamCollector: PortableDatabaseStreamCollector | null = null;
+  let streamingDecryptionKey: Promise<string> | null = null;
   const restoredColdStorageKeys = new Set<string>();
   const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount;
   const pendingNodeAssets = new Map<string, Uint8Array>();
@@ -1274,6 +1602,27 @@ async function restoreLocalBackupSourceUnlocked(
     } else if (name === "database.risudat") {
       pendingDatabase = data;
     } else {
+      const classification = classifyBackupEntry(name);
+      if (classification.kind === "databaseStream") {
+        let encoded = data;
+        if (encryptionMeta.type === "account" && encryptionMeta.time) {
+          streamingDecryptionKey ??= fetchLegacyBackupKey(encryptionMeta.time);
+          encoded = new Uint8Array(
+            await decryptBuffer(encoded, await streamingDecryptionKey),
+          );
+        }
+        const value = await decodeRisuSave(encoded);
+        streamCollector ??= new PortableDatabaseStreamCollector();
+        if (name === PORTABLE_DATABASE_STREAM_MANIFEST) {
+          streamCollector.setManifest(value as PortableDatabaseStreamManifest);
+        } else {
+          streamCollector.addFragment(value as PortableDatabaseStreamFragment);
+        }
+        entriesRestored++;
+        currentEntryName = "";
+        return;
+      }
+
       const inlayKey = getInlayBackupKey(name);
       if (inlayKey) {
         const result = await restoreInlayBackupEntry(inlayKey, data);
@@ -1599,14 +1948,22 @@ async function restoreLocalBackupSourceUnlocked(
     );
   }
 
-  if (!pendingDatabase) {
+  if (streamCollector) {
+    if (pendingDatabase || decodedDatabase) {
+      throw new Error("Backup mixes legacy and streaming database formats");
+    }
+    decodedDatabase = streamCollector.finish() as Database;
+    streamCollector = null;
+  }
+
+  if (!pendingDatabase && !decodedDatabase) {
     throw new Error("Backup does not contain a database entry");
   }
 
-  const databaseByteLength = pendingDatabase.byteLength;
+  const databaseByteLength = pendingDatabase?.byteLength ?? 0;
   let db: Uint8Array | null = pendingDatabase;
   pendingDatabase = null;
-  if (encryptionMeta.type === "account" && encryptionMeta.time) {
+  if (db && encryptionMeta.type === "account" && encryptionMeta.time) {
     try {
       db = await decryptLegacyAccountBackup(
         db,
@@ -1627,8 +1984,11 @@ async function restoreLocalBackupSourceUnlocked(
       : "Decoding database...",
     91,
   );
-  const decodedDb = decodedDatabase ?? ((await decodeRisuSave(db)) as Database);
-  const prepared = preparePortableDatabaseForBranchRestore(decodedDb);
+  const decodedDb =
+    decodedDatabase ?? ((await decodeRisuSave(db as Uint8Array)) as Database);
+  const prepared = preparePortableDatabaseForBranchRestore(
+    normalizeBackupSnapshot(decodedDb as BackupDatabaseDraft),
+  );
   const dbData = prepared.database as Database;
   const portableBranchGraphs = prepared.branchGraphs;
   db = null;

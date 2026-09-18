@@ -35,6 +35,7 @@ for (const method of [
   "loadChatMessages",
   "loadColdStorage",
   "loadLorebooks",
+  "loadModuleRecords",
   "loadModules",
   "loadPersonas",
   "loadPluginCustomStorage",

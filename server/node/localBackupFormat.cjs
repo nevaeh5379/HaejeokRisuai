@@ -1,6 +1,5 @@
 "use strict";
 
-const path = require("path");
 const zlib = require("zlib");
 const { promisify } = require("util");
 const { Packr, Unpackr } = require("msgpackr");
@@ -13,7 +12,16 @@ const packr = new Packr({ useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });
 
 function createEntryHeader(name, size) {
-  const normalizedName = path.basename(name);
+  const normalizedName = String(name).replace(/\\/g, "/");
+  const segments = normalizedName.split("/");
+  if (
+    segments.length === 0 ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(`Invalid local backup entry name: ${name}`);
+  }
   const encodedName = Buffer.from(normalizedName, "utf8");
   if (encodedName.length === 0 || encodedName.length > 1024 * 1024) {
     throw new Error(`Invalid local backup entry name: ${name}`);

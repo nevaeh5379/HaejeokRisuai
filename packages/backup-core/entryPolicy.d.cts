@@ -1,5 +1,6 @@
 export type BackupEntryKind =
   | "database"
+  | "databaseStream"
   | "encryption"
   | "coldStorage"
   | "inlay"

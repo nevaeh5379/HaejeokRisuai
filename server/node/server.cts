@@ -4012,6 +4012,287 @@ async function encodePortableServerDatabase(
   return await encodeLocalBackupDatabase(portable);
 }
 
+const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
+const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
+const PORTABLE_DATABASE_STREAM_PAGE_SIZE = 32;
+const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS = 32;
+
+function streamedDatabaseEntryName(index) {
+  return `${PORTABLE_DATABASE_STREAM_PREFIX}${String(index).padStart(12, "0")}.risudat`;
+}
+
+function createStreamedDatabaseCounts() {
+  return {
+    meta: 0,
+    setting: 0,
+    "plugin-storage": 0,
+    module: 0,
+    preset: 0,
+    character: 0,
+    chat: 0,
+    branch: 0,
+    "active-branch": 0,
+    message: 0,
+  };
+}
+
+async function streamPortableServerDatabase(
+  output,
+  onRecord: (record: any) => void = () => {},
+) {
+  if (!postgresStorage.enabled)
+    throw new Error("SQL storage is not configured");
+  const initialState = await postgresStorage.getState();
+  if (!initialState?.initialized)
+    throw new Error("Database is not initialized");
+  const startup = await postgresStorage.loadStartupData();
+  if (!startup || startup.status !== "ready")
+    throw new Error("Database is not initialized");
+  if (Number(startup.revision) !== Number(initialState.revision)) {
+    throw new Error("Database changed while streaming backup metadata");
+  }
+
+  let fragmentIndex = 0;
+  let totalRecords = 0;
+  let fragmentRecords = [];
+  const counts = createStreamedDatabaseCounts();
+  const flush = async () => {
+    if (fragmentRecords.length === 0) return;
+    const fragment = {
+      format: "risu-portable-database-fragment",
+      version: 1,
+      index: ++fragmentIndex,
+      records: fragmentRecords,
+    };
+    fragmentRecords = [];
+    const encoded = await encodeLocalBackupDatabase(fragment);
+    await writeLocalBackupEntry(
+      output,
+      streamedDatabaseEntryName(fragment.index),
+      encoded,
+      encoded.length,
+    );
+  };
+  const emit = async (record) => {
+    fragmentRecords.push(record);
+    totalRecords++;
+    counts[record.type]++;
+    onRecord(record);
+    if (fragmentRecords.length >= PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS) {
+      await flush();
+    }
+  };
+
+  await emit({
+    type: "meta",
+    formatVersion: 1,
+    revision: Number(initialState.revision),
+  });
+
+  const excludedSettings = new Set([
+    "characters",
+    "modules",
+    "botPresets",
+    "botPresetsId",
+    "pluginCustomStorage",
+  ]);
+  const settingKeys = (await postgresStorage.listSettingKeys()).filter(
+    (key, keyIndex, source) =>
+      !excludedSettings.has(key) && source.indexOf(key) === keyIndex,
+  );
+  for (const key of settingKeys) {
+    const loaded = await postgresStorage.loadSettingKey(key);
+    if (!loaded?.exists)
+      throw new Error(`Backup could not load setting ${key}`);
+    await emit({ type: "setting", key, value: loaded.value });
+  }
+
+  const moduleResult = await postgresStorage.loadModuleRecords();
+  for (
+    let position = 0;
+    position < (moduleResult?.modules?.length ?? 0);
+    position++
+  ) {
+    const value = moduleResult.modules[position];
+    if (!value?.id)
+      throw new Error("Backup encountered a module without an id");
+    await emit({ type: "module", position, id: value.id, data: value });
+  }
+
+  const presetResult = await postgresStorage.listBotPresets();
+  const presetSummaries = presetResult?.presets ?? [];
+  for (const summary of presetSummaries) {
+    const loaded = await postgresStorage.loadBotPreset(summary.id);
+    if (!loaded?.preset)
+      throw new Error(`Backup could not load preset ${summary.id}`);
+    const { id: _id, ...value } = loaded.preset;
+    await emit({
+      type: "preset",
+      position: summary.position,
+      id: summary.id,
+      data: value,
+    });
+  }
+
+  const pluginKeys = await postgresStorage.listPluginCustomStorageKeys();
+  for (const key of pluginKeys) {
+    const loaded = await postgresStorage.loadPluginCustomStorageKey(key);
+    if (!loaded?.exists)
+      throw new Error(`Backup could not load plugin storage ${key}`);
+    await emit({ type: "plugin-storage", key, value: loaded.value });
+  }
+
+  for (
+    let characterPosition = 0;
+    characterPosition < startup.characters.length;
+    characterPosition++
+  ) {
+    const shell = startup.characters[characterPosition];
+    const loadedCharacter = await postgresStorage.loadCharacter(shell.chaId);
+    if (!loadedCharacter)
+      throw new Error(`Backup could not load character ${shell.chaId}`);
+    const chatSummaries = [...(loadedCharacter.chats ?? [])];
+    const { chats: _chats, ...character } = loadedCharacter;
+    await emit({
+      type: "character",
+      position: characterPosition,
+      id: shell.chaId,
+      data: character,
+    });
+
+    for (
+      let chatPosition = 0;
+      chatPosition < chatSummaries.length;
+      chatPosition++
+    ) {
+      const summary = chatSummaries[chatPosition];
+      const loadedChat = await postgresStorage.loadChat(summary.id, {
+        messageLimit: 1,
+      });
+      if (!loadedChat)
+        throw new Error(`Backup could not load chat ${summary.id}`);
+      const { message: _messages, ...chat } = loadedChat;
+      await emit({
+        type: "chat",
+        characterId: shell.chaId,
+        position: chatPosition,
+        id: summary.id,
+        data: chat,
+      });
+
+      let offset = 0;
+      let emittedMetadata = false;
+      while (true) {
+        const page = await postgresStorage.loadChatBranchGraphPage(
+          summary.id,
+          offset,
+          PORTABLE_DATABASE_STREAM_PAGE_SIZE,
+        );
+        if (!emittedMetadata) {
+          for (const branch of page.branches) {
+            await emit({ type: "branch", chatId: summary.id, data: branch });
+          }
+          if (page.activeBranchId) {
+            await emit({
+              type: "active-branch",
+              chatId: summary.id,
+              branchId: page.activeBranchId,
+            });
+          }
+          emittedMetadata = true;
+        }
+        const links = new Map<string, any>(
+          page.links.map((link) => [link.messageId, link]),
+        );
+        for (const message of page.messages) {
+          const messageId = message?.chatId;
+          const link = messageId ? links.get(messageId) : null;
+          if (!messageId || !link || !Number.isSafeInteger(link.position)) {
+            throw new Error(
+              `Backup branch metadata is incomplete for chat ${summary.id}`,
+            );
+          }
+          const { chatId: _messageId, ...data } = message;
+          await emit({
+            type: "message",
+            chatId: summary.id,
+            id: messageId,
+            position: Number(link.position),
+            parentMessageId: link.parentMessageId,
+            originBranchId: link.originBranchId,
+            data,
+          });
+        }
+        if (!page.hasMore) break;
+        const nextOffset = page.offset + page.messages.length;
+        if (nextOffset <= offset)
+          throw new Error(
+            `Branch backup paging stalled for chat ${summary.id}`,
+          );
+        offset = nextOffset;
+      }
+    }
+  }
+
+  const coldItems =
+    typeof postgresStorage.listColdStorage === "function"
+      ? await postgresStorage.listColdStorage()
+      : [];
+  for (const summary of coldItems) {
+    const loaded = await postgresStorage.loadColdStorage(summary.key);
+    if (!loaded) continue;
+    const data = Buffer.from(JSON.stringify(loaded.data), "utf8");
+    await writeLocalBackupEntry(
+      output,
+      `coldstorage_${summary.key}.json`,
+      data,
+      data.length,
+    );
+  }
+
+  const completedState = await postgresStorage.getState();
+  if (Number(completedState?.revision) !== Number(initialState.revision)) {
+    throw new Error(
+      `Database changed during backup (revision ${initialState.revision} -> ${completedState?.revision}); please retry`,
+    );
+  }
+  await flush();
+  return {
+    format: "risu-portable-database-stream",
+    version: 1,
+    revision: Number(initialState.revision),
+    totalFragments: fragmentIndex,
+    totalRecords,
+    counts,
+    complete: true,
+  };
+}
+
+function collectStreamedEssentialAssetKeys(wanted, record) {
+  const add = (key) => {
+    if (typeof key === "string" && key.startsWith("assets/")) wanted.add(key);
+  };
+  if (record.type === "setting") {
+    if (record.key === "personas" && Array.isArray(record.value)) {
+      for (const persona of record.value) add(persona?.icon);
+    } else if (record.key === "userIcon" || record.key === "customBackground") {
+      add(record.value);
+    } else if (record.key === "characterOrder" && Array.isArray(record.value)) {
+      for (const item of record.value) {
+        if (!item || typeof item === "string") continue;
+        add(item.img);
+        add(item.imgFile);
+      }
+    }
+  } else if (record.type === "module") {
+    add(record.data?.icon);
+  } else if (record.type === "preset") {
+    add(record.data?.image);
+  } else if (record.type === "character") {
+    add(record.data?.image);
+  }
+}
+
 // Profile-image asset keys referenced by the snapshot: character main images,
 // persona icons, user icon, custom background, module icons, folder images, bot preset images.
 // Mirrors the client's essential backup scope so partial exports stay small.
@@ -4043,7 +4324,7 @@ function collectEssentialBackupAssetKeys(database, assetKeys) {
   return assetKeys.filter((key) => wanted.has(key));
 }
 
-async function streamServerLocalBackup(res, mode = "native") {
+async function streamLegacyServerLocalBackup(res, mode = "compatible") {
   const database = await buildPortableServerDatabase();
   const coldItems =
     typeof postgresStorage.listColdStorage === "function"
@@ -4124,6 +4405,77 @@ async function streamServerLocalBackup(res, mode = "native") {
     "database.risudat",
     databaseData,
     databaseData.length,
+  );
+  await new Promise((resolve, reject) => {
+    res.once("finish", resolve);
+    res.once("error", reject);
+    res.end();
+  });
+}
+
+async function streamServerLocalBackup(res, mode = "native") {
+  if (mode === "compatible") {
+    await streamLegacyServerLocalBackup(res, mode);
+    return;
+  }
+
+  const partial = mode === "partial";
+  res.status(200);
+  res.setHeader("Content-Type", "application/octet-stream");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const backupName = partial
+    ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
+    : `haejeokrisu_backup_${dateStr}.risubackup`;
+  res.setHeader("Content-Disposition", `attachment; filename="${backupName}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  const essentialAssetKeys = new Set();
+  const manifest = await streamPortableServerDatabase(res, (record) => {
+    if (partial) collectStreamedEssentialAssetKeys(essentialAssetKeys, record);
+  });
+
+  const storage = assetStorageManager.getStorage();
+  const resolved =
+    storage.type === "s3"
+      ? await resolveCatalogedAssetKeys(storage, "assets/")
+      : { keys: await storage.list("assets/") };
+  let assetKeys = resolved.keys.filter(
+    (key) => typeof key === "string" && key.startsWith("assets/"),
+  );
+  if (partial) {
+    assetKeys = assetKeys.filter((key) => essentialAssetKeys.has(key));
+  }
+  const inlayKeys = partial
+    ? []
+    : (await storage.list("inlay_")).filter(
+        (key) =>
+          typeof key === "string" &&
+          /^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.risuinlay$/.test(
+            key,
+          ),
+      );
+
+  for (const key of [...assetKeys, ...inlayKeys]) {
+    const opened =
+      typeof storage.openReadStream === "function"
+        ? await storage.openReadStream(keyToHex(key))
+        : await storage.read(keyToHex(key));
+    if (!opened.exists) continue;
+    const source = opened.stream ?? opened.buffer;
+    const size = Number(opened.contentLength ?? opened.buffer?.length);
+    if (!source || !Number.isSafeInteger(size))
+      throw new Error(`Backup asset is not streamable: ${key}`);
+    await writeLocalBackupEntry(res, key, source, size);
+  }
+
+  const manifestData = await encodeLocalBackupDatabase(manifest);
+  await writeLocalBackupEntry(
+    res,
+    PORTABLE_DATABASE_STREAM_MANIFEST,
+    manifestData,
+    manifestData.length,
   );
   await new Promise((resolve, reject) => {
     res.once("finish", resolve);
