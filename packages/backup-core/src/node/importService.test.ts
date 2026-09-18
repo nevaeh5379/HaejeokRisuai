@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { encodeInlayAssetBackup } from "../inlayCodec";
-import { createLocalBackupEntryHeader } from "./legacyFormat";
+import {
+  createLocalBackupEntryHeader,
+  encodeLegacyBackupDatabase,
+} from "./legacyFormat";
 import { LocalBackupImportJobStore } from "./importJobStore";
 import { BackupImportStagingStore } from "./importStagingStore";
 import {
@@ -79,14 +82,30 @@ describe("LocalBackupImportService", () => {
         }
         observedStages.push(service.progress("import_001").progress.stage);
       },
-      async restoreDatabase(plan, sourceClientId, onProgress) {
+      encodeDatabaseRecord(record) {
+        return record;
+      },
+      async applyPreparedDatabase(prepared, sourceClientId) {
         order.push("database");
-        expect(plan.databaseMode).toBe("legacy");
-        expect(plan.legacyDatabase?.name).toBe("database.risudat");
         expect(sourceClientId).toBe("client-1");
-        onProgress(11, 11, "database.risudat");
+        expect(prepared.sourceRevision).toBe(0);
+        expect(prepared.recordCount).toBeGreaterThan(0);
+        const records = (await fs.readFile(prepared.filePath, "utf8"))
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        expect(records[0]).toEqual({
+          type: "meta",
+          formatVersion: 1,
+          revision: 0,
+        });
+        expect(records).toContainEqual({
+          type: "setting",
+          key: "language",
+          value: "ko",
+        });
         observedStages.push(service.progress("import_001").progress.stage);
-        return { revision: 7, recordCount: 11 };
+        return { revision: 7, recordCount: prepared.recordCount };
       },
     };
     service = new LocalBackupImportService(jobs, staging, adapter);
@@ -98,8 +117,12 @@ describe("LocalBackupImportService", () => {
       name: "Inlay",
       type: "image",
     });
+    const database = await encodeLegacyBackupDatabase({
+      language: "ko",
+      characters: [],
+    });
     const parts = [
-      framed("database.risudat", new Uint8Array([1, 2, 3])),
+      framed("database.risudat", database),
       framed(
         "coldstorage_11111111-1111-1111-1111-111111111111.json",
         new TextEncoder().encode('{"character":[]}'),
@@ -120,7 +143,7 @@ describe("LocalBackupImportService", () => {
       status: "complete",
       error: null,
       revision: 7,
-      recordCount: 11,
+      recordCount: 2,
     });
 
     expect(order).toEqual(["coldStorage", "assets", "inlays", "database"]);
@@ -144,7 +167,10 @@ describe("LocalBackupImportService", () => {
     const adapter: LocalBackupImportAdapter = {
       async writeColdStorage() {},
       async writeAsset() {},
-      async restoreDatabase() {
+      encodeDatabaseRecord(record) {
+        return record;
+      },
+      async applyPreparedDatabase() {
         throw new Error("database restore failed");
       },
     };
@@ -152,7 +178,7 @@ describe("LocalBackupImportService", () => {
     const job = service.createJob();
     const payload = framed(
       "database.risudat",
-      new Uint8Array([1, 2, 3]),
+      await encodeLegacyBackupDatabase({ characters: [] }),
     );
 
     await expect(
@@ -174,7 +200,10 @@ describe("LocalBackupImportService", () => {
     const adapter: LocalBackupImportAdapter = {
       async writeColdStorage() {},
       async writeAsset() {},
-      async restoreDatabase() {
+      encodeDatabaseRecord(record) {
+        return record;
+      },
+      async applyPreparedDatabase() {
         throw new Error("database adapter must not run");
       },
     };

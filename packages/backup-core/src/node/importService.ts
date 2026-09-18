@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import type {
   LocalBackupImportJobCompletion,
@@ -10,9 +11,13 @@ import {
   normalizeBackupAssetPath,
 } from "../entryPolicy";
 import { decodeInlayAssetBackup } from "../inlayCodec";
+import type { LegacyBackupSqlRecord } from "../legacyRecords";
+import {
+  prepareLocalBackupDatabaseImport,
+  type PreparedLocalBackupDatabase,
+} from "./importDatabase";
 import {
   buildBackupImportPlan,
-  type BackupImportPlan,
 } from "./importPlan";
 import {
   LocalBackupImportJobStore,
@@ -30,10 +35,10 @@ export interface LocalBackupImportRestoreResult {
 export interface LocalBackupImportAdapter {
   writeColdStorage(key: string, value: unknown): Promise<void>;
   writeAsset(key: string, filePath: string, size: number): Promise<void>;
-  restoreDatabase(
-    plan: BackupImportPlan,
+  encodeDatabaseRecord(record: LegacyBackupSqlRecord): unknown;
+  applyPreparedDatabase(
+    prepared: PreparedLocalBackupDatabase,
     sourceClientId: unknown,
-    onProgress: (current: number, total: number, detail?: string) => void,
   ): Promise<LocalBackupImportRestoreResult>;
 }
 
@@ -154,11 +159,28 @@ export class LocalBackupImportService {
       await this.restoreColdStorage(id, plan.coldStorage);
       await this.restoreAssets(id, plan.assets);
       await this.restoreInlays(id, plan.inlays);
-      const result = await this.adapter.restoreDatabase(
-        plan,
+      const prepared = await prepareLocalBackupDatabaseImport(plan, {
+        encodeRecord: (record) => this.adapter.encodeDatabaseRecord(record),
+        idFactory: randomUUID,
+        onProgress: (progress) =>
+          this.update(
+            id,
+            "database",
+            progress.current,
+            progress.total,
+            progress.detail,
+          ),
+      });
+      this.update(
+        id,
+        "database",
+        prepared.recordCount,
+        prepared.recordCount,
+        "Applying database",
+      );
+      const result = await this.adapter.applyPreparedDatabase(
+        prepared,
         options.sourceClientId,
-        (current, total, detail) =>
-          this.update(id, "database", current, total, detail),
       );
 
       this.jobs.settle(id, "complete", result);

@@ -76,7 +76,6 @@ const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
 const {
   createLocalBackupEntryHeader,
-  decodeLegacyBackupDatabase,
   makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
 } = require("../../packages/backup-core/dist/node/legacyFormat.js");
@@ -161,13 +160,6 @@ const {
 const {
   BackupImportPlanError,
 } = require("../../packages/backup-core/dist/node/importPlan.js");
-const {
-  iterateLegacyBackupSqlRecords,
-} = require("../../packages/backup-core/dist/legacyRecords.js");
-const {
-  LegacyBackupStreamingUnsupportedError,
-  streamLegacyBackupDatabaseToSqlNdjson,
-} = require("../../packages/backup-core/dist/node/legacyStream.js");
 const {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
@@ -4840,202 +4832,28 @@ async function writeImportedAsset(key, filePath, size) {
   await upsertAssetCatalogKey(key, size);
 }
 
-async function stageLegacyBackupSqlRecords(databaseEntry, onProgress) {
-  onProgress(0, 0, "Streaming legacy database");
-
-  const sqlPath = `${databaseEntry.filePath}.sql.ndjson`;
-  try {
-    const streamed = await streamLegacyBackupDatabaseToSqlNdjson(
-      databaseEntry.filePath,
-      {
-        outputPath: sqlPath,
-        encodeRecord: encodeStorageSyncValue,
-        idFactory: () => crypto.randomUUID(),
-        sourceRevision: 0,
-        onProgress(progress) {
-          onProgress(
-            progress.records,
-            0,
-            `Streaming legacy database · ${progress.phase}`,
-          );
-        },
-      },
-    );
-    return {
-      sourceRevision: streamed.sourceRevision,
-      recordCount: streamed.recordCount,
-      sqlStaging: createLocalBackupSqlStaging(
-        streamed.outputPath,
-        streamed.recordCount,
-        streamed.sourceRevision,
-      ),
-    };
-  } catch (error) {
-    if (!(error instanceof LegacyBackupStreamingUnsupportedError)) {
-      await fs.rm(sqlPath, { force: true }).catch(() => {});
-      throw error;
-    }
-    await fs.rm(sqlPath, { force: true }).catch(() => {});
-    console.info(
-      `[Local backup] Falling back to compatibility decoder: ${error.message}`,
-    );
-  }
-
-  onProgress(0, 0, "Decoding legacy compatibility format");
-
-  let database = decodeLegacyBackupDatabase(
-    new Uint8Array(await fs.readFile(databaseEntry.filePath)),
-  );
-  if (!database || typeof database !== "object" || Array.isArray(database)) {
-    throw new Error("Legacy backup database payload is invalid");
-  }
-
-  const output = fsSync.createWriteStream(sqlPath, {
-    flags: "wx",
-    mode: 0o600,
-  });
-  const outputDone = new Promise<void>((resolve, reject) => {
-    output.once("finish", resolve);
-    output.once("error", reject);
-  });
-
-  let recordCount = 0;
-  const validationState = {
-    sourceRevision: null,
-    entityPhase: false,
-  };
-  try {
-    for (const record of iterateLegacyBackupSqlRecords(database, {
-      sourceRevision: 0,
-      idFactory: () => crypto.randomUUID(),
-    })) {
-      validateStorageSyncSqlRecord(record, recordCount, validationState);
-      const line = `${JSON.stringify(encodeStorageSyncValue(record))}\n`;
-      if (!output.write(line, "utf8")) await once(output, "drain");
-      recordCount++;
-      if (recordCount % 64 === 0) {
-        onProgress(
-          recordCount,
-          0,
-          "Converting legacy compatibility database",
-        );
-      }
-    }
-    output.end();
-    await outputDone;
-  } catch (error) {
-    output.destroy();
-    await fs.rm(sqlPath, { force: true }).catch(() => {});
-    throw error;
-  } finally {
-    database = null;
-  }
-
-  return {
-    sourceRevision: 0,
-    recordCount,
-    sqlStaging: createLocalBackupSqlStaging(sqlPath, recordCount, 0),
-  };
-}
-
-async function restoreStagedLegacyDatabase(
-  databaseEntry,
+async function applyPreparedLocalBackupDatabase(
+  prepared,
   sourceClientId,
-  onProgress,
 ) {
-  const prepared = await stageLegacyBackupSqlRecords(
-    databaseEntry,
-    onProgress,
-  );
-  onProgress(
-    prepared.recordCount,
-    prepared.recordCount,
-    "Applying legacy database",
-  );
+  const staged = {
+    sourceRevision: prepared.sourceRevision,
+    recordCount: prepared.recordCount,
+    sqlStaging: createLocalBackupSqlStaging(
+      prepared.filePath,
+      prepared.recordCount,
+      prepared.sourceRevision,
+    ),
+  };
   const result = await finalizePreparedLocalBackupSql(
-    prepared,
-    `local-backup-import:${databaseEntry.filePath}`,
+    staged,
+    `local-backup-import:${prepared.filePath}`,
     sourceClientId,
   );
   return {
     revision: result.revision,
     recordCount: prepared.recordCount,
   };
-}
-
-async function restoreStagedStreamDatabase(
-  plan,
-  sourceClientId,
-  onProgress,
-) {
-  const manifest = decodeLegacyBackupDatabase(
-    new Uint8Array(await fs.readFile(plan.streamManifest.filePath)),
-  );
-  const totalRecords =
-    Number.isSafeInteger(manifest?.totalRecords) &&
-    Number(manifest.totalRecords) >= 0
-      ? Number(manifest.totalRecords)
-      : 0;
-
-  const session = await localBackupDatabaseStreamStore.create();
-  try {
-    let current = 0;
-    for (
-      let fragmentPosition = 0;
-      fragmentPosition < plan.streamFragments.length;
-      fragmentPosition++
-    ) {
-      const expectedIndex = fragmentPosition + 1;
-      const fragmentEntry = plan.streamFragments[fragmentPosition];
-      const fragment = decodeLegacyBackupDatabase(
-        new Uint8Array(await fs.readFile(fragmentEntry.filePath)),
-      );
-      if (
-        !fragment ||
-        fragment.format !== "risu-portable-database-fragment" ||
-        fragment.version !== 1 ||
-        fragment.index !== expectedIndex ||
-        !Array.isArray(fragment.records) ||
-        fragment.records.length === 0 ||
-        fragment.records.length > PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS
-      ) {
-        throw new Error(
-          `Invalid portable database fragment: ${fragmentEntry.name}`,
-        );
-      }
-
-      for (let offset = 0; offset < fragment.records.length; offset += 64) {
-        const records = fragment.records
-          .slice(offset, offset + 64)
-          .map(encodeStorageSyncValue);
-        const fragmentComplete =
-          offset + records.length === fragment.records.length;
-        const state = await localBackupDatabaseStreamStore.appendRecords(
-          session.id,
-          {
-            fragmentIndex: expectedIndex,
-            records,
-            fragmentComplete,
-          },
-        );
-        current = state.recordCount;
-        onProgress(current, totalRecords, fragmentEntry.name);
-      }
-    }
-
-    const result = await finalizeLocalBackupDatabaseStreamSession(
-      session.id,
-      manifest,
-      sourceClientId,
-    );
-    return {
-      revision: result.revision,
-      recordCount: result.recordCount,
-    };
-  } catch (error) {
-    await localBackupDatabaseStreamStore.cleanup(session.id).catch(() => {});
-    throw error;
-  }
 }
 
 const localBackupImportService = new LocalBackupImportService(
@@ -5045,20 +4863,8 @@ const localBackupImportService = new LocalBackupImportService(
     writeColdStorage: async (key, value) =>
       await postgresStorage.upsertColdStorage(key, value),
     writeAsset: writeImportedAsset,
-    restoreDatabase: async (plan, sourceClientId, onProgress) => {
-      if (plan.databaseMode === "stream") {
-        return await restoreStagedStreamDatabase(
-          plan,
-          sourceClientId,
-          onProgress,
-        );
-      }
-      return await restoreStagedLegacyDatabase(
-        plan.legacyDatabase,
-        sourceClientId,
-        onProgress,
-      );
-    },
+    encodeDatabaseRecord: encodeStorageSyncValue,
+    applyPreparedDatabase: applyPreparedLocalBackupDatabase,
   },
 );
 
