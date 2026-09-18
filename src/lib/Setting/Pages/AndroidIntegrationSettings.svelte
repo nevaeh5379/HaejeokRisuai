@@ -1,6 +1,11 @@
 <script lang="ts">
     import Button from '../../UI/GUI/Button.svelte';
+    import NumberInput from '../../UI/GUI/NumberInput.svelte';
+    import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import {
+        DEFAULT_WIDGET_BOT_COUNT,
+        MAX_WIDGET_BOT_COUNT,
+        MIN_WIDGET_BOT_COUNT,
         refreshAndroidNativeSurfaces,
     } from 'src/ts/androidNativeSurfaces';
     import {
@@ -12,6 +17,20 @@
     const ko = typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('ko');
     let busy = $state(false);
     let status = $state('');
+
+    let botCount = $state(
+        settingsStore.state.androidWidgetBotCount ?? DEFAULT_WIDGET_BOT_COUNT
+    );
+
+    function onBotCountChange() {
+        const clamped = Math.max(
+            MIN_WIDGET_BOT_COUNT,
+            Math.min(MAX_WIDGET_BOT_COUNT, Math.floor(botCount || DEFAULT_WIDGET_BOT_COUNT))
+        );
+        botCount = clamped;
+        settingsStore.state.androidWidgetBotCount = clamped;
+        void refreshAndroidNativeSurfaces();
+    }
 
     async function addWidget(type: AndroidWidgetType) {
         busy = true;
@@ -77,6 +96,25 @@
         <Button styled="outlined" onclick={refreshSurfaces} disabled={busy}>
             {ko ? '시스템 항목 새로고침' : 'Refresh system surfaces'}
         </Button>
+    </div>
+    <div class="mt-4 pt-4 border-t border-darkborderc/60 flex flex-col gap-2">
+        <label for="android-widget-bot-count" class="text-sm font-medium text-textcolor">
+            {ko ? '위젯 봇 표시 개수' : 'Widget bot display count'}
+        </label>
+        <p class="text-xs text-textcolor2">
+            {ko
+                ? `최근 봇 그리드 및 가로줄 위젯에 표시할 봇 개수입니다. (기본값: ${DEFAULT_WIDGET_BOT_COUNT})`
+                : `Number of bots to display in the grid and strip widgets. (Default: ${DEFAULT_WIDGET_BOT_COUNT})`}
+        </p>
+        <div class="w-32">
+            <NumberInput
+                id="android-widget-bot-count"
+                min={MIN_WIDGET_BOT_COUNT}
+                max={MAX_WIDGET_BOT_COUNT}
+                bind:value={botCount}
+                onChange={onBotCountChange}
+            />
+        </div>
     </div>
     {#if status}
         <p class="mt-3 text-sm text-textcolor2" aria-live="polite">{status}</p>

@@ -39,6 +39,7 @@ const runtimeScalarDefaults = {
   ImagenPersonGeneration: defaultString("allow_all"),
   autoScrollToNewMessage: defaultBoolean(true),
   alwaysScrollToNewMessage: defaultBoolean(false),
+  androidWidgetBotCount: defaultNumber(12),
   newMessageButtonStyle: defaultString("bottom-center"),
   generationStatsPosition: defaultPicklist(
     ["bottom-right", "bottom-left", "top-right", "top-left", "off"],

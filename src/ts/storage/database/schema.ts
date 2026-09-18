@@ -104,6 +104,7 @@ export interface DatabaseSettings {
   iconsize: number;
   theme: string;
   uiTheme?: "default" | "windows" | "android";
+  androidWidgetBotCount?: number;
   subModel: string;
   emotionPrompt: string;
   formatversion: number;

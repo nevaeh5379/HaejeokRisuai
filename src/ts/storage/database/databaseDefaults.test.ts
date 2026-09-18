@@ -40,6 +40,10 @@ describe("normalizeDatabaseDefaults", () => {
       assetCacheSizeMB: 32,
       chatParserCacheEntries: 500,
     });
+    expect(normalizeSettingsInput({}).androidWidgetBotCount).toBe(12);
+    expect(
+      normalizeSettingsInput({ androidWidgetBotCount: 6 }).androidWidgetBotCount,
+    ).toBe(6);
     expect(custom.assetCacheEntries).toBe(80);
     expect(custom.assetCacheSizeMB).toBe(32);
     expect(custom.chatParserCacheEntries).toBe(500);

@@ -2,6 +2,7 @@ import { getCharImage } from "./characterImage";
 import type { SqlRecentChatMetadata } from "./storage/sql/ISqlStorage";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 import { characterStore } from "./stores/domain/characterStore.svelte";
+import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import {
   updateAndroidRecentChatWidget,
   updateAndroidShortcuts,
@@ -9,8 +10,21 @@ import {
 } from "./androidNativeIntegration";
 
 const SHORTCUT_LIMIT = 4;
-const WIDGET_LIMIT = 18;
+export const DEFAULT_WIDGET_BOT_COUNT = 12;
+export const MIN_WIDGET_BOT_COUNT = 1;
+export const MAX_WIDGET_BOT_COUNT = 36;
 const RECENT_SCAN_LIMIT = 32;
+
+export function getAndroidWidgetBotCount(): number {
+  const configured = settingsStore.state?.androidWidgetBotCount;
+  if (typeof configured !== "number" || !Number.isFinite(configured)) {
+    return DEFAULT_WIDGET_BOT_COUNT;
+  }
+  return Math.max(
+    MIN_WIDGET_BOT_COUNT,
+    Math.min(MAX_WIDGET_BOT_COUNT, Math.floor(configured)),
+  );
+}
 const widgetArtworkCache = new Map<string, string | null>();
 
 async function loadWidgetArtwork(
@@ -122,14 +136,16 @@ export function refreshAndroidNativeSurfaces(): Promise<void> {
   if (!usesAndroidNativeIntegration()) return Promise.resolve();
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
-    const recent = await loadAndroidRecentChats(RECENT_SCAN_LIMIT);
+    const widgetLimit = getAndroidWidgetBotCount();
+    const scanLimit = Math.max(RECENT_SCAN_LIMIT, widgetLimit * 2);
+    const recent = await loadAndroidRecentChats(scanLimit);
     const widgetChats: SqlRecentChatMetadata[] = [];
     const seenCharacters = new Set<string>();
     for (const chat of recent) {
       if (seenCharacters.has(chat.characterId)) continue;
       seenCharacters.add(chat.characterId);
       widgetChats.push(chat);
-      if (widgetChats.length >= WIDGET_LIMIT) break;
+      if (widgetChats.length >= widgetLimit) break;
     }
     const widgetItems = await Promise.all(
       widgetChats.map(async (chat) => ({

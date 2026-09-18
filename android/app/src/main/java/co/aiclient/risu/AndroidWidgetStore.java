@@ -17,7 +17,7 @@ import java.util.List;
 
 final class AndroidWidgetStore {
     static final String PREFS_NAME = "risu_recent_chat_widget";
-    static final int MAX_ITEMS = 18;
+    static final int MAX_ITEMS = 36;
     private static final String KEY_COUNT = "item_count";
 
     static final class Item {
