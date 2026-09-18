@@ -1951,6 +1951,27 @@ export const languageEnglish = {
   saveBackupLocalNative: "Save HaejeokRisuAI Backup",
   saveBackupLocalNativeDescription:
     "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
+  localBackupPerformanceTitle: "Haejeok backup performance",
+  localBackupDatabasePageRecords: "Database page size (records)",
+  localBackupDatabasePageRecordsDescription:
+    "Maximum records fetched by one database page query. Larger values reduce database calls and increase temporary memory use.",
+  localBackupFragmentRecords: "Compressed fragment size (records)",
+  localBackupFragmentRecordsDescription:
+    "Maximum records serialized and compressed into one database fragment.",
+  localBackupWriterBufferKiB: "Output buffer (KiB)",
+  localBackupWriterBufferKiBDescription:
+    "Bytes accumulated before writing to the browser, desktop, or Android file writer.",
+  localBackupProgressUpdateMs: "Progress update interval (ms)",
+  localBackupProgressUpdateMsDescription:
+    "Minimum interval between progress UI updates. This does not delay backup work.",
+  localBackupPerformanceReset: "Restore numeric defaults",
+  localBackupProgressSelectingDestination: "Selecting backup destination",
+  localBackupProgressPreparing: "Preparing backup",
+  localBackupProgressDatabase: "Saving database",
+  localBackupProgressColdStorage: "Saving cold storage",
+  localBackupProgressAssets: "Saving assets",
+  localBackupProgressInlays: "Saving inlays",
+  localBackupProgressFinalizing: "Finalizing backup",
   saveBackupLocalCompatible: "Save Compatible Backup",
   saveBackupLocalCompatibleDescription:
     "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",

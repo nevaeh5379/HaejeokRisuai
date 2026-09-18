@@ -15,12 +15,20 @@ import {
   type StorageSyncSqlRecord,
 } from "../runtime/storageSyncSource";
 import { NATIVE_BRANCH_GRAPHS_KEY } from "@risuai/backup-core/portableBranches.cjs";
+import {
+  DEFAULT_LOCAL_BACKUP_PERFORMANCE,
+  LOCAL_BACKUP_PERFORMANCE_LIMITS,
+} from "./localBackupPerformance";
 
 export const PORTABLE_DATABASE_STREAM_VERSION = 1;
 export const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
 export const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
-export const PORTABLE_DATABASE_STREAM_PAGE_SIZE = 32;
-export const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS = 32;
+export const PORTABLE_DATABASE_STREAM_PAGE_SIZE =
+  DEFAULT_LOCAL_BACKUP_PERFORMANCE.databasePageRecords;
+export const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS =
+  DEFAULT_LOCAL_BACKUP_PERFORMANCE.fragmentRecords;
+export const PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =
+  LOCAL_BACKUP_PERFORMANCE_LIMITS.fragmentRecords.max;
 
 type PersistedRecord = Exclude<StorageSyncSqlRecord, { type: "cold-storage" }>;
 type PersistedRecordType = PersistedRecord["type"];
@@ -83,6 +91,7 @@ function increment(
 export async function exportPortableDatabaseStream(
   storage: ISqlStorage,
   hooks: PortableDatabaseStreamExportHooks,
+  options: { pageSize?: number; fragmentRecords?: number } = {},
 ): Promise<PortableDatabaseStreamManifest> {
   if (!storage.isEnabled()) {
     const initialized = await storage.init();
@@ -98,6 +107,19 @@ export async function exportPortableDatabaseStream(
   let fragmentIndex = 0;
   let totalRecords = 0;
   let fragmentRecords: PersistedRecord[] = [];
+  const pageSize = Math.max(
+    1,
+    Math.min(500, Math.round(options.pageSize ?? PORTABLE_DATABASE_STREAM_PAGE_SIZE)),
+  );
+  const fragmentRecordLimit = Math.max(
+    1,
+    Math.min(
+      PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+      Math.round(
+        options.fragmentRecords ?? PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
+      ),
+    ),
+  );
   const counts: Partial<Record<PersistedRecordType, number>> = {};
   const flush = async () => {
     if (fragmentRecords.length === 0) return;
@@ -113,7 +135,7 @@ export async function exportPortableDatabaseStream(
 
   for await (const record of iterateStorageSyncSqlRecords(storage, {
     expectedRevision: summary.revision,
-    pageSize: PORTABLE_DATABASE_STREAM_PAGE_SIZE,
+    pageSize,
   })) {
     if (record.type === "cold-storage") {
       await hooks.writeColdStorage(record.key, record.value);
@@ -123,7 +145,7 @@ export async function exportPortableDatabaseStream(
     totalRecords++;
     hooks.onRecord?.(record);
     fragmentRecords.push(record);
-    if (fragmentRecords.length >= PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS) {
+    if (fragmentRecords.length >= fragmentRecordLimit) {
       await flush();
     }
     hooks.onProgress?.({
@@ -328,7 +350,7 @@ export class PortableDatabaseStreamCollector {
       fragment.index <= 0 ||
       !Array.isArray(fragment.records) ||
       fragment.records.length === 0 ||
-      fragment.records.length > PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS
+      fragment.records.length > PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS
     ) {
       throw new Error("Invalid streaming database fragment");
     }

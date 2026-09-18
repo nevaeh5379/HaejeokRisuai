@@ -10,6 +10,7 @@ const DIRECT_READ_METHODS = new Set([
   "getRevisionDetails",
   "getRevisionDiff",
   "getState",
+  "getStorageSyncSummary",
   "getTokenUsage",
   "isAssetCatalogInitialized",
   "listAssetCatalog",

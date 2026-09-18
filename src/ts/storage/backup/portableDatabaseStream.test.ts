@@ -3,6 +3,7 @@ import type { ISqlStorage } from "../sql/ISqlStorage";
 import {
   exportPortableDatabaseStream,
   PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   PortableDatabaseStreamCollector,
   type PortableDatabaseStreamFragment,
 } from "./portableDatabaseStream";
@@ -212,12 +213,16 @@ describe("portable database streaming backup", () => {
   it("rejects missing records even when the remaining fragments decode", async () => {
     const { storage } = createStorage();
     const fragments: PortableDatabaseStreamFragment[] = [];
-    const manifest = await exportPortableDatabaseStream(storage, {
-      writeFragment: async (fragment) => {
-        fragments.push(fragment);
+    const manifest = await exportPortableDatabaseStream(
+      storage,
+      {
+        writeFragment: async (fragment) => {
+          fragments.push(fragment);
+        },
+        writeColdStorage: async () => {},
       },
-      writeColdStorage: async () => {},
-    });
+      { fragmentRecords: 64 },
+    );
     fragments[0].records.splice(2, 1);
 
     const collector = new PortableDatabaseStreamCollector();
@@ -249,21 +254,24 @@ describe("portable database streaming backup", () => {
     });
     const fragments: PortableDatabaseStreamFragment[] = [];
 
-    const manifest = await exportPortableDatabaseStream(storage, {
-      writeFragment: async (fragment) => {
-        fragments.push(fragment);
+    const manifest = await exportPortableDatabaseStream(
+      storage,
+      {
+        writeFragment: async (fragment) => {
+          fragments.push(fragment);
+        },
+        writeColdStorage: async () => {},
       },
-      writeColdStorage: async () => {},
-    });
+      { fragmentRecords: 64 },
+    );
 
     expect(manifest.totalRecords).toBe(301);
     expect(fragments.length).toBeGreaterThan(3);
     expect(
-      fragments.every(
-        (fragment) =>
-          fragment.records.length <= PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
-      ),
+      fragments.every((fragment) => fragment.records.length <= 64),
     ).toBe(true);
+    expect(PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS).toBe(128);
+    expect(PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS).toBe(256);
     expect(storage.exportDatabaseSnapshot).not.toHaveBeenCalled();
   });
 });

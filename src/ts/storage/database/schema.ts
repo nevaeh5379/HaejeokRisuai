@@ -565,6 +565,10 @@ export interface DatabaseSettings {
   lastLoadedLoadoutName: string;
   moveInsteadOfCopyOnCMPConvert?: boolean;
   skipSavingAssetsOnWebSync?: boolean;
+  localBackupDatabasePageRecords?: number;
+  localBackupFragmentRecords?: number;
+  localBackupWriterBufferKiB?: number;
+  localBackupProgressUpdateMs?: number;
   resizeTextarea?: boolean;
 }
 

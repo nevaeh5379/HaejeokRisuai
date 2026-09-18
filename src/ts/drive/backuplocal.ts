@@ -97,9 +97,77 @@ import {
   type PortableDatabaseStreamManifest,
 } from "../storage/backup/portableDatabaseStream";
 import type { StorageSyncSqlRecord } from "../storage/runtime/storageSyncSource";
+import {
+  normalizeLocalBackupPerformance,
+  type LocalBackupPerformanceSettings,
+} from "../storage/backup/localBackupPerformance";
 
 const alertProgress = (msg: string, progress: number | string) =>
   showProgressAlert(msg, progress, "backup");
+
+type LocalBackupProgressStage =
+  | "selectingDestination"
+  | "preparing"
+  | "database"
+  | "coldStorage"
+  | "assets"
+  | "inlays"
+  | "finalizing";
+
+const LOCAL_BACKUP_PROGRESS_RANGES: Record<
+  LocalBackupProgressStage,
+  readonly [number, number]
+> = {
+  selectingDestination: [0, 2],
+  preparing: [2, 5],
+  database: [5, 60],
+  coldStorage: [60, 68],
+  assets: [68, 92],
+  inlays: [92, 97],
+  finalizing: [97, 100],
+};
+
+function localBackupProgressLabel(stage: LocalBackupProgressStage): string {
+  switch (stage) {
+    case "selectingDestination":
+      return language.localBackupProgressSelectingDestination;
+    case "preparing":
+      return language.localBackupProgressPreparing;
+    case "database":
+      return language.localBackupProgressDatabase;
+    case "coldStorage":
+      return language.localBackupProgressColdStorage;
+    case "assets":
+      return language.localBackupProgressAssets;
+    case "inlays":
+      return language.localBackupProgressInlays;
+    case "finalizing":
+      return language.localBackupProgressFinalizing;
+  }
+}
+
+function reportLocalBackupProgress(
+  stage: LocalBackupProgressStage,
+  options: {
+    current?: number;
+    total?: number;
+    detail?: string;
+    percent?: number;
+  } = {},
+) {
+  const [start, end] = LOCAL_BACKUP_PROGRESS_RANGES[stage];
+  const total = Math.max(0, Math.floor(options.total ?? 0));
+  const current = Math.max(0, Math.min(total, Math.floor(options.current ?? 0)));
+  const ratio = total > 0 ? current / total : 0;
+  const percent = options.percent ?? start + (end - start) * ratio;
+  const count = total > 0 ? ` (${current} / ${total})` : "";
+  const detail = options.detail ? `\n${options.detail}` : "";
+  alertProgress(`${localBackupProgressLabel(stage)}${count}${detail}`, percent);
+}
+
+function getLocalBackupPerformance(): LocalBackupPerformanceSettings {
+  return normalizeLocalBackupPerformance(settingsStore.state);
+}
 
 interface NativeBackupPlugin {
   openImport(): Promise<{
@@ -347,53 +415,23 @@ export function buildPortableLocalBackupDatabase(
   return makeLegacyCompatibleDatabase(expanded, coldStorageValues);
 }
 
-function formatBackupElapsed(startedAt: number) {
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - startedAt) / 1000),
-  );
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-}
-
 async function initializeLocalBackupWriter(
   writer: LocalWriter,
   partial = false,
   mode: LocalBackupMode = "native",
 ) {
-  const label = partial
-    ? "Saving partial local backup..."
+  const performance = getLocalBackupPerformance();
+  writer.setBufferSize(performance.writerBufferKiB * 1024);
+  reportLocalBackupProgress("selectingDestination", { percent: 1 });
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const defaultName = partial
+    ? `haejeokrisu_partial_backup_${dateStr}`
     : mode === "compatible"
-      ? "Saving compatible local backup..."
-      : "Saving HaejeokRisuAI local backup...";
-  const startedAt = Date.now();
-  const waitingDetail =
-    isTauri || isCapacitor
-      ? "Waiting for the system Save dialog. Choose a file or cancel to continue."
-      : "Preparing the browser download stream.";
-  const update = () =>
-    alertProgress(
-      `${label} (Selecting destination)\n${waitingDetail}\nElapsed: ${formatBackupElapsed(startedAt)}`,
-      1,
-    );
-  update();
-  const timer = setInterval(update, 1000);
-  try {
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const defaultName = partial
-      ? `haejeokrisu_partial_backup_${dateStr}`
-      : mode === "compatible"
-        ? `risu_compatible_backup_${dateStr}`
-        : `haejeokrisu_backup_${dateStr}`;
-    const initialized = await writer.init(defaultName, ["bin", "risubackup"]);
-    if (initialized) {
-      alertProgress(`${label} (Destination ready; preparing asset list)`, 2);
-    }
-    return initialized;
-  } finally {
-    clearInterval(timer);
-  }
+      ? `risu_compatible_backup_${dateStr}`
+      : `haejeokrisu_backup_${dateStr}`;
+  const initialized = await writer.init(defaultName, ["bin", "risubackup"]);
+  if (initialized) reportLocalBackupProgress("preparing", { percent: 2 });
+  return initialized;
 }
 
 const INLAY_BACKUP_PREFIX = "inlay_";
@@ -403,8 +441,10 @@ function getInlayBackupEntryName(id: string) {
   return `${INLAY_BACKUP_PREFIX}${id}${INLAY_BACKUP_SUFFIX}`;
 }
 
-async function writeLocalBackupInlays(writer: LocalWriter, label: string) {
+async function writeLocalBackupInlays(writer: LocalWriter) {
   const inlays = await listInlayAssets();
+  const updateInterval = getLocalBackupPerformance().progressUpdateMs;
+  let lastUiUpdate = 0;
   for (let index = 0; index < inlays.length; index++) {
     const [id, asset] = inlays[index];
     const name = getInlayBackupEntryName(id);
@@ -412,11 +452,17 @@ async function writeLocalBackupInlays(writer: LocalWriter, label: string) {
       console.warn(`Skipping inlay with unsupported backup key: ${id}`);
       continue;
     }
-    if (index === 0 || index === inlays.length - 1 || index % 8 === 0) {
-      alertProgress(
-        `${label} (Saving inlays ${index + 1} / ${inlays.length})`,
-        88,
-      );
+    const now = Date.now();
+    if (
+      index === 0 ||
+      index === inlays.length - 1 ||
+      now - lastUiUpdate >= updateInterval
+    ) {
+      lastUiUpdate = now;
+      reportLocalBackupProgress("inlays", {
+        current: index + 1,
+        total: inlays.length,
+      });
       await sleep(0);
     }
     await writer.writeBackup(name, await encodeInlayAssetBackup(asset));
@@ -465,24 +511,26 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     throw new Error("Node local backup requires NodeStorage");
   }
   const nodeStorage = forageStorage.realStorage;
+  const performance = getLocalBackupPerformance();
   if (mode === "native") {
-    alertProgress("Saving HaejeokRisuAI local backup... (Staging inlays)", 1);
+    reportLocalBackupProgress("preparing", { percent: 3 });
     await stageNodeInlaysForBackup(nodeStorage);
   }
   try {
     const auth = await nodeStorage.getCachedAuth();
-    alertProgress(
-      mode === "compatible"
-        ? "Saving compatible local backup... (Starting server stream)"
-        : mode === "partial"
-          ? "Saving partial local backup... (Starting server stream)"
-          : "Saving HaejeokRisuAI local backup... (Starting server stream)",
-      1,
-    );
-    const response = await fetch(`/api/local-backup/export/jobs?mode=${mode}`, {
-      method: "POST",
-      headers: { "risu-auth": auth },
+    reportLocalBackupProgress("preparing", { percent: 4 });
+    const jobQuery = new URLSearchParams({
+      mode,
+      pageSize: String(performance.databasePageRecords),
+      fragmentRecords: String(performance.fragmentRecords),
     });
+    const response = await fetch(
+      `/api/local-backup/export/jobs?${jobQuery.toString()}`,
+      {
+        method: "POST",
+        headers: { "risu-auth": auth },
+      },
+    );
     const body = (await response.json().catch(() => null)) as {
       id?: string;
       error?: string;
@@ -498,6 +546,48 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
         headers: { "risu-auth": auth },
       },
     );
+    let keepPolling = true;
+    const progressPolling = (async () => {
+      while (keepPolling) {
+        try {
+          const progressResponse = await fetch(
+            `/api/local-backup/export/jobs/${encodeURIComponent(body.id!)}/progress`,
+            { headers: { "risu-auth": auth } },
+          );
+          const progressBody = (await progressResponse
+            .json()
+            .catch(() => null)) as {
+            status?: string;
+            progress?: {
+              stage?: LocalBackupProgressStage;
+              current?: number;
+              total?: number;
+            };
+          } | null;
+          const progress = progressBody?.progress;
+          if (
+            progressResponse.ok &&
+            progress?.stage &&
+            progress.stage in LOCAL_BACKUP_PROGRESS_RANGES
+          ) {
+            reportLocalBackupProgress(progress.stage, {
+              current: progress.current,
+              total: progress.total,
+            });
+          }
+          if (
+            progressBody?.status === "complete" ||
+            progressBody?.status === "error"
+          ) {
+            break;
+          }
+        } catch {
+          // The completion request remains authoritative. A transient status
+          // polling failure must not abort the actual browser download.
+        }
+        await sleep(performance.progressUpdateMs);
+      }
+    })();
     const anchor = document.createElement("a");
     anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -510,11 +600,10 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    alertProgress(
-      "Saving local backup... (Server is streaming directly to the download)",
-      50,
-    );
+    reportLocalBackupProgress("database", { percent: 5 });
     const completed = await completion;
+    keepPolling = false;
+    await progressPolling;
     const completedBody = (await completed.json().catch(() => null)) as {
       status?: string;
       error?: string;
@@ -525,6 +614,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
           `Local backup download failed (${completed.status})`,
       );
     }
+    reportLocalBackupProgress("finalizing", { percent: 100 });
     alertNormal("Success");
   } finally {
     if (mode === "native") {
@@ -552,24 +642,14 @@ async function loadFullSqlBackupSnapshot(
     }
   }
 
-  const startedAt = Date.now();
-  const update = () =>
-    onProgress?.(
-      `Loading full database snapshot (elapsed ${formatBackupElapsed(startedAt)})`,
+  onProgress?.("Reading database snapshot");
+  const loaded = await storage.exportDatabaseSnapshot();
+  if (!loaded?.database) {
+    throw new Error(
+      "SQL storage returned an uninitialized or empty database snapshot",
     );
-  update();
-  const timer = setInterval(update, 1000);
-  try {
-    const loaded = await storage.exportDatabaseSnapshot();
-    if (!loaded?.database) {
-      throw new Error(
-        "SQL storage returned an uninitialized or empty database snapshot",
-      );
-    }
-    return loaded.database;
-  } finally {
-    clearInterval(timer);
   }
+  return loaded.database;
 }
 
 function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
@@ -647,10 +727,6 @@ interface LocalBackupExportOptions {
   assetScope: BackupAssetScope;
   accountReadDelayMs: number;
   encryptAccountBackup: boolean;
-}
-
-function backupLabel(partial: boolean) {
-  return partial ? "Saving partial local backup..." : "Saving local backup...";
 }
 
 function buildBackupAssetMap(
@@ -744,21 +820,10 @@ export async function listBackupAssetKeys(
 }
 
 function reportBackupAssetProgress(
-  label: string,
   current: number,
   total: number,
-  key: string,
-  assetMap: Map<string, BackupAssetInfo>,
-  missingCount: number,
 ) {
-  const percent = total > 0 ? (current / total) * 80 : 80;
-  const info = findBackupAssetInfo(assetMap, key);
-  let message = `${label} (${current} / ${total})`;
-  message += info ? `\n${info.charName} - ${info.assetName}` : `\n${key}`;
-  if (missingCount > 0) {
-    message += `\n(Skipped ${missingCount} missing assets)`;
-  }
-  alertProgress(message, percent);
+  reportLocalBackupProgress("assets", { current, total });
 }
 
 async function writeLocalBackupAssets(
@@ -770,11 +835,11 @@ async function writeLocalBackupAssets(
   missingAssets: string[];
   assetMap: Map<string, BackupAssetInfo>;
 }> {
-  const label = backupLabel(options.partial);
   const assetMap =
     precomputedAssetMap ?? buildBackupAssetMap(db, options.assetScope);
   const missingAssets: string[] = [];
   let lastUiUpdate = 0;
+  const updateInterval = getLocalBackupPerformance().progressUpdateMs;
 
   await forageStorage.Init();
   const nodeStorage =
@@ -783,7 +848,7 @@ async function writeLocalBackupAssets(
       : null;
 
   if (nodeStorage) {
-    alertProgress(`${label} (Scanning server assets)`, 0);
+    reportLocalBackupProgress("assets");
     await sleep(10);
     const request = await createNodeBackupAssetRequest(
       nodeStorage,
@@ -801,12 +866,8 @@ async function writeLocalBackupAssets(
           progress.totalFiles,
         );
         reportBackupAssetProgress(
-          label,
           current,
           progress.totalFiles,
-          progress.currentFile ?? "",
-          assetMap,
-          missingAssets.length,
         );
       },
       request.options,
@@ -831,15 +892,7 @@ async function writeLocalBackupAssets(
       const result = await writer.writeNativeAssets(batch);
       missingAssets.push(...result.missing);
       const current = Math.min(offset + batch.length, keys.length);
-      const key = batch[batch.length - 1] ?? "";
-      reportBackupAssetProgress(
-        label,
-        current,
-        keys.length,
-        key,
-        assetMap,
-        missingAssets.length,
-      );
+      reportBackupAssetProgress(current, keys.length);
       await sleep(0);
     }
     return { missingAssets, assetMap };
@@ -848,16 +901,13 @@ async function writeLocalBackupAssets(
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index];
     const now = Date.now();
-    if (now - lastUiUpdate > 30 || index === 0 || index === keys.length - 1) {
+    if (
+      now - lastUiUpdate >= updateInterval ||
+      index === 0 ||
+      index === keys.length - 1
+    ) {
       lastUiUpdate = now;
-      reportBackupAssetProgress(
-        label,
-        index + 1,
-        keys.length,
-        key,
-        assetMap,
-        missingAssets.length,
-      );
+      reportBackupAssetProgress(index + 1, keys.length);
       await sleep(0);
     }
 
@@ -883,17 +933,13 @@ async function writeLocalBackupAssets(
   return { missingAssets, assetMap };
 }
 
-async function collectBackupColdStorage(db: PortableDatabase, label: string) {
-  alertProgress(`${label} (Checking cold storage)`, 0);
+async function collectBackupColdStorage(db: PortableDatabase) {
+  reportLocalBackupProgress("coldStorage");
   await sleep(10);
   const coldStoragePayloads = await collectColdStorageBackupPayloads(
     db,
-    (current, total, key) => {
-      const item = key ? `\nCurrent item: ${key}` : "";
-      alertProgress(
-        `${label} (Checking cold storage ${current} / ${total})${item}`,
-        0,
-      );
+    (current, total) => {
+      reportLocalBackupProgress("coldStorage", { current, total });
     },
   );
   const unavailableKeys = [
@@ -913,15 +959,14 @@ async function writeBackupColdStorage(
   coldStoragePayloads: Awaited<
     ReturnType<typeof collectColdStorageBackupPayloads>
   >,
-  label: string,
 ) {
   const total = coldStoragePayloads.payloads.length;
   for (let index = 0; index < total; index++) {
     const payload = coldStoragePayloads.payloads[index];
-    const percent = total > 0 ? 80 + ((index + 1) / total) * 10 : 80;
-    let message = `${label} cold data... (${index + 1} / ${total})`;
-    if (payload.backupName) message += `\n${payload.backupName}`;
-    alertProgress(message, percent);
+    reportLocalBackupProgress("coldStorage", {
+      current: index + 1,
+      total,
+    });
     await sleep(0);
     await writer.writeBackup(payload.backupName, payload.encoded);
   }
@@ -1096,9 +1141,8 @@ function collectStreamingBackupRecord(
 
 async function writeStreamingColdStorage(
   inventory: StreamingBackupInventory,
-  label: string,
 ): Promise<boolean> {
-  alertProgress(`${label} (Checking cold data completeness)`, 88);
+  reportLocalBackupProgress("coldStorage", { percent: 67 });
   for (const key of inventory.referencedColdStorageKeys) {
     if (!inventory.exportedColdStorageKeys.has(key)) {
       inventory.unavailableColdStorageKeys.add(key);
@@ -1188,18 +1232,6 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     return;
   }
 
-  const label = backupLabel(options.partial);
-  alertProgress(`${label} (Preparing database)`, 0);
-  await sleep(10);
-  const db = await createBackupDatabaseSnapshot((msg) => {
-    alertProgress(`${label} (${msg})`, 0);
-  });
-  const coldStoragePayloads = await collectBackupColdStorage(db, label);
-  if (!coldStoragePayloads) {
-    alertClear();
-    return;
-  }
-
   const writer = new LocalWriter();
   if (
     !(await initializeLocalBackupWriter(writer, options.partial, options.mode))
@@ -1208,14 +1240,25 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     return;
   }
 
+  reportLocalBackupProgress("preparing", { percent: 3 });
+  await sleep(10);
+  const db = await createBackupDatabaseSnapshot((msg) => {
+    reportLocalBackupProgress("database", { detail: msg, percent: 5 });
+  });
+  const coldStoragePayloads = await collectBackupColdStorage(db);
+  if (!coldStoragePayloads) {
+    alertClear();
+    return;
+  }
+
+  await writeBackupColdStorage(writer, coldStoragePayloads);
   const { missingAssets, assetMap } = await writeLocalBackupAssets(
     writer,
     db,
     options,
   );
-  await writeBackupColdStorage(writer, coldStoragePayloads, label);
 
-  alertProgress(`${label} (Compressing database)`, 92);
+  reportLocalBackupProgress("finalizing", { percent: 97 });
   await sleep(30);
   const coldStorageValues = new Map(
     coldStoragePayloads.payloads.map(
@@ -1234,7 +1277,7 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     forageStorage.isAccount &&
     location.origin.endsWith("risuai.xyz")
   ) {
-    alertProgress(`${label} (Encrypting database)`, 96);
+    reportLocalBackupProgress("finalizing", { percent: 98 });
     await sleep(20);
     const time = Date.now();
     const key = (
@@ -1247,10 +1290,10 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     );
   }
 
-  alertProgress(`${label} (Writing database)`, 98);
+  reportLocalBackupProgress("finalizing", { percent: 98 });
   await sleep(10);
   await writer.writeBackup("database.risudat", dbData);
-  alertProgress(`${label} (Finalizing)`, 100);
+  reportLocalBackupProgress("finalizing", { percent: 100 });
   await sleep(10);
   await writer.close();
   showMissingBackupAssets(missingAssets, assetMap, options.partial);
@@ -1259,8 +1302,6 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
 async function saveStreamingLocalBackupWithOptions(
   options: LocalBackupExportOptions,
 ) {
-  const label = backupLabel(options.partial);
-  alertProgress(`${label} (Preparing streaming database)`, 0);
   await flushDurableStores();
   const storage = await getSqlStorage();
   if (!storage.isEnabled()) {
@@ -1279,40 +1320,56 @@ async function saveStreamingLocalBackupWithOptions(
   }
 
   const inventory = createStreamingBackupInventory();
+  const performance = getLocalBackupPerformance();
   const encryptionKey = await prepareStreamingBackupEncryption(writer, options);
   let manifest: PortableDatabaseStreamManifest;
+  let lastProgressUpdate = 0;
   try {
-    manifest = await exportPortableDatabaseStream(storage, {
-      async writeFragment(fragment) {
-        const entryName = streamingRecordEntryName(fragment.index);
-        const encoded = await encodeStreamingDatabaseValue(
-          fragment,
-          entryName,
-          encryptionKey,
-        );
-        await writer.writeBackup(entryName, encoded);
-      },
-      async writeColdStorage(key, value) {
-        if (!isColdStorageBackupData(value)) {
-          inventory.unavailableColdStorageKeys.add(key);
-          return;
+    manifest = await exportPortableDatabaseStream(
+      storage,
+      {
+        async writeFragment(fragment) {
+          const entryName = streamingRecordEntryName(fragment.index);
+          const encoded = await encodeStreamingDatabaseValue(
+            fragment,
+            entryName,
+            encryptionKey,
+          );
+          await writer.writeBackup(entryName, encoded);
+        },
+        async writeColdStorage(key, value) {
+          if (!isColdStorageBackupData(value)) {
+            inventory.unavailableColdStorageKeys.add(key);
+            return;
+          }
+          inventory.exportedColdStorageKeys.add(key);
+          await writer.writeBackup(
+            getColdStorageBackupName(key),
+            new TextEncoder().encode(JSON.stringify(value)),
+          );
+        },
+        onRecord(record) {
+          collectStreamingBackupRecord(inventory, record, options.assetScope);
+        },
+        onProgress({ current, total }) {
+          const now = Date.now();
+          if (
+            current !== total &&
+            now - lastProgressUpdate < performance.progressUpdateMs
+          ) {
+            return;
+          }
+          lastProgressUpdate = now;
+          reportLocalBackupProgress("database", { current, total });
         }
-        inventory.exportedColdStorageKeys.add(key);
-        await writer.writeBackup(
-          getColdStorageBackupName(key),
-          new TextEncoder().encode(JSON.stringify(value)),
-        );
       },
-      onRecord(record) {
-        collectStreamingBackupRecord(inventory, record, options.assetScope);
+      {
+        pageSize: performance.databasePageRecords,
+        fragmentRecords: performance.fragmentRecords,
       },
-      onProgress({ stage, current, total }) {
-        const detail = total > 0 ? ` ${current} / ${total}` : "";
-        alertProgress(`${label} (Streaming ${stage}${detail})`, 5);
-      },
-    });
+    );
 
-    if (!(await writeStreamingColdStorage(inventory, label))) {
+    if (!(await writeStreamingColdStorage(inventory))) {
       await writer.close();
       alertClear();
       return;
@@ -1325,9 +1382,9 @@ async function saveStreamingLocalBackupWithOptions(
       options,
       inventory.assetMap,
     );
-    if (!options.partial) await writeLocalBackupInlays(writer, label);
+    if (!options.partial) await writeLocalBackupInlays(writer);
 
-    alertProgress(`${label} (Finalizing streamed database)`, 98);
+    reportLocalBackupProgress("finalizing", { percent: 98 });
     await writer.writeBackup(
       PORTABLE_DATABASE_STREAM_MANIFEST,
       await encodeStreamingDatabaseValue(

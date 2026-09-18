@@ -4014,8 +4014,25 @@ async function encodePortableServerDatabase(
 
 const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
 const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
-const PORTABLE_DATABASE_STREAM_PAGE_SIZE = 32;
-const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS = 32;
+const PORTABLE_DATABASE_STREAM_PAGE_SIZE = 128;
+const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS = 128;
+const PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS = 256;
+
+type LocalBackupProgressUpdate = {
+  stage: string;
+  current?: number;
+  total?: number;
+};
+
+type LocalBackupProgressReporter = (
+  progress: LocalBackupProgressUpdate,
+) => void;
+
+function normalizeLocalBackupInteger(value, fallback, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(numeric)));
+}
 
 function streamedDatabaseEntryName(index) {
   return `${PORTABLE_DATABASE_STREAM_PREFIX}${String(index).padStart(12, "0")}.risudat`;
@@ -4038,7 +4055,12 @@ function createStreamedDatabaseCounts() {
 
 async function streamPortableServerDatabase(
   output,
-  onRecord: (record: any) => void = () => {},
+  options: {
+    onRecord?: (record: any) => void;
+    onProgress?: LocalBackupProgressReporter;
+    pageSize?: number;
+    fragmentRecords?: number;
+  } = {},
 ) {
   if (!postgresStorage.enabled)
     throw new Error("SQL storage is not configured");
@@ -4051,6 +4073,20 @@ async function streamPortableServerDatabase(
   if (Number(startup.revision) !== Number(initialState.revision)) {
     throw new Error("Database changed while streaming backup metadata");
   }
+  const summary = await postgresStorage.getStorageSyncSummary();
+  const expectedRecords = Math.max(0, Number(summary?.records?.total) || 0);
+  const pageSize = normalizeLocalBackupInteger(
+    options.pageSize,
+    PORTABLE_DATABASE_STREAM_PAGE_SIZE,
+    1,
+    500,
+  );
+  const fragmentRecordLimit = normalizeLocalBackupInteger(
+    options.fragmentRecords,
+    PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
+    1,
+    PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  );
 
   let fragmentIndex = 0;
   let totalRecords = 0;
@@ -4077,8 +4113,13 @@ async function streamPortableServerDatabase(
     fragmentRecords.push(record);
     totalRecords++;
     counts[record.type]++;
-    onRecord(record);
-    if (fragmentRecords.length >= PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS) {
+    options.onRecord?.(record);
+    options.onProgress?.({
+      stage: "database",
+      current: totalRecords,
+      total: expectedRecords,
+    });
+    if (fragmentRecords.length >= fragmentRecordLimit) {
       await flush();
     }
   };
@@ -4186,7 +4227,7 @@ async function streamPortableServerDatabase(
         const page = await postgresStorage.loadChatBranchGraphPage(
           summary.id,
           offset,
-          PORTABLE_DATABASE_STREAM_PAGE_SIZE,
+          pageSize,
         );
         if (!emittedMetadata) {
           for (const branch of page.branches) {
@@ -4238,16 +4279,27 @@ async function streamPortableServerDatabase(
     typeof postgresStorage.listColdStorage === "function"
       ? await postgresStorage.listColdStorage()
       : [];
-  for (const summary of coldItems) {
-    const loaded = await postgresStorage.loadColdStorage(summary.key);
+  options.onProgress?.({
+    stage: "coldStorage",
+    current: 0,
+    total: coldItems.length,
+  });
+  for (let index = 0; index < coldItems.length; index++) {
+    const coldSummary = coldItems[index];
+    const loaded = await postgresStorage.loadColdStorage(coldSummary.key);
     if (!loaded) continue;
     const data = Buffer.from(JSON.stringify(loaded.data), "utf8");
     await writeLocalBackupEntry(
       output,
-      `coldstorage_${summary.key}.json`,
+      `coldstorage_${coldSummary.key}.json`,
       data,
       data.length,
     );
+    options.onProgress?.({
+      stage: "coldStorage",
+      current: index + 1,
+      total: coldItems.length,
+    });
   }
 
   const completedState = await postgresStorage.getState();
@@ -4324,7 +4376,12 @@ function collectEssentialBackupAssetKeys(database, assetKeys) {
   return assetKeys.filter((key) => wanted.has(key));
 }
 
-async function streamLegacyServerLocalBackup(res, mode = "compatible") {
+async function streamLegacyServerLocalBackup(
+  res,
+  mode = "compatible",
+  onProgress: LocalBackupProgressReporter = () => {},
+) {
+  onProgress({ stage: "database" });
   const database = await buildPortableServerDatabase();
   const coldItems =
     typeof postgresStorage.listColdStorage === "function"
@@ -4379,7 +4436,30 @@ async function streamLegacyServerLocalBackup(res, mode = "compatible") {
   res.setHeader("X-Accel-Buffering", "no");
   if (typeof res.flushHeaders === "function") res.flushHeaders();
 
-  for (const key of [...assetKeys, ...inlayKeys]) {
+  onProgress({
+    stage: "coldStorage",
+    current: 0,
+    total: loadedColdItems.length,
+  });
+  for (let index = 0; index < loadedColdItems.length; index++) {
+    const item = loadedColdItems[index];
+    const data = Buffer.from(JSON.stringify(item.data), "utf8");
+    await writeLocalBackupEntry(
+      res,
+      `coldstorage_${item.key}.json`,
+      data,
+      data.length,
+    );
+    onProgress({
+      stage: "coldStorage",
+      current: index + 1,
+      total: loadedColdItems.length,
+    });
+  }
+
+  onProgress({ stage: "assets", current: 0, total: assetKeys.length });
+  for (let index = 0; index < assetKeys.length; index++) {
+    const key = assetKeys[index];
     const opened =
       typeof storage.openReadStream === "function"
         ? await storage.openReadStream(keyToHex(key))
@@ -4390,16 +4470,35 @@ async function streamLegacyServerLocalBackup(res, mode = "compatible") {
     if (!source || !Number.isSafeInteger(size))
       throw new Error(`Backup asset is not streamable: ${key}`);
     await writeLocalBackupEntry(res, key, source, size);
+    onProgress({
+      stage: "assets",
+      current: index + 1,
+      total: assetKeys.length,
+    });
   }
-  for (const item of loadedColdItems) {
-    const data = Buffer.from(JSON.stringify(item.data), "utf8");
-    await writeLocalBackupEntry(
-      res,
-      `coldstorage_${item.key}.json`,
-      data,
-      data.length,
-    );
+
+  if (inlayKeys.length > 0) {
+    onProgress({ stage: "inlays", current: 0, total: inlayKeys.length });
+    for (let index = 0; index < inlayKeys.length; index++) {
+      const key = inlayKeys[index];
+      const opened =
+        typeof storage.openReadStream === "function"
+          ? await storage.openReadStream(keyToHex(key))
+          : await storage.read(keyToHex(key));
+      if (!opened.exists) continue;
+      const source = opened.stream ?? opened.buffer;
+      const size = Number(opened.contentLength ?? opened.buffer?.length);
+      if (!source || !Number.isSafeInteger(size))
+        throw new Error(`Backup inlay is not streamable: ${key}`);
+      await writeLocalBackupEntry(res, key, source, size);
+      onProgress({
+        stage: "inlays",
+        current: index + 1,
+        total: inlayKeys.length,
+      });
+    }
   }
+  onProgress({ stage: "finalizing" });
   await writeLocalBackupEntry(
     res,
     "database.risudat",
@@ -4413,9 +4512,14 @@ async function streamLegacyServerLocalBackup(res, mode = "compatible") {
   });
 }
 
-async function streamServerLocalBackup(res, mode = "native") {
+async function streamServerLocalBackup(
+  res,
+  mode = "native",
+  options = {},
+  onProgress: LocalBackupProgressReporter = () => {},
+) {
   if (mode === "compatible") {
-    await streamLegacyServerLocalBackup(res, mode);
+    await streamLegacyServerLocalBackup(res, mode, onProgress);
     return;
   }
 
@@ -4432,8 +4536,12 @@ async function streamServerLocalBackup(res, mode = "native") {
   if (typeof res.flushHeaders === "function") res.flushHeaders();
 
   const essentialAssetKeys = new Set();
-  const manifest = await streamPortableServerDatabase(res, (record) => {
-    if (partial) collectStreamedEssentialAssetKeys(essentialAssetKeys, record);
+  const manifest = await streamPortableServerDatabase(res, {
+    ...options,
+    onProgress,
+    onRecord(record) {
+      if (partial) collectStreamedEssentialAssetKeys(essentialAssetKeys, record);
+    },
   });
 
   const storage = assetStorageManager.getStorage();
@@ -4457,7 +4565,9 @@ async function streamServerLocalBackup(res, mode = "native") {
           ),
       );
 
-  for (const key of [...assetKeys, ...inlayKeys]) {
+  onProgress({ stage: "assets", current: 0, total: assetKeys.length });
+  for (let index = 0; index < assetKeys.length; index++) {
+    const key = assetKeys[index];
     const opened =
       typeof storage.openReadStream === "function"
         ? await storage.openReadStream(keyToHex(key))
@@ -4468,8 +4578,36 @@ async function streamServerLocalBackup(res, mode = "native") {
     if (!source || !Number.isSafeInteger(size))
       throw new Error(`Backup asset is not streamable: ${key}`);
     await writeLocalBackupEntry(res, key, source, size);
+    onProgress({
+      stage: "assets",
+      current: index + 1,
+      total: assetKeys.length,
+    });
   }
 
+  if (inlayKeys.length > 0) {
+    onProgress({ stage: "inlays", current: 0, total: inlayKeys.length });
+  }
+  for (let index = 0; index < inlayKeys.length; index++) {
+    const key = inlayKeys[index];
+    const opened =
+      typeof storage.openReadStream === "function"
+        ? await storage.openReadStream(keyToHex(key))
+        : await storage.read(keyToHex(key));
+    if (!opened.exists) continue;
+    const source = opened.stream ?? opened.buffer;
+    const size = Number(opened.contentLength ?? opened.buffer?.length);
+    if (!source || !Number.isSafeInteger(size))
+      throw new Error(`Backup inlay is not streamable: ${key}`);
+    await writeLocalBackupEntry(res, key, source, size);
+    onProgress({
+      stage: "inlays",
+      current: index + 1,
+      total: inlayKeys.length,
+    });
+  }
+
+  onProgress({ stage: "finalizing" });
   const manifestData = await encodeLocalBackupDatabase(manifest);
   await writeLocalBackupEntry(
     res,
@@ -4493,6 +4631,20 @@ app.post(
     const mode = ["compatible", "partial"].includes(req.query.mode)
       ? req.query.mode
       : "native";
+    const streamOptions = {
+      pageSize: normalizeLocalBackupInteger(
+        req.query.pageSize,
+        PORTABLE_DATABASE_STREAM_PAGE_SIZE,
+        1,
+        500,
+      ),
+      fragmentRecords: normalizeLocalBackupInteger(
+        req.query.fragmentRecords,
+        PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
+        1,
+        PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+      ),
+    };
     const id = crypto.randomBytes(24).toString("base64url");
     let resolveCompletion;
     const completion = new Promise((resolve) => {
@@ -4504,9 +4656,26 @@ app.post(
       completion,
       resolveCompletion,
       mode,
+      streamOptions,
+      progress: { stage: "preparing", current: 0, total: 0 },
       expiresAt: Date.now() + LOCAL_BACKUP_JOB_TTL_MS,
     });
     res.send({ id });
+  },
+);
+
+app.get(
+  "/api/local-backup/export/jobs/:jobId/progress",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    pruneLocalBackupJobs();
+    const job = localBackupJobs.get(req.params.jobId);
+    if (!job)
+      return res
+        .status(404)
+        .send({ error: "Local backup job not found or expired" });
+    res.send({ status: job.status, progress: job.progress });
   },
 );
 
@@ -4546,7 +4715,15 @@ app.get(
     job.status = "streaming";
     job.expiresAt = Number.POSITIVE_INFINITY;
     try {
-      await streamServerLocalBackup(res, job.mode || "native");
+      await streamServerLocalBackup(
+        res,
+        job.mode || "native",
+        job.streamOptions,
+        (progress) => {
+          job.progress = progress;
+        },
+      );
+      job.progress = { stage: "finalizing", current: 1, total: 1 };
       settleLocalBackupJob(job, "complete");
     } catch (error) {
       console.error("[Local backup] Streaming export failed:", error);

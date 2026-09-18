@@ -5,7 +5,7 @@
     import { getCharImage } from '../../ts/characters';
     import { ParseMarkdown } from '../../ts/parser/parser.svelte';
     import BarIcon from '../SideBars/BarIcon.svelte';
-    import { ChevronRightIcon, DatabaseBackupIcon, User } from '@lucide/svelte';
+    import { ChevronRightIcon, User } from '@lucide/svelte';
     import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
@@ -344,9 +344,9 @@
                     {/if}
                     <p class="confirm-message">{confirmMessage}</p>
                 </div>
-            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'hypaV2' && $alertStore.type !== 'chatOptions'}
+            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'hypaV2' && $alertStore.type !== 'chatOptions' && $alertStore.type !== 'progress'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
-                {#if $alertStore.submsg && $alertStore.type !== 'progress'}
+                {#if $alertStore.submsg}
                     <span class="text-gray-500 text-sm">{$alertStore.submsg}</span>
                 {/if}
 
@@ -381,13 +381,7 @@
                 {/if}
             {/if}
             {#if $alertStore.type === 'progress'}
-                {#if $alertStore.mascot === 'backup'}
-                    <div class="mx-auto mt-3 flex items-center gap-1.5 rounded-full border border-textcolor/10 bg-textcolor/5 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-textcolor2">
-                        <DatabaseBackupIcon size={14} aria-hidden="true" />
-                        <span>LOCAL BACKUP</span>
-                    </div>
-                {/if}
-                <div class="relative mt-4 h-24 w-full min-w-64 md:min-w-138" aria-hidden="true">
+                <div class="relative h-24 w-full min-w-64 md:min-w-138" aria-hidden="true">
                     <div
                         class="absolute bottom-0 -translate-x-1/2 transition-[left] duration-300 ease-out"
                         style:left={`calc(10% + ${progressPercent * 0.8}%)`}
@@ -395,18 +389,19 @@
                         <AirisuMascot variant="progress" decorative className="h-24 w-24 drop-shadow-md" />
                     </div>
                 </div>
-                <div
-                    class="w-full min-w-64 md:min-w-138 h-2 bg-bgcolor border border-darkborderc rounded-full overflow-hidden"
-                    role="progressbar"
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    aria-valuenow={progressPercent}
-                >
-                    <div class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]" style:width={`${progressPercent}%`}></div>
+                <div class="flex w-full min-w-64 items-center gap-3 md:min-w-138">
+                    <div
+                        class="h-2 flex-1 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow={progressPercent}
+                    >
+                        <div class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]" style:width={`${progressPercent}%`}></div>
+                    </div>
+                    <span class="w-13 text-right text-sm tabular-nums text-textcolor2">{progressPercent.toFixed(1) + '%'}</span>
                 </div>
-                <div class="w-full flex justify-center mt-6">
-                    <span class="text-textcolor2 text-sm">{progressPercent.toFixed(1) + '%'}</span>
-                </div>
+                <span class="mt-4 max-w-full whitespace-pre-wrap text-center text-sm text-textcolor">{$alertStore.msg}</span>
             {/if}
 
             {#if $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'}

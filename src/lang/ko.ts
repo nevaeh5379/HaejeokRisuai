@@ -1858,6 +1858,27 @@ export const languageKorean = {
   saveBackupLocalNative: "해적리스 전용 백업 저장",
   saveBackupLocalNativeDescription:
     "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
+  localBackupPerformanceTitle: "해적리스 백업 성능",
+  localBackupDatabasePageRecords: "데이터베이스 페이지 크기 (레코드)",
+  localBackupDatabasePageRecordsDescription:
+    "한 번의 데이터베이스 페이지 조회로 읽는 최대 레코드 수입니다. 값이 크면 조회 횟수와 임시 메모리 사용량이 함께 달라집니다.",
+  localBackupFragmentRecords: "압축 조각 크기 (레코드)",
+  localBackupFragmentRecordsDescription:
+    "하나의 데이터베이스 조각으로 직렬화하고 압축하는 최대 레코드 수입니다.",
+  localBackupWriterBufferKiB: "출력 버퍼 (KiB)",
+  localBackupWriterBufferKiBDescription:
+    "브라우저·데스크톱·안드로이드 파일 출력기로 보내기 전에 모으는 바이트 수입니다.",
+  localBackupProgressUpdateMs: "진행 표시 갱신 간격 (ms)",
+  localBackupProgressUpdateMsDescription:
+    "진행 UI를 갱신하는 최소 간격입니다. 백업 작업 자체를 지연시키지는 않습니다.",
+  localBackupPerformanceReset: "기본 수치로 복원",
+  localBackupProgressSelectingDestination: "백업 저장 위치 선택 중",
+  localBackupProgressPreparing: "백업 준비 중",
+  localBackupProgressDatabase: "데이터베이스 저장 중",
+  localBackupProgressColdStorage: "냉동 데이터 저장 중",
+  localBackupProgressAssets: "에셋 저장 중",
+  localBackupProgressInlays: "인레이 저장 중",
+  localBackupProgressFinalizing: "백업 마무리 중",
   saveBackupLocalCompatible: "호환용 백업 저장",
   saveBackupLocalCompatibleDescription:
     "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
