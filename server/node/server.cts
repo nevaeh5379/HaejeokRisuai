@@ -4436,6 +4436,14 @@ async function streamLegacyServerLocalBackup(
   res.setHeader("X-Accel-Buffering", "no");
   if (typeof res.flushHeaders === "function") res.flushHeaders();
 
+  onProgress({ stage: "database", current: 1, total: 1 });
+  await writeLocalBackupEntry(
+    res,
+    "database.risudat",
+    databaseData,
+    databaseData.length,
+  );
+
   onProgress({
     stage: "coldStorage",
     current: 0,
@@ -4499,12 +4507,6 @@ async function streamLegacyServerLocalBackup(
     }
   }
   onProgress({ stage: "finalizing" });
-  await writeLocalBackupEntry(
-    res,
-    "database.risudat",
-    databaseData,
-    databaseData.length,
-  );
   await new Promise((resolve, reject) => {
     res.once("finish", resolve);
     res.once("error", reject);

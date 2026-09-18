@@ -888,6 +888,8 @@ async function writeLocalBackupAssets(
   const assetMap =
     precomputedAssetMap ?? buildBackupAssetMap(db, options.assetScope);
   const missingAssets: string[] = [];
+  reportLocalBackupProgress("assets");
+  await sleep(0);
   let lastUiUpdate = 0;
   const updateInterval = getLocalBackupPerformance().progressUpdateMs;
 
@@ -1301,15 +1303,6 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     return;
   }
 
-  await writeBackupColdStorage(writer, coldStoragePayloads);
-  const { missingAssets, assetMap } = await writeLocalBackupAssets(
-    writer,
-    db,
-    options,
-  );
-
-  reportLocalBackupProgress("finalizing", { percent: 97 });
-  await sleep(30);
   const coldStorageValues = new Map(
     coldStoragePayloads.payloads.map(
       (payload) => [payload.key, payload.value] as const,
@@ -1320,6 +1313,7 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     options.mode,
     coldStorageValues,
   );
+  reportLocalBackupProgress("database", { percent: 55 });
   let dbData = await encodeRisuSaveLegacyAsync(cleanDb, "compression");
 
   if (
@@ -1327,7 +1321,7 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     forageStorage.isAccount &&
     location.origin.endsWith("risuai.xyz")
   ) {
-    reportLocalBackupProgress("finalizing", { percent: 98 });
+    reportLocalBackupProgress("database", { percent: 58 });
     await sleep(20);
     const time = Date.now();
     const key = (
@@ -1340,9 +1334,18 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     );
   }
 
-  reportLocalBackupProgress("finalizing", { percent: 98 });
+  reportLocalBackupProgress("database", { percent: 59 });
   await sleep(10);
   await writer.writeBackup("database.risudat", dbData);
+  reportLocalBackupProgress("database", { percent: 60 });
+
+  await writeBackupColdStorage(writer, coldStoragePayloads);
+  const { missingAssets, assetMap } = await writeLocalBackupAssets(
+    writer,
+    db,
+    options,
+  );
+
   reportLocalBackupProgress("finalizing", { percent: 100 });
   await sleep(10);
   await writer.close();
