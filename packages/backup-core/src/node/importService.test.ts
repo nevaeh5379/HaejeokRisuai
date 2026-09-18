@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { encodeInlayAssetBackup } from "../inlayCodec";
 import { createLocalBackupEntryHeader } from "./legacyFormat";
 import { LocalBackupImportJobStore } from "./importJobStore";
 import { BackupImportStagingStore } from "./importStagingStore";
@@ -23,7 +24,8 @@ function framed(name: string, data: Uint8Array): Uint8Array {
 async function* chunked(parts: Uint8Array[], size = 11) {
   const total = parts.reduce((sum, part) => sum + part.length, 0);
   const payload = new Uint8Array(total);
-  let offset = 0;  for (const part of parts) {
+  let offset = 0;
+  for (const part of parts) {
     payload.set(part, offset);
     offset += part.length;
   }
@@ -51,31 +53,34 @@ afterEach(async () => {
 });
 
 describe("LocalBackupImportService", () => {
-  it("owns import orchestration, progress, and cleanup", async () => {    const { root, jobs, staging } = await makeStores("import_001");
+  it("owns import orchestration, progress, and cleanup", async () => {
+    const { root, jobs, staging } = await makeStores("import_001");
     const order: string[] = [];
     const observedStages: string[] = [];
     let service!: LocalBackupImportService;
 
     const adapter: LocalBackupImportAdapter = {
-      async restoreColdStorage(entries, onProgress) {
+      async writeColdStorage(key, value) {
         order.push("coldStorage");
-        expect(entries).toHaveLength(1);
-        onProgress(1, entries.length, entries[0].name);
+        expect(key).toBe("11111111-1111-1111-1111-111111111111");
+        expect(value).toEqual({ character: [] });
         observedStages.push(service.progress("import_001").progress.stage);
       },
-      async restoreAssets(entries, onProgress) {
-        order.push("assets");
-        expect(entries).toHaveLength(1);
-        onProgress(1, entries.length, entries[0].name);
+      async writeAsset(key, filePath, size) {
+        expect(filePath).toContain("import_001");
+        expect(size).toBeGreaterThan(0);
+        if (key === "assets/a.png") {
+          order.push("assets");
+        } else {
+          expect(key).toBe(
+            "inlay_22222222-2222-2222-2222-222222222222.risuinlay",
+          );
+          order.push("inlays");
+        }
         observedStages.push(service.progress("import_001").progress.stage);
       },
-      async restoreInlays(entries, onProgress) {
-        order.push("inlays");
-        expect(entries).toHaveLength(1);
-        onProgress(1, entries.length, entries[0].name);
-        observedStages.push(service.progress("import_001").progress.stage);
-      },
-      async restoreDatabase(plan, sourceClientId, onProgress) {        order.push("database");
+      async restoreDatabase(plan, sourceClientId, onProgress) {
+        order.push("database");
         expect(plan.databaseMode).toBe("legacy");
         expect(plan.legacyDatabase?.name).toBe("database.risudat");
         expect(sourceClientId).toBe("client-1");
@@ -87,19 +92,26 @@ describe("LocalBackupImportService", () => {
     service = new LocalBackupImportService(jobs, staging, adapter);
     const job = service.createJob();
 
+    const inlay = await encodeInlayAssetBackup({
+      data: "payload",
+      ext: "png",
+      name: "Inlay",
+      type: "image",
+    });
     const parts = [
       framed("database.risudat", new Uint8Array([1, 2, 3])),
       framed(
         "coldstorage_11111111-1111-1111-1111-111111111111.json",
-        new TextEncoder().encode("{}"),
+        new TextEncoder().encode('{"character":[]}'),
       ),
       framed("assets/a.png", new Uint8Array([4, 5])),
       framed(
         "inlay_22222222-2222-2222-2222-222222222222.risuinlay",
-        new Uint8Array([6, 7]),
+        inlay,
       ),
     ];
-    const totalBytes = parts.reduce((sum, part) => sum + part.length, 0);    await expect(
+    const totalBytes = parts.reduce((sum, part) => sum + part.length, 0);
+    await expect(
       service.importStream(job.id, chunked(parts), {
         totalBytes,
         sourceClientId: "client-1",
@@ -127,11 +139,11 @@ describe("LocalBackupImportService", () => {
     });
   });
 
-  it("settles an error and cleans staging when an adapter fails", async () => {    const { root, jobs, staging } = await makeStores("import_002");
+  it("settles an error and cleans staging when an adapter fails", async () => {
+    const { root, jobs, staging } = await makeStores("import_002");
     const adapter: LocalBackupImportAdapter = {
-      async restoreColdStorage() {},
-      async restoreAssets() {},
-      async restoreInlays() {},
+      async writeColdStorage() {},
+      async writeAsset() {},
       async restoreDatabase() {
         throw new Error("database restore failed");
       },
@@ -154,14 +166,14 @@ describe("LocalBackupImportService", () => {
     });
     await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
       code: "ENOENT",
-    });  });
+    });
+  });
 
   it("preserves encrypted-backup rejection and marks the job failed", async () => {
     const { root, jobs, staging } = await makeStores("import_003");
     const adapter: LocalBackupImportAdapter = {
-      async restoreColdStorage() {},
-      async restoreAssets() {},
-      async restoreInlays() {},
+      async writeColdStorage() {},
+      async writeAsset() {},
       async restoreDatabase() {
         throw new Error("database adapter must not run");
       },
@@ -181,7 +193,8 @@ describe("LocalBackupImportService", () => {
     await expect(service.wait(job.id)).resolves.toMatchObject({
       status: "error",
       error: "Account-encrypted backups are intentionally unsupported.",
-    });    await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
+    });
+    await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });

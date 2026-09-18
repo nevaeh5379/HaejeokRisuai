@@ -162,16 +162,6 @@ const {
   BackupImportPlanError,
 } = require("../../packages/backup-core/dist/node/importPlan.js");
 const {
-  getColdStorageBackupKey,
-  normalizeBackupAssetPath,
-} = require("../../packages/backup-core/dist/entryPolicy.js");
-const {
-  isColdStorageBackupData,
-} = require("../../packages/backup-core/dist/coldStorage.js");
-const {
-  decodeInlayAssetBackup,
-} = require("../../packages/backup-core/dist/inlayCodec.js");
-const {
   iterateLegacyBackupSqlRecords,
 } = require("../../packages/backup-core/dist/legacyRecords.js");
 const {
@@ -4841,52 +4831,13 @@ function sendLocalBackupImportError(res, error) {
   return sendLocalBackupDatabaseStreamError(res, error);
 }
 
-async function restoreStagedColdStorage(entries, onProgress) {
-  if (entries.length === 0) return;
-  onProgress(0, entries.length);
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index];
-    const key = getColdStorageBackupKey(entry.name);
-    if (!key) {
-      throw new BackupImportPlanError(
-        `Invalid cold storage backup entry '${entry.name}'`,
-        "duplicate_entry",
-      );
-    }
-    const raw = await fs.readFile(entry.filePath, "utf8");
-    const value = JSON.parse(raw);
-    if (!isColdStorageBackupData(value)) {
-      throw new Error(`Invalid cold storage backup payload: ${entry.name}`);
-    }
-    await postgresStorage.upsertColdStorage(key, value);
-    onProgress(index + 1, entries.length, entry.name);
-  }
-}
-
-async function restoreStagedAssetEntries(
-  entries,
-  transformName,
-  validateInlay,
-  onProgress,
-) {
-  if (entries.length === 0) return;
+async function writeImportedAsset(key, filePath, size) {
   const storage = assetStorageManager.getStorage();
   if (typeof storage.writeFromPath !== "function") {
     throw new Error("Active asset storage cannot import staged backup files");
   }
-  onProgress(0, entries.length);
-
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index];
-    const key = transformName(entry.name);
-    if (validateInlay) {
-      const encoded = new Uint8Array(await fs.readFile(entry.filePath));
-      decodeInlayAssetBackup(encoded);
-    }
-    await storage.writeFromPath(keyToHex(key), entry.filePath);
-    await upsertAssetCatalogKey(key, entry.size);
-    onProgress(index + 1, entries.length, entry.name);
-  }
+  await storage.writeFromPath(keyToHex(key), filePath);
+  await upsertAssetCatalogKey(key, size);
 }
 
 async function stageLegacyBackupSqlRecords(databaseEntry, onProgress) {
@@ -5091,21 +5042,9 @@ const localBackupImportService = new LocalBackupImportService(
   localBackupImportJobs,
   localBackupImportStaging,
   {
-    restoreColdStorage: restoreStagedColdStorage,
-    restoreAssets: async (entries, onProgress) =>
-      await restoreStagedAssetEntries(
-        entries,
-        normalizeBackupAssetPath,
-        false,
-        onProgress,
-      ),
-    restoreInlays: async (entries, onProgress) =>
-      await restoreStagedAssetEntries(
-        entries,
-        (name) => name,
-        true,
-        onProgress,
-      ),
+    writeColdStorage: async (key, value) =>
+      await postgresStorage.upsertColdStorage(key, value),
+    writeAsset: writeImportedAsset,
     restoreDatabase: async (plan, sourceClientId, onProgress) => {
       if (plan.databaseMode === "stream") {
         return await restoreStagedStreamDatabase(

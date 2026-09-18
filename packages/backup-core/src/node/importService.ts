@@ -1,8 +1,15 @@
+import { promises as fs } from "node:fs";
 import type {
   LocalBackupImportJobCompletion,
   LocalBackupImportJobProgress,
   LocalBackupImportProgress,
 } from "../api";
+import { isColdStorageBackupData } from "../coldStorage";
+import {
+  getColdStorageBackupKey,
+  normalizeBackupAssetPath,
+} from "../entryPolicy";
+import { decodeInlayAssetBackup } from "../inlayCodec";
 import {
   buildBackupImportPlan,
   type BackupImportPlan,
@@ -21,18 +28,8 @@ export interface LocalBackupImportRestoreResult {
 }
 
 export interface LocalBackupImportAdapter {
-  restoreColdStorage(
-    entries: readonly StagedBackupEntry[],
-    onProgress: (current: number, total: number, detail?: string) => void,
-  ): Promise<void>;
-  restoreAssets(
-    entries: readonly StagedBackupEntry[],
-    onProgress: (current: number, total: number, detail?: string) => void,
-  ): Promise<void>;
-  restoreInlays(
-    entries: readonly StagedBackupEntry[],
-    onProgress: (current: number, total: number, detail?: string) => void,
-  ): Promise<void>;
+  writeColdStorage(key: string, value: unknown): Promise<void>;
+  writeAsset(key: string, filePath: string, size: number): Promise<void>;
   restoreDatabase(
     plan: BackupImportPlan,
     sourceClientId: unknown,
@@ -83,6 +80,53 @@ export class LocalBackupImportService {
     });
   }
 
+  private async restoreColdStorage(
+    id: string,
+    entries: readonly StagedBackupEntry[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    this.update(id, "coldStorage", 0, entries.length);
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      const key = getColdStorageBackupKey(entry.name);
+      if (!key) throw new Error(`Invalid cold storage backup entry '${entry.name}'`);
+      const value = JSON.parse(await fs.readFile(entry.filePath, "utf8"));
+      if (!isColdStorageBackupData(value)) {
+        throw new Error(`Invalid cold storage backup payload: ${entry.name}`);
+      }
+      await this.adapter.writeColdStorage(key, value);
+      this.update(id, "coldStorage", index + 1, entries.length, entry.name);
+    }
+  }
+
+  private async restoreAssets(
+    id: string,
+    entries: readonly StagedBackupEntry[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    this.update(id, "assets", 0, entries.length);
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      const key = normalizeBackupAssetPath(entry.name);
+      await this.adapter.writeAsset(key, entry.filePath, entry.size);
+      this.update(id, "assets", index + 1, entries.length, entry.name);
+    }
+  }
+
+  private async restoreInlays(
+    id: string,
+    entries: readonly StagedBackupEntry[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    this.update(id, "inlays", 0, entries.length);
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      decodeInlayAssetBackup(new Uint8Array(await fs.readFile(entry.filePath)));
+      await this.adapter.writeAsset(entry.name, entry.filePath, entry.size);
+      this.update(id, "inlays", index + 1, entries.length, entry.name);
+    }
+  }
+
   async importStream(
     id: string,
     chunks: AsyncIterable<Uint8Array>,
@@ -107,21 +151,9 @@ export class LocalBackupImportService {
       this.jobs.markRestoring(id);
       const plan = buildBackupImportPlan(staged);
 
-      await this.adapter.restoreColdStorage(
-        plan.coldStorage,
-        (current, total, detail) =>
-          this.update(id, "coldStorage", current, total, detail),
-      );
-      await this.adapter.restoreAssets(
-        plan.assets,
-        (current, total, detail) =>
-          this.update(id, "assets", current, total, detail),
-      );
-      await this.adapter.restoreInlays(
-        plan.inlays,
-        (current, total, detail) =>
-          this.update(id, "inlays", current, total, detail),
-      );
+      await this.restoreColdStorage(id, plan.coldStorage);
+      await this.restoreAssets(id, plan.assets);
+      await this.restoreInlays(id, plan.inlays);
       const result = await this.adapter.restoreDatabase(
         plan,
         options.sourceClientId,
