@@ -32,6 +32,8 @@ Haejeok RisuAI는 현재 활발히 개발 중인 독립 빌드입니다. 현재 
 - 내장 Risu 계정 로그인 및 계정 동기화 미포함
 - RisuRealm은 외부 업스트림 서비스로 취급되며 자체 인증, 이용약관 및 콘텐츠 규정을 따름
 
+네이티브 `.bin`/`.risubackup` 파일의 바이너리 구조와 호환성 규칙은 [해적리스 네이티브 백업 형식 사양](docs/haejeok-native-backup-format.md)에 정리되어 있습니다.
+
 ## Q&A
 
 Q. 갤럭시 S2에서 실행되나요?

@@ -57,6 +57,12 @@ import {
   decryptLegacyAccountBackup,
   fetchLegacyBackupKey,
 } from "./legacyBackupEncryption";
+import {
+  decryptStreamingBackupEntry,
+  encryptStreamingBackupEntry,
+  isStreamingBackupEncryptedEntry,
+  STREAMING_BACKUP_ENCRYPTION_FORMAT,
+} from "./streamingBackupEncryption";
 import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
   makeLegacyCompatibleDatabase,
@@ -1113,11 +1119,16 @@ function streamingRecordEntryName(index: number) {
 
 async function encodeStreamingDatabaseValue(
   value: PortableDatabaseStreamFragment | PortableDatabaseStreamManifest,
+  entryName: string,
   encryptionKey?: string,
 ) {
   let encoded = await encodeRisuSaveLegacyAsync(value, "compression");
   if (encryptionKey) {
-    encoded = new Uint8Array(await encryptBuffer(encoded, encryptionKey));
+    encoded = await encryptStreamingBackupEntry(
+      encoded,
+      encryptionKey,
+      entryName,
+    );
   }
   return encoded;
 }
@@ -1139,7 +1150,13 @@ async function prepareStreamingBackupEncryption(
   ).key;
   await writer.writeBackup(
     "encryption.risudat",
-    new TextEncoder().encode(JSON.stringify({ time, type: "account" })),
+    new TextEncoder().encode(
+      JSON.stringify({
+        time,
+        type: "account",
+        databaseEncryption: STREAMING_BACKUP_ENCRYPTION_FORMAT,
+      }),
+    ),
   );
   return key;
 }
@@ -1267,14 +1284,13 @@ async function saveStreamingLocalBackupWithOptions(
   try {
     manifest = await exportPortableDatabaseStream(storage, {
       async writeFragment(fragment) {
+        const entryName = streamingRecordEntryName(fragment.index);
         const encoded = await encodeStreamingDatabaseValue(
           fragment,
+          entryName,
           encryptionKey,
         );
-        await writer.writeBackup(
-          streamingRecordEntryName(fragment.index),
-          encoded,
-        );
+        await writer.writeBackup(entryName, encoded);
       },
       async writeColdStorage(key, value) {
         if (!isColdStorageBackupData(value)) {
@@ -1314,7 +1330,11 @@ async function saveStreamingLocalBackupWithOptions(
     alertProgress(`${label} (Finalizing streamed database)`, 98);
     await writer.writeBackup(
       PORTABLE_DATABASE_STREAM_MANIFEST,
-      await encodeStreamingDatabaseValue(manifest, encryptionKey),
+      await encodeStreamingDatabaseValue(
+        manifest,
+        PORTABLE_DATABASE_STREAM_MANIFEST,
+        encryptionKey,
+      ),
     );
     await writer.close();
     showMissingBackupAssets(missingAssets, assetMap, options.partial);
@@ -1607,9 +1627,10 @@ async function restoreLocalBackupSourceUnlocked(
         let encoded = data;
         if (encryptionMeta.type === "account" && encryptionMeta.time) {
           streamingDecryptionKey ??= fetchLegacyBackupKey(encryptionMeta.time);
-          encoded = new Uint8Array(
-            await decryptBuffer(encoded, await streamingDecryptionKey),
-          );
+          const key = await streamingDecryptionKey;
+          encoded = isStreamingBackupEncryptedEntry(encoded)
+            ? await decryptStreamingBackupEntry(encoded, key, name)
+            : new Uint8Array(await decryptBuffer(encoded, key));
         }
         const value = await decodeRisuSave(encoded);
         streamCollector ??= new PortableDatabaseStreamCollector();

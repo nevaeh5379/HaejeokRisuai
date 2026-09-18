@@ -30,6 +30,8 @@ Haejeok RisuAI is currently an actively developed independent build. The primary
 - No built-in Risu Account login or account synchronization
 - RisuRealm is treated as an external upstream service and keeps its own authentication, terms, and content rules
 
+The binary layout and compatibility rules for native `.bin`/`.risubackup` files are documented in the [Haejeok native backup format specification](docs/haejeok-native-backup-format.md).
+
 ## Q&A
 
 Q. Does it run on the Galaxy S2?
