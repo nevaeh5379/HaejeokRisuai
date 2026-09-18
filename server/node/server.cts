@@ -156,8 +156,10 @@ const {
   BackupImportStagingStore,
 } = require("../../packages/backup-core/dist/node/importStagingStore.js");
 const {
+  LocalBackupImportService,
+} = require("../../packages/backup-core/dist/node/importService.js");
+const {
   BackupImportPlanError,
-  buildBackupImportPlan,
 } = require("../../packages/backup-core/dist/node/importPlan.js");
 const {
   getColdStorageBackupKey,
@@ -4839,13 +4841,9 @@ function sendLocalBackupImportError(res, error) {
   return sendLocalBackupDatabaseStreamError(res, error);
 }
 
-async function restoreStagedColdStorage(jobId, entries) {
+async function restoreStagedColdStorage(entries, onProgress) {
   if (entries.length === 0) return;
-  localBackupImportJobs.updateProgress(jobId, {
-    stage: "coldStorage",
-    current: 0,
-    total: entries.length,
-  });
+  onProgress(0, entries.length);
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index];
     const key = getColdStorageBackupKey(entry.name);
@@ -4861,50 +4859,38 @@ async function restoreStagedColdStorage(jobId, entries) {
       throw new Error(`Invalid cold storage backup payload: ${entry.name}`);
     }
     await postgresStorage.upsertColdStorage(key, value);
-    localBackupImportJobs.updateProgress(jobId, {
-      stage: "coldStorage",
-      current: index + 1,
-      total: entries.length,
-    });
+    onProgress(index + 1, entries.length, entry.name);
   }
 }
 
-async function restoreStagedAssetEntries(jobId, entries, stage, transformName) {
+async function restoreStagedAssetEntries(
+  entries,
+  transformName,
+  validateInlay,
+  onProgress,
+) {
   if (entries.length === 0) return;
   const storage = assetStorageManager.getStorage();
   if (typeof storage.writeFromPath !== "function") {
     throw new Error("Active asset storage cannot import staged backup files");
   }
-  localBackupImportJobs.updateProgress(jobId, {
-    stage,
-    current: 0,
-    total: entries.length,
-  });
+  onProgress(0, entries.length);
 
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index];
     const key = transformName(entry.name);
-    if (stage === "inlays") {
+    if (validateInlay) {
       const encoded = new Uint8Array(await fs.readFile(entry.filePath));
       decodeInlayAssetBackup(encoded);
     }
     await storage.writeFromPath(keyToHex(key), entry.filePath);
     await upsertAssetCatalogKey(key, entry.size);
-    localBackupImportJobs.updateProgress(jobId, {
-      stage,
-      current: index + 1,
-      total: entries.length,
-    });
+    onProgress(index + 1, entries.length, entry.name);
   }
 }
 
-async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
-  localBackupImportJobs.updateProgress(jobId, {
-    stage: "database",
-    current: 0,
-    total: 0,
-    detail: "Streaming legacy database",
-  });
+async function stageLegacyBackupSqlRecords(databaseEntry, onProgress) {
+  onProgress(0, 0, "Streaming legacy database");
 
   const sqlPath = `${databaseEntry.filePath}.sql.ndjson`;
   try {
@@ -4916,12 +4902,11 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
         idFactory: () => crypto.randomUUID(),
         sourceRevision: 0,
         onProgress(progress) {
-          localBackupImportJobs.updateProgress(jobId, {
-            stage: "database",
-            current: progress.records,
-            total: 0,
-            detail: `Streaming legacy database · ${progress.phase}`,
-          });
+          onProgress(
+            progress.records,
+            0,
+            `Streaming legacy database · ${progress.phase}`,
+          );
         },
       },
     );
@@ -4945,12 +4930,7 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
     );
   }
 
-  localBackupImportJobs.updateProgress(jobId, {
-    stage: "database",
-    current: 0,
-    total: 0,
-    detail: "Decoding legacy compatibility format",
-  });
+  onProgress(0, 0, "Decoding legacy compatibility format");
 
   let database = decodeLegacyBackupDatabase(
     new Uint8Array(await fs.readFile(databaseEntry.filePath)),
@@ -4983,12 +4963,11 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
       if (!output.write(line, "utf8")) await once(output, "drain");
       recordCount++;
       if (recordCount % 64 === 0) {
-        localBackupImportJobs.updateProgress(jobId, {
-          stage: "database",
-          current: recordCount,
-          total: 0,
-          detail: "Converting legacy compatibility database",
-        });
+        onProgress(
+          recordCount,
+          0,
+          "Converting legacy compatibility database",
+        );
       }
     }
     output.end();
@@ -5009,20 +4988,22 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
 }
 
 async function restoreStagedLegacyDatabase(
-  jobId,
   databaseEntry,
   sourceClientId,
+  onProgress,
 ) {
-  const prepared = await stageLegacyBackupSqlRecords(jobId, databaseEntry);
-  localBackupImportJobs.updateProgress(jobId, {
-    stage: "database",
-    current: prepared.recordCount,
-    total: prepared.recordCount,
-    detail: "Applying legacy database",
-  });
+  const prepared = await stageLegacyBackupSqlRecords(
+    databaseEntry,
+    onProgress,
+  );
+  onProgress(
+    prepared.recordCount,
+    prepared.recordCount,
+    "Applying legacy database",
+  );
   const result = await finalizePreparedLocalBackupSql(
     prepared,
-    `local-backup-import:${jobId}`,
+    `local-backup-import:${databaseEntry.filePath}`,
     sourceClientId,
   );
   return {
@@ -5032,9 +5013,9 @@ async function restoreStagedLegacyDatabase(
 }
 
 async function restoreStagedStreamDatabase(
-  jobId,
   plan,
   sourceClientId,
+  onProgress,
 ) {
   const manifest = decodeLegacyBackupDatabase(
     new Uint8Array(await fs.readFile(plan.streamManifest.filePath)),
@@ -5087,12 +5068,7 @@ async function restoreStagedStreamDatabase(
           },
         );
         current = state.recordCount;
-        localBackupImportJobs.updateProgress(jobId, {
-          stage: "database",
-          current,
-          total: totalRecords,
-          detail: fragmentEntry.name,
-        });
+        onProgress(current, totalRecords, fragmentEntry.name);
       }
     }
 
@@ -5111,47 +5087,48 @@ async function restoreStagedStreamDatabase(
   }
 }
 
-async function restoreStagedLocalBackup(
-  jobId,
-  staged,
-  sourceClientId,
-) {
-  const plan = buildBackupImportPlan(staged);
-
-  await restoreStagedColdStorage(jobId, plan.coldStorage);
-  await restoreStagedAssetEntries(
-    jobId,
-    plan.assets,
-    "assets",
-    normalizeBackupAssetPath,
-  );
-  await restoreStagedAssetEntries(
-    jobId,
-    plan.inlays,
-    "inlays",
-    (name) => name,
-  );
-
-  if (plan.databaseMode === "stream") {
-    return await restoreStagedStreamDatabase(
-      jobId,
-      plan,
-      sourceClientId,
-    );
-  }
-  return await restoreStagedLegacyDatabase(
-    jobId,
-    plan.legacyDatabase,
-    sourceClientId,
-  );
-}
+const localBackupImportService = new LocalBackupImportService(
+  localBackupImportJobs,
+  localBackupImportStaging,
+  {
+    restoreColdStorage: restoreStagedColdStorage,
+    restoreAssets: async (entries, onProgress) =>
+      await restoreStagedAssetEntries(
+        entries,
+        normalizeBackupAssetPath,
+        false,
+        onProgress,
+      ),
+    restoreInlays: async (entries, onProgress) =>
+      await restoreStagedAssetEntries(
+        entries,
+        (name) => name,
+        true,
+        onProgress,
+      ),
+    restoreDatabase: async (plan, sourceClientId, onProgress) => {
+      if (plan.databaseMode === "stream") {
+        return await restoreStagedStreamDatabase(
+          plan,
+          sourceClientId,
+          onProgress,
+        );
+      }
+      return await restoreStagedLegacyDatabase(
+        plan.legacyDatabase,
+        sourceClientId,
+        onProgress,
+      );
+    },
+  },
+);
 
 app.post(
   "/api/local-backup/import/jobs",
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    res.send(localBackupImportJobs.create());
+    res.send(localBackupImportService.createJob());
   },
 );
 
@@ -5161,7 +5138,7 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     try {
-      res.send(localBackupImportJobs.progress(req.params.jobId));
+      res.send(localBackupImportService.progress(req.params.jobId));
     } catch (error) {
       if (sendLocalBackupImportError(res, error)) return;
       next(error);
@@ -5175,7 +5152,7 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     try {
-      res.send(await localBackupImportJobs.wait(req.params.jobId));
+      res.send(await localBackupImportService.wait(req.params.jobId));
     } catch (error) {
       if (sendLocalBackupImportError(res, error)) return;
       next(error);
@@ -5207,42 +5184,19 @@ app.put(
         : 0;
 
     try {
-      localBackupImportJobs.beginUpload(jobId, totalBytes);
-      const staged = await localBackupImportStaging.stage(jobId, req, {
-        totalBytes,
-        onProgress(progress) {
-          localBackupImportJobs.updateProgress(jobId, {
-            stage: "uploading",
-            current: progress.bytesRead,
-            total: progress.totalBytes,
-            ...(progress.entryName
-              ? { detail: progress.entryName }
-              : {}),
-          });
-        },
-      });
-      localBackupImportJobs.markRestoring(jobId);
-      const result = await restoreStagedLocalBackup(
-        jobId,
-        staged,
-        req.headers["x-risu-client-id"],
+      res.send(
+        await localBackupImportService.importStream(jobId, req, {
+          totalBytes,
+          sourceClientId: req.headers["x-risu-client-id"],
+        }),
       );
-      localBackupImportJobs.settle(jobId, "complete", result);
-      res.send(await localBackupImportJobs.wait(jobId));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      try {
-        localBackupImportJobs.settle(jobId, "error", {
-          error: message,
-        });
-      } catch {}
       if (sendLocalBackupImportError(res, error)) return;
       res.status(400).send({
         error: message,
         code: error?.code ?? "local_backup_import_failed",
       });
-    } finally {
-      await localBackupImportStaging.cleanup(jobId).catch(() => {});
     }
   },
 );

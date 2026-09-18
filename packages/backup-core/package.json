@@ -104,6 +104,12 @@
       "import": "./src/node/legacyStream.ts",
       "require": "./dist/node/legacyStream.js",
       "default": "./src/node/legacyStream.ts"
+    },
+    "./node/importService": {
+      "types": "./src/node/importService.ts",
+      "import": "./src/node/importService.ts",
+      "require": "./dist/node/importService.js",
+      "default": "./src/node/importService.ts"
     }
   },
   "scripts": {

@@ -34,6 +34,7 @@ const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/node/importJobStore.js"),
   path.join(backupCoreRoot, "dist/node/importPlan.js"),
   path.join(backupCoreRoot, "dist/node/importStagingStore.js"),
+  path.join(backupCoreRoot, "dist/node/importService.js"),
   path.join(backupCoreRoot, "dist/node/legacyFormat.js"),
   path.join(backupCoreRoot, "dist/node/legacyStream.js"),
 ];
@@ -55,6 +56,7 @@ const backupCoreSources = [
   path.join(backupCoreRoot, "src/node/importJobStore.ts"),
   path.join(backupCoreRoot, "src/node/importPlan.ts"),
   path.join(backupCoreRoot, "src/node/importStagingStore.ts"),
+  path.join(backupCoreRoot, "src/node/importService.ts"),
   path.join(backupCoreRoot, "src/node/legacyFormat.ts"),
   path.join(backupCoreRoot, "src/node/legacyStream.ts"),
 ];
