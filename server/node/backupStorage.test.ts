@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { buildFullBackupPayload } = require("./backupFullPayload.cjs") as {
+const { buildFullBackupPayload } = require("../../packages/backup-core/dist/node/fullPayload.js") as {
   buildFullBackupPayload: (
     database: Record<string, unknown>,
   ) => Record<string, any>;

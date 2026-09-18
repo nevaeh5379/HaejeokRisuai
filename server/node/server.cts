@@ -76,6 +76,7 @@ const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
 const {
   createLocalBackupEntryHeader,
+  decodeLegacyBackupDatabase,
   makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
 } = require("../../packages/backup-core/dist/node/legacyFormat.js");
@@ -146,6 +147,31 @@ const {
   LocalBackupExportJobError,
   LocalBackupExportJobStore,
 } = require("../../packages/backup-core/dist/node/exportJobStore.js");
+const {
+  LocalBackupImportJobError,
+  LocalBackupImportJobStore,
+} = require("../../packages/backup-core/dist/node/importJobStore.js");
+const {
+  BackupImportStagingError,
+  BackupImportStagingStore,
+} = require("../../packages/backup-core/dist/node/importStagingStore.js");
+const {
+  BackupImportPlanError,
+  buildBackupImportPlan,
+} = require("../../packages/backup-core/dist/node/importPlan.js");
+const {
+  getColdStorageBackupKey,
+  normalizeBackupAssetPath,
+} = require("../../packages/backup-core/dist/entryPolicy.js");
+const {
+  isColdStorageBackupData,
+} = require("../../packages/backup-core/dist/coldStorage.js");
+const {
+  decodeInlayAssetBackup,
+} = require("../../packages/backup-core/dist/inlayCodec.js");
+const {
+  iterateLegacyBackupSqlRecords,
+} = require("../../packages/backup-core/dist/legacyRecords.js");
 const {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
@@ -219,6 +245,14 @@ function isStorageSyncChunkRequest(req) {
     req.method === "PUT" &&
     (/^\/api\/storage-sync\/sessions\/[^/]+\/assets\/[^/]+$/.test(req.path) ||
       /^\/api\/storage-sync\/sessions\/[^/]+\/sql$/.test(req.path))
+  );
+}
+
+function isLocalBackupImportUploadRequest(req) {
+  return (
+    req.method === "PUT" &&
+    /^\/api\/local-backup\/import\/jobs\/[^/]+\/file$/.test(req.path) &&
+    req.is("application/octet-stream")
   );
 }
 
@@ -395,7 +429,11 @@ app.use((req, res, next) => {
   defaultJsonParser(req, res, next);
 });
 app.use((req, res, next) => {
-  if (isStreamingAssetWriteRequest(req) || isStorageSyncChunkRequest(req)) {
+  if (
+    isStreamingAssetWriteRequest(req) ||
+    isStorageSyncChunkRequest(req) ||
+    isLocalBackupImportUploadRequest(req)
+  ) {
     return next();
   }
   rawBodyParser(req, res, next);
@@ -441,6 +479,10 @@ const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
     validateRecord: validateStorageSyncSqlRecord,
     getSourceRevision: (state) => state.sourceRevision,
   },
+);
+const localBackupImportJobs = new LocalBackupImportJobStore();
+const localBackupImportStaging = new BackupImportStagingStore(
+  path.join(savePath, "__local_backup_import"),
 );
 const storageSyncRecovery = new StorageSyncRecoveryStore(
   path.join(savePath, "__storage_sync_recovery"),
@@ -826,7 +868,7 @@ function delayMs(ms) {
 }
 
 // 전체 payload 구성은 backupFullPayload.cjs 모듈에서 (테스트 가능성)
-const { buildFullBackupPayload } = require("./backupFullPayload.cjs");
+const { buildFullBackupPayload } = require("../../packages/backup-core/dist/node/fullPayload.js");
 
 // 직렬 큐: 백업 DB로의 모든 쓰기는 순서를 보장하며 하나씩 수행.
 // 실패는 재시도(백오프) 후 상태 기록만 남기고 큐는 계속 진행 (메인 저장에는 영향 없음).
@@ -4665,63 +4707,98 @@ app.put(
   },
 );
 
+function createLocalBackupSqlStaging(
+  filePath: string,
+  recordCount: number,
+  sourceRevision: number,
+) {
+  return {
+    validate: async (
+      _syncSession: unknown,
+      options: {
+        onRecord?: (record: unknown, index: number) => Promise<void>;
+      } = {},
+    ) =>
+      await readStorageSyncSqlRecords(filePath, {
+        expectedRecordCount: recordCount,
+        expectedSourceRevision: sourceRevision,
+        onRecord: options.onRecord,
+      }),
+  };
+}
+
+async function finalizePreparedLocalBackupSql(
+  prepared: {
+    sourceRevision: number;
+    recordCount: number;
+    sqlStaging: ReturnType<typeof createLocalBackupSqlStaging>;
+  },
+  gateKey: string,
+  sourceClientId: unknown,
+) {
+  const release = await storageSyncFinalizeGate.acquire(gateKey);
+  try {
+    return await databaseMutations.localBackupStreamFinalize(
+      { prepared },
+      sourceClientId,
+    );
+  } finally {
+    release?.();
+  }
+}
+
+async function finalizeLocalBackupDatabaseStreamSession(
+  sessionId: string,
+  manifest: unknown,
+  sourceClientId: unknown,
+) {
+  const finalized =
+    localBackupDatabaseStreamStore.getFinalizedResult(sessionId);
+  if (finalized) return finalized;
+
+  const preparedStream =
+    localBackupDatabaseStreamStore.prepareFinalize(sessionId, manifest);
+  const prepared = {
+    ...preparedStream,
+    sqlStaging: createLocalBackupSqlStaging(
+      preparedStream.filePath,
+      preparedStream.recordCount,
+      preparedStream.sourceRevision,
+    ),
+  };
+
+  const result = await finalizePreparedLocalBackupSql(
+    prepared,
+    `local-backup:${sessionId}`,
+    sourceClientId,
+  );
+  const response = {
+    status: "completed",
+    revision: result.revision,
+    revisionId: result.revisionId,
+    sourceRevision: prepared.sourceRevision,
+    recordCount: prepared.recordCount,
+  };
+  await localBackupDatabaseStreamStore.markFinalized(sessionId, response);
+  return response;
+}
+
 app.post(
   "/api/local-backup/database-stream/sessions/:sessionId/finalize",
   authenticatedRouteLimiter,
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    const sessionId = req.params.sessionId;
-    let release = null;
     try {
-      const finalized =
-        localBackupDatabaseStreamStore.getFinalizedResult(sessionId);
-      if (finalized) {
-        res.send(finalized);
-        return;
-      }
-      const preparedStream =
-        localBackupDatabaseStreamStore.prepareFinalize(
-          sessionId,
+      res.send(
+        await finalizeLocalBackupDatabaseStreamSession(
+          req.params.sessionId,
           req.body?.manifest,
-        );
-      const prepared = {
-        ...preparedStream,
-        sqlStaging: {
-          validate: async (
-            _syncSession: unknown,
-            options: { onRecord?: (record: unknown, index: number) => Promise<void> } = {},
-          ) =>
-            await readStorageSyncSqlRecords(preparedStream.filePath, {
-              expectedRecordCount: preparedStream.recordCount,
-              expectedSourceRevision: preparedStream.sourceRevision,
-              onRecord: options.onRecord,
-            }),
-        },
-      };
-      release = await storageSyncFinalizeGate.acquire(
-        `local-backup:${sessionId}`,
+          req.headers["x-risu-client-id"],
+        ),
       );
-      const result = await databaseMutations.localBackupStreamFinalize(
-        { prepared },
-        req.headers["x-risu-client-id"],
-      );
-      const response = {
-        status: "completed",
-        revision: result.revision,
-        revisionId: result.revisionId,
-        sourceRevision: prepared.sourceRevision,
-        recordCount: prepared.recordCount,
-      };
-      await localBackupDatabaseStreamStore.markFinalized(
-        sessionId,
-        response,
-      );
-      res.send(response);
     } catch (error) {
       if (sendLocalBackupDatabaseStreamError(res, error)) return;
       next(error);
-    } finally {
-      release?.();
     }
   },
 );
@@ -4737,6 +4814,390 @@ app.delete(
     } catch (error) {
       if (sendLocalBackupDatabaseStreamError(res, error)) return;
       next(error);
+    }
+  },
+);
+
+
+function sendLocalBackupImportError(res, error) {
+  if (error instanceof LocalBackupImportJobError) {
+    const status = error.code === "job_not_found" ? 404 : 409;
+    res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (
+    error instanceof BackupImportStagingError ||
+    error instanceof BackupImportPlanError
+  ) {
+    res.status(400).send({ error: error.message, code: error.code });
+    return true;
+  }
+  return sendLocalBackupDatabaseStreamError(res, error);
+}
+
+async function restoreStagedColdStorage(jobId, entries) {
+  if (entries.length === 0) return;
+  localBackupImportJobs.updateProgress(jobId, {
+    stage: "coldStorage",
+    current: 0,
+    total: entries.length,
+  });
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    const key = getColdStorageBackupKey(entry.name);
+    if (!key) {
+      throw new BackupImportPlanError(
+        `Invalid cold storage backup entry '${entry.name}'`,
+        "duplicate_entry",
+      );
+    }
+    const raw = await fs.readFile(entry.filePath, "utf8");
+    const value = JSON.parse(raw);
+    if (!isColdStorageBackupData(value)) {
+      throw new Error(`Invalid cold storage backup payload: ${entry.name}`);
+    }
+    await postgresStorage.upsertColdStorage(key, value);
+    localBackupImportJobs.updateProgress(jobId, {
+      stage: "coldStorage",
+      current: index + 1,
+      total: entries.length,
+    });
+  }
+}
+
+async function restoreStagedAssetEntries(jobId, entries, stage, transformName) {
+  if (entries.length === 0) return;
+  const storage = assetStorageManager.getStorage();
+  if (typeof storage.writeFromPath !== "function") {
+    throw new Error("Active asset storage cannot import staged backup files");
+  }
+  localBackupImportJobs.updateProgress(jobId, {
+    stage,
+    current: 0,
+    total: entries.length,
+  });
+
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    const key = transformName(entry.name);
+    if (stage === "inlays") {
+      const encoded = new Uint8Array(await fs.readFile(entry.filePath));
+      decodeInlayAssetBackup(encoded);
+    }
+    await storage.writeFromPath(keyToHex(key), entry.filePath);
+    await upsertAssetCatalogKey(key, entry.size);
+    localBackupImportJobs.updateProgress(jobId, {
+      stage,
+      current: index + 1,
+      total: entries.length,
+    });
+  }
+}
+
+async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
+  localBackupImportJobs.updateProgress(jobId, {
+    stage: "database",
+    current: 0,
+    total: 0,
+    detail: "Decoding legacy database",
+  });
+
+  let database = decodeLegacyBackupDatabase(
+    new Uint8Array(await fs.readFile(databaseEntry.filePath)),
+  );
+  if (!database || typeof database !== "object" || Array.isArray(database)) {
+    throw new Error("Legacy backup database payload is invalid");
+  }
+
+  const sqlPath = `${databaseEntry.filePath}.sql.ndjson`;
+  const output = fsSync.createWriteStream(sqlPath, {
+    flags: "wx",
+    mode: 0o600,
+  });
+  const outputDone = new Promise<void>((resolve, reject) => {
+    output.once("finish", resolve);
+    output.once("error", reject);
+  });
+
+  let recordCount = 0;
+  const validationState = {
+    sourceRevision: null,
+    entityPhase: false,
+  };
+  try {
+    for (const record of iterateLegacyBackupSqlRecords(database, {
+      sourceRevision: 0,
+      idFactory: () => crypto.randomUUID(),
+    })) {
+      validateStorageSyncSqlRecord(record, recordCount, validationState);
+      const line = `${JSON.stringify(encodeStorageSyncValue(record))}\n`;
+      if (!output.write(line, "utf8")) await once(output, "drain");
+      recordCount++;
+      if (recordCount % 64 === 0) {
+        localBackupImportJobs.updateProgress(jobId, {
+          stage: "database",
+          current: recordCount,
+          total: 0,
+          detail: "Converting legacy database",
+        });
+      }
+    }
+    output.end();
+    await outputDone;
+  } catch (error) {
+    output.destroy();
+    await fs.rm(sqlPath, { force: true }).catch(() => {});
+    throw error;
+  } finally {
+    database = null;
+  }
+
+  return {
+    sourceRevision: 0,
+    recordCount,
+    sqlStaging: createLocalBackupSqlStaging(
+      sqlPath,
+      recordCount,
+      0,
+    ),
+  };
+}
+
+async function restoreStagedLegacyDatabase(
+  jobId,
+  databaseEntry,
+  sourceClientId,
+) {
+  const prepared = await stageLegacyBackupSqlRecords(jobId, databaseEntry);
+  localBackupImportJobs.updateProgress(jobId, {
+    stage: "database",
+    current: prepared.recordCount,
+    total: prepared.recordCount,
+    detail: "Applying legacy database",
+  });
+  const result = await finalizePreparedLocalBackupSql(
+    prepared,
+    `local-backup-import:${jobId}`,
+    sourceClientId,
+  );
+  return {
+    revision: result.revision,
+    recordCount: prepared.recordCount,
+  };
+}
+
+async function restoreStagedStreamDatabase(
+  jobId,
+  plan,
+  sourceClientId,
+) {
+  const manifest = decodeLegacyBackupDatabase(
+    new Uint8Array(await fs.readFile(plan.streamManifest.filePath)),
+  );
+  const totalRecords =
+    Number.isSafeInteger(manifest?.totalRecords) &&
+    Number(manifest.totalRecords) >= 0
+      ? Number(manifest.totalRecords)
+      : 0;
+
+  const session = await localBackupDatabaseStreamStore.create();
+  try {
+    let current = 0;
+    for (
+      let fragmentPosition = 0;
+      fragmentPosition < plan.streamFragments.length;
+      fragmentPosition++
+    ) {
+      const expectedIndex = fragmentPosition + 1;
+      const fragmentEntry = plan.streamFragments[fragmentPosition];
+      const fragment = decodeLegacyBackupDatabase(
+        new Uint8Array(await fs.readFile(fragmentEntry.filePath)),
+      );
+      if (
+        !fragment ||
+        fragment.format !== "risu-portable-database-fragment" ||
+        fragment.version !== 1 ||
+        fragment.index !== expectedIndex ||
+        !Array.isArray(fragment.records) ||
+        fragment.records.length === 0 ||
+        fragment.records.length > PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS
+      ) {
+        throw new Error(
+          `Invalid portable database fragment: ${fragmentEntry.name}`,
+        );
+      }
+
+      for (let offset = 0; offset < fragment.records.length; offset += 64) {
+        const records = fragment.records
+          .slice(offset, offset + 64)
+          .map(encodeStorageSyncValue);
+        const fragmentComplete =
+          offset + records.length === fragment.records.length;
+        const state = await localBackupDatabaseStreamStore.appendRecords(
+          session.id,
+          {
+            fragmentIndex: expectedIndex,
+            records,
+            fragmentComplete,
+          },
+        );
+        current = state.recordCount;
+        localBackupImportJobs.updateProgress(jobId, {
+          stage: "database",
+          current,
+          total: totalRecords,
+          detail: fragmentEntry.name,
+        });
+      }
+    }
+
+    const result = await finalizeLocalBackupDatabaseStreamSession(
+      session.id,
+      manifest,
+      sourceClientId,
+    );
+    return {
+      revision: result.revision,
+      recordCount: result.recordCount,
+    };
+  } catch (error) {
+    await localBackupDatabaseStreamStore.cleanup(session.id).catch(() => {});
+    throw error;
+  }
+}
+
+async function restoreStagedLocalBackup(
+  jobId,
+  staged,
+  sourceClientId,
+) {
+  const plan = buildBackupImportPlan(staged);
+
+  await restoreStagedColdStorage(jobId, plan.coldStorage);
+  await restoreStagedAssetEntries(
+    jobId,
+    plan.assets,
+    "assets",
+    normalizeBackupAssetPath,
+  );
+  await restoreStagedAssetEntries(
+    jobId,
+    plan.inlays,
+    "inlays",
+    (name) => name,
+  );
+
+  if (plan.databaseMode === "stream") {
+    return await restoreStagedStreamDatabase(
+      jobId,
+      plan,
+      sourceClientId,
+    );
+  }
+  return await restoreStagedLegacyDatabase(
+    jobId,
+    plan.legacyDatabase,
+    sourceClientId,
+  );
+}
+
+app.post(
+  "/api/local-backup/import/jobs",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    res.send(localBackupImportJobs.create());
+  },
+);
+
+app.get(
+  "/api/local-backup/import/jobs/:jobId/progress",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(localBackupImportJobs.progress(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.get(
+  "/api/local-backup/import/jobs/:jobId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(await localBackupImportJobs.wait(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.put(
+  "/api/local-backup/import/jobs/:jobId/file",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!req.is("application/octet-stream")) {
+      res.status(415).send({
+        error: "Content-Type must be application/octet-stream",
+        code: "invalid_content_type",
+      });
+      return;
+    }
+
+    const jobId = req.params.jobId;
+    const declaredLength = Number.parseInt(
+      String(req.headers["content-length"] ?? "0"),
+      10,
+    );
+    const totalBytes =
+      Number.isSafeInteger(declaredLength) && declaredLength > 0
+        ? declaredLength
+        : 0;
+
+    try {
+      localBackupImportJobs.beginUpload(jobId, totalBytes);
+      const staged = await localBackupImportStaging.stage(jobId, req, {
+        totalBytes,
+        onProgress(progress) {
+          localBackupImportJobs.updateProgress(jobId, {
+            stage: "uploading",
+            current: progress.bytesRead,
+            total: progress.totalBytes,
+            ...(progress.entryName
+              ? { detail: progress.entryName }
+              : {}),
+          });
+        },
+      });
+      localBackupImportJobs.markRestoring(jobId);
+      const result = await restoreStagedLocalBackup(
+        jobId,
+        staged,
+        req.headers["x-risu-client-id"],
+      );
+      localBackupImportJobs.settle(jobId, "complete", result);
+      res.send(await localBackupImportJobs.wait(jobId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      try {
+        localBackupImportJobs.settle(jobId, "error", {
+          error: message,
+        });
+      } catch {}
+      if (sendLocalBackupImportError(res, error)) return;
+      res.status(400).send({
+        error: message,
+        code: error?.code ?? "local_backup_import_failed",
+      });
+    } finally {
+      await localBackupImportStaging.cleanup(jobId).catch(() => {});
     }
   },
 );

@@ -74,6 +74,7 @@ import { Buffer } from "buffer";
 import {
   classifyBackupEntry,
   getInlayBackupKey,
+  normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
 import {
   attachPortableDatabaseBranchGraphs,
@@ -515,25 +516,7 @@ export async function ensureTauriBackupAssetsDirectory(
   });
 }
 
-export function normalizeLocalBackupAssetPath(name: string) {
-  const normalizedName = name.replace(/\\/g, "/");
-  const segments = normalizedName.split("/");
-
-  while (segments[0] === "assets") {
-    segments.shift();
-  }
-
-  if (
-    segments.length === 0 ||
-    segments.some(
-      (segment) => segment === "" || segment === "." || segment === "..",
-    )
-  ) {
-    throw new Error(`Invalid backup asset path: ${name}`);
-  }
-
-  return `assets/${segments.join("/")}`;
-}
+export const normalizeLocalBackupAssetPath = normalizeBackupAssetPath;
 
 export type LocalBackupMode = "native" | "compatible";
 
@@ -2410,6 +2393,101 @@ async function runLocalBackupRestore<T>(
   });
 }
 
+async function restoreNodeLocalBackupFileUnlocked(file: File) {
+  await forageStorage.Init();
+  if (!(forageStorage.realStorage instanceof NodeStorage)) {
+    throw new Error("Node local backup restore requires NodeStorage");
+  }
+
+  const nodeStorage = forageStorage.realStorage;
+  const performance = getLocalBackupPerformance();
+  const job = await nodeStorage.backup.createImportJob();
+  let keepPolling = true;
+
+  const reportRemoteProgress = (
+    progress:
+      | {
+          stage?: string;
+          current?: number;
+          total?: number;
+          detail?: string;
+        }
+      | undefined,
+  ) => {
+    if (!progress?.stage) return;
+    const current = Math.max(0, Number(progress.current) || 0);
+    const total = Math.max(0, Number(progress.total) || 0);
+    const ratio = total > 0 ? Math.min(1, current / total) : 0;
+
+    if (progress.stage === "database") {
+      reportLocalBackupRestoreProgress("database", {
+        percent: 82 + ratio * 16,
+        detail: progress.detail,
+      });
+      return;
+    }
+    if (progress.stage === "finalizing") {
+      reportLocalBackupRestoreProgress("finalizing", {
+        percent: 100,
+        detail: progress.detail,
+      });
+      return;
+    }
+
+    const ranges: Record<string, [number, number]> = {
+      uploading: [2, 52],
+      reading: [52, 58],
+      coldStorage: [58, 64],
+      assets: [64, 76],
+      inlays: [76, 82],
+    };
+    const range = ranges[progress.stage] ?? [52, 82];
+    const percent = range[0] + ratio * (range[1] - range[0]);
+    const byteDetail =
+      progress.stage === "uploading" && total > 0
+        ? `${formatBackupBytes(current)} / ${formatBackupBytes(total)}`
+        : "";
+    const detail = [byteDetail, progress.detail].filter(Boolean).join(" · ");
+    reportLocalBackupRestoreProgress("reading", {
+      percent,
+      detail,
+    });
+  };
+
+  const upload = nodeStorage.backup.uploadImportFile(job.id, file);
+  const polling = (async () => {
+    while (keepPolling) {
+      try {
+        const state = await nodeStorage.backup.getImportProgress(job.id);
+        reportRemoteProgress(state.progress);
+        if (state.status === "complete" || state.status === "error") break;
+      } catch {
+        // The upload request remains authoritative. Progress polling is
+        // best-effort and must not abort a valid restore.
+      }
+      await sleep(performance.progressUpdateMs);
+    }
+  })();
+
+  const completed = await upload;
+  keepPolling = false;
+  await polling;
+  if (completed.status !== "complete") {
+    throw new Error(completed.error ?? "Local backup import failed");
+  }
+
+  reportLocalBackupRestoreProgress("finalizing", { percent: 100 });
+  const storage = await getSqlStorage();
+  await storage.close?.();
+  alertStore.set({
+    type: "wait",
+    msg: "Success, Refreshing your app.",
+  });
+  const cleanUrl = new URL(location.href);
+  cleanUrl.search = "";
+  location.replace(cleanUrl);
+}
+
 async function restoreLocalBackupSource(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
@@ -2421,6 +2499,10 @@ async function restoreLocalBackupSource(
 }
 
 export async function restoreLocalBackupFile(file: File) {
+  if (isNodeServer) {
+    await runLocalBackupRestore(() => restoreNodeLocalBackupFileUnlocked(file));
+    return;
+  }
   await restoreLocalBackupSource(file);
 }
 

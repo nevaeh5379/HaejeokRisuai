@@ -50,6 +50,54 @@
       "import": "./src/node/exportJobStore.ts",
       "require": "./dist/node/exportJobStore.js",
       "default": "./src/node/exportJobStore.ts"
+    },
+    "./containerStream": {
+      "types": "./src/containerStream.ts",
+      "import": "./src/containerStream.ts",
+      "require": "./dist/containerStream.js",
+      "default": "./src/containerStream.ts"
+    },
+    "./node/importJobStore": {
+      "types": "./src/node/importJobStore.ts",
+      "import": "./src/node/importJobStore.ts",
+      "require": "./dist/node/importJobStore.js",
+      "default": "./src/node/importJobStore.ts"
+    },
+    "./node/importStagingStore": {
+      "types": "./src/node/importStagingStore.ts",
+      "import": "./src/node/importStagingStore.ts",
+      "require": "./dist/node/importStagingStore.js",
+      "default": "./src/node/importStagingStore.ts"
+    },
+    "./node/fullPayload": {
+      "types": "./src/node/fullPayload.ts",
+      "import": "./src/node/fullPayload.ts",
+      "require": "./dist/node/fullPayload.js",
+      "default": "./src/node/fullPayload.ts"
+    },
+    "./node/importPlan": {
+      "types": "./src/node/importPlan.ts",
+      "import": "./src/node/importPlan.ts",
+      "require": "./dist/node/importPlan.js",
+      "default": "./src/node/importPlan.ts"
+    },
+    "./legacyRecords": {
+      "types": "./src/legacyRecords.ts",
+      "import": "./src/legacyRecords.ts",
+      "require": "./dist/legacyRecords.js",
+      "default": "./src/legacyRecords.ts"
+    },
+    "./coldStorage": {
+      "types": "./src/coldStorage.ts",
+      "import": "./src/coldStorage.ts",
+      "require": "./dist/coldStorage.js",
+      "default": "./src/coldStorage.ts"
+    },
+    "./inlayCodec": {
+      "types": "./src/inlayCodec.ts",
+      "import": "./src/inlayCodec.ts",
+      "require": "./dist/inlayCodec.js",
+      "default": "./src/inlayCodec.ts"
     }
   },
   "scripts": {

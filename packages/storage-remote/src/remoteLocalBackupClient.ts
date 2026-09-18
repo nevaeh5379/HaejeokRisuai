@@ -6,6 +6,9 @@ import type {
   LocalBackupExportJobCreateInput,
   LocalBackupExportJobCreated,
   LocalBackupExportJobProgress,
+  LocalBackupImportJobCompletion,
+  LocalBackupImportJobCreated,
+  LocalBackupImportJobProgress,
 } from "@risuai/backup-core/api";
 import {
   validateLocalBackupDatabaseStreamFinalizeResult,
@@ -13,6 +16,9 @@ import {
   validateLocalBackupExportJobCompletion,
   validateLocalBackupExportJobCreated,
   validateLocalBackupExportJobProgress,
+  validateLocalBackupImportJobCompletion,
+  validateLocalBackupImportJobCreated,
+  validateLocalBackupImportJobProgress,
 } from "@risuai/backup-core/api";
 import type { NodeApiClient } from "./nodeApiClient";
 
@@ -203,6 +209,86 @@ export class RemoteLocalBackupClient {
       return await this.error(response, "Local backup export failed");
     }
     return validateLocalBackupExportJobCompletion(await response.json());
+  }
+
+  async createImportJob(
+    signal?: AbortSignal,
+  ): Promise<LocalBackupImportJobCreated> {
+    const response = await this.apiClient.request(
+      "/api/local-backup/import/jobs",
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: await this.authHeaders(),
+        signal,
+      },
+    );
+    if (!response.ok) {
+      return await this.error(response, "Could not create local backup import");
+    }
+    return validateLocalBackupImportJobCreated(await response.json());
+  }
+
+  async getImportProgress(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<LocalBackupImportJobProgress> {
+    const response = await this.apiClient.request(
+      `/api/local-backup/import/jobs/${encodeURIComponent(id)}/progress`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: await this.authHeaders(),
+        signal,
+      },
+    );
+    if (!response.ok) {
+      return await this.error(response, "Could not read backup import progress");
+    }
+    return validateLocalBackupImportJobProgress(await response.json());
+  }
+
+  async waitForImport(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<LocalBackupImportJobCompletion> {
+    const response = await this.apiClient.request(
+      `/api/local-backup/import/jobs/${encodeURIComponent(id)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: await this.authHeaders(),
+        signal,
+      },
+    );
+    if (!response.ok) {
+      return await this.error(response, "Local backup import failed");
+    }
+    return validateLocalBackupImportJobCompletion(await response.json());
+  }
+
+  async uploadImportFile(
+    id: string,
+    file: Blob,
+    signal?: AbortSignal,
+  ): Promise<LocalBackupImportJobCompletion> {
+    const response = await this.apiClient.request(
+      `/api/local-backup/import/jobs/${encodeURIComponent(id)}/file`,
+      {
+        method: "PUT",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/octet-stream",
+          ...(await this.authHeaders()),
+        },
+        body: file,
+        signal,
+      },
+    );
+    if (!response.ok) {
+      return await this.error(response, "Could not import local backup");
+    }
+    return validateLocalBackupImportJobCompletion(await response.json());
   }
 
   async getExportDownloadUrl(id: string): Promise<string> {

@@ -1,9 +1,24 @@
+export type BackupEntryKind =
+  | "database"
+  | "databaseStream"
+  | "encryption"
+  | "coldStorage"
+  | "inlay"
+  | "asset"
+  | "extension"
+  | "invalid";
+
+export interface BackupEntryClassification {
+  kind: BackupEntryKind;
+  normalized: string | null;
+}
+
 const COLD_STORAGE_RE =
   /^(?:coldstorage[\/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/;
 const INLAY_RE =
   /^inlay_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.risuinlay$/;
 
-function normalizeBackupEntryName(name) {
+function normalizeBackupEntryName(name: string): string | null {
   if (typeof name !== "string") return null;
   const normalized = name.replace(/\\/g, "/");
   const segments = normalized.split("/");
@@ -17,7 +32,7 @@ function normalizeBackupEntryName(name) {
   return normalized;
 }
 
-function classifyBackupEntry(name) {
+function classifyBackupEntry(name: string): BackupEntryClassification {
   const normalized = normalizeBackupEntryName(name);
   if (!normalized) return { kind: "invalid", normalized: null };
   if (normalized === "database.risudat")
@@ -37,7 +52,36 @@ function classifyBackupEntry(name) {
   return { kind: "extension", normalized };
 }
 
-function getInlayBackupKey(name) {
+function getColdStorageBackupKey(name: string): string | null {
+  const normalized = normalizeBackupEntryName(name);
+  if (!normalized) return null;
+  const match = normalized.match(
+    /^(?:coldstorage[\/_])?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.json$/,
+  );
+  return match?.[1] ?? null;
+}
+
+function normalizeBackupAssetPath(name: string): string {
+  const normalizedName = name.replace(/\\/g, "/");
+  const segments = normalizedName.split("/");
+
+  while (segments[0] === "assets") {
+    segments.shift();
+  }
+
+  if (
+    segments.length === 0 ||
+    segments.some(
+      (segment) => segment === "" || segment === "." || segment === "..",
+    )
+  ) {
+    throw new Error(`Invalid backup asset path: ${name}`);
+  }
+
+  return `assets/${segments.join("/")}`;
+}
+
+function getInlayBackupKey(name: string): string | null {
   const normalized = normalizeBackupEntryName(name);
   if (!normalized) return null;
   return INLAY_RE.exec(normalized)?.[1] ?? null;
@@ -48,5 +92,7 @@ export {
   INLAY_RE,
   normalizeBackupEntryName,
   classifyBackupEntry,
+  getColdStorageBackupKey,
+  normalizeBackupAssetPath,
   getInlayBackupKey,
 };

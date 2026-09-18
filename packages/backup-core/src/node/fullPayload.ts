@@ -1,51 +1,56 @@
-"use strict";
+import { randomUUID } from "node:crypto";
+import settings from "../../../protocol/settings.json";
 
-const crypto = require("crypto");
-const {
-  LEGACY_PERSONA_MIRROR_KEYS,
-} = require("../../packages/protocol/settings.json");
+const LEGACY_PERSONA_MIRROR_KEY_SET = new Set<string>(
+  settings.LEGACY_PERSONA_MIRROR_KEYS,
+);
 
-const LEGACY_PERSONA_MIRROR_KEY_SET = new Set(LEGACY_PERSONA_MIRROR_KEYS);
+export interface FullBackupPayloadOptions {
+  idFactory?: () => string;
+}
 
-/**
- * 전체(loaded) database 객체에서 백업용 full sync payload를 구성한다.
- * SQL commit/replace payload와 동일한 정규화 형태를
- * 유지하며, replaceAll: true로 백업 DB 전체를 덮어쓴다.
- * baseRevision은 0으로 반환되며, 호출자가 실행 시점의 백업 revision으로 교체한다.
- */
-function buildFullBackupPayload(database) {
+export function buildFullBackupPayload(
+  database: Record<string, any>,
+  options: FullBackupPayloadOptions = {},
+) {
   if (!database || typeof database !== "object" || Array.isArray(database)) {
     throw new TypeError("buildFullBackupPayload requires a database object");
   }
-  const rootUpserts = [];
+
+  const idFactory = options.idFactory ?? randomUUID;
+  const rootUpserts: Array<{ key: string; value: unknown }> = [];
   for (const [key, value] of Object.entries(database)) {
     if (
       key === "characters" ||
       value === undefined ||
       value === null ||
       LEGACY_PERSONA_MIRROR_KEY_SET.has(key)
-    )
+    ) {
       continue;
+    }
     rootUpserts.push({ key, value });
   }
-  const characters = [];
-  const characterIds = [];
-  const chats = [];
-  const chatManifests = [];
-  const messages = [];
-  const messageManifests = [];
+
+  const characters: any[] = [];
+  const characterIds: string[] = [];
+  const chats: any[] = [];
+  const chatManifests: any[] = [];
+  const messages: any[] = [];
+  const messageManifests: any[] = [];
   const sourceCharacters = Array.isArray(database.characters)
     ? database.characters
     : [];
+
   for (
     let characterPosition = 0;
     characterPosition < sourceCharacters.length;
     characterPosition++
   ) {
     const character = sourceCharacters[characterPosition];
-    const characterId = character.chaId || crypto.randomUUID();
+    const characterId = character.chaId || idFactory();
     character.chaId = characterId;
     characterIds.push(characterId);
+
     const {
       chats: _chats,
       chaId: _chaId,
@@ -57,17 +62,19 @@ function buildFullBackupPayload(database) {
       position: characterPosition,
       data: characterData,
     });
+
     const sourceChats = Array.isArray(character.chats) ? character.chats : [];
-    const chatIds = [];
+    const chatIds: string[] = [];
     for (
       let chatPosition = 0;
       chatPosition < sourceChats.length;
       chatPosition++
     ) {
       const chat = sourceChats[chatPosition];
-      const chatId = chat.id || crypto.randomUUID();
+      const chatId = chat.id || idFactory();
       chat.id = chatId;
       chatIds.push(chatId);
+
       const {
         message: _message,
         id: _id,
@@ -81,7 +88,8 @@ function buildFullBackupPayload(database) {
         position: chatPosition,
         data: chatData,
       });
-      const messageIds = [];
+
+      const messageIds: string[] = [];
       if (chat.messagesLoaded !== false) {
         const sourceMessages = Array.isArray(chat.message) ? chat.message : [];
         for (
@@ -90,26 +98,28 @@ function buildFullBackupPayload(database) {
           messagePosition++
         ) {
           const message = sourceMessages[messagePosition];
-          const messageId = message.chatId || crypto.randomUUID();
+          const messageId = message.chatId || idFactory();
           message.chatId = messageId;
           messageIds.push(messageId);
+
           const { chatId: _messageId, ...messageData } = message;
           messages.push({
             id: messageId,
-            chatId: chatId,
+            chatId,
             position: messagePosition,
             data: messageData,
           });
         }
       }
-      messageManifests.push({ chatId: chatId, ids: messageIds });
+      messageManifests.push({ chatId, ids: messageIds });
     }
     chatManifests.push({ characterId, ids: chatIds });
   }
+
   return {
     replaceAll: true,
     baseRevision: 0,
-    root: { upserts: rootUpserts, deletes: [] },
+    root: { upserts: rootUpserts, deletes: [] as string[] },
     characters,
     characterIds,
     chats,
@@ -118,7 +128,3 @@ function buildFullBackupPayload(database) {
     messageManifests,
   };
 }
-
-module.exports = {
-  buildFullBackupPayload,
-};

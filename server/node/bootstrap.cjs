@@ -21,11 +21,19 @@ const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/assetScope.js"),
   path.join(backupCoreRoot, "dist/compatibility.js"),
+  path.join(backupCoreRoot, "dist/coldStorage.js"),
+  path.join(backupCoreRoot, "dist/inlayCodec.js"),
+  path.join(backupCoreRoot, "dist/containerStream.js"),
   path.join(backupCoreRoot, "dist/entryPolicy.js"),
+  path.join(backupCoreRoot, "dist/legacyRecords.js"),
   path.join(backupCoreRoot, "dist/portableBranches.js"),
   path.join(backupCoreRoot, "dist/api.js"),
   path.join(backupCoreRoot, "dist/node/databaseStreamStore.js"),
   path.join(backupCoreRoot, "dist/node/exportJobStore.js"),
+  path.join(backupCoreRoot, "dist/node/fullPayload.js"),
+  path.join(backupCoreRoot, "dist/node/importJobStore.js"),
+  path.join(backupCoreRoot, "dist/node/importPlan.js"),
+  path.join(backupCoreRoot, "dist/node/importStagingStore.js"),
   path.join(backupCoreRoot, "dist/node/legacyFormat.js"),
 ];
 const backupCoreSources = [
@@ -34,10 +42,18 @@ const backupCoreSources = [
   path.join(backupCoreRoot, "src/api.ts"),
   path.join(backupCoreRoot, "src/assetScope.ts"),
   path.join(backupCoreRoot, "src/compatibility.ts"),
+  path.join(backupCoreRoot, "src/coldStorage.ts"),
+  path.join(backupCoreRoot, "src/inlayCodec.ts"),
+  path.join(backupCoreRoot, "src/containerStream.ts"),
   path.join(backupCoreRoot, "src/entryPolicy.ts"),
+  path.join(backupCoreRoot, "src/legacyRecords.ts"),
   path.join(backupCoreRoot, "src/portableBranches.ts"),
   path.join(backupCoreRoot, "src/node/databaseStreamStore.ts"),
   path.join(backupCoreRoot, "src/node/exportJobStore.ts"),
+  path.join(backupCoreRoot, "src/node/fullPayload.ts"),
+  path.join(backupCoreRoot, "src/node/importJobStore.ts"),
+  path.join(backupCoreRoot, "src/node/importPlan.ts"),
+  path.join(backupCoreRoot, "src/node/importStagingStore.ts"),
   path.join(backupCoreRoot, "src/node/legacyFormat.ts"),
 ];
 
