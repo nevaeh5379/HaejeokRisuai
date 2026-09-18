@@ -75,6 +75,13 @@
         const value = Number.parseFloat($alertStore.submsg ?? '0')
         return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0
     });
+    const progressSteps = $derived($alertStore.progressSteps ?? []);
+    const progressStepIndex = $derived.by(() => {
+        if (progressSteps.length === 0) return -1
+        const current = Number($alertStore.progressStep ?? 0)
+        if (!Number.isFinite(current)) return 0
+        return Math.max(0, Math.min(progressSteps.length - 1, Math.floor(current)))
+    });
 
     let btn
     let input = $state('')
@@ -389,6 +396,53 @@
                         <AirisuMascot variant="progress" decorative className="h-24 w-24 drop-shadow-md" />
                     </div>
                 </div>
+
+                {#if progressSteps.length > 1}
+                    <div class="mb-4 flex w-full min-w-64 items-start md:min-w-138" aria-label={$alertStore.msg}>
+                        {#each progressSteps as step, index}
+                            {#if index > 0}
+                                <div
+                                    class="mt-3.5 h-0.5 min-w-2 flex-1 rounded-full transition-colors duration-300 sm:mt-4.5"
+                                    class:bg-green-500={index <= progressStepIndex}
+                                    class:bg-darkborderc={index > progressStepIndex}
+                                    aria-hidden="true"
+                                ></div>
+                            {/if}
+                            <div class="flex w-7 shrink-0 flex-col items-center sm:w-18">
+                                <div
+                                    class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-all duration-300 sm:h-9 sm:w-9 sm:text-xs"
+                                    class:border-green-500={index <= progressStepIndex}
+                                    class:bg-green-600={index < progressStepIndex}
+                                    class:text-white={index <= progressStepIndex}
+                                    class:bg-darkbutton={index > progressStepIndex}
+                                    class:border-darkborderc={index > progressStepIndex}
+                                    class:text-textcolor2={index > progressStepIndex}
+                                    class:ring-2={index === progressStepIndex}
+                                    class:ring-green-400={index === progressStepIndex}
+                                    class:ring-offset-2={index === progressStepIndex}
+                                    class:ring-offset-darkbg={index === progressStepIndex}
+                                    aria-current={index === progressStepIndex ? 'step' : undefined}
+                                    title={step}
+                                >
+                                    {#if index < progressStepIndex}
+                                        <CheckIcon size={15} strokeWidth={3} />
+                                    {:else if index === progressStepIndex}
+                                        <span class="h-2 w-2 animate-pulse rounded-full bg-current" aria-hidden="true"></span>
+                                    {:else}
+                                        {index + 1}
+                                    {/if}
+                                </div>
+                                <span
+                                    class="mt-2 hidden max-w-18 text-center text-[10px] leading-tight sm:block"
+                                    class:font-semibold={index === progressStepIndex}
+                                    class:text-green-400={index === progressStepIndex}
+                                    class:text-textcolor2={index !== progressStepIndex}
+                                >{step}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+
                 <div class="flex w-full min-w-64 items-center gap-3 md:min-w-138">
                     <div
                         class="h-2 flex-1 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"

@@ -39,6 +39,8 @@ export interface alertData {
   stackTrace?: string;
   defaultValue?: string;
   mascot?: "help" | "backup";
+  progressSteps?: string[];
+  progressStep?: number;
 }
 
 type AlertGenerationInfoStoreData = {
@@ -205,6 +207,10 @@ export function alertProgress(
   msg: string,
   progress: number | string,
   mascot?: "backup",
+  stepState?: {
+    steps: string[];
+    currentStep: number;
+  },
 ) {
   const percentStr =
     typeof progress === "number"
@@ -215,6 +221,8 @@ export function alertProgress(
     msg: msg,
     submsg: percentStr,
     mascot,
+    progressSteps: stepState?.steps,
+    progressStep: stepState?.currentStep,
   });
 }
 

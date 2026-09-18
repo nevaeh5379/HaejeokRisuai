@@ -36,6 +36,8 @@ type AlertData = {
   stackTrace?: string;
   defaultValue?: string;
   mascot?: "help" | "backup";
+  progressSteps?: string[];
+  progressStep?: number;
 };
 
 type PluginSafetyError = {

@@ -102,8 +102,11 @@ import {
   type LocalBackupPerformanceSettings,
 } from "../storage/backup/localBackupPerformance";
 
-const alertProgress = (msg: string, progress: number | string) =>
-  showProgressAlert(msg, progress, "backup");
+const alertProgress = (
+  msg: string,
+  progress: number | string,
+  stepState?: { steps: string[]; currentStep: number },
+) => showProgressAlert(msg, progress, "backup", stepState);
 
 type LocalBackupProgressStage =
   | "selectingDestination"
@@ -113,6 +116,16 @@ type LocalBackupProgressStage =
   | "assets"
   | "inlays"
   | "finalizing";
+
+const LOCAL_BACKUP_PROGRESS_STAGE_ORDER: LocalBackupProgressStage[] = [
+  "selectingDestination",
+  "preparing",
+  "database",
+  "coldStorage",
+  "assets",
+  "inlays",
+  "finalizing",
+];
 
 const LOCAL_BACKUP_PROGRESS_RANGES: Record<
   LocalBackupProgressStage,
@@ -162,7 +175,14 @@ function reportLocalBackupProgress(
   const percent = options.percent ?? start + (end - start) * ratio;
   const count = total > 0 ? ` (${current} / ${total})` : "";
   const detail = options.detail ? `\n${options.detail}` : "";
-  alertProgress(`${localBackupProgressLabel(stage)}${count}${detail}`, percent);
+  alertProgress(
+    `${localBackupProgressLabel(stage)}${count}${detail}`,
+    percent,
+    {
+      steps: LOCAL_BACKUP_PROGRESS_STAGE_ORDER.map(localBackupProgressLabel),
+      currentStep: LOCAL_BACKUP_PROGRESS_STAGE_ORDER.indexOf(stage),
+    },
+  );
 }
 
 type LocalBackupRestoreStage =
@@ -171,6 +191,14 @@ type LocalBackupRestoreStage =
   | "database"
   | "branches"
   | "finalizing";
+
+const LOCAL_BACKUP_RESTORE_STAGE_ORDER: LocalBackupRestoreStage[] = [
+  "selectingSource",
+  "reading",
+  "database",
+  "branches",
+  "finalizing",
+];
 
 const LOCAL_BACKUP_RESTORE_RANGES: Record<
   LocalBackupRestoreStage,
@@ -212,7 +240,14 @@ function reportLocalBackupRestoreProgress(
   const ratio = total > 0 ? current / total : 0;
   const percent = options.percent ?? start + (end - start) * ratio;
   const count = total > 0 ? ` (${current} / ${total})` : "";
-  alertProgress(`${localBackupRestoreLabel(stage)}${count}`, percent);
+  alertProgress(
+    `${localBackupRestoreLabel(stage)}${count}`,
+    percent,
+    {
+      steps: LOCAL_BACKUP_RESTORE_STAGE_ORDER.map(localBackupRestoreLabel),
+      currentStep: LOCAL_BACKUP_RESTORE_STAGE_ORDER.indexOf(stage),
+    },
+  );
 }
 
 function getLocalBackupPerformance(): LocalBackupPerformanceSettings {
