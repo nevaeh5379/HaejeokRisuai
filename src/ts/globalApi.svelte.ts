@@ -51,7 +51,7 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
-import { normalizeBackupEntryName } from "@risuai/backup-core/entryPolicy.cjs";
+import { normalizeBackupEntryName } from "@risuai/backup-core/entryPolicy";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";

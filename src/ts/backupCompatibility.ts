@@ -5,7 +5,7 @@ import {
   expandChatBranchesForCompatibility as expandChatBranchesCore,
   makeLegacyCompatibleDatabase as makeLegacyCompatibleDatabaseCore,
   materializeColdCharacterForCompatibility as materializeColdCharacterCore,
-} from "@risuai/backup-core/compatibility.cjs";
+} from "@risuai/backup-core/compatibility";
 import { safeStructuredClone } from "./polyfill";
 import { coldStorageHeader } from "./process/coldstorageData";
 import type { Chat, character, groupChat } from "./storage/database/schema";

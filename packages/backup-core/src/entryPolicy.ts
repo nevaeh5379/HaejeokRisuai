@@ -1,5 +1,3 @@
-"use strict";
-
 const COLD_STORAGE_RE =
   /^(?:coldstorage[\/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/;
 const INLAY_RE =
@@ -45,7 +43,7 @@ function getInlayBackupKey(name) {
   return INLAY_RE.exec(normalized)?.[1] ?? null;
 }
 
-module.exports = {
+export {
   COLD_STORAGE_RE,
   INLAY_RE,
   normalizeBackupEntryName,

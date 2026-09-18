@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyBackupEntry,
   getInlayBackupKey,
-} from "@risuai/backup-core/entryPolicy.cjs";
+} from "@risuai/backup-core/entryPolicy";
 
 describe("backup entry policy", () => {
   it("keeps core entries and supported asset layouts", () => {

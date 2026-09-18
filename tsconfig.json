@@ -16,7 +16,7 @@
       "src/*": ["./src/*"],
       "@risuai/chat-core/*": ["./packages/chat-core/*"],
       "@risuai/protocol/*": ["./packages/protocol/*"],
-      "@risuai/backup-core/*": ["./packages/backup-core/*"],
+      "@risuai/backup-core/*": ["./packages/backup-core/src/*"],
       "@risuai/storage-core/*": ["./packages/storage-core/src/*"],
       "@risuai/storage-remote/*": ["./packages/storage-remote/src/*"],
       "@risuai/storage-sqlite/*": ["./packages/storage-sqlite/src/*"]

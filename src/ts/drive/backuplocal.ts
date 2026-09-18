@@ -74,13 +74,13 @@ import { Buffer } from "buffer";
 import {
   classifyBackupEntry,
   getInlayBackupKey,
-} from "@risuai/backup-core/entryPolicy.cjs";
+} from "@risuai/backup-core/entryPolicy";
 import {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
   loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
-} from "@risuai/backup-core/portableBranches.cjs";
+} from "@risuai/backup-core/portableBranches";
 import { restorePortableDatabaseBranchGraphs } from "../storage/sql/portableBranchRestore";
 import {
   decodeInlayAssetBackup,

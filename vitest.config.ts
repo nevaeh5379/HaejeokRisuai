@@ -21,7 +21,10 @@ export default defineConfig({
         process.cwd(),
         "packages/storage-sqlite/src",
       ),
-      "@risuai/backup-core": resolve(process.cwd(), "packages/backup-core"),
+      "@risuai/backup-core": resolve(
+        process.cwd(),
+        "packages/backup-core/src",
+      ),
     },
     conditions: ["browser"],
   },

@@ -1,4 +1,23 @@
-"use strict";
+export interface PortableBranchGraph {
+  branches: Array<{
+    id: string;
+    chatId: string;
+    parentBranchId?: string;
+    forkMessageId?: string;
+    headMessageId?: string;
+    reason: "root" | "manual" | "reroll";
+    createdAt: number;
+  }>;
+  activeBranchId?: string;
+  messages: Array<Record<string, any> & { chatId?: string }>;
+  links: Array<{
+    messageId: string;
+    parentMessageId?: string;
+    originBranchId: string;
+  }>;
+}
+
+export type PortableBranchGraphMap = Record<string, PortableBranchGraph>;
 
 const NATIVE_BRANCH_GRAPHS_KEY = "haejeokBranchGraphs";
 
@@ -7,7 +26,7 @@ function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function randomUUID() {
+function randomUUID(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   throw new Error("A portable branch idFactory is required");
 }
@@ -283,7 +302,7 @@ function expandPortableDatabaseBranchGraphsForCompatibility(
   return database;
 }
 
-module.exports = {
+export {
   NATIVE_BRANCH_GRAPHS_KEY,
   attachPortableDatabaseBranchGraphs,
   loadPortableBranchGraphForExport,

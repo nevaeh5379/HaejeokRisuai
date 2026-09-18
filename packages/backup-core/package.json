@@ -1,19 +1,13 @@
 {
   "name": "@risuai/backup-core",
   "private": true,
-  "type": "commonjs",
-  "main": "./compatibility.cjs",
-  "types": "./compatibility.d.cts",
+  "type": "module",
   "exports": {
-    ".": {
-      "types": "./compatibility.d.cts",
-      "require": "./compatibility.cjs",
-      "default": "./compatibility.cjs"
-    },
-    "./*": {
-      "types": "./*.d.cts",
-      "require": "./*.cjs",
-      "default": "./*.cjs"
-    }
+    "./compatibility": "./src/compatibility.ts",
+    "./entryPolicy": "./src/entryPolicy.ts",
+    "./portableBranches": "./src/portableBranches.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
   }
 }

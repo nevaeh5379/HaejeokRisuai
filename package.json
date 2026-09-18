@@ -19,7 +19,7 @@
     "build:server": "node tooling/build-node-server.mjs",
     "tauribuild": "pnpm run check:server && vite build",
     "preview": "vite preview",
-    "check": "pnpm run check:protocol && pnpm run check:server && svelte-check --tsconfig ./tsconfig.json",
+    "check": "pnpm run check:backup-core && pnpm run check:protocol && pnpm run check:server && svelte-check --tsconfig ./tsconfig.json",
     "check:server-types": "tsc -p server/node/tsconfig.server.json --noEmit",
     "check:server-mutation-types": "tsc -p server/node/tsconfig.mutations.json --noEmit",
     "check:server-mutations": "node tooling/check-server-storage-mutations.mjs",
@@ -48,7 +48,8 @@
     "android:build:debug": "pnpm run android:sync && cd android && ./gradlew assembleDebug",
     "sync": "node electron/sync",
     "electron": "node electron/dist/electron",
-    "hono:build": "pnpm check && vite build --sourcemap && node server/hono/src/utils/postbuild.js"
+    "hono:build": "pnpm check && vite build --sourcemap && node server/hono/src/utils/postbuild.js",
+    "check:backup-core": "pnpm --dir packages/backup-core check"
   },
   "dependencies": {
     "@adobe/css-tools": "4.5.0",

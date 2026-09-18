@@ -14,7 +14,7 @@ import {
   iterateStorageSyncSqlRecords,
   type StorageSyncSqlRecord,
 } from "../runtime/storageSyncSource";
-import { NATIVE_BRANCH_GRAPHS_KEY } from "@risuai/backup-core/portableBranches.cjs";
+import { NATIVE_BRANCH_GRAPHS_KEY } from "@risuai/backup-core/portableBranches";
 import {
   DEFAULT_LOCAL_BACKUP_PERFORMANCE,
   LOCAL_BACKUP_PERFORMANCE_LIMITS,

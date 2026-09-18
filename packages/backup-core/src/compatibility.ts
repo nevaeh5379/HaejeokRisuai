@@ -1,8 +1,16 @@
-"use strict";
+export type CloneValue = <T>(value: T) => T;
+export type IdFactory = () => string;
+export type ColdStorageValueMap = ReadonlyMap<string, unknown>;
+
+export interface CompatibilityOptions {
+  cloneValue?: CloneValue;
+  coldStorageHeader?: string;
+  idFactory?: IdFactory;
+}
 
 const COLD_STORAGE_HEADER = "\uEF01COLDSTORAGE\uEF01";
 
-function randomUUID() {
+function randomUUID(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   throw new Error("A backup compatibility idFactory is required");
 }
@@ -11,10 +19,10 @@ function defaultClone(value) {
   return structuredClone(value);
 }
 
-function resolveOptions(options = {}) {
+function resolveOptions(options: CompatibilityOptions = {}) {
   return {
-    cloneValue: options.cloneValue || defaultClone,
-    coldStorageHeader: options.coldStorageHeader || COLD_STORAGE_HEADER,
+    cloneValue: options.cloneValue ?? defaultClone,
+    coldStorageHeader: options.coldStorageHeader ?? COLD_STORAGE_HEADER,
   };
 }
 
@@ -267,9 +275,9 @@ function expandCharactersForCompatibility(
 }
 
 function makeLegacyCompatibleDatabase(
-  database,
-  coldStorageValues = new Map(),
-  options = {},
+  database: any,
+  coldStorageValues: ColdStorageValueMap = new Map(),
+  options: CompatibilityOptions = {},
 ) {
   if (!database || typeof database !== "object") return database;
   const portable = { ...database };
@@ -290,7 +298,7 @@ function makeLegacyCompatibleDatabase(
   return portable;
 }
 
-module.exports = {
+export {
   COLD_STORAGE_HEADER,
   materializeColdCharacterForCompatibility,
   expandChatBranchesForCompatibility,
