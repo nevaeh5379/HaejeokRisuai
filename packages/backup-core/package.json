@@ -98,6 +98,12 @@
       "import": "./src/inlayCodec.ts",
       "require": "./dist/inlayCodec.js",
       "default": "./src/inlayCodec.ts"
+    },
+    "./node/legacyStream": {
+      "types": "./src/node/legacyStream.ts",
+      "import": "./src/node/legacyStream.ts",
+      "require": "./dist/node/legacyStream.js",
+      "default": "./src/node/legacyStream.ts"
     }
   },
   "scripts": {

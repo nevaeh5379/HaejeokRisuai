@@ -173,6 +173,10 @@ const {
   iterateLegacyBackupSqlRecords,
 } = require("../../packages/backup-core/dist/legacyRecords.js");
 const {
+  LegacyBackupStreamingUnsupportedError,
+  streamLegacyBackupDatabaseToSqlNdjson,
+} = require("../../packages/backup-core/dist/node/legacyStream.js");
+const {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
 } = require("../../packages/protocol/storageSyncValueCodec.cjs");
@@ -4899,7 +4903,53 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
     stage: "database",
     current: 0,
     total: 0,
-    detail: "Decoding legacy database",
+    detail: "Streaming legacy database",
+  });
+
+  const sqlPath = `${databaseEntry.filePath}.sql.ndjson`;
+  try {
+    const streamed = await streamLegacyBackupDatabaseToSqlNdjson(
+      databaseEntry.filePath,
+      {
+        outputPath: sqlPath,
+        encodeRecord: encodeStorageSyncValue,
+        idFactory: () => crypto.randomUUID(),
+        sourceRevision: 0,
+        onProgress(progress) {
+          localBackupImportJobs.updateProgress(jobId, {
+            stage: "database",
+            current: progress.records,
+            total: 0,
+            detail: `Streaming legacy database · ${progress.phase}`,
+          });
+        },
+      },
+    );
+    return {
+      sourceRevision: streamed.sourceRevision,
+      recordCount: streamed.recordCount,
+      sqlStaging: createLocalBackupSqlStaging(
+        streamed.outputPath,
+        streamed.recordCount,
+        streamed.sourceRevision,
+      ),
+    };
+  } catch (error) {
+    if (!(error instanceof LegacyBackupStreamingUnsupportedError)) {
+      await fs.rm(sqlPath, { force: true }).catch(() => {});
+      throw error;
+    }
+    await fs.rm(sqlPath, { force: true }).catch(() => {});
+    console.info(
+      `[Local backup] Falling back to compatibility decoder: ${error.message}`,
+    );
+  }
+
+  localBackupImportJobs.updateProgress(jobId, {
+    stage: "database",
+    current: 0,
+    total: 0,
+    detail: "Decoding legacy compatibility format",
   });
 
   let database = decodeLegacyBackupDatabase(
@@ -4909,7 +4959,6 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
     throw new Error("Legacy backup database payload is invalid");
   }
 
-  const sqlPath = `${databaseEntry.filePath}.sql.ndjson`;
   const output = fsSync.createWriteStream(sqlPath, {
     flags: "wx",
     mode: 0o600,
@@ -4938,7 +4987,7 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
           stage: "database",
           current: recordCount,
           total: 0,
-          detail: "Converting legacy database",
+          detail: "Converting legacy compatibility database",
         });
       }
     }
@@ -4955,11 +5004,7 @@ async function stageLegacyBackupSqlRecords(jobId, databaseEntry) {
   return {
     sourceRevision: 0,
     recordCount,
-    sqlStaging: createLocalBackupSqlStaging(
-      sqlPath,
-      recordCount,
-      0,
-    ),
+    sqlStaging: createLocalBackupSqlStaging(sqlPath, recordCount, 0),
   };
 }
 

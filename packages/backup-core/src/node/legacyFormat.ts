@@ -1,5 +1,5 @@
 import { promisify } from "node:util";
-import { deflate, inflateSync } from "node:zlib";
+import { gzip, gunzipSync, inflateSync } from "node:zlib";
 import { Packr, Unpackr } from "msgpackr";
 import { makeLegacyCompatibleDatabase } from "../compatibility";
 
@@ -10,9 +10,23 @@ const COMPRESSED_HEADER = Buffer.from([
 
 const packr = new Packr({ useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });
-const deflateAsync = promisify(deflate) as (
+const gzipAsync = promisify(gzip) as (
   input: Uint8Array,
 ) => Promise<Buffer>;
+
+function decodeCompressedLegacyPayload(payload: Uint8Array): Uint8Array {
+  try {
+    return gunzipSync(payload);
+  } catch (gzipError) {
+    try {
+      // Transitional HaejeokRisu server builds wrote zlib-wrapped deflate
+      // bytes behind the same legacy header. Keep those backups readable.
+      return inflateSync(payload);
+    } catch {
+      throw gzipError;
+    }
+  }
+}
 
 export function createLocalBackupEntryHeader(
   name: string,
@@ -48,7 +62,7 @@ export async function encodeLegacyBackupDatabase(
   database: unknown,
 ): Promise<Buffer> {
   const packed = packr.encode(database);
-  const compressed = await deflateAsync(packed);
+  const compressed = await gzipAsync(packed);
   return Buffer.concat([COMPRESSED_HEADER, compressed]);
 }
 
@@ -58,7 +72,9 @@ export function decodeLegacyBackupDatabase(data: Uint8Array): unknown {
     buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)
   ) {
     return unpackr.decode(
-      inflateSync(buffer.subarray(COMPRESSED_HEADER.length)),
+      decodeCompressedLegacyPayload(
+        buffer.subarray(COMPRESSED_HEADER.length),
+      ),
     );
   }
   if (buffer.subarray(0, RAW_HEADER.length).equals(RAW_HEADER)) {

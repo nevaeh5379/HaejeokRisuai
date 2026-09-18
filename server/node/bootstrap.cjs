@@ -35,6 +35,7 @@ const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/node/importPlan.js"),
   path.join(backupCoreRoot, "dist/node/importStagingStore.js"),
   path.join(backupCoreRoot, "dist/node/legacyFormat.js"),
+  path.join(backupCoreRoot, "dist/node/legacyStream.js"),
 ];
 const backupCoreSources = [
   path.join(backupCoreRoot, "build.mjs"),
@@ -55,6 +56,7 @@ const backupCoreSources = [
   path.join(backupCoreRoot, "src/node/importPlan.ts"),
   path.join(backupCoreRoot, "src/node/importStagingStore.ts"),
   path.join(backupCoreRoot, "src/node/legacyFormat.ts"),
+  path.join(backupCoreRoot, "src/node/legacyStream.ts"),
 ];
 
 function isStale(source, output) {
