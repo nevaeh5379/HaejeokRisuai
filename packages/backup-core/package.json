@@ -3,11 +3,39 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./compatibility": "./src/compatibility.ts",
-    "./entryPolicy": "./src/entryPolicy.ts",
-    "./portableBranches": "./src/portableBranches.ts"
+    "./compatibility": {
+      "types": "./src/compatibility.ts",
+      "import": "./src/compatibility.ts",
+      "require": "./dist/compatibility.js",
+      "default": "./src/compatibility.ts"
+    },
+    "./entryPolicy": {
+      "types": "./src/entryPolicy.ts",
+      "import": "./src/entryPolicy.ts",
+      "require": "./dist/entryPolicy.js",
+      "default": "./src/entryPolicy.ts"
+    },
+    "./portableBranches": {
+      "types": "./src/portableBranches.ts",
+      "import": "./src/portableBranches.ts",
+      "require": "./dist/portableBranches.js",
+      "default": "./src/portableBranches.ts"
+    },
+    "./api": {
+      "types": "./src/api.ts",
+      "import": "./src/api.ts",
+      "require": "./dist/api.js",
+      "default": "./src/api.ts"
+    },
+    "./node/databaseStreamStore": {
+      "types": "./src/node/databaseStreamStore.ts",
+      "import": "./src/node/databaseStreamStore.ts",
+      "require": "./dist/node/databaseStreamStore.js",
+      "default": "./src/node/databaseStreamStore.ts"
+    }
   },
   "scripts": {
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "build:node": "node build.mjs"
   }
 }

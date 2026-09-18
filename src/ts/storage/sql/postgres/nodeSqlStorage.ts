@@ -41,6 +41,7 @@ import {
 } from "@risuai/storage-remote/remoteDatabaseAdminClient";
 import { RemoteColdStorageClient } from "@risuai/storage-remote/remoteColdStorageClient";
 import { RemoteDatabaseBackupClient } from "@risuai/storage-remote/remoteDatabaseBackupClient";
+import { RemoteLocalBackupClient } from "@risuai/storage-remote/remoteLocalBackupClient";
 import {
   RemoteSqlCommitClient,
   NodeSqlPayloadTooLargeError,
@@ -188,6 +189,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private readonly databaseAdmin: RemoteDatabaseAdminClient;
   private readonly coldStorageClient: RemoteColdStorageClient;
   private readonly backupClient: RemoteDatabaseBackupClient;
+  private readonly localBackupClient: RemoteLocalBackupClient;
   private readonly commitClient: RemoteSqlCommitClient;
   private readonly readClient: RemoteSqlReadClient;
   private readonly documentClient: RemoteSqlDocumentClient;
@@ -266,6 +268,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.clientId,
     );
     this.backupClient = new RemoteDatabaseBackupClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
+    this.localBackupClient = new RemoteLocalBackupClient(
       this.apiClient,
       this.getAuth,
       this.clientId,
@@ -981,9 +988,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       throw new Error("SQL storage is not enabled");
     }
 
-    const auth = await this.getAuth();
     const remoteSession =
-      await this.apiClient.createLocalBackupDatabaseStreamSession(auth);
+      await this.localBackupClient.createDatabaseStreamSession();
     const validator = new PortableDatabaseStreamValidator();
     const textEncoder = new TextEncoder();
     const maxBatchRecords = 64;
@@ -1000,10 +1006,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         throw new Error("Portable database restore session is already closed");
       }
       const state =
-        await this.apiClient.appendLocalBackupDatabaseStreamRecords(
+        await this.localBackupClient.appendDatabaseStreamRecords(
           remoteSession.id,
           { fragmentIndex, records, fragmentComplete },
-          auth,
         );
       onProgress?.({ appliedRecords: state.recordCount });
     };
@@ -1054,10 +1059,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         }
         validator.finish(manifest);
         const result =
-          await this.apiClient.finalizeLocalBackupDatabaseStream(
+          await this.localBackupClient.finalizeDatabaseStream(
             remoteSession.id,
             manifest,
-            auth,
           );
         closed = true;
         this.revision = result.revision;
@@ -1065,8 +1069,8 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       abort: async () => {
         if (closed) return;
         closed = true;
-        await this.apiClient
-          .cancelLocalBackupDatabaseStream(remoteSession.id, auth)
+        await this.localBackupClient
+          .cancelDatabaseStream(remoteSession.id)
           .catch(() => {});
       },
     };

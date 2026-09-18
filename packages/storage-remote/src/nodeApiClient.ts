@@ -112,22 +112,6 @@ export interface NodeStorageSyncFinalizePreflight {
   skippedAssetsVerified: number;
 }
 
-export interface NodeLocalBackupDatabaseStreamSession {
-  id: string;
-  nextFragmentIndex: number;
-  recordCount: number;
-  createdAt: number;
-  expiresAt: number;
-}
-
-export interface NodeLocalBackupDatabaseStreamFinalizeResult {
-  status: "completed";
-  revision: number;
-  revisionId: number | string;
-  sourceRevision: number;
-  recordCount: number;
-}
-
 export interface NodeStorageSyncFinalizeResult {
   status: "completed";
   revision: number;
@@ -181,17 +165,6 @@ export class NodeStorageSyncFinalizeError extends Error {
   ) {
     super(message);
     this.name = "NodeStorageSyncFinalizeError";
-  }
-}
-
-export class NodeLocalBackupDatabaseStreamError extends Error {
-  constructor(
-    message: string,
-    readonly code: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "NodeLocalBackupDatabaseStreamError";
   }
 }
 
@@ -466,66 +439,6 @@ function validateStorageSyncFinalizeResult(
   return result as NodeStorageSyncFinalizeResult;
 }
 
-function validateLocalBackupDatabaseStreamSession(
-  value: unknown,
-): NodeLocalBackupDatabaseStreamSession {
-  const session =
-    value as Partial<NodeLocalBackupDatabaseStreamSession> | null;
-  if (
-    !session ||
-    typeof session.id !== "string" ||
-    !session.id ||
-    !isNonNegativeSafeInteger(session.nextFragmentIndex) ||
-    Number(session.nextFragmentIndex) < 1 ||
-    !isNonNegativeSafeInteger(session.recordCount) ||
-    !isNonNegativeSafeInteger(session.createdAt) ||
-    !isNonNegativeSafeInteger(session.expiresAt)
-  ) {
-    throw new NodeApiCompatibilityError(
-      "The storage server returned an invalid local backup database stream session.",
-    );
-  }
-  return session as NodeLocalBackupDatabaseStreamSession;
-}
-
-function validateLocalBackupDatabaseStreamFinalizeResult(
-  value: unknown,
-): NodeLocalBackupDatabaseStreamFinalizeResult {
-  const result =
-    value as Partial<NodeLocalBackupDatabaseStreamFinalizeResult> | null;
-  if (
-    !result ||
-    result.status !== "completed" ||
-    !isNonNegativeSafeInteger(result.revision) ||
-    !(
-      typeof result.revisionId === "string" ||
-      isNonNegativeSafeInteger(result.revisionId)
-    ) ||
-    !isNonNegativeSafeInteger(result.sourceRevision) ||
-    !isNonNegativeSafeInteger(result.recordCount)
-  ) {
-    throw new NodeApiCompatibilityError(
-      "The storage server returned an invalid local backup database finalize result.",
-    );
-  }
-  return result as NodeLocalBackupDatabaseStreamFinalizeResult;
-}
-
-async function localBackupDatabaseStreamError(
-  response: Response,
-): Promise<never> {
-  const body = await response.json().catch(() => ({}));
-  throw new NodeLocalBackupDatabaseStreamError(
-    typeof body?.error === "string"
-      ? body.error
-      : `Local backup database stream request failed (HTTP ${response.status}).`,
-    typeof body?.code === "string"
-      ? body.code
-      : "local_backup_database_stream_error",
-    response.status,
-  );
-}
-
 async function storageSyncAssetError(response: Response): Promise<never> {
   const body = await response.json().catch(() => ({}));
   throw new NodeStorageSyncAssetError(
@@ -603,92 +516,6 @@ export class NodeApiClient {
       );
     }
     return validateCapabilities(await response.json());
-  }
-
-  async createLocalBackupDatabaseStreamSession(
-    auth: string,
-    signal?: AbortSignal,
-  ): Promise<NodeLocalBackupDatabaseStreamSession> {
-    const response = await this.request(
-      "/api/local-backup/database-stream/sessions",
-      {
-        method: "POST",
-        cache: "no-store",
-        headers: { "risu-auth": auth },
-        signal,
-      },
-    );
-    if (!response.ok) return await localBackupDatabaseStreamError(response);
-    return validateLocalBackupDatabaseStreamSession(await response.json());
-  }
-
-  async appendLocalBackupDatabaseStreamRecords(
-    id: string,
-    input: {
-      fragmentIndex: number;
-      records: unknown[];
-      fragmentComplete: boolean;
-    },
-    auth: string,
-    signal?: AbortSignal,
-  ): Promise<NodeLocalBackupDatabaseStreamSession> {
-    const response = await this.request(
-      `/api/local-backup/database-stream/sessions/${encodeURIComponent(id)}/records`,
-      {
-        method: "PUT",
-        cache: "no-store",
-        headers: {
-          "content-type": "application/json",
-          "risu-auth": auth,
-        },
-        body: JSON.stringify(input),
-        signal,
-      },
-    );
-    if (!response.ok) return await localBackupDatabaseStreamError(response);
-    return validateLocalBackupDatabaseStreamSession(await response.json());
-  }
-
-  async finalizeLocalBackupDatabaseStream(
-    id: string,
-    manifest: unknown,
-    auth: string,
-    signal?: AbortSignal,
-  ): Promise<NodeLocalBackupDatabaseStreamFinalizeResult> {
-    const response = await this.request(
-      `/api/local-backup/database-stream/sessions/${encodeURIComponent(id)}/finalize`,
-      {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-          "content-type": "application/json",
-          "risu-auth": auth,
-        },
-        body: JSON.stringify({ manifest }),
-        signal,
-      },
-    );
-    if (!response.ok) return await localBackupDatabaseStreamError(response);
-    return validateLocalBackupDatabaseStreamFinalizeResult(
-      await response.json(),
-    );
-  }
-
-  async cancelLocalBackupDatabaseStream(
-    id: string,
-    auth: string,
-  ): Promise<void> {
-    const response = await this.request(
-      `/api/local-backup/database-stream/sessions/${encodeURIComponent(id)}`,
-      {
-        method: "DELETE",
-        cache: "no-store",
-        headers: { "risu-auth": auth },
-      },
-    );
-    if (!response.ok && response.status !== 404) {
-      return await localBackupDatabaseStreamError(response);
-    }
   }
 
   async getStorageSyncSummary(

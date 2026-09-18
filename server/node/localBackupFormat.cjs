@@ -38,7 +38,7 @@ function createEntryHeader(name, size) {
 
 const {
   makeLegacyCompatibleDatabase,
-} = require("../../packages/backup-core/compatibility.cjs");
+} = require("../../packages/backup-core/dist/compatibility.js");
 
 async function encodeDatabase(database) {
   const packed = packr.encode(database);

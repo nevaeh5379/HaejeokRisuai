@@ -9,9 +9,19 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const config = resolve(root, "server/node/tsconfig.server.json");
 const outDir = resolve(root, "server/node/.tsbuild");
 const tsc = require.resolve("typescript/bin/tsc");
+const backupCoreBuild = resolve(root, "packages/backup-core/build.mjs");
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
+
+const backupCoreResult = spawnSync(process.execPath, [backupCoreBuild], {
+  cwd: root,
+  stdio: "inherit",
+});
+if (backupCoreResult.error) throw backupCoreResult.error;
+if (backupCoreResult.status !== 0) {
+  process.exit(backupCoreResult.status ?? 1);
+}
 
 const result = spawnSync(process.execPath, [tsc, "-p", config], {
   cwd: root,
@@ -23,7 +33,6 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 for (const file of [
   "server.cjs",
   "databaseMutations.cjs",
-  "localBackupDatabaseStream.cjs",
   "storageSyncSqlApply.cjs",
 ]) {
   copyFileSync(resolve(outDir, file), resolve(root, "server/node", file));

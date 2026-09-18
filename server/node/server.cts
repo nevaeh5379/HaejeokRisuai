@@ -83,7 +83,7 @@ const {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
   loadPortableBranchGraphForExport,
-} = require("../../packages/backup-core/portableBranches.cjs");
+} = require("../../packages/backup-core/dist/portableBranches.js");
 const {
   normalizePageInteger,
   paginateMessages,
@@ -137,7 +137,15 @@ const {
 const {
   LocalBackupDatabaseStreamError,
   LocalBackupDatabaseStreamStore,
-} = require("./localBackupDatabaseStream.cjs");
+} = require("../../packages/backup-core/dist/node/databaseStreamStore.js");
+const {
+  decodeStorageSyncValue,
+  encodeStorageSyncValue,
+} = require("../../packages/protocol/storageSyncValueCodec.cjs");
+const {
+  readStorageSyncSqlRecords,
+  validateStorageSyncSqlRecord,
+} = require("./storageSyncSqlRecords.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -414,6 +422,17 @@ const storageSyncStaging = new StorageSyncStagingStore(storageSyncRoot);
 const storageSyncSqlStaging = new StorageSyncSqlStagingStore(storageSyncRoot);
 const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
   path.join(savePath, "__local_backup_database_stream"),
+  {
+    createValidationState: () => ({
+      sourceRevision: null,
+      entityPhase: false,
+    }),
+    cloneValidationState: (state) => ({ ...state }),
+    decodeRecord: decodeStorageSyncValue,
+    encodeRecord: encodeStorageSyncValue,
+    validateRecord: validateStorageSyncSqlRecord,
+    getSourceRevision: (state) => state.sourceRevision,
+  },
 );
 const storageSyncRecovery = new StorageSyncRecoveryStore(
   path.join(savePath, "__storage_sync_recovery"),
@@ -4717,10 +4736,25 @@ app.post(
         res.send(finalized);
         return;
       }
-      const prepared = localBackupDatabaseStreamStore.prepareFinalize(
-        sessionId,
-        req.body?.manifest,
-      );
+      const preparedStream =
+        localBackupDatabaseStreamStore.prepareFinalize(
+          sessionId,
+          req.body?.manifest,
+        );
+      const prepared = {
+        ...preparedStream,
+        sqlStaging: {
+          validate: async (
+            _syncSession: unknown,
+            options: { onRecord?: (record: unknown, index: number) => Promise<void> } = {},
+          ) =>
+            await readStorageSyncSqlRecords(preparedStream.filePath, {
+              expectedRecordCount: preparedStream.recordCount,
+              expectedSourceRevision: preparedStream.sourceRevision,
+              onRecord: options.onRecord,
+            }),
+        },
+      };
       release = await storageSyncFinalizeGate.acquire(
         `local-backup:${sessionId}`,
       );

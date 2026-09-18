@@ -660,56 +660,20 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     await stageNodeInlaysForBackup(nodeStorage);
   }
   try {
-    const auth = await nodeStorage.getCachedAuth();
     reportLocalBackupProgress("preparing", { percent: 4 });
-    const jobQuery = new URLSearchParams({
+    const job = await nodeStorage.backup.createExportJob({
       mode,
-      pageSize: String(performance.databasePageRecords),
-      fragmentRecords: String(performance.fragmentRecords),
+      pageSize: performance.databasePageRecords,
+      fragmentRecords: performance.fragmentRecords,
     });
-    const response = await fetch(
-      `/api/local-backup/export/jobs?${jobQuery.toString()}`,
-      {
-        method: "POST",
-        headers: { "risu-auth": auth },
-      },
-    );
-    const body = (await response.json().catch(() => null)) as {
-      id?: string;
-      error?: string;
-    } | null;
-    if (!response.ok || !body?.id) {
-      throw new Error(
-        body?.error ?? `Local backup export failed (${response.status})`,
-      );
-    }
-    const completion = fetch(
-      `/api/local-backup/export/jobs/${encodeURIComponent(body.id)}`,
-      {
-        headers: { "risu-auth": auth },
-      },
-    );
+    const completion = nodeStorage.backup.waitForExport(job.id);
     let keepPolling = true;
     const progressPolling = (async () => {
       while (keepPolling) {
         try {
-          const progressResponse = await fetch(
-            `/api/local-backup/export/jobs/${encodeURIComponent(body.id!)}/progress`,
-            { headers: { "risu-auth": auth } },
-          );
-          const progressBody = (await progressResponse
-            .json()
-            .catch(() => null)) as {
-            status?: string;
-            progress?: {
-              stage?: LocalBackupProgressStage;
-              current?: number;
-              total?: number;
-            };
-          } | null;
-          const progress = progressBody?.progress;
+          const state = await nodeStorage.backup.getExportProgress(job.id);
+          const progress = state.progress;
           if (
-            progressResponse.ok &&
             progress?.stage &&
             progress.stage in LOCAL_BACKUP_PROGRESS_RANGES
           ) {
@@ -718,10 +682,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
               total: progress.total,
             });
           }
-          if (
-            progressBody?.status === "complete" ||
-            progressBody?.status === "error"
-          ) {
+          if (state.status === "complete" || state.status === "error") {
             break;
           }
         } catch {
@@ -732,7 +693,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
       }
     })();
     const anchor = document.createElement("a");
-    anchor.href = `/api/local-backup/export/${encodeURIComponent(body.id)}?auth=${encodeURIComponent(auth)}`;
+    anchor.href = await nodeStorage.backup.getExportDownloadUrl(job.id);
     const dateStr = new Date().toISOString().slice(0, 10);
     anchor.download =
       mode === "compatible"
@@ -747,15 +708,8 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     const completed = await completion;
     keepPolling = false;
     await progressPolling;
-    const completedBody = (await completed.json().catch(() => null)) as {
-      status?: string;
-      error?: string;
-    } | null;
-    if (!completed.ok || completedBody?.status !== "complete") {
-      throw new Error(
-        completedBody?.error ??
-          `Local backup download failed (${completed.status})`,
-      );
+    if (completed.status !== "complete") {
+      throw new Error(completed.error ?? "Local backup download failed");
     }
     reportLocalBackupProgress("finalizing", { percent: 100 });
     alertNormal("Success");

@@ -3,20 +3,31 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import {
+  LocalBackupDatabaseStreamError,
+  LocalBackupDatabaseStreamStore,
+} from "@risuai/backup-core/node/databaseStreamStore";
+
 const {
+  decodeStorageSyncValue,
   encodeStorageSyncValue,
 } = require("../../packages/protocol/storageSyncValueCodec.cjs") as {
+  decodeStorageSyncValue: (value: unknown) => any;
   encodeStorageSyncValue: (value: unknown) => unknown;
 };
 const {
-  LocalBackupDatabaseStreamError,
-  LocalBackupDatabaseStreamStore,
-} = require("./localBackupDatabaseStream.cts") as {
-  LocalBackupDatabaseStreamError: new (...args: any[]) => Error;
-  LocalBackupDatabaseStreamStore: new (
-    root: string,
-    options?: Record<string, unknown>,
-  ) => any;
+  readStorageSyncSqlRecords,
+  validateStorageSyncSqlRecord,
+} = require("./storageSyncSqlRecords.cjs") as {
+  readStorageSyncSqlRecords: (
+    filePath: string,
+    options?: Record<string, any>,
+  ) => Promise<any>;
+  validateStorageSyncSqlRecord: (
+    record: any,
+    index: number,
+    state: any,
+  ) => void;
 };
 
 const roots: string[] = [];
@@ -26,7 +37,21 @@ async function makeStore() {
     path.join(os.tmpdir(), "risu-local-backup-db-stream-"),
   );
   roots.push(root);
-  return new LocalBackupDatabaseStreamStore(root, { ttlMs: 60_000 });
+  return new LocalBackupDatabaseStreamStore(
+    root,
+    {
+      createValidationState: () => ({
+        sourceRevision: null as number | null,
+        entityPhase: false,
+      }),
+      cloneValidationState: (state) => ({ ...state }),
+      decodeRecord: decodeStorageSyncValue,
+      encodeRecord: encodeStorageSyncValue,
+      validateRecord: validateStorageSyncSqlRecord,
+      getSourceRevision: (state) => state.sourceRevision,
+    },
+    { ttlMs: 60_000 },
+  );
 }
 
 function records() {
@@ -123,16 +148,13 @@ describe("LocalBackupDatabaseStreamStore", () => {
 
     const prepared = store.prepareFinalize(session.id, manifest(input));
     const replayed: any[] = [];
-    const validation = await prepared.sqlStaging.validate(
-      {
-        peerRevision: 11,
+    const validation = await readStorageSyncSqlRecords(prepared.filePath, {
+      expectedRecordCount: prepared.recordCount,
+      expectedSourceRevision: prepared.sourceRevision,
+      onRecord: async (record: any) => {
+        replayed.push(record);
       },
-      {
-        onRecord: async (record: any) => {
-          replayed.push(record);
-        },
-      },
-    );
+    });
 
     expect(validation).toMatchObject({
       recordCount: input.length,
@@ -158,7 +180,7 @@ describe("LocalBackupDatabaseStreamStore", () => {
     ).rejects.toMatchObject({ code: "session_finalized" });
 
     await store.cleanup(session.id);
-    expect(() => store.require(session.id)).toThrow(
+    expect(() => store.getFinalizedResult(session.id)).toThrow(
       LocalBackupDatabaseStreamError,
     );
   });

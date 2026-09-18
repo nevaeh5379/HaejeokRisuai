@@ -1255,16 +1255,40 @@ describe("NodeSqlStorage portable database stream restore", () => {
       recordCount: stagedRecords,
     }));
     const apiClient = {
-      createLocalBackupDatabaseStreamSession: vi.fn(async () => ({
-        id: "restore-session",
-        nextFragmentIndex: 1,
-        recordCount: 0,
-        createdAt: 1,
-        expiresAt: Date.now() + 60_000,
-      })),
-      appendLocalBackupDatabaseStreamRecords: appendRecords,
-      finalizeLocalBackupDatabaseStream: finalize,
-      cancelLocalBackupDatabaseStream: vi.fn(async () => {}),
+      request: vi.fn(async (path: string, init?: RequestInit) => {
+        if (path === "/api/local-backup/database-stream/sessions") {
+          return new Response(
+            JSON.stringify({
+              id: "restore-session",
+              nextFragmentIndex: 1,
+              recordCount: 0,
+              createdAt: 1,
+              expiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (path.endsWith("/records")) {
+          const input = JSON.parse(String(init?.body ?? "{}"));
+          const state = await appendRecords("restore-session", input);
+          return new Response(JSON.stringify(state), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (path.endsWith("/finalize")) {
+          const result = await finalize();
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`Unexpected backup API request: ${path}`);
+      }),
+      resolve: (path: string) => `http://localhost${path}`,
     } as any;
 
     const storage = new NodeSqlStorage(async () => "test-auth", apiClient);
