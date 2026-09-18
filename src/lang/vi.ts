@@ -985,7 +985,6 @@ export const languageVietnamese = {
   waifuWidth: "Chiều rộng trò chuyện Waifu",
   savebackup: "Lưu Sao lưu vào google",
   loadbackup: "Tải bản sao lưu từ google",
-  files: "Các tập tin",
   backupConfirm: "Bạn có thực sự muốn lưu bản sao lưu?",
   backupLoadConfirm:
     "Bạn có thực sự muốn tải bản sao lưu? Tất cả dữ liệu sẽ bị mất!",
@@ -1120,7 +1119,6 @@ export const languageVietnamese = {
   officialDiscordDesc: "Discord chính thức nói về Risuai",
   persona: "nhân cách",
   icon: "Biểu tượng",
-  account: "Tài khoản",
   remove: "Di dời",
   able: "Có thể",
   assetWidth: "Chiều rộng tối đa của hình ảnh nội dung",

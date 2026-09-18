@@ -411,6 +411,32 @@ export const languageKorean = {
       "브라우저·데스크톱·안드로이드 파일 출력기로 보내기 전에 모으는 바이트 수입니다.",
     localBackupProgressUpdateMs:
       "진행 UI를 갱신하는 최소 간격입니다. 백업 작업 자체를 지연시키지는 않습니다.",
+    backupSaveSection:
+      "상황에 맞는 백업을 선택하세요.\n\n- **해적리스 전용**: 리롤과 분기점을 그대로 보존하는 완전한 백업입니다. 해적리스에서만 완전하게 복원됩니다.\n- **호환용**: 모든 리롤과 분기점을 일반 채팅으로 펼쳐 저장해 구버전과 다른 리스에서도 내용을 잃지 않습니다.\n- **부분**: 데이터베이스와 필수 에셋만 빠르게 저장합니다.\n- **구글**: 백업을 구글 드라이브에 업로드합니다.",
+    saveBackupLocalNative:
+      "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
+    saveBackupLocalCompatible:
+      "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
+    savePartialLocalBackup:
+      "데이터베이스와 프로필 아이콘 같은 필수 에셋만 빠르게 저장합니다. 감정 이미지, 추가 캐릭터 에셋, 음성 파일 등은 포함되지 않습니다.",
+    savebackup:
+      "데이터베이스, 콜드 스토리지, 에셋을 포함한 전체 백업을 구글 드라이브에 업로드합니다. 기기 변경 시 유용합니다.",
+    backupRestoreSection:
+      "저장한 백업을 불러와 현재 데이터를 백업 시점의 데이터로 교체합니다.",
+    loadBackupLocal:
+      "로컬 백업 파일(.risubackup)을 선택해 현재 데이터를 백업 시점의 데이터로 교체합니다.",
+    loadInternalBackup:
+      "이 기기에 자동으로 보관된 내부 백업 목록에서 시점을 골라 복원합니다.",
+    loadbackup:
+      "구글 드라이브에 저장된 백업을 내려받아 현재 데이터를 교체합니다.",
+    dataToolsSection:
+      "저장소를 점검하거나 데이터를 다른 형식으로 옮길 때 사용하는 도구입니다.",
+    cleanColdStorage:
+      "현재 사용 중이 아닌 콜드 스토리지 데이터를 영구 삭제합니다. 나중에 필요할 수 있는 데이터가 포함될 수 있으므로 주의하세요.",
+    inlayMigration:
+      "이 기기에만 저장된 인레이 이미지를 서버에 업로드하여 다른 기기에서도 볼 수 있게 합니다. 여러 번 실행해도 안전합니다.",
+    exportAsDataset:
+      "캐릭터 설명과 대화, 글로벌 로어북을 데이터셋 JSON 파일(dataset.json)로 내보냅니다. 모델 파인튜닝 등에 활용할 수 있습니다.",
   },
   setup: {
     chooseProvider: "AI 제공자를 선택해 주세요",
@@ -1563,7 +1589,6 @@ export const languageKorean = {
   waifuWidth: "Waifu 채팅창 넓이",
   savebackup: "구글 백업 저장",
   loadbackup: "구글 백업 불러오기",
-  files: "파일",
   backupConfirm: "정말로 백업을 저장하시겠습니까?",
   backupLoadConfirm:
     "정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!",
@@ -1745,7 +1770,8 @@ export const languageKorean = {
   officialDiscordDesc: "리스AI에 대해 자유롭게 대화하세요.",
   persona: "페르소나",
   icon: "아이콘",
-  account: "계정",
+  data: "데이터",
+  backup: "백업",
   remove: "삭제",
   able: "활성화됨",
   assetWidth: "에셋 넓이",
@@ -1864,8 +1890,9 @@ export const languageKorean = {
   webdeeplwarn: "이 옵션은 웹에서는 제대로 작동하지 않을 수 있습니다.",
   saveBackupLocal: "로컬 백업 저장",
   saveBackupLocalNative: "해적리스 전용 백업 저장",
-  saveBackupLocalNativeDescription:
-    "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
+  backupSaveSection: "백업 저장",
+  backupRestoreSection: "백업 복원",
+  dataToolsSection: "데이터 관리",
   localBackupPerformanceTitle: "해적리스 백업 성능",
   localBackupDatabasePageRecords: "데이터베이스 페이지 크기 (레코드)",
   localBackupFragmentRecords: "압축 조각 크기 (레코드)",
@@ -1889,8 +1916,6 @@ export const languageKorean = {
   localBackupRestoreBranches: "채팅 분기 복원 중",
   localBackupRestoreFinalizing: "복원 마무리 중",
   saveBackupLocalCompatible: "호환용 백업 저장",
-  saveBackupLocalCompatibleDescription:
-    "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
   loadBackupLocal: "로컬 백업 불러오기",
   exportChatJsonCompatible: "호환용 JSON (현재 타임라인만)",
   exportChatJsonHaejeok: "해적리스용 JSON (분기점 포함)",
@@ -1909,7 +1934,7 @@ export const languageKorean = {
   utilOverride: "유틸리티 덮어쓰기",
   template: "템플릿",
   chatAsOriginalOnSystem: "기존 역할로 보내기",
-  exportAsDataset: "데이터셋으로 세이브 엑스포트",
+  exportAsDataset: "데이터셋으로 내보내기",
   editTranslationDisplay: "번역문 수정",
   selectModel: "모델 선택",
   autoRemoveThoughtTag: "Thought 태그 자동 제거",
@@ -2771,9 +2796,8 @@ export const languageKorean = {
   activeProviderSettings: "활성 프로바이더 설정",
   providerSettings: "API 및 프로바이더",
   exitAppConfirm: "RisuAI를 종료할까요?",
+  cleanColdStorage: "미사용 콜드 스토리지 정리",
   inlayMigrationButton: "인레이 이미지를 서버에 업로드",
-  inlayMigrationDescription:
-    "이 기기에만 저장된 인레이 이미지를 서버에 업로드하여 다른 기기에서도 볼 수 있게 합니다. 여러 번 실행해도 안전합니다.",
   inlayMigrationConfirm:
     "로컬의 모든 인레이 이미지를 서버에 업로드할까요? 이미 서버에 저장된 항목은 건너뜁니다.",
   inlayMigrationRunning: "인레이 업로드 중...",

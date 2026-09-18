@@ -490,6 +490,32 @@ export const languageEnglish = {
       "Bytes accumulated before writing to the browser, desktop, or Android file writer.",
     localBackupProgressUpdateMs:
       "Minimum interval between progress UI updates. This does not delay backup work.",
+    backupSaveSection:
+      "Choose a backup type that fits the situation.\n\n- **HaejeokRisuAI**: Fully preserves rerolls and branches, but restores fully only in HaejeokRisuAI.\n- **Compatible**: Expands every reroll and branch into ordinary chats so older versions and other forks keep the content.\n- **Partial**: Quickly saves only the database and essential assets.\n- **Google**: Uploads the backup to Google Drive.",
+    saveBackupLocalNative:
+      "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
+    saveBackupLocalCompatible:
+      "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",
+    savePartialLocalBackup:
+      "Quickly saves only the database and essential assets such as profile icons. Emotion images, extra character assets, and voice files are not included.",
+    savebackup:
+      "Uploads a full backup of the database, cold storage, and assets to Google Drive. Useful when switching devices.",
+    backupRestoreSection:
+      "Loads a saved backup and replaces the current data with the state from the backup point.",
+    loadBackupLocal:
+      "Selects a local backup file (.risubackup) and replaces the current data with the backup.",
+    loadInternalBackup:
+      "Restores the data from one of the automatic internal snapshots kept on this device.",
+    loadbackup:
+      "Downloads a backup stored in Google Drive and replaces the current data with it.",
+    dataToolsSection:
+      "Tools for inspecting storage or moving data to another format.",
+    cleanColdStorage:
+      "Permanently deletes cold storage data that is not currently in use. This may include data that could be useful in the future, so use with care.",
+    inlayMigration:
+      "Uploads inlay images that are only stored on this device to the server so they can be viewed from other devices. This is safe to run multiple times.",
+    exportAsDataset:
+      "Exports character descriptions, chats, and global lorebooks as a dataset JSON file (dataset.json). Useful for model fine-tuning.",
   },
   setup: {
     chooseProvider: "Choose AI Provider",
@@ -1655,7 +1681,6 @@ export const languageEnglish = {
   waifuWidth: "Waifu Chat Width",
   savebackup: "Save Backup to google",
   loadbackup: "Load Backup from google",
-  files: "Files",
   backupConfirm: "Do you really want to save backup?",
   backupLoadConfirm:
     "Do you really want to load backup? All datas will be lost!",
@@ -1837,7 +1862,8 @@ export const languageEnglish = {
   officialDiscordDesc: "Official Discord to talk about Risuai",
   persona: "Persona",
   icon: "Icon",
-  account: "Account",
+  data: "Data",
+  backup: "Backup",
   remove: "Remove",
   able: "Able",
   assetWidth: "Asset Images Max Width",
@@ -1957,8 +1983,9 @@ export const languageEnglish = {
     "This option is not recommended for use with web version, as it can cause CORS errors.",
   saveBackupLocal: "Save Backup Locally",
   saveBackupLocalNative: "Save HaejeokRisuAI Backup",
-  saveBackupLocalNativeDescription:
-    "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
+  backupSaveSection: "Save Backups",
+  backupRestoreSection: "Restore Backups",
+  dataToolsSection: "Data Tools",
   localBackupPerformanceTitle: "Haejeok backup performance",
   localBackupDatabasePageRecords: "Database page size (records)",
   localBackupFragmentRecords: "Compressed fragment size (records)",
@@ -1982,8 +2009,6 @@ export const languageEnglish = {
   localBackupRestoreBranches: "Restoring chat branches",
   localBackupRestoreFinalizing: "Finalizing restore",
   saveBackupLocalCompatible: "Save Compatible Backup",
-  saveBackupLocalCompatibleDescription:
-    "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",
   loadBackupLocal: "Load Backup Locally",
   exportChatJsonCompatible: "Compatibility JSON (Current timeline only)",
   exportChatJsonHaejeok: "HaejeokRisuAI JSON (Preserve branches)",
@@ -2002,7 +2027,7 @@ export const languageEnglish = {
   utilOverride: "Utility Override",
   template: "Template",
   chatAsOriginalOnSystem: "Send as original role",
-  exportAsDataset: "Export Save as Dataset",
+  exportAsDataset: "Export as Dataset",
   editTranslationDisplay: "Edit Translation Display",
   selectModel: "Select Model",
   autoRemoveThoughtTag: "Remove Thought Tag",
@@ -2745,8 +2770,6 @@ export const languageEnglish = {
   coldStorage: "Cold Storage",
   cleanColdStorage: "Clean Unused Cold Storage",
   inlayMigrationButton: "Upload Inlay Images to Server",
-  inlayMigrationDescription:
-    "Uploads inlay images that are only stored on this device to the server so they can be viewed from other devices. This is safe to run multiple times.",
   inlayMigrationConfirm:
     "Upload all local inlay images to the server? Assets already stored on the server will be skipped.",
   inlayMigrationRunning: "Uploading Inlays...",
