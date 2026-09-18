@@ -373,6 +373,7 @@ describe("AzureStorage Server Interface Compatibility", () => {
     expect(typeof storage.loadScripts).toBe("function");
     expect(typeof storage.loadSettingKey).toBe("function");
     expect(typeof storage.sync).toBe("function");
+    expect(typeof storage.listRecentChats).toBe("function");
 
     // Revisions & Audit
     expect(typeof storage.listRevisions).toBe("function");
@@ -396,6 +397,75 @@ describe("AzureStorage Server Interface Compatibility", () => {
     expect(typeof storage.getTableNames).toBe("function");
     expect(typeof storage.getTableSchema).toBe("function");
     expect(typeof storage.getTableRows).toBe("function");
+  });
+});
+
+describe("AzureStorage recent chats", () => {
+  it("uses per-session activity while keeping the active chat pinned", async () => {
+    const inputs: Record<string, unknown> = {};
+    let query = "";
+    const request = {
+      input: vi.fn(function (name: string, _type: unknown, value: unknown) {
+        inputs[name] = value;
+        return this;
+      }),
+      query: vi.fn(async (sqlText: string) => {
+        query = sqlText.trim().replace(/\s+/g, " ");
+        return {
+          recordset: [
+            {
+              character_id: "char-1",
+              character_name: "Azure Bot",
+              character_image: "asset://avatar",
+              character_kind: "group",
+              chat_id: "chat-active",
+              chat_position: 2,
+              chat_name: "Current session",
+              folder_id: "folder-1",
+              last_message_time: 1234,
+              last_message_text: "Latest reply",
+            },
+          ],
+        };
+      }),
+    };
+    const storage = new AzureStorage({ enabled: true }) as any;
+    storage.pool = {
+      connected: true,
+      request: vi.fn(() => request),
+    };
+
+    await expect(
+      storage.listRecentChats("999", "chat-active"),
+    ).resolves.toEqual([
+      {
+        characterId: "char-1",
+        characterName: "Azure Bot",
+        characterImage: "asset://avatar",
+        characterType: "group",
+        chatId: "chat-active",
+        chatPosition: 2,
+        chatName: "Current session",
+        folderId: "folder-1",
+        lastDate: 1234,
+        lastMessage: "Latest reply",
+      },
+    ]);
+
+    expect(inputs).toMatchObject({ limit: 100, activeChatId: "chat-active" });
+    expect(query).toMatch(/SELECT TOP \(@limit\)/);
+    expect(query).toMatch(
+      /ORDER BY CASE WHEN ch\.id = @activeChatId THEN 1 ELSE 0 END DESC/,
+    );
+    expect(query).toMatch(
+      /WHEN ch\.last_message_time IS NOT NULL THEN ch\.last_message_time/,
+    );
+    expect(query).toMatch(
+      /WHEN ch\.position = 0 THEN COALESCE\(c\.last_interaction_time, 0\)/,
+    );
+    expect(query).toMatch(
+      /SELECT TOP \(1\) m\.content_text .*WHERE m\.chat_id = ch\.id .*ORDER BY m\.position DESC/,
+    );
   });
 });
 

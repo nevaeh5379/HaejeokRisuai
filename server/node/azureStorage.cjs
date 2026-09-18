@@ -5756,6 +5756,63 @@ class AzureStorage extends SqlStorageBase {
     }));
   }
 
+  async listRecentChats(rawLimit, activeChatId = null) {
+    this.assertEnabled();
+    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const limit = Number.isSafeInteger(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 100)
+      : 50;
+    const pool = await this.getPool();
+    const request = pool.request();
+    request.input("limit", sql.Int, limit);
+    request.input("activeChatId", sql.NVarChar(450), activeChatId);
+    const result = await request.query(`
+            SELECT TOP (@limit)
+                   ch.character_id,
+                   c.name AS character_name,
+                   c.image AS character_image,
+                   c.kind AS character_kind,
+                   ch.id AS chat_id,
+                   ch.position AS chat_position,
+                   ch.name AS chat_name,
+                   ch.folder_id,
+                   ch.last_message_time,
+                   (SELECT TOP (1) m.content_text
+                      FROM [chat].[messages] AS m
+                     WHERE m.chat_id = ch.id
+                     ORDER BY m.position DESC, m.sent_time DESC, m.id DESC) AS last_message_text
+              FROM [chat].[chats] AS ch
+              JOIN [character].[characters] AS c ON c.id = ch.character_id
+             WHERE c.trash_time IS NULL
+             ORDER BY CASE WHEN ch.id = @activeChatId THEN 1 ELSE 0 END DESC,
+                      CASE
+                        WHEN ch.id = @activeChatId THEN
+                          CASE
+                            WHEN COALESCE(ch.last_message_time, 0) >= COALESCE(c.last_interaction_time, 0)
+                              THEN COALESCE(ch.last_message_time, 0)
+                            ELSE COALESCE(c.last_interaction_time, 0)
+                          END
+                        WHEN ch.last_message_time IS NOT NULL THEN ch.last_message_time
+                        WHEN ch.position = 0 THEN COALESCE(c.last_interaction_time, 0)
+                        ELSE 0
+                      END DESC,
+                      ch.id
+        `);
+    return result.recordset.map((row) => ({
+      characterId: row.character_id,
+      characterName: row.character_name || "",
+      characterImage: row.character_image || null,
+      characterType: row.character_kind === "group" ? "group" : "character",
+      chatId: row.chat_id,
+      chatPosition: Number(row.chat_position) || 0,
+      chatName: row.chat_name || "",
+      folderId: row.folder_id || null,
+      lastDate:
+        row.last_message_time == null ? null : Number(row.last_message_time),
+      lastMessage: row.last_message_text || "",
+    }));
+  }
+
   async getBotChatStats() {
     this.assertEnabled();
     const pool = await this.getPool();
