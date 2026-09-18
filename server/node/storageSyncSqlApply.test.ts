@@ -281,6 +281,50 @@ describe("applyStorageSyncSqlRecords vendor adapters", () => {
     ).toBe(true);
   });
 
+  it("applies Azure cold-storage replacement inside the caller transaction", async () => {
+    const records = makeRecords().filter(
+      (record) =>
+        record.type === "meta" || record.type === "cold-storage",
+    );
+    const sync = vi.fn(async () => ({ revision: 8 }));
+    const queries: string[] = [];
+    const request = () => {
+      const req = {
+        input: vi.fn(() => req),
+        query: vi.fn(async (sql: string) => {
+          queries.push(sql);
+          return { recordset: [] };
+        }),
+      };
+      return req;
+    };
+    const client = { request };
+    const storage = {
+      sync,
+      upsertColdStorageWithClient: vi.fn(async () => {}),
+    };
+
+    const result = await applyStorageSyncSqlRecords({
+      vendor: "azure",
+      session: session(),
+      sqlStaging: staging(records),
+      sqlStorage: storage,
+      client,
+      transactionContext: transactionContext(),
+    });
+
+    expect(result.applied).toBe(1);
+    expect(
+      queries.some((sql) => sql.includes("DELETE FROM [cold].[archives]")),
+    ).toBe(true);
+    expect(storage.upsertColdStorageWithClient).toHaveBeenCalledOnce();
+    expect(
+      sync.mock.calls.every(([, options]) =>
+        Boolean(options?.externalTransaction?.storageSyncImport),
+      ),
+    ).toBe(true);
+  });
+
   it("stages Azure branch references until messages exist and finalizes them in the same transaction", async () => {
     const records = makeRecords().filter(
       (record) => record.type !== "cold-storage",
