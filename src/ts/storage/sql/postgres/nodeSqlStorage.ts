@@ -48,6 +48,15 @@ import {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import {
+  PortableDatabaseStreamValidator,
+  type PortableDatabaseStreamRestoreProgress,
+} from "../../backup/portableDatabaseStreamRestore";
+import type {
+  PortableDatabaseStreamFragment,
+  PortableDatabaseStreamManifest,
+} from "../../backup/portableDatabaseStream";
 
 import type {
   DbVendor,
@@ -963,6 +972,104 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     onProgress?.("Replacing SQL database...");
     await this.commit(buildSqlReplaceCommit(database, this.revision));
     return true;
+  }
+
+  async beginPortableDatabaseStreamRestore(
+    onProgress?: (progress: PortableDatabaseStreamRestoreProgress) => void,
+  ) {
+    if (!(await this.ensureEnabled())) {
+      throw new Error("SQL storage is not enabled");
+    }
+
+    const auth = await this.getAuth();
+    const remoteSession =
+      await this.apiClient.createLocalBackupDatabaseStreamSession(auth);
+    const validator = new PortableDatabaseStreamValidator();
+    const textEncoder = new TextEncoder();
+    const maxBatchRecords = 64;
+    const maxBatchBytes = 4 * 1024 * 1024;
+    const maxRecordBytes = 16 * 1024 * 1024;
+    let closed = false;
+
+    const sendRecords = async (
+      fragmentIndex: number,
+      records: unknown[],
+      fragmentComplete: boolean,
+    ) => {
+      if (closed) {
+        throw new Error("Portable database restore session is already closed");
+      }
+      const state =
+        await this.apiClient.appendLocalBackupDatabaseStreamRecords(
+          remoteSession.id,
+          { fragmentIndex, records, fragmentComplete },
+          auth,
+        );
+      onProgress?.({ appliedRecords: state.recordCount });
+    };
+
+    return {
+      writeFragment: async (fragment: PortableDatabaseStreamFragment) => {
+        validator.acceptFragment(fragment);
+
+        let batch: unknown[] = [];
+        let batchBytes = 0;
+        const flush = async (fragmentComplete: boolean) => {
+          if (batch.length === 0) return;
+          const records = batch;
+          batch = [];
+          batchBytes = 0;
+          await sendRecords(fragment.index, records, fragmentComplete);
+        };
+
+        for (let index = 0; index < fragment.records.length; index++) {
+          const record = fragment.records[index];
+          const encoded = encodeStorageSyncValue(record);
+          const recordBytes = textEncoder.encode(JSON.stringify(encoded)).byteLength;
+          if (recordBytes > maxRecordBytes) {
+            throw new Error(
+              `Portable database record exceeds ${maxRecordBytes} bytes`,
+            );
+          }
+          if (
+            batch.length > 0 &&
+            (batch.length >= maxBatchRecords ||
+              batchBytes + recordBytes > maxBatchBytes)
+          ) {
+            await flush(false);
+          }
+          batch.push(encoded);
+          batchBytes += recordBytes;
+          if (batch.length >= maxBatchRecords) {
+            await flush(index === fragment.records.length - 1);
+          }
+        }
+        if (batch.length > 0) {
+          await flush(true);
+        }
+      },
+      finish: async (manifest: PortableDatabaseStreamManifest) => {
+        if (closed) {
+          throw new Error("Portable database restore session is already closed");
+        }
+        validator.finish(manifest);
+        const result =
+          await this.apiClient.finalizeLocalBackupDatabaseStream(
+            remoteSession.id,
+            manifest,
+            auth,
+          );
+        closed = true;
+        this.revision = result.revision;
+      },
+      abort: async () => {
+        if (closed) return;
+        closed = true;
+        await this.apiClient
+          .cancelLocalBackupDatabaseStream(remoteSession.id, auth)
+          .catch(() => {});
+      },
+    };
   }
 
   async searchMessages(

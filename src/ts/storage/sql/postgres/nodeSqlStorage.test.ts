@@ -1223,3 +1223,88 @@ describe("NodeSqlStorage concurrent commit handling", () => {
     );
   });
 });
+
+
+describe("NodeSqlStorage portable database stream restore", () => {
+  it("uploads bounded record batches and finalizes without collecting the database", async () => {
+    let stagedRecords = 0;
+    const appendRecords = vi.fn(
+      async (
+        _id: string,
+        input: {
+          fragmentIndex: number;
+          records: unknown[];
+          fragmentComplete: boolean;
+        },
+      ) => {
+        stagedRecords += input.records.length;
+        return {
+          id: "restore-session",
+          nextFragmentIndex: input.fragmentComplete ? 2 : 1,
+          recordCount: stagedRecords,
+          createdAt: 1,
+          expiresAt: Date.now() + 60_000,
+        };
+      },
+    );
+    const finalize = vi.fn(async () => ({
+      status: "completed" as const,
+      revision: 9,
+      revisionId: 77,
+      sourceRevision: 4,
+      recordCount: stagedRecords,
+    }));
+    const apiClient = {
+      createLocalBackupDatabaseStreamSession: vi.fn(async () => ({
+        id: "restore-session",
+        nextFragmentIndex: 1,
+        recordCount: 0,
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+      })),
+      appendLocalBackupDatabaseStreamRecords: appendRecords,
+      finalizeLocalBackupDatabaseStream: finalize,
+      cancelLocalBackupDatabaseStream: vi.fn(async () => {}),
+    } as any;
+
+    const storage = new NodeSqlStorage(async () => "test-auth", apiClient);
+    (storage as any).status = "enabled";
+
+    const records = [
+      { type: "meta" as const, formatVersion: 1 as const, revision: 4 },
+      ...Array.from({ length: 130 }, (_, index) => ({
+        type: "setting" as const,
+        key: `setting-${index}`,
+        value: index,
+      })),
+    ];
+    const restore = await storage.beginPortableDatabaseStreamRestore();
+    await restore.writeFragment({
+      format: "risu-portable-database-fragment",
+      version: 1,
+      index: 1,
+      records,
+    });
+
+    expect(appendRecords).toHaveBeenCalledTimes(3);
+    expect(
+      appendRecords.mock.calls.map((call) => call[1].records.length),
+    ).toEqual([64, 64, 3]);
+    expect(
+      appendRecords.mock.calls.map((call) => call[1].fragmentComplete),
+    ).toEqual([false, false, true]);
+
+    await restore.finish({
+      format: "risu-portable-database-stream",
+      version: 1,
+      revision: 4,
+      complete: true,
+      totalFragments: 1,
+      totalRecords: records.length,
+      counts: { meta: 1, setting: 130 },
+    });
+
+    expect(finalize).toHaveBeenCalledOnce();
+    expect(storage.getRevision()).toBe(9);
+  });
+});

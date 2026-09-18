@@ -531,4 +531,47 @@ describe("Oracle storage sync finalize concurrency", () => {
     expect(connection.commit).not.toHaveBeenCalled();
     expect(connection.close).toHaveBeenCalledOnce();
   });
+
+  it("applies storage-sync payloads inside the caller transaction without committing it", async () => {
+    const { storage, connection, queries } = storageAtRevision(7);
+    const payload = {
+      baseRevision: 7,
+      replaceAll: true,
+      action: "storage-sync:replace",
+      root: { upserts: [], deletes: [] },
+      characters: [],
+      characterIds: [],
+      characterDeletes: [],
+      chats: [],
+      chatManifests: [],
+      chatDeletes: [],
+      messages: [],
+      messageManifests: [],
+      messageDeletes: [],
+    };
+
+    await expect(
+      storage.sync(payload, {
+        externalTransaction: {
+          client: connection,
+          currentRevision: 7,
+          nextRevision: 8,
+          revisionId: 41,
+          storageSyncImport: true,
+        },
+      }),
+    ).resolves.toMatchObject({ revision: 8 });
+
+    expect(
+      queries.some(
+        (sql) => sql.includes("system_storage_meta") && sql.includes("FOR UPDATE"),
+      ),
+    ).toBe(false);
+    expect(
+      queries.some((sql) => sql.includes("INSERT INTO system_revisions")),
+    ).toBe(false);
+    expect(connection.commit).not.toHaveBeenCalled();
+    expect(connection.rollback).not.toHaveBeenCalled();
+    expect(connection.close).not.toHaveBeenCalled();
+  });
 });

@@ -131,9 +131,13 @@ const {
   StorageSyncRecoveryStore,
 } = require("./storageSyncRecovery.cjs");
 const {
-  StorageSyncPostgresApplyError,
-  applyStorageSyncPostgresRecords,
-} = require("./storageSyncPostgresApply.cjs");
+  StorageSyncSqlApplyError,
+  applyStorageSyncSqlRecords,
+} = require("./storageSyncSqlApply.cjs");
+const {
+  LocalBackupDatabaseStreamError,
+  LocalBackupDatabaseStreamStore,
+} = require("./localBackupDatabaseStream.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -408,6 +412,9 @@ const storageSyncPersistence = new StorageSyncSessionPersistence(
 );
 const storageSyncStaging = new StorageSyncStagingStore(storageSyncRoot);
 const storageSyncSqlStaging = new StorageSyncSqlStagingStore(storageSyncRoot);
+const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
+  path.join(savePath, "__local_backup_database_stream"),
+);
 const storageSyncRecovery = new StorageSyncRecoveryStore(
   path.join(savePath, "__storage_sync_recovery"),
 );
@@ -536,6 +543,8 @@ let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(
 const databaseMutations = createDatabaseMutations({
   getStorage: () => postgresStorage,
   finalizeStorageSyncReplacement,
+  applyStorageSyncSqlRecords,
+  getVendor: () => dbVendor,
   realtimeEventHub,
 });
 // vendor 확정 후 환경 변수 관리 여부 갱신
@@ -717,8 +726,12 @@ function isFinalizeSafeApiRequest(req) {
 }
 
 function isFinalizeControlRequest(req) {
-  return /^\/api\/storage-sync\/sessions\/[^/]+\/finalize$/.test(
-    requestApiPath(req),
+  const path = requestApiPath(req);
+  return (
+    /^\/api\/storage-sync\/sessions\/[^/]+\/finalize$/.test(path) ||
+    /^\/api\/local-backup\/database-stream\/sessions\/[^/]+\/finalize$/.test(
+      path,
+    )
   );
 }
 
@@ -2859,7 +2872,7 @@ app.get("/api/client-capabilities", (req, res) => {
       sqlStorage: true,
       assetStorage: true,
       dataChangeEvents: true,
-      storageSync: dbVendor === "postgres",
+      storageSync: ["postgres", "oracle", "azure"].includes(dbVendor),
       modelExecution: false,
       vectorSearch: false,
     },
@@ -3257,13 +3270,6 @@ app.post(
       res.send(session.finalizedResult);
       return;
     }
-    if (dbVendor !== "postgres") {
-      res.status(501).send({
-        error: `Storage sync finalize is not implemented for ${dbVendor} yet`,
-        code: "storage_sync_finalize_unsupported_vendor",
-      });
-      return;
-    }
     try {
       const result = await databaseMutations.storageSyncFinalize(
         {
@@ -3272,7 +3278,6 @@ app.post(
           assetStaging: storageSyncStaging,
           assetStorage: assetStorageManager.getStorage(),
           recoveryStore: storageSyncRecovery,
-          applySqlRecords: applyStorageSyncPostgresRecords,
           gate: storageSyncFinalizeGate,
         },
         req.headers["x-risu-client-id"],
@@ -3307,7 +3312,7 @@ app.post(
     } catch (error) {
       if (
         error instanceof StorageSyncFinalizeError ||
-        error instanceof StorageSyncPostgresApplyError
+        error instanceof StorageSyncSqlApplyError
       ) {
         sendStorageSyncFinalizeError(res, error);
         return;
@@ -4623,6 +4628,141 @@ async function streamServerLocalBackup(
     res.end();
   });
 }
+
+
+function sendLocalBackupDatabaseStreamError(res, error) {
+  if (error instanceof LocalBackupDatabaseStreamError) {
+    const status =
+      error.code === "session_not_found" || error.code === "session_expired"
+        ? 404
+        : error.code === "write_in_progress" ||
+            error.code === "fragment_order_mismatch" ||
+            error.code === "session_finalized"
+          ? 409
+          : 400;
+    res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (error instanceof StorageSyncFinalizeError) {
+    const status =
+      error.code === "finalize_in_progress"
+        ? 423
+        : error.code === "target_changed"
+          ? 409
+          : 400;
+    res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (error instanceof StorageSyncSqlApplyError) {
+    res.status(400).send({ error: error.message, code: error.code });
+    return true;
+  }
+  const currentRevision = Number(
+    error?.revision ?? error?.currentRevision ?? Number.NaN,
+  );
+  if (Number.isSafeInteger(currentRevision) && currentRevision >= 0) {
+    res.status(409).send({
+      error: error?.message || "Database changed before backup restore finalize",
+      code: "target_changed",
+      currentRevision,
+    });
+    return true;
+  }
+  return false;
+}
+
+app.post(
+  "/api/local-backup/database-stream/sessions",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(await localBackupDatabaseStreamStore.create());
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.put(
+  "/api/local-backup/database-stream/sessions/:sessionId/records",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(
+        await localBackupDatabaseStreamStore.appendRecords(
+          req.params.sessionId,
+          req.body,
+        ),
+      );
+    } catch (error) {
+      if (sendLocalBackupDatabaseStreamError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.post(
+  "/api/local-backup/database-stream/sessions/:sessionId/finalize",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    const sessionId = req.params.sessionId;
+    let release = null;
+    try {
+      const finalized =
+        localBackupDatabaseStreamStore.getFinalizedResult(sessionId);
+      if (finalized) {
+        res.send(finalized);
+        return;
+      }
+      const prepared = localBackupDatabaseStreamStore.prepareFinalize(
+        sessionId,
+        req.body?.manifest,
+      );
+      release = await storageSyncFinalizeGate.acquire(
+        `local-backup:${sessionId}`,
+      );
+      const result = await databaseMutations.localBackupStreamFinalize(
+        { prepared },
+        req.headers["x-risu-client-id"],
+      );
+      const response = {
+        status: "completed",
+        revision: result.revision,
+        revisionId: result.revisionId,
+        sourceRevision: prepared.sourceRevision,
+        recordCount: prepared.recordCount,
+      };
+      await localBackupDatabaseStreamStore.markFinalized(
+        sessionId,
+        response,
+      );
+      res.send(response);
+    } catch (error) {
+      if (sendLocalBackupDatabaseStreamError(res, error)) return;
+      next(error);
+    } finally {
+      release?.();
+    }
+  },
+);
+
+app.delete(
+  "/api/local-backup/database-stream/sessions/:sessionId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      await localBackupDatabaseStreamStore.cleanup(req.params.sessionId);
+      res.status(204).end();
+    } catch (error) {
+      if (sendLocalBackupDatabaseStreamError(res, error)) return;
+      next(error);
+    }
+  },
+);
 
 app.post(
   "/api/local-backup/export/jobs",

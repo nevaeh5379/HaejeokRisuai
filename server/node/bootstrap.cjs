@@ -7,8 +7,24 @@ const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "../..");
 const generatedServer = path.join(__dirname, "server.cjs");
 const generatedMutations = path.join(__dirname, "databaseMutations.cjs");
+const generatedLocalBackupStream = path.join(
+  __dirname,
+  "localBackupDatabaseStream.cjs",
+);
+const generatedStorageSyncApply = path.join(
+  __dirname,
+  "storageSyncSqlApply.cjs",
+);
 const serverSource = path.join(__dirname, "server.cts");
 const mutationSource = path.join(__dirname, "databaseMutations.cts");
+const localBackupStreamSource = path.join(
+  __dirname,
+  "localBackupDatabaseStream.cts",
+);
+const storageSyncApplySource = path.join(
+  __dirname,
+  "storageSyncSqlApply.cts",
+);
 
 function isStale(source, output) {
   if (!fs.existsSync(output)) return true;
@@ -18,9 +34,13 @@ function isStale(source, output) {
 const needsBuild =
   !fs.existsSync(generatedServer) ||
   !fs.existsSync(generatedMutations) ||
+  !fs.existsSync(generatedLocalBackupStream) ||
+  !fs.existsSync(generatedStorageSyncApply) ||
   (process.env.NODE_ENV !== "production" &&
     (isStale(serverSource, generatedServer) ||
-      isStale(mutationSource, generatedMutations)));
+      isStale(mutationSource, generatedMutations) ||
+      isStale(localBackupStreamSource, generatedLocalBackupStream) ||
+      isStale(storageSyncApplySource, generatedStorageSyncApply)));
 
 if (needsBuild) {
   const builder = path.join(root, "tooling/build-node-server.mjs");

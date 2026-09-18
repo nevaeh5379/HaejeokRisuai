@@ -7,6 +7,11 @@ const {
 
 type ServerMutationStorage = {
   sync: (payload: any, options?: any) => Promise<any>;
+  getStorageSyncSummary: () => Promise<any>;
+  runStorageSyncFinalizeTransaction: (
+    expectedRevision: number,
+    callback: (client: any, transactionContext: any) => Promise<any>,
+  ) => Promise<any>;
   createChatBranch: (input: any) => Promise<any>;
   activateChatBranch: (chatId: string, branchId: string) => Promise<void>;
   restoreRevision: (revisionId: any) => Promise<any>;
@@ -24,6 +29,15 @@ type MutationArgs = {
   restoreBackup: [payload: any, options: any, rawSourceClientId: unknown];
   storageSyncFinalize: [
     options: Record<string, any>,
+    rawSourceClientId: unknown,
+  ];
+  localBackupStreamFinalize: [
+    input: {
+      prepared: {
+        sourceRevision: number;
+        sqlStaging: any;
+      };
+    },
     rawSourceClientId: unknown,
   ];
   togglePlugin: [input: any, rawSourceClientId: unknown];
@@ -72,6 +86,8 @@ type DatabaseMutationDependencies = {
   finalizeStorageSyncReplacement: (
     options: Record<string, any>,
   ) => Promise<any>;
+  applyStorageSyncSqlRecords: (options: Record<string, any>) => Promise<any>;
+  getVendor: () => "postgres" | "oracle" | "azure";
   realtimeEventHub: {
     broadcast: (event: string, data: Record<string, unknown>) => void;
   };
@@ -80,6 +96,8 @@ type DatabaseMutationDependencies = {
 function createDatabaseMutations({
   getStorage,
   finalizeStorageSyncReplacement,
+  applyStorageSyncSqlRecords,
+  getVendor,
   realtimeEventHub,
 }: DatabaseMutationDependencies): DatabaseMutationApi {
   const storage = () => getStorage();
@@ -116,9 +134,48 @@ function createDatabaseMutations({
         await finalizeStorageSyncReplacement({
           ...options,
           sqlStorage: storage(),
+          applySqlRecords: async (applyOptions: Record<string, any>) =>
+            await applyStorageSyncSqlRecords({
+              ...applyOptions,
+              vendor: getVendor(),
+            }),
         }),
       describe: (_result, _options, rawSourceClientId) => ({
         action: "storage-sync-finalize",
+        details: { replaceAll: true },
+        rawSourceClientId,
+      }),
+    },
+    localBackupStreamFinalize: {
+      mutate: async ({ prepared }) => {
+        const sqlStorage = storage();
+        const summary = await sqlStorage.getStorageSyncSummary();
+        if (!summary) {
+          throw new Error("SQL storage is unavailable for backup restore");
+        }
+        const targetRevision = Number(summary.revision);
+        const syncSession = {
+          serverRevision: targetRevision,
+          peerRevision: prepared.sourceRevision,
+        };
+        return await sqlStorage.runStorageSyncFinalizeTransaction(
+          targetRevision,
+          async (client, transactionContext) => {
+            const sqlResult = await applyStorageSyncSqlRecords({
+              session: syncSession,
+              sqlStaging: prepared.sqlStaging,
+              sqlStorage,
+              client,
+              transactionContext,
+              replaceColdStorage: false,
+              vendor: getVendor(),
+            });
+            return { sqlResult };
+          },
+        );
+      },
+      describe: (_result, _input, rawSourceClientId) => ({
+        action: "backup-restore",
         details: { replaceAll: true },
         rawSourceClientId,
       }),
@@ -241,6 +298,8 @@ function createDatabaseMutations({
     commit: (...args) => execute("commit", ...args),
     restoreBackup: (...args) => execute("restoreBackup", ...args),
     storageSyncFinalize: (...args) => execute("storageSyncFinalize", ...args),
+    localBackupStreamFinalize: (...args) =>
+      execute("localBackupStreamFinalize", ...args),
     togglePlugin: (...args) => execute("togglePlugin", ...args),
     createChatBranch: (...args) => execute("createChatBranch", ...args),
     activateChatBranch: (...args) => execute("activateChatBranch", ...args),

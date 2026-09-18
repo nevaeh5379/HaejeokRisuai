@@ -13,5 +13,10 @@
     "sourceMap": false,
     "declaration": false
   },
-  "include": ["server.cts", "databaseMutations.cts"]
+  "include": [
+    "server.cts",
+    "databaseMutations.cts",
+    "localBackupDatabaseStream.cts",
+    "storageSyncSqlApply.cts"
+  ]
 }

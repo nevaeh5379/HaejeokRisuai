@@ -2771,50 +2771,76 @@ class AzureStorage extends SqlStorageBase {
   async sync(rawPayload, options = {}) {
     const payload = validateSyncPayload(rawPayload);
     const { onProgress } = options;
+    const external =
+      options && typeof options === "object"
+        ? options.externalTransaction ?? null
+        : null;
 
-    return await this.withTransaction(async (tx) => {
-      // 1. Check revision with lock
-      const metaRes = await tx
-        .request()
-        .query(
-          "SELECT revision, initialized FROM [system].[storage_meta] WITH (UPDLOCK, HOLDLOCK) WHERE singleton = 1",
-        );
-      const meta = metaRes.recordset[0] || { revision: 0, initialized: false };
-      const currentRevision = parseInt(meta.revision, 10) || 0;
+    const runSync = async (tx) => {
+      let currentRevision;
+      let nextRevision;
+      let revisionId;
+
+      if (external) {
+        currentRevision = Number(external.currentRevision);
+        nextRevision = Number(external.nextRevision);
+        revisionId = external.revisionId ?? null;
+        if (
+          !Number.isSafeInteger(currentRevision) ||
+          !Number.isSafeInteger(nextRevision) ||
+          nextRevision !== currentRevision + 1
+        ) {
+          throw new StoragePayloadError(
+            "Invalid external storage sync transaction context",
+          );
+        }
+      } else {
+        const metaRes = await tx
+          .request()
+          .query(
+            "SELECT revision, initialized FROM [system].[storage_meta] WITH (UPDLOCK, HOLDLOCK) WHERE singleton = 1",
+          );
+        const meta = metaRes.recordset[0] || {
+          revision: 0,
+          initialized: false,
+        };
+        currentRevision = parseInt(meta.revision, 10) || 0;
+        nextRevision = currentRevision + 1;
+      }
 
       if (payload.baseRevision !== currentRevision) {
         throw new StorageRevisionConflictError(currentRevision);
       }
 
-      const nextRevision = currentRevision + 1;
       const affectedMessageChatIds = new Set([
         ...(payload.messages || []).map((item) => item.chatId),
         ...(payload.messageDeletes || []).map((item) => item.chatId),
       ]);
 
       // 2. Create revision row
-      const revReq = tx.request();
-      revReq.input("storage_rev", sql.BigInt, nextRevision);
-      revReq.input("db_init", sql.Bit, 1);
-      revReq.input("scope", sql.NVarChar(32), "database");
-      revReq.input(
-        "action",
-        sql.NVarChar(64),
-        payload.action || (payload.replaceAll ? "replace-all" : "sync"),
-      );
-      const revRes = await revReq.query(`
-                INSERT INTO [system].[revisions] (storage_revision, database_initialized, scope, action)
-                OUTPUT INSERTED.id
-                VALUES (@storage_rev, @db_init, @scope, @action);
-            `);
-      const revisionId = revRes.recordset[0].id;
+      if (!external) {
+        const revReq = tx.request();
+        revReq.input("storage_rev", sql.BigInt, nextRevision);
+        revReq.input("db_init", sql.Bit, 1);
+        revReq.input("scope", sql.NVarChar(32), "database");
+        revReq.input(
+          "action",
+          sql.NVarChar(64),
+          payload.action || (payload.replaceAll ? "replace-all" : "sync"),
+        );
+        const revRes = await revReq.query(`
+                  INSERT INTO [system].[revisions] (storage_revision, database_initialized, scope, action)
+                  OUTPUT INSERTED.id
+                  VALUES (@storage_rev, @db_init, @scope, @action);
+              `);
+        revisionId = revRes.recordset[0].id;
 
-      // Set session context for audit trigger
-      const ctxReq = tx.request();
-      ctxReq.input("rev_id", sql.NVarChar(128), String(revisionId));
-      await ctxReq.query(
-        `EXEC sp_set_session_context @key = N'risu_revision_id', @value = @rev_id;`,
-      );
+        const ctxReq = tx.request();
+        ctxReq.input("rev_id", sql.NVarChar(128), String(revisionId));
+        await ctxReq.query(
+          `EXEC sp_set_session_context @key = N'risu_revision_id', @value = @rev_id;`,
+        );
+      }
 
       if (onProgress)
         onProgress({ stage: "start", message: "Starting transaction" });
@@ -2837,7 +2863,11 @@ class AzureStorage extends SqlStorageBase {
               "SELECT module_id, position FROM [system].[module_records] ORDER BY position",
             )
         ).recordset;
-        if (!payload.replaceAll && existing.length === 0) {
+        if (
+          !payload.replaceAll &&
+          existing.length === 0 &&
+          !external?.storageSyncImport
+        ) {
           const settings = (
             await tx
               .request()
@@ -3037,7 +3067,7 @@ class AzureStorage extends SqlStorageBase {
           }
         }
         let activeId = payload.presets.activeId;
-        if (activeId === undefined) {
+        if (activeId === undefined && !external?.storageSyncImport) {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = originalIds.indexOf(currentActiveId);
             activeId =
@@ -3983,7 +4013,9 @@ class AzureStorage extends SqlStorageBase {
           splitMessages.map((m) => m.core),
           ["chat_id", "id"],
         );
-        await this.linkIncomingMessagesToActiveBranches(tx, splitMessages);
+        if (!external?.storageSyncImport) {
+          await this.linkIncomingMessagesToActiveBranches(tx, splitMessages);
+        }
 
         const msgOwnerPairs = splitMessages.map((m) => ({
           chat_id: m.core.chat_id,
@@ -4154,22 +4186,27 @@ class AzureStorage extends SqlStorageBase {
                 `);
       }
 
-      // 7. Update storage meta revision
-      const updateMetaReq = tx.request();
-      updateMetaReq.input("next_rev", sql.BigInt, nextRevision);
-      await updateMetaReq.query(`
-                UPDATE [system].[storage_meta]
-                SET revision = @next_rev, initialized = 1, updated_at = SYSDATETIMEOFFSET()
-                WHERE singleton = 1;
-            `);
+      if (!external) {
+        const updateMetaReq = tx.request();
+        updateMetaReq.input("next_rev", sql.BigInt, nextRevision);
+        await updateMetaReq.query(`
+                  UPDATE [system].[storage_meta]
+                  SET revision = @next_rev, initialized = 1, updated_at = SYSDATETIMEOFFSET()
+                  WHERE singleton = 1;
+              `);
+      }
 
       if (onProgress) onProgress({ stage: "finish", message: "Sync complete" });
 
       return {
         revision: nextRevision,
-        revisionId: String(revisionId),
+        ...(revisionId == null ? {} : { revisionId: String(revisionId) }),
       };
-    });
+    };
+
+    const syncResult = external
+      ? await runSync(external.client)
+      : await this.withTransaction(runSync);
 
     const changedSettingKeys = payload.rootUpserts?.map((row) => row.key) || [];
     const rootDeletes = payload.rootDeletes || [];

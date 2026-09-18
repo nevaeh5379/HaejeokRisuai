@@ -3827,8 +3827,13 @@ class OracleStorage extends SqlStorageBase {
     this.assertEnabled();
     const onProgress =
       typeof options === "function" ? options : options?.onProgress;
+    const external =
+      options && typeof options === "object"
+        ? options.externalTransaction ?? null
+        : null;
     const payload = validateSyncPayload(rawPayload);
-    const conn = await this.pool.getConnection();
+    const conn = external?.client ?? (await this.pool.getConnection());
+    const ownsTransaction = !external;
     try {
       onProgress?.({
         stage: "init",
@@ -3836,29 +3841,48 @@ class OracleStorage extends SqlStorageBase {
         percent: 2,
       });
       await conn.execute("SET CONSTRAINTS ALL DEFERRED");
-      // revision 잠금 (SELECT FOR UPDATE)
-      const metaRow = await fetchOne(
-        conn,
-        `SELECT revision FROM system_storage_meta WHERE singleton = 1 FOR UPDATE`,
-      );
-      const currentRevision = Number(metaRow.revision);
+
+      let currentRevision;
+      let nextRevision;
+      if (external) {
+        currentRevision = Number(external.currentRevision);
+        nextRevision = Number(external.nextRevision);
+        if (
+          !Number.isSafeInteger(currentRevision) ||
+          !Number.isSafeInteger(nextRevision) ||
+          nextRevision !== currentRevision + 1
+        ) {
+          throw new StoragePayloadError(
+            "Invalid external storage sync transaction context",
+          );
+        }
+      } else {
+        const metaRow = await fetchOne(
+          conn,
+          `SELECT revision FROM system_storage_meta WHERE singleton = 1 FOR UPDATE`,
+        );
+        currentRevision = Number(metaRow.revision);
+        nextRevision = currentRevision + 1;
+      }
       if (payload.baseRevision !== currentRevision) {
         throw new StorageRevisionConflictError(
           currentRevision,
           `Oracle data changed in another session (server revision ${currentRevision}). Reload before saving again.`,
         );
       }
-      const nextRevision = currentRevision + 1;
       const affectedMessageChatIds = new Set([
         ...(payload.messages || []).map((item) => item.chatId),
         ...(payload.messageDeletes || []).map((item) => item.chatId),
       ]);
-      await beginAuditRevision(conn, {
-        storageRevision: nextRevision,
-        databaseInitialized: true,
-        scope: "database",
-        action: payload.action || (payload.replaceAll ? "replace-all" : "sync"),
-      });
+      if (!external) {
+        await beginAuditRevision(conn, {
+          storageRevision: nextRevision,
+          databaseInitialized: true,
+          scope: "database",
+          action:
+            payload.action || (payload.replaceAll ? "replace-all" : "sync"),
+        });
+      }
 
       if (payload.replaceAll) {
         onProgress?.({
@@ -3878,7 +3902,11 @@ class OracleStorage extends SqlStorageBase {
           conn,
           "SELECT module_id, position FROM system_module_records ORDER BY position",
         );
-        if (!payload.replaceAll && existing.length === 0) {
+        if (
+          !payload.replaceAll &&
+          existing.length === 0 &&
+          !external?.storageSyncImport
+        ) {
           const settings = await fetchRows(
             conn,
             "SELECT * FROM system_settings WHERE key = 'modules'",
@@ -4046,7 +4074,7 @@ class OracleStorage extends SqlStorageBase {
             );
         }
         let activeId = payload.presets.activeId;
-        if (activeId === undefined) {
+        if (activeId === undefined && !external?.storageSyncImport) {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = originalIds.indexOf(currentActiveId);
             activeId =
@@ -4644,7 +4672,9 @@ class OracleStorage extends SqlStorageBase {
           return row;
         });
         await conn.executeMany(upsertSql, binds, { bindDefs });
-        await this.linkIncomingMessagesToActiveBranches(conn, splitMessages);
+        if (!external?.storageSyncImport) {
+          await this.linkIncomingMessagesToActiveBranches(conn, splitMessages);
+        }
       }
       onProgress?.({
         stage: "message_children",
@@ -4750,19 +4780,20 @@ class OracleStorage extends SqlStorageBase {
         );
       }
 
-      // revision 갱신
-      onProgress?.({
-        stage: "commit",
-        message: "오라클 트랜잭션 커밋 중...",
-        percent: 98,
-      });
-      await conn.execute(
-        `UPDATE system_storage_meta
-                 SET revision = :1, initialized = 1, updated_at = SYSTIMESTAMP
-                 WHERE singleton = 1`,
-        [nextRevision],
-      );
-      await conn.commit();
+      if (!external) {
+        onProgress?.({
+          stage: "commit",
+          message: "오라클 트랜잭션 커밋 중...",
+          percent: 98,
+        });
+        await conn.execute(
+          `UPDATE system_storage_meta
+                   SET revision = :1, initialized = 1, updated_at = SYSTIMESTAMP
+                   WHERE singleton = 1`,
+          [nextRevision],
+        );
+        await conn.commit();
+      }
       const changedKeys = payload.rootUpserts.map((s) => s.key);
       const rootDeletes = payload.rootDeletes || [];
       if (changedKeys.includes("plugins") || rootDeletes.includes("plugins")) {
@@ -4790,14 +4821,18 @@ class OracleStorage extends SqlStorageBase {
         },
       };
     } catch (error) {
-      try {
-        await conn.rollback();
-      } catch (e) {}
+      if (ownsTransaction) {
+        try {
+          await conn.rollback();
+        } catch (e) {}
+      }
       throw error;
     } finally {
-      try {
-        await conn.close();
-      } catch (e) {}
+      if (ownsTransaction) {
+        try {
+          await conn.close();
+        } catch (e) {}
+      }
     }
   }
 

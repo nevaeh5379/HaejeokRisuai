@@ -65,7 +65,7 @@ const INTERNAL_WRITE_METHODS = new Set([
 ]);
 
 const INDIRECT_CLIENT_VISIBLE_MUTATION_HELPERS = new Set([
-  "applyStorageSyncPostgresRecords",
+  "applyStorageSyncSqlRecords",
   "finalizeStorageSyncReplacement",
 ]);
 

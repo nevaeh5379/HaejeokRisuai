@@ -549,4 +549,44 @@ describe("Azure storage sync finalize concurrency", () => {
     });
     expect(callback).not.toHaveBeenCalled();
   });
+
+  it("applies storage-sync payloads inside the caller transaction without opening another one", async () => {
+    const { storage, tx, queries } = storageAtRevision(7);
+    const payload = {
+      baseRevision: 7,
+      replaceAll: true,
+      action: "storage-sync:replace",
+      root: { upserts: [], deletes: [] },
+      characters: [],
+      characterIds: [],
+      characterDeletes: [],
+      chats: [],
+      chatManifests: [],
+      chatDeletes: [],
+      messages: [],
+      messageManifests: [],
+      messageDeletes: [],
+    };
+    const withTransaction = vi.spyOn(storage, "withTransaction");
+
+    await expect(
+      storage.sync(payload, {
+        externalTransaction: {
+          client: tx,
+          currentRevision: 7,
+          nextRevision: 8,
+          revisionId: 41,
+          storageSyncImport: true,
+        },
+      }),
+    ).resolves.toMatchObject({ revision: 8 });
+
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(
+      queries.some((sql) => sql.includes("UPDLOCK, HOLDLOCK")),
+    ).toBe(false);
+    expect(
+      queries.some((sql) => sql.includes("INSERT INTO [system].[revisions]")),
+    ).toBe(false);
+  });
 });

@@ -20,7 +20,12 @@ const result = spawnSync(process.execPath, [tsc, "-p", config], {
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 
-for (const file of ["server.cjs", "databaseMutations.cjs"]) {
+for (const file of [
+  "server.cjs",
+  "databaseMutations.cjs",
+  "localBackupDatabaseStream.cjs",
+  "storageSyncSqlApply.cjs",
+]) {
   copyFileSync(resolve(outDir, file), resolve(root, "server/node", file));
 }
 rmSync(outDir, { recursive: true, force: true });
