@@ -165,6 +165,56 @@ function reportLocalBackupProgress(
   alertProgress(`${localBackupProgressLabel(stage)}${count}${detail}`, percent);
 }
 
+type LocalBackupRestoreStage =
+  | "selectingSource"
+  | "reading"
+  | "database"
+  | "branches"
+  | "finalizing";
+
+const LOCAL_BACKUP_RESTORE_RANGES: Record<
+  LocalBackupRestoreStage,
+  readonly [number, number]
+> = {
+  selectingSource: [0, 2],
+  reading: [2, 90],
+  database: [90, 98],
+  branches: [98, 99.5],
+  finalizing: [99.5, 100],
+};
+
+function localBackupRestoreLabel(stage: LocalBackupRestoreStage): string {
+  switch (stage) {
+    case "selectingSource":
+      return language.localBackupRestoreSelectingSource;
+    case "reading":
+      return language.localBackupRestoreReading;
+    case "database":
+      return language.localBackupRestoreDatabase;
+    case "branches":
+      return language.localBackupRestoreBranches;
+    case "finalizing":
+      return language.localBackupRestoreFinalizing;
+  }
+}
+
+function reportLocalBackupRestoreProgress(
+  stage: LocalBackupRestoreStage,
+  options: {
+    current?: number;
+    total?: number;
+    percent?: number;
+  } = {},
+) {
+  const [start, end] = LOCAL_BACKUP_RESTORE_RANGES[stage];
+  const total = Math.max(0, Math.floor(options.total ?? 0));
+  const current = Math.max(0, Math.min(total, Math.floor(options.current ?? 0)));
+  const ratio = total > 0 ? current / total : 0;
+  const percent = options.percent ?? start + (end - start) * ratio;
+  const count = total > 0 ? ` (${current} / ${total})` : "";
+  alertProgress(`${localBackupRestoreLabel(stage)}${count}`, percent);
+}
+
 function getLocalBackupPerformance(): LocalBackupPerformanceSettings {
   return normalizeLocalBackupPerformance(settingsStore.state);
 }
@@ -1482,7 +1532,7 @@ export async function restoreInlayBackupEntry(
 
 async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
-  parserProgress: { start: number; end: number } = { start: 0, end: 90 },
+  parserProgress: { start: number; end: number } = { start: 2, end: 90 },
 ) {
   const textDecoder = new TextDecoder();
   const encryptionMeta: {
@@ -1843,17 +1893,7 @@ async function restoreLocalBackupSourceUnlocked(
                   (bytesRead / file.size) *
                     (parserProgress.end - parserProgress.start),
               );
-        let message = `Parsing backup... (${readPercent}%) (${entriesRestored} entries parsed`;
-        const isBulkRestore =
-          useTauriBulkRestore || useNodeBulkRestore || useBrowserBulkRestore;
-        if (isBulkRestore && entriesWritten > 0) {
-          message += `, ${entriesWritten} written`;
-        }
-        message += ")";
-        if (currentEntryName) {
-          message += `\n${currentEntryName}`;
-        }
-        alertProgress(message, readPercent);
+        reportLocalBackupRestoreProgress("reading", { percent: readPercent });
       }
 
       let chunkOffset = 0;
@@ -1982,19 +2022,13 @@ async function restoreLocalBackupSourceUnlocked(
   }
 
   if (useTauriBulkRestore && pendingTauriAssets.size > 0) {
-    alertProgress(
-      `Flushing remaining assets... (${pendingTauriAssets.size} files)`,
-      90,
-    );
+    reportLocalBackupRestoreProgress("reading", { percent: 90 });
     const flushed = await flushTauriAssets();
     if (flushed) entriesWritten += flushed;
   }
 
   if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
-    alertProgress(
-      `Flushing remaining assets... (${pendingNodeAssets.size} files)`,
-      90,
-    );
+    reportLocalBackupRestoreProgress("reading", { percent: 90 });
     const flushed = await flushNodeAssets();
     if (flushed) {
       entriesWritten += flushed;
@@ -2002,10 +2036,7 @@ async function restoreLocalBackupSourceUnlocked(
   }
 
   if (useBrowserBulkRestore && pendingBrowserAssets.size > 0) {
-    alertProgress(
-      `Flushing remaining assets... (${pendingBrowserAssets.size} files)`,
-      90,
-    );
+    reportLocalBackupRestoreProgress("reading", { percent: 90 });
     const flushed = await flushBrowserAssets();
     if (flushed) {
       entriesWritten += flushed;
@@ -2056,12 +2087,12 @@ async function restoreLocalBackupSourceUnlocked(
       );
     }
   }
-  alertProgress(
-    ignoredExtensionEntries > 0
-      ? `Decoding database...\nSkipped ${ignoredExtensionEntries} unsupported fork extension entries.`
-      : "Decoding database...",
-    91,
-  );
+  if (ignoredExtensionEntries > 0) {
+    console.info(
+      `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
+    );
+  }
+  reportLocalBackupRestoreProgress("database", { percent: 90 });
   const decodedDb =
     decodedDatabase ?? ((await decodeRisuSave(db as Uint8Array)) as Database);
   const prepared = preparePortableDatabaseForBranchRestore(
@@ -2108,28 +2139,23 @@ async function restoreLocalBackupSourceUnlocked(
     return;
   }
 
-  const totalChars = dbData.characters?.length ?? 0;
-  let totalChats = 0;
-  for (const c of dbData.characters ?? []) {
-    totalChats += c.chats?.length ?? 0;
-  }
-  const baseMsg = `Syncing SQL (${totalChars} characters, ${totalChats} chats)`;
-  alertProgress(`${baseMsg}...`, 92);
+  reportLocalBackupRestoreProgress("database", { percent: 91 });
   const storage = await getSqlStorage();
-  await storage.replaceDatabase(dbData, (step, syncProgress) => {
+  await storage.replaceDatabase(dbData, (_step, syncProgress) => {
     const ratio =
       syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
-    const progress = 92 + ratio * 7;
-    const sqlPercent = Math.round(ratio * 100);
-    alertProgress(`${baseMsg}\n${step}\nSQL restore: ${sqlPercent}%`, progress);
+    reportLocalBackupRestoreProgress("database", {
+      percent: 91 + ratio * 7,
+    });
   });
   if (Object.keys(portableBranchGraphs).length > 0) {
-    alertProgress(`${baseMsg}\nRestoring branch graphs...`, 99);
+    reportLocalBackupRestoreProgress("branches", { percent: 98 });
     await restorePortableDatabaseBranchGraphs(
       await getSqlBranchStorage(),
       portableBranchGraphs,
     );
   }
+  reportLocalBackupRestoreProgress("finalizing", { percent: 100 });
 
   const completionMessage =
     invalidInlayEntries.length > 0
@@ -2171,8 +2197,9 @@ async function runLocalBackupRestore<T>(
 
 async function restoreLocalBackupSource(
   file: LocalBackupSource,
-  parserProgress: { start: number; end: number } = { start: 0, end: 90 },
+  parserProgress: { start: number; end: number } = { start: 2, end: 90 },
 ) {
+  reportLocalBackupRestoreProgress("reading", { percent: parserProgress.start });
   return await runLocalBackupRestore(() =>
     restoreLocalBackupSourceUnlocked(file, parserProgress),
   );
@@ -2184,47 +2211,25 @@ export async function restoreLocalBackupFile(file: File) {
 
 async function loadCapacitorLocalBackupUnlocked() {
   if (!nativeBackup) throw new Error("Native backup importer is unavailable");
-  alertProgress(
-    "Opening local backup...\nChoose a backup file in the Android file picker.",
-    0,
-  );
+  reportLocalBackupRestoreProgress("selectingSource", { percent: 0 });
   const progressListener = await nativeBackup.addListener(
     "importProgress",
     (event) => {
       const bytesRead = Math.max(0, event.bytesRead ?? 0);
       const totalBytes = Math.max(0, event.totalBytes ?? 0);
-      const readPercent =
+      let percent =
         totalBytes > 0
-          ? Math.min(45, Math.floor((bytesRead / totalBytes) * 45))
-          : 0;
-      const byteDetail =
-        totalBytes > 0
-          ? `${(bytesRead / 1024 / 1024).toFixed(1)} / ${(totalBytes / 1024 / 1024).toFixed(1)} MB`
-          : `${(bytesRead / 1024 / 1024).toFixed(1)} MB`;
+          ? 2 + Math.min(43, Math.floor((bytesRead / totalBytes) * 43))
+          : 2;
 
       if (event.stage === "committing") {
         const processed = Math.max(0, event.assetsProcessed ?? 0);
         const total = Math.max(0, event.totalAssets ?? 0);
-        const percent =
-          total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
-        alertProgress(
-          `Installing restored assets... (${processed} / ${total})`,
-          percent,
-        );
-      } else if (event.stage === "fallback") {
-        alertProgress(
-          `Reading legacy database backup...\n${byteDetail}`,
-          readPercent,
-        );
+        percent = total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
       } else if (event.stage === "complete") {
-        alertProgress("Native backup extraction complete.", 50);
-      } else {
-        const assets = Math.max(0, event.assetsProcessed ?? 0);
-        alertProgress(
-          `Reading and extracting backup...\n${byteDetail}\n${assets} assets found`,
-          readPercent,
-        );
+        percent = 50;
       }
+      reportLocalBackupRestoreProgress("reading", { percent });
     },
   );
   let selected: Awaited<ReturnType<NativeBackupPlugin["openImport"]>>;
@@ -2243,15 +2248,7 @@ async function loadCapacitorLocalBackupUnlocked() {
   const id = selected.id;
   try {
     const size = Math.max(0, selected.size ?? 0);
-    const ignoredEntries = Math.max(0, selected.ignoredEntries ?? 0);
-    alertProgress(
-      `Native extraction complete (${selected.assetsWritten ?? 0} assets).${
-        ignoredEntries > 0
-          ? ` Skipped ${ignoredEntries} unsupported fork extension entries.`
-          : ""
-      } Streaming database data...`,
-      50,
-    );
+    reportLocalBackupRestoreProgress("reading", { percent: 50 });
     await restoreLocalBackupSourceUnlocked(
       createNativeImportSource(nativeBackup, id, size),
       { start: 50, end: 90 },
@@ -2262,6 +2259,7 @@ async function loadCapacitorLocalBackupUnlocked() {
 }
 
 async function loadTauriLocalBackupUnlocked() {
+  reportLocalBackupRestoreProgress("selectingSource", { percent: 0 });
   const selected = await openDialog({
     multiple: false,
     filters: [
@@ -2271,11 +2269,17 @@ async function loadTauriLocalBackupUnlocked() {
       },
     ],
   });
-  if (selected === null) return;
+  if (selected === null) {
+    alertClear();
+    return;
+  }
 
   const path = Array.isArray(selected) ? selected[0] : selected;
-  if (!path) return;
-  alertProgress("Opening local backup...", 0);
+  if (!path) {
+    alertClear();
+    return;
+  }
+  reportLocalBackupRestoreProgress("reading", { percent: 2 });
   const source = await createTauriImportSource(path);
   await restoreLocalBackupSourceUnlocked(source);
 }
@@ -2293,13 +2297,23 @@ export async function LoadLocalBackup() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".bin,.risubackup";
+    input.addEventListener(
+      "cancel",
+      () => {
+        input.remove();
+        alertClear();
+      },
+      { once: true },
+    );
     input.onchange = async () => {
       if (!input.files || input.files.length === 0) {
         input.remove();
+        alertClear();
         return;
       }
       const file = input.files[0];
       input.remove();
+      reportLocalBackupRestoreProgress("reading", { percent: 2 });
       try {
         await restoreLocalBackupFile(file);
       } catch (error) {
@@ -2310,6 +2324,7 @@ export async function LoadLocalBackup() {
         );
       }
     };
+    reportLocalBackupRestoreProgress("selectingSource", { percent: 0 });
     input.click();
   } catch (error) {
     console.error(error);

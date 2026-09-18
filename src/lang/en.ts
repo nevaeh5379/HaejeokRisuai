@@ -1972,6 +1972,11 @@ export const languageEnglish = {
   localBackupProgressAssets: "Saving assets",
   localBackupProgressInlays: "Saving inlays",
   localBackupProgressFinalizing: "Finalizing backup",
+  localBackupRestoreSelectingSource: "Selecting backup file",
+  localBackupRestoreReading: "Reading backup",
+  localBackupRestoreDatabase: "Restoring database",
+  localBackupRestoreBranches: "Restoring chat branches",
+  localBackupRestoreFinalizing: "Finalizing restore",
   saveBackupLocalCompatible: "Save Compatible Backup",
   saveBackupLocalCompatibleDescription:
     "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",

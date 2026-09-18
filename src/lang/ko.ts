@@ -1879,6 +1879,11 @@ export const languageKorean = {
   localBackupProgressAssets: "에셋 저장 중",
   localBackupProgressInlays: "인레이 저장 중",
   localBackupProgressFinalizing: "백업 마무리 중",
+  localBackupRestoreSelectingSource: "백업 파일 선택 중",
+  localBackupRestoreReading: "백업 데이터 읽는 중",
+  localBackupRestoreDatabase: "데이터베이스 복원 중",
+  localBackupRestoreBranches: "채팅 분기 복원 중",
+  localBackupRestoreFinalizing: "복원 마무리 중",
   saveBackupLocalCompatible: "호환용 백업 저장",
   saveBackupLocalCompatibleDescription:
     "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
