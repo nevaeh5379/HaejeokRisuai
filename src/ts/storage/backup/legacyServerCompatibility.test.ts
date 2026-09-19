@@ -13,7 +13,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const { readStorageSyncSqlRecords } = require(
-  "../../../../server/node/storageSyncSqlRecords.cjs",
+  "../../../../server/node/sync/storageSyncSqlRecords.cjs",
 );
 
 describe("server legacy backup compatibility", () => {

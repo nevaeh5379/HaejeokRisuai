@@ -3,7 +3,7 @@ const app = express();
 const {
   createRemoteCorsMiddleware,
   parseAllowedOrigins,
-} = require("./remoteCors.cjs");
+} = require("./http/remoteCors.cjs");
 if (process.env.TRUST_PROXY) {
   app.set(
     "trust proxy",
@@ -46,12 +46,12 @@ process.on("unhandledRejection", (err: any) => {
 const http = require("http");
 const path = require("path");
 const net = require("net");
-const { formatListenHost, resolveListenHost } = require("./listenAddress.cjs");
-const { isSecurePostgresConfigRequest } = require("./requestSecurity.cjs");
+const { formatListenHost, resolveListenHost } = require("./http/listenAddress.cjs");
+const { isSecurePostgresConfigRequest } = require("./http/requestSecurity.cjs");
 const {
   isLocalBackupImportFinalizePath,
   isLocalBackupImportUploadPath,
-} = require("./localBackupRequestRouting.cjs");
+} = require("./http/localBackupRequestRouting.cjs");
 const htmlparser = require("node-html-parser");
 const fsSync = require("fs");
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
@@ -62,22 +62,22 @@ const { WebSocketServer } = require("ws");
 const { promisify } = require("util");
 const zlib = require("zlib");
 const { gzip } = require("zlib");
-const { createJsonStream } = require("./streamJson.cjs");
-const { streamZip } = require("./zipStream.cjs");
+const { createJsonStream } = require("./util/streamJson.cjs");
+const { streamZip } = require("./util/zipStream.cjs");
 const {
   normalizePrefetchConcurrency,
   prefetchInOrder,
-} = require("./bulkReadPrefetch.cjs");
-const { createModelJobManager } = require("./modelJobs.cjs");
-const { createPushNotificationManager } = require("./pushNotifications.cjs");
+} = require("./util/bulkReadPrefetch.cjs");
+const { createModelJobManager } = require("./executors/modelJobs.cjs");
+const { createPushNotificationManager } = require("./http/pushNotifications.cjs");
 const {
   createRealtimeEventHub,
   normalizeClientId,
-} = require("./realtimeEvents.cjs");
-import { createDatabaseMutations } from "./databaseMutations.cjs";
-const { createNodeChatExecutor } = require("./chatExecutor.cjs");
-const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
-const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
+} = require("./http/realtimeEvents.cjs");
+import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
+const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
+const { createNodeProviderExecutor } = require("./executors/providerExecutor.cjs");
+const { createHypaMemoryExecutor } = require("./executors/hypaMemoryExecutor.cjs");
 const {
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
   encodeLegacyCompatibleBackupDatabase,
@@ -92,9 +92,9 @@ const {
 const {
   normalizePageInteger,
   paginateMessages,
-} = require("./messagePagination.cjs");
-const { countTokensBatch } = require("./tokenizeCount.cjs");
-const { resolveLoreEntries } = require("./loreResolve.cjs");
+} = require("./util/messagePagination.cjs");
+const { countTokensBatch } = require("./util/tokenizeCount.cjs");
+const { resolveLoreEntries } = require("./util/loreResolve.cjs");
 const {
   configureVectorIndexPersistence,
   flushVectorIndexPersistence,
@@ -104,8 +104,8 @@ const {
   syncVectorIndex,
   upsertVectorIndex,
   searchVectorIndex,
-} = require("./vectorIndex.cjs");
-const { matchLoreBatch } = require("./loreMatch.cjs");
+} = require("./util/vectorIndex.cjs");
+const { matchLoreBatch } = require("./util/loreMatch.cjs");
 const {
   STORAGE_SYNC_CHUNK_SIZE_BYTES,
   STORAGE_SYNC_SESSION_TTL_MS,
@@ -113,32 +113,32 @@ const {
   StorageSyncSessionManager,
   StorageSyncValidationError,
   createStorageSyncSummary,
-} = require("./storageSync.cjs");
+} = require("./sync/storageSync.cjs");
 const {
   StorageSyncAssetError,
   StorageSyncStagingStore,
-} = require("./storageSyncStaging.cjs");
+} = require("./sync/storageSyncStaging.cjs");
 const {
   StorageSyncSqlError,
   StorageSyncSqlStagingStore,
-} = require("./storageSyncSqlStaging.cjs");
+} = require("./sync/storageSyncSqlStaging.cjs");
 const {
   StorageSyncSessionPersistence,
-} = require("./storageSyncPersistence.cjs");
+} = require("./sync/storageSyncPersistence.cjs");
 const {
   StorageSyncFinalizeError,
   StorageSyncFinalizeGate,
   finalizeStorageSyncReplacement,
   preflightStorageSyncFinalize,
-} = require("./storageSyncFinalize.cjs");
+} = require("./sync/storageSyncFinalize.cjs");
 const {
   StorageSyncRecoveryError,
   StorageSyncRecoveryStore,
-} = require("./storageSyncRecovery.cjs");
+} = require("./sync/storageSyncRecovery.cjs");
 const {
   StorageSyncSqlApplyError,
   applyStorageSyncSqlRecords,
-} = require("./storageSyncSqlApply.cjs");
+} = require("./sync/storageSyncSqlApply.cjs");
 const {
   INLAY_BACKUP_PREFIX,
 } = require("../../packages/backup-core/dist/entryPolicy.js");
@@ -186,19 +186,19 @@ const {
 const {
   readStorageSyncSqlRecords,
   validateStorageSyncSqlRecord,
-} = require("./storageSyncSqlRecords.cjs");
+} = require("./sync/storageSyncSqlRecords.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
   runStartupStage,
   sanitizeSensitiveText,
   startupErrorHint,
-} = require("./startupDiagnostics.cjs");
+} = require("./http/startupDiagnostics.cjs");
 const {
   PostgresPayloadError,
   PostgresRevisionConflictError,
   PostgresStorage,
-} = require("./postgresStorage.cjs");
+} = require("./storage/postgres/postgresStorage.cjs");
 const {
   StoragePayloadError,
   StorageRevisionConflictError,
@@ -218,13 +218,13 @@ const {
   applyBackupConfig,
   removeBackupConfig,
   MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
-} = require("./storageDriver.cjs");
+} = require("./storage/storageDriver.cjs");
 const {
   AssetStorageManager,
   S3AssetStorage,
   AzureSqlAssetStorage,
   keyToHex,
-} = require("./assetStorage.cjs");
+} = require("./storage/assetStorage.cjs");
 const defaultJsonParser = express.json({ limit: "100mb" });
 const postgresJsonBodyLimit =
   process.env.RISU_POSTGRES_JSON_BODY_LIMIT || "1gb";

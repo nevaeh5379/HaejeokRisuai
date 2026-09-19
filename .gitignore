@@ -62,8 +62,6 @@ Cargo.lock
 /.codegraph/
 
 # Generated Node server JavaScript
-/server/node/server.cjs
-/server/node/databaseMutations.cjs
-/server/node/storageSyncSqlApply.cjs
+/server/node/dist/
 /server/node/.tsbuild/
 /packages/backup-core/dist/

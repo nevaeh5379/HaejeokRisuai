@@ -5,15 +5,18 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "../..");
-const generatedServer = path.join(__dirname, "server.cjs");
-const generatedMutations = path.join(__dirname, "databaseMutations.cjs");
+const generatedServer = path.join(__dirname, "dist/server.cjs");
+const generatedMutations = path.join(__dirname, "dist/databaseMutations.cjs");
 const generatedStorageSyncApply = path.join(
   __dirname,
-  "storageSyncSqlApply.cjs",
+  "dist/storageSyncSqlApply.cjs",
 );
 const serverSource = path.join(__dirname, "server.cts");
-const mutationSource = path.join(__dirname, "databaseMutations.cts");
-const storageSyncApplySource = path.join(__dirname, "storageSyncSqlApply.cts");
+const mutationSource = path.join(__dirname, "sync/databaseMutations.cts");
+const storageSyncApplySource = path.join(
+  __dirname,
+  "sync/storageSyncSqlApply.cts",
+);
 const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/assetScope.js"),

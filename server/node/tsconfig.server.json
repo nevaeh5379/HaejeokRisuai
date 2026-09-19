@@ -17,7 +17,7 @@
   },
   "include": [
     "server.cts",
-    "databaseMutations.cts",
-    "storageSyncSqlApply.cts"
+    "sync/databaseMutations.cts",
+    "sync/storageSyncSqlApply.cts"
   ]
 }
