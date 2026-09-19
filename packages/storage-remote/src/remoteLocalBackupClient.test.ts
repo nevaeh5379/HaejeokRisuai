@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { RemoteLocalBackupClient } from "./remoteLocalBackupClient";
+import { NodeApiClient } from "./nodeApiClient";
 
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -11,9 +12,15 @@ function response(body: unknown, status = 200) {
 describe("RemoteLocalBackupClient import API", () => {
   it("uploads the File/Blob body directly without converting it to JSON", async () => {
     const requests: Array<{ path: string; init?: RequestInit }> = [];
-    const apiClient = {
-      request: vi.fn(async (path: string, init?: RequestInit) => {
-        requests.push({ path, init });
+    const apiClient = new NodeApiClient({
+      version: 1,
+      mode: "remote",
+      baseUrl: "test",
+      allowInsecureHttp: true
+    })
+
+    vi.spyOn(apiClient, "request").mockImplementation(async (path: string, init?: RequestInit): ReturnType<typeof apiClient.request> => {
+              requests.push({ path, init });
         if (path === "/api/local-backup/import/jobs") {
           return response({ id: "import-1" });
         }
@@ -36,9 +43,9 @@ describe("RemoteLocalBackupClient import API", () => {
           });
         }
         throw new Error(`unexpected path ${path}`);
-      }),
-      resolve: (path: string) => `http://localhost${path}`,
-    } as any;
+    })
+
+    vi.spyOn(apiClient, "resolve").mockImplementation((path: string): string => `http://localhost${path}`)
     const client = new RemoteLocalBackupClient(
       apiClient,
       async () => "secret",
