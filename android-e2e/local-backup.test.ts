@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import { remote } from "webdriverio";
+import { buildTestLocalBackup } from "../tooling/backup-fixture";
 
 const appiumUrl = new URL(
   process.env.ANDROID_E2E_APPIUM_URL ?? "http://127.0.0.1:4723",
@@ -91,7 +93,38 @@ async function waitForFixture(browser: WebdriverIO.Browser) {
     },
   );
 }
-async function openCompatibleBackupSave(browser: WebdriverIO.Browser) {
+
+async function waitForRestoredFixture(browser: WebdriverIO.Browser) {
+  await browser.waitUntil(
+    async () => {
+      try {
+        return await browser.execute(() =>
+          (document.body?.innerText ?? "").includes("Fixture Bot"),
+        );
+      } catch {
+        await browser.switchContext("NATIVE_APP").catch(() => undefined);
+        const contexts = (await browser
+          .getContexts()
+          .catch(() => [])) as string[];
+        const webview =
+          contexts.find((item) => item === "WEBVIEW_co.aiclient.risu") ??
+          contexts.find(
+            (item) => item.startsWith("WEBVIEW_") && item !== "WEBVIEW_chrome",
+          );
+        if (webview) {
+          await browser.switchContext(webview).catch(() => undefined);
+        }
+        return false;
+      }
+    },
+    {
+      timeout: 120_000,
+      interval: 750,
+      timeoutMsg: "Restored Fixture Bot did not appear after Android import",
+    },
+  );
+}
+async function openBackupSettingsPage(browser: WebdriverIO.Browser) {
   const clickVisibleSettings = async () =>
     await browser.execute(() => {
       const candidates = [
@@ -187,6 +220,10 @@ async function openCompatibleBackupSave(browser: WebdriverIO.Browser) {
     return Boolean(button);
   });
   assert.equal(openedBackupPage, true);
+}
+
+async function openCompatibleBackupSave(browser: WebdriverIO.Browser) {
+  await openBackupSettingsPage(browser);
   await browser.waitUntil(
     async () =>
       browser.execute(() =>
@@ -246,6 +283,32 @@ async function waitForNativeDocumentSaver(browser: WebdriverIO.Browser) {
   );
 }
 
+function runAdb(args: string[]): string {
+  const scopedArgs = process.env.ANDROID_E2E_UDID
+    ? ["-s", process.env.ANDROID_E2E_UDID, ...args]
+    : args;
+  return execFileSync("adb", scopedArgs, { encoding: "utf8" });
+}
+
+async function stageImportFixture(): Promise<string> {
+  const fileName = "haejeokrisu_android_e2e_import.risubackup";
+  await mkdir(artifactsDir, { recursive: true });
+  const hostPath = join(artifactsDir, fileName);
+  await writeFile(hostPath, buildTestLocalBackup());
+  runAdb(["shell", "mkdir", "-p", "/sdcard/Download"]);
+  runAdb(["push", hostPath, `/sdcard/Download/${fileName}`]);
+  runAdb([
+    "shell",
+    "am",
+    "broadcast",
+    "-a",
+    "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+    "-d",
+    `file:///sdcard/Download/${fileName}`,
+  ]);
+  return fileName;
+}
+
 async function confirmNativeDocumentSave(browser: WebdriverIO.Browser) {
   const selectors = [
     "//*[@resource-id='com.google.android.documentsui:id/action_menu_save']",
@@ -263,9 +326,106 @@ async function confirmNativeDocumentSave(browser: WebdriverIO.Browser) {
   throw new Error("Android document saver did not expose a Save action");
 }
 
+async function clickWebviewYes(browser: WebdriverIO.Browser) {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        [...document.querySelectorAll<HTMLButtonElement>("button")].some(
+          (button) => button.textContent?.trim() === "YES",
+        ),
+      ),
+    {
+      timeout: 10_000,
+      interval: 200,
+      timeoutMsg: "Backup confirmation did not appear",
+    },
+  );
+  await browser.execute(() => {
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.trim() === "YES")
+      ?.click();
+  });
+}
+
+async function openLocalBackupRestore(browser: WebdriverIO.Browser) {
+  await openBackupSettingsPage(browser);
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        Boolean(
+          document.querySelector('[data-setting-id="backup.loadLocal"] button'),
+        ),
+      ),
+    {
+      timeout: 15_000,
+      interval: 250,
+      timeoutMsg: "Local backup restore action did not appear",
+    },
+  );
+  await browser.execute(() => {
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-setting-id="backup.loadLocal"] button',
+      )
+      ?.click();
+  });
+  await clickWebviewYes(browser);
+  await clickWebviewYes(browser);
+}
+
+async function selectNativeDocument(
+  browser: WebdriverIO.Browser,
+  fileName: string,
+) {
+  await browser.switchContext("NATIVE_APP");
+  const fileSelector = `//*[@text="${fileName}"]`;
+  const hasFile = async () =>
+    await browser
+      .$(fileSelector)
+      .then((element) => element.isDisplayed())
+      .catch(() => false);
+
+  if (!(await hasFile())) {
+    const roots = await browser.$(
+      "//*[@content-desc='Show roots' or @content-desc='루트 표시']",
+    );
+    if (await roots.isDisplayed().catch(() => false)) {
+      await roots.click();
+    }
+
+    await browser.waitUntil(
+      async () => {
+        for (const selector of [
+          "//*[@text='Downloads' or @text='다운로드']",
+          "//*[@content-desc='Downloads' or @content-desc='다운로드']",
+        ]) {
+          const downloads = await browser.$(selector);
+          if (await downloads.isDisplayed().catch(() => false)) {
+            await downloads.click();
+            return true;
+          }
+        }
+        return false;
+      },
+      {
+        timeout: 10_000,
+        interval: 250,
+        timeoutMsg: "Android document picker did not expose Downloads",
+      },
+    );
+  }
+
+  await browser.waitUntil(hasFile, {
+    timeout: 15_000,
+    interval: 300,
+    timeoutMsg: `Android document picker did not show ${fileName}`,
+  });
+  await (await browser.$(fileSelector)).click();
+}
+
 test(
   "local Android backup opens the native document saver",
-  { timeout: 180_000, skip: remoteProfile },
+  { timeout: 180_000, skip: remoteProfile, concurrency: false },
   async () => {
     const browser = await startDriver();
     try {
@@ -277,7 +437,6 @@ test(
 
       const source = await browser.getPageSource();
       assert.match(source, /risu_compatible_backup_\d{4}-\d{2}-\d{2}/i);
-      await browser.back();
     } catch (error) {
       await mkdir(artifactsDir, { recursive: true });
       await browser
@@ -287,9 +446,39 @@ test(
     }
   },
 );
+
+test(
+  "Android backup restore selects a real document and restores the fixture",
+  { timeout: 240_000, concurrency: false },
+  async () => {
+    const browser = await startDriver();
+    const fileName = await stageImportFixture();
+    try {
+      await switchToAppWebView(browser);
+      await waitForFixture(browser);
+      await openLocalBackupRestore(browser);
+      await selectNativeDocument(browser, fileName);
+      await waitForRestoredFixture(browser);
+
+      const bodyText = await browser.execute(
+        () => document.body?.innerText ?? "",
+      );
+      assert.match(bodyText, /Fixture Bot/);
+    } catch (error) {
+      await mkdir(artifactsDir, { recursive: true });
+      await browser
+        .saveScreenshot(join(artifactsDir, "backup-restore-failure.png"))
+        .catch(() => undefined);
+      throw error;
+    } finally {
+      runAdb(["shell", "rm", "-f", `/sdcard/Download/${fileName}`]);
+    }
+  },
+);
+
 test(
   "remote-profile Android backup completes through the backup API",
-  { timeout: 180_000, skip: !remoteProfile },
+  { timeout: 180_000, skip: !remoteProfile, concurrency: false },
   async () => {
     const browser = await startDriver();
     try {
