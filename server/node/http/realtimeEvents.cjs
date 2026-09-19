@@ -173,9 +173,12 @@ function createRealtimeEventHub({
   }
 
   function replayClient(client, rawLastEventId) {
+    const hasCursorValue =
+      (typeof rawLastEventId === "number" && Number.isFinite(rawLastEventId)) ||
+      (typeof rawLastEventId === "string" && rawLastEventId.trim().length > 0);
     const lastEventId = Number(rawLastEventId);
     const hasLastEventId =
-      Number.isSafeInteger(lastEventId) && lastEventId >= 0;
+      hasCursorValue && Number.isSafeInteger(lastEventId) && lastEventId >= 0;
     const oldestRetainedId = history[0]?.id ?? sequence + 1;
     const replayGap =
       hasLastEventId &&

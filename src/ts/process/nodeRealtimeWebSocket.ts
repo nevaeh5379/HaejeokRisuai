@@ -53,7 +53,12 @@ export async function consumeNodeRealtimeWebSocket(
           type: "authenticate",
           auth: options.auth,
           clientId: options.clientId,
-          lastEventId: options.lastEventId,
+          // Omit an absent cursor entirely. Older Node servers coerced null to
+          // event id 0 and replayed their whole history on every fresh native
+          // connection, including stale response-completion alarms.
+          ...(options.lastEventId == null
+            ? {}
+            : { lastEventId: options.lastEventId }),
         }),
       );
     });

@@ -233,3 +233,24 @@ test("realtime hub replays and broadcasts the same protocol over WebSocket", () 
   ws.emit("close");
   assert.equal(hub.clientCount(), 0);
 });
+
+test("fresh WebSocket connection with a null cursor does not replay history", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
+  hub.broadcast("generation-state", {
+    chatId: "chat-old",
+    lifecycleId: "lifecycle-old",
+    state: "finished",
+  });
+  hub.broadcast("model-job", {
+    phase: "terminal",
+    job: { id: "job-old", chatId: "chat-old", status: "done" },
+  });
+  const ws = new FakeWebSocket();
+
+  hub.connectWebSocket(ws, { clientId: "device-fresh", lastEventId: null });
+
+  assert.equal(ws.frames.length, 1);
+  assert.equal(ws.frames[0].event, "ready");
+  assert.equal(ws.frames[0].data.latestEventId, 2);
+  ws.emit("close");
+});
