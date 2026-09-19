@@ -4,6 +4,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import { remote } from "webdriverio";
+import { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
+import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
+import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
 import { buildTestLocalBackup } from "../tooling/backup-fixture";
 
 const appiumUrl = new URL(
@@ -15,7 +18,9 @@ const artifactsDir =
 const chromedriverDir =
   process.env.ANDROID_E2E_CHROMEDRIVER_DIR ??
   join(artifactsDir, "chromedrivers");
-const remoteProfile = Boolean(process.env.ANDROID_E2E_REMOTE_URL?.trim());
+const remoteUrl = process.env.ANDROID_E2E_REMOTE_URL?.trim() ?? "";
+const remotePassword = process.env.ANDROID_E2E_REMOTE_PASSWORD ?? "";
+const remoteProfile = Boolean(remoteUrl);
 let driver: WebdriverIO.Browser | undefined;
 
 afterEach(async () => {
@@ -124,6 +129,74 @@ function readAndroidDatabaseBytes(suffix = ""): Buffer {
   } catch {
     return Buffer.alloc(0);
   }
+}
+
+async function createRemoteVerifier() {
+  assert.ok(remoteUrl, "ANDROID_E2E_REMOTE_URL is required");
+  assert.ok(remotePassword, "ANDROID_E2E_REMOTE_PASSWORD is required");
+  const verifierUrl = new URL(remoteUrl);
+  if (verifierUrl.hostname === "10.0.2.2") {
+    verifierUrl.hostname = "127.0.0.1";
+  }
+  const baseUrl = verifierUrl.origin;
+  const api = new NodeApiClient({
+    version: 1,
+    mode: "remote",
+    baseUrl,
+    allowInsecureHttp: baseUrl.startsWith("http://"),
+  });
+  let keyPair: CryptoKeyPair | null = null;
+  const identity = new RemoteAuthIdentity(
+    api,
+    async () => keyPair,
+    async (_name, value) => {
+      keyPair = value;
+    },
+  );
+  const auth = new RemoteAuthController(api, identity, {
+    createAuth: () => identity.createAuth(),
+    requestPassword: async () => remotePassword,
+  });
+  await auth.connectWithPassword(remotePassword);
+  return { api, auth };
+}
+
+async function waitForRemoteRestoredFixture(
+  browser: WebdriverIO.Browser,
+) {
+  const { api, auth } = await createRemoteVerifier();
+  const characterId = "aaaaaaaa-1111-4222-8333-444444444444";
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const response = await api.request(
+      `/api/database-v2/characters/${characterId}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: { "risu-auth": await auth.getCachedAuth() },
+      },
+    );
+    if (response.ok) {
+      const body = await response.json();
+      if (body?.character?.name === "Fixture Bot") return;
+    } else if (response.status !== 404 && response.status !== 423) {
+      throw new Error(
+        `Remote restore verification failed (HTTP ${response.status})`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  let bodyText = "";
+  try {
+    await switchToAppWebView(browser);
+    bodyText = String(
+      await browser.execute(() => document.body?.innerText ?? ""),
+    );
+  } catch {}
+  throw new Error(
+    `Remote restore did not persist Fixture Bot on the server${bodyText ? `\nWebView text:\n${bodyText.slice(0, 3000)}` : ""}`,
+  );
 }
 
 async function waitForRestoredFixtureInSqlite(browser: WebdriverIO.Browser) {
@@ -539,6 +612,30 @@ test(
         .saveScreenshot(join(artifactsDir, "remote-backup-failure.png"))
         .catch(() => undefined);
       throw error;
+    }
+  },
+);
+
+test(
+  "remote-profile Android restore uploads bounded chunks and replaces server data",
+  { timeout: 240_000, skip: !remoteProfile, concurrency: false },
+  async () => {
+    const browser = await startDriver();
+    const fileName = await stageImportFixture();
+    try {
+      await switchToAppWebView(browser);
+      await waitForFixture(browser);
+      await openLocalBackupRestore(browser);
+      await selectNativeDocument(browser, fileName);
+      await waitForRemoteRestoredFixture(browser);
+    } catch (error) {
+      await mkdir(artifactsDir, { recursive: true });
+      await browser
+        .saveScreenshot(join(artifactsDir, "remote-restore-failure.png"))
+        .catch(() => undefined);
+      throw error;
+    } finally {
+      runAdb(["shell", "rm", "-f", `/sdcard/Download/${fileName}`]);
     }
   },
 );

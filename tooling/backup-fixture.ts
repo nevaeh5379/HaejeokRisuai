@@ -109,7 +109,7 @@ export function buildTestLocalBackup(): Buffer {
         tags: ["e2e"],
         creator: "e2e",
         chub: { active: false },
-        bias: {},
+        bias: [],
         virtualMemory: [{ title: "note", content: "" }],
         customScripts: [],
         loreBooks: [],

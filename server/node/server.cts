@@ -48,6 +48,10 @@ const path = require("path");
 const net = require("net");
 const { formatListenHost, resolveListenHost } = require("./listenAddress.cjs");
 const { isSecurePostgresConfigRequest } = require("./requestSecurity.cjs");
+const {
+  isLocalBackupImportFinalizePath,
+  isLocalBackupImportUploadPath,
+} = require("./localBackupRequestRouting.cjs");
 const htmlparser = require("node-html-parser");
 const fsSync = require("fs");
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
@@ -251,7 +255,7 @@ function isStorageSyncChunkRequest(req) {
 function isLocalBackupImportUploadRequest(req) {
   return (
     req.method === "PUT" &&
-    /^\/api\/local-backup\/import\/jobs\/[^/]+\/file$/.test(req.path) &&
+    isLocalBackupImportUploadPath(req.path) &&
     req.is("application/octet-stream")
   );
 }
@@ -808,7 +812,8 @@ function isFinalizeControlRequest(req) {
     /^\/api\/storage-sync\/sessions\/[^/]+\/finalize$/.test(path) ||
     /^\/api\/local-backup\/database-stream\/sessions\/[^/]+\/finalize$/.test(
       path,
-    )
+    ) ||
+    isLocalBackupImportFinalizePath(path)
   );
 }
 
