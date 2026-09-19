@@ -71,6 +71,12 @@
 
         return lines.join('\n')
     });
+    // Backup progress step indicator (stage-by-stage checklist with the mascot).
+    // Set to true to re-enable it; when false, the simple progress bar + walking
+    // mascot UI below is shown instead. Kept disabled on purpose (2026-09) —
+    // do not delete this flag or the step UI markup.
+    const PROGRESS_STEP_UI_ENABLED = false
+
     const progressPercent = $derived.by(() => {
         const value = Number.parseFloat($alertStore.submsg ?? '0')
         return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0
@@ -402,7 +408,7 @@
                 {/if}
             {/if}
             {#if $alertStore.type === 'progress'}
-                {#if progressSteps.length > 1}
+                {#if PROGRESS_STEP_UI_ENABLED && progressSteps.length > 1}
                     <div
                         class="relative mb-4 w-full min-w-64 pt-22 md:min-w-138"
                         aria-label={$alertStore.msg}
