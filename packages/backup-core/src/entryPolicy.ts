@@ -42,24 +42,43 @@ function normalizeBackupEntryName(name: string): string | null {
   return normalized;
 }
 
-function classifyBackupEntry(name: string): BackupEntryClassification {
-  const normalized = normalizeBackupEntryName(name);
-  if (!normalized) return { kind: "invalid", normalized: null };
-  if (normalized === LEGACY_DATABASE_ENTRY_NAME)
-    return { kind: "database", normalized };
-  if (
-    normalized === PORTABLE_DATABASE_STREAM_MANIFEST ||
-    parsePortableDatabaseStreamFragmentName(normalized) !== null
-  )
-    return { kind: "databaseStream", normalized };
-  if (normalized === ACCOUNT_ENCRYPTION_ENTRY_NAME)
-    return { kind: "encryption", normalized };
+function classifyExactBackupEntry(normalized: string): BackupEntryKind | null {
+  switch (normalized) {
+    case LEGACY_DATABASE_ENTRY_NAME:
+      return "database"
+    case PORTABLE_DATABASE_STREAM_MANIFEST:
+      return "databaseStream"
+    case ACCOUNT_ENCRYPTION_ENTRY_NAME:
+      return "encryption"
+    default: return null;
+  }
+}
+
+function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
+  if (parsePortableDatabaseStreamFragmentName(normalized) !== null)
+    return "databaseStream"
+
   if (COLD_STORAGE_RE.test(normalized))
-    return { kind: "coldStorage", normalized };
-  if (INLAY_RE.test(normalized)) return { kind: "inlay", normalized };
-  if (normalized.startsWith("assets/")) return { kind: "asset", normalized };
-  if (!normalized.includes("/")) return { kind: "asset", normalized };
-  return { kind: "extension", normalized };
+    return "coldStorage"
+
+  if (INLAY_RE.test(normalized))
+    return "inlay"
+
+  if (normalized.startsWith("assets/") || !normalized.includes("/"))
+    return "asset"
+
+  return "extension"
+}
+function classifyBackupEntry(name: string): BackupEntryClassification {
+  const normalized: string | null = normalizeBackupEntryName(name);
+  if (!normalized) return { kind: "invalid" satisfies BackupEntryKind, normalized: null };
+
+  const kind: BackupEntryKind = classifyExactBackupEntry(normalized) ?? classifyPatternBackupEntry(normalized)
+
+  return {
+    kind: kind,
+    normalized: normalized
+  } 
 }
 
 function normalizeBackupAssetPath(name: string): string {
