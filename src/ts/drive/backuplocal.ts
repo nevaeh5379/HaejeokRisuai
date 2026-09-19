@@ -313,7 +313,7 @@ function getLocalBackupPerformance(): LocalBackupPerformanceSettings {
 }
 
 interface NativeBackupPlugin {
-  openImport(): Promise<{
+  openImport(options?: { raw?: boolean }): Promise<{
     cancelled?: boolean;
     id?: string;
     size?: number;
@@ -334,7 +334,7 @@ interface NativeBackupPlugin {
 }
 
 interface NativeImportProgress {
-  stage: "extracting" | "committing" | "fallback" | "complete";
+  stage: "extracting" | "committing" | "fallback" | "staging" | "complete";
   bytesRead?: number;
   totalBytes?: number;
   assetsProcessed?: number;
@@ -2449,7 +2449,10 @@ async function runLocalBackupRestore<T>(
   });
 }
 
-async function restoreNodeLocalBackupFileUnlocked(file: File) {
+async function restoreNodeLocalBackupSourceUnlocked(
+  file: LocalBackupSource,
+  uploadStart = 2,
+) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
     throw new Error("Node local backup restore requires NodeStorage");
@@ -2491,7 +2494,7 @@ async function restoreNodeLocalBackupFileUnlocked(file: File) {
     }
 
     const ranges: Record<string, [number, number]> = {
-      uploading: [2, 52],
+      uploading: [uploadStart, 52],
       reading: [52, 58],
       coldStorage: [58, 64],
       assets: [64, 76],
@@ -2510,7 +2513,19 @@ async function restoreNodeLocalBackupFileUnlocked(file: File) {
     });
   };
 
-  const upload = nodeStorage.backup.uploadImportFile(job.id, file);
+  const upload = nodeStorage.backup.uploadImportStream(
+    job.id,
+    file.stream(),
+    file.size,
+    {
+      onProgress: (state) =>
+        reportRemoteProgress({
+          stage: "uploading",
+          current: state.receivedBytes,
+          total: state.totalBytes,
+        }),
+    },
+  );
   const polling = (async () => {
     while (keepPolling) {
       try {
@@ -2525,9 +2540,13 @@ async function restoreNodeLocalBackupFileUnlocked(file: File) {
     }
   })();
 
-  const completed = await upload;
-  keepPolling = false;
-  await polling;
+  let completed: Awaited<typeof upload>;
+  try {
+    completed = await upload;
+  } finally {
+    keepPolling = false;
+    await polling;
+  }
   if (completed.status !== "complete") {
     throw new Error(completed.error ?? "Local backup import failed");
   }
@@ -2558,7 +2577,9 @@ async function restoreLocalBackupSource(
 
 export async function restoreLocalBackupFile(file: File) {
   if (usesRemoteBackupApi(forageStorage.realStorage)) {
-    await runLocalBackupRestore(() => restoreNodeLocalBackupFileUnlocked(file));
+    await runLocalBackupRestore(() =>
+      restoreNodeLocalBackupSourceUnlocked(file),
+    );
     return;
   }
   await restoreLocalBackupSource(file);
@@ -2566,15 +2587,18 @@ export async function restoreLocalBackupFile(file: File) {
 
 async function loadCapacitorLocalBackupUnlocked() {
   if (!nativeBackup) throw new Error("Native backup importer is unavailable");
+  const remote = usesRemoteBackupApi(forageStorage.realStorage);
   reportLocalBackupRestoreProgress("selectingSource", { percent: 0 });
   const progressListener = await nativeBackup.addListener(
     "importProgress",
     (event) => {
       const bytesRead = Math.max(0, event.bytesRead ?? 0);
       const totalBytes = Math.max(0, event.totalBytes ?? 0);
+      const copySpan = remote ? 18 : 43;
       let percent =
         totalBytes > 0
-          ? 2 + Math.min(43, Math.floor((bytesRead / totalBytes) * 43))
+          ? 2 +
+            Math.min(copySpan, Math.floor((bytesRead / totalBytes) * copySpan))
           : 2;
 
       let detail =
@@ -2583,7 +2607,7 @@ async function loadCapacitorLocalBackupUnlocked() {
           : bytesRead > 0
             ? formatBackupBytes(bytesRead)
             : "";
-      if (event.stage === "committing") {
+      if (!remote && event.stage === "committing") {
         const processed = Math.max(0, event.assetsProcessed ?? 0);
         const total = Math.max(0, event.totalAssets ?? 0);
         percent = total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
@@ -2592,14 +2616,16 @@ async function loadCapacitorLocalBackupUnlocked() {
             ? `${processed} / ${total} · ${language.localBackupRestoreReadingAssets}`
             : language.localBackupRestoreReadingAssets;
       } else if (event.stage === "complete") {
-        percent = 50;
+        percent = remote ? 20 : 50;
       }
       reportLocalBackupRestoreProgress("reading", { percent, detail });
     },
   );
   let selected: Awaited<ReturnType<NativeBackupPlugin["openImport"]>>;
   try {
-    selected = await nativeBackup.openImport();
+    selected = await nativeBackup.openImport(
+      remote ? { raw: true } : undefined,
+    );
   } finally {
     await progressListener.remove().catch(() => {});
   }
@@ -2613,11 +2639,14 @@ async function loadCapacitorLocalBackupUnlocked() {
   const id = selected.id;
   try {
     const size = Math.max(0, selected.size ?? 0);
-    reportLocalBackupRestoreProgress("reading", { percent: 50 });
-    await restoreLocalBackupSourceUnlocked(
-      createNativeImportSource(nativeBackup, id, size),
-      { start: 50, end: 90 },
-    );
+    const source = createNativeImportSource(nativeBackup, id, size);
+    if (remote) {
+      reportLocalBackupRestoreProgress("reading", { percent: 20 });
+      await restoreNodeLocalBackupSourceUnlocked(source, 20);
+    } else {
+      reportLocalBackupRestoreProgress("reading", { percent: 50 });
+      await restoreLocalBackupSourceUnlocked(source, { start: 50, end: 90 });
+    }
   } finally {
     await nativeBackup.closeImport({ id }).catch(() => {});
   }
@@ -2646,6 +2675,10 @@ async function loadTauriLocalBackupUnlocked() {
   }
   reportLocalBackupRestoreProgress("reading", { percent: 2 });
   const source = await createTauriImportSource(path);
+  if (usesRemoteBackupApi(forageStorage.realStorage)) {
+    await restoreNodeLocalBackupSourceUnlocked(source);
+    return;
+  }
   await restoreLocalBackupSourceUnlocked(source);
 }
 
