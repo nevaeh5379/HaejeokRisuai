@@ -83,6 +83,7 @@ import {
 import { BackupContainerParser } from "@risuai/backup-core/containerStream";
 import {
   LOCAL_BACKUP_PROGRESS_STAGES,
+  type LocalBackupImportProgress,
   type LocalBackupMode as BackupCoreLocalBackupMode,
   type LocalBackupProgressStage,
 } from "@risuai/backup-core/api";
@@ -2372,14 +2373,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
   let keepPolling = true;
 
   const reportRemoteProgress = (
-    progress:
-      | {
-          stage?: string;
-          current?: number;
-          total?: number;
-          detail?: string;
-        }
-      | undefined,
+    progress: LocalBackupImportProgress | undefined,
   ) => {
     if (!progress?.stage) return;
     const current = Math.max(0, Number(progress.current) || 0);
@@ -2401,7 +2395,9 @@ async function restoreNodeLocalBackupSourceUnlocked(
       return;
     }
 
-    const ranges: Record<string, [number, number]> = {
+    const ranges: Partial<
+      Record<LocalBackupImportProgress["stage"], readonly [number, number]>
+    > = {
       uploading: [uploadStart, 52],
       reading: [52, 58],
       coldStorage: [58, 64],

@@ -198,14 +198,18 @@ export function validateLocalBackupExportJobCompletion(
 export type LocalBackupImportJobStatus =
   "pending" | "uploading" | "restoring" | "complete" | "error";
 
+export const LOCAL_BACKUP_IMPORT_PROGRESS_STAGES = [
+  "uploading",
+  "reading",
+  "database",
+  "coldStorage",
+  "assets",
+  "inlays",
+  "finalizing",
+] as const;
+
 export type LocalBackupImportProgressStage =
-  | "uploading"
-  | "reading"
-  | "database"
-  | "coldStorage"
-  | "assets"
-  | "inlays"
-  | "finalizing";
+  (typeof LOCAL_BACKUP_IMPORT_PROGRESS_STAGES)[number];
 
 export interface LocalBackupImportProgress {
   stage: LocalBackupImportProgressStage;
@@ -242,16 +246,6 @@ const LOCAL_BACKUP_IMPORT_STATUSES: LocalBackupImportJobStatus[] = [
   "restoring",
   "complete",
   "error",
-];
-
-const LOCAL_BACKUP_IMPORT_STAGES: LocalBackupImportProgressStage[] = [
-  "uploading",
-  "reading",
-  "database",
-  "coldStorage",
-  "assets",
-  "inlays",
-  "finalizing",
 ];
 
 export function validateLocalBackupImportJobCreated(
@@ -304,7 +298,7 @@ export function validateLocalBackupImportJobProgress(
   if (progress !== undefined) {
     if (
       !progress ||
-      !LOCAL_BACKUP_IMPORT_STAGES.includes(
+      !LOCAL_BACKUP_IMPORT_PROGRESS_STAGES.includes(
         progress.stage as LocalBackupImportProgressStage,
       ) ||
       (progress.current !== undefined &&

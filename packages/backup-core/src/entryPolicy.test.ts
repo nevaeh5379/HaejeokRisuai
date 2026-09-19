@@ -6,6 +6,7 @@ import {
   getInlayBackupName,
   INLAY_BACKUP_PREFIX,
   LEGACY_DATABASE_ENTRY_NAME,
+  normalizeBackupEntryName,
 } from "./entryPolicy";
 
 describe("backup entry format names", () => {
@@ -17,6 +18,10 @@ describe("backup entry format names", () => {
   it("round-trips canonical inlay entry names", () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const name = getInlayBackupName(id);
+
+    const path = `../test/${id}`
+    const test1 = normalizeBackupEntryName(path);
+    console.log(test1)
     expect(INLAY_BACKUP_PREFIX).toBe("inlay_");
     expect(name).toBe(`inlay_${id}.risuinlay`);
     expect(getInlayBackupKey(name)).toBe(id);
