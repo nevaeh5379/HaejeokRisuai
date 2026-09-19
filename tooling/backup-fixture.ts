@@ -14,9 +14,7 @@
 // round-tripping the decoded backup in the real app code path.
 import { deflateSync } from "node:zlib";
 import { Packr } from "msgpackr";
-import {
-  createBackupContainerEntryHeader,
-} from "@risuai/backup-core/containerStream";
+import { createBackupContainerEntryHeader } from "@risuai/backup-core/containerStream";
 import { LEGACY_DATABASE_ENTRY_NAME } from "@risuai/backup-core/entryPolicy";
 import { LEGACY_COMPRESSED_DATABASE_HEADER_BYTES } from "@risuai/backup-core/legacyHeaders";
 
@@ -28,7 +26,9 @@ type BackupEntry = { name: string; data: Buffer };
 
 export function frameBackupEntry(entry: BackupEntry): Buffer {
   return Buffer.concat([
-    Buffer.from(createBackupContainerEntryHeader(entry.name, entry.data.length)),
+    Buffer.from(
+      createBackupContainerEntryHeader(entry.name, entry.data.length),
+    ),
     entry.data,
   ]);
 }
@@ -79,6 +79,7 @@ export interface TestLocalBackupOptions {
   chatId?: string;
   characterName?: string;
   paddingAssetBytes?: number;
+  paddingAssetKey?: string;
 }
 
 export function buildTestLocalBackup(
@@ -94,6 +95,7 @@ export function buildTestLocalBackup(
   const chatId = options.chatId ?? "bbbbbbbb-1111-4222-8333-444444444444";
   const characterName = options.characterName ?? "Fixture Bot";
   const paddingAssetBytes = options.paddingAssetBytes ?? 0;
+  const paddingAssetKey = options.paddingAssetKey ?? "assets/e2e-padding.bin";
   if (
     !Number.isSafeInteger(paddingAssetBytes) ||
     paddingAssetBytes < 0 ||
@@ -175,6 +177,14 @@ export function buildTestLocalBackup(
     botPresetsId: 0,
   };
 
+  const paddingAsset =
+    paddingAssetBytes > 0 ? Buffer.allocUnsafe(paddingAssetBytes) : null;
+  if (paddingAsset) {
+    for (let index = 0; index < paddingAsset.length; index++) {
+      paddingAsset[index] = index % 251;
+    }
+  }
+
   const packr = new Packr({ useRecords: false });
   const entries: BackupEntry[] = [
     {
@@ -185,11 +195,11 @@ export function buildTestLocalBackup(
       name: "assets/test-user-icon.png",
       data: tinyPng,
     },
-    ...(paddingAssetBytes > 0
+    ...(paddingAsset
       ? [
           {
-            name: "assets/e2e-padding.bin",
-            data: Buffer.alloc(paddingAssetBytes, 0xa5),
+            name: paddingAssetKey,
+            data: paddingAsset,
           },
         ]
       : []),

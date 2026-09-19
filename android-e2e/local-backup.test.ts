@@ -8,6 +8,7 @@ import { remote } from "webdriverio";
 import { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
 import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
+import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
 import { LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE } from "@risuai/storage-remote/remoteLocalBackupClient";
 import { buildTestLocalBackup } from "../tooling/backup-fixture";
 
@@ -199,16 +200,19 @@ async function createRemoteVerifier() {
     await api.getCapabilities();
     await auth.authorizeKey(remotePasswordDigest);
   }
-  return { api, auth };
+  const assets = new RemoteAssetClient(api, () => auth.getCachedAuth());
+  return { api, auth, assets };
 }
 
 async function waitForRemoteRestoredFixture(
   browser: WebdriverIO.Browser,
   characterId: string,
+  paddingAsset?: { key: string; byteLength: number },
 ) {
-  const { api, auth } = await createRemoteVerifier();
+  const { api, auth, assets } = await createRemoteVerifier();
   const deadline = Date.now() + 90_000;
   let lastStatus = 0;
+  let lastAssetState = "not checked";
   while (Date.now() < deadline) {
     const response = await api.request(
       `/api/database-v2/characters/${characterId}`,
@@ -221,7 +225,31 @@ async function waitForRemoteRestoredFixture(
     lastStatus = response.status;
     if (response.ok) {
       const body = await response.json();
-      if (body?.character?.name === "Fixture Bot") return;
+      if (body?.character?.name === "Fixture Bot") {
+        if (!paddingAsset) return;
+        try {
+          const data = await assets.getItem(paddingAsset.key);
+          if (!data) {
+            lastAssetState = "missing";
+          } else {
+            lastAssetState = `${data.byteLength} bytes`;
+            const expectedByte = (index: number) => index % 251;
+            const boundary = LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE;
+            if (
+              data.byteLength === paddingAsset.byteLength &&
+              data[0] === expectedByte(0) &&
+              data[boundary - 1] === expectedByte(boundary - 1) &&
+              data[boundary] === expectedByte(boundary) &&
+              data[data.byteLength - 1] === expectedByte(data.byteLength - 1)
+            ) {
+              return;
+            }
+          }
+        } catch (error) {
+          lastAssetState =
+            error instanceof Error ? error.message : String(error);
+        }
+      }
     } else if (response.status !== 404 && response.status !== 423) {
       throw new Error(
         `Remote restore verification failed (HTTP ${response.status})`,
@@ -238,7 +266,7 @@ async function waitForRemoteRestoredFixture(
     );
   } catch {}
   throw new Error(
-    `Remote restore did not persist Fixture Bot on the server (last HTTP ${lastStatus || "none"})${bodyText ? `\nWebView text:\n${bodyText.slice(0, 3000)}` : ""}`,
+    `Remote restore did not persist Fixture Bot and its padding asset on the server (last HTTP ${lastStatus || "none"}, asset ${lastAssetState})${bodyText ? `\nWebView text:\n${bodyText.slice(0, 3000)}` : ""}`,
   );
 }
 
@@ -667,10 +695,14 @@ test(
   async () => {
     let browser = await startDriver();
     const characterId = randomUUID();
+    const paddingAssetBytes =
+      LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE + 128 * 1024;
+    const paddingAssetKey = `assets/e2e-padding-${characterId}.bin`;
     const { fileName, byteLength } = await stageImportFixture({
       characterId,
       chatId: randomUUID(),
-      paddingAssetBytes: LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE + 128 * 1024,
+      paddingAssetBytes,
+      paddingAssetKey,
     });
     assert.ok(
       byteLength > LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE,
@@ -681,7 +713,10 @@ test(
       browser = await waitForFixture(browser);
       await openLocalBackupRestore(browser);
       await selectNativeDocument(browser, fileName);
-      await waitForRemoteRestoredFixture(browser, characterId);
+      await waitForRemoteRestoredFixture(browser, characterId, {
+        key: paddingAssetKey,
+        byteLength: paddingAssetBytes,
+      });
     } catch (error) {
       await mkdir(artifactsDir, { recursive: true });
       await browser
