@@ -96,3 +96,64 @@ describe("RemoteLocalBackupClient import API", () => {
     });
   });
 });
+
+describe("RemoteLocalBackupClient export API", () => {
+  it("uses the shared export job contract and authenticated download URL", async () => {
+    const requests: Array<{ path: string; init?: RequestInit }> = [];
+    const apiClient = {
+      request: vi.fn(async (path: string, init?: RequestInit) => {
+        requests.push({ path, init });
+        if (path.startsWith("/api/local-backup/export/jobs?")) {
+          return response({ id: "export 1" });
+        }
+        if (path.endsWith("/progress")) {
+          return response({
+            status: "streaming",
+            progress: { stage: "assets", current: 2, total: 5 },
+          });
+        }
+        if (path === "/api/local-backup/export/jobs/export%201") {
+          return response({ status: "complete", error: null });
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+      resolve: (path: string) => `https://backup.example${path}`,
+    } as any;
+    const client = new RemoteLocalBackupClient(
+      apiClient,
+      async () => "secret token",
+      "client-1",
+    );
+
+    const job = await client.createExportJob({
+      mode: "partial",
+      pageSize: 64,
+      fragmentRecords: 32,
+    });
+    const progress = await client.getExportProgress(job.id);
+    const completion = await client.waitForExport(job.id);
+    const downloadUrl = await client.getExportDownloadUrl(job.id);
+
+    expect(job).toEqual({ id: "export 1" });
+    expect(progress).toEqual({
+      status: "streaming",
+      progress: { stage: "assets", current: 2, total: 5 },
+    });
+    expect(completion).toEqual({ status: "complete", error: null });
+    expect(downloadUrl).toBe(
+      "https://backup.example/api/local-backup/export/export%201?auth=secret%20token",
+    );
+
+    const create = requests[0];
+    expect(create.path).toBe(
+      "/api/local-backup/export/jobs?mode=partial&pageSize=64&fragmentRecords=32",
+    );
+    expect(create.init?.method).toBe("POST");
+    expect(new Headers(create.init?.headers).get("risu-auth")).toBe(
+      "secret token",
+    );
+    expect(new Headers(create.init?.headers).get("x-risu-client-id")).toBe(
+      "client-1",
+    );
+  });
+});
