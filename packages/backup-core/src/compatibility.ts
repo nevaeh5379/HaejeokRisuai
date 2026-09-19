@@ -1,3 +1,5 @@
+import { COLD_STORAGE_HEADER } from "./coldStorage";
+
 export type CloneValue = <T>(value: T) => T;
 export type IdFactory = () => string;
 export type ColdStorageValueMap = ReadonlyMap<string, unknown>;
@@ -7,8 +9,6 @@ export interface CompatibilityOptions {
   coldStorageHeader?: string;
   idFactory?: IdFactory;
 }
-
-const COLD_STORAGE_HEADER = "\uEF01COLDSTORAGE\uEF01";
 
 function randomUUID(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
