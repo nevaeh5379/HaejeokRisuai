@@ -56,6 +56,25 @@ describe("NodeApiClient", () => {
     );
   });
 
+  it("supplies an empty body for payload-free Capacitor mutations", async () => {
+    const streamedFetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetcher = createCapacitorNodeApiFetch(streamedFetch);
+
+    await fetcher("https://storage.example/api/local-backup/import/jobs", {
+      method: "POST",
+      headers: { "risu-auth": "android-auth" },
+    });
+
+    expect(streamedFetch).toHaveBeenCalledWith(
+      "https://storage.example/api/local-backup/import/jobs",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "risu-auth": "android-auth" },
+        body: new Uint8Array(),
+      }),
+    );
+  });
+
   it("passes remote mutation bodies through the Capacitor adapter", async () => {
     const streamedFetch = vi.fn(async () => Response.json({ revision: 2 }));
     const fetcher = createCapacitorNodeApiFetch(streamedFetch);

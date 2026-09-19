@@ -15,7 +15,7 @@ import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import {
   beginNativeChatRequest,
   endNativeChatRequest,
-} from "../androidChatLifecycle";
+} from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
 import {
   beginNodeGenerationLifecycle,

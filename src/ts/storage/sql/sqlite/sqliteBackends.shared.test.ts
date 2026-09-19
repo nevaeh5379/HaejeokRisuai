@@ -43,6 +43,11 @@ import { installStartupData } from "../../database/databaseLifecycle";
 import { settingsStore } from "../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../stores/domain/deferredSettingsLoader";
 import { iterateStorageSyncSqlRecords } from "../../runtime/storageSyncSource";
+import {
+  exportPortableDatabaseStream,
+  type PortableDatabaseStreamFragment,
+} from "../../backup/portableDatabaseStream";
+import { hasPortableDatabaseStreamRestore } from "../../backup/portableDatabaseStreamRestore";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
 
@@ -113,6 +118,60 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const chat = records.find((record) => record.type === "chat" && record.id === "chat-1");
     expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
     database.close();
+  });
+
+  it("restores portable database fragments without rebuilding an aggregate database when supported", async () => {
+    const sourceHarness = makeFreshHarness(make);
+    await seed(sourceHarness.storage);
+    const fragments: PortableDatabaseStreamFragment[] = [];
+    const manifest = await exportPortableDatabaseStream(
+      sourceHarness.storage,
+      {
+        async writeFragment(fragment) {
+          fragments.push(fragment);
+        },
+        async writeColdStorage() {},
+      },
+      { pageSize: 1, fragmentRecords: 2 },
+    );
+
+    const targetHarness = makeFreshHarness(make);
+    if (!hasPortableDatabaseStreamRestore(targetHarness.storage)) {
+      sourceHarness.database.close();
+      targetHarness.database.close();
+      return;
+    }
+
+    const session =
+      await targetHarness.storage.beginPortableDatabaseStreamRestore();
+    for (const fragment of fragments) {
+      await session.writeFragment(fragment);
+    }
+    await session.finish(manifest);
+
+    const restored = await targetHarness.storage.exportDatabaseSnapshot();
+    expect(restored?.database.language).toBe("en");
+    expect(restored?.database.theme).toBe("dark");
+    expect(restored?.database.modules).toEqual(buildFullDatabase().modules);
+    const chat = await targetHarness.storage.loadChat("chat-1");
+    expect(chat?.message.map((message) => message.data)).toEqual([
+      "one",
+      "two",
+    ]);
+    const sourceGraph =
+      await sourceHarness.storage.loadChatBranchGraph!("chat-1");
+    const restoredGraph =
+      await targetHarness.storage.loadChatBranchGraph!("chat-1");
+    expect(restoredGraph.branches).toEqual(sourceGraph.branches);
+    expect(restoredGraph.activeBranchId).toBe(sourceGraph.activeBranchId);
+    expect(restoredGraph.links).toEqual(sourceGraph.links);
+    expect(
+      restoredGraph.messages.map((message) => message.chatId),
+    ).toEqual(sourceGraph.messages.map((message) => message.chatId));
+    expect(targetHarness.storage.getRevision()).toBe(1);
+
+    sourceHarness.database.close();
+    targetHarness.database.close();
   });
 
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
@@ -653,14 +712,11 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       "UPDATE characters SET last_interaction_time = CASE id WHEN 'char-1' THEN 999999 ELSE 1 END",
     );
 
-    // Without an active chat hint, a message-less chat (chat-2, NULL
-    // last_message_time) falls back to the character interaction time, so it
-    // can rank above its sibling chat-1. This is exactly why the caller must
-    // pass the active chat hint: the backend cannot know which chat was
-    // opened. The returned metadata still keeps the chat's own timestamps.
+    // Without an active chat hint, only the position-zero legacy
+    // representative can inherit the character interaction time. Empty
+    // sibling chats must not all become recent together.
     const withoutActive = await storage.listRecentChats!(50);
-    expect(withoutActive[0]?.chatId).toBe("chat-2");
-    expect(withoutActive[0]?.lastDate).toBe(null);
+    expect(withoutActive[0]?.chatId).toBe("chat-1");
     expect(withoutActive.find((row) => row.chatId === "chat-1")?.lastDate).toBe(
       2000,
     );
@@ -673,6 +729,35 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     // The boosted row is ranked first, but the returned metadata still reports
     // the chat's own last message time so the UI ago-text stays truthful.
     expect(withActive[0]?.lastDate).toBe(2000);
+    database.close();
+  });
+
+  it("does not promote every empty sibling when one chat is active", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    await seed(storage);
+    database.exec(
+      "UPDATE characters SET last_interaction_time = CASE id WHEN 'char-1' THEN 999999 ELSE 1 END",
+    );
+    database.exec(
+      "UPDATE chats SET last_message_time = CASE id WHEN 'chat-1' THEN NULL ELSE last_message_time END",
+    );
+    database.exec(
+      "INSERT INTO chats (id, character_id, position, name) VALUES " +
+        "('chat-empty-2', 'char-1', 2, 'Empty 2'), " +
+        "('chat-empty-3', 'char-1', 3, 'Empty 3')",
+    );
+    database.exec(
+      "INSERT INTO chats (id, character_id, position, name, last_message_time) " +
+        "VALUES ('other-recent', 'char-2', 0, 'Other recent', 5000)",
+    );
+
+    const recent = await storage.listRecentChats!(50, "chat-1");
+    expect(recent.slice(0, 4).map((row) => row.chatId)).toEqual([
+      "chat-1",
+      "other-recent",
+      "chat-2",
+      "chat-empty-2",
+    ]);
     database.close();
   });
 

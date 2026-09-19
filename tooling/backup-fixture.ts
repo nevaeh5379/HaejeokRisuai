@@ -14,23 +14,23 @@
 // round-tripping the decoded backup in the real app code path.
 import { deflateSync } from "node:zlib";
 import { Packr } from "msgpackr";
+import { createBackupContainerEntryHeader } from "@risuai/backup-core/containerStream";
+import { LEGACY_DATABASE_ENTRY_NAME } from "@risuai/backup-core/entryPolicy";
+import { LEGACY_COMPRESSED_DATABASE_HEADER_BYTES } from "@risuai/backup-core/legacyHeaders";
 
-export const COMPRESSED_HEADER = Buffer.from([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
-]);
+export const COMPRESSED_HEADER = Buffer.from(
+  LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
+);
 
 type BackupEntry = { name: string; data: Buffer };
 
 export function frameBackupEntry(entry: BackupEntry): Buffer {
-  const nameBytes = Buffer.from(entry.name, "utf8");
-  if (nameBytes.length === 0 || nameBytes.length > 1024 * 1024) {
-    throw new Error(`Invalid fixture entry name: ${entry.name}`);
-  }
-  const header = Buffer.alloc(8 + nameBytes.length);
-  header.writeUInt32LE(nameBytes.length, 0);
-  nameBytes.copy(header, 4);
-  header.writeUInt32LE(entry.data.length, 4 + nameBytes.length);
-  return Buffer.concat([header, entry.data]);
+  return Buffer.concat([
+    Buffer.from(
+      createBackupContainerEntryHeader(entry.name, entry.data.length),
+    ),
+    entry.data,
+  ]);
 }
 
 export function encodeFixtureDatabase(database: unknown): Buffer {
@@ -74,14 +74,37 @@ export interface FixtureBackupDatabase {
  *  - `didFirstSetup: true` so the app boots straight into the main UI after
  *    the restore + reload
  */
-export function buildTestLocalBackup(): Buffer {
+export interface TestLocalBackupOptions {
+  characterId?: string;
+  chatId?: string;
+  characterName?: string;
+  paddingAssetBytes?: number;
+  paddingAssetKey?: string;
+}
+
+export function buildTestLocalBackup(
+  options: TestLocalBackupOptions = {},
+): Buffer {
   // 1x1 transparent PNG (smallest valid PNG, 67 bytes).
   const tinyPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
     "base64",
   );
-  const characterId = "aaaaaaaa-1111-4222-8333-444444444444";
-  const chatId = "bbbbbbbb-1111-4222-8333-444444444444";
+  const characterId =
+    options.characterId ?? "aaaaaaaa-1111-4222-8333-444444444444";
+  const chatId = options.chatId ?? "bbbbbbbb-1111-4222-8333-444444444444";
+  const characterName = options.characterName ?? "Fixture Bot";
+  const paddingAssetBytes = options.paddingAssetBytes ?? 0;
+  const paddingAssetKey = options.paddingAssetKey ?? "assets/e2e-padding.bin";
+  if (
+    !Number.isSafeInteger(paddingAssetBytes) ||
+    paddingAssetBytes < 0 ||
+    paddingAssetBytes > 16 * 1024 * 1024
+  ) {
+    throw new TypeError(
+      "Fixture padding asset size must be between 0 and 16 MiB",
+    );
+  }
 
   const database: FixtureBackupDatabase = {
     username: "Backup Tester",
@@ -89,14 +112,20 @@ export function buildTestLocalBackup(): Buffer {
     didFirstSetup: true,
     language: "en",
     personas: [
-      { name: "Backup Tester", icon: "", personaPrompt: "", note: "", largePortrait: false },
+      {
+        name: "Backup Tester",
+        icon: "",
+        personaPrompt: "",
+        note: "",
+        largePortrait: false,
+      },
     ],
     selectedPersona: 0,
     characters: [
       {
         chaId: characterId,
         type: "character",
-        name: "Fixture Bot",
+        name: characterName,
         image: "assets/test-fixture-bot.png",
         firstMessage: "Fixture greeting",
         description: "A character created by the e2e fixture builder.",
@@ -109,7 +138,7 @@ export function buildTestLocalBackup(): Buffer {
         tags: ["e2e"],
         creator: "e2e",
         chub: { active: false },
-        bias: {},
+        bias: [],
         virtualMemory: [{ title: "note", content: "" }],
         customScripts: [],
         loreBooks: [],
@@ -148,6 +177,14 @@ export function buildTestLocalBackup(): Buffer {
     botPresetsId: 0,
   };
 
+  const paddingAsset =
+    paddingAssetBytes > 0 ? Buffer.allocUnsafe(paddingAssetBytes) : null;
+  if (paddingAsset) {
+    for (let index = 0; index < paddingAsset.length; index++) {
+      paddingAsset[index] = index % 251;
+    }
+  }
+
   const packr = new Packr({ useRecords: false });
   const entries: BackupEntry[] = [
     {
@@ -158,9 +195,20 @@ export function buildTestLocalBackup(): Buffer {
       name: "assets/test-user-icon.png",
       data: tinyPng,
     },
+    ...(paddingAsset
+      ? [
+          {
+            name: paddingAssetKey,
+            data: paddingAsset,
+          },
+        ]
+      : []),
     {
-      name: "database.risudat",
-      data: Buffer.concat([COMPRESSED_HEADER, deflateSync(packr.encode(database))]),
+      name: LEGACY_DATABASE_ENTRY_NAME,
+      data: Buffer.concat([
+        COMPRESSED_HEADER,
+        deflateSync(packr.encode(database)),
+      ]),
     },
   ];
 

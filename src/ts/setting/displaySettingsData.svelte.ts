@@ -10,6 +10,7 @@ import { updateAnimationSpeed } from "../gui/animation";
 import { guiSizeText, updateGuisize } from "../gui/guisize";
 import { updateColorScheme, updateTextThemeAndCSS } from "../gui/colorscheme";
 import { applyUITheme } from "../gui/uiTheme";
+import { isCapacitorAndroid } from "../platform";
 import { CustomGUISettingMenuStore, syncMobileGUI } from "../stores.svelte";
 
 export const displayThemeSettingsItems: SettingItem[] = [
@@ -27,6 +28,9 @@ export const displayThemeSettingsItems: SettingItem[] = [
       selectOptions: [
         { value: "default", labelKey: "uiThemeDefault", label: "Default Theme" },
         { value: "windows", labelKey: "uiThemeWindows", label: "Windows 11 Fluent Theme" },
+        ...(isCapacitorAndroid
+          ? [{ value: "android", labelKey: "uiThemeAndroid", label: "Android Material Theme" }]
+          : []),
       ],
     },
     keywords: ["theme", "ui", "windows", "fluent"],

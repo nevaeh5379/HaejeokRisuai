@@ -1,12 +1,11 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon, LayersIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, ArchiveRestoreIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon, LayersIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
     import BotSettings from "./Pages/BotSettings.svelte";
     import OtherBotSettings from "./Pages/OtherBotSettings.svelte";
     import PluginSettings from "./Pages/PluginSettings.svelte";
-    import FilesSettings from "./Pages/FilesSettings.svelte";
     import AdvancedSettings from "./Pages/AdvancedSettings.svelte";
     import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex, settingsOpen, mobileBotTargetStore } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
@@ -63,12 +62,11 @@
             return $mobileBotTargetStore.title;
         }
         switch ($SettingsMenuIndex) {
-            case 0: return `${language.account} & ${language.files}`;
+            case 0: return `${language.data} & ${language.backup}`;
             case 1: return language.chatBot;
             case 2: return language.otherBots;
             case 3: return language.display;
             case 4: return language.plugin;
-            case 5: return language.files;
             case 6: return language.advancedSettings;
             case 7: return language.community;
             case 8: return language.globalLoreBook;
@@ -259,8 +257,8 @@
         onclick={() => {
             $SettingsMenuIndex = 0
     }}>
-        <UserIcon />
-        <span>{language.account} & {language.files}</span>
+        <ArchiveRestoreIcon />
+        <span>{language.data} & {language.backup}</span>
     </button>
     <button class="flex gap-2 items-center hover:text-textcolor"
         class:text-textcolor={$SettingsMenuIndex === 17}
@@ -592,9 +590,9 @@
                 >
                     <div class="flex items-center gap-3.5 min-w-0">
                         <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
-                            <UserIcon size={18} />
+                            <ArchiveRestoreIcon size={18} />
                         </div>
-                        <span class="text-base font-medium text-textcolor truncate">{language.account} & {language.files}</span>
+                        <span class="text-base font-medium text-textcolor truncate">{language.data} & {language.backup}</span>
                     </div>
                     <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                 </button>
@@ -737,8 +735,6 @@
         <DisplaySettings targetSubmenu={searchNavigation?.menuIndex === 3 ? searchNavigation.subTab : undefined} />
     {:else if $SettingsMenuIndex === 4}
         <PluginSettings />
-    {:else if $SettingsMenuIndex === 5}
-        <FilesSettings />
     {:else if $SettingsMenuIndex === 6}
         <AdvancedSettings />
     {:else if $SettingsMenuIndex === 7}

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_strip_card_root"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_marginHorizontal="3dp"
+    android:layout_weight="1">
+
+    <ImageView
+        android:id="@+id/widget_strip_card_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/widget_character_icon_description"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/widget_strip_card_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/widget_card_label"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:paddingHorizontal="7dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="5dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</FrameLayout>

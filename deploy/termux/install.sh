@@ -77,7 +77,7 @@ curl -fL "${ARCHIVE_URL}.sha256" -o "$CHECKSUM" || \
 mkdir -p "$STAGED_APP"
 tar -xzf "$ARCHIVE" -C "$STAGED_APP"
 [ -f "$STAGED_APP/dist/index.html" ] || fail "Runtime bundle is missing dist/index.html."
-[ -f "$STAGED_APP/server/node/server.cjs" ] || fail "Runtime bundle is missing the compiled Node server."
+[ -f "$STAGED_APP/server/node/dist/server.cjs" ] || fail "Runtime bundle is missing the compiled Node server."
 [ -f "$STAGED_APP/server/node/bootstrap.cjs" ] || fail "Runtime bundle is missing the Node server bootstrap."
 [ -f "$STAGED_APP/package.json" ] || fail "Runtime bundle is missing package.json."
 [ -f "$STAGED_APP/package-lock.json" ] || fail "Runtime bundle is missing package-lock.json."

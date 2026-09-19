@@ -10,6 +10,7 @@ const DIRECT_READ_METHODS = new Set([
   "getRevisionDetails",
   "getRevisionDiff",
   "getState",
+  "getStorageSyncSummary",
   "getTokenUsage",
   "isAssetCatalogInitialized",
   "listAssetCatalog",
@@ -35,6 +36,7 @@ for (const method of [
   "loadChatMessages",
   "loadColdStorage",
   "loadLorebooks",
+  "loadModuleRecords",
   "loadModules",
   "loadPersonas",
   "loadPluginCustomStorage",
@@ -63,7 +65,7 @@ const INTERNAL_WRITE_METHODS = new Set([
 ]);
 
 const INDIRECT_CLIENT_VISIBLE_MUTATION_HELPERS = new Set([
-  "applyStorageSyncPostgresRecords",
+  "applyStorageSyncSqlRecords",
   "finalizeStorageSyncReplacement",
 ]);
 

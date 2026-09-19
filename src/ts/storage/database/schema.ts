@@ -103,7 +103,8 @@ export interface DatabaseSettings {
   playMessage: boolean;
   iconsize: number;
   theme: string;
-  uiTheme?: "default" | "windows";
+  uiTheme?: "default" | "windows" | "android";
+  androidWidgetBotCount?: number;
   subModel: string;
   emotionPrompt: string;
   formatversion: number;
@@ -564,6 +565,10 @@ export interface DatabaseSettings {
   lastLoadedLoadoutName: string;
   moveInsteadOfCopyOnCMPConvert?: boolean;
   skipSavingAssetsOnWebSync?: boolean;
+  localBackupDatabasePageRecords?: number;
+  localBackupFragmentRecords?: number;
+  localBackupWriterBufferKiB?: number;
+  localBackupProgressUpdateMs?: number;
   resizeTextarea?: boolean;
 }
 

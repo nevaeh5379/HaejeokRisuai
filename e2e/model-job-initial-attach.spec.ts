@@ -8,7 +8,7 @@ test.use({
 
 /**
  * Reproduces the real mobile bug against the REAL model-job manager logic
- * (server/node/modelJobs.cjs) running inside the Playwright router.
+ * (server/node/executors/modelJobs.cjs) running inside the Playwright router.
  *
  * Scenario:
  *  1. A generation job is created on the server (backgrounded mobile browser).

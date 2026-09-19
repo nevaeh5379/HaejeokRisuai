@@ -8,10 +8,12 @@ import tailwindcss from "@tailwindcss/vite";
 import { resolveBuildVersion } from "./tooling/build-version.mjs";
 import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.mjs";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
-const localCommonJsPackages = ["chat-core", "protocol", "backup-core"] as const;
+const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))
-    .filter((file) => file.endsWith(".cjs"))
+    // Node-only `node --test` files are never imported by the browser app;
+    // including them breaks dependency optimization (node:test, node:assert).
+    .filter((file) => file.endsWith(".cjs") && !file.endsWith(".test.cjs"))
     .map((file) => `@risuai/${packageName}/${file}`),
 );
 
@@ -287,7 +289,10 @@ export default defineConfig(({ command, mode }) => {
         src: "/src",
         "@risuai/chat-core": resolve(process.cwd(), "packages/chat-core"),
         "@risuai/protocol": resolve(process.cwd(), "packages/protocol"),
-        "@risuai/backup-core": resolve(process.cwd(), "packages/backup-core"),
+        "@risuai/backup-core": resolve(
+          process.cwd(),
+          "packages/backup-core/src",
+        ),
         "@risuai/storage-core": resolve(
           process.cwd(),
           "packages/storage-core/src",

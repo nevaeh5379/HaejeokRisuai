@@ -1,4 +1,6 @@
 import { createBlankChar } from "../characterDefaults";
+import { updateColorScheme } from "../gui/colorscheme";
+import { applyUITheme } from "../gui/uiTheme";
 import type { RisuModule } from "../process/modules";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
@@ -62,6 +64,13 @@ export async function prepareAndroidE2eFixture(): Promise<"ready" | "reload"> {
   }
 
   localStorage.setItem(tosAcceptanceKey, "true");
+
+  // Exercise the Android-specific appearance path in every packaged E2E run.
+  // This intentionally goes through the same theme/color functions used by
+  // Display Settings so Material You colors and immersive system bars are covered.
+  settingsStore.set("uiTheme", "android");
+  applyUITheme("android");
+  updateColorScheme();
 
   const characterIndex = characterStore.characters.findIndex(
     (character) => character.chaId === characterId,

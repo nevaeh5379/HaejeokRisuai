@@ -51,7 +51,9 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
-import { normalizeBackupEntryName } from "@risuai/backup-core/entryPolicy.cjs";
+import {
+  createBackupContainerEntryHeader,
+} from "@risuai/backup-core/containerStream";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -1917,21 +1919,7 @@ export class LocalWriter {
    * Writes a backup entry header so its data can be streamed in chunks.
    */
   async startBackup(name: string, dataLength: number | bigint): Promise<void> {
-    const normalizedLength =
-      typeof dataLength === "bigint" ? dataLength : BigInt(dataLength);
-    if (normalizedLength < 0n || normalizedLength > 0xffffffffn) {
-      throw new Error(`Backup entry is too large: ${name}`);
-    }
-    const normalizedName = normalizeBackupEntryName(name);
-    if (!normalizedName) {
-      throw new Error(`Invalid backup entry path: ${name}`);
-    }
-    const encodedName = new TextEncoder().encode(normalizedName);
-    const nameLength = new Uint32Array([encodedName.byteLength]);
-    await this.write(new Uint8Array(nameLength.buffer));
-    await this.write(encodedName);
-    const encodedDataLength = new Uint32Array([Number(normalizedLength)]);
-    await this.write(new Uint8Array(encodedDataLength.buffer));
+    await this.write(createBackupContainerEntryHeader(name, dataLength));
   }
 
   /**

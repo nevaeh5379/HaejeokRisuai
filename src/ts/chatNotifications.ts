@@ -4,7 +4,7 @@ import {
   requestNativeChatNotificationPermission,
   showNativeChatNotification,
   usesNativeChatLifecycle,
-} from "./androidChatLifecycle";
+} from "./android/androidChatLifecycle";
 import { subscribeChatResponsePush } from "./network/pushSubscriptions";
 import {
   chatTabsStore,
@@ -13,6 +13,7 @@ import {
 } from "./chatTabs.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import { refreshAndroidNativeSurfaces } from "./android/androidNativeSurfaces";
 
 export interface ChatResponseNotificationOptions {
   chatId?: string;
@@ -139,10 +140,17 @@ export async function notifyChatResponse(
 
   if (usesNativeChatLifecycle()) {
     if (options.completeNativeLifecycle) {
-      await completeNativeChatRequest({ title, body, notify: true });
+      await completeNativeChatRequest({
+        title,
+        body,
+        notify: true,
+        characterId,
+        chatId,
+      });
     } else {
-      await showNativeChatNotification({ title, body });
+      await showNativeChatNotification({ title, body, characterId, chatId });
     }
+    void refreshAndroidNativeSurfaces();
     return;
   }
   if (typeof Notification === "undefined") return;

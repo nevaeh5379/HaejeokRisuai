@@ -5,7 +5,18 @@
     <string name="chat_generation_active">Generating a reply…</string>
     <string name="chat_result_channel">Chat replies</string>
     <string name="chat_result_ready">Reply received</string>
+    <string name="widget_recent_chat_description">Continue your most recent RisuAI chat</string>
+    <string name="widget_compact_chat_description">Open your most recent RisuAI character</string>
+    <string name="widget_bot_grid_description">Browse recently used RisuAI characters in a scrollable grid</string>
+    <string name="widget_bot_strip_description">Page through recent RisuAI characters in a compact row</string>
+    <string name="widget_bot_grid_title">Recent characters</string>
+    <string name="widget_no_recent_characters">No recent characters</string>
+    <string name="widget_previous_characters">Previous characters</string>
+    <string name="widget_next_characters">Next characters</string>
+    <string name="widget_character_icon_description">Character icon</string>
+    <string name="widget_open_recent_chat">Tap to continue your recent chat</string>
+    <string name="quick_settings_tile_label">RisuAI</string>
     <string name="title_activity_main">Risuai</string>
-    <string name="package_name">co.aiclient.risu</string>
-    <string name="custom_url_scheme">co.aiclient.risu</string>
+    <string name="package_name" translatable="false">co.aiclient.risu</string>
+    <string name="custom_url_scheme" translatable="false">co.aiclient.risu</string>
 </resources>

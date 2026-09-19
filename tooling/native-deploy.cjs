@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const { setTimeout: sleep } = require("node:timers/promises");
-const { parseAllowedOrigins } = require("../server/node/remoteCors.cjs");
+const { parseAllowedOrigins } = require("../server/node/http/remoteCors.cjs");
 
 const root = path.resolve(__dirname, "..");
 const stateDir = path.join(root, ".risuai");
@@ -353,7 +353,7 @@ function runBuild(config = null) {
 
 async function testDatabase(config) {
   const { testConnection } = require(
-    path.join(root, "server/node/storageDriver.cjs"),
+    path.join(root, "server/node/storage/storageDriver.cjs"),
   );
   console.log(`==> Testing ${config.db.vendor} connection`);
   const result = await testConnection(config.db.vendor, config.db.params);

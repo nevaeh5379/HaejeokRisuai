@@ -995,7 +995,6 @@ export const languageGerman = {
   waifuWidth: "Breite des Waifu Chat-Bereichs",
   savebackup: "Erstellen und laden Sie ein Backup auf Google hoch",
   loadbackup: "Laden Sie Ihr Backup von Google herunter",
-  files: "Daten",
   backupConfirm: "Möchten Sie wirklich die Sicherung speichern?",
   backupLoadConfirm:
     "Möchten Sie wirklich das Backup laden? Alle Daten gehen verloren!",
@@ -1134,7 +1133,6 @@ export const languageGerman = {
   officialDiscordDesc: "Offizieller Discord zum Austausch über Risuai",
   persona: "Mein Profil",
   icon: "Symbol",
-  account: "Konto",
   remove: "Entfernen",
   able: "Aktiv",
   assetWidth: "Maximale Breite der Asset-Bilder",

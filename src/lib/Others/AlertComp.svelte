@@ -5,7 +5,7 @@
     import { getCharImage } from '../../ts/characters';
     import { ParseMarkdown } from '../../ts/parser/parser.svelte';
     import BarIcon from '../SideBars/BarIcon.svelte';
-    import { ChevronRightIcon, DatabaseBackupIcon, User } from '@lucide/svelte';
+    import { ChevronRightIcon, User } from '@lucide/svelte';
     import { isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
     import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
@@ -71,9 +71,36 @@
 
         return lines.join('\n')
     });
+    // Backup progress step indicator (stage-by-stage checklist with the mascot).
+    // Set to true to re-enable it; when false, the simple progress bar + walking
+    // mascot UI below is shown instead. Kept disabled on purpose (2026-09) —
+    // do not delete this flag or the step UI markup.
+    const PROGRESS_STEP_UI_ENABLED = false
+
     const progressPercent = $derived.by(() => {
         const value = Number.parseFloat($alertStore.submsg ?? '0')
         return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0
+    });
+    const progressSteps = $derived($alertStore.progressSteps ?? []);
+    const progressStepIndex = $derived.by(() => {
+        if (progressSteps.length === 0) return -1
+        const current = Number($alertStore.progressStep ?? 0)
+        if (!Number.isFinite(current)) return 0
+        return Math.max(0, Math.min(progressSteps.length - 1, Math.floor(current)))
+    });
+    const progressStepRatio = $derived.by(() => {
+        const ratio = Number($alertStore.progressStepRatio ?? 0)
+        return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0
+    });
+    const progressStepTravel = $derived.by(() => {
+        if (progressSteps.length <= 1 || progressStepIndex < 0) return 0
+        return Math.max(
+            0,
+            Math.min(
+                1,
+                (progressStepIndex + progressStepRatio) / (progressSteps.length - 1),
+            ),
+        )
     });
 
     let btn
@@ -344,9 +371,9 @@
                     {/if}
                     <p class="confirm-message">{confirmMessage}</p>
                 </div>
-            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'hypaV2' && $alertStore.type !== 'chatOptions'}
+            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'hypaV2' && $alertStore.type !== 'chatOptions' && $alertStore.type !== 'progress'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
-                {#if $alertStore.submsg && $alertStore.type !== 'progress'}
+                {#if $alertStore.submsg}
                     <span class="text-gray-500 text-sm">{$alertStore.submsg}</span>
                 {/if}
 
@@ -381,32 +408,92 @@
                 {/if}
             {/if}
             {#if $alertStore.type === 'progress'}
-                {#if $alertStore.mascot === 'backup'}
-                    <div class="mx-auto mt-3 flex items-center gap-1.5 rounded-full border border-textcolor/10 bg-textcolor/5 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-textcolor2">
-                        <DatabaseBackupIcon size={14} aria-hidden="true" />
-                        <span>LOCAL BACKUP</span>
+                {#if PROGRESS_STEP_UI_ENABLED && progressSteps.length > 1}
+                    <div
+                        class="relative mb-4 w-full min-w-64 pt-22 md:min-w-138"
+                        aria-label={$alertStore.msg}
+                    >
+                        <div class="absolute top-0 right-3.5 left-3.5 h-20 sm:right-9 sm:left-9 sm:h-24" aria-hidden="true">
+                            <div
+                                class="absolute top-0 -translate-x-1/2 transition-[left] duration-300 ease-out"
+                                style:left={`${progressStepTravel * 100}%`}
+                            >
+                                <AirisuMascot variant="progress" decorative className="h-20 w-20 drop-shadow-md sm:h-24 sm:w-24" />
+                            </div>
+                        </div>
+
+                        <div class="flex w-full items-start">
+                            {#each progressSteps as step, index}
+                                {#if index > 0}
+                                    <div class="relative mt-3.5 h-0.5 min-w-2 flex-1 overflow-hidden rounded-full bg-darkborderc sm:mt-4.5" aria-hidden="true">
+                                        {#if index <= progressStepIndex}
+                                            <div class="absolute inset-0 bg-green-500"></div>
+                                        {:else if index === progressStepIndex + 1}
+                                            <div
+                                                class="absolute inset-y-0 left-0 bg-green-500 transition-[width] duration-300 ease-out"
+                                                style:width={`${progressStepRatio * 100}%`}
+                                            ></div>
+                                        {/if}
+                                    </div>
+                                {/if}
+                                <div class="flex w-7 shrink-0 flex-col items-center sm:w-18">
+                                    <div
+                                        class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-colors duration-300 sm:h-9 sm:w-9 sm:text-xs"
+                                        class:border-green-500={index <= progressStepIndex}
+                                        class:bg-green-500={index < progressStepIndex}
+                                        class:text-white={index < progressStepIndex}
+                                        class:bg-darkbutton={index >= progressStepIndex}
+                                        class:border-darkborderc={index > progressStepIndex}
+                                        class:text-textcolor2={index >= progressStepIndex}
+                                        class:ring-2={index === progressStepIndex}
+                                        class:ring-green-500={index === progressStepIndex}
+                                        class:ring-offset-2={index === progressStepIndex}
+                                        class:ring-offset-darkbg={index === progressStepIndex}
+                                        aria-current={index === progressStepIndex ? 'step' : undefined}
+                                        title={step}
+                                    >
+                                        {#if index < progressStepIndex}
+                                            <CheckIcon size={15} strokeWidth={3} />
+                                        {:else if index === progressStepIndex}
+                                            <span class="h-2 w-2 rounded-full bg-green-500" aria-hidden="true"></span>
+                                        {:else}
+                                            {index + 1}
+                                        {/if}
+                                    </div>
+                                    <span
+                                        class="mt-2 hidden max-w-18 text-center text-[10px] leading-tight sm:block"
+                                        class:font-semibold={index === progressStepIndex}
+                                        class:text-green-500={index === progressStepIndex}
+                                        class:text-textcolor2={index !== progressStepIndex}
+                                    >{step}</span>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                {:else}
+                    <div class="relative h-24 w-full min-w-64 md:min-w-138" aria-hidden="true">
+                        <div
+                            class="absolute bottom-0 -translate-x-1/2 transition-[left] duration-300 ease-out"
+                            style:left={`calc(10% + ${progressPercent * 0.8}%)`}
+                        >
+                            <AirisuMascot variant="progress" decorative className="h-24 w-24 drop-shadow-md" />
+                        </div>
                     </div>
                 {/if}
-                <div class="relative mt-4 h-24 w-full min-w-64 md:min-w-138" aria-hidden="true">
+
+                <div class="flex w-full min-w-64 items-center gap-3 md:min-w-138">
                     <div
-                        class="absolute bottom-0 -translate-x-1/2 transition-[left] duration-300 ease-out"
-                        style:left={`calc(10% + ${progressPercent * 0.8}%)`}
+                        class="h-2 flex-1 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow={progressPercent}
                     >
-                        <AirisuMascot variant="progress" decorative className="h-24 w-24 drop-shadow-md" />
+                        <div class="h-full bg-green-500 transition-[width] duration-300 ease-out" style:width={`${progressPercent}%`}></div>
                     </div>
+                    <span class="w-13 text-right text-sm tabular-nums text-textcolor2">{progressPercent.toFixed(1) + '%'}</span>
                 </div>
-                <div
-                    class="w-full min-w-64 md:min-w-138 h-2 bg-bgcolor border border-darkborderc rounded-full overflow-hidden"
-                    role="progressbar"
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    aria-valuenow={progressPercent}
-                >
-                    <div class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]" style:width={`${progressPercent}%`}></div>
-                </div>
-                <div class="w-full flex justify-center mt-6">
-                    <span class="text-textcolor2 text-sm">{progressPercent.toFixed(1) + '%'}</span>
-                </div>
+                <span class="mt-4 max-w-full whitespace-pre-wrap text-center text-sm text-textcolor">{$alertStore.msg}</span>
             {/if}
 
             {#if $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'}

@@ -10,8 +10,12 @@ import {
   listBackupAssetKeys,
   normalizeLocalBackupAssetPath,
   restoreInlayBackupEntry,
+  selectLocalBackupAssetRestoreMode,
   streamNodeBackupAssets,
+  streamRemoteBackupResponse,
+  usesRemoteBackupApi,
 } from "./backuplocal";
+import { NodeStorage } from "../storage/files/nodeStorage";
 
 describe("LocalWriter backup entry names", () => {
   it("preserves a validated nested asset path", async () => {
@@ -23,7 +27,18 @@ describe("LocalWriter backup entry names", () => {
 
     await writer.startBackup("assets/icon/image/2.png", 3);
 
-    expect(new TextDecoder().decode(chunks[1])).toBe("assets/icon/image/2.png");
+    expect(chunks).toHaveLength(1);
+    const header = chunks[0];
+    const view = new DataView(
+      header.buffer,
+      header.byteOffset,
+      header.byteLength,
+    );
+    const nameLength = view.getUint32(0, true);
+    expect(new TextDecoder().decode(header.subarray(4, 4 + nameLength))).toBe(
+      "assets/icon/image/2.png",
+    );
+    expect(view.getUint32(4 + nameLength, true)).toBe(3);
   });
 
   it("rejects unsafe backup entry paths", async () => {
@@ -95,6 +110,58 @@ describe("createNativeImportSource", () => {
   });
 });
 
+describe("remote backup storage routing", () => {
+  it("uses the backup API whenever the active asset storage is NodeStorage", () => {
+    const remoteStorage = new NodeStorage({} as any);
+
+    expect(usesRemoteBackupApi(remoteStorage)).toBe(true);
+    expect(usesRemoteBackupApi({})).toBe(false);
+  });
+
+  it("prefers remote asset restore over Tauri local storage", () => {
+    const remoteStorage = new NodeStorage({} as any);
+
+    expect(selectLocalBackupAssetRestoreMode(remoteStorage, true)).toBe("node");
+    expect(selectLocalBackupAssetRestoreMode({}, true)).toBe("tauri");
+    expect(selectLocalBackupAssetRestoreMode({}, false)).toBe("browser");
+  });
+});
+
+describe("streamRemoteBackupResponse", () => {
+  it("forwards response chunks without assembling the whole backup", async () => {
+    const chunks = [
+      new Uint8Array([1, 2]),
+      new Uint8Array([3]),
+      new Uint8Array([4, 5, 6]),
+    ];
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(chunk);
+          controller.close();
+        },
+      }),
+    );
+    const writes: Uint8Array[] = [];
+
+    await streamRemoteBackupResponse(response, {
+      async write(chunk) {
+        writes.push(chunk.slice());
+      },
+    });
+
+    expect(writes.map((chunk) => [...chunk])).toEqual([[1, 2], [3], [4, 5, 6]]);
+  });
+
+  it("refuses a non-streaming response instead of buffering it eagerly", async () => {
+    const response = new Response();
+    Object.defineProperty(response, "body", { value: null });
+    await expect(
+      streamRemoteBackupResponse(response, { async write() {} }),
+    ).rejects.toThrow("Streaming backup download is unavailable");
+  });
+});
+
 describe("streamNodeBackupAssets", () => {
   it("streams remote assets into the backup and reports omitted entries", async () => {
     const first = new Uint8Array([1, 2]);
@@ -154,13 +221,9 @@ describe("streamNodeBackupAssets", () => {
       write: vi.fn(async () => undefined),
     };
 
-    await streamNodeBackupAssets(
-      storage as any,
-      writer,
-      [],
-      undefined,
-      { prefix: "assets/" },
-    );
+    await streamNodeBackupAssets(storage as any, writer, [], undefined, {
+      prefix: "assets/",
+    });
 
     expect(storage.streamItems).toHaveBeenCalledWith(
       [],

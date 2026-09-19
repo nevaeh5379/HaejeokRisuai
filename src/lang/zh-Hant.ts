@@ -936,7 +936,6 @@ export const languageChineseTraditional = {
   pluginContainsExternalMedia: "此外掛包含外部媒體。",
   pluginContainsExternalJS: "此外掛包含外部 JavaScript。",
   waifuWidth: "角色對話框寬度",
-  files: "檔案",
   backupConfirm: "您確定要儲存備份嗎？",
   backupLoadConfirm: "確定要載入備份嗎？目前的資料將會被覆蓋！",
   backupLoadConfirm2:
@@ -1102,7 +1101,6 @@ export const languageChineseTraditional = {
   officialDiscordDesc: "Risuai 官方的 Discord 伺服器",
   persona: "使用者設定",
   icon: "圖示",
-  account: "帳號",
   remove: "刪除",
   able: "啟用",
   assetWidth: "額外資源圖片最大寬度",

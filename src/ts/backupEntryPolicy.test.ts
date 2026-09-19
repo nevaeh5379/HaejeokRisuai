@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   classifyBackupEntry,
   getInlayBackupKey,
-} from "@risuai/backup-core/entryPolicy.cjs";
+} from "@risuai/backup-core/entryPolicy";
 
 describe("backup entry policy", () => {
   it("keeps core entries and supported asset layouts", () => {
     expect(classifyBackupEntry("database.risudat").kind).toBe("database");
+    expect(
+      classifyBackupEntry("database.stream/000000000001.risudat").kind,
+    ).toBe("databaseStream");
+    expect(classifyBackupEntry("database.stream/manifest.risudat").kind).toBe(
+      "databaseStream",
+    );
     expect(classifyBackupEntry("encryption.risudat").kind).toBe("encryption");
     expect(classifyBackupEntry("avatar.png").kind).toBe("asset");
     expect(classifyBackupEntry("assets/avatar.png").kind).toBe("asset");

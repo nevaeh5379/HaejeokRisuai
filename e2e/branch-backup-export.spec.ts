@@ -152,7 +152,7 @@ async function decodeBackupDatabase(page: Page, bytes: number[]) {
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     const decoder = new TextDecoder();
     let offset = 0;
-    let databaseData: Uint8Array | undefined;
+    const entries = new Map<string, Uint8Array>();
     while (offset < data.length) {
       const nameLength = view.getUint32(offset, true);
       offset += 4;
@@ -162,14 +162,48 @@ async function decodeBackupDatabase(page: Page, bytes: number[]) {
       offset += 4;
       const entry = data.subarray(offset, offset + dataLength);
       offset += dataLength;
-      if (name === "database.risudat") databaseData = entry;
+      entries.set(name, entry);
     }
-    if (!databaseData) throw new Error("database.risudat missing from backup");
+    // Native backups stream the database as `database.stream/` fragments plus
+    // a manifest instead of the single legacy `database.risudat` entry.
+    // Reassemble them through the production collector so the decoded result
+    // matches the PortableDatabase shape the assertions expect.
+    const streamPrefix = "database.stream/";
     const risuSaveUrl = "/src/ts/storage/backup/risuSave.ts";
+    const streamUrl = "/src/ts/storage/backup/portableDatabaseStream.ts";
     const { decodeRisuSave } = (await import(
       /* @vite-ignore */ risuSaveUrl
     )) as { decodeRisuSave: (data: Uint8Array) => Promise<any> };
-    return await decodeRisuSave(databaseData);
+    const { PortableDatabaseStreamCollector } = (await import(
+      /* @vite-ignore */ streamUrl
+    )) as {
+      PortableDatabaseStreamCollector: new () => {
+        addFragment(fragment: any): void;
+        setManifest(manifest: any): void;
+        finish(): any;
+      };
+    };
+    const fragmentIndexes = [...entries.keys()]
+      .filter((name) => name.startsWith(streamPrefix) && name.endsWith(".risudat"))
+      .map((name) => Number(name.slice(streamPrefix.length).split(".")[0]))
+      .filter((index) => Number.isSafeInteger(index) && index > 0)
+      .sort((left, right) => left - right);
+    if (fragmentIndexes.length === 0) {
+      throw new Error("database.stream fragments missing from backup");
+    }
+    const manifestEntry = entries.get(`${streamPrefix}manifest.risudat`);
+    if (!manifestEntry) {
+      throw new Error("database.stream/manifest.risudat missing from backup");
+    }
+    const collector = new PortableDatabaseStreamCollector();
+    for (const index of fragmentIndexes) {
+      const fragment = await decodeRisuSave(
+        entries.get(`${streamPrefix}${String(index).padStart(12, "0")}.risudat`)!,
+      );
+      collector.addFragment(fragment);
+    }
+    collector.setManifest(await decodeRisuSave(manifestEntry));
+    return collector.finish();
   }, bytes);
 }
 

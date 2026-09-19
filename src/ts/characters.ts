@@ -72,7 +72,7 @@ import { buildChatJsonExportPayload } from "./chatExport";
 import {
   loadPortableBranchGraphForExport,
   preparePortableChatForBranchRestore,
-} from "@risuai/backup-core/portableBranches.cjs";
+} from "@risuai/backup-core/portableBranches";
 import { restorePortableChatBranchGraph } from "./storage/sql/portableBranchRestore";
 
 export { createBlankChar } from "./characterDefaults";

@@ -61,9 +61,10 @@ public class NativeBackupPlugin extends Plugin {
             return;
         }
 
+        boolean raw = Boolean.TRUE.equals(call.getBoolean("raw", false));
         executor.execute(() -> {
             try {
-                ImportResult imported = extractImport(uri);
+                ImportResult imported = raw ? stageRawImport(uri) : extractImport(uri);
                 JSObject ret = new JSObject();
                 ret.put("cancelled", false);
                 ret.put("id", imported.id);
@@ -139,6 +140,39 @@ public class NativeBackupPlugin extends Plugin {
         }
         call.resolve();
     }
+
+    private ImportResult stageRawImport(Uri uri) throws IOException {
+        String id = UUID.randomUUID().toString();
+        File sessionDir = new File(getContext().getCacheDir(), "risu-backup-import/" + id);
+        File rawFile = new File(sessionDir, "raw.risubackup");
+        if (!sessionDir.mkdirs() && !sessionDir.isDirectory()) {
+            throw new IOException("Failed to create backup staging directory");
+        }
+
+        long totalBytes = contentLength(uri);
+        ImportProgressReporter progress = new ImportProgressReporter(totalBytes);
+        try {
+            ContentResolver resolver = getContext().getContentResolver();
+            try (
+                InputStream input = new ProgressInputStream(
+                    requireInput(resolver.openInputStream(uri)),
+                    progress,
+                    "staging"
+                );
+                OutputStream output = new BufferedOutputStream(new FileOutputStream(rawFile))
+            ) {
+                copyUntilEof(input, output, new byte[COPY_BUFFER_SIZE]);
+            }
+            sessions.put(id, rawFile);
+            progress.report("complete", rawFile.length(), 0, 0, true);
+            return new ImportResult(id, rawFile, 0, 0, true);
+        } catch (Exception error) {
+            deleteTree(sessionDir);
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("Failed to stage local backup", error);
+        }
+    }
+
     private ImportResult extractImport(Uri uri) throws IOException {
         String id = UUID.randomUUID().toString();
         File sessionDir = new File(getContext().getCacheDir(), "risu-backup-import/" + id);
@@ -240,11 +274,15 @@ public class NativeBackupPlugin extends Plugin {
                 }
                 if (
                     kind == BackupEntryPolicy.Kind.DATABASE ||
+                    kind == BackupEntryPolicy.Kind.DATABASE_STREAM ||
                     kind == BackupEntryPolicy.Kind.ENCRYPTION ||
                     kind == BackupEntryPolicy.Kind.COLD_STORAGE ||
                     kind == BackupEntryPolicy.Kind.INLAY
                 ) {
-                    if (kind == BackupEntryPolicy.Kind.DATABASE) state.hasDatabase = true;
+                    if (
+                        kind == BackupEntryPolicy.Kind.DATABASE ||
+                        "database.stream/manifest.risudat".equals(name.replace('\\', '/'))
+                    ) state.hasDatabase = true;
                     BackupContainerCodec.writeEntry(
                         special,
                         data,

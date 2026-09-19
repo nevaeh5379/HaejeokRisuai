@@ -6,7 +6,7 @@
     import {
         requestNativeChatNotificationPermission,
         usesNativeChatLifecycle,
-    } from 'src/ts/androidChatLifecycle';
+    } from 'src/ts/android/androidChatLifecycle';
     import {
         subscribeChatResponsePush,
         unsubscribeChatResponsePush,

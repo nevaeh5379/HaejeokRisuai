@@ -249,9 +249,9 @@ export interface ISqlStorage {
   ): Promise<SqlChatBranchSummary>;
   activateChatBranch?(chatId: string, branchId: string): Promise<void>;
   /** Lightweight recent-chat feed; avoids hydrating character/chat trees.
-   * `activeChatId` marks the currently open chat so backends can rank it by
-   * the character's latest interaction without boosting that character's
-   * other chats (which would pollute the result before LIMIT is applied). */
+   * `activeChatId` pins the most recently opened chat ahead of the LIMIT and
+   * lets it inherit character interaction time without boosting that
+   * character's other chats. */
   listRecentChats?(
     limit?: number,
     activeChatId?: string,

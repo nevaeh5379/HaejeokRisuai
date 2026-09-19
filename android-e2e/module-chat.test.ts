@@ -57,9 +57,14 @@ test(
       await driver.waitUntil(
         async () => {
           const contexts = (await driver?.getContexts()) as string[];
-          webviewContext = contexts.find((context) =>
-            context.startsWith("WEBVIEW_"),
-          );
+          webviewContext =
+            contexts.find(
+              (context) => context === "WEBVIEW_co.aiclient.risu",
+            ) ??
+            contexts.find(
+              (context) =>
+                context.startsWith("WEBVIEW_") && context !== "WEBVIEW_chrome",
+            );
           return Boolean(webviewContext);
         },
         {
@@ -87,9 +92,15 @@ test(
             await driver?.switchContext("NATIVE_APP").catch(() => undefined);
             const contexts = (await driver?.getContexts().catch(() => [])) as
               string[] | undefined;
-            const liveWebview = contexts?.find((context) =>
-              context.startsWith("WEBVIEW_"),
-            );
+            const liveWebview =
+              contexts?.find(
+                (context) => context === "WEBVIEW_co.aiclient.risu",
+              ) ??
+              contexts?.find(
+                (context) =>
+                  context.startsWith("WEBVIEW_") &&
+                  context !== "WEBVIEW_chrome",
+              );
             if (liveWebview) {
               await driver?.switchContext(liveWebview).catch(() => undefined);
             }
@@ -165,15 +176,23 @@ test(
         color: "rgb(1, 2, 3)",
       });
 
-      const actionButton = await driver.$(
-        'button[risu-btn="android-e2e-module-action"]',
-      );
-      await actionButton.click();
       await driver.waitUntil(
         async () =>
-          driver?.execute(() =>
-            document.body.innerText.includes("android module button worked"),
-          ),
+          driver?.execute(() => {
+            if (
+              document.body.innerText.includes("android module button worked")
+            ) {
+              return true;
+            }
+            document
+              .querySelector<HTMLButtonElement>(
+                'button[risu-btn="android-e2e-module-action"]',
+              )
+              ?.click();
+            return document.body.innerText.includes(
+              "android module button worked",
+            );
+          }),
         {
           timeout: 30_000,
           interval: 250,
