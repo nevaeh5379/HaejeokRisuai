@@ -35,6 +35,14 @@ async function boot(page: Page) {
     await skip.click();
   }
   await expect(page.getByText("Welcome to Haejeok RisuAI")).toHaveCount(0);
+  // The module store hydrates asynchronously from SQLite; reading modules
+  // before hydration completes races init() overwriting the in-memory module
+  // list with the database snapshot.
+  await page.waitForFunction(async () => {
+    const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+    const { moduleStore } = await import(/* @vite-ignore */ path);
+    return moduleStore.loaded === true;
+  });
 }
 
 test("downloads a module as a real CharX archive instead of the HTML app shell", async ({

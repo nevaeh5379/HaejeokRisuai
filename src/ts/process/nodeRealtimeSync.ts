@@ -42,7 +42,7 @@ import {
   type RealtimeGenerationState,
   type RealtimeModelJobEvent,
   type RealtimeReadyEvent,
-} from "../../../packages/protocol/realtimeEvents.cjs";
+} from "@risuai/protocol/realtimeEvents.cjs";
 
 let started = false;
 let streamController: AbortController | null = null;

@@ -37,6 +37,14 @@ async function waitForAppReady(page: import("@playwright/test").Page) {
     undefined,
     { timeout: 30_000 },
   );
+  // The module store hydrates asynchronously from SQLite; reading modules
+  // before hydration completes races init() overwriting the in-memory module
+  // list with the database snapshot.
+  await page.waitForFunction(async () => {
+    const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+    const { moduleStore } = await import(/* @vite-ignore */ path);
+    return moduleStore.loaded === true;
+  });
 }
 
 test.describe("Per-module auxiliary model (E2E)", () => {

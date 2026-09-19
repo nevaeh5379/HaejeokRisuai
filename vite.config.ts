@@ -11,7 +11,9 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))
-    .filter((file) => file.endsWith(".cjs"))
+    // Node-only `node --test` files are never imported by the browser app;
+    // including them breaks dependency optimization (node:test, node:assert).
+    .filter((file) => file.endsWith(".cjs") && !file.endsWith(".test.cjs"))
     .map((file) => `@risuai/${packageName}/${file}`),
 );
 

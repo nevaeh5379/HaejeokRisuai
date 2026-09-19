@@ -25,6 +25,14 @@ async function waitForAppReady(page: import("@playwright/test").Page) {
   );
 
   await expect(page.getByText("Loading...")).toHaveCount(0, { timeout: 30_000 });
+  // The module store hydrates asynchronously from SQLite; installing modules
+  // before hydration completes races init() overwriting the in-memory module
+  // list with the database snapshot.
+  await page.waitForFunction(async () => {
+    const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+    const { moduleStore } = await import(/* @vite-ignore */ path);
+    return moduleStore.loaded === true;
+  });
 }
 
 async function enableSaveIconSetting(page: import("@playwright/test").Page) {

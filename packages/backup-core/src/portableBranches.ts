@@ -312,4 +312,5 @@ export {
   expandChatBranchGraphForCompatibility,
   expandPortableDatabaseBranchGraphsForCompatibility,
   portableBranchPath,
+  stripLegacyBranchFields,
 };

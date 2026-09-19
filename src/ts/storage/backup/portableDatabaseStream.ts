@@ -11,7 +11,10 @@ import type {
   SqlChatBranchSummary,
 } from "../sql/ISqlStorage";
 import { iterateStorageSyncSqlRecords } from "../runtime/storageSyncSource";
-import { NATIVE_BRANCH_GRAPHS_KEY } from "@risuai/backup-core/portableBranches";
+import {
+  NATIVE_BRANCH_GRAPHS_KEY,
+  stripLegacyBranchFields,
+} from "@risuai/backup-core/portableBranches";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
@@ -80,6 +83,13 @@ function increment(
   counts[type] = (counts[type] ?? 0) + 1;
 }
 
+function shallowCloneRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") {
+    throw new Error("Streamed chat record data must be an object");
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
 /**
  * Reuses the storage-sync iterator shared by every SQL backend. It performs
  * authoritative revision checks and pages branch messages; the backup layer
@@ -144,7 +154,19 @@ export async function exportPortableDatabaseStream(
     increment(counts, record.type);
     totalRecords++;
     hooks.onRecord?.(record);
-    fragmentRecords.push(record);
+    fragmentRecords.push(
+      record.type === "chat"
+        ? {
+            ...record,
+            // Runtime chat documents carry activeBranchId from SQL hydration,
+            // but the backup format keeps branch fields only in the graph.
+            // stripLegacyBranchFields mutates, so clone before normalizing.
+            data: stripLegacyBranchFields(
+              shallowCloneRecord(record.data) as Record<string, unknown>,
+            ),
+          }
+        : record,
+    );
     if (fragmentRecords.length >= fragmentRecordLimit) {
       await flush();
     }
