@@ -10,8 +10,11 @@ import {
   listBackupAssetKeys,
   normalizeLocalBackupAssetPath,
   restoreInlayBackupEntry,
+  selectLocalBackupAssetRestoreMode,
   streamNodeBackupAssets,
+  usesRemoteBackupApi,
 } from "./backuplocal";
+import { NodeStorage } from "../storage/files/nodeStorage";
 
 describe("LocalWriter backup entry names", () => {
   it("preserves a validated nested asset path", async () => {
@@ -95,6 +98,23 @@ describe("createNativeImportSource", () => {
   });
 });
 
+describe("remote backup storage routing", () => {
+  it("uses the backup API whenever the active asset storage is NodeStorage", () => {
+    const remoteStorage = new NodeStorage({} as any);
+
+    expect(usesRemoteBackupApi(remoteStorage)).toBe(true);
+    expect(usesRemoteBackupApi({})).toBe(false);
+  });
+
+  it("prefers remote asset restore over Tauri local storage", () => {
+    const remoteStorage = new NodeStorage({} as any);
+
+    expect(selectLocalBackupAssetRestoreMode(remoteStorage, true)).toBe("node");
+    expect(selectLocalBackupAssetRestoreMode({}, true)).toBe("tauri");
+    expect(selectLocalBackupAssetRestoreMode({}, false)).toBe("browser");
+  });
+});
+
 describe("streamNodeBackupAssets", () => {
   it("streams remote assets into the backup and reports omitted entries", async () => {
     const first = new Uint8Array([1, 2]);
@@ -154,13 +174,9 @@ describe("streamNodeBackupAssets", () => {
       write: vi.fn(async () => undefined),
     };
 
-    await streamNodeBackupAssets(
-      storage as any,
-      writer,
-      [],
-      undefined,
-      { prefix: "assets/" },
-    );
+    await streamNodeBackupAssets(storage as any, writer, [], undefined, {
+      prefix: "assets/",
+    });
 
     expect(storage.streamItems).toHaveBeenCalledWith(
       [],

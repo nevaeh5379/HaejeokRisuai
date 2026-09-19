@@ -185,7 +185,10 @@ function reportLocalBackupProgress(
 ) {
   const [start, end] = LOCAL_BACKUP_PROGRESS_RANGES[stage];
   const total = Math.max(0, Math.floor(options.total ?? 0));
-  const current = Math.max(0, Math.min(total, Math.floor(options.current ?? 0)));
+  const current = Math.max(
+    0,
+    Math.min(total, Math.floor(options.current ?? 0)),
+  );
   const ratio = total > 0 ? current / total : 0;
   const percent = options.percent ?? start + (end - start) * ratio;
   const stepRatio =
@@ -208,11 +211,7 @@ function reportLocalBackupProgress(
 }
 
 type LocalBackupRestoreStage =
-  | "selectingSource"
-  | "reading"
-  | "database"
-  | "branches"
-  | "finalizing";
+  "selectingSource" | "reading" | "database" | "branches" | "finalizing";
 
 const LOCAL_BACKUP_RESTORE_STAGE_ORDER: LocalBackupRestoreStage[] = [
   "selectingSource",
@@ -259,7 +258,10 @@ function reportLocalBackupRestoreProgress(
 ) {
   const [start, end] = LOCAL_BACKUP_RESTORE_RANGES[stage];
   const total = Math.max(0, Math.floor(options.total ?? 0));
-  const current = Math.max(0, Math.min(total, Math.floor(options.current ?? 0)));
+  const current = Math.max(
+    0,
+    Math.min(total, Math.floor(options.current ?? 0)),
+  );
   const ratio = total > 0 ? current / total : 0;
   const percent = options.percent ?? start + (end - start) * ratio;
   const stepRatio =
@@ -270,15 +272,11 @@ function reportLocalBackupRestoreProgress(
         : 1;
   const count = total > 0 ? ` (${current} / ${total})` : "";
   const detail = options.detail ? `\n${options.detail}` : "";
-  alertProgress(
-    `${localBackupRestoreLabel(stage)}${count}${detail}`,
-    percent,
-    {
-      steps: LOCAL_BACKUP_RESTORE_STAGE_ORDER.map(localBackupRestoreLabel),
-      currentStep: LOCAL_BACKUP_RESTORE_STAGE_ORDER.indexOf(stage),
-      currentStepRatio: stepRatio,
-    },
-  );
+  alertProgress(`${localBackupRestoreLabel(stage)}${count}${detail}`, percent, {
+    steps: LOCAL_BACKUP_RESTORE_STAGE_ORDER.map(localBackupRestoreLabel),
+    currentStep: LOCAL_BACKUP_RESTORE_STAGE_ORDER.indexOf(stage),
+    currentStepRatio: stepRatio,
+  });
 }
 
 function formatBackupBytes(bytes: number): string {
@@ -628,6 +626,18 @@ async function stageNodeInlaysForBackup(storage: NodeStorage) {
 
 type NodeServerBackupMode = LocalBackupMode | "partial";
 
+export function usesRemoteBackupApi(storage: unknown): storage is NodeStorage {
+  return storage instanceof NodeStorage;
+}
+
+export function selectLocalBackupAssetRestoreMode(
+  storage: unknown,
+  tauri = isTauri,
+): "node" | "tauri" | "browser" {
+  if (usesRemoteBackupApi(storage)) return "node";
+  return tauri ? "tauri" : "browser";
+}
+
 async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
@@ -890,10 +900,7 @@ export async function listBackupAssetKeys(
   return (await storage.keys()).filter((key) => key?.startsWith("assets/"));
 }
 
-function reportBackupAssetProgress(
-  current: number,
-  total: number,
-) {
+function reportBackupAssetProgress(current: number, total: number) {
   reportLocalBackupProgress("assets", { current, total });
 }
 
@@ -938,10 +945,7 @@ async function writeLocalBackupAssets(
           progress.completedFiles + (progress.currentFile ? 1 : 0),
           progress.totalFiles,
         );
-        reportBackupAssetProgress(
-          current,
-          progress.totalFiles,
-        );
+        reportBackupAssetProgress(current, progress.totalFiles);
       },
       request.options,
     );
@@ -1435,7 +1439,7 @@ async function saveStreamingLocalBackupWithOptions(
           }
           lastProgressUpdate = now;
           reportLocalBackupProgress("database", { current, total });
-        }
+        },
       },
       {
         pageSize: performance.databasePageRecords,
@@ -1478,7 +1482,7 @@ async function saveStreamingLocalBackupWithOptions(
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
   try {
     await runExclusiveLocalBackupOperation("save", async () => {
-      if (isNodeServer && !forageStorage.isAccount) {
+      if (usesRemoteBackupApi(forageStorage.realStorage)) {
         await flushDurableStores();
         await saveNodeLocalBackupStream(mode);
         return;
@@ -1503,7 +1507,7 @@ export async function SavePartialLocalBackup() {
     if (!(await alertConfirm(language.partialBackupFirstConfirm))) return;
     if (!(await alertConfirm(language.partialBackupSecondConfirm))) return;
     await runExclusiveLocalBackupOperation("partial-save", async () => {
-      if (isNodeServer && !forageStorage.isAccount) {
+      if (usesRemoteBackupApi(forageStorage.realStorage)) {
         await flushDurableStores();
         await saveNodeLocalBackupStream("partial");
         return;
@@ -1638,14 +1642,17 @@ async function restoreLocalBackupSourceUnlocked(
   let streamCollector: PortableDatabaseStreamCollector | null = null;
   let streamingRestoreSession: PortableDatabaseStreamRestoreSession | null =
     null;
-  let streamingRestoreStorage: Awaited<ReturnType<typeof getSqlStorage>> | null =
-    null;
+  let streamingRestoreStorage: Awaited<
+    ReturnType<typeof getSqlStorage>
+  > | null = null;
   let streamingManifest: PortableDatabaseStreamManifest | null = null;
-  const streamingColdStorage =
-    createStreamingRestoreColdStorageInventory();
+  const streamingColdStorage = createStreamingRestoreColdStorageInventory();
   let streamingDecryptionKey: Promise<string> | null = null;
   const restoredColdStorageKeys = new Set<string>();
-  const useNodeBulkRestore = isNodeServer && !forageStorage.isAccount;
+  const assetRestoreMode = selectLocalBackupAssetRestoreMode(
+    forageStorage.realStorage,
+  );
+  const useNodeBulkRestore = assetRestoreMode === "node";
   const pendingNodeAssets = new Map<string, Uint8Array>();
   const nodeBulkMaxFiles = 64;
   const nodeBulkMaxBytes = 64 * 1024 * 1024;
@@ -1656,7 +1663,7 @@ async function restoreLocalBackupSourceUnlocked(
   const failedInlayWrites: string[] = [];
   let currentEntryName = "";
   let bytesRead = 0;
-  const useTauriBulkRestore = isTauri;
+  const useTauriBulkRestore = assetRestoreMode === "tauri";
   let pendingTauriAssets = new Map<string, Uint8Array>();
   const tauriAssetDirectories = new Set<string>();
   const tauriBulkMaxFiles = 128;
@@ -1666,708 +1673,717 @@ async function restoreLocalBackupSourceUnlocked(
   let streamingRestoreFinished = false;
 
   try {
-  const flushTauriAssets = async (): Promise<number> => {
-    if (pendingTauriAssets.size === 0) return 0;
-    const entries = Array.from(pendingTauriAssets);
-    pendingTauriAssets = new Map();
-    pendingTauriAssetBytes = 0;
+    const flushTauriAssets = async (): Promise<number> => {
+      if (pendingTauriAssets.size === 0) return 0;
+      const entries = Array.from(pendingTauriAssets);
+      pendingTauriAssets = new Map();
+      pendingTauriAssetBytes = 0;
 
-    const directories = new Set(
-      entries.map(([assetPath]) =>
-        assetPath.slice(0, assetPath.lastIndexOf("/")),
-      ),
-    );
-    await Promise.all(
-      Array.from(directories)
-        .filter((directory) => !tauriAssetDirectories.has(directory))
-        .map(async (directory) => {
-          await mkdir(directory, {
-            baseDir: BaseDirectory.AppData,
-            recursive: true,
-          });
-          tauriAssetDirectories.add(directory);
-        }),
-    );
-
-    let cursor = 0;
-    const workers = Array.from(
-      { length: Math.min(tauriBulkWriteConcurrency, entries.length) },
-      async () => {
-        while (cursor < entries.length) {
-          const [assetPath, data] = entries[cursor++];
-          await writeFile(assetPath, data, { baseDir: BaseDirectory.AppData });
-        }
-      },
-    );
-    await Promise.all(workers);
-    return entries.length;
-  };
-
-  const flushNodeAssets = async (): Promise<number> => {
-    if (pendingNodeAssets.size === 0) {
-      return 0;
-    }
-    const count = pendingNodeAssets.size;
-    await (forageStorage.realStorage as NodeStorage).setItems(
-      pendingNodeAssets,
-    );
-    pendingNodeAssets.clear();
-    pendingNodeAssetBytes = 0;
-    return count;
-  };
-
-  // Browser storage (IndexedDB/localForage) has no bulk API, but writing
-  // assets one-by-one serializes every IndexedDB transaction and makes
-  // restoring large backups extremely slow. Batch them instead and write
-  // each batch in a single IndexedDB transaction when possible.
-  const useBrowserBulkRestore = !isTauri && !useNodeBulkRestore;
-  let pendingBrowserAssets = new Map<string, Uint8Array>();
-  const browserBulkMaxFiles = 256;
-  const browserBulkMaxBytes = 64 * 1024 * 1024;
-  const browserBulkWriteConcurrency = 8;
-  let pendingBrowserAssetBytes = 0;
-
-  /**
-   * Reuse localForage's own IndexedDB connection so restored assets land in
-   * exactly the same database/store localForage reads from. Returns null when
-   * the active driver is not IndexedDB (e.g. WebSQL/localStorage fallback).
-   */
-  const getLocalForageIdb = async (): Promise<{
-    db: IDBDatabase;
-    storeName: string;
-  } | null> => {
-    try {
-      const storage = forageStorage.realStorage as any;
-      if (typeof storage?.ready !== "function") return null;
-      await storage.ready();
-      const dbInfo = storage._dbInfo;
-      if (!dbInfo?.db || !dbInfo.storeName) return null;
-      return { db: dbInfo.db, storeName: dbInfo.storeName };
-    } catch {
-      return null;
-    }
-  };
-
-  const writeBrowserAssetBatchWithLocalForage = async (
-    entries: Array<[string, Uint8Array]>,
-  ) => {
-    let cursor = 0;
-    const workers = Array.from(
-      { length: Math.min(browserBulkWriteConcurrency, entries.length) },
-      async () => {
-        while (cursor < entries.length) {
-          const [key, data] = entries[cursor++];
-          await forageStorage.setItem(key, data);
-        }
-      },
-    );
-    await Promise.all(workers);
-  };
-
-  const flushBrowserAssets = async (): Promise<number> => {
-    if (pendingBrowserAssets.size === 0) {
-      return 0;
-    }
-    const count = pendingBrowserAssets.size;
-    const entries = Array.from(pendingBrowserAssets);
-    pendingBrowserAssets = new Map();
-    pendingBrowserAssetBytes = 0;
-
-    try {
-      const idb = await getLocalForageIdb();
-      if (idb) {
-        await new Promise<void>((resolve, reject) => {
-          const tx = idb.db.transaction(idb.storeName, "readwrite");
-          const store = tx.objectStore(idb.storeName);
-          for (const [key, data] of entries) {
-            store.put(data, key);
-          }
-          tx.oncomplete = () => resolve();
-          tx.onerror = () =>
-            reject(tx.error ?? new Error("IndexedDB bulk write failed"));
-          tx.onabort = () =>
-            reject(tx.error ?? new Error("IndexedDB bulk write aborted"));
-        });
-        return count;
-      }
-    } catch (error) {
-      console.warn(
-        "IndexedDB bulk asset write failed, falling back to per-item writes:",
-        error,
+      const directories = new Set(
+        entries.map(([assetPath]) =>
+          assetPath.slice(0, assetPath.lastIndexOf("/")),
+        ),
       );
-    }
+      await Promise.all(
+        Array.from(directories)
+          .filter((directory) => !tauriAssetDirectories.has(directory))
+          .map(async (directory) => {
+            await mkdir(directory, {
+              baseDir: BaseDirectory.AppData,
+              recursive: true,
+            });
+            tauriAssetDirectories.add(directory);
+          }),
+      );
 
-    await writeBrowserAssetBatchWithLocalForage(entries);
-    return count;
-  };
+      let cursor = 0;
+      const workers = Array.from(
+        { length: Math.min(tauriBulkWriteConcurrency, entries.length) },
+        async () => {
+          while (cursor < entries.length) {
+            const [assetPath, data] = entries[cursor++];
+            await writeFile(assetPath, data, {
+              baseDir: BaseDirectory.AppData,
+            });
+          }
+        },
+      );
+      await Promise.all(workers);
+      return entries.length;
+    };
 
-  const restoreBackupEntry = async (name: string, data: Uint8Array) => {
-    currentEntryName = name;
-    if (name === "encryption.risudat") {
-      let meta: typeof encryptionMeta;
+    const flushNodeAssets = async (): Promise<number> => {
+      if (pendingNodeAssets.size === 0) {
+        return 0;
+      }
+      const count = pendingNodeAssets.size;
+      await (forageStorage.realStorage as NodeStorage).setItems(
+        pendingNodeAssets,
+      );
+      pendingNodeAssets.clear();
+      pendingNodeAssetBytes = 0;
+      return count;
+    };
+
+    // Browser storage (IndexedDB/localForage) has no bulk API, but writing
+    // assets one-by-one serializes every IndexedDB transaction and makes
+    // restoring large backups extremely slow. Batch them instead and write
+    // each batch in a single IndexedDB transaction when possible.
+    const useBrowserBulkRestore = assetRestoreMode === "browser";
+    let pendingBrowserAssets = new Map<string, Uint8Array>();
+    const browserBulkMaxFiles = 256;
+    const browserBulkMaxBytes = 64 * 1024 * 1024;
+    const browserBulkWriteConcurrency = 8;
+    let pendingBrowserAssetBytes = 0;
+
+    /**
+     * Reuse localForage's own IndexedDB connection so restored assets land in
+     * exactly the same database/store localForage reads from. Returns null when
+     * the active driver is not IndexedDB (e.g. WebSQL/localStorage fallback).
+     */
+    const getLocalForageIdb = async (): Promise<{
+      db: IDBDatabase;
+      storeName: string;
+    } | null> => {
       try {
-        meta = JSON.parse(textDecoder.decode(data));
+        const storage = forageStorage.realStorage as any;
+        if (typeof storage?.ready !== "function") return null;
+        await storage.ready();
+        const dbInfo = storage._dbInfo;
+        if (!dbInfo?.db || !dbInfo.storeName) return null;
+        return { db: dbInfo.db, storeName: dbInfo.storeName };
+      } catch {
+        return null;
+      }
+    };
+
+    const writeBrowserAssetBatchWithLocalForage = async (
+      entries: Array<[string, Uint8Array]>,
+    ) => {
+      let cursor = 0;
+      const workers = Array.from(
+        { length: Math.min(browserBulkWriteConcurrency, entries.length) },
+        async () => {
+          while (cursor < entries.length) {
+            const [key, data] = entries[cursor++];
+            await forageStorage.setItem(key, data);
+          }
+        },
+      );
+      await Promise.all(workers);
+    };
+
+    const flushBrowserAssets = async (): Promise<number> => {
+      if (pendingBrowserAssets.size === 0) {
+        return 0;
+      }
+      const count = pendingBrowserAssets.size;
+      const entries = Array.from(pendingBrowserAssets);
+      pendingBrowserAssets = new Map();
+      pendingBrowserAssetBytes = 0;
+
+      try {
+        const idb = await getLocalForageIdb();
+        if (idb) {
+          await new Promise<void>((resolve, reject) => {
+            const tx = idb.db.transaction(idb.storeName, "readwrite");
+            const store = tx.objectStore(idb.storeName);
+            for (const [key, data] of entries) {
+              store.put(data, key);
+            }
+            tx.oncomplete = () => resolve();
+            tx.onerror = () =>
+              reject(tx.error ?? new Error("IndexedDB bulk write failed"));
+            tx.onabort = () =>
+              reject(tx.error ?? new Error("IndexedDB bulk write aborted"));
+          });
+          return count;
+        }
       } catch (error) {
-        console.error("Failed to parse encryption metadata:", error);
-        throw new Error(
-          "This backup is encrypted, but its encryption metadata is invalid.",
+        console.warn(
+          "IndexedDB bulk asset write failed, falling back to per-item writes:",
+          error,
         );
       }
 
-      if (
-        meta.type !== "account" ||
-        typeof meta.time !== "number" ||
-        !Number.isFinite(meta.time) ||
-        meta.time <= 0
-      ) {
-        throw new Error(
-          "This backup is encrypted, but its encryption metadata is incomplete.",
-        );
-      }
-      encryptionMeta.type = "account";
-      encryptionMeta.time = meta.time;
-    } else if (name === "database.risudat") {
-      pendingDatabase = data;
-    } else {
-      const classification = classifyBackupEntry(name);
-      if (classification.kind === "databaseStream") {
-        let encoded = data;
-        if (encryptionMeta.type === "account" && encryptionMeta.time) {
-          streamingDecryptionKey ??= fetchLegacyBackupKey(encryptionMeta.time);
-          const key = await streamingDecryptionKey;
-          encoded = isStreamingBackupEncryptedEntry(encoded)
-            ? await decryptStreamingBackupEntry(encoded, key, name)
-            : new Uint8Array(await decryptBuffer(encoded, key));
-        }
-        const value = await decodeRisuSave(encoded);
-        if (!streamingRestoreSession && !streamCollector) {
-          const storage = await getSqlStorage();
-          if (hasPortableDatabaseStreamRestore(storage)) {
-            streamingRestoreStorage = storage;
-            streamingRestoreSession =
-              await storage.beginPortableDatabaseStreamRestore();
-          } else {
-            streamCollector = new PortableDatabaseStreamCollector();
-          }
-        }
-        if (name === PORTABLE_DATABASE_STREAM_MANIFEST) {
-          const manifest = value as PortableDatabaseStreamManifest;
-          if (streamingRestoreSession) {
-            if (streamingManifest) {
-              throw new Error("Duplicate streaming database manifest");
-            }
-            streamingManifest = manifest;
-          } else {
-            streamCollector!.setManifest(manifest);
-          }
-        } else {
-          const fragment = value as PortableDatabaseStreamFragment;
-          if (streamingRestoreSession) {
-            for (const record of fragment.records) {
-              collectStreamingRestoreColdStorageRecord(
-                streamingColdStorage,
-                record,
-              );
-            }
-            await streamingRestoreSession.writeFragment(fragment);
-          } else {
-            streamCollector!.addFragment(fragment);
-          }
-        }
-        entriesRestored++;
-        currentEntryName = "";
-        return;
-      }
+      await writeBrowserAssetBatchWithLocalForage(entries);
+      return count;
+    };
 
-      const inlayKey = getInlayBackupKey(name);
-      if (inlayKey) {
-        const result = await restoreInlayBackupEntry(inlayKey, data);
-        entriesRestored++;
-        if (result.status === "restored") {
-          entriesWritten++;
-        } else if (result.status === "invalid") {
-          invalidInlayEntries.push(inlayKey);
-          console.warn(
-            `Skipping invalid inlay item ${inlayKey}:`,
-            result.error,
-          );
-        } else {
-          failedInlayWrites.push(inlayKey);
-          console.error(
-            `Failed to store inlay item ${inlayKey}:`,
-            result.error,
-          );
-        }
-        currentEntryName = "";
-        return;
-      }
-
-      const coldStorageKey = getColdStorageBackupKey(name);
-      let handledAsColdStorage = false;
-
-      if (coldStorageKey) {
-        handledAsColdStorage = true;
+    const restoreBackupEntry = async (name: string, data: Uint8Array) => {
+      currentEntryName = name;
+      if (name === "encryption.risudat") {
+        let meta: typeof encryptionMeta;
         try {
-          const jsonData = JSON.parse(textDecoder.decode(data));
+          meta = JSON.parse(textDecoder.decode(data));
+        } catch (error) {
+          console.error("Failed to parse encryption metadata:", error);
+          throw new Error(
+            "This backup is encrypted, but its encryption metadata is invalid.",
+          );
+        }
 
-          if (isColdStorageBackupData(jsonData)) {
-            if (await setColdStorageItem(coldStorageKey, jsonData)) {
-              restoredColdStorageKeys.add(coldStorageKey);
+        if (
+          meta.type !== "account" ||
+          typeof meta.time !== "number" ||
+          !Number.isFinite(meta.time) ||
+          meta.time <= 0
+        ) {
+          throw new Error(
+            "This backup is encrypted, but its encryption metadata is incomplete.",
+          );
+        }
+        encryptionMeta.type = "account";
+        encryptionMeta.time = meta.time;
+      } else if (name === "database.risudat") {
+        pendingDatabase = data;
+      } else {
+        const classification = classifyBackupEntry(name);
+        if (classification.kind === "databaseStream") {
+          let encoded = data;
+          if (encryptionMeta.type === "account" && encryptionMeta.time) {
+            streamingDecryptionKey ??= fetchLegacyBackupKey(
+              encryptionMeta.time,
+            );
+            const key = await streamingDecryptionKey;
+            encoded = isStreamingBackupEncryptedEntry(encoded)
+              ? await decryptStreamingBackupEntry(encoded, key, name)
+              : new Uint8Array(await decryptBuffer(encoded, key));
+          }
+          const value = await decodeRisuSave(encoded);
+          if (!streamingRestoreSession && !streamCollector) {
+            const storage = await getSqlStorage();
+            if (hasPortableDatabaseStreamRestore(storage)) {
+              streamingRestoreStorage = storage;
+              streamingRestoreSession =
+                await storage.beginPortableDatabaseStreamRestore();
             } else {
-              console.error(
-                `Failed to restore cold storage item ${coldStorageKey}`,
-              );
+              streamCollector = new PortableDatabaseStreamCollector();
+            }
+          }
+          if (name === PORTABLE_DATABASE_STREAM_MANIFEST) {
+            const manifest = value as PortableDatabaseStreamManifest;
+            if (streamingRestoreSession) {
+              if (streamingManifest) {
+                throw new Error("Duplicate streaming database manifest");
+              }
+              streamingManifest = manifest;
+            } else {
+              streamCollector!.setManifest(manifest);
             }
           } else {
-            console.warn(`Skipping invalid cold storage backup item ${name}`);
+            const fragment = value as PortableDatabaseStreamFragment;
+            if (streamingRestoreSession) {
+              for (const record of fragment.records) {
+                collectStreamingRestoreColdStorageRecord(
+                  streamingColdStorage,
+                  record,
+                );
+              }
+              await streamingRestoreSession.writeFragment(fragment);
+            } else {
+              streamCollector!.addFragment(fragment);
+            }
           }
-        } catch (e) {
-          console.error(
-            `Failed to parse cold storage item ${coldStorageKey}:`,
-            e,
-          );
+          entriesRestored++;
+          currentEntryName = "";
+          return;
+        }
+
+        const inlayKey = getInlayBackupKey(name);
+        if (inlayKey) {
+          const result = await restoreInlayBackupEntry(inlayKey, data);
+          entriesRestored++;
+          if (result.status === "restored") {
+            entriesWritten++;
+          } else if (result.status === "invalid") {
+            invalidInlayEntries.push(inlayKey);
+            console.warn(
+              `Skipping invalid inlay item ${inlayKey}:`,
+              result.error,
+            );
+          } else {
+            failedInlayWrites.push(inlayKey);
+            console.error(
+              `Failed to store inlay item ${inlayKey}:`,
+              result.error,
+            );
+          }
+          currentEntryName = "";
+          return;
+        }
+
+        const coldStorageKey = getColdStorageBackupKey(name);
+        let handledAsColdStorage = false;
+
+        if (coldStorageKey) {
+          handledAsColdStorage = true;
+          try {
+            const jsonData = JSON.parse(textDecoder.decode(data));
+
+            if (isColdStorageBackupData(jsonData)) {
+              if (await setColdStorageItem(coldStorageKey, jsonData)) {
+                restoredColdStorageKeys.add(coldStorageKey);
+              } else {
+                console.error(
+                  `Failed to restore cold storage item ${coldStorageKey}`,
+                );
+              }
+            } else {
+              console.warn(`Skipping invalid cold storage backup item ${name}`);
+            }
+          } catch (e) {
+            console.error(
+              `Failed to parse cold storage item ${coldStorageKey}:`,
+              e,
+            );
+          }
+        }
+
+        if (!handledAsColdStorage) {
+          const assetPath = normalizeLocalBackupAssetPath(name);
+          if (useTauriBulkRestore) {
+            const previous = pendingTauriAssets.get(assetPath);
+            if (previous) pendingTauriAssetBytes -= previous.byteLength;
+            pendingTauriAssets.set(assetPath, data);
+            pendingTauriAssetBytes += data.byteLength;
+
+            if (
+              pendingTauriAssets.size >= tauriBulkMaxFiles ||
+              pendingTauriAssetBytes >= tauriBulkMaxBytes
+            ) {
+              const flushed = await flushTauriAssets();
+              if (flushed) entriesWritten += flushed;
+            }
+          } else if (useNodeBulkRestore) {
+            const key = assetPath;
+            const previous = pendingNodeAssets.get(key);
+            if (previous) {
+              pendingNodeAssetBytes -= previous.byteLength;
+            }
+            pendingNodeAssets.set(key, data);
+            pendingNodeAssetBytes += data.byteLength;
+
+            if (
+              pendingNodeAssets.size >= nodeBulkMaxFiles ||
+              pendingNodeAssetBytes >= nodeBulkMaxBytes
+            ) {
+              const flushed = await flushNodeAssets();
+              if (flushed) {
+                entriesWritten += flushed;
+              }
+            }
+          } else {
+            const key = assetPath;
+            const previous = pendingBrowserAssets.get(key);
+            if (previous) {
+              pendingBrowserAssetBytes -= previous.byteLength;
+            }
+            pendingBrowserAssets.set(key, data);
+            pendingBrowserAssetBytes += data.byteLength;
+
+            if (
+              pendingBrowserAssets.size >= browserBulkMaxFiles ||
+              pendingBrowserAssetBytes >= browserBulkMaxBytes
+            ) {
+              const flushed = await flushBrowserAssets();
+              if (flushed) {
+                entriesWritten += flushed;
+              }
+            }
+          }
         }
       }
 
-      if (!handledAsColdStorage) {
-        const assetPath = normalizeLocalBackupAssetPath(name);
-        if (useTauriBulkRestore) {
-          const previous = pendingTauriAssets.get(assetPath);
-          if (previous) pendingTauriAssetBytes -= previous.byteLength;
-          pendingTauriAssets.set(assetPath, data);
-          pendingTauriAssetBytes += data.byteLength;
+      entriesRestored++;
+      currentEntryName = "";
+    };
 
-          if (
-            pendingTauriAssets.size >= tauriBulkMaxFiles ||
-            pendingTauriAssetBytes >= tauriBulkMaxBytes
-          ) {
-            const flushed = await flushTauriAssets();
-            if (flushed) entriesWritten += flushed;
-          }
-        } else if (useNodeBulkRestore) {
-          const key = assetPath;
-          const previous = pendingNodeAssets.get(key);
-          if (previous) {
-            pendingNodeAssetBytes -= previous.byteLength;
-          }
-          pendingNodeAssets.set(key, data);
-          pendingNodeAssetBytes += data.byteLength;
+    let ignoredExtensionEntries = 0;
+    try {
+      const reader = file.stream().getReader();
+      let lastUiUpdate = 0;
+      type BackupParserPhase = "nameLength" | "name" | "dataLength" | "data";
+      let parserPhase: BackupParserPhase = "nameLength";
+      const lengthBuffer = new Uint8Array(4);
+      let lengthOffset = 0;
+      let entryNameBuffer = new Uint8Array();
+      let entryNameOffset = 0;
+      let entryName = "";
+      let entryDataLength = 0;
+      let entryDataReceived = 0;
+      let entryDataBuffer: Uint8Array | null = new Uint8Array();
 
-          if (
-            pendingNodeAssets.size >= nodeBulkMaxFiles ||
-            pendingNodeAssetBytes >= nodeBulkMaxBytes
-          ) {
-            const flushed = await flushNodeAssets();
-            if (flushed) {
-              entriesWritten += flushed;
-            }
-          }
-        } else {
-          const key = assetPath;
-          const previous = pendingBrowserAssets.get(key);
-          if (previous) {
-            pendingBrowserAssetBytes -= previous.byteLength;
-          }
-          pendingBrowserAssets.set(key, data);
-          pendingBrowserAssetBytes += data.byteLength;
-
-          if (
-            pendingBrowserAssets.size >= browserBulkMaxFiles ||
-            pendingBrowserAssetBytes >= browserBulkMaxBytes
-          ) {
-            const flushed = await flushBrowserAssets();
-            if (flushed) {
-              entriesWritten += flushed;
-            }
-          }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
         }
-      }
-    }
 
-    entriesRestored++;
-    currentEntryName = "";
-  };
+        bytesRead += value.length;
+        const now = Date.now();
+        if (now - lastUiUpdate > 30) {
+          lastUiUpdate = now;
+          const readPercent =
+            file.size === 0
+              ? parserProgress.end
+              : parserProgress.start +
+                (bytesRead / file.size) *
+                  (parserProgress.end - parserProgress.start);
+          const entryLabel = entryName
+            ? localBackupRestoreEntryLabel(entryName)
+            : "";
+          const byteProgress =
+            file.size > 0
+              ? `${formatBackupBytes(bytesRead)} / ${formatBackupBytes(file.size)}`
+              : formatBackupBytes(bytesRead);
+          reportLocalBackupRestoreProgress("reading", {
+            percent: readPercent,
+            detail: entryLabel
+              ? `${byteProgress} · ${entryLabel}`
+              : byteProgress,
+          });
+        }
 
-  let ignoredExtensionEntries = 0;
-  try {
-    const reader = file.stream().getReader();
-    let lastUiUpdate = 0;
-    type BackupParserPhase = "nameLength" | "name" | "dataLength" | "data";
-    let parserPhase: BackupParserPhase = "nameLength";
-    const lengthBuffer = new Uint8Array(4);
-    let lengthOffset = 0;
-    let entryNameBuffer = new Uint8Array();
-    let entryNameOffset = 0;
-    let entryName = "";
-    let entryDataLength = 0;
-    let entryDataReceived = 0;
-    let entryDataBuffer: Uint8Array | null = new Uint8Array();
+        let chunkOffset = 0;
+        while (chunkOffset < value.length) {
+          if (parserPhase === "nameLength" || parserPhase === "dataLength") {
+            const copyLength = Math.min(
+              lengthBuffer.length - lengthOffset,
+              value.length - chunkOffset,
+            );
+            lengthBuffer.set(
+              value.subarray(chunkOffset, chunkOffset + copyLength),
+              lengthOffset,
+            );
+            lengthOffset += copyLength;
+            chunkOffset += copyLength;
+            if (lengthOffset < lengthBuffer.length) {
+              continue;
+            }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
+            const length = new DataView(lengthBuffer.buffer).getUint32(0, true);
+            lengthOffset = 0;
 
-      bytesRead += value.length;
-      const now = Date.now();
-      if (now - lastUiUpdate > 30) {
-        lastUiUpdate = now;
-        const readPercent =
-          file.size === 0
-            ? parserProgress.end
-            : parserProgress.start +
-              (bytesRead / file.size) *
-                (parserProgress.end - parserProgress.start);
-        const entryLabel = entryName
-          ? localBackupRestoreEntryLabel(entryName)
-          : "";
-        const byteProgress =
-          file.size > 0
-            ? `${formatBackupBytes(bytesRead)} / ${formatBackupBytes(file.size)}`
-            : formatBackupBytes(bytesRead);
-        reportLocalBackupRestoreProgress("reading", {
-          percent: readPercent,
-          detail: entryLabel
-            ? `${byteProgress} · ${entryLabel}`
-            : byteProgress,
-        });
-      }
+            if (parserPhase === "nameLength") {
+              if (length === 0 || length > 1024 * 1024) {
+                throw new Error("Invalid backup entry name length");
+              }
+              entryNameBuffer = new Uint8Array(length);
+              entryNameOffset = 0;
+              parserPhase = "name";
+            } else {
+              if (length > file.size) {
+                throw new Error("Invalid backup entry data length");
+              }
+              entryDataLength = length;
+              entryDataReceived = 0;
+              const classification = classifyBackupEntry(entryName);
+              if (classification.kind === "invalid") {
+                throw new Error(`Invalid backup entry path: ${entryName}`);
+              }
+              if (classification.kind === "extension") {
+                entryDataBuffer = null;
+                ignoredExtensionEntries++;
+                console.info(
+                  `Skipping unsupported backup extension entry: ${entryName}`,
+                );
+              } else {
+                entryDataBuffer = new Uint8Array(length);
+              }
+              parserPhase = "data";
 
-      let chunkOffset = 0;
-      while (chunkOffset < value.length) {
-        if (parserPhase === "nameLength" || parserPhase === "dataLength") {
-          const copyLength = Math.min(
-            lengthBuffer.length - lengthOffset,
-            value.length - chunkOffset,
-          );
-          lengthBuffer.set(
-            value.subarray(chunkOffset, chunkOffset + copyLength),
-            lengthOffset,
-          );
-          lengthOffset += copyLength;
-          chunkOffset += copyLength;
-          if (lengthOffset < lengthBuffer.length) {
+              if (entryDataLength === 0) {
+                if (entryDataBuffer !== null) {
+                  await restoreBackupEntry(entryName, new Uint8Array());
+                }
+                entryName = "";
+                parserPhase = "nameLength";
+              }
+            }
             continue;
           }
 
-          const length = new DataView(lengthBuffer.buffer).getUint32(0, true);
-          lengthOffset = 0;
+          if (parserPhase === "name") {
+            const copyLength = Math.min(
+              entryNameBuffer.length - entryNameOffset,
+              value.length - chunkOffset,
+            );
+            entryNameBuffer.set(
+              value.subarray(chunkOffset, chunkOffset + copyLength),
+              entryNameOffset,
+            );
+            entryNameOffset += copyLength;
+            chunkOffset += copyLength;
 
-          if (parserPhase === "nameLength") {
-            if (length === 0 || length > 1024 * 1024) {
-              throw new Error("Invalid backup entry name length");
+            if (entryNameOffset === entryNameBuffer.length) {
+              entryName = textDecoder.decode(entryNameBuffer);
+              parserPhase = "dataLength";
             }
-            entryNameBuffer = new Uint8Array(length);
-            entryNameOffset = 0;
-            parserPhase = "name";
-          } else {
-            if (length > file.size) {
-              throw new Error("Invalid backup entry data length");
-            }
-            entryDataLength = length;
-            entryDataReceived = 0;
-            const classification = classifyBackupEntry(entryName);
-            if (classification.kind === "invalid") {
-              throw new Error(`Invalid backup entry path: ${entryName}`);
-            }
-            if (classification.kind === "extension") {
-              entryDataBuffer = null;
-              ignoredExtensionEntries++;
-              console.info(
-                `Skipping unsupported backup extension entry: ${entryName}`,
-              );
-            } else {
-              entryDataBuffer = new Uint8Array(length);
-            }
-            parserPhase = "data";
-
-            if (entryDataLength === 0) {
-              if (entryDataBuffer !== null) {
-                await restoreBackupEntry(entryName, new Uint8Array());
-              }
-              entryName = "";
-              parserPhase = "nameLength";
-            }
+            continue;
           }
-          continue;
-        }
 
-        if (parserPhase === "name") {
           const copyLength = Math.min(
-            entryNameBuffer.length - entryNameOffset,
+            entryDataLength - entryDataReceived,
             value.length - chunkOffset,
           );
-          entryNameBuffer.set(
-            value.subarray(chunkOffset, chunkOffset + copyLength),
-            entryNameOffset,
-          );
-          entryNameOffset += copyLength;
+          if (entryDataBuffer !== null) {
+            entryDataBuffer.set(
+              value.subarray(chunkOffset, chunkOffset + copyLength),
+              entryDataReceived,
+            );
+          }
+          entryDataReceived += copyLength;
           chunkOffset += copyLength;
 
-          if (entryNameOffset === entryNameBuffer.length) {
-            entryName = textDecoder.decode(entryNameBuffer);
-            parserPhase = "dataLength";
+          if (entryDataReceived === entryDataLength) {
+            if (entryDataBuffer !== null) {
+              await restoreBackupEntry(entryName, entryDataBuffer);
+            }
+            entryName = "";
+            entryDataBuffer = new Uint8Array();
+            parserPhase = "nameLength";
           }
-          continue;
-        }
-
-        const copyLength = Math.min(
-          entryDataLength - entryDataReceived,
-          value.length - chunkOffset,
-        );
-        if (entryDataBuffer !== null) {
-          entryDataBuffer.set(
-            value.subarray(chunkOffset, chunkOffset + copyLength),
-            entryDataReceived,
-          );
-        }
-        entryDataReceived += copyLength;
-        chunkOffset += copyLength;
-
-        if (entryDataReceived === entryDataLength) {
-          if (entryDataBuffer !== null) {
-            await restoreBackupEntry(entryName, entryDataBuffer);
-          }
-          entryName = "";
-          entryDataBuffer = new Uint8Array();
-          parserPhase = "nameLength";
         }
       }
-    }
 
-    if (parserPhase !== "nameLength" || lengthOffset !== 0) {
-      throw new Error("Backup file ended with an incomplete entry");
-    }
-  } catch (streamErr) {
-    if (streamingRestoreSession) {
-      await streamingRestoreSession.abort().catch(() => {});
-      streamingRestoreSession = null;
-      streamingRestoreStorage = null;
-      streamingManifest = null;
-    }
-    // If chunked container failed, try fallback for raw database.bin
-    console.warn(
-      "Stream backup container parsing failed, trying raw database.bin fallback:",
-      streamErr,
-    );
-    try {
-      const buffer = await file.arrayBuffer();
-      const rawBytes = new Uint8Array(buffer);
-      const rawDb = await decodeRisuSave(rawBytes);
-      if (!rawDb || typeof rawDb !== "object") {
+      if (parserPhase !== "nameLength" || lengthOffset !== 0) {
+        throw new Error("Backup file ended with an incomplete entry");
+      }
+    } catch (streamErr) {
+      if (streamingRestoreSession) {
+        await streamingRestoreSession.abort().catch(() => {});
+        streamingRestoreSession = null;
+        streamingRestoreStorage = null;
+        streamingManifest = null;
+      }
+      // If chunked container failed, try fallback for raw database.bin
+      console.warn(
+        "Stream backup container parsing failed, trying raw database.bin fallback:",
+        streamErr,
+      );
+      try {
+        const buffer = await file.arrayBuffer();
+        const rawBytes = new Uint8Array(buffer);
+        const rawDb = await decodeRisuSave(rawBytes);
+        if (!rawDb || typeof rawDb !== "object") {
+          throw streamErr;
+        }
+        pendingDatabase = rawBytes;
+        decodedDatabase = rawDb as Database;
+      } catch {
         throw streamErr;
       }
-      pendingDatabase = rawBytes;
-      decodedDatabase = rawDb as Database;
-    } catch {
-      throw streamErr;
-    }
-  }
-
-  if (useTauriBulkRestore && pendingTauriAssets.size > 0) {
-    reportLocalBackupRestoreProgress("reading", { percent: 90 });
-    const flushed = await flushTauriAssets();
-    if (flushed) entriesWritten += flushed;
-  }
-
-  if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
-    reportLocalBackupRestoreProgress("reading", { percent: 90 });
-    const flushed = await flushNodeAssets();
-    if (flushed) {
-      entriesWritten += flushed;
-    }
-  }
-
-  if (useBrowserBulkRestore && pendingBrowserAssets.size > 0) {
-    reportLocalBackupRestoreProgress("reading", { percent: 90 });
-    const flushed = await flushBrowserAssets();
-    if (flushed) {
-      entriesWritten += flushed;
-    }
-  }
-
-  if (failedInlayWrites.length > 0) {
-    throw new Error(
-      `Failed to restore ${failedInlayWrites.length} inlay item(s) because local storage writes failed. ` +
-        `The database replacement was not applied. First failed item: ${failedInlayWrites[0]}`,
-    );
-  }
-
-  if (invalidInlayEntries.length > 0) {
-    await alertNormalWait(
-      `This backup contains ${invalidInlayEntries.length} invalid inlay item(s). ` +
-        "Those items will be skipped, but the database restore can continue.",
-    );
-  }
-
-  let storage = streamingRestoreStorage ?? (await getSqlStorage());
-
-  if (streamingRestoreSession) {
-    if (pendingDatabase || decodedDatabase || streamCollector) {
-      throw new Error("Backup mixes legacy and streaming database formats");
-    }
-    if (!streamingManifest) {
-      throw new Error("Streaming database manifest is missing");
     }
 
-    const missingColdStorageKeys: string[] = [];
-    for (const key of streamingColdStorage.referencedKeys) {
-      if (restoredColdStorageKeys.has(key)) continue;
-      const existingColdStorage = await getColdStorageItem(key);
-      if (!isColdStorageBackupData(existingColdStorage)) {
-        missingColdStorageKeys.push(key);
+    if (useTauriBulkRestore && pendingTauriAssets.size > 0) {
+      reportLocalBackupRestoreProgress("reading", { percent: 90 });
+      const flushed = await flushTauriAssets();
+      if (flushed) entriesWritten += flushed;
+    }
+
+    if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
+      reportLocalBackupRestoreProgress("reading", { percent: 90 });
+      const flushed = await flushNodeAssets();
+      if (flushed) {
+        entriesWritten += flushed;
       }
     }
-    if (
-      !(await confirmIncompleteColdStorageOperation(
-        {
-          characters: [...streamingColdStorage.characters.values()],
-        } as any,
-        missingColdStorageKeys,
-        "restore",
-      ))
-    ) {
-      return;
+
+    if (useBrowserBulkRestore && pendingBrowserAssets.size > 0) {
+      reportLocalBackupRestoreProgress("reading", { percent: 90 });
+      const flushed = await flushBrowserAssets();
+      if (flushed) {
+        entriesWritten += flushed;
+      }
     }
 
-    if (ignoredExtensionEntries > 0) {
-      console.info(
-        `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
+    if (failedInlayWrites.length > 0) {
+      throw new Error(
+        `Failed to restore ${failedInlayWrites.length} inlay item(s) because local storage writes failed. ` +
+          `The database replacement was not applied. First failed item: ${failedInlayWrites[0]}`,
       );
     }
-    reportLocalBackupRestoreProgress("database", { percent: 97 });
-    reportLocalBackupRestoreProgress("branches", { percent: 98 });
-    await streamingRestoreSession.finish(streamingManifest);
-    streamingRestoreFinished = true;
-    reportLocalBackupRestoreProgress("branches", { percent: 99.5 });
-  } else {
-    if (streamCollector) {
-      if (pendingDatabase || decodedDatabase) {
+
+    if (invalidInlayEntries.length > 0) {
+      await alertNormalWait(
+        `This backup contains ${invalidInlayEntries.length} invalid inlay item(s). ` +
+          "Those items will be skipped, but the database restore can continue.",
+      );
+    }
+
+    let storage = streamingRestoreStorage ?? (await getSqlStorage());
+
+    if (streamingRestoreSession) {
+      if (pendingDatabase || decodedDatabase || streamCollector) {
         throw new Error("Backup mixes legacy and streaming database formats");
       }
-      decodedDatabase = streamCollector.finish() as Database;
-      streamCollector = null;
-    }
+      if (!streamingManifest) {
+        throw new Error("Streaming database manifest is missing");
+      }
 
-    if (!pendingDatabase && !decodedDatabase) {
-      throw new Error("Backup does not contain a database entry");
-    }
+      const missingColdStorageKeys: string[] = [];
+      for (const key of streamingColdStorage.referencedKeys) {
+        if (restoredColdStorageKeys.has(key)) continue;
+        const existingColdStorage = await getColdStorageItem(key);
+        if (!isColdStorageBackupData(existingColdStorage)) {
+          missingColdStorageKeys.push(key);
+        }
+      }
+      if (
+        !(await confirmIncompleteColdStorageOperation(
+          {
+            characters: [...streamingColdStorage.characters.values()],
+          } as any,
+          missingColdStorageKeys,
+          "restore",
+        ))
+      ) {
+        return;
+      }
 
-    const databaseByteLength = pendingDatabase?.byteLength ?? 0;
-    let db: Uint8Array | null = pendingDatabase;
-    pendingDatabase = null;
-    if (db && encryptionMeta.type === "account" && encryptionMeta.time) {
-      try {
-        db = await decryptLegacyAccountBackup(
-          db,
-          encryptionMeta.time,
-          decryptBuffer,
-        );
-      } catch (error) {
-        console.error("Failed to decrypt database backup:", error);
-        const detail = error instanceof Error ? error.message : `${error}`;
-        throw new Error(
-          `This backup is encrypted and could not be decrypted. ${detail}`,
+      if (ignoredExtensionEntries > 0) {
+        console.info(
+          `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
         );
       }
-    }
-    if (ignoredExtensionEntries > 0) {
-      console.info(
-        `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
-      );
-    }
-    reportLocalBackupRestoreProgress("database", { percent: 90 });
-    const decodedDb =
-      decodedDatabase ?? ((await decodeRisuSave(db as Uint8Array)) as Database);
-    const prepared = preparePortableDatabaseForBranchRestore(
-      normalizeBackupSnapshot(decodedDb as BackupDatabaseDraft),
-    );
-    const dbData = prepared.database as Database;
-    const portableBranchGraphs = prepared.branchGraphs;
-    db = null;
-    console.info("[LocalBackupRestore] Decoded database summary", {
-      databaseBytes: databaseByteLength,
-      characters: Array.isArray(dbData.characters)
-        ? dbData.characters.length
-        : null,
-      personas: Array.isArray(dbData.personas) ? dbData.personas.length : null,
-      modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
-      botPresets: Array.isArray(
-        (dbData as Database & Partial<PortableDatabase>).botPresets,
-      )
-        ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
-        : null,
-      promptTemplate: Array.isArray(dbData.promptTemplate)
-        ? dbData.promptTemplate.length
-        : null,
-    });
-    normalizeDatabaseDefaults(dbData);
-    dbData.pluginCustomStorage ??= {};
-    const missingColdStorageKeys: string[] = [];
-    for (const key of await listColdDataKeys(dbData)) {
-      if (restoredColdStorageKeys.has(key)) continue;
-      const existingColdStorage = await getColdStorageItem(key);
-      if (!isColdStorageBackupData(existingColdStorage)) {
-        missingColdStorageKeys.push(key);
-      }
-    }
-    if (
-      !(await confirmIncompleteColdStorageOperation(
-        dbData,
-        missingColdStorageKeys,
-        "restore",
-      ))
-    ) {
-      return;
-    }
-
-    reportLocalBackupRestoreProgress("database", { percent: 91 });
-    storage = await getSqlStorage();
-    await storage.replaceDatabase(dbData, (_step, syncProgress) => {
-      const ratio =
-        syncProgress === undefined ? 0 : Math.max(0, Math.min(1, syncProgress));
-      reportLocalBackupRestoreProgress("database", {
-        percent: 91 + ratio * 7,
-      });
-    });
-    if (Object.keys(portableBranchGraphs).length > 0) {
+      reportLocalBackupRestoreProgress("database", { percent: 97 });
       reportLocalBackupRestoreProgress("branches", { percent: 98 });
-      await restorePortableDatabaseBranchGraphs(
-        await getSqlBranchStorage(),
-        portableBranchGraphs,
+      await streamingRestoreSession.finish(streamingManifest);
+      streamingRestoreFinished = true;
+      reportLocalBackupRestoreProgress("branches", { percent: 99.5 });
+    } else {
+      if (streamCollector) {
+        if (pendingDatabase || decodedDatabase) {
+          throw new Error("Backup mixes legacy and streaming database formats");
+        }
+        decodedDatabase = streamCollector.finish() as Database;
+        streamCollector = null;
+      }
+
+      if (!pendingDatabase && !decodedDatabase) {
+        throw new Error("Backup does not contain a database entry");
+      }
+
+      const databaseByteLength = pendingDatabase?.byteLength ?? 0;
+      let db: Uint8Array | null = pendingDatabase;
+      pendingDatabase = null;
+      if (db && encryptionMeta.type === "account" && encryptionMeta.time) {
+        try {
+          db = await decryptLegacyAccountBackup(
+            db,
+            encryptionMeta.time,
+            decryptBuffer,
+          );
+        } catch (error) {
+          console.error("Failed to decrypt database backup:", error);
+          const detail = error instanceof Error ? error.message : `${error}`;
+          throw new Error(
+            `This backup is encrypted and could not be decrypted. ${detail}`,
+          );
+        }
+      }
+      if (ignoredExtensionEntries > 0) {
+        console.info(
+          `[LocalBackupRestore] Skipped ${ignoredExtensionEntries} unsupported extension entries`,
+        );
+      }
+      reportLocalBackupRestoreProgress("database", { percent: 90 });
+      const decodedDb =
+        decodedDatabase ??
+        ((await decodeRisuSave(db as Uint8Array)) as Database);
+      const prepared = preparePortableDatabaseForBranchRestore(
+        normalizeBackupSnapshot(decodedDb as BackupDatabaseDraft),
       );
+      const dbData = prepared.database as Database;
+      const portableBranchGraphs = prepared.branchGraphs;
+      db = null;
+      console.info("[LocalBackupRestore] Decoded database summary", {
+        databaseBytes: databaseByteLength,
+        characters: Array.isArray(dbData.characters)
+          ? dbData.characters.length
+          : null,
+        personas: Array.isArray(dbData.personas)
+          ? dbData.personas.length
+          : null,
+        modules: Array.isArray(dbData.modules) ? dbData.modules.length : null,
+        botPresets: Array.isArray(
+          (dbData as Database & Partial<PortableDatabase>).botPresets,
+        )
+          ? (dbData as Database & Partial<PortableDatabase>).botPresets!.length
+          : null,
+        promptTemplate: Array.isArray(dbData.promptTemplate)
+          ? dbData.promptTemplate.length
+          : null,
+      });
+      normalizeDatabaseDefaults(dbData);
+      dbData.pluginCustomStorage ??= {};
+      const missingColdStorageKeys: string[] = [];
+      for (const key of await listColdDataKeys(dbData)) {
+        if (restoredColdStorageKeys.has(key)) continue;
+        const existingColdStorage = await getColdStorageItem(key);
+        if (!isColdStorageBackupData(existingColdStorage)) {
+          missingColdStorageKeys.push(key);
+        }
+      }
+      if (
+        !(await confirmIncompleteColdStorageOperation(
+          dbData,
+          missingColdStorageKeys,
+          "restore",
+        ))
+      ) {
+        return;
+      }
+
+      reportLocalBackupRestoreProgress("database", { percent: 91 });
+      storage = await getSqlStorage();
+      await storage.replaceDatabase(dbData, (_step, syncProgress) => {
+        const ratio =
+          syncProgress === undefined
+            ? 0
+            : Math.max(0, Math.min(1, syncProgress));
+        reportLocalBackupRestoreProgress("database", {
+          percent: 91 + ratio * 7,
+        });
+      });
+      if (Object.keys(portableBranchGraphs).length > 0) {
+        reportLocalBackupRestoreProgress("branches", { percent: 98 });
+        await restorePortableDatabaseBranchGraphs(
+          await getSqlBranchStorage(),
+          portableBranchGraphs,
+        );
+      }
     }
-  }
-  reportLocalBackupRestoreProgress("finalizing", { percent: 100 });
+    reportLocalBackupRestoreProgress("finalizing", { percent: 100 });
 
-  const completionMessage =
-    invalidInlayEntries.length > 0
-      ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s). Refreshing your app.`
-      : "Success, Refreshing your app.";
+    const completionMessage =
+      invalidInlayEntries.length > 0
+        ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s). Refreshing your app.`
+        : "Success, Refreshing your app.";
 
-  if (isTauri) {
-    alertStore.set({
-      type: "wait",
-      msg: completionMessage,
-    });
-    await relaunch();
-  } else {
-    await storage.close?.();
-    alertStore.set({
-      type: "wait",
-      msg: completionMessage,
-    });
-    const cleanUrl = new URL(location.href);
-    cleanUrl.search = "";
-    location.replace(cleanUrl);
-  }
+    if (isTauri) {
+      alertStore.set({
+        type: "wait",
+        msg: completionMessage,
+      });
+      await relaunch();
+    } else {
+      await storage.close?.();
+      alertStore.set({
+        type: "wait",
+        msg: completionMessage,
+      });
+      const cleanUrl = new URL(location.href);
+      cleanUrl.search = "";
+      location.replace(cleanUrl);
+    }
 
-  alertNormal(
-    invalidInlayEntries.length > 0
-      ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s).`
-      : "Success",
-  );
+    alertNormal(
+      invalidInlayEntries.length > 0
+        ? `Success, but skipped ${invalidInlayEntries.length} invalid inlay item(s).`
+        : "Success",
+    );
   } finally {
     if (streamingRestoreSession && !streamingRestoreFinished) {
       await streamingRestoreSession.abort().catch(() => {});
@@ -2483,14 +2499,16 @@ async function restoreLocalBackupSource(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
 ) {
-  reportLocalBackupRestoreProgress("reading", { percent: parserProgress.start });
+  reportLocalBackupRestoreProgress("reading", {
+    percent: parserProgress.start,
+  });
   return await runLocalBackupRestore(() =>
     restoreLocalBackupSourceUnlocked(file, parserProgress),
   );
 }
 
 export async function restoreLocalBackupFile(file: File) {
-  if (isNodeServer) {
+  if (usesRemoteBackupApi(forageStorage.realStorage)) {
     await runLocalBackupRestore(() => restoreNodeLocalBackupFileUnlocked(file));
     return;
   }
