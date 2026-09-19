@@ -1,7 +1,11 @@
 import { promisify } from "node:util";
 import { gzip, gunzipSync, inflateSync } from "node:zlib";
 import { Packr, Unpackr } from "msgpackr";
-import { makeLegacyCompatibleDatabase } from "../compatibility";
+import {
+  makeLegacyCompatibleDatabase,
+  type ColdStorageValueMap,
+} from "../compatibility";
+import { expandPortableDatabaseBranchGraphsForCompatibility } from "../portableBranches";
 
 const RAW_HEADER = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]);
 const COMPRESSED_HEADER = Buffer.from([
@@ -10,9 +14,7 @@ const COMPRESSED_HEADER = Buffer.from([
 
 const packr = new Packr({ useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });
-const gzipAsync = promisify(gzip) as (
-  input: Uint8Array,
-) => Promise<Buffer>;
+const gzipAsync = promisify(gzip) as (input: Uint8Array) => Promise<Buffer>;
 
 function decodeCompressedLegacyPayload(payload: Uint8Array): Uint8Array {
   try {
@@ -66,15 +68,20 @@ export async function encodeLegacyBackupDatabase(
   return Buffer.concat([COMPRESSED_HEADER, compressed]);
 }
 
+export async function encodeLegacyCompatibleBackupDatabase(
+  database: Record<string, any>,
+  coldStorageValues: ColdStorageValueMap = new Map(),
+): Promise<Buffer> {
+  const expanded = expandPortableDatabaseBranchGraphsForCompatibility(database);
+  const compatible = makeLegacyCompatibleDatabase(expanded, coldStorageValues);
+  return await encodeLegacyBackupDatabase(compatible);
+}
+
 export function decodeLegacyBackupDatabase(data: Uint8Array): unknown {
   const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-  if (
-    buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)
-  ) {
+  if (buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)) {
     return unpackr.decode(
-      decodeCompressedLegacyPayload(
-        buffer.subarray(COMPRESSED_HEADER.length),
-      ),
+      decodeCompressedLegacyPayload(buffer.subarray(COMPRESSED_HEADER.length)),
     );
   }
   if (buffer.subarray(0, RAW_HEADER.length).equals(RAW_HEADER)) {

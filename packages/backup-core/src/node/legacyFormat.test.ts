@@ -4,6 +4,7 @@ import {
   createLocalBackupEntryHeader,
   decodeLegacyBackupDatabase,
   encodeLegacyBackupDatabase,
+  encodeLegacyCompatibleBackupDatabase,
   makeLegacyCompatibleDatabase,
 } from "./legacyFormat";
 import { collectEssentialBackupAssetKeys } from "../assetScope";
@@ -20,6 +21,80 @@ describe("local backup format", () => {
       0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
     ]);
     expect(decodeLegacyBackupDatabase(encoded)).toEqual(database);
+  });
+
+  it("encodes portable branch graphs as legacy-compatible chats", async () => {
+    const encoded = await encodeLegacyCompatibleBackupDatabase({
+      characters: [
+        {
+          chaId: "char-1",
+          chatPage: 0,
+          chats: [
+            {
+              id: "chat-1",
+              name: "Chat",
+              message: [
+                { chatId: "m1", role: "user", data: "one" },
+                { chatId: "m3", role: "char", data: "alt" },
+              ],
+            },
+          ],
+        },
+      ],
+      haejeokBranchGraphs: {
+        "chat-1": {
+          branches: [
+            {
+              id: "root",
+              chatId: "chat-1",
+              reason: "root",
+              createdAt: 0,
+              headMessageId: "m2",
+            },
+            {
+              id: "reroll",
+              chatId: "chat-1",
+              parentBranchId: "root",
+              forkMessageId: "m1",
+              reason: "reroll",
+              createdAt: 1,
+              headMessageId: "m3",
+            },
+          ],
+          activeBranchId: "reroll",
+          messages: [
+            { chatId: "m1", role: "user", data: "one" },
+            { chatId: "m2", role: "char", data: "root" },
+            { chatId: "m3", role: "char", data: "alt" },
+          ],
+          links: [
+            { messageId: "m1", originBranchId: "root" },
+            {
+              messageId: "m2",
+              parentMessageId: "m1",
+              originBranchId: "root",
+            },
+            {
+              messageId: "m3",
+              parentMessageId: "m1",
+              originBranchId: "reroll",
+            },
+          ],
+        },
+      },
+    });
+    const decoded = decodeLegacyBackupDatabase(encoded) as Record<string, any>;
+    const chats = decoded.characters[0].chats;
+
+    expect(decoded).not.toHaveProperty("haejeokBranchGraphs");
+    expect(chats.map((chat) => chat.name)).toEqual(["Chat", "Chat (Reroll 1)"]);
+    expect(
+      chats.map((chat) => chat.message.map((message) => message.data)),
+    ).toEqual([
+      ["one", "root"],
+      ["one", "alt"],
+    ]);
+    expect(decoded.characters[0].chatPage).toBe(1);
   });
 
   it("removes asset folder metadata without mutating the live database", () => {
@@ -55,10 +130,13 @@ describe("local backup format", () => {
   });
 
   it("rejects traversal while preserving database stream namespaces", () => {
-    expect(() => createLocalBackupEntryHeader("database.stream/../secret", 1)).toThrow(
-      "Invalid local backup entry name",
+    expect(() =>
+      createLocalBackupEntryHeader("database.stream/../secret", 1),
+    ).toThrow("Invalid local backup entry name");
+    const header = createLocalBackupEntryHeader(
+      "database.stream/000000000001.risudat",
+      9,
     );
-    const header = createLocalBackupEntryHeader("database.stream/000000000001.risudat", 9);
     const nameLength = header.readUInt32LE(0);
     expect(header.subarray(4, 4 + nameLength).toString()).toBe(
       "database.stream/000000000001.risudat",

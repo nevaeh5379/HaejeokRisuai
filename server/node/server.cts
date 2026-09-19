@@ -75,8 +75,8 @@ const { createNodeChatExecutor } = require("./chatExecutor.cjs");
 const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
 const {
-  makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
+  encodeLegacyCompatibleBackupDatabase,
 } = require("../../packages/backup-core/dist/node/legacyFormat.js");
 const {
   collectStreamedEssentialAssetKeys,
@@ -87,7 +87,6 @@ const {
 } = require("../../packages/backup-core/dist/exportPlan.js");
 const {
   attachPortableDatabaseBranchGraphs,
-  expandPortableDatabaseBranchGraphsForCompatibility,
   loadPortableBranchGraphForExport,
 } = require("../../packages/backup-core/dist/portableBranches.js");
 const {
@@ -153,6 +152,7 @@ const {
   streamColdStorageExportEntries,
 } = require("../../packages/backup-core/dist/node/exportEntries.js");
 const {
+  LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE,
   LocalBackupExportService,
 } = require("../../packages/backup-core/dist/node/exportService.js");
 const {
@@ -4106,23 +4106,6 @@ async function buildPortableServerDatabase() {
   return database;
 }
 
-async function encodePortableServerDatabase(
-  database,
-  mode = "native",
-  coldStorageValues = new Map(),
-) {
-  const portable =
-    mode === "compatible"
-      ? makeLegacyCompatibleBackupDatabase(
-          expandPortableDatabaseBranchGraphsForCompatibility(database),
-          coldStorageValues,
-        )
-      : database;
-  return await encodeLocalBackupDatabase(portable);
-}
-
-const PORTABLE_DATABASE_STREAM_PAGE_SIZE = 128;
-
 type LocalBackupProgressUpdate = {
   stage: string;
   current?: number;
@@ -4132,12 +4115,6 @@ type LocalBackupProgressUpdate = {
 type LocalBackupProgressReporter = (
   progress: LocalBackupProgressUpdate,
 ) => void;
-
-function normalizeLocalBackupInteger(value, fallback, min, max) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.max(min, Math.min(max, Math.round(numeric)));
-}
 
 async function streamPortableServerDatabase(
   output,
@@ -4161,12 +4138,8 @@ async function streamPortableServerDatabase(
   }
   const summary = await postgresStorage.getStorageSyncSummary();
   const expectedRecords = Math.max(0, Number(summary?.records?.total) || 0);
-  const pageSize = normalizeLocalBackupInteger(
-    options.pageSize,
-    PORTABLE_DATABASE_STREAM_PAGE_SIZE,
-    1,
-    500,
-  );
+  const pageSize =
+    options.pageSize ?? LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE;
   const writer = new PortableDatabaseExportWriter({
     revision: Number(initialState.revision),
     expectedRecords,
@@ -4346,9 +4319,8 @@ async function streamLegacyServerLocalBackup(
   const coldStorageValues = new Map(
     loadedColdItems.map((item) => [item.key, item.value]),
   );
-  const databaseData = await encodePortableServerDatabase(
+  const databaseData = await encodeLegacyCompatibleBackupDatabase(
     database,
-    "compatible",
     coldStorageValues,
   );
   const storage = assetStorageManager.getStorage();
