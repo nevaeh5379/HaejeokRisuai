@@ -9,6 +9,7 @@ import {
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
   portableDatabaseStreamFragmentName,
+  type PortableDatabaseStreamManifest,
 } from "../streamFormat";
 
 export {
@@ -16,22 +17,13 @@ export {
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
 } from "../streamFormat";
+export type { PortableDatabaseStreamManifest } from "../streamFormat";
 export const PORTABLE_DATABASE_STREAM_DEFAULT_FRAGMENT_RECORDS = 128;
 export const databaseFragmentName = portableDatabaseStreamFragmentName;
 
 export type BackupEntrySource = Uint8Array | AsyncIterable<Uint8Array>;
 
 export type BackupChunkWriter = (chunk: Uint8Array) => Promise<void>;
-
-export interface PortableDatabaseStreamManifest {
-  format: "risu-portable-database-stream";
-  version: typeof PORTABLE_DATABASE_STREAM_VERSION;
-  revision: number;
-  totalFragments: number;
-  totalRecords: number;
-  counts: Record<string, number>;
-  complete: true;
-}
 
 export interface PortableDatabaseExportWriterOptions {
   revision: number;

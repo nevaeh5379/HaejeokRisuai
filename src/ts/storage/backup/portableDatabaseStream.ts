@@ -10,16 +10,16 @@ import type {
   SqlChatBranchGraphLink,
   SqlChatBranchSummary,
 } from "../sql/ISqlStorage";
-import {
-  iterateStorageSyncSqlRecords,
-  type StorageSyncSqlRecord,
-} from "../runtime/storageSyncSource";
+import { iterateStorageSyncSqlRecords } from "../runtime/storageSyncSource";
 import { NATIVE_BRANCH_GRAPHS_KEY } from "@risuai/backup-core/portableBranches";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
   portableDatabaseStreamFragmentName,
+  type PortableDatabaseStreamFragment as CorePortableDatabaseStreamFragment,
+  type PortableDatabaseStreamManifest as CorePortableDatabaseStreamManifest,
+  type PortableDatabaseStreamRecord,
 } from "@risuai/backup-core/streamFormat";
 import {
   DEFAULT_LOCAL_BACKUP_PERFORMANCE,
@@ -39,29 +39,13 @@ export const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS =
 export const PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =
   LOCAL_BACKUP_PERFORMANCE_LIMITS.fragmentRecords.max;
 
-export type PortableDatabaseStreamPersistedRecord = Exclude<
-  StorageSyncSqlRecord,
-  { type: "cold-storage" }
->;
+export type PortableDatabaseStreamPersistedRecord =
+  PortableDatabaseStreamRecord;
+export type PortableDatabaseStreamFragment = CorePortableDatabaseStreamFragment;
+export type PortableDatabaseStreamManifest = CorePortableDatabaseStreamManifest;
+
 type PersistedRecord = PortableDatabaseStreamPersistedRecord;
 type PersistedRecordType = PersistedRecord["type"];
-
-export interface PortableDatabaseStreamFragment {
-  format: "risu-portable-database-fragment";
-  version: typeof PORTABLE_DATABASE_STREAM_VERSION;
-  index: number;
-  records: PersistedRecord[];
-}
-
-export interface PortableDatabaseStreamManifest {
-  format: "risu-portable-database-stream";
-  version: typeof PORTABLE_DATABASE_STREAM_VERSION;
-  revision: number;
-  totalFragments: number;
-  totalRecords: number;
-  counts: Partial<Record<PersistedRecordType, number>>;
-  complete: true;
-}
 
 export interface PortableDatabaseStreamProgress {
   stage: string;

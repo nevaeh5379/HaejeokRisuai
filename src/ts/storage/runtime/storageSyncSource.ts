@@ -1,5 +1,6 @@
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import type { LegacyBackupSqlRecord } from "@risuai/backup-core/legacyRecords";
 import type {
   ISqlStorage,
   SqlChatBranchGraphLink,
@@ -24,31 +25,8 @@ export interface StorageSyncSqlSourcePlan {
   sourceRevision: number;
 }
 export type StorageSyncSqlRecord =
-  | { type: "meta"; formatVersion: 1; revision: number }
-  | { type: "setting"; key: string; value: unknown }
-  | { type: "plugin-storage"; key: string; value: unknown }
-  | { type: "module"; position: number; id: string; data: unknown }
-  | { type: "preset"; position: number; id: string; data: unknown }
-  | { type: "cold-storage"; key: string; value: unknown }
-  | { type: "character"; position: number; id: string; data: unknown }
-  | {
-      type: "chat";
-      characterId: string;
-      position: number;
-      id: string;
-      data: unknown;
-    }
-  | { type: "branch"; chatId: string; data: unknown }
-  | { type: "active-branch"; chatId: string; branchId: string }
-  | {
-      type: "message";
-      chatId: string;
-      id: string;
-      position: number;
-      parentMessageId?: string;
-      originBranchId: string;
-      data: unknown;
-    };
+  | LegacyBackupSqlRecord
+  | { type: "cold-storage"; key: string; value: unknown };
 export class StorageSyncSourceRevisionChangedError extends Error {
   constructor(
     readonly expectedRevision: number,
