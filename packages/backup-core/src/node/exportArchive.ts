@@ -1,6 +1,7 @@
 import type { LocalBackupMode, LocalBackupProgress } from "../api";
 import { collectStreamedEssentialAssetKeys } from "../assetScope";
 import { createLocalBackupExportPlan } from "../exportPlan";
+import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy";
 import type { LegacyBackupSqlRecord } from "../legacyRecords";
 import {
   streamBackupStorageEntries,
@@ -71,7 +72,11 @@ async function streamCompatibleBackup(
   await adapter.onReady?.();
 
   onProgress({ stage: "database", current: 1, total: 1 });
-  await adapter.writeEntry("database.risudat", prepared.source, prepared.size);
+  await adapter.writeEntry(
+    LEGACY_DATABASE_ENTRY_NAME,
+    prepared.source,
+    prepared.size,
+  );
 
   await streamColdStorageExportEntries({
     keys: prepared.coldStorageKeys,

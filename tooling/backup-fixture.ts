@@ -14,6 +14,7 @@
 // round-tripping the decoded backup in the real app code path.
 import { deflateSync } from "node:zlib";
 import { Packr } from "msgpackr";
+import { LEGACY_DATABASE_ENTRY_NAME } from "@risuai/backup-core/entryPolicy";
 
 export const COMPRESSED_HEADER = Buffer.from([
   0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
@@ -175,7 +176,7 @@ export function buildTestLocalBackup(
       data: tinyPng,
     },
     {
-      name: "database.risudat",
+      name: LEGACY_DATABASE_ENTRY_NAME,
       data: Buffer.concat([
         COMPRESSED_HEADER,
         deflateSync(packr.encode(database)),

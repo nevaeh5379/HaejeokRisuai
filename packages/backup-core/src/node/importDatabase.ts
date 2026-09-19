@@ -4,9 +4,7 @@ import {
   LOCAL_BACKUP_DATABASE_RECORD_TYPES,
   LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
 } from "./databaseStreamStore";
-import {
-  decodeLegacyBackupDatabase,
-} from "./legacyFormat";
+import { decodeLegacyBackupDatabase } from "./legacyFormat";
 import {
   LegacyBackupStreamingUnsupportedError,
   streamLegacyBackupDatabaseToSqlNdjson,
@@ -16,6 +14,7 @@ import {
   iterateLegacyBackupSqlRecords,
   type LegacyBackupSqlRecord,
 } from "../legacyRecords";
+import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy";
 import type { BackupImportPlan } from "./importPlan";
 
 export interface PreparedLocalBackupDatabase {
@@ -33,9 +32,7 @@ export interface LocalBackupDatabasePreparationProgress {
 export interface LocalBackupDatabasePreparationOptions {
   encodeRecord: (record: LegacyBackupSqlRecord) => unknown;
   idFactory: () => string;
-  onProgress?: (
-    progress: LocalBackupDatabasePreparationProgress,
-  ) => void;
+  onProgress?: (progress: LocalBackupDatabasePreparationProgress) => void;
 }
 
 interface PortableDatabaseStreamManifest {
@@ -116,7 +113,9 @@ async function prepareLegacyDatabase(
 ): Promise<PreparedLocalBackupDatabase> {
   const databaseEntry = plan.legacyDatabase;
   if (!databaseEntry) {
-    throw new Error("Legacy backup import plan is missing database.risudat");
+    throw new Error(
+      `Legacy backup import plan is missing ${LEGACY_DATABASE_ENTRY_NAME}`,
+    );
   }
 
   const outputPath = `${databaseEntry.filePath}.sql.ndjson`;

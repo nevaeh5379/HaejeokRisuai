@@ -72,8 +72,10 @@ import {
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 import {
+  ACCOUNT_ENCRYPTION_ENTRY_NAME,
   classifyBackupEntry,
   getInlayBackupKey,
+  LEGACY_DATABASE_ENTRY_NAME,
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
 import { BackupContainerParser } from "@risuai/backup-core/containerStream";
@@ -1316,7 +1318,7 @@ async function prepareStreamingBackupEncryption(
     await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()
   ).key;
   await writer.writeBackup(
-    "encryption.risudat",
+    ACCOUNT_ENCRYPTION_ENTRY_NAME,
     new TextEncoder().encode(
       JSON.stringify({
         time,
@@ -1400,14 +1402,14 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
     ).key;
     dbData = new Uint8Array(await encryptBuffer(dbData, key));
     await writer.writeBackup(
-      "encryption.risudat",
+      ACCOUNT_ENCRYPTION_ENTRY_NAME,
       new TextEncoder().encode(JSON.stringify({ time, type: "account" })),
     );
   }
 
   reportLocalBackupProgress("database", { percent: 59 });
   await sleep(10);
-  await writer.writeBackup("database.risudat", dbData);
+  await writer.writeBackup(LEGACY_DATABASE_ENTRY_NAME, dbData);
   reportLocalBackupProgress("database", { percent: 60 });
 
   await writeBackupColdStorage(writer, coldStoragePayloads);
@@ -1858,7 +1860,7 @@ async function restoreLocalBackupSourceUnlocked(
 
     const restoreBackupEntry = async (name: string, data: Uint8Array) => {
       currentEntryName = name;
-      if (name === "encryption.risudat") {
+      if (name === ACCOUNT_ENCRYPTION_ENTRY_NAME) {
         let meta: typeof encryptionMeta;
         try {
           meta = JSON.parse(textDecoder.decode(data));
@@ -1881,7 +1883,7 @@ async function restoreLocalBackupSourceUnlocked(
         }
         encryptionMeta.type = "account";
         encryptionMeta.time = meta.time;
-      } else if (name === "database.risudat") {
+      } else if (name === LEGACY_DATABASE_ENTRY_NAME) {
         pendingDatabase = data;
       } else {
         const classification = classifyBackupEntry(name);

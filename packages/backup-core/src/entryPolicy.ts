@@ -13,6 +13,9 @@ export interface BackupEntryClassification {
   normalized: string | null;
 }
 
+export const LEGACY_DATABASE_ENTRY_NAME = "database.risudat";
+export const ACCOUNT_ENCRYPTION_ENTRY_NAME = "encryption.risudat";
+
 const COLD_STORAGE_RE =
   /^(?:coldstorage[\/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/;
 const INLAY_RE =
@@ -35,14 +38,14 @@ function normalizeBackupEntryName(name: string): string | null {
 function classifyBackupEntry(name: string): BackupEntryClassification {
   const normalized = normalizeBackupEntryName(name);
   if (!normalized) return { kind: "invalid", normalized: null };
-  if (normalized === "database.risudat")
+  if (normalized === LEGACY_DATABASE_ENTRY_NAME)
     return { kind: "database", normalized };
   if (
     normalized === "database.stream/manifest.risudat" ||
     /^database\.stream\/[0-9]{12}\.risudat$/.test(normalized)
   )
     return { kind: "databaseStream", normalized };
-  if (normalized === "encryption.risudat")
+  if (normalized === ACCOUNT_ENCRYPTION_ENTRY_NAME)
     return { kind: "encryption", normalized };
   if (COLD_STORAGE_RE.test(normalized))
     return { kind: "coldStorage", normalized };
