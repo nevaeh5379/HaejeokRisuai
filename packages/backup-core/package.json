@@ -122,6 +122,12 @@
       "import": "./src/node/exportService.ts",
       "require": "./dist/node/exportService.js",
       "default": "./src/node/exportService.ts"
+    },
+    "./node/exportStream": {
+      "types": "./src/node/exportStream.ts",
+      "import": "./src/node/exportStream.ts",
+      "require": "./dist/node/exportStream.js",
+      "default": "./src/node/exportStream.ts"
     }
   },
   "scripts": {

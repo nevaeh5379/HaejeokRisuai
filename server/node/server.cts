@@ -75,7 +75,6 @@ const { createNodeChatExecutor } = require("./chatExecutor.cjs");
 const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
 const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
 const {
-  createLocalBackupEntryHeader,
   makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
 } = require("../../packages/backup-core/dist/node/legacyFormat.js");
@@ -149,6 +148,11 @@ const {
 const {
   LocalBackupExportService,
 } = require("../../packages/backup-core/dist/node/exportService.js");
+const {
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PortableDatabaseExportWriter,
+  writeBackupContainerEntry,
+} = require("../../packages/backup-core/dist/node/exportStream.js");
 const {
   LocalBackupImportJobError,
   LocalBackupImportJobStore,
@@ -4005,22 +4009,13 @@ function sendLocalBackupExportJobError(res, error) {
   return true;
 }
 
-async function writeLocalBackupHeader(output, name, size) {
-  await writePacket(output, createLocalBackupEntryHeader(name, size));
-}
-
-async function writeLocalBackupEntry(output, name, source, size) {
-  await writeLocalBackupHeader(output, name, size);
-  if (Buffer.isBuffer(source) || source instanceof Uint8Array) {
-    await writePacket(output, source);
-    return;
-  }
-  for await (const chunk of source) {
-    await writePacket(
-      output,
-      Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
-    );
-  }
+async function writeServerBackupEntry(output, name, source, size) {
+  await writeBackupContainerEntry(
+    async (chunk) => await writePacket(output, chunk),
+    name,
+    source,
+    size,
+  );
 }
 
 async function buildPortableServerDatabase() {
@@ -4080,11 +4075,7 @@ async function encodePortableServerDatabase(
   return await encodeLocalBackupDatabase(portable);
 }
 
-const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
-const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
 const PORTABLE_DATABASE_STREAM_PAGE_SIZE = 128;
-const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS = 128;
-const PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS = 256;
 
 type LocalBackupProgressUpdate = {
   stage: string;
@@ -4100,25 +4091,6 @@ function normalizeLocalBackupInteger(value, fallback, min, max) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(min, Math.min(max, Math.round(numeric)));
-}
-
-function streamedDatabaseEntryName(index) {
-  return `${PORTABLE_DATABASE_STREAM_PREFIX}${String(index).padStart(12, "0")}.risudat`;
-}
-
-function createStreamedDatabaseCounts() {
-  return {
-    meta: 0,
-    setting: 0,
-    "plugin-storage": 0,
-    module: 0,
-    preset: 0,
-    character: 0,
-    chat: 0,
-    branch: 0,
-    "active-branch": 0,
-    message: 0,
-  };
 }
 
 async function streamPortableServerDatabase(
@@ -4149,50 +4121,20 @@ async function streamPortableServerDatabase(
     1,
     500,
   );
-  const fragmentRecordLimit = normalizeLocalBackupInteger(
-    options.fragmentRecords,
-    PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
-    1,
-    PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-  );
+  const writer = new PortableDatabaseExportWriter({
+    revision: Number(initialState.revision),
+    expectedRecords,
+    fragmentRecords: options.fragmentRecords,
+    encodeDatabase: encodeLocalBackupDatabase,
+    writeEntry: async (name, source, size) =>
+      await writeServerBackupEntry(output, name, source, size),
+    onRecord: options.onRecord,
+    onProgress(current, total) {
+      options.onProgress?.({ stage: "database", current, total });
+    },
+  });
 
-  let fragmentIndex = 0;
-  let totalRecords = 0;
-  let fragmentRecords = [];
-  const counts = createStreamedDatabaseCounts();
-  const flush = async () => {
-    if (fragmentRecords.length === 0) return;
-    const fragment = {
-      format: "risu-portable-database-fragment",
-      version: 1,
-      index: ++fragmentIndex,
-      records: fragmentRecords,
-    };
-    fragmentRecords = [];
-    const encoded = await encodeLocalBackupDatabase(fragment);
-    await writeLocalBackupEntry(
-      output,
-      streamedDatabaseEntryName(fragment.index),
-      encoded,
-      encoded.length,
-    );
-  };
-  const emit = async (record) => {
-    fragmentRecords.push(record);
-    totalRecords++;
-    counts[record.type]++;
-    options.onRecord?.(record);
-    options.onProgress?.({
-      stage: "database",
-      current: totalRecords,
-      total: expectedRecords,
-    });
-    if (fragmentRecords.length >= fragmentRecordLimit) {
-      await flush();
-    }
-  };
-
-  await emit({
+  await writer.emit({
     type: "meta",
     formatVersion: 1,
     revision: Number(initialState.revision),
@@ -4213,7 +4155,7 @@ async function streamPortableServerDatabase(
     const loaded = await postgresStorage.loadSettingKey(key);
     if (!loaded?.exists)
       throw new Error(`Backup could not load setting ${key}`);
-    await emit({ type: "setting", key, value: loaded.value });
+    await writer.emit({ type: "setting", key, value: loaded.value });
   }
 
   const moduleResult = await postgresStorage.loadModuleRecords();
@@ -4225,7 +4167,7 @@ async function streamPortableServerDatabase(
     const value = moduleResult.modules[position];
     if (!value?.id)
       throw new Error("Backup encountered a module without an id");
-    await emit({ type: "module", position, id: value.id, data: value });
+    await writer.emit({ type: "module", position, id: value.id, data: value });
   }
 
   const presetResult = await postgresStorage.listBotPresets();
@@ -4235,7 +4177,7 @@ async function streamPortableServerDatabase(
     if (!loaded?.preset)
       throw new Error(`Backup could not load preset ${summary.id}`);
     const { id: _id, ...value } = loaded.preset;
-    await emit({
+    await writer.emit({
       type: "preset",
       position: summary.position,
       id: summary.id,
@@ -4248,7 +4190,7 @@ async function streamPortableServerDatabase(
     const loaded = await postgresStorage.loadPluginCustomStorageKey(key);
     if (!loaded?.exists)
       throw new Error(`Backup could not load plugin storage ${key}`);
-    await emit({ type: "plugin-storage", key, value: loaded.value });
+    await writer.emit({ type: "plugin-storage", key, value: loaded.value });
   }
 
   for (
@@ -4262,7 +4204,7 @@ async function streamPortableServerDatabase(
       throw new Error(`Backup could not load character ${shell.chaId}`);
     const chatSummaries = [...(loadedCharacter.chats ?? [])];
     const { chats: _chats, ...character } = loadedCharacter;
-    await emit({
+    await writer.emit({
       type: "character",
       position: characterPosition,
       id: shell.chaId,
@@ -4281,7 +4223,7 @@ async function streamPortableServerDatabase(
       if (!loadedChat)
         throw new Error(`Backup could not load chat ${summary.id}`);
       const { message: _messages, ...chat } = loadedChat;
-      await emit({
+      await writer.emit({
         type: "chat",
         characterId: shell.chaId,
         position: chatPosition,
@@ -4299,10 +4241,10 @@ async function streamPortableServerDatabase(
         );
         if (!emittedMetadata) {
           for (const branch of page.branches) {
-            await emit({ type: "branch", chatId: summary.id, data: branch });
+            await writer.emit({ type: "branch", chatId: summary.id, data: branch });
           }
           if (page.activeBranchId) {
-            await emit({
+            await writer.emit({
               type: "active-branch",
               chatId: summary.id,
               branchId: page.activeBranchId,
@@ -4322,7 +4264,7 @@ async function streamPortableServerDatabase(
             );
           }
           const { chatId: _messageId, ...data } = message;
-          await emit({
+          await writer.emit({
             type: "message",
             chatId: summary.id,
             id: messageId,
@@ -4343,6 +4285,7 @@ async function streamPortableServerDatabase(
     }
   }
 
+  const manifest = await writer.finalize();
   const coldItems =
     typeof postgresStorage.listColdStorage === "function"
       ? await postgresStorage.listColdStorage()
@@ -4357,7 +4300,7 @@ async function streamPortableServerDatabase(
     const loaded = await postgresStorage.loadColdStorage(coldSummary.key);
     if (!loaded) continue;
     const data = Buffer.from(JSON.stringify(loaded.data), "utf8");
-    await writeLocalBackupEntry(
+    await writeServerBackupEntry(
       output,
       `coldstorage_${coldSummary.key}.json`,
       data,
@@ -4376,16 +4319,7 @@ async function streamPortableServerDatabase(
       `Database changed during backup (revision ${initialState.revision} -> ${completedState?.revision}); please retry`,
     );
   }
-  await flush();
-  return {
-    format: "risu-portable-database-stream",
-    version: 1,
-    revision: Number(initialState.revision),
-    totalFragments: fragmentIndex,
-    totalRecords,
-    counts,
-    complete: true,
-  };
+  return manifest;
 }
 
 async function streamLegacyServerLocalBackup(
@@ -4449,7 +4383,7 @@ async function streamLegacyServerLocalBackup(
   if (typeof res.flushHeaders === "function") res.flushHeaders();
 
   onProgress({ stage: "database", current: 1, total: 1 });
-  await writeLocalBackupEntry(
+  await writeServerBackupEntry(
     res,
     "database.risudat",
     databaseData,
@@ -4464,7 +4398,7 @@ async function streamLegacyServerLocalBackup(
   for (let index = 0; index < loadedColdItems.length; index++) {
     const item = loadedColdItems[index];
     const data = Buffer.from(JSON.stringify(item.data), "utf8");
-    await writeLocalBackupEntry(
+    await writeServerBackupEntry(
       res,
       `coldstorage_${item.key}.json`,
       data,
@@ -4489,7 +4423,7 @@ async function streamLegacyServerLocalBackup(
     const size = Number(opened.contentLength ?? opened.buffer?.length);
     if (!source || !Number.isSafeInteger(size))
       throw new Error(`Backup asset is not streamable: ${key}`);
-    await writeLocalBackupEntry(res, key, source, size);
+    await writeServerBackupEntry(res, key, source, size);
     onProgress({
       stage: "assets",
       current: index + 1,
@@ -4510,7 +4444,7 @@ async function streamLegacyServerLocalBackup(
       const size = Number(opened.contentLength ?? opened.buffer?.length);
       if (!source || !Number.isSafeInteger(size))
         throw new Error(`Backup inlay is not streamable: ${key}`);
-      await writeLocalBackupEntry(res, key, source, size);
+      await writeServerBackupEntry(res, key, source, size);
       onProgress({
         stage: "inlays",
         current: index + 1,
@@ -4591,7 +4525,7 @@ async function streamServerLocalBackup(
     const size = Number(opened.contentLength ?? opened.buffer?.length);
     if (!source || !Number.isSafeInteger(size))
       throw new Error(`Backup asset is not streamable: ${key}`);
-    await writeLocalBackupEntry(res, key, source, size);
+    await writeServerBackupEntry(res, key, source, size);
     onProgress({
       stage: "assets",
       current: index + 1,
@@ -4613,7 +4547,7 @@ async function streamServerLocalBackup(
     const size = Number(opened.contentLength ?? opened.buffer?.length);
     if (!source || !Number.isSafeInteger(size))
       throw new Error(`Backup inlay is not streamable: ${key}`);
-    await writeLocalBackupEntry(res, key, source, size);
+    await writeServerBackupEntry(res, key, source, size);
     onProgress({
       stage: "inlays",
       current: index + 1,
@@ -4623,7 +4557,7 @@ async function streamServerLocalBackup(
 
   onProgress({ stage: "finalizing" });
   const manifestData = await encodeLocalBackupDatabase(manifest);
-  await writeLocalBackupEntry(
+  await writeServerBackupEntry(
     res,
     PORTABLE_DATABASE_STREAM_MANIFEST,
     manifestData,
