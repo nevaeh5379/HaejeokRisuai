@@ -79,6 +79,7 @@ export interface TestLocalBackupOptions {
   characterId?: string;
   chatId?: string;
   characterName?: string;
+  paddingAssetBytes?: number;
 }
 
 export function buildTestLocalBackup(
@@ -93,6 +94,16 @@ export function buildTestLocalBackup(
     options.characterId ?? "aaaaaaaa-1111-4222-8333-444444444444";
   const chatId = options.chatId ?? "bbbbbbbb-1111-4222-8333-444444444444";
   const characterName = options.characterName ?? "Fixture Bot";
+  const paddingAssetBytes = options.paddingAssetBytes ?? 0;
+  if (
+    !Number.isSafeInteger(paddingAssetBytes) ||
+    paddingAssetBytes < 0 ||
+    paddingAssetBytes > 16 * 1024 * 1024
+  ) {
+    throw new TypeError(
+      "Fixture padding asset size must be between 0 and 16 MiB",
+    );
+  }
 
   const database: FixtureBackupDatabase = {
     username: "Backup Tester",
@@ -175,6 +186,14 @@ export function buildTestLocalBackup(
       name: "assets/test-user-icon.png",
       data: tinyPng,
     },
+    ...(paddingAssetBytes > 0
+      ? [
+          {
+            name: "assets/e2e-padding.bin",
+            data: Buffer.alloc(paddingAssetBytes, 0xa5),
+          },
+        ]
+      : []),
     {
       name: LEGACY_DATABASE_ENTRY_NAME,
       data: Buffer.concat([

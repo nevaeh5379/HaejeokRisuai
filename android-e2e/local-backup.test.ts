@@ -8,6 +8,7 @@ import { remote } from "webdriverio";
 import { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
 import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
+import { LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE } from "@risuai/storage-remote/remoteLocalBackupClient";
 import { buildTestLocalBackup } from "../tooling/backup-fixture";
 
 const appiumUrl = new URL(
@@ -428,11 +429,12 @@ function runAdb(args: string[]): string {
 
 async function stageImportFixture(
   options?: Parameters<typeof buildTestLocalBackup>[0],
-): Promise<string> {
+): Promise<{ fileName: string; byteLength: number }> {
   const fileName = "haejeokrisu_android_e2e_import.risubackup";
   await mkdir(artifactsDir, { recursive: true });
   const hostPath = join(artifactsDir, fileName);
-  await writeFile(hostPath, buildTestLocalBackup(options));
+  const fixture = buildTestLocalBackup(options);
+  await writeFile(hostPath, fixture);
   runAdb(["shell", "mkdir", "-p", "/sdcard/Download"]);
   runAdb(["push", hostPath, `/sdcard/Download/${fileName}`]);
   runAdb([
@@ -444,7 +446,7 @@ async function stageImportFixture(
     "-d",
     `file:///sdcard/Download/${fileName}`,
   ]);
-  return fileName;
+  return { fileName, byteLength: fixture.byteLength };
 }
 
 async function confirmNativeDocumentSave(browser: WebdriverIO.Browser) {
@@ -522,8 +524,38 @@ async function selectNativeDocument(
       .$(fileSelector)
       .then((element) => element.isDisplayed())
       .catch(() => false);
+  const waitForFile = async (timeout: number) => {
+    try {
+      await browser.waitUntil(hasFile, {
+        timeout,
+        interval: 250,
+        timeoutMsg: `Android document picker did not show ${fileName}`,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   if (!(await hasFile())) {
+    const search = await browser.$(
+      "//*[@content-desc='Search' or @content-desc='검색']",
+    );
+    if (await search.isDisplayed().catch(() => false)) {
+      await search.click();
+      const input = await browser.$(
+        "//*[@resource-id='com.google.android.documentsui:id/search_src_text' or @class='android.widget.EditText']",
+      );
+      if (await input.isDisplayed().catch(() => false)) {
+        await input.setValue(fileName);
+        if (await waitForFile(5_000)) {
+          await (await browser.$(fileSelector)).click();
+          return;
+        }
+      }
+      await browser.back().catch(() => undefined);
+    }
+
     const roots = await browser.$(
       "//*[@content-desc='Show roots' or @content-desc='루트 표시']",
     );
@@ -590,7 +622,7 @@ test(
   { timeout: 240_000, skip: remoteProfile, concurrency: false },
   async () => {
     let browser = await startDriver();
-    const fileName = await stageImportFixture();
+    const { fileName } = await stageImportFixture();
     try {
       await switchToAppWebView(browser);
       browser = await waitForFixture(browser);
@@ -656,10 +688,15 @@ test(
   async () => {
     let browser = await startDriver();
     const characterId = randomUUID();
-    const fileName = await stageImportFixture({
+    const { fileName, byteLength } = await stageImportFixture({
       characterId,
       chatId: randomUUID(),
+      paddingAssetBytes: LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE + 128 * 1024,
     });
+    assert.ok(
+      byteLength > LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE,
+      "Remote restore fixture must exceed one HTTP upload chunk",
+    );
     try {
       await switchToAppWebView(browser);
       browser = await waitForFixture(browser);
