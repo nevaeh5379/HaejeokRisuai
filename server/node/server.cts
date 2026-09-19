@@ -140,6 +140,9 @@ const {
   applyStorageSyncSqlRecords,
 } = require("./storageSyncSqlApply.cjs");
 const {
+  INLAY_BACKUP_PREFIX,
+} = require("../../packages/backup-core/dist/entryPolicy.js");
+const {
   LocalBackupDatabaseStreamError,
   LocalBackupDatabaseStreamStore,
 } = require("../../packages/backup-core/dist/node/databaseStreamStore.js");
@@ -4389,7 +4392,7 @@ async function streamServerLocalBackup(
         return await listServerBackupAssetKeys(storage);
       },
       async listInlayKeys() {
-        return await storage.list("inlay_");
+        return await storage.list(INLAY_BACKUP_PREFIX);
       },
       async openStorageEntry(key) {
         return await openServerBackupStorageEntry(storage, key);
