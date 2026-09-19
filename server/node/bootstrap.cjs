@@ -13,10 +13,7 @@ const generatedStorageSyncApply = path.join(
 );
 const serverSource = path.join(__dirname, "server.cts");
 const mutationSource = path.join(__dirname, "databaseMutations.cts");
-const storageSyncApplySource = path.join(
-  __dirname,
-  "storageSyncSqlApply.cts",
-);
+const storageSyncApplySource = path.join(__dirname, "storageSyncSqlApply.cts");
 const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/assetScope.js"),
@@ -40,6 +37,7 @@ const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/node/importDatabase.js"),
   path.join(backupCoreRoot, "dist/node/importPlan.js"),
   path.join(backupCoreRoot, "dist/node/importStagingStore.js"),
+  path.join(backupCoreRoot, "dist/node/importUploadStore.js"),
   path.join(backupCoreRoot, "dist/node/importService.js"),
   path.join(backupCoreRoot, "dist/node/legacyFormat.js"),
   path.join(backupCoreRoot, "dist/node/legacyStream.js"),
@@ -68,6 +66,7 @@ const backupCoreSources = [
   path.join(backupCoreRoot, "src/node/importDatabase.ts"),
   path.join(backupCoreRoot, "src/node/importPlan.ts"),
   path.join(backupCoreRoot, "src/node/importStagingStore.ts"),
+  path.join(backupCoreRoot, "src/node/importUploadStore.ts"),
   path.join(backupCoreRoot, "src/node/importService.ts"),
   path.join(backupCoreRoot, "src/node/legacyFormat.ts"),
   path.join(backupCoreRoot, "src/node/legacyStream.ts"),

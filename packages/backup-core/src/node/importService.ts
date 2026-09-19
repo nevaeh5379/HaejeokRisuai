@@ -4,6 +4,7 @@ import type {
   LocalBackupImportJobCompletion,
   LocalBackupImportJobProgress,
   LocalBackupImportProgress,
+  LocalBackupImportUploadState,
 } from "../api";
 import { isColdStorageBackupData } from "../coldStorage";
 import {
@@ -16,16 +17,16 @@ import {
   prepareLocalBackupDatabaseImport,
   type PreparedLocalBackupDatabase,
 } from "./importDatabase";
+import { buildBackupImportPlan } from "./importPlan";
 import {
-  buildBackupImportPlan,
-} from "./importPlan";
-import {
+  LocalBackupImportJobError,
   LocalBackupImportJobStore,
 } from "./importJobStore";
 import {
   BackupImportStagingStore,
   type StagedBackupEntry,
 } from "./importStagingStore";
+import { BackupImportUploadStore } from "./importUploadStore";
 
 export interface LocalBackupImportRestoreResult {
   revision?: number;
@@ -52,6 +53,7 @@ export class LocalBackupImportService {
     readonly jobs: LocalBackupImportJobStore,
     readonly staging: BackupImportStagingStore,
     private readonly adapter: LocalBackupImportAdapter,
+    readonly uploads?: BackupImportUploadStore,
   ) {}
 
   createJob(): { id: string } {
@@ -94,7 +96,8 @@ export class LocalBackupImportService {
     for (let index = 0; index < entries.length; index++) {
       const entry = entries[index];
       const key = getColdStorageBackupKey(entry.name);
-      if (!key) throw new Error(`Invalid cold storage backup entry '${entry.name}'`);
+      if (!key)
+        throw new Error(`Invalid cold storage backup entry '${entry.name}'`);
       const value = JSON.parse(await fs.readFile(entry.filePath, "utf8"));
       if (!isColdStorageBackupData(value)) {
         throw new Error(`Invalid cold storage backup payload: ${entry.name}`);
@@ -132,14 +135,22 @@ export class LocalBackupImportService {
     }
   }
 
-  async importStream(
+  private async restoreStream(
     id: string,
     chunks: AsyncIterable<Uint8Array>,
-    options: LocalBackupImportRequestOptions = {},
+    options: LocalBackupImportRequestOptions,
+    beginUpload: boolean,
   ): Promise<LocalBackupImportJobCompletion> {
     const totalBytes = Math.max(0, options.totalBytes ?? 0);
     try {
-      this.jobs.beginUpload(id, totalBytes);
+      if (beginUpload) {
+        this.jobs.beginUpload(id, totalBytes);
+      } else if (this.jobs.progress(id).status !== "uploading") {
+        throw new LocalBackupImportJobError(
+          "Local backup import is not ready to finalize",
+        );
+      }
+
       const staged = await this.staging.stage(id, chunks, {
         totalBytes,
         onProgress: (progress) => {
@@ -194,5 +205,71 @@ export class LocalBackupImportService {
     } finally {
       await this.staging.cleanup(id).catch(() => {});
     }
+  }
+
+  async importStream(
+    id: string,
+    chunks: AsyncIterable<Uint8Array>,
+    options: LocalBackupImportRequestOptions = {},
+  ): Promise<LocalBackupImportJobCompletion> {
+    return await this.restoreStream(id, chunks, options, true);
+  }
+
+  async appendUploadChunk(
+    id: string,
+    offset: number,
+    chunks: AsyncIterable<Uint8Array>,
+    totalBytes: number,
+  ): Promise<LocalBackupImportUploadState> {
+    if (!this.uploads) {
+      throw new Error("Chunked local backup uploads are not configured");
+    }
+    const status = this.jobs.progress(id).status;
+    if (status !== "pending" && status !== "uploading") {
+      throw new LocalBackupImportJobError(
+        "Local backup import is not accepting upload chunks",
+      );
+    }
+
+    const state = await this.uploads.append(id, offset, chunks, totalBytes);
+    const currentStatus = this.jobs.progress(id).status;
+    if (currentStatus === "pending") {
+      this.jobs.beginUpload(id, totalBytes);
+    } else if (currentStatus !== "uploading") {
+      throw new LocalBackupImportJobError(
+        "Local backup import stopped accepting upload chunks",
+      );
+    }
+    this.update(id, "uploading", state.receivedBytes, state.totalBytes);
+    return state;
+  }
+
+  async finalizeUpload(
+    id: string,
+    options: Pick<LocalBackupImportRequestOptions, "sourceClientId"> = {},
+  ): Promise<LocalBackupImportJobCompletion> {
+    if (!this.uploads) {
+      throw new Error("Chunked local backup uploads are not configured");
+    }
+    const source = await this.uploads.finalize(id);
+    try {
+      return await this.restoreStream(
+        id,
+        source.stream,
+        {
+          totalBytes: source.totalBytes,
+          sourceClientId: options.sourceClientId,
+        },
+        false,
+      );
+    } finally {
+      await this.uploads.cleanup(id).catch(() => {});
+    }
+  }
+
+  async cancel(id: string): Promise<void> {
+    await this.uploads?.cleanup(id).catch(() => {});
+    await this.staging.cleanup(id).catch(() => {});
+    this.jobs.remove(id);
   }
 }

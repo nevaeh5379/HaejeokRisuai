@@ -163,6 +163,10 @@ const {
   BackupImportStagingStore,
 } = require("../../packages/backup-core/dist/node/importStagingStore.js");
 const {
+  BackupImportUploadError,
+  BackupImportUploadStore,
+} = require("../../packages/backup-core/dist/node/importUploadStore.js");
+const {
   LocalBackupImportService,
 } = require("../../packages/backup-core/dist/node/importService.js");
 const {
@@ -479,6 +483,14 @@ const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
 const localBackupImportJobs = new LocalBackupImportJobStore();
 const localBackupImportStaging = new BackupImportStagingStore(
   path.join(savePath, "__local_backup_import"),
+);
+const localBackupImportUploadRoot = path.join(
+  savePath,
+  "__local_backup_import_upload",
+);
+fsSync.rmSync(localBackupImportUploadRoot, { recursive: true, force: true });
+const localBackupImportUploads = new BackupImportUploadStore(
+  localBackupImportUploadRoot,
 );
 const storageSyncRecovery = new StorageSyncRecoveryStore(
   path.join(savePath, "__storage_sync_recovery"),
@@ -864,7 +876,9 @@ function delayMs(ms) {
 }
 
 // 전체 payload 구성은 backupFullPayload.cjs 모듈에서 (테스트 가능성)
-const { buildFullBackupPayload } = require("../../packages/backup-core/dist/node/fullPayload.js");
+const {
+  buildFullBackupPayload,
+} = require("../../packages/backup-core/dist/node/fullPayload.js");
 
 // 직렬 큐: 백업 DB로의 모든 쓰기는 순서를 보장하며 하나씩 수행.
 // 실패는 재시도(백오프) 후 상태 기록만 남기고 큐는 계속 진행 (메인 저장에는 영향 없음).
@@ -3990,18 +4004,10 @@ async function handleCharxExport(req, res) {
 app.post("/api/charx-export", authenticatedRouteLimiter, handleCharxExport);
 
 const localBackupJobs = new LocalBackupExportJobStore();
-const localBackupExportService = new LocalBackupExportService(
-  localBackupJobs,
-  {
-    stream: async (job, res, onProgress) =>
-      await streamServerLocalBackup(
-        res,
-        job.mode,
-        job.streamOptions,
-        onProgress,
-      ),
-  },
-);
+const localBackupExportService = new LocalBackupExportService(localBackupJobs, {
+  stream: async (job, res, onProgress) =>
+    await streamServerLocalBackup(res, job.mode, job.streamOptions, onProgress),
+});
 
 function sendLocalBackupExportJobError(res, error) {
   if (!(error instanceof LocalBackupExportJobError)) return false;
@@ -4140,8 +4146,7 @@ async function streamPortableServerDatabase(
   }
   const summary = await postgresStorage.getStorageSyncSummary();
   const expectedRecords = Math.max(0, Number(summary?.records?.total) || 0);
-  const pageSize =
-    options.pageSize ?? LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE;
+  const pageSize = options.pageSize ?? LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE;
   const writer = new PortableDatabaseExportWriter({
     revision: Number(initialState.revision),
     expectedRecords,
@@ -4261,7 +4266,11 @@ async function streamPortableServerDatabase(
         );
         if (!emittedMetadata) {
           for (const branch of page.branches) {
-            await writer.emit({ type: "branch", chatId: summary.id, data: branch });
+            await writer.emit({
+              type: "branch",
+              chatId: summary.id,
+              data: branch,
+            });
           }
           if (page.activeBranchId) {
             await writer.emit({
@@ -4391,7 +4400,6 @@ async function streamServerLocalBackup(
   });
 }
 
-
 function sendLocalBackupDatabaseStreamError(res, error) {
   if (error instanceof LocalBackupDatabaseStreamError) {
     const status =
@@ -4424,7 +4432,8 @@ function sendLocalBackupDatabaseStreamError(res, error) {
   );
   if (Number.isSafeInteger(currentRevision) && currentRevision >= 0) {
     res.status(409).send({
-      error: error?.message || "Database changed before backup restore finalize",
+      error:
+        error?.message || "Database changed before backup restore finalize",
       code: "target_changed",
       currentRevision,
     });
@@ -4514,8 +4523,10 @@ async function finalizeLocalBackupDatabaseStreamSession(
     localBackupDatabaseStreamStore.getFinalizedResult(sessionId);
   if (finalized) return finalized;
 
-  const preparedStream =
-    localBackupDatabaseStreamStore.prepareFinalize(sessionId, manifest);
+  const preparedStream = localBackupDatabaseStreamStore.prepareFinalize(
+    sessionId,
+    manifest,
+  );
   const prepared = {
     ...preparedStream,
     sqlStaging: createLocalBackupSqlStaging(
@@ -4576,11 +4587,25 @@ app.delete(
   },
 );
 
-
 function sendLocalBackupImportError(res, error) {
   if (error instanceof LocalBackupImportJobError) {
     const status = error.code === "job_not_found" ? 404 : 409;
     res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (error instanceof BackupImportUploadError) {
+    const status =
+      error.code === "upload_offset_mismatch" ||
+      error.code === "upload_incomplete"
+        ? 409
+        : 400;
+    res.status(status).send({
+      error: error.message,
+      code: error.code,
+      ...(error.expectedOffset !== undefined
+        ? { expectedOffset: error.expectedOffset }
+        : {}),
+    });
     return true;
   }
   if (
@@ -4602,10 +4627,7 @@ async function writeImportedAsset(key, filePath, size) {
   await upsertAssetCatalogKey(key, size);
 }
 
-async function applyPreparedLocalBackupDatabase(
-  prepared,
-  sourceClientId,
-) {
+async function applyPreparedLocalBackupDatabase(prepared, sourceClientId) {
   const staged = {
     sourceRevision: prepared.sourceRevision,
     recordCount: prepared.recordCount,
@@ -4636,6 +4658,7 @@ const localBackupImportService = new LocalBackupImportService(
     encodeDatabaseRecord: encodeStorageSyncValue,
     applyPreparedDatabase: applyPreparedLocalBackupDatabase,
   },
+  localBackupImportUploads,
 );
 
 app.post(
@@ -4716,6 +4739,68 @@ app.put(
   },
 );
 
+app.put(
+  "/api/local-backup/import/jobs/:jobId/chunks",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!req.is("application/octet-stream")) {
+      res.status(415).send({
+        error: "Content-Type must be application/octet-stream",
+        code: "invalid_content_type",
+      });
+      return;
+    }
+
+    try {
+      res.send(
+        await localBackupImportService.appendUploadChunk(
+          req.params.jobId,
+          Number(req.query.offset),
+          req,
+          Number(req.query.totalBytes),
+        ),
+      );
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.post(
+  "/api/local-backup/import/jobs/:jobId/finalize-upload",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(
+        await localBackupImportService.finalizeUpload(req.params.jobId, {
+          sourceClientId: req.headers["x-risu-client-id"],
+        }),
+      );
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.delete(
+  "/api/local-backup/import/jobs/:jobId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      await localBackupImportService.cancel(req.params.jobId);
+      res.status(204).end();
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
 app.post(
   "/api/local-backup/export/jobs",
   authenticatedRouteLimiter,
@@ -4751,9 +4836,7 @@ app.get(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
     try {
-      res.send(
-        await localBackupExportService.waitAndRemove(req.params.jobId),
-      );
+      res.send(await localBackupExportService.waitAndRemove(req.params.jobId));
     } catch (error) {
       if (sendLocalBackupExportJobError(res, error)) return;
       next(error);

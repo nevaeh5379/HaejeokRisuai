@@ -48,10 +48,7 @@ export interface LocalBackupExportJobCreated {
 }
 
 export type LocalBackupExportJobStatus =
-  | "pending"
-  | "streaming"
-  | "complete"
-  | "error";
+  "pending" | "streaming" | "complete" | "error";
 
 export interface LocalBackupExportJobProgress {
   status: LocalBackupExportJobStatus;
@@ -71,18 +68,13 @@ export class BackupApiContractError extends Error {
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= 0
-  );
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 export function validateLocalBackupDatabaseStreamSession(
   value: unknown,
 ): LocalBackupDatabaseStreamSession {
-  const session =
-    value as Partial<LocalBackupDatabaseStreamSession> | null;
+  const session = value as Partial<LocalBackupDatabaseStreamSession> | null;
   if (
     !session ||
     typeof session.id !== "string" ||
@@ -145,7 +137,10 @@ export function validateLocalBackupExportJobProgress(
     "complete",
     "error",
   ];
-  if (!result || !validStatuses.includes(result.status as LocalBackupExportJobStatus)) {
+  if (
+    !result ||
+    !validStatuses.includes(result.status as LocalBackupExportJobStatus)
+  ) {
     throw new BackupApiContractError(
       "The backup API returned an invalid export progress response.",
     );
@@ -203,13 +198,8 @@ export function validateLocalBackupExportJobCompletion(
   return result as LocalBackupExportJobCompletion;
 }
 
-
 export type LocalBackupImportJobStatus =
-  | "pending"
-  | "uploading"
-  | "restoring"
-  | "complete"
-  | "error";
+  "pending" | "uploading" | "restoring" | "complete" | "error";
 
 export type LocalBackupImportProgressStage =
   | "uploading"
@@ -229,6 +219,12 @@ export interface LocalBackupImportProgress {
 
 export interface LocalBackupImportJobCreated {
   id: string;
+}
+
+export interface LocalBackupImportUploadState {
+  receivedBytes: number;
+  totalBytes: number;
+  complete: boolean;
 }
 
 export interface LocalBackupImportJobProgress {
@@ -273,6 +269,25 @@ export function validateLocalBackupImportJobCreated(
   return result as LocalBackupImportJobCreated;
 }
 
+export function validateLocalBackupImportUploadState(
+  value: unknown,
+): LocalBackupImportUploadState {
+  const result = value as Partial<LocalBackupImportUploadState> | null;
+  if (
+    !result ||
+    !isNonNegativeSafeInteger(result.receivedBytes) ||
+    !isNonNegativeSafeInteger(result.totalBytes) ||
+    result.receivedBytes > result.totalBytes ||
+    typeof result.complete !== "boolean" ||
+    result.complete !== (result.receivedBytes === result.totalBytes)
+  ) {
+    throw new BackupApiContractError(
+      "The backup API returned an invalid import upload state.",
+    );
+  }
+  return result as LocalBackupImportUploadState;
+}
+
 export function validateLocalBackupImportJobProgress(
   value: unknown,
 ): LocalBackupImportJobProgress {
@@ -299,10 +314,7 @@ export function validateLocalBackupImportJobProgress(
         !isNonNegativeSafeInteger(progress.current)) ||
       (progress.total !== undefined &&
         !isNonNegativeSafeInteger(progress.total)) ||
-      !(
-        progress.detail === undefined ||
-        typeof progress.detail === "string"
-      )
+      !(progress.detail === undefined || typeof progress.detail === "string")
     ) {
       throw new BackupApiContractError(
         "The backup API returned invalid import progress data.",
@@ -327,8 +339,7 @@ export function validateLocalBackupImportJobCompletion(
       typeof result.error === "string"
     ) ||
     !(
-      result.revision === undefined ||
-      isNonNegativeSafeInteger(result.revision)
+      result.revision === undefined || isNonNegativeSafeInteger(result.revision)
     ) ||
     !(
       result.recordCount === undefined ||

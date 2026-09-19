@@ -9,6 +9,7 @@ import {
 } from "./legacyFormat";
 import { LocalBackupImportJobStore } from "./importJobStore";
 import { BackupImportStagingStore } from "./importStagingStore";
+import { BackupImportUploadStore } from "./importUploadStore";
 import {
   LocalBackupImportService,
   type LocalBackupImportAdapter,
@@ -49,9 +50,9 @@ async function makeStores(id: string) {
 
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) =>
-      fs.rm(root, { recursive: true, force: true }),
-    ),
+    roots
+      .splice(0)
+      .map((root) => fs.rm(root, { recursive: true, force: true })),
   );
 });
 
@@ -128,10 +129,7 @@ describe("LocalBackupImportService", () => {
         new TextEncoder().encode('{"character":[]}'),
       ),
       framed("assets/a.png", new Uint8Array([4, 5])),
-      framed(
-        "inlay_22222222-2222-2222-2222-222222222222.risuinlay",
-        inlay,
-      ),
+      framed("inlay_22222222-2222-2222-2222-222222222222.risuinlay", inlay),
     ];
     const totalBytes = parts.reduce((sum, part) => sum + part.length, 0);
     await expect(
@@ -193,6 +191,74 @@ describe("LocalBackupImportService", () => {
     await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("restores a backup after multiple offset upload requests", async () => {
+    const { root, jobs, staging } = await makeStores("import_004");
+    const uploads = new BackupImportUploadStore(path.join(root, "uploads"));
+    const adapter: LocalBackupImportAdapter = {
+      async writeColdStorage() {},
+      async writeAsset() {},
+      encodeDatabaseRecord(record) {
+        return record;
+      },
+      async applyPreparedDatabase(prepared, sourceClientId) {
+        expect(sourceClientId).toBe("client-chunked");
+        expect(prepared.recordCount).toBe(2);
+        return { revision: 12, recordCount: prepared.recordCount };
+      },
+    };
+    const service = new LocalBackupImportService(
+      jobs,
+      staging,
+      adapter,
+      uploads,
+    );
+    const job = service.createJob();
+    const payload = framed(
+      "database.risudat",
+      await encodeLegacyBackupDatabase({
+        language: "ko",
+        characters: [],
+      }),
+    );
+    const split = Math.floor(payload.length / 2);
+
+    await expect(
+      service.appendUploadChunk(
+        job.id,
+        0,
+        chunked([payload.subarray(0, split)], 7),
+        payload.length,
+      ),
+    ).resolves.toMatchObject({
+      receivedBytes: split,
+      totalBytes: payload.length,
+      complete: false,
+    });
+    await expect(
+      service.appendUploadChunk(
+        job.id,
+        split,
+        chunked([payload.subarray(split)], 9),
+        payload.length,
+      ),
+    ).resolves.toMatchObject({
+      receivedBytes: payload.length,
+      complete: true,
+    });
+
+    await expect(
+      service.finalizeUpload(job.id, { sourceClientId: "client-chunked" }),
+    ).resolves.toEqual({
+      status: "complete",
+      error: null,
+      revision: 12,
+      recordCount: 2,
+    });
+    await expect(
+      fs.stat(path.join(root, "uploads", `${job.id}.upload`)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("preserves encrypted-backup rejection and marks the job failed", async () => {
