@@ -10,14 +10,17 @@ import { createUnzip } from "node:zlib";
 import { Unpackr } from "msgpackr";
 import settings from "../../../protocol/settings.json";
 import type { LegacyBackupSqlRecord } from "../legacyRecords";
+import {
+  LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
+  LEGACY_RAW_DATABASE_HEADER_BYTES,
+  LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
+} from "../legacyHeaders";
 
-const RAW_HEADER = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]);
-const COMPRESSED_HEADER = Buffer.from([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
-]);
-const STREAM_COMPRESSED_HEADER = Buffer.from([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 9,
-]);
+const RAW_HEADER = Buffer.from(LEGACY_RAW_DATABASE_HEADER_BYTES);
+const COMPRESSED_HEADER = Buffer.from(LEGACY_COMPRESSED_DATABASE_HEADER_BYTES);
+const STREAM_COMPRESSED_HEADER = Buffer.from(
+  LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
+);
 
 const LEGACY_PERSONA_MIRROR_KEYS = new Set<string>(
   settings.LEGACY_PERSONA_MIRROR_KEYS,

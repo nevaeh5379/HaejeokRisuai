@@ -111,6 +111,12 @@
       "require": "./dist/legacyRecords.js",
       "default": "./src/legacyRecords.ts"
     },
+    "./legacyHeaders": {
+      "types": "./src/legacyHeaders.ts",
+      "import": "./src/legacyHeaders.ts",
+      "require": "./dist/legacyHeaders.js",
+      "default": "./src/legacyHeaders.ts"
+    },
     "./coldStorage": {
       "types": "./src/coldStorage.ts",
       "import": "./src/coldStorage.ts",

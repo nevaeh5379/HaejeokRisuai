@@ -6,11 +6,13 @@ import {
   type ColdStorageValueMap,
 } from "../compatibility";
 import { expandPortableDatabaseBranchGraphsForCompatibility } from "../portableBranches";
+import {
+  LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
+  LEGACY_RAW_DATABASE_HEADER_BYTES,
+} from "../legacyHeaders";
 
-const RAW_HEADER = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]);
-const COMPRESSED_HEADER = Buffer.from([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
-]);
+const RAW_HEADER = Buffer.from(LEGACY_RAW_DATABASE_HEADER_BYTES);
+const COMPRESSED_HEADER = Buffer.from(LEGACY_COMPRESSED_DATABASE_HEADER_BYTES);
 
 const packr = new Packr({ useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });

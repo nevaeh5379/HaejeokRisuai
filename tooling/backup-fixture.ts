@@ -15,10 +15,11 @@
 import { deflateSync } from "node:zlib";
 import { Packr } from "msgpackr";
 import { LEGACY_DATABASE_ENTRY_NAME } from "@risuai/backup-core/entryPolicy";
+import { LEGACY_COMPRESSED_DATABASE_HEADER_BYTES } from "@risuai/backup-core/legacyHeaders";
 
-export const COMPRESSED_HEADER = Buffer.from([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
-]);
+export const COMPRESSED_HEADER = Buffer.from(
+  LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
+);
 
 type BackupEntry = { name: string; data: Buffer };
 
