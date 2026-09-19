@@ -66,6 +66,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@huggingface/jinja": "^0.5.9",
     "@huggingface/transformers": "^4.2.0",
+    "@logtape/logtape": "^2.3.5",
     "@lucide/svelte": "^1.35.0",
     "@mlc-ai/web-tokenizers": "^0.1.6",
     "@risuai/ccardlib": "^0.4.2",

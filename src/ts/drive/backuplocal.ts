@@ -119,6 +119,9 @@ import {
   normalizeLocalBackupPerformance,
   type LocalBackupPerformanceSettings,
 } from "../storage/backup/localBackupPerformance";
+import { getLogger } from "@logtape/logtape";
+
+const logger = getLogger(["risuai", "backup"]);
 
 const alertProgress = (
   msg: string,
@@ -647,33 +650,66 @@ export async function streamRemoteBackupResponse(
 }
 
 async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
+  const startedAt = Date.now();
+  const elapsed = () => Date.now() - startedAt;
+  logger.info("node-stream.start {mode}", { mode, elapsedMs: elapsed() });
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
+    logger.error("node-stream.storage-mismatch", {
+      actualStorage: forageStorage.realStorage?.constructor?.name ?? "null",
+      elapsedMs: elapsed(),
+    });
     throw new Error("Node local backup requires NodeStorage");
   }
   const nodeStorage = forageStorage.realStorage;
   const performance = getLocalBackupPerformance();
+  logger.debug("node-stream.performance", {
+    databasePageRecords: performance.databasePageRecords,
+    fragmentRecords: performance.fragmentRecords,
+    writerBufferKiB: performance.writerBufferKiB,
+    progressUpdateMs: performance.progressUpdateMs,
+  });
   let nativeWriter: LocalWriter | null = null;
   if (isTauri || isCapacitor) {
     nativeWriter = new LocalWriter();
     nativeWriter.setBufferSize(performance.writerBufferKiB * 1024);
     reportLocalBackupProgress("selectingDestination", { percent: 1 });
     const { baseName } = createLocalBackupExportMetadata(mode);
+    logger.info("node-stream.writer-init {baseName}", {
+      baseName,
+      elapsedMs: elapsed(),
+    });
     if (!(await nativeWriter.init(baseName, ["risubackup"]))) {
+      // Quiet-failure suspect #1: the native document picker was cancelled
+      // (either by the system on cold start or by the user). The progress UI
+      // was already shown, so alertClear() makes it vanish silently.
+      logger.warn("node-stream.writer-cancelled {platform}", {
+        platform: isCapacitor ? "capacitor" : "tauri",
+        elapsedMs: elapsed(),
+      });
       alertClear();
       return;
     }
+    logger.info("node-stream.writer-opened", { elapsedMs: elapsed() });
   }
   try {
     if (mode === "native") {
       reportLocalBackupProgress("preparing", { percent: 3 });
+      logger.info("node-stream.staging-inlays", { elapsedMs: elapsed() });
       await stageNodeInlaysForBackup(nodeStorage);
     }
     reportLocalBackupProgress("preparing", { percent: 4 });
+    logger.info("node-stream.creating-export-job", {
+      elapsedMs: elapsed(),
+    });
     const job = await nodeStorage.backup.createExportJob({
       mode,
       pageSize: performance.databasePageRecords,
       fragmentRecords: performance.fragmentRecords,
+    });
+    logger.info("node-stream.export-job-created {jobId}", {
+      jobId: job.id,
+      elapsedMs: elapsed(),
     });
     let keepPolling = true;
     const progressPolling = (async () => {
@@ -691,11 +727,28 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
             });
           }
           if (state.status === "complete" || state.status === "error") {
+            if (state.status === "error") {
+              logger.error("node-stream.poll-final-state", {
+                status: state.status,
+                stage: progress?.stage ?? "none",
+                elapsedMs: elapsed(),
+              });
+            } else {
+              logger.info("node-stream.poll-final-state", {
+                status: state.status,
+                stage: progress?.stage ?? "none",
+                elapsedMs: elapsed(),
+              });
+            }
             break;
           }
-        } catch {
+        } catch (error) {
           // The completion request remains authoritative. A transient status
           // polling failure must not abort the actual browser download.
+          logger.warn("node-stream.poll-error", {
+            error: error instanceof Error ? error.message : String(error),
+            elapsedMs: elapsed(),
+          });
         }
         await sleep(performance.progressUpdateMs);
       }
@@ -705,11 +758,19 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
         ReturnType<typeof nodeStorage.backup.waitForExport>
       >;
       if (nativeWriter) {
+        logger.info("node-stream.opening-export-stream {jobId}", {
+          jobId: job.id,
+          elapsedMs: elapsed(),
+        });
         const response = await nodeStorage.backup.openExportStream(job.id);
         reportLocalBackupProgress("database", { percent: 5 });
         await streamRemoteBackupResponse(response, nativeWriter);
+        logger.info("node-stream.download-streamed", {
+          elapsedMs: elapsed(),
+        });
         await nativeWriter.close();
         nativeWriter = null;
+        logger.info("node-stream.writer-closed", { elapsedMs: elapsed() });
         completion = await nodeStorage.backup.waitForExport(job.id);
       } else {
         const anchor = document.createElement("a");
@@ -719,17 +780,31 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
         anchor.click();
         anchor.remove();
         reportLocalBackupProgress("database", { percent: 5 });
+        logger.info("node-stream.anchor-download-clicked", {
+          elapsedMs: elapsed(),
+        });
         completion = await nodeStorage.backup.waitForExport(job.id);
       }
       if (completion.status !== "complete") {
+        logger.error("node-stream.export-failed {reason}", {
+          reason: completion.error ?? "unknown",
+          elapsedMs: elapsed(),
+        });
         throw new Error(completion.error ?? "Local backup download failed");
       }
+      logger.info("node-stream.complete", { elapsedMs: elapsed() });
       reportLocalBackupProgress("finalizing", { percent: 100 });
       alertNormal("Success");
     } finally {
       keepPolling = false;
       await progressPolling;
     }
+  } catch (error) {
+    logger.error("node-stream.failed {error}", {
+      error: error instanceof Error ? error.message : String(error),
+      elapsedMs: elapsed(),
+    });
+    throw error;
   } finally {
     if (nativeWriter) {
       await nativeWriter.close().catch(() => {});
@@ -737,8 +812,15 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     if (mode === "native") {
       try {
         await clearNodeBackupInlayStage(nodeStorage);
+        logger.info("node-stream.inlay-stage-cleared", {
+          elapsedMs: elapsed(),
+        });
       } catch (error) {
         console.warn("Failed to clean staged backup inlays:", error);
+        logger.warn("node-stream.inlay-stage-clear-failed", {
+          error: error instanceof Error ? error.message : String(error),
+          elapsedMs: elapsed(),
+        });
       }
     }
   }
@@ -1512,13 +1594,17 @@ async function saveStreamingLocalBackupWithOptions(
 }
 
 export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
+  const startedAt = Date.now();
+  logger.info("save.start {mode}", { mode });
   try {
     await runExclusiveLocalBackupOperation("save", async () => {
       if (usesRemoteBackupApi(forageStorage.realStorage)) {
+        logger.info("save.route {route}", { route: "node" });
         await flushDurableStores();
         await saveNodeLocalBackupStream(mode);
         return;
       }
+      logger.info("save.route {route}", { route: "local" });
       await saveLocalBackupWithOptions({
         mode,
         partial: false,
@@ -1527,7 +1613,16 @@ export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
         encryptAccountBackup: true,
       });
     });
+    logger.info("save.complete", {
+      mode,
+      elapsedMs: Date.now() - startedAt,
+    });
   } catch (error) {
+    logger.error("save.failed {error}", {
+      mode,
+      error: error instanceof Error ? error.message : String(error),
+      elapsedMs: Date.now() - startedAt,
+    });
     console.error("SaveLocalBackup failed:", error);
     alertError(error);
   }
@@ -1535,15 +1630,25 @@ export async function SaveLocalBackup(mode: LocalBackupMode = "native") {
 
 /** Save a native backup containing only the essential visual assets. */
 export async function SavePartialLocalBackup() {
+  const startedAt = Date.now();
+  logger.info("partial-save.start");
   try {
-    if (!(await alertConfirm(language.partialBackupFirstConfirm))) return;
-    if (!(await alertConfirm(language.partialBackupSecondConfirm))) return;
+    if (!(await alertConfirm(language.partialBackupFirstConfirm))) {
+      logger.info("partial-save.cancelled {at}", { at: "confirm-1" });
+      return;
+    }
+    if (!(await alertConfirm(language.partialBackupSecondConfirm))) {
+      logger.info("partial-save.cancelled {at}", { at: "confirm-2" });
+      return;
+    }
     await runExclusiveLocalBackupOperation("partial-save", async () => {
       if (usesRemoteBackupApi(forageStorage.realStorage)) {
+        logger.info("partial-save.route {route}", { route: "node" });
         await flushDurableStores();
         await saveNodeLocalBackupStream("partial");
         return;
       }
+      logger.info("partial-save.route {route}", { route: "local" });
       await saveLocalBackupWithOptions({
         mode: "native",
         partial: true,
@@ -1552,7 +1657,14 @@ export async function SavePartialLocalBackup() {
         encryptAccountBackup: false,
       });
     });
+    logger.info("partial-save.complete", {
+      elapsedMs: Date.now() - startedAt,
+    });
   } catch (error) {
+    logger.error("partial-save.failed {error}", {
+      error: error instanceof Error ? error.message : String(error),
+      elapsedMs: Date.now() - startedAt,
+    });
     console.error("SavePartialLocalBackup failed:", error);
     alertError(error);
   }
