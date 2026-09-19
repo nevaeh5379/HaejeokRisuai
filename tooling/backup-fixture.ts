@@ -74,14 +74,24 @@ export interface FixtureBackupDatabase {
  *  - `didFirstSetup: true` so the app boots straight into the main UI after
  *    the restore + reload
  */
-export function buildTestLocalBackup(): Buffer {
+export interface TestLocalBackupOptions {
+  characterId?: string;
+  chatId?: string;
+  characterName?: string;
+}
+
+export function buildTestLocalBackup(
+  options: TestLocalBackupOptions = {},
+): Buffer {
   // 1x1 transparent PNG (smallest valid PNG, 67 bytes).
   const tinyPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
     "base64",
   );
-  const characterId = "aaaaaaaa-1111-4222-8333-444444444444";
-  const chatId = "bbbbbbbb-1111-4222-8333-444444444444";
+  const characterId =
+    options.characterId ?? "aaaaaaaa-1111-4222-8333-444444444444";
+  const chatId = options.chatId ?? "bbbbbbbb-1111-4222-8333-444444444444";
+  const characterName = options.characterName ?? "Fixture Bot";
 
   const database: FixtureBackupDatabase = {
     username: "Backup Tester",
@@ -89,14 +99,20 @@ export function buildTestLocalBackup(): Buffer {
     didFirstSetup: true,
     language: "en",
     personas: [
-      { name: "Backup Tester", icon: "", personaPrompt: "", note: "", largePortrait: false },
+      {
+        name: "Backup Tester",
+        icon: "",
+        personaPrompt: "",
+        note: "",
+        largePortrait: false,
+      },
     ],
     selectedPersona: 0,
     characters: [
       {
         chaId: characterId,
         type: "character",
-        name: "Fixture Bot",
+        name: characterName,
         image: "assets/test-fixture-bot.png",
         firstMessage: "Fixture greeting",
         description: "A character created by the e2e fixture builder.",
@@ -160,7 +176,10 @@ export function buildTestLocalBackup(): Buffer {
     },
     {
       name: "database.risudat",
-      data: Buffer.concat([COMPRESSED_HEADER, deflateSync(packr.encode(database))]),
+      data: Buffer.concat([
+        COMPRESSED_HEADER,
+        deflateSync(packr.encode(database)),
+      ]),
     },
   ];
 

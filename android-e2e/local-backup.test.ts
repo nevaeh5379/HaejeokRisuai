@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -30,7 +31,8 @@ afterEach(async () => {
   }
 });
 
-async function startDriver() {
+async function startDriver(options: { preserveData?: boolean } = {}) {
+  const preserveData = options.preserveData ?? false;
   assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
   await mkdir(chromedriverDir, { recursive: true });
   driver = await remote({
@@ -46,12 +48,16 @@ async function startDriver() {
       ...(process.env.ANDROID_E2E_UDID
         ? { "appium:udid": process.env.ANDROID_E2E_UDID }
         : {}),
-      "appium:app": apkPath,
+      ...(preserveData
+        ? {}
+        : {
+            "appium:app": apkPath,
+            "appium:enforceAppInstall": true,
+          }),
       "appium:appPackage": "co.aiclient.risu",
       "appium:appActivity": ".MainActivity",
-      "appium:enforceAppInstall": true,
       "appium:autoGrantPermissions": true,
-      "appium:noReset": false,
+      "appium:noReset": preserveData,
       "appium:newCommandTimeout": 120,
       "appium:ensureWebviewsHavePages": true,
       "appium:chromedriverExecutableDir": chromedriverDir,
@@ -82,10 +88,31 @@ async function switchToAppWebView(browser: WebdriverIO.Browser) {
   await browser.switchContext(context);
 }
 
-async function waitForFixture(browser: WebdriverIO.Browser) {
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
+function isDisconnectedWebViewError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /disconnected: not connected to DevTools|chrome not reachable|no such window/i.test(
+    message,
+  );
+}
+
+async function reconnectPreservingAppData(
+  browser: WebdriverIO.Browser,
+): Promise<WebdriverIO.Browser> {
+  await browser.deleteSession().catch(() => undefined);
+  if (driver === browser) driver = undefined;
+  const reconnected = await startDriver({ preserveData: true });
+  await switchToAppWebView(reconnected);
+  return reconnected;
+}
+
+async function waitForFixture(
+  browser: WebdriverIO.Browser,
+): Promise<WebdriverIO.Browser> {
+  let current = browser;
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    try {
+      const ready = await current.execute(
         (allowPersistedRemoteFixture) =>
           localStorage.getItem(
             "risu_android_e2e_module_rendering_fixture_ready_v5",
@@ -95,13 +122,16 @@ async function waitForFixture(browser: WebdriverIO.Browser) {
               "Android E2E Module Rendering Character",
             )),
         remoteProfile,
-      ),
-    {
-      timeout: 90_000,
-      interval: 500,
-      timeoutMsg: "Android E2E fixture did not become ready",
-    },
-  );
+      );
+      if (ready) return current;
+    } catch (error) {
+      if (!remoteProfile || !isDisconnectedWebViewError(error)) throw error;
+      current = await reconnectPreservingAppData(current);
+      continue;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("Android E2E fixture did not become ready");
 }
 
 const ANDROID_SQLITE_PATH = "databases/risuai-localSQLite.db";
@@ -163,9 +193,9 @@ async function createRemoteVerifier() {
 
 async function waitForRemoteRestoredFixture(
   browser: WebdriverIO.Browser,
+  characterId: string,
 ) {
   const { api, auth } = await createRemoteVerifier();
-  const characterId = "aaaaaaaa-1111-4222-8333-444444444444";
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const response = await api.request(
@@ -394,11 +424,13 @@ function runAdb(args: string[]): string {
   return execFileSync("adb", scopedArgs, { encoding: "utf8" });
 }
 
-async function stageImportFixture(): Promise<string> {
+async function stageImportFixture(
+  options?: Parameters<typeof buildTestLocalBackup>[0],
+): Promise<string> {
   const fileName = "haejeokrisu_android_e2e_import.risubackup";
   await mkdir(artifactsDir, { recursive: true });
   const hostPath = join(artifactsDir, fileName);
-  await writeFile(hostPath, buildTestLocalBackup());
+  await writeFile(hostPath, buildTestLocalBackup(options));
   runAdb(["shell", "mkdir", "-p", "/sdcard/Download"]);
   runAdb(["push", hostPath, `/sdcard/Download/${fileName}`]);
   runAdb([
@@ -531,10 +563,10 @@ test(
   "local Android backup opens the native document saver",
   { timeout: 180_000, skip: remoteProfile, concurrency: false },
   async () => {
-    const browser = await startDriver();
+    let browser = await startDriver();
     try {
       await switchToAppWebView(browser);
-      await waitForFixture(browser);
+      browser = await waitForFixture(browser);
       await openCompatibleBackupSave(browser);
 
       await waitForNativeDocumentSaver(browser);
@@ -555,11 +587,11 @@ test(
   "Android backup restore selects a real document and persists the fixture",
   { timeout: 240_000, skip: remoteProfile, concurrency: false },
   async () => {
-    const browser = await startDriver();
+    let browser = await startDriver();
     const fileName = await stageImportFixture();
     try {
       await switchToAppWebView(browser);
-      await waitForFixture(browser);
+      browser = await waitForFixture(browser);
       await openLocalBackupRestore(browser);
       await selectNativeDocument(browser, fileName);
       await waitForRestoredFixtureInSqlite(browser);
@@ -579,10 +611,10 @@ test(
   "remote-profile Android backup completes through the backup API",
   { timeout: 180_000, skip: !remoteProfile, concurrency: false },
   async () => {
-    const browser = await startDriver();
+    let browser = await startDriver();
     try {
       await switchToAppWebView(browser);
-      await waitForFixture(browser);
+      browser = await waitForFixture(browser);
       await openCompatibleBackupSave(browser);
       await waitForNativeDocumentSaver(browser);
       await confirmNativeDocumentSave(browser);
@@ -620,14 +652,18 @@ test(
   "remote-profile Android restore uploads bounded chunks and replaces server data",
   { timeout: 240_000, skip: !remoteProfile, concurrency: false },
   async () => {
-    const browser = await startDriver();
-    const fileName = await stageImportFixture();
+    let browser = await startDriver();
+    const characterId = randomUUID();
+    const fileName = await stageImportFixture({
+      characterId,
+      chatId: randomUUID(),
+    });
     try {
       await switchToAppWebView(browser);
-      await waitForFixture(browser);
+      browser = await waitForFixture(browser);
       await openLocalBackupRestore(browser);
       await selectNativeDocument(browser, fileName);
-      await waitForRemoteRestoredFixture(browser);
+      await waitForRemoteRestoredFixture(browser, characterId);
     } catch (error) {
       await mkdir(artifactsDir, { recursive: true });
       await browser
