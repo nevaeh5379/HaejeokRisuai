@@ -63,6 +63,12 @@
       "require": "./dist/node/exportEntries.js",
       "default": "./src/node/exportEntries.ts"
     },
+    "./node/exportArchive": {
+      "types": "./src/node/exportArchive.ts",
+      "import": "./src/node/exportArchive.ts",
+      "require": "./dist/node/exportArchive.js",
+      "default": "./src/node/exportArchive.ts"
+    },
     "./containerStream": {
       "types": "./src/containerStream.ts",
       "import": "./src/containerStream.ts",

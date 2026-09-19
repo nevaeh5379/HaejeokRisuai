@@ -79,11 +79,7 @@ const {
   encodeLegacyCompatibleBackupDatabase,
 } = require("../../packages/backup-core/dist/node/legacyFormat.js");
 const {
-  collectStreamedEssentialAssetKeys,
-} = require("../../packages/backup-core/dist/assetScope.js");
-const {
   createLocalBackupExportMetadata,
-  createLocalBackupExportPlan,
 } = require("../../packages/backup-core/dist/exportPlan.js");
 const {
   attachPortableDatabaseBranchGraphs,
@@ -148,15 +144,13 @@ const {
   LocalBackupExportJobStore,
 } = require("../../packages/backup-core/dist/node/exportJobStore.js");
 const {
-  streamBackupStorageEntries,
-  streamColdStorageExportEntries,
-} = require("../../packages/backup-core/dist/node/exportEntries.js");
+  streamLocalBackupArchive,
+} = require("../../packages/backup-core/dist/node/exportArchive.js");
 const {
   LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE,
   LocalBackupExportService,
 } = require("../../packages/backup-core/dist/node/exportService.js");
 const {
-  PORTABLE_DATABASE_STREAM_MANIFEST,
   PortableDatabaseExportWriter,
   writeBackupContainerEntry,
 } = require("../../packages/backup-core/dist/node/exportStream.js");
@@ -4037,6 +4031,14 @@ async function openServerBackupStorageEntry(storage, key) {
   };
 }
 
+async function listServerBackupAssetKeys(storage) {
+  const resolved =
+    storage.type === "s3"
+      ? await resolveCatalogedAssetKeys(storage, "assets/")
+      : { keys: await storage.list("assets/") };
+  return resolved.keys;
+}
+
 async function listServerBackupColdStorageKeys() {
   const summaries =
     typeof postgresStorage.listColdStorage === "function"
@@ -4117,7 +4119,7 @@ type LocalBackupProgressReporter = (
 ) => void;
 
 async function streamPortableServerDatabase(
-  output,
+  writeEntry,
   options: {
     onRecord?: (record: any) => void;
     onProgress?: LocalBackupProgressReporter;
@@ -4145,8 +4147,7 @@ async function streamPortableServerDatabase(
     expectedRecords,
     fragmentRecords: options.fragmentRecords,
     encodeDatabase: encodeLocalBackupDatabase,
-    writeEntry: async (name, source, size) =>
-      await writeServerBackupEntry(output, name, source, size),
+    writeEntry,
     onRecord: options.onRecord,
     onProgress(current, total) {
       options.onProgress?.({ stage: "database", current, total });
@@ -4309,155 +4310,80 @@ async function streamPortableServerDatabase(
   return manifest;
 }
 
-async function streamLegacyServerLocalBackup(
-  res,
-  onProgress: LocalBackupProgressReporter = () => {},
-) {
-  onProgress({ stage: "database" });
-  const database = await buildPortableServerDatabase();
-  const loadedColdItems = await loadServerBackupColdStorageItems();
-  const coldStorageValues = new Map(
-    loadedColdItems.map((item) => [item.key, item.value]),
-  );
-  const databaseData = await encodeLegacyCompatibleBackupDatabase(
-    database,
-    coldStorageValues,
-  );
-  const storage = assetStorageManager.getStorage();
-  const resolved =
-    storage.type === "s3"
-      ? await resolveCatalogedAssetKeys(storage, "assets/")
-      : { keys: await storage.list("assets/") };
-  const { assetKeys } = createLocalBackupExportPlan({
-    mode: "compatible",
-    assetKeys: resolved.keys,
-  });
-
-  res.status(200);
-  res.setHeader("Content-Type", "application/octet-stream");
-  const { filename } = createLocalBackupExportMetadata("compatible");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("X-Accel-Buffering", "no");
-  if (typeof res.flushHeaders === "function") res.flushHeaders();
-
-  onProgress({ stage: "database", current: 1, total: 1 });
-  await writeServerBackupEntry(
-    res,
-    "database.risudat",
-    databaseData,
-    databaseData.length,
-  );
-
-  await streamColdStorageExportEntries({
-    keys: loadedColdItems.map((item) => item.key),
-    async load(key) {
-      return {
-        exists: coldStorageValues.has(key),
-        value: coldStorageValues.get(key),
-      };
-    },
-    writeEntry: async (name, source, size) =>
-      await writeServerBackupEntry(res, name, source, size),
-    onProgress,
-  });
-
-  await streamBackupStorageEntries({
-    stage: "assets",
-    keys: assetKeys,
-    open: async (key) => await openServerBackupStorageEntry(storage, key),
-    writeEntry: async (name, source, size) =>
-      await writeServerBackupEntry(res, name, source, size),
-    onProgress,
-  });
-
-  onProgress({ stage: "finalizing" });
-  await new Promise((resolve, reject) => {
-    res.once("finish", resolve);
-    res.once("error", reject);
-    res.end();
-  });
-}
-
 async function streamServerLocalBackup(
   res,
   mode = "native",
   options = {},
   onProgress: LocalBackupProgressReporter = () => {},
 ) {
-  if (mode === "compatible") {
-    await streamLegacyServerLocalBackup(res, onProgress);
-    return;
-  }
-
-  const partial = mode === "partial";
-  res.status(200);
-  res.setHeader("Content-Type", "application/octet-stream");
-  const { filename } = createLocalBackupExportMetadata(mode);
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("X-Accel-Buffering", "no");
-  if (typeof res.flushHeaders === "function") res.flushHeaders();
-
-  const essentialAssetKeys = new Set();
-  const manifest = await streamPortableServerDatabase(res, {
-    ...options,
-    onProgress,
-    onRecord(record) {
-      if (partial) collectStreamedEssentialAssetKeys(essentialAssetKeys, record);
-    },
-  });
-  await streamColdStorageExportEntries({
-    keys: await listServerBackupColdStorageKeys(),
-    async load(key) {
-      const loaded = await postgresStorage.loadColdStorage(key);
-      return loaded
-        ? { exists: true, value: loaded.data }
-        : { exists: false };
-    },
-    writeEntry: async (name, source, size) =>
-      await writeServerBackupEntry(res, name, source, size),
-    onProgress,
-  });
-  await assertServerBackupRevision(manifest.revision);
-
   const storage = assetStorageManager.getStorage();
-  const resolved =
-    storage.type === "s3"
-      ? await resolveCatalogedAssetKeys(storage, "assets/")
-      : { keys: await storage.list("assets/") };
-  const { assetKeys, inlayKeys } = createLocalBackupExportPlan({
+  const writeEntry = async (name, source, size) =>
+    await writeServerBackupEntry(res, name, source, size);
+
+  await streamLocalBackupArchive({
     mode,
-    assetKeys: resolved.keys,
-    inlayKeys: partial ? [] : await storage.list("inlay_"),
-    essentialAssetKeys,
+    streamOptions: options,
+    onProgress,
+    adapter: {
+      onReady() {
+        res.status(200);
+        res.setHeader("Content-Type", "application/octet-stream");
+        const { filename } = createLocalBackupExportMetadata(mode);
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${filename}"`,
+        );
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("X-Accel-Buffering", "no");
+        if (typeof res.flushHeaders === "function") res.flushHeaders();
+      },
+      writeEntry,
+      async prepareCompatibleDatabase() {
+        const database = await buildPortableServerDatabase();
+        const loadedColdItems = await loadServerBackupColdStorageItems();
+        const coldStorageValues = new Map(
+          loadedColdItems.map((item) => [item.key, item.value]),
+        );
+        const databaseData = await encodeLegacyCompatibleBackupDatabase(
+          database,
+          coldStorageValues,
+        );
+        return {
+          source: databaseData,
+          size: databaseData.length,
+          coldStorageKeys: loadedColdItems.map((item) => item.key),
+          async loadColdStorage(key) {
+            return {
+              exists: coldStorageValues.has(key),
+              value: coldStorageValues.get(key),
+            };
+          },
+        };
+      },
+      async streamNativeDatabase(streamOptions) {
+        return await streamPortableServerDatabase(writeEntry, streamOptions);
+      },
+      listColdStorageKeys: listServerBackupColdStorageKeys,
+      async loadColdStorage(key) {
+        const loaded = await postgresStorage.loadColdStorage(key);
+        return loaded
+          ? { exists: true, value: loaded.data }
+          : { exists: false };
+      },
+      assertDatabaseRevision: assertServerBackupRevision,
+      async listAssetKeys() {
+        return await listServerBackupAssetKeys(storage);
+      },
+      async listInlayKeys() {
+        return await storage.list("inlay_");
+      },
+      async openStorageEntry(key) {
+        return await openServerBackupStorageEntry(storage, key);
+      },
+      encodeDatabase: encodeLocalBackupDatabase,
+    },
   });
 
-  await streamBackupStorageEntries({
-    stage: "assets",
-    keys: assetKeys,
-    open: async (key) => await openServerBackupStorageEntry(storage, key),
-    writeEntry: async (name, source, size) =>
-      await writeServerBackupEntry(res, name, source, size),
-    onProgress,
-  });
-  await streamBackupStorageEntries({
-    stage: "inlays",
-    keys: inlayKeys,
-    open: async (key) => await openServerBackupStorageEntry(storage, key),
-    writeEntry: async (name, source, size) =>
-      await writeServerBackupEntry(res, name, source, size),
-    onProgress,
-  });
-
-  onProgress({ stage: "finalizing" });
-  const manifestData = await encodeLocalBackupDatabase(manifest);
-  await writeServerBackupEntry(
-    res,
-    PORTABLE_DATABASE_STREAM_MANIFEST,
-    manifestData,
-    manifestData.length,
-  );
   await new Promise((resolve, reject) => {
     res.once("finish", resolve);
     res.once("error", reject);
