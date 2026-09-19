@@ -36,10 +36,13 @@ the same Android version cannot make the test run stale code.
 The E2E build also installs deterministic global and prompt-selected module
 fixtures, persists them, and verifies that the chat can run its module action,
 render module-provided CBS/HTML/CSS, and open the input menu's `Modules` modal
-after selecting the character through the real default Android UI. With remote
-storage, the first session seeds the fixture and later fresh app sessions test
-the server-hydrated state without rewriting it. This fixture is only enabled
-for builds created by
+after selecting the character through the real default Android UI. Backup
+coverage drives Settings -> Data & Backup and verifies that a compatible local
+backup opens Android's real document saver. When a remote E2E URL is supplied,
+the backup test also saves the authenticated API export through the native
+writer and waits for the app's Success state. With remote storage, the first
+session seeds the fixture and later fresh app sessions test the server-hydrated
+state without rewriting it. This fixture is only enabled for builds created by
 `test:e2e:android` (`VITE_ANDROID_E2E=TRUE`). Tests run serially because one
 emulator cannot safely host multiple Appium sessions at once.
 
