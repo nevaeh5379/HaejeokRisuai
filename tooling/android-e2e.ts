@@ -203,15 +203,25 @@ async function main(): Promise<void> {
       projectRoot,
       `node_modules/.bin/tsx${process.platform === "win32" ? ".cmd" : ""}`,
     );
-    await run(tsxBin, ["--test", "--test-concurrency=1", ...tests], {
-      env: {
-        ...process.env,
-        ANDROID_E2E_APK: apkPath,
-        ANDROID_E2E_APPIUM_URL: appiumUrl,
-        ANDROID_E2E_ARTIFACTS: artifactsDir,
-        ANDROID_E2E_CHROMEDRIVER_DIR: chromedriverDir,
+    const testName = process.env.ANDROID_E2E_TEST_NAME?.trim();
+    await run(
+      tsxBin,
+      [
+        "--test",
+        "--test-concurrency=1",
+        ...(testName ? [`--test-name-pattern=${testName}`] : []),
+        ...tests,
+      ],
+      {
+        env: {
+          ...process.env,
+          ANDROID_E2E_APK: apkPath,
+          ANDROID_E2E_APPIUM_URL: appiumUrl,
+          ANDROID_E2E_ARTIFACTS: artifactsDir,
+          ANDROID_E2E_CHROMEDRIVER_DIR: chromedriverDir,
+        },
       },
-    });
+    );
   } finally {
     if (appium.exitCode === null) {
       const appiumExited = new Promise<void>((resolvePromise) => {

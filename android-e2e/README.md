@@ -39,8 +39,8 @@ render module-provided CBS/HTML/CSS, and open the input menu's `Modules` modal
 after selecting the character through the real default Android UI. Backup
 coverage drives Settings -> Data & Backup, verifies that a compatible local
 backup opens Android's real document saver, and restores a real fixture selected
-through Android's document picker before checking the restored character in the
-reloaded app. When a remote E2E URL is supplied, the backup test also saves the
+through Android's document picker before verifying the restored character was
+persisted to the app's native SQLite database. When a remote E2E URL is supplied, the backup test also saves the
 authenticated API export through the native writer and waits for the app's
 Success state. With remote storage, the first
 session seeds the fixture and later fresh app sessions test the server-hydrated
@@ -81,6 +81,14 @@ To isolate one test file while debugging, set a filename substring:
 
 ```bash
 ANDROID_E2E_TEST=module-chat pnpm test:e2e:android
+```
+
+To isolate one Node test name inside the selected file, add a name pattern:
+
+```bash
+ANDROID_E2E_TEST=local-backup \
+ANDROID_E2E_TEST_NAME='Android backup restore' \
+pnpm test:e2e:android
 ```
 
 Useful overrides:

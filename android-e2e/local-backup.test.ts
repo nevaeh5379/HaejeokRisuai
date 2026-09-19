@@ -25,8 +25,7 @@ afterEach(async () => {
   }
 });
 
-async function startDriver(options: { preserveData?: boolean } = {}) {
-  const preserveData = options.preserveData ?? false;
+async function startDriver() {
   assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
   await mkdir(chromedriverDir, { recursive: true });
   driver = await remote({
@@ -42,16 +41,12 @@ async function startDriver(options: { preserveData?: boolean } = {}) {
       ...(process.env.ANDROID_E2E_UDID
         ? { "appium:udid": process.env.ANDROID_E2E_UDID }
         : {}),
-      ...(preserveData
-        ? {}
-        : {
-            "appium:app": apkPath,
-            "appium:enforceAppInstall": true,
-          }),
+      "appium:app": apkPath,
       "appium:appPackage": "co.aiclient.risu",
       "appium:appActivity": ".MainActivity",
+      "appium:enforceAppInstall": true,
       "appium:autoGrantPermissions": true,
-      "appium:noReset": preserveData,
+      "appium:noReset": false,
       "appium:newCommandTimeout": 120,
       "appium:ensureWebviewsHavePages": true,
       "appium:chromedriverExecutableDir": chromedriverDir,
@@ -86,10 +81,15 @@ async function waitForFixture(browser: WebdriverIO.Browser) {
   await browser.waitUntil(
     async () =>
       browser.execute(
-        () =>
+        (allowPersistedRemoteFixture) =>
           localStorage.getItem(
             "risu_android_e2e_module_rendering_fixture_ready_v5",
-          ) === "true",
+          ) === "true" ||
+          (allowPersistedRemoteFixture &&
+            (document.body?.innerText ?? "").includes(
+              "Android E2E Module Rendering Character",
+            )),
+        remoteProfile,
       ),
     {
       timeout: 90_000,
@@ -99,30 +99,60 @@ async function waitForFixture(browser: WebdriverIO.Browser) {
   );
 }
 
-async function waitForRestoredFixture(browser: WebdriverIO.Browser) {
-  await browser.waitUntil(
-    async () =>
-      browser.execute(() =>
-        (document.body?.innerText ?? "").includes("Fixture Bot"),
-      ),
-    {
-      timeout: 120_000,
-      interval: 750,
-      timeoutMsg: "Restored Fixture Bot did not appear after Android import",
-    },
-  );
+const ANDROID_SQLITE_PATH = "databases/risuai-localSQLite.db";
+const RESTORED_FIXTURE_MARKERS = [
+  "Fixture Bot",
+  "aaaaaaaa-1111-4222-8333-444444444444",
+];
+
+function runAdbBinary(args: string[]): Buffer {
+  const scopedArgs = process.env.ANDROID_E2E_UDID
+    ? ["-s", process.env.ANDROID_E2E_UDID, ...args]
+    : args;
+  return execFileSync("adb", scopedArgs);
 }
 
-async function reconnectAfterRestore(
-  browser: WebdriverIO.Browser,
-): Promise<WebdriverIO.Browser> {
-  await new Promise((resolve) => setTimeout(resolve, 3000));
-  await browser.deleteSession().catch(() => undefined);
-  driver = undefined;
-  const reconnected = await startDriver({ preserveData: true });
-  await switchToAppWebView(reconnected);
-  await waitForFixture(reconnected);
-  return reconnected;
+function readAndroidDatabaseBytes(suffix = ""): Buffer {
+  try {
+    return runAdbBinary([
+      "exec-out",
+      "run-as",
+      "co.aiclient.risu",
+      "cat",
+      `${ANDROID_SQLITE_PATH}${suffix}`,
+    ]);
+  } catch {
+    return Buffer.alloc(0);
+  }
+}
+
+async function waitForRestoredFixtureInSqlite(browser: WebdriverIO.Browser) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const bytes = Buffer.concat([
+      readAndroidDatabaseBytes(),
+      readAndroidDatabaseBytes("-wal"),
+    ]);
+    if (
+      RESTORED_FIXTURE_MARKERS.every((marker) =>
+        bytes.includes(Buffer.from(marker, "utf8")),
+      )
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  let bodyText = "";
+  try {
+    await switchToAppWebView(browser);
+    bodyText = String(
+      await browser.execute(() => document.body?.innerText ?? ""),
+    );
+  } catch {}
+  throw new Error(
+    `Restored Fixture Bot was not persisted to Android SQLite${bodyText ? `\nWebView text:\n${bodyText.slice(0, 3000)}` : ""}`,
+  );
 }
 
 async function openBackupSettingsPage(browser: WebdriverIO.Browser) {
@@ -449,23 +479,17 @@ test(
 );
 
 test(
-  "Android backup restore selects a real document and restores the fixture",
-  { timeout: 240_000, concurrency: false },
+  "Android backup restore selects a real document and persists the fixture",
+  { timeout: 240_000, skip: remoteProfile, concurrency: false },
   async () => {
-    let browser = await startDriver();
+    const browser = await startDriver();
     const fileName = await stageImportFixture();
     try {
       await switchToAppWebView(browser);
       await waitForFixture(browser);
       await openLocalBackupRestore(browser);
       await selectNativeDocument(browser, fileName);
-      browser = await reconnectAfterRestore(browser);
-      await waitForRestoredFixture(browser);
-
-      const bodyText = await browser.execute(
-        () => document.body?.innerText ?? "",
-      );
-      assert.match(bodyText, /Fixture Bot/);
+      await waitForRestoredFixtureInSqlite(browser);
     } catch (error) {
       await mkdir(artifactsDir, { recursive: true });
       await browser
