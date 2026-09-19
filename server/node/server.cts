@@ -149,6 +149,10 @@ const {
   LocalBackupExportJobStore,
 } = require("../../packages/backup-core/dist/node/exportJobStore.js");
 const {
+  streamBackupStorageEntries,
+  streamColdStorageExportEntries,
+} = require("../../packages/backup-core/dist/node/exportEntries.js");
+const {
   LocalBackupExportService,
 } = require("../../packages/backup-core/dist/node/exportService.js");
 const {
@@ -4021,6 +4025,45 @@ async function writeServerBackupEntry(output, name, source, size) {
   );
 }
 
+async function openServerBackupStorageEntry(storage, key) {
+  const opened =
+    typeof storage.openReadStream === "function"
+      ? await storage.openReadStream(keyToHex(key))
+      : await storage.read(keyToHex(key));
+  return {
+    exists: Boolean(opened.exists),
+    source: opened.stream ?? opened.buffer ?? null,
+    size: Number(opened.contentLength ?? opened.buffer?.length),
+  };
+}
+
+async function listServerBackupColdStorageKeys() {
+  const summaries =
+    typeof postgresStorage.listColdStorage === "function"
+      ? await postgresStorage.listColdStorage()
+      : [];
+  return summaries.map((summary) => summary.key);
+}
+
+async function loadServerBackupColdStorageItems() {
+  const items = [];
+  for (const key of await listServerBackupColdStorageKeys()) {
+    const loaded = await postgresStorage.loadColdStorage(key);
+    if (!loaded) continue;
+    items.push({ key, value: loaded.data });
+  }
+  return items;
+}
+
+async function assertServerBackupRevision(expectedRevision) {
+  const completedState = await postgresStorage.getState();
+  if (Number(completedState?.revision) !== Number(expectedRevision)) {
+    throw new Error(
+      `Database changed during backup (revision ${expectedRevision} -> ${completedState?.revision}); please retry`,
+    );
+  }
+}
+
 async function buildPortableServerDatabase() {
   if (!postgresStorage.enabled)
     throw new Error("SQL storage is not configured");
@@ -4289,39 +4332,7 @@ async function streamPortableServerDatabase(
   }
 
   const manifest = await writer.finalize();
-  const coldItems =
-    typeof postgresStorage.listColdStorage === "function"
-      ? await postgresStorage.listColdStorage()
-      : [];
-  options.onProgress?.({
-    stage: "coldStorage",
-    current: 0,
-    total: coldItems.length,
-  });
-  for (let index = 0; index < coldItems.length; index++) {
-    const coldSummary = coldItems[index];
-    const loaded = await postgresStorage.loadColdStorage(coldSummary.key);
-    if (!loaded) continue;
-    const data = Buffer.from(JSON.stringify(loaded.data), "utf8");
-    await writeServerBackupEntry(
-      output,
-      `coldstorage_${coldSummary.key}.json`,
-      data,
-      data.length,
-    );
-    options.onProgress?.({
-      stage: "coldStorage",
-      current: index + 1,
-      total: coldItems.length,
-    });
-  }
-
-  const completedState = await postgresStorage.getState();
-  if (Number(completedState?.revision) !== Number(initialState.revision)) {
-    throw new Error(
-      `Database changed during backup (revision ${initialState.revision} -> ${completedState?.revision}); please retry`,
-    );
-  }
+  await assertServerBackupRevision(initialState.revision);
   return manifest;
 }
 
@@ -4331,18 +4342,10 @@ async function streamLegacyServerLocalBackup(
 ) {
   onProgress({ stage: "database" });
   const database = await buildPortableServerDatabase();
-  const coldItems =
-    typeof postgresStorage.listColdStorage === "function"
-      ? await postgresStorage.listColdStorage()
-      : [];
-  const loadedColdItems = [];
-  const coldStorageValues = new Map();
-  for (const summary of coldItems) {
-    const loaded = await postgresStorage.loadColdStorage(summary.key);
-    if (!loaded) continue;
-    loadedColdItems.push({ key: summary.key, data: loaded.data });
-    coldStorageValues.set(summary.key, loaded.data);
-  }
+  const loadedColdItems = await loadServerBackupColdStorageItems();
+  const coldStorageValues = new Map(
+    loadedColdItems.map((item) => [item.key, item.value]),
+  );
   const databaseData = await encodePortableServerDatabase(
     database,
     "compatible",
@@ -4374,46 +4377,27 @@ async function streamLegacyServerLocalBackup(
     databaseData.length,
   );
 
-  onProgress({
-    stage: "coldStorage",
-    current: 0,
-    total: loadedColdItems.length,
+  await streamColdStorageExportEntries({
+    keys: loadedColdItems.map((item) => item.key),
+    async load(key) {
+      return {
+        exists: coldStorageValues.has(key),
+        value: coldStorageValues.get(key),
+      };
+    },
+    writeEntry: async (name, source, size) =>
+      await writeServerBackupEntry(res, name, source, size),
+    onProgress,
   });
-  for (let index = 0; index < loadedColdItems.length; index++) {
-    const item = loadedColdItems[index];
-    const data = Buffer.from(JSON.stringify(item.data), "utf8");
-    await writeServerBackupEntry(
-      res,
-      `coldstorage_${item.key}.json`,
-      data,
-      data.length,
-    );
-    onProgress({
-      stage: "coldStorage",
-      current: index + 1,
-      total: loadedColdItems.length,
-    });
-  }
 
-  onProgress({ stage: "assets", current: 0, total: assetKeys.length });
-  for (let index = 0; index < assetKeys.length; index++) {
-    const key = assetKeys[index];
-    const opened =
-      typeof storage.openReadStream === "function"
-        ? await storage.openReadStream(keyToHex(key))
-        : await storage.read(keyToHex(key));
-    if (!opened.exists) continue;
-    const source = opened.stream ?? opened.buffer;
-    const size = Number(opened.contentLength ?? opened.buffer?.length);
-    if (!source || !Number.isSafeInteger(size))
-      throw new Error(`Backup asset is not streamable: ${key}`);
-    await writeServerBackupEntry(res, key, source, size);
-    onProgress({
-      stage: "assets",
-      current: index + 1,
-      total: assetKeys.length,
-    });
-  }
+  await streamBackupStorageEntries({
+    stage: "assets",
+    keys: assetKeys,
+    open: async (key) => await openServerBackupStorageEntry(storage, key),
+    writeEntry: async (name, source, size) =>
+      await writeServerBackupEntry(res, name, source, size),
+    onProgress,
+  });
 
   onProgress({ stage: "finalizing" });
   await new Promise((resolve, reject) => {
@@ -4451,6 +4435,19 @@ async function streamServerLocalBackup(
       if (partial) collectStreamedEssentialAssetKeys(essentialAssetKeys, record);
     },
   });
+  await streamColdStorageExportEntries({
+    keys: await listServerBackupColdStorageKeys(),
+    async load(key) {
+      const loaded = await postgresStorage.loadColdStorage(key);
+      return loaded
+        ? { exists: true, value: loaded.data }
+        : { exists: false };
+    },
+    writeEntry: async (name, source, size) =>
+      await writeServerBackupEntry(res, name, source, size),
+    onProgress,
+  });
+  await assertServerBackupRevision(manifest.revision);
 
   const storage = assetStorageManager.getStorage();
   const resolved =
@@ -4464,47 +4461,22 @@ async function streamServerLocalBackup(
     essentialAssetKeys,
   });
 
-  onProgress({ stage: "assets", current: 0, total: assetKeys.length });
-  for (let index = 0; index < assetKeys.length; index++) {
-    const key = assetKeys[index];
-    const opened =
-      typeof storage.openReadStream === "function"
-        ? await storage.openReadStream(keyToHex(key))
-        : await storage.read(keyToHex(key));
-    if (!opened.exists) continue;
-    const source = opened.stream ?? opened.buffer;
-    const size = Number(opened.contentLength ?? opened.buffer?.length);
-    if (!source || !Number.isSafeInteger(size))
-      throw new Error(`Backup asset is not streamable: ${key}`);
-    await writeServerBackupEntry(res, key, source, size);
-    onProgress({
-      stage: "assets",
-      current: index + 1,
-      total: assetKeys.length,
-    });
-  }
-
-  if (inlayKeys.length > 0) {
-    onProgress({ stage: "inlays", current: 0, total: inlayKeys.length });
-  }
-  for (let index = 0; index < inlayKeys.length; index++) {
-    const key = inlayKeys[index];
-    const opened =
-      typeof storage.openReadStream === "function"
-        ? await storage.openReadStream(keyToHex(key))
-        : await storage.read(keyToHex(key));
-    if (!opened.exists) continue;
-    const source = opened.stream ?? opened.buffer;
-    const size = Number(opened.contentLength ?? opened.buffer?.length);
-    if (!source || !Number.isSafeInteger(size))
-      throw new Error(`Backup inlay is not streamable: ${key}`);
-    await writeServerBackupEntry(res, key, source, size);
-    onProgress({
-      stage: "inlays",
-      current: index + 1,
-      total: inlayKeys.length,
-    });
-  }
+  await streamBackupStorageEntries({
+    stage: "assets",
+    keys: assetKeys,
+    open: async (key) => await openServerBackupStorageEntry(storage, key),
+    writeEntry: async (name, source, size) =>
+      await writeServerBackupEntry(res, name, source, size),
+    onProgress,
+  });
+  await streamBackupStorageEntries({
+    stage: "inlays",
+    keys: inlayKeys,
+    open: async (key) => await openServerBackupStorageEntry(storage, key),
+    writeEntry: async (name, source, size) =>
+      await writeServerBackupEntry(res, name, source, size),
+    onProgress,
+  });
 
   onProgress({ stage: "finalizing" });
   const manifestData = await encodeLocalBackupDatabase(manifest);

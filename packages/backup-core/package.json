@@ -57,6 +57,12 @@
       "require": "./dist/node/exportJobStore.js",
       "default": "./src/node/exportJobStore.ts"
     },
+    "./node/exportEntries": {
+      "types": "./src/node/exportEntries.ts",
+      "import": "./src/node/exportEntries.ts",
+      "require": "./dist/node/exportEntries.js",
+      "default": "./src/node/exportEntries.ts"
+    },
     "./containerStream": {
       "types": "./src/containerStream.ts",
       "import": "./src/containerStream.ts",
