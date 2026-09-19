@@ -7,7 +7,7 @@ import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
-import { syncAndroidSystemBars } from "../androidNativeIntegration";
+import { syncAndroidSystemBars } from "../android/androidNativeIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 

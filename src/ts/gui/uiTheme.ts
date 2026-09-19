@@ -1,6 +1,6 @@
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { isCapacitorAndroid, isTauriWindows } from "../platform";
-import { applyAndroidDynamicPalette } from "../androidNativeIntegration";
+import { applyAndroidDynamicPalette } from "../android/androidNativeIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 
 export type UITheme = "default" | "windows" | "android";

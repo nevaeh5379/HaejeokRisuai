@@ -5,10 +5,10 @@ import {
   loadedStore,
   MobileSideBar,
   settingsOpen,
-} from "./stores.svelte";
-import { characterStore } from "./stores/domain";
-import { changeChar } from "./characters";
-import { findChatTarget } from "./chatTabs.svelte";
+} from "../stores.svelte";
+import { characterStore } from "../stores/domain";
+import { changeChar } from "../characters";
+import { findChatTarget } from "../chatTabs.svelte";
 
 async function waitForAppData(): Promise<void> {
   if (get(loadedStore)) return;

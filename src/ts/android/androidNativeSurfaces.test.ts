@@ -5,7 +5,7 @@ import {
   MIN_WIDGET_BOT_COUNT,
   getAndroidWidgetBotCount,
 } from "./androidNativeSurfaces";
-import { settingsStore } from "./stores/domain/settingsStore.svelte";
+import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 describe("getAndroidWidgetBotCount", () => {
   it("returns default value when not configured", () => {

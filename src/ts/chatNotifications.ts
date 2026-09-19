@@ -4,7 +4,7 @@ import {
   requestNativeChatNotificationPermission,
   showNativeChatNotification,
   usesNativeChatLifecycle,
-} from "./androidChatLifecycle";
+} from "./android/androidChatLifecycle";
 import { subscribeChatResponsePush } from "./network/pushSubscriptions";
 import {
   chatTabsStore,
@@ -13,7 +13,7 @@ import {
 } from "./chatTabs.svelte";
 import { characterStore } from "./stores/domain/characterStore.svelte";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
-import { refreshAndroidNativeSurfaces } from "./androidNativeSurfaces";
+import { refreshAndroidNativeSurfaces } from "./android/androidNativeSurfaces";
 
 export interface ChatResponseNotificationOptions {
   chatId?: string;
