@@ -7,6 +7,10 @@ import {
 } from "../compatibility";
 import { expandPortableDatabaseBranchGraphsForCompatibility } from "../portableBranches";
 import {
+  BackupContainerEntryHeaderError,
+  createBackupContainerEntryHeader,
+} from "../containerStream";
+import {
   LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
   LEGACY_RAW_DATABASE_HEADER_BYTES,
 } from "../legacyHeaders";
@@ -36,30 +40,17 @@ export function createLocalBackupEntryHeader(
   name: string,
   size: number,
 ): Buffer {
-  const normalizedName = String(name).replace(/\\/g, "/");
-  const segments = normalizedName.split("/");
-  if (
-    segments.length === 0 ||
-    segments.some(
-      (segment) => segment === "" || segment === "." || segment === "..",
-    )
-  ) {
-    throw new Error(`Invalid local backup entry name: ${name}`);
+  try {
+    return Buffer.from(createBackupContainerEntryHeader(name, size));
+  } catch (error) {
+    if (error instanceof BackupContainerEntryHeaderError) {
+      if (error.code === "invalid_name") {
+        throw new Error(`Invalid local backup entry name: ${name}`);
+      }
+      throw new Error(`Local backup entry is too large: ${name}`);
+    }
+    throw error;
   }
-
-  const encodedName = Buffer.from(normalizedName, "utf8");
-  if (encodedName.length === 0 || encodedName.length > 1024 * 1024) {
-    throw new Error(`Invalid local backup entry name: ${name}`);
-  }
-  if (!Number.isSafeInteger(size) || size < 0 || size > 0xffffffff) {
-    throw new Error(`Local backup entry is too large: ${name}`);
-  }
-
-  const header = Buffer.alloc(8 + encodedName.length);
-  header.writeUInt32LE(encodedName.length, 0);
-  encodedName.copy(header, 4);
-  header.writeUInt32LE(size, 4 + encodedName.length);
-  return header;
 }
 
 export async function encodeLegacyBackupDatabase(

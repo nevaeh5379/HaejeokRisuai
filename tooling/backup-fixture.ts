@@ -14,6 +14,9 @@
 // round-tripping the decoded backup in the real app code path.
 import { deflateSync } from "node:zlib";
 import { Packr } from "msgpackr";
+import {
+  createBackupContainerEntryHeader,
+} from "@risuai/backup-core/containerStream";
 import { LEGACY_DATABASE_ENTRY_NAME } from "@risuai/backup-core/entryPolicy";
 import { LEGACY_COMPRESSED_DATABASE_HEADER_BYTES } from "@risuai/backup-core/legacyHeaders";
 
@@ -24,15 +27,10 @@ export const COMPRESSED_HEADER = Buffer.from(
 type BackupEntry = { name: string; data: Buffer };
 
 export function frameBackupEntry(entry: BackupEntry): Buffer {
-  const nameBytes = Buffer.from(entry.name, "utf8");
-  if (nameBytes.length === 0 || nameBytes.length > 1024 * 1024) {
-    throw new Error(`Invalid fixture entry name: ${entry.name}`);
-  }
-  const header = Buffer.alloc(8 + nameBytes.length);
-  header.writeUInt32LE(nameBytes.length, 0);
-  nameBytes.copy(header, 4);
-  header.writeUInt32LE(entry.data.length, 4 + nameBytes.length);
-  return Buffer.concat([header, entry.data]);
+  return Buffer.concat([
+    Buffer.from(createBackupContainerEntryHeader(entry.name, entry.data.length)),
+    entry.data,
+  ]);
 }
 
 export function encodeFixtureDatabase(database: unknown): Buffer {

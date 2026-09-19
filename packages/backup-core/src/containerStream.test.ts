@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BackupContainerParser,
+  createBackupContainerEntryHeader,
   parseBackupContainer,
 } from "./containerStream";
-import { createLocalBackupEntryHeader } from "./node/legacyFormat";
 
 function entry(name: string, data: Uint8Array): Uint8Array {
-  const header = createLocalBackupEntryHeader(name, data.length);
+  const header = createBackupContainerEntryHeader(name, data.length);
   const result = new Uint8Array(header.length + data.length);
   result.set(header, 0);
   result.set(data, header.length);
@@ -23,6 +23,23 @@ async function* chunked(
 }
 
 describe("BackupContainerParser", () => {
+  it("encodes canonical little-endian entry headers", () => {
+    const header = createBackupContainerEntryHeader("assets/a.png", 1234);
+    const view = new DataView(
+      header.buffer,
+      header.byteOffset,
+      header.byteLength,
+    );
+    const nameLength = view.getUint32(0, true);
+    expect(new TextDecoder().decode(header.subarray(4, 4 + nameLength))).toBe(
+      "assets/a.png",
+    );
+    expect(view.getUint32(4 + nameLength, true)).toBe(1234);
+    expect(() =>
+      createBackupContainerEntryHeader("assets/../secret", 1),
+    ).toThrow("Invalid backup entry path");
+  });
+
   it("parses entry framing across arbitrary chunk boundaries", async () => {
     const first = entry("database.risudat", new Uint8Array([1, 2, 3, 4, 5]));
     const second = entry("assets/a.png", new Uint8Array([9, 8, 7]));

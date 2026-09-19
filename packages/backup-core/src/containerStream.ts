@@ -1,3 +1,69 @@
+import { normalizeBackupEntryName } from "./entryPolicy";
+
+export const BACKUP_CONTAINER_MAX_NAME_BYTES = 1024 * 1024;
+export const BACKUP_CONTAINER_MAX_ENTRY_BYTES = 0xffffffff;
+
+export class BackupContainerEntryHeaderError extends Error {
+  constructor(
+    message: string,
+    readonly code: "invalid_name" | "invalid_size",
+  ) {
+    super(message);
+    this.name = "BackupContainerEntryHeaderError";
+  }
+}
+
+export function createBackupContainerEntryHeader(
+  name: string,
+  size: number | bigint,
+): Uint8Array {
+  const normalizedName = normalizeBackupEntryName(name);
+  if (!normalizedName) {
+    throw new BackupContainerEntryHeaderError(
+      `Invalid backup entry path: ${name}`,
+      "invalid_name",
+    );
+  }
+
+  const encodedName = new TextEncoder().encode(normalizedName);
+  if (
+    encodedName.byteLength === 0 ||
+    encodedName.byteLength > BACKUP_CONTAINER_MAX_NAME_BYTES
+  ) {
+    throw new BackupContainerEntryHeaderError(
+      `Invalid backup entry path: ${name}`,
+      "invalid_name",
+    );
+  }
+
+  if (
+    (typeof size === "number" && !Number.isSafeInteger(size)) ||
+    (typeof size === "bigint" && size < 0n)
+  ) {
+    throw new BackupContainerEntryHeaderError(
+      `Backup entry is too large: ${name}`,
+      "invalid_size",
+    );
+  }
+  const normalizedSize = typeof size === "bigint" ? size : BigInt(size);
+  if (
+    normalizedSize < 0n ||
+    normalizedSize > BigInt(BACKUP_CONTAINER_MAX_ENTRY_BYTES)
+  ) {
+    throw new BackupContainerEntryHeaderError(
+      `Backup entry is too large: ${name}`,
+      "invalid_size",
+    );
+  }
+
+  const header = new Uint8Array(8 + encodedName.byteLength);
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  view.setUint32(0, encodedName.byteLength, true);
+  header.set(encodedName, 4);
+  view.setUint32(4 + encodedName.byteLength, Number(normalizedSize), true);
+  return header;
+}
+
 export interface BackupContainerEntryInfo {
   name: string;
   size: number;
@@ -38,8 +104,10 @@ export class BackupContainerParser {
     private readonly handlers: BackupContainerParserHandlers,
     options: BackupContainerParserOptions = {},
   ) {
-    this.maxNameBytes = options.maxNameBytes ?? 1024 * 1024;
-    this.maxEntryBytes = options.maxEntryBytes ?? 0xffffffff;
+    this.maxNameBytes =
+      options.maxNameBytes ?? BACKUP_CONTAINER_MAX_NAME_BYTES;
+    this.maxEntryBytes =
+      options.maxEntryBytes ?? BACKUP_CONTAINER_MAX_ENTRY_BYTES;
   }
 
   async write(chunk: Uint8Array): Promise<void> {

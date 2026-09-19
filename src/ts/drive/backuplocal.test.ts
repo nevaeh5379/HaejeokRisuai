@@ -27,7 +27,18 @@ describe("LocalWriter backup entry names", () => {
 
     await writer.startBackup("assets/icon/image/2.png", 3);
 
-    expect(new TextDecoder().decode(chunks[1])).toBe("assets/icon/image/2.png");
+    expect(chunks).toHaveLength(1);
+    const header = chunks[0];
+    const view = new DataView(
+      header.buffer,
+      header.byteOffset,
+      header.byteLength,
+    );
+    const nameLength = view.getUint32(0, true);
+    expect(new TextDecoder().decode(header.subarray(4, 4 + nameLength))).toBe(
+      "assets/icon/image/2.png",
+    );
+    expect(view.getUint32(4 + nameLength, true)).toBe(3);
   });
 
   it("rejects unsafe backup entry paths", async () => {
