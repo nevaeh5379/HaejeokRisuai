@@ -15,6 +15,12 @@
       "require": "./dist/entryPolicy.js",
       "default": "./src/entryPolicy.ts"
     },
+    "./exportPlan": {
+      "types": "./src/exportPlan.ts",
+      "import": "./src/exportPlan.ts",
+      "require": "./dist/exportPlan.js",
+      "default": "./src/exportPlan.ts"
+    },
     "./portableBranches": {
       "types": "./src/portableBranches.ts",
       "import": "./src/portableBranches.ts",

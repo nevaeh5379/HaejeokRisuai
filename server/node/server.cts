@@ -79,9 +79,12 @@ const {
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
 } = require("../../packages/backup-core/dist/node/legacyFormat.js");
 const {
-  collectEssentialBackupAssetKeys,
   collectStreamedEssentialAssetKeys,
 } = require("../../packages/backup-core/dist/assetScope.js");
+const {
+  createLocalBackupExportMetadata,
+  createLocalBackupExportPlan,
+} = require("../../packages/backup-core/dist/exportPlan.js");
 const {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
@@ -4324,7 +4327,6 @@ async function streamPortableServerDatabase(
 
 async function streamLegacyServerLocalBackup(
   res,
-  mode = "compatible",
   onProgress: LocalBackupProgressReporter = () => {},
 ) {
   onProgress({ stage: "database" });
@@ -4343,7 +4345,7 @@ async function streamLegacyServerLocalBackup(
   }
   const databaseData = await encodePortableServerDatabase(
     database,
-    mode === "partial" ? "native" : mode,
+    "compatible",
     coldStorageValues,
   );
   const storage = assetStorageManager.getStorage();
@@ -4351,33 +4353,15 @@ async function streamLegacyServerLocalBackup(
     storage.type === "s3"
       ? await resolveCatalogedAssetKeys(storage, "assets/")
       : { keys: await storage.list("assets/") };
-  let assetKeys = resolved.keys.filter(
-    (key) => typeof key === "string" && key.startsWith("assets/"),
-  );
-  if (mode === "partial") {
-    assetKeys = collectEssentialBackupAssetKeys(database, assetKeys);
-  }
-  const inlayKeys =
-    mode === "native"
-      ? (await storage.list("inlay_")).filter(
-          (key) =>
-            typeof key === "string" &&
-            /^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.risuinlay$/.test(
-              key,
-            ),
-        )
-      : [];
+  const { assetKeys } = createLocalBackupExportPlan({
+    mode: "compatible",
+    assetKeys: resolved.keys,
+  });
 
   res.status(200);
   res.setHeader("Content-Type", "application/octet-stream");
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const backupName =
-    mode === "compatible"
-      ? `risu_compatible_backup_${dateStr}.risubackup`
-      : mode === "partial"
-        ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
-        : `haejeokrisu_backup_${dateStr}.risubackup`;
-  res.setHeader("Content-Disposition", `attachment; filename="${backupName}"`);
+  const { filename } = createLocalBackupExportMetadata("compatible");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Accel-Buffering", "no");
   if (typeof res.flushHeaders === "function") res.flushHeaders();
@@ -4431,27 +4415,6 @@ async function streamLegacyServerLocalBackup(
     });
   }
 
-  if (inlayKeys.length > 0) {
-    onProgress({ stage: "inlays", current: 0, total: inlayKeys.length });
-    for (let index = 0; index < inlayKeys.length; index++) {
-      const key = inlayKeys[index];
-      const opened =
-        typeof storage.openReadStream === "function"
-          ? await storage.openReadStream(keyToHex(key))
-          : await storage.read(keyToHex(key));
-      if (!opened.exists) continue;
-      const source = opened.stream ?? opened.buffer;
-      const size = Number(opened.contentLength ?? opened.buffer?.length);
-      if (!source || !Number.isSafeInteger(size))
-        throw new Error(`Backup inlay is not streamable: ${key}`);
-      await writeServerBackupEntry(res, key, source, size);
-      onProgress({
-        stage: "inlays",
-        current: index + 1,
-        total: inlayKeys.length,
-      });
-    }
-  }
   onProgress({ stage: "finalizing" });
   await new Promise((resolve, reject) => {
     res.once("finish", resolve);
@@ -4467,18 +4430,15 @@ async function streamServerLocalBackup(
   onProgress: LocalBackupProgressReporter = () => {},
 ) {
   if (mode === "compatible") {
-    await streamLegacyServerLocalBackup(res, mode, onProgress);
+    await streamLegacyServerLocalBackup(res, onProgress);
     return;
   }
 
   const partial = mode === "partial";
   res.status(200);
   res.setHeader("Content-Type", "application/octet-stream");
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const backupName = partial
-    ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
-    : `haejeokrisu_backup_${dateStr}.risubackup`;
-  res.setHeader("Content-Disposition", `attachment; filename="${backupName}"`);
+  const { filename } = createLocalBackupExportMetadata(mode);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Accel-Buffering", "no");
   if (typeof res.flushHeaders === "function") res.flushHeaders();
@@ -4497,21 +4457,12 @@ async function streamServerLocalBackup(
     storage.type === "s3"
       ? await resolveCatalogedAssetKeys(storage, "assets/")
       : { keys: await storage.list("assets/") };
-  let assetKeys = resolved.keys.filter(
-    (key) => typeof key === "string" && key.startsWith("assets/"),
-  );
-  if (partial) {
-    assetKeys = assetKeys.filter((key) => essentialAssetKeys.has(key));
-  }
-  const inlayKeys = partial
-    ? []
-    : (await storage.list("inlay_")).filter(
-        (key) =>
-          typeof key === "string" &&
-          /^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.risuinlay$/.test(
-            key,
-          ),
-      );
+  const { assetKeys, inlayKeys } = createLocalBackupExportPlan({
+    mode,
+    assetKeys: resolved.keys,
+    inlayKeys: partial ? [] : await storage.list("inlay_"),
+    essentialAssetKeys,
+  });
 
   onProgress({ stage: "assets", current: 0, total: assetKeys.length });
   for (let index = 0; index < assetKeys.length; index++) {

@@ -76,6 +76,7 @@ import {
   getInlayBackupKey,
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
+import { createLocalBackupExportMetadata } from "@risuai/backup-core/exportPlan";
 import {
   attachPortableDatabaseBranchGraphs,
   expandPortableDatabaseBranchGraphsForCompatibility,
@@ -549,13 +550,9 @@ async function initializeLocalBackupWriter(
   const performance = getLocalBackupPerformance();
   writer.setBufferSize(performance.writerBufferKiB * 1024);
   reportLocalBackupProgress("selectingDestination", { percent: 1 });
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const defaultName = partial
-    ? `haejeokrisu_partial_backup_${dateStr}`
-    : mode === "compatible"
-      ? `risu_compatible_backup_${dateStr}`
-      : `haejeokrisu_backup_${dateStr}`;
-  const initialized = await writer.init(defaultName, ["bin", "risubackup"]);
+  const backupMode = partial ? "partial" : mode;
+  const { baseName } = createLocalBackupExportMetadata(backupMode);
+  const initialized = await writer.init(baseName, ["bin", "risubackup"]);
   if (initialized) reportLocalBackupProgress("preparing", { percent: 2 });
   return initialized;
 }
@@ -677,13 +674,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     })();
     const anchor = document.createElement("a");
     anchor.href = await nodeStorage.backup.getExportDownloadUrl(job.id);
-    const dateStr = new Date().toISOString().slice(0, 10);
-    anchor.download =
-      mode === "compatible"
-        ? `risu_compatible_backup_${dateStr}.risubackup`
-        : mode === "partial"
-          ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
-          : `haejeokrisu_backup_${dateStr}.risubackup`;
+    anchor.download = createLocalBackupExportMetadata(mode).filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
