@@ -3,74 +3,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("events");
+const { createRealtimeEventHub } = require("../dist/http/realtimeEvents.cjs");
 const {
-  createRealtimeEventHub,
-  describeSqlCommitChange,
-} = require("../dist/http/realtimeEvents.cjs");
-
-test("describeSqlCommitChange extracts affected domains and entity ids", () => {
-  const change = describeSqlCommitChange({
-    action: "message",
-    root: {
-      upserts: [
-        { key: "temperature", value: 80 },
-        { key: "temperature", value: 90 },
-      ],
-      deletes: ["oldSetting", "oldSetting"],
-    },
-    characters: [{ id: "char-a" }],
-    characterTouches: [{ id: "char-touched", lastInteraction: 1 }],
-    characterDeletes: ["char-deleted"],
-    characterIds: ["char-a"],
-    chats: [{ id: "chat-a", characterId: "char-a" }],
-    chatDeletes: ["chat-deleted"],
-    messages: [
-      { id: "msg-a", chatId: "chat-a" },
-      { id: "msg-b", chatId: "chat-b" },
-    ],
-    messageManifests: [{ chatId: "chat-b", ids: ["msg-b"] }],
-    pluginStorage: {
-      upserts: [
-        { key: "plugin-a", value: { n: 1 } },
-        { key: "plugin-a", value: { n: 2 } },
-      ],
-      deletes: ["plugin-b", "plugin-b"],
-      clear: true,
-    },
-    presets: {
-      upserts: [{ id: "preset-a", data: {} }],
-      deletes: ["preset-b"],
-      order: ["preset-a"],
-      activeId: "preset-a",
-    },
-    modules: {
-      upserts: [{ id: "module-a", data: {} }],
-      deletes: ["module-b"],
-    },
-  });
-
-  assert.deepEqual(change.chatIds.sort(), ["chat-a", "chat-b", "chat-deleted"]);
-  assert.deepEqual(change.characterIds, ["char-a", "char-deleted"]);
-  assert.equal(change.charactersChanged, true);
-  assert.deepEqual(change.rootUpsertKeys, ["temperature"]);
-  assert.deepEqual(change.rootDeleteKeys, ["oldSetting"]);
-  assert.equal(change.rootChanged, true);
-  assert.deepEqual(change.pluginStorageUpsertKeys, ["plugin-a"]);
-  assert.deepEqual(change.pluginStorageDeleteKeys, ["plugin-b"]);
-  assert.equal(change.pluginStorageCleared, true);
-  assert.equal(change.presetsChanged, true);
-  assert.equal(change.modulesChanged, true);
-});
-
-test("character touches do not request a full character-index refresh", () => {
-  const change = describeSqlCommitChange({
-    action: "character-touch",
-    characterTouches: [{ id: "char-a", lastInteraction: 123 }],
-  });
-
-  assert.deepEqual(change.characterIds, []);
-  assert.equal(change.charactersChanged, false);
-});
+  parseRealtimeEvent,
+} = require("../../../packages/protocol/realtimeEvents.cjs");
 
 class FakeResponse extends EventEmitter {
   constructor() {
@@ -253,4 +189,43 @@ test("fresh WebSocket connection with a null cursor does not replay history", ()
   assert.equal(ws.frames[0].event, "ready");
   assert.equal(ws.frames[0].data.latestEventId, 2);
   ws.emit("close");
+});
+
+test("typed broadcast payloads round-trip through the shared event parser", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
+  const req = new EventEmitter();
+  req.headers = { "x-risu-client-id": "device-a" };
+  const res = new FakeResponse();
+  hub.connect(req, res);
+
+  // Producers are keyed by the shared realtime event map; every broadcast
+  // payload must stay parseable by the client-side narrowing contract.
+  // 생산자는 공유 실시간 이벤트 맵으로 형식화되며, 모든 전파 페이로드는
+  // 클라이언트 좁히기 계약으로 다시 해석될 수 있어야 합니다.
+  hub.broadcast("database-change", {
+    revision: 7,
+    action: "sync",
+    chatIds: ["chat-a"],
+    charactersChanged: false,
+  });
+  const output = res.chunks.join("");
+  const match = /event: database-change\ndata: (.+)\n\n/.exec(
+    output.slice(output.indexOf("event: database-change")),
+  );
+  assert.ok(match);
+  const frame = parseRealtimeEvent("database-change", JSON.parse(match[1]));
+  // The hub stamps its own eventId onto the envelope; the parsed client-side
+  // summary carries only the compact payload.
+  // 파싱된 클라이언트 요약은 허브의 eventId를 제외한 압축 페이로드만
+  // 담습니다.
+  assert.deepEqual(frame, {
+    event: "database-change",
+    data: {
+      revision: 7,
+      action: "sync",
+      chatIds: ["chat-a"],
+      charactersChanged: false,
+    },
+  });
+  req.emit("close");
 });

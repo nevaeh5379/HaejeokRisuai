@@ -2,8 +2,25 @@
  * A lifecycle state accepted by realtime generation synchronization.
  * 실시간 생성 동기화에서 허용하는 생명주기 상태입니다.
  */
-export type GenerationLifecycleState =
-  "started" | "finished" | "failed" | "aborted";
+export type { GenerationLifecycleState } from "../../../packages/protocol/realtimeEvents.cjs";
+
+import type {
+  GenerationLifecycleState,
+  RealtimeBroadcastEventName,
+  RealtimeEventEnvelope,
+  RealtimeEventMap,
+  RealtimeEventName,
+  RealtimeEventPayload,
+  RealtimeGenerationState,
+} from "../../../packages/protocol/realtimeEvents.cjs";
+
+/**
+ * A validated generation state retained and broadcast by the hub.
+ * 허브가 보관하고 전파하는 검증된 생성 상태입니다.
+ */
+export interface GenerationStateRecord extends RealtimeGenerationState {
+  readonly updatedAt: number;
+}
 
 /**
  * The minimal request contract needed to establish an SSE connection.
@@ -72,82 +89,11 @@ export interface GenerationStateInput {
 }
 
 /**
- * A validated generation state retained and broadcast by the hub.
- * 허브가 보관하고 전파하는 검증된 생성 상태입니다.
- */
-export interface GenerationStateRecord {
-  readonly chatId: string;
-  readonly lifecycleId: string;
-  readonly state: GenerationLifecycleState;
-  readonly sourceClientId: string | null;
-  readonly error?: string;
-  readonly updatedAt: number;
-}
-
-/**
- * The subset of an SQL commit used to describe affected realtime domains.
- * 실시간 변경 영역을 설명하는 데 쓰이는 SQL 커밋의 부분 구조입니다.
- */
-export interface SqlCommitChangePayload {
-  readonly replaceAll?: boolean;
-  readonly root?: {
-    readonly upserts?: readonly { readonly key?: unknown }[];
-    readonly deletes?: readonly unknown[];
-  };
-  readonly pluginStorage?: {
-    readonly upserts?: readonly { readonly key?: unknown }[];
-    readonly deletes?: readonly unknown[];
-    readonly clear?: boolean;
-  };
-  readonly presets?: {
-    readonly upserts?: readonly unknown[];
-    readonly deletes?: readonly unknown[];
-    readonly order?: readonly unknown[];
-    readonly activeId?: unknown;
-  };
-  readonly modules?: {
-    readonly upserts?: readonly unknown[];
-    readonly deletes?: readonly unknown[];
-    readonly order?: readonly unknown[];
-  };
-  readonly characters?: readonly { readonly id?: unknown }[];
-  readonly characterIds?: readonly unknown[];
-  readonly characterDeletes?: readonly unknown[];
-  readonly chats?: readonly {
-    readonly id?: unknown;
-    readonly characterId?: unknown;
-  }[];
-  readonly chatManifests?: readonly {
-    readonly characterId?: unknown;
-  }[];
-  readonly chatDeletes?: readonly unknown[];
-  readonly messages?: readonly { readonly chatId?: unknown }[];
-  readonly messageManifests?: readonly { readonly chatId?: unknown }[];
-  readonly messageDeletes?: readonly { readonly chatId?: unknown }[];
-}
-
-/**
- * A compact description of domains and entity IDs affected by an SQL commit.
- * SQL 커밋이 건드린 영역과 엔터티 ID를 압축해 나타낸 설명입니다.
- */
-export interface SqlCommitChange {
-  readonly replaceAll: boolean;
-  readonly chatIds: string[];
-  readonly characterIds: string[];
-  readonly charactersChanged: boolean;
-  readonly rootUpsertKeys: string[];
-  readonly rootDeleteKeys: string[];
-  readonly rootChanged: boolean;
-  readonly pluginStorageUpsertKeys: string[];
-  readonly pluginStorageDeleteKeys: string[];
-  readonly pluginStorageCleared: boolean;
-  readonly presetsChanged: boolean;
-  readonly modulesChanged: boolean;
-}
-
-/**
- * The public operations exposed by a realtime event hub.
- * 실시간 이벤트 허브가 외부에 제공하는 작업 모음입니다.
+ * The public operations exposed by a realtime event hub. Broadcasting is
+ * typed by the canonical realtime event map, so each event name accepts
+ * exactly its mapped payload.
+ * 실시간 이벤트 허브가 외부에 제공하는 작업 모음입니다. 전파는 표준 실시간
+ * 이벤트 맵으로 형식화되어, 이벤트 이름별로 대응하는 페이로드만 허용합니다.
  */
 export interface RealtimeEventHub {
   connect(req: RealtimeSseRequest, res: RealtimeSseResponse): void;
@@ -155,7 +101,10 @@ export interface RealtimeEventHub {
     ws: RealtimeWebSocket,
     options?: RealtimeWebSocketOptions,
   ): void;
-  broadcast(event: string, data: object): void;
+  broadcast<K extends RealtimeBroadcastEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
+  ): void;
   updateGenerationState(
     input: GenerationStateInput | null | undefined,
     sourceClientId: unknown,
@@ -167,13 +116,13 @@ export interface RealtimeEventHub {
 
 interface RealtimeEventRecord {
   readonly id?: number;
-  readonly event: string;
-  readonly data: object;
+  readonly event: RealtimeEventName;
+  readonly data: RealtimeEventPayload;
 }
 
 interface BroadcastEventRecord extends RealtimeEventRecord {
   readonly id: number;
-  readonly data: object & { readonly eventId: number };
+  readonly data: RealtimeEventEnvelope;
 }
 
 interface SseClient {
@@ -209,51 +158,6 @@ function isGenerationLifecycleState(
 }
 
 /**
- * Returns a non-empty string unchanged and rejects every other value.
- * 비어 있지 않은 문자열만 그대로 반환하고 나머지는 버립니다.
- *
- * @param value - Candidate string. 문자열 후보입니다.
- * @returns The valid string or null. 유효한 문자열 또는 null입니다.
- */
-function readNonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-/**
- * Collects non-empty strings while preserving their original order.
- * 원래 순서를 유지하며 비어 있지 않은 문자열만 모읍니다.
- *
- * @param values - Candidate values. 값 후보 목록입니다.
- * @returns Valid non-empty strings. 유효한 비어 있지 않은 문자열 목록입니다.
- */
-function collectNonEmptyStrings(values: readonly unknown[]): string[] {
-  return values.flatMap((value: unknown): string[] => {
-    const normalized: string | null = readNonEmptyString(value);
-    return normalized === null ? [] : [normalized];
-  });
-}
-
-/**
- * Collects a string property from a list of lightweight commit rows.
- * 간소화된 커밋 행 목록에서 문자열 속성을 모읍니다.
- *
- * @param rows - Rows to inspect. 검사할 행 목록입니다.
- * @param property - Property to read. 읽을 속성입니다.
- * @returns Valid property values. 유효한 속성값 목록입니다.
- */
-function collectRowStrings<
-  TProperty extends "id" | "key" | "chatId" | "characterId",
->(
-  rows: readonly Partial<Record<TProperty, unknown>>[],
-  property: TProperty,
-): string[] {
-  return rows.flatMap((row: Partial<Record<TProperty, unknown>>): string[] => {
-    const normalized: string | null = readNonEmptyString(row[property]);
-    return normalized === null ? [] : [normalized];
-  });
-}
-
-/**
  * Normalizes a client identifier for use in realtime records.
  * 실시간 레코드에 사용할 클라이언트 식별자를 정규화합니다.
  *
@@ -264,108 +168,6 @@ export function normalizeClientId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed: string = value.trim();
   return trimmed.length > 0 && trimmed.length <= 128 ? trimmed : null;
-}
-
-/**
- * Describes which realtime domains and entity IDs an SQL commit changed.
- * SQL 커밋이 변경한 실시간 영역과 엔터티 ID를 설명합니다.
- *
- * @param payload - Commit sections relevant to realtime invalidation. 실시간 무효화에 관련된 커밋 구역입니다.
- * @returns A deduplicated change description. 중복을 제거한 변경 설명입니다.
- */
-export function describeSqlCommitChange(
-  payload: SqlCommitChangePayload = {},
-): SqlCommitChange {
-  const chatIds: Set<string> = new Set<string>();
-  const characterIds: Set<string> = new Set<string>();
-  const addChat: (id: unknown) => void = (id: unknown): void => {
-    const normalized: string | null = readNonEmptyString(id);
-    if (normalized !== null) chatIds.add(normalized);
-  };
-  const addCharacter: (id: unknown) => void = (id: unknown): void => {
-    const normalized: string | null = readNonEmptyString(id);
-    if (normalized !== null) characterIds.add(normalized);
-  };
-
-  for (const id of collectRowStrings(payload.messages ?? [], "chatId")) {
-    addChat(id);
-  }
-  for (const id of collectRowStrings(
-    payload.messageManifests ?? [],
-    "chatId",
-  )) {
-    addChat(id);
-  }
-  for (const id of collectRowStrings(payload.messageDeletes ?? [], "chatId")) {
-    addChat(id);
-  }
-  for (const row of payload.chats ?? []) {
-    addChat(row.id);
-    addCharacter(row.characterId);
-  }
-  for (const id of payload.chatDeletes ?? []) addChat(id);
-  for (const id of collectRowStrings(payload.characters ?? [], "id")) {
-    addCharacter(id);
-  }
-  for (const id of payload.characterDeletes ?? []) addCharacter(id);
-  for (const id of collectRowStrings(
-    payload.chatManifests ?? [],
-    "characterId",
-  )) {
-    addCharacter(id);
-  }
-
-  const rootUpsertKeys: string[] = collectRowStrings(
-    payload.root?.upserts ?? [],
-    "key",
-  );
-  const rootDeleteKeys: string[] = collectNonEmptyStrings(
-    payload.root?.deletes ?? [],
-  );
-  const pluginStorageUpsertKeys: string[] = collectRowStrings(
-    payload.pluginStorage?.upserts ?? [],
-    "key",
-  );
-  const pluginStorageDeleteKeys: string[] = collectNonEmptyStrings(
-    payload.pluginStorage?.deletes ?? [],
-  );
-  const presetUpserts: readonly unknown[] = payload.presets?.upserts ?? [];
-  const presetDeletes: readonly unknown[] = payload.presets?.deletes ?? [];
-  const moduleUpserts: readonly unknown[] = payload.modules?.upserts ?? [];
-  const moduleDeletes: readonly unknown[] = payload.modules?.deletes ?? [];
-
-  return {
-    replaceAll: payload.replaceAll === true,
-    chatIds: [...chatIds],
-    characterIds: [...characterIds],
-    charactersChanged: Boolean(
-      payload.replaceAll ||
-      (payload.characters?.length ?? 0) > 0 ||
-      (payload.characterDeletes?.length ?? 0) > 0 ||
-      payload.characterIds !== undefined,
-    ),
-    rootUpsertKeys: [...new Set<string>(rootUpsertKeys)],
-    rootDeleteKeys: [...new Set<string>(rootDeleteKeys)],
-    rootChanged: Boolean(
-      payload.replaceAll || rootUpsertKeys.length || rootDeleteKeys.length,
-    ),
-    pluginStorageUpsertKeys: [...new Set<string>(pluginStorageUpsertKeys)],
-    pluginStorageDeleteKeys: [...new Set<string>(pluginStorageDeleteKeys)],
-    pluginStorageCleared: payload.pluginStorage?.clear === true,
-    presetsChanged: Boolean(
-      payload.replaceAll ||
-      presetUpserts.length ||
-      presetDeletes.length ||
-      payload.presets?.order !== undefined ||
-      payload.presets?.activeId !== undefined,
-    ),
-    modulesChanged: Boolean(
-      payload.replaceAll ||
-      moduleUpserts.length ||
-      moduleDeletes.length ||
-      payload.modules?.order !== undefined,
-    ),
-  };
 }
 
 /**
@@ -401,12 +203,13 @@ export function createRealtimeEventHub(
   }
 
   /** Allocates the next shared event ID. / 다음 공용 이벤트 ID를 할당합니다. */
-  function makeBroadcastEvent(
-    event: string,
-    data: object,
+  function makeBroadcastEvent<K extends RealtimeBroadcastEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
   ): BroadcastEventRecord {
     const id: number = ++sequence;
-    return { id, event, data: { ...data, eventId: id } };
+    const envelope: RealtimeEventEnvelope<K> = { ...data, eventId: id };
+    return { id, event, data: envelope };
   }
 
   /** Sends a record through the client's selected transport. / 선택된 전송 방식으로 레코드를 보냅니다. */
@@ -425,7 +228,10 @@ export function createRealtimeEventHub(
   }
 
   /** Broadcasts and retains one replayable event. / 재생 가능한 이벤트 하나를 보관하고 전파합니다. */
-  function broadcast(event: string, data: object): void {
+  function broadcast<K extends RealtimeBroadcastEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
+  ): void {
     const record: BroadcastEventRecord = makeBroadcastEvent(event, data);
     history.push(record);
     if (history.length > historyLimit) {

@@ -3,6 +3,8 @@
 const fs = require("fs/promises");
 const {
   createSqlCommitValidator,
+  deriveSqlCommitImpact,
+  readSqlCommitImpactSink,
 } = require("../../../packages/protocol/sqlCommit.cjs");
 
 const DEFAULT_MAX_COLD_STORAGE_KEYS = 250000;
@@ -423,6 +425,19 @@ function createSqlStorageHelpers({
     return payload;
   };
 
+  // Derives the compact realtime impact of a validated commit exactly once
+  // and reports it through the internal channel installed by
+  // databaseMutations. The impact stays in memory and never reaches HTTP
+  // responses; it only feeds the realtime broadcast after the write succeeds.
+  // 검증된 커밋의 압축 실시간 영향을 정확히 한 번 도출하여, databaseMutations가
+  // 설치한 내부 채널로 보고합니다. 영향은 HTTP 응답으로 새어 나가지 않고,
+  // 쓰기가 성공한 뒤의 실시간 전파에만 쓰입니다.
+  const captureSyncCommitImpact = (options, payload) => {
+    const sink = readSqlCommitImpactSink(options);
+    if (!sink) return;
+    sink(deriveSqlCommitImpact(payload));
+  };
+
   // Preset handling pushes `activeBotPresetId` into rootUpserts after
   // validation. Restores built from portable databases can already contain
   // that key, and a duplicated key makes the single-statement bulk upsert
@@ -453,6 +468,7 @@ function createSqlStorageHelpers({
     validateColdStorageKeys,
     findLegacyColdStorageFiles,
     validateSyncPayload,
+    captureSyncCommitImpact,
     dedupeRootUpserts,
   };
 }

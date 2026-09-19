@@ -2,9 +2,43 @@ import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 
 export type NodeRealtimeWebSocketFrame = {
   id?: number;
-  event?: string;
+  event: string;
   data?: unknown;
 };
+
+/**
+ * Narrows an untrusted WebSocket JSON message into a transport frame. The
+ * payload stays `unknown` here: dispatchEvent narrows it again against the
+ * shared realtime event map.
+ * 신뢰할 수 없는 WebSocket JSON 메시지를 전송 프레임 형태로 좁힙니다.
+ * 페이로드는 여기서 unknown으로 유지되며, dispatchEvent가 공유 실시간
+ * 이벤트 맵으로 다시 좁힙니다.
+ *
+ * @param value - Parsed JSON message (unknown). 해석된 JSON 메시지(unknown)입니다.
+ * @returns A typed frame, or null when the message is not an event. 형식화된 프레임 또는 null입니다.
+ */
+function parseWebSocketFrame(
+  value: unknown,
+): NodeRealtimeWebSocketFrame | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record: Record<string, unknown> = value as Record<string, unknown>;
+  if (typeof record.event !== "string" || record.event.length === 0) {
+    return null;
+  }
+  const id: number | undefined =
+    typeof record.id === "number" &&
+    Number.isSafeInteger(record.id) &&
+    record.id >= 0
+      ? record.id
+      : undefined;
+  return {
+    ...(id === undefined ? {} : { id }),
+    event: record.event,
+    data: record.data,
+  };
+}
 
 export type NodeRealtimeWebSocketOptions = {
   apiClient: NodeApiClient;
@@ -66,8 +100,14 @@ export async function consumeNodeRealtimeWebSocket(
       if (typeof event.data !== "string") return;
       messageChain = messageChain
         .then(async () => {
-          const frame = JSON.parse(event.data) as NodeRealtimeWebSocketFrame;
-          if (!frame.event) return;
+          let parsedMessage: unknown;
+          try {
+            parsedMessage = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          const frame = parseWebSocketFrame(parsedMessage);
+          if (frame === null) return;
           await options.onFrame(frame);
         })
         .catch((error) => {

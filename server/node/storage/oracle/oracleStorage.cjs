@@ -84,6 +84,7 @@ const {
   validateColdStorageKeys,
   findLegacyColdStorageFiles,
   validateSyncPayload,
+  captureSyncCommitImpact,
   dedupeRootUpserts,
 } = createSqlStorageHelpers({
   PayloadError: StoragePayloadError,
@@ -3829,9 +3830,14 @@ class OracleStorage extends SqlStorageBase {
       typeof options === "function" ? options : options?.onProgress;
     const external =
       options && typeof options === "object"
-        ? options.externalTransaction ?? null
+        ? (options.externalTransaction ?? null)
         : null;
     const payload = validateSyncPayload(rawPayload);
+    // Report the compact commit impact to the internal realtime channel right
+    // after validation; it is never serialized into the sync result.
+    // 검증 직후 압축 커밋 영향을 내부 실시간 채널로 보고하며, sync 결과에는
+    // 절대 직렬화되지 않습니다.
+    captureSyncCommitImpact(options, payload);
     const conn = external?.client ?? (await this.pool.getConnection());
     const ownsTransaction = !external;
     try {
