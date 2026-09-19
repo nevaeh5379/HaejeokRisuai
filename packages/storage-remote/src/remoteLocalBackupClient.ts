@@ -187,7 +187,10 @@ export class RemoteLocalBackupClient {
       },
     );
     if (!response.ok) {
-      return await this.error(response, "Could not read backup export progress");
+      return await this.error(
+        response,
+        "Could not read backup export progress",
+      );
     }
     return validateLocalBackupExportJobProgress(await response.json());
   }
@@ -243,7 +246,10 @@ export class RemoteLocalBackupClient {
       },
     );
     if (!response.ok) {
-      return await this.error(response, "Could not read backup import progress");
+      return await this.error(
+        response,
+        "Could not read backup import progress",
+      );
     }
     return validateLocalBackupImportJobProgress(await response.json());
   }
@@ -289,6 +295,22 @@ export class RemoteLocalBackupClient {
       return await this.error(response, "Could not import local backup");
     }
     return validateLocalBackupImportJobCompletion(await response.json());
+  }
+
+  async openExportStream(id: string, signal?: AbortSignal): Promise<Response> {
+    const response = await this.apiClient.request(
+      `/api/local-backup/export/${encodeURIComponent(id)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: await this.authHeaders(),
+        signal,
+      },
+    );
+    if (!response.ok) {
+      return await this.error(response, "Local backup download failed");
+    }
+    return response;
   }
 
   async getExportDownloadUrl(id: string): Promise<string> {

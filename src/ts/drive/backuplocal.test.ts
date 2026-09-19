@@ -12,6 +12,7 @@ import {
   restoreInlayBackupEntry,
   selectLocalBackupAssetRestoreMode,
   streamNodeBackupAssets,
+  streamRemoteBackupResponse,
   usesRemoteBackupApi,
 } from "./backuplocal";
 import { NodeStorage } from "../storage/files/nodeStorage";
@@ -112,6 +113,41 @@ describe("remote backup storage routing", () => {
     expect(selectLocalBackupAssetRestoreMode(remoteStorage, true)).toBe("node");
     expect(selectLocalBackupAssetRestoreMode({}, true)).toBe("tauri");
     expect(selectLocalBackupAssetRestoreMode({}, false)).toBe("browser");
+  });
+});
+
+describe("streamRemoteBackupResponse", () => {
+  it("forwards response chunks without assembling the whole backup", async () => {
+    const chunks = [
+      new Uint8Array([1, 2]),
+      new Uint8Array([3]),
+      new Uint8Array([4, 5, 6]),
+    ];
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(chunk);
+          controller.close();
+        },
+      }),
+    );
+    const writes: Uint8Array[] = [];
+
+    await streamRemoteBackupResponse(response, {
+      async write(chunk) {
+        writes.push(chunk.slice());
+      },
+    });
+
+    expect(writes.map((chunk) => [...chunk])).toEqual([[1, 2], [3], [4, 5, 6]]);
+  });
+
+  it("refuses a non-streaming response instead of buffering it eagerly", async () => {
+    const response = new Response();
+    Object.defineProperty(response, "body", { value: null });
+    await expect(
+      streamRemoteBackupResponse(response, { async write() {} }),
+    ).rejects.toThrow("Streaming backup download is unavailable");
   });
 });
 

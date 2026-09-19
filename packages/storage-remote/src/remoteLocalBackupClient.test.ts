@@ -115,6 +115,12 @@ describe("RemoteLocalBackupClient export API", () => {
         if (path === "/api/local-backup/export/jobs/export%201") {
           return response({ status: "complete", error: null });
         }
+        if (path === "/api/local-backup/export/export%201") {
+          return new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: { "content-type": "application/octet-stream" },
+          });
+        }
         throw new Error(`unexpected path ${path}`);
       }),
       resolve: (path: string) => `https://backup.example${path}`,
@@ -132,6 +138,7 @@ describe("RemoteLocalBackupClient export API", () => {
     });
     const progress = await client.getExportProgress(job.id);
     const completion = await client.waitForExport(job.id);
+    const streamed = await client.openExportStream(job.id);
     const downloadUrl = await client.getExportDownloadUrl(job.id);
 
     expect(job).toEqual({ id: "export 1" });
@@ -140,6 +147,18 @@ describe("RemoteLocalBackupClient export API", () => {
       progress: { stage: "assets", current: 2, total: 5 },
     });
     expect(completion).toEqual({ status: "complete", error: null });
+    expect([...new Uint8Array(await streamed.arrayBuffer())]).toEqual([
+      1, 2, 3,
+    ]);
+    const streamRequest = requests.find(
+      ({ path }) => path === "/api/local-backup/export/export%201",
+    )!;
+    expect(new Headers(streamRequest.init?.headers).get("risu-auth")).toBe(
+      "secret token",
+    );
+    expect(
+      new Headers(streamRequest.init?.headers).get("x-risu-client-id"),
+    ).toBe("client-1");
     expect(downloadUrl).toBe(
       "https://backup.example/api/local-backup/export/export%201?auth=secret%20token",
     );

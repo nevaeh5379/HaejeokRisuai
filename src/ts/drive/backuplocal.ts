@@ -638,6 +638,27 @@ export function selectLocalBackupAssetRestoreMode(
   return tauri ? "tauri" : "browser";
 }
 
+export async function streamRemoteBackupResponse(
+  response: Response,
+  writer: Pick<LocalWriter, "write">,
+): Promise<void> {
+  if (!response.body) {
+    throw new Error(
+      "Streaming backup download is unavailable on this platform",
+    );
+  }
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value?.byteLength) await writer.write(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
@@ -645,18 +666,28 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   }
   const nodeStorage = forageStorage.realStorage;
   const performance = getLocalBackupPerformance();
-  if (mode === "native") {
-    reportLocalBackupProgress("preparing", { percent: 3 });
-    await stageNodeInlaysForBackup(nodeStorage);
+  let nativeWriter: LocalWriter | null = null;
+  if (isTauri || isCapacitor) {
+    nativeWriter = new LocalWriter();
+    nativeWriter.setBufferSize(performance.writerBufferKiB * 1024);
+    reportLocalBackupProgress("selectingDestination", { percent: 1 });
+    const { baseName } = createLocalBackupExportMetadata(mode);
+    if (!(await nativeWriter.init(baseName, ["risubackup"]))) {
+      alertClear();
+      return;
+    }
   }
   try {
+    if (mode === "native") {
+      reportLocalBackupProgress("preparing", { percent: 3 });
+      await stageNodeInlaysForBackup(nodeStorage);
+    }
     reportLocalBackupProgress("preparing", { percent: 4 });
     const job = await nodeStorage.backup.createExportJob({
       mode,
       pageSize: performance.databasePageRecords,
       fragmentRecords: performance.fragmentRecords,
     });
-    const completion = nodeStorage.backup.waitForExport(job.id);
     let keepPolling = true;
     const progressPolling = (async () => {
       while (keepPolling) {
@@ -682,22 +713,40 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
         await sleep(performance.progressUpdateMs);
       }
     })();
-    const anchor = document.createElement("a");
-    anchor.href = await nodeStorage.backup.getExportDownloadUrl(job.id);
-    anchor.download = createLocalBackupExportMetadata(mode).filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    reportLocalBackupProgress("database", { percent: 5 });
-    const completed = await completion;
-    keepPolling = false;
-    await progressPolling;
-    if (completed.status !== "complete") {
-      throw new Error(completed.error ?? "Local backup download failed");
+    try {
+      let completion: Awaited<
+        ReturnType<typeof nodeStorage.backup.waitForExport>
+      >;
+      if (nativeWriter) {
+        const response = await nodeStorage.backup.openExportStream(job.id);
+        reportLocalBackupProgress("database", { percent: 5 });
+        await streamRemoteBackupResponse(response, nativeWriter);
+        await nativeWriter.close();
+        nativeWriter = null;
+        completion = await nodeStorage.backup.waitForExport(job.id);
+      } else {
+        const anchor = document.createElement("a");
+        anchor.href = await nodeStorage.backup.getExportDownloadUrl(job.id);
+        anchor.download = createLocalBackupExportMetadata(mode).filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        reportLocalBackupProgress("database", { percent: 5 });
+        completion = await nodeStorage.backup.waitForExport(job.id);
+      }
+      if (completion.status !== "complete") {
+        throw new Error(completion.error ?? "Local backup download failed");
+      }
+      reportLocalBackupProgress("finalizing", { percent: 100 });
+      alertNormal("Success");
+    } finally {
+      keepPolling = false;
+      await progressPolling;
     }
-    reportLocalBackupProgress("finalizing", { percent: 100 });
-    alertNormal("Success");
   } finally {
+    if (nativeWriter) {
+      await nativeWriter.close().catch(() => {});
+    }
     if (mode === "native") {
       try {
         await clearNodeBackupInlayStage(nodeStorage);
