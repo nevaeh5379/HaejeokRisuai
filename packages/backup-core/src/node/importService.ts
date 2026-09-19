@@ -139,16 +139,19 @@ export class LocalBackupImportService {
     id: string,
     chunks: AsyncIterable<Uint8Array>,
     options: LocalBackupImportRequestOptions,
-    beginUpload: boolean,
+    sourceKind: "direct" | "sealed-upload",
   ): Promise<LocalBackupImportJobCompletion> {
     const totalBytes = Math.max(0, options.totalBytes ?? 0);
     try {
-      if (beginUpload) {
+      if (sourceKind === "direct") {
         this.jobs.beginUpload(id, totalBytes);
-      } else if (this.jobs.progress(id).status !== "uploading") {
-        throw new LocalBackupImportJobError(
-          "Local backup import is not ready to finalize",
-        );
+      } else {
+        if (this.jobs.progress(id).status !== "uploading") {
+          throw new LocalBackupImportJobError(
+            "Local backup import is not ready to finalize",
+          );
+        }
+        this.jobs.markRestoring(id);
       }
 
       const staged = await this.staging.stage(id, chunks, {
@@ -156,7 +159,7 @@ export class LocalBackupImportService {
         onProgress: (progress) => {
           this.update(
             id,
-            "uploading",
+            sourceKind === "direct" ? "uploading" : "reading",
             progress.bytesRead,
             progress.totalBytes,
             progress.entryName,
@@ -164,7 +167,9 @@ export class LocalBackupImportService {
         },
       });
 
-      this.jobs.markRestoring(id);
+      if (sourceKind === "direct") {
+        this.jobs.markRestoring(id);
+      }
       const plan = buildBackupImportPlan(staged);
 
       await this.restoreColdStorage(id, plan.coldStorage);
@@ -212,7 +217,7 @@ export class LocalBackupImportService {
     chunks: AsyncIterable<Uint8Array>,
     options: LocalBackupImportRequestOptions = {},
   ): Promise<LocalBackupImportJobCompletion> {
-    return await this.restoreStream(id, chunks, options, true);
+    return await this.restoreStream(id, chunks, options, "direct");
   }
 
   async appendUploadChunk(
@@ -260,7 +265,7 @@ export class LocalBackupImportService {
           totalBytes: source.totalBytes,
           sourceClientId: options.sourceClientId,
         },
-        false,
+        "sealed-upload",
       );
     } finally {
       await this.uploads.cleanup(id).catch(() => {});

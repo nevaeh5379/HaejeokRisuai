@@ -4596,7 +4596,8 @@ function sendLocalBackupImportError(res, error) {
   if (error instanceof BackupImportUploadError) {
     const status =
       error.code === "upload_offset_mismatch" ||
-      error.code === "upload_incomplete"
+      error.code === "upload_incomplete" ||
+      error.code === "upload_finalized"
         ? 409
         : 400;
     res.status(status).send({

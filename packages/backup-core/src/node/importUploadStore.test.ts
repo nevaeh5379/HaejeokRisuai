@@ -118,4 +118,15 @@ describe("BackupImportUploadStore", () => {
       expectedOffset: 2,
     });
   });
+
+  it("seals a completed upload against late append requests", async () => {
+    const { store } = await makeStore();
+    const id = "import_005";
+    await store.append(id, 0, chunks([1, 2, 3]), 3);
+    await store.finalize(id);
+
+    await expect(store.append(id, 3, chunks(), 3)).rejects.toMatchObject({
+      code: "upload_finalized",
+    });
+  });
 });

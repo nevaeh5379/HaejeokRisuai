@@ -11,6 +11,7 @@ export class BackupImportUploadError extends Error {
       | "invalid_total_bytes"
       | "upload_offset_mismatch"
       | "upload_incomplete"
+      | "upload_finalized"
       | "upload_error" = "upload_error",
     readonly expectedOffset?: number,
   ) {
@@ -28,6 +29,7 @@ export interface BackupImportUploadFinalizeSource {
 export class BackupImportUploadStore {
   private readonly rootPath: string;
   private readonly totals = new Map<string, number>();
+  private readonly sealed = new Set<string>();
   private readonly locks = new Map<string, Promise<void>>();
 
   constructor(rootPath: string) {
@@ -93,6 +95,12 @@ export class BackupImportUploadStore {
   ): Promise<LocalBackupImportUploadState> {
     this.validateRange(offset, totalBytes);
     return await this.serialized(id, async () => {
+      if (this.sealed.has(id)) {
+        throw new BackupImportUploadError(
+          "Backup upload was already finalized",
+          "upload_finalized",
+        );
+      }
       const filePath = this.uploadPath(id);
       await fs.mkdir(this.rootPath, { recursive: true });
       const stat = await fs
@@ -192,6 +200,7 @@ export class BackupImportUploadStore {
           receivedBytes,
         );
       }
+      this.sealed.add(id);
       return {
         filePath,
         totalBytes,
@@ -201,8 +210,11 @@ export class BackupImportUploadStore {
   }
 
   async cleanup(id: string): Promise<void> {
-    const filePath = this.uploadPath(id);
-    this.totals.delete(id);
-    await fs.rm(filePath, { force: true });
+    await this.serialized(id, async () => {
+      const filePath = this.uploadPath(id);
+      this.totals.delete(id);
+      this.sealed.delete(id);
+      await fs.rm(filePath, { force: true });
+    });
   }
 }

@@ -327,7 +327,7 @@ export class RemoteLocalBackupClient {
           "content-type": "application/octet-stream",
           ...(await this.authHeaders()),
         },
-        body: chunk,
+        body: new Uint8Array(chunk).buffer,
         signal,
       },
     );
