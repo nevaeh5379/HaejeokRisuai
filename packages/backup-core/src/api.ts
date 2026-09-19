@@ -1,13 +1,17 @@
 export type LocalBackupMode = "native" | "compatible" | "partial";
 
+export const LOCAL_BACKUP_PROGRESS_STAGES = [
+  "selectingDestination",
+  "preparing",
+  "database",
+  "coldStorage",
+  "assets",
+  "inlays",
+  "finalizing",
+] as const;
+
 export type LocalBackupProgressStage =
-  | "selectingDestination"
-  | "preparing"
-  | "database"
-  | "coldStorage"
-  | "assets"
-  | "inlays"
-  | "finalizing";
+  (typeof LOCAL_BACKUP_PROGRESS_STAGES)[number];
 
 export interface LocalBackupProgress {
   stage: LocalBackupProgressStage;
@@ -147,18 +151,11 @@ export function validateLocalBackupExportJobProgress(
   }
   const progress = result.progress;
   if (progress !== undefined) {
-    const stages: LocalBackupProgressStage[] = [
-      "selectingDestination",
-      "preparing",
-      "database",
-      "coldStorage",
-      "assets",
-      "inlays",
-      "finalizing",
-    ];
     if (
       !progress ||
-      !stages.includes(progress.stage as LocalBackupProgressStage) ||
+      !LOCAL_BACKUP_PROGRESS_STAGES.includes(
+        progress.stage as LocalBackupProgressStage,
+      ) ||
       (progress.current !== undefined &&
         !isNonNegativeSafeInteger(progress.current)) ||
       (progress.total !== undefined &&

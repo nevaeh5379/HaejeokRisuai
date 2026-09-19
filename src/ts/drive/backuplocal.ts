@@ -81,6 +81,11 @@ import {
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
 import { BackupContainerParser } from "@risuai/backup-core/containerStream";
+import {
+  LOCAL_BACKUP_PROGRESS_STAGES,
+  type LocalBackupMode as BackupCoreLocalBackupMode,
+  type LocalBackupProgressStage,
+} from "@risuai/backup-core/api";
 import { createLocalBackupExportMetadata } from "@risuai/backup-core/exportPlan";
 import {
   attachPortableDatabaseBranchGraphs,
@@ -124,24 +129,7 @@ const alertProgress = (
   },
 ) => showProgressAlert(msg, progress, "backup", stepState);
 
-type LocalBackupProgressStage =
-  | "selectingDestination"
-  | "preparing"
-  | "database"
-  | "coldStorage"
-  | "assets"
-  | "inlays"
-  | "finalizing";
-
-const LOCAL_BACKUP_PROGRESS_STAGE_ORDER: LocalBackupProgressStage[] = [
-  "selectingDestination",
-  "preparing",
-  "database",
-  "coldStorage",
-  "assets",
-  "inlays",
-  "finalizing",
-];
+const LOCAL_BACKUP_PROGRESS_STAGE_ORDER = LOCAL_BACKUP_PROGRESS_STAGES;
 
 const LOCAL_BACKUP_PROGRESS_RANGES: Record<
   LocalBackupProgressStage,
@@ -522,7 +510,7 @@ export async function ensureTauriBackupAssetsDirectory(
 
 export const normalizeLocalBackupAssetPath = normalizeBackupAssetPath;
 
-export type LocalBackupMode = "native" | "compatible";
+export type LocalBackupMode = Exclude<BackupCoreLocalBackupMode, "partial">;
 
 export function buildPortableLocalBackupDatabase(
   db: PortableDatabase,
