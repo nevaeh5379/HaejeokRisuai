@@ -2,25 +2,25 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseRealtimeEvent = parseRealtimeEvent;
 function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /**
  * Returns a non-empty string within the given length budget.
  * 주어진 길이 한도 안의 비어 있지 않은 문자열을 반환합니다.
  */
 function readString(value, maxLength) {
-  return typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= maxLength
-    ? value
-    : undefined;
+    return typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= maxLength
+        ? value
+        : undefined;
 }
 /**
  * Returns a strict boolean, leaving absent or invalid fields undefined.
  * 엄격한 불리언만 통과시키고, 없거나 잘못된 값은 버립니다.
  */
 function readBoolean(value) {
-  return typeof value === "boolean" ? value : undefined;
+    return typeof value === "boolean" ? value : undefined;
 }
 /**
  * Returns a non-negative safe integer, the only numeric shape realtime
@@ -29,9 +29,9 @@ function readBoolean(value) {
  * 정수를 반환합니다.
  */
 function readNonNegativeInteger(value) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+        ? value
+        : undefined;
 }
 /**
  * Validates a string array in place so large change summaries are not copied
@@ -40,18 +40,17 @@ function readNonNegativeInteger(value) {
  * 검증합니다.
  */
 function readStringArray(value) {
-  if (!Array.isArray(value)) return undefined;
-  const entries = value;
-  for (const entry of entries) {
-    if (
-      typeof entry !== "string" ||
-      entry.length === 0 ||
-      entry.length > MAX_EVENT_DATABASE_ID_LENGTH
-    ) {
-      return undefined;
+    if (!Array.isArray(value))
+        return undefined;
+    const entries = value;
+    for (const entry of entries) {
+        if (typeof entry !== "string" ||
+            entry.length === 0 ||
+            entry.length > MAX_EVENT_DATABASE_ID_LENGTH) {
+            return undefined;
+        }
     }
-  }
-  return entries;
+    return entries;
 }
 /**
  * Reads a bounded realtime id-or-null field, preserving the difference
@@ -60,22 +59,29 @@ function readStringArray(value) {
  * null의 차이를 유지합니다.
  */
 function readIdOrNull(value, maxLength) {
-  if (typeof value === "string") return readString(value, maxLength);
-  if (value === null) return null;
-  return undefined;
+    if (typeof value === "string")
+        return readString(value, maxLength);
+    if (value === null)
+        return null;
+    return undefined;
 }
 const GENERATION_LIFECYCLE_STATES = [
-  "started",
-  "finished",
-  "failed",
-  "aborted",
+    "started",
+    "finished",
+    "failed",
+    "aborted",
 ];
 function isGenerationLifecycleState(value) {
-  return GENERATION_LIFECYCLE_STATES.includes(value);
+    return GENERATION_LIFECYCLE_STATES.includes(value);
 }
-const MODEL_JOB_STATUS_VALUES = ["running", "done", "failed", "aborted"];
+const MODEL_JOB_STATUS_VALUES = [
+    "running",
+    "done",
+    "failed",
+    "aborted",
+];
 function isModelJobStatus(value) {
-  return MODEL_JOB_STATUS_VALUES.includes(value);
+    return MODEL_JOB_STATUS_VALUES.includes(value);
 }
 // Length budgets mirror the server-side hub validation, so a malformed or
 // hostile stream can never push unbounded strings into client state.
@@ -94,77 +100,79 @@ const MAX_EVENT_ERROR_LENGTH = 8000;
  * 없이 재사용하여 대형 커밋이 같은 크기의 목록을 하나 더 만들지 않습니다.
  */
 function parseDatabaseChangeEvent(value) {
-  if (!isRecord(value)) return null;
-  const event = {};
-  const replaceAll = readBoolean(value.replaceAll);
-  if (replaceAll !== undefined) event.replaceAll = replaceAll;
-  const chatIds = readStringArray(value.chatIds);
-  if (value.chatIds !== undefined && chatIds === undefined) return null;
-  if (chatIds !== undefined) event.chatIds = chatIds;
-  const characterIds = readStringArray(value.characterIds);
-  if (value.characterIds !== undefined && characterIds === undefined) {
-    return null;
-  }
-  if (characterIds !== undefined) event.characterIds = characterIds;
-  const rootUpsertKeys = readStringArray(value.rootUpsertKeys);
-  if (value.rootUpsertKeys !== undefined && rootUpsertKeys === undefined) {
-    return null;
-  }
-  if (rootUpsertKeys !== undefined) event.rootUpsertKeys = rootUpsertKeys;
-  const rootDeleteKeys = readStringArray(value.rootDeleteKeys);
-  if (value.rootDeleteKeys !== undefined && rootDeleteKeys === undefined) {
-    return null;
-  }
-  if (rootDeleteKeys !== undefined) event.rootDeleteKeys = rootDeleteKeys;
-  const pluginStorageUpsertKeys = readStringArray(
-    value.pluginStorageUpsertKeys,
-  );
-  if (
-    value.pluginStorageUpsertKeys !== undefined &&
-    pluginStorageUpsertKeys === undefined
-  ) {
-    return null;
-  }
-  if (pluginStorageUpsertKeys !== undefined) {
-    event.pluginStorageUpsertKeys = pluginStorageUpsertKeys;
-  }
-  const pluginStorageDeleteKeys = readStringArray(
-    value.pluginStorageDeleteKeys,
-  );
-  if (
-    value.pluginStorageDeleteKeys !== undefined &&
-    pluginStorageDeleteKeys === undefined
-  ) {
-    return null;
-  }
-  if (pluginStorageDeleteKeys !== undefined) {
-    event.pluginStorageDeleteKeys = pluginStorageDeleteKeys;
-  }
-  for (const field of [
-    "charactersChanged",
-    "rootChanged",
-    "pluginStorageCleared",
-    "presetsChanged",
-    "modulesChanged",
-    "pluginsChanged",
-  ]) {
-    const flag = readBoolean(value[field]);
-    if (flag !== undefined) event[field] = flag;
-  }
-  const revision = readNonNegativeInteger(value.revision);
-  if (revision !== undefined) event.revision = revision;
-  const action = readString(value.action, MAX_EVENT_ACTION_LENGTH);
-  if (action !== undefined) event.action = action;
-  const sourceClientId = readIdOrNull(
-    value.sourceClientId,
-    MAX_EVENT_CLIENT_ID_LENGTH,
-  );
-  if (sourceClientId !== undefined) event.sourceClientId = sourceClientId;
-  const pluginName = readString(value.pluginName, MAX_EVENT_CLIENT_ID_LENGTH);
-  if (pluginName !== undefined) event.pluginName = pluginName;
-  const pluginEnabled = readBoolean(value.pluginEnabled);
-  if (pluginEnabled !== undefined) event.pluginEnabled = pluginEnabled;
-  return event;
+    if (!isRecord(value))
+        return null;
+    const event = {};
+    const replaceAll = readBoolean(value.replaceAll);
+    if (replaceAll !== undefined)
+        event.replaceAll = replaceAll;
+    const chatIds = readStringArray(value.chatIds);
+    if (value.chatIds !== undefined && chatIds === undefined)
+        return null;
+    if (chatIds !== undefined)
+        event.chatIds = chatIds;
+    const characterIds = readStringArray(value.characterIds);
+    if (value.characterIds !== undefined && characterIds === undefined) {
+        return null;
+    }
+    if (characterIds !== undefined)
+        event.characterIds = characterIds;
+    const rootUpsertKeys = readStringArray(value.rootUpsertKeys);
+    if (value.rootUpsertKeys !== undefined && rootUpsertKeys === undefined) {
+        return null;
+    }
+    if (rootUpsertKeys !== undefined)
+        event.rootUpsertKeys = rootUpsertKeys;
+    const rootDeleteKeys = readStringArray(value.rootDeleteKeys);
+    if (value.rootDeleteKeys !== undefined && rootDeleteKeys === undefined) {
+        return null;
+    }
+    if (rootDeleteKeys !== undefined)
+        event.rootDeleteKeys = rootDeleteKeys;
+    const pluginStorageUpsertKeys = readStringArray(value.pluginStorageUpsertKeys);
+    if (value.pluginStorageUpsertKeys !== undefined &&
+        pluginStorageUpsertKeys === undefined) {
+        return null;
+    }
+    if (pluginStorageUpsertKeys !== undefined) {
+        event.pluginStorageUpsertKeys = pluginStorageUpsertKeys;
+    }
+    const pluginStorageDeleteKeys = readStringArray(value.pluginStorageDeleteKeys);
+    if (value.pluginStorageDeleteKeys !== undefined &&
+        pluginStorageDeleteKeys === undefined) {
+        return null;
+    }
+    if (pluginStorageDeleteKeys !== undefined) {
+        event.pluginStorageDeleteKeys = pluginStorageDeleteKeys;
+    }
+    for (const field of [
+        "charactersChanged",
+        "rootChanged",
+        "pluginStorageCleared",
+        "presetsChanged",
+        "modulesChanged",
+        "pluginsChanged",
+    ]) {
+        const flag = readBoolean(value[field]);
+        if (flag !== undefined)
+            event[field] = flag;
+    }
+    const revision = readNonNegativeInteger(value.revision);
+    if (revision !== undefined)
+        event.revision = revision;
+    const action = readString(value.action, MAX_EVENT_ACTION_LENGTH);
+    if (action !== undefined)
+        event.action = action;
+    const sourceClientId = readIdOrNull(value.sourceClientId, MAX_EVENT_CLIENT_ID_LENGTH);
+    if (sourceClientId !== undefined)
+        event.sourceClientId = sourceClientId;
+    const pluginName = readString(value.pluginName, MAX_EVENT_CLIENT_ID_LENGTH);
+    if (pluginName !== undefined)
+        event.pluginName = pluginName;
+    const pluginEnabled = readBoolean(value.pluginEnabled);
+    if (pluginEnabled !== undefined)
+        event.pluginEnabled = pluginEnabled;
+    return event;
 }
 /**
  * Parses the compact model-job summary a client needs; the full durable job
@@ -173,32 +181,34 @@ function parseDatabaseChangeEvent(value) {
  * 레코드를 실시간 경계에서 해석할 필요는 없습니다.
  */
 function parseModelJobEvent(value) {
-  if (!isRecord(value)) return null;
-  const phase = value.phase;
-  if (phase !== "created" && phase !== "terminal") return null;
-  const event = { phase };
-  if (isRecord(value.job)) {
-    const job = {};
-    const id = readString(value.job.id, 256);
-    if (id !== undefined) job.id = id;
-    const chatId = readString(value.job.chatId, MAX_EVENT_CHAT_ID_LENGTH);
-    if (chatId !== undefined) job.chatId = chatId;
-    const generationId = readIdOrNull(
-      value.job.generationId,
-      MAX_EVENT_LIFECYCLE_ID_LENGTH,
-    );
-    if (generationId !== undefined) job.generationId = generationId;
-    if (isModelJobStatus(value.job.status)) job.status = value.job.status;
-    const recoverable = readBoolean(value.job.recoverable);
-    if (recoverable !== undefined) job.recoverable = recoverable;
-    event.job = job;
-  }
-  const sourceClientId = readIdOrNull(
-    value.sourceClientId,
-    MAX_EVENT_CLIENT_ID_LENGTH,
-  );
-  if (sourceClientId !== undefined) event.sourceClientId = sourceClientId;
-  return event;
+    if (!isRecord(value))
+        return null;
+    const phase = value.phase;
+    if (phase !== "created" && phase !== "terminal")
+        return null;
+    const event = { phase };
+    if (isRecord(value.job)) {
+        const job = {};
+        const id = readString(value.job.id, 256);
+        if (id !== undefined)
+            job.id = id;
+        const chatId = readString(value.job.chatId, MAX_EVENT_CHAT_ID_LENGTH);
+        if (chatId !== undefined)
+            job.chatId = chatId;
+        const generationId = readIdOrNull(value.job.generationId, MAX_EVENT_LIFECYCLE_ID_LENGTH);
+        if (generationId !== undefined)
+            job.generationId = generationId;
+        if (isModelJobStatus(value.job.status))
+            job.status = value.job.status;
+        const recoverable = readBoolean(value.job.recoverable);
+        if (recoverable !== undefined)
+            job.recoverable = recoverable;
+        event.job = job;
+    }
+    const sourceClientId = readIdOrNull(value.sourceClientId, MAX_EVENT_CLIENT_ID_LENGTH);
+    if (sourceClientId !== undefined)
+        event.sourceClientId = sourceClientId;
+    return event;
 }
 /**
  * Parses a generation lifecycle state, applying the same length budgets the
@@ -207,30 +217,29 @@ function parseModelJobEvent(value) {
  * 길이 한도를 적용합니다.
  */
 function parseGenerationState(value) {
-  if (!isRecord(value)) return null;
-  const chatId = readString(value.chatId, MAX_EVENT_CHAT_ID_LENGTH);
-  const lifecycleId = readString(
-    value.lifecycleId,
-    MAX_EVENT_LIFECYCLE_ID_LENGTH,
-  );
-  if (chatId === undefined || lifecycleId === undefined) return null;
-  const state = value.state;
-  if (!isGenerationLifecycleState(state)) return null;
-  const sourceClientId = readIdOrNull(
-    value.sourceClientId,
-    MAX_EVENT_CLIENT_ID_LENGTH,
-  );
-  const event = {
-    chatId,
-    lifecycleId,
-    state,
-    sourceClientId: sourceClientId ?? null,
-  };
-  const error = readString(value.error, MAX_EVENT_ERROR_LENGTH);
-  if (error !== undefined) event.error = error;
-  const updatedAt = readNonNegativeInteger(value.updatedAt);
-  if (updatedAt !== undefined) event.updatedAt = updatedAt;
-  return event;
+    if (!isRecord(value))
+        return null;
+    const chatId = readString(value.chatId, MAX_EVENT_CHAT_ID_LENGTH);
+    const lifecycleId = readString(value.lifecycleId, MAX_EVENT_LIFECYCLE_ID_LENGTH);
+    if (chatId === undefined || lifecycleId === undefined)
+        return null;
+    const state = value.state;
+    if (!isGenerationLifecycleState(state))
+        return null;
+    const sourceClientId = readIdOrNull(value.sourceClientId, MAX_EVENT_CLIENT_ID_LENGTH);
+    const event = {
+        chatId,
+        lifecycleId,
+        state,
+        sourceClientId: sourceClientId ?? null,
+    };
+    const error = readString(value.error, MAX_EVENT_ERROR_LENGTH);
+    if (error !== undefined)
+        event.error = error;
+    const updatedAt = readNonNegativeInteger(value.updatedAt);
+    if (updatedAt !== undefined)
+        event.updatedAt = updatedAt;
+    return event;
 }
 /**
  * Parses the ready snapshot sent right after a client is registered. Malformed
@@ -239,24 +248,29 @@ function parseGenerationState(value) {
  * 항목은 스냅샷 전체를 실패시키지 않고 버려집니다.
  */
 function parseReadyEvent(value) {
-  if (!isRecord(value)) return null;
-  const latestEventId = readNonNegativeInteger(value.latestEventId);
-  if (latestEventId === undefined) return null;
-  const event = {
-    latestEventId,
-    activeGenerations: [],
-  };
-  const clientId = readString(value.clientId, MAX_EVENT_CLIENT_ID_LENGTH);
-  if (clientId !== undefined) event.clientId = clientId;
-  const connectedAt = readNonNegativeInteger(value.connectedAt);
-  if (connectedAt !== undefined) event.connectedAt = connectedAt;
-  if (Array.isArray(value.activeGenerations)) {
-    for (const rawGeneration of value.activeGenerations) {
-      const generation = parseGenerationState(rawGeneration);
-      if (generation !== null) event.activeGenerations.push(generation);
+    if (!isRecord(value))
+        return null;
+    const latestEventId = readNonNegativeInteger(value.latestEventId);
+    if (latestEventId === undefined)
+        return null;
+    const event = {
+        latestEventId,
+        activeGenerations: [],
+    };
+    const clientId = readString(value.clientId, MAX_EVENT_CLIENT_ID_LENGTH);
+    if (clientId !== undefined)
+        event.clientId = clientId;
+    const connectedAt = readNonNegativeInteger(value.connectedAt);
+    if (connectedAt !== undefined)
+        event.connectedAt = connectedAt;
+    if (Array.isArray(value.activeGenerations)) {
+        for (const rawGeneration of value.activeGenerations) {
+            const generation = parseGenerationState(rawGeneration);
+            if (generation !== null)
+                event.activeGenerations.push(generation);
+        }
     }
-  }
-  return event;
+    return event;
 }
 /**
  * Parses the resync-required event emitted when a client's replay cursor is
@@ -265,13 +279,16 @@ function parseReadyEvent(value) {
  * 전송되는 resync-required 이벤트를 해석합니다.
  */
 function parseResyncRequiredEvent(value) {
-  if (!isRecord(value)) return null;
-  const latestEventId = readNonNegativeInteger(value.latestEventId);
-  if (latestEventId === undefined) return null;
-  const event = { latestEventId };
-  const oldestRetainedId = readNonNegativeInteger(value.oldestRetainedId);
-  if (oldestRetainedId !== undefined) event.oldestRetainedId = oldestRetainedId;
-  return event;
+    if (!isRecord(value))
+        return null;
+    const latestEventId = readNonNegativeInteger(value.latestEventId);
+    if (latestEventId === undefined)
+        return null;
+    const event = { latestEventId };
+    const oldestRetainedId = readNonNegativeInteger(value.oldestRetainedId);
+    if (oldestRetainedId !== undefined)
+        event.oldestRetainedId = oldestRetainedId;
+    return event;
 }
 /**
  * Narrows an untrusted SSE/WebSocket JSON value into one of the canonical
@@ -286,31 +303,31 @@ function parseResyncRequiredEvent(value) {
  * @returns The typed event frame, or null when unrecognizable. 형식화된 이벤트 프레임 또는 null입니다.
  */
 function parseRealtimeEvent(eventName, data) {
-  if (eventName === "database-change") {
-    const payload = parseDatabaseChangeEvent(data);
-    return payload === null
-      ? null
-      : { event: "database-change", data: payload };
-  }
-  if (eventName === "model-job") {
-    const payload = parseModelJobEvent(data);
-    return payload === null ? null : { event: "model-job", data: payload };
-  }
-  if (eventName === "generation-state") {
-    const payload = parseGenerationState(data);
-    return payload === null
-      ? null
-      : { event: "generation-state", data: payload };
-  }
-  if (eventName === "ready") {
-    const payload = parseReadyEvent(data);
-    return payload === null ? null : { event: "ready", data: payload };
-  }
-  if (eventName === "resync-required") {
-    const payload = parseResyncRequiredEvent(data);
-    return payload === null
-      ? null
-      : { event: "resync-required", data: payload };
-  }
-  return null;
+    if (eventName === "database-change") {
+        const payload = parseDatabaseChangeEvent(data);
+        return payload === null
+            ? null
+            : { event: "database-change", data: payload };
+    }
+    if (eventName === "model-job") {
+        const payload = parseModelJobEvent(data);
+        return payload === null ? null : { event: "model-job", data: payload };
+    }
+    if (eventName === "generation-state") {
+        const payload = parseGenerationState(data);
+        return payload === null
+            ? null
+            : { event: "generation-state", data: payload };
+    }
+    if (eventName === "ready") {
+        const payload = parseReadyEvent(data);
+        return payload === null ? null : { event: "ready", data: payload };
+    }
+    if (eventName === "resync-required") {
+        const payload = parseResyncRequiredEvent(data);
+        return payload === null
+            ? null
+            : { event: "resync-required", data: payload };
+    }
+    return null;
 }

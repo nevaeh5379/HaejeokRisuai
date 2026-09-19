@@ -16,9 +16,9 @@
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
-    import { installAndroidNativeEntryHandler } from './ts/androidNativeIntegration';
-    import { routeAndroidNativeEntry } from './ts/androidNativeEntryRouter';
-    import { refreshAndroidNativeSurfaces } from './ts/androidNativeSurfaces';
+    import { installAndroidNativeEntryHandler } from './ts/android/androidNativeIntegration';
+    import { routeAndroidNativeEntry } from './ts/android/androidNativeEntryRouter';
+    import { refreshAndroidNativeSurfaces } from './ts/android/androidNativeSurfaces';
 
 
   

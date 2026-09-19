@@ -36,8 +36,8 @@
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
-    import { androidComposerPrefill, clearAndroidComposerPrefill } from 'src/ts/androidNativeEntryState';
-    import { triggerAndroidHaptic } from 'src/ts/androidNativeIntegration';
+    import { androidComposerPrefill, clearAndroidComposerPrefill } from 'src/ts/android/androidNativeEntryState';
+    import { triggerAndroidHaptic } from 'src/ts/android/androidNativeIntegration';
     import {
         getNextFirstMessageIndex,
         getPreviousFirstMessageIndex,

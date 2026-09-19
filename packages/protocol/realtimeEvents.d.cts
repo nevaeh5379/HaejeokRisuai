@@ -4,8 +4,7 @@ import type { SqlCommitImpact } from "./sqlCommit.cjs";
  * Lifecycle state accepted by realtime generation synchronization.
  * 실시간 생성 동기화에서 허용하는 생명주기 상태입니다.
  */
-export type GenerationLifecycleState =
-  "started" | "finished" | "failed" | "aborted";
+export type GenerationLifecycleState = "started" | "finished" | "failed" | "aborted";
 /**
  * The phase of a durable model job lifecycle event.
  * 영구 모델 잡 생명주기 이벤트의 단계입니다.
@@ -19,33 +18,28 @@ export type ModelJobEventPhase = "created" | "terminal";
  * 집합입니다. 생산자는 전체 레코드를 전파할 수 있고, 클라이언트는 이 필드만
  * 보존하여 저메모리 기기에서도 이벤트 요약을 작게 유지합니다.
  */
-export type RealtimeModelJobSummary = Partial<
-  Pick<
-    DurableModelJobRecord,
-    "id" | "chatId" | "generationId" | "status" | "recoverable"
-  >
->;
+export type RealtimeModelJobSummary = Partial<Pick<DurableModelJobRecord, "id" | "chatId" | "generationId" | "status" | "recoverable">>;
 /**
  * Event broadcast when a durable model job is created or reaches a terminal
  * state.
  * 영구 모델 잡이 생성되거나 종료 상태에 도달했을 때 전파되는 이벤트입니다.
  */
 export interface RealtimeModelJobEvent {
-  readonly phase: ModelJobEventPhase;
-  readonly job?: RealtimeModelJobSummary | null;
-  readonly sourceClientId?: string | null;
+    readonly phase: ModelJobEventPhase;
+    readonly job?: RealtimeModelJobSummary | null;
+    readonly sourceClientId?: string | null;
 }
 /**
  * A validated generation lifecycle state retained and broadcast by the hub.
  * 허브가 보관하고 전파하는 검증된 생성 생명주기 상태입니다.
  */
 export interface RealtimeGenerationState {
-  readonly chatId: string;
-  readonly lifecycleId: string;
-  readonly state: GenerationLifecycleState;
-  readonly sourceClientId: string | null;
-  readonly error?: string;
-  readonly updatedAt?: number;
+    readonly chatId: string;
+    readonly lifecycleId: string;
+    readonly state: GenerationLifecycleState;
+    readonly sourceClientId: string | null;
+    readonly error?: string;
+    readonly updatedAt?: number;
 }
 /**
  * Event broadcast when a chat generation lifecycle state changes.
@@ -60,10 +54,10 @@ export type RealtimeGenerationStateEvent = RealtimeGenerationState;
  * 식별자, 현재 재생 커서, 이미 진행 중인 생성 상태를 담은 연결 스냅샷입니다.
  */
 export interface RealtimeReadyEvent {
-  readonly clientId?: string | null;
-  readonly connectedAt?: number;
-  readonly latestEventId: number;
-  readonly activeGenerations: RealtimeGenerationState[];
+    readonly clientId?: string | null;
+    readonly connectedAt?: number;
+    readonly latestEventId: number;
+    readonly activeGenerations: RealtimeGenerationState[];
 }
 /**
  * Event sent when a reconnecting client's replay cursor falls outside the
@@ -72,8 +66,8 @@ export interface RealtimeReadyEvent {
  * 필요할 때 전송되는 이벤트입니다.
  */
 export interface RealtimeResyncRequiredEvent {
-  readonly latestEventId: number;
-  readonly oldestRetainedId?: number;
+    readonly latestEventId: number;
+    readonly oldestRetainedId?: number;
 }
 /**
  * Realtime payload describing which domains and entity IDs a database commit
@@ -84,11 +78,11 @@ export interface RealtimeResyncRequiredEvent {
  * 더합니다.
  */
 export type RealtimeDatabaseChangeEvent = Partial<SqlCommitImpact> & {
-  readonly revision?: number;
-  readonly sourceClientId?: string | null;
-  readonly pluginsChanged?: boolean;
-  readonly pluginName?: string;
-  readonly pluginEnabled?: boolean;
+    readonly revision?: number;
+    readonly sourceClientId?: string | null;
+    readonly pluginsChanged?: boolean;
+    readonly pluginName?: string;
+    readonly pluginEnabled?: boolean;
 };
 /**
  * Canonical realtime event map shared by server producers and frontend
@@ -98,11 +92,11 @@ export type RealtimeDatabaseChangeEvent = Partial<SqlCommitImpact> & {
  * 모든 허브 전파와 클라이언트 파싱이 이 이벤트 이름으로 구분됩니다.
  */
 export interface RealtimeEventMap {
-  "database-change": RealtimeDatabaseChangeEvent;
-  "model-job": RealtimeModelJobEvent;
-  "generation-state": RealtimeGenerationStateEvent;
-  ready: RealtimeReadyEvent;
-  "resync-required": RealtimeResyncRequiredEvent;
+    "database-change": RealtimeDatabaseChangeEvent;
+    "model-job": RealtimeModelJobEvent;
+    "generation-state": RealtimeGenerationStateEvent;
+    ready: RealtimeReadyEvent;
+    "resync-required": RealtimeResyncRequiredEvent;
 }
 /** Names of all canonical realtime events. 모든 표준 실시간 이벤트의 이름입니다. */
 export type RealtimeEventName = keyof RealtimeEventMap;
@@ -112,22 +106,15 @@ export type RealtimeEventName = keyof RealtimeEventMap;
  * 재생 기록에 보관되고 이벤트 ID가 붙는 이벤트입니다. ready와
  * resync-required는 연결별 제어 이벤트이므로 전파되지 않습니다.
  */
-export type RealtimeBroadcastEventName = Exclude<
-  RealtimeEventName,
-  "ready" | "resync-required"
->;
+export type RealtimeBroadcastEventName = Exclude<RealtimeEventName, "ready" | "resync-required">;
 /** Wire payload for a realtime event name. 실시간 이벤트 이름의 페이로드입니다. */
-export type RealtimeEventPayload<
-  K extends RealtimeEventName = RealtimeEventName,
-> = RealtimeEventMap[K];
+export type RealtimeEventPayload<K extends RealtimeEventName = RealtimeEventName> = RealtimeEventMap[K];
 /**
  * Payload after the hub has stamped its shared sequence id onto the event.
  * 허브가 공용 시퀀스 ID를 이벤트에 새긴 뒤의 페이로드입니다.
  */
-export type RealtimeEventEnvelope<
-  K extends RealtimeBroadcastEventName = RealtimeBroadcastEventName,
-> = RealtimeEventMap[K] & {
-  readonly eventId: number;
+export type RealtimeEventEnvelope<K extends RealtimeBroadcastEventName = RealtimeBroadcastEventName> = RealtimeEventMap[K] & {
+    readonly eventId: number;
 };
 /**
  * Typed broadcast signature: each event name accepts exactly its mapped
@@ -135,10 +122,7 @@ export type RealtimeEventEnvelope<
  * 이벤트 이름별로 정확히 대응하는 페이로드만 허용하는 전파자 시그니처입니다.
  * 생산자가 모르거나 잘못된 형태의 실시간 이벤트를 내보낼 수 없습니다.
  */
-export type RealtimeEventBroadcaster = <K extends RealtimeBroadcastEventName>(
-  event: K,
-  data: RealtimeEventMap[K],
-) => void;
+export type RealtimeEventBroadcaster = <K extends RealtimeBroadcastEventName>(event: K, data: RealtimeEventMap[K]) => void;
 /**
  * A parsed realtime event frame: the event name narrowed to the canonical map
  * together with its runtime-validated payload.
@@ -146,10 +130,10 @@ export type RealtimeEventBroadcaster = <K extends RealtimeBroadcastEventName>(
  * 프레임입니다.
  */
 export type RealtimeEventFrame = {
-  [K in RealtimeEventName]: {
-    event: K;
-    data: RealtimeEventMap[K];
-  };
+    [K in RealtimeEventName]: {
+        event: K;
+        data: RealtimeEventMap[K];
+    };
 }[RealtimeEventName];
 /**
  * Narrows an untrusted SSE/WebSocket JSON value into one of the canonical
@@ -163,7 +147,4 @@ export type RealtimeEventFrame = {
  * @param data - Parsed JSON payload (unknown). 해석된 JSON 페이로드(unknown)입니다.
  * @returns The typed event frame, or null when unrecognizable. 형식화된 이벤트 프레임 또는 null입니다.
  */
-export declare function parseRealtimeEvent(
-  eventName: string,
-  data: unknown,
-): RealtimeEventFrame | null;
+export declare function parseRealtimeEvent(eventName: string, data: unknown): RealtimeEventFrame | null;

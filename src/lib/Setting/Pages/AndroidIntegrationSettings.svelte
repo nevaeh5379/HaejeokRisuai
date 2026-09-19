@@ -7,12 +7,12 @@
         MAX_WIDGET_BOT_COUNT,
         MIN_WIDGET_BOT_COUNT,
         refreshAndroidNativeSurfaces,
-    } from 'src/ts/androidNativeSurfaces';
+    } from 'src/ts/android/androidNativeSurfaces';
     import {
         requestAndroidQuickSettingsTile,
         requestAndroidWidget,
         type AndroidWidgetType,
-    } from 'src/ts/androidNativeIntegration';
+    } from 'src/ts/android/androidNativeIntegration';
 
     const ko = typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('ko');
     let busy = $state(false);
