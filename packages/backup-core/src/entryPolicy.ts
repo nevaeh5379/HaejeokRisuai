@@ -30,7 +30,7 @@ const INLAY_RE =
 
 function normalizeBackupEntryName(name: string): string | null {
   if (typeof name !== "string") return null;
-  const normalized = name.replace(/\\/g, "/");
+  const normalized = name.replaceAll("\\", "/");
   const segments = normalized.split("/");
   if (
     segments.length === 0 ||
