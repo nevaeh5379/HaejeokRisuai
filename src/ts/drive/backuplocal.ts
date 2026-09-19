@@ -726,21 +726,20 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
               total: progress.total,
             });
           }
-          if (state.status === "complete" || state.status === "error") {
-            if (state.status === "error") {
-              logger.error("node-stream.poll-final-state", {
+          const logInfo = {
                 status: state.status,
                 stage: progress?.stage ?? "none",
                 elapsedMs: elapsed(),
-              });
-            } else {
-              logger.info("node-stream.poll-final-state", {
-                status: state.status,
-                stage: progress?.stage ?? "none",
-                elapsedMs: elapsed(),
-              });
-            }
-            break;
+              };
+          const message = "node-stream.poll-final-state";
+
+          switch (state.status) {
+            case "complete":
+              logger.info(message, logInfo);
+              break;
+            case "error":
+              logger.error(message, logInfo);
+              break;
           }
         } catch (error) {
           // The completion request remains authoritative. A transient status
