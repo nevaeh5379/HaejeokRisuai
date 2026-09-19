@@ -6,11 +6,11 @@ import type {
   LocalBackupImportProgress,
   LocalBackupImportUploadState,
 } from "../api";
-import { isColdStorageBackupData } from "../coldStorage";
 import {
   getColdStorageBackupKey,
-  normalizeBackupAssetPath,
-} from "../entryPolicy";
+  isColdStorageBackupData,
+} from "../coldStorage";
+import { normalizeBackupAssetPath } from "../entryPolicy";
 import { decodeInlayAssetBackup } from "../inlayCodec";
 import type { LegacyBackupSqlRecord } from "../legacyRecords";
 import {

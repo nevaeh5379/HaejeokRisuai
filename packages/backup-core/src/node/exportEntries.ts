@@ -1,6 +1,8 @@
 import type { LocalBackupProgress } from "../api";
-import { getColdStorageBackupName } from "../coldStorage";
-import { getColdStorageBackupKey } from "../entryPolicy";
+import {
+  getColdStorageBackupKey,
+  getColdStorageBackupName,
+} from "../coldStorage";
 import type { BackupEntrySource } from "./exportStream";
 
 export interface LoadColdStorageExportValueResult {

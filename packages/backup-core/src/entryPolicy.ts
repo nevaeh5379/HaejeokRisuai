@@ -1,3 +1,4 @@
+import { COLD_STORAGE_BACKUP_RE, getColdStorageBackupKey } from "./coldStorage";
 import {
   parsePortableDatabaseStreamFragmentName,
   PORTABLE_DATABASE_STREAM_MANIFEST,
@@ -21,8 +22,7 @@ export interface BackupEntryClassification {
 export const LEGACY_DATABASE_ENTRY_NAME = "database.risudat";
 export const ACCOUNT_ENCRYPTION_ENTRY_NAME = "encryption.risudat";
 
-const COLD_STORAGE_RE =
-  /^(?:coldstorage[\/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.json$/;
+const COLD_STORAGE_RE = COLD_STORAGE_BACKUP_RE;
 const INLAY_RE =
   /^inlay_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.risuinlay$/;
 
@@ -58,15 +58,6 @@ function classifyBackupEntry(name: string): BackupEntryClassification {
   if (normalized.startsWith("assets/")) return { kind: "asset", normalized };
   if (!normalized.includes("/")) return { kind: "asset", normalized };
   return { kind: "extension", normalized };
-}
-
-function getColdStorageBackupKey(name: string): string | null {
-  const normalized = normalizeBackupEntryName(name);
-  if (!normalized) return null;
-  const match = normalized.match(
-    /^(?:coldstorage[\/_])?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.json$/,
-  );
-  return match?.[1] ?? null;
 }
 
 function normalizeBackupAssetPath(name: string): string {

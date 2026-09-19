@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   COLD_STORAGE_HEADER,
+  getColdStorageBackupKey,
   getColdStorageBackupName,
   isColdStorageBackupData,
 } from "./coldStorage";
-import { getColdStorageBackupKey } from "./entryPolicy";
 
 describe("cold storage backup format", () => {
   it("shares the canonical header and backup filename", () => {
@@ -12,6 +12,9 @@ describe("cold storage backup format", () => {
     expect(COLD_STORAGE_HEADER).toBe("\uEF01COLDSTORAGE\uEF01");
     expect(getColdStorageBackupName(key)).toBe(`coldstorage_${key}.json`);
     expect(getColdStorageBackupKey(getColdStorageBackupName(key))).toBe(key);
+    expect(getColdStorageBackupKey(`coldstorage/${key}.json`)).toBe(key);
+    expect(getColdStorageBackupKey(`${key}.json`)).toBe(key);
+    expect(getColdStorageBackupKey("coldstorage_not-a-key.json")).toBeNull();
   });
 
   it("accepts supported cold storage payload shapes", () => {

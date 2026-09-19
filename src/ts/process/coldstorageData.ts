@@ -1,9 +1,9 @@
 import {
   COLD_STORAGE_HEADER,
+  getColdStorageBackupKey,
   getColdStorageBackupName,
   isColdStorageBackupData,
 } from "@risuai/backup-core/coldStorage";
-import { getColdStorageBackupKey } from "@risuai/backup-core/entryPolicy";
 import { safeStructuredClone } from "../polyfill";
 import type {
   Database,
