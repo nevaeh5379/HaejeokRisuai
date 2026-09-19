@@ -1,3 +1,9 @@
+import {
+  COLD_STORAGE_HEADER,
+  getColdStorageBackupName,
+  isColdStorageBackupData,
+} from "@risuai/backup-core/coldStorage";
+import { getColdStorageBackupKey } from "@risuai/backup-core/entryPolicy";
 import { safeStructuredClone } from "../polyfill";
 import type {
   Database,
@@ -5,30 +11,12 @@ import type {
   groupChat,
 } from "../storage/database/schema";
 
-export const coldStorageHeader = "\uEF01COLDSTORAGE\uEF01";
-
-export function getColdStorageBackupKey(name: string): string | null {
-  const match = name.match(
-    /^(?:coldstorage[/_])?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.json$/,
-  );
-  return match?.[1] ?? null;
-}
-
-export function getColdStorageBackupName(key: string): string {
-  return `coldstorage_${key}.json`;
-}
-
-export function isColdStorageBackupData(data: unknown): boolean {
-  if (Array.isArray(data)) {
-    return true;
-  }
-
-  return (
-    !!data &&
-    typeof data === "object" &&
-    ("character" in data || "message" in data)
-  );
-}
+export const coldStorageHeader = COLD_STORAGE_HEADER;
+export {
+  getColdStorageBackupKey,
+  getColdStorageBackupName,
+  isColdStorageBackupData,
+};
 
 function replaceData(
   data: string | undefined,

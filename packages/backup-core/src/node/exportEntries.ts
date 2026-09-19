@@ -1,4 +1,5 @@
 import type { LocalBackupProgress } from "../api";
+import { getColdStorageBackupName } from "../coldStorage";
 import { getColdStorageBackupKey } from "../entryPolicy";
 import type { BackupEntrySource } from "./exportStream";
 
@@ -39,7 +40,7 @@ export interface StreamColdStorageExportEntriesOptions {
 }
 
 export function coldStorageExportEntryName(key: string): string {
-  const name = `coldstorage_${key}.json`;
+  const name = getColdStorageBackupName(key);
   if (getColdStorageBackupKey(name) !== key) {
     throw new Error(`Invalid cold storage backup key '${key}'`);
   }
