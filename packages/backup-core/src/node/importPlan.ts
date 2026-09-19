@@ -1,3 +1,7 @@
+import {
+  parsePortableDatabaseStreamFragmentName,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+} from "../streamFormat";
 import type {
   StagedBackupContainer,
   StagedBackupEntry,
@@ -33,13 +37,6 @@ export class BackupImportPlanError extends Error {
   }
 }
 
-function streamFragmentIndex(name: string): number | null {
-  const match = /^database\.stream\/([0-9]{12})\.risudat$/.exec(name);
-  if (!match) return null;
-  const value = Number(match[1]);
-  return Number.isSafeInteger(value) && value > 0 ? value : null;
-}
-
 export function buildBackupImportPlan(
   staged: StagedBackupContainer,
 ): BackupImportPlan {
@@ -65,11 +62,11 @@ export function buildBackupImportPlan(
         legacy.push(entry);
         break;
       case "databaseStream": {
-        if (entry.name === "database.stream/manifest.risudat") {
+        if (entry.name === PORTABLE_DATABASE_STREAM_MANIFEST) {
           manifests.push(entry);
           break;
         }
-        const index = streamFragmentIndex(entry.name);
+        const index = parsePortableDatabaseStreamFragmentName(entry.name);
         if (index === null) {
           throw new BackupImportPlanError(
             `Invalid database stream fragment '${entry.name}'`,

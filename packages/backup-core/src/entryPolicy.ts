@@ -1,3 +1,8 @@
+import {
+  parsePortableDatabaseStreamFragmentName,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+} from "./streamFormat";
+
 export type BackupEntryKind =
   | "database"
   | "databaseStream"
@@ -41,8 +46,8 @@ function classifyBackupEntry(name: string): BackupEntryClassification {
   if (normalized === LEGACY_DATABASE_ENTRY_NAME)
     return { kind: "database", normalized };
   if (
-    normalized === "database.stream/manifest.risudat" ||
-    /^database\.stream\/[0-9]{12}\.risudat$/.test(normalized)
+    normalized === PORTABLE_DATABASE_STREAM_MANIFEST ||
+    parsePortableDatabaseStreamFragmentName(normalized) !== null
   )
     return { kind: "databaseStream", normalized };
   if (normalized === ACCOUNT_ENCRYPTION_ENTRY_NAME)

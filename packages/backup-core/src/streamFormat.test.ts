@@ -3,6 +3,7 @@ import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
+  parsePortableDatabaseStreamFragmentName,
   portableDatabaseStreamFragmentName,
 } from "./streamFormat";
 
@@ -16,6 +17,22 @@ describe("portable database stream format", () => {
     expect(portableDatabaseStreamFragmentName(7)).toBe(
       "database.stream/000000000007.risudat",
     );
+  });
+
+  it("parses only canonical positive fragment names", () => {
+    expect(
+      parsePortableDatabaseStreamFragmentName(
+        "database.stream/000000000007.risudat",
+      ),
+    ).toBe(7);
+    expect(
+      parsePortableDatabaseStreamFragmentName(
+        "database.stream/000000000000.risudat",
+      ),
+    ).toBeNull();
+    expect(
+      parsePortableDatabaseStreamFragmentName("database.stream/7.risudat"),
+    ).toBeNull();
   });
 
   it("rejects invalid fragment indexes", () => {
