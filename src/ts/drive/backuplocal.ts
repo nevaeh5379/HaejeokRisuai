@@ -76,6 +76,7 @@ import {
   getInlayBackupKey,
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
+import { BackupContainerParser } from "@risuai/backup-core/containerStream";
 import { createLocalBackupExportMetadata } from "@risuai/backup-core/exportPlan";
 import {
   attachPortableDatabaseBranchGraphs,
@@ -2052,16 +2053,43 @@ async function restoreLocalBackupSourceUnlocked(
     try {
       const reader = file.stream().getReader();
       let lastUiUpdate = 0;
-      type BackupParserPhase = "nameLength" | "name" | "dataLength" | "data";
-      let parserPhase: BackupParserPhase = "nameLength";
-      const lengthBuffer = new Uint8Array(4);
-      let lengthOffset = 0;
-      let entryNameBuffer = new Uint8Array();
-      let entryNameOffset = 0;
       let entryName = "";
-      let entryDataLength = 0;
-      let entryDataReceived = 0;
-      let entryDataBuffer: Uint8Array | null = new Uint8Array();
+      let entryDataBuffer: Uint8Array | null = null;
+      const parser = new BackupContainerParser(
+        {
+          onEntryStart(entry) {
+            entryName = entry.name;
+            const classification = classifyBackupEntry(entry.name);
+            if (classification.kind === "invalid") {
+              throw new Error(`Invalid backup entry path: ${entry.name}`);
+            }
+            if (classification.kind === "extension") {
+              entryDataBuffer = null;
+              ignoredExtensionEntries++;
+              console.info(
+                `Skipping unsupported backup extension entry: ${entry.name}`,
+              );
+              return;
+            }
+            entryDataBuffer = new Uint8Array(entry.size);
+          },
+          onEntryChunk(_entry, chunk, offset) {
+            entryDataBuffer?.set(chunk, offset);
+          },
+          async onEntryEnd(entry) {
+            const data = entryDataBuffer;
+            entryDataBuffer = null;
+            entryName = "";
+            if (data !== null) {
+              await restoreBackupEntry(entry.name, data);
+            }
+          },
+        },
+        {
+          maxNameBytes: 1024 * 1024,
+          maxEntryBytes: file.size,
+        },
+      );
 
       while (true) {
         const { done, value } = await reader.read();
@@ -2094,111 +2122,10 @@ async function restoreLocalBackupSourceUnlocked(
           });
         }
 
-        let chunkOffset = 0;
-        while (chunkOffset < value.length) {
-          if (parserPhase === "nameLength" || parserPhase === "dataLength") {
-            const copyLength = Math.min(
-              lengthBuffer.length - lengthOffset,
-              value.length - chunkOffset,
-            );
-            lengthBuffer.set(
-              value.subarray(chunkOffset, chunkOffset + copyLength),
-              lengthOffset,
-            );
-            lengthOffset += copyLength;
-            chunkOffset += copyLength;
-            if (lengthOffset < lengthBuffer.length) {
-              continue;
-            }
-
-            const length = new DataView(lengthBuffer.buffer).getUint32(0, true);
-            lengthOffset = 0;
-
-            if (parserPhase === "nameLength") {
-              if (length === 0 || length > 1024 * 1024) {
-                throw new Error("Invalid backup entry name length");
-              }
-              entryNameBuffer = new Uint8Array(length);
-              entryNameOffset = 0;
-              parserPhase = "name";
-            } else {
-              if (length > file.size) {
-                throw new Error("Invalid backup entry data length");
-              }
-              entryDataLength = length;
-              entryDataReceived = 0;
-              const classification = classifyBackupEntry(entryName);
-              if (classification.kind === "invalid") {
-                throw new Error(`Invalid backup entry path: ${entryName}`);
-              }
-              if (classification.kind === "extension") {
-                entryDataBuffer = null;
-                ignoredExtensionEntries++;
-                console.info(
-                  `Skipping unsupported backup extension entry: ${entryName}`,
-                );
-              } else {
-                entryDataBuffer = new Uint8Array(length);
-              }
-              parserPhase = "data";
-
-              if (entryDataLength === 0) {
-                if (entryDataBuffer !== null) {
-                  await restoreBackupEntry(entryName, new Uint8Array());
-                }
-                entryName = "";
-                parserPhase = "nameLength";
-              }
-            }
-            continue;
-          }
-
-          if (parserPhase === "name") {
-            const copyLength = Math.min(
-              entryNameBuffer.length - entryNameOffset,
-              value.length - chunkOffset,
-            );
-            entryNameBuffer.set(
-              value.subarray(chunkOffset, chunkOffset + copyLength),
-              entryNameOffset,
-            );
-            entryNameOffset += copyLength;
-            chunkOffset += copyLength;
-
-            if (entryNameOffset === entryNameBuffer.length) {
-              entryName = textDecoder.decode(entryNameBuffer);
-              parserPhase = "dataLength";
-            }
-            continue;
-          }
-
-          const copyLength = Math.min(
-            entryDataLength - entryDataReceived,
-            value.length - chunkOffset,
-          );
-          if (entryDataBuffer !== null) {
-            entryDataBuffer.set(
-              value.subarray(chunkOffset, chunkOffset + copyLength),
-              entryDataReceived,
-            );
-          }
-          entryDataReceived += copyLength;
-          chunkOffset += copyLength;
-
-          if (entryDataReceived === entryDataLength) {
-            if (entryDataBuffer !== null) {
-              await restoreBackupEntry(entryName, entryDataBuffer);
-            }
-            entryName = "";
-            entryDataBuffer = new Uint8Array();
-            parserPhase = "nameLength";
-          }
-        }
+        await parser.write(value);
       }
 
-      if (parserPhase !== "nameLength" || lengthOffset !== 0) {
-        throw new Error("Backup file ended with an incomplete entry");
-      }
+      parser.finish();
     } catch (streamErr) {
       if (streamingRestoreSession) {
         await streamingRestoreSession.abort().catch(() => {});
