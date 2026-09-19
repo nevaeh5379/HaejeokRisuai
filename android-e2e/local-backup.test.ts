@@ -22,6 +22,8 @@ const chromedriverDir =
   join(artifactsDir, "chromedrivers");
 const remoteUrl = process.env.ANDROID_E2E_REMOTE_URL?.trim() ?? "";
 const remotePassword = process.env.ANDROID_E2E_REMOTE_PASSWORD ?? "";
+const remotePasswordDigest =
+  process.env.ANDROID_E2E_REMOTE_PASSWORD_DIGEST ?? "";
 const remoteProfile = Boolean(remoteUrl);
 let driver: WebdriverIO.Browser | undefined;
 
@@ -164,7 +166,10 @@ function readAndroidDatabaseBytes(suffix = ""): Buffer {
 
 async function createRemoteVerifier() {
   assert.ok(remoteUrl, "ANDROID_E2E_REMOTE_URL is required");
-  assert.ok(remotePassword, "ANDROID_E2E_REMOTE_PASSWORD is required");
+  assert.ok(
+    remotePassword || remotePasswordDigest,
+    "ANDROID_E2E_REMOTE_PASSWORD or ANDROID_E2E_REMOTE_PASSWORD_DIGEST is required",
+  );
   const verifierUrl = new URL(remoteUrl);
   if (verifierUrl.hostname === "10.0.2.2") {
     verifierUrl.hostname = "127.0.0.1";
@@ -188,7 +193,12 @@ async function createRemoteVerifier() {
     createAuth: () => identity.createAuth(),
     requestPassword: async () => remotePassword,
   });
-  await auth.connectWithPassword(remotePassword);
+  if (remotePassword) {
+    await auth.connectWithPassword(remotePassword);
+  } else {
+    await api.getCapabilities();
+    await auth.authorizeKey(remotePasswordDigest);
+  }
   return { api, auth };
 }
 
@@ -524,38 +534,7 @@ async function selectNativeDocument(
       .$(fileSelector)
       .then((element) => element.isDisplayed())
       .catch(() => false);
-  const waitForFile = async (timeout: number) => {
-    try {
-      await browser.waitUntil(hasFile, {
-        timeout,
-        interval: 250,
-        timeoutMsg: `Android document picker did not show ${fileName}`,
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   if (!(await hasFile())) {
-    const search = await browser.$(
-      "//*[@content-desc='Search' or @content-desc='검색']",
-    );
-    if (await search.isDisplayed().catch(() => false)) {
-      await search.click();
-      const input = await browser.$(
-        "//*[@resource-id='com.google.android.documentsui:id/search_src_text' or @class='android.widget.EditText']",
-      );
-      if (await input.isDisplayed().catch(() => false)) {
-        await input.setValue(fileName);
-        if (await waitForFile(5_000)) {
-          await (await browser.$(fileSelector)).click();
-          return;
-        }
-      }
-      await browser.back().catch(() => undefined);
-    }
-
     const roots = await browser.$(
       "//*[@content-desc='Show roots' or @content-desc='루트 표시']",
     );
