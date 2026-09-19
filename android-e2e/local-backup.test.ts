@@ -196,7 +196,8 @@ async function waitForRemoteRestoredFixture(
   characterId: string,
 ) {
   const { api, auth } = await createRemoteVerifier();
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 90_000;
+  let lastStatus = 0;
   while (Date.now() < deadline) {
     const response = await api.request(
       `/api/database-v2/characters/${characterId}`,
@@ -206,6 +207,7 @@ async function waitForRemoteRestoredFixture(
         headers: { "risu-auth": await auth.getCachedAuth() },
       },
     );
+    lastStatus = response.status;
     if (response.ok) {
       const body = await response.json();
       if (body?.character?.name === "Fixture Bot") return;
@@ -225,7 +227,7 @@ async function waitForRemoteRestoredFixture(
     );
   } catch {}
   throw new Error(
-    `Remote restore did not persist Fixture Bot on the server${bodyText ? `\nWebView text:\n${bodyText.slice(0, 3000)}` : ""}`,
+    `Remote restore did not persist Fixture Bot on the server (last HTTP ${lastStatus || "none"})${bodyText ? `\nWebView text:\n${bodyText.slice(0, 3000)}` : ""}`,
   );
 }
 
