@@ -25,7 +25,8 @@ afterEach(async () => {
   }
 });
 
-async function startDriver() {
+async function startDriver(options: { preserveData?: boolean } = {}) {
+  const preserveData = options.preserveData ?? false;
   assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
   await mkdir(chromedriverDir, { recursive: true });
   driver = await remote({
@@ -41,12 +42,16 @@ async function startDriver() {
       ...(process.env.ANDROID_E2E_UDID
         ? { "appium:udid": process.env.ANDROID_E2E_UDID }
         : {}),
-      "appium:app": apkPath,
+      ...(preserveData
+        ? {}
+        : {
+            "appium:app": apkPath,
+            "appium:enforceAppInstall": true,
+          }),
       "appium:appPackage": "co.aiclient.risu",
       "appium:appActivity": ".MainActivity",
-      "appium:enforceAppInstall": true,
       "appium:autoGrantPermissions": true,
-      "appium:noReset": false,
+      "appium:noReset": preserveData,
       "appium:newCommandTimeout": 120,
       "appium:ensureWebviewsHavePages": true,
       "appium:chromedriverExecutableDir": chromedriverDir,
@@ -96,27 +101,10 @@ async function waitForFixture(browser: WebdriverIO.Browser) {
 
 async function waitForRestoredFixture(browser: WebdriverIO.Browser) {
   await browser.waitUntil(
-    async () => {
-      try {
-        return await browser.execute(() =>
-          (document.body?.innerText ?? "").includes("Fixture Bot"),
-        );
-      } catch {
-        await browser.switchContext("NATIVE_APP").catch(() => undefined);
-        const contexts = (await browser
-          .getContexts()
-          .catch(() => [])) as string[];
-        const webview =
-          contexts.find((item) => item === "WEBVIEW_co.aiclient.risu") ??
-          contexts.find(
-            (item) => item.startsWith("WEBVIEW_") && item !== "WEBVIEW_chrome",
-          );
-        if (webview) {
-          await browser.switchContext(webview).catch(() => undefined);
-        }
-        return false;
-      }
-    },
+    async () =>
+      browser.execute(() =>
+        (document.body?.innerText ?? "").includes("Fixture Bot"),
+      ),
     {
       timeout: 120_000,
       interval: 750,
@@ -124,6 +112,19 @@ async function waitForRestoredFixture(browser: WebdriverIO.Browser) {
     },
   );
 }
+
+async function reconnectAfterRestore(
+  browser: WebdriverIO.Browser,
+): Promise<WebdriverIO.Browser> {
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  await browser.deleteSession().catch(() => undefined);
+  driver = undefined;
+  const reconnected = await startDriver({ preserveData: true });
+  await switchToAppWebView(reconnected);
+  await waitForFixture(reconnected);
+  return reconnected;
+}
+
 async function openBackupSettingsPage(browser: WebdriverIO.Browser) {
   const clickVisibleSettings = async () =>
     await browser.execute(() => {
@@ -451,13 +452,14 @@ test(
   "Android backup restore selects a real document and restores the fixture",
   { timeout: 240_000, concurrency: false },
   async () => {
-    const browser = await startDriver();
+    let browser = await startDriver();
     const fileName = await stageImportFixture();
     try {
       await switchToAppWebView(browser);
       await waitForFixture(browser);
       await openLocalBackupRestore(browser);
       await selectNativeDocument(browser, fileName);
+      browser = await reconnectAfterRestore(browser);
       await waitForRestoredFixture(browser);
 
       const bodyText = await browser.execute(
