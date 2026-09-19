@@ -75,6 +75,8 @@ import {
   ACCOUNT_ENCRYPTION_ENTRY_NAME,
   classifyBackupEntry,
   getInlayBackupKey,
+  getInlayBackupName,
+  INLAY_BACKUP_PREFIX,
   LEGACY_DATABASE_ENTRY_NAME,
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
@@ -558,20 +560,13 @@ async function initializeLocalBackupWriter(
   return initialized;
 }
 
-const INLAY_BACKUP_PREFIX = "inlay_";
-const INLAY_BACKUP_SUFFIX = ".risuinlay";
-
-function getInlayBackupEntryName(id: string) {
-  return `${INLAY_BACKUP_PREFIX}${id}${INLAY_BACKUP_SUFFIX}`;
-}
-
 async function writeLocalBackupInlays(writer: LocalWriter) {
   const inlays = await listInlayAssets();
   const updateInterval = getLocalBackupPerformance().progressUpdateMs;
   let lastUiUpdate = 0;
   for (let index = 0; index < inlays.length; index++) {
     const [id, asset] = inlays[index];
-    const name = getInlayBackupEntryName(id);
+    const name = getInlayBackupName(id);
     if (getInlayBackupKey(name) !== id) {
       console.warn(`Skipping inlay with unsupported backup key: ${id}`);
       continue;
@@ -617,7 +612,7 @@ async function stageNodeInlaysForBackup(storage: NodeStorage) {
     batchBytes = 0;
   };
   for (const [id, asset] of inlays) {
-    const name = getInlayBackupEntryName(id);
+    const name = getInlayBackupName(id);
     if (getInlayBackupKey(name) !== id) continue;
     const encoded = await encodeInlayAssetBackup(asset);
     batch.set(name, encoded);

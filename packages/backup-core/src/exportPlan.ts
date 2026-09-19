@@ -1,5 +1,5 @@
 import type { LocalBackupMode } from "./api";
-import { INLAY_RE } from "./entryPolicy";
+import { getInlayBackupKey } from "./entryPolicy";
 
 export interface LocalBackupExportMetadata {
   baseName: string;
@@ -52,7 +52,8 @@ export function createLocalBackupExportPlan(
   const inlayKeys =
     input.mode === "native"
       ? (input.inlayKeys ?? []).filter(
-          (key): key is string => typeof key === "string" && INLAY_RE.test(key),
+          (key): key is string =>
+            typeof key === "string" && getInlayBackupKey(key) !== null,
         )
       : [];
 

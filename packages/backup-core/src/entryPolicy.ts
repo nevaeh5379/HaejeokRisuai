@@ -21,6 +21,8 @@ export interface BackupEntryClassification {
 
 export const LEGACY_DATABASE_ENTRY_NAME = "database.risudat";
 export const ACCOUNT_ENCRYPTION_ENTRY_NAME = "encryption.risudat";
+export const INLAY_BACKUP_PREFIX = "inlay_";
+export const INLAY_BACKUP_SUFFIX = ".risuinlay";
 
 const COLD_STORAGE_RE = COLD_STORAGE_BACKUP_RE;
 const INLAY_RE =
@@ -80,6 +82,10 @@ function normalizeBackupAssetPath(name: string): string {
   return `assets/${segments.join("/")}`;
 }
 
+function getInlayBackupName(id: string): string {
+  return `${INLAY_BACKUP_PREFIX}${id}${INLAY_BACKUP_SUFFIX}`;
+}
+
 function getInlayBackupKey(name: string): string | null {
   const normalized = normalizeBackupEntryName(name);
   if (!normalized) return null;
@@ -93,5 +99,6 @@ export {
   classifyBackupEntry,
   getColdStorageBackupKey,
   normalizeBackupAssetPath,
+  getInlayBackupName,
   getInlayBackupKey,
 };
