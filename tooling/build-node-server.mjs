@@ -97,6 +97,11 @@ await bundle({
 });
 
 await bundle({
+  entry: resolve(nodeServerDir, "http/realtimeEvents.cts"),
+  outfile: resolve(distDir, "http/realtimeEvents.cjs"),
+});
+
+await bundle({
   entry: resolve(nodeServerDir, "sync/databaseMutations.cts"),
   outfile: resolve(distDir, "databaseMutations.cjs"),
 });

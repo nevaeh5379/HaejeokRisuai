@@ -6,7 +6,7 @@ const { EventEmitter } = require("events");
 const {
   createRealtimeEventHub,
   describeSqlCommitChange,
-} = require("./realtimeEvents.cjs");
+} = require("../dist/http/realtimeEvents.cjs");
 
 test("describeSqlCommitChange extracts affected domains and entity ids", () => {
   const change = describeSqlCommitChange({

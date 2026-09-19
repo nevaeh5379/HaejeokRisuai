@@ -5,9 +5,7 @@
     "moduleResolution": "NodeNext",
     "rootDir": ".",
     "outDir": ".tsbuild",
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "strict": false,
     "useUnknownInCatchVariables": false,
     "skipLibCheck": true,
@@ -17,6 +15,7 @@
   },
   "include": [
     "server.cts",
+    "http/realtimeEvents.cts",
     "sync/databaseMutations.cts",
     "sync/storageSyncSqlApply.cts"
   ]
