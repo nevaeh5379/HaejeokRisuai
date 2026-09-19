@@ -71,6 +71,90 @@ describe("RemoteLocalBackupClient import API", () => {
     );
   });
 
+  it("uploads a ReadableStream through bounded offset chunks and finalizes it", async () => {
+    const requests: Array<{ path: string; init?: RequestInit }> = [];
+    let received = 0;
+    const apiClient = {
+      request: vi.fn(async (path: string, init?: RequestInit) => {
+        requests.push({ path, init });
+        if (path === "/api/local-backup/import/jobs") {
+          return response({ id: "import-stream" });
+        }
+        if (
+          path.startsWith("/api/local-backup/import/jobs/import-stream/chunks?")
+        ) {
+          const url = new URL(path, "http://localhost");
+          const offset = Number(url.searchParams.get("offset"));
+          const totalBytes = Number(url.searchParams.get("totalBytes"));
+          expect(offset).toBe(received);
+          expect(totalBytes).toBe(7);
+          const chunk = new Uint8Array(
+            await new Response(init?.body as BodyInit).arrayBuffer(),
+          );
+          received += chunk.byteLength;
+          return response({
+            receivedBytes: received,
+            totalBytes,
+            complete: received === totalBytes,
+          });
+        }
+        if (
+          path === "/api/local-backup/import/jobs/import-stream/finalize-upload"
+        ) {
+          expect(received).toBe(7);
+          return response({
+            status: "complete",
+            error: null,
+            revision: 14,
+            recordCount: 2,
+          });
+        }
+        if (
+          path === "/api/local-backup/import/jobs/import-stream" &&
+          init?.method === "DELETE"
+        ) {
+          throw new Error("successful upload must not be cancelled");
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+      resolve: (path: string) => `http://localhost${path}`,
+    } as any;
+    const client = new RemoteLocalBackupClient(
+      apiClient,
+      async () => "secret",
+      "client-1",
+    );
+    const job = await client.createImportJob();
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.enqueue(new Uint8Array([4, 5, 6, 7]));
+        controller.close();
+      },
+    });
+    const progress: number[] = [];
+
+    await expect(
+      client.uploadImportStream(job.id, source, 7, {
+        chunkSize: 4,
+        onProgress: (state) => progress.push(state.receivedBytes),
+      }),
+    ).resolves.toEqual({
+      status: "complete",
+      error: null,
+      revision: 14,
+      recordCount: 2,
+    });
+
+    expect(progress).toEqual([4, 7]);
+    const chunks = requests.filter(({ path }) => path.includes("/chunks?"));
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map(({ init }) => init?.method)).toEqual(["PUT", "PUT"]);
+    expect(
+      chunks.map(({ init }) => new Headers(init?.headers).get("content-type")),
+    ).toEqual(["application/octet-stream", "application/octet-stream"]);
+  });
+
   it("preserves typed API error codes", async () => {
     const apiClient = {
       request: vi.fn(async () =>
