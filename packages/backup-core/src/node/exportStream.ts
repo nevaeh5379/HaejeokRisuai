@@ -4,10 +4,20 @@ import {
 } from "./databaseStreamStore";
 import { createLocalBackupEntryHeader } from "./legacyFormat";
 import type { LegacyBackupSqlRecord } from "../legacyRecords";
+import {
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PORTABLE_DATABASE_STREAM_VERSION,
+  portableDatabaseStreamFragmentName,
+} from "../streamFormat";
 
-export const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
-export const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
+export {
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PORTABLE_DATABASE_STREAM_VERSION,
+} from "../streamFormat";
 export const PORTABLE_DATABASE_STREAM_DEFAULT_FRAGMENT_RECORDS = 128;
+export const databaseFragmentName = portableDatabaseStreamFragmentName;
 
 export type BackupEntrySource = Uint8Array | AsyncIterable<Uint8Array>;
 
@@ -15,7 +25,7 @@ export type BackupChunkWriter = (chunk: Uint8Array) => Promise<void>;
 
 export interface PortableDatabaseStreamManifest {
   format: "risu-portable-database-stream";
-  version: 1;
+  version: typeof PORTABLE_DATABASE_STREAM_VERSION;
   revision: number;
   totalFragments: number;
   totalRecords: number;
@@ -75,13 +85,6 @@ function createCounts(): Record<string, number> {
   );
 }
 
-function databaseFragmentName(index: number): string {
-  if (!Number.isSafeInteger(index) || index <= 0) {
-    throw new TypeError("Portable database fragment index must be positive");
-  }
-  return `${PORTABLE_DATABASE_STREAM_PREFIX}${String(index).padStart(12, "0")}.risudat`;
-}
-
 export class PortableDatabaseExportWriter {
   private readonly counts = createCounts();
   private readonly fragmentRecordLimit: number;
@@ -109,14 +112,14 @@ export class PortableDatabaseExportWriter {
     if (this.fragmentRecords.length === 0) return;
     const fragment = {
       format: "risu-portable-database-fragment",
-      version: 1,
+      version: PORTABLE_DATABASE_STREAM_VERSION,
       index: ++this.fragmentIndex,
       records: this.fragmentRecords,
     };
     this.fragmentRecords = [];
     const encoded = await this.options.encodeDatabase(fragment);
     await this.options.writeEntry(
-      databaseFragmentName(fragment.index),
+      portableDatabaseStreamFragmentName(fragment.index),
       encoded,
       encoded.byteLength,
     );
@@ -148,7 +151,7 @@ export class PortableDatabaseExportWriter {
     await this.flush();
     return {
       format: "risu-portable-database-stream",
-      version: 1,
+      version: PORTABLE_DATABASE_STREAM_VERSION,
       revision: this.options.revision,
       totalFragments: this.fragmentIndex,
       totalRecords: this.totalRecords,
@@ -157,5 +160,3 @@ export class PortableDatabaseExportWriter {
     };
   }
 }
-
-export { databaseFragmentName };

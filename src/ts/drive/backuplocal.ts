@@ -94,7 +94,7 @@ import {
 import {
   exportPortableDatabaseStream,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-  PORTABLE_DATABASE_STREAM_PREFIX,
+  portableDatabaseStreamFragmentName,
   PortableDatabaseStreamCollector,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
@@ -1284,10 +1284,6 @@ async function writeStreamingColdStorage(
   );
 }
 
-function streamingRecordEntryName(index: number) {
-  return `${PORTABLE_DATABASE_STREAM_PREFIX}${String(index).padStart(12, "0")}.risudat`;
-}
-
 async function encodeStreamingDatabaseValue(
   value: PortableDatabaseStreamFragment | PortableDatabaseStreamManifest,
   entryName: string,
@@ -1457,7 +1453,7 @@ async function saveStreamingLocalBackupWithOptions(
       storage,
       {
         async writeFragment(fragment) {
-          const entryName = streamingRecordEntryName(fragment.index);
+          const entryName = portableDatabaseStreamFragmentName(fragment.index);
           const encoded = await encodeStreamingDatabaseValue(
             fragment,
             entryName,

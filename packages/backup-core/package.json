@@ -75,6 +75,12 @@
       "require": "./dist/containerStream.js",
       "default": "./src/containerStream.ts"
     },
+    "./streamFormat": {
+      "types": "./src/streamFormat.ts",
+      "import": "./src/streamFormat.ts",
+      "require": "./dist/streamFormat.js",
+      "default": "./src/streamFormat.ts"
+    },
     "./node/importJobStore": {
       "types": "./src/node/importJobStore.ts",
       "import": "./src/node/importJobStore.ts",

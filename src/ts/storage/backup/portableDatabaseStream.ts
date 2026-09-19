@@ -16,13 +16,22 @@ import {
 } from "../runtime/storageSyncSource";
 import { NATIVE_BRANCH_GRAPHS_KEY } from "@risuai/backup-core/portableBranches";
 import {
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PORTABLE_DATABASE_STREAM_VERSION,
+  portableDatabaseStreamFragmentName,
+} from "@risuai/backup-core/streamFormat";
+import {
   DEFAULT_LOCAL_BACKUP_PERFORMANCE,
   LOCAL_BACKUP_PERFORMANCE_LIMITS,
 } from "./localBackupPerformance";
 
-export const PORTABLE_DATABASE_STREAM_VERSION = 1;
-export const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
-export const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
+export {
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PORTABLE_DATABASE_STREAM_VERSION,
+  portableDatabaseStreamFragmentName,
+};
 export const PORTABLE_DATABASE_STREAM_PAGE_SIZE =
   DEFAULT_LOCAL_BACKUP_PERFORMANCE.databasePageRecords;
 export const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS =
@@ -113,7 +122,10 @@ export async function exportPortableDatabaseStream(
   let fragmentRecords: PersistedRecord[] = [];
   const pageSize = Math.max(
     1,
-    Math.min(500, Math.round(options.pageSize ?? PORTABLE_DATABASE_STREAM_PAGE_SIZE)),
+    Math.min(
+      500,
+      Math.round(options.pageSize ?? PORTABLE_DATABASE_STREAM_PAGE_SIZE),
+    ),
   );
   const fragmentRecordLimit = Math.max(
     1,
