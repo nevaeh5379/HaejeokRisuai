@@ -117,6 +117,12 @@
       "require": "./dist/legacyHeaders.js",
       "default": "./src/legacyHeaders.ts"
     },
+    "./streamingEncryption": {
+      "types": "./src/streamingEncryption.ts",
+      "import": "./src/streamingEncryption.ts",
+      "require": "./dist/streamingEncryption.js",
+      "default": "./src/streamingEncryption.ts"
+    },
     "./coldStorage": {
       "types": "./src/coldStorage.ts",
       "import": "./src/coldStorage.ts",
