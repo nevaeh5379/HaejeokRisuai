@@ -13,8 +13,8 @@ import {
   type PortableDatabaseStreamManifest,
 } from "./streamFormat";
 
-describe("portable database stream format", () => {
-  it("uses the canonical stream entry names", () => {
+describe("portable database stream format", (): void => {
+  it("uses the canonical stream entry names", (): void => {
     expect(PORTABLE_DATABASE_STREAM_VERSION).toBe(1);
     expect(PORTABLE_DATABASE_STREAM_PREFIX).toBe("database.stream/");
     expect(PORTABLE_DATABASE_STREAM_MANIFEST).toBe(
@@ -25,7 +25,7 @@ describe("portable database stream format", () => {
     );
   });
 
-  it("parses only canonical positive fragment names", () => {
+  it("parses only canonical positive fragment names", (): void => {
     expect(
       parsePortableDatabaseStreamFragmentName(
         "database.stream/000000000007.risudat",
@@ -41,14 +41,14 @@ describe("portable database stream format", () => {
     ).toBeNull();
   });
 
-  it("rejects invalid fragment indexes", () => {
+  it("rejects invalid fragment indexes", (): void => {
     expect(() => portableDatabaseStreamFragmentName(0)).toThrow("positive");
     expect(() => portableDatabaseStreamFragmentName(1.5)).toThrow("positive");
   });
 });
 
-describe("parsePortableDatabaseStreamManifest", () => {
-  const validManifest = {
+describe("parsePortableDatabaseStreamManifest", (): void => {
+  const validManifest: PortableDatabaseStreamManifest = {
     format: "risu-portable-database-stream",
     version: 1,
     revision: 7,
@@ -58,13 +58,13 @@ describe("parsePortableDatabaseStreamManifest", () => {
     complete: true,
   };
 
-  it("returns the manifest when the shape is valid", () => {
+  it("returns the manifest when the shape is valid", (): void => {
     expect(parsePortableDatabaseStreamManifest(validManifest)).toEqual(
       validManifest,
     );
   });
 
-  it("returns null for non-object and malformed payloads", () => {
+  it("returns null for non-object and malformed payloads", (): void => {
     expect(parsePortableDatabaseStreamManifest(null)).toBeNull();
     expect(parsePortableDatabaseStreamManifest(undefined)).toBeNull();
     expect(parsePortableDatabaseStreamManifest("manifest")).toBeNull();
@@ -104,7 +104,7 @@ describe("parsePortableDatabaseStreamManifest", () => {
     ).toBeNull();
   });
 
-  it("tolerates empty and unknown-key counts objects", () => {
+  it("tolerates empty and unknown-key counts objects", (): void => {
     expect(
       parsePortableDatabaseStreamManifest({
         ...validManifest,
@@ -120,7 +120,7 @@ describe("parsePortableDatabaseStreamManifest", () => {
   });
 });
 
-describe("parsePortableDatabaseStreamFragment", () => {
+describe("parsePortableDatabaseStreamFragment", (): void => {
   const validFragment: PortableDatabaseStreamFragment = {
     format: "risu-portable-database-fragment",
     version: 1,
@@ -131,13 +131,13 @@ describe("parsePortableDatabaseStreamFragment", () => {
     ],
   };
 
-  it("returns the fragment when the shape is valid", () => {
+  it("returns the fragment when the shape is valid", (): void => {
     expect(parsePortableDatabaseStreamFragment(validFragment)).toEqual(
       validFragment,
     );
   });
 
-  it("enforces the expected index when provided", () => {
+  it("enforces the expected index when provided", (): void => {
     expect(
       parsePortableDatabaseStreamFragment(validFragment, { expectedIndex: 3 }),
     ).toEqual(validFragment);
@@ -146,7 +146,7 @@ describe("parsePortableDatabaseStreamFragment", () => {
     ).toBeNull();
   });
 
-  it("returns null for malformed fragments", () => {
+  it("returns null for malformed fragments", (): void => {
     expect(parsePortableDatabaseStreamFragment(null)).toBeNull();
     expect(parsePortableDatabaseStreamFragment("fragment")).toBeNull();
     const wrongFormat: Record<string, unknown> = {
@@ -181,7 +181,7 @@ describe("parsePortableDatabaseStreamFragment", () => {
     expect(parsePortableDatabaseStreamFragment(missingRecords)).toBeNull();
   });
 
-  it("rejects fragments exceeding the shared max record bound", () => {
+  it("rejects fragments exceeding the shared max record bound", (): void => {
     const oversizedRecords: LegacyBackupSqlRecord[] = Array.from(
       { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS + 1 },
       (): LegacyBackupSqlRecord => ({ type: "setting", key: "k", value: 1 }),
@@ -202,7 +202,7 @@ describe("parsePortableDatabaseStreamFragment", () => {
     expect(parsePortableDatabaseStreamFragment(atBound)).toEqual(atBound);
   });
 
-  it("preserves the record references without copying payloads", () => {
+  it("preserves the record references without copying payloads", (): void => {
     const records: LegacyBackupSqlRecord[] = [
       { type: "setting", key: "k", value: 1 },
     ];
