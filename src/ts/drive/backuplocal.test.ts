@@ -4,6 +4,7 @@ import { LocalWriter } from "../globalApi.svelte";
 import type { Database } from "../storage/database/schema";
 import type { DatabaseInput } from "../storage/database/databaseDefaults";
 import {
+  createNativeAssetCommit,
   createNativeImportSource,
   createNodeBackupAssetRequest,
   ensureTauriBackupAssetsDirectory,
@@ -49,6 +50,46 @@ describe("LocalWriter backup entry names", () => {
       "Invalid backup entry path",
     );
     expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe("createNativeAssetCommit", () => {
+  it("commits the native session exactly once across repeated invocations", async (): Promise<void> => {
+    const commitIds: string[] = [];
+    const plugin = {
+      commitImport: async (options: { id: string }): Promise<void> => {
+        commitIds.push(options.id);
+      },
+    };
+    const commit: () => Promise<void> = createNativeAssetCommit(
+      plugin,
+      "session-1",
+    );
+
+    await commit();
+    await commit();
+
+    expect(commitIds).toEqual(["session-1"]);
+  });
+
+  it("keeps the once-only guard after a failed commit attempt", async (): Promise<void> => {
+    const commitIds: string[] = [];
+    let attempts: number = 0;
+    const plugin = {
+      commitImport: async (options: { id: string }): Promise<void> => {
+        attempts += 1;
+        throw new Error("commit failed");
+      },
+    };
+    const commit: () => Promise<void> = createNativeAssetCommit(
+      plugin,
+      "session-1",
+    );
+
+    await expect(commit()).rejects.toThrow("commit failed");
+    await commit();
+    expect(attempts).toBe(1);
+    expect(commitIds).toEqual([]);
   });
 });
 

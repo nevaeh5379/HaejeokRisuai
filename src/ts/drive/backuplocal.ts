@@ -321,6 +321,7 @@ interface NativeBackupPlugin {
     offset: number;
     length: number;
   }): Promise<{ data: string; bytesRead: number; eof: boolean }>;
+  commitImport(options: { id: string }): Promise<void>;
   closeImport(options: { id: string }): Promise<void>;
   addListener(
     eventName: "importProgress",
@@ -343,6 +344,23 @@ interface LocalBackupSource {
 }
 
 const NATIVE_IMPORT_CHUNK_SIZE = 512 * 1024;
+
+/**
+ * Builds a once-only native asset commit callback for one import session.
+ * Repeated invocations are no-ops, so the restore flow can hook it before
+ * the database apply without double-committing staged assets.
+ */
+export function createNativeAssetCommit(
+  plugin: Pick<NativeBackupPlugin, "commitImport">,
+  id: string,
+): () => Promise<void> {
+  let committed: boolean = false;
+  return async (): Promise<void> => {
+    if (committed) return;
+    committed = true;
+    await plugin.commitImport({ id });
+  };
+}
 
 /**
  * Exposes the native import staging file as a pull-based stream. Keeping the
@@ -1494,7 +1512,8 @@ export async function restoreInlayBackupEntry(
 async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
-) {
+  options: { beforeDatabaseApply?: () => Promise<void> } = {},
+): Promise<void> {
   const textDecoder = new TextDecoder();
   const encryptionMeta: {
     type: "none" | "account";
@@ -2017,6 +2036,7 @@ async function restoreLocalBackupSourceUnlocked(
       }
       reportLocalBackupRestoreProgress("database", { percent: 97 });
       reportLocalBackupRestoreProgress("branches", { percent: 98 });
+      await options.beforeDatabaseApply?.();
       await streamingRestoreSession.finish(streamingManifest);
       streamingRestoreFinished = true;
       reportLocalBackupRestoreProgress("branches", { percent: 99.5 });
@@ -2106,6 +2126,7 @@ async function restoreLocalBackupSourceUnlocked(
 
       reportLocalBackupRestoreProgress("database", { percent: 91 });
       storage = await getSqlStorage();
+      await options.beforeDatabaseApply?.();
       await storage.replaceDatabase(dbData, (_step, syncProgress) => {
         const ratio =
           syncProgress === undefined
@@ -2350,16 +2371,32 @@ async function loadCapacitorLocalBackupUnlocked() {
   if (!selected.id)
     throw new Error("Native backup import session was not created");
 
-  const id = selected.id;
+  const id: string = selected.id;
+  const commitNativeAssets: () => Promise<void> = createNativeAssetCommit(
+    nativeBackup,
+    id,
+  );
   try {
-    const size = Math.max(0, selected.size ?? 0);
-    const source = createNativeImportSource(nativeBackup, id, size);
+    const size: number = Math.max(0, selected.size ?? 0);
+    const source: LocalBackupSource = createNativeImportSource(
+      nativeBackup,
+      id,
+      size,
+    );
     if (remote) {
       reportLocalBackupRestoreProgress("reading", { percent: 20 });
       await restoreNodeLocalBackupSourceUnlocked(source, 20);
     } else {
       reportLocalBackupRestoreProgress("reading", { percent: 50 });
-      await restoreLocalBackupSourceUnlocked(source, { start: 50, end: 90 });
+      await restoreLocalBackupSourceUnlocked(
+        source,
+        { start: 50, end: 90 },
+        {
+          beforeDatabaseApply: async (): Promise<void> => {
+            await commitNativeAssets();
+          },
+        },
+      );
     }
   } finally {
     await nativeBackup.closeImport({ id }).catch(() => {});
