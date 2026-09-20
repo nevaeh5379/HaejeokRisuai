@@ -183,6 +183,12 @@
       "require": "./dist/inlayRestore.js",
       "default": "./src/inlayRestore.ts"
     },
+    "./importSource": {
+      "types": "./src/importSource.ts",
+      "import": "./src/importSource.ts",
+      "require": "./dist/importSource.js",
+      "default": "./src/importSource.ts"
+    },
     "./node/legacyStream": {
       "types": "./src/node/legacyStream.ts",
       "import": "./src/node/legacyStream.ts",

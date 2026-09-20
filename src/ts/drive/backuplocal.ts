@@ -85,6 +85,11 @@ import {
   type BackupContainerEntryInfo,
 } from "@risuai/backup-core/containerStream";
 import {
+  createEncodedBackupSource,
+  iterateLocalBackupSource,
+  type LocalBackupSource,
+} from "@risuai/backup-core/importSource";
+import {
   LOCAL_BACKUP_PROGRESS_STAGES,
   type LocalBackupImportProgress,
   type LocalBackupMode as BackupCoreLocalBackupMode,
@@ -345,31 +350,8 @@ interface NativeImportProgress {
   totalAssets?: number;
 }
 
-interface LocalBackupSource {
-  readonly size: number;
-  stream(): ReadableStream<Uint8Array>;
-  arrayBuffer(): Promise<ArrayBuffer>;
-}
-
 interface LocalBackupRestoreOptions {
   beforeDatabaseApply?: () => Promise<void>;
-}
-
-async function* streamLocalBackupSource(
-  source: LocalBackupSource,
-): AsyncGenerator<Uint8Array> {
-  const reader: ReadableStreamDefaultReader<Uint8Array> = source
-    .stream()
-    .getReader();
-  try {
-    while (true) {
-      const result: ReadableStreamReadResult<Uint8Array> = await reader.read();
-      if (result.done) return;
-      yield result.value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 const NATIVE_IMPORT_CHUNK_SIZE = 512 * 1024;
@@ -403,71 +385,13 @@ export function createNativeImportSource(
   id: string,
   size: number,
 ): LocalBackupSource {
-  const normalizedSize = Math.max(0, Math.floor(size));
-
-  const readChunk = async (offset: number) => {
-    const requested = Math.min(
-      NATIVE_IMPORT_CHUNK_SIZE,
-      normalizedSize - offset,
-    );
-    const chunk = await plugin.readImportChunk({
-      id,
-      offset,
-      length: requested,
-    });
-    if (chunk.bytesRead < 0 || chunk.bytesRead > requested) {
-      throw new Error("Native backup importer returned an invalid chunk size");
-    }
-    if (chunk.bytesRead === 0 && !chunk.eof) {
-      throw new Error("Native backup importer stopped before reaching the end");
-    }
-    const decoded = chunk.data
-      ? new Uint8Array(Buffer.from(chunk.data, "base64"))
-      : new Uint8Array();
-    if (decoded.byteLength !== chunk.bytesRead) {
-      throw new Error("Native backup importer returned an incomplete chunk");
-    }
-    return { ...chunk, decoded };
-  };
-
-  return {
-    size: normalizedSize,
-    stream() {
-      let offset = 0;
-      return new ReadableStream<Uint8Array>({
-        async pull(controller) {
-          if (offset >= normalizedSize) {
-            controller.close();
-            return;
-          }
-          try {
-            const chunk = await readChunk(offset);
-            offset += chunk.bytesRead;
-            if (chunk.decoded.byteLength > 0) controller.enqueue(chunk.decoded);
-            if (chunk.eof || offset >= normalizedSize) controller.close();
-          } catch (error) {
-            controller.error(error);
-          }
-        },
-      });
+  return createEncodedBackupSource(plugin, id, size, {
+    chunkSize: NATIVE_IMPORT_CHUNK_SIZE,
+    decode(data: string): Uint8Array {
+      return new Uint8Array(Buffer.from(data, "base64"));
     },
-    async arrayBuffer() {
-      const output = new Uint8Array(normalizedSize);
-      let offset = 0;
-      while (offset < normalizedSize) {
-        const chunk = await readChunk(offset);
-        output.set(chunk.decoded, offset);
-        offset += chunk.bytesRead;
-        if (chunk.eof) break;
-      }
-      if (offset !== normalizedSize) {
-        throw new Error(
-          "Native backup importer ended before the declared size",
-        );
-      }
-      return output.buffer;
-    },
-  };
+    importerLabel: "Native backup importer",
+  });
 }
 
 const TAURI_IMPORT_CHUNK_SIZE = 4 * 1024 * 1024;
@@ -1749,7 +1673,7 @@ async function restoreLocalBackupSourceUnlocked(
       let lastUiUpdate: number = 0;
       let entryName: string = "";
       await parseBufferedBackupContainer(
-        streamLocalBackupSource(file),
+        iterateLocalBackupSource(file),
         {
           onEntryStart(
             entry: BackupContainerEntryInfo,
