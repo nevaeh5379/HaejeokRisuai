@@ -4,11 +4,14 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Mutex, OnceLock,
+    },
 };
 use tauri::{
     plugin::{Builder, TauriPlugin},
-    AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder,
 };
 
 mod background_effect;
@@ -53,6 +56,15 @@ pub struct LinuxWindowCapabilities {
 
 static WINDOW_CAPABILITIES: OnceLock<Mutex<HashMap<String, LinuxWindowCapabilities>>> =
     OnceLock::new();
+static NATIVE_APPEARANCE: AtomicU8 = AtomicU8::new(0);
+
+fn native_appearance_theme() -> Option<Theme> {
+    match NATIVE_APPEARANCE.load(Ordering::Relaxed) {
+        1 => Some(Theme::Light),
+        2 => Some(Theme::Dark),
+        _ => None,
+    }
+}
 
 fn capability_store() -> &'static Mutex<HashMap<String, LinuxWindowCapabilities>> {
     WINDOW_CAPABILITIES.get_or_init(|| Mutex::new(HashMap::new()))
@@ -150,15 +162,21 @@ pub fn set_risu_native_appearance<R: Runtime>(
     app: &AppHandle<R>,
     dark: bool,
 ) -> Result<(), String> {
+    NATIVE_APPEARANCE.store(if dark { 2 } else { 1 }, Ordering::Relaxed);
+
+    let mut native_window = None;
     for window in app.webview_windows().into_values() {
-        if !supports_native_window(window.label()) {
-            continue;
+        window
+            .set_theme(native_appearance_theme())
+            .map_err(|error| error.to_string())?;
+        if native_window.is_none() && supports_native_window(window.label()) {
+            native_window = Some(window);
         }
+    }
+
+    if let Some(window) = native_window {
         let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
-        if let Some(settings) = gtk_window.settings() {
-            settings.set_gtk_application_prefer_dark_theme(dark);
-        }
-        decoration::set_native_appearance_class(&gtk_window, dark);
+        decoration::apply_native_theme_variant(&gtk_window, dark)?;
     }
     Ok(())
 }
@@ -166,6 +184,28 @@ pub fn set_risu_native_appearance<R: Runtime>(
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("linux-wayland")
         .on_window_ready(|window| {
+            if let Some(theme) = native_appearance_theme() {
+                if let Err(error) = window.set_theme(Some(theme)) {
+                    eprintln!(
+                        "[Linux Wayland] Failed to apply the saved native appearance to {}: {error}",
+                        window.label()
+                    );
+                }
+                if supports_native_window(window.label()) {
+                    if let Ok(gtk_window) = window.gtk_window() {
+                        if let Err(error) = decoration::apply_native_theme_variant(
+                            &gtk_window,
+                            theme == Theme::Dark,
+                        ) {
+                            eprintln!(
+                                "[Linux Wayland] Failed to apply the GTK theme variant to {}: {error}",
+                                window.label()
+                            );
+                        }
+                    }
+                }
+            }
+
             if !supports_native_window(window.label()) {
                 return;
             }

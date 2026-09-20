@@ -355,7 +355,7 @@ html.tauri-linux-background-blur #app {
 html.tauri-linux-background-blur {
   --risu-linux-sidebar-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 84%,
+    var(--risu-theme-darkbg) 94%,
     transparent
   );
 }

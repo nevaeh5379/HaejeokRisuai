@@ -1,11 +1,17 @@
 use gtk::prelude::*;
+use std::cell::RefCell;
 use tauri::{Runtime, Window};
 
 use super::LinuxWindowDecoration;
 
 const INTEGRATED_CSD_CLASS: &str = "risu-integrated-csd";
-const NATIVE_DARK_CLASS: &str = "risu-native-dark";
-const NATIVE_LIGHT_CLASS: &str = "risu-native-light";
+const NATIVE_THEME_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 1;
+const INTEGRATED_CSD_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 2;
+
+thread_local! {
+    static NATIVE_THEME_PROVIDER: RefCell<Option<(gtk::gdk::Screen, gtk::CssProvider)>> =
+        const { RefCell::new(None) };
+}
 
 pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool {
     decoration == LinuxWindowDecoration::Ssd
@@ -19,19 +25,73 @@ fn configure_integrated_header(header: &gtk::HeaderBar) {
     header.set_has_subtitle(false);
 }
 
-fn native_appearance_class(dark: bool) -> &'static str {
-    if dark {
-        NATIVE_DARK_CLASS
-    } else {
-        NATIVE_LIGHT_CLASS
+fn extract_named_color_declarations(css: &str) -> String {
+    let mut declarations = String::new();
+    let mut remaining = css;
+
+    while let Some(start) = remaining.find("@define-color") {
+        remaining = &remaining[start..];
+        let Some(end) = remaining.find(';') else {
+            break;
+        };
+
+        declarations.push_str(remaining[..=end].trim());
+        declarations.push('\n');
+        remaining = &remaining[end + 1..];
     }
+
+    declarations
 }
 
-pub fn set_native_appearance_class(window: &gtk::ApplicationWindow, dark: bool) {
-    let style = window.style_context();
-    style.remove_class(NATIVE_DARK_CLASS);
-    style.remove_class(NATIVE_LIGHT_CLASS);
-    style.add_class(native_appearance_class(dark));
+fn replace_native_theme_provider(screen: &gtk::gdk::Screen, provider: Option<gtk::CssProvider>) {
+    NATIVE_THEME_PROVIDER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some((previous_screen, previous_provider)) = slot.take() {
+            gtk::StyleContext::remove_provider_for_screen(&previous_screen, &previous_provider);
+        }
+
+        if let Some(provider) = provider {
+            gtk::StyleContext::add_provider_for_screen(screen, &provider, NATIVE_THEME_PRIORITY);
+            *slot = Some((screen.clone(), provider));
+        }
+    });
+}
+
+pub fn apply_native_theme_variant(
+    window: &gtk::ApplicationWindow,
+    dark: bool,
+) -> Result<(), String> {
+    let settings = window
+        .settings()
+        .ok_or_else(|| "GTK settings are unavailable".to_string())?;
+    let theme_name = settings
+        .gtk_theme_name()
+        .ok_or_else(|| "GTK theme name is unavailable".to_string())?;
+    // KDE's GTK integration can install user-priority color definitions for
+    // the desktop color scheme. When RisuAI uses the opposite appearance,
+    // those definitions still win over GTK's selected theme variant. Reapply
+    // only the named colors exported by the theme itself; copying its widget
+    // rules would replace the user's native button shapes and behavior.
+    let named_provider =
+        gtk::CssProvider::named(theme_name.as_str(), if dark { Some("dark") } else { None })
+            .or_else(|| gtk::CssProvider::named(theme_name.as_str(), None))
+            .ok_or_else(|| format!("GTK theme is unavailable: {theme_name}"))?;
+    let named_colors = extract_named_color_declarations(&named_provider.to_string());
+    let screen = gtk::prelude::WidgetExt::screen(window)
+        .ok_or_else(|| "GTK screen is unavailable".to_string())?;
+
+    let provider = if named_colors.is_empty() {
+        None
+    } else {
+        let provider = gtk::CssProvider::new();
+        provider
+            .load_from_data(named_colors.as_bytes())
+            .map_err(|error| format!("Failed to load GTK theme colors: {error}"))?;
+        Some(provider)
+    };
+    replace_native_theme_provider(&screen, provider);
+    gtk::StyleContext::reset_widgets(&screen);
+    Ok(())
 }
 
 fn install_header_drag_behavior(window: &gtk::ApplicationWindow, event_box: &gtk::EventBox) {
@@ -138,76 +198,24 @@ headerbar.risu-integrated-csd {
   border: none;
   box-shadow: none;
 }
-
-window.risu-native-dark .risu-integrated-csd,
-window.risu-native-dark .risu-integrated-csd button.titlebutton {
-  color: rgba(255, 255, 255, 0.92);
-  -gtk-icon-shadow: none;
-  text-shadow: none;
-}
-
-window.risu-native-light .risu-integrated-csd,
-window.risu-native-light .risu-integrated-csd button.titlebutton {
-  color: rgba(0, 0, 0, 0.82);
-  -gtk-icon-shadow: none;
-  text-shadow: none;
-}
-
-.risu-integrated-csd button.titlebutton {
-  background-color: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-window.risu-native-dark .risu-integrated-csd button.titlebutton:hover {
-  background-color: rgba(255, 255, 255, 0.14);
-}
-
-window.risu-native-dark .risu-integrated-csd button.titlebutton:active {
-  background-color: rgba(255, 255, 255, 0.22);
-}
-
-window.risu-native-light .risu-integrated-csd button.titlebutton:hover {
-  background-color: rgba(0, 0, 0, 0.11);
-}
-
-window.risu-native-light .risu-integrated-csd button.titlebutton:active {
-  background-color: rgba(0, 0, 0, 0.18);
-}
-
-.risu-integrated-csd button.titlebutton.close:hover,
-.risu-integrated-csd button.titlebutton.close:active {
-  background-color: #e81123;
-  color: white;
-}
 "#,
         )
         .map_err(|error| format!("Failed to style GTK CSD: {error}"))?;
 
     if let Some(screen) = gtk::prelude::WidgetExt::screen(window) {
-        gtk::StyleContext::add_provider_for_screen(
-            &screen,
-            &provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
+        gtk::StyleContext::add_provider_for_screen(&screen, &provider, INTEGRATED_CSD_PRIORITY);
     }
-
-    let dark = window
-        .settings()
-        .map(|settings| settings.is_gtk_application_prefer_dark_theme())
-        .unwrap_or(false);
-    set_native_appearance_class(window, dark);
 
     titlebar.style_context().add_class(INTEGRATED_CSD_CLASS);
     titlebar
         .style_context()
-        .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        .add_provider(&provider, INTEGRATED_CSD_PRIORITY);
 
     event_box.set_above_child(false);
     header.style_context().add_class(INTEGRATED_CSD_CLASS);
     header
         .style_context()
-        .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        .add_provider(&provider, INTEGRATED_CSD_PRIORITY);
     configure_integrated_header(&header);
 
     let header_weak = header.downgrade();
@@ -288,10 +296,26 @@ mod tests {
     }
 
     #[test]
-    fn native_appearance_uses_exclusive_window_classes() {
-        assert_eq!(native_appearance_class(true), NATIVE_DARK_CLASS);
-        assert_eq!(native_appearance_class(false), NATIVE_LIGHT_CLASS);
-        assert_ne!(NATIVE_DARK_CLASS, NATIVE_LIGHT_CLASS);
+    fn extracts_theme_defined_colors_without_copying_widget_rules() {
+        let css = r#"
+@define-color theme_fg_color rgb(240, 240, 240);
+button { color: @theme_fg_color; }
+@define-color theme_specific_titlebar_color @theme_fg_color;
+"#;
+
+        assert_eq!(
+            extract_named_color_declarations(css),
+            "@define-color theme_fg_color rgb(240, 240, 240);\n\
+             @define-color theme_specific_titlebar_color @theme_fg_color;\n"
+        );
+    }
+
+    #[test]
+    fn ignores_incomplete_named_color_declarations() {
+        assert_eq!(
+            extract_named_color_declarations("@define-color theme_fg_color #fff"),
+            ""
+        );
     }
 
     #[test]
