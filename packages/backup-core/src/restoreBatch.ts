@@ -78,3 +78,72 @@ export class BoundedAssetBatch {
     this.#bytes = 0;
   }
 }
+
+export type RestoredAssetBatch = Map<string, Uint8Array>;
+
+export type RestoredAssetBatchWrite = (
+  entries: RestoredAssetBatch,
+) => Promise<void>;
+
+/**
+ * Owns a bounded asset batch and transfers each drained Map to an injected
+ * platform writer. The payloads are not copied while moving between batches.
+ */
+export class BoundedAssetBatchWriter {
+  readonly #batch: BoundedAssetBatch;
+  readonly #write: RestoredAssetBatchWrite;
+
+  constructor(
+    maxFiles: number,
+    maxBytes: number,
+    write: RestoredAssetBatchWrite,
+  ) {
+    this.#batch = new BoundedAssetBatch(maxFiles, maxBytes);
+    this.#write = write;
+  }
+
+  get size(): number {
+    return this.#batch.size;
+  }
+
+  get byteSize(): number {
+    return this.#batch.byteSize;
+  }
+
+  async add(key: string, data: Uint8Array): Promise<void> {
+    if (this.#batch.add(key, data)) await this.flush();
+  }
+
+  async flush(): Promise<number> {
+    const count: number = this.#batch.size;
+    if (count === 0) return 0;
+    const entries: RestoredAssetBatch = this.#batch.drain();
+    await this.#write(entries);
+    return count;
+  }
+}
+
+/** Runs a bounded number of asynchronous item writes without copying items. */
+export async function writeItemsConcurrently<T>(
+  items: readonly T[],
+  concurrency: number,
+  writeItem: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {
+    throw new RangeError("concurrency must be a positive safe integer");
+  }
+  let cursor: number = 0;
+  const workerCount: number = Math.min(concurrency, items.length);
+  const workers: Promise<void>[] = Array.from(
+    { length: workerCount },
+    async (): Promise<void> => {
+      while (cursor < items.length) {
+        const index: number = cursor;
+        cursor += 1;
+        const item: T = items[index];
+        await writeItem(item, index);
+      }
+    },
+  );
+  await Promise.all(workers);
+}

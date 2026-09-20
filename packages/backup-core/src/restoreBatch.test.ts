@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BoundedAssetBatch } from "./restoreBatch";
+import {
+  BoundedAssetBatch,
+  BoundedAssetBatchWriter,
+  writeItemsConcurrently,
+  type RestoredAssetBatch,
+} from "./restoreBatch";
 
 function payload(length: number, fill = 1): Uint8Array {
   return new Uint8Array(length).fill(fill);
@@ -136,5 +141,62 @@ describe("BoundedAssetBatch drain", () => {
     expect(batch.size).toBe(0);
     expect(batch.byteSize).toBe(0);
     expect(batch.full).toBe(false);
+  });
+});
+
+describe("BoundedAssetBatchWriter", (): void => {
+  it("flushes automatically at a limit and manually at the end", async (): Promise<void> => {
+    const batches: RestoredAssetBatch[] = [];
+    const writer: BoundedAssetBatchWriter = new BoundedAssetBatchWriter(
+      2,
+      100,
+      async (entries: RestoredAssetBatch): Promise<void> => {
+        batches.push(entries);
+      },
+    );
+
+    await writer.add("a", payload(1));
+    expect(writer.size).toBe(1);
+    await writer.add("b", payload(2));
+    expect(writer.size).toBe(0);
+    await writer.add("c", payload(3));
+    expect(await writer.flush()).toBe(1);
+    expect(await writer.flush()).toBe(0);
+
+    expect(
+      batches.map((batch: RestoredAssetBatch): string[] => [...batch.keys()]),
+    ).toEqual([["a", "b"], ["c"]]);
+  });
+});
+
+describe("writeItemsConcurrently", (): void => {
+  it("writes every item while respecting the concurrency limit", async (): Promise<void> => {
+    const items: number[] = [1, 2, 3, 4, 5];
+    const written: number[] = [];
+    let active: number = 0;
+    let peak: number = 0;
+
+    await writeItemsConcurrently(
+      items,
+      2,
+      async (item: number): Promise<void> => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await Promise.resolve();
+        written.push(item);
+        active -= 1;
+      },
+    );
+
+    expect(
+      [...written].sort((left: number, right: number): number => left - right),
+    ).toEqual(items);
+    expect(peak).toBe(2);
+  });
+
+  it("rejects invalid concurrency", async (): Promise<void> => {
+    await expect(
+      writeItemsConcurrently([], 0, async (): Promise<void> => {}),
+    ).rejects.toThrow(RangeError);
   });
 });

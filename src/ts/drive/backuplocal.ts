@@ -937,7 +937,11 @@ import {
   type InlayRestoreResult,
   type InlayRestoreWrite,
 } from "@risuai/backup-core/inlayRestore";
-import { BoundedAssetBatch } from "@risuai/backup-core/restoreBatch";
+import {
+  BoundedAssetBatchWriter,
+  writeItemsConcurrently,
+  type RestoredAssetBatch,
+} from "@risuai/backup-core/restoreBatch";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -1576,37 +1580,28 @@ async function restoreLocalBackupSourceUnlocked(
   const assetRestoreMode = selectLocalBackupAssetRestoreMode(
     forageStorage.realStorage,
   );
-  const useNodeBulkRestore = assetRestoreMode === "node";
-  const nodeBulkMaxFiles = 64;
-  const nodeBulkMaxBytes = 64 * 1024 * 1024;
-  const nodeAssets = new BoundedAssetBatch(nodeBulkMaxFiles, nodeBulkMaxBytes);
   const invalidInlayEntries: string[] = [];
   const failedInlayWrites: string[] = [];
-  const useTauriBulkRestore = assetRestoreMode === "tauri";
-  const tauriAssetDirectories = new Set<string>();
-  const tauriBulkMaxFiles = 128;
-  const tauriBulkMaxBytes = 64 * 1024 * 1024;
-  const tauriBulkWriteConcurrency = 8;
-  const tauriAssets = new BoundedAssetBatch(
-    tauriBulkMaxFiles,
-    tauriBulkMaxBytes,
-  );
+  const tauriAssetDirectories: Set<string> = new Set<string>();
   let streamingRestoreFinished = false;
 
   try {
-    const flushTauriAssets = async (): Promise<number> => {
-      if (tauriAssets.size === 0) return 0;
-      const entries = Array.from(tauriAssets.drain());
-
-      const directories = new Set(
-        entries.map(([assetPath]) =>
+    const writeTauriAssetBatch = async (
+      batch: RestoredAssetBatch,
+    ): Promise<void> => {
+      const entries: Array<[string, Uint8Array]> = Array.from(batch);
+      const directories: Set<string> = new Set<string>(
+        entries.map(([assetPath]: [string, Uint8Array]): string =>
           assetPath.slice(0, assetPath.lastIndexOf("/")),
         ),
       );
       await Promise.all(
         Array.from(directories)
-          .filter((directory) => !tauriAssetDirectories.has(directory))
-          .map(async (directory) => {
+          .filter(
+            (directory: string): boolean =>
+              !tauriAssetDirectories.has(directory),
+          )
+          .map(async (directory: string): Promise<void> => {
             await mkdir(directory, {
               baseDir: BaseDirectory.AppData,
               recursive: true,
@@ -1614,47 +1609,28 @@ async function restoreLocalBackupSourceUnlocked(
             tauriAssetDirectories.add(directory);
           }),
       );
-
-      let cursor = 0;
-      const workers = Array.from(
-        { length: Math.min(tauriBulkWriteConcurrency, entries.length) },
-        async () => {
-          while (cursor < entries.length) {
-            const [assetPath, data] = entries[cursor++];
-            await writeFile(assetPath, data, {
-              baseDir: BaseDirectory.AppData,
-            });
-          }
+      await writeItemsConcurrently(
+        entries,
+        8,
+        async (entry: [string, Uint8Array]): Promise<void> => {
+          const [assetPath, data]: [string, Uint8Array] = entry;
+          await writeFile(assetPath, data, {
+            baseDir: BaseDirectory.AppData,
+          });
         },
       );
-      await Promise.all(workers);
-      return entries.length;
     };
 
-    const flushNodeAssets = async (): Promise<number> => {
-      const count = nodeAssets.size;
-      if (count === 0) {
-        return 0;
-      }
-      await (forageStorage.realStorage as NodeStorage).setItems(
-        nodeAssets.drain(),
-      );
-      return count;
+    const writeNodeAssetBatch = async (
+      batch: RestoredAssetBatch,
+    ): Promise<void> => {
+      await (forageStorage.realStorage as NodeStorage).setItems(batch);
     };
 
     // Browser storage (IndexedDB/localForage) has no bulk API, but writing
     // assets one-by-one serializes every IndexedDB transaction and makes
     // restoring large backups extremely slow. Batch them instead and write
     // each batch in a single IndexedDB transaction when possible.
-    const useBrowserBulkRestore = assetRestoreMode === "browser";
-    const browserBulkMaxFiles = 256;
-    const browserBulkMaxBytes = 64 * 1024 * 1024;
-    const browserBulkWriteConcurrency = 8;
-    const browserAssets = new BoundedAssetBatch(
-      browserBulkMaxFiles,
-      browserBulkMaxBytes,
-    );
-
     /**
      * Reuse localForage's own IndexedDB connection so restored assets land in
      * exactly the same database/store localForage reads from. Returns null when
@@ -1665,10 +1641,17 @@ async function restoreLocalBackupSourceUnlocked(
       storeName: string;
     } | null> => {
       try {
-        const storage = forageStorage.realStorage as any;
-        if (typeof storage?.ready !== "function") return null;
+        const storage: {
+          ready?: () => Promise<void>;
+          _dbInfo?: { db?: IDBDatabase; storeName?: string };
+        } = forageStorage.realStorage as {
+          ready?: () => Promise<void>;
+          _dbInfo?: { db?: IDBDatabase; storeName?: string };
+        };
+        if (typeof storage.ready !== "function") return null;
         await storage.ready();
-        const dbInfo = storage._dbInfo;
+        const dbInfo: { db?: IDBDatabase; storeName?: string } | undefined =
+          storage._dbInfo;
         if (!dbInfo?.db || !dbInfo.storeName) return null;
         return { db: dbInfo.db, storeName: dbInfo.storeName };
       } catch {
@@ -1678,45 +1661,43 @@ async function restoreLocalBackupSourceUnlocked(
 
     const writeBrowserAssetBatchWithLocalForage = async (
       entries: Array<[string, Uint8Array]>,
-    ) => {
-      let cursor = 0;
-      const workers = Array.from(
-        { length: Math.min(browserBulkWriteConcurrency, entries.length) },
-        async () => {
-          while (cursor < entries.length) {
-            const [key, data] = entries[cursor++];
-            await forageStorage.setItem(key, data);
-          }
+    ): Promise<void> => {
+      await writeItemsConcurrently(
+        entries,
+        8,
+        async (entry: [string, Uint8Array]): Promise<void> => {
+          const [key, data]: [string, Uint8Array] = entry;
+          await forageStorage.setItem(key, data);
         },
       );
-      await Promise.all(workers);
     };
 
-    const flushBrowserAssets = async (): Promise<number> => {
-      const count = browserAssets.size;
-      if (count === 0) {
-        return 0;
-      }
-      const entries = Array.from(browserAssets.drain());
-
+    const writeBrowserAssetBatch = async (
+      batch: RestoredAssetBatch,
+    ): Promise<void> => {
+      const entries: Array<[string, Uint8Array]> = Array.from(batch);
       try {
-        const idb = await getLocalForageIdb();
+        const idb: { db: IDBDatabase; storeName: string } | null =
+          await getLocalForageIdb();
         if (idb) {
           await new Promise<void>((resolve, reject) => {
-            const tx = idb.db.transaction(idb.storeName, "readwrite");
-            const store = tx.objectStore(idb.storeName);
+            const tx: IDBTransaction = idb.db.transaction(
+              idb.storeName,
+              "readwrite",
+            );
+            const store: IDBObjectStore = tx.objectStore(idb.storeName);
             for (const [key, data] of entries) {
               store.put(data, key);
             }
-            tx.oncomplete = () => resolve();
-            tx.onerror = () =>
+            tx.oncomplete = (): void => resolve();
+            tx.onerror = (): void =>
               reject(tx.error ?? new Error("IndexedDB bulk write failed"));
-            tx.onabort = () =>
+            tx.onabort = (): void =>
               reject(tx.error ?? new Error("IndexedDB bulk write aborted"));
           });
-          return count;
+          return;
         }
-      } catch (error) {
+      } catch (error: unknown) {
         console.warn(
           "IndexedDB bulk asset write failed, falling back to per-item writes:",
           error,
@@ -1724,8 +1705,26 @@ async function restoreLocalBackupSourceUnlocked(
       }
 
       await writeBrowserAssetBatchWithLocalForage(entries);
-      return count;
     };
+
+    const assetBatchWriter: BoundedAssetBatchWriter =
+      assetRestoreMode === "tauri"
+        ? new BoundedAssetBatchWriter(
+            128,
+            64 * 1024 * 1024,
+            writeTauriAssetBatch,
+          )
+        : assetRestoreMode === "node"
+          ? new BoundedAssetBatchWriter(
+              64,
+              64 * 1024 * 1024,
+              writeNodeAssetBatch,
+            )
+          : new BoundedAssetBatchWriter(
+              256,
+              64 * 1024 * 1024,
+              writeBrowserAssetBatch,
+            );
 
     const restoreBackupEntry = async (
       name: string,
@@ -1760,10 +1759,7 @@ async function restoreLocalBackupSourceUnlocked(
           const value: unknown = await decodeRisuSave(encoded);
           await streamRestore.acceptEntry(normalizedName, value);
         },
-        async onInlay(
-          inlayKey: string,
-          inlayData: Uint8Array,
-        ): Promise<void> {
+        async onInlay(inlayKey: string, inlayData: Uint8Array): Promise<void> {
           const result: InlayRestoreResult = await restoreInlayBackupEntry(
             inlayKey,
             inlayData,
@@ -1797,11 +1793,10 @@ async function restoreLocalBackupSourceUnlocked(
             );
           }
         },
-        onInvalidColdStorage(
-          _coldStorageKey: string,
-          entryName: string,
-        ): void {
-          console.warn(`Skipping invalid cold storage backup item ${entryName}`);
+        onInvalidColdStorage(_coldStorageKey: string, entryName: string): void {
+          console.warn(
+            `Skipping invalid cold storage backup item ${entryName}`,
+          );
         },
         onColdStorageParseError(
           coldStorageKey: string,
@@ -1813,23 +1808,8 @@ async function restoreLocalBackupSourceUnlocked(
             error,
           );
         },
-        async onAsset(
-          assetPath: string,
-          assetData: Uint8Array,
-        ): Promise<void> {
-          if (useTauriBulkRestore) {
-            if (tauriAssets.add(assetPath, assetData)) {
-              await flushTauriAssets();
-            }
-          } else if (useNodeBulkRestore) {
-            if (nodeAssets.add(assetPath, assetData)) {
-              await flushNodeAssets();
-            }
-          } else {
-            if (browserAssets.add(assetPath, assetData)) {
-              await flushBrowserAssets();
-            }
-          }
+        async onAsset(assetPath: string, assetData: Uint8Array): Promise<void> {
+          await assetBatchWriter.add(assetPath, assetData);
         },
       });
     };
@@ -1919,19 +1899,9 @@ async function restoreLocalBackupSourceUnlocked(
       }
     }
 
-    if (useTauriBulkRestore && tauriAssets.size > 0) {
+    if (assetBatchWriter.size > 0) {
       reportLocalBackupRestoreProgress("reading", { percent: 90 });
-      await flushTauriAssets();
-    }
-
-    if (useNodeBulkRestore && nodeAssets.size > 0) {
-      reportLocalBackupRestoreProgress("reading", { percent: 90 });
-      await flushNodeAssets();
-    }
-
-    if (useBrowserBulkRestore && browserAssets.size > 0) {
-      reportLocalBackupRestoreProgress("reading", { percent: 90 });
-      await flushBrowserAssets();
+      await assetBatchWriter.flush();
     }
 
     if (failedInlayWrites.length > 0) {
