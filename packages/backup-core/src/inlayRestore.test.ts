@@ -32,7 +32,7 @@ function trackingWrite(): TrackingWriteState {
   const writtenKeys: string[] = [];
   const writtenAssets: InlayAsset[] = [];
   return {
-    write: async (key: string, asset: InlayAsset) => {
+    write: async (key: string, asset: InlayAsset): Promise<void> => {
       writtenKeys.push(key);
       writtenAssets.push(asset);
     },
@@ -44,7 +44,7 @@ function trackingWrite(): TrackingWriteState {
 describe("restoreInlayBackupEntry", (): void => {
   it("decodes a valid payload and writes the asset through the writer", async (): Promise<void> => {
     const state: TrackingWriteState = trackingWrite();
-    const { write, writtenKeys, writtenAssets } = state;
+    const { write, writtenKeys, writtenAssets }: TrackingWriteState = state;
     const data: Uint8Array = await encodeSourceAsset();
 
     const result: InlayRestoreResult = await restoreInlayBackupEntry(
@@ -93,7 +93,7 @@ describe("restoreInlayBackupEntry", (): void => {
   });
 
   it("classifies storage failures separately from invalid data", async (): Promise<void> => {
-    const storageError = new Error("quota exceeded");
+    const storageError: Error = new Error("quota exceeded");
 
     const result: InlayRestoreResult = await restoreInlayBackupEntry(
       inlayKey,
@@ -110,7 +110,7 @@ describe("restoreInlayBackupEntry", (): void => {
 
   it("uses the bundled codec decode when no decode hook is provided", async (): Promise<void> => {
     const state: TrackingWriteState = trackingWrite();
-    const { write, writtenAssets } = state;
+    const { write, writtenAssets }: TrackingWriteState = state;
     const data: Uint8Array = await encodeSourceAsset();
 
     const result: InlayRestoreResult = await restoreInlayBackupEntry(
