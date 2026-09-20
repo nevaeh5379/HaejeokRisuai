@@ -34,8 +34,53 @@ export interface SequentialBackupSourceOptions {
   importerLabel?: string;
 }
 
+export interface BackupImportCommitter {
+  commitImport(options: { id: string }): Promise<void>;
+}
+
+export interface BackupResponseWriter {
+  write(chunk: Uint8Array): Promise<void>;
+}
+
 interface DecodedBackupChunk extends EncodedBackupChunk {
   decoded: Uint8Array;
+}
+
+/** Returns a retryable callback that becomes a no-op after its first success. */
+export function createImportCommit(
+  committer: BackupImportCommitter,
+  id: string,
+): () => Promise<void> {
+  let committed: boolean = false;
+  return async (): Promise<void> => {
+    if (committed) return;
+    await committer.commitImport({ id });
+    committed = true;
+  };
+}
+
+/** Streams an HTTP response to a writer without materializing its body. */
+export async function streamBackupResponse(
+  response: Response,
+  writer: BackupResponseWriter,
+): Promise<void> {
+  if (!response.body) {
+    throw new Error(
+      "Streaming backup download is unavailable on this platform",
+    );
+  }
+  const reader: ReadableStreamDefaultReader<Uint8Array> =
+    response.body.getReader();
+  try {
+    while (true) {
+      const result: ReadableStreamReadResult<Uint8Array> = await reader.read();
+      if (result.done) break;
+      const chunk: Uint8Array = result.value;
+      if (chunk.byteLength > 0) await writer.write(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export async function* iterateLocalBackupSource(

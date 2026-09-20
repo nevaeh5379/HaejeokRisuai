@@ -86,8 +86,10 @@ import {
 } from "@risuai/backup-core/containerStream";
 import {
   createEncodedBackupSource,
+  createImportCommit,
   createSequentialFileBackupSource,
   iterateLocalBackupSource,
+  streamBackupResponse,
   type LocalBackupSource,
 } from "@risuai/backup-core/importSource";
 import {
@@ -368,12 +370,7 @@ export function createNativeAssetCommit(
   plugin: Pick<NativeBackupPlugin, "commitImport">,
   id: string,
 ): () => Promise<void> {
-  let committed: boolean = false;
-  return async (): Promise<void> => {
-    if (committed) return;
-    await plugin.commitImport({ id });
-    committed = true;
-  };
+  return createImportCommit(plugin, id);
 }
 
 /**
@@ -542,26 +539,8 @@ export function selectLocalBackupAssetRestoreMode(
   return tauri ? "tauri" : "browser";
 }
 
-export async function streamRemoteBackupResponse(
-  response: Response,
-  writer: Pick<LocalWriter, "write">,
-): Promise<void> {
-  if (!response.body) {
-    throw new Error(
-      "Streaming backup download is unavailable on this platform",
-    );
-  }
-  const reader = response.body.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value?.byteLength) await writer.write(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
+export const streamRemoteBackupResponse: typeof streamBackupResponse =
+  streamBackupResponse;
 
 async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
   const startedAt = Date.now();

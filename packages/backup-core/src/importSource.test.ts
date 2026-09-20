@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createEncodedBackupSource,
+  createImportCommit,
   createSequentialFileBackupSource,
   iterateLocalBackupSource,
+  streamBackupResponse,
   type EncodedBackupChunkReader,
   type LocalBackupSource,
   type SequentialBackupFileHandle,
@@ -147,5 +149,47 @@ describe("createSequentialFileBackupSource", (): void => {
       "ended before the declared size",
     );
     expect(closed).toHaveLength(1);
+  });
+});
+
+describe("backup import transport helpers", (): void => {
+  it("retries commits until the first success and then becomes a no-op", async (): Promise<void> => {
+    let attempts: number = 0;
+    const commit: () => Promise<void> = createImportCommit(
+      {
+        async commitImport(options: { id: string }): Promise<void> {
+          expect(options.id).toBe("import-1");
+          attempts += 1;
+          if (attempts === 1) throw new Error("temporary failure");
+        },
+      },
+      "import-1",
+    );
+
+    await expect(commit()).rejects.toThrow("temporary failure");
+    await commit();
+    await commit();
+    expect(attempts).toBe(2);
+  });
+
+  it("forwards response chunks without buffering the response", async (): Promise<void> => {
+    const written: number[][] = [];
+    const response: Response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller: ReadableStreamDefaultController<Uint8Array>): void {
+          controller.enqueue(new Uint8Array([1, 2]));
+          controller.enqueue(new Uint8Array([3]));
+          controller.close();
+        },
+      }),
+    );
+
+    await streamBackupResponse(response, {
+      async write(chunk: Uint8Array): Promise<void> {
+        written.push(Array.from(chunk));
+      },
+    });
+
+    expect(written).toEqual([[1, 2], [3]]);
   });
 });
