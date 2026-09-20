@@ -1,5 +1,5 @@
-const DEFAULT_ANDROID_E2E_INFRASTRUCTURE_TIMEOUT_MS = 120_000;
-const DEFAULT_ANDROID_E2E_CONNECTION_RETRY_TIMEOUT_MS = 180_000;
+const DEFAULT_ANDROID_E2E_INFRASTRUCTURE_TIMEOUT_MS = 300_000;
+const DEFAULT_ANDROID_E2E_CONNECTION_RETRY_TIMEOUT_MS = 360_000;
 
 function readInfrastructureTimeout(): number {
   const value = Number(
@@ -19,6 +19,10 @@ export function getAndroidE2eConnectionRetryTimeout(): number {
   return Number.isSafeInteger(value) && value > 0
     ? value
     : DEFAULT_ANDROID_E2E_CONNECTION_RETRY_TIMEOUT_MS;
+}
+
+export function getAndroidE2eTestTimeout(testBodyBudgetMs: number): number {
+  return getAndroidE2eConnectionRetryTimeout() + testBodyBudgetMs;
 }
 
 export function getAndroidE2eInfrastructureCapabilities(): Record<

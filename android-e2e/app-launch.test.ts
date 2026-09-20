@@ -8,6 +8,7 @@ import { remote } from "webdriverio";
 import {
   getAndroidE2eConnectionRetryTimeout,
   getAndroidE2eInfrastructureCapabilities,
+  getAndroidE2eTestTimeout,
 } from "./appium-capabilities";
 
 const appiumUrl = new URL(
@@ -43,7 +44,7 @@ after(async () => {
 
 test(
   "the packaged Android app exposes a working Capacitor WebView",
-  { timeout: 300_000 },
+  { timeout: getAndroidE2eTestTimeout(120_000) },
   async () => {
     assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
     await mkdir(chromedriverDir, { recursive: true });

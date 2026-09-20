@@ -93,14 +93,16 @@ pnpm test:e2e:android
 
 Useful overrides:
 
-| Variable                       | Purpose                                                  |
-| ------------------------------ | -------------------------------------------------------- |
-| `ANDROID_E2E_APK`              | APK path relative to the repository, or an absolute path |
-| `ANDROID_E2E_UDID`             | Select one device when more than one is connected        |
-| `ANDROID_E2E_DEVICE_NAME`      | Appium device name; defaults to `Android`                |
-| `ANDROID_E2E_APPIUM_PORT`      | Appium port; defaults to `4723`                          |
-| `ANDROID_E2E_WDIO_LOG_LEVEL`   | WebdriverIO log level; defaults to `warn`                |
-| `ANDROID_E2E_CHROMEDRIVER_DIR` | Persistent directory for matching Chromedriver binaries  |
+| Variable                                  | Purpose                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| `ANDROID_E2E_APK`                         | APK path relative to the repository, or an absolute path         |
+| `ANDROID_E2E_UDID`                        | Select one device when more than one is connected                |
+| `ANDROID_E2E_DEVICE_NAME`                 | Appium device name; defaults to `Android`                        |
+| `ANDROID_E2E_APPIUM_PORT`                 | Appium port; defaults to `4723`                                  |
+| `ANDROID_E2E_WDIO_LOG_LEVEL`              | WebdriverIO log level; defaults to `warn`                        |
+| `ANDROID_E2E_INFRASTRUCTURE_TIMEOUT_MS`   | Appium ADB/install/UiAutomator2 timeout; defaults to `300000` ms |
+| `ANDROID_E2E_CONNECTION_RETRY_TIMEOUT_MS` | WebdriverIO request timeout; defaults to `360000` ms             |
+| `ANDROID_E2E_CHROMEDRIVER_DIR`            | Persistent directory for matching Chromedriver binaries          |
 
 The initial smoke test deliberately verifies the real Capacitor origin and
 native-platform flag after switching into the WebView. Android-specific

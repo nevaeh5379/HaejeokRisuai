@@ -7,6 +7,7 @@ import { remote } from "webdriverio";
 import {
   getAndroidE2eConnectionRetryTimeout,
   getAndroidE2eInfrastructureCapabilities,
+  getAndroidE2eTestTimeout,
 } from "./appium-capabilities";
 
 const appiumUrl = new URL(
@@ -26,7 +27,7 @@ after(async () => {
 
 test(
   "a persisted Android chat applies its module and opens the module menu",
-  { timeout: 360_000 },
+  { timeout: getAndroidE2eTestTimeout(360_000) },
   async () => {
     assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
     await mkdir(chromedriverDir, { recursive: true });

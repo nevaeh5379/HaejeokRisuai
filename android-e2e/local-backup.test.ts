@@ -14,6 +14,7 @@ import { buildTestLocalBackup } from "../tooling/backup-fixture";
 import {
   getAndroidE2eConnectionRetryTimeout,
   getAndroidE2eInfrastructureCapabilities,
+  getAndroidE2eTestTimeout,
 } from "./appium-capabilities";
 
 const appiumUrl = new URL(
@@ -608,7 +609,11 @@ async function selectNativeDocument(
 
 test(
   "local Android backup opens the native document saver",
-  { timeout: 300_000, skip: remoteProfile, concurrency: false },
+  {
+    timeout: getAndroidE2eTestTimeout(300_000),
+    skip: remoteProfile,
+    concurrency: false,
+  },
   async () => {
     let browser = await startDriver();
     try {
@@ -632,7 +637,11 @@ test(
 
 test(
   "Android backup restore selects a real document and persists the fixture",
-  { timeout: 360_000, skip: remoteProfile, concurrency: false },
+  {
+    timeout: getAndroidE2eTestTimeout(360_000),
+    skip: remoteProfile,
+    concurrency: false,
+  },
   async () => {
     let browser = await startDriver();
     const { fileName } = await stageImportFixture();
@@ -656,7 +665,11 @@ test(
 
 test(
   "remote-profile Android backup completes through the backup API",
-  { timeout: 180_000, skip: !remoteProfile, concurrency: false },
+  {
+    timeout: getAndroidE2eTestTimeout(180_000),
+    skip: !remoteProfile,
+    concurrency: false,
+  },
   async () => {
     let browser = await startDriver();
     try {
@@ -697,7 +710,11 @@ test(
 
 test(
   "remote-profile Android restore uploads bounded chunks and replaces server data",
-  { timeout: 240_000, skip: !remoteProfile, concurrency: false },
+  {
+    timeout: getAndroidE2eTestTimeout(240_000),
+    skip: !remoteProfile,
+    concurrency: false,
+  },
   async () => {
     let browser = await startDriver();
     const characterId = randomUUID();
