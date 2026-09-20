@@ -80,7 +80,10 @@ import {
   ACCOUNT_ENCRYPTION_ENTRY_NAME,
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
-import { BackupContainerParser } from "@risuai/backup-core/containerStream";
+import {
+  parseBufferedBackupContainer,
+  type BackupContainerEntryInfo,
+} from "@risuai/backup-core/containerStream";
 import {
   LOCAL_BACKUP_PROGRESS_STAGES,
   type LocalBackupImportProgress,
@@ -345,6 +348,23 @@ interface LocalBackupSource {
 
 interface LocalBackupRestoreOptions {
   beforeDatabaseApply?: () => Promise<void>;
+}
+
+async function* streamLocalBackupSource(
+  source: LocalBackupSource,
+): AsyncGenerator<Uint8Array> {
+  const reader: ReadableStreamDefaultReader<Uint8Array> = source
+    .stream()
+    .getReader();
+  try {
+    while (true) {
+      const result: ReadableStreamReadResult<Uint8Array> = await reader.read();
+      if (result.done) return;
+      yield result.value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 const NATIVE_IMPORT_CHUNK_SIZE = 512 * 1024;
@@ -1551,8 +1571,6 @@ async function restoreLocalBackupSourceUnlocked(
   let entriesWritten = 0;
   const invalidInlayEntries: string[] = [];
   const failedInlayWrites: string[] = [];
-  let currentEntryName = "";
-  let bytesRead = 0;
   const useTauriBulkRestore = assetRestoreMode === "tauri";
   const tauriAssetDirectories = new Set<string>();
   const tauriBulkMaxFiles = 128;
@@ -1702,8 +1720,7 @@ async function restoreLocalBackupSourceUnlocked(
       name: string,
       data: Uint8Array,
       classification: BackupEntryClassification,
-    ) => {
-      currentEntryName = name;
+    ): Promise<void> => {
       if (classification.kind === "encryption") {
         let meta: typeof encryptionMeta;
         try {
@@ -1774,7 +1791,6 @@ async function restoreLocalBackupSourceUnlocked(
             }
           }
           entriesRestored++;
-          currentEntryName = "";
           return;
         }
 
@@ -1797,7 +1813,6 @@ async function restoreLocalBackupSourceUnlocked(
               result.error,
             );
           }
-          currentEntryName = "";
           return;
         }
 
@@ -1854,50 +1869,59 @@ async function restoreLocalBackupSourceUnlocked(
       }
 
       entriesRestored++;
-      currentEntryName = "";
     };
-    let ignoredExtensionEntries = 0;
+    let ignoredExtensionEntries: number = 0;
     try {
-      const reader = file.stream().getReader();
-      let lastUiUpdate = 0;
-      let entryName = "";
-      let entryClassification: BackupEntryClassification | null = null;
-      let entryDataBuffer: Uint8Array | null = null;
-      const parser = new BackupContainerParser(
+      let lastUiUpdate: number = 0;
+      let entryName: string = "";
+      await parseBufferedBackupContainer(
+        streamLocalBackupSource(file),
         {
-          onEntryStart(entry) {
+          onEntryStart(
+            entry: BackupContainerEntryInfo,
+            _classification: BackupEntryClassification,
+          ): void {
             entryName = entry.name;
-            entryClassification = classifyBackupEntry(entry.name);
-            if (entryClassification.kind === "invalid") {
-              throw new Error(`Invalid backup entry path: ${entry.name}`);
-            }
-            if (entryClassification.kind === "extension") {
-              entryDataBuffer = null;
-              ignoredExtensionEntries++;
-              console.info(
-                `Skipping unsupported backup extension entry: ${entry.name}`,
-              );
-              return;
-            }
-            entryDataBuffer = new Uint8Array(entry.size);
           },
-          onEntryChunk(_entry, chunk, offset) {
-            entryDataBuffer?.set(chunk, offset);
+          async onEntry(
+            entry: BackupContainerEntryInfo,
+            data: Uint8Array,
+            classification: BackupEntryClassification,
+          ): Promise<void> {
+            await restoreBackupEntry(entry.name, data, classification);
           },
-          async onEntryEnd(entry) {
-            const data = entryDataBuffer;
-            const classification = entryClassification;
-            entryDataBuffer = null;
-            entryClassification = null;
+          onEntryEnd(): void {
             entryName = "";
-            if (data !== null) {
-              if (!classification) {
-                throw new Error(
-                  `Backup entry ${entry.name} was not initialized`,
-                );
-              }
-              await restoreBackupEntry(entry.name, data, classification);
-            }
+          },
+          onExtensionEntry(entry: BackupContainerEntryInfo): void {
+            ignoredExtensionEntries += 1;
+            console.info(
+              `Skipping unsupported backup extension entry: ${entry.name}`,
+            );
+          },
+          onChunk(_chunk: Uint8Array, totalBytesRead: number): void {
+            const now: number = Date.now();
+            if (now - lastUiUpdate <= 30) return;
+            lastUiUpdate = now;
+            const readPercent: number =
+              file.size === 0
+                ? parserProgress.end
+                : parserProgress.start +
+                  (totalBytesRead / file.size) *
+                    (parserProgress.end - parserProgress.start);
+            const entryLabel: string = entryName
+              ? localBackupRestoreEntryLabel(entryName)
+              : "";
+            const byteProgress: string =
+              file.size > 0
+                ? `${formatBackupBytes(totalBytesRead)} / ${formatBackupBytes(file.size)}`
+                : formatBackupBytes(totalBytesRead);
+            reportLocalBackupRestoreProgress("reading", {
+              percent: readPercent,
+              detail: entryLabel
+                ? `${byteProgress} · ${entryLabel}`
+                : byteProgress,
+            });
           },
         },
         {
@@ -1905,42 +1929,6 @@ async function restoreLocalBackupSourceUnlocked(
           maxEntryBytes: file.size,
         },
       );
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        bytesRead += value.length;
-        const now = Date.now();
-        if (now - lastUiUpdate > 30) {
-          lastUiUpdate = now;
-          const readPercent =
-            file.size === 0
-              ? parserProgress.end
-              : parserProgress.start +
-                (bytesRead / file.size) *
-                  (parserProgress.end - parserProgress.start);
-          const entryLabel = entryName
-            ? localBackupRestoreEntryLabel(entryName)
-            : "";
-          const byteProgress =
-            file.size > 0
-              ? `${formatBackupBytes(bytesRead)} / ${formatBackupBytes(file.size)}`
-              : formatBackupBytes(bytesRead);
-          reportLocalBackupRestoreProgress("reading", {
-            percent: readPercent,
-            detail: entryLabel
-              ? `${byteProgress} · ${entryLabel}`
-              : byteProgress,
-          });
-        }
-
-        await parser.write(value);
-      }
-
-      parser.finish();
     } catch (streamErr) {
       if (streamingRestoreSession) {
         await streamingRestoreSession.abort().catch(() => {});

@@ -1,4 +1,8 @@
-import { normalizeBackupEntryName } from "./entryPolicy";
+import {
+  classifyBackupEntry,
+  normalizeBackupEntryName,
+  type BackupEntryClassification,
+} from "./entryPolicy";
 
 export const BACKUP_CONTAINER_MAX_NAME_BYTES = 1024 * 1024;
 export const BACKUP_CONTAINER_MAX_ENTRY_BYTES = 0xffffffff;
@@ -226,4 +230,124 @@ export async function parseBackupContainer(
     await parser.write(chunk);
   }
   parser.finish();
+}
+
+export interface BufferedBackupContainerHandlers {
+  onEntry(
+    entry: BackupContainerEntryInfo,
+    data: Uint8Array,
+    classification: BackupEntryClassification,
+  ): Promise<void> | void;
+  onEntryStart?(
+    entry: BackupContainerEntryInfo,
+    classification: BackupEntryClassification,
+  ): Promise<void> | void;
+  onEntryEnd?(
+    entry: BackupContainerEntryInfo,
+    classification: BackupEntryClassification,
+  ): Promise<void> | void;
+  onExtensionEntry?(
+    entry: BackupContainerEntryInfo,
+    classification: BackupEntryClassification,
+  ): Promise<void> | void;
+  onChunk?(chunk: Uint8Array, totalBytesRead: number): Promise<void> | void;
+}
+
+export interface BufferedBackupContainerResult {
+  bytesRead: number;
+  entriesHandled: number;
+  ignoredExtensionEntries: number;
+}
+
+/**
+ * Parses a backup container and materializes at most one supported entry at a
+ * time. Entry names are classified centrally; invalid paths abort parsing and
+ * unsupported extension entries are consumed without allocating their
+ * payload. Hosts keep platform I/O and progress reporting in callbacks.
+ */
+export async function parseBufferedBackupContainer(
+  chunks: AsyncIterable<Uint8Array>,
+  handlers: BufferedBackupContainerHandlers,
+  options: BackupContainerParserOptions = {},
+): Promise<BufferedBackupContainerResult> {
+  let currentClassification: BackupEntryClassification | null = null;
+  let currentData: Uint8Array | null = null;
+  let bytesRead: number = 0;
+  let entriesHandled: number = 0;
+  let ignoredExtensionEntries: number = 0;
+
+  const parser: BackupContainerParser = new BackupContainerParser(
+    {
+      async onEntryStart(entry: BackupContainerEntryInfo): Promise<void> {
+        const classification: BackupEntryClassification = classifyBackupEntry(
+          entry.name,
+        );
+        if (classification.kind === "invalid") {
+          throw new Error(`Invalid backup entry path: ${entry.name}`);
+        }
+        currentClassification = classification;
+        currentData =
+          classification.kind === "extension"
+            ? null
+            : new Uint8Array(entry.size);
+        await handlers.onEntryStart?.(entry, classification);
+      },
+      onEntryChunk(
+        _entry: BackupContainerEntryInfo,
+        chunk: Uint8Array,
+        offset: number,
+      ): void {
+        currentData?.set(chunk, offset);
+      },
+      async onEntryEnd(entry: BackupContainerEntryInfo): Promise<void> {
+        const classification: BackupEntryClassification | null =
+          currentClassification;
+        const data: Uint8Array | null = currentData;
+        currentClassification = null;
+        currentData = null;
+        if (!classification) {
+          throw new Error(`Backup entry ${entry.name} was not initialized`);
+        }
+
+        try {
+          if (classification.kind === "extension") {
+            ignoredExtensionEntries += 1;
+            await handlers.onExtensionEntry?.(entry, classification);
+            return;
+          }
+          if (!data) {
+            throw new Error(`Backup entry ${entry.name} has no payload`);
+          }
+          await handlers.onEntry(entry, data, classification);
+          entriesHandled += 1;
+        } finally {
+          await handlers.onEntryEnd?.(entry, classification);
+        }
+      },
+    },
+    options,
+  );
+
+  const chunkIterator: AsyncIterator<Uint8Array> =
+    chunks[Symbol.asyncIterator]();
+  let chunksExhausted: boolean = false;
+  try {
+    while (true) {
+      const nextChunk: IteratorResult<Uint8Array> = await chunkIterator.next();
+      if (nextChunk.done) {
+        chunksExhausted = true;
+        break;
+      }
+      const chunk: Uint8Array = nextChunk.value;
+      bytesRead += chunk.byteLength;
+      await handlers.onChunk?.(chunk, bytesRead);
+      await parser.write(chunk);
+    }
+  } finally {
+    if (!chunksExhausted) {
+      await chunkIterator.return?.();
+    }
+  }
+  parser.finish();
+  return { bytesRead, entriesHandled, ignoredExtensionEntries };
 }
