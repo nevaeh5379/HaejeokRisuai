@@ -6,7 +6,12 @@ import {
   createSingleTabSnapshot,
   type ChatWorkspaceBounds,
 } from "./chatWorkspace";
-import { isTauri, isTauriMacOS, isTauriWindows } from "./platform";
+import {
+  isTauri,
+  isTauriLinux,
+  isTauriMacOS,
+  isTauriWindows,
+} from "./platform";
 
 const WINDOW_KIND_PARAM = "risuWindow";
 const WINDOW_ID_PARAM = "workspaceWindowId";
@@ -602,11 +607,15 @@ async function openAuxiliaryWindow(
     minWidth: 300,
     minHeight: 500,
     resizable: true,
-    transparent: isTauriMacOS || isTauriWindows,
+    transparent: isTauriLinux || isTauriMacOS || isTauriWindows,
     titleBarStyle: isTauriMacOS ? "overlay" : undefined,
     hiddenTitle: isTauriMacOS,
-    trafficLightPosition: isTauriMacOS ? new LogicalPosition(12, 22) : undefined,
-    visible: true,
+    trafficLightPosition: isTauriMacOS
+      ? new LogicalPosition(12, 22)
+      : undefined,
+    // Linux Wayland windows must stay unrealized until the native plugin has
+    // removed Tao's forced GtkHeaderBar and negotiated compositor decoration.
+    visible: !isTauriLinux,
     focus: true,
   });
 

@@ -7,6 +7,7 @@ use tauri::{
 };
 
 mod background_effect;
+mod decoration;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,8 +87,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                     if window.label() == "main" {
                         set_capabilities(LinuxWindowCapabilities::default());
                     }
+                    if let Ok(gtk_window) = window.gtk_window() {
+                        gtk_window.show_all();
+                    }
                     eprintln!(
-                        "[Linux Wayland] Failed to initialize {}: {error}",
+                        "[Linux Wayland] Failed to initialize {}; keeping GTK CSD: {error}",
                         window.label()
                     );
                 }

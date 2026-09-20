@@ -13,7 +13,7 @@ use wayland_protocols::ext::background_effect::v1::client::{
 };
 use wayland_protocols_plasma::blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager};
 
-use super::{BackgroundBlurSupport, LinuxWindowCapabilities};
+use super::{decoration, BackgroundBlurSupport, LinuxWindowCapabilities};
 
 const STANDARD_BLUR_MANAGER: &str = "ext_background_effect_manager_v1";
 const KWIN_BLUR_MANAGER: &str = "org_kde_kwin_blur_manager";
@@ -252,39 +252,44 @@ fn create_effect(
 
 fn connect_to_gtk_wayland(
     gtk_window: &gtk::ApplicationWindow,
-) -> Result<Option<(Connection, wl_surface::WlSurface)>, String> {
+) -> Result<Option<Connection>, String> {
     let display = gtk_window.display();
     if !display.backend().is_wayland() {
         return Ok(None);
     }
 
-    if gtk_window.window().is_none() {
-        gtk_window.realize();
-    }
-    let gdk_window = gtk_window
-        .window()
-        .ok_or_else(|| "GTK window has no realized GDK window".to_string())?;
-
     let display_ptr =
         unsafe { gdk_wayland_sys::gdk_wayland_display_get_wl_display(display.as_ptr().cast()) };
-    let surface_ptr =
-        unsafe { gdk_wayland_sys::gdk_wayland_window_get_wl_surface(gdk_window.as_ptr().cast()) };
-    if display_ptr.is_null() || surface_ptr.is_null() {
-        return Err("GTK did not expose Wayland display/surface handles".to_string());
+    if display_ptr.is_null() {
+        return Err("GTK did not expose a Wayland display handle".to_string());
     }
 
     // SAFETY: GTK owns this wl_display for at least as long as the Tauri window.
-
     // The backend is created in guest mode and therefore never disconnects it.
     let backend = unsafe { Backend::from_foreign_display(display_ptr.cast()) };
-    let connection = Connection::from_backend(backend);
-    let surface = wrap_foreign_surface(&connection, surface_ptr)?;
-    Ok(Some((connection, surface)))
+    Ok(Some(Connection::from_backend(backend)))
+}
+
+fn wrap_gtk_surface(
+    connection: &Connection,
+    gtk_window: &gtk::ApplicationWindow,
+) -> Result<wl_surface::WlSurface, String> {
+    let gdk_window = gtk_window
+        .window()
+        .ok_or_else(|| "GTK window has no realized GDK window".to_string())?;
+    let surface_ptr =
+        unsafe { gdk_wayland_sys::gdk_wayland_window_get_wl_surface(gdk_window.as_ptr().cast()) };
+    if surface_ptr.is_null() {
+        return Err("GTK did not expose a Wayland surface handle".to_string());
+    }
+
+    wrap_foreign_surface(connection, surface_ptr)
 }
 
 pub fn install<R: Runtime>(window: &Window<R>) -> Result<LinuxWindowCapabilities, String> {
     let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
-    let Some((connection, surface)) = connect_to_gtk_wayland(&gtk_window)? else {
+    let Some(connection) = connect_to_gtk_wayland(&gtk_window)? else {
+        gtk_window.show_all();
         return Ok(LinuxWindowCapabilities::default());
     };
 
@@ -296,8 +301,27 @@ pub fn install<R: Runtime>(window: &Window<R>) -> Result<LinuxWindowCapabilities
         .roundtrip(&mut state)
         .map_err(|error| format!("Failed to enumerate Wayland globals: {error}"))?;
 
-    let server_side_decoration =
-        state.has_global(XDG_DECORATION_MANAGER) || state.has_global(KWIN_DECORATION_MANAGER);
+    let standard_decoration_advertised = state.has_global(XDG_DECORATION_MANAGER);
+    // GTK3 does not expose its xdg_toplevel and does not bind xdg-decoration
+    // itself. Its usable SSD path on current Tao/Tauri is KWin's legacy
+    // server-decoration protocol, so only remove Tao's HeaderBar when that
+    // protocol is actually present.
+    let server_side_decoration = state.has_global(KWIN_DECORATION_MANAGER);
+    let using_server_side_decoration =
+        decoration::prefer_server_side_decoration(&gtk_window, server_side_decoration);
+    if using_server_side_decoration {
+        eprintln!("[Linux Wayland] Removed Tao GTK header bar before realization");
+    } else if server_side_decoration && gtk_window.is_realized() {
+        eprintln!("[Linux Wayland] Window was realized before decoration negotiation");
+    } else if standard_decoration_advertised && !server_side_decoration {
+        eprintln!(
+            "[Linux Wayland] xdg-decoration is advertised but GTK3 cannot safely attach to its xdg_toplevel; keeping CSD"
+        );
+    }
+
+    gtk_window.show_all();
+    let surface = wrap_gtk_surface(&connection, &gtk_window)?;
+
     let compositor = bind_compositor(&registry, &state, &qh)?;
     let (effect, background_blur) =
         create_effect(&registry, &mut state, &mut event_queue, &surface)?;
