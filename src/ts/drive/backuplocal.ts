@@ -343,12 +343,18 @@ interface LocalBackupSource {
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
+interface LocalBackupRestoreOptions {
+  beforeDatabaseApply?: () => Promise<void>;
+}
+
 const NATIVE_IMPORT_CHUNK_SIZE = 512 * 1024;
 
 /**
  * Builds a once-only native asset commit callback for one import session.
- * Repeated invocations are no-ops, so the restore flow can hook it before
- * the database apply without double-committing staged assets.
+ * A successful commit is remembered, so repeated calls are no-ops and the
+ * staged assets are never double-committed. Until it succeeds, the next
+ * call retries the commit, because a failed commit must not permanently
+ * block the restore.
  */
 export function createNativeAssetCommit(
   plugin: Pick<NativeBackupPlugin, "commitImport">,
@@ -357,8 +363,8 @@ export function createNativeAssetCommit(
   let committed: boolean = false;
   return async (): Promise<void> => {
     if (committed) return;
-    committed = true;
     await plugin.commitImport({ id });
+    committed = true;
   };
 }
 
@@ -1512,7 +1518,7 @@ export async function restoreInlayBackupEntry(
 async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
-  options: { beforeDatabaseApply?: () => Promise<void> } = {},
+  options: LocalBackupRestoreOptions = {},
 ): Promise<void> {
   const textDecoder = new TextDecoder();
   const encryptionMeta: {
@@ -2320,31 +2326,33 @@ export async function restoreLocalBackupFile(file: File) {
   await restoreLocalBackupSource(file);
 }
 
-async function loadCapacitorLocalBackupUnlocked() {
+async function loadCapacitorLocalBackupUnlocked(): Promise<void> {
   if (!nativeBackup) throw new Error("Native backup importer is unavailable");
-  const remote = usesRemoteBackupApi(forageStorage.realStorage);
+  const remote: boolean = usesRemoteBackupApi(forageStorage.realStorage);
   reportLocalBackupRestoreProgress("selectingSource", { percent: 0 });
-  const progressListener = await nativeBackup.addListener(
+  const progressListener: Awaited<
+    ReturnType<NativeBackupPlugin["addListener"]>
+  > = await nativeBackup.addListener(
     "importProgress",
-    (event) => {
-      const bytesRead = Math.max(0, event.bytesRead ?? 0);
-      const totalBytes = Math.max(0, event.totalBytes ?? 0);
-      const copySpan = remote ? 18 : 43;
-      let percent =
+    (event: NativeImportProgress): void => {
+      const bytesRead: number = Math.max(0, event.bytesRead ?? 0);
+      const totalBytes: number = Math.max(0, event.totalBytes ?? 0);
+      const copySpan: number = remote ? 18 : 43;
+      let percent: number =
         totalBytes > 0
           ? 2 +
             Math.min(copySpan, Math.floor((bytesRead / totalBytes) * copySpan))
           : 2;
 
-      let detail =
+      let detail: string =
         totalBytes > 0
           ? `${formatBackupBytes(bytesRead)} / ${formatBackupBytes(totalBytes)}`
           : bytesRead > 0
             ? formatBackupBytes(bytesRead)
             : "";
       if (!remote && event.stage === "committing") {
-        const processed = Math.max(0, event.assetsProcessed ?? 0);
-        const total = Math.max(0, event.totalAssets ?? 0);
+        const processed: number = Math.max(0, event.assetsProcessed ?? 0);
+        const total: number = Math.max(0, event.totalAssets ?? 0);
         percent = total > 0 ? 45 + Math.floor((processed / total) * 4) : 47;
         detail =
           total > 0
@@ -2356,50 +2364,49 @@ async function loadCapacitorLocalBackupUnlocked() {
       reportLocalBackupRestoreProgress("reading", { percent, detail });
     },
   );
-  let selected: Awaited<ReturnType<NativeBackupPlugin["openImport"]>>;
-  try {
-    selected = await nativeBackup.openImport(
-      remote ? { raw: true } : undefined,
-    );
-  } finally {
-    await progressListener.remove().catch(() => {});
-  }
-  if (selected.cancelled) {
-    alertClear();
-    return;
-  }
-  if (!selected.id)
-    throw new Error("Native backup import session was not created");
 
-  const id: string = selected.id;
-  const commitNativeAssets: () => Promise<void> = createNativeAssetCommit(
-    nativeBackup,
-    id,
-  );
   try {
-    const size: number = Math.max(0, selected.size ?? 0);
-    const source: LocalBackupSource = createNativeImportSource(
+    const selected: Awaited<ReturnType<NativeBackupPlugin["openImport"]>> =
+      await nativeBackup.openImport(remote ? { raw: true } : undefined);
+    if (selected.cancelled) {
+      alertClear();
+      return;
+    }
+    if (!selected.id)
+      throw new Error("Native backup import session was not created");
+
+    const id: string = selected.id;
+    const commitNativeAssets: () => Promise<void> = createNativeAssetCommit(
       nativeBackup,
       id,
-      size,
     );
-    if (remote) {
-      reportLocalBackupRestoreProgress("reading", { percent: 20 });
-      await restoreNodeLocalBackupSourceUnlocked(source, 20);
-    } else {
-      reportLocalBackupRestoreProgress("reading", { percent: 50 });
-      await restoreLocalBackupSourceUnlocked(
-        source,
-        { start: 50, end: 90 },
-        {
-          beforeDatabaseApply: async (): Promise<void> => {
-            await commitNativeAssets();
-          },
-        },
+    try {
+      const size: number = Math.max(0, selected.size ?? 0);
+      const source: LocalBackupSource = createNativeImportSource(
+        nativeBackup,
+        id,
+        size,
       );
+      if (remote) {
+        reportLocalBackupRestoreProgress("reading", { percent: 20 });
+        await restoreNodeLocalBackupSourceUnlocked(source, 20);
+      } else {
+        reportLocalBackupRestoreProgress("reading", { percent: 50 });
+        await restoreLocalBackupSourceUnlocked(
+          source,
+          { start: 50, end: 90 },
+          {
+            beforeDatabaseApply: async (): Promise<void> => {
+              await commitNativeAssets();
+            },
+          },
+        );
+      }
+    } finally {
+      await nativeBackup.closeImport({ id }).catch(() => {});
     }
   } finally {
-    await nativeBackup.closeImport({ id }).catch(() => {});
+    await progressListener.remove().catch(() => {});
   }
 }
 

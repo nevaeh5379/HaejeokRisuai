@@ -72,13 +72,14 @@ describe("createNativeAssetCommit", () => {
     expect(commitIds).toEqual(["session-1"]);
   });
 
-  it("keeps the once-only guard after a failed commit attempt", async (): Promise<void> => {
+  it("retries after a failed commit and remembers the later success", async (): Promise<void> => {
     const commitIds: string[] = [];
     let attempts: number = 0;
     const plugin = {
       commitImport: async (options: { id: string }): Promise<void> => {
         attempts += 1;
-        throw new Error("commit failed");
+        commitIds.push(options.id);
+        if (attempts === 1) throw new Error("commit failed");
       },
     };
     const commit: () => Promise<void> = createNativeAssetCommit(
@@ -88,8 +89,9 @@ describe("createNativeAssetCommit", () => {
 
     await expect(commit()).rejects.toThrow("commit failed");
     await commit();
-    expect(attempts).toBe(1);
-    expect(commitIds).toEqual([]);
+    await commit();
+    expect(attempts).toBe(2);
+    expect(commitIds).toEqual(["session-1", "session-1"]);
   });
 });
 
