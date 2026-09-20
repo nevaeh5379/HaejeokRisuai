@@ -16,11 +16,15 @@ import {
   getAndroidE2eInfrastructureCapabilities,
   getAndroidE2eTestTimeout,
 } from "./appium-capabilities";
+import {
+  ANDROID_E2E_APP_ACTIVITY,
+  ANDROID_E2E_APP_PACKAGE,
+  resetAndroidE2eAppData,
+} from "./android-device";
 
 const appiumUrl = new URL(
   process.env.ANDROID_E2E_APPIUM_URL ?? "http://127.0.0.1:4723",
 );
-const apkPath = process.env.ANDROID_E2E_APK;
 const artifactsDir =
   process.env.ANDROID_E2E_ARTIFACTS ?? "android-e2e/artifacts";
 const chromedriverDir =
@@ -42,8 +46,9 @@ afterEach(async () => {
 
 async function startDriver(options: { preserveData?: boolean } = {}) {
   const preserveData = options.preserveData ?? false;
-  assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
   await mkdir(chromedriverDir, { recursive: true });
+  if (!preserveData) resetAndroidE2eAppData();
+
   driver = await remote({
     protocol: appiumUrl.protocol.replace(":", ""),
     hostname: appiumUrl.hostname,
@@ -59,16 +64,10 @@ async function startDriver(options: { preserveData?: boolean } = {}) {
       ...(process.env.ANDROID_E2E_UDID
         ? { "appium:udid": process.env.ANDROID_E2E_UDID }
         : {}),
-      ...(preserveData
-        ? {}
-        : {
-            "appium:app": apkPath,
-            "appium:enforceAppInstall": true,
-          }),
-      "appium:appPackage": "co.aiclient.risu",
-      "appium:appActivity": ".MainActivity",
+      "appium:appPackage": ANDROID_E2E_APP_PACKAGE,
+      "appium:appActivity": ANDROID_E2E_APP_ACTIVITY,
       "appium:autoGrantPermissions": true,
-      "appium:noReset": preserveData,
+      "appium:noReset": true,
       "appium:newCommandTimeout": 120,
       "appium:ensureWebviewsHavePages": true,
       "appium:chromedriverExecutableDir": chromedriverDir,
@@ -564,11 +563,10 @@ async function selectNativeDocument(
 ) {
   await browser.switchContext("NATIVE_APP");
   const fileSelector = `//*[@text="${fileName}"]`;
-  const hasFile = async () =>
-    await browser
-      .$(fileSelector)
-      .then((element) => element.isDisplayed())
-      .catch(() => false);
+  const hasFile = async () => {
+    const file = await browser.$(fileSelector);
+    return file.isDisplayed().catch(() => false);
+  };
   if (!(await hasFile())) {
     const roots = await browser.$(
       "//*[@content-desc='Show roots' or @content-desc='루트 표시']",

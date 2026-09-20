@@ -6,6 +6,11 @@ import { after, test } from "node:test";
 
 import { remote } from "webdriverio";
 import {
+  ANDROID_E2E_APP_ACTIVITY,
+  ANDROID_E2E_APP_PACKAGE,
+  resetAndroidE2eAppData,
+} from "./android-device";
+import {
   getAndroidE2eConnectionRetryTimeout,
   getAndroidE2eInfrastructureCapabilities,
   getAndroidE2eTestTimeout,
@@ -14,7 +19,6 @@ import {
 const appiumUrl = new URL(
   process.env.ANDROID_E2E_APPIUM_URL ?? "http://127.0.0.1:4723",
 );
-const apkPath = process.env.ANDROID_E2E_APK;
 const artifactsDir =
   process.env.ANDROID_E2E_ARTIFACTS ?? "android-e2e/artifacts";
 const chromedriverDir =
@@ -46,8 +50,8 @@ test(
   "the packaged Android app exposes a working Capacitor WebView",
   { timeout: getAndroidE2eTestTimeout(120_000) },
   async () => {
-    assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
     await mkdir(chromedriverDir, { recursive: true });
+    resetAndroidE2eAppData();
 
     driver = await remote({
       protocol: appiumUrl.protocol.replace(":", ""),
@@ -64,12 +68,10 @@ test(
         ...(process.env.ANDROID_E2E_UDID
           ? { "appium:udid": process.env.ANDROID_E2E_UDID }
           : {}),
-        "appium:app": apkPath,
-        "appium:appPackage": "co.aiclient.risu",
-        "appium:appActivity": ".MainActivity",
-        "appium:enforceAppInstall": true,
+        "appium:appPackage": ANDROID_E2E_APP_PACKAGE,
+        "appium:appActivity": ANDROID_E2E_APP_ACTIVITY,
         "appium:autoGrantPermissions": true,
-        "appium:noReset": false,
+        "appium:noReset": true,
         "appium:newCommandTimeout": 120,
         "appium:ensureWebviewsHavePages": true,
         "appium:chromedriverExecutableDir": chromedriverDir,
