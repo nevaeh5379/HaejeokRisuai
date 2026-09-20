@@ -91,6 +91,10 @@ import {
   type LocalBackupProgressStage,
 } from "@risuai/backup-core/api";
 import { createLocalBackupExportMetadata } from "@risuai/backup-core/exportPlan";
+import {
+  createNodeBackupAssetRequest,
+  streamNodeBackupAssets,
+} from "@risuai/backup-core/node/exportAssets";
 import { dispatchBackupRestoreEntry } from "@risuai/backup-core/restoreEntry";
 import {
   attachPortableDatabaseBranchGraphs,
@@ -951,52 +955,7 @@ interface LocalBackupExportOptions {
   encryptAccountBackup: boolean;
 }
 
-type NodeBackupAssetStorage = Pick<NodeStorage, "keys" | "streamItems">;
-type StreamingBackupWriter = Pick<LocalWriter, "startBackup" | "write">;
-type NodeBackupAssetStreamOptions = Parameters<NodeStorage["streamItems"]>[3];
-
-export async function createNodeBackupAssetRequest(
-  storage: Pick<NodeBackupAssetStorage, "keys">,
-  scope: BackupAssetScope,
-  assetMap: BackupAssetMap,
-): Promise<{ keys: string[]; options?: NodeBackupAssetStreamOptions }> {
-  if (scope === "all") {
-    return { keys: [], options: { prefix: "assets/" } };
-  }
-
-  const keys = await storage.keys("assets/");
-  return { keys: filterEssentialBackupAssetKeys(keys, assetMap) };
-}
-
-export async function streamNodeBackupAssets(
-  storage: NodeBackupAssetStorage,
-  writer: StreamingBackupWriter,
-  keys: string[],
-  onProgress?: Parameters<NodeStorage["streamItems"]>[2],
-  options?: NodeBackupAssetStreamOptions,
-): Promise<{ writtenKeys: string[]; missingKeys: string[] }> {
-  const writtenKeys = new Set<string>();
-
-  await storage.streamItems(
-    keys,
-    {
-      async onFileStart(name, size) {
-        writtenKeys.add(name);
-        await writer.startBackup(name, size);
-      },
-      async onFileChunk(_name, chunk) {
-        await writer.write(chunk);
-      },
-    },
-    onProgress,
-    options,
-  );
-
-  return {
-    writtenKeys: [...writtenKeys],
-    missingKeys: keys.filter((key) => !writtenKeys.has(key)),
-  };
-}
+export { createNodeBackupAssetRequest, streamNodeBackupAssets };
 
 type BackupAssetKeyStorage = Pick<
   typeof forageStorage,
