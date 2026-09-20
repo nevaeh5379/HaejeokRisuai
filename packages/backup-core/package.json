@@ -105,6 +105,12 @@
       "require": "./dist/streamFormat.js",
       "default": "./src/streamFormat.ts"
     },
+    "./streamRestore": {
+      "types": "./src/streamRestore.ts",
+      "import": "./src/streamRestore.ts",
+      "require": "./dist/streamRestore.js",
+      "default": "./src/streamRestore.ts"
+    },
     "./node/importJobStore": {
       "types": "./src/node/importJobStore.ts",
       "import": "./src/node/importJobStore.ts",

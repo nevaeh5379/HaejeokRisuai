@@ -96,6 +96,7 @@ import {
   loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
 } from "@risuai/backup-core/portableBranches";
+import { PortableDatabaseStreamRestoreCoordinator } from "@risuai/backup-core/streamRestore";
 import { restorePortableDatabaseBranchGraphs } from "../storage/sql/portableBranchRestore";
 import {
   decodeInlayAssetBackup,
@@ -107,7 +108,6 @@ import {
   exportPortableDatabaseStream,
   PORTABLE_DATABASE_STREAM_MANIFEST,
   portableDatabaseStreamFragmentName,
-  PortableDatabaseStreamCollector,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
   type PortableDatabaseStreamPersistedRecord,
@@ -1549,15 +1549,28 @@ async function restoreLocalBackupSourceUnlocked(
   };
 
   let pendingDatabase: Uint8Array | null = null;
-  let decodedDatabase: Database | null = null;
-  let streamCollector: PortableDatabaseStreamCollector | null = null;
-  let streamingRestoreSession: PortableDatabaseStreamRestoreSession | null =
-    null;
+  let decodedDatabase: object | null = null;
   let streamingRestoreStorage: Awaited<
     ReturnType<typeof getSqlStorage>
   > | null = null;
-  let streamingManifest: PortableDatabaseStreamManifest | null = null;
   const streamingColdStorage = createStreamingColdStorageInventory();
+  const streamRestore: PortableDatabaseStreamRestoreCoordinator<PortableDatabaseStreamRestoreSession> =
+    new PortableDatabaseStreamRestoreCoordinator({
+      async createSink(): Promise<PortableDatabaseStreamRestoreSession | null> {
+        const storage: Awaited<ReturnType<typeof getSqlStorage>> =
+          await getSqlStorage();
+        if (!hasPortableDatabaseStreamRestore(storage)) return null;
+        streamingRestoreStorage = storage;
+        return await storage.beginPortableDatabaseStreamRestore();
+      },
+      onSinkFragment(fragment: PortableDatabaseStreamFragment): void {
+        fragment.records.forEach(
+          (record: PortableDatabaseStreamPersistedRecord): void => {
+            collectStreamingInventoryRecord(streamingColdStorage, record);
+          },
+        );
+      },
+    });
   let streamingDecryptionKey: Promise<string> | null = null;
   const restoredColdStorageKeys = new Set<string>();
   const assetRestoreMode = selectLocalBackupAssetRestoreMode(
@@ -1748,48 +1761,22 @@ async function restoreLocalBackupSourceUnlocked(
         pendingDatabase = data;
       } else {
         if (classification.kind === "databaseStream") {
-          let encoded = data;
+          let encoded: Uint8Array = data;
           if (encryptionMeta.type === "account" && encryptionMeta.time) {
             streamingDecryptionKey ??= fetchLegacyBackupKey(
               encryptionMeta.time,
             );
-            const key = await streamingDecryptionKey;
+            const key: string = await streamingDecryptionKey;
             encoded = isStreamingBackupEncryptedEntry(encoded)
               ? await decryptStreamingBackupEntry(encoded, key, name)
               : new Uint8Array(await decryptBuffer(encoded, key));
           }
-          const value = await decodeRisuSave(encoded);
-          if (!streamingRestoreSession && !streamCollector) {
-            const storage = await getSqlStorage();
-            if (hasPortableDatabaseStreamRestore(storage)) {
-              streamingRestoreStorage = storage;
-              streamingRestoreSession =
-                await storage.beginPortableDatabaseStreamRestore();
-            } else {
-              streamCollector = new PortableDatabaseStreamCollector();
-            }
+          const value: unknown = await decodeRisuSave(encoded);
+          const normalizedName: string | null = classification.normalized;
+          if (!normalizedName) {
+            throw new Error(`Invalid streaming database entry name: ${name}`);
           }
-          if (classification.normalized === PORTABLE_DATABASE_STREAM_MANIFEST) {
-            const manifest = value as PortableDatabaseStreamManifest;
-            if (streamingRestoreSession) {
-              if (streamingManifest) {
-                throw new Error("Duplicate streaming database manifest");
-              }
-              streamingManifest = manifest;
-            } else {
-              streamCollector!.setManifest(manifest);
-            }
-          } else {
-            const fragment = value as PortableDatabaseStreamFragment;
-            if (streamingRestoreSession) {
-              for (const record of fragment.records) {
-                collectStreamingInventoryRecord(streamingColdStorage, record);
-              }
-              await streamingRestoreSession.writeFragment(fragment);
-            } else {
-              streamCollector!.addFragment(fragment);
-            }
-          }
+          await streamRestore.acceptEntry(normalizedName, value);
           entriesRestored++;
           return;
         }
@@ -1930,12 +1917,13 @@ async function restoreLocalBackupSourceUnlocked(
         },
       );
     } catch (streamErr) {
-      if (streamingRestoreSession) {
-        await streamingRestoreSession.abort().catch(() => {});
-        streamingRestoreSession = null;
+      const failedStreamingSession: PortableDatabaseStreamRestoreSession | null =
+        streamRestore.sink;
+      if (failedStreamingSession) {
+        await failedStreamingSession.abort().catch((): void => {});
         streamingRestoreStorage = null;
-        streamingManifest = null;
       }
+      streamRestore.reset();
       // If chunked container failed, try fallback for raw database.bin
       console.warn(
         "Stream backup container parsing failed, trying raw database.bin fallback:",
@@ -1949,7 +1937,7 @@ async function restoreLocalBackupSourceUnlocked(
           throw streamErr;
         }
         pendingDatabase = rawBytes;
-        decodedDatabase = rawDb as Database;
+        decodedDatabase = rawDb;
       } catch {
         throw streamErr;
       }
@@ -1993,10 +1981,14 @@ async function restoreLocalBackupSourceUnlocked(
 
     let storage = streamingRestoreStorage ?? (await getSqlStorage());
 
+    const streamingRestoreSession: PortableDatabaseStreamRestoreSession | null =
+      streamRestore.sink;
     if (streamingRestoreSession) {
-      if (pendingDatabase || decodedDatabase || streamCollector) {
+      if (pendingDatabase || decodedDatabase) {
         throw new Error("Backup mixes legacy and streaming database formats");
       }
+      const streamingManifest: PortableDatabaseStreamManifest | null =
+        streamRestore.manifest;
       if (!streamingManifest) {
         throw new Error("Streaming database manifest is missing");
       }
@@ -2035,12 +2027,13 @@ async function restoreLocalBackupSourceUnlocked(
       streamingRestoreFinished = true;
       reportLocalBackupRestoreProgress("branches", { percent: 99.5 });
     } else {
-      if (streamCollector) {
+      const collectedDatabase: Record<string, unknown> | null =
+        streamRestore.finishCollected();
+      if (collectedDatabase) {
         if (pendingDatabase || decodedDatabase) {
           throw new Error("Backup mixes legacy and streaming database formats");
         }
-        decodedDatabase = streamCollector.finish() as Database;
-        streamCollector = null;
+        decodedDatabase = collectedDatabase;
       }
 
       if (!pendingDatabase && !decodedDatabase) {
@@ -2071,7 +2064,7 @@ async function restoreLocalBackupSourceUnlocked(
         );
       }
       reportLocalBackupRestoreProgress("database", { percent: 90 });
-      const decodedDb =
+      const decodedDb: object =
         decodedDatabase ??
         ((await decodeRisuSave(db as Uint8Array)) as Database);
       const prepared = preparePortableDatabaseForBranchRestore(
@@ -2168,8 +2161,10 @@ async function restoreLocalBackupSourceUnlocked(
         : "Success",
     );
   } finally {
-    if (streamingRestoreSession && !streamingRestoreFinished) {
-      await streamingRestoreSession.abort().catch(() => {});
+    const unfinishedStreamingSession: PortableDatabaseStreamRestoreSession | null =
+      streamRestore.sink;
+    if (unfinishedStreamingSession && !streamingRestoreFinished) {
+      await unfinishedStreamingSession.abort().catch((): void => {});
     }
   }
 }
