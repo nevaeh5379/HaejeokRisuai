@@ -45,6 +45,12 @@
       "require": "./dist/assetScope.js",
       "default": "./src/assetScope.ts"
     },
+    "./streamInventory": {
+      "types": "./src/streamInventory.ts",
+      "import": "./src/streamInventory.ts",
+      "require": "./dist/streamInventory.js",
+      "default": "./src/streamInventory.ts"
+    },
     "./node/legacyFormat": {
       "types": "./src/node/legacyFormat.ts",
       "import": "./src/node/legacyFormat.ts",

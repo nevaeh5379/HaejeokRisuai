@@ -38,7 +38,6 @@ import { language } from "src/lang";
 import {
   collectColdStorageBackupPayloads,
   confirmIncompleteColdStorageOperation,
-  coldStorageHeader,
   getColdStorageBackupKey,
   getColdStorageBackupName,
   getColdStorageItem,
@@ -114,7 +113,6 @@ import {
   hasPortableDatabaseStreamRestore,
   type PortableDatabaseStreamRestoreSession,
 } from "../storage/backup/portableDatabaseStreamRestore";
-import type { StorageSyncSqlRecord } from "../storage/runtime/storageSyncSource";
 import {
   normalizeLocalBackupPerformance,
   type LocalBackupPerformanceSettings,
@@ -922,6 +920,11 @@ import {
   type BackupAssetMap,
   type BackupAssetScope,
 } from "@risuai/backup-core/assetScope";
+import {
+  collectStreamingInventoryRecord,
+  createStreamingColdStorageInventory,
+  type StreamingColdStorageInventory,
+} from "@risuai/backup-core/streamInventory";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -1142,171 +1145,30 @@ async function writeBackupColdStorage(
   }
 }
 
-interface StreamingBackupInventory {
+interface StreamingBackupInventory extends StreamingColdStorageInventory {
   assetMap: BackupAssetMap;
-  referencedColdStorageKeys: Set<string>;
   exportedColdStorageKeys: Set<string>;
   unavailableColdStorageKeys: Set<string>;
-  chatOwners: Map<string, string>;
-  coldStorageCharacters: Map<
-    string,
-    {
-      chaId: string;
-      name: string;
-      coldstorage?: string;
-      coldStoragedChats?: string[];
-      chats: Array<{ message: Array<{ data: string }> }>;
-    }
-  >;
 }
 
 function createStreamingBackupInventory(): StreamingBackupInventory {
   return {
+    ...createStreamingColdStorageInventory(),
     assetMap: new Map(),
-    referencedColdStorageKeys: new Set(),
     exportedColdStorageKeys: new Set(),
     unavailableColdStorageKeys: new Set(),
-    chatOwners: new Map(),
-    coldStorageCharacters: new Map(),
   };
 }
 
 function collectStreamingBackupRecord(
   inventory: StreamingBackupInventory,
-  record: Exclude<StorageSyncSqlRecord, { type: "cold-storage" }>,
+  record: PortableDatabaseStreamPersistedRecord,
   scope: BackupAssetScope,
 ) {
-  const addAsset = (key: unknown, category: string, name: string) => {
-    if (typeof key === "string" && key.length > 0) {
-      inventory.assetMap.set(key, { charName: category, assetName: name });
-    }
-  };
-
-  if (record.type === "setting") {
-    if (record.key === "personas" && Array.isArray(record.value)) {
-      for (const persona of record.value) {
-        addAsset(persona?.icon, "Persona", `${persona?.name ?? "User"} Icon`);
-      }
-    } else if (record.key === "userIcon") {
-      addAsset(record.value, "User Settings", "User Icon");
-    } else if (record.key === "customBackground") {
-      addAsset(record.value, "User Settings", "Custom Background");
-    } else if (
-      scope === "essential" &&
-      record.key === "characterOrder" &&
-      Array.isArray(record.value)
-    ) {
-      for (const item of record.value) {
-        if (!item || typeof item === "string") continue;
-        addAsset(item.img, "Folder", `${item.name ?? "Folder"} Folder Image`);
-        addAsset(
-          item.imgFile,
-          "Folder",
-          `${item.name ?? "Folder"} Folder Image File`,
-        );
-      }
-    }
-    return;
-  }
-
-  if (record.type === "module") {
-    const mod = record.data as any;
-    const moduleName = mod?.name ?? "Unknown Module";
-    addAsset(mod?.icon, "Module", `${moduleName} Icon`);
-    if (scope === "all") {
-      for (const asset of mod?.assets ?? []) {
-        addAsset(
-          asset?.[1],
-          "Module",
-          `${moduleName} - ${asset?.[0] ?? "Asset"}`,
-        );
-      }
-    }
-    return;
-  }
-
-  if (record.type === "preset") {
-    if (scope === "essential") {
-      const preset = record.data as any;
-      addAsset(
-        preset?.image,
-        "Preset",
-        `${preset?.name ?? "Preset"} Preset Image`,
-      );
-    }
-    return;
-  }
-
-  if (record.type === "character") {
-    const character = { ...(record.data as any), chaId: record.id };
-    const characterName = character.name ?? "Unknown Character";
-    addAsset(
-      character.image,
-      characterName,
-      scope === "essential" ? "Profile Image" : "Main Image",
-    );
-    if (scope === "all") {
-      for (const emotion of character.emotionImages ?? []) {
-        addAsset(emotion?.[1], characterName, emotion?.[0] ?? "Emotion");
-      }
-      if (character.type !== "group") {
-        for (const asset of character.additionalAssets ?? []) {
-          addAsset(asset?.[1], characterName, asset?.[0] ?? "Asset");
-        }
-        for (const [name, key] of Object.entries(character.vits?.files ?? {})) {
-          addAsset(key, characterName, name);
-        }
-        for (const asset of character.ccAssets ?? []) {
-          addAsset(asset?.uri, characterName, asset?.name ?? "Asset");
-        }
-      }
-    }
-
-    const coldstorage =
-      typeof character.coldstorage === "string"
-        ? character.coldstorage
-        : undefined;
-    const coldStoragedChats = Array.isArray(character.coldStoragedChats)
-      ? character.coldStoragedChats.filter(
-          (key: unknown): key is string => typeof key === "string",
-        )
-      : [];
-    if (coldstorage) inventory.referencedColdStorageKeys.add(coldstorage);
-    for (const key of coldStoragedChats) {
-      inventory.referencedColdStorageKeys.add(key);
-    }
-    inventory.coldStorageCharacters.set(character.chaId, {
-      chaId: character.chaId,
-      name: characterName,
-      coldstorage,
-      coldStoragedChats,
-      chats: [],
-    });
-    return;
-  }
-
-  if (record.type === "chat") {
-    inventory.chatOwners.set(record.id, record.characterId);
-    return;
-  }
-
-  if (record.type === "message" && record.position === 0) {
-    const firstMessage = record.data as any;
-    if (
-      typeof firstMessage?.data === "string" &&
-      firstMessage.data.startsWith(coldStorageHeader)
-    ) {
-      const key = firstMessage.data.slice(coldStorageHeader.length);
-      if (key) inventory.referencedColdStorageKeys.add(key);
-      const ownerId = inventory.chatOwners.get(record.chatId);
-      const character = ownerId
-        ? inventory.coldStorageCharacters.get(ownerId)
-        : undefined;
-      if (character) {
-        character.chats.push({ message: [{ data: firstMessage.data }] });
-      }
-    }
-  }
+  collectStreamingInventoryRecord(inventory, record, {
+    scope,
+    assetMap: inventory.assetMap,
+  });
 }
 
 async function writeStreamingColdStorage(
@@ -1677,73 +1539,6 @@ export async function restoreInlayBackupEntry(
   return { status: "restored" };
 }
 
-interface StreamingRestoreColdStorageInventory {
-  referencedKeys: Set<string>;
-  chatOwners: Map<string, string>;
-  characters: Map<
-    string,
-    {
-      chaId: string;
-      name: string;
-      coldstorage?: string;
-      coldStoragedChats?: string[];
-      chats: Array<{ message: Array<{ data: string }> }>;
-    }
-  >;
-}
-
-function createStreamingRestoreColdStorageInventory(): StreamingRestoreColdStorageInventory {
-  return {
-    referencedKeys: new Set(),
-    chatOwners: new Map(),
-    characters: new Map(),
-  };
-}
-
-function collectStreamingRestoreColdStorageRecord(
-  inventory: StreamingRestoreColdStorageInventory,
-  record: PortableDatabaseStreamPersistedRecord,
-) {
-  if (record.type === "character") {
-    const data = record.data as any;
-    const coldstorage =
-      typeof data?.coldstorage === "string" ? data.coldstorage : undefined;
-    const coldStoragedChats = Array.isArray(data?.coldStoragedChats)
-      ? data.coldStoragedChats.filter(
-          (key: unknown): key is string => typeof key === "string",
-        )
-      : [];
-    if (coldstorage) inventory.referencedKeys.add(coldstorage);
-    for (const key of coldStoragedChats) inventory.referencedKeys.add(key);
-    inventory.characters.set(record.id, {
-      chaId: record.id,
-      name: data?.name ?? "Unknown Character",
-      coldstorage,
-      coldStoragedChats,
-      chats: [],
-    });
-    return;
-  }
-  if (record.type === "chat") {
-    inventory.chatOwners.set(record.id, record.characterId);
-    return;
-  }
-  if (record.type !== "message" || record.position !== 0) return;
-  const data = record.data as any;
-  if (
-    typeof data?.data !== "string" ||
-    !data.data.startsWith(coldStorageHeader)
-  ) {
-    return;
-  }
-  const key = data.data.slice(coldStorageHeader.length);
-  if (!key) return;
-  inventory.referencedKeys.add(key);
-  const owner = inventory.chatOwners.get(record.chatId);
-  const character = owner ? inventory.characters.get(owner) : undefined;
-  character?.chats.push({ message: [{ data: data.data }] });
-}
-
 async function restoreLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
@@ -1765,7 +1560,7 @@ async function restoreLocalBackupSourceUnlocked(
     ReturnType<typeof getSqlStorage>
   > | null = null;
   let streamingManifest: PortableDatabaseStreamManifest | null = null;
-  const streamingColdStorage = createStreamingRestoreColdStorageInventory();
+  const streamingColdStorage = createStreamingColdStorageInventory();
   let streamingDecryptionKey: Promise<string> | null = null;
   const restoredColdStorageKeys = new Set<string>();
   const assetRestoreMode = selectLocalBackupAssetRestoreMode(
@@ -1994,10 +1789,7 @@ async function restoreLocalBackupSourceUnlocked(
             const fragment = value as PortableDatabaseStreamFragment;
             if (streamingRestoreSession) {
               for (const record of fragment.records) {
-                collectStreamingRestoreColdStorageRecord(
-                  streamingColdStorage,
-                  record,
-                );
+                collectStreamingInventoryRecord(streamingColdStorage, record);
               }
               await streamingRestoreSession.writeFragment(fragment);
             } else {
@@ -2268,7 +2060,7 @@ async function restoreLocalBackupSourceUnlocked(
       }
 
       const missingColdStorageKeys: string[] = [];
-      for (const key of streamingColdStorage.referencedKeys) {
+      for (const key of streamingColdStorage.referencedColdStorageKeys) {
         if (restoredColdStorageKeys.has(key)) continue;
         const existingColdStorage = await getColdStorageItem(key);
         if (!isColdStorageBackupData(existingColdStorage)) {
@@ -2278,7 +2070,9 @@ async function restoreLocalBackupSourceUnlocked(
       if (
         !(await confirmIncompleteColdStorageOperation(
           {
-            characters: [...streamingColdStorage.characters.values()],
+            characters: [
+              ...streamingColdStorage.coldStorageCharacters.values(),
+            ],
           } as any,
           missingColdStorageKeys,
           "restore",
