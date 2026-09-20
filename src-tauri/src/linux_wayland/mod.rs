@@ -124,7 +124,6 @@ pub fn create_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     }
 
     let requested = read_decoration_preference(app);
-    let decorations = decoration::tauri_decorations_enabled(requested);
 
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Risuai")
@@ -132,13 +131,13 @@ pub fn create_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .min_inner_size(300.0, 500.0)
         .resizable(true)
         .disable_drag_drop_handler()
-        .decorations(decorations)
+        .decorations(true)
         .transparent(true)
         .visible(false)
         .build()?;
 
     eprintln!(
-        "[Linux Wayland] Created main window with {:?} (decorations={decorations})",
+        "[Linux Wayland] Created main window with {:?} GTK decoration bootstrap",
         requested
     );
     Ok(())
@@ -167,10 +166,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 return;
             }
 
-            let requested = window
-                .gtk_window()
-                .map(|gtk_window| decoration::mode_for_window(&gtk_window))
-                .unwrap_or_else(|_| read_decoration_preference(window.app_handle()));
+            let requested = read_decoration_preference(window.app_handle());
             match background_effect::install(&window, requested) {
                 Ok(capabilities) => {
                     if let Ok(mut values) = capability_store().lock() {

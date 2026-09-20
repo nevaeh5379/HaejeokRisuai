@@ -1,5 +1,4 @@
 import type { ChatTab, ChatTabsSnapshot } from "./chatTabs.svelte";
-import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import {
   ChatWindowManager,
   MAIN_CHAT_WORKSPACE_WINDOW_ID,
@@ -608,9 +607,7 @@ async function openAuxiliaryWindow(
     minWidth: 300,
     minHeight: 500,
     resizable: true,
-    decorations:
-      !isTauriLinux ||
-      (settingsStore.state.linuxWindowDecoration ?? "ssd") === "ssd",
+    decorations: true,
     transparent: isTauriLinux || isTauriMacOS || isTauriWindows,
     titleBarStyle: isTauriMacOS ? "overlay" : undefined,
     hiddenTitle: isTauriMacOS,

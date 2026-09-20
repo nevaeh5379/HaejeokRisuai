@@ -50,7 +50,6 @@
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
-    import { isLinuxCsdActive } from "src/ts/linuxWindowIntegration";
     import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import {
       closeTauriSidebarMenuPopup,
@@ -63,7 +62,6 @@
     import { onMount } from 'svelte';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
     import { btwRuntime } from 'src/ts/process/btwRuntime.svelte';
-  const linuxCsdActive = isLinuxCsdActive();
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -563,7 +561,7 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-{#if isTauriMacOS || isTauriWindows || linuxCsdActive}
+{#if isTauriMacOS || isTauriWindows}
   <div
     class="absolute top-0 left-0 right-1 h-8 z-20"
     use:windowDragRegion
@@ -644,7 +642,7 @@
   class:hidden={hidden}
   class:flex={!hidden}
 >
-  {#if isTauriMacOS || isTauriWindows || linuxCsdActive}
+  {#if isTauriMacOS || isTauriWindows}
     {#if !settingsStore.state.hamburgerButtonBottom}
       <div
         class="absolute top-0 left-0 right-1 h-8 z-20"

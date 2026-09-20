@@ -28,8 +28,8 @@
 <section class="mt-5 rounded-lg border border-darkborderc bg-darkbg/35 p-4">
     <h3 class="text-lg font-semibold text-textcolor">Linux Window Decoration</h3>
     <p class="mt-1 mb-4 text-sm text-textcolor2">
-        Choose whether the Wayland compositor or RisuAI draws the window chrome.
-        Integrated CSD extends the app surface into the titlebar area.
+        Choose whether the Wayland compositor or GTK draws the window chrome.
+        GTK CSD keeps native controls while extending the Wayland material into the titlebar area.
     </p>
 
     <label class="flex flex-col gap-2 text-sm text-textcolor">
@@ -46,7 +46,7 @@
                 SSD — compositor-native titlebar
             </option>
             <option class="bg-darkbg text-textcolor" value="csd">
-                CSD — integrated app titlebar
+                CSD — GTK native titlebar
             </option>
         </SelectInput>
     </label>

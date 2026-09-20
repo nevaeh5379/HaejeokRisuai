@@ -310,12 +310,17 @@ pub fn install<R: Runtime>(
     // installs blur; toggling GTK decorations after WebKit has realized the
     // window is too late on Wayland.
     let server_side_decoration = state.has_global(KWIN_DECORATION_MANAGER);
+    let prepared_csd =
+        decoration::prepare_client_side_decoration(&gtk_window, requested_decoration);
     let prepared_ssd = decoration::prepare_server_side_decoration(
         &gtk_window,
         requested_decoration,
         server_side_decoration,
     );
 
+    if prepared_csd {
+        eprintln!("[Linux Wayland] Styled native GTK HeaderBar for integrated CSD");
+    }
     if prepared_ssd {
         eprintln!("[Linux Wayland] Removed Tao GtkHeaderBar for compositor SSD");
     } else if requested_decoration == LinuxWindowDecoration::Ssd
