@@ -151,7 +151,7 @@ class StorageSyncStagingStore {
     }
     if (session.assets) return serializeAssetPlan(session);
     const manifest = normalizeManifest(assets);
-    const plannedAssets = {};
+    const plannedAssets = Object.create(null);
     session.status = "planning-assets";
     try {
       await fs.promises.mkdir(
@@ -340,7 +340,7 @@ class StorageSyncStagingStore {
       return false;
     }
     const persisted = new Map(raw.assets.map((asset) => [asset.id, asset]));
-    const hydrated = {};
+    const hydrated = Object.create(null);
     for (const asset of manifest) {
       const saved = persisted.get(asset.id);
       if (saved?.state === "skipped" && Number(saved.offset) === asset.size) {

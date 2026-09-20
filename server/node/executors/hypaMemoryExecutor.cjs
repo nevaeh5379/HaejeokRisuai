@@ -52,12 +52,29 @@ function hash(value) {
     .slice(0, 32);
 }
 
-const secretFingerprintKey = crypto.randomBytes(32);
+const SECRET_FINGERPRINT_CACHE_MAX_ENTRIES = 64;
+const secretFingerprintSalt = crypto.randomBytes(16);
+const secretFingerprintCache = new Map();
+
 function secretFingerprint(value) {
-  return crypto
-    .createHmac("sha256", secretFingerprintKey)
-    .update(String(value))
-    .digest("base64url");
+  const secret = String(value);
+  const cached = secretFingerprintCache.get(secret);
+  if (cached) {
+    secretFingerprintCache.delete(secret);
+    secretFingerprintCache.set(secret, cached);
+    return cached;
+  }
+
+  const fingerprint = crypto
+    .scryptSync(secret, secretFingerprintSalt, 16)
+    .toString("base64url");
+  secretFingerprintCache.set(secret, fingerprint);
+  while (secretFingerprintCache.size > SECRET_FINGERPRINT_CACHE_MAX_ENTRIES) {
+    const oldest = secretFingerprintCache.keys().next().value;
+    if (oldest === undefined) break;
+    secretFingerprintCache.delete(oldest);
+  }
+  return fingerprint;
 }
 
 function queryMetric(scope) {

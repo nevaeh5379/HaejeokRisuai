@@ -84,6 +84,7 @@ describe("storage sync asset staging", () => {
       ],
       activeStorage,
     );
+    expect(Object.getPrototypeOf(session.assets)).toBeNull();
     expect(plan.skippedCount).toBe(1);
     expect(plan.missingCount).toBe(1);
     expect(plan.remainingBytes).toBe(incoming.length);
@@ -229,6 +230,7 @@ describe("storage sync asset staging", () => {
 
     const restored = targetSession(session.id);
     await expect(store.hydrateSession(restored)).resolves.toBe(true);
+    expect(Object.getPrototypeOf(restored.assets)).toBeNull();
     expect(store.getPlan(restored).assets[0]).toMatchObject({ offset: 4, state: "receiving" });
     await store.writeAssetChunk(restored, plan.assets[0].id, 4, body.subarray(4));
     expect(store.getPlan(restored)).toMatchObject({ status: "assets-ready", remainingBytes: 0 });
