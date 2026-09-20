@@ -290,12 +290,10 @@ async function installAndroidE2ePackages(): Promise<void> {
       args: ["install", "-r", serverApk],
     })),
   ];
-  await Promise.all(
-    installs.map(async ({ label, args }) => {
-      console.log(`[android-e2e] Preinstalling ${label}: ${args.at(-1)}`);
-      await runAdbVisible(args, 300_000);
-    }),
-  );
+  for (const { label, args } of installs) {
+    console.log(`[android-e2e] Preinstalling ${label}: ${args.at(-1)}`);
+    await runAdbVisible(args, 300_000);
+  }
 
   const installedPackage = runAdbSync([
     "shell",
