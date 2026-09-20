@@ -158,6 +158,7 @@ pub fn set_risu_native_appearance<R: Runtime>(
         if let Some(settings) = gtk_window.settings() {
             settings.set_gtk_application_prefer_dark_theme(dark);
         }
+        decoration::set_native_appearance_class(&gtk_window, dark);
     }
     Ok(())
 }

@@ -4,6 +4,8 @@ use tauri::{Runtime, Window};
 use super::LinuxWindowDecoration;
 
 const INTEGRATED_CSD_CLASS: &str = "risu-integrated-csd";
+const NATIVE_DARK_CLASS: &str = "risu-native-dark";
+const NATIVE_LIGHT_CLASS: &str = "risu-native-light";
 
 pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool {
     decoration == LinuxWindowDecoration::Ssd
@@ -14,17 +16,32 @@ fn reset_header_decoration_layout(header: &gtk::HeaderBar) {
     header.set_decoration_layout_set(false);
 }
 
-fn install_header_drag_behavior(window: &gtk::ApplicationWindow, header: &gtk::HeaderBar) {
-    header.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+fn native_appearance_class(dark: bool) -> &'static str {
+    if dark {
+        NATIVE_DARK_CLASS
+    } else {
+        NATIVE_LIGHT_CLASS
+    }
+}
+
+pub fn set_native_appearance_class(window: &gtk::ApplicationWindow, dark: bool) {
+    let style = window.style_context();
+    style.remove_class(NATIVE_DARK_CLASS);
+    style.remove_class(NATIVE_LIGHT_CLASS);
+    style.add_class(native_appearance_class(dark));
+}
+
+fn install_header_drag_behavior(window: &gtk::ApplicationWindow, event_box: &gtk::EventBox) {
+    event_box.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
 
     let window = window.clone();
-    header.connect_button_press_event(move |header, event| {
+    event_box.connect_button_press_event(move |event_box, event| {
         if event.button() != 1 {
             return gtk::glib::Propagation::Proceed;
         }
 
         let (x, y) = event.position();
-        let allocation = header.allocation();
+        let allocation = event_box.allocation();
         if y <= 6.0 && !window.is_maximized() && window.is_resizable() {
             let edge = if x <= 6.0 {
                 gtk::gdk::WindowEdge::NorthWest
@@ -118,9 +135,65 @@ headerbar.risu-integrated-csd {
   border: none;
   box-shadow: none;
 }
+
+window.risu-native-dark .risu-integrated-csd,
+window.risu-native-dark .risu-integrated-csd button.titlebutton {
+  color: rgba(255, 255, 255, 0.92);
+  -gtk-icon-shadow: none;
+  text-shadow: none;
+}
+
+window.risu-native-light .risu-integrated-csd,
+window.risu-native-light .risu-integrated-csd button.titlebutton {
+  color: rgba(0, 0, 0, 0.82);
+  -gtk-icon-shadow: none;
+  text-shadow: none;
+}
+
+.risu-integrated-csd button.titlebutton {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+window.risu-native-dark .risu-integrated-csd button.titlebutton:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+window.risu-native-dark .risu-integrated-csd button.titlebutton:active {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+
+window.risu-native-light .risu-integrated-csd button.titlebutton:hover {
+  background-color: rgba(0, 0, 0, 0.11);
+}
+
+window.risu-native-light .risu-integrated-csd button.titlebutton:active {
+  background-color: rgba(0, 0, 0, 0.18);
+}
+
+.risu-integrated-csd button.titlebutton.close:hover,
+.risu-integrated-csd button.titlebutton.close:active {
+  background-color: #e81123;
+  color: white;
+}
 "#,
         )
         .map_err(|error| format!("Failed to style GTK CSD: {error}"))?;
+
+    if let Some(screen) = gtk::prelude::WidgetExt::screen(window) {
+        gtk::StyleContext::add_provider_for_screen(
+            &screen,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
+    let dark = window
+        .settings()
+        .map(|settings| settings.is_gtk_application_prefer_dark_theme())
+        .unwrap_or(false);
+    set_native_appearance_class(window, dark);
 
     titlebar.style_context().add_class(INTEGRATED_CSD_CLASS);
     titlebar
@@ -141,7 +214,10 @@ headerbar.risu-integrated-csd {
         }
     });
 
-    install_header_drag_behavior(window, &header);
+    // Tao's HeaderBar is a no-window widget. Its surrounding EventBox owns the
+    // GDK input surface, so window dragging and top-edge resizing must be
+    // handled there while native title buttons keep receiving their own input.
+    install_header_drag_behavior(window, &event_box);
 
     // Keep the WebView exactly two GTK parents below the window. Tauri's Linux
     // resize handler assumes `WebView -> container -> Window`; retaining the
@@ -206,6 +282,13 @@ mod tests {
     #[test]
     fn integrated_csd_class_is_scoped() {
         assert_eq!(INTEGRATED_CSD_CLASS, "risu-integrated-csd");
+    }
+
+    #[test]
+    fn native_appearance_uses_exclusive_window_classes() {
+        assert_eq!(native_appearance_class(true), NATIVE_DARK_CLASS);
+        assert_eq!(native_appearance_class(false), NATIVE_LIGHT_CLASS);
+        assert_ne!(NATIVE_DARK_CLASS, NATIVE_LIGHT_CLASS);
     }
 
     #[test]
