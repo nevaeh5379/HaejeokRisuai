@@ -45,6 +45,12 @@
       "require": "./dist/restoreBatch.js",
       "default": "./src/restoreBatch.ts"
     },
+    "./restoreEntry": {
+      "types": "./src/restoreEntry.ts",
+      "import": "./src/restoreEntry.ts",
+      "require": "./dist/restoreEntry.js",
+      "default": "./src/restoreEntry.ts"
+    },
     "./api": {
       "types": "./src/api.ts",
       "import": "./src/api.ts",
