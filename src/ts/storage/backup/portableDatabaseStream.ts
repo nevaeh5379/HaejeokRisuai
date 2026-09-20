@@ -16,12 +16,18 @@ import {
   LOCAL_BACKUP_PERFORMANCE_LIMITS,
 } from "./localBackupPerformance";
 import { PortableDatabaseStreamCollector } from "@risuai/backup-core/streamCollector";
+import {
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
+} from "@risuai/backup-core/streamFormat";
 
 export {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
   portableDatabaseStreamFragmentName,
   PortableDatabaseStreamCollector,
 };

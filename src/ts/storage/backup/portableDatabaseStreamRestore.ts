@@ -1,5 +1,6 @@
 import {
-  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
   type PortableDatabaseStreamPersistedRecord,
@@ -63,24 +64,13 @@ export class PortableDatabaseStreamValidator {
   private sourceRevision: number | null = null;
 
   acceptFragment(fragment: PortableDatabaseStreamFragment): void {
-    if (
-      fragment.format !== "risu-portable-database-fragment" ||
-      fragment.version !== 1 ||
-      !Number.isSafeInteger(fragment.index) ||
-      fragment.index <= 0 ||
-      !Array.isArray(fragment.records) ||
-      fragment.records.length === 0 ||
-      fragment.records.length > PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS
-    ) {
-      throw new Error("Invalid streaming database fragment");
+    const parsed = parsePortableDatabaseStreamFragment(fragment);
+    if (!parsed) throw new Error("Invalid streaming database fragment");
+    if (this.fragments.has(parsed.index)) {
+      throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
     }
-    if (this.fragments.has(fragment.index)) {
-      throw new Error(
-        `Duplicate streaming database fragment ${fragment.index}`,
-      );
-    }
-    this.fragments.add(fragment.index);
-    for (const record of fragment.records) {
+    this.fragments.add(parsed.index);
+    for (const record of parsed.records) {
       this.acceptRecord(record);
     }
   }
@@ -106,21 +96,8 @@ export class PortableDatabaseStreamValidator {
   }
 
   finish(manifest: PortableDatabaseStreamManifest): void {
-    if (
-      manifest.format !== "risu-portable-database-stream" ||
-      manifest.version !== 1 ||
-      manifest.complete !== true ||
-      !Number.isSafeInteger(manifest.revision) ||
-      manifest.revision < 0 ||
-      !Number.isSafeInteger(manifest.totalFragments) ||
-      manifest.totalFragments <= 0 ||
-      !Number.isSafeInteger(manifest.totalRecords) ||
-      manifest.totalRecords <= 0 ||
-      !manifest.counts ||
-      typeof manifest.counts !== "object"
-    ) {
-      throw new Error("Unsupported streaming database manifest");
-    }
+    const parsed = parsePortableDatabaseStreamManifest(manifest);
+    if (!parsed) throw new Error("Unsupported streaming database manifest");
     if (
       manifest.totalFragments !== this.fragments.size ||
       manifest.totalRecords !== this.totalRecords

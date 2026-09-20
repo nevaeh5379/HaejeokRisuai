@@ -1,9 +1,6 @@
 import { once } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
-import {
-  LOCAL_BACKUP_DATABASE_RECORD_TYPES,
-  LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-} from "./databaseStreamStore";
+import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore";
 import { decodeLegacyBackupDatabase } from "./legacyFormat";
 import {
   LegacyBackupStreamingUnsupportedError,
@@ -15,6 +12,12 @@ import {
   type LegacyBackupSqlRecord,
 } from "../legacyRecords";
 import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy";
+import {
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
+  type PortableDatabaseStreamFragment,
+  type PortableDatabaseStreamManifest,
+} from "../streamFormat";
 import type { BackupImportPlan } from "./importPlan";
 
 export interface PreparedLocalBackupDatabase {
@@ -35,23 +38,6 @@ export interface LocalBackupDatabasePreparationOptions {
   onProgress?: (progress: LocalBackupDatabasePreparationProgress) => void;
 }
 
-interface PortableDatabaseStreamManifest {
-  format: "risu-portable-database-stream";
-  version: 1;
-  revision: number;
-  totalFragments: number;
-  totalRecords: number;
-  counts: Record<string, number | undefined>;
-  complete: true;
-}
-
-interface PortableDatabaseStreamFragment {
-  format: "risu-portable-database-fragment";
-  version: 1;
-  index: number;
-  records: LegacyBackupSqlRecord[];
-}
-
 function requireObject(value: unknown, label: string): Record<string, any> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
@@ -61,23 +47,11 @@ function requireObject(value: unknown, label: string): Record<string, any> {
 
 function decodeManifest(data: unknown): PortableDatabaseStreamManifest {
   const manifest = requireObject(data, "Portable database stream manifest");
-  if (
-    manifest.format !== "risu-portable-database-stream" ||
-    manifest.version !== 1 ||
-    manifest.complete !== true ||
-    !Number.isSafeInteger(manifest.revision) ||
-    Number(manifest.revision) < 0 ||
-    !Number.isSafeInteger(manifest.totalFragments) ||
-    Number(manifest.totalFragments) <= 0 ||
-    !Number.isSafeInteger(manifest.totalRecords) ||
-    Number(manifest.totalRecords) <= 0 ||
-    !manifest.counts ||
-    typeof manifest.counts !== "object" ||
-    Array.isArray(manifest.counts)
-  ) {
+  const parsed = parsePortableDatabaseStreamManifest(manifest);
+  if (!parsed || Array.isArray(parsed.counts)) {
     throw new Error("Portable database stream manifest is invalid");
   }
-  return manifest as PortableDatabaseStreamManifest;
+  return parsed;
 }
 
 function decodeFragment(
@@ -86,17 +60,13 @@ function decodeFragment(
   name: string,
 ): PortableDatabaseStreamFragment {
   const fragment = requireObject(data, `Portable database fragment ${name}`);
-  if (
-    fragment.format !== "risu-portable-database-fragment" ||
-    fragment.version !== 1 ||
-    fragment.index !== expectedIndex ||
-    !Array.isArray(fragment.records) ||
-    fragment.records.length === 0 ||
-    fragment.records.length > LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS
-  ) {
+  const parsed = parsePortableDatabaseStreamFragment(fragment, {
+    expectedIndex,
+  });
+  if (!parsed) {
     throw new Error(`Invalid portable database fragment: ${name}`);
   }
-  return fragment as PortableDatabaseStreamFragment;
+  return parsed;
 }
 
 async function writeRecordLine(

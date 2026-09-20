@@ -73,8 +73,8 @@ function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
  * getColdStorageBackupKey, getInlayBackupKey, and normalizeBackupAssetPath.
  */
 export function classifyBackupEntry(name: string): BackupEntryClassification {
-  const normalized: string = normalizeBackupEntryName(name);
-  if (!normalized) return { kind: "invalid" satisfies BackupEntryKind, normalized: null satisfies string};
+  const normalized: string | null = normalizeBackupEntryName(name);
+  if (!normalized) return { kind: "invalid", normalized: null };
   const kind: BackupEntryKind =
     classifyExactBackupEntry(normalized) ??
     classifyPatternBackupEntry(normalized);

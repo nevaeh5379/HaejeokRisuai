@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LocalBackupDatabaseStreamSession } from "../api";
-import { PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS } from "../streamFormat";
+import {
+  parsePortableDatabaseStreamManifest,
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+} from "../streamFormat";
 
 export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
 /**
@@ -341,23 +344,9 @@ export class LocalBackupDatabaseStreamStore<
     manifest: unknown,
     session: InternalSession<TState>,
   ): asserts manifest is LocalBackupDatabaseStreamManifest {
-    const value = manifest as
-      | Partial<LocalBackupDatabaseStreamManifest>
-      | null;
-    if (
-      !value ||
-      value.format !== "risu-portable-database-stream" ||
-      value.version !== LOCAL_BACKUP_DATABASE_STREAM_VERSION ||
-      value.complete !== true ||
-      !Number.isSafeInteger(value.revision) ||
-      Number(value.revision) < 0 ||
-      !Number.isSafeInteger(value.totalFragments) ||
-      Number(value.totalFragments) <= 0 ||
-      !Number.isSafeInteger(value.totalRecords) ||
-      Number(value.totalRecords) <= 0 ||
-      !value.counts ||
-      typeof value.counts !== "object"
-    ) {
+    const value = manifest as Partial<LocalBackupDatabaseStreamManifest> | null;
+    const parsed = parsePortableDatabaseStreamManifest(value);
+    if (!parsed) {
       throw new LocalBackupDatabaseStreamError(
         "Portable database stream manifest is invalid",
         "invalid_manifest",
@@ -371,16 +360,16 @@ export class LocalBackupDatabaseStreamStore<
     }
     const completedFragments = session.nextFragmentIndex - 1;
     if (
-      value.totalFragments !== completedFragments ||
-      value.totalRecords !== session.recordCount
+      parsed.totalFragments !== completedFragments ||
+      parsed.totalRecords !== session.recordCount
     ) {
       throw new LocalBackupDatabaseStreamError(
-        `Portable database stream is incomplete (${completedFragments}/${value.totalFragments} fragments, ${session.recordCount}/${value.totalRecords} records)`,
+        `Portable database stream is incomplete (${completedFragments}/${parsed.totalFragments} fragments, ${session.recordCount}/${parsed.totalRecords} records)`,
         "incomplete_stream",
       );
     }
     if (
-      value.revision !==
+      parsed.revision !==
       this.adapter.getSourceRevision(session.validationState)
     ) {
       throw new LocalBackupDatabaseStreamError(
@@ -389,14 +378,14 @@ export class LocalBackupDatabaseStreamStore<
       );
     }
     for (const type of LOCAL_BACKUP_DATABASE_RECORD_TYPES) {
-      if ((value.counts[type] ?? 0) !== (session.counts[type] ?? 0)) {
+      if ((parsed.counts[type] ?? 0) !== (session.counts[type] ?? 0)) {
         throw new LocalBackupDatabaseStreamError(
           `Portable database stream ${type} count does not match`,
           "record_count_mismatch",
         );
       }
     }
-    for (const [type, count] of Object.entries(value.counts)) {
+    for (const [type, count] of Object.entries(parsed.counts)) {
       if (!isAllowedRecordType(type) && Number(count) !== 0) {
         throw new LocalBackupDatabaseStreamError(
           `Portable database stream contains unsupported record type '${type}'`,
