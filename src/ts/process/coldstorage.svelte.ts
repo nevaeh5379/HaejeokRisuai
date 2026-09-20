@@ -23,6 +23,7 @@ import {
   getColdStorageBackupName,
   isColdStorageBackupData,
   listColdDataKeysFromDb,
+  type ColdStorageDatabaseReference,
 } from "./coldstorageData";
 
 export {
@@ -359,7 +360,7 @@ export async function collectColdStorageBackupPayloads(
 }
 
 export async function confirmIncompleteColdStorageOperation(
-  db: Pick<Database, "characters">,
+  db: ColdStorageDatabaseReference,
   unavailableKeys: Iterable<string>,
   operation: "backup" | "restore",
 ): Promise<boolean> {

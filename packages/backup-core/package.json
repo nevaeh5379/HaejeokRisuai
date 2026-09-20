@@ -51,6 +51,12 @@
       "require": "./dist/restoreEntry.js",
       "default": "./src/restoreEntry.ts"
     },
+    "./restoreArchive": {
+      "types": "./src/restoreArchive.ts",
+      "import": "./src/restoreArchive.ts",
+      "require": "./dist/restoreArchive.js",
+      "default": "./src/restoreArchive.ts"
+    },
     "./api": {
       "types": "./src/api.ts",
       "import": "./src/api.ts",
@@ -188,6 +194,30 @@
       "import": "./src/inlayExport.ts",
       "require": "./dist/inlayExport.js",
       "default": "./src/inlayExport.ts"
+    },
+    "./progress": {
+      "types": "./src/progress.ts",
+      "import": "./src/progress.ts",
+      "require": "./dist/progress.js",
+      "default": "./src/progress.ts"
+    },
+    "./assetExport": {
+      "types": "./src/assetExport.ts",
+      "import": "./src/assetExport.ts",
+      "require": "./dist/assetExport.js",
+      "default": "./src/assetExport.ts"
+    },
+    "./coldStorageExport": {
+      "types": "./src/coldStorageExport.ts",
+      "import": "./src/coldStorageExport.ts",
+      "require": "./dist/coldStorageExport.js",
+      "default": "./src/coldStorageExport.ts"
+    },
+    "./exportEncryption": {
+      "types": "./src/exportEncryption.ts",
+      "import": "./src/exportEncryption.ts",
+      "require": "./dist/exportEncryption.js",
+      "default": "./src/exportEncryption.ts"
     },
     "./importSource": {
       "types": "./src/importSource.ts",

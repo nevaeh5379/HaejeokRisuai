@@ -5,11 +5,21 @@ import {
   isColdStorageBackupData,
 } from "@risuai/backup-core/coldStorage";
 import { safeStructuredClone } from "../polyfill";
-import type {
-  Database,
-  character,
-  groupChat,
-} from "../storage/database/schema";
+import type { character, groupChat } from "../storage/database/schema";
+
+export interface ColdStorageCharacterReference {
+  chaId: string;
+  name?: string;
+  coldstorage?: string;
+  coldStoragedChats?: string[];
+  chats?: Array<{
+    message?: Array<{ data?: string }>;
+  }>;
+}
+
+export interface ColdStorageDatabaseReference {
+  characters?: Array<ColdStorageCharacterReference | null | undefined>;
+}
 
 export const coldStorageHeader = COLD_STORAGE_HEADER;
 export {
@@ -72,7 +82,7 @@ export function replaceColdStoragePayloadResources(
 }
 
 function listColdDataKeysFromCharacter(
-  character: character | groupChat,
+  character: ColdStorageCharacterReference,
 ): string[] {
   const keys: string[] = [];
   if (character.coldstorage) {
@@ -89,7 +99,7 @@ function listColdDataKeysFromCharacter(
 }
 
 export function listColdDataKeysFromDb(
-  db: Pick<Database, "characters"> | null | undefined,
+  db: ColdStorageDatabaseReference | null | undefined,
 ): string[] {
   const keys = new Set<string>();
   for (const character of db?.characters ?? []) {
@@ -104,7 +114,7 @@ export function listColdDataKeysFromDb(
 }
 
 export function getColdStorageAffectedCharacters(
-  db: Pick<Database, "characters"> | null | undefined,
+  db: ColdStorageDatabaseReference | null | undefined,
   unavailableKeys: Iterable<string>,
 ): {
   characterNames: string[];

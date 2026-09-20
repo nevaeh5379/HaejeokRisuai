@@ -3,7 +3,6 @@ import {
   mkdir,
   open as openFile,
   readFile,
-  writeFile,
 } from "@tauri-apps/plugin-fs";
 import localforage from "localforage";
 import {
@@ -44,6 +43,7 @@ import {
   isColdStorageBackupData,
   listColdDataKeys,
   setColdStorageItem,
+  type ColdStorageBackupPayload,
 } from "../process/coldstorage.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { flushDurableStores } from "../stores/domain/flushDurableStores";
@@ -71,7 +71,6 @@ import {
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 import {
-  type BackupEntryClassification,
   classifyBackupEntry,
   getInlayBackupKey,
   INLAY_BACKUP_PREFIX,
@@ -80,14 +79,9 @@ import {
   normalizeBackupAssetPath,
 } from "@risuai/backup-core/entryPolicy";
 import {
-  parseBufferedBackupContainer,
-  type BackupContainerEntryInfo,
-} from "@risuai/backup-core/containerStream";
-import {
   createEncodedBackupSource,
   createImportCommit,
   createSequentialFileBackupSource,
-  iterateLocalBackupSource,
   streamBackupResponse,
   type LocalBackupSource,
 } from "@risuai/backup-core/importSource";
@@ -97,18 +91,33 @@ import {
   type LocalBackupMode as BackupCoreLocalBackupMode,
   type LocalBackupProgressStage,
 } from "@risuai/backup-core/api";
+import {
+  createBackupProgressReporter,
+  type BackupProgressView,
+} from "@risuai/backup-core/progress";
+import {
+  exportNativeBackupAssets,
+  exportStoredBackupAssets,
+  formatMissingBackupAssets,
+  selectBackupAssetKeys,
+  type BackupAssetExportProgress,
+} from "@risuai/backup-core/assetExport";
+import {
+  prepareColdStorageBackup,
+  writeColdStorageBackup,
+  type ColdStorageBackupCollection,
+} from "@risuai/backup-core/coldStorageExport";
+import { prepareAccountBackupEncryption } from "@risuai/backup-core/exportEncryption";
 import { createLocalBackupExportMetadata } from "@risuai/backup-core/exportPlan";
 import {
   createNodeBackupAssetRequest,
   streamNodeBackupAssets,
 } from "@risuai/backup-core/node/exportAssets";
-import { dispatchBackupRestoreEntry } from "@risuai/backup-core/restoreEntry";
 import {
   attachPortableDatabaseBranchGraphs,
   loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
 } from "@risuai/backup-core/portableBranches";
-import { PortableDatabaseStreamRestoreCoordinator } from "@risuai/backup-core/streamRestore";
 import { restorePortableDatabaseBranchGraphs } from "../storage/sql/portableBranchRestore";
 import {
   decodeInlayAssetBackup,
@@ -122,7 +131,6 @@ import {
   portableDatabaseStreamFragmentName,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-  type PortableDatabaseStreamPersistedRecord,
 } from "../storage/backup/portableDatabaseStream";
 import {
   hasPortableDatabaseStreamRestore,
@@ -145,8 +153,6 @@ const alertProgress = (
     currentStepRatio?: number;
   },
 ) => showProgressAlert(msg, progress, "backup", stepState);
-
-const LOCAL_BACKUP_PROGRESS_STAGE_ORDER = LOCAL_BACKUP_PROGRESS_STAGES;
 
 const LOCAL_BACKUP_PROGRESS_RANGES: Record<
   LocalBackupProgressStage,
@@ -180,45 +186,21 @@ function localBackupProgressLabel(stage: LocalBackupProgressStage): string {
   }
 }
 
-function clampProgressRatio(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function reportLocalBackupProgress(
-  stage: LocalBackupProgressStage,
-  options: {
-    current?: number;
-    total?: number;
-    detail?: string;
-    percent?: number;
-  } = {},
-) {
-  const [start, end] = LOCAL_BACKUP_PROGRESS_RANGES[stage];
-  const total = Math.max(0, Math.floor(options.total ?? 0));
-  const current = Math.max(
-    0,
-    Math.min(total, Math.floor(options.current ?? 0)),
-  );
-  const ratio = total > 0 ? current / total : 0;
-  const percent = options.percent ?? start + (end - start) * ratio;
-  const stepRatio =
-    total > 0
-      ? clampProgressRatio(ratio)
-      : end > start
-        ? clampProgressRatio((percent - start) / (end - start))
-        : 1;
-  const count = total > 0 ? ` (${current} / ${total})` : "";
-  const detail = options.detail ? `\n${options.detail}` : "";
-  alertProgress(
-    `${localBackupProgressLabel(stage)}${count}${detail}`,
-    percent,
-    {
-      steps: LOCAL_BACKUP_PROGRESS_STAGE_ORDER.map(localBackupProgressLabel),
-      currentStep: LOCAL_BACKUP_PROGRESS_STAGE_ORDER.indexOf(stage),
-      currentStepRatio: stepRatio,
-    },
-  );
-}
+const reportLocalBackupProgress = createBackupProgressReporter({
+  stages: LOCAL_BACKUP_PROGRESS_STAGES,
+  ranges: LOCAL_BACKUP_PROGRESS_RANGES,
+  label: localBackupProgressLabel,
+  report(view: BackupProgressView<LocalBackupProgressStage>): void {
+    const count: string =
+      view.total > 0 ? ` (${view.current} / ${view.total})` : "";
+    const detail: string = view.detail ? `\n${view.detail}` : "";
+    alertProgress(`${view.label}${count}${detail}`, view.percent, {
+      steps: view.steps,
+      currentStep: view.currentStep,
+      currentStepRatio: view.currentStepRatio,
+    });
+  },
+});
 
 type LocalBackupRestoreStage =
   "selectingSource" | "reading" | "database" | "branches" | "finalizing";
@@ -257,37 +239,21 @@ function localBackupRestoreLabel(stage: LocalBackupRestoreStage): string {
   }
 }
 
-function reportLocalBackupRestoreProgress(
-  stage: LocalBackupRestoreStage,
-  options: {
-    current?: number;
-    total?: number;
-    percent?: number;
-    detail?: string;
-  } = {},
-) {
-  const [start, end] = LOCAL_BACKUP_RESTORE_RANGES[stage];
-  const total = Math.max(0, Math.floor(options.total ?? 0));
-  const current = Math.max(
-    0,
-    Math.min(total, Math.floor(options.current ?? 0)),
-  );
-  const ratio = total > 0 ? current / total : 0;
-  const percent = options.percent ?? start + (end - start) * ratio;
-  const stepRatio =
-    total > 0
-      ? clampProgressRatio(ratio)
-      : end > start
-        ? clampProgressRatio((percent - start) / (end - start))
-        : 1;
-  const count = total > 0 ? ` (${current} / ${total})` : "";
-  const detail = options.detail ? `\n${options.detail}` : "";
-  alertProgress(`${localBackupRestoreLabel(stage)}${count}${detail}`, percent, {
-    steps: LOCAL_BACKUP_RESTORE_STAGE_ORDER.map(localBackupRestoreLabel),
-    currentStep: LOCAL_BACKUP_RESTORE_STAGE_ORDER.indexOf(stage),
-    currentStepRatio: stepRatio,
-  });
-}
+const reportLocalBackupRestoreProgress = createBackupProgressReporter({
+  stages: LOCAL_BACKUP_RESTORE_STAGE_ORDER,
+  ranges: LOCAL_BACKUP_RESTORE_RANGES,
+  label: localBackupRestoreLabel,
+  report(view: BackupProgressView<LocalBackupRestoreStage>): void {
+    const count: string =
+      view.total > 0 ? ` (${view.current} / ${view.total})` : "";
+    const detail: string = view.detail ? `\n${view.detail}` : "";
+    alertProgress(`${view.label}${count}${detail}`, view.percent, {
+      steps: view.steps,
+      currentStep: view.currentStep,
+      currentStepRatio: view.currentStepRatio,
+    });
+  },
+});
 
 function formatBackupBytes(bytes: number): string {
   const value = Math.max(0, Number(bytes) || 0);
@@ -467,8 +433,7 @@ type LocalBackupInlayAsset = LocalBackupInlayEntries[number][1];
 
 async function writeLocalBackupInlays(writer: LocalWriter): Promise<void> {
   const inlays: LocalBackupInlayEntries = await listInlayAssets();
-  const updateInterval: number =
-    getLocalBackupPerformance().progressUpdateMs;
+  const updateInterval: number = getLocalBackupPerformance().progressUpdateMs;
   let lastUiUpdate: number = 0;
   await streamBackupInlays({
     entries: inlays,
@@ -625,10 +590,10 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
             });
           }
           const logInfo = {
-                status: state.status,
-                stage: progress?.stage ?? "none",
-                elapsedMs: elapsed(),
-              };
+            status: state.status,
+            stage: progress?.stage ?? "none",
+            elapsedMs: elapsed(),
+          };
           const message = "node-stream.poll-final-state";
 
           switch (state.status) {
@@ -779,17 +744,11 @@ import {
   ensureAllDomains,
 } from "../storage/database/domainRegistry.svelte";
 import {
-  filterEssentialBackupAssetKeys,
-  findBackupAssetInfo,
   type BackupAssetInfo,
   type BackupAssetMap,
   type BackupAssetScope,
 } from "@risuai/backup-core/assetScope";
-import {
-  collectStreamingInventoryRecord,
-  createStreamingColdStorageInventory,
-  StreamingBackupExportInventory,
-} from "@risuai/backup-core/streamInventory";
+import { StreamingBackupExportInventory } from "@risuai/backup-core/streamInventory";
 import {
   buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
   normalizePortableBackupSnapshot,
@@ -803,9 +762,15 @@ import {
 import { streamBackupInlays } from "@risuai/backup-core/inlayExport";
 import {
   BoundedAssetBatchWriter,
-  writeItemsConcurrently,
   type RestoredAssetBatch,
 } from "@risuai/backup-core/restoreBatch";
+import {
+  restoreBackupArchive,
+  type BackupArchiveEncryptionState,
+  type BackupArchiveReadProgress,
+  type RestoredBackupArchive,
+} from "@risuai/backup-core/restoreArchive";
+import { createLocalBackupAssetBatchWriter } from "./localBackupAssetRestore";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -832,7 +797,7 @@ export async function listBackupAssetKeys(
   return (await storage.keys()).filter((key) => key?.startsWith("assets/"));
 }
 
-function reportBackupAssetProgress(current: number, total: number) {
+function reportBackupAssetProgress(current: number, total: number): void {
   reportLocalBackupProgress("assets", { current, total });
 }
 
@@ -850,8 +815,7 @@ async function writeLocalBackupAssets(
   const missingAssets: string[] = [];
   reportLocalBackupProgress("assets");
   await sleep(0);
-  let lastUiUpdate = 0;
-  const updateInterval = getLocalBackupPerformance().progressUpdateMs;
+  const updateInterval: number = getLocalBackupPerformance().progressUpdateMs;
 
   await forageStorage.Init();
   const nodeStorage =
@@ -885,100 +849,119 @@ async function writeLocalBackupAssets(
     return { missingAssets, assetMap };
   }
 
-  let keys = await listBackupAssetKeys();
-  if (options.assetScope === "essential") {
-    keys = filterEssentialBackupAssetKeys(keys, assetMap);
-  }
+  const listedKeys: string[] = await listBackupAssetKeys();
+  const keys: string[] = selectBackupAssetKeys(
+    listedKeys,
+    options.assetScope,
+    assetMap,
+  );
 
   if (
     isCapacitor &&
     !forageStorage.isAccount &&
     writer.supportsNativeAssetTransfer()
   ) {
-    const batchSize = 128;
-    for (let offset = 0; offset < keys.length; offset += batchSize) {
-      const batch = keys.slice(offset, offset + batchSize);
-      const result = await writer.writeNativeAssets(batch);
-      missingAssets.push(...result.missing);
-      const current = Math.min(offset + batch.length, keys.length);
-      reportBackupAssetProgress(current, keys.length);
-      await sleep(0);
-    }
+    missingAssets.push(
+      ...(await exportNativeBackupAssets({
+        keys,
+        writeBatch: async (batch: string[]): Promise<{ missing: string[] }> =>
+          await writer.writeNativeAssets(batch),
+        onProgress(progress: BackupAssetExportProgress): void {
+          reportBackupAssetProgress(progress.current, progress.total);
+        },
+        yieldControl: async (): Promise<void> => {
+          await sleep(0);
+        },
+      })),
+    );
     return { missingAssets, assetMap };
   }
 
-  for (let index = 0; index < keys.length; index++) {
-    const key = keys[index];
-    const now = Date.now();
-    if (
-      now - lastUiUpdate >= updateInterval ||
-      index === 0 ||
-      index === keys.length - 1
-    ) {
-      lastUiUpdate = now;
-      reportBackupAssetProgress(index + 1, keys.length);
-      await sleep(0);
-    }
-
-    let data: Uint8Array | undefined;
-    let isCached = false;
-    if (forageStorage.isAccount) {
-      if (settingsStore.state.skipSavingAssetsOnWebSync) continue;
-      const cached = (await localforage.getItem(key)) as ArrayBuffer;
-      if (cached) {
-        isCached = true;
-        data = new Uint8Array(cached);
-      }
-    }
-    if (!data) {
-      data = (await forageStorage.getItem(key)) as unknown as Uint8Array;
-    }
-    if (data) await writer.writeBackup(key, data);
-    else missingAssets.push(key);
-    if (forageStorage.isAccount && !isCached) {
-      await sleep(options.accountReadDelayMs);
-    }
+  if (
+    forageStorage.isAccount &&
+    settingsStore.state.skipSavingAssetsOnWebSync
+  ) {
+    return { missingAssets, assetMap };
   }
+  missingAssets.push(
+    ...(await exportStoredBackupAssets({
+      keys,
+      async read(key: string): Promise<Uint8Array | undefined> {
+        const value: unknown = await forageStorage.getItem(key);
+        return value ? (value as Uint8Array) : undefined;
+      },
+      async write(key: string, data: Uint8Array): Promise<void> {
+        await writer.writeBackup(key, data);
+      },
+      readCached: forageStorage.isAccount
+        ? async (key: string): Promise<Uint8Array | undefined> => {
+            const cached: ArrayBuffer | null =
+              await localforage.getItem<ArrayBuffer>(key);
+            return cached ? new Uint8Array(cached) : undefined;
+          }
+        : undefined,
+      onProgress(progress: BackupAssetExportProgress): void {
+        reportBackupAssetProgress(progress.current, progress.total);
+      },
+      yieldControl: async (): Promise<void> => {
+        await sleep(0);
+      },
+      delay: async (milliseconds: number): Promise<void> => {
+        await sleep(milliseconds);
+      },
+      delayAfterUncachedMs: forageStorage.isAccount
+        ? options.accountReadDelayMs
+        : 0,
+      progressUpdateMs: updateInterval,
+    })),
+  );
   return { missingAssets, assetMap };
 }
 
-async function collectBackupColdStorage(db: PortableDatabase) {
-  reportLocalBackupProgress("coldStorage");
-  await sleep(10);
-  const coldStoragePayloads = await collectColdStorageBackupPayloads(
-    db,
-    (current, total) => {
+async function collectBackupColdStorage(
+  db: PortableDatabase,
+): Promise<ColdStorageBackupCollection<ColdStorageBackupPayload> | null> {
+  return await prepareColdStorageBackup({
+    database: db,
+    collect: async (
+      onProgress,
+    ): Promise<ColdStorageBackupCollection<ColdStorageBackupPayload>> =>
+      await collectColdStorageBackupPayloads(db, onProgress),
+    confirm: async (
+      database: PortableDatabase,
+      unavailableKeys: readonly string[],
+    ): Promise<boolean> =>
+      await confirmIncompleteColdStorageOperation(
+        database,
+        unavailableKeys,
+        "backup",
+      ),
+    onProgress(current: number, total: number): void {
       reportLocalBackupProgress("coldStorage", { current, total });
     },
-  );
-  const unavailableKeys = [
-    ...coldStoragePayloads.missingKeys,
-    ...coldStoragePayloads.invalidKeys,
-  ];
-  const confirmed = await confirmIncompleteColdStorageOperation(
-    db,
-    unavailableKeys,
-    "backup",
-  );
-  return confirmed ? coldStoragePayloads : null;
+    yieldControl: async (): Promise<void> => {
+      await sleep(10);
+    },
+  });
 }
 
 async function writeBackupColdStorage(
   writer: LocalWriter,
-  coldStoragePayloads: Awaited<
-    ReturnType<typeof collectColdStorageBackupPayloads>
-  >,
-) {
-  const total = coldStoragePayloads.payloads.length;
-  for (let index = 0; index < total; index++) {
-    const payload = coldStoragePayloads.payloads[index];
-    reportLocalBackupProgress("coldStorage", {
-      current: index + 1,
-      total,
-    });
-    await sleep(0);
-    await writer.writeBackup(payload.backupName, payload.encoded);
-  }
+  coldStoragePayloads: ColdStorageBackupCollection<ColdStorageBackupPayload>,
+): Promise<void> {
+  await writeColdStorageBackup({
+    payloads: coldStoragePayloads.payloads,
+    name: (payload: ColdStorageBackupPayload): string => payload.backupName,
+    encode: (payload: ColdStorageBackupPayload): Uint8Array => payload.encoded,
+    write: async (name: string, data: Uint8Array): Promise<void> =>
+      await writer.writeBackup(name, data),
+    onProgress(current: number, total: number): void {
+      reportLocalBackupProgress("coldStorage", { current, total });
+    },
+    yieldControl: async (): Promise<void> => {
+      await sleep(0);
+    },
+  });
 }
 
 async function writeStreamingColdStorage(
@@ -989,7 +972,7 @@ async function writeStreamingColdStorage(
     inventory.finalizeUnavailableColdStorageKeys();
   return await confirmIncompleteColdStorageOperation(
     {
-      characters: [...inventory.coldStorageCharacters.values()] as any,
+      characters: [...inventory.coldStorageCharacters.values()],
     },
     unavailableKeys,
     "backup",
@@ -1010,53 +993,29 @@ async function encodeStreamingDatabaseValue(
   );
 }
 
-async function prepareStreamingBackupEncryption(
-  writer: LocalWriter,
-  options: LocalBackupExportOptions,
-): Promise<string | undefined> {
-  if (
-    !options.encryptAccountBackup ||
-    !forageStorage.isAccount ||
-    !location.origin.endsWith("risuai.xyz")
-  ) {
-    return undefined;
-  }
-  const time = Date.now();
-  const key = (
-    await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()
-  ).key;
-  await writer.writeBackup(
-    ACCOUNT_ENCRYPTION_ENTRY_NAME,
-    new TextEncoder().encode(
-      JSON.stringify({
-        time,
-        type: "account",
-        databaseEncryption: STREAMING_BACKUP_ENCRYPTION_FORMAT,
-      }),
-    ),
+async function requestAccountBackupEncryptionKey(
+  time: number,
+): Promise<unknown> {
+  const response: Response = await fetch(
+    `https://sv.risuai.xyz/cryptokey?key=${time}`,
   );
-  return key;
+  const payload: unknown = await response.json();
+  return typeof payload === "object" && payload !== null && "key" in payload
+    ? payload.key
+    : undefined;
 }
 
 function showMissingBackupAssets(
   missingAssets: string[],
   assetMap: BackupAssetMap,
   partial: boolean,
-) {
-  if (missingAssets.length === 0) {
+): void {
+  const result = formatMissingBackupAssets(missingAssets, assetMap, partial);
+  if (result.success) {
     alertNormal("Success");
     return;
   }
-  let message = partial
-    ? "Partial backup successful, but the following profile images were missing and skipped:\n\n"
-    : "Backup Successful, but the following assets were missing and skipped:\n\n";
-  for (const key of missingAssets) {
-    const info = findBackupAssetInfo(assetMap, key);
-    message += info
-      ? `* **${info.assetName}** (from *${info.charName}*)  \n  *File: ${key}*\n`
-      : `* **Unknown Asset**  \n  *File: ${key}*\n`;
-  }
-  alertMd(message);
+  alertMd(result.message ?? "Backup completed with missing assets.");
 }
 
 async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
@@ -1104,15 +1063,15 @@ async function saveLocalBackupWithOptions(options: LocalBackupExportOptions) {
   ) {
     reportLocalBackupProgress("database", { percent: 58 });
     await sleep(20);
-    const time = Date.now();
-    const key = (
-      await (await fetch(`https://sv.risuai.xyz/cryptokey?key=${time}`)).json()
-    ).key;
+    const key: string | undefined = await prepareAccountBackupEncryption({
+      enabled: true,
+      metadataEntryName: ACCOUNT_ENCRYPTION_ENTRY_NAME,
+      requestKey: requestAccountBackupEncryptionKey,
+      write: async (name: string, data: Uint8Array): Promise<void> =>
+        await writer.writeBackup(name, data),
+    });
+    if (!key) throw new Error("Account backup encryption key is unavailable");
     dbData = new Uint8Array(await encryptBuffer(dbData, key));
-    await writer.writeBackup(
-      ACCOUNT_ENCRYPTION_ENTRY_NAME,
-      new TextEncoder().encode(JSON.stringify({ time, type: "account" })),
-    );
   }
 
   reportLocalBackupProgress("database", { percent: 59 });
@@ -1156,7 +1115,18 @@ async function saveStreamingLocalBackupWithOptions(
   const inventory: StreamingBackupExportInventory =
     new StreamingBackupExportInventory(options.assetScope);
   const performance = getLocalBackupPerformance();
-  const encryptionKey = await prepareStreamingBackupEncryption(writer, options);
+  const encryptionKey: string | undefined =
+    await prepareAccountBackupEncryption({
+      enabled:
+        options.encryptAccountBackup &&
+        forageStorage.isAccount &&
+        location.origin.endsWith("risuai.xyz"),
+      metadataEntryName: ACCOUNT_ENCRYPTION_ENTRY_NAME,
+      requestKey: requestAccountBackupEncryptionKey,
+      write: async (name: string, data: Uint8Array): Promise<void> =>
+        await writer.writeBackup(name, data),
+      databaseEncryption: STREAMING_BACKUP_ENCRYPTION_FORMAT,
+    });
   let manifest: PortableDatabaseStreamManifest;
   let lastProgressUpdate = 0;
   try {
@@ -1334,385 +1304,136 @@ async function restoreLocalBackupSourceUnlocked(
   parserProgress: { start: number; end: number } = { start: 2, end: 90 },
   options: LocalBackupRestoreOptions = {},
 ): Promise<void> {
-  const encryptionMeta: {
-    type: "none" | "account";
-    time?: number;
-  } = {
-    type: "none",
-  };
-
-  let pendingDatabase: Uint8Array | null = null;
-  let decodedDatabase: object | null = null;
   let streamingRestoreStorage: Awaited<
     ReturnType<typeof getSqlStorage>
   > | null = null;
-  const streamingColdStorage = createStreamingColdStorageInventory();
-  const streamRestore: PortableDatabaseStreamRestoreCoordinator<PortableDatabaseStreamRestoreSession> =
-    new PortableDatabaseStreamRestoreCoordinator({
-      async createSink(): Promise<PortableDatabaseStreamRestoreSession | null> {
+  let streamingDecryptionKey: Promise<string> | null = null;
+  let streamingRestoreFinished: boolean = false;
+  let lastUiUpdate: number = 0;
+  const assetBatchWriter: BoundedAssetBatchWriter =
+    createLocalBackupAssetBatchWriter(
+      selectLocalBackupAssetRestoreMode(forageStorage.realStorage),
+    );
+  let restoredArchive: RestoredBackupArchive<PortableDatabaseStreamRestoreSession> | null =
+    null;
+
+  try {
+    restoredArchive = await restoreBackupArchive({
+      source: file,
+      async createStreamSink(): Promise<PortableDatabaseStreamRestoreSession | null> {
         const storage: Awaited<ReturnType<typeof getSqlStorage>> =
           await getSqlStorage();
         if (!hasPortableDatabaseStreamRestore(storage)) return null;
         streamingRestoreStorage = storage;
         return await storage.beginPortableDatabaseStreamRestore();
       },
-      onSinkFragment(fragment: PortableDatabaseStreamFragment): void {
-        fragment.records.forEach(
-          (record: PortableDatabaseStreamPersistedRecord): void => {
-            collectStreamingInventoryRecord(streamingColdStorage, record);
-          },
+      async decodeStreamValue(
+        data: Uint8Array,
+        entryName: string,
+        encryption: BackupArchiveEncryptionState,
+      ): Promise<unknown> {
+        let decodeOptions: StreamingBackupValueDecodeOptions | undefined;
+        if (encryption.type === "account" && encryption.time) {
+          streamingDecryptionKey ??= fetchLegacyBackupKey(encryption.time);
+          decodeOptions = {
+            secret: await streamingDecryptionKey,
+            async decryptLegacy(
+              encrypted: Uint8Array,
+              secret: string,
+            ): Promise<Uint8Array> {
+              return new Uint8Array(await decryptBuffer(encrypted, secret));
+            },
+          };
+        }
+        return await decodeStreamingBackupValue(
+          data,
+          entryName,
+          async (encoded: Uint8Array): Promise<unknown> =>
+            await decodeRisuSave(encoded),
+          decodeOptions,
+        );
+      },
+      decodeRawDatabase: async (data: Uint8Array): Promise<unknown> =>
+        await decodeRisuSave(data),
+      restoreInlay: restoreInlayBackupEntry,
+      async restoreColdStorage(key: string, value: unknown): Promise<boolean> {
+        const restored: boolean = await setColdStorageItem(key, value);
+        if (!restored) {
+          console.error(`Failed to restore cold storage item ${key}`);
+        }
+        return restored;
+      },
+      async restoreAsset(path: string, data: Uint8Array): Promise<void> {
+        await assetBatchWriter.add(path, data);
+      },
+      async flushAssets(): Promise<void> {
+        if (assetBatchWriter.size === 0) return;
+        reportLocalBackupRestoreProgress("reading", { percent: 90 });
+        await assetBatchWriter.flush();
+      },
+      onProgress(progress: BackupArchiveReadProgress): void {
+        const now: number = Date.now();
+        if (now - lastUiUpdate <= 30) return;
+        lastUiUpdate = now;
+        const readPercent: number =
+          progress.totalBytes === 0
+            ? parserProgress.end
+            : parserProgress.start +
+              (progress.totalBytesRead / progress.totalBytes) *
+                (parserProgress.end - parserProgress.start);
+        const entryLabel: string = progress.entryName
+          ? localBackupRestoreEntryLabel(progress.entryName)
+          : "";
+        const byteProgress: string =
+          progress.totalBytes > 0
+            ? `${formatBackupBytes(progress.totalBytesRead)} / ${formatBackupBytes(progress.totalBytes)}`
+            : formatBackupBytes(progress.totalBytesRead);
+        reportLocalBackupRestoreProgress("reading", {
+          percent: readPercent,
+          detail: entryLabel ? `${byteProgress} · ${entryLabel}` : byteProgress,
+        });
+      },
+      onEncryptionParseError(error: unknown): void {
+        console.error("Failed to parse encryption metadata:", error);
+      },
+      onInvalidInlay(key: string, error: unknown): void {
+        console.warn(`Skipping invalid inlay item ${key}:`, error);
+      },
+      onInlayStorageError(key: string, error: unknown): void {
+        console.error(`Failed to store inlay item ${key}:`, error);
+      },
+      onInvalidColdStorage(_key: string, entryName: string): void {
+        console.warn(`Skipping invalid cold storage backup item ${entryName}`);
+      },
+      onColdStorageParseError(
+        key: string,
+        _entryName: string,
+        error: unknown,
+      ): void {
+        console.error(`Failed to parse cold storage item ${key}:`, error);
+      },
+      onExtensionEntry(name: string): void {
+        console.info(`Skipping unsupported backup extension entry: ${name}`);
+      },
+      onContainerFallback(error: unknown): void {
+        streamingRestoreStorage = null;
+        console.warn(
+          "Stream backup container parsing failed, trying raw database.bin fallback:",
+          error,
         );
       },
     });
-  let streamingDecryptionKey: Promise<string> | null = null;
-  const restoredColdStorageKeys = new Set<string>();
-  const assetRestoreMode = selectLocalBackupAssetRestoreMode(
-    forageStorage.realStorage,
-  );
-  const invalidInlayEntries: string[] = [];
-  const failedInlayWrites: string[] = [];
-  const tauriAssetDirectories: Set<string> = new Set<string>();
-  let streamingRestoreFinished = false;
 
-  try {
-    const writeTauriAssetBatch = async (
-      batch: RestoredAssetBatch,
-    ): Promise<void> => {
-      const entries: Array<[string, Uint8Array]> = Array.from(batch);
-      const directories: Set<string> = new Set<string>(
-        entries.map(([assetPath]: [string, Uint8Array]): string =>
-          assetPath.slice(0, assetPath.lastIndexOf("/")),
-        ),
-      );
-      await Promise.all(
-        Array.from(directories)
-          .filter(
-            (directory: string): boolean =>
-              !tauriAssetDirectories.has(directory),
-          )
-          .map(async (directory: string): Promise<void> => {
-            await mkdir(directory, {
-              baseDir: BaseDirectory.AppData,
-              recursive: true,
-            });
-            tauriAssetDirectories.add(directory);
-          }),
-      );
-      await writeItemsConcurrently(
-        entries,
-        8,
-        async (entry: [string, Uint8Array]): Promise<void> => {
-          const [assetPath, data]: [string, Uint8Array] = entry;
-          await writeFile(assetPath, data, {
-            baseDir: BaseDirectory.AppData,
-          });
-        },
-      );
-    };
-
-    const writeNodeAssetBatch = async (
-      batch: RestoredAssetBatch,
-    ): Promise<void> => {
-      await (forageStorage.realStorage as NodeStorage).setItems(batch);
-    };
-
-    // Browser storage (IndexedDB/localForage) has no bulk API, but writing
-    // assets one-by-one serializes every IndexedDB transaction and makes
-    // restoring large backups extremely slow. Batch them instead and write
-    // each batch in a single IndexedDB transaction when possible.
-    /**
-     * Reuse localForage's own IndexedDB connection so restored assets land in
-     * exactly the same database/store localForage reads from. Returns null when
-     * the active driver is not IndexedDB (e.g. WebSQL/localStorage fallback).
-     */
-    const getLocalForageIdb = async (): Promise<{
-      db: IDBDatabase;
-      storeName: string;
-    } | null> => {
-      try {
-        const storage: {
-          ready?: () => Promise<void>;
-          _dbInfo?: { db?: IDBDatabase; storeName?: string };
-        } = forageStorage.realStorage as {
-          ready?: () => Promise<void>;
-          _dbInfo?: { db?: IDBDatabase; storeName?: string };
-        };
-        if (typeof storage.ready !== "function") return null;
-        await storage.ready();
-        const dbInfo: { db?: IDBDatabase; storeName?: string } | undefined =
-          storage._dbInfo;
-        if (!dbInfo?.db || !dbInfo.storeName) return null;
-        return { db: dbInfo.db, storeName: dbInfo.storeName };
-      } catch {
-        return null;
-      }
-    };
-
-    const writeBrowserAssetBatchWithLocalForage = async (
-      entries: Array<[string, Uint8Array]>,
-    ): Promise<void> => {
-      await writeItemsConcurrently(
-        entries,
-        8,
-        async (entry: [string, Uint8Array]): Promise<void> => {
-          const [key, data]: [string, Uint8Array] = entry;
-          await forageStorage.setItem(key, data);
-        },
-      );
-    };
-
-    const writeBrowserAssetBatch = async (
-      batch: RestoredAssetBatch,
-    ): Promise<void> => {
-      const entries: Array<[string, Uint8Array]> = Array.from(batch);
-      try {
-        const idb: { db: IDBDatabase; storeName: string } | null =
-          await getLocalForageIdb();
-        if (idb) {
-          await new Promise<void>((resolve, reject) => {
-            const tx: IDBTransaction = idb.db.transaction(
-              idb.storeName,
-              "readwrite",
-            );
-            const store: IDBObjectStore = tx.objectStore(idb.storeName);
-            for (const [key, data] of entries) {
-              store.put(data, key);
-            }
-            tx.oncomplete = (): void => resolve();
-            tx.onerror = (): void =>
-              reject(tx.error ?? new Error("IndexedDB bulk write failed"));
-            tx.onabort = (): void =>
-              reject(tx.error ?? new Error("IndexedDB bulk write aborted"));
-          });
-          return;
-        }
-      } catch (error: unknown) {
-        console.warn(
-          "IndexedDB bulk asset write failed, falling back to per-item writes:",
-          error,
-        );
-      }
-
-      await writeBrowserAssetBatchWithLocalForage(entries);
-    };
-
-    const assetBatchWriter: BoundedAssetBatchWriter =
-      assetRestoreMode === "tauri"
-        ? new BoundedAssetBatchWriter(
-            128,
-            64 * 1024 * 1024,
-            writeTauriAssetBatch,
-          )
-        : assetRestoreMode === "node"
-          ? new BoundedAssetBatchWriter(
-              64,
-              64 * 1024 * 1024,
-              writeNodeAssetBatch,
-            )
-          : new BoundedAssetBatchWriter(
-              256,
-              64 * 1024 * 1024,
-              writeBrowserAssetBatch,
-            );
-
-    const restoreBackupEntry = async (
-      name: string,
-      data: Uint8Array,
-      classification: BackupEntryClassification,
-    ): Promise<void> => {
-      await dispatchBackupRestoreEntry(name, data, classification, {
-        onEncryptionParseError(error: unknown): void {
-          console.error("Failed to parse encryption metadata:", error);
-        },
-        onEncryption(metadata: { type: "account"; time: number }): void {
-          encryptionMeta.type = metadata.type;
-          encryptionMeta.time = metadata.time;
-        },
-        onDatabase(databaseData: Uint8Array): void {
-          pendingDatabase = databaseData;
-        },
-        async onDatabaseStream(
-          normalizedName: string,
-          streamData: Uint8Array,
-        ): Promise<void> {
-          let decodeOptions: StreamingBackupValueDecodeOptions | undefined;
-          if (encryptionMeta.type === "account" && encryptionMeta.time) {
-            streamingDecryptionKey ??= fetchLegacyBackupKey(
-              encryptionMeta.time,
-            );
-            const key: string = await streamingDecryptionKey;
-            decodeOptions = {
-              secret: key,
-              async decryptLegacy(
-                encrypted: Uint8Array,
-                secret: string,
-              ): Promise<Uint8Array> {
-                return new Uint8Array(
-                  await decryptBuffer(encrypted, secret),
-                );
-              },
-            };
-          }
-          const value: unknown = await decodeStreamingBackupValue(
-            streamData,
-            name,
-            async (encoded: Uint8Array): Promise<unknown> =>
-              await decodeRisuSave(encoded),
-            decodeOptions,
-          );
-          await streamRestore.acceptEntry(normalizedName, value);
-        },
-        async onInlay(inlayKey: string, inlayData: Uint8Array): Promise<void> {
-          const result: InlayRestoreResult = await restoreInlayBackupEntry(
-            inlayKey,
-            inlayData,
-          );
-          if (result.status === "restored") {
-            return;
-          } else if (result.status === "invalid") {
-            invalidInlayEntries.push(inlayKey);
-            console.warn(
-              `Skipping invalid inlay item ${inlayKey}:`,
-              result.error,
-            );
-          } else {
-            failedInlayWrites.push(inlayKey);
-            console.error(
-              `Failed to store inlay item ${inlayKey}:`,
-              result.error,
-            );
-          }
-        },
-        async onColdStorage(
-          coldStorageKey: string,
-          value: unknown,
-          _entryName: string,
-        ): Promise<void> {
-          if (await setColdStorageItem(coldStorageKey, value)) {
-            restoredColdStorageKeys.add(coldStorageKey);
-          } else {
-            console.error(
-              `Failed to restore cold storage item ${coldStorageKey}`,
-            );
-          }
-        },
-        onInvalidColdStorage(_coldStorageKey: string, entryName: string): void {
-          console.warn(
-            `Skipping invalid cold storage backup item ${entryName}`,
-          );
-        },
-        onColdStorageParseError(
-          coldStorageKey: string,
-          _entryName: string,
-          error: unknown,
-        ): void {
-          console.error(
-            `Failed to parse cold storage item ${coldStorageKey}:`,
-            error,
-          );
-        },
-        async onAsset(assetPath: string, assetData: Uint8Array): Promise<void> {
-          await assetBatchWriter.add(assetPath, assetData);
-        },
-      });
-    };
-    let ignoredExtensionEntries: number = 0;
-    try {
-      let lastUiUpdate: number = 0;
-      let entryName: string = "";
-      await parseBufferedBackupContainer(
-        iterateLocalBackupSource(file),
-        {
-          onEntryStart(
-            entry: BackupContainerEntryInfo,
-            _classification: BackupEntryClassification,
-          ): void {
-            entryName = entry.name;
-          },
-          async onEntry(
-            entry: BackupContainerEntryInfo,
-            data: Uint8Array,
-            classification: BackupEntryClassification,
-          ): Promise<void> {
-            await restoreBackupEntry(entry.name, data, classification);
-          },
-          onEntryEnd(): void {
-            entryName = "";
-          },
-          onExtensionEntry(entry: BackupContainerEntryInfo): void {
-            ignoredExtensionEntries += 1;
-            console.info(
-              `Skipping unsupported backup extension entry: ${entry.name}`,
-            );
-          },
-          onChunk(_chunk: Uint8Array, totalBytesRead: number): void {
-            const now: number = Date.now();
-            if (now - lastUiUpdate <= 30) return;
-            lastUiUpdate = now;
-            const readPercent: number =
-              file.size === 0
-                ? parserProgress.end
-                : parserProgress.start +
-                  (totalBytesRead / file.size) *
-                    (parserProgress.end - parserProgress.start);
-            const entryLabel: string = entryName
-              ? localBackupRestoreEntryLabel(entryName)
-              : "";
-            const byteProgress: string =
-              file.size > 0
-                ? `${formatBackupBytes(totalBytesRead)} / ${formatBackupBytes(file.size)}`
-                : formatBackupBytes(totalBytesRead);
-            reportLocalBackupRestoreProgress("reading", {
-              percent: readPercent,
-              detail: entryLabel
-                ? `${byteProgress} · ${entryLabel}`
-                : byteProgress,
-            });
-          },
-        },
-        {
-          maxNameBytes: 1024 * 1024,
-          maxEntryBytes: file.size,
-        },
-      );
-    } catch (streamErr) {
-      const failedStreamingSession: PortableDatabaseStreamRestoreSession | null =
-        streamRestore.sink;
-      if (failedStreamingSession) {
-        await failedStreamingSession.abort().catch((): void => {});
-        streamingRestoreStorage = null;
-      }
-      streamRestore.reset();
-      // If chunked container failed, try fallback for raw database.bin
-      console.warn(
-        "Stream backup container parsing failed, trying raw database.bin fallback:",
-        streamErr,
-      );
-      try {
-        const buffer = await file.arrayBuffer();
-        const rawBytes = new Uint8Array(buffer);
-        const rawDb = await decodeRisuSave(rawBytes);
-        if (!rawDb || typeof rawDb !== "object") {
-          throw streamErr;
-        }
-        pendingDatabase = rawBytes;
-        decodedDatabase = rawDb;
-      } catch {
-        throw streamErr;
-      }
-    }
-
-    if (assetBatchWriter.size > 0) {
-      reportLocalBackupRestoreProgress("reading", { percent: 90 });
-      await assetBatchWriter.flush();
-    }
-
-    if (failedInlayWrites.length > 0) {
-      throw new Error(
-        `Failed to restore ${failedInlayWrites.length} inlay item(s) because local storage writes failed. ` +
-          `The database replacement was not applied. First failed item: ${failedInlayWrites[0]}`,
-      );
-    }
+    let pendingDatabase: Uint8Array | null = restoredArchive.pendingDatabase;
+    let decodedDatabase: object | null = restoredArchive.decodedDatabase;
+    const streamRestore = restoredArchive.streamRestore;
+    const streamingColdStorage = restoredArchive.streamingColdStorage;
+    const restoredColdStorageKeys = restoredArchive.restoredColdStorageKeys;
+    const invalidInlayEntries: string[] = restoredArchive.invalidInlayEntries;
+    const ignoredExtensionEntries: number =
+      restoredArchive.ignoredExtensionEntries;
+    const encryptionMeta: BackupArchiveEncryptionState =
+      restoredArchive.encryption;
 
     if (invalidInlayEntries.length > 0) {
       await alertNormalWait(
@@ -1749,7 +1470,7 @@ async function restoreLocalBackupSourceUnlocked(
             characters: [
               ...streamingColdStorage.coldStorageCharacters.values(),
             ],
-          } as any,
+          },
           missingColdStorageKeys,
           "restore",
         ))
@@ -1904,7 +1625,7 @@ async function restoreLocalBackupSourceUnlocked(
     );
   } finally {
     const unfinishedStreamingSession: PortableDatabaseStreamRestoreSession | null =
-      streamRestore.sink;
+      restoredArchive?.streamRestore.sink ?? null;
     if (unfinishedStreamingSession && !streamingRestoreFinished) {
       await unfinishedStreamingSession.abort().catch((): void => {});
     }
