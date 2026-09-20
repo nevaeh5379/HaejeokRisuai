@@ -57,14 +57,12 @@ function classifyExactBackupEntry(normalized: string): BackupEntryKind | null {
 }
 
 function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
-  if (parsePortableDatabaseStreamFragmentName(normalized) !== null) {
+  if (parsePortableDatabaseStreamFragmentName(normalized) !== null)
     return "databaseStream";
-  }
   if (COLD_STORAGE_RE.test(normalized)) return "coldStorage";
   if (INLAY_RE.test(normalized)) return "inlay";
-  if (normalized.startsWith("assets/") || !normalized.includes("/")) {
+  if (normalized.startsWith("assets/") || !normalized.includes("/"))
     return "asset";
-  }
   return "extension";
 }
 
@@ -75,11 +73,9 @@ function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
  * getColdStorageBackupKey, getInlayBackupKey, and normalizeBackupAssetPath.
  */
 export function classifyBackupEntry(name: string): BackupEntryClassification {
-  const normalized = normalizeBackupEntryName(name);
-  if (!normalized) {
-    return { kind: "invalid", normalized: null };
-  }
-  const kind =
+  const normalized: string = normalizeBackupEntryName(name);
+  if (!normalized) return { kind: "invalid", normalized: null };
+  const kind: BackupEntryKind =
     classifyExactBackupEntry(normalized) ??
     classifyPatternBackupEntry(normalized);
   return { kind, normalized };
