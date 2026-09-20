@@ -63,9 +63,16 @@ use a production password. Supplying the remote URL also enables cleartext
 traffic in that E2E APK so a local HTTP server can be reached; ordinary builds
 retain the production network policy.
 
-On the first WebView run, Appium downloads a Chromedriver matching the device's
-WebView and caches it under `android-e2e/artifacts/chromedrivers/`. Later runs
-reuse that binary. The server listens only on `127.0.0.1`, and only the scoped
+The suite needs a recent system WebView: the web bundle targets Vite's
+`baseline-widely-available` (chrome111), so an emulator or device whose
+WebView is older than that cannot load the app, and the last Chromedriver
+that matches such an old WebView predates the W3C `/status` contract Appium
+expects. The CI image (Android 14 / API 34, `google_apis`) ships a recent
+`com.google.android.webview`; on other emulators or USB devices make sure
+the Play-updated WebView is current. On the first WebView run, Appium
+downloads a matching Chromedriver and caches it under
+`android-e2e/artifacts/chromedrivers/`. Later runs reuse that binary. The
+server listens only on `127.0.0.1`, and only the scoped
 UiAutomator2 Chromedriver-download feature is enabled.
 
 For a previously built APK:

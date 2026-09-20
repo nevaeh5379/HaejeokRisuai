@@ -209,7 +209,7 @@ jobs:
           path: android/app/build/reports/tests/
 
   android-e2e-test:
-    name: Linux / Android E2E (API 26)
+    name: Linux / Android E2E (API 34)
     needs: changes
     if: needs.changes.outputs.android_e2e == 'true'
     runs-on: ubuntu-latest
@@ -262,7 +262,11 @@ jobs:
       - name: Run packaged Android E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 26
+          # API level must ship a system WebView at least as new as the app's
+          # web build target (Vite baseline-widely-available = chrome111): the
+          # API 26 image's Chrome 69 WebView cannot run the app, and its last
+          # matching chromedriver (2.44) predates the W3C /status contract.
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
