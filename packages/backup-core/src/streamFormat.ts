@@ -2,6 +2,12 @@ import type { LegacyBackupSqlRecord } from "./legacyRecords";
 
 export const PORTABLE_DATABASE_STREAM_VERSION = 1 as const;
 export const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";
+/**
+ * Canonical upper bound of records per streamed fragment. Shared by the
+ * export-side performance limits and the collector's fragment validation
+ * so the two can never diverge.
+ */
+export const PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS = 256;
 export const PORTABLE_DATABASE_STREAM_MANIFEST = `${PORTABLE_DATABASE_STREAM_PREFIX}manifest.risudat`;
 const PORTABLE_DATABASE_STREAM_FRAGMENT_RE =
   /^database\.stream\/([0-9]{12})\.risudat$/;

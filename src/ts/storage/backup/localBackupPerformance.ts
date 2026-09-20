@@ -1,6 +1,12 @@
+import { PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS } from "@risuai/backup-core/streamFormat";
+
 export const LOCAL_BACKUP_PERFORMANCE_LIMITS = {
   databasePageRecords: { min: 1, max: 500 },
-  fragmentRecords: { min: 1, max: 256 },
+  // Never exceeds the streamed-fragment format bound owned by backup-core.
+  fragmentRecords: {
+    min: 1,
+    max: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  },
   writerBufferKiB: { min: 256, max: 16 * 1024 },
   progressUpdateMs: { min: 50, max: 2_000 },
 } as const;

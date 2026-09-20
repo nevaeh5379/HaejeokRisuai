@@ -33,6 +33,12 @@
       "require": "./dist/databasePreparation.js",
       "default": "./src/databasePreparation.ts"
     },
+    "./streamCollector": {
+      "types": "./src/streamCollector.ts",
+      "import": "./src/streamCollector.ts",
+      "require": "./dist/streamCollector.js",
+      "default": "./src/streamCollector.ts"
+    },
     "./restoreBatch": {
       "types": "./src/restoreBatch.ts",
       "import": "./src/restoreBatch.ts",
