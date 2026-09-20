@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createEncodedBackupSource,
+  createSequentialFileBackupSource,
   iterateLocalBackupSource,
   type EncodedBackupChunkReader,
   type LocalBackupSource,
+  type SequentialBackupFileHandle,
 } from "./importSource";
 
 function decodeHex(data: string): Uint8Array {
@@ -83,5 +85,67 @@ describe("createEncodedBackupSource", (): void => {
     await expect(source.stream().getReader().read()).rejects.toThrow(
       "incomplete chunk",
     );
+  });
+});
+
+describe("createSequentialFileBackupSource", (): void => {
+  function openBytes(
+    input: Uint8Array,
+    closed: number[],
+  ): () => Promise<SequentialBackupFileHandle> {
+    return async (): Promise<SequentialBackupFileHandle> => {
+      let offset: number = 0;
+      return {
+        async read(buffer: Uint8Array): Promise<number | null> {
+          if (offset >= input.byteLength) return null;
+          const length: number = Math.min(
+            buffer.byteLength,
+            input.byteLength - offset,
+          );
+          buffer.set(input.subarray(offset, offset + length));
+          offset += length;
+          return length;
+        },
+        async close(): Promise<void> {
+          closed.push(1);
+        },
+      };
+    };
+  }
+
+  it("streams bounded file chunks and closes its handle", async (): Promise<void> => {
+    const input: Uint8Array = new Uint8Array([1, 2, 3, 4, 5]);
+    const closed: number[] = [];
+    const source: LocalBackupSource = createSequentialFileBackupSource(
+      input.byteLength,
+      openBytes(input, closed),
+      { chunkSize: 2, importerLabel: "Test importer" },
+    );
+    const reader: ReadableStreamDefaultReader<Uint8Array> = source
+      .stream()
+      .getReader();
+    const chunks: number[][] = [];
+    while (true) {
+      const result: ReadableStreamReadResult<Uint8Array> = await reader.read();
+      if (result.done) break;
+      chunks.push(Array.from(result.value));
+    }
+
+    expect(chunks).toEqual([[1, 2], [3, 4], [5]]);
+    expect(closed).toHaveLength(1);
+  });
+
+  it("rejects a truncated materialized file and closes its handle", async (): Promise<void> => {
+    const closed: number[] = [];
+    const source: LocalBackupSource = createSequentialFileBackupSource(
+      3,
+      openBytes(new Uint8Array([1, 2]), closed),
+      { chunkSize: 2, importerLabel: "Test importer" },
+    );
+
+    await expect(source.arrayBuffer()).rejects.toThrow(
+      "ended before the declared size",
+    );
+    expect(closed).toHaveLength(1);
   });
 });

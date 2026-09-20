@@ -86,6 +86,7 @@ import {
 } from "@risuai/backup-core/containerStream";
 import {
   createEncodedBackupSource,
+  createSequentialFileBackupSource,
   iterateLocalBackupSource,
   type LocalBackupSource,
 } from "@risuai/backup-core/importSource";
@@ -399,75 +400,25 @@ const TAURI_IMPORT_CHUNK_SIZE = 4 * 1024 * 1024;
 async function createTauriImportSource(
   path: string,
 ): Promise<LocalBackupSource> {
-  const metadataHandle = await openFile(path, { read: true });
-  let size = 0;
+  const metadataHandle: Awaited<ReturnType<typeof openFile>> = await openFile(
+    path,
+    { read: true },
+  );
+  let size: number = 0;
   try {
     size = Math.max(0, Number((await metadataHandle.stat()).size) || 0);
   } finally {
     await metadataHandle.close();
   }
-
-  return {
+  return createSequentialFileBackupSource(
     size,
-    stream() {
-      const handlePromise = openFile(path, { read: true });
-      let closed = false;
-      const close = async () => {
-        if (closed) return;
-        closed = true;
-        try {
-          await (await handlePromise).close();
-        } catch {}
-      };
-      return new ReadableStream<Uint8Array>({
-        async pull(controller) {
-          try {
-            const handle = await handlePromise;
-            const buffer = new Uint8Array(TAURI_IMPORT_CHUNK_SIZE);
-            const bytesRead = await handle.read(buffer);
-            if (bytesRead === null) {
-              await close();
-              controller.close();
-              return;
-            }
-            if (bytesRead <= 0)
-              throw new Error("Tauri backup importer stopped before EOF");
-            controller.enqueue(buffer.subarray(0, bytesRead));
-          } catch (error) {
-            await close();
-            controller.error(error);
-          }
-        },
-        async cancel() {
-          await close();
-        },
-      });
+    async (): Promise<Awaited<ReturnType<typeof openFile>>> =>
+      await openFile(path, { read: true }),
+    {
+      chunkSize: TAURI_IMPORT_CHUNK_SIZE,
+      importerLabel: "Tauri backup importer",
     },
-    async arrayBuffer() {
-      const output = new Uint8Array(size);
-      const handle = await openFile(path, { read: true });
-      let offset = 0;
-      try {
-        while (offset < size) {
-          const bytesRead = await handle.read(
-            output.subarray(
-              offset,
-              Math.min(size, offset + TAURI_IMPORT_CHUNK_SIZE),
-            ),
-          );
-          if (bytesRead === null) break;
-          if (bytesRead <= 0)
-            throw new Error("Tauri backup importer stopped before EOF");
-          offset += bytesRead;
-        }
-      } finally {
-        await handle.close();
-      }
-      if (offset !== size)
-        throw new Error("Tauri backup importer ended before the declared size");
-      return output.buffer;
-    },
-  };
+  );
 }
 
 const nativeBackup = isCapacitor
