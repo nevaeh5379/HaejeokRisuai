@@ -33,6 +33,12 @@
       "require": "./dist/databasePreparation.js",
       "default": "./src/databasePreparation.ts"
     },
+    "./restoreBatch": {
+      "types": "./src/restoreBatch.ts",
+      "import": "./src/restoreBatch.ts",
+      "require": "./dist/restoreBatch.js",
+      "default": "./src/restoreBatch.ts"
+    },
     "./api": {
       "types": "./src/api.ts",
       "import": "./src/api.ts",

@@ -885,6 +885,7 @@ import {
   buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
   normalizePortableBackupSnapshot,
 } from "@risuai/backup-core/databasePreparation";
+import { BoundedAssetBatch } from "@risuai/backup-core/restoreBatch";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -1527,10 +1528,9 @@ async function restoreLocalBackupSourceUnlocked(
     forageStorage.realStorage,
   );
   const useNodeBulkRestore = assetRestoreMode === "node";
-  const pendingNodeAssets = new Map<string, Uint8Array>();
   const nodeBulkMaxFiles = 64;
   const nodeBulkMaxBytes = 64 * 1024 * 1024;
-  let pendingNodeAssetBytes = 0;
+  const nodeAssets = new BoundedAssetBatch(nodeBulkMaxFiles, nodeBulkMaxBytes);
   let entriesRestored = 0;
   let entriesWritten = 0;
   const invalidInlayEntries: string[] = [];
@@ -1538,20 +1538,20 @@ async function restoreLocalBackupSourceUnlocked(
   let currentEntryName = "";
   let bytesRead = 0;
   const useTauriBulkRestore = assetRestoreMode === "tauri";
-  let pendingTauriAssets = new Map<string, Uint8Array>();
   const tauriAssetDirectories = new Set<string>();
   const tauriBulkMaxFiles = 128;
   const tauriBulkMaxBytes = 64 * 1024 * 1024;
   const tauriBulkWriteConcurrency = 8;
-  let pendingTauriAssetBytes = 0;
+  const tauriAssets = new BoundedAssetBatch(
+    tauriBulkMaxFiles,
+    tauriBulkMaxBytes,
+  );
   let streamingRestoreFinished = false;
 
   try {
     const flushTauriAssets = async (): Promise<number> => {
-      if (pendingTauriAssets.size === 0) return 0;
-      const entries = Array.from(pendingTauriAssets);
-      pendingTauriAssets = new Map();
-      pendingTauriAssetBytes = 0;
+      if (tauriAssets.size === 0) return 0;
+      const entries = Array.from(tauriAssets.drain());
 
       const directories = new Set(
         entries.map(([assetPath]) =>
@@ -1587,15 +1587,13 @@ async function restoreLocalBackupSourceUnlocked(
     };
 
     const flushNodeAssets = async (): Promise<number> => {
-      if (pendingNodeAssets.size === 0) {
+      const count = nodeAssets.size;
+      if (count === 0) {
         return 0;
       }
-      const count = pendingNodeAssets.size;
       await (forageStorage.realStorage as NodeStorage).setItems(
-        pendingNodeAssets,
+        nodeAssets.drain(),
       );
-      pendingNodeAssets.clear();
-      pendingNodeAssetBytes = 0;
       return count;
     };
 
@@ -1604,11 +1602,13 @@ async function restoreLocalBackupSourceUnlocked(
     // restoring large backups extremely slow. Batch them instead and write
     // each batch in a single IndexedDB transaction when possible.
     const useBrowserBulkRestore = assetRestoreMode === "browser";
-    let pendingBrowserAssets = new Map<string, Uint8Array>();
     const browserBulkMaxFiles = 256;
     const browserBulkMaxBytes = 64 * 1024 * 1024;
     const browserBulkWriteConcurrency = 8;
-    let pendingBrowserAssetBytes = 0;
+    const browserAssets = new BoundedAssetBatch(
+      browserBulkMaxFiles,
+      browserBulkMaxBytes,
+    );
 
     /**
      * Reuse localForage's own IndexedDB connection so restored assets land in
@@ -1648,13 +1648,11 @@ async function restoreLocalBackupSourceUnlocked(
     };
 
     const flushBrowserAssets = async (): Promise<number> => {
-      if (pendingBrowserAssets.size === 0) {
+      const count = browserAssets.size;
+      if (count === 0) {
         return 0;
       }
-      const count = pendingBrowserAssets.size;
-      const entries = Array.from(pendingBrowserAssets);
-      pendingBrowserAssets = new Map();
-      pendingBrowserAssetBytes = 0;
+      const entries = Array.from(browserAssets.drain());
 
       try {
         const idb = await getLocalForageIdb();
@@ -1814,49 +1812,19 @@ async function restoreLocalBackupSourceUnlocked(
         if (!handledAsColdStorage) {
           const assetPath = normalizeLocalBackupAssetPath(name);
           if (useTauriBulkRestore) {
-            const previous = pendingTauriAssets.get(assetPath);
-            if (previous) pendingTauriAssetBytes -= previous.byteLength;
-            pendingTauriAssets.set(assetPath, data);
-            pendingTauriAssetBytes += data.byteLength;
-
-            if (
-              pendingTauriAssets.size >= tauriBulkMaxFiles ||
-              pendingTauriAssetBytes >= tauriBulkMaxBytes
-            ) {
+            if (tauriAssets.add(assetPath, data)) {
               const flushed = await flushTauriAssets();
               if (flushed) entriesWritten += flushed;
             }
           } else if (useNodeBulkRestore) {
-            const key = assetPath;
-            const previous = pendingNodeAssets.get(key);
-            if (previous) {
-              pendingNodeAssetBytes -= previous.byteLength;
-            }
-            pendingNodeAssets.set(key, data);
-            pendingNodeAssetBytes += data.byteLength;
-
-            if (
-              pendingNodeAssets.size >= nodeBulkMaxFiles ||
-              pendingNodeAssetBytes >= nodeBulkMaxBytes
-            ) {
+            if (nodeAssets.add(assetPath, data)) {
               const flushed = await flushNodeAssets();
               if (flushed) {
                 entriesWritten += flushed;
               }
             }
           } else {
-            const key = assetPath;
-            const previous = pendingBrowserAssets.get(key);
-            if (previous) {
-              pendingBrowserAssetBytes -= previous.byteLength;
-            }
-            pendingBrowserAssets.set(key, data);
-            pendingBrowserAssetBytes += data.byteLength;
-
-            if (
-              pendingBrowserAssets.size >= browserBulkMaxFiles ||
-              pendingBrowserAssetBytes >= browserBulkMaxBytes
-            ) {
+            if (browserAssets.add(assetPath, data)) {
               const flushed = await flushBrowserAssets();
               if (flushed) {
                 entriesWritten += flushed;
@@ -1973,13 +1941,13 @@ async function restoreLocalBackupSourceUnlocked(
       }
     }
 
-    if (useTauriBulkRestore && pendingTauriAssets.size > 0) {
+    if (useTauriBulkRestore && tauriAssets.size > 0) {
       reportLocalBackupRestoreProgress("reading", { percent: 90 });
       const flushed = await flushTauriAssets();
       if (flushed) entriesWritten += flushed;
     }
 
-    if (useNodeBulkRestore && pendingNodeAssets.size > 0) {
+    if (useNodeBulkRestore && nodeAssets.size > 0) {
       reportLocalBackupRestoreProgress("reading", { percent: 90 });
       const flushed = await flushNodeAssets();
       if (flushed) {
@@ -1987,7 +1955,7 @@ async function restoreLocalBackupSourceUnlocked(
       }
     }
 
-    if (useBrowserBulkRestore && pendingBrowserAssets.size > 0) {
+    if (useBrowserBulkRestore && browserAssets.size > 0) {
       reportLocalBackupRestoreProgress("reading", { percent: 90 });
       const flushed = await flushBrowserAssets();
       if (flushed) {
