@@ -1,19 +1,263 @@
 {
   "name": "@risuai/backup-core",
   "private": true,
-  "type": "commonjs",
-  "main": "./compatibility.cjs",
-  "types": "./compatibility.d.cts",
+  "type": "module",
   "exports": {
-    ".": {
-      "types": "./compatibility.d.cts",
-      "require": "./compatibility.cjs",
-      "default": "./compatibility.cjs"
+    "./compatibility": {
+      "types": "./src/compatibility.ts",
+      "import": "./src/compatibility.ts",
+      "require": "./dist/compatibility.js",
+      "default": "./src/compatibility.ts"
     },
-    "./*": {
-      "types": "./*.d.cts",
-      "require": "./*.cjs",
-      "default": "./*.cjs"
+    "./entryPolicy": {
+      "types": "./src/entryPolicy.ts",
+      "import": "./src/entryPolicy.ts",
+      "require": "./dist/entryPolicy.js",
+      "default": "./src/entryPolicy.ts"
+    },
+    "./exportPlan": {
+      "types": "./src/exportPlan.ts",
+      "import": "./src/exportPlan.ts",
+      "require": "./dist/exportPlan.js",
+      "default": "./src/exportPlan.ts"
+    },
+    "./portableBranches": {
+      "types": "./src/portableBranches.ts",
+      "import": "./src/portableBranches.ts",
+      "require": "./dist/portableBranches.js",
+      "default": "./src/portableBranches.ts"
+    },
+    "./databasePreparation": {
+      "types": "./src/databasePreparation.ts",
+      "import": "./src/databasePreparation.ts",
+      "require": "./dist/databasePreparation.js",
+      "default": "./src/databasePreparation.ts"
+    },
+    "./streamCollector": {
+      "types": "./src/streamCollector.ts",
+      "import": "./src/streamCollector.ts",
+      "require": "./dist/streamCollector.js",
+      "default": "./src/streamCollector.ts"
+    },
+    "./restoreBatch": {
+      "types": "./src/restoreBatch.ts",
+      "import": "./src/restoreBatch.ts",
+      "require": "./dist/restoreBatch.js",
+      "default": "./src/restoreBatch.ts"
+    },
+    "./restoreEntry": {
+      "types": "./src/restoreEntry.ts",
+      "import": "./src/restoreEntry.ts",
+      "require": "./dist/restoreEntry.js",
+      "default": "./src/restoreEntry.ts"
+    },
+    "./restoreArchive": {
+      "types": "./src/restoreArchive.ts",
+      "import": "./src/restoreArchive.ts",
+      "require": "./dist/restoreArchive.js",
+      "default": "./src/restoreArchive.ts"
+    },
+    "./api": {
+      "types": "./src/api.ts",
+      "import": "./src/api.ts",
+      "require": "./dist/api.js",
+      "default": "./src/api.ts"
+    },
+    "./node/databaseStreamStore": {
+      "types": "./src/node/databaseStreamStore.ts",
+      "import": "./src/node/databaseStreamStore.ts",
+      "require": "./dist/node/databaseStreamStore.js",
+      "default": "./src/node/databaseStreamStore.ts"
+    },
+    "./assetScope": {
+      "types": "./src/assetScope.ts",
+      "import": "./src/assetScope.ts",
+      "require": "./dist/assetScope.js",
+      "default": "./src/assetScope.ts"
+    },
+    "./streamInventory": {
+      "types": "./src/streamInventory.ts",
+      "import": "./src/streamInventory.ts",
+      "require": "./dist/streamInventory.js",
+      "default": "./src/streamInventory.ts"
+    },
+    "./node/legacyFormat": {
+      "types": "./src/node/legacyFormat.ts",
+      "import": "./src/node/legacyFormat.ts",
+      "require": "./dist/node/legacyFormat.js",
+      "default": "./src/node/legacyFormat.ts"
+    },
+    "./node/exportJobStore": {
+      "types": "./src/node/exportJobStore.ts",
+      "import": "./src/node/exportJobStore.ts",
+      "require": "./dist/node/exportJobStore.js",
+      "default": "./src/node/exportJobStore.ts"
+    },
+    "./node/exportEntries": {
+      "types": "./src/node/exportEntries.ts",
+      "import": "./src/node/exportEntries.ts",
+      "require": "./dist/node/exportEntries.js",
+      "default": "./src/node/exportEntries.ts"
+    },
+    "./node/exportAssets": {
+      "types": "./src/node/exportAssets.ts",
+      "import": "./src/node/exportAssets.ts",
+      "require": "./dist/node/exportAssets.js",
+      "default": "./src/node/exportAssets.ts"
+    },
+    "./node/exportArchive": {
+      "types": "./src/node/exportArchive.ts",
+      "import": "./src/node/exportArchive.ts",
+      "require": "./dist/node/exportArchive.js",
+      "default": "./src/node/exportArchive.ts"
+    },
+    "./containerStream": {
+      "types": "./src/containerStream.ts",
+      "import": "./src/containerStream.ts",
+      "require": "./dist/containerStream.js",
+      "default": "./src/containerStream.ts"
+    },
+    "./streamFormat": {
+      "types": "./src/streamFormat.ts",
+      "import": "./src/streamFormat.ts",
+      "require": "./dist/streamFormat.js",
+      "default": "./src/streamFormat.ts"
+    },
+    "./streamRestore": {
+      "types": "./src/streamRestore.ts",
+      "import": "./src/streamRestore.ts",
+      "require": "./dist/streamRestore.js",
+      "default": "./src/streamRestore.ts"
+    },
+    "./node/importJobStore": {
+      "types": "./src/node/importJobStore.ts",
+      "import": "./src/node/importJobStore.ts",
+      "require": "./dist/node/importJobStore.js",
+      "default": "./src/node/importJobStore.ts"
+    },
+    "./node/importStagingStore": {
+      "types": "./src/node/importStagingStore.ts",
+      "import": "./src/node/importStagingStore.ts",
+      "require": "./dist/node/importStagingStore.js",
+      "default": "./src/node/importStagingStore.ts"
+    },
+    "./node/fullPayload": {
+      "types": "./src/node/fullPayload.ts",
+      "import": "./src/node/fullPayload.ts",
+      "require": "./dist/node/fullPayload.js",
+      "default": "./src/node/fullPayload.ts"
+    },
+    "./node/importPlan": {
+      "types": "./src/node/importPlan.ts",
+      "import": "./src/node/importPlan.ts",
+      "require": "./dist/node/importPlan.js",
+      "default": "./src/node/importPlan.ts"
+    },
+    "./legacyRecords": {
+      "types": "./src/legacyRecords.ts",
+      "import": "./src/legacyRecords.ts",
+      "require": "./dist/legacyRecords.js",
+      "default": "./src/legacyRecords.ts"
+    },
+    "./legacyHeaders": {
+      "types": "./src/legacyHeaders.ts",
+      "import": "./src/legacyHeaders.ts",
+      "require": "./dist/legacyHeaders.js",
+      "default": "./src/legacyHeaders.ts"
+    },
+    "./streamingEncryption": {
+      "types": "./src/streamingEncryption.ts",
+      "import": "./src/streamingEncryption.ts",
+      "require": "./dist/streamingEncryption.js",
+      "default": "./src/streamingEncryption.ts"
+    },
+    "./coldStorage": {
+      "types": "./src/coldStorage.ts",
+      "import": "./src/coldStorage.ts",
+      "require": "./dist/coldStorage.js",
+      "default": "./src/coldStorage.ts"
+    },
+    "./inlayCodec": {
+      "types": "./src/inlayCodec.ts",
+      "import": "./src/inlayCodec.ts",
+      "require": "./dist/inlayCodec.js",
+      "default": "./src/inlayCodec.ts"
+    },
+    "./inlayRestore": {
+      "types": "./src/inlayRestore.ts",
+      "import": "./src/inlayRestore.ts",
+      "require": "./dist/inlayRestore.js",
+      "default": "./src/inlayRestore.ts"
+    },
+    "./inlayExport": {
+      "types": "./src/inlayExport.ts",
+      "import": "./src/inlayExport.ts",
+      "require": "./dist/inlayExport.js",
+      "default": "./src/inlayExport.ts"
+    },
+    "./progress": {
+      "types": "./src/progress.ts",
+      "import": "./src/progress.ts",
+      "require": "./dist/progress.js",
+      "default": "./src/progress.ts"
+    },
+    "./assetExport": {
+      "types": "./src/assetExport.ts",
+      "import": "./src/assetExport.ts",
+      "require": "./dist/assetExport.js",
+      "default": "./src/assetExport.ts"
+    },
+    "./coldStorageExport": {
+      "types": "./src/coldStorageExport.ts",
+      "import": "./src/coldStorageExport.ts",
+      "require": "./dist/coldStorageExport.js",
+      "default": "./src/coldStorageExport.ts"
+    },
+    "./exportEncryption": {
+      "types": "./src/exportEncryption.ts",
+      "import": "./src/exportEncryption.ts",
+      "require": "./dist/exportEncryption.js",
+      "default": "./src/exportEncryption.ts"
+    },
+    "./importSource": {
+      "types": "./src/importSource.ts",
+      "import": "./src/importSource.ts",
+      "require": "./dist/importSource.js",
+      "default": "./src/importSource.ts"
+    },
+    "./node/legacyStream": {
+      "types": "./src/node/legacyStream.ts",
+      "import": "./src/node/legacyStream.ts",
+      "require": "./dist/node/legacyStream.js",
+      "default": "./src/node/legacyStream.ts"
+    },
+    "./node/importService": {
+      "types": "./src/node/importService.ts",
+      "import": "./src/node/importService.ts",
+      "require": "./dist/node/importService.js",
+      "default": "./src/node/importService.ts"
+    },
+    "./node/importDatabase": {
+      "types": "./src/node/importDatabase.ts",
+      "import": "./src/node/importDatabase.ts",
+      "require": "./dist/node/importDatabase.js",
+      "default": "./src/node/importDatabase.ts"
+    },
+    "./node/exportService": {
+      "types": "./src/node/exportService.ts",
+      "import": "./src/node/exportService.ts",
+      "require": "./dist/node/exportService.js",
+      "default": "./src/node/exportService.ts"
+    },
+    "./node/exportStream": {
+      "types": "./src/node/exportStream.ts",
+      "import": "./src/node/exportStream.ts",
+      "require": "./dist/node/exportStream.js",
+      "default": "./src/node/exportStream.ts"
     }
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "build:node": "node build.mjs"
   }
 }

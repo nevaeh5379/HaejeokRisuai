@@ -1,23 +1,12 @@
-export type DatabaseChangeEvent = {
-  revision?: number;
-  action?: string;
-  sourceClientId?: string | null;
-  replaceAll?: boolean;
-  chatIds?: string[];
-  characterIds?: string[];
-  charactersChanged?: boolean;
-  rootUpsertKeys?: string[];
-  rootDeleteKeys?: string[];
-  rootChanged?: boolean;
-  pluginStorageUpsertKeys?: string[];
-  pluginStorageDeleteKeys?: string[];
-  pluginStorageCleared?: boolean;
-  pluginsChanged?: boolean;
-  presetsChanged?: boolean;
-  modulesChanged?: boolean;
-  pluginName?: string;
-  pluginEnabled?: boolean;
-};
+import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/realtimeEvents.cjs";
+
+/**
+ * Canonical wire shape of a database-change realtime event, shared with the
+ * server through the protocol package.
+ * 서버와 프로토콜 패키지를 통해 공유하는 database-change 실시간 이벤트의
+ * 표준 와이어 형태입니다.
+ */
+export type DatabaseChangeEvent = RealtimeDatabaseChangeEvent;
 
 const ARRAY_FIELDS = [
   "chatIds",
@@ -39,12 +28,22 @@ const BOOLEAN_FIELDS = [
 ] as const satisfies readonly (keyof DatabaseChangeEvent)[];
 
 function mergeStringArrays(
-  left: string[] | undefined,
-  right: string[] | undefined,
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
 ): string[] | undefined {
   if (!left?.length && !right?.length) return undefined;
   return [...new Set([...(left ?? []), ...(right ?? [])].filter(Boolean))];
 }
+
+/**
+ * Mutable working copy of the canonical wire type: the wire payload is
+ * readonly, but the queue assembles merged events field by field.
+ * 표준 와이어 타입의 가변 작업 사본입니다. 와이어 페이로드는 불변이지만,
+ * 큐는 병합된 이벤트를 필드 단위로 조립합니다.
+ */
+type MutableDatabaseChangeEvent = {
+  -readonly [K in keyof DatabaseChangeEvent]: DatabaseChangeEvent[K];
+};
 
 /**
  * Combines a burst of database notifications without retaining commit
@@ -55,11 +54,11 @@ export function mergeDatabaseChanges(
   current: DatabaseChangeEvent | null,
   incoming: DatabaseChangeEvent,
 ): DatabaseChangeEvent {
-  const merged: DatabaseChangeEvent = current ? { ...current } : {};
+  const merged: MutableDatabaseChangeEvent = current ? { ...current } : {};
   for (const field of ARRAY_FIELDS) {
     const value = mergeStringArrays(
-      merged[field] as string[] | undefined,
-      incoming[field] as string[] | undefined,
+      merged[field] as readonly string[] | undefined,
+      incoming[field] as readonly string[] | undefined,
     );
     if (value) (merged[field] as string[]) = value;
   }

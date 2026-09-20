@@ -36,6 +36,9 @@ type AlertData = {
   stackTrace?: string;
   defaultValue?: string;
   mascot?: "help" | "backup";
+  progressSteps?: string[];
+  progressStep?: number;
+  progressStepRatio?: number;
 };
 
 type PluginSafetyError = {
@@ -262,7 +265,7 @@ export const mobileSettingsReturnChar = $state<{
 
 export interface MobileBotTarget {
   submenu: number;
-  modelTab?: 'main' | 'sub' | 'provider';
+  modelTab?: "main" | "sub" | "provider";
   title?: string;
 }
 

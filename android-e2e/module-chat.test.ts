@@ -4,11 +4,20 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { remote } from "webdriverio";
+import {
+  ANDROID_E2E_APP_ACTIVITY,
+  ANDROID_E2E_APP_PACKAGE,
+  resetAndroidE2eAppData,
+} from "./android-device";
+import {
+  getAndroidE2eConnectionRetryTimeout,
+  getAndroidE2eInfrastructureCapabilities,
+  getAndroidE2eTestTimeout,
+} from "./appium-capabilities";
 
 const appiumUrl = new URL(
   process.env.ANDROID_E2E_APPIUM_URL ?? "http://127.0.0.1:4723",
 );
-const apkPath = process.env.ANDROID_E2E_APK;
 const artifactsDir =
   process.env.ANDROID_E2E_ARTIFACTS ?? "android-e2e/artifacts";
 const chromedriverDir =
@@ -22,10 +31,10 @@ after(async () => {
 
 test(
   "a persisted Android chat applies its module and opens the module menu",
-  { timeout: 180_000 },
+  { timeout: getAndroidE2eTestTimeout(360_000) },
   async () => {
-    assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
     await mkdir(chromedriverDir, { recursive: true });
+    resetAndroidE2eAppData();
 
     driver = await remote({
       protocol: appiumUrl.protocol.replace(":", ""),
@@ -33,19 +42,19 @@ test(
       port: Number(appiumUrl.port),
       path: "/",
       logLevel: "warn",
+      connectionRetryTimeout: getAndroidE2eConnectionRetryTimeout(),
       capabilities: {
         platformName: "Android",
         "appium:automationName": "UiAutomator2",
+        ...getAndroidE2eInfrastructureCapabilities(),
         "appium:deviceName": process.env.ANDROID_E2E_DEVICE_NAME ?? "Android",
         ...(process.env.ANDROID_E2E_UDID
           ? { "appium:udid": process.env.ANDROID_E2E_UDID }
           : {}),
-        "appium:app": apkPath,
-        "appium:appPackage": "co.aiclient.risu",
-        "appium:appActivity": ".MainActivity",
-        "appium:enforceAppInstall": true,
+        "appium:appPackage": ANDROID_E2E_APP_PACKAGE,
+        "appium:appActivity": ANDROID_E2E_APP_ACTIVITY,
         "appium:autoGrantPermissions": true,
-        "appium:noReset": false,
+        "appium:noReset": true,
         "appium:newCommandTimeout": 120,
         "appium:ensureWebviewsHavePages": true,
         "appium:chromedriverExecutableDir": chromedriverDir,
@@ -57,9 +66,14 @@ test(
       await driver.waitUntil(
         async () => {
           const contexts = (await driver?.getContexts()) as string[];
-          webviewContext = contexts.find((context) =>
-            context.startsWith("WEBVIEW_"),
-          );
+          webviewContext =
+            contexts.find(
+              (context) => context === "WEBVIEW_co.aiclient.risu",
+            ) ??
+            contexts.find(
+              (context) =>
+                context.startsWith("WEBVIEW_") && context !== "WEBVIEW_chrome",
+            );
           return Boolean(webviewContext);
         },
         {
@@ -87,9 +101,15 @@ test(
             await driver?.switchContext("NATIVE_APP").catch(() => undefined);
             const contexts = (await driver?.getContexts().catch(() => [])) as
               string[] | undefined;
-            const liveWebview = contexts?.find((context) =>
-              context.startsWith("WEBVIEW_"),
-            );
+            const liveWebview =
+              contexts?.find(
+                (context) => context === "WEBVIEW_co.aiclient.risu",
+              ) ??
+              contexts?.find(
+                (context) =>
+                  context.startsWith("WEBVIEW_") &&
+                  context !== "WEBVIEW_chrome",
+              );
             if (liveWebview) {
               await driver?.switchContext(liveWebview).catch(() => undefined);
             }
@@ -165,15 +185,23 @@ test(
         color: "rgb(1, 2, 3)",
       });
 
-      const actionButton = await driver.$(
-        'button[risu-btn="android-e2e-module-action"]',
-      );
-      await actionButton.click();
       await driver.waitUntil(
         async () =>
-          driver?.execute(() =>
-            document.body.innerText.includes("android module button worked"),
-          ),
+          driver?.execute(() => {
+            if (
+              document.body.innerText.includes("android module button worked")
+            ) {
+              return true;
+            }
+            document
+              .querySelector<HTMLButtonElement>(
+                'button[risu-btn="android-e2e-module-action"]',
+              )
+              ?.click();
+            return document.body.innerText.includes(
+              "android module button worked",
+            );
+          }),
         {
           timeout: 30_000,
           interval: 250,

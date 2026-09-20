@@ -8,7 +8,7 @@ import {
   setUITheme,
 } from "./uiTheme";
 
-describe("UI Theme Management (Default vs Windows 11 Fluent)", () => {
+describe("UI Theme Management", () => {
   beforeEach(() => {
     document.documentElement.className = "";
     settingsStore.state.uiTheme = "default";
@@ -29,6 +29,12 @@ describe("UI Theme Management (Default vs Windows 11 Fluent)", () => {
 
   it("defaults to 'default' UI theme", () => {
     expect(getUITheme()).toBe("default");
+    expect(isWindowsFluentTheme()).toBe(false);
+  });
+
+  it("preserves the Android theme setting without treating it as Fluent", () => {
+    settingsStore.state.uiTheme = "android";
+    expect(getUITheme()).toBe("android");
     expect(isWindowsFluentTheme()).toBe(false);
   });
 

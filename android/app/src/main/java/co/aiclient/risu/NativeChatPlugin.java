@@ -56,7 +56,9 @@ public class NativeChatPlugin extends Plugin {
         if (Boolean.TRUE.equals(call.getBoolean("notify", false)) && canNotify()) {
             showResultNotification(
                 call.getString("title", getContext().getString(R.string.app_name)),
-                call.getString("body", getContext().getString(R.string.chat_result_ready))
+                call.getString("body", getContext().getString(R.string.chat_result_ready)),
+                call.getString("characterId"),
+                call.getString("chatId")
             );
         }
         call.resolve();
@@ -67,7 +69,9 @@ public class NativeChatPlugin extends Plugin {
         if (canNotify()) {
             showResultNotification(
                 call.getString("title", getContext().getString(R.string.app_name)),
-                call.getString("body", getContext().getString(R.string.chat_result_ready))
+                call.getString("body", getContext().getString(R.string.chat_result_ready)),
+                call.getString("characterId"),
+                call.getString("chatId")
             );
         }
         call.resolve();
@@ -106,7 +110,12 @@ public class NativeChatPlugin extends Plugin {
         context.stopService(new Intent(context, ChatForegroundService.class));
     }
 
-    private void showResultNotification(String title, String body) {
+    private void showResultNotification(
+        String title,
+        String body,
+        String characterId,
+        String chatId
+    ) {
         ChatForegroundService.createNotificationChannels(getContext());
         String safeBody = body == null ? "" : body.trim().replaceAll("\\s+", " ");
         if (safeBody.isEmpty()) safeBody = getContext().getString(R.string.chat_result_ready);
@@ -124,7 +133,9 @@ public class NativeChatPlugin extends Plugin {
             .setContentTitle(safeTitle)
             .setContentText(safeBody)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(safeBody))
-            .setContentIntent(ChatForegroundService.openAppIntent(getContext()))
+            .setContentIntent(
+                ChatForegroundService.openChatIntent(getContext(), characterId, chatId)
+            )
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

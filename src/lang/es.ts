@@ -1001,7 +1001,6 @@ export const languageSpanish = {
   waifuWidth: "Ancho del Chat Waifu",
   savebackup: "Guardar Respaldo en Google",
   loadbackup: "Cargar Respaldo desde Google",
-  files: "Archivos",
   backupConfirm: "¿Realmente deseas guardar el respaldo?",
   backupLoadConfirm:
     "¿Realmente deseas cargar el respaldo? ¡Todos los datos se perderán!",
@@ -1139,7 +1138,6 @@ export const languageSpanish = {
   officialDiscordDesc: "Discord Oficial para hablar sobre Risuai",
   persona: "Persona",
   icon: "Icono",
-  account: "Cuenta",
   remove: "Eliminar",
   able: "Habilitar",
   assetWidth: "Ancho Máximo de Imágenes de Activos",

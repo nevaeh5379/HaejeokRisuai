@@ -14,4 +14,4 @@ allowBuilds:
   "msgpackr-extract@3.0.4": true
   "oracledb@7.0.1": true
   "protobufjs@7.6.6": true
-  "sharp@0.34.5": true
+  "sharp@0.34.5": false

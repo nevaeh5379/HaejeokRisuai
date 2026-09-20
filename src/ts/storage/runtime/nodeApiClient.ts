@@ -36,6 +36,11 @@ export function createCapacitorNodeApiFetch(
 
     if (init?.body != null) {
       body = new Uint8Array(await new Response(init.body).arrayBuffer());
+    } else if (method !== "GET" && method !== "DELETE") {
+      // fetchNative requires a body for native mutation methods even when the
+      // HTTP endpoint intentionally has no payload (for example job creation
+      // and finalize actions). Preserve fetch semantics with a zero-byte body.
+      body = new Uint8Array();
     }
 
     return streamedFetch(input, {

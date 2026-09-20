@@ -1,10 +1,13 @@
 package co.aiclient.risu;
 
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.webkit.WebView;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -15,6 +18,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SplashScreen.installSplashScreen(this);
         // Hybrid E2E tools need a debuggable WebView context to inspect the
         // bundled Capacitor UI. Never expose it from release builds.
         WebView.setWebContentsDebuggingEnabled(
@@ -29,12 +33,14 @@ public class MainActivity extends BridgeActivity {
                         NativeImagePlugin.class,
                         NativeChatPlugin.class,
                         NativeAppControlPlugin.class,
+                        NativeIntegrationPlugin.class,
                         NativeUpdaterPlugin.class
                 ));
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().setWebViewClient(new RisuWebViewClient(getBridge(), getApplicationContext()));
         }
+        handleNativeIntent(getIntent());
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -48,5 +54,36 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         });
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        NativeIntegrationPlugin.applySavedSystemBarAppearance(this);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        NativeIntegrationPlugin.applySavedSystemBarAppearance(this);
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().requestApplyInsets();
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNativeIntent(intent);
+    }
+
+    private void handleNativeIntent(Intent intent) {
+        if (!NativeIntegrationPlugin.enqueueIntent(getApplicationContext(), intent)) return;
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        getBridge().getWebView().evaluateJavascript(
+                "window.dispatchEvent(new Event('risu:native-entry-available'))",
+                null
+        );
     }
 }

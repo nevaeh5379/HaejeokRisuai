@@ -21,6 +21,8 @@ import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQu
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
+import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
+import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 
 // The Android native backend applies connection-local PRAGMAs itself. Keep
 // those out of the shared DDL script and send the remaining statements through
@@ -128,7 +130,7 @@ export class CapacitorSqliteStorage
   private static readonly BATCH_MAX_STATEMENTS = 48;
   private static readonly BATCH_MAX_PAYLOAD_CHARS = 256 * 1024;
 
-  private async runNativeTransaction<T>(
+  protected async runNativeTransaction<T>(
     expectedRevision: number | null,
     task: (
       execute: (sql: string, bind?: unknown[]) => Promise<void>,
@@ -183,6 +185,29 @@ export class CapacitorSqliteStorage
 
   protected createRestoreStream() {
     return new CapacitorSqliteRestoreStream(this.plugin);
+  }
+
+  async beginPortableDatabaseStreamRestore(
+    onProgress?: (progress: PortableDatabaseStreamRestoreProgress) => void,
+  ) {
+    if (!this._enabled && !(await this.init())) {
+      throw new Error("SQLite storage is not enabled");
+    }
+    const baseRevision = this.revision;
+    return await createPortableDatabaseStreamSqliteSession({
+      baseRevision,
+      onProgress,
+      onCommitted: (revision) => {
+        this.revision = revision;
+      },
+      runTransaction: (task) =>
+        this.writeQueue.run(async () => {
+          if (!this._enabled || !this.isStorageReady()) {
+            throw new Error("SQLite storage is not enabled");
+          }
+          return await this.runNativeTransaction(baseRevision, task);
+        }),
+    });
   }
 
   override async replaceDatabase(

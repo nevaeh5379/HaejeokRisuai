@@ -38,9 +38,11 @@ test('test', async ({ page }, testInfo) => {
   await download.saveAs(savedPath);
   await page.getByRole('button', { name: 'OK' }).click();
   await addCharacterButton.click();
-  await page.getByRole('button', { name: 'Import Character' }).click();
-
+  // Register the filechooser listener before the click: the app opens the
+  // picker synchronously from the click handler, so waiting afterwards can
+  // miss the event when the app is warm.
   const fileChooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import Character' }).click();
   const fileChooser = await fileChooserPromise;
   await fileChooser.setFiles(savedPath);
 });

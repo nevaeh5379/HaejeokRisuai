@@ -35,34 +35,14 @@ import {
   type DatabaseChangeEvent,
 } from "./nodeRealtimeChangeQueue";
 import { consumeNodeRealtimeWebSocket } from "./nodeRealtimeWebSocket";
-
-type ModelJobEvent = {
-  phase?: "created" | "terminal";
-  sourceClientId?: string | null;
-  job?: {
-    id?: string;
-    chatId?: string;
-    generationId?: string | null;
-    recoverable?: boolean;
-    status?: string;
-  };
-};
-
-type GenerationStateEvent = {
-  chatId?: string;
-  lifecycleId?: string;
-  state?: "started" | "finished" | "failed" | "aborted";
-  sourceClientId?: string | null;
-  error?: string;
-};
-
-type ReadyEvent = {
-  activeGenerations?: GenerationStateEvent[];
-};
-
-type ResyncRequiredEvent = {
-  latestEventId?: number;
-};
+import {
+  parseRealtimeEvent,
+  type GenerationLifecycleState,
+  type RealtimeDatabaseChangeEvent,
+  type RealtimeGenerationState,
+  type RealtimeModelJobEvent,
+  type RealtimeReadyEvent,
+} from "@risuai/protocol/realtimeEvents.cjs";
 
 let started = false;
 let streamController: AbortController | null = null;
@@ -300,7 +280,7 @@ async function applyDatabaseChange(
   }
 }
 
-async function applyModelJob(event: ModelJobEvent): Promise<void> {
+async function applyModelJob(event: RealtimeModelJobEvent): Promise<void> {
   const job = event.job;
   if (!job?.chatId || job.recoverable === false) return;
   if (event.phase === "created" && job.id) {
@@ -336,8 +316,8 @@ async function applyModelJob(event: ModelJobEvent): Promise<void> {
   void recoverDurableModelJobs();
 }
 
-function applyGenerationState(event: GenerationStateEvent): void {
-  if (!event.chatId || !event.lifecycleId || !event.state) return;
+function applyGenerationState(event: RealtimeGenerationState): void {
+  if (!event.chatId || !event.lifecycleId) return;
   if (event.sourceClientId === getNodeClientSessionId()) return;
   setRemoteChatGeneration(
     event.chatId,
@@ -360,9 +340,13 @@ function applyGenerationState(event: GenerationStateEvent): void {
   }
 }
 
-function applyReadyEvent(event: ReadyEvent): void {
-  for (const generation of event.activeGenerations ?? []) {
-    applyGenerationState({ ...generation, state: "started" });
+function applyReadyEvent(event: RealtimeReadyEvent): void {
+  for (const generation of event.activeGenerations) {
+    const started: RealtimeGenerationState = {
+      ...generation,
+      state: "started" satisfies GenerationLifecycleState,
+    };
+    applyGenerationState(started);
   }
 }
 
@@ -426,36 +410,49 @@ async function dispatchEvent(
   rawData: string,
   allowNodeFeatures: boolean,
 ): Promise<void> {
-  let data: unknown;
+  let parsedJson: unknown;
   try {
-    data = JSON.parse(rawData);
+    parsedJson = JSON.parse(rawData);
   } catch {
     return;
   }
-  if (eventName === "database-change") {
-    const change = data as DatabaseChangeEvent;
-    if (Number.isSafeInteger(change.revision)) {
-      storage.applyRemoteRevision(change.revision!);
+  // The SSE/WebSocket boundary is untrusted: JSON.parse results are narrowed
+  // against the shared event map instead of being cast blindly.
+  // SSE/WebSocket 경계는 신뢰할 수 없으므로, JSON.parse 결과를 무분별하게
+  // 캐스팅하지 않고 공유 이벤트 맵으로 좁힙니다.
+  const frame = parseRealtimeEvent(eventName, parsedJson);
+  if (frame === null) {
+    // A malformed database delta has no deletion authority. Request a full
+    // refresh instead of silently leaving the local client stale.
+    // 잘못된 DB 델타는 삭제 권한이 없으므로, 무시해 로컬 상태를
+    // 낡은 채로 두지 않고 전체 동기화를 요청합니다.
+    if (eventName === "database-change") {
+      databaseChangeQueue?.enqueue({
+        action: "realtime-invalid-database-change",
+        replaceAll: true,
+        sourceClientId: null,
+      });
+    }
+    return;
+  }
+  if (frame.event === "database-change") {
+    const change: RealtimeDatabaseChangeEvent = frame.data;
+    if (change.revision !== undefined) {
+      storage.applyRemoteRevision(change.revision);
     }
     if (change.sourceClientId !== storage.getClientId()) {
       databaseChangeQueue?.enqueue(change);
     }
     return;
   }
-  if (eventName === "model-job") {
-    if (allowNodeFeatures) await applyModelJob(data as ModelJobEvent);
-  } else if (eventName === "generation-state") {
-    applyGenerationState(data as GenerationStateEvent);
-  } else if (eventName === "ready") {
-    applyReadyEvent(data as ReadyEvent);
-  } else if (eventName === "resync-required") {
-    const event = data as ResyncRequiredEvent;
-    if (
-      Number.isSafeInteger(event.latestEventId) &&
-      event.latestEventId! >= 0
-    ) {
-      lastEventId = event.latestEventId!;
-    }
+  if (frame.event === "model-job") {
+    if (allowNodeFeatures) await applyModelJob(frame.data);
+  } else if (frame.event === "generation-state") {
+    applyGenerationState(frame.data);
+  } else if (frame.event === "ready") {
+    applyReadyEvent(frame.data);
+  } else if (frame.event === "resync-required") {
+    lastEventId = frame.data.latestEventId;
     databaseChangeQueue?.enqueue({
       action: "realtime-resync",
       replaceAll: true,
@@ -540,7 +537,7 @@ async function connect(
         onFrame: async (frame) => {
           await dispatchEvent(
             storage,
-            frame.event!,
+            frame.event,
             JSON.stringify(frame.data ?? null),
             allowNodeFeatures,
           );

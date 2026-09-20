@@ -1,4 +1,5 @@
 import { get } from "svelte/store";
+import { configureSync, getConsoleSink } from "@logtape/logtape";
 import { alertError, alertTOS } from "../alert";
 import { changeLanguage } from "../../lang";
 import { installStartupData } from "../storage/database/databaseLifecycle";
@@ -142,6 +143,18 @@ export async function loadData() {
     let storageProfile: StorageProfile | null = null;
     try {
       startupPhase.set("core-loading");
+      // LogTape: console sink only. WebView console output is forwarded to
+      // logcat, so `adb logcat | grep risuai` shows every record.
+      configureSync({
+        sinks: { console: getConsoleSink() },
+        loggers: [
+          {
+            category: ["risuai"],
+            sinks: ["console"],
+            lowestLevel: import.meta.env.DEV ? "debug" : "info",
+          },
+        ],
+      });
       storageProfile = await resolveBootstrapStorageProfile();
       if (!storageProfile) return;
       let nodeApiClient: NodeApiClient | null = null;

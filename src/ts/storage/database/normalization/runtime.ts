@@ -20,6 +20,7 @@ import {
   mergeDefaults,
   parseDefaults,
 } from "./valibotDefaults";
+import { applyLocalBackupPerformanceDefaults } from "../../backup/localBackupPerformance";
 
 const runtimeScalarDefaults = {
   openAIFlexProcessing: defaultBoolean(false),
@@ -39,6 +40,7 @@ const runtimeScalarDefaults = {
   ImagenPersonGeneration: defaultString("allow_all"),
   autoScrollToNewMessage: defaultBoolean(true),
   alwaysScrollToNewMessage: defaultBoolean(false),
+  androidWidgetBotCount: defaultNumber(12),
   newMessageButtonStyle: defaultString("bottom-center"),
   generationStatsPosition: defaultPicklist(
     ["bottom-right", "bottom-left", "top-right", "top-left", "off"],
@@ -89,6 +91,10 @@ export type RuntimeValidatedDefaults = Required<
     | "wavespeedImage"
     | "chatLoadInitialPages"
     | "chatLoadAdditionalPages"
+    | "localBackupDatabasePageRecords"
+    | "localBackupFragmentRecords"
+    | "localBackupWriterBufferKiB"
+    | "localBackupProgressUpdateMs"
     | ImageCacheLimitKey
   >
 >;
@@ -123,6 +129,7 @@ function applyPlatformRuntimePolicy(data: Database): void {
 
 export function normalizeRuntimeDatabaseSettings(data: Database): void {
   Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
+  applyLocalBackupPerformanceDefaults(data);
   normalizeImageCacheSettings(data, isCapacitor);
   data.customModels ??= [];
   data.authRefreshes ??= [];

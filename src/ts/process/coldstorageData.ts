@@ -1,34 +1,32 @@
+import {
+  COLD_STORAGE_HEADER,
+  getColdStorageBackupKey,
+  getColdStorageBackupName,
+  isColdStorageBackupData,
+} from "@risuai/backup-core/coldStorage";
 import { safeStructuredClone } from "../polyfill";
-import type {
-  Database,
-  character,
-  groupChat,
-} from "../storage/database/schema";
+import type { character, groupChat } from "../storage/database/schema";
 
-export const coldStorageHeader = "\uEF01COLDSTORAGE\uEF01";
-
-export function getColdStorageBackupKey(name: string): string | null {
-  const match = name.match(
-    /^(?:coldstorage[/_])?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.json$/,
-  );
-  return match?.[1] ?? null;
+export interface ColdStorageCharacterReference {
+  chaId: string;
+  name?: string;
+  coldstorage?: string;
+  coldStoragedChats?: string[];
+  chats?: Array<{
+    message?: Array<{ data?: string }>;
+  }>;
 }
 
-export function getColdStorageBackupName(key: string): string {
-  return `coldstorage_${key}.json`;
+export interface ColdStorageDatabaseReference {
+  characters?: Array<ColdStorageCharacterReference | null | undefined>;
 }
 
-export function isColdStorageBackupData(data: unknown): boolean {
-  if (Array.isArray(data)) {
-    return true;
-  }
-
-  return (
-    !!data &&
-    typeof data === "object" &&
-    ("character" in data || "message" in data)
-  );
-}
+export const coldStorageHeader = COLD_STORAGE_HEADER;
+export {
+  getColdStorageBackupKey,
+  getColdStorageBackupName,
+  isColdStorageBackupData,
+};
 
 function replaceData(
   data: string | undefined,
@@ -84,7 +82,7 @@ export function replaceColdStoragePayloadResources(
 }
 
 function listColdDataKeysFromCharacter(
-  character: character | groupChat,
+  character: ColdStorageCharacterReference,
 ): string[] {
   const keys: string[] = [];
   if (character.coldstorage) {
@@ -101,7 +99,7 @@ function listColdDataKeysFromCharacter(
 }
 
 export function listColdDataKeysFromDb(
-  db: Pick<Database, "characters"> | null | undefined,
+  db: ColdStorageDatabaseReference | null | undefined,
 ): string[] {
   const keys = new Set<string>();
   for (const character of db?.characters ?? []) {
@@ -116,7 +114,7 @@ export function listColdDataKeysFromDb(
 }
 
 export function getColdStorageAffectedCharacters(
-  db: Pick<Database, "characters"> | null | undefined,
+  db: ColdStorageDatabaseReference | null | undefined,
   unavailableKeys: Iterable<string>,
 ): {
   characterNames: string[];

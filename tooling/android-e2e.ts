@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import {
   createWriteStream,
   existsSync,
@@ -9,10 +10,22 @@ import {
   readdirSync,
   realpathSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const nodeRequire = createRequire(import.meta.url);
+const uiautomator2DriverRoot = dirname(
+  nodeRequire.resolve("appium-uiautomator2-driver/package.json"),
+);
+const appiumSettingsApk = resolve(
+  uiautomator2DriverRoot,
+  "node_modules/io.appium.settings/apks/settings_apk-debug.apk",
+);
+const uiautomator2ServerApksDir = resolve(
+  uiautomator2DriverRoot,
+  "node_modules/appium-uiautomator2-server/apks",
+);
 const artifactsDir = resolve(projectRoot, "android-e2e/artifacts");
 const apkPath = resolve(
   projectRoot,
@@ -26,6 +39,22 @@ const appiumBin = resolve(
   projectRoot,
   `node_modules/.bin/appium${process.platform === "win32" ? ".cmd" : ""}`,
 );
+const androidAppPackage = "co.aiclient.risu";
+
+function getAdbCommand(): string {
+  return androidSdk
+    ? resolve(
+        androidSdk,
+        `platform-tools/adb${process.platform === "win32" ? ".exe" : ""}`,
+      )
+    : "adb";
+}
+
+function getScopedAdbArgs(args: string[]): string[] {
+  return process.env.ANDROID_E2E_UDID
+    ? ["-s", process.env.ANDROID_E2E_UDID, ...args]
+    : args;
+}
 
 function detectAndroidSdk(): string | undefined {
   if (process.env.ANDROID_HOME) return process.env.ANDROID_HOME;
@@ -57,7 +86,13 @@ const javaHome = detectJavaHome();
 const toolEnv = {
   ...process.env,
   ...(androidSdk
-    ? { ANDROID_HOME: androidSdk, ANDROID_SDK_ROOT: androidSdk }
+    ? {
+        ANDROID_HOME: androidSdk,
+        ANDROID_SDK_ROOT: androidSdk,
+        PATH: `${resolve(androidSdk, "platform-tools")}${delimiter}${
+          process.env.PATH ?? ""
+        }`,
+      }
     : {}),
   ...(javaHome ? { JAVA_HOME: javaHome } : {}),
 };
@@ -104,16 +139,14 @@ async function waitForAppium(child: ReturnType<typeof spawn>): Promise<void> {
 }
 
 async function assertDeviceConnected(): Promise<void> {
-  const adb = androidSdk
-    ? resolve(
-        androidSdk,
-        `platform-tools/adb${process.platform === "win32" ? ".exe" : ""}`,
-      )
-    : "adb";
+  const adb = getAdbCommand();
 
   let output = "";
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn(adb, ["devices"], { cwd: projectRoot });
+    const child = spawn(adb, ["devices"], {
+      cwd: projectRoot,
+      env: toolEnv,
+    });
     child.stdout?.on("data", (chunk) => (output += chunk));
     child.stderr?.on("data", (chunk) => (output += chunk));
     child.once("error", reject);
@@ -126,9 +159,151 @@ async function assertDeviceConnected(): Promise<void> {
     .split(/\r?\n/)
     .slice(1)
     .filter((line) => /\tdevice$/.test(line));
-  if (devices.length === 0) {
+  const requestedDevice = process.env.ANDROID_E2E_UDID;
+  const hasReadyDevice = requestedDevice
+    ? devices.some((line) => line.startsWith(`${requestedDevice}\t`))
+    : devices.length > 0;
+  if (!hasReadyDevice) {
     throw new Error(
-      "No ready Android emulator or USB-debuggable device was found by `adb devices`.",
+      requestedDevice
+        ? `Android device ${requestedDevice} is not ready according to \`adb devices\`.`
+        : "No ready Android emulator or USB-debuggable device was found by `adb devices`.",
+    );
+  }
+}
+
+function runAdbSync(args: string[], timeout = 30_000): string {
+  return execFileSync(getAdbCommand(), getScopedAdbArgs(args), {
+    cwd: projectRoot,
+    env: toolEnv,
+    encoding: "utf8",
+    timeout,
+  });
+}
+
+function runAdbVisible(args: string[], timeout: number): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const command = getAdbCommand();
+    const scopedArgs = getScopedAdbArgs(args);
+    const child = spawn(command, scopedArgs, {
+      cwd: projectRoot,
+      env: toolEnv,
+      stdio: "inherit",
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(
+        new Error(
+          `${command} ${scopedArgs.join(" ")} timed out after ${timeout}ms`,
+        ),
+      );
+    }, timeout);
+
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolvePromise();
+        return;
+      }
+      reject(new Error(`${command} exited with ${code ?? signal}`));
+    });
+  });
+}
+
+async function waitForAndroidPackageManager(): Promise<void> {
+  runAdbSync(["wait-for-device"], 120_000);
+  const deadline = Date.now() + 120_000;
+  let lastError = "Android package manager is not ready";
+
+  while (Date.now() < deadline) {
+    try {
+      const bootCompleted = runAdbSync([
+        "shell",
+        "getprop",
+        "sys.boot_completed",
+      ]).trim();
+      const packageManager = runAdbSync([
+        "shell",
+        "pm",
+        "path",
+        "android",
+      ]).trim();
+      if (bootCompleted === "1" && packageManager.startsWith("package:")) {
+        return;
+      }
+      lastError = `boot_completed=${bootCompleted || "<empty>"}, pm=${
+        packageManager || "<empty>"
+      }`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_000));
+  }
+
+  throw new Error(
+    `Timed out waiting for Android package manager: ${lastError}`,
+  );
+}
+
+function getUiAutomator2ServerApks(): string[] {
+  if (!existsSync(appiumSettingsApk)) {
+    throw new Error(`Appium Settings APK not found: ${appiumSettingsApk}`);
+  }
+  if (!existsSync(uiautomator2ServerApksDir)) {
+    throw new Error(
+      `UiAutomator2 server APK directory not found: ${uiautomator2ServerApksDir}`,
+    );
+  }
+
+  const serverApks = readdirSync(uiautomator2ServerApksDir)
+    .filter((name) => name.endsWith(".apk"))
+    .sort()
+    .map((name) => resolve(uiautomator2ServerApksDir, name));
+  if (serverApks.length === 0) {
+    throw new Error(
+      `No UiAutomator2 server APKs found in ${uiautomator2ServerApksDir}`,
+    );
+  }
+  return serverApks;
+}
+
+async function installAndroidE2ePackages(): Promise<void> {
+  await waitForAndroidPackageManager();
+  const serverApks = getUiAutomator2ServerApks();
+
+  console.log(
+    `[android-e2e] Preinstalling Appium Settings APK: ${appiumSettingsApk}`,
+  );
+  await runAdbVisible(["install", "-r", "-g", appiumSettingsApk], 300_000);
+
+  const installs = [
+    {
+      label: "application APK",
+      args: ["install", "-r", "-g", apkPath],
+    },
+    ...serverApks.map((serverApk) => ({
+      label: "UiAutomator2 server APK",
+      args: ["install", "-r", serverApk],
+    })),
+  ];
+  for (const { label, args } of installs) {
+    console.log(`[android-e2e] Preinstalling ${label}: ${args.at(-1)}`);
+    await runAdbVisible(args, 300_000);
+  }
+
+  const installedPackage = runAdbSync([
+    "shell",
+    "pm",
+    "path",
+    androidAppPackage,
+  ]).trim();
+  if (!installedPackage.startsWith("package:")) {
+    throw new Error(
+      `Android package ${androidAppPackage} was not installed successfully.`,
     );
   }
 }
@@ -163,6 +338,8 @@ async function main(): Promise<void> {
   if (!existsSync(apkPath)) {
     throw new Error(`Android debug APK not found: ${apkPath}`);
   }
+  await installAndroidE2ePackages();
+
   mkdirSync(artifactsDir, { recursive: true });
   const chromedriverDir = resolve(artifactsDir, "chromedrivers");
   mkdirSync(chromedriverDir, { recursive: true });
@@ -203,15 +380,24 @@ async function main(): Promise<void> {
       projectRoot,
       `node_modules/.bin/tsx${process.platform === "win32" ? ".cmd" : ""}`,
     );
-    await run(tsxBin, ["--test", "--test-concurrency=1", ...tests], {
-      env: {
-        ...process.env,
-        ANDROID_E2E_APK: apkPath,
-        ANDROID_E2E_APPIUM_URL: appiumUrl,
-        ANDROID_E2E_ARTIFACTS: artifactsDir,
-        ANDROID_E2E_CHROMEDRIVER_DIR: chromedriverDir,
+    const testName = process.env.ANDROID_E2E_TEST_NAME?.trim();
+    await run(
+      tsxBin,
+      [
+        "--test",
+        "--test-concurrency=1",
+        ...(testName ? [`--test-name-pattern=${testName}`] : []),
+        ...tests,
+      ],
+      {
+        env: {
+          ...toolEnv,
+          ANDROID_E2E_APPIUM_URL: appiumUrl,
+          ANDROID_E2E_ARTIFACTS: artifactsDir,
+          ANDROID_E2E_CHROMEDRIVER_DIR: chromedriverDir,
+        },
       },
-    });
+    );
   } finally {
     if (appium.exitCode === null) {
       const appiumExited = new Promise<void>((resolvePromise) => {

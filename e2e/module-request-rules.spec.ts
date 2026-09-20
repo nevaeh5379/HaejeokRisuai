@@ -19,6 +19,14 @@ async function boot(page: Page) {
   });
   if (await skip.isVisible()) await skip.click();
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+  // The module store hydrates asynchronously from SQLite; installing modules
+  // before hydration completes races init() overwriting the in-memory module
+  // list with the database snapshot.
+  await page.waitForFunction(async () => {
+    const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+    const { moduleStore } = await import(/* @vite-ignore */ path);
+    return moduleStore.loaded === true;
+  });
 }
 
 async function seed(page: Page, rules: boolean) {

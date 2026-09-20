@@ -3,7 +3,7 @@ const app = express();
 const {
   createRemoteCorsMiddleware,
   parseAllowedOrigins,
-} = require("./remoteCors.cjs");
+} = require("./http/remoteCors.cjs");
 if (process.env.TRUST_PROXY) {
   app.set(
     "trust proxy",
@@ -46,8 +46,12 @@ process.on("unhandledRejection", (err: any) => {
 const http = require("http");
 const path = require("path");
 const net = require("net");
-const { formatListenHost, resolveListenHost } = require("./listenAddress.cjs");
-const { isSecurePostgresConfigRequest } = require("./requestSecurity.cjs");
+const { formatListenHost, resolveListenHost } = require("./http/listenAddress.cjs");
+const { isSecurePostgresConfigRequest } = require("./http/requestSecurity.cjs");
+const {
+  isLocalBackupImportFinalizePath,
+  isLocalBackupImportUploadPath,
+} = require("./http/localBackupRequestRouting.cjs");
 const htmlparser = require("node-html-parser");
 const fsSync = require("fs");
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
@@ -58,38 +62,39 @@ const { WebSocketServer } = require("ws");
 const { promisify } = require("util");
 const zlib = require("zlib");
 const { gzip } = require("zlib");
-const { createJsonStream } = require("./streamJson.cjs");
-const { streamZip } = require("./zipStream.cjs");
+const { createJsonStream } = require("./util/streamJson.cjs");
+const { streamZip } = require("./util/zipStream.cjs");
 const {
   normalizePrefetchConcurrency,
   prefetchInOrder,
-} = require("./bulkReadPrefetch.cjs");
-const { createModelJobManager } = require("./modelJobs.cjs");
-const { createPushNotificationManager } = require("./pushNotifications.cjs");
+} = require("./util/bulkReadPrefetch.cjs");
+const { createModelJobManager } = require("./executors/modelJobs.cjs");
+const { createPushNotificationManager } = require("./http/pushNotifications.cjs");
 const {
   createRealtimeEventHub,
   normalizeClientId,
-} = require("./realtimeEvents.cjs");
-import { createDatabaseMutations } from "./databaseMutations.cjs";
-const { createNodeChatExecutor } = require("./chatExecutor.cjs");
-const { createNodeProviderExecutor } = require("./providerExecutor.cjs");
-const { createHypaMemoryExecutor } = require("./hypaMemoryExecutor.cjs");
+} = require("./http/realtimeEvents.cjs");
+import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
+const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
+const { createNodeProviderExecutor } = require("./executors/providerExecutor.cjs");
+const { createHypaMemoryExecutor } = require("./executors/hypaMemoryExecutor.cjs");
 const {
-  createEntryHeader: createLocalBackupEntryHeader,
-  makeLegacyCompatibleDatabase: makeLegacyCompatibleBackupDatabase,
-  encodeDatabase: encodeLocalBackupDatabase,
-} = require("./localBackupFormat.cjs");
+  encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
+  encodeLegacyCompatibleBackupDatabase,
+} = require("../../packages/backup-core/dist/node/legacyFormat.js");
+const {
+  createLocalBackupExportMetadata,
+} = require("../../packages/backup-core/dist/exportPlan.js");
 const {
   attachPortableDatabaseBranchGraphs,
-  expandPortableDatabaseBranchGraphsForCompatibility,
   loadPortableBranchGraphForExport,
-} = require("../../packages/backup-core/portableBranches.cjs");
+} = require("../../packages/backup-core/dist/portableBranches.js");
 const {
   normalizePageInteger,
   paginateMessages,
-} = require("./messagePagination.cjs");
-const { countTokensBatch } = require("./tokenizeCount.cjs");
-const { resolveLoreEntries } = require("./loreResolve.cjs");
+} = require("./util/messagePagination.cjs");
+const { countTokensBatch } = require("./util/tokenizeCount.cjs");
+const { resolveLoreEntries } = require("./util/loreResolve.cjs");
 const {
   configureVectorIndexPersistence,
   flushVectorIndexPersistence,
@@ -99,8 +104,8 @@ const {
   syncVectorIndex,
   upsertVectorIndex,
   searchVectorIndex,
-} = require("./vectorIndex.cjs");
-const { matchLoreBatch } = require("./loreMatch.cjs");
+} = require("./util/vectorIndex.cjs");
+const { matchLoreBatch } = require("./util/loreMatch.cjs");
 const {
   STORAGE_SYNC_CHUNK_SIZE_BYTES,
   STORAGE_SYNC_SESSION_TTL_MS,
@@ -108,44 +113,92 @@ const {
   StorageSyncSessionManager,
   StorageSyncValidationError,
   createStorageSyncSummary,
-} = require("./storageSync.cjs");
+} = require("./sync/storageSync.cjs");
 const {
   StorageSyncAssetError,
   StorageSyncStagingStore,
-} = require("./storageSyncStaging.cjs");
+} = require("./sync/storageSyncStaging.cjs");
 const {
   StorageSyncSqlError,
   StorageSyncSqlStagingStore,
-} = require("./storageSyncSqlStaging.cjs");
+} = require("./sync/storageSyncSqlStaging.cjs");
 const {
   StorageSyncSessionPersistence,
-} = require("./storageSyncPersistence.cjs");
+} = require("./sync/storageSyncPersistence.cjs");
 const {
   StorageSyncFinalizeError,
   StorageSyncFinalizeGate,
   finalizeStorageSyncReplacement,
   preflightStorageSyncFinalize,
-} = require("./storageSyncFinalize.cjs");
+} = require("./sync/storageSyncFinalize.cjs");
 const {
   StorageSyncRecoveryError,
   StorageSyncRecoveryStore,
-} = require("./storageSyncRecovery.cjs");
+} = require("./sync/storageSyncRecovery.cjs");
 const {
-  StorageSyncPostgresApplyError,
-  applyStorageSyncPostgresRecords,
-} = require("./storageSyncPostgresApply.cjs");
+  StorageSyncSqlApplyError,
+  applyStorageSyncSqlRecords,
+} = require("./sync/storageSyncSqlApply.cjs");
+const {
+  INLAY_BACKUP_PREFIX,
+} = require("../../packages/backup-core/dist/entryPolicy.js");
+const {
+  LocalBackupDatabaseStreamError,
+  LocalBackupDatabaseStreamStore,
+} = require("../../packages/backup-core/dist/node/databaseStreamStore.js");
+const {
+  LocalBackupExportJobError,
+  LocalBackupExportJobStore,
+} = require("../../packages/backup-core/dist/node/exportJobStore.js");
+const {
+  streamLocalBackupArchive,
+} = require("../../packages/backup-core/dist/node/exportArchive.js");
+const {
+  LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE,
+  LocalBackupExportService,
+} = require("../../packages/backup-core/dist/node/exportService.js");
+const {
+  PortableDatabaseExportWriter,
+  writeBackupContainerEntry,
+} = require("../../packages/backup-core/dist/node/exportStream.js");
+const {
+  LocalBackupImportJobError,
+  LocalBackupImportJobStore,
+} = require("../../packages/backup-core/dist/node/importJobStore.js");
+const {
+  BackupImportStagingError,
+  BackupImportStagingStore,
+} = require("../../packages/backup-core/dist/node/importStagingStore.js");
+const {
+  BackupImportUploadError,
+  BackupImportUploadStore,
+} = require("../../packages/backup-core/dist/node/importUploadStore.js");
+const {
+  LocalBackupImportService,
+} = require("../../packages/backup-core/dist/node/importService.js");
+const {
+  BackupImportPlanError,
+} = require("../../packages/backup-core/dist/node/importPlan.js");
+const {
+  decodeStorageSyncValue,
+  encodeStorageSyncValue,
+} = require("../../packages/protocol/storageSyncValueCodec.cjs");
+const {
+  readStorageSyncSqlRecords,
+  validateStorageSyncSqlRecord,
+} = require("./sync/storageSyncSqlRecords.cjs");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
   runStartupStage,
   sanitizeSensitiveText,
   startupErrorHint,
-} = require("./startupDiagnostics.cjs");
+} = require("./http/startupDiagnostics.cjs");
 const {
   PostgresPayloadError,
   PostgresRevisionConflictError,
   PostgresStorage,
-} = require("./postgresStorage.cjs");
+} = require("./storage/postgres/postgresStorage.cjs");
 const {
   StoragePayloadError,
   StorageRevisionConflictError,
@@ -165,13 +218,13 @@ const {
   applyBackupConfig,
   removeBackupConfig,
   MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
-} = require("./storageDriver.cjs");
+} = require("./storage/storageDriver.cjs");
 const {
   AssetStorageManager,
   S3AssetStorage,
   AzureSqlAssetStorage,
   keyToHex,
-} = require("./assetStorage.cjs");
+} = require("./storage/assetStorage.cjs");
 const defaultJsonParser = express.json({ limit: "100mb" });
 const postgresJsonBodyLimit =
   process.env.RISU_POSTGRES_JSON_BODY_LIMIT || "1gb";
@@ -199,6 +252,14 @@ function isStorageSyncChunkRequest(req) {
     req.method === "PUT" &&
     (/^\/api\/storage-sync\/sessions\/[^/]+\/assets\/[^/]+$/.test(req.path) ||
       /^\/api\/storage-sync\/sessions\/[^/]+\/sql$/.test(req.path))
+  );
+}
+
+function isLocalBackupImportUploadRequest(req) {
+  return (
+    req.method === "PUT" &&
+    isLocalBackupImportUploadPath(req.path) &&
+    req.is("application/octet-stream")
   );
 }
 
@@ -375,7 +436,11 @@ app.use((req, res, next) => {
   defaultJsonParser(req, res, next);
 });
 app.use((req, res, next) => {
-  if (isStreamingAssetWriteRequest(req) || isStorageSyncChunkRequest(req)) {
+  if (
+    isStreamingAssetWriteRequest(req) ||
+    isStorageSyncChunkRequest(req) ||
+    isLocalBackupImportUploadRequest(req)
+  ) {
     return next();
   }
   rawBodyParser(req, res, next);
@@ -408,6 +473,32 @@ const storageSyncPersistence = new StorageSyncSessionPersistence(
 );
 const storageSyncStaging = new StorageSyncStagingStore(storageSyncRoot);
 const storageSyncSqlStaging = new StorageSyncSqlStagingStore(storageSyncRoot);
+const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
+  path.join(savePath, "__local_backup_database_stream"),
+  {
+    createValidationState: () => ({
+      sourceRevision: null,
+      entityPhase: false,
+    }),
+    cloneValidationState: (state) => ({ ...state }),
+    decodeRecord: decodeStorageSyncValue,
+    encodeRecord: encodeStorageSyncValue,
+    validateRecord: validateStorageSyncSqlRecord,
+    getSourceRevision: (state) => state.sourceRevision,
+  },
+);
+const localBackupImportJobs = new LocalBackupImportJobStore();
+const localBackupImportStaging = new BackupImportStagingStore(
+  path.join(savePath, "__local_backup_import"),
+);
+const localBackupImportUploadRoot = path.join(
+  savePath,
+  "__local_backup_import_upload",
+);
+fsSync.rmSync(localBackupImportUploadRoot, { recursive: true, force: true });
+const localBackupImportUploads = new BackupImportUploadStore(
+  localBackupImportUploadRoot,
+);
 const storageSyncRecovery = new StorageSyncRecoveryStore(
   path.join(savePath, "__storage_sync_recovery"),
 );
@@ -536,6 +627,8 @@ let { storage: postgresStorage, vendor: dbVendor } = createServerStorage(
 const databaseMutations = createDatabaseMutations({
   getStorage: () => postgresStorage,
   finalizeStorageSyncReplacement,
+  applyStorageSyncSqlRecords,
+  getVendor: () => dbVendor,
   realtimeEventHub,
 });
 // vendor 확정 후 환경 변수 관리 여부 갱신
@@ -717,8 +810,13 @@ function isFinalizeSafeApiRequest(req) {
 }
 
 function isFinalizeControlRequest(req) {
-  return /^\/api\/storage-sync\/sessions\/[^/]+\/finalize$/.test(
-    requestApiPath(req),
+  const path = requestApiPath(req);
+  return (
+    /^\/api\/storage-sync\/sessions\/[^/]+\/finalize$/.test(path) ||
+    /^\/api\/local-backup\/database-stream\/sessions\/[^/]+\/finalize$/.test(
+      path,
+    ) ||
+    isLocalBackupImportFinalizePath(path)
   );
 }
 
@@ -786,7 +884,9 @@ function delayMs(ms) {
 }
 
 // 전체 payload 구성은 backupFullPayload.cjs 모듈에서 (테스트 가능성)
-const { buildFullBackupPayload } = require("./backupFullPayload.cjs");
+const {
+  buildFullBackupPayload,
+} = require("../../packages/backup-core/dist/node/fullPayload.js");
 
 // 직렬 큐: 백업 DB로의 모든 쓰기는 순서를 보장하며 하나씩 수행.
 // 실패는 재시도(백오프) 후 상태 기록만 남기고 큐는 계속 진행 (메인 저장에는 영향 없음).
@@ -2859,7 +2959,7 @@ app.get("/api/client-capabilities", (req, res) => {
       sqlStorage: true,
       assetStorage: true,
       dataChangeEvents: true,
-      storageSync: dbVendor === "postgres",
+      storageSync: ["postgres", "oracle", "azure"].includes(dbVendor),
       modelExecution: false,
       vectorSearch: false,
     },
@@ -3257,13 +3357,6 @@ app.post(
       res.send(session.finalizedResult);
       return;
     }
-    if (dbVendor !== "postgres") {
-      res.status(501).send({
-        error: `Storage sync finalize is not implemented for ${dbVendor} yet`,
-        code: "storage_sync_finalize_unsupported_vendor",
-      });
-      return;
-    }
     try {
       const result = await databaseMutations.storageSyncFinalize(
         {
@@ -3272,7 +3365,6 @@ app.post(
           assetStaging: storageSyncStaging,
           assetStorage: assetStorageManager.getStorage(),
           recoveryStore: storageSyncRecovery,
-          applySqlRecords: applyStorageSyncPostgresRecords,
           gate: storageSyncFinalizeGate,
         },
         req.headers["x-risu-client-id"],
@@ -3307,7 +3399,7 @@ app.post(
     } catch (error) {
       if (
         error instanceof StorageSyncFinalizeError ||
-        error instanceof StorageSyncPostgresApplyError
+        error instanceof StorageSyncSqlApplyError
       ) {
         sendStorageSyncFinalizeError(res, error);
         return;
@@ -3919,38 +4011,71 @@ async function handleCharxExport(req, res) {
 
 app.post("/api/charx-export", authenticatedRouteLimiter, handleCharxExport);
 
-const localBackupJobs = new Map();
-const LOCAL_BACKUP_JOB_TTL_MS = 60 * 1000;
+const localBackupJobs = new LocalBackupExportJobStore();
+const localBackupExportService = new LocalBackupExportService(localBackupJobs, {
+  stream: async (job, res, onProgress) =>
+    await streamServerLocalBackup(res, job.mode, job.streamOptions, onProgress),
+});
 
-function pruneLocalBackupJobs() {
-  const now = Date.now();
-  for (const [id, job] of localBackupJobs) {
-    if (job.expiresAt <= now) localBackupJobs.delete(id);
+function sendLocalBackupExportJobError(res, error) {
+  if (!(error instanceof LocalBackupExportJobError)) return false;
+  const status = error.code === "job_not_found" ? 404 : 409;
+  res.status(status).send({ error: error.message, code: error.code });
+  return true;
+}
+
+async function writeServerBackupEntry(output, name, source, size) {
+  await writeBackupContainerEntry(
+    async (chunk) => await writePacket(output, chunk),
+    name,
+    source,
+    size,
+  );
+}
+
+async function openServerBackupStorageEntry(storage, key) {
+  const opened =
+    typeof storage.openReadStream === "function"
+      ? await storage.openReadStream(keyToHex(key))
+      : await storage.read(keyToHex(key));
+  return {
+    exists: Boolean(opened.exists),
+    source: opened.stream ?? opened.buffer ?? null,
+    size: Number(opened.contentLength ?? opened.buffer?.length),
+  };
+}
+
+async function listServerBackupAssetKeys(storage) {
+  const resolved =
+    storage.type === "s3"
+      ? await resolveCatalogedAssetKeys(storage, "assets/")
+      : { keys: await storage.list("assets/") };
+  return resolved.keys;
+}
+
+async function listServerBackupColdStorageKeys() {
+  const summaries =
+    typeof postgresStorage.listColdStorage === "function"
+      ? await postgresStorage.listColdStorage()
+      : [];
+  return summaries.map((summary) => summary.key);
+}
+
+async function loadServerBackupColdStorageItems() {
+  const items = [];
+  for (const key of await listServerBackupColdStorageKeys()) {
+    const loaded = await postgresStorage.loadColdStorage(key);
+    if (!loaded) continue;
+    items.push({ key, value: loaded.data });
   }
+  return items;
 }
 
-function settleLocalBackupJob(job, status, error = null) {
-  job.status = status;
-  job.error = error;
-  job.expiresAt = Date.now() + LOCAL_BACKUP_JOB_TTL_MS;
-  job.resolveCompletion?.();
-  job.resolveCompletion = null;
-}
-
-async function writeLocalBackupHeader(output, name, size) {
-  await writePacket(output, createLocalBackupEntryHeader(name, size));
-}
-
-async function writeLocalBackupEntry(output, name, source, size) {
-  await writeLocalBackupHeader(output, name, size);
-  if (Buffer.isBuffer(source) || source instanceof Uint8Array) {
-    await writePacket(output, source);
-    return;
-  }
-  for await (const chunk of source) {
-    await writePacket(
-      output,
-      Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
+async function assertServerBackupRevision(expectedRevision) {
+  const completedState = await postgresStorage.getState();
+  if (Number(completedState?.revision) !== Number(expectedRevision)) {
+    throw new Error(
+      `Database changed during backup (revision ${expectedRevision} -> ${completedState?.revision}); please retry`,
     );
   }
 }
@@ -3997,134 +4122,285 @@ async function buildPortableServerDatabase() {
   return database;
 }
 
-async function encodePortableServerDatabase(
-  database,
-  mode = "native",
-  coldStorageValues = new Map(),
+type LocalBackupProgressUpdate = {
+  stage: string;
+  current?: number;
+  total?: number;
+};
+
+type LocalBackupProgressReporter = (
+  progress: LocalBackupProgressUpdate,
+) => void;
+
+async function streamPortableServerDatabase(
+  writeEntry,
+  options: {
+    onRecord?: (record: any) => void;
+    onProgress?: LocalBackupProgressReporter;
+    pageSize?: number;
+    fragmentRecords?: number;
+  } = {},
 ) {
-  const portable =
-    mode === "compatible"
-      ? makeLegacyCompatibleBackupDatabase(
-          expandPortableDatabaseBranchGraphsForCompatibility(database),
-          coldStorageValues,
-        )
-      : database;
-  return await encodeLocalBackupDatabase(portable);
-}
+  if (!postgresStorage.enabled)
+    throw new Error("SQL storage is not configured");
+  const initialState = await postgresStorage.getState();
+  if (!initialState?.initialized)
+    throw new Error("Database is not initialized");
+  const startup = await postgresStorage.loadStartupData();
+  if (!startup || startup.status !== "ready")
+    throw new Error("Database is not initialized");
+  if (Number(startup.revision) !== Number(initialState.revision)) {
+    throw new Error("Database changed while streaming backup metadata");
+  }
+  const summary = await postgresStorage.getStorageSyncSummary();
+  const expectedRecords = Math.max(0, Number(summary?.records?.total) || 0);
+  const pageSize = options.pageSize ?? LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE;
+  const writer = new PortableDatabaseExportWriter({
+    revision: Number(initialState.revision),
+    expectedRecords,
+    fragmentRecords: options.fragmentRecords,
+    encodeDatabase: encodeLocalBackupDatabase,
+    writeEntry,
+    onRecord: options.onRecord,
+    onProgress(current, total) {
+      options.onProgress?.({ stage: "database", current, total });
+    },
+  });
 
-// Profile-image asset keys referenced by the snapshot: character main images,
-// persona icons, user icon, custom background, module icons, folder images, bot preset images.
-// Mirrors the client's essential backup scope so partial exports stay small.
-function collectEssentialBackupAssetKeys(database, assetKeys) {
-  const wanted = new Set();
-  const add = (key) => {
-    if (typeof key === "string" && key.startsWith("assets/")) wanted.add(key);
-  };
-  for (const character of database.characters ?? []) {
-    if (!character) continue;
-    add(character.image);
-  }
-  for (const persona of database.personas ?? []) {
-    if (persona?.icon) add(persona.icon);
-  }
-  add(database.userIcon);
-  add(database.customBackground);
-  for (const mod of database.modules ?? []) {
-    if (mod?.icon) add(mod.icon);
-  }
-  for (const item of database.characterOrder ?? []) {
-    if (typeof item === "string") continue;
-    add(item?.img);
-    add(item?.imgFile);
-  }
-  for (const preset of database.botPresets ?? []) {
-    if (preset?.image) add(preset.image);
-  }
-  return assetKeys.filter((key) => wanted.has(key));
-}
+  await writer.emit({
+    type: "meta",
+    formatVersion: 1,
+    revision: Number(initialState.revision),
+  });
 
-async function streamServerLocalBackup(res, mode = "native") {
-  const database = await buildPortableServerDatabase();
-  const coldItems =
-    typeof postgresStorage.listColdStorage === "function"
-      ? await postgresStorage.listColdStorage()
-      : [];
-  const loadedColdItems = [];
-  const coldStorageValues = new Map();
-  for (const summary of coldItems) {
-    const loaded = await postgresStorage.loadColdStorage(summary.key);
-    if (!loaded) continue;
-    loadedColdItems.push({ key: summary.key, data: loaded.data });
-    coldStorageValues.set(summary.key, loaded.data);
-  }
-  const databaseData = await encodePortableServerDatabase(
-    database,
-    mode === "partial" ? "native" : mode,
-    coldStorageValues,
+  const excludedSettings = new Set([
+    "characters",
+    "modules",
+    "botPresets",
+    "botPresetsId",
+    "pluginCustomStorage",
+  ]);
+  const settingKeys = (await postgresStorage.listSettingKeys()).filter(
+    (key, keyIndex, source) =>
+      !excludedSettings.has(key) && source.indexOf(key) === keyIndex,
   );
+  for (const key of settingKeys) {
+    const loaded = await postgresStorage.loadSettingKey(key);
+    if (!loaded?.exists)
+      throw new Error(`Backup could not load setting ${key}`);
+    await writer.emit({ type: "setting", key, value: loaded.value });
+  }
+
+  const moduleResult = await postgresStorage.loadModuleRecords();
+  for (
+    let position = 0;
+    position < (moduleResult?.modules?.length ?? 0);
+    position++
+  ) {
+    const value = moduleResult.modules[position];
+    if (!value?.id)
+      throw new Error("Backup encountered a module without an id");
+    await writer.emit({ type: "module", position, id: value.id, data: value });
+  }
+
+  const presetResult = await postgresStorage.listBotPresets();
+  const presetSummaries = presetResult?.presets ?? [];
+  for (const summary of presetSummaries) {
+    const loaded = await postgresStorage.loadBotPreset(summary.id);
+    if (!loaded?.preset)
+      throw new Error(`Backup could not load preset ${summary.id}`);
+    const { id: _id, ...value } = loaded.preset;
+    await writer.emit({
+      type: "preset",
+      position: summary.position,
+      id: summary.id,
+      data: value,
+    });
+  }
+
+  const pluginKeys = await postgresStorage.listPluginCustomStorageKeys();
+  for (const key of pluginKeys) {
+    const loaded = await postgresStorage.loadPluginCustomStorageKey(key);
+    if (!loaded?.exists)
+      throw new Error(`Backup could not load plugin storage ${key}`);
+    await writer.emit({ type: "plugin-storage", key, value: loaded.value });
+  }
+
+  for (
+    let characterPosition = 0;
+    characterPosition < startup.characters.length;
+    characterPosition++
+  ) {
+    const shell = startup.characters[characterPosition];
+    const loadedCharacter = await postgresStorage.loadCharacter(shell.chaId);
+    if (!loadedCharacter)
+      throw new Error(`Backup could not load character ${shell.chaId}`);
+    const chatSummaries = [...(loadedCharacter.chats ?? [])];
+    const { chats: _chats, ...character } = loadedCharacter;
+    await writer.emit({
+      type: "character",
+      position: characterPosition,
+      id: shell.chaId,
+      data: character,
+    });
+
+    for (
+      let chatPosition = 0;
+      chatPosition < chatSummaries.length;
+      chatPosition++
+    ) {
+      const summary = chatSummaries[chatPosition];
+      const loadedChat = await postgresStorage.loadChat(summary.id, {
+        messageLimit: 1,
+      });
+      if (!loadedChat)
+        throw new Error(`Backup could not load chat ${summary.id}`);
+      const { message: _messages, ...chat } = loadedChat;
+      await writer.emit({
+        type: "chat",
+        characterId: shell.chaId,
+        position: chatPosition,
+        id: summary.id,
+        data: chat,
+      });
+
+      let offset = 0;
+      let emittedMetadata = false;
+      while (true) {
+        const page = await postgresStorage.loadChatBranchGraphPage(
+          summary.id,
+          offset,
+          pageSize,
+        );
+        if (!emittedMetadata) {
+          for (const branch of page.branches) {
+            await writer.emit({
+              type: "branch",
+              chatId: summary.id,
+              data: branch,
+            });
+          }
+          if (page.activeBranchId) {
+            await writer.emit({
+              type: "active-branch",
+              chatId: summary.id,
+              branchId: page.activeBranchId,
+            });
+          }
+          emittedMetadata = true;
+        }
+        const links = new Map<string, any>(
+          page.links.map((link) => [link.messageId, link]),
+        );
+        for (const message of page.messages) {
+          const messageId = message?.chatId;
+          const link = messageId ? links.get(messageId) : null;
+          if (!messageId || !link || !Number.isSafeInteger(link.position)) {
+            throw new Error(
+              `Backup branch metadata is incomplete for chat ${summary.id}`,
+            );
+          }
+          const { chatId: _messageId, ...data } = message;
+          await writer.emit({
+            type: "message",
+            chatId: summary.id,
+            id: messageId,
+            position: Number(link.position),
+            parentMessageId: link.parentMessageId,
+            originBranchId: link.originBranchId,
+            data,
+          });
+        }
+        if (!page.hasMore) break;
+        const nextOffset = page.offset + page.messages.length;
+        if (nextOffset <= offset)
+          throw new Error(
+            `Branch backup paging stalled for chat ${summary.id}`,
+          );
+        offset = nextOffset;
+      }
+    }
+  }
+
+  const manifest = await writer.finalize();
+  await assertServerBackupRevision(initialState.revision);
+  return manifest;
+}
+
+async function streamServerLocalBackup(
+  res,
+  mode = "native",
+  options = {},
+  onProgress: LocalBackupProgressReporter = () => {},
+) {
   const storage = assetStorageManager.getStorage();
-  const resolved =
-    storage.type === "s3"
-      ? await resolveCatalogedAssetKeys(storage, "assets/")
-      : { keys: await storage.list("assets/") };
-  let assetKeys = resolved.keys.filter(
-    (key) => typeof key === "string" && key.startsWith("assets/"),
-  );
-  if (mode === "partial") {
-    assetKeys = collectEssentialBackupAssetKeys(database, assetKeys);
-  }
-  const inlayKeys =
-    mode === "native"
-      ? (await storage.list("inlay_")).filter(
-          (key) =>
-            typeof key === "string" &&
-            /^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.risuinlay$/.test(
-              key,
-            ),
-        )
-      : [];
+  const writeEntry = async (name, source, size) =>
+    await writeServerBackupEntry(res, name, source, size);
 
-  res.status(200);
-  res.setHeader("Content-Type", "application/octet-stream");
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const backupName =
-    mode === "compatible"
-      ? `risu_compatible_backup_${dateStr}.risubackup`
-      : mode === "partial"
-        ? `haejeokrisu_partial_backup_${dateStr}.risubackup`
-        : `haejeokrisu_backup_${dateStr}.risubackup`;
-  res.setHeader("Content-Disposition", `attachment; filename="${backupName}"`);
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("X-Accel-Buffering", "no");
-  if (typeof res.flushHeaders === "function") res.flushHeaders();
+  await streamLocalBackupArchive({
+    mode,
+    streamOptions: options,
+    onProgress,
+    adapter: {
+      onReady() {
+        res.status(200);
+        res.setHeader("Content-Type", "application/octet-stream");
+        const { filename } = createLocalBackupExportMetadata(mode);
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${filename}"`,
+        );
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("X-Accel-Buffering", "no");
+        if (typeof res.flushHeaders === "function") res.flushHeaders();
+      },
+      writeEntry,
+      async prepareCompatibleDatabase() {
+        const database = await buildPortableServerDatabase();
+        const loadedColdItems = await loadServerBackupColdStorageItems();
+        const coldStorageValues = new Map(
+          loadedColdItems.map((item) => [item.key, item.value]),
+        );
+        const databaseData = await encodeLegacyCompatibleBackupDatabase(
+          database,
+          coldStorageValues,
+        );
+        return {
+          source: databaseData,
+          size: databaseData.length,
+          coldStorageKeys: loadedColdItems.map((item) => item.key),
+          async loadColdStorage(key) {
+            return {
+              exists: coldStorageValues.has(key),
+              value: coldStorageValues.get(key),
+            };
+          },
+        };
+      },
+      async streamNativeDatabase(streamOptions) {
+        return await streamPortableServerDatabase(writeEntry, streamOptions);
+      },
+      listColdStorageKeys: listServerBackupColdStorageKeys,
+      async loadColdStorage(key) {
+        const loaded = await postgresStorage.loadColdStorage(key);
+        return loaded
+          ? { exists: true, value: loaded.data }
+          : { exists: false };
+      },
+      assertDatabaseRevision: assertServerBackupRevision,
+      async listAssetKeys() {
+        return await listServerBackupAssetKeys(storage);
+      },
+      async listInlayKeys() {
+        return await storage.list(INLAY_BACKUP_PREFIX);
+      },
+      async openStorageEntry(key) {
+        return await openServerBackupStorageEntry(storage, key);
+      },
+      encodeDatabase: encodeLocalBackupDatabase,
+    },
+  });
 
-  for (const key of [...assetKeys, ...inlayKeys]) {
-    const opened =
-      typeof storage.openReadStream === "function"
-        ? await storage.openReadStream(keyToHex(key))
-        : await storage.read(keyToHex(key));
-    if (!opened.exists) continue;
-    const source = opened.stream ?? opened.buffer;
-    const size = Number(opened.contentLength ?? opened.buffer?.length);
-    if (!source || !Number.isSafeInteger(size))
-      throw new Error(`Backup asset is not streamable: ${key}`);
-    await writeLocalBackupEntry(res, key, source, size);
-  }
-  for (const item of loadedColdItems) {
-    const data = Buffer.from(JSON.stringify(item.data), "utf8");
-    await writeLocalBackupEntry(
-      res,
-      `coldstorage_${item.key}.json`,
-      data,
-      data.length,
-    );
-  }
-  await writeLocalBackupEntry(
-    res,
-    "database.risudat",
-    databaseData,
-    databaseData.length,
-  );
   await new Promise((resolve, reject) => {
     res.once("finish", resolve);
     res.once("error", reject);
@@ -4132,75 +4408,465 @@ async function streamServerLocalBackup(res, mode = "native") {
   });
 }
 
+function sendLocalBackupDatabaseStreamError(res, error) {
+  if (error instanceof LocalBackupDatabaseStreamError) {
+    const status =
+      error.code === "session_not_found" || error.code === "session_expired"
+        ? 404
+        : error.code === "write_in_progress" ||
+            error.code === "fragment_order_mismatch" ||
+            error.code === "session_finalized"
+          ? 409
+          : 400;
+    res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (error instanceof StorageSyncFinalizeError) {
+    const status =
+      error.code === "finalize_in_progress"
+        ? 423
+        : error.code === "target_changed"
+          ? 409
+          : 400;
+    res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (error instanceof StorageSyncSqlApplyError) {
+    res.status(400).send({ error: error.message, code: error.code });
+    return true;
+  }
+  const currentRevision = Number(
+    error?.revision ?? error?.currentRevision ?? Number.NaN,
+  );
+  if (Number.isSafeInteger(currentRevision) && currentRevision >= 0) {
+    res.status(409).send({
+      error:
+        error?.message || "Database changed before backup restore finalize",
+      code: "target_changed",
+      currentRevision,
+    });
+    return true;
+  }
+  return false;
+}
+
+app.post(
+  "/api/local-backup/database-stream/sessions",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(await localBackupDatabaseStreamStore.create());
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.put(
+  "/api/local-backup/database-stream/sessions/:sessionId/records",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(
+        await localBackupDatabaseStreamStore.appendRecords(
+          req.params.sessionId,
+          req.body,
+        ),
+      );
+    } catch (error) {
+      if (sendLocalBackupDatabaseStreamError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+function createLocalBackupSqlStaging(
+  filePath: string,
+  recordCount: number,
+  sourceRevision: number,
+) {
+  return {
+    validate: async (
+      _syncSession: unknown,
+      options: {
+        onRecord?: (record: unknown, index: number) => Promise<void>;
+      } = {},
+    ) =>
+      await readStorageSyncSqlRecords(filePath, {
+        expectedRecordCount: recordCount,
+        expectedSourceRevision: sourceRevision,
+        onRecord: options.onRecord,
+      }),
+  };
+}
+
+async function finalizePreparedLocalBackupSql(
+  prepared: {
+    sourceRevision: number;
+    recordCount: number;
+    sqlStaging: ReturnType<typeof createLocalBackupSqlStaging>;
+  },
+  gateKey: string,
+  sourceClientId: unknown,
+) {
+  const release = await storageSyncFinalizeGate.acquire(gateKey);
+  try {
+    return await databaseMutations.localBackupStreamFinalize(
+      { prepared },
+      sourceClientId,
+    );
+  } finally {
+    release?.();
+  }
+}
+
+async function finalizeLocalBackupDatabaseStreamSession(
+  sessionId: string,
+  manifest: unknown,
+  sourceClientId: unknown,
+) {
+  const finalized =
+    localBackupDatabaseStreamStore.getFinalizedResult(sessionId);
+  if (finalized) return finalized;
+
+  const preparedStream = localBackupDatabaseStreamStore.prepareFinalize(
+    sessionId,
+    manifest,
+  );
+  const prepared = {
+    ...preparedStream,
+    sqlStaging: createLocalBackupSqlStaging(
+      preparedStream.filePath,
+      preparedStream.recordCount,
+      preparedStream.sourceRevision,
+    ),
+  };
+
+  const result = await finalizePreparedLocalBackupSql(
+    prepared,
+    `local-backup:${sessionId}`,
+    sourceClientId,
+  );
+  const response = {
+    status: "completed",
+    revision: result.revision,
+    revisionId: result.revisionId,
+    sourceRevision: prepared.sourceRevision,
+    recordCount: prepared.recordCount,
+  };
+  await localBackupDatabaseStreamStore.markFinalized(sessionId, response);
+  return response;
+}
+
+app.post(
+  "/api/local-backup/database-stream/sessions/:sessionId/finalize",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(
+        await finalizeLocalBackupDatabaseStreamSession(
+          req.params.sessionId,
+          req.body?.manifest,
+          req.headers["x-risu-client-id"],
+        ),
+      );
+    } catch (error) {
+      if (sendLocalBackupDatabaseStreamError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.delete(
+  "/api/local-backup/database-stream/sessions/:sessionId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      await localBackupDatabaseStreamStore.cleanup(req.params.sessionId);
+      res.status(204).end();
+    } catch (error) {
+      if (sendLocalBackupDatabaseStreamError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+function sendLocalBackupImportError(res, error) {
+  if (error instanceof LocalBackupImportJobError) {
+    const status = error.code === "job_not_found" ? 404 : 409;
+    res.status(status).send({ error: error.message, code: error.code });
+    return true;
+  }
+  if (error instanceof BackupImportUploadError) {
+    const status =
+      error.code === "upload_offset_mismatch" ||
+      error.code === "upload_incomplete" ||
+      error.code === "upload_finalized"
+        ? 409
+        : 400;
+    res.status(status).send({
+      error: error.message,
+      code: error.code,
+      ...(error.expectedOffset !== undefined
+        ? { expectedOffset: error.expectedOffset }
+        : {}),
+    });
+    return true;
+  }
+  if (
+    error instanceof BackupImportStagingError ||
+    error instanceof BackupImportPlanError
+  ) {
+    res.status(400).send({ error: error.message, code: error.code });
+    return true;
+  }
+  return sendLocalBackupDatabaseStreamError(res, error);
+}
+
+async function writeImportedAsset(key, filePath, size) {
+  const storage = assetStorageManager.getStorage();
+  if (typeof storage.writeFromPath !== "function") {
+    throw new Error("Active asset storage cannot import staged backup files");
+  }
+  await storage.writeFromPath(keyToHex(key), filePath);
+  await upsertAssetCatalogKey(key, size);
+}
+
+async function applyPreparedLocalBackupDatabase(prepared, sourceClientId) {
+  const staged = {
+    sourceRevision: prepared.sourceRevision,
+    recordCount: prepared.recordCount,
+    sqlStaging: createLocalBackupSqlStaging(
+      prepared.filePath,
+      prepared.recordCount,
+      prepared.sourceRevision,
+    ),
+  };
+  const result = await finalizePreparedLocalBackupSql(
+    staged,
+    `local-backup-import:${prepared.filePath}`,
+    sourceClientId,
+  );
+  return {
+    revision: result.revision,
+    recordCount: prepared.recordCount,
+  };
+}
+
+const localBackupImportService = new LocalBackupImportService(
+  localBackupImportJobs,
+  localBackupImportStaging,
+  {
+    writeColdStorage: async (key, value) =>
+      await postgresStorage.upsertColdStorage(key, value),
+    writeAsset: writeImportedAsset,
+    encodeDatabaseRecord: encodeStorageSyncValue,
+    applyPreparedDatabase: applyPreparedLocalBackupDatabase,
+  },
+  localBackupImportUploads,
+);
+
+app.post(
+  "/api/local-backup/import/jobs",
+  authenticatedRouteLimiter,
+  async (req, res) => {
+    if (!(await checkAuth(req, res))) return;
+    res.send(localBackupImportService.createJob());
+  },
+);
+
+app.get(
+  "/api/local-backup/import/jobs/:jobId/progress",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(localBackupImportService.progress(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.get(
+  "/api/local-backup/import/jobs/:jobId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(await localBackupImportService.wait(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.put(
+  "/api/local-backup/import/jobs/:jobId/file",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!req.is("application/octet-stream")) {
+      res.status(415).send({
+        error: "Content-Type must be application/octet-stream",
+        code: "invalid_content_type",
+      });
+      return;
+    }
+
+    const jobId = req.params.jobId;
+    const declaredLength = Number.parseInt(
+      String(req.headers["content-length"] ?? "0"),
+      10,
+    );
+    const totalBytes =
+      Number.isSafeInteger(declaredLength) && declaredLength > 0
+        ? declaredLength
+        : 0;
+
+    try {
+      res.send(
+        await localBackupImportService.importStream(jobId, req, {
+          totalBytes,
+          sourceClientId: req.headers["x-risu-client-id"],
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (sendLocalBackupImportError(res, error)) return;
+      res.status(400).send({
+        error: message,
+        code: error?.code ?? "local_backup_import_failed",
+      });
+    }
+  },
+);
+
+app.put(
+  "/api/local-backup/import/jobs/:jobId/chunks",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!req.is("application/octet-stream")) {
+      res.status(415).send({
+        error: "Content-Type must be application/octet-stream",
+        code: "invalid_content_type",
+      });
+      return;
+    }
+
+    try {
+      res.send(
+        await localBackupImportService.appendUploadChunk(
+          req.params.jobId,
+          Number(req.query.offset),
+          req,
+          Number(req.query.totalBytes),
+        ),
+      );
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.post(
+  "/api/local-backup/import/jobs/:jobId/finalize-upload",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(
+        await localBackupImportService.finalizeUpload(req.params.jobId, {
+          sourceClientId: req.headers["x-risu-client-id"],
+        }),
+      );
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
+app.delete(
+  "/api/local-backup/import/jobs/:jobId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      await localBackupImportService.cancel(req.params.jobId);
+      res.status(204).end();
+    } catch (error) {
+      if (sendLocalBackupImportError(res, error)) return;
+      next(error);
+    }
+  },
+);
+
 app.post(
   "/api/local-backup/export/jobs",
   authenticatedRouteLimiter,
   async (req, res) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
-    const mode = ["compatible", "partial"].includes(req.query.mode)
-      ? req.query.mode
-      : "native";
-    const id = crypto.randomBytes(24).toString("base64url");
-    let resolveCompletion;
-    const completion = new Promise((resolve) => {
-      resolveCompletion = resolve;
-    });
-    localBackupJobs.set(id, {
-      status: "pending",
-      error: null,
-      completion,
-      resolveCompletion,
-      mode,
-      expiresAt: Date.now() + LOCAL_BACKUP_JOB_TTL_MS,
-    });
-    res.send({ id });
+    res.send(
+      localBackupExportService.createJob({
+        mode: req.query.mode,
+        pageSize: req.query.pageSize,
+        fragmentRecords: req.query.fragmentRecords,
+      }),
+    );
+  },
+);
+
+app.get(
+  "/api/local-backup/export/jobs/:jobId/progress",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    try {
+      res.send(localBackupExportService.progress(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupExportJobError(res, error)) return;
+      next(error);
+    }
   },
 );
 
 app.get(
   "/api/local-backup/export/jobs/:jobId",
   authenticatedRouteLimiter,
-  async (req, res) => {
+  async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
-    const job = localBackupJobs.get(req.params.jobId);
-    if (!job)
-      return res
-        .status(404)
-        .send({ error: "Local backup job not found or expired" });
-    if (job.status === "pending" || job.status === "streaming")
-      await job.completion;
-    res.send({ status: job.status, error: job.error });
-    localBackupJobs.delete(req.params.jobId);
+    try {
+      res.send(await localBackupExportService.waitAndRemove(req.params.jobId));
+    } catch (error) {
+      if (sendLocalBackupExportJobError(res, error)) return;
+      next(error);
+    }
   },
 );
 
 app.get(
   "/api/local-backup/export/:jobId",
   authenticatedRouteLimiter,
-  async (req, res) => {
+  async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    pruneLocalBackupJobs();
-    const job = localBackupJobs.get(req.params.jobId);
-    if (!job)
-      return res
-        .status(404)
-        .send({ error: "Local backup job not found or expired" });
-    if (job.status !== "pending")
-      return res
-        .status(409)
-        .send({ error: "Local backup download was already started" });
-    job.status = "streaming";
-    job.expiresAt = Number.POSITIVE_INFINITY;
+    const jobId = req.params.jobId;
     try {
-      await streamServerLocalBackup(res, job.mode || "native");
-      settleLocalBackupJob(job, "complete");
+      await localBackupExportService.stream(jobId, res);
     } catch (error) {
+      if (sendLocalBackupExportJobError(res, error)) return;
+      const message = error instanceof Error ? error.message : String(error);
       console.error("[Local backup] Streaming export failed:", error);
-      if (!res.headersSent) res.status(500).send({ error: error.message });
+      if (!res.headersSent) res.status(500).send({ error: message });
       else res.destroy(error);
-      settleLocalBackupJob(job, "error", error.message);
     }
   },
 );

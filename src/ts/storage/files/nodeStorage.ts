@@ -7,6 +7,7 @@ import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
 import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
 import { RemoteStorageSyncClient } from "@risuai/storage-remote/remoteStorageSyncClient";
 import { RemoteSyncAssetReader } from "@risuai/storage-remote/remoteSyncAssetReader";
+import { RemoteLocalBackupClient } from "@risuai/storage-remote/remoteLocalBackupClient";
 import {
   RemoteComputeClient,
   type NodeVectorCacheStats,
@@ -99,6 +100,7 @@ export type {
 export class NodeStorage {
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
+  readonly backup: RemoteLocalBackupClient;
   private readonly assetClient: RemoteAssetClient;
   private readonly authIdentity: RemoteAuthIdentity;
   private readonly authController: RemoteAuthController;
@@ -131,6 +133,11 @@ export class NodeStorage {
     );
     this.sql = new NodeSqlStorage(getAuth, apiClient);
     this.s3 = new NodeS3Storage(getAuth, apiClient);
+    this.backup = new RemoteLocalBackupClient(
+      apiClient,
+      getAuth,
+      this.sql.getClientId(),
+    );
     this.assetClient = new RemoteAssetClient(apiClient, () =>
       this.getCachedAuth(),
     );

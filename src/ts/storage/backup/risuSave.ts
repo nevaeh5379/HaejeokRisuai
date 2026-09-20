@@ -3,6 +3,12 @@ import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { presetTemplate } from "../presets/presetDefaults";
 import type { Database, PortableDatabase } from "../database/schema";
+import {
+  LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
+  LEGACY_RAW_DATABASE_HEADER_BYTES,
+  LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
+  RISU_SAVE_BLOCK_HEADER_BYTES,
+} from "@risuai/backup-core/legacyHeaders";
 
 import localforage from "localforage";
 import { forageStorage } from "../../globalApi.svelte";
@@ -32,14 +38,14 @@ const disableRemoteSaving = () => {
     return true;
   }
 };
-const magicHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7]);
-const magicCompressedHeader = new Uint8Array([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8,
-]);
-const magicStreamCompressedHeader = new Uint8Array([
-  0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 9,
-]);
-const magicRisuSaveHeader = new TextEncoder().encode("RISUSAVE\0");
+const magicHeader = new Uint8Array(LEGACY_RAW_DATABASE_HEADER_BYTES);
+const magicCompressedHeader = new Uint8Array(
+  LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
+);
+const magicStreamCompressedHeader = new Uint8Array(
+  LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
+);
+const magicRisuSaveHeader = new Uint8Array(RISU_SAVE_BLOCK_HEADER_BYTES);
 
 async function checkCompressionStreams() {
   if (!CompressionStream) {

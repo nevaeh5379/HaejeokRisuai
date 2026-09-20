@@ -60,12 +60,11 @@
             return $mobileBotTargetStore.title;
         }
         switch ($SettingsMenuIndex) {
-            case 0: return `${language.account} & ${language.files}`;
+            case 0: return `${language.data} & ${language.backup}`;
             case 1: return language.chatBot;
             case 2: return language.otherBots;
             case 3: return language.display;
             case 4: return language.plugin;
-            case 5: return language.files;
             case 6: return language.advancedSettings;
             case 7: return language.community;
             case 8: return language.globalLoreBook;

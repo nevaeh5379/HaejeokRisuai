@@ -88,11 +88,11 @@ test("rejects indirect primary mutation helpers outside the mutation service", (
     },
   );
   withFixture(
-    `applyStorageSyncPostgresRecords({ sqlStorage: postgresStorage });`,
+    `applyStorageSyncSqlRecords({ sqlStorage: postgresStorage });`,
     (file) => {
       assert.throws(
         () => checkServerStorageMutations(file),
-        /direct applyStorageSyncPostgresRecords\(\) call is forbidden/,
+        /direct applyStorageSyncSqlRecords\(\) call is forbidden/,
       );
     },
   );

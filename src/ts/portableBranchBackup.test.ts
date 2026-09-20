@@ -4,7 +4,7 @@ import {
   expandChatBranchGraphForCompatibility,
   loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
-} from "@risuai/backup-core/portableBranches.cjs";
+} from "@risuai/backup-core/portableBranches";
 
 const message = (chatId: string, data: string) => ({
   chatId,
