@@ -74,7 +74,7 @@ function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
  */
 export function classifyBackupEntry(name: string): BackupEntryClassification {
   const normalized: string = normalizeBackupEntryName(name);
-  if (!normalized) return { kind: "invalid", normalized: null };
+  if (!normalized) return { kind: "invalid" satisfies BackupEntryKind, normalized: null satisfies string};
   const kind: BackupEntryKind =
     classifyExactBackupEntry(normalized) ??
     classifyPatternBackupEntry(normalized);
