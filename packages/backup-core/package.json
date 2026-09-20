@@ -183,6 +183,12 @@
       "require": "./dist/inlayRestore.js",
       "default": "./src/inlayRestore.ts"
     },
+    "./inlayExport": {
+      "types": "./src/inlayExport.ts",
+      "import": "./src/inlayExport.ts",
+      "require": "./dist/inlayExport.js",
+      "default": "./src/inlayExport.ts"
+    },
     "./importSource": {
       "types": "./src/importSource.ts",
       "import": "./src/importSource.ts",

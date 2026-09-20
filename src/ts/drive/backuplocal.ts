@@ -74,7 +74,6 @@ import {
   type BackupEntryClassification,
   classifyBackupEntry,
   getInlayBackupKey,
-  getInlayBackupName,
   INLAY_BACKUP_PREFIX,
   LEGACY_DATABASE_ENTRY_NAME,
   ACCOUNT_ENCRYPTION_ENTRY_NAME,
@@ -463,66 +462,72 @@ async function initializeLocalBackupWriter(
   return initialized;
 }
 
-async function writeLocalBackupInlays(writer: LocalWriter) {
-  const inlays = await listInlayAssets();
-  const updateInterval = getLocalBackupPerformance().progressUpdateMs;
-  let lastUiUpdate = 0;
-  for (let index = 0; index < inlays.length; index++) {
-    const [id, asset] = inlays[index];
-    const name = getInlayBackupName(id);
-    if (getInlayBackupKey(name) !== id) {
+type LocalBackupInlayEntries = Awaited<ReturnType<typeof listInlayAssets>>;
+type LocalBackupInlayAsset = LocalBackupInlayEntries[number][1];
+
+async function writeLocalBackupInlays(writer: LocalWriter): Promise<void> {
+  const inlays: LocalBackupInlayEntries = await listInlayAssets();
+  const updateInterval: number =
+    getLocalBackupPerformance().progressUpdateMs;
+  let lastUiUpdate: number = 0;
+  await streamBackupInlays({
+    entries: inlays,
+    async encode(asset: LocalBackupInlayAsset): Promise<Uint8Array> {
+      return await encodeInlayAssetBackup(asset);
+    },
+    async write(name: string, data: Uint8Array): Promise<void> {
+      await writer.writeBackup(name, data);
+    },
+    async onProgress(current: number, total: number): Promise<void> {
+      const now: number = Date.now();
+      if (
+        current === 1 ||
+        current === total ||
+        now - lastUiUpdate >= updateInterval
+      ) {
+        lastUiUpdate = now;
+        reportLocalBackupProgress("inlays", { current, total });
+        await sleep(0);
+      }
+    },
+    onUnsupportedKey(id: string): void {
       console.warn(`Skipping inlay with unsupported backup key: ${id}`);
-      continue;
-    }
-    const now = Date.now();
-    if (
-      index === 0 ||
-      index === inlays.length - 1 ||
-      now - lastUiUpdate >= updateInterval
-    ) {
-      lastUiUpdate = now;
-      reportLocalBackupProgress("inlays", {
-        current: index + 1,
-        total: inlays.length,
-      });
-      await sleep(0);
-    }
-    await writer.writeBackup(name, await encodeInlayAssetBackup(asset));
-  }
+    },
+  });
 }
 
-async function clearNodeBackupInlayStage(storage: NodeStorage) {
-  const keys = (await storage.keys(INLAY_BACKUP_PREFIX)).filter(
-    (key) => getInlayBackupKey(key) !== null,
+async function clearNodeBackupInlayStage(storage: NodeStorage): Promise<void> {
+  const keys: string[] = (await storage.keys(INLAY_BACKUP_PREFIX)).filter(
+    (key: string): boolean => getInlayBackupKey(key) !== null,
   );
   if (keys.length > 0) await storage.removeItem(keys);
 }
 
-async function stageNodeInlaysForBackup(storage: NodeStorage) {
+async function stageNodeInlaysForBackup(storage: NodeStorage): Promise<void> {
   // Inlays are persisted on the server permanently since the remote inlay
   // storage landed; this restage only re-exports what listInlayAssets still
   // reports (local cache misses are resolved from the server by the inlay
   // layer itself), so existing server keys are simply rewritten with the
   // same payload.
   await clearNodeBackupInlayStage(storage);
-  const inlays = await listInlayAssets();
-  let batch = new Map<string, Uint8Array>();
-  let batchBytes = 0;
-  const flush = async () => {
-    if (batch.size === 0) return;
-    await storage.setItems(batch);
-    batch = new Map();
-    batchBytes = 0;
-  };
-  for (const [id, asset] of inlays) {
-    const name = getInlayBackupName(id);
-    if (getInlayBackupKey(name) !== id) continue;
-    const encoded = await encodeInlayAssetBackup(asset);
-    batch.set(name, encoded);
-    batchBytes += encoded.byteLength;
-    if (batch.size >= 32 || batchBytes >= 32 * 1024 * 1024) await flush();
-  }
-  await flush();
+  const inlays: LocalBackupInlayEntries = await listInlayAssets();
+  const batchWriter: BoundedAssetBatchWriter = new BoundedAssetBatchWriter(
+    32,
+    32 * 1024 * 1024,
+    async (entries: RestoredAssetBatch): Promise<void> => {
+      await storage.setItems(entries);
+    },
+  );
+  await streamBackupInlays({
+    entries: inlays,
+    async encode(asset: LocalBackupInlayAsset): Promise<Uint8Array> {
+      return await encodeInlayAssetBackup(asset);
+    },
+    async write(name: string, data: Uint8Array): Promise<void> {
+      await batchWriter.add(name, data);
+    },
+  });
+  await batchWriter.flush();
 }
 
 type NodeServerBackupMode = LocalBackupMode | "partial";
@@ -795,6 +800,7 @@ import {
   type InlayRestoreResult,
   type InlayRestoreWrite,
 } from "@risuai/backup-core/inlayRestore";
+import { streamBackupInlays } from "@risuai/backup-core/inlayExport";
 import {
   BoundedAssetBatchWriter,
   writeItemsConcurrently,
