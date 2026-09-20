@@ -1,17 +1,31 @@
 use gtk::prelude::*;
 
-fn should_prefer_server_side_decoration(supported: bool) -> bool {
-    supported
+use super::LinuxWindowDecoration;
+
+pub fn tauri_decorations_enabled(decoration: LinuxWindowDecoration) -> bool {
+    decoration == LinuxWindowDecoration::Ssd
 }
 
-pub fn prefer_server_side_decoration(window: &gtk::ApplicationWindow, supported: bool) -> bool {
-    if !should_prefer_server_side_decoration(supported) || window.is_realized() {
+pub fn mode_for_window(window: &gtk::ApplicationWindow) -> LinuxWindowDecoration {
+    if window.is_decorated() {
+        LinuxWindowDecoration::Ssd
+    } else {
+        LinuxWindowDecoration::Csd
+    }
+}
+
+pub fn prepare_server_side_decoration(
+    window: &gtk::ApplicationWindow,
+    requested: LinuxWindowDecoration,
+    server_side_supported: bool,
+) -> bool {
+    if requested != LinuxWindowDecoration::Ssd || !server_side_supported || window.is_realized() {
         return false;
     }
 
-    // Tao 0.35 installs a GtkHeaderBar for every Wayland window. Removing that
-    // explicit custom titlebar before realization lets GTK negotiate the normal
-    // decorated window path with compositors that advertise SSD support.
+    // Tao installs a GtkHeaderBar for decorated Wayland windows. Removing that
+    // custom titlebar before realization lets GTK/KWin negotiate compositor
+    // decorations through KDE's server-decoration protocol.
     window.set_titlebar(None::<&gtk::Widget>);
     window.set_decorated(true);
     true
@@ -22,8 +36,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn server_side_path_is_capability_gated() {
-        assert!(should_prefer_server_side_decoration(true));
-        assert!(!should_prefer_server_side_decoration(false));
+    fn only_ssd_keeps_tauri_window_decorations() {
+        assert!(tauri_decorations_enabled(LinuxWindowDecoration::Ssd));
+        assert!(!tauri_decorations_enabled(LinuxWindowDecoration::Csd));
     }
 }

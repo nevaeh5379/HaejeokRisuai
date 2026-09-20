@@ -13,7 +13,7 @@ use wayland_protocols::ext::background_effect::v1::client::{
 };
 use wayland_protocols_plasma::blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager};
 
-use super::{decoration, BackgroundBlurSupport, LinuxWindowCapabilities};
+use super::{decoration, BackgroundBlurSupport, LinuxWindowCapabilities, LinuxWindowDecoration};
 
 const STANDARD_BLUR_MANAGER: &str = "ext_background_effect_manager_v1";
 const KWIN_BLUR_MANAGER: &str = "org_kde_kwin_blur_manager";
@@ -286,7 +286,10 @@ fn wrap_gtk_surface(
     wrap_foreign_surface(connection, surface_ptr)
 }
 
-pub fn install<R: Runtime>(window: &Window<R>) -> Result<LinuxWindowCapabilities, String> {
+pub fn install<R: Runtime>(
+    window: &Window<R>,
+    requested_decoration: LinuxWindowDecoration,
+) -> Result<LinuxWindowCapabilities, String> {
     let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
     let Some(connection) = connect_to_gtk_wayland(&gtk_window)? else {
         gtk_window.show_all();
@@ -302,20 +305,25 @@ pub fn install<R: Runtime>(window: &Window<R>) -> Result<LinuxWindowCapabilities
         .map_err(|error| format!("Failed to enumerate Wayland globals: {error}"))?;
 
     let standard_decoration_advertised = state.has_global(XDG_DECORATION_MANAGER);
-    // GTK3 does not expose its xdg_toplevel and does not bind xdg-decoration
-    // itself. Its usable SSD path on current Tao/Tauri is KWin's legacy
-    // server-decoration protocol, so only remove Tao's HeaderBar when that
-    // protocol is actually present.
+    // Decoration mode is fixed when the Tauri window is constructed. This
+    // late Wayland integration layer only records compositor capabilities and
+    // installs blur; toggling GTK decorations after WebKit has realized the
+    // window is too late on Wayland.
     let server_side_decoration = state.has_global(KWIN_DECORATION_MANAGER);
-    let using_server_side_decoration =
-        decoration::prefer_server_side_decoration(&gtk_window, server_side_decoration);
-    if using_server_side_decoration {
-        eprintln!("[Linux Wayland] Removed Tao GTK header bar before realization");
-    } else if server_side_decoration && gtk_window.is_realized() {
-        eprintln!("[Linux Wayland] Window was realized before decoration negotiation");
-    } else if standard_decoration_advertised && !server_side_decoration {
+    let prepared_ssd = decoration::prepare_server_side_decoration(
+        &gtk_window,
+        requested_decoration,
+        server_side_decoration,
+    );
+
+    if prepared_ssd {
+        eprintln!("[Linux Wayland] Removed Tao GtkHeaderBar for compositor SSD");
+    } else if requested_decoration == LinuxWindowDecoration::Ssd
+        && standard_decoration_advertised
+        && !server_side_decoration
+    {
         eprintln!(
-            "[Linux Wayland] xdg-decoration is advertised but GTK3 cannot safely attach to its xdg_toplevel; keeping CSD"
+            "[Linux Wayland] SSD requested; compositor exposes xdg-decoration but GTK3 may fall back to toolkit CSD"
         );
     }
 
@@ -365,6 +373,7 @@ pub fn install<R: Runtime>(window: &Window<R>) -> Result<LinuxWindowCapabilities
         wayland: true,
         server_side_decoration,
         background_blur,
+        decoration: requested_decoration,
     })
 }
 

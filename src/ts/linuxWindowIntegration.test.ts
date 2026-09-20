@@ -6,35 +6,59 @@ const { invoke } = vi.hoisted(() => ({
 
 vi.mock("./platform", () => ({ isTauriLinux: true }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 
-import { initializeLinuxWindowIntegration } from "./linuxWindowIntegration";
+import {
+  initializeLinuxWindowIntegration,
+  isLinuxCsdActive,
+  setLinuxWindowDecorationPreference,
+} from "./linuxWindowIntegration";
 
-describe("initializeLinuxWindowIntegration", () => {
+describe("Linux window integration", () => {
   beforeEach(() => {
     invoke.mockReset();
     document.documentElement.classList.remove(
       "tauri-linux-wayland",
       "tauri-linux-background-blur",
+      "tauri-linux-csd",
+      "tauri-linux-ssd",
     );
     delete document.documentElement.dataset.risuLinuxBlur;
+    delete document.documentElement.dataset.risuLinuxDecoration;
     delete document.documentElement.dataset.risuLinuxServerDecoration;
   });
 
-  it("enables compositor material only when blur is supported", async () => {
+  it("reads capabilities for the current window", async () => {
     invoke.mockResolvedValue({
       wayland: true,
       serverSideDecoration: true,
       backgroundBlur: "standard",
+      decoration: "csd",
     });
 
     const capabilities = await initializeLinuxWindowIntegration();
 
+    expect(invoke).toHaveBeenCalledWith("get_linux_window_capabilities", {
+      label: "main",
+    });
     expect(capabilities.backgroundBlur).toBe("standard");
+    expect(isLinuxCsdActive()).toBe(true);
     expect(document.documentElement.classList).toContain(
       "tauri-linux-background-blur",
     );
-    expect(document.documentElement.dataset.risuLinuxServerDecoration).toBe(
-      "true",
+    expect(document.documentElement.classList).toContain("tauri-linux-csd");
+  });
+
+  it("persists the native bootstrap preference", async () => {
+    invoke.mockResolvedValue(undefined);
+
+    await setLinuxWindowDecorationPreference("csd");
+
+    expect(invoke).toHaveBeenCalledWith(
+      "set_linux_window_decoration_preference",
+      { decoration: "csd" },
     );
   });
 
@@ -43,6 +67,7 @@ describe("initializeLinuxWindowIntegration", () => {
       wayland: true,
       serverSideDecoration: false,
       backgroundBlur: "none",
+      decoration: "csd",
     });
 
     await initializeLinuxWindowIntegration();

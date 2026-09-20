@@ -1,4 +1,5 @@
 import type { ChatTab, ChatTabsSnapshot } from "./chatTabs.svelte";
+import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import {
   ChatWindowManager,
   MAIN_CHAT_WORKSPACE_WINDOW_ID,
@@ -607,14 +608,17 @@ async function openAuxiliaryWindow(
     minWidth: 300,
     minHeight: 500,
     resizable: true,
+    decorations:
+      !isTauriLinux ||
+      (settingsStore.state.linuxWindowDecoration ?? "ssd") === "ssd",
     transparent: isTauriLinux || isTauriMacOS || isTauriWindows,
     titleBarStyle: isTauriMacOS ? "overlay" : undefined,
     hiddenTitle: isTauriMacOS,
     trafficLightPosition: isTauriMacOS
       ? new LogicalPosition(12, 22)
       : undefined,
-    // Linux Wayland windows must stay unrealized until the native plugin has
-    // removed Tao's forced GtkHeaderBar and negotiated compositor decoration.
+    // Linux keeps the first frame hidden while the native Wayland plugin
+    // installs blur and records the decoration mode selected at construction.
     visible: !isTauriLinux,
     focus: true,
   });

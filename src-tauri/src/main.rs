@@ -82,24 +82,44 @@ fn set_risu_windows_backdrop(app: AppHandle, effect: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn get_linux_window_capabilities() -> Value {
+fn set_linux_window_decoration_preference(
+    app: AppHandle,
+    decoration: String,
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        serde_json::to_value(linux_wayland::capabilities()).unwrap_or_else(|_| {
+        linux_wayland::set_decoration_preference(&app, &decoration)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, decoration);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn get_linux_window_capabilities(label: String) -> Value {
+    #[cfg(target_os = "linux")]
+    {
+        serde_json::to_value(linux_wayland::capabilities_for(&label)).unwrap_or_else(|_| {
             json!({
                 "wayland": false,
                 "serverSideDecoration": false,
-                "backgroundBlur": "none"
+                "backgroundBlur": "none",
+                "decoration": "ssd"
             })
         })
     }
 
     #[cfg(not(target_os = "linux"))]
     {
+        let _ = label;
         json!({
             "wayland": false,
             "serverSideDecoration": false,
-            "backgroundBlur": "none"
+            "backgroundBlur": "none",
+            "decoration": "ssd"
         })
     }
 }
@@ -1341,7 +1361,10 @@ fn main() {
 
     #[cfg(target_os = "linux")]
     {
-        builder = builder.plugin(linux_wayland::init());
+        builder = builder.plugin(linux_wayland::init()).setup(|app| {
+            linux_wayland::create_main_window(app.handle())?;
+            Ok(())
+        });
     }
 
     #[cfg(target_os = "macos")]
@@ -1359,10 +1382,9 @@ fn main() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app
-                .get_webview_window("main")
-                .expect("no main window")
-                .set_focus();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
         }));
     }
 
@@ -1397,6 +1419,7 @@ fn main() {
             sqlite_transaction::sqlite_rollback_stream_transaction,
             set_risu_native_appearance,
             set_risu_windows_backdrop,
+            set_linux_window_decoration_preference,
             get_linux_window_capabilities,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,

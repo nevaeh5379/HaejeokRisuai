@@ -18,7 +18,8 @@
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
     import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
     import { isTauri, isTauriMacOS, isTauriWindows } from 'src/ts/platform';
-    import { windowDragRegion } from 'src/ts/nativeWindowChrome';
+    import { isLinuxCsdActive } from 'src/ts/linuxWindowIntegration';
+    import { linuxCsdWindowDragRegion, windowDragRegion } from 'src/ts/nativeWindowChrome';
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
@@ -55,6 +56,7 @@
     }
 
     let { groupId, reserveSidebarSpace = false, allowSplit = false }: Props = $props();
+    const linuxCsdActive = isLinuxCsdActive();
     let showTabs = $derived(settingsStore.state.showChatTabs ?? true);
     let groupTabs = $derived(chatTabsStore.tabsForGroup(groupId));
     let windowsPaneSurfaceLayoutKey = $derived(
@@ -701,6 +703,7 @@
     <div
         class="rs-chat-tab-strip-shell shrink-0 w-full"
         class:macos-traffic-light-clearance={reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
+        use:linuxCsdWindowDragRegion
     >
         <div
             class="rs-chat-tab-traffic-light-spacer"
@@ -723,7 +726,7 @@
         class:pl-2={$MobileGUI || (!reserveSidebarSpace && !isTauriWindows) || isTauriMacOS}
         class:ring-1={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
         class:ring-textcolor2={!$MobileGUI && chatTabsStore.focusedGroupId === groupId && chatTabsStore.groups.length > 1}
-        style:padding-right={isTauriWindows ? "140px" : undefined}
+        style:padding-right={isTauriWindows || linuxCsdActive ? "140px" : undefined}
         class:macos-aux-titlebar-tabs={reserveMacOSTrafficLights}
         class:macos-main-titlebar-tabs-closed={reserveMainMacOSTrafficLights}
     >

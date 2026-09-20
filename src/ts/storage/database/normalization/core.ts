@@ -7,6 +7,7 @@ import { normalizePromptTemplate } from "../../presets/presetService";
 import {
   defaultBoolean,
   defaultNumber,
+  defaultPicklist,
   defaultString,
   parseDefaults,
 } from "./valibotDefaults";
@@ -46,6 +47,7 @@ const coreScalarDefaults = {
   iconsize: defaultNumber(100),
   theme: defaultString(),
   uiTheme: defaultString("default"),
+  linuxWindowDecoration: defaultPicklist(["ssd", "csd"], "ssd"),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
   waifuWidth2: defaultNumber(100),

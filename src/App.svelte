@@ -2,7 +2,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
+    import { isCapacitor, isNodeServer, isTauri, isTauriLinux, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
@@ -12,7 +12,9 @@
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
+    import LinuxWindowControls from './lib/UI/LinuxWindowControls.svelte';
     import { windowDragRegion } from './ts/nativeWindowChrome';
+    import { isLinuxCsdActive } from './ts/linuxWindowIntegration';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
@@ -23,6 +25,7 @@
 
   
     const auxiliaryChatLaunch = isTauri ? parseTauriChatWorkspaceLaunch(location.search) : null
+    const linuxCsdActive = isTauriLinux && isLinuxCsdActive()
     const detachedChatWindow = auxiliaryChatLaunch !== null
     const detachedChatPresentation = auxiliaryChatLaunch?.presentation ?? {}
     let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
@@ -272,8 +275,11 @@
     }
 
 }}>
-    {#if isTauriWindows}
+    {#if isTauriWindows || linuxCsdActive}
         <NativeWindowResizeHandles />
+    {/if}
+    {#if linuxCsdActive}
+        <LinuxWindowControls />
     {/if}
     {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
         <LazyComponent loader={legalLoader} />
@@ -369,7 +375,7 @@
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
             <div class="relative w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
-                {#if isTauriMacOS || isTauriWindows}
+                {#if isTauriMacOS || isTauriWindows || linuxCsdActive}
                     <div
                         class="absolute top-0 left-0 right-1 h-10 z-[1]"
                         use:windowDragRegion
