@@ -344,6 +344,46 @@ html.tauri-windows-vibrancy .rs-sidebar-panel.dynamic-sidebar {
   box-shadow: 10px 0 28px rgb(0 0 0 / 0.28);
 }
 
+/* Linux Wayland background effects are compositor-owned. Keep the app body
+ * opaque unless the native capability probe confirms a blur protocol. */
+html.tauri-linux-background-blur,
+html.tauri-linux-background-blur body,
+html.tauri-linux-background-blur #app {
+  background: transparent;
+}
+
+html.tauri-linux-background-blur {
+  --risu-linux-sidebar-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) 84%,
+    transparent
+  );
+}
+
+html.tauri-linux-background-blur main.tauri-native {
+  background-color: transparent;
+}
+
+html.tauri-linux-background-blur .rs-main-content {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+html.tauri-linux-background-blur .rs-sidebar,
+html.tauri-linux-background-blur .rs-sidebar-panel {
+  background-color: var(--risu-linux-sidebar-tint) !important;
+  border-right-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 10%,
+    transparent
+  ) !important;
+  box-shadow: none;
+}
+
+html.tauri-linux-background-blur .rs-sidebar.dynamic-sidebar,
+html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
+  background-color: var(--risu-theme-darkbg) !important;
+}
+
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
   --risu-macos-traffic-lights-width: 5rem;

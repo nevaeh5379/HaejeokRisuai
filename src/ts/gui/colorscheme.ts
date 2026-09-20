@@ -6,7 +6,12 @@ import { alertError } from "../alert";
 import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
+import {
+  isCapacitorAndroid,
+  isTauriLinux,
+  isTauriMacOS,
+  isTauriWindows,
+} from "../platform";
 import { syncAndroidSystemBars } from "../android/androidNativeIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
@@ -25,7 +30,7 @@ export interface ColorScheme {
 }
 
 async function syncTauriNativeAppearance(type: "light" | "dark") {
-  if (!isTauriMacOS && !isTauriWindows) {
+  if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
     return;
   }
 

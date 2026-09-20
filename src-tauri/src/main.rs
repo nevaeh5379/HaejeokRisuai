@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "linux")]
+mod linux_wayland;
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
 mod sqlite_transaction;
@@ -53,7 +55,12 @@ fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), 
         windows_titlebar::set_risu_native_appearance(&app, dark)
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_wayland::set_risu_native_appearance(&app, dark)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         let _ = (app, dark);
         Ok(())
@@ -71,6 +78,29 @@ fn set_risu_windows_backdrop(app: AppHandle, effect: String) -> Result<(), Strin
     {
         let _ = (app, effect);
         Ok(())
+    }
+}
+
+#[tauri::command]
+fn get_linux_window_capabilities() -> Value {
+    #[cfg(target_os = "linux")]
+    {
+        serde_json::to_value(linux_wayland::capabilities()).unwrap_or_else(|_| {
+            json!({
+                "wayland": false,
+                "serverSideDecoration": false,
+                "backgroundBlur": "none"
+            })
+        })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        json!({
+            "wayland": false,
+            "serverSideDecoration": false,
+            "backgroundBlur": "none"
+        })
     }
 }
 
@@ -1294,6 +1324,9 @@ async fn close_sidebar_menu_window(
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    std::env::set_var("GDK_BACKEND", "wayland");
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(target_os = "macos")]
@@ -1304,6 +1337,11 @@ fn main() {
     #[cfg(target_os = "windows")]
     {
         builder = builder.plugin(windows_titlebar::init());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.plugin(linux_wayland::init());
     }
 
     #[cfg(target_os = "macos")]
@@ -1359,6 +1397,7 @@ fn main() {
             sqlite_transaction::sqlite_rollback_stream_transaction,
             set_risu_native_appearance,
             set_risu_windows_backdrop,
+            get_linux_window_capabilities,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,
             mark_sidebar_menu_window_ready,

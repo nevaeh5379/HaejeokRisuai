@@ -58,3 +58,11 @@ custom-protocol = ["tauri/custom-protocol"]
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = { version = "2.2.3", features = ["deep-link"] }
 tauri-plugin-updater = "2.11.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gdkwayland-sys = "0.18.2"
+gtk = "0.18.2"
+wayland-backend = { version = "0.3.11", features = ["client_system"] }
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
+wayland-protocols-plasma = { version = "0.3.9", features = ["client"] }
