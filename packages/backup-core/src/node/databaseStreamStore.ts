@@ -2,9 +2,16 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LocalBackupDatabaseStreamSession } from "../api";
+import { PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS } from "../streamFormat";
 
 export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
-export const LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS = 256;
+/**
+ * Compatibility alias of the canonical streamed-fragment record bound in
+ * streamFormat.ts, so Node export/import/session validation always consume
+ * the same value as the frontend and the aggregate collector.
+ */
+export const LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS;
 export const LOCAL_BACKUP_DATABASE_STREAM_MAX_REQUEST_RECORDS = 64;
 export const LOCAL_BACKUP_DATABASE_STREAM_TTL_MS = 60 * 60 * 1000;
 
