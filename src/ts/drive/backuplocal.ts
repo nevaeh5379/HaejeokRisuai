@@ -71,7 +71,6 @@ import {
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 import {
-  classifyBackupEntry,
   getInlayBackupKey,
   INLAY_BACKUP_PREFIX,
   LEGACY_DATABASE_ENTRY_NAME,
@@ -86,15 +85,9 @@ import {
   type LocalBackupSource,
 } from "@risuai/backup-core/importSource";
 import {
-  LOCAL_BACKUP_PROGRESS_STAGES,
   type LocalBackupImportProgress,
   type LocalBackupMode as BackupCoreLocalBackupMode,
-  type LocalBackupProgressStage,
 } from "@risuai/backup-core/api";
-import {
-  createBackupProgressReporter,
-  type BackupProgressView,
-} from "@risuai/backup-core/progress";
 import {
   exportNativeBackupAssets,
   exportStoredBackupAssets,
@@ -144,145 +137,12 @@ import { getLogger } from "@logtape/logtape";
 
 const logger = getLogger(["risuai", "backup"]);
 
-const alertProgress = (
-  msg: string,
-  progress: number | string,
-  stepState?: {
-    steps: string[];
-    currentStep: number;
-    currentStepRatio?: number;
-  },
-) => showProgressAlert(msg, progress, "backup", stepState);
-
-const LOCAL_BACKUP_PROGRESS_RANGES: Record<
-  LocalBackupProgressStage,
-  readonly [number, number]
-> = {
-  selectingDestination: [0, 2],
-  preparing: [2, 5],
-  database: [5, 60],
-  coldStorage: [60, 68],
-  assets: [68, 92],
-  inlays: [92, 97],
-  finalizing: [97, 100],
-};
-
-function localBackupProgressLabel(stage: LocalBackupProgressStage): string {
-  switch (stage) {
-    case "selectingDestination":
-      return language.localBackupProgressSelectingDestination;
-    case "preparing":
-      return language.localBackupProgressPreparing;
-    case "database":
-      return language.localBackupProgressDatabase;
-    case "coldStorage":
-      return language.localBackupProgressColdStorage;
-    case "assets":
-      return language.localBackupProgressAssets;
-    case "inlays":
-      return language.localBackupProgressInlays;
-    case "finalizing":
-      return language.localBackupProgressFinalizing;
-  }
-}
-
-const reportLocalBackupProgress = createBackupProgressReporter({
-  stages: LOCAL_BACKUP_PROGRESS_STAGES,
-  ranges: LOCAL_BACKUP_PROGRESS_RANGES,
-  label: localBackupProgressLabel,
-  report(view: BackupProgressView<LocalBackupProgressStage>): void {
-    const count: string =
-      view.total > 0 ? ` (${view.current} / ${view.total})` : "";
-    const detail: string = view.detail ? `\n${view.detail}` : "";
-    alertProgress(`${view.label}${count}${detail}`, view.percent, {
-      steps: view.steps,
-      currentStep: view.currentStep,
-      currentStepRatio: view.currentStepRatio,
-    });
-  },
+const {
+  exportProgress: reportLocalBackupProgress,
+  restoreProgress: reportLocalBackupRestoreProgress,
+} = createLocalBackupProgressReporters((message, progress, stepState): void => {
+  showProgressAlert(message, progress, "backup", stepState);
 });
-
-type LocalBackupRestoreStage =
-  "selectingSource" | "reading" | "database" | "branches" | "finalizing";
-
-const LOCAL_BACKUP_RESTORE_STAGE_ORDER: LocalBackupRestoreStage[] = [
-  "selectingSource",
-  "reading",
-  "database",
-  "branches",
-  "finalizing",
-];
-
-const LOCAL_BACKUP_RESTORE_RANGES: Record<
-  LocalBackupRestoreStage,
-  readonly [number, number]
-> = {
-  selectingSource: [0, 2],
-  reading: [2, 90],
-  database: [90, 98],
-  branches: [98, 99.5],
-  finalizing: [99.5, 100],
-};
-
-function localBackupRestoreLabel(stage: LocalBackupRestoreStage): string {
-  switch (stage) {
-    case "selectingSource":
-      return language.localBackupRestoreSelectingSource;
-    case "reading":
-      return language.localBackupRestoreReading;
-    case "database":
-      return language.localBackupRestoreDatabase;
-    case "branches":
-      return language.localBackupRestoreBranches;
-    case "finalizing":
-      return language.localBackupRestoreFinalizing;
-  }
-}
-
-const reportLocalBackupRestoreProgress = createBackupProgressReporter({
-  stages: LOCAL_BACKUP_RESTORE_STAGE_ORDER,
-  ranges: LOCAL_BACKUP_RESTORE_RANGES,
-  label: localBackupRestoreLabel,
-  report(view: BackupProgressView<LocalBackupRestoreStage>): void {
-    const count: string =
-      view.total > 0 ? ` (${view.current} / ${view.total})` : "";
-    const detail: string = view.detail ? `\n${view.detail}` : "";
-    alertProgress(`${view.label}${count}${detail}`, view.percent, {
-      steps: view.steps,
-      currentStep: view.currentStep,
-      currentStepRatio: view.currentStepRatio,
-    });
-  },
-});
-
-function formatBackupBytes(bytes: number): string {
-  const value = Math.max(0, Number(bytes) || 0);
-  if (value < 1024) return `${Math.round(value)} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  let scaled = value / 1024;
-  let unitIndex = 0;
-  while (scaled >= 1024 && unitIndex < units.length - 1) {
-    scaled /= 1024;
-    unitIndex++;
-  }
-  return `${scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[unitIndex]}`;
-}
-
-function localBackupRestoreEntryLabel(name: string): string {
-  switch (classifyBackupEntry(name).kind) {
-    case "database":
-    case "databaseStream":
-      return language.localBackupRestoreReadingDatabase;
-    case "asset":
-      return language.localBackupRestoreReadingAssets;
-    case "inlay":
-      return language.localBackupRestoreReadingInlays;
-    case "coldStorage":
-      return language.localBackupRestoreReadingColdStorage;
-    default:
-      return "";
-  }
-}
 
 function getLocalBackupPerformance(): LocalBackupPerformanceSettings {
   return normalizeLocalBackupPerformance(settingsStore.state);
@@ -580,10 +440,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
         try {
           const state = await nodeStorage.backup.getExportProgress(job.id);
           const progress = state.progress;
-          if (
-            progress?.stage &&
-            progress.stage in LOCAL_BACKUP_PROGRESS_RANGES
-          ) {
+          if (progress?.stage) {
             reportLocalBackupProgress(progress.stage, {
               current: progress.current,
               total: progress.total,
@@ -771,6 +628,11 @@ import {
   type RestoredBackupArchive,
 } from "@risuai/backup-core/restoreArchive";
 import { createLocalBackupAssetBatchWriter } from "./localBackupAssetRestore";
+import {
+  createLocalBackupProgressReporters,
+  formatBackupBytes,
+  formatLocalBackupReadProgress,
+} from "./localBackupProgress";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -1381,16 +1243,13 @@ async function restoreLocalBackupSourceUnlocked(
             : parserProgress.start +
               (progress.totalBytesRead / progress.totalBytes) *
                 (parserProgress.end - parserProgress.start);
-        const entryLabel: string = progress.entryName
-          ? localBackupRestoreEntryLabel(progress.entryName)
-          : "";
-        const byteProgress: string =
-          progress.totalBytes > 0
-            ? `${formatBackupBytes(progress.totalBytesRead)} / ${formatBackupBytes(progress.totalBytes)}`
-            : formatBackupBytes(progress.totalBytesRead);
         reportLocalBackupRestoreProgress("reading", {
           percent: readPercent,
-          detail: entryLabel ? `${byteProgress} · ${entryLabel}` : byteProgress,
+          detail: formatLocalBackupReadProgress(
+            progress.entryName,
+            progress.totalBytesRead,
+            progress.totalBytes,
+          ),
         });
       },
       onEncryptionParseError(error: unknown): void {
