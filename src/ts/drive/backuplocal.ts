@@ -886,6 +886,12 @@ import {
   buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
   normalizePortableBackupSnapshot,
 } from "@risuai/backup-core/databasePreparation";
+import {
+  restoreInlayBackupEntry as restoreInlayBackupEntryCore,
+  type InlayRestoreDecode,
+  type InlayRestoreResult,
+  type InlayRestoreWrite,
+} from "@risuai/backup-core/inlayRestore";
 import { BoundedAssetBatch } from "@risuai/backup-core/restoreBatch";
 
 interface LocalBackupExportOptions {
@@ -1469,10 +1475,7 @@ export async function SavePartialLocalBackup() {
   }
 }
 
-export type InlayRestoreResult =
-  | { status: "restored" }
-  | { status: "invalid"; error: unknown }
-  | { status: "storage-error"; error: unknown };
+export type { InlayRestoreResult } from "@risuai/backup-core/inlayRestore";
 
 export async function restoreInlayBackupEntry(
   inlayKey: string,
@@ -1482,23 +1485,10 @@ export async function restoreInlayBackupEntry(
     write?: typeof setInlayAsset;
   } = {},
 ): Promise<InlayRestoreResult> {
-  const decode = dependencies.decode ?? decodeInlayAssetBackup;
-  const write = dependencies.write ?? setInlayAsset;
-  let asset: ReturnType<typeof decodeInlayAssetBackup>;
-
-  try {
-    asset = decode(data);
-  } catch (error) {
-    return { status: "invalid", error };
-  }
-
-  try {
-    await write(inlayKey, asset);
-  } catch (error) {
-    return { status: "storage-error", error };
-  }
-
-  return { status: "restored" };
+  const decode: InlayRestoreDecode =
+    dependencies.decode ?? decodeInlayAssetBackup;
+  const write: InlayRestoreWrite = dependencies.write ?? setInlayAsset;
+  return restoreInlayBackupEntryCore(inlayKey, data, { decode, write });
 }
 
 async function restoreLocalBackupSourceUnlocked(

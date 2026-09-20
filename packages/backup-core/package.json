@@ -159,6 +159,12 @@
       "require": "./dist/inlayCodec.js",
       "default": "./src/inlayCodec.ts"
     },
+    "./inlayRestore": {
+      "types": "./src/inlayRestore.ts",
+      "import": "./src/inlayRestore.ts",
+      "require": "./dist/inlayRestore.js",
+      "default": "./src/inlayRestore.ts"
+    },
     "./node/legacyStream": {
       "types": "./src/node/legacyStream.ts",
       "import": "./src/node/legacyStream.ts",
