@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
@@ -5,10 +6,7 @@ import {
   BackupContainerParser,
   type BackupContainerEntryInfo,
 } from "../containerStream";
-import {
-  classifyBackupEntry,
-  type BackupEntryKind,
-} from "../entryPolicy";
+import { classifyBackupEntry, type BackupEntryKind } from "../entryPolicy";
 
 export interface StagedBackupEntry {
   index: number;
@@ -47,19 +45,25 @@ interface ActiveEntry {
 
 export class BackupImportStagingStore {
   private readonly rootPath: string;
+  private readonly jobDirectories = new Map<string, string>();
 
   constructor(rootPath: string) {
     this.rootPath = resolve(rootPath);
   }
 
-  private jobDirectory(id: string): string {
+  private jobDirectory(id: string, create: boolean): string | null {
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(id)) {
       throw new BackupImportStagingError(
         "Invalid local backup import job id",
         "invalid_job_id",
       );
     }
-    return join(this.rootPath, id);
+    const existing = this.jobDirectories.get(id);
+    if (existing) return existing;
+    if (!create) return null;
+    const directory = join(this.rootPath, randomUUID());
+    this.jobDirectories.set(id, directory);
+    return directory;
   }
 
   async stage(
@@ -74,7 +78,7 @@ export class BackupImportStagingStore {
       }) => void;
     } = {},
   ): Promise<StagedBackupContainer> {
-    const directory = this.jobDirectory(id);
+    const directory = this.jobDirectory(id, true)!;
     await fs.rm(directory, { recursive: true, force: true });
     await fs.mkdir(directory, { recursive: true });
 
@@ -177,6 +181,9 @@ export class BackupImportStagingStore {
     } catch (error) {
       await closeActive(true).catch(() => {});
       await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+      if (this.jobDirectories.get(id) === directory) {
+        this.jobDirectories.delete(id);
+      }
       if (error instanceof BackupImportStagingError) throw error;
       throw new BackupImportStagingError(
         error instanceof Error ? error.message : String(error),
@@ -185,6 +192,10 @@ export class BackupImportStagingStore {
   }
 
   async cleanup(id: string): Promise<void> {
-    await fs.rm(this.jobDirectory(id), { recursive: true, force: true });
+    const directory = this.jobDirectory(id, false);
+    this.jobDirectories.delete(id);
+    if (directory) {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
   }
 }

@@ -71,6 +71,8 @@ export interface LocalBackupDatabaseStreamPrepared {
 
 interface InternalSession<TState> {
   id: string;
+  directoryPath: string;
+  filePath: string;
   createdAt: number;
   expiresAt: number;
   nextFragmentIndex: number;
@@ -108,7 +110,9 @@ function serializeSession<TState>(
   };
 }
 
-function isAllowedRecordType(type: string): type is LocalBackupDatabaseRecordType {
+function isAllowedRecordType(
+  type: string,
+): type is LocalBackupDatabaseRecordType {
   return (LOCAL_BACKUP_DATABASE_RECORD_TYPES as readonly string[]).includes(
     type,
   );
@@ -137,26 +141,16 @@ export class LocalBackupDatabaseStreamStore<
         : LOCAL_BACKUP_DATABASE_STREAM_TTL_MS;
   }
 
-  private sessionDirectory(id: string): string {
-    if (!/^[0-9a-f-]{36}$/.test(id)) {
-      throw new LocalBackupDatabaseStreamError(
-        "Invalid local backup database stream session id",
-        "invalid_session",
-      );
-    }
-    return join(this.rootPath, id);
-  }
-
-  private filePath(id: string): string {
-    return join(this.sessionDirectory(id), "database.ndjson.part");
-  }
-
   async create(): Promise<LocalBackupDatabaseStreamSession> {
     await this.cleanupExpired();
     const id = randomUUID();
+    const directoryPath = join(this.rootPath, id);
+    const filePath = join(directoryPath, "database.ndjson.part");
     const createdAt = Date.now();
     const session: InternalSession<TState> = {
       id,
+      directoryPath,
+      filePath,
       createdAt,
       expiresAt: createdAt + this.ttlMs,
       nextFragmentIndex: 1,
@@ -166,8 +160,8 @@ export class LocalBackupDatabaseStreamStore<
       validationState: this.adapter.createValidationState(),
       writeInProgress: false,
     };
-    await fs.mkdir(this.sessionDirectory(id), { recursive: true });
-    await fs.writeFile(this.filePath(id), new Uint8Array());
+    await fs.mkdir(directoryPath, { recursive: true });
+    await fs.writeFile(filePath, new Uint8Array());
     this.sessions.set(id, session);
     return serializeSession(session);
   }
@@ -182,7 +176,7 @@ export class LocalBackupDatabaseStreamStore<
     }
     if (session.expiresAt <= Date.now()) {
       this.sessions.delete(id);
-      void fs.rm(this.sessionDirectory(id), {
+      void fs.rm(session.directoryPath, {
         recursive: true,
         force: true,
       });
@@ -265,11 +259,8 @@ export class LocalBackupDatabaseStreamStore<
           );
         }
         this.adapter.validateRecord(record, recordIndex, candidateState);
-        candidateCounts[record.type] =
-          (candidateCounts[record.type] ?? 0) + 1;
-        lines.push(
-          `${JSON.stringify(this.adapter.encodeRecord(record))}\n`,
-        );
+        candidateCounts[record.type] = (candidateCounts[record.type] ?? 0) + 1;
+        lines.push(`${JSON.stringify(this.adapter.encodeRecord(record))}\n`);
         recordIndex++;
       }
     } catch (error) {
@@ -282,7 +273,7 @@ export class LocalBackupDatabaseStreamStore<
 
     session.writeInProgress = true;
     try {
-      await fs.appendFile(this.filePath(id), lines.join(""), "utf8");
+      await fs.appendFile(session.filePath, lines.join(""), "utf8");
       session.validationState = candidateState;
       session.counts = candidateCounts;
       session.recordCount += encodedRecords.length;
@@ -306,7 +297,7 @@ export class LocalBackupDatabaseStreamStore<
     const session = this.require(id);
     session.finalizedResult = result;
     session.expiresAt = Date.now() + this.ttlMs;
-    await fs.rm(this.sessionDirectory(id), {
+    await fs.rm(session.directoryPath, {
       recursive: true,
       force: true,
     });
@@ -334,7 +325,7 @@ export class LocalBackupDatabaseStreamStore<
     const typedManifest = manifest as LocalBackupDatabaseStreamManifest;
     return {
       id,
-      filePath: this.filePath(id),
+      filePath: session.filePath,
       sourceRevision: typedManifest.revision,
       recordCount: typedManifest.totalRecords,
       counts: cloneCounts(session.counts),
@@ -398,11 +389,14 @@ export class LocalBackupDatabaseStreamStore<
   }
 
   async cleanup(id: string): Promise<void> {
+    const session = this.sessions.get(id);
     this.sessions.delete(id);
-    await fs.rm(this.sessionDirectory(id), {
-      recursive: true,
-      force: true,
-    });
+    if (session) {
+      await fs.rm(session.directoryPath, {
+        recursive: true,
+        force: true,
+      });
+    }
   }
 
   async cleanupExpired(): Promise<void> {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LocalBackupImportUploadState } from "../api";
@@ -29,6 +30,7 @@ export interface BackupImportUploadFinalizeSource {
 export class BackupImportUploadStore {
   private readonly rootPath: string;
   private readonly totals = new Map<string, number>();
+  private readonly uploadPaths = new Map<string, string>();
   private readonly sealed = new Set<string>();
   private readonly locks = new Map<string, Promise<void>>();
 
@@ -36,14 +38,23 @@ export class BackupImportUploadStore {
     this.rootPath = resolve(rootPath);
   }
 
-  private uploadPath(id: string): string {
+  private validateJobId(id: string): void {
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(id)) {
       throw new BackupImportUploadError(
         "Invalid local backup import job id",
         "invalid_job_id",
       );
     }
-    return join(this.rootPath, `${id}.upload`);
+  }
+
+  private getUploadPath(id: string, create: boolean): string | null {
+    this.validateJobId(id);
+    const existing = this.uploadPaths.get(id);
+    if (existing) return existing;
+    if (!create) return null;
+    const filePath = join(this.rootPath, `${randomUUID()}.upload`);
+    this.uploadPaths.set(id, filePath);
+    return filePath;
   }
 
   private async serialized<T>(
@@ -101,7 +112,7 @@ export class BackupImportUploadStore {
           "upload_finalized",
         );
       }
-      const filePath = this.uploadPath(id);
+      const filePath = this.getUploadPath(id, true)!;
       await fs.mkdir(this.rootPath, { recursive: true });
       const stat = await fs
         .stat(filePath)
@@ -183,9 +194,9 @@ export class BackupImportUploadStore {
 
   async finalize(id: string): Promise<BackupImportUploadFinalizeSource> {
     return await this.serialized(id, async () => {
-      const filePath = this.uploadPath(id);
+      const filePath = this.getUploadPath(id, false);
       const totalBytes = this.totals.get(id);
-      if (!totalBytes) {
+      if (!filePath || !totalBytes) {
         throw new BackupImportUploadError(
           "Backup upload was not started",
           "upload_incomplete",
@@ -211,10 +222,11 @@ export class BackupImportUploadStore {
 
   async cleanup(id: string): Promise<void> {
     await this.serialized(id, async () => {
-      const filePath = this.uploadPath(id);
+      const filePath = this.getUploadPath(id, false);
       this.totals.delete(id);
+      this.uploadPaths.delete(id);
       this.sealed.delete(id);
-      await fs.rm(filePath, { force: true });
+      if (filePath) await fs.rm(filePath, { force: true });
     });
   }
 }

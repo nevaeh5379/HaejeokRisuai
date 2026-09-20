@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { remote } from "webdriverio";
+import {
+  getAndroidE2eConnectionRetryTimeout,
+  getAndroidE2eInfrastructureCapabilities,
+} from "./appium-capabilities";
 
 const appiumUrl = new URL(
   process.env.ANDROID_E2E_APPIUM_URL ?? "http://127.0.0.1:4723",
@@ -22,7 +26,7 @@ after(async () => {
 
 test(
   "a persisted Android chat applies its module and opens the module menu",
-  { timeout: 180_000 },
+  { timeout: 360_000 },
   async () => {
     assert.ok(apkPath, "ANDROID_E2E_APK must point to the debug APK");
     await mkdir(chromedriverDir, { recursive: true });
@@ -33,9 +37,11 @@ test(
       port: Number(appiumUrl.port),
       path: "/",
       logLevel: "warn",
+      connectionRetryTimeout: getAndroidE2eConnectionRetryTimeout(),
       capabilities: {
         platformName: "Android",
         "appium:automationName": "UiAutomator2",
+        ...getAndroidE2eInfrastructureCapabilities(),
         "appium:deviceName": process.env.ANDROID_E2E_DEVICE_NAME ?? "Android",
         ...(process.env.ANDROID_E2E_UDID
           ? { "appium:udid": process.env.ANDROID_E2E_UDID }

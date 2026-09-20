@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -30,10 +30,10 @@ if (backupCoreResult.status !== 0) {
  *   require back into the source tree.
  * - node_modules packages and workspace packages (packages/*) stay external:
  *   they are shipped alongside the app in every deploy target.
- * - `__dirname` is replaced at build time with the absolute folder of the
- *   source file using it, because storage backends read sibling SQL schema
- *   files (e.g. storage/postgres/postgres-schema.sql) and vendor .env files
- *   that live in the source tree.
+ * - `__dirname` references are rewritten to runtime-relative source
+ *   directories. Relocated bundles (for example the Termux archive) therefore
+ *   resolve schemas and vendor .env files from the extracted installation
+ *   instead of embedding the CI checkout path.
  */
 
 function externalizePackages() {
@@ -54,17 +54,19 @@ function externalizePackages() {
   };
 }
 
-function dirnamesAtBuildTime() {
+function runtimeRelativeDirnames(bundleDirectory) {
   return {
-    name: "dirnames-at-build-time",
+    name: "runtime-relative-dirnames",
     setup(build) {
       build.onLoad({ filter: /\.(c|m)?[jt]s$/ }, async (args) => {
         let contents = await readFile(args.path, "utf8");
         if (contents.includes("__dirname")) {
-          contents = contents.replaceAll(
-            "__dirname",
-            JSON.stringify(dirname(args.path)),
-          );
+          const sourceDirectory = dirname(args.path);
+          const fromBundleDirectory = relative(bundleDirectory, sourceDirectory);
+          const runtimeDirectory = fromBundleDirectory
+            ? `require("node:path").resolve(__dirname, ${JSON.stringify(fromBundleDirectory)})`
+            : "__dirname";
+          contents = contents.replaceAll("__dirname", `(${runtimeDirectory})`);
         }
         const isTypeScript = /\.(c|m)?ts$/.test(args.path);
         return {
@@ -87,7 +89,7 @@ async function bundle({ entry, outfile }) {
     sourcemap: false,
     logLevel: "info",
     outExtension: { ".js": ".cjs" },
-    plugins: [externalizePackages(), dirnamesAtBuildTime()],
+    plugins: [externalizePackages(), runtimeRelativeDirnames(dirname(outfile))],
   });
 }
 

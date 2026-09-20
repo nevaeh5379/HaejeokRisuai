@@ -3,7 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 const requestNativePermission = vi.hoisted(() => vi.fn(async () => true));
 const nativeState = vi.hoisted(() => ({ native: false }));
 
-vi.mock("./androidChatLifecycle", () => ({
+vi.mock("./android/androidChatLifecycle", () => ({
   completeNativeChatRequest: vi.fn(async () => {}),
   showNativeChatNotification: vi.fn(async () => {}),
   usesNativeChatLifecycle: () => nativeState.native,
@@ -15,7 +15,11 @@ vi.mock("./chatTabs.svelte", () => ({
   openChatTargetInTab: vi.fn(),
 }));
 vi.mock("./stores/domain/characterStore.svelte", () => ({
-  characterStore: { characters: [] },
+  characterStore: {
+    characters: [],
+    selectedId: -1,
+    select: vi.fn(),
+  },
 }));
 vi.mock("./stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: { notification: true } },
@@ -197,7 +201,8 @@ test("plays audio when playMessage is true and notification is disabled", async 
   const originalAudio = globalThis.Audio;
   (globalThis as any).Audio = FakeAudio;
 
-  const { settingsStore } = await import("./stores/domain/settingsStore.svelte");
+  const { settingsStore } =
+    await import("./stores/domain/settingsStore.svelte");
   (settingsStore.state as any).playMessage = true;
   (settingsStore.state as any).notification = false;
 
@@ -224,7 +229,8 @@ test("suppresses audio when service worker already notified", async () => {
   const originalAudio = globalThis.Audio;
   (globalThis as any).Audio = FakeAudio;
 
-  const { settingsStore } = await import("./stores/domain/settingsStore.svelte");
+  const { settingsStore } =
+    await import("./stores/domain/settingsStore.svelte");
   (settingsStore.state as any).playMessage = true;
 
   class FakePort {

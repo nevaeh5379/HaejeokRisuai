@@ -11,6 +11,10 @@ import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
 import { LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE } from "@risuai/storage-remote/remoteLocalBackupClient";
 import { buildTestLocalBackup } from "../tooling/backup-fixture";
+import {
+  getAndroidE2eConnectionRetryTimeout,
+  getAndroidE2eInfrastructureCapabilities,
+} from "./appium-capabilities";
 
 const appiumUrl = new URL(
   process.env.ANDROID_E2E_APPIUM_URL ?? "http://127.0.0.1:4723",
@@ -45,9 +49,11 @@ async function startDriver(options: { preserveData?: boolean } = {}) {
     port: Number(appiumUrl.port),
     path: "/",
     logLevel: "warn",
+    connectionRetryTimeout: getAndroidE2eConnectionRetryTimeout(),
     capabilities: {
       platformName: "Android",
       "appium:automationName": "UiAutomator2",
+      ...getAndroidE2eInfrastructureCapabilities(),
       "appium:deviceName": process.env.ANDROID_E2E_DEVICE_NAME ?? "Android",
       ...(process.env.ANDROID_E2E_UDID
         ? { "appium:udid": process.env.ANDROID_E2E_UDID }
@@ -602,7 +608,7 @@ async function selectNativeDocument(
 
 test(
   "local Android backup opens the native document saver",
-  { timeout: 180_000, skip: remoteProfile, concurrency: false },
+  { timeout: 300_000, skip: remoteProfile, concurrency: false },
   async () => {
     let browser = await startDriver();
     try {
@@ -626,7 +632,7 @@ test(
 
 test(
   "Android backup restore selects a real document and persists the fixture",
-  { timeout: 240_000, skip: remoteProfile, concurrency: false },
+  { timeout: 360_000, skip: remoteProfile, concurrency: false },
   async () => {
     let browser = await startDriver();
     const { fileName } = await stageImportFixture();

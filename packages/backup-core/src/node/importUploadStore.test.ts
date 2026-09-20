@@ -50,11 +50,13 @@ describe("BackupImportUploadStore", () => {
     }
     expect(source.totalBytes).toBe(6);
     expect(read).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(path.dirname(source.filePath)).toBe(root);
+    expect(path.basename(source.filePath)).not.toContain(id);
 
     await store.cleanup(id);
-    await expect(
-      fs.stat(path.join(root, `${id}.upload`)),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(source.filePath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("rejects an unexpected offset without modifying the staged upload", async () => {

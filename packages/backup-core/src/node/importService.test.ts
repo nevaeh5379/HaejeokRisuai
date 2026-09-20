@@ -130,7 +130,8 @@ describe("LocalBackupImportService", () => {
         observedStages.push(service.progress("import_001").progress.stage);
       },
       async writeAsset(key, filePath, size) {
-        expect(filePath).toContain("import_001");
+        expect(filePath.startsWith(`${root}${path.sep}`)).toBe(true);
+        expect(filePath).not.toContain("import_001");
         expect(size).toBeGreaterThan(0);
         if (key === "assets/a.png") {
           order.push("assets");
@@ -214,9 +215,7 @@ describe("LocalBackupImportService", () => {
       status: "complete",
       progress: { stage: "finalizing", current: 1, total: 1 },
     });
-    await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    await expect(fs.readdir(root)).resolves.toEqual([]);
   });
 
   it("settles an error and cleans staging when an adapter fails", async () => {

@@ -15,6 +15,7 @@ export const DEFAULT_WIDGET_BOT_COUNT = 12;
 export const MIN_WIDGET_BOT_COUNT = 1;
 export const MAX_WIDGET_BOT_COUNT = 36;
 const RECENT_SCAN_LIMIT = 32;
+const WIDGET_ARTWORK_CACHE_MAX_ENTRIES = MAX_WIDGET_BOT_COUNT + SHORTCUT_LIMIT;
 
 export function getAndroidWidgetBotCount(): number {
   const configured = settingsStore.state?.androidWidgetBotCount;
@@ -28,12 +29,28 @@ export function getAndroidWidgetBotCount(): number {
 }
 const widgetArtworkCache = new Map<string, string | null>();
 
+function rememberWidgetArtwork(
+  imageLocation: string,
+  data: string | null,
+): string | null {
+  widgetArtworkCache.delete(imageLocation);
+  widgetArtworkCache.set(imageLocation, data);
+  while (widgetArtworkCache.size > WIDGET_ARTWORK_CACHE_MAX_ENTRIES) {
+    const oldest = widgetArtworkCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    widgetArtworkCache.delete(oldest);
+  }
+  return data;
+}
+
 async function loadWidgetArtwork(
   imageLocation: string | null,
 ): Promise<string | null> {
   if (!imageLocation || typeof document === "undefined") return null;
-  if (widgetArtworkCache.has(imageLocation))
-    return widgetArtworkCache.get(imageLocation) ?? null;
+  if (widgetArtworkCache.has(imageLocation)) {
+    const cached = widgetArtworkCache.get(imageLocation) ?? null;
+    return rememberWidgetArtwork(imageLocation, cached);
+  }
   try {
     // Read the original character artwork. The old thumbnail path was visibly
     // soft once a widget card became larger than a tiny launcher avatar.
@@ -73,15 +90,13 @@ async function loadWidgetArtwork(
     bitmap.close();
 
     const data = canvas.toDataURL("image/webp", 0.9);
-    widgetArtworkCache.set(imageLocation, data);
-    return data;
+    return rememberWidgetArtwork(imageLocation, data);
   } catch (error) {
     console.warn(
       "[NativeIntegration] Failed to prepare widget artwork:",
       error,
     );
-    widgetArtworkCache.set(imageLocation, null);
-    return null;
+    return rememberWidgetArtwork(imageLocation, null);
   }
 }
 
