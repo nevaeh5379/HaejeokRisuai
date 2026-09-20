@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectStreamingInventoryRecord,
   createStreamingColdStorageInventory,
+  StreamingBackupExportInventory,
   type StreamingColdStorageInventory,
 } from "./streamInventory";
 import type { LegacyBackupSqlRecord } from "./legacyRecords";
@@ -388,5 +389,37 @@ describe("streaming asset collection (backup export)", () => {
 
     expect(assetMap.size).toBe(0);
     expect(inventory.referencedColdStorageKeys.size).toBe(0);
+  });
+});
+
+describe("StreamingBackupExportInventory", (): void => {
+  it("collects assets and cold-storage references in one pass", (): void => {
+    const inventory: StreamingBackupExportInventory =
+      new StreamingBackupExportInventory("essential");
+
+    inventory.collect(
+      characterRecord({
+        name: "Alice",
+        image: "assets/a.png",
+        coldstorage: "cold-a",
+      }),
+    );
+
+    expect([...inventory.assetMap.keys()]).toEqual(["assets/a.png"]);
+    expect([...inventory.referencedColdStorageKeys]).toEqual(["cold-a"]);
+  });
+
+  it("finalizes referenced payloads that were not exported", (): void => {
+    const inventory: StreamingBackupExportInventory =
+      new StreamingBackupExportInventory("all");
+    inventory.referencedColdStorageKeys.add("cold-a");
+    inventory.referencedColdStorageKeys.add("cold-b");
+    inventory.markColdStorageExported("cold-a");
+    inventory.markColdStorageUnavailable("cold-c");
+
+    const unavailable: ReadonlySet<string> =
+      inventory.finalizeUnavailableColdStorageKeys();
+
+    expect([...unavailable].sort()).toEqual(["cold-b", "cold-c"]);
   });
 });

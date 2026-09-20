@@ -925,7 +925,7 @@ import {
 import {
   collectStreamingInventoryRecord,
   createStreamingColdStorageInventory,
-  type StreamingColdStorageInventory,
+  StreamingBackupExportInventory,
 } from "@risuai/backup-core/streamInventory";
 import {
   buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
@@ -1162,46 +1162,17 @@ async function writeBackupColdStorage(
   }
 }
 
-interface StreamingBackupInventory extends StreamingColdStorageInventory {
-  assetMap: BackupAssetMap;
-  exportedColdStorageKeys: Set<string>;
-  unavailableColdStorageKeys: Set<string>;
-}
-
-function createStreamingBackupInventory(): StreamingBackupInventory {
-  return {
-    ...createStreamingColdStorageInventory(),
-    assetMap: new Map(),
-    exportedColdStorageKeys: new Set(),
-    unavailableColdStorageKeys: new Set(),
-  };
-}
-
-function collectStreamingBackupRecord(
-  inventory: StreamingBackupInventory,
-  record: PortableDatabaseStreamPersistedRecord,
-  scope: BackupAssetScope,
-) {
-  collectStreamingInventoryRecord(inventory, record, {
-    scope,
-    assetMap: inventory.assetMap,
-  });
-}
-
 async function writeStreamingColdStorage(
-  inventory: StreamingBackupInventory,
+  inventory: StreamingBackupExportInventory,
 ): Promise<boolean> {
   reportLocalBackupProgress("coldStorage", { percent: 67 });
-  for (const key of inventory.referencedColdStorageKeys) {
-    if (!inventory.exportedColdStorageKeys.has(key)) {
-      inventory.unavailableColdStorageKeys.add(key);
-    }
-  }
+  const unavailableKeys: ReadonlySet<string> =
+    inventory.finalizeUnavailableColdStorageKeys();
   return await confirmIncompleteColdStorageOperation(
     {
       characters: [...inventory.coldStorageCharacters.values()] as any,
     },
-    inventory.unavailableColdStorageKeys,
+    unavailableKeys,
     "backup",
   );
 }
@@ -1365,7 +1336,8 @@ async function saveStreamingLocalBackupWithOptions(
     return;
   }
 
-  const inventory = createStreamingBackupInventory();
+  const inventory: StreamingBackupExportInventory =
+    new StreamingBackupExportInventory(options.assetScope);
   const performance = getLocalBackupPerformance();
   const encryptionKey = await prepareStreamingBackupEncryption(writer, options);
   let manifest: PortableDatabaseStreamManifest;
@@ -1385,17 +1357,17 @@ async function saveStreamingLocalBackupWithOptions(
         },
         async writeColdStorage(key, value) {
           if (!isColdStorageBackupData(value)) {
-            inventory.unavailableColdStorageKeys.add(key);
+            inventory.markColdStorageUnavailable(key);
             return;
           }
-          inventory.exportedColdStorageKeys.add(key);
+          inventory.markColdStorageExported(key);
           await writer.writeBackup(
             getColdStorageBackupName(key),
             new TextEncoder().encode(JSON.stringify(value)),
           );
         },
         onRecord(record) {
-          collectStreamingBackupRecord(inventory, record, options.assetScope);
+          inventory.collect(record);
         },
         onProgress({ current, total }) {
           const now = Date.now();

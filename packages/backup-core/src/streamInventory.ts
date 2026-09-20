@@ -35,6 +35,53 @@ export function createStreamingColdStorageInventory(): StreamingColdStorageInven
   };
 }
 
+/**
+ * Export-side streaming inventory. It combines bounded cold-storage reference
+ * tracking with asset selection and records which referenced cold payloads
+ * could actually be emitted.
+ */
+export class StreamingBackupExportInventory implements StreamingColdStorageInventory {
+  readonly referencedColdStorageKeys: Set<string> = new Set<string>();
+  readonly chatOwners: Map<string, string> = new Map<string, string>();
+  readonly coldStorageCharacters: Map<string, ColdStorageChatCharacter> =
+    new Map<string, ColdStorageChatCharacter>();
+  readonly assetMap: BackupAssetMap = new Map();
+  readonly exportedColdStorageKeys: Set<string> = new Set<string>();
+  readonly unavailableColdStorageKeys: Set<string> = new Set<string>();
+  readonly #scope: BackupAssetScope;
+
+  constructor(scope: BackupAssetScope) {
+    this.#scope = scope;
+  }
+
+  collect(record: LegacyBackupSqlRecord): void {
+    collectStreamingInventoryRecord(this, record, {
+      scope: this.#scope,
+      assetMap: this.assetMap,
+    });
+  }
+
+  markColdStorageExported(key: string): void {
+    this.exportedColdStorageKeys.add(key);
+    this.unavailableColdStorageKeys.delete(key);
+  }
+
+  markColdStorageUnavailable(key: string): void {
+    this.unavailableColdStorageKeys.add(key);
+  }
+
+  finalizeUnavailableColdStorageKeys(): ReadonlySet<string> {
+    const referencedKeys: string[] = Array.from(this.referencedColdStorageKeys);
+    for (let index: number = 0; index < referencedKeys.length; index += 1) {
+      const key: string = referencedKeys[index];
+      if (!this.exportedColdStorageKeys.has(key)) {
+        this.unavailableColdStorageKeys.add(key);
+      }
+    }
+    return this.unavailableColdStorageKeys;
+  }
+}
+
 export interface StreamingInventoryCollectOptions {
   /**
    * When set (backup export), asset metadata for the requested scope is
