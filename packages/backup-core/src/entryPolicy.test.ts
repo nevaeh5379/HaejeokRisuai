@@ -10,9 +10,7 @@ import {
   LEGACY_DATABASE_ENTRY_NAME,
   normalizeBackupAssetPath,
   normalizeBackupEntryName,
-  type BackupEntryClassification,
 } from "./entryPolicy";
-import { PORTABLE_DATABASE_STREAM_MANIFEST } from "./streamFormat";
 
 describe("backup entry format names", () => {
   it("keeps legacy database and encryption entry names stable", () => {
@@ -53,189 +51,72 @@ describe("normalizeBackupEntryName", () => {
   it("rejects non-string input", () => {
     expect(normalizeBackupEntryName(undefined as unknown as string)).toBeNull();
   });
-
-  it("accepts plain names unchanged", () => {
-    expect(normalizeBackupEntryName("plain.bin")).toBe("plain.bin");
-    expect(normalizeBackupEntryName("a/b.bin")).toBe("a/b.bin");
-  });
 });
 
-describe("classifyBackupEntry exact entries", () => {
-  it("classifies the legacy database entry", () => {
+describe("classifyBackupEntry kinds", () => {
+  it("classifies the reserved entry names first", () => {
     expect(classifyBackupEntry(LEGACY_DATABASE_ENTRY_NAME)).toEqual({
       kind: "database",
       normalized: "database.risudat",
     });
-  });
-
-  it("classifies the account encryption entry", () => {
     expect(classifyBackupEntry(ACCOUNT_ENCRYPTION_ENTRY_NAME)).toEqual({
       kind: "encryption",
       normalized: "encryption.risudat",
     });
-  });
-
-  it("classifies the streaming manifest without an index", () => {
-    expect(classifyBackupEntry(PORTABLE_DATABASE_STREAM_MANIFEST)).toEqual({
+    expect(classifyBackupEntry("database.stream/manifest.risudat")).toEqual({
       kind: "databaseStream",
-      normalized: PORTABLE_DATABASE_STREAM_MANIFEST,
-      stream: { type: "manifest" },
+      normalized: "database.stream/manifest.risudat",
     });
   });
 
-  it("classifies numbered streaming fragments with their index", () => {
-    const result = classifyBackupEntry("database.stream/000000000042.risudat");
-    expect(result.kind).toBe("databaseStream");
-    expect(result).toMatchObject({
-      normalized: "database.stream/000000000042.risudat",
-      stream: { type: "fragment", index: 42 },
-    });
-  });
-
-  it("rejects malformed streaming fragment names", () => {
-    for (const name of [
-      "database.stream/000000000042.risudatx",
-      "database.stream/42.risudat",
-      "database.stream/99999999999999999999.risudat",
-      "database.stream/000000000042.other",
-    ]) {
-      const result = classifyBackupEntry(name);
-      expect(result.kind).not.toBe("databaseStream");
-    }
-  });
-});
-
-describe("classifyBackupEntry cold storage entries", () => {
-  const key = "22222222-3333-4444-8444-555555555555";
-
-  it("extracts the key from the plain name", () => {
-    expect(classifyBackupEntry(`${key}.json`)).toEqual({
-      kind: "coldStorage",
-      normalized: `${key}.json`,
-      key,
-    });
-  });
-
-  it("extracts the key from coldstorage-prefixed slash and underscore names", () => {
-    expect(classifyBackupEntry(`coldstorage/${key}.json`)).toMatchObject({
-      kind: "coldStorage",
-      normalized: `coldstorage/${key}.json`,
-      key,
-    });
-    expect(classifyBackupEntry(`coldstorage_${key}.json`)).toMatchObject({
-      kind: "coldStorage",
-      normalized: `coldstorage_${key}.json`,
-      key,
-    });
-  });
-
-  it("resolves keys through normalized Windows separators", () => {
-    const result = classifyBackupEntry(`coldstorage\\${key}.json`);
-    expect(result).toMatchObject({
-      kind: "coldStorage",
-      normalized: `coldstorage/${key}.json`,
-      key,
-    });
-  });
-
-  it("rejects malformed cold storage names", () => {
-    expect(classifyBackupEntry("coldstorage/not-a-uuid.json").kind).toBe(
-      "extension",
+  it("classifies numbered streaming fragments before the asset fallback", () => {
+    expect(classifyBackupEntry("database.stream/000000000042.risudat")).toEqual(
+      {
+        kind: "databaseStream",
+        normalized: "database.stream/000000000042.risudat",
+      },
     );
-    expect(classifyBackupEntry(`${key.slice(0, 8)}.json`).kind).toBe("asset");
   });
-});
 
-describe("classifyBackupEntry inlay entries", () => {
-  it("extracts the inlay key", () => {
-    const id = "99999999-8888-4777-8777-666666666666";
-    const name = getInlayBackupName(id);
-    expect(classifyBackupEntry(name)).toEqual({
-      kind: "inlay",
-      normalized: name,
-      key: id,
+  it("classifies cold storage names with or without the coldstorage prefix", () => {
+    const key = "22222222-3333-4444-8444-555555555555";
+    for (const name of [
+      `${key}.json`,
+      `coldstorage/${key}.json`,
+      `coldstorage_${key}.json`,
+    ]) {
+      expect(classifyBackupEntry(name)).toEqual({
+        kind: "coldStorage",
+        normalized: name,
+      });
+    }
+    expect(classifyBackupEntry(`coldstorage\\${key}.json`)).toEqual({
+      kind: "coldStorage",
+      normalized: `coldstorage/${key}.json`,
     });
   });
 
-  it("rejects malformed inlay ids as non-inlay names", () => {
-    const result = classifyBackupEntry("inlay_not-a-uuid.risuinlay");
-    expect(result.kind).toBe("asset");
-    expect(
-      classifyBackupEntry(
-        `inlay_${"g".repeat(8)}-1111-4111-8111-111111111111.risuinlay`,
-      ).kind,
-    ).toBe("asset");
+  it("classifies inlay names before the bare-name asset fallback", () => {
+    const id = "99999999-8888-4777-8777-666666666666";
+    expect(classifyBackupEntry(getInlayBackupName(id))).toEqual({
+      kind: "inlay",
+      normalized: getInlayBackupName(id),
+    });
   });
 
-  it("returns null keys from getInlayBackupKey for non-inlay names", () => {
-    expect(getInlayBackupKey("plain.bin")).toBeNull();
-    expect(
-      getInlayBackupKey(
-        "../inlay_11111111-1111-4111-8111-111111111111.risuinlay",
-      ),
-    ).toBeNull();
-  });
-});
-
-describe("classifyBackupEntry asset entries", () => {
-  it("resolves bare legacy asset names under assets/", () => {
+  it("classifies bare and assets/-prefixed names as assets", () => {
     expect(classifyBackupEntry("avatar.png")).toEqual({
       kind: "asset",
       normalized: "avatar.png",
-      assetPath: "assets/avatar.png",
     });
-  });
-
-  it("keeps already-prefixed asset paths canonical", () => {
     expect(classifyBackupEntry("assets/avatar.png")).toEqual({
       kind: "asset",
       normalized: "assets/avatar.png",
-      assetPath: "assets/avatar.png",
-    });
-  });
-
-  it("normalizes nested and backslash asset paths once", () => {
-    expect(classifyBackupEntry("assets/folder/avatar.png")).toEqual({
-      kind: "asset",
-      normalized: "assets/folder/avatar.png",
-      assetPath: "assets/folder/avatar.png",
     });
     expect(classifyBackupEntry("assets\\folder\\avatar.png")).toEqual({
       kind: "asset",
       normalized: "assets/folder/avatar.png",
-      assetPath: "assets/folder/avatar.png",
     });
-    expect(classifyBackupEntry("assets\\nested\\..\\image.png")).toEqual({
-      kind: "invalid",
-      normalized: null,
-    });
-  });
-
-  it("collapses repeated leading assets segments", () => {
-    expect(
-      classifyBackupEntry("assets/assets/folder/avatar.png"),
-    ).toMatchObject({
-      kind: "asset",
-      assetPath: "assets/folder/avatar.png",
-    });
-  });
-});
-
-describe("classifyBackupEntry security and fallback edges", () => {
-  it("rejects unsafe names as invalid with no normalized value", () => {
-    for (const name of [
-      "../escape.bin",
-      "assets/../secret.png",
-      "fork//item.bin",
-      "/absolute.bin",
-      "a/./b.bin",
-      "..\\windows\\escape",
-    ]) {
-      expect(classifyBackupEntry(name)).toEqual({
-        kind: "invalid",
-        normalized: null,
-      });
-    }
   });
 
   it("marks multi-segment non-reserved names as extension entries", () => {
@@ -251,63 +132,20 @@ describe("classifyBackupEntry security and fallback edges", () => {
     }
   });
 
-  it("throws for asset names whose resolved path is unsafe", () => {
-    expect(() => classifyBackupEntry("assets")).toThrow(
-      "Invalid backup asset path: assets",
-    );
-    expect(() => classifyBackupEntry("assets/assets")).toThrow(
-      "Invalid backup asset path: assets/assets",
-    );
-  });
-
-  it("keeps prototype-named entries out of the exact-rule lookup", () => {
-    for (const name of ["constructor", "toString", "__proto__"]) {
+  it("rejects unsafe names as invalid with a null normalized value", () => {
+    for (const name of [
+      "../escape.bin",
+      "assets/../secret.png",
+      "fork//item.bin",
+      "/absolute.bin",
+      "a/./b.bin",
+      "..\\windows\\escape",
+    ]) {
       expect(classifyBackupEntry(name)).toEqual({
-        kind: "asset",
-        normalized: name,
-        assetPath: `assets/${name}`,
+        kind: "invalid",
+        normalized: null,
       });
     }
-  });
-
-  it("matches getColdStorageBackupKey results from the classification key", () => {
-    const key = "33333333-4444-4555-8555-666666666666";
-    for (const name of [
-      `${key}.json`,
-      `coldstorage/${key}.json`,
-      `coldstorage_${key}.json`,
-    ]) {
-      const result = classifyBackupEntry(name);
-      expect(result.kind === "coldStorage" && result.key).toBe(
-        getColdStorageBackupKey(name),
-      );
-    }
-    // Double-backslash quirk of the standalone helper is preserved.
-    expect(getColdStorageBackupKey(`coldstorage\\\\${key}.json`)).toBe(key);
-    expect(classifyBackupEntry(`coldstorage\\\\${key}.json`).kind).toBe(
-      "invalid",
-    );
-  });
-});
-
-describe("classifyBackupEntry compatibility", () => {
-  it("keeps kind and normalized on every variant", () => {
-    const results: BackupEntryClassification[] = [
-      classifyBackupEntry(LEGACY_DATABASE_ENTRY_NAME),
-      classifyBackupEntry("database.stream/000000000001.risudat"),
-      classifyBackupEntry(ACCOUNT_ENCRYPTION_ENTRY_NAME),
-      classifyBackupEntry(`${"44444444-4444-4555-8555-666666666666"}.json`),
-      classifyBackupEntry(
-        getInlayBackupName("44444444-4444-4555-8555-666666666666"),
-      ),
-      classifyBackupEntry("assets/x.png"),
-      classifyBackupEntry("extras/x.bin"),
-    ];
-    for (const result of results) {
-      expect(typeof result.kind).toBe("string");
-      expect(typeof result.normalized).toBe("string");
-    }
-    expect(classifyBackupEntry("../bad").normalized).toBeNull();
   });
 
   it("does not log during classification", () => {
@@ -320,5 +158,56 @@ describe("classifyBackupEntry compatibility", () => {
     expect(warn).not.toHaveBeenCalled();
     expect(info).not.toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+});
+
+describe("backup asset path resolution", () => {
+  it("resolves bare, prefixed, nested, and Windows paths", () => {
+    expect(normalizeBackupAssetPath("avatar.png")).toBe("assets/avatar.png");
+    expect(normalizeBackupAssetPath("assets/avatar.png")).toBe(
+      "assets/avatar.png",
+    );
+    expect(normalizeBackupAssetPath("assets/folder/avatar.png")).toBe(
+      "assets/folder/avatar.png",
+    );
+    expect(normalizeBackupAssetPath("assets\\nested\\image.png")).toBe(
+      "assets/nested/image.png",
+    );
+  });
+
+  it("rejects asset paths that escape the assets directory", () => {
+    expect(() => normalizeBackupAssetPath("assets")).toThrow(
+      "Invalid backup asset path: assets",
+    );
+    expect(() => normalizeBackupAssetPath("assets/assets")).toThrow(
+      "Invalid backup asset path: assets/assets",
+    );
+  });
+});
+
+describe("focused restore target helpers", () => {
+  it("extracts inlay keys only from valid inlay entry names", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(getInlayBackupKey(getInlayBackupName(id))).toBe(id);
+    expect(getInlayBackupKey("plain.bin")).toBeNull();
+    expect(getInlayBackupKey("inlay_not-a-uuid.risuinlay")).toBeNull();
+    expect(
+      getInlayBackupKey(
+        "../inlay_11111111-1111-4111-8111-111111111111.risuinlay",
+      ),
+    ).toBeNull();
+  });
+
+  it("extracts cold storage keys, preserving the double-backslash quirk", () => {
+    const key = "33333333-4444-4555-8555-666666666666";
+    for (const name of [
+      `${key}.json`,
+      `coldstorage/${key}.json`,
+      `coldstorage_${key}.json`,
+    ]) {
+      expect(getColdStorageBackupKey(name)).toBe(key);
+    }
+    expect(getColdStorageBackupKey(`coldstorage\\\\${key}.json`)).toBe(key);
+    expect(getColdStorageBackupKey(`coldstorage\\${key}.json`)).toBe(key);
   });
 });

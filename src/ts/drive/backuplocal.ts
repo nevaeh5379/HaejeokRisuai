@@ -38,6 +38,7 @@ import { language } from "src/lang";
 import {
   collectColdStorageBackupPayloads,
   confirmIncompleteColdStorageOperation,
+  getColdStorageBackupKey,
   getColdStorageBackupName,
   getColdStorageItem,
   isColdStorageBackupData,
@@ -1688,36 +1689,33 @@ async function restoreLocalBackupSourceUnlocked(
       classification: BackupEntryClassification,
     ) => {
       currentEntryName = name;
-      switch (classification.kind) {
-        case "encryption": {
-          let meta: typeof encryptionMeta;
-          try {
-            meta = JSON.parse(textDecoder.decode(data));
-          } catch (error) {
-            console.error("Failed to parse encryption metadata:", error);
-            throw new Error(
-              "This backup is encrypted, but its encryption metadata is invalid.",
-            );
-          }
-
-          if (
-            meta.type !== "account" ||
-            typeof meta.time !== "number" ||
-            !Number.isFinite(meta.time) ||
-            meta.time <= 0
-          ) {
-            throw new Error(
-              "This backup is encrypted, but its encryption metadata is incomplete.",
-            );
-          }
-          encryptionMeta.type = "account";
-          encryptionMeta.time = meta.time;
-          break;
+      if (classification.kind === "encryption") {
+        let meta: typeof encryptionMeta;
+        try {
+          meta = JSON.parse(textDecoder.decode(data));
+        } catch (error) {
+          console.error("Failed to parse encryption metadata:", error);
+          throw new Error(
+            "This backup is encrypted, but its encryption metadata is invalid.",
+          );
         }
-        case "database":
-          pendingDatabase = data;
-          break;
-        case "databaseStream": {
+
+        if (
+          meta.type !== "account" ||
+          typeof meta.time !== "number" ||
+          !Number.isFinite(meta.time) ||
+          meta.time <= 0
+        ) {
+          throw new Error(
+            "This backup is encrypted, but its encryption metadata is incomplete.",
+          );
+        }
+        encryptionMeta.type = "account";
+        encryptionMeta.time = meta.time;
+      } else if (classification.kind === "database") {
+        pendingDatabase = data;
+      } else {
+        if (classification.kind === "databaseStream") {
           let encoded = data;
           if (encryptionMeta.type === "account" && encryptionMeta.time) {
             streamingDecryptionKey ??= fetchLegacyBackupKey(
@@ -1725,11 +1723,7 @@ async function restoreLocalBackupSourceUnlocked(
             );
             const key = await streamingDecryptionKey;
             encoded = isStreamingBackupEncryptedEntry(encoded)
-              ? await decryptStreamingBackupEntry(
-                  encoded,
-                  key,
-                  classification.normalized,
-                )
+              ? await decryptStreamingBackupEntry(encoded, key, name)
               : new Uint8Array(await decryptBuffer(encoded, key));
           }
           const value = await decodeRisuSave(encoded);
@@ -1743,7 +1737,7 @@ async function restoreLocalBackupSourceUnlocked(
               streamCollector = new PortableDatabaseStreamCollector();
             }
           }
-          if (classification.stream.type === "manifest") {
+          if (classification.normalized === PORTABLE_DATABASE_STREAM_MANIFEST) {
             const manifest = value as PortableDatabaseStreamManifest;
             if (streamingRestoreSession) {
               if (streamingManifest) {
@@ -1768,8 +1762,9 @@ async function restoreLocalBackupSourceUnlocked(
           currentEntryName = "";
           return;
         }
-        case "inlay": {
-          const inlayKey = classification.key;
+
+        const inlayKey = getInlayBackupKey(name);
+        if (inlayKey) {
           const result = await restoreInlayBackupEntry(inlayKey, data);
           entriesRestored++;
           if (result.status === "restored") {
@@ -1790,8 +1785,12 @@ async function restoreLocalBackupSourceUnlocked(
           currentEntryName = "";
           return;
         }
-        case "coldStorage": {
-          const coldStorageKey = classification.key;
+
+        const coldStorageKey = getColdStorageBackupKey(name);
+        let handledAsColdStorage = false;
+
+        if (coldStorageKey) {
+          handledAsColdStorage = true;
           try {
             const jsonData = JSON.parse(textDecoder.decode(data));
 
@@ -1812,10 +1811,10 @@ async function restoreLocalBackupSourceUnlocked(
               e,
             );
           }
-          break;
         }
-        case "asset": {
-          const assetPath = classification.assetPath;
+
+        if (!handledAsColdStorage) {
+          const assetPath = normalizeBackupAssetPath(name);
           if (useTauriBulkRestore) {
             if (tauriAssets.add(assetPath, data)) {
               const flushed = await flushTauriAssets();
@@ -1836,16 +1835,12 @@ async function restoreLocalBackupSourceUnlocked(
               }
             }
           }
-          break;
         }
-        default:
-          throw new Error(`Invalid backup entry path: ${name}`);
       }
 
       entriesRestored++;
       currentEntryName = "";
     };
-
     let ignoredExtensionEntries = 0;
     try {
       const reader = file.stream().getReader();
