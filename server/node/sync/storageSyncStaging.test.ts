@@ -149,6 +149,18 @@ describe("storage sync asset staging", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("rejects untrusted asset ids before looking them up", async () => {
+    const store = await tempStore();
+    const session = targetSession();
+    session.assets = Object.create(null);
+
+    await expect(
+      store.writeAssetChunk(session, "__proto__", 0, Buffer.from("x")),
+    ).rejects.toThrow(/Invalid storage sync asset id/);
+    expect(Object.prototype).not.toHaveProperty("uploading");
+    expect(Object.prototype).not.toHaveProperty("state");
+  });
+
   it("rejects overlapping uploads and excessive request concurrency", async () => {
     const store = await tempStore();
     const session = targetSession();

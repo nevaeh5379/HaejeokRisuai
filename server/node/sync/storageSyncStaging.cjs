@@ -27,6 +27,14 @@ function keyToHex(key) {
 function assetIdForKey(key) {
   return crypto.createHash("sha256").update(key, "utf8").digest("hex");
 }
+
+function validateAssetId(assetId) {
+  if (typeof assetId !== "string" || !/^[0-9a-f]{64}$/.test(assetId)) {
+    throw new StorageSyncAssetError("Invalid storage sync asset id");
+  }
+  return assetId;
+}
+
 function normalizeManifest(assets) {
   if (!Array.isArray(assets) || assets.length > MAX_SYNC_ASSETS) {
     throw new StorageSyncAssetError(
@@ -122,13 +130,11 @@ class StorageSyncStagingStore {
   }
 
   assetPath(sessionId, assetId) {
-    if (!/^[0-9a-f]{64}$/.test(assetId)) {
-      throw new StorageSyncAssetError("Invalid storage sync asset id");
-    }
+    const validatedAssetId = validateAssetId(assetId);
     return path.join(
       this.sessionDirectory(sessionId),
       "assets",
-      `${assetId}.part`,
+      `${validatedAssetId}.part`,
     );
   }
 
@@ -215,7 +221,8 @@ class StorageSyncStagingStore {
   }
 
   async writeAssetChunk(session, assetId, offset, data) {
-    if (session.role !== "target" || !session.assets?.[assetId]) {
+    const validatedAssetId = validateAssetId(assetId);
+    if (session.role !== "target" || !session.assets?.[validatedAssetId]) {
       throw new StorageSyncAssetError(
         "Storage sync asset is not part of this session",
       );
@@ -229,7 +236,7 @@ class StorageSyncStagingStore {
         "chunk_too_large",
       );
     }
-    const asset = session.assets[assetId];
+    const asset = session.assets[validatedAssetId];
     if (asset.state === "skipped" || asset.state === "ready") return asset;
     if (asset.uploading) {
       throw new StorageSyncAssetError(
