@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { LegacyBackupSqlRecord } from "./legacyRecords";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
@@ -8,6 +9,8 @@ import {
   parsePortableDatabaseStreamFragmentName,
   parsePortableDatabaseStreamManifest,
   portableDatabaseStreamFragmentName,
+  type PortableDatabaseStreamFragment,
+  type PortableDatabaseStreamManifest,
 } from "./streamFormat";
 
 describe("portable database stream format", () => {
@@ -118,7 +121,7 @@ describe("parsePortableDatabaseStreamManifest", () => {
 });
 
 describe("parsePortableDatabaseStreamFragment", () => {
-  const validFragment = {
+  const validFragment: PortableDatabaseStreamFragment = {
     format: "risu-portable-database-fragment",
     version: 1,
     index: 3,
@@ -146,56 +149,70 @@ describe("parsePortableDatabaseStreamFragment", () => {
   it("returns null for malformed fragments", () => {
     expect(parsePortableDatabaseStreamFragment(null)).toBeNull();
     expect(parsePortableDatabaseStreamFragment("fragment")).toBeNull();
-    expect(
-      parsePortableDatabaseStreamFragment({ ...validFragment, format: "nope" }),
-    ).toBeNull();
-    expect(
-      parsePortableDatabaseStreamFragment({ ...validFragment, version: 2 }),
-    ).toBeNull();
-    expect(
-      parsePortableDatabaseStreamFragment({ ...validFragment, index: 0 }),
-    ).toBeNull();
-    expect(
-      parsePortableDatabaseStreamFragment({ ...validFragment, index: 4.5 }),
-    ).toBeNull();
-    expect(
-      parsePortableDatabaseStreamFragment({ ...validFragment, records: [] }),
-    ).toBeNull();
-    expect(
-      parsePortableDatabaseStreamFragment({
-        ...validFragment,
-        records: undefined as unknown as unknown[],
-      }),
-    ).toBeNull();
+    const wrongFormat: Record<string, unknown> = {
+      ...validFragment,
+      format: "nope",
+    };
+    expect(parsePortableDatabaseStreamFragment(wrongFormat)).toBeNull();
+    const wrongVersion: Record<string, unknown> = {
+      ...validFragment,
+      version: 2,
+    };
+    expect(parsePortableDatabaseStreamFragment(wrongVersion)).toBeNull();
+    const zeroIndex: Record<string, unknown> = {
+      ...validFragment,
+      index: 0,
+    };
+    expect(parsePortableDatabaseStreamFragment(zeroIndex)).toBeNull();
+    const fractionalIndex: Record<string, unknown> = {
+      ...validFragment,
+      index: 4.5,
+    };
+    expect(parsePortableDatabaseStreamFragment(fractionalIndex)).toBeNull();
+    const emptyRecords: Record<string, unknown> = {
+      ...validFragment,
+      records: [],
+    };
+    expect(parsePortableDatabaseStreamFragment(emptyRecords)).toBeNull();
+    const missingRecords: Record<string, unknown> = {
+      ...validFragment,
+      records: undefined,
+    };
+    expect(parsePortableDatabaseStreamFragment(missingRecords)).toBeNull();
   });
 
   it("rejects fragments exceeding the shared max record bound", () => {
-    const oversized = {
+    const oversizedRecords: LegacyBackupSqlRecord[] = Array.from(
+      { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS + 1 },
+      (): LegacyBackupSqlRecord => ({ type: "setting", key: "k", value: 1 }),
+    );
+    const oversized: PortableDatabaseStreamFragment = {
       ...validFragment,
-      records: Array.from(
-        { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS + 1 },
-        () => ({ type: "setting", key: "k", value: 1 }),
-      ),
+      records: oversizedRecords,
     };
     expect(parsePortableDatabaseStreamFragment(oversized)).toBeNull();
-    const atBound = {
+    const atBoundRecords: LegacyBackupSqlRecord[] = Array.from(
+      { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS },
+      (): LegacyBackupSqlRecord => ({ type: "setting", key: "k", value: 1 }),
+    );
+    const atBound: PortableDatabaseStreamFragment = {
       ...validFragment,
-      records: Array.from(
-        { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS },
-        () => ({ type: "setting", key: "k", value: 1 }),
-      ),
+      records: atBoundRecords,
     };
     expect(parsePortableDatabaseStreamFragment(atBound)).toEqual(atBound);
   });
 
   it("preserves the record references without copying payloads", () => {
-    const records = [{ type: "setting", key: "k", value: 1 }];
-    const parsed = parsePortableDatabaseStreamFragment({
-      format: "risu-portable-database-fragment",
-      version: 1,
-      index: 1,
-      records,
-    });
+    const records: LegacyBackupSqlRecord[] = [
+      { type: "setting", key: "k", value: 1 },
+    ];
+    const parsed: PortableDatabaseStreamFragment | null =
+      parsePortableDatabaseStreamFragment({
+        format: "risu-portable-database-fragment",
+        version: 1,
+        index: 1,
+        records,
+      });
     expect(parsed?.records[0]).toBe(records[0]);
   });
 });

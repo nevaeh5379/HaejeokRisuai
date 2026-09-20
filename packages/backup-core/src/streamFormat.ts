@@ -57,7 +57,8 @@ export function parsePortableDatabaseStreamManifest(
   data: unknown,
 ): PortableDatabaseStreamManifest | null {
   if (!data || typeof data !== "object") return null;
-  const manifest = data as Partial<PortableDatabaseStreamManifest>;
+  const manifest: Partial<PortableDatabaseStreamManifest> =
+    data as Partial<PortableDatabaseStreamManifest>;
   if (
     manifest.format !== "risu-portable-database-stream" ||
     manifest.version !== PORTABLE_DATABASE_STREAM_VERSION ||
@@ -82,12 +83,19 @@ export function parsePortableDatabaseStreamManifest(
  * provided the fragment index must match it. Callers keep their own error
  * messaging and sequencing state (duplicate and aggregate checks).
  */
+/** Options for parsePortableDatabaseStreamFragment. */
+export interface ParsePortableDatabaseStreamFragmentOptions {
+  /** When provided, the fragment index must equal this value. */
+  expectedIndex?: number;
+}
+
 export function parsePortableDatabaseStreamFragment(
   data: unknown,
-  options: { expectedIndex?: number } = {},
+  options: ParsePortableDatabaseStreamFragmentOptions = {},
 ): PortableDatabaseStreamFragment | null {
   if (!data || typeof data !== "object") return null;
-  const fragment = data as Partial<PortableDatabaseStreamFragment>;
+  const fragment: Partial<PortableDatabaseStreamFragment> =
+    data as Partial<PortableDatabaseStreamFragment>;
   if (
     fragment.format !== "risu-portable-database-fragment" ||
     fragment.version !== PORTABLE_DATABASE_STREAM_VERSION ||

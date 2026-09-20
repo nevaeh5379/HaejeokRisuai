@@ -5,6 +5,7 @@ import type { LocalBackupDatabaseStreamSession } from "../api";
 import {
   parsePortableDatabaseStreamManifest,
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  type PortableDatabaseStreamManifest,
 } from "../streamFormat";
 
 export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
@@ -345,7 +346,8 @@ export class LocalBackupDatabaseStreamStore<
     session: InternalSession<TState>,
   ): asserts manifest is LocalBackupDatabaseStreamManifest {
     const value = manifest as Partial<LocalBackupDatabaseStreamManifest> | null;
-    const parsed = parsePortableDatabaseStreamManifest(value);
+    const parsed: PortableDatabaseStreamManifest | null =
+      parsePortableDatabaseStreamManifest(value);
     if (!parsed) {
       throw new LocalBackupDatabaseStreamError(
         "Portable database stream manifest is invalid",

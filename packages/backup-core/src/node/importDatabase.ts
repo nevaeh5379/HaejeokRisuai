@@ -47,7 +47,8 @@ function requireObject(value: unknown, label: string): Record<string, any> {
 
 function decodeManifest(data: unknown): PortableDatabaseStreamManifest {
   const manifest = requireObject(data, "Portable database stream manifest");
-  const parsed = parsePortableDatabaseStreamManifest(manifest);
+  const parsed: PortableDatabaseStreamManifest | null =
+    parsePortableDatabaseStreamManifest(manifest);
   if (!parsed || Array.isArray(parsed.counts)) {
     throw new Error("Portable database stream manifest is invalid");
   }
@@ -60,9 +61,10 @@ function decodeFragment(
   name: string,
 ): PortableDatabaseStreamFragment {
   const fragment = requireObject(data, `Portable database fragment ${name}`);
-  const parsed = parsePortableDatabaseStreamFragment(fragment, {
-    expectedIndex,
-  });
+  const parsed: PortableDatabaseStreamFragment | null =
+    parsePortableDatabaseStreamFragment(fragment, {
+      expectedIndex,
+    });
   if (!parsed) {
     throw new Error(`Invalid portable database fragment: ${name}`);
   }

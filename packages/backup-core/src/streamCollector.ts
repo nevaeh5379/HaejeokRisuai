@@ -215,7 +215,8 @@ export class PortableDatabaseStreamCollector {
   }
 
   addFragment(fragment: PortableDatabaseStreamFragment): void {
-    const parsed = parsePortableDatabaseStreamFragment(fragment);
+    const parsed: PortableDatabaseStreamFragment | null =
+      parsePortableDatabaseStreamFragment(fragment);
     if (!parsed) throw new Error("Invalid streaming database fragment");
     if (this.fragments.has(parsed.index)) {
       throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
@@ -226,7 +227,8 @@ export class PortableDatabaseStreamCollector {
 
   setManifest(manifest: PortableDatabaseStreamManifest): void {
     if (this.manifest) throw new Error("Duplicate streaming database manifest");
-    const parsed = parsePortableDatabaseStreamManifest(manifest);
+    const parsed: PortableDatabaseStreamManifest | null =
+      parsePortableDatabaseStreamManifest(manifest);
     if (!parsed) throw new Error("Unsupported streaming database manifest");
     this.manifest = parsed;
   }

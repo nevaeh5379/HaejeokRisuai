@@ -28,9 +28,9 @@ export function hasPortableDatabaseStreamRestore(
 ): storage is PortableDatabaseStreamRestoreCapable {
   return Boolean(
     storage &&
-      typeof storage === "object" &&
-      typeof (storage as PortableDatabaseStreamRestoreCapable)
-        .beginPortableDatabaseStreamRestore === "function",
+    typeof storage === "object" &&
+    typeof (storage as PortableDatabaseStreamRestoreCapable)
+      .beginPortableDatabaseStreamRestore === "function",
   );
 }
 const RECORD_TYPES: PortableDatabaseStreamPersistedRecord["type"][] = [
@@ -64,7 +64,8 @@ export class PortableDatabaseStreamValidator {
   private sourceRevision: number | null = null;
 
   acceptFragment(fragment: PortableDatabaseStreamFragment): void {
-    const parsed = parsePortableDatabaseStreamFragment(fragment);
+    const parsed: PortableDatabaseStreamFragment | null =
+      parsePortableDatabaseStreamFragment(fragment);
     if (!parsed) throw new Error("Invalid streaming database fragment");
     if (this.fragments.has(parsed.index)) {
       throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
@@ -76,7 +77,11 @@ export class PortableDatabaseStreamValidator {
   }
 
   private acceptRecord(record: PortableDatabaseStreamPersistedRecord): void {
-    if (!record || typeof record !== "object" || !RECORD_TYPES.includes(record.type)) {
+    if (
+      !record ||
+      typeof record !== "object" ||
+      !RECORD_TYPES.includes(record.type)
+    ) {
       throw new Error("Invalid streaming database record");
     }
     this.totalRecords++;
