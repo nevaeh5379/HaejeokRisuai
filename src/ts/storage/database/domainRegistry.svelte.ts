@@ -13,8 +13,9 @@ import { personaStore } from "../../stores/domain/personaStore.svelte";
 import { moduleStore } from "../../stores/domain/moduleStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
 import { getSqlStorage } from "../sql/sqlStorageFactory";
+import type { BackupAssetScope } from "@risuai/backup-core/assetScope";
 
-export type BackupAssetScope = "all" | "essential";
+export type { BackupAssetScope };
 
 export interface DomainAssetInfo {
   category: string;

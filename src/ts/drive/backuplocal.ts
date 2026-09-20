@@ -914,10 +914,14 @@ export async function createBackupDatabaseSnapshot(
 import {
   collectAllDomainAssets,
   ensureAllDomains,
-  type BackupAssetScope,
 } from "../storage/database/domainRegistry.svelte";
-
-type BackupAssetInfo = { charName: string; assetName: string };
+import {
+  filterEssentialBackupAssetKeys,
+  findBackupAssetInfo,
+  type BackupAssetInfo,
+  type BackupAssetMap,
+  type BackupAssetScope,
+} from "@risuai/backup-core/assetScope";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -927,32 +931,6 @@ interface LocalBackupExportOptions {
   encryptAccountBackup: boolean;
 }
 
-function buildBackupAssetMap(
-  db: PortableDatabase,
-  scope: BackupAssetScope,
-): Map<string, BackupAssetInfo> {
-  return collectAllDomainAssets(db, scope);
-}
-
-function findBackupAssetInfo(
-  assetMap: Map<string, BackupAssetInfo>,
-  key: string,
-) {
-  return (
-    assetMap.get(key) ??
-    assetMap.get(key.replace(/^assets\//, "")) ??
-    assetMap.get(`assets/${key}`)
-  );
-}
-
-function isEssentialBackupAsset(
-  assetMap: Map<string, BackupAssetInfo>,
-  key: string,
-) {
-  if (!key.endsWith(".png")) return false;
-  return Boolean(findBackupAssetInfo(assetMap, key));
-}
-
 type NodeBackupAssetStorage = Pick<NodeStorage, "keys" | "streamItems">;
 type StreamingBackupWriter = Pick<LocalWriter, "startBackup" | "write">;
 type NodeBackupAssetStreamOptions = Parameters<NodeStorage["streamItems"]>[3];
@@ -960,16 +938,14 @@ type NodeBackupAssetStreamOptions = Parameters<NodeStorage["streamItems"]>[3];
 export async function createNodeBackupAssetRequest(
   storage: Pick<NodeBackupAssetStorage, "keys">,
   scope: BackupAssetScope,
-  assetMap: Map<string, BackupAssetInfo>,
+  assetMap: BackupAssetMap,
 ): Promise<{ keys: string[]; options?: NodeBackupAssetStreamOptions }> {
   if (scope === "all") {
     return { keys: [], options: { prefix: "assets/" } };
   }
 
   const keys = await storage.keys("assets/");
-  return {
-    keys: keys.filter((key) => isEssentialBackupAsset(assetMap, key)),
-  };
+  return { keys: filterEssentialBackupAssetKeys(keys, assetMap) };
 }
 
 export async function streamNodeBackupAssets(
@@ -1025,13 +1001,13 @@ async function writeLocalBackupAssets(
   writer: LocalWriter,
   db: PortableDatabase,
   options: LocalBackupExportOptions,
-  precomputedAssetMap?: Map<string, BackupAssetInfo>,
+  precomputedAssetMap?: BackupAssetMap,
 ): Promise<{
   missingAssets: string[];
-  assetMap: Map<string, BackupAssetInfo>;
+  assetMap: BackupAssetMap;
 }> {
   const assetMap =
-    precomputedAssetMap ?? buildBackupAssetMap(db, options.assetScope);
+    precomputedAssetMap ?? collectAllDomainAssets(db, options.assetScope);
   const missingAssets: string[] = [];
   reportLocalBackupProgress("assets");
   await sleep(0);
@@ -1072,7 +1048,7 @@ async function writeLocalBackupAssets(
 
   let keys = await listBackupAssetKeys();
   if (options.assetScope === "essential") {
-    keys = keys.filter((key) => isEssentialBackupAsset(assetMap, key));
+    keys = filterEssentialBackupAssetKeys(keys, assetMap);
   }
 
   if (
@@ -1167,7 +1143,7 @@ async function writeBackupColdStorage(
 }
 
 interface StreamingBackupInventory {
-  assetMap: Map<string, BackupAssetInfo>;
+  assetMap: BackupAssetMap;
   referencedColdStorageKeys: Set<string>;
   exportedColdStorageKeys: Set<string>;
   unavailableColdStorageKeys: Set<string>;
@@ -1397,7 +1373,7 @@ async function prepareStreamingBackupEncryption(
 
 function showMissingBackupAssets(
   missingAssets: string[],
-  assetMap: Map<string, BackupAssetInfo>,
+  assetMap: BackupAssetMap,
   partial: boolean,
 ) {
   if (missingAssets.length === 0) {

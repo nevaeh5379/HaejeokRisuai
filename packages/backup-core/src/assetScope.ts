@@ -5,6 +5,64 @@ export interface BackupAssetReferenceRecord {
   data?: Record<string, any>;
 }
 
+/** Which assets a backup export should include. */
+export type BackupAssetScope = "all" | "essential";
+
+/**
+ * Display metadata kept for missing-asset reporting:
+ * `charName` is the owning category (character/preset/setting group) and
+ * `assetName` is the human-readable asset label.
+ */
+export interface BackupAssetInfo {
+  charName: string;
+  assetName: string;
+}
+
+/**
+ * Inventory of the asset keys a database references, with the metadata
+ * needed to report entries that turned out to be missing.
+ */
+export type BackupAssetMap = Map<string, BackupAssetInfo>;
+
+/**
+ * Resolves an asset key against the inventory regardless of whether the
+ * caller passes the key with or without the `assets/` prefix.
+ */
+export function findBackupAssetInfo(
+  assetMap: BackupAssetMap,
+  key: string,
+): BackupAssetInfo | undefined {
+  return (
+    assetMap.get(key) ??
+    assetMap.get(key.replace(/^assets\//, "")) ??
+    assetMap.get(`assets/${key}`)
+  );
+}
+
+/**
+ * Essential-scope filtering only admits PNG profile-style images that the
+ * database actually references.
+ */
+export function isEssentialBackupAsset(
+  assetMap: BackupAssetMap,
+  key: string,
+): boolean {
+  if (!key.endsWith(".png")) return false;
+  return Boolean(findBackupAssetInfo(assetMap, key));
+}
+
+/**
+ * Filters a listed set of storage keys down to the essential assets.
+ * Performs a single pass over `keys`, preserves the input order, and
+ * returns a new array without mutating the input.
+ */
+export function filterEssentialBackupAssetKeys(
+  keys: readonly string[],
+  assetMap: BackupAssetMap,
+): string[] {
+  return keys.filter((key) => isEssentialBackupAsset(assetMap, key));
+}
+
 function addAssetKey(target: Set<string>, key: unknown): void {
   if (typeof key === "string" && key.startsWith("assets/")) {
     target.add(key);
