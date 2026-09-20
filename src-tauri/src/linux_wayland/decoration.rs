@@ -11,9 +11,12 @@ pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool 
     decoration == LinuxWindowDecoration::Ssd
 }
 
-fn reset_header_decoration_layout(header: &gtk::HeaderBar) {
+fn configure_integrated_header(header: &gtk::HeaderBar) {
     header.set_decoration_layout(None);
     header.set_decoration_layout_set(false);
+    header.set_title(None);
+    header.set_subtitle(None);
+    header.set_has_subtitle(false);
 }
 
 fn native_appearance_class(dark: bool) -> &'static str {
@@ -205,12 +208,12 @@ window.risu-native-light .risu-integrated-csd button.titlebutton:active {
     header
         .style_context()
         .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
-    reset_header_decoration_layout(&header);
+    configure_integrated_header(&header);
 
     let header_weak = header.downgrade();
     window.connect_resizable_notify(move |_| {
         if let Some(header) = header_weak.upgrade() {
-            reset_header_decoration_layout(&header);
+            configure_integrated_header(&header);
         }
     });
 
