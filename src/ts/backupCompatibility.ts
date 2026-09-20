@@ -19,7 +19,7 @@ export interface ExpandedChatBackup {
   activeIndex: number;
 }
 
-const compatibilityOptions = {
+export const compatibilityOptions = {
   cloneValue: safeStructuredClone,
   coldStorageHeader,
   idFactory: uuidv4,

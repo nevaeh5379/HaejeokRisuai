@@ -27,6 +27,12 @@
       "require": "./dist/portableBranches.js",
       "default": "./src/portableBranches.ts"
     },
+    "./databasePreparation": {
+      "types": "./src/databasePreparation.ts",
+      "import": "./src/databasePreparation.ts",
+      "require": "./dist/databasePreparation.js",
+      "default": "./src/databasePreparation.ts"
+    },
     "./api": {
       "types": "./src/api.ts",
       "import": "./src/api.ts",

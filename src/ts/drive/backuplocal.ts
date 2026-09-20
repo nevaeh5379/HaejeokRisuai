@@ -64,7 +64,7 @@ import {
 } from "./streamingBackupEncryption";
 import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
-  makeLegacyCompatibleDatabase,
+  compatibilityOptions,
   type ColdStorageValueMap,
 } from "../backupCompatibility";
 
@@ -89,7 +89,6 @@ import {
 import { createLocalBackupExportMetadata } from "@risuai/backup-core/exportPlan";
 import {
   attachPortableDatabaseBranchGraphs,
-  expandPortableDatabaseBranchGraphsForCompatibility,
   loadPortableBranchGraphForExport,
   preparePortableDatabaseForBranchRestore,
 } from "@risuai/backup-core/portableBranches";
@@ -519,20 +518,12 @@ export function buildPortableLocalBackupDatabase(
   mode: LocalBackupMode,
   coldStorageValues?: ColdStorageValueMap,
 ): Record<string, any> {
-  const cleanDb: Record<string, any> = {};
-  for (const [key, value] of Object.entries(db)) {
-    if (
-      key === "account" ||
-      typeof value === "function" ||
-      (mode === "compatible" && key === "moduleFolders")
-    )
-      continue;
-    cleanDb[key] = value;
-  }
-  cleanDb.pluginCustomStorage ??= {};
-  if (mode !== "compatible") return cleanDb;
-  const expanded = expandPortableDatabaseBranchGraphsForCompatibility(cleanDb);
-  return makeLegacyCompatibleDatabase(expanded, coldStorageValues);
+  return buildPortableLocalBackupDatabaseCore(
+    db as Record<string, any>,
+    mode,
+    coldStorageValues,
+    { compatibility: compatibilityOptions },
+  );
 }
 
 async function initializeLocalBackupWriter(
@@ -848,41 +839,6 @@ async function loadFullSqlBackupSnapshot(
   return loaded.database;
 }
 
-function normalizeBackupSnapshot(db: BackupDatabaseDraft): PortableDatabase {
-  db.pluginCustomStorage ??= {};
-  if (!db.personas || db.personas.length === 0) {
-    db.personas = [
-      {
-        name: db.username ?? "User",
-        icon: db.userIcon ?? "",
-        personaPrompt: db.personaPrompt ?? "",
-        note: db.userNote ?? "",
-        largePortrait: false,
-      },
-    ];
-  } else {
-    for (const persona of db.personas) {
-      if (persona) persona.largePortrait ??= false;
-    }
-  }
-  if (
-    typeof db.selectedPersona !== "number" ||
-    !Number.isInteger(db.selectedPersona) ||
-    !db.personas[db.selectedPersona]
-  ) {
-    db.selectedPersona = 0;
-  }
-
-  const activePersona = db.personas[db.selectedPersona];
-  db.username = activePersona.name;
-  db.userIcon = activePersona.icon;
-  db.userNote = activePersona.note ?? "";
-  db.personaPrompt = activePersona.personaPrompt;
-  db.botPresets ??= [];
-  db.botPresetsId ??= 0;
-  return db as PortableDatabase;
-}
-
 export async function createBackupDatabaseSnapshot(
   onProgress?: (msg: string) => void,
 ): Promise<PortableDatabase> {
@@ -892,7 +848,7 @@ export async function createBackupDatabaseSnapshot(
 
   ensureAllDomains(db);
 
-  const normalized = normalizeBackupSnapshot(db);
+  const normalized = normalizePortableBackupSnapshot(db) as PortableDatabase;
   const branchStorage = await getSqlBranchStorage();
   return (await attachPortableDatabaseBranchGraphs(
     normalized,
@@ -925,6 +881,10 @@ import {
   createStreamingColdStorageInventory,
   type StreamingColdStorageInventory,
 } from "@risuai/backup-core/streamInventory";
+import {
+  buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
+  normalizePortableBackupSnapshot,
+} from "@risuai/backup-core/databasePreparation";
 
 interface LocalBackupExportOptions {
   mode: LocalBackupMode;
@@ -2132,7 +2092,7 @@ async function restoreLocalBackupSourceUnlocked(
         decodedDatabase ??
         ((await decodeRisuSave(db as Uint8Array)) as Database);
       const prepared = preparePortableDatabaseForBranchRestore(
-        normalizeBackupSnapshot(decodedDb as BackupDatabaseDraft),
+        normalizePortableBackupSnapshot(decodedDb as BackupDatabaseDraft),
       );
       const dbData = prepared.database as Database;
       const portableBranchGraphs = prepared.branchGraphs;
