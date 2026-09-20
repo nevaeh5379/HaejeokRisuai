@@ -54,80 +54,6 @@ export function normalizeBackupEntryName(name: string): string | null {
   return normalized;
 }
 
-type ExactBackupEntryKind =
-  | { kind: "database" }
-  | { kind: "databaseStream"; stream: { type: "manifest" } }
-  | { kind: "encryption" };
-
-function classifyExactBackupEntry(
-  normalized: string,
-): ExactBackupEntryKind | null {
-  switch (normalized) {
-    case LEGACY_DATABASE_ENTRY_NAME:
-      return { kind: "database" };
-    case PORTABLE_DATABASE_STREAM_MANIFEST:
-      return { kind: "databaseStream", stream: { type: "manifest" } };
-    case ACCOUNT_ENCRYPTION_ENTRY_NAME:
-      return { kind: "encryption" };
-    default:
-      return null;
-  }
-}
-
-function classifyPatternBackupEntry(
-  normalized: string,
-): BackupEntryClassification {
-  const fragmentIndex = parsePortableDatabaseStreamFragmentName(normalized);
-  if (fragmentIndex !== null) {
-    return {
-      kind: "databaseStream",
-      normalized,
-      stream: { type: "fragment", index: fragmentIndex },
-    };
-  }
-
-  const coldStorageKey = COLD_STORAGE_BACKUP_RE.exec(normalized)?.[1];
-  if (coldStorageKey) {
-    return { kind: "coldStorage", normalized, key: coldStorageKey };
-  }
-
-  const inlayKey = INLAY_RE.exec(normalized)?.[1];
-  if (inlayKey) {
-    return { kind: "inlay", normalized, key: inlayKey };
-  }
-
-  if (normalized.startsWith("assets/") || !normalized.includes("/")) {
-    return {
-      kind: "asset",
-      normalized,
-      assetPath: normalizeBackupAssetPath(normalized),
-    };
-  }
-
-  return { kind: "extension", normalized };
-}
-
-/**
- * Classifies a backup container entry once, resolving every kind-specific
- * restore target (stream type/index, cold-storage key, inlay key, canonical
- * asset storage path) from a single normalization pass. Invalid names get
- * `kind: "invalid"` with a `null` normalized value; asset names whose
- * resolved path is unsafe throw, exactly like `normalizeBackupAssetPath`.
- */
-export function classifyBackupEntry(name: string): BackupEntryClassification {
-  const normalized = normalizeBackupEntryName(name);
-  if (normalized === null) {
-    return { kind: "invalid", normalized: null };
-  }
-
-  const exact = classifyExactBackupEntry(normalized);
-  if (exact) {
-    return { ...exact, normalized } as BackupEntryClassification;
-  }
-
-  return classifyPatternBackupEntry(normalized);
-}
-
 function normalizeBackupAssetPath(name: string): string {
   const normalizedName = name.replace(/\\/g, "/");
   const segments = normalizedName.split("/");
@@ -156,6 +82,108 @@ function getInlayBackupKey(name: string): string | null {
   const normalized = normalizeBackupEntryName(name);
   if (!normalized) return null;
   return INLAY_RE.exec(normalized)?.[1] ?? null;
+}
+
+/** A classification rule: either classifies a normalized name or defers. */
+type EntryRule = (normalized: string) => BackupEntryClassification | null;
+type ExactRuleFactory = (normalized: string) => BackupEntryClassification;
+
+/**
+ * Reserved entry names classified by exact normalized lookup. A Map keeps
+ * entry names like `constructor` or `toString` out of the lookup chain.
+ */
+const EXACT_ENTRY_RULES: ReadonlyMap<string, ExactRuleFactory> = new Map<
+  string,
+  ExactRuleFactory
+>([
+  [
+    LEGACY_DATABASE_ENTRY_NAME,
+    (normalized) => ({ kind: "database", normalized }),
+  ],
+  [
+    PORTABLE_DATABASE_STREAM_MANIFEST,
+    (normalized) => ({
+      kind: "databaseStream",
+      normalized,
+      stream: { type: "manifest" },
+    }),
+  ],
+  [
+    ACCOUNT_ENCRYPTION_ENTRY_NAME,
+    (normalized) => ({ kind: "encryption", normalized }),
+  ],
+]);
+
+/** Builds a rule that classifies regex-matching names by their captured key. */
+const keyPatternRule =
+  (
+    regex: RegExp,
+    classify: (normalized: string, key: string) => BackupEntryClassification,
+  ): EntryRule =>
+  (normalized) => {
+    const key = regex.exec(normalized)?.[1];
+    return key ? classify(normalized, key) : null;
+  };
+
+const assetRule = (normalized: string): BackupEntryClassification => ({
+  kind: "asset",
+  normalized,
+  assetPath: normalizeBackupAssetPath(normalized),
+});
+
+/**
+ * Ordered pattern rules; the first non-null result wins. Precedence:
+ * numbered stream fragments, cold storage, inlays, assets. The trailing
+ * extension fallback lives in classifyBackupEntry, not in this table.
+ */
+const PATTERN_ENTRY_RULES: readonly EntryRule[] = [
+  (normalized) => {
+    const index = parsePortableDatabaseStreamFragmentName(normalized);
+    return index === null
+      ? null
+      : {
+          kind: "databaseStream",
+          normalized,
+          stream: { type: "fragment", index },
+        };
+  },
+  keyPatternRule(COLD_STORAGE_BACKUP_RE, (normalized, key) => ({
+    kind: "coldStorage",
+    normalized,
+    key,
+  })),
+  keyPatternRule(INLAY_RE, (normalized, key) => ({
+    kind: "inlay",
+    normalized,
+    key,
+  })),
+  (normalized) =>
+    normalized.startsWith("assets/") || !normalized.includes("/")
+      ? assetRule(normalized)
+      : null,
+];
+
+/**
+ * Classifies a backup container entry once, resolving every kind-specific
+ * restore target (stream type/index, cold-storage key, inlay key, canonical
+ * asset storage path) from a single normalization pass. Invalid names get
+ * `kind: "invalid"` with a `null` normalized value; asset names whose
+ * resolved path is unsafe throw, exactly like `normalizeBackupAssetPath`.
+ */
+export function classifyBackupEntry(name: string): BackupEntryClassification {
+  const normalized = normalizeBackupEntryName(name);
+  if (normalized === null) {
+    return { kind: "invalid", normalized: null };
+  }
+
+  const exactRule = EXACT_ENTRY_RULES.get(normalized);
+  if (exactRule) return exactRule(normalized);
+
+  for (const patternRule of PATTERN_ENTRY_RULES) {
+    const result = patternRule(normalized);
+    if (result) return result;
+  }
+  return { kind: "extension", normalized };
 }
 
 export { COLD_STORAGE_BACKUP_RE as COLD_STORAGE_RE } from "./coldStorage";

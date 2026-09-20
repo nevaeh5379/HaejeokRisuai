@@ -260,6 +260,16 @@ describe("classifyBackupEntry security and fallback edges", () => {
     );
   });
 
+  it("keeps prototype-named entries out of the exact-rule lookup", () => {
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      expect(classifyBackupEntry(name)).toEqual({
+        kind: "asset",
+        normalized: name,
+        assetPath: `assets/${name}`,
+      });
+    }
+  });
+
   it("matches getColdStorageBackupKey results from the classification key", () => {
     const key = "33333333-4444-4555-8555-666666666666";
     for (const name of [
