@@ -1,4 +1,5 @@
 import type { ChatTab, ChatTabsSnapshot } from "./chatTabs.svelte";
+import { isLinuxCsdActive } from "./linuxWindowIntegration";
 import {
   ChatWindowManager,
   MAIN_CHAT_WORKSPACE_WINDOW_ID,
@@ -607,7 +608,7 @@ async function openAuxiliaryWindow(
     minWidth: 300,
     minHeight: 500,
     resizable: true,
-    decorations: true,
+    decorations: !isTauriLinux || !isLinuxCsdActive(),
     transparent: isTauriLinux || isTauriMacOS || isTauriWindows,
     titleBarStyle: isTauriMacOS ? "overlay" : undefined,
     hiddenTitle: isTauriMacOS,

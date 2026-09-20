@@ -384,6 +384,30 @@ html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
   background-color: var(--risu-theme-darkbg) !important;
 }
 
+/* GTK CSD is overlaid on top of the WebView. Keep the visual material at y=0,
+ * but move interactive web chrome below the native 40px HeaderBar. */
+html.tauri-linux-csd {
+  --risu-linux-csd-titlebar-height: 40px;
+}
+
+html.tauri-linux-csd .rs-sidebar.rs-sidebar-titlebar-inset {
+  padding-top: var(--risu-linux-csd-titlebar-height);
+}
+
+html.tauri-linux-csd
+  .rs-sidebar:not(.rs-sidebar-titlebar-inset)
+  .rs-sidebar-scroll {
+  padding-top: var(--risu-linux-csd-titlebar-height);
+}
+
+html.tauri-linux-csd .rs-chat-tab-strip-shell {
+  margin-top: var(--risu-linux-csd-titlebar-height);
+}
+
+html.tauri-linux-csd .rs-setting-backdrop {
+  padding-top: var(--risu-linux-csd-titlebar-height);
+}
+
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
   --risu-macos-traffic-lights-width: 5rem;

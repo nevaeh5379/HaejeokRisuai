@@ -131,7 +131,10 @@ pub fn create_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .min_inner_size(300.0, 500.0)
         .resizable(true)
         .disable_drag_drop_handler()
-        .decorations(true)
+        // Tao creates its native GtkHeaderBar on Wayland even for an
+        // undecorated window. Bootstrap CSD as undecorated so GTK never asks
+        // KWin for SSD before the plugin moves that HeaderBar into an overlay.
+        .decorations(decoration::bootstrap_decorations_enabled(requested))
         .transparent(true)
         .visible(false)
         .build()?;

@@ -311,7 +311,7 @@ pub fn install<R: Runtime>(
     // window is too late on Wayland.
     let server_side_decoration = state.has_global(KWIN_DECORATION_MANAGER);
     let prepared_csd =
-        decoration::prepare_client_side_decoration(&gtk_window, requested_decoration);
+        decoration::prepare_client_side_decoration(window, &gtk_window, requested_decoration)?;
     let prepared_ssd = decoration::prepare_server_side_decoration(
         &gtk_window,
         requested_decoration,
