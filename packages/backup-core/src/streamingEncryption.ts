@@ -102,3 +102,52 @@ export async function decryptStreamingBackupEntry(
     ),
   );
 }
+
+export type StreamingBackupValueEncoder = (
+  value: unknown,
+) => Promise<Uint8Array>;
+
+export type StreamingBackupValueDecoder = (
+  data: Uint8Array,
+) => Promise<unknown>;
+
+export type LegacyStreamingBackupDecrypt = (
+  data: Uint8Array,
+  secret: string,
+) => Promise<Uint8Array>;
+
+export interface StreamingBackupValueDecodeOptions {
+  secret: string;
+  decryptLegacy: LegacyStreamingBackupDecrypt;
+}
+
+/** Serializes a streamed database value and optionally encrypts its entry. */
+export async function encodeStreamingBackupValue(
+  value: unknown,
+  entryName: string,
+  encode: StreamingBackupValueEncoder,
+  secret?: string,
+): Promise<Uint8Array> {
+  const encoded: Uint8Array = await encode(value);
+  if (!secret) return encoded;
+  return await encryptStreamingBackupEntry(encoded, secret, entryName);
+}
+
+/**
+ * Decrypts a streamed database entry using its authenticated envelope, or the
+ * injected legacy decryptor for older account backups, then decodes its value.
+ */
+export async function decodeStreamingBackupValue(
+  data: Uint8Array,
+  entryName: string,
+  decode: StreamingBackupValueDecoder,
+  options?: StreamingBackupValueDecodeOptions,
+): Promise<unknown> {
+  let encoded: Uint8Array = data;
+  if (options) {
+    encoded = isStreamingBackupEncryptedEntry(data)
+      ? await decryptStreamingBackupEntry(data, options.secret, entryName)
+      : await options.decryptLegacy(data, options.secret);
+  }
+  return await decode(encoded);
+}

@@ -57,10 +57,10 @@ import {
   fetchLegacyBackupKey,
 } from "./legacyBackupEncryption";
 import {
-  decryptStreamingBackupEntry,
-  encryptStreamingBackupEntry,
-  isStreamingBackupEncryptedEntry,
+  decodeStreamingBackupValue,
+  encodeStreamingBackupValue,
   STREAMING_BACKUP_ENCRYPTION_FORMAT,
+  type StreamingBackupValueDecodeOptions,
 } from "./streamingBackupEncryption";
 import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
@@ -1000,16 +1000,14 @@ async function encodeStreamingDatabaseValue(
   value: PortableDatabaseStreamFragment | PortableDatabaseStreamManifest,
   entryName: string,
   encryptionKey?: string,
-) {
-  let encoded = await encodeRisuSaveLegacyAsync(value, "compression");
-  if (encryptionKey) {
-    encoded = await encryptStreamingBackupEntry(
-      encoded,
-      encryptionKey,
-      entryName,
-    );
-  }
-  return encoded;
+): Promise<Uint8Array> {
+  return await encodeStreamingBackupValue(
+    value,
+    entryName,
+    async (data: unknown): Promise<Uint8Array> =>
+      await encodeRisuSaveLegacyAsync(data, "compression"),
+    encryptionKey,
+  );
 }
 
 async function prepareStreamingBackupEncryption(
@@ -1537,17 +1535,31 @@ async function restoreLocalBackupSourceUnlocked(
           normalizedName: string,
           streamData: Uint8Array,
         ): Promise<void> {
-          let encoded: Uint8Array = streamData;
+          let decodeOptions: StreamingBackupValueDecodeOptions | undefined;
           if (encryptionMeta.type === "account" && encryptionMeta.time) {
             streamingDecryptionKey ??= fetchLegacyBackupKey(
               encryptionMeta.time,
             );
             const key: string = await streamingDecryptionKey;
-            encoded = isStreamingBackupEncryptedEntry(encoded)
-              ? await decryptStreamingBackupEntry(encoded, key, name)
-              : new Uint8Array(await decryptBuffer(encoded, key));
+            decodeOptions = {
+              secret: key,
+              async decryptLegacy(
+                encrypted: Uint8Array,
+                secret: string,
+              ): Promise<Uint8Array> {
+                return new Uint8Array(
+                  await decryptBuffer(encrypted, secret),
+                );
+              },
+            };
           }
-          const value: unknown = await decodeRisuSave(encoded);
+          const value: unknown = await decodeStreamingBackupValue(
+            streamData,
+            name,
+            async (encoded: Uint8Array): Promise<unknown> =>
+              await decodeRisuSave(encoded),
+            decodeOptions,
+          );
           await streamRestore.acceptEntry(normalizedName, value);
         },
         async onInlay(inlayKey: string, inlayData: Uint8Array): Promise<void> {
