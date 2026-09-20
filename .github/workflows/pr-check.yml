@@ -259,6 +259,19 @@ jobs:
       - name: install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::/dev/kvm is unavailable on this runner"
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+          echo "KVM device permissions:"
+          ls -l /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
       - name: Run packaged Android E2E
         uses: reactivecircus/android-emulator-runner@v2
         with:
