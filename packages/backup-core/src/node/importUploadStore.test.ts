@@ -6,8 +6,13 @@ import { BackupImportUploadStore } from "./importUploadStore";
 
 const roots: string[] = [];
 
-async function makeStore() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "risu-upload-store-"));
+async function makeStore(): Promise<{
+  root: string;
+  store: BackupImportUploadStore;
+}> {
+  const root: string = await fs.mkdtemp(
+    path.join(os.tmpdir(), "risu-upload-store-"),
+  );
   roots.push(root);
   return {
     root,
@@ -15,20 +20,20 @@ async function makeStore() {
   };
 }
 
-async function* chunks(...values: number[][]) {
+async function* chunks(...values: number[][]): AsyncGenerator<Uint8Array> {
   for (const value of values) yield new Uint8Array(value);
 }
 
-afterEach(async () => {
+afterEach(async (): Promise<void> => {
   await Promise.all(
     roots
       .splice(0)
-      .map((root) => fs.rm(root, { recursive: true, force: true })),
+      .map((root: string) => fs.rm(root, { recursive: true, force: true })),
   );
 });
 
-describe("BackupImportUploadStore", () => {
-  it("appends sequential chunks and exposes the completed file as a stream", async () => {
+describe("BackupImportUploadStore", (): void => {
+  it("releases uploaded chunks as the finalized stream consumes them", async (): Promise<void> => {
     const { root, store } = await makeStore();
     const id = "import_001";
 
@@ -43,23 +48,30 @@ describe("BackupImportUploadStore", () => {
       complete: true,
     });
 
+    const [uploadDirectoryName]: string[] = await fs.readdir(root);
+    const uploadDirectory: string = path.join(root, uploadDirectoryName);
+    await expect(fs.readdir(uploadDirectory)).resolves.toHaveLength(2);
+
     const source = await store.finalize(id);
-    const read: number[] = [];
-    for await (const chunk of source.stream) {
-      read.push(...chunk);
-    }
+    const iterator: AsyncIterator<Uint8Array> =
+      source.stream[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+    expect([...first.value!]).toEqual([1, 2, 3]);
+
+    const second = await iterator.next();
+    expect(second.done).toBe(false);
+    expect([...second.value!]).toEqual([4, 5, 6]);
+    await expect(fs.readdir(uploadDirectory)).resolves.toHaveLength(1);
+
+    await expect(iterator.next()).resolves.toMatchObject({ done: true });
     expect(source.totalBytes).toBe(6);
-    expect(read).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(path.dirname(source.filePath)).toBe(root);
-    expect(path.basename(source.filePath)).not.toContain(id);
+    await expect(fs.readdir(root)).resolves.toEqual([]);
 
     await store.cleanup(id);
-    await expect(fs.stat(source.filePath)).rejects.toMatchObject({
-      code: "ENOENT",
-    });
   });
 
-  it("rejects an unexpected offset without modifying the staged upload", async () => {
+  it("rejects an unexpected offset without modifying the staged upload", async (): Promise<void> => {
     const { store } = await makeStore();
     const id = "import_002";
     await store.append(id, 0, chunks([1, 2, 3]), 5);
@@ -81,12 +93,12 @@ describe("BackupImportUploadStore", () => {
     expect(read).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("rolls back a partially received request so the same offset can retry", async () => {
-    const { store } = await makeStore();
+  it("rolls back a partially received request so the same offset can retry", async (): Promise<void> => {
+    const { root, store } = await makeStore();
     const id = "import_003";
     await store.append(id, 0, chunks([1, 2]), 6);
 
-    async function* broken() {
+    async function* broken(): AsyncGenerator<Uint8Array> {
       yield new Uint8Array([3, 4]);
       throw new Error("network interrupted");
     }
@@ -95,10 +107,14 @@ describe("BackupImportUploadStore", () => {
       code: "upload_error",
     });
 
+    const [uploadDirectoryName]: string[] = await fs.readdir(root);
+    await expect(
+      fs.readdir(path.join(root, uploadDirectoryName)),
+    ).resolves.toHaveLength(1);
+
     await expect(store.append(id, 2, chunks([3, 4, 5, 6]), 6)).resolves.toEqual(
       {
         receivedBytes: 6,
-
         totalBytes: 6,
         complete: true,
       },
@@ -110,7 +126,7 @@ describe("BackupImportUploadStore", () => {
     expect(read).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
-  it("refuses to finalize before the declared upload is complete", async () => {
+  it("refuses to finalize before the declared upload is complete", async (): Promise<void> => {
     const { store } = await makeStore();
     const id = "import_004";
     await store.append(id, 0, chunks([1, 2]), 4);
@@ -121,7 +137,7 @@ describe("BackupImportUploadStore", () => {
     });
   });
 
-  it("seals a completed upload against late append requests", async () => {
+  it("seals a completed upload against late append requests", async (): Promise<void> => {
     const { store } = await makeStore();
     const id = "import_005";
     await store.append(id, 0, chunks([1, 2, 3]), 3);

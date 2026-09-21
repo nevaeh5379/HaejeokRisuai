@@ -314,9 +314,7 @@ describe("LocalBackupImportService", () => {
       revision: 12,
       recordCount: 2,
     });
-    await expect(
-      fs.stat(path.join(root, "uploads", `${job.id}.upload`)),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readdir(path.join(root, "uploads"))).resolves.toEqual([]);
   });
 
   it("preserves encrypted-backup rejection and marks the job failed", async () => {

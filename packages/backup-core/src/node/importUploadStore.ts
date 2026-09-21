@@ -21,8 +21,13 @@ export class BackupImportUploadError extends Error {
   }
 }
 
-export interface BackupImportUploadFinalizeSource {
+interface BackupImportUploadSegment {
   filePath: string;
+  offset: number;
+  size: number;
+}
+
+export interface BackupImportUploadFinalizeSource {
   totalBytes: number;
   stream: AsyncIterable<Uint8Array>;
 }
@@ -30,7 +35,9 @@ export interface BackupImportUploadFinalizeSource {
 export class BackupImportUploadStore {
   private readonly rootPath: string;
   private readonly totals = new Map<string, number>();
-  private readonly uploadPaths = new Map<string, string>();
+  private readonly receivedBytes = new Map<string, number>();
+  private readonly uploadDirectories = new Map<string, string>();
+  private readonly segments = new Map<string, BackupImportUploadSegment[]>();
   private readonly sealed = new Set<string>();
   private readonly locks = new Map<string, Promise<void>>();
 
@@ -47,26 +54,26 @@ export class BackupImportUploadStore {
     }
   }
 
-  private getUploadPath(id: string, create: boolean): string | null {
+  private getUploadDirectory(id: string, create: boolean): string | null {
     this.validateJobId(id);
-    const existing = this.uploadPaths.get(id);
+    const existing: string | undefined = this.uploadDirectories.get(id);
     if (existing) return existing;
     if (!create) return null;
-    const filePath = join(this.rootPath, `${randomUUID()}.upload`);
-    this.uploadPaths.set(id, filePath);
-    return filePath;
+    const directory: string = join(this.rootPath, `${randomUUID()}.upload`);
+    this.uploadDirectories.set(id, directory);
+    return directory;
   }
 
   private async serialized<T>(
     id: string,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const previous = this.locks.get(id) ?? Promise.resolve();
+    const previous: Promise<void> = this.locks.get(id) ?? Promise.resolve();
     let release!: () => void;
-    const gate = new Promise<void>((resolveGate) => {
+    const gate: Promise<void> = new Promise<void>((resolveGate) => {
       release = resolveGate;
     });
-    const queued = previous.catch(() => {}).then(() => gate);
+    const queued: Promise<void> = previous.catch(() => {}).then(() => gate);
     this.locks.set(id, queued);
     await previous.catch(() => {});
     try {
@@ -98,6 +105,30 @@ export class BackupImportUploadStore {
     }
   }
 
+  /**
+   * Drain sealed upload segments in order and remove each segment only after
+   * the downstream parser has consumed it. Staging therefore replaces upload
+   * bytes instead of duplicating the complete backup on disk.
+   */
+  private async *consumeSegments(
+    directory: string,
+    uploadSegments: readonly BackupImportUploadSegment[],
+  ): AsyncGenerator<Uint8Array> {
+    try {
+      for (const segment of uploadSegments) {
+        try {
+          for await (const chunk of createReadStream(segment.filePath)) {
+            yield chunk;
+          }
+        } finally {
+          await fs.rm(segment.filePath, { force: true }).catch(() => {});
+        }
+      }
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   async append(
     id: string,
     offset: number,
@@ -105,128 +136,172 @@ export class BackupImportUploadStore {
     totalBytes: number,
   ): Promise<LocalBackupImportUploadState> {
     this.validateRange(offset, totalBytes);
-    return await this.serialized(id, async () => {
-      if (this.sealed.has(id)) {
-        throw new BackupImportUploadError(
-          "Backup upload was already finalized",
-          "upload_finalized",
-        );
-      }
-      const filePath = this.getUploadPath(id, true)!;
-      await fs.mkdir(this.rootPath, { recursive: true });
-      const stat = await fs
-        .stat(filePath)
-        .catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return null;
-          throw error;
-        });
-      const currentSize = stat?.size ?? 0;
-      if (currentSize !== offset) {
-        throw new BackupImportUploadError(
-          `Backup upload offset mismatch: expected ${currentSize}, received ${offset}`,
-          "upload_offset_mismatch",
-          currentSize,
-        );
-      }
+    return await this.serialized(
+      id,
+      async (): Promise<LocalBackupImportUploadState> => {
+        if (this.sealed.has(id)) {
+          throw new BackupImportUploadError(
+            "Backup upload was already finalized",
+            "upload_finalized",
+          );
+        }
 
-      const knownTotal = this.totals.get(id);
-      if (knownTotal !== undefined && knownTotal !== totalBytes) {
-        throw new BackupImportUploadError(
-          "Backup upload total size changed during the upload",
-          "invalid_total_bytes",
-        );
-      }
-      this.totals.set(id, totalBytes);
+        const currentSize: number = this.receivedBytes.get(id) ?? 0;
+        if (currentSize !== offset) {
+          throw new BackupImportUploadError(
+            `Backup upload offset mismatch: expected ${currentSize}, received ${offset}`,
+            "upload_offset_mismatch",
+            currentSize,
+          );
+        }
 
-      const handle = await fs.open(
-        filePath,
-        currentSize === 0 ? "w+" : "r+",
-        0o600,
-      );
-      let position = offset;
-      try {
-        for await (const rawChunk of chunks) {
-          const chunk =
-            rawChunk instanceof Uint8Array
-              ? rawChunk
-              : new Uint8Array(rawChunk as ArrayBuffer);
-          if (position + chunk.byteLength > totalBytes) {
-            throw new BackupImportUploadError(
-              "Backup upload exceeded the declared total size",
-              "invalid_total_bytes",
-            );
-          }
-          let chunkOffset = 0;
-          while (chunkOffset < chunk.byteLength) {
-            const { bytesWritten } = await handle.write(
-              chunk,
-              chunkOffset,
-              chunk.byteLength - chunkOffset,
-              position,
-            );
-            if (bytesWritten <= 0) {
+        const knownTotal: number | undefined = this.totals.get(id);
+        if (knownTotal !== undefined && knownTotal !== totalBytes) {
+          throw new BackupImportUploadError(
+            "Backup upload total size changed during the upload",
+            "invalid_total_bytes",
+          );
+        }
+        this.totals.set(id, totalBytes);
+
+        const directory: string = this.getUploadDirectory(id, true)!;
+        await fs.mkdir(directory, { recursive: true });
+        const segmentPath: string = join(
+          directory,
+          `${String(offset).padStart(16, "0")}-${randomUUID()}.chunk`,
+        );
+        const handle = await fs.open(segmentPath, "wx", 0o600);
+        let segmentSize = 0;
+
+        try {
+          for await (const rawChunk of chunks) {
+            const chunk: Uint8Array =
+              rawChunk instanceof Uint8Array
+                ? rawChunk
+                : new Uint8Array(rawChunk as ArrayBuffer);
+            if (offset + segmentSize + chunk.byteLength > totalBytes) {
               throw new BackupImportUploadError(
-                "Backup upload stopped while writing a chunk",
-                "upload_error",
+                "Backup upload exceeded the declared total size",
+                "invalid_total_bytes",
               );
             }
-            chunkOffset += bytesWritten;
-            position += bytesWritten;
-          }
-        }
-      } catch (error) {
-        await handle.truncate(offset).catch(() => {});
-        if (error instanceof BackupImportUploadError) throw error;
-        throw new BackupImportUploadError(
-          error instanceof Error ? error.message : String(error),
-        );
-      } finally {
-        await handle.close();
-      }
 
-      return {
-        receivedBytes: position,
-        totalBytes,
-        complete: position === totalBytes,
-      };
-    });
+            let chunkOffset = 0;
+            while (chunkOffset < chunk.byteLength) {
+              const { bytesWritten }: { bytesWritten: number } =
+                await handle.write(
+                  chunk,
+                  chunkOffset,
+                  chunk.byteLength - chunkOffset,
+                  segmentSize,
+                );
+              if (bytesWritten <= 0) {
+                throw new BackupImportUploadError(
+                  "Backup upload stopped while writing a chunk",
+                  "upload_error",
+                );
+              }
+              chunkOffset += bytesWritten;
+              segmentSize += bytesWritten;
+            }
+          }
+        } catch (error) {
+          await handle.close().catch(() => {});
+          await fs.rm(segmentPath, { force: true }).catch(() => {});
+          if (error instanceof BackupImportUploadError) throw error;
+          throw new BackupImportUploadError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        await handle.close();
+        const position: number = offset + segmentSize;
+        if (segmentSize > 0) {
+          const uploadSegments: BackupImportUploadSegment[] =
+            this.segments.get(id) ?? [];
+          uploadSegments.push({
+            filePath: segmentPath,
+            offset,
+            size: segmentSize,
+          });
+          this.segments.set(id, uploadSegments);
+        } else {
+          await fs.rm(segmentPath, { force: true }).catch(() => {});
+        }
+        this.receivedBytes.set(id, position);
+
+        return {
+          receivedBytes: position,
+          totalBytes,
+          complete: position === totalBytes,
+        };
+      },
+    );
   }
 
   async finalize(id: string): Promise<BackupImportUploadFinalizeSource> {
-    return await this.serialized(id, async () => {
-      const filePath = this.getUploadPath(id, false);
-      const totalBytes = this.totals.get(id);
-      if (!filePath || !totalBytes) {
-        throw new BackupImportUploadError(
-          "Backup upload was not started",
-          "upload_incomplete",
-        );
-      }
-      const stat = await fs.stat(filePath).catch(() => null);
-      const receivedBytes = stat?.size ?? 0;
-      if (receivedBytes !== totalBytes) {
-        throw new BackupImportUploadError(
-          `Backup upload is incomplete: ${receivedBytes} / ${totalBytes} bytes`,
-          "upload_incomplete",
-          receivedBytes,
-        );
-      }
-      this.sealed.add(id);
-      return {
-        filePath,
-        totalBytes,
-        stream: createReadStream(filePath),
-      };
-    });
+    return await this.serialized(
+      id,
+      async (): Promise<BackupImportUploadFinalizeSource> => {
+        const directory: string | null = this.getUploadDirectory(id, false);
+        const totalBytes: number | undefined = this.totals.get(id);
+        const receivedBytes: number = this.receivedBytes.get(id) ?? 0;
+        if (!directory || !totalBytes) {
+          throw new BackupImportUploadError(
+            "Backup upload was not started",
+            "upload_incomplete",
+          );
+        }
+        if (receivedBytes !== totalBytes) {
+          throw new BackupImportUploadError(
+            `Backup upload is incomplete: ${receivedBytes} / ${totalBytes} bytes`,
+            "upload_incomplete",
+            receivedBytes,
+          );
+        }
+
+        const uploadSegments: BackupImportUploadSegment[] = [
+          ...(this.segments.get(id) ?? []),
+        ].sort((left, right) => left.offset - right.offset);
+        let expectedOffset = 0;
+        for (const segment of uploadSegments) {
+          if (segment.offset !== expectedOffset) {
+            throw new BackupImportUploadError(
+              `Backup upload segment gap: expected ${expectedOffset}, received ${segment.offset}`,
+              "upload_incomplete",
+              expectedOffset,
+            );
+          }
+          expectedOffset += segment.size;
+        }
+        if (expectedOffset !== totalBytes) {
+          throw new BackupImportUploadError(
+            `Backup upload is incomplete: ${expectedOffset} / ${totalBytes} bytes`,
+            "upload_incomplete",
+            expectedOffset,
+          );
+        }
+
+        this.sealed.add(id);
+        return {
+          totalBytes,
+          stream: this.consumeSegments(directory, uploadSegments),
+        };
+      },
+    );
   }
 
   async cleanup(id: string): Promise<void> {
-    await this.serialized(id, async () => {
-      const filePath = this.getUploadPath(id, false);
+    await this.serialized(id, async (): Promise<void> => {
+      const directory: string | null = this.getUploadDirectory(id, false);
       this.totals.delete(id);
-      this.uploadPaths.delete(id);
+      this.receivedBytes.delete(id);
+      this.uploadDirectories.delete(id);
+      this.segments.delete(id);
       this.sealed.delete(id);
-      if (filePath) await fs.rm(filePath, { force: true });
+      if (directory) {
+        await fs.rm(directory, { recursive: true, force: true });
+      }
     });
   }
 }
