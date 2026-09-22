@@ -42,6 +42,7 @@ type AlertData = {
   progressBars?: Array<{
     label: string;
     progress: number;
+    detail?: string;
   }>;
 };
 

@@ -24,7 +24,7 @@ describe("Node local backup restore progress", () => {
       },
     );
 
-    reporter.start();
+    reporter.start(100);
     reporter.updateUpload(80, 100);
     reporter.updateRemote({ stage: "reading", current: 50, total: 100 });
     reporter.updateRemote({ stage: "database", current: 1, total: 1 });
@@ -37,15 +37,17 @@ describe("Node local backup restore progress", () => {
       [0, 0],
       [80, 0],
       [80, 50],
-      [80, 98],
-      [80, 98],
-      [80, 98],
+      [80, 100],
+      [80, 100],
+      [80, 100],
     ]);
     for (let index = 1; index < updates.length; index += 1) {
       expect(updates[index].progress).toBeGreaterThanOrEqual(
         updates[index - 1].progress,
       );
     }
+    expect(updates[1].stepState.bars?.[0].detail).toBe("80 B / 100 B");
+    expect(updates[2].stepState.bars?.[1].detail).toBe("50 B / 100 B");
   });
 
   it("never exposes a server entry name and finishes both bars", () => {
@@ -56,6 +58,7 @@ describe("Node local backup restore progress", () => {
       },
     );
 
+    reporter.start(1024);
     reporter.updateRemote({
       stage: "assets",
       current: 7,
@@ -65,6 +68,9 @@ describe("Node local backup restore progress", () => {
     reporter.complete();
 
     expect(JSON.stringify(updates)).not.toContain("secret-name.png");
+    expect(updates.at(-1)?.stepState.bars?.[0].detail).toBe(
+      "1.0 KiB / 1.0 KiB",
+    );
     expect(updates.at(-1)?.progress).toBe(100);
     expect(barsByLabel(updates.at(-1)?.stepState.bars ?? [])).toEqual([
       100, 100,
