@@ -197,7 +197,7 @@ afterEach(async () => {
 });
 
 describe("LocalBackupImportService streaming restore", () => {
-  it("streams asset bytes into inactive state and activates DB/assets together", async () => {
+  it("streams asset bytes through the restore adapter and completes the database", async () => {
     const state = restoreState();
     const { root, service } = await makeService(
       "import_success",
@@ -283,7 +283,7 @@ describe("LocalBackupImportService streaming restore", () => {
     expect(state.aborted).toBe(1);
   });
 
-  it("rolls back inactive state when final database commit fails", async () => {
+  it("aborts adapter-managed pending assets when final database commit fails", async () => {
     const state = restoreState();
     state.failComplete = true;
     const { service } = await makeService(
@@ -393,7 +393,7 @@ describe("LocalBackupImportService streaming restore", () => {
     await expect(fs.readdir(path.join(root, "uploads"))).resolves.toEqual([]);
   });
 
-  it("cancellation aborts the current inactive asset writer", async () => {
+  it("cancellation aborts the current asset writer", async () => {
     const state = restoreState();
     const { service } = await makeService(
       "import_cancel",
@@ -444,7 +444,7 @@ describe("LocalBackupImportService streaming restore", () => {
     expect(state.activeAssets).toEqual(new Map([["assets/old.png", [9]]]));
   });
 
-  it("expires an abandoned resumable upload and cleans inactive state", async () => {
+  it("expires an abandoned resumable upload and cleans adapter state", async () => {
     const state = restoreState();
     const { service } = await makeService(
       "import_idle",

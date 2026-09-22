@@ -80,7 +80,6 @@ const {
   normalizeClientId,
 } = require("./http/realtimeEvents.cjs");
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
-import { GenerationAssetStorage } from "./storage/generationAssetStorage.js";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
 const {
@@ -1313,21 +1312,6 @@ loadBackupStorageFromConfig();
 
 const assetStorageManager = new AssetStorageManager(savePath);
 let assetStorageInitialized = false;
-const assetStorage = new GenerationAssetStorage(
-  savePath,
-  () => assetStorageManager.getStorage(),
-  () => {
-    const storage = assetStorageManager.getStorage();
-    const config = assetStorageManager.config || {};
-    return JSON.stringify({
-      type: storage.type,
-      endpoint: config.endpoint || null,
-      bucket: config.bucket || null,
-      server: config.server || null,
-      database: config.database || null,
-    });
-  },
-);
 const localBackupImportRecords = new LocalBackupImportRecordStore(
   () => postgresStorage,
   () => dbVendor,
@@ -1382,18 +1366,11 @@ function getPrimaryDatabaseIdentity() {
 
 async function reconcileLocalBackupRestoreState() {
   if (!assetStorageInitialized || !isPrimaryStorageReady()) return;
-  const summary = await postgresStorage.getStorageSyncSummary();
-  const revision = Number(summary?.revision);
-  if (!Number.isSafeInteger(revision) || revision < 0) {
-    throw new Error("SQL storage returned an invalid restore revision");
-  }
-  await assetStorage.reconcile(revision, getPrimaryDatabaseIdentity());
-  await assetStorage.cleanupInactiveGenerations();
   await localBackupImportRecords.cleanupAll();
 }
 
 function getAssetCatalogSourceId() {
-  const storage = assetStorage;
+  const storage = assetStorageManager.getStorage();
   if (storage.type !== "s3") return null;
   const config =
     assetStorageManager.s3Config || assetStorageManager.config || {};
@@ -1401,8 +1378,7 @@ function getAssetCatalogSourceId() {
     type: "s3",
     endpoint: config.endpoint || "aws",
     bucket: config.bucket || "risuai-assets",
-    scope: "active-generation",
-    generation: assetStorage.activeGeneration,
+    scope: "full-bucket",
   });
 }
 
@@ -1459,7 +1435,7 @@ async function resolveCatalogedAssetKeys(
 // catalog row. Used by the explicit resync endpoint, post-migration sync, and
 // the storage explorer's one-time initialization.
 async function resyncAssetCatalogFull() {
-  const storage = assetStorage;
+  const storage = assetStorageManager.getStorage();
   if (storage.type !== "s3" || !assetStorageManager.s3Storage) {
     throw new Error("S3 storage is not active");
   }
@@ -1467,7 +1443,7 @@ async function resyncAssetCatalogFull() {
   if (!sourceId || !canUseAssetCatalog()) {
     throw new Error("SQL asset catalog is unavailable");
   }
-  const fresh = await assetStorage.getAssetDetails();
+  const fresh = await storage.getAssetDetails();
   const count = await postgresStorage.replaceAssetCatalog(
     "",
     fresh.assets.map((asset) => ({ key: asset.key, size: asset.size })),
@@ -3076,7 +3052,7 @@ app.get(
     try {
       const summary = await createStorageSyncSummary(
         postgresStorage,
-        assetStorage,
+        assetStorageManager.getStorage(),
       );
       res.send(summary);
     } catch (error) {
@@ -3093,7 +3069,7 @@ app.post(
     try {
       const summary = await createStorageSyncSummary(
         postgresStorage,
-        assetStorage,
+        assetStorageManager.getStorage(),
       );
       const session = storageSyncSessions.create({
         direction: req.body?.direction,
@@ -3167,7 +3143,7 @@ app.post(
       const plan = await storageSyncStaging.planAssets(
         session,
         req.body?.assets,
-        assetStorage,
+        assetStorageManager.getStorage(),
       );
       res.send(plan);
     } catch (error) {
@@ -3399,7 +3375,7 @@ app.post(
           sqlStaging: storageSyncSqlStaging,
           assetStaging: storageSyncStaging,
           sqlStorage: postgresStorage,
-          assetStorage,
+          assetStorage: assetStorageManager.getStorage(),
         }),
       );
     } catch (error) {
@@ -3465,7 +3441,7 @@ app.post(
           session,
           sqlStaging: storageSyncSqlStaging,
           assetStaging: storageSyncStaging,
-          assetStorage,
+          assetStorage: assetStorageManager.getStorage(),
           recoveryStore: storageSyncRecovery,
           gate: storageSyncFinalizeGate,
         },
@@ -3719,7 +3695,7 @@ app.post(
       });
       return;
     }
-    const storage = assetStorage;
+    const storage = assetStorageManager.getStorage();
     if (prefix) {
       const resolved =
         prefix === "assets/" && storage.type === "s3"
@@ -3980,7 +3956,7 @@ async function handleCharxExport(req, res) {
 
     const seenNames = new Set();
     let inlineBytes = 0;
-    const storage = assetStorage;
+    const storage = assetStorageManager.getStorage();
     const entries = requestedEntries.map((entry) => {
       const name = normalizeCharxEntryName(entry?.name);
       if (seenNames.has(name))
@@ -4435,7 +4411,7 @@ async function streamServerLocalBackup(
   options = {},
   onProgress: LocalBackupProgressReporter = () => {},
 ) {
-  const storage = assetStorage;
+  const storage = assetStorageManager.getStorage();
   const writeEntry = async (name, source, size) =>
     await writeServerBackupEntry(res, name, source, size);
 
@@ -4746,16 +4722,63 @@ function sendLocalBackupImportError(res, error) {
   return sendLocalBackupDatabaseStreamError(res, error);
 }
 
+async function openDirectRestoreAsset(key: string, expectedSize: number) {
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+    throw new Error("Asset restore entry size is invalid");
+  }
+  const storage = assetStorageManager.getStorage();
+  const writer = storage.createWriteStream(keyToHex(key), {
+    generateThumbnail: false,
+  });
+  let written = 0;
+  let finished = false;
+
+  return {
+    async write(chunk: Uint8Array): Promise<void> {
+      if (finished) throw new Error("Asset restore writer is already closed");
+      written += chunk.byteLength;
+      if (written > expectedSize) {
+        throw new Error(`Asset restore entry exceeded ${expectedSize} bytes`);
+      }
+      if (!writer.stream.write(chunk)) await once(writer.stream, "drain");
+    },
+    async close(): Promise<void> {
+      if (finished) return;
+      if (written !== expectedSize) {
+        await writer.abort?.().catch(() => {});
+        finished = true;
+        throw new Error(
+          `Asset restore entry size mismatch: expected ${expectedSize}, got ${written}`,
+        );
+      }
+      writer.stream.end();
+      try {
+        await writer.done();
+        finished = true;
+        await upsertAssetCatalogKey(key, expectedSize);
+      } catch (error) {
+        await writer.abort?.().catch(() => {});
+        finished = true;
+        throw error;
+      }
+    },
+    async abort(): Promise<void> {
+      if (finished) return;
+      finished = true;
+      writer.stream.destroy();
+      await writer.abort?.().catch(() => {});
+    },
+  };
+}
+
 const localBackupImportService = new LocalBackupImportService(
   localBackupImportJobs,
   localBackupImportStaging,
   {
     async beginRestore(id) {
-      await assetStorage.discardGeneration(id);
       await localBackupImportRecords.cleanup(id);
       let sequence = 0;
       let completed = false;
-      let activationStarted = false;
 
       return {
         async stageDatabaseRecords(records) {
@@ -4771,12 +4794,10 @@ const localBackupImportService = new LocalBackupImportService(
           ]);
         },
         async openAsset(key, size) {
-          return await assetStorage.openGenerationWriter(id, key, size);
+          return await openDirectRestoreAsset(key, size);
         },
         async complete(prepared, sourceClientId) {
           const stagedRecordCount = sequence;
-          let databaseCommitted = false;
-          let previousGeneration: string | null = null;
           const staged = {
             sourceRevision: prepared.sourceRevision,
             recordCount: stagedRecordCount,
@@ -4787,81 +4808,29 @@ const localBackupImportService = new LocalBackupImportService(
                 stagedRecordCount,
                 prepared.sourceRevision,
               ),
-            beforeCommit: async (transactionContext) => {
-              await assetStorage.beginActivation(
-                id,
-                transactionContext.nextRevision,
-                getPrimaryDatabaseIdentity(),
-              );
-              activationStarted = true;
-            },
-            afterCommit: async (result) => {
-              databaseCommitted = true;
-              try {
-                previousGeneration = await assetStorage.commitActivation(
-                  id,
-                  Number((result as { revision?: unknown }).revision),
-                );
-              } catch (error) {
-                console.warn(
-                  "[local-backup] Database committed but asset generation journal finalization failed; startup reconciliation will finish it:",
-                  error?.message || error,
-                );
-              }
-              activationStarted = false;
-            },
-            rollback: async () => {
-              if (activationStarted && !databaseCommitted) {
-                await assetStorage.rollbackActivation(id);
-                activationStarted = false;
-              }
-            },
           };
-          try {
-            const result = await finalizePreparedLocalBackupSql(
-              staged,
-              `local-backup-import:${id}`,
-              sourceClientId,
+          const result = await finalizePreparedLocalBackupSql(
+            staged,
+            `local-backup-import:${id}`,
+            sourceClientId,
+          );
+          completed = true;
+          await localBackupImportRecords
+            .cleanup(id)
+            .catch((error) =>
+              console.warn(
+                "[local-backup] Committed restore-record cleanup failed:",
+                error?.message || error,
+              ),
             );
-            completed = true;
-            await localBackupImportRecords
-              .cleanup(id)
-              .catch((error) =>
-                console.warn(
-                  "[local-backup] Committed restore-record cleanup failed:",
-                  error?.message || error,
-                ),
-              );
-            void assetStorage
-              .cleanupPrevious(previousGeneration)
-              .catch((error) =>
-                console.warn(
-                  "[local-backup] Previous asset generation cleanup failed:",
-                  error?.message || error,
-                ),
-              );
-            return {
-              revision: result.revision,
-              recordCount: prepared.databaseRecordCount,
-            };
-          } catch (error) {
-            if (activationStarted && !databaseCommitted) {
-              await assetStorage.rollbackActivation(id).catch(() => {});
-              activationStarted = false;
-            }
-            throw error;
-          }
+          return {
+            revision: result.revision,
+            recordCount: prepared.databaseRecordCount,
+          };
         },
         async abort() {
           if (completed) return;
-          if (activationStarted) {
-            await assetStorage.rollbackActivation(id).catch(() => {});
-            activationStarted = false;
-          }
-          await Promise.allSettled([
-            assetStorage.discardGeneration(id),
-            localBackupImportRecords.cleanup(id),
-          ]);
+          await localBackupImportRecords.cleanup(id);
         },
       };
     },
@@ -5083,7 +5052,7 @@ app.post(
       return;
     }
 
-    const storage = assetStorage;
+    const storage = assetStorageManager.getStorage();
     const receivingFiles = new Map();
     const targetPaths = new Set();
     let pending = Buffer.alloc(0);
@@ -8321,7 +8290,7 @@ app.get("/api/s3-stats", authenticatedRouteLimiter, async (req, res, next) => {
     return;
   }
   try {
-    const stats = await assetStorage.getStats();
+    const stats = await assetStorageManager.getStorage().getStats();
     res.send(stats);
   } catch (error) {
     next(error);
@@ -8341,10 +8310,11 @@ app.get(
       const summary = await assetStorageManager.getSummary({
         skipS3Stats: true,
       });
-      const activeStats = await assetStorage.getStats();
-      if (assetStorage.type === "fs") {
+      const storage = assetStorageManager.getStorage();
+      const activeStats = await storage.getStats();
+      if (storage.type === "fs") {
         summary.localFs = { ...summary.localFs, ...activeStats };
-      } else if (assetStorage.type === "azuresql" && summary.azuresql) {
+      } else if (storage.type === "azuresql" && summary.azuresql) {
         summary.azuresql = { ...summary.azuresql, ...activeStats };
       }
       if (summary.s3 && canUseAssetCatalog()) {
@@ -8385,7 +8355,8 @@ app.get(
     }
     try {
       const target = req.query.target || "active";
-      const effectiveType = target === "active" ? assetStorage.type : target;
+      const storage = assetStorageManager.getStorage();
+      const effectiveType = target === "active" ? storage.type : target;
       if (effectiveType === "s3") {
         if (!canUseAssetCatalog()) {
           res.status(503).send({
@@ -8412,7 +8383,7 @@ app.get(
       }
       const details =
         target === "active"
-          ? await assetStorage.getAssetDetails()
+          ? await storage.getAssetDetails()
           : await assetStorageManager.getAssetDetails(target);
       res.send({ ...details, listSource: details.listSource || "storage" });
     } catch (error) {
@@ -8437,13 +8408,16 @@ app.post(
       const result =
         target === "active"
           ? await (async () => {
-              await assetStorage.remove(keys.map((key) => keyToHex(key)));
+              await assetStorageManager
+                .getStorage()
+                .remove(keys.map((key) => keyToHex(key)));
               return { deleted: keys.length };
             })()
           : await assetStorageManager.deleteAssetKeys(keys, target);
       if (
         target === "s3" ||
-        (target === "active" && assetStorage.type === "s3")
+        (target === "active" &&
+          assetStorageManager.getStorage().type === "s3")
       ) {
         await removeAssetCatalogKeys(deriveCatalogDeleteKeys(keys));
       }
@@ -8478,7 +8452,8 @@ app.post(
       return;
     }
     try {
-      if (assetStorage.type !== "s3" && assetStorage.type !== "azuresql") {
+      const storage = assetStorageManager.getStorage();
+      if (storage.type !== "s3" && storage.type !== "azuresql") {
         res.status(400).send({
           error: "Remote storage (S3 or Azure SQL) is not currently active.",
         });
@@ -8488,14 +8463,14 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await assetStorage.migrateFromLocal(
+      const result = await storage.migrateFromLocal(
         savePath,
         (progress) => {
           res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
         },
       );
 
-      if (assetStorage.type === "s3" && canUseAssetCatalog()) {
+      if (storage.type === "s3" && canUseAssetCatalog()) {
         await resyncAssetCatalogFull().catch((error) => {
           console.warn(
             "[asset-catalog] Post-migration catalog resync failed:",
@@ -8527,7 +8502,8 @@ app.post(
       return;
     }
     try {
-      if (assetStorage.type !== "s3" && assetStorage.type !== "azuresql") {
+      const storage = assetStorageManager.getStorage();
+      if (storage.type !== "s3" && storage.type !== "azuresql") {
         res.status(400).send({
           error: "Remote storage (S3 or Azure SQL) is not currently active.",
         });
@@ -8537,7 +8513,7 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await assetStorage.rollbackToLocal(
+      const result = await storage.rollbackToLocal(
         savePath,
         (progress) => {
           res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
@@ -8565,7 +8541,8 @@ app.post(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
 
-    if (assetStorage.type !== "s3" && assetStorage.type !== "azuresql") {
+    const storage = assetStorageManager.getStorage();
+    if (storage.type !== "s3" && storage.type !== "azuresql") {
       res.status(400).send({
         error: "Remote storage (S3 or Azure SQL) is not currently active",
       });
@@ -8577,7 +8554,7 @@ app.post(
     res.setHeader("Connection", "keep-alive");
 
     try {
-      const result = await assetStorage.generateMissingThumbnails(
+      const result = await storage.generateMissingThumbnails(
         (progress) => {
           res.write(JSON.stringify(progress) + "\n");
         },
@@ -8643,7 +8620,7 @@ app.get("/api/read", authenticatedRouteLimiter, async (req, res, next) => {
         return;
       }
     } else {
-      storage = assetStorage;
+      storage = assetStorageManager.getStorage();
     }
     const result =
       useThumb && typeof storage.readThumbnail === "function"
@@ -8734,7 +8711,7 @@ app.get("/api/remove", authenticatedRouteLimiter, async (req, res, next) => {
   }
 
   try {
-    await assetStorage.remove(filePaths);
+    await assetStorageManager.getStorage().remove(filePaths);
     await removeAssetCatalogKeys(
       deriveCatalogDeleteKeys(
         filePaths.map((filePath) =>
@@ -8755,7 +8732,7 @@ app.get("/api/list", authenticatedRouteLimiter, async (req, res, next) => {
     return;
   }
   try {
-    const storage = assetStorage;
+    const storage = assetStorageManager.getStorage();
     const prefix =
       typeof req.query.prefix === "string"
         ? req.query.prefix.slice(0, 1024)
@@ -8787,7 +8764,7 @@ app.post(
   authenticatedRouteLimiter,
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    const storage = assetStorage;
+    const storage = assetStorageManager.getStorage();
     if (storage.type !== "s3") {
       res
         .status(400)
@@ -8845,7 +8822,7 @@ app.post("/api/write", authenticatedRouteLimiter, async (req, res, next) => {
     return;
   }
 
-  const writer = assetStorage.createWriteStream(filePath);
+  const writer = assetStorageManager.getStorage().createWriteStream(filePath);
   try {
     let received = 0;
     for await (const chunk of req) {

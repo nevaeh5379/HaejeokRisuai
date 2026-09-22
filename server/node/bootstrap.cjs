@@ -17,10 +17,6 @@ const storageSyncApplySource = path.join(
   __dirname,
   "sync/storageSyncSqlApply.cts",
 );
-const generationAssetStorageSource = path.join(
-  __dirname,
-  "storage/generationAssetStorage.ts",
-);
 const localBackupImportRecordsSource = path.join(
   __dirname,
   "sync/localBackupImportRecords.ts",
@@ -104,7 +100,6 @@ const needsBuild =
     (isStale(serverSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
       isStale(storageSyncApplySource, generatedStorageSyncApply) ||
-      isStale(generationAssetStorageSource, generatedServer) ||
       isStale(localBackupImportRecordsSource, generatedServer)));
 
 if (needsBuild) {
