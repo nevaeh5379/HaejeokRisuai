@@ -17,6 +17,14 @@ const storageSyncApplySource = path.join(
   __dirname,
   "sync/storageSyncSqlApply.cts",
 );
+const generationAssetStorageSource = path.join(
+  __dirname,
+  "storage/generationAssetStorage.ts",
+);
+const localBackupImportRecordsSource = path.join(
+  __dirname,
+  "sync/localBackupImportRecords.ts",
+);
 const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/assetScope.js"),
@@ -95,7 +103,9 @@ const needsBuild =
   (process.env.NODE_ENV !== "production" &&
     (isStale(serverSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
-      isStale(storageSyncApplySource, generatedStorageSyncApply)));
+      isStale(storageSyncApplySource, generatedStorageSyncApply) ||
+      isStale(generationAssetStorageSource, generatedServer) ||
+      isStale(localBackupImportRecordsSource, generatedServer)));
 
 if (needsBuild) {
   const builder = path.join(root, "tooling/build-node-server.mjs");

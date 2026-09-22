@@ -22,14 +22,19 @@ const packr = new Packr({ useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });
 const gzipAsync = promisify(gzip) as (input: Uint8Array) => Promise<Buffer>;
 
-function decodeCompressedLegacyPayload(payload: Uint8Array): Uint8Array {
+function decodeCompressedLegacyPayload(
+  payload: Uint8Array,
+  maxOutputLength?: number,
+): Uint8Array {
+  const options =
+    maxOutputLength === undefined ? undefined : { maxOutputLength };
   try {
-    return gunzipSync(payload);
+    return gunzipSync(payload, options);
   } catch (gzipError) {
     try {
       // Transitional HaejeokRisu server builds wrote zlib-wrapped deflate
       // bytes behind the same legacy header. Keep those backups readable.
-      return inflateSync(payload);
+      return inflateSync(payload, options);
     } catch {
       throw gzipError;
     }
@@ -70,11 +75,17 @@ export async function encodeLegacyCompatibleBackupDatabase(
   return await encodeLegacyBackupDatabase(compatible);
 }
 
-export function decodeLegacyBackupDatabase(data: Uint8Array): unknown {
+export function decodeLegacyBackupDatabase(
+  data: Uint8Array,
+  options: { maxOutputBytes?: number } = {},
+): unknown {
   const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
   if (buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)) {
     return unpackr.decode(
-      decodeCompressedLegacyPayload(buffer.subarray(COMPRESSED_HEADER.length)),
+      decodeCompressedLegacyPayload(
+        buffer.subarray(COMPRESSED_HEADER.length),
+        options.maxOutputBytes,
+      ),
     );
   }
   if (buffer.subarray(0, RAW_HEADER.length).equals(RAW_HEADER)) {

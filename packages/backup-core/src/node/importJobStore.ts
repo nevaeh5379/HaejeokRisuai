@@ -165,6 +165,13 @@ export class LocalBackupImportJobStore {
   }
 
   remove(id: string): void {
+    const job = this.jobs.get(id);
+    if (job?.resolveCompletion) {
+      job.status = "error";
+      job.error = job.error ?? "Local backup import was cancelled";
+      job.resolveCompletion();
+      job.resolveCompletion = null;
+    }
     this.jobs.delete(id);
   }
 }

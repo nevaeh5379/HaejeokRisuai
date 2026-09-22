@@ -16,7 +16,9 @@
   "include": [
     "server.cts",
     "http/realtimeEvents.cts",
+    "storage/generationAssetStorage.ts",
     "sync/databaseMutations.cts",
+    "sync/localBackupImportRecords.ts",
     "sync/storageSyncSqlApply.cts"
   ]
 }

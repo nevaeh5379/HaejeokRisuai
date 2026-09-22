@@ -46,7 +46,10 @@ process.on("unhandledRejection", (err: any) => {
 const http = require("http");
 const path = require("path");
 const net = require("net");
-const { formatListenHost, resolveListenHost } = require("./http/listenAddress.cjs");
+const {
+  formatListenHost,
+  resolveListenHost,
+} = require("./http/listenAddress.cjs");
 const { isSecurePostgresConfigRequest } = require("./http/requestSecurity.cjs");
 const {
   isLocalBackupImportFinalizePath,
@@ -69,15 +72,23 @@ const {
   prefetchInOrder,
 } = require("./util/bulkReadPrefetch.cjs");
 const { createModelJobManager } = require("./executors/modelJobs.cjs");
-const { createPushNotificationManager } = require("./http/pushNotifications.cjs");
+const {
+  createPushNotificationManager,
+} = require("./http/pushNotifications.cjs");
 const {
   createRealtimeEventHub,
   normalizeClientId,
 } = require("./http/realtimeEvents.cjs");
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
+import { GenerationAssetStorage } from "./storage/generationAssetStorage.js";
+import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
-const { createNodeProviderExecutor } = require("./executors/providerExecutor.cjs");
-const { createHypaMemoryExecutor } = require("./executors/hypaMemoryExecutor.cjs");
+const {
+  createNodeProviderExecutor,
+} = require("./executors/providerExecutor.cjs");
+const {
+  createHypaMemoryExecutor,
+} = require("./executors/hypaMemoryExecutor.cjs");
 const {
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
   encodeLegacyCompatibleBackupDatabase,
@@ -488,8 +499,13 @@ const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
   },
 );
 const localBackupImportJobs = new LocalBackupImportJobStore();
+const localBackupImportStagingRoot = path.join(
+  savePath,
+  "__local_backup_import",
+);
+fsSync.rmSync(localBackupImportStagingRoot, { recursive: true, force: true });
 const localBackupImportStaging = new BackupImportStagingStore(
-  path.join(savePath, "__local_backup_import"),
+  localBackupImportStagingRoot,
 );
 const localBackupImportUploadRoot = path.join(
   savePath,
@@ -724,6 +740,14 @@ async function initializePrimaryStorage(
         if (storage === postgresStorage) {
           setPrimaryStorageRuntime("ready");
           console.log(`[Server startup] ${vendor} storage became ready.`);
+          if (assetStorageInitialized) {
+            void reconcileLocalBackupRestoreState().catch((error) =>
+              console.warn(
+                "[local-backup] Deferred restore reconciliation failed:",
+                error?.message || error,
+              ),
+            );
+          }
         } else if (typeof storage.close === "function") {
           void storage.close().catch(() => {});
         }
@@ -1288,9 +1312,88 @@ async function deactivateBackupStorage() {
 loadBackupStorageFromConfig();
 
 const assetStorageManager = new AssetStorageManager(savePath);
+let assetStorageInitialized = false;
+const assetStorage = new GenerationAssetStorage(
+  savePath,
+  () => assetStorageManager.getStorage(),
+  () => {
+    const storage = assetStorageManager.getStorage();
+    const config = assetStorageManager.config || {};
+    return JSON.stringify({
+      type: storage.type,
+      endpoint: config.endpoint || null,
+      bucket: config.bucket || null,
+      server: config.server || null,
+      database: config.database || null,
+    });
+  },
+);
+const localBackupImportRecords = new LocalBackupImportRecordStore(
+  () => postgresStorage,
+  () => dbVendor,
+  {
+    encodeRecord: encodeStorageSyncValue,
+    decodeRecord: decodeStorageSyncValue,
+    validateRecord: validateStorageSyncSqlRecord,
+  },
+);
+
+function getPrimaryDatabaseIdentity() {
+  let postgresTarget = null;
+  if (dbVendor === "postgres") {
+    try {
+      const target = new URL(postgresStorage.connectionString);
+      postgresTarget = {
+        username: decodeURIComponent(target.username || ""),
+        hostname: target.hostname,
+        port: target.port || "5432",
+        database: decodeURIComponent(target.pathname.replace(/^\//, "")),
+      };
+    } catch {
+      postgresTarget = {
+        target: describeStorageTarget(dbVendor, postgresStorage),
+      };
+    }
+  }
+  const identity =
+    dbVendor === "postgres"
+      ? {
+          vendor: dbVendor,
+          target: postgresTarget,
+        }
+      : dbVendor === "oracle"
+        ? {
+            vendor: dbVendor,
+            user: postgresStorage.user || null,
+            tnsAlias: postgresStorage.tnsAlias || null,
+          }
+        : {
+            vendor: dbVendor,
+            server: postgresStorage.server || null,
+            database: postgresStorage.database || null,
+            user: postgresStorage.user || null,
+            port: postgresStorage.port || null,
+          };
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest("hex");
+}
+
+async function reconcileLocalBackupRestoreState() {
+  if (!assetStorageInitialized || !isPrimaryStorageReady()) return;
+  const summary = await postgresStorage.getStorageSyncSummary();
+  const revision = Number(summary?.revision);
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new Error("SQL storage returned an invalid restore revision");
+  }
+  await assetStorage.reconcile(revision, getPrimaryDatabaseIdentity());
+  await assetStorage.cleanupInactiveGenerations();
+  await localBackupImportRecords.cleanupAll();
+}
 
 function getAssetCatalogSourceId() {
-  const storage = assetStorageManager.getStorage();
+  const storage = assetStorage;
   if (storage.type !== "s3") return null;
   const config =
     assetStorageManager.s3Config || assetStorageManager.config || {};
@@ -1298,9 +1401,8 @@ function getAssetCatalogSourceId() {
     type: "s3",
     endpoint: config.endpoint || "aws",
     bucket: config.bucket || "risuai-assets",
-    // 'full-bucket' = the catalog mirrors every object in the bucket
-    // (assets/, thumbnails/, database/...), not just the assets/ prefix.
-    scope: "full-bucket",
+    scope: "active-generation",
+    generation: assetStorage.activeGeneration,
   });
 }
 
@@ -1357,7 +1459,7 @@ async function resolveCatalogedAssetKeys(
 // catalog row. Used by the explicit resync endpoint, post-migration sync, and
 // the storage explorer's one-time initialization.
 async function resyncAssetCatalogFull() {
-  const storage = assetStorageManager.getStorage();
+  const storage = assetStorage;
   if (storage.type !== "s3" || !assetStorageManager.s3Storage) {
     throw new Error("S3 storage is not active");
   }
@@ -1365,7 +1467,7 @@ async function resyncAssetCatalogFull() {
   if (!sourceId || !canUseAssetCatalog()) {
     throw new Error("SQL asset catalog is unavailable");
   }
-  const fresh = await assetStorageManager.s3Storage.getAssetDetails();
+  const fresh = await assetStorage.getAssetDetails();
   const count = await postgresStorage.replaceAssetCatalog(
     "",
     fresh.assets.map((asset) => ({ key: asset.key, size: asset.size })),
@@ -2974,7 +3076,7 @@ app.get(
     try {
       const summary = await createStorageSyncSummary(
         postgresStorage,
-        assetStorageManager.getStorage(),
+        assetStorage,
       );
       res.send(summary);
     } catch (error) {
@@ -2991,7 +3093,7 @@ app.post(
     try {
       const summary = await createStorageSyncSummary(
         postgresStorage,
-        assetStorageManager.getStorage(),
+        assetStorage,
       );
       const session = storageSyncSessions.create({
         direction: req.body?.direction,
@@ -3065,7 +3167,7 @@ app.post(
       const plan = await storageSyncStaging.planAssets(
         session,
         req.body?.assets,
-        assetStorageManager.getStorage(),
+        assetStorage,
       );
       res.send(plan);
     } catch (error) {
@@ -3297,7 +3399,7 @@ app.post(
           sqlStaging: storageSyncSqlStaging,
           assetStaging: storageSyncStaging,
           sqlStorage: postgresStorage,
-          assetStorage: assetStorageManager.getStorage(),
+          assetStorage,
         }),
       );
     } catch (error) {
@@ -3363,7 +3465,7 @@ app.post(
           session,
           sqlStaging: storageSyncSqlStaging,
           assetStaging: storageSyncStaging,
-          assetStorage: assetStorageManager.getStorage(),
+          assetStorage,
           recoveryStore: storageSyncRecovery,
           gate: storageSyncFinalizeGate,
         },
@@ -3617,7 +3719,7 @@ app.post(
       });
       return;
     }
-    const storage = assetStorageManager.getStorage();
+    const storage = assetStorage;
     if (prefix) {
       const resolved =
         prefix === "assets/" && storage.type === "s3"
@@ -3878,7 +3980,7 @@ async function handleCharxExport(req, res) {
 
     const seenNames = new Set();
     let inlineBytes = 0;
-    const storage = assetStorageManager.getStorage();
+    const storage = assetStorage;
     const entries = requestedEntries.map((entry) => {
       const name = normalizeCharxEntryName(entry?.name);
       if (seenNames.has(name))
@@ -4333,7 +4435,7 @@ async function streamServerLocalBackup(
   options = {},
   onProgress: LocalBackupProgressReporter = () => {},
 ) {
-  const storage = assetStorageManager.getStorage();
+  const storage = assetStorage;
   const writeEntry = async (name, source, size) =>
     await writeServerBackupEntry(res, name, source, size);
 
@@ -4506,17 +4608,34 @@ async function finalizePreparedLocalBackupSql(
   prepared: {
     sourceRevision: number;
     recordCount: number;
-    sqlStaging: ReturnType<typeof createLocalBackupSqlStaging>;
+    sqlStaging?: ReturnType<typeof createLocalBackupSqlStaging>;
+    createSqlStaging?: (client: unknown) => {
+      validate(
+        session: unknown,
+        options?: {
+          onRecord?: (record: unknown, index: number) => Promise<void>;
+        },
+      ): Promise<unknown>;
+    };
+    beforeCommit?: (transactionContext: {
+      nextRevision: number;
+    }) => Promise<void>;
+    afterCommit?: (result: unknown) => Promise<void>;
+    rollback?: () => Promise<void>;
   },
   gateKey: string,
   sourceClientId: unknown,
 ) {
   const release = await storageSyncFinalizeGate.acquire(gateKey);
   try {
-    return await databaseMutations.localBackupStreamFinalize(
+    const result = await databaseMutations.localBackupStreamFinalize(
       { prepared },
       sourceClientId,
     );
+    return result;
+  } catch (error) {
+    await prepared.rollback?.().catch(() => {});
+    throw error;
   } finally {
     release?.();
   }
@@ -4627,45 +4746,125 @@ function sendLocalBackupImportError(res, error) {
   return sendLocalBackupDatabaseStreamError(res, error);
 }
 
-async function writeImportedAsset(key, filePath, size) {
-  const storage = assetStorageManager.getStorage();
-  if (typeof storage.writeFromPath !== "function") {
-    throw new Error("Active asset storage cannot import staged backup files");
-  }
-  await storage.writeFromPath(keyToHex(key), filePath);
-  await upsertAssetCatalogKey(key, size);
-}
-
-async function applyPreparedLocalBackupDatabase(prepared, sourceClientId) {
-  const staged = {
-    sourceRevision: prepared.sourceRevision,
-    recordCount: prepared.recordCount,
-    sqlStaging: createLocalBackupSqlStaging(
-      prepared.filePath,
-      prepared.recordCount,
-      prepared.sourceRevision,
-    ),
-  };
-  const result = await finalizePreparedLocalBackupSql(
-    staged,
-    `local-backup-import:${prepared.filePath}`,
-    sourceClientId,
-  );
-  return {
-    revision: result.revision,
-    recordCount: prepared.recordCount,
-  };
-}
-
 const localBackupImportService = new LocalBackupImportService(
   localBackupImportJobs,
   localBackupImportStaging,
   {
-    writeColdStorage: async (key, value) =>
-      await postgresStorage.upsertColdStorage(key, value),
-    writeAsset: writeImportedAsset,
-    encodeDatabaseRecord: encodeStorageSyncValue,
-    applyPreparedDatabase: applyPreparedLocalBackupDatabase,
+    async beginRestore(id) {
+      await assetStorage.discardGeneration(id);
+      await localBackupImportRecords.cleanup(id);
+      let sequence = 0;
+      let completed = false;
+      let activationStarted = false;
+
+      return {
+        async stageDatabaseRecords(records) {
+          sequence = await localBackupImportRecords.append(
+            id,
+            sequence,
+            records,
+          );
+        },
+        async stageColdStorage(key, value) {
+          sequence = await localBackupImportRecords.append(id, sequence, [
+            { type: "cold-storage", key, value },
+          ]);
+        },
+        async openAsset(key, size) {
+          return await assetStorage.openGenerationWriter(id, key, size);
+        },
+        async complete(prepared, sourceClientId) {
+          const stagedRecordCount = sequence;
+          let databaseCommitted = false;
+          let previousGeneration: string | null = null;
+          const staged = {
+            sourceRevision: prepared.sourceRevision,
+            recordCount: stagedRecordCount,
+            createSqlStaging: (client) =>
+              localBackupImportRecords.createSqlStaging(
+                id,
+                client,
+                stagedRecordCount,
+                prepared.sourceRevision,
+              ),
+            beforeCommit: async (transactionContext) => {
+              await assetStorage.beginActivation(
+                id,
+                transactionContext.nextRevision,
+                getPrimaryDatabaseIdentity(),
+              );
+              activationStarted = true;
+            },
+            afterCommit: async (result) => {
+              databaseCommitted = true;
+              try {
+                previousGeneration = await assetStorage.commitActivation(
+                  id,
+                  Number((result as { revision?: unknown }).revision),
+                );
+              } catch (error) {
+                console.warn(
+                  "[local-backup] Database committed but asset generation journal finalization failed; startup reconciliation will finish it:",
+                  error?.message || error,
+                );
+              }
+              activationStarted = false;
+            },
+            rollback: async () => {
+              if (activationStarted && !databaseCommitted) {
+                await assetStorage.rollbackActivation(id);
+                activationStarted = false;
+              }
+            },
+          };
+          try {
+            const result = await finalizePreparedLocalBackupSql(
+              staged,
+              `local-backup-import:${id}`,
+              sourceClientId,
+            );
+            completed = true;
+            await localBackupImportRecords
+              .cleanup(id)
+              .catch((error) =>
+                console.warn(
+                  "[local-backup] Committed restore-record cleanup failed:",
+                  error?.message || error,
+                ),
+              );
+            void assetStorage
+              .cleanupPrevious(previousGeneration)
+              .catch((error) =>
+                console.warn(
+                  "[local-backup] Previous asset generation cleanup failed:",
+                  error?.message || error,
+                ),
+              );
+            return {
+              revision: result.revision,
+              recordCount: prepared.databaseRecordCount,
+            };
+          } catch (error) {
+            if (activationStarted && !databaseCommitted) {
+              await assetStorage.rollbackActivation(id).catch(() => {});
+              activationStarted = false;
+            }
+            throw error;
+          }
+        },
+        async abort() {
+          if (completed) return;
+          if (activationStarted) {
+            await assetStorage.rollbackActivation(id).catch(() => {});
+            activationStarted = false;
+          }
+          await Promise.allSettled([
+            assetStorage.discardGeneration(id),
+            localBackupImportRecords.cleanup(id),
+          ]);
+        },
+      };
+    },
   },
   localBackupImportUploads,
 );
@@ -4884,7 +5083,7 @@ app.post(
       return;
     }
 
-    const storage = assetStorageManager.getStorage();
+    const storage = assetStorage;
     const receivingFiles = new Map();
     const targetPaths = new Set();
     let pending = Buffer.alloc(0);
@@ -5175,6 +5374,7 @@ async function replacePrimaryStorageConfiguration(
   dbVendor = vendor;
   storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
   setPrimaryStorageRuntime("ready");
+  await reconcileLocalBackupRestoreState();
   if (typeof previousStorage.close === "function") {
     try {
       await previousStorage.close();
@@ -5241,6 +5441,13 @@ app.post(
         error:
           "PostgreSQL configuration changes require HTTPS or a localhost connection",
         code: "postgres_secure_transport_required",
+      });
+      return;
+    }
+    if (localBackupImportService.hasActiveImports()) {
+      res.status(409).send({
+        error: "Database storage cannot change during a local backup import",
+        code: "local_backup_import_active",
       });
       return;
     }
@@ -5433,6 +5640,7 @@ app.post(
         dbVendor,
         `retry ${dbVendor} storage connection`,
       );
+      await reconcileLocalBackupRestoreState();
       const response = getDbConfigResponse();
       try {
         const state = await postgresStorage.getState();
@@ -5469,6 +5677,13 @@ app.post(
         error:
           "DB configuration changes require HTTPS or a localhost connection",
         code: "secure_transport_required",
+      });
+      return;
+    }
+    if (localBackupImportService.hasActiveImports()) {
+      res.status(409).send({
+        error: "Database storage cannot change during a local backup import",
+        code: "local_backup_import_active",
       });
       return;
     }
@@ -8023,6 +8238,13 @@ app.post(
     if (!(await checkAuth(req, res))) {
       return;
     }
+    if (localBackupImportService.hasActiveImports()) {
+      res.status(409).send({
+        error: "Asset storage cannot change during a local backup import",
+        code: "local_backup_import_active",
+      });
+      return;
+    }
     try {
       const body = req.body || {};
       const updated = await assetStorageManager.setConfig(body);
@@ -8099,7 +8321,7 @@ app.get("/api/s3-stats", authenticatedRouteLimiter, async (req, res, next) => {
     return;
   }
   try {
-    const stats = await assetStorageManager.getStorage().getStats();
+    const stats = await assetStorage.getStats();
     res.send(stats);
   } catch (error) {
     next(error);
@@ -8119,6 +8341,12 @@ app.get(
       const summary = await assetStorageManager.getSummary({
         skipS3Stats: true,
       });
+      const activeStats = await assetStorage.getStats();
+      if (assetStorage.type === "fs") {
+        summary.localFs = { ...summary.localFs, ...activeStats };
+      } else if (assetStorage.type === "azuresql" && summary.azuresql) {
+        summary.azuresql = { ...summary.azuresql, ...activeStats };
+      }
       if (summary.s3 && canUseAssetCatalog()) {
         try {
           const sourceId = getAssetCatalogSourceId();
@@ -8157,8 +8385,7 @@ app.get(
     }
     try {
       const target = req.query.target || "active";
-      const effectiveType =
-        target === "active" ? assetStorageManager.getStorage().type : target;
+      const effectiveType = target === "active" ? assetStorage.type : target;
       if (effectiveType === "s3") {
         if (!canUseAssetCatalog()) {
           res.status(503).send({
@@ -8183,7 +8410,10 @@ app.get(
         });
         return;
       }
-      const details = await assetStorageManager.getAssetDetails(target);
+      const details =
+        target === "active"
+          ? await assetStorage.getAssetDetails()
+          : await assetStorageManager.getAssetDetails(target);
       res.send({ ...details, listSource: details.listSource || "storage" });
     } catch (error) {
       next(error);
@@ -8204,10 +8434,16 @@ app.post(
         res.status(400).send({ error: "keys must be an array of asset keys" });
         return;
       }
-      const result = await assetStorageManager.deleteAssetKeys(keys, target);
+      const result =
+        target === "active"
+          ? await (async () => {
+              await assetStorage.remove(keys.map((key) => keyToHex(key)));
+              return { deleted: keys.length };
+            })()
+          : await assetStorageManager.deleteAssetKeys(keys, target);
       if (
         target === "s3" ||
-        (target === "active" && assetStorageManager.getStorage().type === "s3")
+        (target === "active" && assetStorage.type === "s3")
       ) {
         await removeAssetCatalogKeys(deriveCatalogDeleteKeys(keys));
       }
@@ -8242,10 +8478,7 @@ app.post(
       return;
     }
     try {
-      if (
-        assetStorageManager.getStorage().type !== "s3" &&
-        assetStorageManager.getStorage().type !== "azuresql"
-      ) {
+      if (assetStorage.type !== "s3" && assetStorage.type !== "azuresql") {
         res.status(400).send({
           error: "Remote storage (S3 or Azure SQL) is not currently active.",
         });
@@ -8255,16 +8488,14 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await assetStorageManager
-        .getStorage()
-        .migrateFromLocal(savePath, (progress) => {
+      const result = await assetStorage.migrateFromLocal(
+        savePath,
+        (progress) => {
           res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
-        });
+        },
+      );
 
-      if (
-        assetStorageManager.getStorage().type === "s3" &&
-        canUseAssetCatalog()
-      ) {
+      if (assetStorage.type === "s3" && canUseAssetCatalog()) {
         await resyncAssetCatalogFull().catch((error) => {
           console.warn(
             "[asset-catalog] Post-migration catalog resync failed:",
@@ -8296,10 +8527,7 @@ app.post(
       return;
     }
     try {
-      if (
-        assetStorageManager.getStorage().type !== "s3" &&
-        assetStorageManager.getStorage().type !== "azuresql"
-      ) {
+      if (assetStorage.type !== "s3" && assetStorage.type !== "azuresql") {
         res.status(400).send({
           error: "Remote storage (S3 or Azure SQL) is not currently active.",
         });
@@ -8309,11 +8537,12 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await assetStorageManager
-        .getStorage()
-        .rollbackToLocal(savePath, (progress) => {
+      const result = await assetStorage.rollbackToLocal(
+        savePath,
+        (progress) => {
           res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
-        });
+        },
+      );
 
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
@@ -8336,10 +8565,7 @@ app.post(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
 
-    if (
-      assetStorageManager.getStorage().type !== "s3" &&
-      assetStorageManager.getStorage().type !== "azuresql"
-    ) {
+    if (assetStorage.type !== "s3" && assetStorage.type !== "azuresql") {
       res.status(400).send({
         error: "Remote storage (S3 or Azure SQL) is not currently active",
       });
@@ -8351,11 +8577,11 @@ app.post(
     res.setHeader("Connection", "keep-alive");
 
     try {
-      const result = await assetStorageManager
-        .getStorage()
-        .generateMissingThumbnails((progress) => {
+      const result = await assetStorage.generateMissingThumbnails(
+        (progress) => {
           res.write(JSON.stringify(progress) + "\n");
-        });
+        },
+      );
 
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
@@ -8417,7 +8643,7 @@ app.get("/api/read", authenticatedRouteLimiter, async (req, res, next) => {
         return;
       }
     } else {
-      storage = assetStorageManager.getStorage();
+      storage = assetStorage;
     }
     const result =
       useThumb && typeof storage.readThumbnail === "function"
@@ -8508,7 +8734,7 @@ app.get("/api/remove", authenticatedRouteLimiter, async (req, res, next) => {
   }
 
   try {
-    await assetStorageManager.getStorage().remove(filePaths);
+    await assetStorage.remove(filePaths);
     await removeAssetCatalogKeys(
       deriveCatalogDeleteKeys(
         filePaths.map((filePath) =>
@@ -8529,7 +8755,7 @@ app.get("/api/list", authenticatedRouteLimiter, async (req, res, next) => {
     return;
   }
   try {
-    const storage = assetStorageManager.getStorage();
+    const storage = assetStorage;
     const prefix =
       typeof req.query.prefix === "string"
         ? req.query.prefix.slice(0, 1024)
@@ -8561,7 +8787,7 @@ app.post(
   authenticatedRouteLimiter,
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
-    const storage = assetStorageManager.getStorage();
+    const storage = assetStorage;
     if (storage.type !== "s3") {
       res
         .status(400)
@@ -8619,7 +8845,7 @@ app.post("/api/write", authenticatedRouteLimiter, async (req, res, next) => {
     return;
   }
 
-  const writer = assetStorageManager.getStorage().createWriteStream(filePath);
+  const writer = assetStorage.createWriteStream(filePath);
   try {
     let received = 0;
     for await (const chunk of req) {
@@ -9040,7 +9266,11 @@ async function startServer() {
         operation: "Step 2/4 initialize asset storage",
         heartbeatMs: storageStartupSettings.heartbeatMs,
       },
-      () => assetStorageManager.init(),
+      async () => {
+        await assetStorageManager.init();
+        assetStorageInitialized = true;
+        await reconcileLocalBackupRestoreState();
+      },
     );
     await runStartupStage(
       {

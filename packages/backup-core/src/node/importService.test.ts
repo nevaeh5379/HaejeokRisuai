@@ -2,22 +2,21 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { LocalBackupImportJobCompletion } from "../api";
 import { encodeInlayAssetBackup } from "../inlayCodec";
+import type { LegacyBackupSqlRecord } from "../legacyRecords";
+import type { PortableDatabaseStreamManifest } from "../streamFormat";
 import {
   createLocalBackupEntryHeader,
   encodeLegacyBackupDatabase,
 } from "./legacyFormat";
-import { LEGACY_COMPRESSED_DATABASE_HEADER_BYTES } from "../legacyHeaders";
-import type { LegacyBackupSqlRecord } from "../legacyRecords";
-import type { PreparedLocalBackupDatabase } from "./importDatabase";
 import { LocalBackupImportJobStore } from "./importJobStore";
 import { BackupImportStagingStore } from "./importStagingStore";
 import { BackupImportUploadStore } from "./importUploadStore";
 import {
   LocalBackupImportService,
   type LocalBackupImportAdapter,
-  type LocalBackupImportRestoreResult,
+  type LocalBackupImportPreparedState,
+  type LocalBackupImportRestoreSession,
 } from "./importService";
 
 const roots: string[] = [];
@@ -28,54 +27,6 @@ function framed(name: string, data: Uint8Array): Uint8Array {
   result.set(header);
   result.set(data, header.length);
   return result;
-}
-
-function jsonBytes(value: string): Uint8Array {
-  return new TextEncoder().encode(value);
-}
-
-interface CountingAdapterState {
-  coldStorageKeys: string[];
-  assetKeys: string[];
-  inlayEntryNames: string[];
-  databaseApplyCount: number;
-}
-
-async function framedValidDatabaseEntry(): Promise<Uint8Array> {
-  const database = await encodeLegacyBackupDatabase({
-    language: "ko",
-    characters: [],
-  });
-  return framed("database.risudat", database);
-}
-
-function countingAdapter(
-  state: CountingAdapterState,
-): LocalBackupImportAdapter {
-  return {
-    writeColdStorage: async (key: string, _value: unknown): Promise<void> => {
-      state.coldStorageKeys.push(key);
-    },
-    writeAsset: async (
-      key: string,
-      _filePath: string,
-      _size: number,
-    ): Promise<void> => {
-      if (key.startsWith("inlay_")) {
-        state.inlayEntryNames.push(key);
-      } else {
-        state.assetKeys.push(key);
-      }
-    },
-    encodeDatabaseRecord: (record: LegacyBackupSqlRecord): unknown => record,
-    applyPreparedDatabase: async (
-      _prepared: PreparedLocalBackupDatabase,
-      _sourceClientId: unknown,
-    ): Promise<LocalBackupImportRestoreResult> => {
-      state.databaseApplyCount += 1;
-      return { revision: 1, recordCount: 0 };
-    },
-  };
 }
 
 async function* chunked(parts: Uint8Array[], size = 11) {
@@ -91,19 +42,149 @@ async function* chunked(parts: Uint8Array[], size = 11) {
   }
 }
 
-interface ImportServiceStores {
-  root: string;
-  jobs: LocalBackupImportJobStore;
-  staging: BackupImportStagingStore;
+async function nativeDatabaseEntries(
+  records: LegacyBackupSqlRecord[] = [
+    { type: "meta", formatVersion: 1, revision: 4 },
+    { type: "setting", key: "language", value: "ko" },
+  ],
+): Promise<{ fragment: Uint8Array; manifest: Uint8Array }> {
+  const counts: Record<string, number> = {};
+  for (const record of records)
+    counts[record.type] = (counts[record.type] ?? 0) + 1;
+  const fragment = await encodeLegacyBackupDatabase({
+    format: "risu-portable-database-fragment",
+    version: 1,
+    index: 1,
+    records,
+  });
+  const manifest: PortableDatabaseStreamManifest = {
+    format: "risu-portable-database-stream",
+    version: 1,
+    revision: 4,
+    totalFragments: 1,
+    totalRecords: records.length,
+    counts,
+    complete: true,
+  };
+  return {
+    fragment: framed("database.stream/000000000001.risudat", fragment),
+    manifest: framed(
+      "database.stream/manifest.risudat",
+      await encodeLegacyBackupDatabase(manifest),
+    ),
+  };
 }
 
-async function makeStores(id: string): Promise<ImportServiceStores> {
+interface RestoreState {
+  activeAssets: Map<string, number[]>;
+  activeRecords: LegacyBackupSqlRecord[];
+  activeCold: Map<string, unknown>;
+  pendingAssets: Map<string, number[]>;
+  aborted: number;
+  completed: number;
+  writesInFlight: number;
+  maxWritesInFlight: number;
+  failComplete?: boolean;
+}
+
+function restoreState(): RestoreState {
+  return {
+    activeAssets: new Map([["assets/old.png", [9]]]),
+    activeRecords: [{ type: "setting", key: "old", value: true }],
+    activeCold: new Map(),
+    pendingAssets: new Map(),
+    aborted: 0,
+    completed: 0,
+    writesInFlight: 0,
+    maxWritesInFlight: 0,
+  };
+}
+
+function transactionalAdapter(state: RestoreState): LocalBackupImportAdapter {
+  return {
+    async beginRestore(): Promise<LocalBackupImportRestoreSession> {
+      const records: LegacyBackupSqlRecord[] = [];
+      const cold = new Map<string, unknown>();
+      let aborted = false;
+      return {
+        async stageDatabaseRecords(batch): Promise<void> {
+          records.push(...batch);
+        },
+        async stageColdStorage(key, value): Promise<void> {
+          cold.set(key, value);
+        },
+        async openAsset(key, expectedSize) {
+          const bytes: number[] = [];
+          state.pendingAssets.set(key, bytes);
+          return {
+            async write(chunk): Promise<void> {
+              state.writesInFlight++;
+              state.maxWritesInFlight = Math.max(
+                state.maxWritesInFlight,
+                state.writesInFlight,
+              );
+              await Promise.resolve();
+              bytes.push(...chunk);
+              state.writesInFlight--;
+            },
+            async close(): Promise<void> {
+              if (bytes.length !== expectedSize) {
+                throw new Error("mock asset size mismatch");
+              }
+            },
+            async abort(): Promise<void> {
+              state.pendingAssets.delete(key);
+            },
+          };
+        },
+        async complete(
+          prepared: LocalBackupImportPreparedState,
+        ): Promise<{ revision: number; recordCount: number }> {
+          if (state.failComplete) throw new Error("database commit failed");
+          expect(prepared.databaseRecordCount).toBe(records.length);
+          state.activeAssets = new Map(state.pendingAssets);
+          state.activeRecords = [...records];
+          state.activeCold = new Map(cold);
+          state.pendingAssets.clear();
+          state.completed++;
+          return { revision: 7, recordCount: records.length };
+        },
+        async abort(): Promise<void> {
+          if (aborted) return;
+          aborted = true;
+          state.pendingAssets.clear();
+          state.aborted++;
+        },
+      };
+    },
+  };
+}
+
+async function makeService(
+  id: string,
+  adapter: LocalBackupImportAdapter,
+  withUploads = false,
+  idleTimeoutMs?: number,
+): Promise<{
+  root: string;
+  service: LocalBackupImportService;
+  uploads?: BackupImportUploadStore;
+}> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "risu-import-service-"));
   roots.push(root);
+  const uploads = withUploads
+    ? new BackupImportUploadStore(path.join(root, "uploads"))
+    : undefined;
   return {
     root,
-    jobs: new LocalBackupImportJobStore(60_000, () => id),
-    staging: new BackupImportStagingStore(root),
+    uploads,
+    service: new LocalBackupImportService(
+      new LocalBackupImportJobStore(60_000, () => id),
+      new BackupImportStagingStore(path.join(root, "entries")),
+      adapter,
+      uploads,
+      { idleTimeoutMs },
+    ),
   };
 }
 
@@ -115,427 +196,380 @@ afterEach(async () => {
   );
 });
 
-describe("LocalBackupImportService", () => {
-  it("owns import orchestration, progress, and cleanup", async () => {
-    const { root, jobs, staging } = await makeStores("import_001");
-    const order: string[] = [];
-    const observedStages: string[] = [];
-    let service!: LocalBackupImportService;
-
-    const adapter: LocalBackupImportAdapter = {
-      async writeColdStorage(key, value) {
-        order.push("coldStorage");
-        expect(key).toBe("11111111-1111-1111-1111-111111111111");
-        expect(value).toEqual({ character: [] });
-        observedStages.push(service.progress("import_001").progress.stage);
-      },
-      async writeAsset(key, filePath, size) {
-        expect(filePath.startsWith(`${root}${path.sep}`)).toBe(true);
-        expect(filePath).not.toContain("import_001");
-        expect(size).toBeGreaterThan(0);
-        if (key === "assets/a.png") {
-          order.push("assets");
-        } else {
-          expect(key).toBe(
-            "inlay_22222222-2222-2222-2222-222222222222.risuinlay",
-          );
-          order.push("inlays");
-        }
-        observedStages.push(service.progress("import_001").progress.stage);
-      },
-      encodeDatabaseRecord(record) {
-        return record;
-      },
-      async applyPreparedDatabase(prepared, sourceClientId) {
-        order.push("database");
-        expect(sourceClientId).toBe("client-1");
-        expect(prepared.sourceRevision).toBe(0);
-        expect(prepared.recordCount).toBeGreaterThan(0);
-        const records = (await fs.readFile(prepared.filePath, "utf8"))
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line));
-        expect(records[0]).toEqual({
-          type: "meta",
-          formatVersion: 1,
-          revision: 0,
-        });
-        expect(records).toContainEqual({
-          type: "setting",
-          key: "language",
-          value: "ko",
-        });
-        observedStages.push(service.progress("import_001").progress.stage);
-        return { revision: 7, recordCount: prepared.recordCount };
-      },
-    };
-    service = new LocalBackupImportService(jobs, staging, adapter);
+describe("LocalBackupImportService streaming restore", () => {
+  it("streams asset bytes into inactive state and activates DB/assets together", async () => {
+    const state = restoreState();
+    const { root, service } = await makeService(
+      "import_success",
+      transactionalAdapter(state),
+    );
     const job = service.createJob();
-
+    const database = await nativeDatabaseEntries();
     const inlay = await encodeInlayAssetBackup({
       data: "payload",
       ext: "png",
       name: "Inlay",
       type: "image",
     });
-    const database = await encodeLegacyBackupDatabase({
-      language: "ko",
-      characters: [],
-    });
     const parts = [
-      framed("database.risudat", database),
+      database.fragment,
       framed(
         "coldstorage_11111111-1111-1111-1111-111111111111.json",
         new TextEncoder().encode('{"character":[]}'),
       ),
-      framed("assets/a.png", new Uint8Array([4, 5])),
+      framed("assets/a.png", new Uint8Array([1, 2, 3, 4, 5, 6])),
       framed("inlay_22222222-2222-2222-2222-222222222222.risuinlay", inlay),
+      database.manifest,
     ];
-    const totalBytes = parts.reduce((sum, part) => sum + part.length, 0);
+    const total = parts.reduce((sum, part) => sum + part.length, 0);
+
     await expect(
-      service.importStream(job.id, chunked(parts), {
-        totalBytes,
+      service.importStream(job.id, chunked(parts, 3), {
+        totalBytes: total,
         sourceClientId: "client-1",
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       status: "complete",
-      error: null,
       revision: 7,
       recordCount: 2,
     });
 
-    expect(order).toEqual(["coldStorage", "assets", "inlays", "database"]);
-    expect(observedStages).toEqual([
-      "coldStorage",
-      "assets",
-      "inlays",
-      "database",
+    expect(state.completed).toBe(1);
+    expect(state.activeAssets.get("assets/a.png")).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(
+      state.activeAssets.get(
+        "inlay_22222222-2222-2222-2222-222222222222.risuinlay",
+      ),
+    ).toEqual([...inlay]);
+    expect(state.activeRecords).toHaveLength(2);
+    expect(
+      state.activeCold.get("11111111-1111-1111-1111-111111111111"),
+    ).toEqual({
+      character: [],
+    });
+    expect(state.maxWritesInFlight).toBe(1);
+    await expect(fs.readdir(path.join(root, "entries"))).resolves.toEqual([]);
+  });
+
+  it("does not activate streamed assets when a later database fragment is malformed", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_bad_late_db",
+      transactionalAdapter(state),
+    );
+    const job = service.createJob();
+    const database = await nativeDatabaseEntries();
+    const corruptLaterFragment = framed(
+      "database.stream/000000000002.risudat",
+      new Uint8Array([1, 2, 3]),
+    );
+
+    await expect(
+      service.importStream(
+        job.id,
+        chunked([
+          database.fragment,
+          framed("assets/new.png", new Uint8Array([7, 8, 9])),
+          corruptLaterFragment,
+        ]),
+      ),
+    ).rejects.toThrow();
+
+    expect(state.activeAssets).toEqual(new Map([["assets/old.png", [9]]]));
+    expect(state.activeRecords).toEqual([
+      { type: "setting", key: "old", value: true },
     ]);
-    expect(service.progress(job.id)).toEqual({
-      status: "complete",
-      progress: { stage: "finalizing", current: 1, total: 1 },
-    });
-    await expect(fs.readdir(root)).resolves.toEqual([]);
+    expect(state.pendingAssets.size).toBe(0);
+    expect(state.aborted).toBe(1);
   });
 
-  it("settles an error and cleans staging when an adapter fails", async () => {
-    const { root, jobs, staging } = await makeStores("import_002");
-    const adapter: LocalBackupImportAdapter = {
-      async writeColdStorage() {},
-      async writeAsset() {},
-      encodeDatabaseRecord(record) {
-        return record;
-      },
-      async applyPreparedDatabase() {
-        throw new Error("database restore failed");
-      },
-    };
-    const service = new LocalBackupImportService(jobs, staging, adapter);
-    const job = service.createJob();
-    const payload = framed(
-      "database.risudat",
-      await encodeLegacyBackupDatabase({ characters: [] }),
+  it("rolls back inactive state when final database commit fails", async () => {
+    const state = restoreState();
+    state.failComplete = true;
+    const { service } = await makeService(
+      "import_commit_fail",
+      transactionalAdapter(state),
     );
+    const job = service.createJob();
+    const database = await nativeDatabaseEntries();
 
     await expect(
-      service.importStream(job.id, chunked([payload])),
-    ).rejects.toThrow("database restore failed");
-    await expect(service.wait(job.id)).resolves.toEqual({
-      status: "error",
-      error: "database restore failed",
-      revision: undefined,
-      recordCount: undefined,
+      service.importStream(
+        job.id,
+        chunked([
+          database.fragment,
+          framed("assets/new.png", new Uint8Array([1, 2])),
+          database.manifest,
+        ]),
+      ),
+    ).rejects.toThrow("database commit failed");
+    expect(state.activeAssets).toEqual(new Map([["assets/old.png", [9]]]));
+    expect(state.pendingAssets.size).toBe(0);
+    expect(state.aborted).toBe(1);
+  });
+
+  it("restores the legacy aggregate database compatibility path", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_legacy",
+      transactionalAdapter(state),
+    );
+    const job = service.createJob();
+    const legacy = await encodeLegacyBackupDatabase({
+      language: "ko",
+      characters: [],
     });
-    await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
-      code: "ENOENT",
+    await expect(
+      service.importStream(
+        job.id,
+        chunked([framed("database.risudat", legacy)]),
+      ),
+    ).resolves.toMatchObject({ status: "complete", recordCount: 2 });
+    expect(state.activeRecords).toContainEqual({
+      type: "setting",
+      key: "language",
+      value: "ko",
     });
   });
 
-  it("restores a backup after multiple offset upload requests", async () => {
-    const { root, jobs, staging } = await makeStores("import_004");
-    const uploads = new BackupImportUploadStore(path.join(root, "uploads"));
-    const adapter: LocalBackupImportAdapter = {
-      async writeColdStorage() {},
-      async writeAsset() {},
-      encodeDatabaseRecord(record) {
-        return record;
-      },
-      async applyPreparedDatabase(prepared, sourceClientId) {
-        expect(sourceClientId).toBe("client-chunked");
-        expect(prepared.recordCount).toBe(2);
-        return { revision: 12, recordCount: prepared.recordCount };
-      },
-    };
-    const service = new LocalBackupImportService(
-      jobs,
-      staging,
-      adapter,
-      uploads,
+  it("preserves chunk resume and does not parse an accepted replay twice", async () => {
+    const state = restoreState();
+    const { root, service } = await makeService(
+      "import_chunked",
+      transactionalAdapter(state),
+      true,
     );
     const job = service.createJob();
-    const payload = framed(
-      "database.risudat",
-      await encodeLegacyBackupDatabase({
-        language: "ko",
-        characters: [],
-      }),
+    const database = await nativeDatabaseEntries();
+    const payloadParts = [
+      database.fragment,
+      framed("assets/new.png", new Uint8Array([3, 4, 5])),
+      database.manifest,
+    ];
+    const payload = new Uint8Array(
+      payloadParts.reduce((sum, part) => sum + part.length, 0),
     );
+    let cursor = 0;
+    for (const part of payloadParts) {
+      payload.set(part, cursor);
+      cursor += part.length;
+    }
     const split = Math.floor(payload.length / 2);
+    const first = payload.subarray(0, split);
 
+    await service.appendUploadChunk(
+      job.id,
+      0,
+      chunked([first], 5),
+      payload.length,
+    );
+    await service.appendUploadChunk(
+      job.id,
+      0,
+      chunked([first], 7),
+      payload.length,
+    );
+    await service.appendUploadChunk(
+      job.id,
+      split,
+      chunked([payload.subarray(split)], 9),
+      payload.length,
+    );
     await expect(
-      service.appendUploadChunk(
-        job.id,
-        0,
-        chunked([payload.subarray(0, split)], 7),
-        payload.length,
-      ),
-    ).resolves.toMatchObject({
-      receivedBytes: split,
-      totalBytes: payload.length,
-      complete: false,
-    });
-    await expect(
-      service.appendUploadChunk(
-        job.id,
-        split,
-        chunked([payload.subarray(split)], 9),
-        payload.length,
-      ),
-    ).resolves.toMatchObject({
-      receivedBytes: payload.length,
-      complete: true,
-    });
-
-    await expect(
-      service.finalizeUpload(job.id, { sourceClientId: "client-chunked" }),
-    ).resolves.toEqual({
+      Promise.all([
+        service.finalizeUpload(job.id),
+        service.finalizeUpload(job.id),
+      ]),
+    ).resolves.toEqual([
+      expect.objectContaining({ status: "complete", revision: 7 }),
+      expect.objectContaining({ status: "complete", revision: 7 }),
+    ]);
+    await expect(service.finalizeUpload(job.id)).resolves.toMatchObject({
       status: "complete",
-      error: null,
-      revision: 12,
-      recordCount: 2,
+      revision: 7,
     });
+    expect(state.completed).toBe(1);
+    expect(state.activeAssets.get("assets/new.png")).toEqual([3, 4, 5]);
     await expect(fs.readdir(path.join(root, "uploads"))).resolves.toEqual([]);
   });
 
-  it("preserves encrypted-backup rejection and marks the job failed", async () => {
-    const { root, jobs, staging } = await makeStores("import_003");
-    const adapter: LocalBackupImportAdapter = {
-      async writeColdStorage() {},
-      async writeAsset() {},
-      encodeDatabaseRecord(record) {
-        return record;
-      },
-      async applyPreparedDatabase() {
-        throw new Error("database adapter must not run");
-      },
-    };
-    const service = new LocalBackupImportService(jobs, staging, adapter);
+  it("cancellation aborts the current inactive asset writer", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_cancel",
+      transactionalAdapter(state),
+      true,
+    );
     const job = service.createJob();
-    const encrypted = framed(
-      "encryption.risudat",
-      new TextEncoder().encode('{"type":"account","time":1}'),
+    const header = createLocalBackupEntryHeader("assets/large.bin", 100);
+    const partial = new Uint8Array(header.length + 3);
+    partial.set(header);
+    partial.set([1, 2, 3], header.length);
+    await service.appendUploadChunk(
+      job.id,
+      0,
+      chunked([partial]),
+      partial.length + 97,
+    );
+    expect(state.pendingAssets.get("assets/large.bin")).toEqual([1, 2, 3]);
+    await service.cancel(job.id);
+    expect(state.pendingAssets.size).toBe(0);
+    expect(state.activeAssets).toEqual(new Map([["assets/old.png", [9]]]));
+  });
+
+  it("aborts the current destination when finalize finds a truncated entry", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_truncated",
+      transactionalAdapter(state),
+      true,
+    );
+    const job = service.createJob();
+    const header = createLocalBackupEntryHeader("assets/large.bin", 100);
+    const partial = new Uint8Array(header.length + 3);
+    partial.set(header);
+    partial.set([1, 2, 3], header.length);
+    await service.appendUploadChunk(
+      job.id,
+      0,
+      chunked([partial]),
+      partial.length,
+    );
+
+    await expect(service.finalizeUpload(job.id)).rejects.toThrow(
+      "incomplete entry",
+    );
+    expect(state.pendingAssets.size).toBe(0);
+    expect(state.aborted).toBe(1);
+    expect(state.activeAssets).toEqual(new Map([["assets/old.png", [9]]]));
+  });
+
+  it("expires an abandoned resumable upload and cleans inactive state", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_idle",
+      transactionalAdapter(state),
+      true,
+      10,
+    );
+    const job = service.createJob();
+    const header = createLocalBackupEntryHeader("assets/large.bin", 100);
+    const partial = new Uint8Array(header.length + 3);
+    partial.set(header);
+    partial.set([1, 2, 3], header.length);
+    await service.appendUploadChunk(
+      job.id,
+      0,
+      chunked([partial]),
+      partial.length + 97,
+    );
+
+    await expect.poll(() => state.aborted).toBe(1);
+    expect(state.pendingAssets.size).toBe(0);
+    expect(() => service.progress(job.id)).toThrow("not found or expired");
+  });
+
+  it("bounds whole-save import concurrency to one active stream", async () => {
+    const state = restoreState();
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "risu-import-service-"),
+    );
+    roots.push(root);
+    let id = 0;
+    const service = new LocalBackupImportService(
+      new LocalBackupImportJobStore(60_000, () => `import_limit_${++id}`),
+      new BackupImportStagingStore(path.join(root, "entries")),
+      transactionalAdapter(state),
+      new BackupImportUploadStore(path.join(root, "uploads")),
+    );
+    const first = service.createJob();
+    const second = service.createJob();
+    const header = createLocalBackupEntryHeader("assets/large.bin", 100);
+    await service.appendUploadChunk(
+      first.id,
+      0,
+      chunked([header]),
+      header.length + 100,
     );
 
     await expect(
-      service.importStream(job.id, chunked([encrypted])),
-    ).rejects.toMatchObject({
-      code: "encrypted_backup_unsupported",
-    });
-    await expect(service.wait(job.id)).resolves.toMatchObject({
-      status: "error",
-      error: "Account-encrypted backups are intentionally unsupported.",
-    });
-    await expect(fs.stat(path.join(root, job.id))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  async function runImport(
-    service: LocalBackupImportService,
-    jobId: string,
-    parts: Uint8Array[],
-    expectedError?: RegExp,
-  ): Promise<void> {
-    const importPromise: Promise<LocalBackupImportJobCompletion> =
-      service.importStream(jobId, chunked(parts), {});
-    if (expectedError) {
-      await expect(importPromise).rejects.toThrow(expectedError);
-    } else {
-      await expect(importPromise).rejects.toThrow();
-    }
-    await expect(service.wait(jobId)).resolves.toMatchObject({
-      status: "error",
-    });
-  }
-
-  it("writes nothing when the backup is missing a database entry", async (): Promise<void> => {
-    const { jobs, staging }: ImportServiceStores =
-      await makeStores("import_no_db");
-    const state: CountingAdapterState = {
-      coldStorageKeys: [],
-      assetKeys: [],
-      inlayEntryNames: [],
-      databaseApplyCount: 0,
-    };
-    const service: LocalBackupImportService = new LocalBackupImportService(
-      jobs,
-      staging,
-      countingAdapter(state),
-    );
-    const job: { id: string } = service.createJob();
-
-    await runImport(
-      service,
-      job.id,
-      [
-        framed(
-          "coldstorage_11111111-1111-1111-1111-111111111111.json",
-          jsonBytes('{"character":[]}'),
-        ),
-      ],
-      /Backup does not contain a database entry/,
-    );
-
-    expect(state.coldStorageKeys).toHaveLength(0);
-    expect(state.assetKeys).toHaveLength(0);
-    expect(state.inlayEntryNames).toHaveLength(0);
-    expect(state.databaseApplyCount).toBe(0);
-  });
-
-  it("writes nothing when the staged database payload cannot be decoded", async (): Promise<void> => {
-    const { jobs, staging }: ImportServiceStores =
-      await makeStores("import_bad_db");
-    const state: CountingAdapterState = {
-      coldStorageKeys: [],
-      assetKeys: [],
-      inlayEntryNames: [],
-      databaseApplyCount: 0,
-    };
-    const service: LocalBackupImportService = new LocalBackupImportService(
-      jobs,
-      staging,
-      countingAdapter(state),
-    );
-    const job: { id: string } = service.createJob();
-
-    const corruptDatabase: Uint8Array = new Uint8Array([
-      ...LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
-      ...new TextEncoder().encode("not gzip"),
-    ]);
-    await runImport(service, job.id, [
-      framed(
-        "coldstorage_11111111-1111-1111-1111-111111111111.json",
-        jsonBytes('{"character":[]}'),
+      service.appendUploadChunk(
+        second.id,
+        0,
+        chunked([new Uint8Array([1])]),
+        1,
       ),
-      framed("database.risudat", corruptDatabase),
-    ]);
+    ).rejects.toThrow("already active");
+    expect(service.hasActiveImports()).toBe(true);
 
-    expect(state.coldStorageKeys).toHaveLength(0);
-    expect(state.assetKeys).toHaveLength(0);
-    expect(state.inlayEntryNames).toHaveLength(0);
-    expect(state.databaseApplyCount).toBe(0);
+    await service.cancel(first.id);
+    await service.cancel(second.id);
+    expect(service.hasActiveImports()).toBe(false);
   });
 
-  it("writes nothing when a later cold storage payload is malformed", async (): Promise<void> => {
-    const { jobs, staging }: ImportServiceStores =
-      await makeStores("import_bad_cold");
-    const state: CountingAdapterState = {
-      coldStorageKeys: [],
-      assetKeys: [],
-      inlayEntryNames: [],
-      databaseApplyCount: 0,
+  it("waits for an in-flight commit instead of rolling it back", async () => {
+    const state = restoreState();
+    const base = transactionalAdapter(state);
+    let announceCommit!: () => void;
+    let releaseCommit!: () => void;
+    const commitStarted = new Promise<void>((resolve) => {
+      announceCommit = resolve;
+    });
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const adapter: LocalBackupImportAdapter = {
+      async beginRestore(id) {
+        const restore = await base.beginRestore(id);
+        return {
+          ...restore,
+          async complete(prepared, sourceClientId) {
+            announceCommit();
+            await commitGate;
+            return await restore.complete(prepared, sourceClientId);
+          },
+        };
+      },
     };
-    const service: LocalBackupImportService = new LocalBackupImportService(
-      jobs,
-      staging,
-      countingAdapter(state),
-    );
-    const job: { id: string } = service.createJob();
-
-    await runImport(
-      service,
+    const { service } = await makeService("import_commit_cancel", adapter);
+    const job = service.createJob();
+    const database = await nativeDatabaseEntries();
+    const importing = service.importStream(
       job.id,
-      [
-        await framedValidDatabaseEntry(),
-        framed(
-          "coldstorage_11111111-1111-1111-1111-111111111111.json",
-          jsonBytes('{"character":[]}'),
-        ),
-        framed(
-          "coldstorage_22222222-2222-2222-2222-222222222222.json",
-          jsonBytes("not json"),
-        ),
-      ],
-      /is not valid JSON/,
+      chunked([
+        database.fragment,
+        framed("assets/new.png", new Uint8Array([4, 5, 6])),
+        database.manifest,
+      ]),
     );
+    await commitStarted;
+    const cancelling = service.cancel(job.id);
+    releaseCommit();
 
-    expect(state.coldStorageKeys).toHaveLength(0);
-    expect(state.assetKeys).toHaveLength(0);
-    expect(state.inlayEntryNames).toHaveLength(0);
-    expect(state.databaseApplyCount).toBe(0);
+    await expect(importing).resolves.toMatchObject({
+      status: "complete",
+      revision: 7,
+    });
+    await expect(cancelling).resolves.toBeUndefined();
+    expect(state.completed).toBe(1);
+    expect(state.aborted).toBe(0);
+    expect(state.activeAssets.get("assets/new.png")).toEqual([4, 5, 6]);
   });
 
-  it("writes nothing when a staged inlay payload is malformed", async (): Promise<void> => {
-    const { jobs, staging }: ImportServiceStores =
-      await makeStores("import_bad_inlay");
-    const state: CountingAdapterState = {
-      coldStorageKeys: [],
-      assetKeys: [],
-      inlayEntryNames: [],
-      databaseApplyCount: 0,
-    };
-    const service: LocalBackupImportService = new LocalBackupImportService(
-      jobs,
-      staging,
-      countingAdapter(state),
+  it("rejects a missing database without activating pending assets", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_no_db",
+      transactionalAdapter(state),
     );
-    const job: { id: string } = service.createJob();
-
-    await runImport(
-      service,
-      job.id,
-      [
-        await framedValidDatabaseEntry(),
-        framed(
-          "inlay_22222222-2222-2222-2222-222222222222.risuinlay",
-          new Uint8Array([1]),
-        ),
-      ],
-      /Invalid inlay backup payload/,
-    );
-
-    expect(state.coldStorageKeys).toHaveLength(0);
-    expect(state.assetKeys).toHaveLength(0);
-    expect(state.inlayEntryNames).toHaveLength(0);
-    expect(state.databaseApplyCount).toBe(0);
-  });
-
-  it("writes nothing when an asset entry name cannot be resolved", async (): Promise<void> => {
-    const { jobs, staging }: ImportServiceStores =
-      await makeStores("import_bad_asset");
-    const state: CountingAdapterState = {
-      coldStorageKeys: [],
-      assetKeys: [],
-      inlayEntryNames: [],
-      databaseApplyCount: 0,
-    };
-    const service: LocalBackupImportService = new LocalBackupImportService(
-      jobs,
-      staging,
-      countingAdapter(state),
-    );
-    const job: { id: string } = service.createJob();
-
-    await runImport(
-      service,
-      job.id,
-      [await framedValidDatabaseEntry(), framed("assets", new Uint8Array([1]))],
-      /Invalid backup asset path: assets/,
-    );
-
-    expect(state.coldStorageKeys).toHaveLength(0);
-    expect(state.assetKeys).toHaveLength(0);
-    expect(state.inlayEntryNames).toHaveLength(0);
-    expect(state.databaseApplyCount).toBe(0);
+    const job = service.createJob();
+    await expect(
+      service.importStream(
+        job.id,
+        chunked([framed("assets/new.png", new Uint8Array([1]))]),
+      ),
+    ).rejects.toThrow("does not contain a database");
+    expect(state.activeAssets).toEqual(new Map([["assets/old.png", [9]]]));
+    expect(state.aborted).toBe(1);
   });
 });

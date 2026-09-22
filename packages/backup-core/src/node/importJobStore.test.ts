@@ -39,4 +39,19 @@ describe("LocalBackupImportJobStore", () => {
       LocalBackupImportJobError,
     );
   });
+
+  it("releases an in-flight waiter when a job is cancelled", async () => {
+    const store = new LocalBackupImportJobStore(60_000, () => "import-3");
+    const job = store.create();
+    store.beginUpload(job.id, 1000);
+    const waiting = store.wait(job.id);
+
+    store.remove(job.id);
+
+    await expect(waiting).resolves.toMatchObject({
+      status: "error",
+      error: "Local backup import was cancelled",
+    });
+    expect(() => store.progress(job.id)).toThrow("not found or expired");
+  });
 });
