@@ -250,5 +250,82 @@ describe.each(["postgres", "azure", "oracle"] as const)(
       await store.cleanup(id);
       expect(rows).toEqual([]);
     });
+
+    it("stages NUL-bearing records losslessly (jsonb rejects raw \\u0000)", async () => {
+      const rows: StoredRow[] = [];
+      const storage =
+        vendor === "postgres"
+          ? postgresStorage(rows)
+          : vendor === "azure"
+            ? azureStorage(rows)
+            : oracleStorage(rows);
+      const store = new LocalBackupImportRecordStore(
+        () => storage,
+        () => vendor,
+        adapter,
+      );
+      const id = `restore_nul_${vendor}`;
+      const nulMessage = {
+        type: "message" as const,
+        chatId: "chat-1",
+        id: "msg-1",
+        position: 0,
+        originBranchId: "branch-1",
+        data: {
+          role: "user",
+          data: "before\0binary",
+          ["key\0suffix"]: "v\0v",
+        },
+      };
+      let sequence = await store.append(id, 0, [
+        { type: "meta", formatVersion: 1, revision: 7 },
+      ]);
+      sequence = await store.append(id, sequence, [nulMessage]);
+      expect(sequence).toBe(2);
+
+      // The PostgreSQL payload is cast to ::jsonb on insert, and jsonb cannot
+      // store NUL bytes. The payload must therefore be free of raw \u0000
+      // escapes (wrapped losslessly instead) before it reaches the cast.
+      for (const row of rows) {
+        if (row.restoreId === id) {
+          expect(row.payload).not.toContain("\\u0000");
+        }
+      }
+
+      const dynamicStorage = storage as unknown as {
+        pool?: { getConnection?: () => Promise<unknown> };
+        getPool?: () => Promise<unknown>;
+      };
+      const client =
+        vendor === "azure"
+          ? await dynamicStorage.getPool!()
+          : vendor === "oracle"
+            ? await dynamicStorage.pool!.getConnection!()
+            : dynamicStorage.pool;
+      const staging = store.createSqlStaging(id, client, 2, 7);
+      const decoded: Array<Record<string, unknown>> = [];
+      await expect(
+        staging.validate(
+          {},
+          {
+            async onRecord(record) {
+              decoded.push(record as unknown as Record<string, unknown>);
+            },
+          },
+        ),
+      ).resolves.toMatchObject({ recordCount: 2, sourceRevision: 7 });
+
+      // NUL round-trips losslessly through staging + validate.
+      expect(decoded[1]).toEqual(nulMessage);
+      expect((decoded[1].data as Record<string, unknown>).data).toBe(
+        "before\0binary",
+      );
+      expect(
+        (decoded[1].data as Record<string, unknown>)["key\0suffix"],
+      ).toBe("v\0v");
+
+      await store.cleanup(id);
+      expect(rows).toEqual([]);
+    });
   },
 );

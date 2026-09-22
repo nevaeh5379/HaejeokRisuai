@@ -99,6 +99,33 @@ export class LocalBackupImportRecordStore {
     private readonly adapter: RestoreRecordAdapter,
   ) {}
 
+  /**
+   * Serializes a staged record to JSONB-safe text. PostgreSQL jsonb cannot
+   * store NUL bytes, so a `\u0000` escape in the payload would make the
+   * `payload::jsonb` cast fail with "unsupported Unicode escape sequence".
+   * NUL-bearing strings/keys are wrapped losslessly (UTF-16LE + base64) via
+   * the shared PostgreSQL JSON codec before the cast; `decodePayload`
+   * reverses it on read. The order mirrors encode = pgJson(encodeRecord) and
+   * decode = decodeRecord(pgJson^-1), applied LIFO.
+   */
+  private encodePayload(record: RestoreRecord): string {
+    const { encodePostgresJsonValue } = require(
+      "../storage/postgres/postgresJsonCodec.cjs",
+    );
+    return JSON.stringify(
+      encodePostgresJsonValue(this.adapter.encodeRecord(record)),
+    );
+  }
+
+  private decodePayload(payload: string): RestoreRecord {
+    const { decodePostgresJsonValue } = require(
+      "../storage/postgres/postgresJsonCodec.cjs",
+    );
+    return this.adapter.decodeRecord(
+      decodePostgresJsonValue(JSON.parse(payload)),
+    );
+  }
+
   private async postgresPool(): Promise<PostgresClient> {
     const pool = this.getStorage().pool;
     if (!pool?.query)
@@ -202,11 +229,13 @@ export class LocalBackupImportRecordStore {
     const rows: StoredRow[] = records.map((record, index) => ({
       sequence: sequence + index,
       tier: recordTier(record),
-      payload: JSON.stringify(this.adapter.encodeRecord(record)),
+      payload: this.encodePayload(record),
     }));
     const vendor = this.getVendor();
     if (vendor === "postgres") {
       const pool = await this.postgresPool();
+      // The payload is NUL-safe (see encodePayload), so the ::jsonb cast is
+      // safe: a raw \u0000 escape would otherwise make jsonb reject the row.
       await pool.query(
         `INSERT INTO system.local_backup_import_records
            (restore_id, sequence_no, tier, payload)
@@ -364,8 +393,7 @@ export class LocalBackupImportRecordStore {
           const rows = await this.readPage(client, id, lastTier, lastSequence);
           if (rows.length === 0) break;
           for (const row of rows) {
-            const encoded: unknown = JSON.parse(row.payload);
-            const record = this.adapter.decodeRecord(encoded);
+            const record = this.decodePayload(row.payload);
             this.adapter.validateRecord(record, recordCount, state);
             counts[record.type] = (counts[record.type] ?? 0) + 1;
             await options.onRecord?.(record, recordCount);
