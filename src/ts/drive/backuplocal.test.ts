@@ -178,6 +178,58 @@ describe("formatRemoteBackupRestoreDetail", () => {
     expect(detail).toContain("1.0 KiB / 2.0 KiB");
     expect(detail).toContain("Sending backup");
   });
+
+  it("hides entry names while reading the backup stream", () => {
+    const detail: string = formatRemoteBackupRestoreDetail({
+      stage: "reading",
+      current: 1024,
+      total: 2048,
+      detail: "assets/6b22abf6.png",
+    });
+
+    expect(detail).toContain("1.0 KiB / 2.0 KiB");
+    expect(detail).not.toContain("assets/6b22abf6.png");
+  });
+
+  it("shows counts without entry names for item restore stages", () => {
+    const stages = [
+      ["coldStorage", "coldstorage_11111111-1111-1111-1111-111111111111.json"],
+      ["assets", "assets/6b22abf6.png"],
+      ["inlays", "inlay_11111111-1111-1111-1111-111111111111.risuinlay"],
+    ] as const;
+
+    for (const [stage, entryName] of stages) {
+      const detail: string = formatRemoteBackupRestoreDetail({
+        stage,
+        current: 7,
+        total: 10,
+        detail: entryName,
+      });
+
+      expect(detail).toContain("7 / 10");
+      expect(detail).not.toContain(entryName);
+    }
+  });
+
+  it("hides database fragment names but keeps human-readable database detail", () => {
+    expect(
+      formatRemoteBackupRestoreDetail({
+        stage: "database",
+        current: 40,
+        total: 100,
+        detail: "database.stream.000001.risudat",
+      }),
+    ).toBe("40 / 100");
+
+    expect(
+      formatRemoteBackupRestoreDetail({
+        stage: "database",
+        current: 100,
+        total: 100,
+        detail: "Applying database",
+      }),
+    ).toBe("Applying database");
+  });
 });
 
 describe("remote backup storage routing", () => {

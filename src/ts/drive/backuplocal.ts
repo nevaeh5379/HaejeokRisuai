@@ -1500,11 +1500,30 @@ async function runLocalBackupRestore<T>(
   });
 }
 
+function isBackupEntryProgressDetail(detail: string): boolean {
+  return (
+    detail.startsWith("assets/") ||
+    detail.startsWith("coldstorage_") ||
+    detail.startsWith("coldstorage/") ||
+    detail.startsWith("inlay_") ||
+    detail.endsWith(".risudat")
+  );
+}
+
+function formatRestoreItemCount(
+  current: number,
+  total: number,
+  label: string,
+): string {
+  return total > 0 ? `${current} / ${total} · ${label}` : label;
+}
+
 export function formatRemoteBackupRestoreDetail(
   progress: LocalBackupImportProgress,
 ): string {
   const current: number = Math.max(0, Number(progress.current) || 0);
   const total: number = Math.max(0, Number(progress.total) || 0);
+  const detail: string = progress.detail ?? "";
 
   switch (progress.stage) {
     case "uploading": {
@@ -1512,14 +1531,38 @@ export function formatRemoteBackupRestoreDetail(
         total > 0
           ? `${formatBackupBytes(current)} / ${formatBackupBytes(total)}`
           : "";
-      return [byteDetail, progress.detail].filter(Boolean).join(" · ");
+      const supplementalDetail: string = isBackupEntryProgressDetail(detail)
+        ? ""
+        : detail;
+      return [byteDetail, supplementalDetail].filter(Boolean).join(" · ");
     }
+    case "reading":
+      return formatLocalBackupReadProgress(detail, current, total);
+    case "coldStorage":
+      return formatRestoreItemCount(
+        current,
+        total,
+        language.localBackupRestoreReadingColdStorage,
+      );
     case "assets":
-      return total > 0
-        ? `${current} / ${total} · ${language.localBackupRestoreReadingAssets}`
-        : language.localBackupRestoreReadingAssets;
-    default:
-      return progress.detail ?? "";
+      return formatRestoreItemCount(
+        current,
+        total,
+        language.localBackupRestoreReadingAssets,
+      );
+    case "inlays":
+      return formatRestoreItemCount(
+        current,
+        total,
+        language.localBackupRestoreReadingInlays,
+      );
+    case "database":
+      if (isBackupEntryProgressDetail(detail)) {
+        return total > 0 ? `${current} / ${total}` : "";
+      }
+      return detail || (total > 0 ? `${current} / ${total}` : "");
+    case "finalizing":
+      return detail;
   }
 }
 
@@ -1548,14 +1591,14 @@ async function restoreNodeLocalBackupSourceUnlocked(
     if (progress.stage === "database") {
       reportLocalBackupRestoreProgress("database", {
         percent: 82 + ratio * 16,
-        detail: progress.detail,
+        detail: formatRemoteBackupRestoreDetail(progress),
       });
       return;
     }
     if (progress.stage === "finalizing") {
       reportLocalBackupRestoreProgress("finalizing", {
         percent: 100,
-        detail: progress.detail,
+        detail: formatRemoteBackupRestoreDetail(progress),
       });
       return;
     }
