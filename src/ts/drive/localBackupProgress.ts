@@ -1,6 +1,8 @@
 import { language } from "src/lang";
 import {
   LOCAL_BACKUP_PROGRESS_STAGES,
+  type LocalBackupImportJobStatus,
+  type LocalBackupImportProgress,
   type LocalBackupProgressStage,
 } from "@risuai/backup-core/api";
 import { classifyBackupEntry } from "@risuai/backup-core/entryPolicy";
@@ -17,6 +19,12 @@ export interface LocalBackupProgressStepState {
   steps: string[];
   currentStep: number;
   currentStepRatio?: number;
+  bars?: LocalBackupProgressBar[];
+}
+
+export interface LocalBackupProgressBar {
+  label: string;
+  progress: number;
 }
 
 export type LocalBackupProgressOutput = (
@@ -34,6 +42,16 @@ export interface LocalBackupProgressReporters {
     stage: LocalBackupRestoreStage,
     input?: BackupProgressInput,
   ): void;
+}
+
+export interface NodeLocalBackupRestoreProgressReporter {
+  start(): void;
+  updateUpload(current: number, total: number): void;
+  updateRemote(
+    progress: LocalBackupImportProgress | undefined,
+    status?: LocalBackupImportJobStatus,
+  ): void;
+  complete(): void;
 }
 
 const EXPORT_RANGES: Record<
@@ -126,6 +144,103 @@ export function createLocalBackupProgressReporters(
         emitProgress(output, view);
       },
     }),
+  };
+}
+
+function boundedProgressRatio(current: number, total: number): number | null {
+  const safeCurrent: number = Math.max(0, Number(current) || 0);
+  const safeTotal: number = Math.max(0, Number(total) || 0);
+  if (safeTotal <= 0) return null;
+  return Math.max(0, Math.min(1, safeCurrent / safeTotal));
+}
+
+/**
+ * Keeps the client upload and server restore lanes independent. Their updates
+ * can arrive out of order while a remote Node restore is running, so each lane
+ * is monotonic and the mascot follows only their monotonic aggregate.
+ */
+export function createNodeLocalBackupRestoreProgressReporter(
+  output: LocalBackupProgressOutput,
+  startPercent = 2,
+): NodeLocalBackupRestoreProgressReporter {
+  let uploadRatio: number = 0;
+  let restoreRatio: number = 0;
+  let completed: boolean = false;
+  let message: string = language.localBackupRestoreReading;
+
+  const emit = (): void => {
+    const aggregateRatio: number = (uploadRatio + restoreRatio) / 2;
+    const percent: number = completed
+      ? 100
+      : startPercent + (99.5 - startPercent) * aggregateRatio;
+    output(message, percent, {
+      steps: RESTORE_STAGES.map(restoreLabel),
+      currentStep: completed ? RESTORE_STAGES.indexOf("finalizing") : 1,
+      currentStepRatio: completed ? 1 : aggregateRatio,
+      bars: [
+        {
+          label: language.localBackupRestoreUploading,
+          progress: uploadRatio * 100,
+        },
+        {
+          label: language.localBackupRestoreProcessing,
+          progress: restoreRatio * 100,
+        },
+      ],
+    });
+  };
+
+  return {
+    start(): void {
+      emit();
+    },
+    updateUpload(current: number, total: number): void {
+      const ratio: number | null = boundedProgressRatio(current, total);
+      if (ratio !== null) uploadRatio = Math.max(uploadRatio, ratio);
+      emit();
+    },
+    updateRemote(
+      progress: LocalBackupImportProgress | undefined,
+      status?: LocalBackupImportJobStatus,
+    ): void {
+      if (status === "complete") {
+        uploadRatio = 1;
+        restoreRatio = 1;
+        completed = true;
+        message = language.localBackupRestoreFinalizing;
+        emit();
+        return;
+      }
+      if (!progress?.stage) return;
+
+      if (progress.stage === "uploading" || progress.stage === "reading") {
+        const ratio: number | null = boundedProgressRatio(
+          progress.current ?? 0,
+          progress.total ?? 0,
+        );
+        if (ratio !== null) restoreRatio = Math.max(restoreRatio, ratio);
+      } else if (progress.stage === "database") {
+        message = language.localBackupRestoreDatabase;
+        const ratio: number | null = boundedProgressRatio(
+          progress.current ?? 0,
+          progress.total ?? 0,
+        );
+        if (ratio === 1) restoreRatio = Math.max(restoreRatio, 0.98);
+      } else if (progress.stage === "finalizing") {
+        message = language.localBackupRestoreFinalizing;
+        restoreRatio = 1;
+      } else {
+        message = language.localBackupRestoreReading;
+      }
+      emit();
+    },
+    complete(): void {
+      uploadRatio = 1;
+      restoreRatio = 1;
+      completed = true;
+      message = language.localBackupRestoreFinalizing;
+      emit();
+    },
   };
 }
 

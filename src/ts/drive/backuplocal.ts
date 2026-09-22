@@ -84,10 +84,7 @@ import {
   streamBackupResponse,
   type LocalBackupSource,
 } from "@risuai/backup-core/importSource";
-import {
-  type LocalBackupImportProgress,
-  type LocalBackupMode as BackupCoreLocalBackupMode,
-} from "@risuai/backup-core/api";
+import { type LocalBackupMode as BackupCoreLocalBackupMode } from "@risuai/backup-core/api";
 import {
   exportNativeBackupAssets,
   exportStoredBackupAssets,
@@ -629,9 +626,11 @@ import {
 } from "@risuai/backup-core/restoreArchive";
 import { createLocalBackupAssetBatchWriter } from "./localBackupAssetRestore";
 import {
+  createNodeLocalBackupRestoreProgressReporter,
   createLocalBackupProgressReporters,
   formatBackupBytes,
   formatLocalBackupReadProgress,
+  type NodeLocalBackupRestoreProgressReporter,
 } from "./localBackupProgress";
 
 interface LocalBackupExportOptions {
@@ -1513,51 +1512,14 @@ async function restoreNodeLocalBackupSourceUnlocked(
   const performance = getLocalBackupPerformance();
   const job = await nodeStorage.backup.createImportJob();
   let keepPolling = true;
-
-  const reportRemoteProgress = (
-    progress: LocalBackupImportProgress | undefined,
-  ) => {
-    if (!progress?.stage) return;
-    const current = Math.max(0, Number(progress.current) || 0);
-    const total = Math.max(0, Number(progress.total) || 0);
-    const ratio = total > 0 ? Math.min(1, current / total) : 0;
-
-    if (progress.stage === "database") {
-      reportLocalBackupRestoreProgress("database", {
-        percent: 82 + ratio * 16,
-        detail: progress.detail,
-      });
-      return;
-    }
-    if (progress.stage === "finalizing") {
-      reportLocalBackupRestoreProgress("finalizing", {
-        percent: 100,
-        detail: progress.detail,
-      });
-      return;
-    }
-
-    const ranges: Partial<
-      Record<LocalBackupImportProgress["stage"], readonly [number, number]>
-    > = {
-      uploading: [uploadStart, 52],
-      reading: [52, 58],
-      coldStorage: [58, 64],
-      assets: [64, 76],
-      inlays: [76, 82],
-    };
-    const range = ranges[progress.stage] ?? [52, 82];
-    const percent = range[0] + ratio * (range[1] - range[0]);
-    const byteDetail =
-      progress.stage === "uploading" && total > 0
-        ? `${formatBackupBytes(current)} / ${formatBackupBytes(total)}`
-        : "";
-    const detail = [byteDetail, progress.detail].filter(Boolean).join(" · ");
-    reportLocalBackupRestoreProgress("reading", {
-      percent,
-      detail,
-    });
-  };
+  const progressReporter: NodeLocalBackupRestoreProgressReporter =
+    createNodeLocalBackupRestoreProgressReporter(
+      (message, progress, stepState): void => {
+        showProgressAlert(message, progress, "backup", stepState);
+      },
+      uploadStart,
+    );
+  progressReporter.start();
 
   const upload = nodeStorage.backup.uploadImportStream(
     job.id,
@@ -1565,18 +1527,14 @@ async function restoreNodeLocalBackupSourceUnlocked(
     file.size,
     {
       onProgress: (state) =>
-        reportRemoteProgress({
-          stage: "uploading",
-          current: state.receivedBytes,
-          total: state.totalBytes,
-        }),
+        progressReporter.updateUpload(state.receivedBytes, state.totalBytes),
     },
   );
   const polling = (async () => {
     while (keepPolling) {
       try {
         const state = await nodeStorage.backup.getImportProgress(job.id);
-        reportRemoteProgress(state.progress);
+        progressReporter.updateRemote(state.progress, state.status);
         if (state.status === "complete" || state.status === "error") break;
       } catch {
         // The upload request remains authoritative. Progress polling is
@@ -1597,7 +1555,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
     throw new Error(completed.error ?? "Local backup import failed");
   }
 
-  reportLocalBackupRestoreProgress("finalizing", { percent: 100 });
+  progressReporter.complete();
   const storage = await getSqlStorage();
   await storage.close?.();
   alertStore.set({
