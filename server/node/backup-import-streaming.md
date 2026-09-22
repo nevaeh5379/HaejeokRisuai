@@ -36,12 +36,11 @@ resumable request (bounded spool)
      -> cold-storage value (one current-entry spool)
         -> vendor SQL restore-record table
      -> asset/inlay
-        -> inactive asset generation writer
+        -> active asset-storage writer
   -> manifest and whole-container validation
   -> finalize gate
      -> SQL replacement transaction
-     -> generation activation journal
-  -> committed database + generation become observable
+  -> committed database becomes observable
 ```
 
 An upload request is durably spooled before it is accepted by the parser. The
@@ -52,8 +51,8 @@ match the accepted request. The server caps a request spool at 8 MiB (the
 shipped client sends 4 MiB requests). Resume state remains process-local, as it
 was before this change; a server restart requires a new import job. An upload
 may pause between accepted request boundaries for up to one hour. After that
-idle window, the parser, current destination writer, inactive generation, and
-vendor restore records are aborted and removed.
+idle window, the parser and current destination writer are aborted, and vendor
+restore records are removed.
 
 Native database fragments are decoded one at a time. Encoded SQL records are
 stored in the configured PostgreSQL, Oracle, or Azure SQL database and replayed
@@ -66,33 +65,27 @@ capped at 64 MiB each (native compressed output is capped at 128 MiB), so a
 malicious header or compression bomb cannot turn "current entry" into an
 unbounded resource commitment.
 
-Assets and inlays are written once to
-`__restore_generations/<restore-id>/<logical-key>`. The generation wrapper maps
-normal reads and writes through the active generation pointer. S3/RustFS uses a
-streaming multipart writer and does not copy temporary objects at activation.
-Local filesystem activation likewise changes only the pointer; it does not
-copy every asset. Inlay metadata validation retains at most 1 MiB while its
-payload streams to the inactive generation.
+Assets and inlays are written once to their normal logical keys in the active
+asset storage. S3/RustFS uses its streaming multipart writer, while local and
+Azure SQL storage use their existing streaming destinations. Completed assets
+remain in storage if a later entry or the database finalize step fails; until
+the database transaction commits they are normally unreferenced and can be
+removed by ordinary orphan cleanup. Inlay metadata validation retains at most
+1 MiB while its payload streams to the destination.
 
 ## Safety invariants
 
-1. A generation is invisible until every container entry and the final native
-   manifest have been validated.
-2. Prepared SQL records never mutate active application tables before the
+1. Prepared SQL records never mutate active application tables before the
    final replacement transaction.
-3. The activation journal records the previous generation and the database
-   identity/revision expected after commit. A failed finalize rolls the pointer
-   back. Startup recovery with an unavailable database preserves both
-   generations and keeps serving the previous one; reconciliation keeps the
-   new generation only when the same database reports the committed revision.
-4. Cancellation and failure abort the current writer, delete the inactive
-   generation, and remove vendor restore records.
-5. Parser writes await destination backpressure. Only one container entry is
+2. Assets stream directly to their final keys. Cancellation and failure abort
+   the current writer and remove vendor restore records; assets completed
+   earlier in the import may remain as unreferenced files.
+3. Parser writes await destination backpressure. Only one container entry is
    open, destination concurrency is bounded to one for this sequential
    container format, and the server admits only one active whole-save import.
-6. Duplicate names, database format mixing, fragment gaps, duplicate/final
+4. Duplicate names, database format mixing, fragment gaps, duplicate/final
    manifests, invalid inlays, invalid cold storage, and trailing or incomplete
-   container bytes fail before activation.
+   container bytes fail before the database replacement transaction.
 
 ## Resource bounds
 

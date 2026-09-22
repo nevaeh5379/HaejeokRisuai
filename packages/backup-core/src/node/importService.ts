@@ -675,7 +675,7 @@ export class LocalBackupImportService {
         "database",
         prepared.databaseRecordCount,
         prepared.databaseRecordCount,
-        "Applying prepared database and asset generation",
+        "Applying prepared database",
       );
       const result = await active.restore.complete(prepared, sourceClientId);
       this.jobs.settle(id, "complete", result);
