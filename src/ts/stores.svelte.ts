@@ -39,6 +39,10 @@ type AlertData = {
   progressSteps?: string[];
   progressStep?: number;
   progressStepRatio?: number;
+  progressBars?: Array<{
+    label: string;
+    progress: number;
+  }>;
 };
 
 type PluginSafetyError = {

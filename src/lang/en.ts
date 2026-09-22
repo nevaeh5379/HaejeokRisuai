@@ -2000,6 +2000,8 @@ export const languageEnglish = {
   localBackupProgressInlays: "Saving inlays",
   localBackupProgressFinalizing: "Finalizing backup",
   localBackupRestoreSelectingSource: "Selecting backup file",
+  localBackupRestoreUploading: "Uploading backup",
+  localBackupRestoreProcessing: "Processing restore",
   localBackupRestoreReading: "Reading backup",
   localBackupRestoreReadingDatabase: "Database fragments",
   localBackupRestoreReadingAssets: "Assets",

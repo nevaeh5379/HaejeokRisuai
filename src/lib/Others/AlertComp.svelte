@@ -81,6 +81,14 @@
         const value = Number.parseFloat($alertStore.submsg ?? '0')
         return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0
     });
+    const progressBars = $derived.by(() =>
+        ($alertStore.progressBars ?? []).map((bar) => ({
+            label: bar.label,
+            progress: Number.isFinite(bar.progress)
+                ? Math.min(100, Math.max(0, bar.progress))
+                : 0,
+        })),
+    );
     const progressSteps = $derived($alertStore.progressSteps ?? []);
     const progressStepIndex = $derived.by(() => {
         if (progressSteps.length === 0) return -1
@@ -481,18 +489,39 @@
                     </div>
                 {/if}
 
-                <div class="flex w-full min-w-64 items-center gap-3 md:min-w-138">
-                    <div
-                        class="h-2 flex-1 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"
-                        role="progressbar"
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                        aria-valuenow={progressPercent}
-                    >
-                        <div class="h-full bg-green-500 transition-[width] duration-300 ease-out" style:width={`${progressPercent}%`}></div>
+                {#if progressBars.length > 1}
+                    <div class="flex w-full min-w-64 flex-col gap-3 md:min-w-138">
+                        {#each progressBars as bar}
+                            <div class="grid grid-cols-[minmax(0,1fr)_3.25rem] items-center gap-x-3 gap-y-1">
+                                <span class="truncate text-xs font-medium text-textcolor2">{bar.label}</span>
+                                <span class="text-right text-xs tabular-nums text-textcolor2">{bar.progress.toFixed(1) + '%'}</span>
+                                <div
+                                    class="col-span-2 h-2 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"
+                                    role="progressbar"
+                                    aria-label={bar.label}
+                                    aria-valuemin="0"
+                                    aria-valuemax="100"
+                                    aria-valuenow={bar.progress}
+                                >
+                                    <div class="h-full bg-green-500 transition-[width] duration-300 ease-out" style:width={`${bar.progress}%`}></div>
+                                </div>
+                            </div>
+                        {/each}
                     </div>
-                    <span class="w-13 text-right text-sm tabular-nums text-textcolor2">{progressPercent.toFixed(1) + '%'}</span>
-                </div>
+                {:else}
+                    <div class="flex w-full min-w-64 items-center gap-3 md:min-w-138">
+                        <div
+                            class="h-2 flex-1 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow={progressPercent}
+                        >
+                            <div class="h-full bg-green-500 transition-[width] duration-300 ease-out" style:width={`${progressPercent}%`}></div>
+                        </div>
+                        <span class="w-13 text-right text-sm tabular-nums text-textcolor2">{progressPercent.toFixed(1) + '%'}</span>
+                    </div>
+                {/if}
                 <span class="mt-4 max-w-full whitespace-pre-wrap text-center text-sm text-textcolor">{$alertStore.msg}</span>
             {/if}
 

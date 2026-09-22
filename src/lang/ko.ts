@@ -1907,6 +1907,8 @@ export const languageKorean = {
   localBackupProgressInlays: "인레이 저장 중",
   localBackupProgressFinalizing: "백업 마무리 중",
   localBackupRestoreSelectingSource: "백업 파일 선택 중",
+  localBackupRestoreUploading: "백업 업로드",
+  localBackupRestoreProcessing: "복원 처리",
   localBackupRestoreReading: "백업 데이터 읽는 중",
   localBackupRestoreReadingDatabase: "데이터베이스 조각",
   localBackupRestoreReadingAssets: "에셋",
