@@ -243,6 +243,13 @@ export class BackupImportUploadStore {
     return await this.serialized(
       id,
       async (): Promise<BackupImportUploadFinalizeSource> => {
+        if (this.sealed.has(id)) {
+          throw new BackupImportUploadError(
+            "Backup upload was already finalized",
+            "upload_finalized",
+          );
+        }
+
         const directory: string | null = this.getUploadDirectory(id, false);
         const totalBytes: number | undefined = this.totals.get(id);
         const receivedBytes: number = this.receivedBytes.get(id) ?? 0;

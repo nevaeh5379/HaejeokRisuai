@@ -137,9 +137,26 @@ describe("BackupImportUploadStore", (): void => {
     });
   });
 
+  it("rejects repeated finalize while the first stream is active", async (): Promise<void> => {
+    const { root, store } = await makeStore();
+    const id = "import_005";
+    await store.append(id, 0, chunks([1, 2]), 4);
+    await store.append(id, 2, chunks([3, 4]), 4);
+
+    const source = await store.finalize(id);
+    await expect(store.finalize(id)).rejects.toMatchObject({
+      code: "upload_finalized",
+    });
+
+    const read: number[] = [];
+    for await (const chunk of source.stream) read.push(...chunk);
+    expect(read).toEqual([1, 2, 3, 4]);
+    await expect(fs.readdir(root)).resolves.toEqual([]);
+  });
+
   it("seals a completed upload against late append requests", async (): Promise<void> => {
     const { store } = await makeStore();
-    const id = "import_005";
+    const id = "import_006";
     await store.append(id, 0, chunks([1, 2, 3]), 3);
     await store.finalize(id);
 
