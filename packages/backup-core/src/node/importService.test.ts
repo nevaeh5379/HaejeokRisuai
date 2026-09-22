@@ -510,6 +510,11 @@ describe("LocalBackupImportService streaming restore", () => {
   it("waits for an in-flight commit instead of rolling it back", async () => {
     const state = restoreState();
     const base = transactionalAdapter(state);
+    const finalizeProgress: Array<{
+      phase: "applying" | "committing";
+      current: number;
+      total: number;
+    }> = [];
     let announceCommit!: () => void;
     let releaseCommit!: () => void;
     const commitStarted = new Promise<void>((resolve) => {
@@ -523,7 +528,27 @@ describe("LocalBackupImportService streaming restore", () => {
         const restore = await base.beginRestore(id);
         return {
           ...restore,
-          async complete(prepared, sourceClientId) {
+          async complete(prepared, sourceClientId, onProgress) {
+            onProgress?.({
+              phase: "applying",
+              current: 1,
+              total: 1,
+            });
+            finalizeProgress.push({
+              phase: "applying",
+              current: 1,
+              total: 1,
+            });
+            onProgress?.({
+              phase: "committing",
+              current: 0,
+              total: 1,
+            });
+            finalizeProgress.push({
+              phase: "committing",
+              current: 0,
+              total: 1,
+            });
             announceCommit();
             await commitGate;
             return await restore.complete(prepared, sourceClientId);
@@ -543,6 +568,18 @@ describe("LocalBackupImportService streaming restore", () => {
       ]),
     );
     await commitStarted;
+    expect(service.progress(job.id)).toEqual({
+      status: "restoring",
+      progress: {
+        stage: "finalizing",
+        current: 0,
+        total: 1,
+      },
+    });
+    expect(finalizeProgress).toEqual([
+      { phase: "applying", current: 1, total: 1 },
+      { phase: "committing", current: 0, total: 1 },
+    ]);
     const cancelling = service.cancel(job.id);
     releaseCommit();
 

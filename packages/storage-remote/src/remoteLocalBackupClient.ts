@@ -24,7 +24,10 @@ import {
 } from "@risuai/backup-core/api";
 import type { NodeApiClient } from "./nodeApiClient";
 
-export const LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+// Keep resumable native/Tauri uploads at the server's bounded request limit.
+// Browser File restores use the single streaming /file request instead, so
+// they do not pay one HTTP round trip and one spool replay per chunk.
+export const LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024;
 const LOCAL_BACKUP_IMPORT_REQUEST_ATTEMPTS = 3;
 
 export class RemoteLocalBackupError extends Error {

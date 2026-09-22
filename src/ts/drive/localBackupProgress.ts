@@ -170,6 +170,7 @@ export function createNodeLocalBackupRestoreProgressReporter(
   let uploadTotalBytes: number = 0;
   let restoreBytes: number = 0;
   let restoreTotalBytes: number = 0;
+  let restoreDetail: string | undefined;
   let completed: boolean = false;
   let message: string = language.localBackupRestoreReading;
 
@@ -195,8 +196,8 @@ export function createNodeLocalBackupRestoreProgressReporter(
         },
         {
           label: language.localBackupRestoreProcessing,
-          progress: restoreRatio * 100,
-          detail: byteDetail(restoreBytes, restoreTotalBytes),
+          progress: Number((restoreRatio * 100).toFixed(3)),
+          detail: restoreDetail,
         },
       ],
     });
@@ -242,13 +243,19 @@ export function createNodeLocalBackupRestoreProgressReporter(
           progress.current ?? 0,
           progress.total ?? 0,
         );
-        if (ratio !== null && ratio >= restoreRatio) {
-          restoreRatio = ratio;
-          restoreTotalBytes = Math.max(0, Number(progress.total) || 0);
-          restoreBytes = Math.min(
-            restoreTotalBytes,
-            Math.max(0, Number(progress.current) || 0),
-          );
+        if (ratio !== null) {
+          // Container transfer/parsing is only the first part of server-side
+          // restore work. Reserve the remaining lane for measured SQL apply.
+          const nextRatio: number = ratio * 0.55;
+          if (nextRatio >= restoreRatio) {
+            restoreRatio = nextRatio;
+            restoreTotalBytes = Math.max(0, Number(progress.total) || 0);
+            restoreBytes = Math.min(
+              restoreTotalBytes,
+              Math.max(0, Number(progress.current) || 0),
+            );
+            restoreDetail = byteDetail(restoreBytes, restoreTotalBytes);
+          }
         }
       } else if (progress.stage === "database") {
         message = language.localBackupRestoreDatabase;
@@ -256,14 +263,16 @@ export function createNodeLocalBackupRestoreProgressReporter(
           progress.current ?? 0,
           progress.total ?? 0,
         );
-        if (ratio === 1) {
-          restoreRatio = 1;
-          restoreBytes = restoreTotalBytes;
+        if (ratio !== null) {
+          restoreRatio = Math.max(restoreRatio, 0.55 + ratio * 0.4);
+          restoreDetail = `${Math.max(0, progress.current ?? 0)} / ${Math.max(0, progress.total ?? 0)}`;
         }
       } else if (progress.stage === "finalizing") {
         message = language.localBackupRestoreFinalizing;
-        restoreRatio = 1;
-        restoreBytes = restoreTotalBytes;
+        const ratio: number =
+          boundedProgressRatio(progress.current ?? 0, progress.total ?? 0) ?? 0;
+        restoreRatio = Math.max(restoreRatio, 0.95 + ratio * 0.05);
+        restoreDetail = undefined;
       } else {
         message = language.localBackupRestoreReading;
       }
@@ -274,6 +283,7 @@ export function createNodeLocalBackupRestoreProgressReporter(
       restoreRatio = 1;
       uploadBytes = uploadTotalBytes;
       restoreBytes = restoreTotalBytes;
+      restoreDetail = byteDetail(restoreBytes, restoreTotalBytes);
       completed = true;
       message = language.localBackupRestoreFinalizing;
       emit();

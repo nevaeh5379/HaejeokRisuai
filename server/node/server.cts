@@ -4796,8 +4796,9 @@ const localBackupImportService = new LocalBackupImportService(
         async openAsset(key, size) {
           return await openDirectRestoreAsset(key, size);
         },
-        async complete(prepared, sourceClientId) {
+        async complete(prepared, sourceClientId, onProgress) {
           const stagedRecordCount = sequence;
+          const appliedRecordCount = Math.max(1, stagedRecordCount - 1);
           const staged = {
             sourceRevision: prepared.sourceRevision,
             recordCount: stagedRecordCount,
@@ -4808,6 +4809,21 @@ const localBackupImportService = new LocalBackupImportService(
                 stagedRecordCount,
                 prepared.sourceRevision,
               ),
+            onProgress: ({ applied, type }) =>
+              onProgress?.({
+                phase: "applying",
+                current: Math.min(appliedRecordCount, applied),
+                total: appliedRecordCount,
+                detail: type,
+              }),
+            beforeCommit: async () => {
+              onProgress?.({
+                phase: "committing",
+                current: 0,
+                total: 1,
+                detail: "Committing restored database",
+              });
+            },
           };
           const result = await finalizePreparedLocalBackupSql(
             staged,

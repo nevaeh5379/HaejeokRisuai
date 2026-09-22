@@ -234,6 +234,7 @@ test("local backup finalize builds staging on the transaction client before comm
   const client = { id: "transaction-client" };
   const transactionContext = { nextRevision: 42 };
   const sqlStaging = { validate: async () => ({ recordCount: 1 }) };
+  const progress = () => {};
   const storage = {
     async getStorageSyncSummary() {
       return { revision: 41 };
@@ -253,6 +254,7 @@ test("local backup finalize builds staging on the transaction client before comm
       order.push("apply");
       assert.equal(options.client, client);
       assert.equal(options.sqlStaging, sqlStaging);
+      assert.equal(options.onProgress, progress);
       return { recordCount: 1 };
     },
     getVendor: () => "postgres",
@@ -268,6 +270,7 @@ test("local backup finalize builds staging on the transaction client before comm
     {
       prepared: {
         sourceRevision: 7,
+        onProgress: progress,
         createSqlStaging(transactionClient) {
           order.push("create-staging");
           assert.equal(transactionClient, client);

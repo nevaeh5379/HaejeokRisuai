@@ -36,10 +36,10 @@ describe("Node local backup restore progress", () => {
     ).toEqual([
       [0, 0],
       [80, 0],
-      [80, 50],
-      [80, 100],
-      [80, 100],
-      [80, 100],
+      [80, 27.5],
+      [80, 95],
+      [80, 95],
+      [80, 95],
     ]);
     for (let index = 1; index < updates.length; index += 1) {
       expect(updates[index].progress).toBeGreaterThanOrEqual(
@@ -48,6 +48,37 @@ describe("Node local backup restore progress", () => {
     }
     expect(updates[1].stepState.bars?.[0].detail).toBe("80 B / 100 B");
     expect(updates[2].stepState.bars?.[1].detail).toBe("50 B / 100 B");
+  });
+
+  it("shows finalization without reporting completion early", () => {
+    const updates: CapturedProgress[] = [];
+    const reporter = createNodeLocalBackupRestoreProgressReporter(
+      (message, progress, stepState): void => {
+        updates.push({ message, progress, stepState });
+      },
+    );
+
+    reporter.start(100);
+    reporter.updateUpload(100, 100);
+    reporter.updateRemote({ stage: "reading", current: 100, total: 100 });
+    reporter.updateRemote({ stage: "database", current: 40, total: 100 });
+
+    expect(updates.at(-1)?.progress).toBeLessThan(100);
+    expect(barsByLabel(updates.at(-1)?.stepState.bars ?? [])).toEqual([
+      100, 71,
+    ]);
+
+    reporter.updateRemote({ stage: "database", current: 100, total: 100 });
+    reporter.updateRemote({ stage: "finalizing", current: 0, total: 1 });
+    expect(barsByLabel(updates.at(-1)?.stepState.bars ?? [])).toEqual([
+      100, 95,
+    ]);
+
+    reporter.complete();
+    expect(updates.at(-1)?.progress).toBe(100);
+    expect(barsByLabel(updates.at(-1)?.stepState.bars ?? [])).toEqual([
+      100, 100,
+    ]);
   });
 
   it("never exposes a server entry name and finishes both bars", () => {

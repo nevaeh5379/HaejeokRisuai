@@ -57,6 +57,13 @@ export interface LocalBackupImportPreparedState {
   databaseRecordCount: number;
 }
 
+export interface LocalBackupImportFinalizeProgress {
+  phase: "applying" | "committing";
+  current: number;
+  total: number;
+  detail?: string;
+}
+
 export interface LocalBackupImportRestoreSession {
   stageDatabaseRecords(
     records: readonly LegacyBackupSqlRecord[],
@@ -66,6 +73,7 @@ export interface LocalBackupImportRestoreSession {
   complete(
     prepared: LocalBackupImportPreparedState,
     sourceClientId: unknown,
+    onProgress?: (progress: LocalBackupImportFinalizeProgress) => void,
   ): Promise<LocalBackupImportRestoreResult>;
   abort(): Promise<void>;
 }
@@ -670,14 +678,21 @@ export class LocalBackupImportService {
     try {
       await active.parser.finish();
       const prepared = this.validateDatabase(active.database);
-      this.update(
-        id,
-        "database",
-        prepared.databaseRecordCount,
-        prepared.databaseRecordCount,
-        "Applying prepared database",
+      const applyTotal = Math.max(1, prepared.databaseRecordCount - 1);
+      this.update(id, "database", 0, applyTotal, "Applying prepared database");
+      const result = await active.restore.complete(
+        prepared,
+        sourceClientId,
+        (progress): void => {
+          this.update(
+            id,
+            progress.phase === "committing" ? "finalizing" : "database",
+            progress.current,
+            progress.total,
+            progress.detail,
+          );
+        },
       );
-      const result = await active.restore.complete(prepared, sourceClientId);
       this.jobs.settle(id, "complete", result);
       return await this.jobs.wait(id);
     } catch (error) {
