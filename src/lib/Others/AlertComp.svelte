@@ -87,6 +87,7 @@
             progress: Number.isFinite(bar.progress)
                 ? Math.min(100, Math.max(0, bar.progress))
                 : 0,
+            detail: bar.detail,
         })),
     );
     const progressSteps = $derived($alertStore.progressSteps ?? []);
@@ -492,9 +493,12 @@
                 {#if progressBars.length > 1}
                     <div class="flex w-full min-w-64 flex-col gap-3 md:min-w-138">
                         {#each progressBars as bar}
-                            <div class="grid grid-cols-[minmax(0,1fr)_3.25rem] items-center gap-x-3 gap-y-1">
+                            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
                                 <span class="truncate text-xs font-medium text-textcolor2">{bar.label}</span>
-                                <span class="text-right text-xs tabular-nums text-textcolor2">{bar.progress.toFixed(1) + '%'}</span>
+                                <span class="flex items-center justify-end gap-2 whitespace-nowrap text-right text-xs tabular-nums text-textcolor2">
+                                    {#if bar.detail}<span>{bar.detail}</span>{/if}
+                                    <span>{bar.progress.toFixed(1) + '%'}</span>
+                                </span>
                                 <div
                                     class="col-span-2 h-2 overflow-hidden rounded-full border border-darkborderc bg-bgcolor"
                                     role="progressbar"

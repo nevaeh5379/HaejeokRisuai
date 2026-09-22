@@ -25,6 +25,7 @@ export interface LocalBackupProgressStepState {
 export interface LocalBackupProgressBar {
   label: string;
   progress: number;
+  detail?: string;
 }
 
 export type LocalBackupProgressOutput = (
@@ -45,7 +46,7 @@ export interface LocalBackupProgressReporters {
 }
 
 export interface NodeLocalBackupRestoreProgressReporter {
-  start(): void;
+  start(totalBytes?: number): void;
   updateUpload(current: number, total: number): void;
   updateRemote(
     progress: LocalBackupImportProgress | undefined,
@@ -165,8 +166,17 @@ export function createNodeLocalBackupRestoreProgressReporter(
 ): NodeLocalBackupRestoreProgressReporter {
   let uploadRatio: number = 0;
   let restoreRatio: number = 0;
+  let uploadBytes: number = 0;
+  let uploadTotalBytes: number = 0;
+  let restoreBytes: number = 0;
+  let restoreTotalBytes: number = 0;
   let completed: boolean = false;
   let message: string = language.localBackupRestoreReading;
+
+  const byteDetail = (current: number, total: number): string | undefined =>
+    total > 0
+      ? `${formatBackupBytes(current)} / ${formatBackupBytes(total)}`
+      : undefined;
 
   const emit = (): void => {
     const aggregateRatio: number = (uploadRatio + restoreRatio) / 2;
@@ -181,22 +191,34 @@ export function createNodeLocalBackupRestoreProgressReporter(
         {
           label: language.localBackupRestoreUploading,
           progress: uploadRatio * 100,
+          detail: byteDetail(uploadBytes, uploadTotalBytes),
         },
         {
           label: language.localBackupRestoreProcessing,
           progress: restoreRatio * 100,
+          detail: byteDetail(restoreBytes, restoreTotalBytes),
         },
       ],
     });
   };
 
   return {
-    start(): void {
+    start(totalBytes = 0): void {
+      const safeTotal: number = Math.max(0, Number(totalBytes) || 0);
+      uploadTotalBytes = safeTotal;
+      restoreTotalBytes = safeTotal;
       emit();
     },
     updateUpload(current: number, total: number): void {
       const ratio: number | null = boundedProgressRatio(current, total);
-      if (ratio !== null) uploadRatio = Math.max(uploadRatio, ratio);
+      if (ratio !== null && ratio >= uploadRatio) {
+        uploadRatio = ratio;
+        uploadTotalBytes = Math.max(0, Number(total) || 0);
+        uploadBytes = Math.min(
+          uploadTotalBytes,
+          Math.max(0, Number(current) || 0),
+        );
+      }
       emit();
     },
     updateRemote(
@@ -206,6 +228,8 @@ export function createNodeLocalBackupRestoreProgressReporter(
       if (status === "complete") {
         uploadRatio = 1;
         restoreRatio = 1;
+        uploadBytes = uploadTotalBytes;
+        restoreBytes = restoreTotalBytes;
         completed = true;
         message = language.localBackupRestoreFinalizing;
         emit();
@@ -218,17 +242,28 @@ export function createNodeLocalBackupRestoreProgressReporter(
           progress.current ?? 0,
           progress.total ?? 0,
         );
-        if (ratio !== null) restoreRatio = Math.max(restoreRatio, ratio);
+        if (ratio !== null && ratio >= restoreRatio) {
+          restoreRatio = ratio;
+          restoreTotalBytes = Math.max(0, Number(progress.total) || 0);
+          restoreBytes = Math.min(
+            restoreTotalBytes,
+            Math.max(0, Number(progress.current) || 0),
+          );
+        }
       } else if (progress.stage === "database") {
         message = language.localBackupRestoreDatabase;
         const ratio: number | null = boundedProgressRatio(
           progress.current ?? 0,
           progress.total ?? 0,
         );
-        if (ratio === 1) restoreRatio = Math.max(restoreRatio, 0.98);
+        if (ratio === 1) {
+          restoreRatio = 1;
+          restoreBytes = restoreTotalBytes;
+        }
       } else if (progress.stage === "finalizing") {
         message = language.localBackupRestoreFinalizing;
         restoreRatio = 1;
+        restoreBytes = restoreTotalBytes;
       } else {
         message = language.localBackupRestoreReading;
       }
@@ -237,6 +272,8 @@ export function createNodeLocalBackupRestoreProgressReporter(
     complete(): void {
       uploadRatio = 1;
       restoreRatio = 1;
+      uploadBytes = uploadTotalBytes;
+      restoreBytes = restoreTotalBytes;
       completed = true;
       message = language.localBackupRestoreFinalizing;
       emit();

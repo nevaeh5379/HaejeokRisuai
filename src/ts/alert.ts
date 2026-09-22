@@ -45,6 +45,7 @@ export interface alertData {
   progressBars?: Array<{
     label: string;
     progress: number;
+    detail?: string;
   }>;
 }
 
@@ -219,6 +220,7 @@ export function alertProgress(
     bars?: Array<{
       label: string;
       progress: number;
+      detail?: string;
     }>;
   },
 ) {
@@ -237,6 +239,7 @@ export function alertProgress(
     progressBars: stepState?.bars?.map((bar) => ({
       label: bar.label,
       progress: Math.min(100, Math.max(0, bar.progress)),
+      detail: bar.detail,
     })),
   });
 }

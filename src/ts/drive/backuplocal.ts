@@ -1519,7 +1519,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
       },
       uploadStart,
     );
-  progressReporter.start();
+  progressReporter.start(file.size);
 
   const upload = nodeStorage.backup.uploadImportStream(
     job.id,
