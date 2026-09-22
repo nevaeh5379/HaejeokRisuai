@@ -1502,6 +1502,7 @@ async function runLocalBackupRestore<T>(
 async function restoreNodeLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   uploadStart = 2,
+  directFile?: Blob,
 ) {
   await forageStorage.Init();
   if (!(forageStorage.realStorage instanceof NodeStorage)) {
@@ -1521,19 +1522,28 @@ async function restoreNodeLocalBackupSourceUnlocked(
     );
   progressReporter.start(file.size);
 
-  const upload = nodeStorage.backup.uploadImportStream(
-    job.id,
-    file.stream(),
-    file.size,
-    {
-      onProgress: (state) =>
-        progressReporter.updateUpload(state.receivedBytes, state.totalBytes),
-    },
-  );
+  // A browser File can be streamed by the user agent in one request without
+  // materializing it. Native/Tauri sources retain resumable bounded requests.
+  const upload = directFile
+    ? nodeStorage.backup.uploadImportFile(job.id, directFile)
+    : nodeStorage.backup.uploadImportStream(job.id, file.stream(), file.size, {
+        onProgress: (state) =>
+          progressReporter.updateUpload(state.receivedBytes, state.totalBytes),
+      });
   const polling = (async () => {
     while (keepPolling) {
       try {
         const state = await nodeStorage.backup.getImportProgress(job.id);
+        if (
+          directFile &&
+          (state.progress?.stage === "uploading" ||
+            state.progress?.stage === "reading")
+        ) {
+          progressReporter.updateUpload(
+            state.progress.current ?? 0,
+            state.progress.total ?? file.size,
+          );
+        }
         progressReporter.updateRemote(state.progress, state.status);
         if (state.status === "complete" || state.status === "error") break;
       } catch {
@@ -1582,7 +1592,7 @@ async function restoreLocalBackupSource(
 export async function restoreLocalBackupFile(file: File) {
   if (usesRemoteBackupApi(forageStorage.realStorage)) {
     await runLocalBackupRestore(() =>
-      restoreNodeLocalBackupSourceUnlocked(file),
+      restoreNodeLocalBackupSourceUnlocked(file, 2, file),
     );
     return;
   }

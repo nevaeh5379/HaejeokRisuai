@@ -42,6 +42,7 @@ type MutationArgs = {
         beforeCommit?: (transactionContext: any) => Promise<void>;
         afterCommit?: (result: any) => Promise<void>;
         rollback?: () => Promise<void>;
+        onProgress?: (progress: { applied: number; type: string }) => void;
       };
     },
     rawSourceClientId: unknown,
@@ -252,6 +253,7 @@ function createDatabaseMutations({
               transactionContext,
               replaceColdStorage: false,
               vendor: getVendor(),
+              onProgress: prepared.onProgress,
             });
             await prepared.beforeCommit?.(transactionContext);
             return { sqlResult };

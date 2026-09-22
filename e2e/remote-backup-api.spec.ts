@@ -99,7 +99,7 @@ test.describe("remote local backup routing", () => {
     await expect(page.getByRole("heading", { name: "Error" })).toHaveCount(0);
   });
 
-  test("active NodeStorage streams restore files through the remote import API", async ({
+  test("active NodeStorage sends browser files through the direct streaming import API", async ({
     page,
   }) => {
     await waitForAppReady(page);
@@ -142,22 +142,13 @@ test.describe("remote local backup routing", () => {
             progress: { stage: "uploading", current: 0, total: 7 },
           };
         },
-        async uploadImportFile() {
-          throw new Error("legacy Blob upload path must not be used");
+        async uploadImportFile(id: string, file: Blob) {
+          calls.push(`file:${id}:${file.size}`);
+          received.push(...new Uint8Array(await file.arrayBuffer()));
+          throw new Error("E2E_STOP_AFTER_FILE");
         },
-        async uploadImportStream(
-          id: string,
-          source: ReadableStream<Uint8Array>,
-          totalBytes: number,
-        ) {
-          calls.push(`stream:${id}:${totalBytes}`);
-          const reader = source.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            received.push(...value);
-          }
-          throw new Error("E2E_STOP_AFTER_STREAM");
+        async uploadImportStream() {
+          throw new Error("chunked stream path must not be used");
         },
       });
 
@@ -180,9 +171,9 @@ test.describe("remote local backup routing", () => {
       return { calls, received, error };
     });
 
-    expect(result.error).toBe("E2E_STOP_AFTER_STREAM");
+    expect(result.error).toBe("E2E_STOP_AFTER_FILE");
     expect(result.calls).toEqual(
-      expect.arrayContaining(["create", "progress", "stream:e2e-import:7"]),
+      expect.arrayContaining(["create", "progress", "file:e2e-import:7"]),
     );
     expect(result.received).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
