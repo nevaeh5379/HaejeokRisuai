@@ -1500,6 +1500,29 @@ async function runLocalBackupRestore<T>(
   });
 }
 
+export function formatRemoteBackupRestoreDetail(
+  progress: LocalBackupImportProgress,
+): string {
+  const current: number = Math.max(0, Number(progress.current) || 0);
+  const total: number = Math.max(0, Number(progress.total) || 0);
+
+  switch (progress.stage) {
+    case "uploading": {
+      const byteDetail: string =
+        total > 0
+          ? `${formatBackupBytes(current)} / ${formatBackupBytes(total)}`
+          : "";
+      return [byteDetail, progress.detail].filter(Boolean).join(" · ");
+    }
+    case "assets":
+      return total > 0
+        ? `${current} / ${total} · ${language.localBackupRestoreReadingAssets}`
+        : language.localBackupRestoreReadingAssets;
+    default:
+      return progress.detail ?? "";
+  }
+}
+
 async function restoreNodeLocalBackupSourceUnlocked(
   file: LocalBackupSource,
   uploadStart = 2,
@@ -1548,14 +1571,9 @@ async function restoreNodeLocalBackupSourceUnlocked(
     };
     const range = ranges[progress.stage] ?? [52, 82];
     const percent = range[0] + ratio * (range[1] - range[0]);
-    const byteDetail =
-      progress.stage === "uploading" && total > 0
-        ? `${formatBackupBytes(current)} / ${formatBackupBytes(total)}`
-        : "";
-    const detail = [byteDetail, progress.detail].filter(Boolean).join(" · ");
     reportLocalBackupRestoreProgress("reading", {
       percent,
-      detail,
+      detail: formatRemoteBackupRestoreDetail(progress),
     });
   };
 

@@ -7,6 +7,7 @@ import {
   createNativeAssetCommit,
   createNativeImportSource,
   createNodeBackupAssetRequest,
+  formatRemoteBackupRestoreDetail,
   ensureTauriBackupAssetsDirectory,
   listBackupAssetKeys,
   normalizeLocalBackupAssetPath,
@@ -150,6 +151,32 @@ describe("createNativeImportSource", () => {
     await expect(source.stream().getReader().read()).rejects.toThrow(
       "incomplete chunk",
     );
+  });
+});
+
+describe("formatRemoteBackupRestoreDetail", () => {
+  it("shows asset counts instead of the current asset filename", () => {
+    const detail: string = formatRemoteBackupRestoreDetail({
+      stage: "assets",
+      current: 69,
+      total: 100,
+      detail: "assets/6b22abf6.png",
+    });
+
+    expect(detail).toContain("69 / 100");
+    expect(detail).not.toContain("assets/6b22abf6.png");
+  });
+
+  it("keeps upload byte progress and supplemental detail", () => {
+    const detail: string = formatRemoteBackupRestoreDetail({
+      stage: "uploading",
+      current: 1024,
+      total: 2048,
+      detail: "Sending backup",
+    });
+
+    expect(detail).toContain("1.0 KiB / 2.0 KiB");
+    expect(detail).toContain("Sending backup");
   });
 });
 
