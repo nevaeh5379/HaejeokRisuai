@@ -25,6 +25,7 @@ import {
 import type { NodeApiClient } from "./nodeApiClient";
 
 export const LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+const LOCAL_BACKUP_IMPORT_REQUEST_ATTEMPTS = 3;
 
 export class RemoteLocalBackupError extends Error {
   constructor(
@@ -50,6 +51,34 @@ export class RemoteLocalBackupClient {
       "risu-auth": await this.getAuth(),
       "x-risu-client-id": this.clientId,
     };
+  }
+
+  private async retryImportRequest<T>(
+    operation: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (
+      let attempt = 1;
+      attempt <= LOCAL_BACKUP_IMPORT_REQUEST_ATTEMPTS;
+      attempt++
+    ) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (signal?.aborted) throw error;
+        const retryable =
+          !(error instanceof RemoteLocalBackupError) ||
+          error.status === 408 ||
+          error.status === 429 ||
+          error.status >= 500;
+        if (!retryable || attempt === LOCAL_BACKUP_IMPORT_REQUEST_ATTEMPTS) {
+          throw error;
+        }
+      }
+    }
+    throw lastError;
   }
 
   private async error(response: Response, fallback: string): Promise<never> {
@@ -403,11 +432,17 @@ export class RemoteLocalBackupClient {
     let offset = 0;
     const flush = async () => {
       if (buffered === 0) return;
-      const state = await this.appendImportChunk(
-        id,
-        offset,
-        buffer.subarray(0, buffered),
-        totalBytes,
+      const requestOffset = offset;
+      const requestChunk = buffer.slice(0, buffered);
+      const state = await this.retryImportRequest(
+        async () =>
+          await this.appendImportChunk(
+            id,
+            requestOffset,
+            requestChunk,
+            totalBytes,
+            options.signal,
+          ),
         options.signal,
       );
       offset = state.receivedBytes;
@@ -445,7 +480,10 @@ export class RemoteLocalBackupClient {
           `Local backup source ended early: ${offset} / ${totalBytes} bytes`,
         );
       }
-      return await this.finalizeImportUpload(id, options.signal);
+      return await this.retryImportRequest(
+        async () => await this.finalizeImportUpload(id, options.signal),
+        options.signal,
+      );
     } catch (error) {
       await reader.cancel().catch(() => {});
       await this.cancelImportJob(id).catch(() => {});

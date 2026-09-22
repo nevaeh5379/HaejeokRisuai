@@ -227,3 +227,75 @@ test("storage sync finalize does not broadcast before a failed transaction", asy
   );
   assert.equal(events.length, 0);
 });
+
+test("local backup finalize builds staging on the transaction client before commit", async () => {
+  const order = [];
+  const events = [];
+  const client = { id: "transaction-client" };
+  const transactionContext = { nextRevision: 42 };
+  const sqlStaging = { validate: async () => ({ recordCount: 1 }) };
+  const storage = {
+    async getStorageSyncSummary() {
+      return { revision: 41 };
+    },
+    async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+      assert.equal(expectedRevision, 41);
+      order.push("transaction");
+      const value = await callback(client, transactionContext);
+      order.push("commit");
+      return { revision: 42, ...value };
+    },
+  };
+  const mutations = createDatabaseMutations({
+    getStorage: () => storage,
+    finalizeStorageSyncReplacement: async () => {},
+    applyStorageSyncSqlRecords: async (options) => {
+      order.push("apply");
+      assert.equal(options.client, client);
+      assert.equal(options.sqlStaging, sqlStaging);
+      return { recordCount: 1 };
+    },
+    getVendor: () => "postgres",
+    realtimeEventHub: {
+      broadcast(event, data) {
+        order.push("broadcast");
+        events.push({ event, data });
+      },
+    },
+  });
+
+  const result = await mutations.localBackupStreamFinalize(
+    {
+      prepared: {
+        sourceRevision: 7,
+        createSqlStaging(transactionClient) {
+          order.push("create-staging");
+          assert.equal(transactionClient, client);
+          return sqlStaging;
+        },
+        async beforeCommit(context) {
+          order.push("before-commit");
+          assert.equal(context, transactionContext);
+        },
+        async afterCommit(commitResult) {
+          order.push("after-commit");
+          assert.equal(commitResult.revision, 42);
+        },
+      },
+    },
+    "writer",
+  );
+
+  assert.equal(result.revision, 42);
+  assert.deepEqual(order, [
+    "transaction",
+    "create-staging",
+    "apply",
+    "before-commit",
+    "commit",
+    "after-commit",
+    "broadcast",
+  ]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].data.replaceAll, true);
+});

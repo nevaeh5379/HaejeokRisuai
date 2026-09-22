@@ -865,7 +865,7 @@ describe("createWriteStream streaming support", () => {
     expect(eagerThumbnail).not.toHaveBeenCalled();
   });
 
-  it("AzureSqlAssetStorage.createWriteStream preserves uploads with more than 100 chunks", async () => {
+  it("AzureSqlAssetStorage.createWriteStream appends bounded database chunks without a local spool", async () => {
     const storage = new AzureSqlAssetStorage(
       {
         server: "mock.database.windows.net",
@@ -875,22 +875,70 @@ describe("createWriteStream streaming support", () => {
       },
       tmpDir,
     );
-    let persisted: Buffer | null = null;
-    storage.writeFromPath = async (_hex: string, sourcePath: string) => {
-      persisted = await fs.promises.readFile(sourcePath);
-      await fs.promises.unlink(sourcePath);
-      return { success: true };
+    const stored = new Map<string, Buffer>();
+    const appendSizes: number[] = [];
+    storage.sql = {
+      MAX: "max",
+      NVarChar: (length: number) => ({ type: "NVarChar", length }),
+      VarBinary: (length: number) => ({ type: "VarBinary", length }),
+      BigInt: { type: "BigInt" },
+    };
+    storage.pool = {
+      connected: true,
+      request() {
+        const params: Record<string, unknown> = {};
+        return {
+          input(name: string, _type: unknown, value?: unknown) {
+            params[name] = value === undefined ? _type : value;
+            return this;
+          },
+          async query(sql: string) {
+            if (sql.includes("INSERT INTO asset_files")) {
+              stored.set(String(params.temporary_key), Buffer.alloc(0));
+            } else if (sql.includes("content .WRITE")) {
+              const chunk = Buffer.from(params.content as Uint8Array);
+              appendSizes.push(chunk.length);
+              const temporaryKey = String(params.temporary_key);
+              stored.set(
+                temporaryKey,
+                Buffer.concat([
+                  stored.get(temporaryKey) ?? Buffer.alloc(0),
+                  chunk,
+                ]),
+              );
+            } else if (sql.includes("BEGIN TRANSACTION")) {
+              const temporaryKey = String(params.temporary_key);
+              const content = stored.get(temporaryKey);
+              if (!content || content.length !== Number(params.size)) {
+                throw new Error("stream size mismatch");
+              }
+              stored.delete(String(params.key));
+              stored.delete(temporaryKey);
+              stored.set(String(params.key), content);
+            } else if (sql.includes("DELETE FROM asset_files")) {
+              stored.delete(String(params.temporary_key));
+            }
+            return { recordset: [] };
+          },
+        };
+      },
     };
 
-    const chunks = Array.from({ length: 150 }, (_, index) =>
-      Buffer.from(`chunk-${index.toString().padStart(3, "0")}|`),
-    );
-    const writer = storage.createWriteStream(keyToHex("assets/large.bin"));
+    const targetKey = "assets/large.bin";
+    const chunks = [
+      Buffer.alloc(1024 * 1024 + 17, 1),
+      ...Array.from({ length: 150 }, (_, index) =>
+        Buffer.from(`chunk-${index.toString().padStart(3, "0")}|`),
+      ),
+    ];
+    const writer = storage.createWriteStream(keyToHex(targetKey));
     for (const chunk of chunks) writer.stream.write(chunk);
     writer.stream.end();
     await writer.done();
 
-    expect(persisted).toEqual(Buffer.concat(chunks));
+    expect(stored.get(targetKey)).toEqual(Buffer.concat(chunks));
+    expect(Math.max(...appendSizes)).toBeLessThanOrEqual(1024 * 1024);
+    expect(Array.from(stored.keys())).toEqual([targetKey]);
     expect(
       fs
         .readdirSync(tmpDir)

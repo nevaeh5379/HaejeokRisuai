@@ -37,7 +37,11 @@ type MutationArgs = {
     input: {
       prepared: {
         sourceRevision: number;
-        sqlStaging: any;
+        sqlStaging?: any;
+        createSqlStaging?: (client: any) => any;
+        beforeCommit?: (transactionContext: any) => Promise<void>;
+        afterCommit?: (result: any) => Promise<void>;
+        rollback?: () => Promise<void>;
       };
     },
     rawSourceClientId: unknown,
@@ -233,21 +237,28 @@ function createDatabaseMutations({
           serverRevision: targetRevision,
           peerRevision: prepared.sourceRevision,
         };
-        return await sqlStorage.runStorageSyncFinalizeTransaction(
+        const result = await sqlStorage.runStorageSyncFinalizeTransaction(
           targetRevision,
           async (client, transactionContext) => {
+            const sqlStaging =
+              typeof prepared.createSqlStaging === "function"
+                ? prepared.createSqlStaging(client)
+                : prepared.sqlStaging;
             const sqlResult = await applyStorageSyncSqlRecords({
               session: syncSession,
-              sqlStaging: prepared.sqlStaging,
+              sqlStaging,
               sqlStorage,
               client,
               transactionContext,
               replaceColdStorage: false,
               vendor: getVendor(),
             });
+            await prepared.beforeCommit?.(transactionContext);
             return { sqlResult };
           },
         );
+        await prepared.afterCommit?.(result);
+        return result;
       },
       describe: (_result, _input, rawSourceClientId) => ({
         action: "backup-restore",

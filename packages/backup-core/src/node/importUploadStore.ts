@@ -1,7 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LocalBackupImportUploadState } from "../api";
+
+export const DEFAULT_BACKUP_IMPORT_REQUEST_BYTES = 8 * 1024 * 1024;
 
 export class BackupImportUploadError extends Error {
   constructor(
@@ -10,6 +12,7 @@ export class BackupImportUploadError extends Error {
       | "invalid_job_id"
       | "invalid_offset"
       | "invalid_total_bytes"
+      | "upload_request_too_large"
       | "upload_offset_mismatch"
       | "upload_incomplete"
       | "upload_finalized"
@@ -21,28 +24,48 @@ export class BackupImportUploadError extends Error {
   }
 }
 
-interface BackupImportUploadSegment {
-  filePath: string;
+interface AcceptedUploadRequest {
   offset: number;
   size: number;
+  sha256: string;
 }
 
-export interface BackupImportUploadFinalizeSource {
-  totalBytes: number;
-  stream: AsyncIterable<Uint8Array>;
+interface SpoolResult {
+  filePath: string;
+  size: number;
+  sha256: string;
 }
 
+export type BackupImportUploadConsumer = (
+  chunks: AsyncIterable<Uint8Array>,
+) => Promise<void>;
+
+/**
+ * Resumable request spool for streaming imports.
+ *
+ * At most one request body is kept on disk. A request is first completed and
+ * hashed, then passed to the long-lived container parser, and finally removed.
+ * This preserves request retry safety without retaining an upload-sized copy.
+ */
 export class BackupImportUploadStore {
   private readonly rootPath: string;
   private readonly totals = new Map<string, number>();
   private readonly receivedBytes = new Map<string, number>();
   private readonly uploadDirectories = new Map<string, string>();
-  private readonly segments = new Map<string, BackupImportUploadSegment[]>();
+  private readonly lastAccepted = new Map<string, AcceptedUploadRequest>();
   private readonly sealed = new Set<string>();
   private readonly locks = new Map<string, Promise<void>>();
 
-  constructor(rootPath: string) {
+  constructor(
+    rootPath: string,
+    private readonly maxRequestBytes = DEFAULT_BACKUP_IMPORT_REQUEST_BYTES,
+  ) {
     this.rootPath = resolve(rootPath);
+    if (!Number.isSafeInteger(maxRequestBytes) || maxRequestBytes <= 0) {
+      throw new TypeError(
+        "Backup upload request limit must be a positive integer",
+      );
+    }
   }
 
   private validateJobId(id: string): void {
@@ -105,27 +128,64 @@ export class BackupImportUploadStore {
     }
   }
 
-  /**
-   * Drain sealed upload segments in order and remove each segment only after
-   * the downstream parser has consumed it. Staging therefore replaces upload
-   * bytes instead of duplicating the complete backup on disk.
-   */
-  private async *consumeSegments(
+  private async spoolRequest(
     directory: string,
-    uploadSegments: readonly BackupImportUploadSegment[],
-  ): AsyncGenerator<Uint8Array> {
+    offset: number,
+    chunks: AsyncIterable<Uint8Array>,
+    totalBytes: number,
+  ): Promise<SpoolResult> {
+    await fs.mkdir(directory, { recursive: true });
+    const filePath: string = join(directory, `${randomUUID()}.chunk`);
+    const handle = await fs.open(filePath, "wx", 0o600);
+    const hash = createHash("sha256");
+    let size = 0;
+
     try {
-      for (const segment of uploadSegments) {
-        try {
-          for await (const chunk of createReadStream(segment.filePath)) {
-            yield chunk;
+      for await (const rawChunk of chunks) {
+        const chunk: Uint8Array =
+          rawChunk instanceof Uint8Array
+            ? rawChunk
+            : new Uint8Array(rawChunk as ArrayBuffer);
+        if (offset + size + chunk.byteLength > totalBytes) {
+          throw new BackupImportUploadError(
+            "Backup upload exceeded the declared total size",
+            "invalid_total_bytes",
+          );
+        }
+        if (size + chunk.byteLength > this.maxRequestBytes) {
+          throw new BackupImportUploadError(
+            `Backup upload request exceeds ${this.maxRequestBytes} bytes`,
+            "upload_request_too_large",
+          );
+        }
+        hash.update(chunk);
+        let chunkOffset = 0;
+        while (chunkOffset < chunk.byteLength) {
+          const { bytesWritten }: { bytesWritten: number } = await handle.write(
+            chunk,
+            chunkOffset,
+            chunk.byteLength - chunkOffset,
+            size,
+          );
+          if (bytesWritten <= 0) {
+            throw new BackupImportUploadError(
+              "Backup upload stopped while writing a chunk",
+              "upload_error",
+            );
           }
-        } finally {
-          await fs.rm(segment.filePath, { force: true }).catch(() => {});
+          chunkOffset += bytesWritten;
+          size += bytesWritten;
         }
       }
-    } finally {
-      await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+      await handle.close();
+      return { filePath, size, sha256: hash.digest("hex") };
+    } catch (error) {
+      await handle.close().catch(() => {});
+      await fs.rm(filePath, { force: true }).catch(() => {});
+      if (error instanceof BackupImportUploadError) throw error;
+      throw new BackupImportUploadError(
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -134,6 +194,7 @@ export class BackupImportUploadStore {
     offset: number,
     chunks: AsyncIterable<Uint8Array>,
     totalBytes: number,
+    consume: BackupImportUploadConsumer,
   ): Promise<LocalBackupImportUploadState> {
     this.validateRange(offset, totalBytes);
     return await this.serialized(
@@ -145,16 +206,6 @@ export class BackupImportUploadStore {
             "upload_finalized",
           );
         }
-
-        const currentSize: number = this.receivedBytes.get(id) ?? 0;
-        if (currentSize !== offset) {
-          throw new BackupImportUploadError(
-            `Backup upload offset mismatch: expected ${currentSize}, received ${offset}`,
-            "upload_offset_mismatch",
-            currentSize,
-          );
-        }
-
         const knownTotal: number | undefined = this.totals.get(id);
         if (knownTotal !== undefined && knownTotal !== totalBytes) {
           throw new BackupImportUploadError(
@@ -164,96 +215,77 @@ export class BackupImportUploadStore {
         }
         this.totals.set(id, totalBytes);
 
+        const currentSize: number = this.receivedBytes.get(id) ?? 0;
         const directory: string = this.getUploadDirectory(id, true)!;
-        await fs.mkdir(directory, { recursive: true });
-        const segmentPath: string = join(
+        const spooled: SpoolResult = await this.spoolRequest(
           directory,
-          `${String(offset).padStart(16, "0")}-${randomUUID()}.chunk`,
-        );
-        const handle = await fs.open(segmentPath, "wx", 0o600);
-        let segmentSize = 0;
-
-        try {
-          for await (const rawChunk of chunks) {
-            const chunk: Uint8Array =
-              rawChunk instanceof Uint8Array
-                ? rawChunk
-                : new Uint8Array(rawChunk as ArrayBuffer);
-            if (offset + segmentSize + chunk.byteLength > totalBytes) {
-              throw new BackupImportUploadError(
-                "Backup upload exceeded the declared total size",
-                "invalid_total_bytes",
-              );
-            }
-
-            let chunkOffset = 0;
-            while (chunkOffset < chunk.byteLength) {
-              const { bytesWritten }: { bytesWritten: number } =
-                await handle.write(
-                  chunk,
-                  chunkOffset,
-                  chunk.byteLength - chunkOffset,
-                  segmentSize,
-                );
-              if (bytesWritten <= 0) {
-                throw new BackupImportUploadError(
-                  "Backup upload stopped while writing a chunk",
-                  "upload_error",
-                );
-              }
-              chunkOffset += bytesWritten;
-              segmentSize += bytesWritten;
-            }
-          }
-        } catch (error) {
-          await handle.close().catch(() => {});
-          await fs.rm(segmentPath, { force: true }).catch(() => {});
-          if (error instanceof BackupImportUploadError) throw error;
-          throw new BackupImportUploadError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-
-        await handle.close();
-        const position: number = offset + segmentSize;
-        if (segmentSize > 0) {
-          const uploadSegments: BackupImportUploadSegment[] =
-            this.segments.get(id) ?? [];
-          uploadSegments.push({
-            filePath: segmentPath,
-            offset,
-            size: segmentSize,
-          });
-          this.segments.set(id, uploadSegments);
-        } else {
-          await fs.rm(segmentPath, { force: true }).catch(() => {});
-        }
-        this.receivedBytes.set(id, position);
-
-        return {
-          receivedBytes: position,
+          offset,
+          chunks,
           totalBytes,
-          complete: position === totalBytes,
-        };
+        );
+        try {
+          if (offset !== currentSize) {
+            const accepted: AcceptedUploadRequest | undefined =
+              this.lastAccepted.get(id);
+            if (
+              accepted &&
+              accepted.offset === offset &&
+              accepted.size === spooled.size &&
+              accepted.sha256 === spooled.sha256 &&
+              offset + spooled.size === currentSize
+            ) {
+              return {
+                receivedBytes: currentSize,
+                totalBytes,
+                complete: currentSize === totalBytes,
+              };
+            }
+            throw new BackupImportUploadError(
+              `Backup upload offset mismatch: expected ${currentSize}, received ${offset}`,
+              "upload_offset_mismatch",
+              currentSize,
+            );
+          }
+
+          if (spooled.size === 0 && currentSize !== totalBytes) {
+            throw new BackupImportUploadError(
+              "Backup upload request did not contain any bytes",
+              "upload_error",
+            );
+          }
+          await consume(createReadStream(spooled.filePath));
+          const position: number = offset + spooled.size;
+          this.receivedBytes.set(id, position);
+          this.lastAccepted.set(id, {
+            offset,
+            size: spooled.size,
+            sha256: spooled.sha256,
+          });
+          return {
+            receivedBytes: position,
+            totalBytes,
+            complete: position === totalBytes,
+          };
+        } finally {
+          await fs.rm(spooled.filePath, { force: true }).catch(() => {});
+        }
       },
     );
   }
 
-  async finalize(id: string): Promise<BackupImportUploadFinalizeSource> {
+  async finalize(id: string): Promise<LocalBackupImportUploadState> {
     return await this.serialized(
       id,
-      async (): Promise<BackupImportUploadFinalizeSource> => {
+      async (): Promise<LocalBackupImportUploadState> => {
         if (this.sealed.has(id)) {
           throw new BackupImportUploadError(
             "Backup upload was already finalized",
             "upload_finalized",
           );
         }
-
-        const directory: string | null = this.getUploadDirectory(id, false);
         const totalBytes: number | undefined = this.totals.get(id);
         const receivedBytes: number = this.receivedBytes.get(id) ?? 0;
-        if (!directory || !totalBytes) {
+        if (!totalBytes) {
           throw new BackupImportUploadError(
             "Backup upload was not started",
             "upload_incomplete",
@@ -266,34 +298,8 @@ export class BackupImportUploadStore {
             receivedBytes,
           );
         }
-
-        const uploadSegments: BackupImportUploadSegment[] = [
-          ...(this.segments.get(id) ?? []),
-        ].sort((left, right) => left.offset - right.offset);
-        let expectedOffset = 0;
-        for (const segment of uploadSegments) {
-          if (segment.offset !== expectedOffset) {
-            throw new BackupImportUploadError(
-              `Backup upload segment gap: expected ${expectedOffset}, received ${segment.offset}`,
-              "upload_incomplete",
-              expectedOffset,
-            );
-          }
-          expectedOffset += segment.size;
-        }
-        if (expectedOffset !== totalBytes) {
-          throw new BackupImportUploadError(
-            `Backup upload is incomplete: ${expectedOffset} / ${totalBytes} bytes`,
-            "upload_incomplete",
-            expectedOffset,
-          );
-        }
-
         this.sealed.add(id);
-        return {
-          totalBytes,
-          stream: this.consumeSegments(directory, uploadSegments),
-        };
+        return { receivedBytes, totalBytes, complete: true };
       },
     );
   }
@@ -304,7 +310,7 @@ export class BackupImportUploadStore {
       this.totals.delete(id);
       this.receivedBytes.delete(id);
       this.uploadDirectories.delete(id);
-      this.segments.delete(id);
+      this.lastAccepted.delete(id);
       this.sealed.delete(id);
       if (directory) {
         await fs.rm(directory, { recursive: true, force: true });
