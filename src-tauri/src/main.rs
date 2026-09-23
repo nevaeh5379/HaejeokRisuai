@@ -106,7 +106,7 @@ fn set_linux_kde_decoration_colors(
     inactive_foreground: String,
     accent: String,
     negative: String,
-) -> Result<(), String> {
+) -> Result<Option<u8>, String> {
     #[cfg(target_os = "linux")]
     {
         linux_wayland::set_kde_decoration_colors(
@@ -129,7 +129,7 @@ fn set_linux_kde_decoration_colors(
             accent,
             negative,
         );
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -142,7 +142,8 @@ fn get_linux_window_capabilities(label: String) -> Value {
                 "wayland": false,
                 "serverSideDecoration": false,
                 "backgroundBlur": "none",
-                "decoration": "ssd"
+                "decoration": "ssd",
+                "decorationAlpha": null
             })
         })
     }
@@ -154,7 +155,8 @@ fn get_linux_window_capabilities(label: String) -> Value {
             "wayland": false,
             "serverSideDecoration": false,
             "backgroundBlur": "none",
-            "decoration": "ssd"
+            "decoration": "ssd",
+            "decorationAlpha": null
         })
     }
 }

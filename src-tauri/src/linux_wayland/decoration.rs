@@ -1,5 +1,9 @@
 use gtk::prelude::*;
-use std::{cell::RefCell, fs, path::Path};
+use std::{
+    cell::RefCell,
+    env, fs,
+    path::{Path, PathBuf},
+};
 use tauri::{Runtime, Window};
 
 use super::LinuxWindowDecoration;
@@ -20,6 +24,15 @@ impl Rgb {
     fn as_kde(self) -> String {
         format!("{},{},{}", self.0, self.1, self.2)
     }
+
+    fn as_kde_background(self, alpha: Option<u8>) -> String {
+        match alpha {
+            Some(alpha) if alpha < u8::MAX => {
+                format!("{},{},{},{}", self.0, self.1, self.2, alpha)
+            }
+            _ => self.as_kde(),
+        }
+    }
 }
 
 fn parse_hex_color(value: &str) -> Result<Rgb, String> {
@@ -38,6 +51,190 @@ fn parse_hex_color(value: &str) -> Result<Rgb, String> {
     Ok(Rgb(channel(0)?, channel(2)?, channel(4)?))
 }
 
+fn ini_value<'a>(contents: &'a str, section: &str, key: &str) -> Option<&'a str> {
+    let mut active_section = "";
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            active_section = &line[1..line.len() - 1];
+            continue;
+        }
+        if active_section != section {
+            continue;
+        }
+
+        let Some((candidate, value)) = line.split_once('=') else {
+            continue;
+        };
+        if candidate.trim() == key {
+            return Some(value.trim());
+        }
+    }
+
+    None
+}
+
+fn parse_kde_color_alpha(value: &str) -> Option<u8> {
+    let mut channels = value.split(',').map(str::trim);
+    let _red = channels.next()?.parse::<u8>().ok()?;
+    let _green = channels.next()?.parse::<u8>().ok()?;
+    let _blue = channels.next()?.parse::<u8>().ok()?;
+    match channels.next() {
+        Some(alpha) => alpha.parse::<u8>().ok(),
+        None => Some(u8::MAX),
+    }
+}
+
+fn kde_config_home() -> Option<PathBuf> {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+}
+
+fn kde_data_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Some(path) = env::var_os("XDG_DATA_HOME") {
+        roots.push(PathBuf::from(path));
+    } else if let Some(home) = env::var_os("HOME") {
+        roots.push(PathBuf::from(home).join(".local/share"));
+    }
+
+    match env::var_os("XDG_DATA_DIRS") {
+        Some(paths) => roots.extend(env::split_paths(&paths)),
+        None => {
+            roots.push(PathBuf::from("/usr/local/share"));
+            roots.push(PathBuf::from("/usr/share"));
+        }
+    }
+
+    roots
+}
+
+fn titlebar_alpha_from_colors(contents: &str) -> Option<u8> {
+    ini_value(contents, "Colors:Header", "BackgroundNormal")
+        .and_then(parse_kde_color_alpha)
+        .or_else(|| {
+            ini_value(contents, "Colors:Window", "BackgroundNormal").and_then(parse_kde_color_alpha)
+        })
+        .or_else(|| ini_value(contents, "WM", "activeBackground").and_then(parse_kde_color_alpha))
+}
+
+fn svg_attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let pattern = format!("{name}=\"");
+    let start = tag.find(&pattern)? + pattern.len();
+    let rest = &tag[start..];
+    Some(&rest[..rest.find('"')?])
+}
+
+fn svg_style_property<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let style = svg_attribute(tag, "style")?;
+    style.split(';').find_map(|entry| {
+        let (property, value) = entry.split_once(':')?;
+        (property.trim() == name).then(|| value.trim())
+    })
+}
+
+fn parse_svg_opacity(value: &str) -> Option<f64> {
+    let value = value.trim();
+    let opacity = match value.strip_suffix('%') {
+        Some(percent) => percent.trim().parse::<f64>().ok()? / 100.0,
+        None => value.parse::<f64>().ok()?,
+    };
+    Some(opacity.clamp(0.0, 1.0))
+}
+
+fn aurorae_center_alpha(contents: &str) -> Option<u8> {
+    let marker = "id=\"decoration-center\"";
+    let id = contents.find(marker)?;
+    let tag_start = contents[..id].rfind('<')?;
+    let tag_end = id + contents[id..].find('>')? + 1;
+    let tag = &contents[tag_start..tag_end];
+
+    let opacity = svg_attribute(tag, "opacity")
+        .or_else(|| svg_style_property(tag, "opacity"))
+        .and_then(parse_svg_opacity)
+        .unwrap_or(1.0);
+    let fill_opacity = svg_attribute(tag, "fill-opacity")
+        .or_else(|| svg_style_property(tag, "fill-opacity"))
+        .and_then(parse_svg_opacity)
+        .unwrap_or(1.0);
+
+    Some((opacity * fill_opacity * f64::from(u8::MAX)).round() as u8)
+}
+
+fn aurorae_titlebar_alpha() -> Option<u8> {
+    let config_home = kde_config_home()?;
+    let kwinrc = fs::read_to_string(config_home.join("kwinrc")).ok()?;
+    let library = ini_value(&kwinrc, "org.kde.kdecoration2", "library")?;
+    if !library.starts_with("org.kde.kwin.aurorae") {
+        return None;
+    }
+
+    let theme = ini_value(&kwinrc, "org.kde.kdecoration2", "theme")?;
+    let theme = theme.strip_prefix("__aurorae__svg__").unwrap_or(theme);
+
+    for root in kde_data_roots() {
+        let path = root
+            .join("aurorae/themes")
+            .join(theme)
+            .join("decoration.svg");
+        if let Ok(contents) = fs::read_to_string(path) {
+            if let Some(alpha) = aurorae_center_alpha(&contents) {
+                return Some(alpha);
+            }
+        }
+    }
+
+    None
+}
+
+fn kde_palette_titlebar_alpha() -> Option<u8> {
+    let kdeglobals = kde_config_home()?.join("kdeglobals");
+    let contents = fs::read_to_string(&kdeglobals).ok()?;
+
+    if let Some(alpha) = titlebar_alpha_from_colors(&contents) {
+        return Some(alpha);
+    }
+
+    let scheme = ini_value(&contents, "General", "ColorScheme")?;
+    for root in kde_data_roots() {
+        let path = root.join("color-schemes").join(format!("{scheme}.colors"));
+        if let Ok(contents) = fs::read_to_string(path) {
+            if let Some(alpha) = titlebar_alpha_from_colors(&contents) {
+                return Some(alpha);
+            }
+        }
+    }
+
+    None
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct KdeTitlebarAlpha {
+    pub palette: Option<u8>,
+    pub effective: Option<u8>,
+}
+
+pub fn kde_titlebar_alphas() -> KdeTitlebarAlpha {
+    let palette = kde_palette_titlebar_alpha();
+    let intrinsic = aurorae_titlebar_alpha();
+    let effective = match (palette, intrinsic) {
+        (Some(palette), Some(intrinsic)) => {
+            Some(((u16::from(palette) * u16::from(intrinsic) + 127) / u16::from(u8::MAX)) as u8)
+        }
+        (Some(palette), None) => Some(palette),
+        (None, Some(intrinsic)) => Some(intrinsic),
+        (None, None) => None,
+    };
+
+    KdeTitlebarAlpha { palette, effective }
+}
+
 pub fn write_kwin_decoration_palette(
     path: &Path,
     background: &str,
@@ -45,8 +242,9 @@ pub fn write_kwin_decoration_palette(
     inactive_foreground: &str,
     accent: &str,
     negative: &str,
+    background_alpha: Option<u8>,
 ) -> Result<(), String> {
-    let background = parse_hex_color(background)?.as_kde();
+    let background = parse_hex_color(background)?.as_kde_background(background_alpha);
     let foreground = parse_hex_color(foreground)?.as_kde();
     let inactive_foreground = parse_hex_color(inactive_foreground)?.as_kde();
     let accent = parse_hex_color(accent)?.as_kde();
@@ -66,15 +264,35 @@ pub fn write_kwin_decoration_palette(
     fs::write(path, palette).map_err(|error| error.to_string())
 }
 
-pub fn ensure_kwin_decoration_palette(path: &Path, dark: bool) -> Result<(), String> {
+pub fn ensure_kwin_decoration_palette(
+    path: &Path,
+    dark: bool,
+    background_alpha: Option<u8>,
+) -> Result<(), String> {
     if path.exists() {
         return Ok(());
     }
 
     if dark {
-        write_kwin_decoration_palette(path, "#21222c", "#f8f8f2", "#94a3b8", "#6272a4", "#ff5555")
+        write_kwin_decoration_palette(
+            path,
+            "#21222c",
+            "#f8f8f2",
+            "#94a3b8",
+            "#6272a4",
+            "#ff5555",
+            background_alpha,
+        )
     } else {
-        write_kwin_decoration_palette(path, "#f0f0f0", "#0f172a", "#64748b", "#94a3b8", "#dc2626")
+        write_kwin_decoration_palette(
+            path,
+            "#f0f0f0",
+            "#0f172a",
+            "#64748b",
+            "#94a3b8",
+            "#dc2626",
+            background_alpha,
+        )
     }
 }
 
@@ -365,6 +583,40 @@ mod tests {
         assert_eq!(parse_hex_color("#21222c").unwrap(), Rgb(33, 34, 44));
         assert!(parse_hex_color("rgb(1, 2, 3)").is_err());
         assert!(parse_hex_color("#fff").is_err());
+    }
+
+    #[test]
+    fn reads_kde_titlebar_alpha_from_header_colors() {
+        let colors = r#"
+[Colors:Window]
+BackgroundNormal=1,2,3
+[Colors:Header]
+BackgroundNormal=33,34,44,192
+"#;
+
+        assert_eq!(titlebar_alpha_from_colors(colors), Some(192));
+        assert_eq!(parse_kde_color_alpha("33,34,44"), Some(255));
+        assert_eq!(parse_kde_color_alpha("33,34,44,128"), Some(128));
+    }
+
+    #[test]
+    fn preserves_kde_alpha_when_serializing_risu_background() {
+        assert_eq!(Rgb(33, 34, 44).as_kde_background(Some(192)), "33,34,44,192");
+        assert_eq!(Rgb(33, 34, 44).as_kde_background(Some(255)), "33,34,44");
+    }
+
+    #[test]
+    fn reads_aurorae_decoration_center_opacity() {
+        let svg = r#"
+<svg>
+  <rect
+    style="opacity:0.82;fill:#161925;fill-opacity:1"
+    id="decoration-center"
+  />
+</svg>
+"#;
+
+        assert_eq!(aurorae_center_alpha(svg), Some(209));
     }
 
     #[test]

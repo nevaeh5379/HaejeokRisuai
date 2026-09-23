@@ -8,6 +8,7 @@ export interface LinuxWindowCapabilities {
   serverSideDecoration: boolean;
   backgroundBlur: LinuxBackgroundBlurSupport;
   decoration: LinuxWindowDecoration;
+  decorationAlpha: number | null;
 }
 
 const EMPTY_CAPABILITIES: LinuxWindowCapabilities = {
@@ -15,6 +16,7 @@ const EMPTY_CAPABILITIES: LinuxWindowCapabilities = {
   serverSideDecoration: false,
   backgroundBlur: "none",
   decoration: "ssd",
+  decorationAlpha: null,
 };
 
 let activeCapabilities: LinuxWindowCapabilities = { ...EMPTY_CAPABILITIES };
@@ -44,6 +46,22 @@ export async function setLinuxWindowDecorationPreference(
   await invoke("set_linux_window_decoration_preference", { decoration });
 }
 
+export function applyLinuxDecorationAlpha(alpha: number | null): void {
+  if (typeof document === "undefined") return;
+
+  const root = document.documentElement;
+  if (alpha == null) {
+    root.style.removeProperty("--risu-linux-decoration-opacity");
+    return;
+  }
+
+  const clamped = Math.min(255, Math.max(0, alpha));
+  root.style.setProperty(
+    "--risu-linux-decoration-opacity",
+    `${(clamped / 255) * 100}%`,
+  );
+}
+
 function applyCapabilities(capabilities: LinuxWindowCapabilities): void {
   activeCapabilities = capabilities;
   if (typeof document === "undefined") return;
@@ -59,6 +77,7 @@ function applyCapabilities(capabilities: LinuxWindowCapabilities): void {
     "tauri-linux-ssd",
     capabilities.wayland && capabilities.decoration === "ssd",
   );
+  applyLinuxDecorationAlpha(capabilities.decorationAlpha);
   root.dataset.risuLinuxBlur = capabilities.backgroundBlur;
   root.dataset.risuLinuxDecoration = capabilities.decoration;
   root.dataset.risuLinuxServerDecoration = String(

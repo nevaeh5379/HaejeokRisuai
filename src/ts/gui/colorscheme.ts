@@ -13,6 +13,7 @@ import {
   isTauriWindows,
 } from "../platform";
 import { syncAndroidSystemBars } from "../android/androidNativeIntegration";
+import { applyLinuxDecorationAlpha } from "../linuxWindowIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
@@ -36,23 +37,25 @@ async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    const updates: Promise<unknown>[] = [
-      invoke("set_risu_native_appearance", { appearance: colorScheme.type }),
-    ];
+    const nativeAppearance = invoke("set_risu_native_appearance", {
+      appearance: colorScheme.type,
+    });
 
     if (isTauriLinux) {
-      updates.push(
-        invoke("set_linux_kde_decoration_colors", {
+      const [, decorationAlpha] = await Promise.all([
+        nativeAppearance,
+        invoke<number | null>("set_linux_kde_decoration_colors", {
           background: colorScheme.darkbg,
           foreground: colorScheme.textcolor,
           inactiveForeground: colorScheme.textcolor2,
           accent: colorScheme.selected,
           negative: colorScheme.draculared,
         }),
-      );
+      ]);
+      applyLinuxDecorationAlpha(decorationAlpha);
+    } else {
+      await nativeAppearance;
     }
-
-    await Promise.all(updates);
   } catch (error) {
     console.warn(
       "Failed to sync native Tauri appearance with Risu theme:",

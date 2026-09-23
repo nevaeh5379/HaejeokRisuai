@@ -28,6 +28,9 @@ describe("Linux window integration", () => {
     delete document.documentElement.dataset.risuLinuxBlur;
     delete document.documentElement.dataset.risuLinuxDecoration;
     delete document.documentElement.dataset.risuLinuxServerDecoration;
+    document.documentElement.style.removeProperty(
+      "--risu-linux-decoration-opacity",
+    );
   });
 
   it("reads capabilities for the current window", async () => {
@@ -36,6 +39,7 @@ describe("Linux window integration", () => {
       serverSideDecoration: true,
       backgroundBlur: "standard",
       decoration: "csd",
+      decorationAlpha: null,
     });
 
     const capabilities = await initializeLinuxWindowIntegration();
@@ -62,12 +66,31 @@ describe("Linux window integration", () => {
     );
   });
 
+  it("matches the Linux sidebar tint to the KDE decoration alpha", async () => {
+    invoke.mockResolvedValue({
+      wayland: true,
+      serverSideDecoration: true,
+      backgroundBlur: "kwinLegacy",
+      decoration: "ssd",
+      decorationAlpha: 128,
+    });
+
+    await initializeLinuxWindowIntegration();
+
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--risu-linux-decoration-opacity",
+      ),
+    ).toBe(`${(128 / 255) * 100}%`);
+  });
+
   it("keeps the document opaque when no blur protocol is available", async () => {
     invoke.mockResolvedValue({
       wayland: true,
       serverSideDecoration: false,
       backgroundBlur: "none",
       decoration: "csd",
+      decorationAlpha: null,
     });
 
     await initializeLinuxWindowIntegration();

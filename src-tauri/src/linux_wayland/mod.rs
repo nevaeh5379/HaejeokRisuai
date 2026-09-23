@@ -53,6 +53,7 @@ pub struct LinuxWindowCapabilities {
     pub server_side_decoration: bool,
     pub background_blur: BackgroundBlurSupport,
     pub decoration: LinuxWindowDecoration,
+    pub decoration_alpha: Option<u8>,
 }
 
 static WINDOW_CAPABILITIES: OnceLock<Mutex<HashMap<String, LinuxWindowCapabilities>>> =
@@ -112,8 +113,13 @@ pub fn set_kde_decoration_colors<R: Runtime>(
     inactive_foreground: &str,
     accent: &str,
     negative: &str,
-) -> Result<(), String> {
+) -> Result<Option<u8>, String> {
+    if read_decoration_preference(app) != LinuxWindowDecoration::Ssd {
+        return Ok(None);
+    }
+
     let path = kwin_decoration_palette_path(app)?;
+    let titlebar_alpha = decoration::kde_titlebar_alphas();
     decoration::write_kwin_decoration_palette(
         &path,
         background,
@@ -121,7 +127,9 @@ pub fn set_kde_decoration_colors<R: Runtime>(
         inactive_foreground,
         accent,
         negative,
-    )
+        titlebar_alpha.palette,
+    )?;
+    Ok(titlebar_alpha.effective)
 }
 
 fn read_preference_file(path: &Path) -> LinuxWindowDecoration {
@@ -238,11 +246,20 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             }
 
             let requested = read_decoration_preference(window.app_handle());
+            let titlebar_alpha = if requested == LinuxWindowDecoration::Ssd {
+                decoration::kde_titlebar_alphas()
+            } else {
+                decoration::KdeTitlebarAlpha::default()
+            };
             let palette_path = if requested == LinuxWindowDecoration::Ssd {
                 kwin_decoration_palette_path(window.app_handle())
                     .and_then(|path| {
                         let dark = native_appearance_theme() == Some(Theme::Dark);
-                        decoration::ensure_kwin_decoration_palette(&path, dark)?;
+                        decoration::ensure_kwin_decoration_palette(
+                            &path,
+                            dark,
+                            titlebar_alpha.palette,
+                        )?;
                         Ok(path)
                     })
                     .map_err(|error| {
@@ -257,7 +274,12 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             };
 
             match background_effect::install(&window, requested, palette_path.as_deref()) {
-                Ok(capabilities) => {
+                Ok(mut capabilities) => {
+                    capabilities.decoration_alpha = if capabilities.server_side_decoration {
+                        titlebar_alpha.effective
+                    } else {
+                        None
+                    };
                     if let Ok(mut values) = capability_store().lock() {
                         values.insert(window.label().to_string(), capabilities.clone());
                     }
@@ -296,6 +318,7 @@ mod tests {
                 server_side_decoration: false,
                 background_blur: BackgroundBlurSupport::None,
                 decoration: LinuxWindowDecoration::Ssd,
+                decoration_alpha: None,
             }
         );
     }

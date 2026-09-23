@@ -435,6 +435,7 @@ pub fn install<R: Runtime>(
         server_side_decoration,
         background_blur,
         decoration: requested_decoration,
+        decoration_alpha: None,
     })
 }
 

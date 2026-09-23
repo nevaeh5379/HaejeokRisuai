@@ -353,9 +353,10 @@ html.tauri-linux-background-blur #app {
 }
 
 html.tauri-linux-background-blur {
+  --risu-linux-decoration-opacity: 94%;
   --risu-linux-sidebar-tint: color-mix(
     in srgb,
-    var(--risu-theme-darkbg) 94%,
+    var(--risu-theme-darkbg) var(--risu-linux-decoration-opacity),
     transparent
   );
 }
