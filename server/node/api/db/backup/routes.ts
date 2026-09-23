@@ -1,6 +1,11 @@
 import type { Express, Request, RequestHandler, Response } from "express";
+import type {
+  BackupParams,
+  BackupVendor,
+  MaskedBackupParams,
+} from "./params.js";
 
-export type BackupVendor = "postgres" | "oracle" | "azure";
+export type { BackupParams, BackupVendor, MaskedBackupParams };
 
 type RawBackupParams = Record<string, unknown>;
 
@@ -9,19 +14,6 @@ type BackupRequestBody = {
   params?: unknown;
   mirroring?: unknown;
   snapshot?: unknown;
-};
-
-type BackupParams = {
-  connectionString?: string;
-  poolMax?: number;
-  user?: string;
-  tnsAlias?: string;
-  walletPath?: string;
-  password?: string;
-  walletPassword?: string;
-  server?: string;
-  database?: string;
-  port?: number;
 };
 
 export type BackupConfig = {
@@ -79,7 +71,6 @@ type BackupConfigurationInput = {
   snapshot: { enabled: boolean; intervalMinutes: unknown };
 };
 type AppliedBackupConfig = { backup: BackupConfig; storage: BackupStorage };
-type MaskedBackupParams = Record<string, string | number | boolean>;
 
 type BackupConfigResponse = {
   configured: boolean;
@@ -88,7 +79,7 @@ type BackupConfigResponse = {
   managedByEnvironment: false;
   mirroring: { enabled: boolean };
   snapshot: { enabled: boolean; intervalMinutes: number };
-  params: MaskedBackupParams;
+  params: MaskedBackupParams | null;
   primaryRevision: number | null;
   backupRevision: number | null;
   lag: number | null;
@@ -257,13 +248,24 @@ export function registerBackupRoutes(
    * presence (`hasPassword`/`hasWalletPassword`) is exposed as booleans, and the
    * postgres connectionString is masked via `maskPostgresConnectionString`.
    *
-   * @param vendor - 마스킹할 vendor. `null`이면 빈 객체를 반환한다.
-   * / Vendor to mask for. `null` returns an empty object.
+   * @param vendor - 마스킹할 vendor. / Vendor to mask for.
    * @param params - 저장된 원본 연결 파라미터. / Stored raw connection parameters.
    * @returns API 응답에 포함할 마스킹된 파라미터. / Masked parameters safe for API responses.
    */
   function maskBackupParams(
-    vendor: BackupVendor | null,
+    vendor: "postgres",
+    params?: BackupParams,
+  ): MaskedBackupParams.Postgres;
+  function maskBackupParams(
+    vendor: "oracle",
+    params?: BackupParams,
+  ): MaskedBackupParams.Oracle;
+  function maskBackupParams(
+    vendor: "azure",
+    params?: BackupParams,
+  ): MaskedBackupParams.Azure;
+  function maskBackupParams(
+    vendor: BackupVendor,
     params: BackupParams = {},
   ): MaskedBackupParams {
     switch (vendor) {
@@ -293,12 +295,9 @@ export function registerBackupRoutes(
           hasPassword: Boolean(params.password),
         };
       default:
-        // vendor는 BackupVendor|"null"이므로 모든 케이스를 다뤘다.
-        // 여기 도달하면 부재(null) 상태인데도 마스킹을 요청한 것이므로
-        // 호출부 버그로 간주하고 명시적으로 실패시킨다.
-        // Every BackupVendor case is handled above; reaching here means a
-        // missing (null) vendor was masked, which is a caller bug.
-        throw new Error(`maskBackupParams: unsupported vendor: ${String(vendor)}`);
+        throw new Error(
+          `maskBackupParams: unsupported vendor: ${String(vendor)}`,
+        );
     }
   }
 
@@ -341,7 +340,10 @@ export function registerBackupRoutes(
         enabled: Boolean(config.snapshot?.enabled),
         intervalMinutes: config.snapshot?.intervalMinutes || 60,
       },
-      params: configured ? maskBackupParams(config.vendor, config.params) : {},
+      params:
+        configured && config.vendor
+          ? maskBackupParams(config.vendor, config.params)
+          : null,
       primaryRevision,
       backupRevision,
       lag:

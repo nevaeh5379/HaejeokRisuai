@@ -10,6 +10,7 @@ import {
   type BackupProgress,
   type BackupRouteDependencies,
   type BackupStorage,
+  type MaskedBackupParams,
 } from "./routes.js";
 
 async function withBackupApi(
@@ -131,13 +132,26 @@ async function withBackupApi(
 test("설정 조회는 비밀번호를 가리고 revision 차이를 반환한다 / status masks credentials and reports revision lag", async (): Promise<void> => {
   await withBackupApi(async (baseUrl: string): Promise<void> => {
     const response: Response = await fetch(`${baseUrl}/api/db-backup`);
-    const body: { params: { connectionString: string }; lag: number } =
+    const body: { params: MaskedBackupParams.Postgres; lag: number } =
       await response.json();
     expect(response.status).toBe(200);
     expect(body.params.connectionString).toBe(
       "postgres://user:***@localhost/db",
     );
     expect(body.lag).toBe(2);
+  });
+});
+
+test("미설정 상태에서는 params가 null로 반환된다 / unconfigured status returns null params", async (): Promise<void> => {
+  await withBackupApi(async (baseUrl: string): Promise<void> => {
+    const deleteRes: Response = await fetch(`${baseUrl}/api/db-backup`, {
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(200);
+    const body: { configured: boolean; params: MaskedBackupParams | null } =
+      await deleteRes.json();
+    expect(body.configured).toBe(false);
+    expect(body.params).toBeNull();
   });
 });
 
