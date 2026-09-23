@@ -721,7 +721,14 @@ async function initializePrimaryStorage(
   }
 
   if (storage === postgresStorage) setPrimaryStorageRuntime("starting");
-  const rawPromise = Promise.resolve().then(() => storage.initialize());
+  const rawPromise = Promise.resolve().then(async () => {
+    await storage.initialize();
+    // A timed-out initialization may finish after the HTTP server starts.
+    // Keep application APIs gated until restore staging is reconciled.
+    if (storage === postgresStorage && assetStorageInitialized) {
+      await localBackupImportRecords.cleanupAll();
+    }
+  });
   const guardedPromise = runStartupStage(
     {
       scope: "Server startup",
@@ -741,14 +748,6 @@ async function initializePrimaryStorage(
         if (storage === postgresStorage) {
           setPrimaryStorageRuntime("ready");
           console.log(`[Server startup] ${vendor} storage became ready.`);
-          if (assetStorageInitialized) {
-            void reconcileLocalBackupRestoreState().catch((error) =>
-              console.warn(
-                "[local-backup] Deferred restore reconciliation failed:",
-                error?.message || error,
-              ),
-            );
-          }
         } else if (typeof storage.close === "function") {
           void storage.close().catch(() => {});
         }
@@ -1296,14 +1295,15 @@ loadBackupStorageFromConfig();
 
 const assetStorageManager = new AssetStorageManager(savePath);
 let assetStorageInitialized = false;
+const localBackupRecordAdapter = {
+  encodeRecord: encodeStorageSyncValue,
+  decodeRecord: decodeStorageSyncValue,
+  validateRecord: validateStorageSyncSqlRecord,
+};
 const localBackupImportRecords = new LocalBackupImportRecordStore(
   () => postgresStorage,
   () => dbVendor,
-  {
-    encodeRecord: encodeStorageSyncValue,
-    decodeRecord: decodeStorageSyncValue,
-    validateRecord: validateStorageSyncSqlRecord,
-  },
+  localBackupRecordAdapter,
 );
 
 function getPrimaryDatabaseIdentity() {
@@ -5381,6 +5381,21 @@ async function replacePrimaryStorageConfiguration(
     throw error;
   }
 
+  // Reconcile the candidate before persisting or exposing it. If cleanup
+  // fails, the current connection and both configuration files still point
+  // to the previous database.
+  try {
+    const candidateRecords = new LocalBackupImportRecordStore(
+      () => candidateStorage,
+      () => vendor,
+      localBackupRecordAdapter,
+    );
+    await candidateRecords.cleanupAll();
+  } catch (error) {
+    await candidateStorage.close?.().catch(() => {});
+    throw error;
+  }
+
   const previousStored = readStoredDbConfig(savePath);
   const previousPostgresConfig = { ...postgresServerConfig };
   try {
@@ -5411,7 +5426,6 @@ async function replacePrimaryStorageConfiguration(
   dbVendor = vendor;
   storageManagedByEnvironment = isStorageManagedByEnvironment(dbVendor);
   setPrimaryStorageRuntime("ready");
-  await reconcileLocalBackupRestoreState();
   if (typeof previousStorage.close === "function") {
     try {
       await previousStorage.close();
