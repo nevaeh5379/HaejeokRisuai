@@ -84,6 +84,32 @@ test("parseRealtimeEvent narrows every canonical realtime event", () => {
   );
 
   assert.deepEqual(
+    parseRealtimeEvent("local-backup-import-progress", {
+      jobId: "backup-1",
+      status: "restoring",
+      progress: {
+        stage: "database",
+        current: 12,
+        total: 40,
+        detail: "messages",
+      },
+    }),
+    {
+      event: "local-backup-import-progress",
+      data: {
+        jobId: "backup-1",
+        status: "restoring",
+        progress: {
+          stage: "database",
+          current: 12,
+          total: 40,
+          detail: "messages",
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(
     parseRealtimeEvent("ready", {
       clientId: "device-a",
       connectedAt: 99,
@@ -152,6 +178,14 @@ test("parseRealtimeEvent rejects malformed or unknown events", () => {
     null,
   );
   assert.equal(parseRealtimeEvent("legacy-event", {}), null);
+  assert.equal(
+    parseRealtimeEvent("local-backup-import-progress", {
+      jobId: "backup-1",
+      status: "restoring",
+      progress: { stage: "unknown" },
+    }),
+    null,
+  );
   assert.equal(parseRealtimeEvent("database-change", null), null);
 
   // Oversized strings are rejected so hostile streams cannot push unbounded

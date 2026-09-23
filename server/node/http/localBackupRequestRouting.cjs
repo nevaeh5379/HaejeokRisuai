@@ -18,8 +18,16 @@ function isLocalBackupImportControlPath(path) {
   );
 }
 
+function isReadOnlyRequestMethod(method) {
+  const normalized = String(method || "").toUpperCase();
+  return (
+    normalized === "GET" || normalized === "HEAD" || normalized === "OPTIONS"
+  );
+}
+
 module.exports = {
   isLocalBackupImportControlPath,
   isLocalBackupImportFinalizePath,
   isLocalBackupImportUploadPath,
+  isReadOnlyRequestMethod,
 };
