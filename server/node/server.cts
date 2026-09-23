@@ -83,6 +83,7 @@ const {
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
 import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.js";
+import { Packet } from "./http/packet.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
 const {
   createNodeProviderExecutor,
@@ -3543,50 +3544,6 @@ app.post("/api/set_password", loginRouteLimiter, async (req, res) => {
   }
 });
 
-function createHeaderPacket(fileId, name, fileSize) {
-  const nameBuffer = Buffer.from(name, "utf8");
-  const packet = Buffer.alloc(1 + 4 + 4 + nameBuffer.length + 8);
-
-  let offset = 0;
-
-  packet.writeUInt8(0x01, offset);
-  offset += 1;
-  packet.writeUInt32BE(fileId, offset);
-  offset += 4;
-  packet.writeUInt32BE(nameBuffer.length, offset);
-  offset += 4;
-
-  nameBuffer.copy(packet, offset);
-  offset += nameBuffer.length;
-
-  packet.writeBigUint64BE(BigInt(fileSize), offset);
-
-  return packet;
-}
-
-function createChunkPacket(fileId, data) {
-  const header = Buffer.alloc(1 + 4 + 4);
-  header.writeUInt8(0x02, 0);
-  header.writeUInt32BE(fileId, 1);
-  header.writeUint32BE(data.length, 5);
-
-  return Buffer.concat([header, data]);
-}
-
-async function writePacket(res, packet) {
-  if (!res.write(packet)) {
-    await once(res, "drain");
-  }
-}
-
-function createEndPacket(fileId) {
-  const packet = Buffer.alloc(1 + 4);
-  packet.writeInt8(0x03, 0);
-  packet.writeInt32BE(fileId, 1);
-
-  return packet;
-}
-
 const BULK_WRITE_CONTENT_TYPE = "application/x-risu-bulk";
 const BULK_READ_PREFETCH_CONCURRENCY = normalizePrefetchConcurrency(
   process.env.RISUAI_BULK_READ_PREFETCH_CONCURRENCY,
@@ -3727,23 +3684,23 @@ app.post(
         const name = Buffer.from(filePath, "hex").toString("utf8");
         const totalSize =
           result.contentLength || (result.buffer ? result.buffer.length : 0);
-        await writePacket(res, createHeaderPacket(fileId, name, totalSize));
+        await Packet.write(res, Packet.createHeader(fileId, name, totalSize));
 
         if (result.filePath) {
           const fileHandle = await fs.open(result.filePath, "r");
           try {
             const stream = fileHandle.createReadStream({ autoClose: false });
             for await (const chunk of stream) {
-              await writePacket(res, createChunkPacket(fileId, chunk));
+              await Packet.write(res, Packet.createChunk(fileId, chunk));
             }
           } finally {
             await fileHandle.close();
           }
         } else if (result.stream) {
           for await (const chunk of result.stream) {
-            await writePacket(
+            await Packet.write(
               res,
-              createChunkPacket(
+              Packet.createChunk(
                 fileId,
                 Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
               ),
@@ -3760,10 +3717,10 @@ app.post(
               offset,
               Math.min(offset + chunkSize, result.buffer.length),
             );
-            await writePacket(res, createChunkPacket(fileId, chunk));
+            await Packet.write(res, Packet.createChunk(fileId, chunk));
           }
         }
-        await writePacket(res, createEndPacket(fileId));
+        await Packet.write(res, Packet.createEnd(fileId));
         fileId += 1;
       } catch (err) {
         console.error("Error reading %s in read-bulk:", filePath, err);
@@ -4088,7 +4045,7 @@ function sendLocalBackupExportJobError(res, error) {
 
 async function writeServerBackupEntry(output, name, source, size) {
   await writeBackupContainerEntry(
-    async (chunk) => await writePacket(output, chunk),
+    async (chunk) => await Packet.write(output, chunk),
     name,
     source,
     size,

@@ -15,6 +15,7 @@
   },
   "include": [
     "server.cts",
+    "http/packet.ts",
     "http/realtimeEvents.cts",
     "sync/databaseMutations.cts",
     "sync/localBackupImportRecords.ts",
