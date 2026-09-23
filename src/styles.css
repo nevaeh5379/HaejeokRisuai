@@ -3180,3 +3180,71 @@ html.theme-android-material .rs-chat-send-btn {
 html.theme-android-material :focus-visible {
   outline-color: var(--risu-android-accent) !important;
 }
+
+/* KDE SSD owns the real title bar, so the sidebar mode switch reads better as
+ * part of the app header than as the old U-shaped floating control. */
+html.tauri-linux-ssd .rs-sidebar-mode-tabs {
+  position: static !important;
+  bottom: auto !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  margin: 0 0 12px !important;
+  padding: 0 4px !important;
+  gap: 4px;
+  align-items: stretch;
+  flex-shrink: 0;
+  border: 0 !important;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--risu-theme-textcolor) 16%, transparent) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button {
+  position: relative;
+  min-height: 39px;
+  padding: 0 14px;
+  border: 0 !important;
+  border-radius: 8px 8px 0 0 !important;
+  background: transparent;
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button.text-textcolor2:hover {
+  background: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 6%,
+    transparent
+  );
+  color: var(--risu-theme-textcolor) !important;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button:not(.text-textcolor2) {
+  background: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 8%,
+    transparent
+  );
+  color: var(--risu-theme-textcolor) !important;
+  font-weight: 600;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button:not(.text-textcolor2)::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  bottom: -1px;
+  left: 14px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--risu-theme-selected);
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--risu-theme-selected) 70%, transparent);
+}
