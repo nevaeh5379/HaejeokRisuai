@@ -3,7 +3,7 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": ".",
+    "rootDir": "../..",
     "outDir": ".tsbuild",
     "types": ["node"],
     "strict": false,

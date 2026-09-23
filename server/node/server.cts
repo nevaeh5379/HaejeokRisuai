@@ -82,7 +82,7 @@ const {
 } = require("./http/realtimeEvents.cjs");
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
-import type { LocalBackupImportJobProgress } from "../../packages/backup-core/dist/api.js";
+import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
 const {
   createNodeProviderExecutor,
