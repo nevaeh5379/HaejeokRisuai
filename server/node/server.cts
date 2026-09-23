@@ -54,6 +54,7 @@ const { isSecurePostgresConfigRequest } = require("./http/requestSecurity.cjs");
 const {
   isLocalBackupImportControlPath,
   isLocalBackupImportUploadPath,
+  isReadOnlyRequestMethod,
 } = require("./http/localBackupRequestRouting.cjs");
 const htmlparser = require("node-html-parser");
 const fsSync = require("fs");
@@ -81,6 +82,7 @@ const {
 } = require("./http/realtimeEvents.cjs");
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
+import type { LocalBackupImportJobProgress } from "../../packages/backup-core/dist/api.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
 const {
   createNodeProviderExecutor,
@@ -810,26 +812,8 @@ app.use("/api", (req, res, next) => {
   });
 });
 
-const finalizeSafeApiPrefixes = [
-  "/api/client-capabilities",
-  "/api/health",
-  "/api/test_auth",
-  "/api/login",
-  "/api/crypto",
-  "/api/set_password",
-];
-
 function requestApiPath(req) {
   return String(req.originalUrl || req.url || "").split("?", 1)[0];
-}
-
-function isFinalizeSafeApiRequest(req) {
-  const requestPath = requestApiPath(req);
-  if (requestPath === "/api/realtime/events") return true;
-  if (/^\/api\/model-jobs\/[^/]+\/stream$/.test(requestPath)) return true;
-  return finalizeSafeApiPrefixes.some(
-    (prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`),
-  );
 }
 
 function isFinalizeControlRequest(req) {
@@ -843,11 +827,11 @@ function isFinalizeControlRequest(req) {
   );
 }
 
-// Finalize briefly replaces assets before the SQL transaction commits. Every
-// ordinary request takes a reader slot. Finalize blocks new readers, drains the
-// ones already in flight, and only then mutates assets/SQL.
+// Restore mode allows reads to continue while the prepared database and assets
+// are committed. Mutations are drained and then rejected until finalize ends,
+// preventing user writes from being silently overwritten by the replacement.
 app.use("/api", (req, res, next) => {
-  if (isFinalizeSafeApiRequest(req) || isFinalizeControlRequest(req)) {
+  if (isReadOnlyRequestMethod(req.method) || isFinalizeControlRequest(req)) {
     next();
     return;
   }
@@ -4771,6 +4755,59 @@ async function openDirectRestoreAsset(key: string, expectedSize: number) {
   };
 }
 
+interface PendingLocalBackupProgress {
+  state: LocalBackupImportJobProgress;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const localBackupProgressPending = new Map<
+  string,
+  PendingLocalBackupProgress
+>();
+const localBackupProgressLastSentAt = new Map<string, number>();
+const LOCAL_BACKUP_PROGRESS_EVENT_INTERVAL_MS = 250;
+
+function broadcastLocalBackupProgress(
+  jobId: string,
+  state: LocalBackupImportJobProgress,
+): void {
+  const send = (latest: LocalBackupImportJobProgress): void => {
+    localBackupProgressLastSentAt.set(jobId, Date.now());
+    realtimeEventHub.broadcastTransient("local-backup-import-progress", {
+      jobId,
+      ...latest,
+    });
+  };
+  const terminal = state.status === "complete" || state.status === "error";
+  const existing = localBackupProgressPending.get(jobId);
+  if (terminal) {
+    if (existing?.timer) clearTimeout(existing.timer);
+    localBackupProgressPending.delete(jobId);
+    send(state);
+    localBackupProgressLastSentAt.delete(jobId);
+    return;
+  }
+  const elapsed = Date.now() - (localBackupProgressLastSentAt.get(jobId) ?? 0);
+  if (elapsed >= LOCAL_BACKUP_PROGRESS_EVENT_INTERVAL_MS && !existing) {
+    send(state);
+    return;
+  }
+  if (existing) {
+    existing.state = state;
+    return;
+  }
+  const timer = setTimeout(
+    () => {
+      localBackupProgressPending.delete(jobId);
+      send(pending.state);
+    },
+    Math.max(0, LOCAL_BACKUP_PROGRESS_EVENT_INTERVAL_MS - elapsed),
+  );
+  const pending: PendingLocalBackupProgress = { state, timer };
+  timer.unref?.();
+  localBackupProgressPending.set(jobId, pending);
+}
+
 const localBackupImportService = new LocalBackupImportService(
   localBackupImportJobs,
   localBackupImportStaging,
@@ -4852,6 +4889,7 @@ const localBackupImportService = new LocalBackupImportService(
     },
   },
   localBackupImportUploads,
+  { onProgress: broadcastLocalBackupProgress },
 );
 
 app.post(

@@ -64,6 +64,10 @@ import {
 } from "./streamingBackupEncryption";
 import { runExclusiveLocalBackupOperation } from "./localBackupOperationGate";
 import {
+  isNodeRealtimeConnected,
+  subscribeNodeBackupProgress,
+} from "../process/nodeRealtimeBackupProgress";
+import {
   compatibilityOptions,
   type ColdStorageValueMap,
 } from "../backupCompatibility";
@@ -1522,6 +1526,25 @@ async function restoreNodeLocalBackupSourceUnlocked(
     );
   progressReporter.start(file.size);
 
+  const applyRemoteProgress = (
+    state: Awaited<ReturnType<typeof nodeStorage.backup.getImportProgress>>,
+  ): void => {
+    if (
+      directFile &&
+      (state.progress?.stage === "uploading" ||
+        state.progress?.stage === "reading")
+    ) {
+      progressReporter.updateUpload(
+        state.progress.current ?? 0,
+        state.progress.total ?? file.size,
+      );
+    }
+    progressReporter.updateRemote(state.progress, state.status);
+  };
+  const unsubscribeProgress = subscribeNodeBackupProgress(job.id, (state) =>
+    applyRemoteProgress(state),
+  );
+
   // A browser File can be streamed by the user agent in one request without
   // materializing it. Native/Tauri sources retain resumable bounded requests.
   const upload = directFile
@@ -1532,25 +1555,21 @@ async function restoreNodeLocalBackupSourceUnlocked(
       });
   const polling = (async () => {
     while (keepPolling) {
-      try {
-        const state = await nodeStorage.backup.getImportProgress(job.id);
-        if (
-          directFile &&
-          (state.progress?.stage === "uploading" ||
-            state.progress?.stage === "reading")
-        ) {
-          progressReporter.updateUpload(
-            state.progress.current ?? 0,
-            state.progress.total ?? file.size,
-          );
+      if (!isNodeRealtimeConnected()) {
+        try {
+          const state = await nodeStorage.backup.getImportProgress(job.id);
+          applyRemoteProgress(state);
+          if (state.status === "complete" || state.status === "error") break;
+        } catch {
+          // The upload request remains authoritative. Fallback polling is
+          // best-effort and must not abort a valid restore.
         }
-        progressReporter.updateRemote(state.progress, state.status);
-        if (state.status === "complete" || state.status === "error") break;
-      } catch {
-        // The upload request remains authoritative. Progress polling is
-        // best-effort and must not abort a valid restore.
       }
-      await sleep(performance.progressUpdateMs);
+      await sleep(
+        isNodeRealtimeConnected()
+          ? Math.max(1_000, performance.progressUpdateMs)
+          : performance.progressUpdateMs,
+      );
     }
   })();
 
@@ -1560,6 +1579,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
   } finally {
     keepPolling = false;
     await polling;
+    unsubscribeProgress();
   }
   if (completed.status !== "complete") {
     throw new Error(completed.error ?? "Local backup import failed");

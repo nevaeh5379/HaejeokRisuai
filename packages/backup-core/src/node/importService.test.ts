@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { LocalBackupImportJobProgress } from "../api";
 import { encodeInlayAssetBackup } from "../inlayCodec";
 import type { LegacyBackupSqlRecord } from "../legacyRecords";
 import type { PortableDatabaseStreamManifest } from "../streamFormat";
@@ -165,6 +166,7 @@ async function makeService(
   adapter: LocalBackupImportAdapter,
   withUploads = false,
   idleTimeoutMs?: number,
+  onProgress?: (id: string, state: LocalBackupImportJobProgress) => void,
 ): Promise<{
   root: string;
   service: LocalBackupImportService;
@@ -183,7 +185,7 @@ async function makeService(
       new BackupImportStagingStore(path.join(root, "entries")),
       adapter,
       uploads,
-      { idleTimeoutMs },
+      { idleTimeoutMs, onProgress },
     ),
   };
 }
@@ -199,9 +201,13 @@ afterEach(async () => {
 describe("LocalBackupImportService streaming restore", () => {
   it("streams asset bytes through the restore adapter and completes the database", async () => {
     const state = restoreState();
+    const onProgress = vi.fn();
     const { root, service } = await makeService(
       "import_success",
       transactionalAdapter(state),
+      false,
+      undefined,
+      onProgress,
     );
     const job = service.createJob();
     const database = await nativeDatabaseEntries();
@@ -233,6 +239,10 @@ describe("LocalBackupImportService streaming restore", () => {
       revision: 7,
       recordCount: 2,
     });
+    expect(onProgress).toHaveBeenLastCalledWith(
+      job.id,
+      expect.objectContaining({ status: "complete" }),
+    );
 
     expect(state.completed).toBe(1);
     expect(state.activeAssets.get("assets/a.png")).toEqual([1, 2, 3, 4, 5, 6]);

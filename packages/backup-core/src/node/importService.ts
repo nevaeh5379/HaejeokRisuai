@@ -239,14 +239,23 @@ export class LocalBackupImportService {
   >();
   private readonly idleTimeoutMs: number;
   private readonly maxActiveImports: number;
+  private readonly onProgress?: (
+    id: string,
+    state: LocalBackupImportJobProgress,
+  ) => void;
 
   constructor(
     readonly jobs: LocalBackupImportJobStore,
     readonly staging: BackupImportStagingStore,
     private readonly adapter: LocalBackupImportAdapter,
     readonly uploads?: BackupImportUploadStore,
-    options: { idleTimeoutMs?: number; maxActiveImports?: number } = {},
+    options: {
+      idleTimeoutMs?: number;
+      maxActiveImports?: number;
+      onProgress?: (id: string, state: LocalBackupImportJobProgress) => void;
+    } = {},
   ) {
+    this.onProgress = options.onProgress;
     this.idleTimeoutMs =
       options.idleTimeoutMs ?? DEFAULT_IMPORT_IDLE_TIMEOUT_MS;
     if (!Number.isSafeInteger(this.idleTimeoutMs) || this.idleTimeoutMs <= 0) {
@@ -323,6 +332,33 @@ export class LocalBackupImportService {
       total: Math.max(0, total),
       ...(detail ? { detail } : {}),
     });
+    this.notifyProgress(id);
+  }
+
+  private notifyProgress(id: string): void {
+    if (!this.onProgress) return;
+    try {
+      this.onProgress(id, this.jobs.progress(id));
+    } catch {}
+  }
+
+  private beginUpload(id: string, totalBytes: number): void {
+    this.jobs.beginUpload(id, totalBytes);
+    this.notifyProgress(id);
+  }
+
+  private markRestoring(id: string): void {
+    this.jobs.markRestoring(id);
+    this.notifyProgress(id);
+  }
+
+  private settle(
+    id: string,
+    status: "complete" | "error",
+    result: { error?: string | null; revision?: number; recordCount?: number },
+  ): void {
+    this.jobs.settle(id, status, result);
+    this.notifyProgress(id);
   }
 
   private async stageRecords(
@@ -698,14 +734,14 @@ export class LocalBackupImportService {
           );
         },
       );
-      this.jobs.settle(id, "complete", result);
+      this.settle(id, "complete", result);
       return await this.jobs.wait(id);
     } catch (error) {
       await active.parser.abort().catch(() => {});
       await active.restore.abort().catch(() => {});
       const message = error instanceof Error ? error.message : String(error);
       try {
-        this.jobs.settle(id, "error", { error: message });
+        this.settle(id, "error", { error: message });
       } catch {}
       throw error;
     } finally {
@@ -721,17 +757,17 @@ export class LocalBackupImportService {
     options: LocalBackupImportRequestOptions = {},
   ): Promise<LocalBackupImportJobCompletion> {
     const totalBytes = Math.max(0, options.totalBytes ?? 0);
-    this.jobs.beginUpload(id, totalBytes);
+    this.beginUpload(id, totalBytes);
     try {
       const active = await this.activeImport(id, totalBytes, "direct");
       await active.parser.writeAll(chunks);
-      this.jobs.markRestoring(id);
+      this.markRestoring(id);
       return await this.completeActive(id, options.sourceClientId);
     } catch (error) {
       await this.abortActive(id);
       const message = error instanceof Error ? error.message : String(error);
       try {
-        this.jobs.settle(id, "error", { error: message });
+        this.settle(id, "error", { error: message });
       } catch {}
       throw error;
     }
@@ -752,7 +788,7 @@ export class LocalBackupImportService {
         "Local backup import is not accepting upload chunks",
       );
     }
-    if (status === "pending") this.jobs.beginUpload(id, totalBytes);
+    if (status === "pending") this.beginUpload(id, totalBytes);
     this.clearIdleTimer(id);
 
     try {
@@ -779,7 +815,7 @@ export class LocalBackupImportService {
       await this.abortActive(id);
       const message = error instanceof Error ? error.message : String(error);
       try {
-        this.jobs.settle(id, "error", { error: message });
+        this.settle(id, "error", { error: message });
       } catch {}
       throw error;
     }
@@ -819,7 +855,7 @@ export class LocalBackupImportService {
       this.armIdleTimer(id);
       throw error;
     }
-    this.jobs.markRestoring(id);
+    this.markRestoring(id);
     try {
       return await this.completeActive(id, options.sourceClientId);
     } finally {

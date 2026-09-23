@@ -46,6 +46,26 @@ test("realtime hub streams ready and broadcast events to connected clients", () 
   assert.equal(hub.clientCount(), 0);
 });
 
+test("backup progress is transient and does not consume replay history", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000 });
+  const req = new EventEmitter();
+  req.headers = {};
+  const res = new FakeResponse();
+  hub.connect(req, res);
+
+  hub.broadcastTransient("local-backup-import-progress", {
+    jobId: "backup-1",
+    status: "restoring",
+    progress: { stage: "database", current: 2, total: 3 },
+  });
+
+  const output = res.chunks.join("");
+  assert.match(output, /event: local-backup-import-progress/);
+  assert.match(output, /"jobId":"backup-1"/);
+  assert.equal(hub.latestEventId(), 0);
+  req.emit("close");
+});
+
 test("broadcasts share one event id across clients and reconnects replay missed events", () => {
   const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
   const reqA = new EventEmitter();
