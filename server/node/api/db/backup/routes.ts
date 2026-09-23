@@ -293,7 +293,12 @@ export function registerBackupRoutes(
           hasPassword: Boolean(params.password),
         };
       default:
-        return {};
+        // vendor는 BackupVendor|"null"이므로 모든 케이스를 다뤘다.
+        // 여기 도달하면 부재(null) 상태인데도 마스킹을 요청한 것이므로
+        // 호출부 버그로 간주하고 명시적으로 실패시킨다.
+        // Every BackupVendor case is handled above; reaching here means a
+        // missing (null) vendor was masked, which is a caller bug.
+        throw new Error(`maskBackupParams: unsupported vendor: ${String(vendor)}`);
     }
   }
 
