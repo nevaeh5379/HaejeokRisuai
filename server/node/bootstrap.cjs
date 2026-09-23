@@ -13,6 +13,7 @@ const generatedStorageSyncApply = path.join(
 );
 const serverSource = path.join(__dirname, "server.cts");
 const packetSource = path.join(__dirname, "http/packet.ts");
+const backupRoutesSource = path.join(__dirname, "api/db/backup/routes.ts");
 const mutationSource = path.join(__dirname, "sync/databaseMutations.cts");
 const storageSyncApplySource = path.join(
   __dirname,
@@ -100,6 +101,7 @@ const needsBuild =
   (process.env.NODE_ENV !== "production" &&
     (isStale(serverSource, generatedServer) ||
       isStale(packetSource, generatedServer) ||
+      isStale(backupRoutesSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
       isStale(storageSyncApplySource, generatedStorageSyncApply) ||
       isStale(localBackupImportRecordsSource, generatedServer)));
