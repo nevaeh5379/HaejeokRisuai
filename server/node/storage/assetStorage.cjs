@@ -2642,38 +2642,118 @@ class AzureSqlAssetStorage {
   }
 
   async writeFromPath(hexPath, sourcePath) {
-    const key = hexToKey(hexPath);
-    const contentType = getContentType(key);
-    let buffer = await fs.promises.readFile(sourcePath);
-    await this._upsertFile(key, buffer, contentType);
-    if (isImageKey(key)) {
-      await this._eagerGenerateThumbnail(hexPath, key, buffer).catch(() => {});
+    const writer = this.createWriteStream(hexPath, {
+      generateThumbnail: false,
+    });
+    try {
+      await pipeline(fs.createReadStream(sourcePath), writer.stream);
+      await writer.done();
+      await fs.promises.unlink(sourcePath).catch(() => {});
+      return { success: true };
+    } catch (err) {
+      await writer.abort().catch(() => {});
+      throw err;
     }
-    await fs.promises.unlink(sourcePath).catch(() => {});
-    return { success: true };
   }
 
-  createWriteStream(hexPath) {
-    if (!fs.existsSync(this.savePath))
-      fs.mkdirSync(this.savePath, { recursive: true });
-    const temporaryPath = path.join(
-      this.savePath,
-      `.__azuresql-upload-${crypto.randomUUID()}.tmp`,
-    );
-    const fileStream = fs.createWriteStream(temporaryPath, { mode: 0o600 });
-    const finished = new Promise((resolve, reject) => {
-      fileStream.once("finish", resolve);
-      fileStream.once("error", reject);
+  createWriteStream(hexPath, _options = {}) {
+    const key = hexToKey(hexPath);
+    const contentType = getContentType(key);
+    const temporaryKey = `__risu_stream/${crypto.randomUUID()}`;
+    const chunkSize = 1024 * 1024;
+    const passThrough = new stream.PassThrough({
+      highWaterMark: chunkSize,
     });
-    const donePromise = finished.then(() =>
-      this.writeFromPath(hexPath, temporaryPath),
-    );
+    let initialized = false;
+    let aborted = false;
+
+    const removeTemporaryRow = async () => {
+      if (!initialized) return;
+      const pool = await this._getPool();
+      await pool
+        .request()
+        .input("temporary_key", this.sql.NVarChar(512), temporaryKey)
+        .query("DELETE FROM asset_files WHERE asset_key = @temporary_key");
+    };
+
+    const donePromise = (async () => {
+      const pool = await this._getPool();
+      await pool
+        .request()
+        .input("temporary_key", this.sql.NVarChar(512), temporaryKey)
+        .input("content_type", this.sql.NVarChar(128), contentType)
+        .query(`DELETE FROM asset_files WHERE asset_key = @temporary_key;
+INSERT INTO asset_files (asset_key, content, content_type, size)
+VALUES (@temporary_key, 0x, @content_type, 0);`);
+      initialized = true;
+
+      let totalSize = 0;
+      for await (const value of passThrough) {
+        if (aborted) throw new Error("Azure SQL asset upload aborted");
+        const incoming = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        for (let offset = 0; offset < incoming.length; offset += chunkSize) {
+          if (aborted) throw new Error("Azure SQL asset upload aborted");
+          const chunk = incoming.subarray(
+            offset,
+            Math.min(offset + chunkSize, incoming.length),
+          );
+          await pool
+            .request()
+            .input("temporary_key", this.sql.NVarChar(512), temporaryKey)
+            .input("content", this.sql.VarBinary(this.sql.MAX), chunk)
+            .input("size", this.sql.BigInt, chunk.length)
+            .query(`UPDATE asset_files
+SET content .WRITE(@content, NULL, 0),
+    size = size + @size,
+    mtime = SYSUTCDATETIME()
+WHERE asset_key = @temporary_key;`);
+          totalSize += chunk.length;
+        }
+      }
+      if (aborted) throw new Error("Azure SQL asset upload aborted");
+
+      await pool
+        .request()
+        .input("temporary_key", this.sql.NVarChar(512), temporaryKey)
+        .input("key", this.sql.NVarChar(512), key)
+        .input("content_type", this.sql.NVarChar(128), contentType)
+        .input("size", this.sql.BigInt, totalSize).query(`SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRANSACTION;
+    IF NOT EXISTS (
+        SELECT 1 FROM asset_files
+        WHERE asset_key = @temporary_key
+          AND size = @size
+          AND DATALENGTH(content) = @size
+    ) THROW 51000, 'Azure SQL streamed asset size mismatch', 1;
+    DELETE FROM asset_thumbnails WHERE asset_key = @key;
+    DELETE FROM asset_files WHERE asset_key = @key;
+    UPDATE asset_files
+    SET asset_key = @key,
+        content_type = @content_type,
+        mtime = SYSUTCDATETIME()
+    WHERE asset_key = @temporary_key;
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+END CATCH;`);
+      initialized = false;
+      return { success: true };
+    })().catch(async (err) => {
+      await removeTemporaryRow().catch(() => {});
+      throw err;
+    });
+
     return {
-      stream: fileStream,
+      stream: passThrough,
       done: () => donePromise,
       abort: async () => {
-        fileStream.destroy();
-        await fs.promises.unlink(temporaryPath).catch(() => {});
+        aborted = true;
+        passThrough.destroy(new Error("Azure SQL asset upload aborted"));
+        await donePromise.catch(() => {});
+        await removeTemporaryRow().catch(() => {});
       },
     };
   }

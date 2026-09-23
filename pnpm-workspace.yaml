@@ -1,5 +1,8 @@
 sideEffectsCache: false
 
+packages:
+  - server/node
+
 overrides:
   "@huggingface/transformers>onnxruntime-node": "-"
 

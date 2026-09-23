@@ -8,6 +8,7 @@ const ALLOWED_HEADERS = [
   "if-none-match",
   "last-event-id",
   "risu-auth",
+  "x-risu-backup-upload-token",
   "x-risu-client-id",
 ];
 const EXPOSED_HEADERS = ["content-length", "content-type", "etag"];
