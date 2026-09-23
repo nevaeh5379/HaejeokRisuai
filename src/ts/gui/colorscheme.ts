@@ -29,14 +29,30 @@ export interface ColorScheme {
   type: "light" | "dark";
 }
 
-async function syncTauriNativeAppearance(type: "light" | "dark") {
+async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
   if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
     return;
   }
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("set_risu_native_appearance", { appearance: type });
+    const updates: Promise<unknown>[] = [
+      invoke("set_risu_native_appearance", { appearance: colorScheme.type }),
+    ];
+
+    if (isTauriLinux) {
+      updates.push(
+        invoke("set_linux_kde_decoration_colors", {
+          background: colorScheme.darkbg,
+          foreground: colorScheme.textcolor,
+          inactiveForeground: colorScheme.textcolor2,
+          accent: colorScheme.selected,
+          negative: colorScheme.draculared,
+        }),
+      );
+    }
+
+    await Promise.all(updates);
   } catch (error) {
     console.warn(
       "Failed to sync native Tauri appearance with Risu theme:",
@@ -378,7 +394,7 @@ export function updateColorScheme() {
     if (isFluent && isTauriWindows) {
       void ensureFluentWindowsBackdrop();
     }
-    void syncTauriNativeAppearance(colorScheme.type);
+    void syncTauriNativeAppearance(colorScheme);
     updateTextThemeAndCSS();
   } catch (error) {}
 }

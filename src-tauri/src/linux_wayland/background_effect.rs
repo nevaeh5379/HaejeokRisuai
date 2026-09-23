@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
 use gtk::prelude::*;
 use tauri::{Runtime, Window};
@@ -11,7 +11,12 @@ use wayland_client::{
 use wayland_protocols::ext::background_effect::v1::client::{
     ext_background_effect_manager_v1, ext_background_effect_surface_v1,
 };
-use wayland_protocols_plasma::blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager};
+use wayland_protocols_plasma::{
+    blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager},
+    server_decoration_palette::client::{
+        org_kde_kwin_server_decoration_palette, org_kde_kwin_server_decoration_palette_manager,
+    },
+};
 
 use super::{decoration, BackgroundBlurSupport, LinuxWindowCapabilities, LinuxWindowDecoration};
 
@@ -19,6 +24,7 @@ const STANDARD_BLUR_MANAGER: &str = "ext_background_effect_manager_v1";
 const KWIN_BLUR_MANAGER: &str = "org_kde_kwin_blur_manager";
 const XDG_DECORATION_MANAGER: &str = "zxdg_decoration_manager_v1";
 const KWIN_DECORATION_MANAGER: &str = "org_kde_kwin_server_decoration_manager";
+const KWIN_DECORATION_PALETTE_MANAGER: &str = "org_kde_kwin_server_decoration_palette_manager";
 
 #[derive(Debug, Clone)]
 struct Global {
@@ -101,6 +107,8 @@ delegate_noop!(RegistryState: ignore wl_region::WlRegion);
 delegate_noop!(RegistryState: ignore ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1);
 delegate_noop!(RegistryState: ignore org_kde_kwin_blur_manager::OrgKdeKwinBlurManager);
 delegate_noop!(RegistryState: ignore org_kde_kwin_blur::OrgKdeKwinBlur);
+delegate_noop!(RegistryState: ignore org_kde_kwin_server_decoration_palette_manager::OrgKdeKwinServerDecorationPaletteManager);
+delegate_noop!(RegistryState: ignore org_kde_kwin_server_decoration_palette::OrgKdeKwinServerDecorationPalette);
 
 enum BackgroundEffect {
     Standard {
@@ -114,6 +122,12 @@ enum BackgroundEffect {
     None,
 }
 
+struct KwinDecorationPalette {
+    _manager:
+        org_kde_kwin_server_decoration_palette_manager::OrgKdeKwinServerDecorationPaletteManager,
+    palette: org_kde_kwin_server_decoration_palette::OrgKdeKwinServerDecorationPalette,
+}
+
 struct WaylandEffectSession {
     connection: Connection,
     event_queue: EventQueue<RegistryState>,
@@ -122,6 +136,7 @@ struct WaylandEffectSession {
     compositor: wl_compositor::WlCompositor,
     _surface: wl_surface::WlSurface,
     effect: BackgroundEffect,
+    decoration_palette: Option<KwinDecorationPalette>,
     cleaned: bool,
 }
 
@@ -162,6 +177,10 @@ impl WaylandEffectSession {
                 blur.release();
             }
             BackgroundEffect::None => {}
+        }
+
+        if let Some(decoration_palette) = &self.decoration_palette {
+            decoration_palette.palette.release();
         }
 
         let _ = self.connection.flush();
@@ -250,6 +269,28 @@ fn create_effect(
     Ok((BackgroundEffect::None, BackgroundBlurSupport::None))
 }
 
+fn create_kwin_decoration_palette(
+    registry: &wl_registry::WlRegistry,
+    state: &RegistryState,
+    qh: &QueueHandle<RegistryState>,
+    surface: &wl_surface::WlSurface,
+    palette_path: &Path,
+) -> Option<KwinDecorationPalette> {
+    let global = state.global(KWIN_DECORATION_PALETTE_MANAGER)?;
+    let manager = registry.bind::<
+        org_kde_kwin_server_decoration_palette_manager::OrgKdeKwinServerDecorationPaletteManager,
+        _,
+        _,
+    >(global.name, global.version.min(1), qh, ());
+    let palette = manager.create(surface, qh, ());
+    palette.set_palette(palette_path.to_string_lossy().into_owned());
+
+    Some(KwinDecorationPalette {
+        _manager: manager,
+        palette,
+    })
+}
+
 fn connect_to_gtk_wayland(
     gtk_window: &gtk::ApplicationWindow,
 ) -> Result<Option<Connection>, String> {
@@ -289,6 +330,7 @@ fn wrap_gtk_surface(
 pub fn install<R: Runtime>(
     window: &Window<R>,
     requested_decoration: LinuxWindowDecoration,
+    palette_path: Option<&Path>,
 ) -> Result<LinuxWindowCapabilities, String> {
     let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
     let Some(connection) = connect_to_gtk_wayland(&gtk_window)? else {
@@ -338,6 +380,19 @@ pub fn install<R: Runtime>(
     let compositor = bind_compositor(&registry, &state, &qh)?;
     let (effect, background_blur) =
         create_effect(&registry, &mut state, &mut event_queue, &surface)?;
+    let decoration_palette = if requested_decoration == LinuxWindowDecoration::Ssd {
+        palette_path
+            .and_then(|path| create_kwin_decoration_palette(&registry, &state, &qh, &surface, path))
+    } else {
+        None
+    };
+
+    if decoration_palette.is_some() {
+        connection
+            .flush()
+            .map_err(|error| format!("Failed to set KWin decoration palette: {error}"))?;
+        eprintln!("[Linux Wayland] Applied KWin server-decoration palette");
+    }
 
     let session = Rc::new(RefCell::new(WaylandEffectSession {
         connection,
@@ -347,6 +402,7 @@ pub fn install<R: Runtime>(
         compositor,
         _surface: surface,
         effect,
+        decoration_palette,
         cleaned: false,
     }));
 
@@ -392,6 +448,10 @@ mod tests {
         assert_eq!(
             KWIN_DECORATION_MANAGER,
             "org_kde_kwin_server_decoration_manager"
+        );
+        assert_eq!(
+            KWIN_DECORATION_PALETTE_MANAGER,
+            "org_kde_kwin_server_decoration_palette_manager"
         );
     }
 

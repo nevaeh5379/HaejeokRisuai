@@ -18,6 +18,7 @@ mod background_effect;
 mod decoration;
 
 const DECORATION_PREFERENCE_FILE: &str = "linux-window-decoration";
+const KWIN_DECORATION_PALETTE_FILE: &str = "kwin-decoration.colors";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +96,32 @@ fn preference_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
         .app_config_dir()
         .map(|directory| directory.join(DECORATION_PREFERENCE_FILE))
         .map_err(|error| error.to_string())
+}
+
+fn kwin_decoration_palette_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join(KWIN_DECORATION_PALETTE_FILE))
+        .map_err(|error| error.to_string())
+}
+
+pub fn set_kde_decoration_colors<R: Runtime>(
+    app: &AppHandle<R>,
+    background: &str,
+    foreground: &str,
+    inactive_foreground: &str,
+    accent: &str,
+    negative: &str,
+) -> Result<(), String> {
+    let path = kwin_decoration_palette_path(app)?;
+    decoration::write_kwin_decoration_palette(
+        &path,
+        background,
+        foreground,
+        inactive_foreground,
+        accent,
+        negative,
+    )
 }
 
 fn read_preference_file(path: &Path) -> LinuxWindowDecoration {
@@ -211,7 +238,25 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             }
 
             let requested = read_decoration_preference(window.app_handle());
-            match background_effect::install(&window, requested) {
+            let palette_path = if requested == LinuxWindowDecoration::Ssd {
+                kwin_decoration_palette_path(window.app_handle())
+                    .and_then(|path| {
+                        let dark = native_appearance_theme() == Some(Theme::Dark);
+                        decoration::ensure_kwin_decoration_palette(&path, dark)?;
+                        Ok(path)
+                    })
+                    .map_err(|error| {
+                        eprintln!(
+                            "[Linux Wayland] Failed to prepare KWin decoration palette: {error}"
+                        );
+                        error
+                    })
+                    .ok()
+            } else {
+                None
+            };
+
+            match background_effect::install(&window, requested, palette_path.as_deref()) {
                 Ok(capabilities) => {
                     if let Ok(mut values) = capability_store().lock() {
                         values.insert(window.label().to_string(), capabilities.clone());

@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use std::cell::RefCell;
+use std::{cell::RefCell, fs, path::Path};
 use tauri::{Runtime, Window};
 
 use super::LinuxWindowDecoration;
@@ -11,6 +11,71 @@ const INTEGRATED_CSD_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 2;
 thread_local! {
     static NATIVE_THEME_PROVIDER: RefCell<Option<(gtk::gdk::Screen, gtk::CssProvider)>> =
         const { RefCell::new(None) };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rgb(u8, u8, u8);
+
+impl Rgb {
+    fn as_kde(self) -> String {
+        format!("{},{},{}", self.0, self.1, self.2)
+    }
+}
+
+fn parse_hex_color(value: &str) -> Result<Rgb, String> {
+    let value = value.trim();
+    let hex = value
+        .strip_prefix('#')
+        .ok_or_else(|| format!("Expected #RRGGBB color, got {value}"))?;
+    if hex.len() != 6 {
+        return Err(format!("Expected #RRGGBB color, got {value}"));
+    }
+
+    let channel = |start: usize| {
+        u8::from_str_radix(&hex[start..start + 2], 16)
+            .map_err(|_| format!("Invalid #RRGGBB color: {value}"))
+    };
+    Ok(Rgb(channel(0)?, channel(2)?, channel(4)?))
+}
+
+pub fn write_kwin_decoration_palette(
+    path: &Path,
+    background: &str,
+    foreground: &str,
+    inactive_foreground: &str,
+    accent: &str,
+    negative: &str,
+) -> Result<(), String> {
+    let background = parse_hex_color(background)?.as_kde();
+    let foreground = parse_hex_color(foreground)?.as_kde();
+    let inactive_foreground = parse_hex_color(inactive_foreground)?.as_kde();
+    let accent = parse_hex_color(accent)?.as_kde();
+    let negative = parse_hex_color(negative)?.as_kde();
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "KWin decoration palette path has no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+
+    // KWin reads Colors:Header for modern decorations and WM for legacy ones.
+    // Keep the palette file stable instead of atomically replacing it: KWin's
+    // KConfigWatcher watches this exact path and should see live theme changes.
+    let palette = format!(
+        "[Colors:Header]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={foreground}\n\n[Colors:Header][Inactive]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={inactive_foreground}\n\n[Colors:Window]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={foreground}\n\n[WM]\nactiveBackground={background}\nactiveForeground={foreground}\nframe={background}\ninactiveBackground={background}\ninactiveForeground={inactive_foreground}\ninactiveFrame={background}\n\n[General]\nColorScheme=RisuAI\nName=RisuAI\n"
+    );
+    fs::write(path, palette).map_err(|error| error.to_string())
+}
+
+pub fn ensure_kwin_decoration_palette(path: &Path, dark: bool) -> Result<(), String> {
+    if path.exists() {
+        return Ok(());
+    }
+
+    if dark {
+        write_kwin_decoration_palette(path, "#21222c", "#f8f8f2", "#94a3b8", "#6272a4", "#ff5555")
+    } else {
+        write_kwin_decoration_palette(path, "#f0f0f0", "#0f172a", "#64748b", "#94a3b8", "#dc2626")
+    }
 }
 
 pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool {
@@ -293,6 +358,13 @@ mod tests {
     #[test]
     fn integrated_csd_class_is_scoped() {
         assert_eq!(INTEGRATED_CSD_CLASS, "risu-integrated-csd");
+    }
+
+    #[test]
+    fn parses_kde_palette_hex_colors() {
+        assert_eq!(parse_hex_color("#21222c").unwrap(), Rgb(33, 34, 44));
+        assert!(parse_hex_color("rgb(1, 2, 3)").is_err());
+        assert!(parse_hex_color("#fff").is_err());
     }
 
     #[test]
