@@ -10,7 +10,16 @@ function isLocalBackupImportFinalizePath(path) {
   );
 }
 
+function isLocalBackupImportControlPath(path) {
+  const normalized = String(path || "");
+  return (
+    /^\/api\/local-backup\/import\/jobs\/[^/]+\/file$/.test(normalized) ||
+    isLocalBackupImportFinalizePath(normalized)
+  );
+}
+
 module.exports = {
+  isLocalBackupImportControlPath,
   isLocalBackupImportFinalizePath,
   isLocalBackupImportUploadPath,
 };

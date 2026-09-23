@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  isLocalBackupImportControlPath,
   isLocalBackupImportFinalizePath,
   isLocalBackupImportUploadPath,
 } = require("./localBackupRequestRouting.cjs");
@@ -31,6 +32,27 @@ test("chunked import finalize bypasses the reader gate", () => {
   );
   assert.equal(
     isLocalBackupImportFinalizePath("/api/local-backup/import/jobs/job-1/chunks"),
+    false,
+  );
+});
+
+test("direct import bypasses the reader gate before finalizing in-request", () => {
+  assert.equal(
+    isLocalBackupImportControlPath(
+      "/api/local-backup/import/jobs/job-1/file",
+    ),
+    true,
+  );
+  assert.equal(
+    isLocalBackupImportControlPath(
+      "/api/local-backup/import/jobs/job-1/finalize-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    isLocalBackupImportControlPath(
+      "/api/local-backup/import/jobs/job-1/chunks",
+    ),
     false,
   );
 });
