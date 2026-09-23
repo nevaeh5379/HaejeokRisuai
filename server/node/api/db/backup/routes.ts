@@ -266,6 +266,10 @@ export function registerBackupRoutes(
   ): MaskedBackupParams.Azure;
   function maskBackupParams(
     vendor: BackupVendor,
+    parmas?: BackupParams
+  ): MaskedBackupParams
+  function maskBackupParams(
+    vendor: BackupVendor,
     params: BackupParams = {},
   ): MaskedBackupParams {
     switch (vendor) {

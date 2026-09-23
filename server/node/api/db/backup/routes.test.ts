@@ -134,6 +134,36 @@ test("설정 조회는 비밀번호를 가리고 revision 차이를 반환한다
     const response: Response = await fetch(`${baseUrl}/api/db-backup`);
     const body: { params: MaskedBackupParams.Postgres; lag: number } =
       await response.json();
+    expect(body).toMatchInlineSnapshot(`
+      {
+        "backupInitialized": true,
+        "backupRevision": 8,
+        "configured": true,
+        "enabled": true,
+        "inFlight": false,
+        "lag": 2,
+        "lastFullSyncAt": null,
+        "lastFullSyncError": null,
+        "lastMirrorAt": null,
+        "lastMirrorError": null,
+        "lastSnapshotAt": null,
+        "lastSnapshotError": null,
+        "managedByEnvironment": false,
+        "mirroring": {
+          "enabled": true,
+        },
+        "params": {
+          "connectionString": "postgres://user:***@localhost/db",
+          "poolMax": 10,
+        },
+        "primaryRevision": 10,
+        "snapshot": {
+          "enabled": false,
+          "intervalMinutes": 60,
+        },
+        "vendor": "postgres",
+      }
+    `);
     expect(response.status).toBe(200);
     expect(body.params.connectionString).toBe(
       "postgres://user:***@localhost/db",
