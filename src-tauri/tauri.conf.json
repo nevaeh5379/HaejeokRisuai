@@ -55,6 +55,7 @@
   "app": {
     "withGlobalTauri": false,
     "macOSPrivateApi": true,
+    "enableGTKAppId": true,
     "windows": [
       {
         "fullscreen": false,
