@@ -80,6 +80,16 @@ const MODEL_JOB_STATUS_VALUES = [
     "failed",
     "aborted",
 ];
+const LOCAL_BACKUP_IMPORT_STATUSES = ["pending", "uploading", "restoring", "complete", "error"];
+const LOCAL_BACKUP_IMPORT_STAGES = [
+    "uploading",
+    "reading",
+    "database",
+    "coldStorage",
+    "assets",
+    "inlays",
+    "finalizing",
+];
 function isModelJobStatus(value) {
     return MODEL_JOB_STATUS_VALUES.includes(value);
 }
@@ -241,6 +251,42 @@ function parseGenerationState(value) {
         event.updatedAt = updatedAt;
     return event;
 }
+function parseLocalBackupImportProgress(value) {
+    if (!isRecord(value))
+        return null;
+    const jobId = readString(value.jobId, 256);
+    if (jobId === undefined ||
+        !LOCAL_BACKUP_IMPORT_STATUSES.includes(value.status)) {
+        return null;
+    }
+    const event = {
+        jobId,
+        status: value.status,
+    };
+    if (value.progress !== undefined) {
+        if (!isRecord(value.progress))
+            return null;
+        if (!LOCAL_BACKUP_IMPORT_STAGES.includes(value.progress.stage)) {
+            return null;
+        }
+        const current = readNonNegativeInteger(value.progress.current);
+        const total = readNonNegativeInteger(value.progress.total);
+        const detail = readString(value.progress.detail, 1024);
+        if (value.progress.current !== undefined && current === undefined)
+            return null;
+        if (value.progress.total !== undefined && total === undefined)
+            return null;
+        if (value.progress.detail !== undefined && detail === undefined)
+            return null;
+        event.progress = {
+            stage: value.progress.stage,
+            ...(current === undefined ? {} : { current }),
+            ...(total === undefined ? {} : { total }),
+            ...(detail === undefined ? {} : { detail }),
+        };
+    }
+    return event;
+}
 /**
  * Parses the ready snapshot sent right after a client is registered. Malformed
  * generation entries are dropped instead of failing the whole snapshot.
@@ -318,6 +364,12 @@ function parseRealtimeEvent(eventName, data) {
         return payload === null
             ? null
             : { event: "generation-state", data: payload };
+    }
+    if (eventName === "local-backup-import-progress") {
+        const payload = parseLocalBackupImportProgress(data);
+        return payload === null
+            ? null
+            : { event: "local-backup-import-progress", data: payload };
     }
     if (eventName === "ready") {
         const payload = parseReadyEvent(data);

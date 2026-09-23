@@ -29,11 +29,15 @@ test("model job survives stream client disconnect and replays the full journal",
   const saveDir = await makeTempDir();
   t.after(() => fs.rm(saveDir, { recursive: true, force: true }));
 
+  let releaseUpstream;
+  const continueUpstream = new Promise((resolve) => {
+    releaseUpstream = resolve;
+  });
+  t.after(() => releaseUpstream());
   const upstream = http.createServer((_req, res) => {
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write("alpha");
-    setTimeout(() => res.write("beta"), 40);
-    setTimeout(() => res.end("gamma"), 80);
+    void continueUpstream.then(() => res.end("betagamma"));
   });
   const upstreamPort = await listen(upstream);
   t.after(() => close(upstream));
@@ -91,6 +95,7 @@ test("model job survives stream client disconnect and replays the full journal",
   const first = await firstReader.read();
   assert.equal(new TextDecoder().decode(first.value), "alpha");
   await firstReader.cancel();
+  releaseUpstream();
 
   await new Promise((resolve) => setTimeout(resolve, 130));
   const job = manager.getJob(jobId);

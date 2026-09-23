@@ -3,7 +3,7 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": ".",
+    "rootDir": "../..",
     "outDir": ".tsbuild",
     "types": ["node"],
     "strict": false,
@@ -17,6 +17,7 @@
     "server.cts",
     "http/realtimeEvents.cts",
     "sync/databaseMutations.cts",
+    "sync/localBackupImportRecords.ts",
     "sync/storageSyncSqlApply.cts"
   ]
 }

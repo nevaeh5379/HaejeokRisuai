@@ -12,6 +12,7 @@ import type {
   RealtimeEventName,
   RealtimeEventPayload,
   RealtimeGenerationState,
+  RealtimeTransientEventName,
 } from "../../../packages/protocol/realtimeEvents.cjs";
 
 /**
@@ -102,6 +103,10 @@ export interface RealtimeEventHub {
     options?: RealtimeWebSocketOptions,
   ): void;
   broadcast<K extends RealtimeBroadcastEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
+  ): void;
+  broadcastTransient<K extends RealtimeTransientEventName>(
     event: K,
     data: RealtimeEventMap[K],
   ): void;
@@ -237,6 +242,21 @@ export function createRealtimeEventHub(
     if (history.length > historyLimit) {
       history.splice(0, history.length - historyLimit);
     }
+    for (const client of [...clients]) {
+      try {
+        if (!sendToClient(client, record)) clients.delete(client);
+      } catch {
+        clients.delete(client);
+      }
+    }
+  }
+
+  /** Sends an ephemeral event without consuming replay history. */
+  function broadcastTransient<K extends RealtimeTransientEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
+  ): void {
+    const record: RealtimeEventRecord = { event, data };
     for (const client of [...clients]) {
       try {
         if (!sendToClient(client, record)) clients.delete(client);
@@ -413,6 +433,7 @@ export function createRealtimeEventHub(
     connect,
     connectWebSocket,
     broadcast,
+    broadcastTransient,
     updateGenerationState,
     listActiveGenerations,
     clientCount: (): number => clients.size,

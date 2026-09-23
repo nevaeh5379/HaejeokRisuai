@@ -36,6 +36,10 @@ import {
 } from "./nodeRealtimeChangeQueue";
 import { consumeNodeRealtimeWebSocket } from "./nodeRealtimeWebSocket";
 import {
+  publishNodeBackupProgress,
+  setNodeRealtimeConnected,
+} from "./nodeRealtimeBackupProgress";
+import {
   parseRealtimeEvent,
   type GenerationLifecycleState,
   type RealtimeDatabaseChangeEvent,
@@ -445,11 +449,16 @@ async function dispatchEvent(
     }
     return;
   }
+  if (frame.event === "local-backup-import-progress") {
+    publishNodeBackupProgress(frame.data);
+    return;
+  }
   if (frame.event === "model-job") {
     if (allowNodeFeatures) await applyModelJob(frame.data);
   } else if (frame.event === "generation-state") {
     applyGenerationState(frame.data);
   } else if (frame.event === "ready") {
+    setNodeRealtimeConnected(true);
     applyReadyEvent(frame.data);
   } else if (frame.event === "resync-required") {
     lastEventId = frame.data.latestEventId;
@@ -567,6 +576,7 @@ async function connect(
       console.warn("[NodeRealtimeSync] connection lost", error);
     }
   } finally {
+    setNodeRealtimeConnected(false);
     if (streamController === controller) streamController = null;
     if (!controller.signal.aborted)
       scheduleReconnect(storage, apiClient, allowNodeFeatures);
