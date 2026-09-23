@@ -26,7 +26,7 @@ describe("RemoteLocalBackupClient import API", () => {
       ): ReturnType<typeof apiClient.request> => {
         requests.push({ path, init });
         if (path === "/api/local-backup/import/jobs") {
-          return response({ id: "import-1" });
+          return response({ id: "import-1", uploadToken: "upload-1" });
         }
         if (path === "/api/local-backup/import/jobs/import-1/file") {
           return response({
@@ -61,7 +61,7 @@ describe("RemoteLocalBackupClient import API", () => {
 
     const job = await client.createImportJob();
     const blob = new Blob([new Uint8Array([1, 2, 3])]);
-    const result = await client.uploadImportFile(job.id, blob);
+    const result = await client.uploadImportFile(job.id, blob, job.uploadToken);
     const progress = await client.getImportProgress(job.id);
 
     expect(result).toMatchObject({
@@ -79,7 +79,10 @@ describe("RemoteLocalBackupClient import API", () => {
     expect(new Headers(upload.init?.headers).get("content-type")).toBe(
       "application/octet-stream",
     );
-    expect(new Headers(upload.init?.headers).get("risu-auth")).toBe("secret");
+    expect(new Headers(upload.init?.headers).get("risu-auth")).toBeNull();
+    expect(
+      new Headers(upload.init?.headers).get("x-risu-backup-upload-token"),
+    ).toBe("upload-1");
     expect(new Headers(upload.init?.headers).get("x-risu-client-id")).toBe(
       "client-1",
     );
@@ -92,7 +95,10 @@ describe("RemoteLocalBackupClient import API", () => {
       request: vi.fn(async (path: string, init?: RequestInit) => {
         requests.push({ path, init });
         if (path === "/api/local-backup/import/jobs") {
-          return response({ id: "import-stream" });
+          return response({
+            id: "import-stream",
+            uploadToken: "upload-stream",
+          });
         }
         if (
           path.startsWith("/api/local-backup/import/jobs/import-stream/chunks?")

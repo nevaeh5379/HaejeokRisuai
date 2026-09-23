@@ -220,6 +220,7 @@ export interface LocalBackupImportProgress {
 
 export interface LocalBackupImportJobCreated {
   id: string;
+  uploadToken: string;
 }
 
 export interface LocalBackupImportUploadState {
@@ -252,7 +253,13 @@ export function validateLocalBackupImportJobCreated(
   value: unknown,
 ): LocalBackupImportJobCreated {
   const result = value as Partial<LocalBackupImportJobCreated> | null;
-  if (!result || typeof result.id !== "string" || result.id.length === 0) {
+  if (
+    !result ||
+    typeof result.id !== "string" ||
+    result.id.length === 0 ||
+    typeof result.uploadToken !== "string" ||
+    result.uploadToken.length === 0
+  ) {
     throw new BackupApiContractError(
       "The backup API returned an invalid import job.",
     );

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import type {
+  LocalBackupImportJobCreated,
   LocalBackupImportJobCompletion,
   LocalBackupImportJobProgress,
   LocalBackupImportProgress,
@@ -261,8 +262,12 @@ export class LocalBackupImportService {
     }
   }
 
-  createJob(): { id: string } {
+  createJob(): LocalBackupImportJobCreated {
     return this.jobs.create();
+  }
+
+  authorizeDirectUpload(id: string, uploadToken: string): boolean {
+    return this.jobs.authorizeDirectUpload(id, uploadToken);
   }
 
   progress(id: string): LocalBackupImportJobProgress {

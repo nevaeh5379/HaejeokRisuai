@@ -4895,7 +4895,21 @@ app.put(
   "/api/local-backup/import/jobs/:jobId/file",
   authenticatedRouteLimiter,
   async (req, res, next) => {
-    if (!(await checkAuth(req, res))) return;
+    const uploadToken = normalizeAuthHeader(
+      req.headers["x-risu-backup-upload-token"],
+    );
+    if (
+      !localBackupImportService.authorizeDirectUpload(
+        req.params.jobId,
+        uploadToken,
+      )
+    ) {
+      res.status(401).send({
+        error: "Invalid local backup upload token",
+        code: "invalid_upload_token",
+      });
+      return;
+    }
     if (!req.is("application/octet-stream")) {
       res.status(415).send({
         error: "Content-Type must be application/octet-stream",
