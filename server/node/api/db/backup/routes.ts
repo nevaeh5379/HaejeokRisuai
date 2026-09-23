@@ -165,6 +165,42 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * @description NDJSON 스트림의 전송 계층만 담당하는 래퍼.
+ * @description A wrapper owning only the NDJSON transport layer.
+ *
+ * @description 헤더 설정과 안전한 라인 쓰기(연결이 끊기면 무시), 스트림 종료만
+ * 안다. 각 라인의 "내용"(progress/done/error)은 호출부가 결정한다.
+ * @description Knows only header setup, safe line writing (no-op once the
+ * connection is closed), and stream closing. The caller decides line content.
+ */
+type NdjsonStream = {
+  sendLine: (line: Record<string, unknown>) => void;
+  end: () => void;
+};
+
+/**
+ * @description 응답을 NDJSON 스트림으로 열고 전송 래퍼를 반환한다.
+ * @description Opens the response as an NDJSON stream and returns a transport wrapper.
+ *
+ * @param res - 스트림으로 사용할 Express 응답 객체. / Express response to stream on.
+ * @returns 라인 작성기(sendLine)와 스트림 종료기(end). / Line writer (sendLine) and stream closer (end).
+ */
+function openNdjsonStream(res: Response): NdjsonStream {
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.setHeader("Transfer-Encoding", "chunked");
+  return {
+    sendLine: (line: Record<string, unknown>): void => {
+      if (!res.writableEnded && !res.closed) {
+        res.write(JSON.stringify(line) + "\n");
+      }
+    },
+    end: (): void => {
+      res.end();
+    },
+  };
+}
+
 /** Register the backup database API while sharing the server's live backup state. */
 export function registerBackupRoutes(
   app: Express,
@@ -210,32 +246,55 @@ export function registerBackupRoutes(
   // /api/db-backup DELETE:  백업 설정 해제
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /**
+   * @description vendor별 연결 파라미터 중 민감하지 않은 필드만 노출하는 마스킹 매퍼.
+   * @description A vendor-specific masking mapper that exposes only non-sensitive connection fields.
+   *
+   * @description 비밀번호(password/walletPassword)는 값을 반환하지 않고
+   * 존재 여부(`hasPassword`/`hasWalletPassword`)만 boolean으로 노출하며,
+   * postgres의 connectionString은 `maskPostgresConnectionString`으로 마스킹한다.
+   * @description Passwords (password/walletPassword) are never returned; only their
+   * presence (`hasPassword`/`hasWalletPassword`) is exposed as booleans, and the
+   * postgres connectionString is masked via `maskPostgresConnectionString`.
+   *
+   * @param vendor - 마스킹할 vendor. `null`이면 빈 객체를 반환한다.
+   * / Vendor to mask for. `null` returns an empty object.
+   * @param params - 저장된 원본 연결 파라미터. / Stored raw connection parameters.
+   * @returns API 응답에 포함할 마스킹된 파라미터. / Masked parameters safe for API responses.
+   */
   function maskBackupParams(
     vendor: BackupVendor | null,
     params: BackupParams = {},
   ): MaskedBackupParams {
-    const masked: MaskedBackupParams = {};
-    if (vendor === "postgres") {
-      masked.connectionString = maskPostgresConnectionString(
-        params.connectionString || "",
-      );
-      masked.poolMax = params.poolMax || 10;
-    } else if (vendor === "oracle") {
-      masked.user = params.user || "";
-      masked.tnsAlias = params.tnsAlias || "";
-      masked.walletPath = params.walletPath || "";
-      masked.poolMax = params.poolMax || 10;
-      masked.hasPassword = Boolean(params.password);
-      masked.hasWalletPassword = Boolean(params.walletPassword);
-    } else if (vendor === "azure") {
-      masked.server = params.server || "";
-      masked.database = params.database || "";
-      masked.user = params.user || "";
-      masked.port = params.port || 1433;
-      masked.poolMax = params.poolMax || 10;
-      masked.hasPassword = Boolean(params.password);
+    switch (vendor) {
+      case "postgres":
+        return {
+          connectionString: maskPostgresConnectionString(
+            params.connectionString || "",
+          ),
+          poolMax: params.poolMax || 10,
+        };
+      case "oracle":
+        return {
+          user: params.user || "",
+          tnsAlias: params.tnsAlias || "",
+          walletPath: params.walletPath || "",
+          poolMax: params.poolMax || 10,
+          hasPassword: Boolean(params.password),
+          hasWalletPassword: Boolean(params.walletPassword),
+        };
+      case "azure":
+        return {
+          server: params.server || "",
+          database: params.database || "",
+          user: params.user || "",
+          port: params.port || 1433,
+          poolMax: params.poolMax || 10,
+          hasPassword: Boolean(params.password),
+        };
+      default:
+        return {};
     }
-    return masked;
   }
 
   async function getBackupConfigResponse(): Promise<BackupConfigResponse> {
@@ -438,6 +497,67 @@ export function registerBackupRoutes(
     },
   );
 
+  /**
+   * @description 전체 백업 작업(resync/restore)을 NDJSON 스트리밍으로 실행하는 공통 헬퍼.
+   * @description Shared helper that streams a full backup operation (resync/restore) as NDJSON.
+   *
+   * @description 작업 흐름(직렬 큐 실행 → done/error 페이로드 구성)만 담당하고,
+   * 실제 전송은 `openNdjsonStream` 래퍼에 위임한다. 실패 시 헤더가 아직
+   * 전송되지 않았다면 502 JSON 본문으로, 이미 보냈다면 `error` 라인으로 전달한다.
+   * @description Owns only the operation flow (serial-queue execution → done/error
+   * payload shaping) and delegates transport to the `openNdjsonStream` wrapper. On
+   * failure it responds with a 502 JSON body when headers were not yet sent,
+   * otherwise an `error` line.
+   *
+   * @param res - NDJSON 스트림을 받을 Express 응답 객체. / Express response receiving the NDJSON stream.
+   * @param operation - 진행 콜백을 받는 백업 작업. 반환 객체가 `done` 라인에 스프레드된다.
+   * / Backup operation receiving a progress emitter; its return value is spread into the `done` line.
+   * @param fallbackError - 오류에 메시지가 없을 때 사용하는 기본 메시지. / Fallback message when the error has none.
+   * @param errorCode - `error` 라인/502 본문에 넣는 기계 가독 코드. / Machine-readable code for the `error` line / 502 body.
+   */
+  async function streamFullBackupOperation(
+    res: Response,
+    operation: (
+      sendProgress: (event: BackupProgress) => void,
+    ) => Promise<Record<string, unknown> | null>,
+    fallbackError: string,
+    errorCode: string,
+  ): Promise<void> {
+    const stream: NdjsonStream = openNdjsonStream(res);
+
+    try {
+      const result = await enqueueBackupWrite(
+        () => operation((event) => stream.sendLine({ type: "progress", ...event })),
+        "full",
+      );
+      stream.sendLine({ type: "done", success: true, ...result });
+    } catch (error) {
+      const payload = {
+        success: false,
+        error: errorMessage(error, fallbackError),
+        code: errorCode,
+      };
+      if (!res.headersSent) {
+        res.status(502).send(payload);
+      } else {
+        stream.sendLine({ type: "error", ...payload });
+      }
+    } finally {
+      stream.end();
+    }
+  }
+
+  /**
+   * @description POST /api/db-backup/resync — 메인 DB 전체를 백업 DB로 다시 적요한다.
+   * @description POST /api/db-backup/resync — re-sync the entire main database into the backup database.
+   *
+   * @description 진행 상황과 결과를 NDJSON으로 스트리밍한다. 성공 시 마지막 전체
+   * 동기화 오류(lastFullSyncError)를 초기화하고, lastFullSyncAt 타임스탬프를
+   * `done` 라인에 포함한다.
+   * @description Streams progress and the result as NDJSON. On success it clears the
+   * last full-sync error (lastFullSyncError) and includes the lastFullSyncAt
+   * timestamp in the `done` line.
+   */
   app.post(
     "/api/db-backup/resync",
     authenticatedRouteLimiter,
@@ -453,56 +573,34 @@ export function registerBackupRoutes(
         return;
       }
       try {
-        res.setHeader("Content-Type", "application/x-ndjson");
-        res.setHeader("Transfer-Encoding", "chunked");
-
-        const sendProgress: (event: BackupProgress) => void = (
-          event: BackupProgress,
-        ): void => {
-          if (res.writableEnded || res.closed) return;
-          res.write(JSON.stringify({ type: "progress", ...event }) + "\n");
-        };
-
-        const result: BackupResult | null = await enqueueBackupWrite(
-          () =>
-            mirrorFullBackupToBackup(sendProgress).then((r: BackupResult) => {
-              backupRuntime.lastFullSyncAt = new Date().toISOString();
-              backupRuntime.lastFullSyncError = null;
-              return r;
-            }),
-          "full",
+        await streamFullBackupOperation(
+          res,
+          async (sendProgress) => {
+            const result = await mirrorFullBackupToBackup(sendProgress);
+            backupRuntime.lastFullSyncAt = new Date().toISOString();
+            backupRuntime.lastFullSyncError = null;
+            return { ...result, lastFullSyncAt: backupRuntime.lastFullSyncAt };
+          },
+          "Backup full sync failed",
+          "backup_sync_failed",
         );
-
-        res.write(
-          JSON.stringify({
-            type: "done",
-            success: true,
-            ...(result || {}),
-            lastFullSyncAt: backupRuntime.lastFullSyncAt,
-          }) + "\n",
-        );
-        res.end();
       } catch (error) {
-        if (!res.headersSent) {
-          res.status(502).send({
-            success: false,
-            error: errorMessage(error, "Backup full sync failed"),
-            code: "backup_sync_failed",
-          });
-        } else {
-          res.write(
-            JSON.stringify({
-              type: "error",
-              error: errorMessage(error, "Backup full sync failed"),
-              code: "backup_sync_failed",
-            }) + "\n",
-          );
-          res.end();
-        }
+        next(error);
       }
     },
   );
 
+  /**
+   * @description POST /api/db-backup/restore — 백업 DB 전체를 메인 DB로 복원한다.
+   * @description POST /api/db-backup/restore — restore the entire backup database into the main database.
+   *
+   * @description 진행 상황과 결과를 NDJSON으로 스트리밍한다. 복원은 메인 DB의
+   * 상태 자체를 교체하기 때문에, 실행 중 실패가 발생해도 스트림이 이미 시작
+   * 되었다면 `error` 타입의 NDJSON 라인으로 전달된다.
+   * @description Streams progress and the result as NDJSON. Because a restore
+   * replaces the main database's state outright, a mid-run failure is reported
+   * as an NDJSON `error` line once the stream has already started.
+   */
   app.post(
     "/api/db-backup/restore",
     authenticatedRouteLimiter,
@@ -518,46 +616,14 @@ export function registerBackupRoutes(
         return;
       }
       try {
-        res.setHeader("Content-Type", "application/x-ndjson");
-        res.setHeader("Transfer-Encoding", "chunked");
-
-        const sendProgress: (event: BackupProgress) => void = (
-          event: BackupProgress,
-        ): void => {
-          if (res.writableEnded || res.closed) return;
-          res.write(JSON.stringify({ type: "progress", ...event }) + "\n");
-        };
-
-        const result: BackupResult | null = await enqueueBackupWrite(
-          () => restoreBackupToMainDatabase(sendProgress),
-          "full",
+        await streamFullBackupOperation(
+          res,
+          restoreBackupToMainDatabase,
+          "Backup restore to main failed",
+          "backup_restore_failed",
         );
-
-        res.write(
-          JSON.stringify({
-            type: "done",
-            success: true,
-            ...(result || {}),
-          }) + "\n",
-        );
-        res.end();
       } catch (error) {
-        if (!res.headersSent) {
-          res.status(502).send({
-            success: false,
-            error: errorMessage(error, "Backup restore to main failed"),
-            code: "backup_restore_failed",
-          });
-        } else {
-          res.write(
-            JSON.stringify({
-              type: "error",
-              error: errorMessage(error, "Backup restore to main failed"),
-              code: "backup_restore_failed",
-            }) + "\n",
-          );
-          res.end();
-        }
+        next(error);
       }
     },
   );
