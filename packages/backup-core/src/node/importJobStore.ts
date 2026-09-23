@@ -1,5 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type {
+  LocalBackupImportJobCreated,
   LocalBackupImportJobCompletion,
   LocalBackupImportJobProgress,
   LocalBackupImportJobStatus,
@@ -8,6 +9,7 @@ import type {
 
 interface InternalImportJob {
   id: string;
+  uploadToken: string | null;
   status: LocalBackupImportJobStatus;
   progress: LocalBackupImportProgress;
   error: string | null;
@@ -17,6 +19,8 @@ interface InternalImportJob {
   completion: Promise<void>;
   resolveCompletion: (() => void) | null;
 }
+
+const DEFAULT_IMPORT_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class LocalBackupImportJobError extends Error {
   constructor(
@@ -35,8 +39,13 @@ export class LocalBackupImportJobStore {
   private readonly jobs = new Map<string, InternalImportJob>();
 
   constructor(
-    private readonly ttlMs = 60 * 60 * 1000,
+    // Pending jobs are disposable capabilities. Keep them long enough for a
+    // browser request to leave its connection queue; active uploads set their
+    // expiry to Infinity and therefore have no duration limit.
+    private readonly ttlMs = DEFAULT_IMPORT_JOB_TTL_MS,
     private readonly idFactory = () => randomBytes(24).toString("base64url"),
+    private readonly uploadTokenFactory = () =>
+      randomBytes(32).toString("base64url"),
   ) {
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
       throw new TypeError("Local backup import job TTL must be positive");
@@ -50,15 +59,17 @@ export class LocalBackupImportJobStore {
     }
   }
 
-  create(): { id: string } {
+  create(): LocalBackupImportJobCreated {
     this.prune();
     const id = this.idFactory();
+    const uploadToken = this.uploadTokenFactory();
     let resolveCompletion!: () => void;
     const completion = new Promise<void>((resolve) => {
       resolveCompletion = resolve;
     });
     this.jobs.set(id, {
       id,
+      uploadToken,
       status: "pending",
       progress: { stage: "uploading", current: 0, total: 0 },
       error: null,
@@ -66,7 +77,20 @@ export class LocalBackupImportJobStore {
       completion,
       resolveCompletion,
     });
-    return { id };
+    return { id, uploadToken };
+  }
+
+  authorizeDirectUpload(id: string, uploadToken: string): boolean {
+    this.prune();
+    const job = this.jobs.get(id);
+    if (!job || job.status !== "pending" || !job.uploadToken || !uploadToken) {
+      return false;
+    }
+    const expected = Buffer.from(job.uploadToken);
+    const actual = Buffer.from(uploadToken);
+    return (
+      expected.length === actual.length && timingSafeEqual(expected, actual)
+    );
   }
 
   private require(id: string): InternalImportJob {
@@ -90,6 +114,7 @@ export class LocalBackupImportJobStore {
       );
     }
     job.status = "uploading";
+    job.uploadToken = null;
     job.progress = {
       stage: "uploading",
       current: 0,

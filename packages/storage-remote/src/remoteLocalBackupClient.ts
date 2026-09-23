@@ -318,6 +318,7 @@ export class RemoteLocalBackupClient {
   async uploadImportFile(
     id: string,
     file: Blob,
+    uploadToken: string,
     signal?: AbortSignal,
   ): Promise<LocalBackupImportJobCompletion> {
     const response = await this.apiClient.request(
@@ -327,7 +328,8 @@ export class RemoteLocalBackupClient {
         cache: "no-store",
         headers: {
           "content-type": "application/octet-stream",
-          ...(await this.authHeaders()),
+          "x-risu-backup-upload-token": uploadToken,
+          "x-risu-client-id": this.clientId,
         },
         body: file,
         signal,

@@ -1525,7 +1525,7 @@ async function restoreNodeLocalBackupSourceUnlocked(
   // A browser File can be streamed by the user agent in one request without
   // materializing it. Native/Tauri sources retain resumable bounded requests.
   const upload = directFile
-    ? nodeStorage.backup.uploadImportFile(job.id, directFile)
+    ? nodeStorage.backup.uploadImportFile(job.id, directFile, job.uploadToken)
     : nodeStorage.backup.uploadImportStream(job.id, file.stream(), file.size, {
         onProgress: (state) =>
           progressReporter.updateUpload(state.receivedBytes, state.totalBytes),

@@ -133,7 +133,7 @@ test.describe("remote local backup routing", () => {
       Object.assign(storage.backup, {
         async createImportJob() {
           calls.push("create");
-          return { id: "e2e-import" };
+          return { id: "e2e-import", uploadToken: "e2e-upload" };
         },
         async getImportProgress() {
           calls.push("progress");
@@ -142,8 +142,8 @@ test.describe("remote local backup routing", () => {
             progress: { stage: "uploading", current: 0, total: 7 },
           };
         },
-        async uploadImportFile(id: string, file: Blob) {
-          calls.push(`file:${id}:${file.size}`);
+        async uploadImportFile(id: string, file: Blob, uploadToken: string) {
+          calls.push(`file:${id}:${file.size}:${uploadToken}`);
           received.push(...new Uint8Array(await file.arrayBuffer()));
           throw new Error("E2E_STOP_AFTER_FILE");
         },
@@ -173,7 +173,11 @@ test.describe("remote local backup routing", () => {
 
     expect(result.error).toBe("E2E_STOP_AFTER_FILE");
     expect(result.calls).toEqual(
-      expect.arrayContaining(["create", "progress", "file:e2e-import:7"]),
+      expect.arrayContaining([
+        "create",
+        "progress",
+        "file:e2e-import:7:e2e-upload",
+      ]),
     );
     expect(result.received).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
