@@ -4,9 +4,10 @@ WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY server/node/package.json server/node/package.json
 RUN corepack enable \
-    && corepack install --global pnpm@10.34.1
+    && corepack install --global pnpm@12.3.4
 RUN --mount=type=cache,id=pnpm-static,target=/pnpm/store pnpm install --frozen-lockfile
 
 COPY . .
@@ -21,4 +22,3 @@ COPY deploy/rustfs/Caddyfile.static /etc/caddy/Caddyfile
 COPY --from=builder /app/dist /srv
 
 EXPOSE 6001
-
