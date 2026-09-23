@@ -52,7 +52,7 @@ const {
 } = require("./http/listenAddress.cjs");
 const { isSecurePostgresConfigRequest } = require("./http/requestSecurity.cjs");
 const {
-  isLocalBackupImportFinalizePath,
+  isLocalBackupImportControlPath,
   isLocalBackupImportUploadPath,
 } = require("./http/localBackupRequestRouting.cjs");
 const htmlparser = require("node-html-parser");
@@ -839,7 +839,7 @@ function isFinalizeControlRequest(req) {
     /^\/api\/local-backup\/database-stream\/sessions\/[^/]+\/finalize$/.test(
       path,
     ) ||
-    isLocalBackupImportFinalizePath(path)
+    isLocalBackupImportControlPath(path)
   );
 }
 
