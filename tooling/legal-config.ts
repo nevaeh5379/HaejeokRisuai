@@ -2,11 +2,21 @@ import { execFileSync } from "node:child_process";
 
 export const LEGAL_CONFIG_GIT_KEY = "risu.legalConfigured";
 
-function isTrue(value) {
+type EnvMap = Record<string, string | undefined>;
+
+export interface LegalConfigOptions {
+  cwd?: string;
+  env?: EnvMap;
+  viteEnv?: EnvMap;
+}
+
+function isTrue(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().toUpperCase() === "TRUE";
 }
 
-export function readGitLegalConfigured(cwd = process.cwd()) {
+export function readGitLegalConfigured(
+  cwd: string = process.cwd(),
+): boolean | undefined {
   try {
     const value = execFileSync(
       "git",
@@ -32,7 +42,7 @@ export function resolveLegalConfigured({
   cwd = process.cwd(),
   env = process.env,
   viteEnv = {},
-} = {}) {
+}: LegalConfigOptions = {}): boolean {
   const explicit =
     env.VITE_RISU_LEGAL_CONFIGURED ?? viteEnv.VITE_RISU_LEGAL_CONFIGURED;
 
