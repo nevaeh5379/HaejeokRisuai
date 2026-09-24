@@ -1380,6 +1380,40 @@ async fn close_sidebar_menu_window(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn configure_linux_gstreamer_paths() {
+    // Ensure GStreamer can locate host plugins across various Linux distros (Arch, Fedora, Debian/Ubuntu)
+    // when running from an AppImage or standalone binary where plugin paths differ.
+    let candidate_gst_paths = [
+        "/usr/lib/gstreamer-1.0",
+        "/usr/lib64/gstreamer-1.0",
+        "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+        "/usr/lib/aarch64-linux-gnu/gstreamer-1.0",
+    ];
+    let existing_gst_paths: Vec<String> = candidate_gst_paths
+        .iter()
+        .filter(|p| Path::new(p).is_dir())
+        .map(|p| p.to_string())
+        .collect();
+
+    if !existing_gst_paths.is_empty() {
+        match std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0") {
+            Ok(current) if !current.is_empty() => {
+                let mut paths: Vec<String> = current.split(':').map(|s| s.to_string()).collect();
+                for p in existing_gst_paths {
+                    if !paths.contains(&p) {
+                        paths.push(p);
+                    }
+                }
+                std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", paths.join(":"));
+            }
+            _ => {
+                std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", existing_gst_paths.join(":"));
+            }
+        }
+    }
+}
+
 fn main() {
     #[cfg(target_os = "linux")]
     {
@@ -1387,6 +1421,7 @@ fn main() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
         std::env::set_var("GDK_BACKEND", "wayland");
+        configure_linux_gstreamer_paths();
         // KWin resolves the titlebar icon through the Wayland app-id, which
         // is derived from the executable name. Portable launches (AppImage,
         // bare binary) have no installed desktop entry, so register a hidden
