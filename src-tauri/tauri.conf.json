@@ -20,6 +20,11 @@
       "src-python/*"
     ],
     "targets": ["deb", "rpm", "appimage", "nsis", "app", "dmg"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
     "createUpdaterArtifacts": true,
     "macOS": {
       "signingIdentity": "-"
