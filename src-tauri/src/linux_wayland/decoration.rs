@@ -9,6 +9,8 @@ use tauri::{Runtime, Window};
 use super::LinuxWindowDecoration;
 
 const INTEGRATED_CSD_CLASS: &str = "risu-integrated-csd";
+const ROUNDED_CSD_WINDOW_CLASS: &str = "risu-rounded-csd-window";
+pub const CSD_CORNER_RADIUS: i32 = 12;
 const NATIVE_THEME_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 1;
 const INTEGRATED_CSD_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 2;
 
@@ -377,6 +379,65 @@ pub fn apply_native_theme_variant(
     Ok(())
 }
 
+fn uses_square_csd_corners(window: &gtk::ApplicationWindow) -> bool {
+    window.window().is_some_and(|gdk_window| {
+        gdk_window.state().intersects(
+            gtk::gdk::WindowState::MAXIMIZED
+                | gtk::gdk::WindowState::FULLSCREEN
+                | gtk::gdk::WindowState::TILED,
+        )
+    })
+}
+
+fn rounded_clip(cr: &gtk::cairo::Context, width: i32, height: i32, radius: f64) {
+    let width = f64::from(width.max(1));
+    let height = f64::from(height.max(1));
+    let radius = radius.max(0.0).min(width / 2.0).min(height / 2.0);
+
+    if radius == 0.0 {
+        cr.rectangle(0.0, 0.0, width, height);
+        cr.clip();
+        return;
+    }
+
+    use std::f64::consts::{FRAC_PI_2, PI};
+    cr.new_sub_path();
+    cr.arc(radius, radius, radius, PI, PI + FRAC_PI_2);
+    cr.arc(width - radius, radius, radius, PI + FRAC_PI_2, PI * 2.0);
+    cr.arc(width - radius, height - radius, radius, 0.0, FRAC_PI_2);
+    cr.arc(radius, height - radius, radius, FRAC_PI_2, PI);
+    cr.close_path();
+    cr.clip();
+}
+
+fn install_rounded_overlay_draw(
+    window: &gtk::ApplicationWindow,
+    overlay: &gtk::Overlay,
+    content: &gtk::Widget,
+    titlebar: &gtk::Widget,
+) {
+    let window = window.clone();
+    let content = content.clone();
+    let titlebar = titlebar.clone();
+
+    overlay.connect_draw(move |overlay, cr| {
+        let allocation = overlay.allocation();
+        let radius = if uses_square_csd_corners(&window) {
+            0.0
+        } else {
+            f64::from(CSD_CORNER_RADIUS)
+        };
+
+        let _ = cr.save();
+        rounded_clip(cr, allocation.width(), allocation.height(), radius);
+        overlay.propagate_draw(&content, cr);
+        overlay.propagate_draw(&titlebar, cr);
+        let _ = cr.restore();
+
+        gtk::glib::Propagation::Stop
+    });
+}
+
 fn install_header_drag_behavior(window: &gtk::ApplicationWindow, event_box: &gtk::EventBox) {
     event_box.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
 
@@ -481,6 +542,34 @@ headerbar.risu-integrated-csd {
   border: none;
   box-shadow: none;
 }
+
+/* Keep GTK in charge of the CSD shadow, resize gutter and window state.
+ * We only change the actual GtkWindow/decoration corner geometry. */
+window.risu-rounded-csd-window,
+window.risu-rounded-csd-window decoration {
+  border-radius: 12px;
+}
+
+window.risu-rounded-csd-window.maximized,
+window.risu-rounded-csd-window.fullscreen,
+window.risu-rounded-csd-window.tiled,
+window.risu-rounded-csd-window.maximized decoration,
+window.risu-rounded-csd-window.fullscreen decoration,
+window.risu-rounded-csd-window.tiled decoration {
+  border-radius: 0;
+}
+
+/* Breeze hard-codes a stronger normal-state recolor for the close glyph than
+ * its sibling title buttons. Soften only the idle state and leave the theme's
+ * hover/active artwork untouched. */
+window.risu-rounded-csd-window button.titlebutton.close {
+  opacity: 0.76;
+}
+
+window.risu-rounded-csd-window button.titlebutton.close:hover,
+window.risu-rounded-csd-window button.titlebutton.close:active {
+  opacity: 1;
+}
 "#,
         )
         .map_err(|error| format!("Failed to style GTK CSD: {error}"))?;
@@ -489,6 +578,7 @@ headerbar.risu-integrated-csd {
         gtk::StyleContext::add_provider_for_screen(&screen, &provider, INTEGRATED_CSD_PRIORITY);
     }
 
+    window.style_context().add_class(ROUNDED_CSD_WINDOW_CLASS);
     titlebar.style_context().add_class(INTEGRATED_CSD_CLASS);
     titlebar
         .style_context()
@@ -545,6 +635,7 @@ headerbar.risu-integrated-csd {
     titlebar.set_vexpand(false);
     overlay.add_overlay(&titlebar);
     overlay.set_overlay_pass_through(&titlebar, false);
+    install_rounded_overlay_draw(window, &overlay, &content, &titlebar);
 
     window.add(&overlay);
     overlay.show_all();

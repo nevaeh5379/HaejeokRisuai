@@ -140,12 +140,99 @@ struct WaylandEffectSession {
     cleaned: bool,
 }
 
+fn add_rounded_region(
+    region: &wl_region::WlRegion,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    radius: i32,
+) {
+    let width = width.max(1);
+    let height = height.max(1);
+    let radius = radius.max(0).min(width / 2).min(height / 2);
+
+    if radius == 0 {
+        region.add(x, y, width, height);
+        return;
+    }
+
+    let middle_height = height - radius * 2;
+    if middle_height > 0 {
+        region.add(x, y + radius, width, middle_height);
+    }
+
+    for row in 0..radius {
+        let dy = f64::from(radius - row) - 0.5;
+        let circle_width = (f64::from(radius * radius) - dy * dy).max(0.0).sqrt();
+        let inset = (f64::from(radius) - circle_width).ceil() as i32;
+        let row_width = width - inset * 2;
+        if row_width > 0 {
+            region.add(x + inset, y + row, row_width, 1);
+            region.add(x + inset, y + height - row - 1, row_width, 1);
+        }
+    }
+}
+
+fn csd_blur_geometry(
+    window: &gtk::ApplicationWindow,
+    rounded_csd: bool,
+) -> (i32, i32, i32, i32, i32) {
+    let square_state = window.window().is_some_and(|gdk_window| {
+        let state = gdk_window.state();
+        state.intersects(
+            gtk::gdk::WindowState::MAXIMIZED
+                | gtk::gdk::WindowState::FULLSCREEN
+                | gtk::gdk::WindowState::TILED,
+        )
+    });
+    let corner_radius = if rounded_csd && !square_state {
+        decoration::CSD_CORNER_RADIUS
+    } else {
+        0
+    };
+
+    if rounded_csd {
+        if let Some(child) = window.child() {
+            let allocation = child.allocation();
+            return (
+                allocation.x(),
+                allocation.y(),
+                allocation.width(),
+                allocation.height(),
+                corner_radius,
+            );
+        }
+    }
+
+    let allocation = window.allocation();
+    (0, 0, allocation.width(), allocation.height(), corner_radius)
+}
+
+fn update_window_blur_region(
+    session: &Rc<RefCell<WaylandEffectSession>>,
+    window: &gtk::ApplicationWindow,
+    rounded_csd: bool,
+) -> Result<(), String> {
+    let (x, y, width, height, corner_radius) = csd_blur_geometry(window, rounded_csd);
+    session
+        .borrow_mut()
+        .update_region(x, y, width, height, corner_radius)
+}
+
 impl WaylandEffectSession {
-    fn update_region(&mut self, width: i32, height: i32) -> Result<(), String> {
+    fn update_region(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        corner_radius: i32,
+    ) -> Result<(), String> {
         let _ = self.event_queue.dispatch_pending(&mut self.state);
         let qh = self.event_queue.handle();
         let region = self.compositor.create_region(&qh, ());
-        region.add(0, 0, width.max(1), height.max(1));
+        add_rounded_region(&region, x, y, width, height, corner_radius);
 
         match &self.effect {
             BackgroundEffect::Standard { surface, .. } => {
@@ -407,21 +494,25 @@ pub fn install<R: Runtime>(
     }));
 
     if background_blur != BackgroundBlurSupport::None {
-        let allocation = gtk_window.allocation();
-        session
-            .borrow_mut()
-            .update_region(allocation.width(), allocation.height())?;
+        let rounded_csd = requested_decoration == LinuxWindowDecoration::Csd;
+        update_window_blur_region(&session, &gtk_window, rounded_csd)?;
         gtk_window.queue_draw();
 
         let resize_session = Rc::clone(&session);
-        gtk_window.connect_size_allocate(move |window, allocation| {
-            if let Err(error) = resize_session
-                .borrow_mut()
-                .update_region(allocation.width(), allocation.height())
-            {
+        gtk_window.connect_size_allocate(move |window, _allocation| {
+            if let Err(error) = update_window_blur_region(&resize_session, window, rounded_csd) {
                 eprintln!("[Linux Wayland] Failed to update blur region: {error}");
             }
             window.queue_draw();
+        });
+
+        let state_session = Rc::clone(&session);
+        gtk_window.connect_window_state_event(move |window, _event| {
+            if let Err(error) = update_window_blur_region(&state_session, window, rounded_csd) {
+                eprintln!("[Linux Wayland] Failed to update blur window state: {error}");
+            }
+            window.queue_draw();
+            gtk::glib::Propagation::Proceed
         });
     }
 
