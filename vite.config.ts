@@ -8,7 +8,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { resolveBuildVersion } from "./tooling/build-version.mjs";
 import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.mjs";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
-import { resolveLegalConfigured } from "./tooling/legal-config.mjs";
+import { resolveLegalConfigured } from "./tooling/legal-config.js";
 const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))

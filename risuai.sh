@@ -105,7 +105,11 @@ configure_legal_build_state() {
             export VITE_RISU_LEGAL_CONFIGURED
             return
             ;;
-        false) return ;;
+        false)
+            VITE_RISU_LEGAL_CONFIGURED=
+            export VITE_RISU_LEGAL_CONFIGURED
+            return
+            ;;
     esac
 
     # Non-interactive builds keep the legal gate enabled unless explicitly configured.
@@ -124,15 +128,19 @@ EOF
         y|Y|yes|YES)
             VITE_RISU_LEGAL_CONFIGURED=TRUE
             export VITE_RISU_LEGAL_CONFIGURED
-            if [ "$legal_git_available" = true ]; then
+            if [ "$legal_git_available" = true ] && [ "$legal_dry_run" != true ]; then
                 git -C "$script_dir" config --local risu.legalConfigured true
                 ok "Saved legal configuration confirmation in local Git config"
+            elif [ "$legal_git_available" = true ]; then
+                warn "Dry run: the legal confirmation applies to this run only"
             else
                 warn "Git metadata is unavailable; legal confirmation applies only to this run"
             fi
             ;;
         *)
-            if [ "$legal_git_available" = true ]; then
+            VITE_RISU_LEGAL_CONFIGURED=
+            export VITE_RISU_LEGAL_CONFIGURED
+            if [ "$legal_git_available" = true ] && [ "$legal_dry_run" != true ]; then
                 git -C "$script_dir" config --local risu.legalConfigured false
                 info "Legal configuration remains disabled. Change it later with: git config --local risu.legalConfigured true"
             fi
@@ -392,6 +400,13 @@ if [ "$action" = version ]; then
     exit 0
 fi
 
+# Install options are parsed much later; scan for --dry-run up front so
+# configure_legal_build_state can avoid persistent writes in that mode.
+legal_dry_run=false
+for legal_arg in "$@"; do
+    if [ "$legal_arg" = "--dry-run" ]; then legal_dry_run=true; fi
+done
+
 case "$action" in
     install|start|restart|rebuild) configure_legal_build_state ;;
     dev)
@@ -442,6 +457,29 @@ replace_env_value() {
     ' "$replace_file" >"$replace_tmp" || { rm -f "$replace_tmp"; return 1; }
     chmod 600 "$replace_tmp" || { rm -f "$replace_tmp"; return 1; }
     mv -f "$replace_tmp" "$replace_file"
+}
+
+legal_build_state_changed() {
+    # The legal gate is baked into the image at build time. True when the
+    # decision made for this run differs from the value recorded at the last
+    # successful build, meaning the image is stale for this input.
+    [ "${VITE_RISU_LEGAL_CONFIGURED+x}" = x ] || return 1
+    case "$VITE_RISU_LEGAL_CONFIGURED" in TRUE) legal_desired=TRUE ;; *) legal_desired= ;; esac
+    legal_recorded=$(read_env_value_from "$env_file" VITE_RISU_LEGAL_CONFIGURED)
+    case "$legal_recorded" in TRUE) ;; *) legal_recorded= ;; esac
+    [ "$legal_desired" = "$legal_recorded" ] && return 1
+    return 0
+}
+
+persist_legal_build_state() {
+    # Record the value baked into the image by the build that just ran so a
+    # later start/restart can detect changes of this build input.
+    [ "${VITE_RISU_LEGAL_CONFIGURED+x}" = x ] || return 0
+    case "$VITE_RISU_LEGAL_CONFIGURED" in TRUE) persist_legal_value=TRUE ;; *) persist_legal_value= ;; esac
+    persist_recorded=$(read_env_value_from "$env_file" VITE_RISU_LEGAL_CONFIGURED)
+    case "$persist_recorded" in TRUE) ;; *) persist_recorded= ;; esac
+    [ "$persist_legal_value" = "$persist_recorded" ] && return 0
+    replace_env_value "$env_file" VITE_RISU_LEGAL_CONFIGURED "$persist_legal_value"
 }
 
 stored_mode_from() {
@@ -2119,7 +2157,11 @@ manage_existing_installation() {
             check_required_ports
             info "Starting the saved RisuAI deployment"
             runtime_image=$(image_for_runtime "$runtime")
-            if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            if legal_build_state_changed; then
+                warn "The legal configuration changed since this image was built; rebuilding it now."
+                compose up -d --build --remove-orphans
+            elif container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            persist_legal_build_state
             wait_for_risuai_or_die "$wait_timeout" "RisuAI did not become ready within ${wait_timeout}s"
             compose_ps_all
             show_deployment_from "$env_file"
@@ -2142,7 +2184,11 @@ manage_existing_installation() {
             check_required_ports
             info "Reconciling and restarting all RisuAI containers"
             runtime_image=$(image_for_runtime "$runtime")
-            if container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            if legal_build_state_changed; then
+                warn "The legal configuration changed since this image was built; rebuilding it now."
+                compose up -d --build --remove-orphans
+            elif container image inspect "$runtime_image" >/dev/null 2>&1; then compose up -d --remove-orphans; else warn "The local $runtime RisuAI image is missing; building it now."; compose up -d --build --remove-orphans; fi
+            persist_legal_build_state
             compose restart
             wait_for_risuai_or_die "$wait_timeout" "RisuAI did not become ready within ${wait_timeout}s"
             compose_ps_all
@@ -2155,6 +2201,7 @@ manage_existing_installation() {
             check_required_ports
             info "Rebuilding and recreating the RisuAI application"
             compose build risuai
+            persist_legal_build_state
             compose up -d --force-recreate risuai
             compose up -d --remove-orphans
             wait_for_risuai_or_die "$wait_timeout" "Rebuilt RisuAI did not become ready within ${wait_timeout}s"
@@ -2536,6 +2583,7 @@ write_env() {
     write_destination=$1
     write_dynv6_path=$2
     write_cloudflare_path=$3
+    case "${VITE_RISU_LEGAL_CONFIGURED:-}" in TRUE) write_legal_configured=TRUE ;; *) write_legal_configured= ;; esac
     cat >"$write_destination" <<EOF
 RISUAI_CONFIG_VERSION=$config_version
 COMPOSE_PROJECT_NAME=$project_name
@@ -2565,6 +2613,7 @@ CLOUDFLARE_ZONE_ID=$cloudflare_zone_id
 CLOUDFLARE_IPV6=$enable_ipv6
 CLOUDFLARE_TOKEN_FILE=$write_cloudflare_path
 CLOUDFLARE_UPDATE_INTERVAL=$ddns_interval
+VITE_RISU_LEGAL_CONFIGURED=$write_legal_configured
 RISUAI_WAIT_TIMEOUT=$wait_timeout
 EOF
 }
