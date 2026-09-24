@@ -23,7 +23,7 @@ import {
 } from "../storage/sql/sqlDeferredSettings";
 import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
-import { cancelLocalGeneration } from "./chatGenerationCancellation";
+import { cancelLocalGeneration } from "./chat/generationCancellation";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
@@ -31,7 +31,7 @@ import {
   clearRemoteChatGeneration,
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
-} from "./chatRuntimeState";
+} from "./chat/runtimeState";
 import {
   NodeRealtimeChangeQueue,
   type DatabaseChangeEvent,

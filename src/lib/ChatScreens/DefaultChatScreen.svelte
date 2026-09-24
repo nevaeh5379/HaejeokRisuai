@@ -9,7 +9,7 @@
     import type { Chat as ChatSession, Message } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
-    import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chatRuntimeState";
+    import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chat/runtimeState";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";

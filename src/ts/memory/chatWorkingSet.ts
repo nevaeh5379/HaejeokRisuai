@@ -1,6 +1,6 @@
 import { get } from "svelte/store";
 import { chatTabsStore } from "../chatTabs.svelte";
-import { activeGenerationChatIds } from "../process/chatRuntimeState";
+import { activeGenerationChatIds } from "../process/chat/runtimeState";
 
 /**
  * Chats whose live in-memory state must survive background compaction.

@@ -61,7 +61,7 @@ import {
   type LLMModel,
 } from "src/ts/model/types";
 import { customV3ProviderMetaStore } from "./providerStore";
-import { isChatGenerationActive } from "src/ts/process/chatRuntimeState";
+import { isChatGenerationActive } from "src/ts/process/chat/runtimeState";
 import { getModelInfo } from "src/ts/model/modellist";
 import type { ModelModeExtended } from "src/ts/process/request/shared";
 import { requestChatDataMain } from "src/ts/process/request/request";

@@ -1,17 +1,17 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { character, Chat, groupChat } from "../storage/database/schema";
+import type { character, Chat, groupChat } from "../../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { safeStructuredClone } from "../polyfill";
-import { getAuthorNoteDefaultText, getPersonaPrompt } from "../util";
-import { risuChatParser } from "./scripts";
-import { additionalInformations } from "./embedding/addinfo";
-import { loadLoreBookV3Prompt } from "./lorebook.svelte";
-import type { PromptItem, PromptRole } from "./prompt";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { safeStructuredClone } from "../../polyfill";
+import { getAuthorNoteDefaultText, getPersonaPrompt } from "../../util";
+import { risuChatParser } from "../scripts";
+import { additionalInformations } from "../embedding/addinfo";
+import { loadLoreBookV3Prompt } from "../lorebook.svelte";
+import type { PromptItem, PromptRole } from "../prompt";
 import {
   generationOverride,
   type ChatGenerationOverrides,
-} from "./chatGenerationContext";
+} from "./generationContext";
 import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
 export type { PromptSections } from "@risuai/chat-core/types.cjs";
 

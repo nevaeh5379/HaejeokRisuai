@@ -3,13 +3,13 @@ import type {
   character,
   Message,
   MessageGenerationInfo,
-} from "../storage/database/schema";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { selectedCharID } from "../stores.svelte";
-import { alertError } from "../alert";
-import { messageStore } from "../stores/domain/messageStore.svelte";
-import { reportNodeGenerationFailure } from "./nodeGenerationLifecycle";
+} from "../../storage/database/schema";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { selectedCharID } from "../../stores.svelte";
+import { alertError } from "../../alert";
+import { messageStore } from "../../stores/domain/messageStore.svelte";
+import { reportNodeGenerationFailure } from "../nodeGenerationLifecycle";
 
 export interface ChatErrorContext {
   selectedChar: number;

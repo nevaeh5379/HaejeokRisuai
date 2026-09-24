@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cancelLocalGeneration,
   registerLocalGeneration,
-} from "./chatGenerationCancellation";
+} from "./generationCancellation";
 
 describe("cross-device generation cancellation", () => {
   it("aborts only the matching active lifecycle", () => {

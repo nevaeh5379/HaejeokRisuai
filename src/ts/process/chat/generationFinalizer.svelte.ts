@@ -1,13 +1,13 @@
 import type {
   character,
   MessageGenerationInfo,
-} from "../storage/database/schema";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { messageStore } from "../stores/domain/messageStore.svelte";
-import { tokenize } from "../tokenizer";
-import { parseChatML } from "../parser/chatML";
-import { requestChatData } from "./request/chatRequestOrchestrator";
+} from "../../storage/database/schema";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { messageStore } from "../../stores/domain/messageStore.svelte";
+import { tokenize } from "../../tokenizer";
+import { parseChatML } from "../../parser/chatML";
+import { requestChatData } from "../request/chatRequestOrchestrator";
 import type {
   ChatModelResponse,
   ChatStageTimings,
@@ -16,12 +16,12 @@ import {
   decideAutoContinuation,
   endsWithCompletionPunctuation,
 } from "@risuai/chat-core/finalization.cjs";
-import { risuChatParser } from "./scripts";
-import { peerSync } from "../sync/multiuser";
-import { processPostGenerationEffects } from "./chatPostGeneration.svelte";
-import { tryCreateNodeAutoContinuationDecision } from "./chatNodePlanner";
-import { notifyChatResponse } from "../chatNotifications";
-import { requireChatTargetFromIndexes } from "../chatTarget";
+import { risuChatParser } from "../scripts";
+import { peerSync } from "../../sync/multiuser";
+import { processPostGenerationEffects } from "./postGeneration.svelte";
+import { tryCreateNodeAutoContinuationDecision } from "./nodePlanner";
+import { notifyChatResponse } from "../../chatNotifications";
+import { requireChatTargetFromIndexes } from "../../chatTarget";
 
 function updateGenerationStageTimings(
   generationInfo: MessageGenerationInfo,

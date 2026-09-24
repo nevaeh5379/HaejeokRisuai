@@ -1,6 +1,6 @@
-import type { MessageGenerationInfo } from "../storage/database/schema";
-import { language } from "../../lang";
-import { setChatProcessStage } from "./chatRuntimeState";
+import type { MessageGenerationInfo } from "../../storage/database/schema";
+import { language } from "../../../lang";
+import { setChatProcessStage } from "./runtimeState";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
@@ -14,24 +14,24 @@ import type {
   ChatStageTimings,
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
-import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
-import { requireChatTargetFromIndexes } from "../chatTarget";
-import { tryCreateNodeChatGenerationPlan } from "./chatNodePlanner";
-import { processChatResponse } from "./chatResponse.svelte";
-import { finalizeChatGeneration } from "./chatGenerationFinalizer.svelte";
+import { createLocalChatGenerationRuntime } from "./localRuntime";
+import { requireChatTargetFromIndexes } from "../../chatTarget";
+import { tryCreateNodeChatGenerationPlan } from "./nodePlanner";
+import { processChatResponse } from "./response.svelte";
+import { finalizeChatGeneration } from "./generationFinalizer.svelte";
 import {
   createChatErrorHandler,
   type ChatErrorContext,
-} from "./chatError.svelte";
-import { prepareChatSession } from "./chatSession.svelte";
-import { buildGenerationPrompt } from "./chatPromptPipeline";
+} from "./error.svelte";
+import { prepareChatSession } from "./session.svelte";
+import { buildGenerationPrompt } from "./promptPipeline";
 import {
   cancelChatGenerationStats,
   completeChatGenerationStats,
   recordChatGenerationText,
   startChatGenerationStats,
   updateChatGenerationModel,
-} from "./chatGenerationStats";
+} from "./generationStats";
 
 export interface LocalChatExecutorSink {
   setPreviewFormated(chats: OpenAIChat[]): void;

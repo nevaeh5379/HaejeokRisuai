@@ -4,10 +4,10 @@ import type {
   Chat,
   MessageGenerationInfo,
   MessagePresetInfo,
-} from "../storage/database/schema";
+} from "../../storage/database/schema";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
-import { processStreamingResponse } from "./chatStreamingResponse.svelte";
-import { processNonStreamingResponse } from "./chatNonStreamingResponse.svelte";
+import { processStreamingResponse } from "./streamingResponse.svelte";
+import { processNonStreamingResponse } from "./nonStreamingResponse.svelte";
 
 export interface ProcessChatResponseOptions {
   req: ChatModelResponse;

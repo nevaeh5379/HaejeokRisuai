@@ -2,13 +2,13 @@ import type {
   groupChat,
   character,
   StreamingDisplayOptimizationMode,
-} from "../storage/database/schema";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { trimUntilPunctuation } from "../util";
-import { processScriptFull } from "./scripts";
-import { recordChatGenerationText } from "./chatGenerationStats";
-import { requireChatTargetFromIndexes } from "../chatTarget";
+} from "../../storage/database/schema";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { trimUntilPunctuation } from "../../util";
+import { processScriptFull } from "../scripts";
+import { recordChatGenerationText } from "./generationStats";
+import { requireChatTargetFromIndexes } from "../../chatTarget";
 
 export interface StreamDisplayOptions {
   reader: ReadableStreamDefaultReader<{ [key: string]: string }>;

@@ -5,23 +5,23 @@ const { processScriptFull, settingsState } = vi.hoisted(() => ({
   settingsState: { removeIncompleteResponse: false },
 }));
 
-vi.mock("./scripts", () => ({ processScriptFull }));
-vi.mock("../stores/domain/settingsStore.svelte", () => ({
+vi.mock("../scripts", () => ({ processScriptFull }));
+vi.mock("../../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: settingsState },
 }));
-vi.mock("../stores/domain/characterStore.svelte", () => ({
+vi.mock("../../stores/domain/characterStore.svelte", () => ({
   characterStore: {
     characters: [{ chaId: "char-0", chats: [{ id: "chat-0" }] }],
   },
 }));
-vi.mock("../util", () => ({
+vi.mock("../../util", () => ({
   trimUntilPunctuation: (value: string) => value,
 }));
 
 import {
   processStreamingRerollValues,
   type StreamDisplayOptions,
-} from "./chatStreamingDisplay.svelte";
+} from "./streamingDisplay.svelte";
 
 beforeEach(() => {
   processScriptFull.mockReset();

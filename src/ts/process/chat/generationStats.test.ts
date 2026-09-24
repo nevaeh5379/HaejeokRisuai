@@ -9,7 +9,7 @@ import {
   recordChatGenerationText,
   startChatGenerationStats,
   updateChatGenerationModel,
-} from "./chatGenerationStats";
+} from "./generationStats";
 
 afterEach(() => {
   for (const generationId of get(chatGenerationStats).keys()) {

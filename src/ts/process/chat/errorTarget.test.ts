@@ -6,10 +6,10 @@ const alertError = vi.hoisted(() => vi.fn());
 const chatA = vi.hoisted(() => ({ id: "chat-a", message: [] as any[] }));
 const chatB = vi.hoisted(() => ({ id: "chat-b", message: [] as any[] }));
 
-vi.mock("../stores/domain/settingsStore.svelte", () => ({
+vi.mock("../../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: { inlayErrorResponse: true } },
 }));
-vi.mock("../stores/domain/characterStore.svelte", () => ({
+vi.mock("../../stores/domain/characterStore.svelte", () => ({
   characterStore: {
     characters: [
       { chaId: "char-a", chatPage: 0, chats: [chatA] },
@@ -17,7 +17,7 @@ vi.mock("../stores/domain/characterStore.svelte", () => ({
     ],
   },
 }));
-vi.mock("../stores.svelte", () => ({
+vi.mock("../../stores.svelte", () => ({
   selectedCharID: {
     subscribe(run: (value: number) => void) {
       run(1);
@@ -25,15 +25,15 @@ vi.mock("../stores.svelte", () => ({
     },
   },
 }));
-vi.mock("../alert", () => ({ alertError }));
-vi.mock("../stores/domain/messageStore.svelte", () => ({
+vi.mock("../../alert", () => ({ alertError }));
+vi.mock("../../stores/domain/messageStore.svelte", () => ({
   messageStore: { appendMessage },
 }));
-vi.mock("./nodeGenerationLifecycle", () => ({
+vi.mock("../nodeGenerationLifecycle", () => ({
   reportNodeGenerationFailure: reportFailure,
 }));
 
-import { createChatErrorHandler } from "./chatError.svelte";
+import { createChatErrorHandler } from "./error.svelte";
 
 test("keeps early generation errors pinned to the target chat", () => {
   const throwError = createChatErrorHandler({

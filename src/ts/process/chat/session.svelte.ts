@@ -4,34 +4,34 @@ import type {
   groupChat,
   Chat,
   MessagePresetInfo,
-} from "../storage/database/schema";
-import { changeToPreset } from "../storage/presets/presetService";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { presetStore } from "../stores/domain/presetStore.svelte";
-import { selectedCharID } from "../stores.svelte";
-import { alertToast } from "../alert";
-import { language } from "../../lang";
-import { ChatTokenizer } from "../tokenizer";
-import { findCharacterbyId, parseToggleSyntax } from "../util";
+} from "../../storage/database/schema";
+import { changeToPreset } from "../../storage/presets/presetService";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { presetStore } from "../../stores/domain/presetStore.svelte";
+import { selectedCharID } from "../../stores.svelte";
+import { alertToast } from "../../alert";
+import { language } from "../../../lang";
+import { ChatTokenizer } from "../../tokenizer";
+import { findCharacterbyId, parseToggleSyntax } from "../../util";
 import { v4 } from "uuid";
 import { selectGroupGenerationOrder } from "@risuai/chat-core/group.cjs";
-import { risuChatParser } from "./scripts";
-import { getModuleToggles } from "./modules";
-import { pluginV2 } from "../plugins/plugins.svelte";
-import { preLoadChat } from "./coldstorage.svelte";
-import { setChatProcessStage } from "./chatRuntimeState";
+import { risuChatParser } from "../scripts";
+import { getModuleToggles } from "../modules";
+import { pluginV2 } from "../../plugins/plugins.svelte";
+import { preLoadChat } from "../coldstorage.svelte";
+import { setChatProcessStage } from "./runtimeState";
 import {
   connectionOpen,
   peerRevertChat,
   peerSafeCheck,
   peerSync,
-} from "../sync/multiuser";
-import type { ChatErrorContext } from "./chatError.svelte";
+} from "../../sync/multiuser";
+import type { ChatErrorContext } from "./error.svelte";
 import {
   requireChatTargetFromIndexes,
   type ChatExecutionTarget,
-} from "../chatTarget";
+} from "../../chatTarget";
 
 export interface GroupGenerationRequest {
   chatProcessIndex: number;

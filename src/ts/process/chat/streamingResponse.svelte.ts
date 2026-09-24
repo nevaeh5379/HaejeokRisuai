@@ -5,19 +5,19 @@ import type {
   MessageGenerationInfo,
   MessagePresetInfo,
   StreamingDisplayOptimizationMode,
-} from "../storage/database/schema";
-import { characterStore } from "../stores/domain/characterStore.svelte";
+} from "../../storage/database/schema";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { addRerolls } from "./prereroll";
-import { runInlayScreen } from "./inlayScreen";
-import { sayTTS } from "./tts";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { addRerolls } from "../prereroll";
+import { runInlayScreen } from "../inlayScreen";
+import { sayTTS } from "../tts";
 import {
   applyOutputTrigger,
   findMessageIndexByChatId,
   runChatOutputListeners,
-} from "./chatResponseShared.svelte";
-import { consumeStreamingDisplay } from "./chatStreamingDisplay.svelte";
+} from "./responseShared.svelte";
+import { consumeStreamingDisplay } from "./streamingDisplay.svelte";
 
 type StreamingRequest = Extract<ChatModelResponse, { type: "streaming" }>;
 

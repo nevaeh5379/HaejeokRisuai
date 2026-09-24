@@ -1,29 +1,29 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { character, MessagePresetInfo } from "../storage/database/schema";
+import type { character, MessagePresetInfo } from "../../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { safeStructuredClone } from "../polyfill";
-import { prebuiltAssetCommand } from "../util";
-import { parseChatML } from "../parser/chatML";
-import { ChatTokenizer } from "../tokenizer";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { safeStructuredClone } from "../../polyfill";
+import { prebuiltAssetCommand } from "../../util";
+import { parseChatML } from "../../parser/chatML";
+import { ChatTokenizer } from "../../tokenizer";
 import type {
   PromptItem,
   PromptItemAuthorNote,
   PromptItemChat,
   PromptItemTyped,
   PromptRole,
-} from "./prompt";
-import { risuChatParser } from "./scripts";
-import { runLuaEditTrigger } from "./scriptings";
+} from "../prompt";
+import { risuChatParser } from "../scripts";
+import { runLuaEditTrigger } from "../scriptings";
 import {
   generationOverride,
   type ChatGenerationOverrides,
-} from "./chatGenerationContext";
+} from "./generationContext";
 import {
   applyPromptBlockRole,
   PROMPT_ROLE_TO_OPENAI,
   type PromptSections,
-} from "./chatPromptSections";
+} from "./promptSections";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 
 interface RenderContext {

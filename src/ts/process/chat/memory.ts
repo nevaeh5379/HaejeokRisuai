@@ -1,15 +1,15 @@
-import type { character, Chat, groupChat } from "../storage/database/schema";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { language } from "../../lang";
-import { ChatTokenizer } from "../tokenizer";
-import { setChatProcessStage } from "./chatRuntimeState";
-import { hanuraiMemory } from "./memory/hanuraiMemory";
-import { hypaMemoryV2 } from "./memory/hypav2";
-import { hypaMemoryV3 } from "./memory/hypav3";
-import { supaMemory } from "./memory/supaMemory";
+import type { character, Chat, groupChat } from "../../storage/database/schema";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { language } from "../../../lang";
+import { ChatTokenizer } from "../../tokenizer";
+import { setChatProcessStage } from "./runtimeState";
+import { hanuraiMemory } from "../memory/hanuraiMemory";
+import { hypaMemoryV2 } from "../memory/hypav2";
+import { hypaMemoryV3 } from "../memory/hypav3";
+import { supaMemory } from "../memory/supaMemory";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-import { requireChatTargetFromIndexes } from "../chatTarget";
+import { requireChatTargetFromIndexes } from "../../chatTarget";
 
 interface MemoryState {
   chats: OpenAIChat[];

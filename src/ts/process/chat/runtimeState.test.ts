@@ -9,7 +9,7 @@ import {
   setChatProcessStage,
   setRemoteChatGeneration,
   activeGenerationChatIds,
-} from "./chatRuntimeState";
+} from "./runtimeState";
 
 const chatIds = ["chat-a", "chat-b"];
 

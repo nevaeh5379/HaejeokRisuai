@@ -1,5 +1,5 @@
-import type { FormatingOrderItem } from "../storage/database/schema";
-import type { PromptItem, PromptSettings } from "./prompt";
+import type { FormatingOrderItem } from "../../storage/database/schema";
+import type { PromptItem, PromptSettings } from "../prompt";
 
 /**
  * Request-local prompt/session overrides. These values must never be copied

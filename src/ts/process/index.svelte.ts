@@ -4,12 +4,12 @@ import {
   chatProcessStage,
   doingChat,
   endChatGeneration,
-} from "./chatRuntimeState";
-export { chatProcessStage, doingChat } from "./chatRuntimeState";
+} from "./chat/runtimeState";
+export { chatProcessStage, doingChat } from "./chat/runtimeState";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { selectedCharID } from "../stores.svelte";
-import { createLocalChatExecutor } from "./chatLocalExecutor";
+import { createLocalChatExecutor } from "./chat/localExecutor";
 import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
 import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import {
@@ -17,7 +17,7 @@ import {
   endNativeChatRequest,
 } from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
-import { registerLocalGeneration } from "./chatGenerationCancellation";
+import { registerLocalGeneration } from "./chat/generationCancellation";
 import {
   beginNodeGenerationLifecycle,
   endNodeGenerationLifecycle,
