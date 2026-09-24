@@ -310,24 +310,6 @@ fn configure_integrated_header(header: &gtk::HeaderBar) {
     header.set_has_subtitle(false);
 }
 
-fn extract_named_color_declarations(css: &str) -> String {
-    let mut declarations = String::new();
-    let mut remaining = css;
-
-    while let Some(start) = remaining.find("@define-color") {
-        remaining = &remaining[start..];
-        let Some(end) = remaining.find(';') else {
-            break;
-        };
-
-        declarations.push_str(remaining[..=end].trim());
-        declarations.push('\n');
-        remaining = &remaining[end + 1..];
-    }
-
-    declarations
-}
-
 fn replace_native_theme_provider(screen: &gtk::gdk::Screen, provider: Option<gtk::CssProvider>) {
     NATIVE_THEME_PROVIDER.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -352,29 +334,24 @@ pub fn apply_native_theme_variant(
     let theme_name = settings
         .gtk_theme_name()
         .ok_or_else(|| "GTK theme name is unavailable".to_string())?;
-    // KDE's GTK integration can install user-priority color definitions for
-    // the desktop color scheme. When RisuAI uses the opposite appearance,
-    // those definitions still win over GTK's selected theme variant. Reapply
-    // only the named colors exported by the theme itself; copying its widget
-    // rules would replace the user's native button shapes and behavior.
-    let named_provider =
+
+    // Let GTK load the theme's real dark/light variant first. This keeps the
+    // theme's own title-button artwork and state styling intact instead of
+    // replacing native minimize/maximize/close glyphs with app-owned icons.
+    settings.set_gtk_application_prefer_dark_theme(dark);
+
+    // KDE's GTK integration can pin the desktop's light theme rules at user
+    // priority. Reapply the selected GTK theme variant as a whole so native
+    // title buttons keep the theme's own glyphs, hover states, and maximize /
+    // restore artwork while matching RisuAI's light or dark appearance.
+    let provider =
         gtk::CssProvider::named(theme_name.as_str(), if dark { Some("dark") } else { None })
             .or_else(|| gtk::CssProvider::named(theme_name.as_str(), None))
             .ok_or_else(|| format!("GTK theme is unavailable: {theme_name}"))?;
-    let named_colors = extract_named_color_declarations(&named_provider.to_string());
     let screen = gtk::prelude::WidgetExt::screen(window)
         .ok_or_else(|| "GTK screen is unavailable".to_string())?;
 
-    let provider = if named_colors.is_empty() {
-        None
-    } else {
-        let provider = gtk::CssProvider::new();
-        provider
-            .load_from_data(named_colors.as_bytes())
-            .map_err(|error| format!("Failed to load GTK theme colors: {error}"))?;
-        Some(provider)
-    };
-    replace_native_theme_provider(&screen, provider);
+    replace_native_theme_provider(&screen, Some(provider));
     gtk::StyleContext::reset_widgets(&screen);
     Ok(())
 }
@@ -559,17 +536,6 @@ window.risu-rounded-csd-window.tiled decoration {
   border-radius: 0;
 }
 
-/* Breeze hard-codes a stronger normal-state recolor for the close glyph than
- * its sibling title buttons. Soften only the idle state and leave the theme's
- * hover/active artwork untouched. */
-window.risu-rounded-csd-window button.titlebutton.close {
-  opacity: 0.76;
-}
-
-window.risu-rounded-csd-window button.titlebutton.close:hover,
-window.risu-rounded-csd-window button.titlebutton.close:active {
-  opacity: 1;
-}
 "#,
         )
         .map_err(|error| format!("Failed to style GTK CSD: {error}"))?;
@@ -708,29 +674,6 @@ BackgroundNormal=33,34,44,192
 "#;
 
         assert_eq!(aurorae_center_alpha(svg), Some(209));
-    }
-
-    #[test]
-    fn extracts_theme_defined_colors_without_copying_widget_rules() {
-        let css = r#"
-@define-color theme_fg_color rgb(240, 240, 240);
-button { color: @theme_fg_color; }
-@define-color theme_specific_titlebar_color @theme_fg_color;
-"#;
-
-        assert_eq!(
-            extract_named_color_declarations(css),
-            "@define-color theme_fg_color rgb(240, 240, 240);\n\
-             @define-color theme_specific_titlebar_color @theme_fg_color;\n"
-        );
-    }
-
-    #[test]
-    fn ignores_incomplete_named_color_declarations() {
-        assert_eq!(
-            extract_named_color_declarations("@define-color theme_fg_color #fff"),
-            ""
-        );
     }
 
     #[test]
