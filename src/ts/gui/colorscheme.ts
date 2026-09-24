@@ -6,8 +6,14 @@ import { alertError } from "../alert";
 import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
+import {
+  isCapacitorAndroid,
+  isTauriLinux,
+  isTauriMacOS,
+  isTauriWindows,
+} from "../platform";
 import { syncAndroidSystemBars } from "../android/androidNativeIntegration";
+import { applyLinuxDecorationAlpha } from "../linuxWindowIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
@@ -24,14 +30,32 @@ export interface ColorScheme {
   type: "light" | "dark";
 }
 
-async function syncTauriNativeAppearance(type: "light" | "dark") {
-  if (!isTauriMacOS && !isTauriWindows) {
+async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
+  if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
     return;
   }
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("set_risu_native_appearance", { appearance: type });
+    const nativeAppearance = invoke("set_risu_native_appearance", {
+      appearance: colorScheme.type,
+    });
+
+    if (isTauriLinux) {
+      const [, decorationAlpha] = await Promise.all([
+        nativeAppearance,
+        invoke<number | null>("set_linux_kde_decoration_colors", {
+          background: colorScheme.darkbg,
+          foreground: colorScheme.textcolor,
+          inactiveForeground: colorScheme.textcolor2,
+          accent: colorScheme.selected,
+          negative: colorScheme.draculared,
+        }),
+      ]);
+      applyLinuxDecorationAlpha(decorationAlpha);
+    } else {
+      await nativeAppearance;
+    }
   } catch (error) {
     console.warn(
       "Failed to sync native Tauri appearance with Risu theme:",
@@ -373,7 +397,7 @@ export function updateColorScheme() {
     if (isFluent && isTauriWindows) {
       void ensureFluentWindowsBackdrop();
     }
-    void syncTauriNativeAppearance(colorScheme.type);
+    void syncTauriNativeAppearance(colorScheme);
     updateTextThemeAndCSS();
   } catch (error) {}
 }

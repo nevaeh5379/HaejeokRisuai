@@ -344,6 +344,71 @@ html.tauri-windows-vibrancy .rs-sidebar-panel.dynamic-sidebar {
   box-shadow: 10px 0 28px rgb(0 0 0 / 0.28);
 }
 
+/* Linux Wayland background effects are compositor-owned. Keep the app body
+ * opaque unless the native capability probe confirms a blur protocol. */
+html.tauri-linux-background-blur,
+html.tauri-linux-background-blur body,
+html.tauri-linux-background-blur #app {
+  background: transparent;
+}
+
+html.tauri-linux-background-blur {
+  --risu-linux-decoration-opacity: 94%;
+  --risu-linux-sidebar-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) var(--risu-linux-decoration-opacity),
+    transparent
+  );
+}
+
+html.tauri-linux-background-blur main.tauri-native {
+  background-color: transparent;
+}
+
+html.tauri-linux-background-blur .rs-main-content {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+html.tauri-linux-background-blur .rs-sidebar,
+html.tauri-linux-background-blur .rs-sidebar-panel {
+  background-color: var(--risu-linux-sidebar-tint) !important;
+  border-right-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 10%,
+    transparent
+  ) !important;
+  box-shadow: none;
+}
+
+html.tauri-linux-background-blur .rs-sidebar.dynamic-sidebar,
+html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
+  background-color: var(--risu-theme-darkbg) !important;
+}
+
+/* GTK CSD is overlaid on top of the WebView. Keep the visual material at y=0,
+ * but move interactive web chrome below the native 40px HeaderBar. */
+html.tauri-linux-csd {
+  --risu-linux-csd-titlebar-height: 40px;
+}
+
+html.tauri-linux-csd .rs-sidebar.rs-sidebar-titlebar-inset {
+  padding-top: var(--risu-linux-csd-titlebar-height);
+}
+
+html.tauri-linux-csd
+  .rs-sidebar:not(.rs-sidebar-titlebar-inset)
+  .rs-sidebar-scroll {
+  padding-top: var(--risu-linux-csd-titlebar-height);
+}
+
+html.tauri-linux-csd .rs-chat-tab-strip-shell {
+  margin-top: var(--risu-linux-csd-titlebar-height);
+}
+
+html.tauri-linux-csd .rs-setting-backdrop {
+  padding-top: var(--risu-linux-csd-titlebar-height);
+}
+
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
   --risu-macos-traffic-lights-width: 5rem;
@@ -3114,4 +3179,26 @@ html.theme-android-material .rs-chat-send-btn {
 
 html.theme-android-material :focus-visible {
   outline-color: var(--risu-android-accent) !important;
+}
+
+/* Keep the original full-width segmented sidebar switch on KDE SSD. Center it
+ * vertically in the existing top spacing and close the previously open top edge. */
+html.tauri-linux-ssd .rs-sidebar-mode-tabs {
+  width: 100% !important;
+  bottom: 0.75rem !important;
+  margin: 0 !important;
+  border-top: 1px solid var(--risu-theme-selected) !important;
+  border-radius: 0.375rem !important;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button {
+  border-radius: 0 !important;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button:first-child {
+  border-radius: 0.375rem 0 0 0.375rem !important;
+}
+
+html.tauri-linux-ssd .rs-sidebar-mode-tabs > button:last-child {
+  border-radius: 0 0.375rem 0.375rem 0 !important;
 }
