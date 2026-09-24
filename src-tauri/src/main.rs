@@ -1382,7 +1382,12 @@ async fn close_sidebar_menu_window(
 
 fn main() {
     #[cfg(target_os = "linux")]
-    std::env::set_var("GDK_BACKEND", "wayland");
+    {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        std::env::set_var("GDK_BACKEND", "wayland");
+    }
 
     let mut builder = tauri::Builder::default();
 
