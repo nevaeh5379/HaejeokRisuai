@@ -23,7 +23,7 @@ import {
 } from "../storage/sql/sqlDeferredSettings";
 import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
-import { cancelLocalGeneration } from "./chat/generationCancellation";
+import { localGenerationController } from "./chat/generationCancellation";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
@@ -317,7 +317,7 @@ function applyGenerationState(event: RealtimeGenerationState): void {
   if (!event.chatId || !event.lifecycleId) return;
   if (event.sourceClientId === getNodeClientSessionId()) return;
   if (event.state === "aborted") {
-    cancelLocalGeneration(event.chatId, event.lifecycleId);
+    localGenerationController.cancel(event.chatId, event.lifecycleId);
   }
   setRemoteChatGeneration(
     event.chatId,

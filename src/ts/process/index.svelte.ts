@@ -17,7 +17,7 @@ import {
   endNativeChatRequest,
 } from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
-import { registerLocalGeneration } from "./chat/generationCancellation";
+import { localGenerationController } from "./chat/generationCancellation";
 import {
   beginNodeGenerationLifecycle,
   endNodeGenerationLifecycle,
@@ -73,12 +73,12 @@ export async function sendChat(
   const forwardAbort = () => controller?.abort();
   if (arg.signal?.aborted) forwardAbort();
   else arg.signal?.addEventListener("abort", forwardAbort, { once: true });
-  const unregisterLocalGeneration =
-    controller && targetChatId
-      ? registerLocalGeneration(targetChatId, controller, () =>
-          getActiveNodeGenerationLifecycleId(targetChatId),
-        )
-      : null;
+  if (controller && targetChatId) {
+    localGenerationController.register(targetChatId, {
+      controller,
+      lifecycleId: () => getActiveNodeGenerationLifecycleId(targetChatId),
+    });
+  }
   const signal = controller?.signal ?? arg.signal;
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
@@ -113,7 +113,9 @@ export async function sendChat(
     throw error;
   } finally {
     arg.signal?.removeEventListener("abort", forwardAbort);
-    unregisterLocalGeneration?.();
+    if (controller && targetChatId) {
+      localGenerationController.unregister(targetChatId, controller);
+    }
     if (keepAlive && targetChat) {
       targetChat.preventMessageCompaction = previousCompactionGuard;
     }
