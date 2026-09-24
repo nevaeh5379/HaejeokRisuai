@@ -183,6 +183,7 @@ jobs:
             librsvg2-dev \
             libssl-dev \
             libxdo-dev \
+            libunwind-dev \
             libfuse2 \
             xdg-utils \
             patchelf \
