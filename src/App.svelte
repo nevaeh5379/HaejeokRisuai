@@ -275,7 +275,7 @@
     {#if isTauriWindows}
         <NativeWindowResizeHandles />
     {/if}
-    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
+    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED === 'TRUE' || globalThis.__RISU_LEGAL_CONFIGURED__ === true)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
 
