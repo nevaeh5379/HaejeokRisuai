@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { get } from "svelte/store";
 import {
   beginChatGeneration,
+  clearRemoteChatGeneration,
   chatProcessStages,
   endChatGeneration,
   getChatProcessStage,
@@ -55,5 +56,16 @@ describe("chat process stages", () => {
 
     setRemoteChatGeneration("chat-a", false, "lifecycle:test");
     expect(get(activeGenerationChatIds).has("chat-a")).toBe(false);
+  });
+
+  it("clears all stale remote sources after a chat cancellation", () => {
+    setRemoteChatGeneration("chat-a", true, "lifecycle:test");
+    setRemoteChatGeneration("chat-a", true, "model-job:test");
+    setRemoteChatGeneration("chat-b", true, "lifecycle:test");
+
+    clearRemoteChatGeneration("chat-a");
+
+    expect(get(activeGenerationChatIds).has("chat-a")).toBe(false);
+    expect(get(activeGenerationChatIds).has("chat-b")).toBe(true);
   });
 });

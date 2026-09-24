@@ -17,9 +17,11 @@ import {
   endNativeChatRequest,
 } from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
+import { registerLocalGeneration } from "./chatGenerationCancellation";
 import {
   beginNodeGenerationLifecycle,
   endNodeGenerationLifecycle,
+  getActiveNodeGenerationLifecycleId,
   reportNodeGenerationFailure,
 } from "./nodeGenerationLifecycle";
 
@@ -67,37 +69,51 @@ export async function sendChat(
     keepAlive && targetChatId ? beginChatGeneration(targetChatId) : false;
   if (keepAlive && targetChatId && !locked) return false;
 
+  const controller = locked ? new AbortController() : null;
+  const forwardAbort = () => controller?.abort();
+  if (arg.signal?.aborted) forwardAbort();
+  else arg.signal?.addEventListener("abort", forwardAbort, { once: true });
+  const unregisterLocalGeneration =
+    controller && targetChatId
+      ? registerLocalGeneration(targetChatId, controller, () =>
+          getActiveNodeGenerationLifecycleId(targetChatId),
+        )
+      : null;
+  const signal = controller?.signal ?? arg.signal;
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
-  const lifecycleId =
-    locked && targetChatId
-      ? await beginNodeGenerationLifecycle(targetChatId)
-      : null;
-  if (keepAlive) {
-    // Ask while we are still inside the send gesture: browsers drop the
-    // notification permission prompt once the tab is backgrounded, so
-    // requesting at response time never shows the dialog.
-    await ensureChatNotificationPermission();
-    await beginNativeChatRequest();
-  }
+  let lifecycleId: string | null = null;
   const serializeForPresetChain =
     chatProcessIndex === -1 && Boolean(settingsStore.state.presetChain?.trim());
   try {
-    return await runWithPresetChainGenerationGate(
+    if (locked && targetChatId) {
+      lifecycleId = await beginNodeGenerationLifecycle(targetChatId, signal);
+    }
+    if (keepAlive) {
+      // Ask while we are still inside the send gesture: browsers drop the
+      // notification permission prompt once the tab is backgrounded.
+      await ensureChatNotificationPermission();
+      await beginNativeChatRequest();
+    }
+    const result = await runWithPresetChainGenerationGate(
       serializeForPresetChain,
       async () => {
-        if (arg.signal?.aborted) return false;
+        if (signal?.aborted) return false;
         return localChatExecutor.execute(chatProcessIndex, {
           ...arg,
+          signal,
           targetCharacterId,
           targetChatId,
         });
       },
     );
+    return signal?.aborted ? false : result;
   } catch (error) {
     reportNodeGenerationFailure(targetChatId, error);
     throw error;
   } finally {
+    arg.signal?.removeEventListener("abort", forwardAbort);
+    unregisterLocalGeneration?.();
     if (keepAlive && targetChat) {
       targetChat.preventMessageCompaction = previousCompactionGuard;
     }
@@ -106,7 +122,7 @@ export async function sendChat(
       await endNodeGenerationLifecycle(
         targetChatId,
         lifecycleId,
-        arg.signal?.aborted === true,
+        signal?.aborted === true,
       );
     }
     if (keepAlive) await endNativeChatRequest();

@@ -295,7 +295,8 @@ function createModelJobManager({
         (record) =>
           record.chatId === chatId &&
           record.status === "running" &&
-          record.recoverable !== false,
+          record.recoverable !== false &&
+          !activeJobs.get(record.id)?.controller.signal.aborted,
       );
       if (running) {
         return {
@@ -354,6 +355,11 @@ function createModelJobManager({
   }
 
   function listJobs(filter) {
+    if (filter === "running") {
+      return records
+        .filter((record) => record.status === "running")
+        .map(publicRecord);
+    }
     if (filter === "active") {
       return records
         .filter(

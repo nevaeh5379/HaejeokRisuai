@@ -622,14 +622,15 @@
     ) {
         const targetCharacter = characterStore.characters[targetCharacterIndex]
         const targetChat = targetCharacter?.chats?.[targetChatIndex]
-        if(!targetCharacter?.chaId || !targetChat?.id) return
+        if(!targetCharacter?.chaId || !targetChat?.id) return true
         targetChat.preventMessageCompaction = true
         messageInput = ''
         const controller = new AbortController()
         abortControllers.set(targetChat.id, controller)
+        let completed = false
         try {
             const { sendChat } = await import('../../ts/process/index.svelte')
-            await sendChat(-1, {
+            completed = await sendChat(-1, {
                 signal:controller.signal,
                 continue:continued,
                 targetCharacterId:targetCharacter.chaId,
@@ -645,6 +646,7 @@
             targetChat.preventMessageCompaction = false
         }
         compactChatMessages(targetChat.id)
+        return !completed || controller.signal.aborted
     }
 
     async function abortChat(){
@@ -667,8 +669,8 @@
         const selectedChar = selectedCharacterIndex
         autoMode = true
         while(autoMode){
-            await sendChatMain()
-            if(selectedChar !== selectedCharacterIndex){
+            const cancelled = await sendChatMain()
+            if(cancelled || selectedChar !== selectedCharacterIndex){
                 autoMode = false
             }
         }

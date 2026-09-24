@@ -92,3 +92,7 @@ export function setRemoteChatGeneration(
   }
   publishGenerationState();
 }
+
+export function clearRemoteChatGeneration(chatId: string): void {
+  if (remoteGenerationSources.delete(chatId)) publishGenerationState();
+}

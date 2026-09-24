@@ -23,10 +23,12 @@ import {
 } from "../storage/sql/sqlDeferredSettings";
 import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
+import { cancelLocalGeneration } from "./chatGenerationCancellation";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
 import {
+  clearRemoteChatGeneration,
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
 } from "./chatRuntimeState";
@@ -53,7 +55,6 @@ let streamController: AbortController | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastEventId: number | null = null;
 let databaseChangeQueue: NodeRealtimeChangeQueue | null = null;
-const activeModelJobsByChat = new Map<string, string>();
 
 const PERSONA_ROOT_KEYS = new Set([
   "personas",
@@ -287,14 +288,6 @@ async function applyDatabaseChange(
 async function applyModelJob(event: RealtimeModelJobEvent): Promise<void> {
   const job = event.job;
   if (!job?.chatId || job.recoverable === false) return;
-  if (event.phase === "created" && job.id) {
-    activeModelJobsByChat.set(job.chatId, job.id);
-  } else if (
-    event.phase === "terminal" &&
-    (!job.id || activeModelJobsByChat.get(job.chatId) === job.id)
-  ) {
-    activeModelJobsByChat.delete(job.chatId);
-  }
   const ownClient = event.sourceClientId === getNodeClientSessionId();
   if (ownClient) {
     // The local stream pipeline usually delivers the result itself, but on
@@ -323,6 +316,9 @@ async function applyModelJob(event: RealtimeModelJobEvent): Promise<void> {
 function applyGenerationState(event: RealtimeGenerationState): void {
   if (!event.chatId || !event.lifecycleId) return;
   if (event.sourceClientId === getNodeClientSessionId()) return;
+  if (event.state === "aborted") {
+    cancelLocalGeneration(event.chatId, event.lifecycleId);
+  }
   setRemoteChatGeneration(
     event.chatId,
     event.state === "started",
@@ -354,58 +350,22 @@ function applyReadyEvent(event: RealtimeReadyEvent): void {
   }
 }
 
-async function findActiveModelJobId(chatId: string): Promise<string | null> {
-  const cached = activeModelJobsByChat.get(chatId);
-  if (cached) return cached;
-  try {
-    const response = await fetch("/api/model-jobs?active=1", {
-      headers: { "risu-auth": await getNodeServerProxyAuth() },
-      cache: "no-store",
-    });
-    if (!response.ok) return null;
-    const body = (await response.json()) as {
-      jobs?: Array<{ id?: string; chatId?: string; recoverable?: boolean }>;
-    };
-    const job = body.jobs?.find(
-      (item) => item.chatId === chatId && item.recoverable !== false && item.id,
-    );
-    if (!job?.id) return null;
-    activeModelJobsByChat.set(chatId, job.id);
-    return job.id;
-  } catch {
-    return null;
-  }
-}
-
 export async function cancelNodeChatGeneration(
   chatId: string,
 ): Promise<boolean> {
   if (!isNodeServer || !chatId) return false;
-  let jobId = await findActiveModelJobId(chatId);
-  if (!jobId) return false;
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch(
-      `/api/model-jobs/${encodeURIComponent(jobId)}`,
-      {
-        method: "DELETE",
-        headers: { "risu-auth": await getNodeServerProxyAuth() },
-      },
-    );
-    if (response.ok) {
-      if (activeModelJobsByChat.get(chatId) === jobId) {
-        activeModelJobsByChat.delete(chatId);
-      }
-      const remoteSource = "model-job:" + jobId;
-      setRemoteChatGeneration(chatId, false, remoteSource);
-      return true;
-    }
-    if (response.status !== 404 || attempt > 0) return false;
-    activeModelJobsByChat.delete(chatId);
-    jobId = (await findActiveModelJobId(chatId)) ?? "";
-    if (!jobId) return false;
-  }
-  return false;
+  const response = await fetch("/api/realtime/generation-cancel", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "risu-auth": await getNodeServerProxyAuth(),
+      "x-risu-client-id": getNodeClientSessionId(),
+    },
+    body: JSON.stringify({ chatId }),
+  });
+  if (!response.ok) return false;
+  clearRemoteChatGeneration(chatId);
+  return true;
 }
 
 async function dispatchEvent(

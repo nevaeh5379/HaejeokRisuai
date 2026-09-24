@@ -136,6 +136,7 @@ export class LocalChatExecutor implements ChatExecutor {
       );
       return false;
     }
+    if (abortSignal.aborted) return false;
 
     const { generationId, generationModel, inputTokens, outputTokens } = plan;
     generationInfo = {
@@ -195,6 +196,10 @@ export class LocalChatExecutor implements ChatExecutor {
     } catch (error) {
       if (trackGeneration) cancelChatGenerationStats(generationId);
       throw error;
+    }
+    if (abortSignal.aborted) {
+      if (trackGeneration) cancelChatGenerationStats(generationId);
+      return false;
     }
 
     console.log(req);

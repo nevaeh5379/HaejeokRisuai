@@ -7,6 +7,12 @@ type GenerationLifecycleState = "started" | "finished" | "failed" | "aborted";
 const activeLifecycles = new Map<string, string>();
 const failedLifecycles = new Set<string>();
 
+export function getActiveNodeGenerationLifecycleId(
+  chatId: string,
+): string | undefined {
+  return activeLifecycles.get(chatId);
+}
+
 function createLifecycleId(): string {
   return (
     globalThis.crypto?.randomUUID?.() ??
@@ -27,6 +33,7 @@ async function publishState(
   lifecycleId: string,
   state: GenerationLifecycleState,
   error?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const apiClient = getRealtimeApiClient();
   if (!apiClient || !chatId || !lifecycleId) return;
@@ -40,6 +47,7 @@ async function publishState(
       },
       body: JSON.stringify({ chatId, lifecycleId, state, error }),
       cache: "no-store",
+      signal,
     });
   } catch (caught) {
     console.warn("[NodeGenerationLifecycle] state publish failed", caught);
@@ -48,11 +56,12 @@ async function publishState(
 
 export async function beginNodeGenerationLifecycle(
   chatId: string,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   if (!chatId || !getRealtimeApiClient()) return null;
   const lifecycleId = createLifecycleId();
   activeLifecycles.set(chatId, lifecycleId);
-  await publishState(chatId, lifecycleId, "started");
+  await publishState(chatId, lifecycleId, "started", undefined, signal);
   return lifecycleId;
 }
 
