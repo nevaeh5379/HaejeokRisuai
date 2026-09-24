@@ -137,6 +137,7 @@ struct WaylandEffectSession {
     _surface: wl_surface::WlSurface,
     effect: BackgroundEffect,
     decoration_palette: Option<KwinDecorationPalette>,
+    last_blur_region: Option<(i32, i32, i32, i32, i32)>,
     cleaned: bool,
 }
 
@@ -193,16 +194,13 @@ fn csd_blur_geometry(
     };
 
     if rounded_csd {
-        if let Some(child) = window.child() {
-            let allocation = child.allocation();
-            return (
-                allocation.x(),
-                allocation.y(),
-                allocation.width(),
-                allocation.height(),
-                corner_radius,
-            );
-        }
+        // GTK's raw wl_surface includes the client-side shadow margins, but
+        // KWin applies the blur region in the window content coordinate space
+        // and intersects it with EffectWindow::contentsRect(). GtkWindow::size()
+        // is exactly that margin-free CSD geometry, unlike child.allocation()
+        // whose x/y include the shadow inset.
+        let size = window.size();
+        return (0, 0, size.0, size.1, corner_radius);
     }
 
     let allocation = window.allocation();
@@ -229,6 +227,11 @@ impl WaylandEffectSession {
         height: i32,
         corner_radius: i32,
     ) -> Result<(), String> {
+        let geometry = (x, y, width, height, corner_radius);
+        if self.last_blur_region == Some(geometry) {
+            return Ok(());
+        }
+
         let _ = self.event_queue.dispatch_pending(&mut self.state);
         let qh = self.event_queue.handle();
         let region = self.compositor.create_region(&qh, ());
@@ -246,7 +249,9 @@ impl WaylandEffectSession {
         }
 
         region.destroy();
-        self.connection.flush().map_err(|error| error.to_string())
+        self.connection.flush().map_err(|error| error.to_string())?;
+        self.last_blur_region = Some(geometry);
+        Ok(())
     }
 
     fn cleanup(&mut self) {
@@ -490,30 +495,33 @@ pub fn install<R: Runtime>(
         _surface: surface,
         effect,
         decoration_palette,
+        last_blur_region: None,
         cleaned: false,
     }));
 
     if background_blur != BackgroundBlurSupport::None {
         let rounded_csd = requested_decoration == LinuxWindowDecoration::Csd;
-        update_window_blur_region(&session, &gtk_window, rounded_csd)?;
-        gtk_window.queue_draw();
 
-        let resize_session = Rc::clone(&session);
-        gtk_window.connect_size_allocate(move |window, _allocation| {
-            if let Err(error) = update_window_blur_region(&resize_session, window, rounded_csd) {
+        // ext-background-effect applies its pending region on the next
+        // wl_surface.commit. Update the region from GtkWindow::draw so GTK's
+        // own draw/commit cycle applies the matching geometry in the same
+        // frame instead of leaving a stale region after a resize.
+        let draw_session = Rc::clone(&session);
+        gtk_window.connect_draw(move |window, _cr| {
+            if let Err(error) = update_window_blur_region(&draw_session, window, rounded_csd) {
                 eprintln!("[Linux Wayland] Failed to update blur region: {error}");
             }
-            window.queue_draw();
+            gtk::glib::Propagation::Proceed
         });
 
-        let state_session = Rc::clone(&session);
+        gtk_window.connect_size_allocate(move |window, _allocation| {
+            window.queue_draw();
+        });
         gtk_window.connect_window_state_event(move |window, _event| {
-            if let Err(error) = update_window_blur_region(&state_session, window, rounded_csd) {
-                eprintln!("[Linux Wayland] Failed to update blur window state: {error}");
-            }
             window.queue_draw();
             gtk::glib::Propagation::Proceed
         });
+        gtk_window.queue_draw();
     }
 
     let destroy_session = Rc::clone(&session);
