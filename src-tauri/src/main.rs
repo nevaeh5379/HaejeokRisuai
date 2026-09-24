@@ -1387,6 +1387,11 @@ fn main() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
         std::env::set_var("GDK_BACKEND", "wayland");
+        // KWin resolves the titlebar icon through the Wayland app-id, which
+        // is derived from the executable name. Portable launches (AppImage,
+        // bare binary) have no installed desktop entry, so register a hidden
+        // user-level entry before the window is created.
+        linux_wayland::app_icon::register();
     }
 
     let mut builder = tauri::Builder::default();

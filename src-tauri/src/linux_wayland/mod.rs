@@ -14,6 +14,7 @@ use tauri::{
     AppHandle, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder,
 };
 
+pub mod app_icon;
 mod background_effect;
 mod decoration;
 
