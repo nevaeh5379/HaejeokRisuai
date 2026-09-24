@@ -86,6 +86,60 @@ warn() { printf '%bWarning:%b %s\n' "$color_yellow" "$color_reset" "$*" >&2; }
 error() { printf '%bError:%b %s\n' "$color_red" "$color_reset" "$*" >&2; }
 die() { error "$*"; exit 1; }
 
+configure_legal_build_state() {
+    # An explicit environment value always wins, including FALSE/empty.
+    if [ "${VITE_RISU_LEGAL_CONFIGURED+x}" = x ]; then
+        return
+    fi
+
+    legal_git_available=false
+    legal_git_value=
+    if command -v git >/dev/null 2>&1 && git -C "$script_dir" rev-parse --git-dir >/dev/null 2>&1; then
+        legal_git_available=true
+        legal_git_value=$(git -C "$script_dir" config --local --bool --get risu.legalConfigured 2>/dev/null || true)
+    fi
+
+    case "$legal_git_value" in
+        true)
+            VITE_RISU_LEGAL_CONFIGURED=TRUE
+            export VITE_RISU_LEGAL_CONFIGURED
+            return
+            ;;
+        false) return ;;
+    esac
+
+    # Non-interactive builds keep the legal gate enabled unless explicitly configured.
+    [ -t 0 ] && [ -t 1 ] || return
+
+    cat <<'EOF'
+
+RisuAI has an upstream legal-configuration gate.
+Only mark this checkout as configured if you have read the legal notice and
+this use satisfies its requirements, or the required legal documents and
+service-usage notices have already been configured.
+EOF
+    printf 'Mark legal configuration as complete for this checkout? [y/N] '
+    if ! IFS= read -r legal_answer; then legal_answer=; fi
+    case "$legal_answer" in
+        y|Y|yes|YES)
+            VITE_RISU_LEGAL_CONFIGURED=TRUE
+            export VITE_RISU_LEGAL_CONFIGURED
+            if [ "$legal_git_available" = true ]; then
+                git -C "$script_dir" config --local risu.legalConfigured true
+                ok "Saved legal configuration confirmation in local Git config"
+            else
+                warn "Git metadata is unavailable; legal confirmation applies only to this run"
+            fi
+            ;;
+        *)
+            if [ "$legal_git_available" = true ]; then
+                git -C "$script_dir" config --local risu.legalConfigured false
+                info "Legal configuration remains disabled. Change it later with: git config --local risu.legalConfigured true"
+            fi
+            ;;
+    esac
+}
+
 usage() {
     cat <<'EOF'
 RisuAI Node/storage or static-web installer and manager
@@ -171,7 +225,12 @@ Environment inputs:
   RUSTFS_CONSOLE_PORT, RISUAI_HTTP_PORT, RISUAI_HTTPS_PORT,
   RISUAI_WAIT_TIMEOUT, DYNV6_TOKEN, CLOUDFLARE_TOKEN,
   CLOUDFLARE_ZONE_ID, POSTGRES_PASSWORD, RUSTFS_ACCESS_KEY,
-  RUSTFS_SECRET_KEY
+  RUSTFS_SECRET_KEY, VITE_RISU_LEGAL_CONFIGURED
+
+Legal configuration is remembered per clone with the local Git setting
+`risu.legalConfigured`. An explicit VITE_RISU_LEGAL_CONFIGURED value overrides
+that setting. Forks and fresh clones default to the legal warning until they
+are explicitly configured.
 
 Existing settings, generated credentials, and provider tokens are preserved on
 reinstall unless an explicit replacement is supplied. Provider token files are
@@ -332,6 +391,16 @@ if [ "$action" = version ]; then
     printf 'risuai.sh %s (configuration schema %s)\n' "$program_version" "$config_version"
     exit 0
 fi
+
+case "$action" in
+    install|start|restart|rebuild) configure_legal_build_state ;;
+    dev)
+        case "${1:-web}" in web|node) configure_legal_build_state ;; esac
+        ;;
+    native)
+        case "${1:-}" in install|build|start|restart|rebuild) configure_legal_build_state ;; esac
+        ;;
+esac
 
 read_env_value_from() {
     read_file=$1
