@@ -46,11 +46,15 @@ process.on("unhandledRejection", (err: any) => {
 const http = require("http");
 const path = require("path");
 const net = require("net");
-const { formatListenHost, resolveListenHost } = require("./http/listenAddress.cjs");
+const {
+  formatListenHost,
+  resolveListenHost,
+} = require("./http/listenAddress.cjs");
 const { isSecurePostgresConfigRequest } = require("./http/requestSecurity.cjs");
 const {
-  isLocalBackupImportFinalizePath,
+  isLocalBackupImportControlPath,
   isLocalBackupImportUploadPath,
+  isReadOnlyRequestMethod,
 } = require("./http/localBackupRequestRouting.cjs");
 const htmlparser = require("node-html-parser");
 const fsSync = require("fs");
@@ -69,15 +73,24 @@ const {
   prefetchInOrder,
 } = require("./util/bulkReadPrefetch.cjs");
 const { createModelJobManager } = require("./executors/modelJobs.cjs");
-const { createPushNotificationManager } = require("./http/pushNotifications.cjs");
+const {
+  createPushNotificationManager,
+} = require("./http/pushNotifications.cjs");
 const {
   createRealtimeEventHub,
   normalizeClientId,
 } = require("./http/realtimeEvents.cjs");
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
+import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
+import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.js";
+import { Packet } from "./http/packet.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
-const { createNodeProviderExecutor } = require("./executors/providerExecutor.cjs");
-const { createHypaMemoryExecutor } = require("./executors/hypaMemoryExecutor.cjs");
+const {
+  createNodeProviderExecutor,
+} = require("./executors/providerExecutor.cjs");
+const {
+  createHypaMemoryExecutor,
+} = require("./executors/hypaMemoryExecutor.cjs");
 const {
   encodeLegacyBackupDatabase: encodeLocalBackupDatabase,
   encodeLegacyCompatibleBackupDatabase,
@@ -488,8 +501,13 @@ const localBackupDatabaseStreamStore = new LocalBackupDatabaseStreamStore(
   },
 );
 const localBackupImportJobs = new LocalBackupImportJobStore();
+const localBackupImportStagingRoot = path.join(
+  savePath,
+  "__local_backup_import",
+);
+fsSync.rmSync(localBackupImportStagingRoot, { recursive: true, force: true });
 const localBackupImportStaging = new BackupImportStagingStore(
-  path.join(savePath, "__local_backup_import"),
+  localBackupImportStagingRoot,
 );
 const localBackupImportUploadRoot = path.join(
   savePath,
@@ -704,7 +722,14 @@ async function initializePrimaryStorage(
   }
 
   if (storage === postgresStorage) setPrimaryStorageRuntime("starting");
-  const rawPromise = Promise.resolve().then(() => storage.initialize());
+  const rawPromise = Promise.resolve().then(async () => {
+    await storage.initialize();
+    // A timed-out initialization may finish after the HTTP server starts.
+    // Keep application APIs gated until restore staging is reconciled.
+    if (storage === postgresStorage && assetStorageInitialized) {
+      await localBackupImportRecords.cleanupAll();
+    }
+  });
   const guardedPromise = runStartupStage(
     {
       scope: "Server startup",
@@ -787,26 +812,8 @@ app.use("/api", (req, res, next) => {
   });
 });
 
-const finalizeSafeApiPrefixes = [
-  "/api/client-capabilities",
-  "/api/health",
-  "/api/test_auth",
-  "/api/login",
-  "/api/crypto",
-  "/api/set_password",
-];
-
 function requestApiPath(req) {
   return String(req.originalUrl || req.url || "").split("?", 1)[0];
-}
-
-function isFinalizeSafeApiRequest(req) {
-  const requestPath = requestApiPath(req);
-  if (requestPath === "/api/realtime/events") return true;
-  if (/^\/api\/model-jobs\/[^/]+\/stream$/.test(requestPath)) return true;
-  return finalizeSafeApiPrefixes.some(
-    (prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`),
-  );
 }
 
 function isFinalizeControlRequest(req) {
@@ -816,15 +823,15 @@ function isFinalizeControlRequest(req) {
     /^\/api\/local-backup\/database-stream\/sessions\/[^/]+\/finalize$/.test(
       path,
     ) ||
-    isLocalBackupImportFinalizePath(path)
+    isLocalBackupImportControlPath(path)
   );
 }
 
-// Finalize briefly replaces assets before the SQL transaction commits. Every
-// ordinary request takes a reader slot. Finalize blocks new readers, drains the
-// ones already in flight, and only then mutates assets/SQL.
+// Restore mode allows reads to continue while the prepared database and assets
+// are committed. Mutations are drained and then rejected until finalize ends,
+// preventing user writes from being silently overwritten by the replacement.
 app.use("/api", (req, res, next) => {
-  if (isFinalizeSafeApiRequest(req) || isFinalizeControlRequest(req)) {
+  if (isReadOnlyRequestMethod(req.method) || isFinalizeControlRequest(req)) {
     next();
     return;
   }
@@ -1288,6 +1295,64 @@ async function deactivateBackupStorage() {
 loadBackupStorageFromConfig();
 
 const assetStorageManager = new AssetStorageManager(savePath);
+let assetStorageInitialized = false;
+const localBackupRecordAdapter = {
+  encodeRecord: encodeStorageSyncValue,
+  decodeRecord: decodeStorageSyncValue,
+  validateRecord: validateStorageSyncSqlRecord,
+};
+const localBackupImportRecords = new LocalBackupImportRecordStore(
+  () => postgresStorage,
+  () => dbVendor,
+  localBackupRecordAdapter,
+);
+
+function getPrimaryDatabaseIdentity() {
+  let postgresTarget = null;
+  if (dbVendor === "postgres") {
+    try {
+      const target = new URL(postgresStorage.connectionString);
+      postgresTarget = {
+        username: decodeURIComponent(target.username || ""),
+        hostname: target.hostname,
+        port: target.port || "5432",
+        database: decodeURIComponent(target.pathname.replace(/^\//, "")),
+      };
+    } catch {
+      postgresTarget = {
+        target: describeStorageTarget(dbVendor, postgresStorage),
+      };
+    }
+  }
+  const identity =
+    dbVendor === "postgres"
+      ? {
+          vendor: dbVendor,
+          target: postgresTarget,
+        }
+      : dbVendor === "oracle"
+        ? {
+            vendor: dbVendor,
+            user: postgresStorage.user || null,
+            tnsAlias: postgresStorage.tnsAlias || null,
+          }
+        : {
+            vendor: dbVendor,
+            server: postgresStorage.server || null,
+            database: postgresStorage.database || null,
+            user: postgresStorage.user || null,
+            port: postgresStorage.port || null,
+          };
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest("hex");
+}
+
+async function reconcileLocalBackupRestoreState() {
+  if (!assetStorageInitialized || !isPrimaryStorageReady()) return;
+  await localBackupImportRecords.cleanupAll();
+}
 
 function getAssetCatalogSourceId() {
   const storage = assetStorageManager.getStorage();
@@ -1298,8 +1363,6 @@ function getAssetCatalogSourceId() {
     type: "s3",
     endpoint: config.endpoint || "aws",
     bucket: config.bucket || "risuai-assets",
-    // 'full-bucket' = the catalog mirrors every object in the bucket
-    // (assets/, thumbnails/, database/...), not just the assets/ prefix.
     scope: "full-bucket",
   });
 }
@@ -1365,7 +1428,7 @@ async function resyncAssetCatalogFull() {
   if (!sourceId || !canUseAssetCatalog()) {
     throw new Error("SQL asset catalog is unavailable");
   }
-  const fresh = await assetStorageManager.s3Storage.getAssetDetails();
+  const fresh = await storage.getAssetDetails();
   const count = await postgresStorage.replaceAssetCatalog(
     "",
     fresh.assets.map((asset) => ({ key: asset.key, size: asset.size })),
@@ -2440,6 +2503,31 @@ app.post(
   },
 );
 
+app.post(
+  "/api/realtime/generation-cancel",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  async (req, res) => {
+    const chatId =
+      typeof req.body?.chatId === "string" ? req.body.chatId.trim() : "";
+    if (!chatId || chatId.length > 256) {
+      res.status(400).send({ error: "Invalid chat id" });
+      return;
+    }
+    const cancelled = realtimeEventHub.cancelGeneration(
+      chatId,
+      req.headers["x-risu-client-id"],
+    );
+    const runningJobs = modelJobManager.listJobs("running");
+    const jobs = (runningJobs ?? []).filter((job) => job.chatId === chatId);
+    await Promise.all(jobs.map((job) => modelJobManager.deleteJob(job.id)));
+    res.send({
+      success: true,
+      cancelled: Boolean(cancelled) || jobs.length > 0,
+    });
+  },
+);
+
 app.get(
   "/api/push/vapid-public-key",
   authenticatedRouteLimiter,
@@ -3481,50 +3569,6 @@ app.post("/api/set_password", loginRouteLimiter, async (req, res) => {
   }
 });
 
-function createHeaderPacket(fileId, name, fileSize) {
-  const nameBuffer = Buffer.from(name, "utf8");
-  const packet = Buffer.alloc(1 + 4 + 4 + nameBuffer.length + 8);
-
-  let offset = 0;
-
-  packet.writeUInt8(0x01, offset);
-  offset += 1;
-  packet.writeUInt32BE(fileId, offset);
-  offset += 4;
-  packet.writeUInt32BE(nameBuffer.length, offset);
-  offset += 4;
-
-  nameBuffer.copy(packet, offset);
-  offset += nameBuffer.length;
-
-  packet.writeBigUint64BE(BigInt(fileSize), offset);
-
-  return packet;
-}
-
-function createChunkPacket(fileId, data) {
-  const header = Buffer.alloc(1 + 4 + 4);
-  header.writeUInt8(0x02, 0);
-  header.writeUInt32BE(fileId, 1);
-  header.writeUint32BE(data.length, 5);
-
-  return Buffer.concat([header, data]);
-}
-
-async function writePacket(res, packet) {
-  if (!res.write(packet)) {
-    await once(res, "drain");
-  }
-}
-
-function createEndPacket(fileId) {
-  const packet = Buffer.alloc(1 + 4);
-  packet.writeInt8(0x03, 0);
-  packet.writeInt32BE(fileId, 1);
-
-  return packet;
-}
-
 const BULK_WRITE_CONTENT_TYPE = "application/x-risu-bulk";
 const BULK_READ_PREFETCH_CONCURRENCY = normalizePrefetchConcurrency(
   process.env.RISUAI_BULK_READ_PREFETCH_CONCURRENCY,
@@ -3665,23 +3709,23 @@ app.post(
         const name = Buffer.from(filePath, "hex").toString("utf8");
         const totalSize =
           result.contentLength || (result.buffer ? result.buffer.length : 0);
-        await writePacket(res, createHeaderPacket(fileId, name, totalSize));
+        await Packet.write(res, Packet.createHeader(fileId, name, totalSize));
 
         if (result.filePath) {
           const fileHandle = await fs.open(result.filePath, "r");
           try {
             const stream = fileHandle.createReadStream({ autoClose: false });
             for await (const chunk of stream) {
-              await writePacket(res, createChunkPacket(fileId, chunk));
+              await Packet.write(res, Packet.createChunk(fileId, chunk));
             }
           } finally {
             await fileHandle.close();
           }
         } else if (result.stream) {
           for await (const chunk of result.stream) {
-            await writePacket(
+            await Packet.write(
               res,
-              createChunkPacket(
+              Packet.createChunk(
                 fileId,
                 Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
               ),
@@ -3698,10 +3742,10 @@ app.post(
               offset,
               Math.min(offset + chunkSize, result.buffer.length),
             );
-            await writePacket(res, createChunkPacket(fileId, chunk));
+            await Packet.write(res, Packet.createChunk(fileId, chunk));
           }
         }
-        await writePacket(res, createEndPacket(fileId));
+        await Packet.write(res, Packet.createEnd(fileId));
         fileId += 1;
       } catch (err) {
         console.error("Error reading %s in read-bulk:", filePath, err);
@@ -4026,7 +4070,7 @@ function sendLocalBackupExportJobError(res, error) {
 
 async function writeServerBackupEntry(output, name, source, size) {
   await writeBackupContainerEntry(
-    async (chunk) => await writePacket(output, chunk),
+    async (chunk) => await Packet.write(output, chunk),
     name,
     source,
     size,
@@ -4506,17 +4550,34 @@ async function finalizePreparedLocalBackupSql(
   prepared: {
     sourceRevision: number;
     recordCount: number;
-    sqlStaging: ReturnType<typeof createLocalBackupSqlStaging>;
+    sqlStaging?: ReturnType<typeof createLocalBackupSqlStaging>;
+    createSqlStaging?: (client: unknown) => {
+      validate(
+        session: unknown,
+        options?: {
+          onRecord?: (record: unknown, index: number) => Promise<void>;
+        },
+      ): Promise<unknown>;
+    };
+    beforeCommit?: (transactionContext: {
+      nextRevision: number;
+    }) => Promise<void>;
+    afterCommit?: (result: unknown) => Promise<void>;
+    rollback?: () => Promise<void>;
   },
   gateKey: string,
   sourceClientId: unknown,
 ) {
   const release = await storageSyncFinalizeGate.acquire(gateKey);
   try {
-    return await databaseMutations.localBackupStreamFinalize(
+    const result = await databaseMutations.localBackupStreamFinalize(
       { prepared },
       sourceClientId,
     );
+    return result;
+  } catch (error) {
+    await prepared.rollback?.().catch(() => {});
+    throw error;
   } finally {
     release?.();
   }
@@ -4627,47 +4688,190 @@ function sendLocalBackupImportError(res, error) {
   return sendLocalBackupDatabaseStreamError(res, error);
 }
 
-async function writeImportedAsset(key, filePath, size) {
-  const storage = assetStorageManager.getStorage();
-  if (typeof storage.writeFromPath !== "function") {
-    throw new Error("Active asset storage cannot import staged backup files");
+async function openDirectRestoreAsset(key: string, expectedSize: number) {
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+    throw new Error("Asset restore entry size is invalid");
   }
-  await storage.writeFromPath(keyToHex(key), filePath);
-  await upsertAssetCatalogKey(key, size);
+  const storage = assetStorageManager.getStorage();
+  const writer = storage.createWriteStream(keyToHex(key), {
+    generateThumbnail: false,
+  });
+  let written = 0;
+  let finished = false;
+
+  return {
+    async write(chunk: Uint8Array): Promise<void> {
+      if (finished) throw new Error("Asset restore writer is already closed");
+      written += chunk.byteLength;
+      if (written > expectedSize) {
+        throw new Error(`Asset restore entry exceeded ${expectedSize} bytes`);
+      }
+      if (!writer.stream.write(chunk)) await once(writer.stream, "drain");
+    },
+    async close(): Promise<void> {
+      if (finished) return;
+      if (written !== expectedSize) {
+        await writer.abort?.().catch(() => {});
+        finished = true;
+        throw new Error(
+          `Asset restore entry size mismatch: expected ${expectedSize}, got ${written}`,
+        );
+      }
+      writer.stream.end();
+      try {
+        await writer.done();
+        finished = true;
+        await upsertAssetCatalogKey(key, expectedSize);
+      } catch (error) {
+        await writer.abort?.().catch(() => {});
+        finished = true;
+        throw error;
+      }
+    },
+    async abort(): Promise<void> {
+      if (finished) return;
+      finished = true;
+      writer.stream.destroy();
+      await writer.abort?.().catch(() => {});
+    },
+  };
 }
 
-async function applyPreparedLocalBackupDatabase(prepared, sourceClientId) {
-  const staged = {
-    sourceRevision: prepared.sourceRevision,
-    recordCount: prepared.recordCount,
-    sqlStaging: createLocalBackupSqlStaging(
-      prepared.filePath,
-      prepared.recordCount,
-      prepared.sourceRevision,
-    ),
+interface PendingLocalBackupProgress {
+  state: LocalBackupImportJobProgress;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const localBackupProgressPending = new Map<
+  string,
+  PendingLocalBackupProgress
+>();
+const localBackupProgressLastSentAt = new Map<string, number>();
+const LOCAL_BACKUP_PROGRESS_EVENT_INTERVAL_MS = 250;
+
+function broadcastLocalBackupProgress(
+  jobId: string,
+  state: LocalBackupImportJobProgress,
+): void {
+  const send = (latest: LocalBackupImportJobProgress): void => {
+    localBackupProgressLastSentAt.set(jobId, Date.now());
+    realtimeEventHub.broadcastTransient("local-backup-import-progress", {
+      jobId,
+      ...latest,
+    });
   };
-  const result = await finalizePreparedLocalBackupSql(
-    staged,
-    `local-backup-import:${prepared.filePath}`,
-    sourceClientId,
+  const terminal = state.status === "complete" || state.status === "error";
+  const existing = localBackupProgressPending.get(jobId);
+  if (terminal) {
+    if (existing?.timer) clearTimeout(existing.timer);
+    localBackupProgressPending.delete(jobId);
+    send(state);
+    localBackupProgressLastSentAt.delete(jobId);
+    return;
+  }
+  const elapsed = Date.now() - (localBackupProgressLastSentAt.get(jobId) ?? 0);
+  if (elapsed >= LOCAL_BACKUP_PROGRESS_EVENT_INTERVAL_MS && !existing) {
+    send(state);
+    return;
+  }
+  if (existing) {
+    existing.state = state;
+    return;
+  }
+  const timer = setTimeout(
+    () => {
+      localBackupProgressPending.delete(jobId);
+      send(pending.state);
+    },
+    Math.max(0, LOCAL_BACKUP_PROGRESS_EVENT_INTERVAL_MS - elapsed),
   );
-  return {
-    revision: result.revision,
-    recordCount: prepared.recordCount,
-  };
+  const pending: PendingLocalBackupProgress = { state, timer };
+  timer.unref?.();
+  localBackupProgressPending.set(jobId, pending);
 }
 
 const localBackupImportService = new LocalBackupImportService(
   localBackupImportJobs,
   localBackupImportStaging,
   {
-    writeColdStorage: async (key, value) =>
-      await postgresStorage.upsertColdStorage(key, value),
-    writeAsset: writeImportedAsset,
-    encodeDatabaseRecord: encodeStorageSyncValue,
-    applyPreparedDatabase: applyPreparedLocalBackupDatabase,
+    async beginRestore(id) {
+      await localBackupImportRecords.cleanup(id);
+      let sequence = 0;
+      let completed = false;
+
+      return {
+        async stageDatabaseRecords(records) {
+          sequence = await localBackupImportRecords.append(
+            id,
+            sequence,
+            records,
+          );
+        },
+        async stageColdStorage(key, value) {
+          sequence = await localBackupImportRecords.append(id, sequence, [
+            { type: "cold-storage", key, value },
+          ]);
+        },
+        async openAsset(key, size) {
+          return await openDirectRestoreAsset(key, size);
+        },
+        async complete(prepared, sourceClientId, onProgress) {
+          const stagedRecordCount = sequence;
+          const appliedRecordCount = Math.max(1, stagedRecordCount - 1);
+          const staged = {
+            sourceRevision: prepared.sourceRevision,
+            recordCount: stagedRecordCount,
+            createSqlStaging: (client) =>
+              localBackupImportRecords.createSqlStaging(
+                id,
+                client,
+                stagedRecordCount,
+                prepared.sourceRevision,
+              ),
+            onProgress: ({ applied, type }) =>
+              onProgress?.({
+                phase: "applying",
+                current: Math.min(appliedRecordCount, applied),
+                total: appliedRecordCount,
+                detail: type,
+              }),
+            beforeCommit: async () => {
+              onProgress?.({
+                phase: "committing",
+                current: 0,
+                total: 1,
+                detail: "Committing restored database",
+              });
+            },
+          };
+          const result = await finalizePreparedLocalBackupSql(
+            staged,
+            `local-backup-import:${id}`,
+            sourceClientId,
+          );
+          completed = true;
+          await localBackupImportRecords
+            .cleanup(id)
+            .catch((error) =>
+              console.warn(
+                "[local-backup] Committed restore-record cleanup failed:",
+                error?.message || error,
+              ),
+            );
+          return {
+            revision: result.revision,
+            recordCount: prepared.databaseRecordCount,
+          };
+        },
+        async abort() {
+          if (completed) return;
+          await localBackupImportRecords.cleanup(id);
+        },
+      };
+    },
   },
   localBackupImportUploads,
+  { onProgress: broadcastLocalBackupProgress },
 );
 
 app.post(
@@ -4711,7 +4915,21 @@ app.put(
   "/api/local-backup/import/jobs/:jobId/file",
   authenticatedRouteLimiter,
   async (req, res, next) => {
-    if (!(await checkAuth(req, res))) return;
+    const uploadToken = normalizeAuthHeader(
+      req.headers["x-risu-backup-upload-token"],
+    );
+    if (
+      !localBackupImportService.authorizeDirectUpload(
+        req.params.jobId,
+        uploadToken,
+      )
+    ) {
+      res.status(401).send({
+        error: "Invalid local backup upload token",
+        code: "invalid_upload_token",
+      });
+      return;
+    }
     if (!req.is("application/octet-stream")) {
       res.status(415).send({
         error: "Content-Type must be application/octet-stream",
@@ -5145,6 +5363,21 @@ async function replacePrimaryStorageConfiguration(
     throw error;
   }
 
+  // Reconcile the candidate before persisting or exposing it. If cleanup
+  // fails, the current connection and both configuration files still point
+  // to the previous database.
+  try {
+    const candidateRecords = new LocalBackupImportRecordStore(
+      () => candidateStorage,
+      () => vendor,
+      localBackupRecordAdapter,
+    );
+    await candidateRecords.cleanupAll();
+  } catch (error) {
+    await candidateStorage.close?.().catch(() => {});
+    throw error;
+  }
+
   const previousStored = readStoredDbConfig(savePath);
   const previousPostgresConfig = { ...postgresServerConfig };
   try {
@@ -5241,6 +5474,13 @@ app.post(
         error:
           "PostgreSQL configuration changes require HTTPS or a localhost connection",
         code: "postgres_secure_transport_required",
+      });
+      return;
+    }
+    if (localBackupImportService.hasActiveImports()) {
+      res.status(409).send({
+        error: "Database storage cannot change during a local backup import",
+        code: "local_backup_import_active",
       });
       return;
     }
@@ -5433,6 +5673,7 @@ app.post(
         dbVendor,
         `retry ${dbVendor} storage connection`,
       );
+      await reconcileLocalBackupRestoreState();
       const response = getDbConfigResponse();
       try {
         const state = await postgresStorage.getState();
@@ -5469,6 +5710,13 @@ app.post(
         error:
           "DB configuration changes require HTTPS or a localhost connection",
         code: "secure_transport_required",
+      });
+      return;
+    }
+    if (localBackupImportService.hasActiveImports()) {
+      res.status(409).send({
+        error: "Database storage cannot change during a local backup import",
+        code: "local_backup_import_active",
       });
       return;
     }
@@ -8023,6 +8271,13 @@ app.post(
     if (!(await checkAuth(req, res))) {
       return;
     }
+    if (localBackupImportService.hasActiveImports()) {
+      res.status(409).send({
+        error: "Asset storage cannot change during a local backup import",
+        code: "local_backup_import_active",
+      });
+      return;
+    }
     try {
       const body = req.body || {};
       const updated = await assetStorageManager.setConfig(body);
@@ -8119,6 +8374,13 @@ app.get(
       const summary = await assetStorageManager.getSummary({
         skipS3Stats: true,
       });
+      const storage = assetStorageManager.getStorage();
+      const activeStats = await storage.getStats();
+      if (storage.type === "fs") {
+        summary.localFs = { ...summary.localFs, ...activeStats };
+      } else if (storage.type === "azuresql" && summary.azuresql) {
+        summary.azuresql = { ...summary.azuresql, ...activeStats };
+      }
       if (summary.s3 && canUseAssetCatalog()) {
         try {
           const sourceId = getAssetCatalogSourceId();
@@ -8157,8 +8419,8 @@ app.get(
     }
     try {
       const target = req.query.target || "active";
-      const effectiveType =
-        target === "active" ? assetStorageManager.getStorage().type : target;
+      const storage = assetStorageManager.getStorage();
+      const effectiveType = target === "active" ? storage.type : target;
       if (effectiveType === "s3") {
         if (!canUseAssetCatalog()) {
           res.status(503).send({
@@ -8183,7 +8445,10 @@ app.get(
         });
         return;
       }
-      const details = await assetStorageManager.getAssetDetails(target);
+      const details =
+        target === "active"
+          ? await storage.getAssetDetails()
+          : await assetStorageManager.getAssetDetails(target);
       res.send({ ...details, listSource: details.listSource || "storage" });
     } catch (error) {
       next(error);
@@ -8204,10 +8469,19 @@ app.post(
         res.status(400).send({ error: "keys must be an array of asset keys" });
         return;
       }
-      const result = await assetStorageManager.deleteAssetKeys(keys, target);
+      const result =
+        target === "active"
+          ? await (async () => {
+              await assetStorageManager
+                .getStorage()
+                .remove(keys.map((key) => keyToHex(key)));
+              return { deleted: keys.length };
+            })()
+          : await assetStorageManager.deleteAssetKeys(keys, target);
       if (
         target === "s3" ||
-        (target === "active" && assetStorageManager.getStorage().type === "s3")
+        (target === "active" &&
+          assetStorageManager.getStorage().type === "s3")
       ) {
         await removeAssetCatalogKeys(deriveCatalogDeleteKeys(keys));
       }
@@ -8242,10 +8516,8 @@ app.post(
       return;
     }
     try {
-      if (
-        assetStorageManager.getStorage().type !== "s3" &&
-        assetStorageManager.getStorage().type !== "azuresql"
-      ) {
+      const storage = assetStorageManager.getStorage();
+      if (storage.type !== "s3" && storage.type !== "azuresql") {
         res.status(400).send({
           error: "Remote storage (S3 or Azure SQL) is not currently active.",
         });
@@ -8255,16 +8527,14 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await assetStorageManager
-        .getStorage()
-        .migrateFromLocal(savePath, (progress) => {
+      const result = await storage.migrateFromLocal(
+        savePath,
+        (progress) => {
           res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
-        });
+        },
+      );
 
-      if (
-        assetStorageManager.getStorage().type === "s3" &&
-        canUseAssetCatalog()
-      ) {
+      if (storage.type === "s3" && canUseAssetCatalog()) {
         await resyncAssetCatalogFull().catch((error) => {
           console.warn(
             "[asset-catalog] Post-migration catalog resync failed:",
@@ -8296,10 +8566,8 @@ app.post(
       return;
     }
     try {
-      if (
-        assetStorageManager.getStorage().type !== "s3" &&
-        assetStorageManager.getStorage().type !== "azuresql"
-      ) {
+      const storage = assetStorageManager.getStorage();
+      if (storage.type !== "s3" && storage.type !== "azuresql") {
         res.status(400).send({
           error: "Remote storage (S3 or Azure SQL) is not currently active.",
         });
@@ -8309,11 +8577,12 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await assetStorageManager
-        .getStorage()
-        .rollbackToLocal(savePath, (progress) => {
+      const result = await storage.rollbackToLocal(
+        savePath,
+        (progress) => {
           res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
-        });
+        },
+      );
 
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
@@ -8336,10 +8605,8 @@ app.post(
   async (req, res, next) => {
     if (!(await checkAuth(req, res))) return;
 
-    if (
-      assetStorageManager.getStorage().type !== "s3" &&
-      assetStorageManager.getStorage().type !== "azuresql"
-    ) {
+    const storage = assetStorageManager.getStorage();
+    if (storage.type !== "s3" && storage.type !== "azuresql") {
       res.status(400).send({
         error: "Remote storage (S3 or Azure SQL) is not currently active",
       });
@@ -8351,11 +8618,11 @@ app.post(
     res.setHeader("Connection", "keep-alive");
 
     try {
-      const result = await assetStorageManager
-        .getStorage()
-        .generateMissingThumbnails((progress) => {
+      const result = await storage.generateMissingThumbnails(
+        (progress) => {
           res.write(JSON.stringify(progress) + "\n");
-        });
+        },
+      );
 
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
@@ -9040,7 +9307,11 @@ async function startServer() {
         operation: "Step 2/4 initialize asset storage",
         heartbeatMs: storageStartupSettings.heartbeatMs,
       },
-      () => assetStorageManager.init(),
+      async () => {
+        await assetStorageManager.init();
+        assetStorageInitialized = true;
+        await reconcileLocalBackupRestoreState();
+      },
     );
     await runStartupStage(
       {

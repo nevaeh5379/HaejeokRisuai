@@ -520,6 +520,51 @@ importers:
         specifier: 9.31.9
         version: 9.31.9(supports-color@7.2.0)
 
+  server/node:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1121.0
+        version: 3.1121.0
+      '@aws-sdk/lib-storage':
+        specifier: ^3.1121.0
+        version: 3.1121.0
+      '@dqbd/tiktoken':
+        specifier: ^1.0.22
+        version: 1.0.22
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      express-rate-limit:
+        specifier: ^8.7.0
+        version: 8.7.0
+      msgpackr:
+        specifier: 2.1.0
+        version: 2.1.0
+      mssql:
+        specifier: ^12.7.0
+        version: 12.7.0
+      node-html-parser:
+        specifier: ^9.0.2
+        version: 9.0.2
+      openid-client:
+        specifier: ^6.8.7
+        version: 6.8.7
+      oracledb:
+        specifier: ^7.0.1
+        version: 7.0.1
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+      sharp:
+        specifier: ^0.35.4
+        version: 0.35.4
+      web-push:
+        specifier: ^3.6.7
+        version: 3.6.7
+      ws:
+        specifier: ^8.21.3
+        version: 8.21.3
+
 packages:
 
   '@adobe/css-tools@4.5.0':

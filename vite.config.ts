@@ -1,6 +1,6 @@
 import { existsSync, realpathSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { defineConfig, loadEnv, searchForWorkspaceRoot } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from "@rollup/plugin-strip";
@@ -8,6 +8,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { resolveBuildVersion } from "./tooling/build-version.mjs";
 import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.mjs";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { resolveLegalConfigured } from "./tooling/legal-config.js";
 const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))
@@ -21,6 +22,8 @@ const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
 export default defineConfig(({ command, mode }) => {
   if (command === "build") checkServerStorageMutations();
 
+  const viteEnv = loadEnv(mode, process.cwd(), "VITE_");
+  const legalConfigured = resolveLegalConfigured({ viteEnv });
   const buildVersion = resolveBuildVersion();
   console.log(
     `[HaejeokRisuAI] Build version: ${buildVersion.buildTag} (${buildVersion.source})`,
@@ -28,6 +31,9 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     define: {
+      "import.meta.env.VITE_RISU_LEGAL_CONFIGURED": JSON.stringify(
+        legalConfigured ? "TRUE" : "",
+      ),
       "import.meta.env.VITE_HAEJEOK_BUILD_TAG": JSON.stringify(
         buildVersion.buildTag,
       ),

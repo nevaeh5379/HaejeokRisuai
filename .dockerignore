@@ -14,6 +14,7 @@ node_modules
 
 # Mobile / Android
 android
+android-e2e
 
 # Desktop / Rust builds (Tauri)
 src-tauri
@@ -29,6 +30,16 @@ playwright-report
 test-results
 coverage
 backup
+e2e
+docs
+resources
+
+# Test sources and runner configuration are not used by production builds
+**/*.test.*
+**/*.node-test.*
+playwright.config.*
+vitest.config.*
+vitest.setup.*
 
 # Local data & environment
 save
@@ -42,6 +53,7 @@ save/**
 
 # Logs, dumps & trace files
 *.log
+*.logcat
 *.har
 *.gz
 *profile.json*

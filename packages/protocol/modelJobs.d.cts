@@ -14,7 +14,7 @@ export const MODEL_JOB_TERMINAL_STATUSES: readonly [
 export type TerminalModelJobStatus =
   (typeof MODEL_JOB_TERMINAL_STATUSES)[number];
 
-export const MODEL_JOB_FILTERS: readonly ["active", "unclaimed"];
+export const MODEL_JOB_FILTERS: readonly ["active", "unclaimed", "running"];
 export type ModelJobFilter = (typeof MODEL_JOB_FILTERS)[number];
 
 export const DEFAULT_MODEL_JOB_MAX_BODY_BYTES: number;

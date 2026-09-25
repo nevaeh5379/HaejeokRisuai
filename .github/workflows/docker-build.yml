@@ -87,11 +87,13 @@ jobs:
           BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
           BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
           IMAGE: ${{ env.DOCKERHUB_IMAGE }}
+          VITE_RISU_LEGAL_CONFIGURED: ${{ vars.VITE_RISU_LEGAL_CONFIGURED }}
         run: |
           CACHE_REF="${IMAGE}:buildcache-${ARCH}"
           docker buildx build \
             --platform "${PLATFORM}" \
             --build-arg "HAEJEOK_BUILD_NUMBER=${BUILD_NUMBER}" \
+            --build-arg "VITE_RISU_LEGAL_CONFIGURED=${VITE_RISU_LEGAL_CONFIGURED}" \
             --cache-from "type=registry,ref=${CACHE_REF}" \
             --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \

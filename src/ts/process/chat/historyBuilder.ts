@@ -1,0 +1,501 @@
+import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+import type {
+  character,
+  Chat,
+  groupChat,
+  Message,
+} from "../../storage/database/schema";
+import { replaceTargetChat, type ChatExecutionTarget } from "src/ts/chatTarget";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { ChatTokenizer } from "../../tokenizer";
+import { getUserName } from "../../util";
+import { getModelInfo, LLMFlags } from "../../model/modellist";
+import { readImage } from "../../globalApi.svelte";
+import { v4 } from "uuid";
+import { exampleMessage } from "../exampleMessages";
+import { processScript, processScriptFull, risuChatParser } from "../scripts";
+import { runTrigger } from "../triggers";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { getInlayAsset } from "../files/inlays";
+import { runImageEmbedding } from "../transformers";
+import { getModuleAssets } from "../modules";
+import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import {
+  generationOverride,
+  type ChatGenerationOverrides,
+} from "./generationContext";
+import { getSelectedFirstMessage } from "../../firstMessageSelection";
+
+type LorePrompt = Awaited<
+  ReturnType<typeof import("../lorebook.svelte").loadLoreBookV3Prompt>
+>;
+type DepthPrompt = LorePrompt["actives"][number];
+
+function getActiveMessages(chat: Chat) {
+  const messages: Message[] = [];
+  let reset = false;
+  for (let i = chat.message.length - 1; i >= 0; i--) {
+    const message = chat.message[i];
+    if (message.disabled === true) continue;
+    if (message.disabled === "allBefore") {
+      reset = true;
+      break;
+    }
+    messages.unshift(message);
+  }
+  return { messages, reset };
+}
+
+async function addFirstMessage(
+  chats: OpenAIChat[],
+  currentChar: character,
+  nowChatroom: character | groupChat,
+  currentChat: Chat,
+  usingPromptTemplate: boolean,
+  chatTarget: ChatExecutionTarget,
+  generation?: ChatGenerationOverrides,
+) {
+  const active = getActiveMessages(currentChat);
+  if (nowChatroom.type === "group" || active.reset) return null;
+
+  const firstMessage = getSelectedFirstMessage(
+    nowChatroom.firstMessage,
+    nowChatroom.alternateGreetings,
+    currentChat.fmIndex,
+  );
+  const parsedFirstMessage = risuChatParser(firstMessage, {
+    chara: currentChar,
+    chatTarget,
+  });
+  const chat: OpenAIChat = {
+    role: "assistant",
+    content: generation?.suppressTriggers
+      ? parsedFirstMessage
+      : await processScript(
+          nowChatroom,
+          parsedFirstMessage,
+          "editprocess",
+          {},
+          chatTarget,
+        ),
+  };
+  const promptSettings = generationOverride(
+    generation,
+    "promptSettings",
+    presetStore.state.promptSettings,
+  );
+  if (usingPromptTemplate && promptSettings.sendName) {
+    chat.content = `${currentChar.name}: ${chat.content}`;
+    chat.attr = ["nameAdded"];
+  }
+  chats.push(chat);
+  return chat;
+}
+
+function extractInlayReferences(content: string, role: Message["role"]) {
+  const inlays: string[] = [];
+  if (role === "char") {
+    content = content.replace(
+      /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g,
+      (_match: string, kind: string, value: string) => {
+        if (value && kind === "inlayeddata") inlays.push(value);
+        return "";
+      },
+    );
+  } else {
+    inlays.push(
+      ...(content.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g) ?? []),
+    );
+  }
+  return { content, inlays };
+}
+
+async function resolveInlays(content: string, inlays: string[]) {
+  const multimodals: MultiModal[] = [];
+  const modelInfo = getModelInfo(presetStore.state.aiModel);
+  for (const inlay of inlays) {
+    const name = inlay
+      .replace("{{inlayed::", "")
+      .replace("{{inlay::", "")
+      .replace("}}", "")
+      .replace("{{inlayeddata::", "");
+    const data = await getInlayAsset(name);
+    if (data?.type === "image") {
+      if (modelInfo.flags.includes(LLMFlags.hasImageInput)) {
+        multimodals.push({
+          type: "image",
+          base64: data.data,
+          width: data.width,
+          height: data.height,
+        });
+      } else {
+        const caption = await runImageEmbedding(data.data);
+        content += `[${caption[0].generated_text}]`;
+      }
+    } else if (
+      (data?.type === "video" || data?.type === "audio") &&
+      multimodals.length === 0
+    ) {
+      multimodals.push({ type: data.type, base64: data.data });
+    } else if (data?.type === "signature") {
+      multimodals.push({ type: "signature", base64: data.data });
+    }
+    content = content.replace(inlay, "");
+  }
+  return { content, multimodals };
+}
+
+async function resolveAssetPrompts(
+  content: string,
+  multimodals: MultiModal[],
+  currentChar: character,
+  moduleRoom: character | groupChat,
+  moduleIds?: string[],
+) {
+  const assetPromises: Promise<void>[] = [];
+  const moduleAssets = getModuleAssets(moduleRoom, moduleIds);
+  const assets = (currentChar.additionalAssets ?? []).concat(moduleAssets);
+  content = content.replace(
+    /\{\{asset_?prompt::(.+?)\}\}/gimsu,
+    (_match, name) => {
+      const asset = assets.find((entry) => entry[0] === name);
+      const imagePath =
+        asset?.[1] ?? (name === "icon" ? (currentChar.image ?? "") : null);
+      if (imagePath !== null) {
+        assetPromises.push(
+          (async () => {
+            const data = await readImage(imagePath);
+            multimodals.push({
+              type: "image",
+              base64: `data:image/png;base64,${Buffer.from(data).toString("base64")}`,
+            });
+          })(),
+        );
+      }
+      return "";
+    },
+  );
+  await Promise.all(assetPromises);
+  return content;
+}
+
+function resolveMessageRole(
+  message: Message,
+  currentChar: character,
+  nowChatroom: character | groupChat,
+  usingPromptTemplate: boolean,
+  findCharacter: (id: string) => character,
+  content: string,
+  chatTarget: ChatExecutionTarget,
+  generation?: ChatGenerationOverrides,
+) {
+  let role: "user" | "assistant" | "system" =
+    message.role === "user" ? "user" : "assistant";
+  const promptSettings = generationOverride(
+    generation,
+    "promptSettings",
+    presetStore.state.promptSettings,
+  );
+  const shouldWrapName =
+    (nowChatroom.type === "group" &&
+      findCharacter(message.saying).chaId !== currentChar.chaId) ||
+    (nowChatroom.type === "group" &&
+      presetStore.state.groupOtherBotRole === "assistant") ||
+    (usingPromptTemplate && promptSettings.sendName);
+
+  if (!shouldWrapName) return { role, content };
+
+  const format =
+    presetStore.state.groupTemplate ||
+    `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`;
+  content = risuChatParser(format, {
+    chara: findCharacter(message.saying).name,
+    chatTarget,
+  }).replace("{{slot}}", content);
+  role = ["user", "assistant", "system"].includes(
+    presetStore.state.groupOtherBotRole,
+  )
+    ? (presetStore.state.groupOtherBotRole as typeof role)
+    : "assistant";
+  return { role, content };
+}
+
+function extractThoughts(
+  content: string,
+  index: number,
+  messageCount: number,
+  generation?: ChatGenerationOverrides,
+) {
+  const thoughts: string[] = [];
+  const maxDepth =
+    generationOverride(
+      generation,
+      "promptSettings",
+      presetStore.state.promptSettings,
+    )?.maxThoughtTagDepth ?? -1;
+  content = content.replace(
+    /<Thoughts>(.+)<\/Thoughts>/gms,
+    (_match, thought) => {
+      if (maxDepth === -1 || maxDepth - messageCount <= index)
+        thoughts.push(thought);
+      return "";
+    },
+  );
+  return { content, thoughts };
+}
+
+async function resolveHistoryMessagePayload(
+  message: Message,
+  index: number,
+  currentChar: character,
+  nowChatroom: character | groupChat,
+  chatTarget: ChatExecutionTarget,
+  generation?: ChatGenerationOverrides,
+) {
+  const parsed = risuChatParser(message.data, {
+    chara: currentChar,
+    role: message.role,
+    chatTarget,
+  });
+  const processed = generation?.suppressTriggers
+    ? { data: parsed, emoChanged: false }
+    : await processScriptFull(
+        nowChatroom,
+        parsed,
+        "editprocess",
+        index,
+        { chatRole: message.role },
+        chatTarget,
+      );
+  const extracted = extractInlayReferences(processed.data, message.role);
+  const resolved = await resolveInlays(extracted.content, extracted.inlays);
+  const content = await resolveAssetPrompts(
+    resolved.content,
+    resolved.multimodals,
+    currentChar,
+    nowChatroom,
+    generation?.moduleIds,
+  );
+  return { content, multimodals: resolved.multimodals };
+}
+
+async function formatHistoryMessage(
+  message: Message,
+  index: number,
+  messageCount: number,
+  currentChar: character,
+  nowChatroom: character | groupChat,
+  usingPromptTemplate: boolean,
+  findCharacter: (id: string) => character,
+  chatTarget: ChatExecutionTarget,
+  generation?: ChatGenerationOverrides,
+): Promise<OpenAIChat> {
+  message.chatId ??= v4();
+  const payload = await resolveHistoryMessagePayload(
+    message,
+    index,
+    currentChar,
+    nowChatroom,
+    chatTarget,
+    generation,
+  );
+  const roleResult = resolveMessageRole(
+    message,
+    currentChar,
+    nowChatroom,
+    usingPromptTemplate,
+    findCharacter,
+    payload.content,
+    chatTarget,
+    generation,
+  );
+  const thoughtResult = extractThoughts(
+    roleResult.content,
+    index,
+    messageCount,
+    generation,
+  );
+  const chat: OpenAIChat = {
+    role: roleResult.role,
+    content: thoughtResult.content,
+    memo: message.chatId,
+    attr: [],
+    multimodals: payload.multimodals,
+    thoughts: thoughtResult.thoughts,
+  };
+  if (chat.multimodals?.length === 0) delete chat.multimodals;
+  return chat;
+}
+
+export interface BuildChatHistoryOptions {
+  currentChar: character;
+  nowChatroom: character | groupChat;
+  currentChat: Chat;
+  usingPromptTemplate: boolean;
+  tokenizer: ChatTokenizer;
+  currentTokens: number;
+  lorePrompt: LorePrompt;
+  resolvePosition: (text: string, maxDepth?: number) => string;
+  findCharacter: (id: string) => character;
+  chatTarget: ChatExecutionTarget;
+  generation?: ChatGenerationOverrides;
+}
+
+async function initializeHistory(options: BuildChatHistoryOptions) {
+  const chats = exampleMessage(
+    options.currentChar,
+    getUserName(options.chatTarget),
+    options.chatTarget,
+  );
+  let currentTokens =
+    options.currentTokens + (await options.tokenizer.tokenizeChats(chats));
+  const promptSettings = generationOverride(
+    options.generation,
+    "promptSettings",
+    presetStore.state.promptSettings,
+  );
+  if (
+    !presetStore.state.aiModel.startsWith("novelai") &&
+    !promptSettings?.trimStartNewChat
+  ) {
+    chats.push({
+      role: "system",
+      content: "[Start a new chat]",
+      memo: "NewChat",
+    });
+  }
+  const firstMessage = await addFirstMessage(
+    chats,
+    options.currentChar,
+    options.nowChatroom,
+    options.currentChat,
+    options.usingPromptTemplate,
+    options.chatTarget,
+    options.generation,
+  );
+  if (firstMessage) {
+    currentTokens += await options.tokenizer.tokenizeChat(firstMessage);
+  }
+  return { chats, currentTokens };
+}
+
+async function runStartTrigger(
+  options: BuildChatHistoryOptions,
+  currentChat: Chat,
+  currentTokens: number,
+) {
+  let active = getActiveMessages(currentChat);
+  if (options.generation?.suppressTriggers) {
+    return {
+      stopSending: false as const,
+      currentChat,
+      currentTokens,
+      active,
+      triggerResult: undefined,
+    };
+  }
+  const triggerResult = await runTrigger(options.currentChar, "start", {
+    chat: currentChat,
+    target: options.chatTarget,
+  });
+  if (!triggerResult) {
+    return {
+      stopSending: false as const,
+      currentChat,
+      currentTokens,
+      active,
+      triggerResult,
+    };
+  }
+
+  currentChat = triggerResult.chat;
+  replaceTargetChat(options.chatTarget, currentChat);
+  active = getActiveMessages(currentChat);
+  currentTokens += triggerResult.tokens;
+  return {
+    stopSending: !!triggerResult.stopSending,
+    currentChat,
+    currentTokens,
+    active,
+    triggerResult,
+  };
+}
+
+async function appendHistoryMessages(
+  options: BuildChatHistoryOptions,
+  chats: OpenAIChat[],
+  messages: Message[],
+  currentTokens: number,
+) {
+  const historyStart = chats.length;
+  for (let index = 0; index < messages.length; index++) {
+    chats.push(
+      await formatHistoryMessage(
+        messages[index],
+        index,
+        messages.length,
+        options.currentChar,
+        options.nowChatroom,
+        options.usingPromptTemplate,
+        options.findCharacter,
+        options.chatTarget,
+        options.generation,
+      ),
+    );
+  }
+  return (
+    currentTokens +
+    (await options.tokenizer.tokenizeChats(chats.slice(historyStart)))
+  );
+}
+
+async function collectDepthPrompts(
+  options: BuildChatHistoryOptions,
+  currentTokens: number,
+) {
+  const depthPrompts = options.lorePrompt.actives.filter(
+    (prompt) =>
+      (prompt.pos === "depth" && prompt.depth > 0) ||
+      prompt.pos === "reverse_depth",
+  );
+  for (const depthPrompt of depthPrompts) {
+    currentTokens += await options.tokenizer.tokenizeChat({
+      role: depthPrompt.role,
+      content: risuChatParser(options.resolvePosition(depthPrompt.prompt), {
+        chara: options.currentChar,
+        chatTarget: options.chatTarget,
+      }),
+    });
+  }
+  return { depthPrompts: depthPrompts as DepthPrompt[], currentTokens };
+}
+
+export async function buildChatHistory(options: BuildChatHistoryOptions) {
+  let { currentChat } = options;
+  const initialized = await initializeHistory(options);
+  let currentTokens = initialized.currentTokens;
+  const chats = initialized.chats;
+
+  const triggered = await runStartTrigger(options, currentChat, currentTokens);
+  currentChat = triggered.currentChat;
+  currentTokens = triggered.currentTokens;
+  if (triggered.stopSending) {
+    return { stopSending: true as const, currentChat, currentTokens };
+  }
+
+  currentTokens = await appendHistoryMessages(
+    options,
+    chats,
+    triggered.active.messages,
+    currentTokens,
+  );
+  const depth = await collectDepthPrompts(options, currentTokens);
+  return {
+    stopSending: false as const,
+    chats,
+    currentChat,
+    currentTokens: depth.currentTokens,
+    triggerResult: triggered.triggerResult,
+    depthPrompts: depth.depthPrompts,
+  };
+}

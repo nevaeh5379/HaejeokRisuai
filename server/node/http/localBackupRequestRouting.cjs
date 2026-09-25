@@ -10,7 +10,24 @@ function isLocalBackupImportFinalizePath(path) {
   );
 }
 
+function isLocalBackupImportControlPath(path) {
+  const normalized = String(path || "");
+  return (
+    /^\/api\/local-backup\/import\/jobs\/[^/]+\/file$/.test(normalized) ||
+    isLocalBackupImportFinalizePath(normalized)
+  );
+}
+
+function isReadOnlyRequestMethod(method) {
+  const normalized = String(method || "").toUpperCase();
+  return (
+    normalized === "GET" || normalized === "HEAD" || normalized === "OPTIONS"
+  );
+}
+
 module.exports = {
+  isLocalBackupImportControlPath,
   isLocalBackupImportFinalizePath,
   isLocalBackupImportUploadPath,
+  isReadOnlyRequestMethod,
 };

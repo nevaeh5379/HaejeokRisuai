@@ -2,7 +2,13 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { BackupImportStagingStore } from "./importStagingStore";
+import {
+  BackupImportStagingStore,
+  type BackupImportEntryWriter,
+  type StagedBackupContainer,
+  type StagedBackupEntry,
+  type StreamedBackupEntry,
+} from "./importStagingStore";
 import { buildBackupImportPlan } from "./importPlan";
 import { streamLocalBackupArchive } from "./exportArchive";
 import {
@@ -26,14 +32,33 @@ afterEach(async () => {
   );
 });
 
-async function stageChunks(chunks: Uint8Array[]) {
+async function stageChunks(
+  chunks: Uint8Array[],
+): Promise<StagedBackupContainer> {
   const staging = new BackupImportStagingStore(await tempRoot());
-  return await staging.stage(
-    "integrationjob",
-    (async function* () {
-      for (const chunk of chunks) yield chunk;
-    })(),
-  );
+  const entries: StagedBackupEntry[] = [];
+  const session = await staging.createSession("integrationjob", {
+    async onBufferedEntry(entry): Promise<void> {
+      entries.push({ ...entry });
+    },
+    async openAssetEntry(
+      entry: StreamedBackupEntry,
+    ): Promise<BackupImportEntryWriter> {
+      entries.push({ ...entry, filePath: "streamed-directly" });
+      return {
+        async write(): Promise<void> {},
+        async close(): Promise<void> {},
+        async abort(): Promise<void> {},
+      };
+    },
+  });
+  for (const chunk of chunks) await session.write(chunk);
+  const result = await session.finish();
+  return {
+    entries,
+    bytesRead: result.bytesRead,
+    ignoredExtensionEntries: result.ignoredExtensionEntries,
+  };
 }
 
 function containerWriter(target: Uint8Array[]) {

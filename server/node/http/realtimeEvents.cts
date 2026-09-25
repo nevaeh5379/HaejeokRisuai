@@ -12,6 +12,7 @@ import type {
   RealtimeEventName,
   RealtimeEventPayload,
   RealtimeGenerationState,
+  RealtimeTransientEventName,
 } from "../../../packages/protocol/realtimeEvents.cjs";
 
 /**
@@ -105,8 +106,16 @@ export interface RealtimeEventHub {
     event: K,
     data: RealtimeEventMap[K],
   ): void;
+  broadcastTransient<K extends RealtimeTransientEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
+  ): void;
   updateGenerationState(
     input: GenerationStateInput | null | undefined,
+    sourceClientId: unknown,
+  ): GenerationStateRecord | null;
+  cancelGeneration(
+    chatId: string,
     sourceClientId: unknown,
   ): GenerationStateRecord | null;
   listActiveGenerations(): GenerationStateRecord[];
@@ -246,6 +255,21 @@ export function createRealtimeEventHub(
     }
   }
 
+  /** Sends an ephemeral event without consuming replay history. */
+  function broadcastTransient<K extends RealtimeTransientEventName>(
+    event: K,
+    data: RealtimeEventMap[K],
+  ): void {
+    const record: RealtimeEventRecord = { event, data };
+    for (const client of [...clients]) {
+      try {
+        if (!sendToClient(client, record)) clients.delete(client);
+      } catch {
+        clients.delete(client);
+      }
+    }
+  }
+
   /** Removes generation states older than the retention window. / 보존 시간을 넘긴 생성 상태를 제거합니다. */
   function pruneGenerationStates(): void {
     const cutoff: number = Date.now() - generationMaxAgeMs;
@@ -292,6 +316,19 @@ export function createRealtimeEventHub(
     }
     broadcast("generation-state", record);
     return record;
+  }
+
+  function cancelGeneration(
+    chatId: string,
+    sourceClientId: unknown,
+  ): GenerationStateRecord | null {
+    pruneGenerationStates();
+    const active = activeGenerations.get(chatId);
+    if (!active) return null;
+    return updateGenerationState(
+      { chatId, lifecycleId: active.lifecycleId, state: "aborted" },
+      sourceClientId,
+    );
   }
 
   /** Returns the current non-expired generation states. / 만료되지 않은 현재 생성 상태를 반환합니다. */
@@ -413,7 +450,9 @@ export function createRealtimeEventHub(
     connect,
     connectWebSocket,
     broadcast,
+    broadcastTransient,
     updateGenerationState,
+    cancelGeneration,
     listActiveGenerations,
     clientCount: (): number => clients.size,
     latestEventId: (): number => sequence,

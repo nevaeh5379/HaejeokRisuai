@@ -42,6 +42,11 @@ export interface alertData {
   progressSteps?: string[];
   progressStep?: number;
   progressStepRatio?: number;
+  progressBars?: Array<{
+    label: string;
+    progress: number;
+    detail?: string;
+  }>;
 }
 
 type AlertGenerationInfoStoreData = {
@@ -212,6 +217,11 @@ export function alertProgress(
     steps: string[];
     currentStep: number;
     currentStepRatio?: number;
+    bars?: Array<{
+      label: string;
+      progress: number;
+      detail?: string;
+    }>;
   },
 ) {
   const percentStr =
@@ -226,6 +236,11 @@ export function alertProgress(
     progressSteps: stepState?.steps,
     progressStep: stepState?.currentStep,
     progressStepRatio: stepState?.currentStepRatio,
+    progressBars: stepState?.bars?.map((bar) => ({
+      label: bar.label,
+      progress: Math.min(100, Math.max(0, bar.progress)),
+      detail: bar.detail,
+    })),
   });
 }
 

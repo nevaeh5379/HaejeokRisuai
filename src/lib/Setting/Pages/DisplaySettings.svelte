@@ -7,8 +7,9 @@
         displaySizeSettingsItems,
         displayThemeSettingsItems,
     } from "src/ts/setting/displaySettingsData.svelte";
-    import { isTauriWindows } from "src/ts/platform";
+    import { isTauriLinux, isTauriWindows } from "src/ts/platform";
     import WindowsTransparencySettings from "./WindowsTransparencySettings.svelte";
+    import LinuxWindowSettings from "./LinuxWindowSettings.svelte";
 
     interface Props {
         targetSubmenu?: number;
@@ -61,6 +62,9 @@
     <SettingRenderer items={displayThemeSettingsItems} />
     {#if isTauriWindows}
         <WindowsTransparencySettings />
+    {/if}
+    {#if isTauriLinux}
+        <LinuxWindowSettings />
     {/if}
 {/if}
 

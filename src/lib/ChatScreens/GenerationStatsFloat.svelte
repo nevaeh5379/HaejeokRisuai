@@ -2,7 +2,7 @@
     import { onDestroy, onMount } from 'svelte'
     import { language } from '../../lang'
     import { createDeferredTokenCalculator } from '../../ts/deferredTokenCalculator'
-    import { calculateChatGenerationMetrics, chatGenerationStats, getChatGenerationStats } from '../../ts/process/chatGenerationStats'
+    import { calculateChatGenerationMetrics, chatGenerationStats, getChatGenerationStats } from '../../ts/process/chat/generationStats'
     import { settingsStore } from '../../ts/stores/domain/settingsStore.svelte'
 
     interface Props {

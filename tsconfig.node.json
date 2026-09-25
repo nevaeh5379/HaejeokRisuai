@@ -4,5 +4,5 @@
     "module": "ESNext",
     "moduleResolution": "nodenext"
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "tooling/legal-config.ts"]
 }

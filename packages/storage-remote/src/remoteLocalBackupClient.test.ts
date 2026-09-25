@@ -16,13 +16,17 @@ describe("RemoteLocalBackupClient import API", () => {
       version: 1,
       mode: "remote",
       baseUrl: "test",
-      allowInsecureHttp: true
-    })
+      allowInsecureHttp: true,
+    });
 
-    vi.spyOn(apiClient, "request").mockImplementation(async (path: string, init?: RequestInit): ReturnType<typeof apiClient.request> => {
-              requests.push({ path, init });
+    vi.spyOn(apiClient, "request").mockImplementation(
+      async (
+        path: string,
+        init?: RequestInit,
+      ): ReturnType<typeof apiClient.request> => {
+        requests.push({ path, init });
         if (path === "/api/local-backup/import/jobs") {
-          return response({ id: "import-1" });
+          return response({ id: "import-1", uploadToken: "upload-1" });
         }
         if (path === "/api/local-backup/import/jobs/import-1/file") {
           return response({
@@ -43,9 +47,12 @@ describe("RemoteLocalBackupClient import API", () => {
           });
         }
         throw new Error(`unexpected path ${path}`);
-    })
+      },
+    );
 
-    vi.spyOn(apiClient, "resolve").mockImplementation((path: string): string => `http://localhost${path}`)
+    vi.spyOn(apiClient, "resolve").mockImplementation(
+      (path: string): string => `http://localhost${path}`,
+    );
     const client = new RemoteLocalBackupClient(
       apiClient,
       async () => "secret",
@@ -54,7 +61,7 @@ describe("RemoteLocalBackupClient import API", () => {
 
     const job = await client.createImportJob();
     const blob = new Blob([new Uint8Array([1, 2, 3])]);
-    const result = await client.uploadImportFile(job.id, blob);
+    const result = await client.uploadImportFile(job.id, blob, job.uploadToken);
     const progress = await client.getImportProgress(job.id);
 
     expect(result).toMatchObject({
@@ -72,7 +79,10 @@ describe("RemoteLocalBackupClient import API", () => {
     expect(new Headers(upload.init?.headers).get("content-type")).toBe(
       "application/octet-stream",
     );
-    expect(new Headers(upload.init?.headers).get("risu-auth")).toBe("secret");
+    expect(new Headers(upload.init?.headers).get("risu-auth")).toBeNull();
+    expect(
+      new Headers(upload.init?.headers).get("x-risu-backup-upload-token"),
+    ).toBe("upload-1");
     expect(new Headers(upload.init?.headers).get("x-risu-client-id")).toBe(
       "client-1",
     );
@@ -85,7 +95,10 @@ describe("RemoteLocalBackupClient import API", () => {
       request: vi.fn(async (path: string, init?: RequestInit) => {
         requests.push({ path, init });
         if (path === "/api/local-backup/import/jobs") {
-          return response({ id: "import-stream" });
+          return response({
+            id: "import-stream",
+            uploadToken: "upload-stream",
+          });
         }
         if (
           path.startsWith("/api/local-backup/import/jobs/import-stream/chunks?")
@@ -160,6 +173,82 @@ describe("RemoteLocalBackupClient import API", () => {
     expect(
       chunks.map(({ init }) => new Headers(init?.headers).get("content-type")),
     ).toEqual(["application/octet-stream", "application/octet-stream"]);
+  });
+
+  it("replays the same chunk and finalize request after accepted responses are lost", async () => {
+    const seen = new Map<number, Uint8Array>();
+    let received = 0;
+    let chunkResponseLost = false;
+    let finalized = false;
+    let finalizeResponseLost = false;
+    const apiClient = {
+      request: vi.fn(async (requestPath: string, init?: RequestInit) => {
+        if (requestPath.includes("/chunks?")) {
+          const url = new URL(requestPath, "http://localhost");
+          const offset = Number(url.searchParams.get("offset"));
+          const chunk = new Uint8Array(
+            await new Response(init?.body as BodyInit).arrayBuffer(),
+          );
+          const previous = seen.get(offset);
+          if (previous) {
+            expect(chunk).toEqual(previous);
+          } else {
+            expect(offset).toBe(received);
+            seen.set(offset, chunk);
+            received += chunk.byteLength;
+          }
+          if (!chunkResponseLost) {
+            chunkResponseLost = true;
+            throw new TypeError("response connection reset");
+          }
+          return response({
+            receivedBytes: received,
+            totalBytes: 4,
+            complete: received === 4,
+          });
+        }
+        if (requestPath.endsWith("/finalize-upload")) {
+          finalized = true;
+          if (!finalizeResponseLost) {
+            finalizeResponseLost = true;
+            throw new TypeError("finalize response connection reset");
+          }
+          return response({
+            status: "complete",
+            error: null,
+            revision: 15,
+            recordCount: 1,
+          });
+        }
+        if (init?.method === "DELETE") {
+          throw new Error("successful retry must not cancel the import");
+        }
+        throw new Error(`unexpected path ${requestPath}`);
+      }),
+      resolve: (requestPath: string) => `http://localhost${requestPath}`,
+    } as any;
+    const client = new RemoteLocalBackupClient(
+      apiClient,
+      async () => "secret",
+      "client-1",
+    );
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+        controller.close();
+      },
+    });
+
+    await expect(
+      client.uploadImportStream("import-retry", source, 4, { chunkSize: 4 }),
+    ).resolves.toMatchObject({ status: "complete", revision: 15 });
+    expect(received).toBe(4);
+    expect(finalized).toBe(true);
+    expect(
+      apiClient.request.mock.calls.filter(([requestPath]: [string]) =>
+        requestPath.includes("/chunks?"),
+      ),
+    ).toHaveLength(2);
   });
 
   it("preserves typed API error codes", async () => {

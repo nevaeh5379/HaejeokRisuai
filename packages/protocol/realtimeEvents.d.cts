@@ -46,6 +46,18 @@ export interface RealtimeGenerationState {
  * 채팅 생성 생명주기 상태가 바뀔 때 전파되는 이벤트입니다.
  */
 export type RealtimeGenerationStateEvent = RealtimeGenerationState;
+export type RealtimeLocalBackupImportStatus = "pending" | "uploading" | "restoring" | "complete" | "error";
+export type RealtimeLocalBackupImportStage = "uploading" | "reading" | "database" | "coldStorage" | "assets" | "inlays" | "finalizing";
+export interface RealtimeLocalBackupImportProgressEvent {
+    readonly jobId: string;
+    readonly status: RealtimeLocalBackupImportStatus;
+    readonly progress?: {
+        readonly stage: RealtimeLocalBackupImportStage;
+        readonly current?: number;
+        readonly total?: number;
+        readonly detail?: string;
+    };
+}
 /**
  * Event sent immediately after a realtime client is registered. It carries the
  * connection snapshot: the assigned client id, the current replay cursor, and
@@ -95,6 +107,7 @@ export interface RealtimeEventMap {
     "database-change": RealtimeDatabaseChangeEvent;
     "model-job": RealtimeModelJobEvent;
     "generation-state": RealtimeGenerationStateEvent;
+    "local-backup-import-progress": RealtimeLocalBackupImportProgressEvent;
     ready: RealtimeReadyEvent;
     "resync-required": RealtimeResyncRequiredEvent;
 }
@@ -106,7 +119,8 @@ export type RealtimeEventName = keyof RealtimeEventMap;
  * 재생 기록에 보관되고 이벤트 ID가 붙는 이벤트입니다. ready와
  * resync-required는 연결별 제어 이벤트이므로 전파되지 않습니다.
  */
-export type RealtimeBroadcastEventName = Exclude<RealtimeEventName, "ready" | "resync-required">;
+export type RealtimeBroadcastEventName = Exclude<RealtimeEventName, "ready" | "resync-required" | "local-backup-import-progress">;
+export type RealtimeTransientEventName = "local-backup-import-progress";
 /** Wire payload for a realtime event name. 실시간 이벤트 이름의 페이로드입니다. */
 export type RealtimeEventPayload<K extends RealtimeEventName = RealtimeEventName> = RealtimeEventMap[K];
 /**

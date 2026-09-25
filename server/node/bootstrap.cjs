@@ -12,10 +12,15 @@ const generatedStorageSyncApply = path.join(
   "dist/storageSyncSqlApply.cjs",
 );
 const serverSource = path.join(__dirname, "server.cts");
+const packetSource = path.join(__dirname, "http/packet.ts");
 const mutationSource = path.join(__dirname, "sync/databaseMutations.cts");
 const storageSyncApplySource = path.join(
   __dirname,
   "sync/storageSyncSqlApply.cts",
+);
+const localBackupImportRecordsSource = path.join(
+  __dirname,
+  "sync/localBackupImportRecords.ts",
 );
 const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
@@ -94,8 +99,10 @@ const needsBuild =
   backupCoreNeedsBuild ||
   (process.env.NODE_ENV !== "production" &&
     (isStale(serverSource, generatedServer) ||
+      isStale(packetSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
-      isStale(storageSyncApplySource, generatedStorageSyncApply)));
+      isStale(storageSyncApplySource, generatedStorageSyncApply) ||
+      isStale(localBackupImportRecordsSource, generatedServer)));
 
 if (needsBuild) {
   const builder = path.join(root, "tooling/build-node-server.mjs");

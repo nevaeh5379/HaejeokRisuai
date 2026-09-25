@@ -46,6 +46,26 @@ test("realtime hub streams ready and broadcast events to connected clients", () 
   assert.equal(hub.clientCount(), 0);
 });
 
+test("backup progress is transient and does not consume replay history", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000 });
+  const req = new EventEmitter();
+  req.headers = {};
+  const res = new FakeResponse();
+  hub.connect(req, res);
+
+  hub.broadcastTransient("local-backup-import-progress", {
+    jobId: "backup-1",
+    status: "restoring",
+    progress: { stage: "database", current: 2, total: 3 },
+  });
+
+  const output = res.chunks.join("");
+  assert.match(output, /event: local-backup-import-progress/);
+  assert.match(output, /"jobId":"backup-1"/);
+  assert.equal(hub.latestEventId(), 0);
+  req.emit("close");
+});
+
 test("broadcasts share one event id across clients and reconnects replay missed events", () => {
   const hub = createRealtimeEventHub({ heartbeatMs: 60_000, historyLimit: 4 });
   const reqA = new EventEmitter();
@@ -131,6 +151,42 @@ test("realtime hub snapshots active generation lifecycle state", () => {
   );
   assert.deepEqual(hub.listActiveGenerations(), []);
   req.emit("close");
+});
+
+test("another client can cancel the current generation without cancelling a later one", () => {
+  const hub = createRealtimeEventHub({ heartbeatMs: 60_000 });
+  const req = new EventEmitter();
+  req.headers = { "x-risu-client-id": "device-a" };
+  const res = new FakeResponse();
+  hub.connect(req, res);
+  const otherReq = new EventEmitter();
+  otherReq.headers = { "x-risu-client-id": "device-b" };
+  const otherRes = new FakeResponse();
+  hub.connect(otherReq, otherRes);
+
+  hub.updateGenerationState(
+    { chatId: "chat-a", lifecycleId: "life-a", state: "started" },
+    "device-a",
+  );
+  const cancelled = hub.cancelGeneration("chat-a", "device-b");
+  assert.equal(cancelled.lifecycleId, "life-a");
+  assert.equal(cancelled.state, "aborted");
+  assert.equal(cancelled.sourceClientId, "device-b");
+  assert.deepEqual(hub.listActiveGenerations(), []);
+  assert.match(
+    res.chunks.join(""),
+    /"lifecycleId":"life-a","state":"aborted","sourceClientId":"device-b"/,
+  );
+  assert.match(otherRes.chunks.join(""), /"state":"aborted"/);
+
+  hub.updateGenerationState(
+    { chatId: "chat-a", lifecycleId: "life-b", state: "started" },
+    "device-a",
+  );
+  assert.equal(hub.cancelGeneration("chat-missing", "device-b"), null);
+  assert.equal(hub.listActiveGenerations()[0].lifecycleId, "life-b");
+  req.emit("close");
+  otherReq.emit("close");
 });
 
 class FakeWebSocket extends EventEmitter {

@@ -8,7 +8,7 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 const { once } = require("events");
-const { createModelJobManager } = require("./modelJobs.cjs");
+const { createModelJobManager } = require("../dist/executors/modelJobs.cjs");
 
 async function listen(server) {
   server.listen(0, "127.0.0.1");
@@ -29,11 +29,15 @@ test("model job survives stream client disconnect and replays the full journal",
   const saveDir = await makeTempDir();
   t.after(() => fs.rm(saveDir, { recursive: true, force: true }));
 
+  let releaseUpstream;
+  const continueUpstream = new Promise((resolve) => {
+    releaseUpstream = resolve;
+  });
+  t.after(() => releaseUpstream());
   const upstream = http.createServer((_req, res) => {
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write("alpha");
-    setTimeout(() => res.write("beta"), 40);
-    setTimeout(() => res.end("gamma"), 80);
+    void continueUpstream.then(() => res.end("betagamma"));
   });
   const upstreamPort = await listen(upstream);
   t.after(() => close(upstream));
@@ -91,6 +95,7 @@ test("model job survives stream client disconnect and replays the full journal",
   const first = await firstReader.read();
   assert.equal(new TextDecoder().decode(first.value), "alpha");
   await firstReader.cancel();
+  releaseUpstream();
 
   await new Promise((resolve) => setTimeout(resolve, 130));
   const job = manager.getJob(jobId);
@@ -243,7 +248,50 @@ test("active model jobs can be aborted from another client", async (t) => {
 
   const deleted = await manager.deleteJob(created.jobId);
   assert.deepEqual(deleted, { success: true, aborted: true });
+  const replacement = manager.createJob({
+    targetUrl: `http://127.0.0.1:${upstreamPort}/v1/chat`,
+    method: "POST",
+    body: "{}",
+    chatId: "remote-cancel-chat",
+    generationId: "replacement-generation",
+    protocol: "openai",
+    streaming: true,
+  });
+  assert.ok(replacement.jobId);
+  await manager.deleteJob(replacement.jobId);
   await created.runPromise;
+  await replacement.runPromise;
   assert.equal(manager.getJob(created.jobId).status, "aborted");
   assert.equal(manager.listJobs("active").length, 0);
+});
+
+test("chat cancellation can find running jobs that are not recoverable", async (t) => {
+  const saveDir = await makeTempDir();
+  t.after(() => fs.rm(saveDir, { recursive: true, force: true }));
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200);
+    res.write("partial");
+  });
+  const upstreamPort = await listen(upstream);
+  t.after(() => close(upstream));
+  const manager = createModelJobManager({ saveDir });
+  t.after(() => manager.close());
+  const created = manager.createJob({
+    targetUrl: `http://127.0.0.1:${upstreamPort}/v1/chat`,
+    method: "POST",
+    body: '{"tools":[{}]}',
+    chatId: "chat-nonrecoverable",
+    generationId: "generation-nonrecoverable",
+    protocol: "openai",
+    streaming: true,
+    recoverable: false,
+  });
+  assert.ok(created.jobId);
+  assert.equal(manager.listJobs("active").length, 0);
+  const running = manager.listJobs("running");
+  assert.equal(running.length, 1);
+  assert.equal(running[0].id, created.jobId);
+  await manager.deleteJob(running[0].id);
+  await created.runPromise;
+  assert.equal(manager.getJob(created.jobId).status, "aborted");
 });

@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { chatTabsStore, type ChatTab } from "../chatTabs.svelte";
-import { activeGenerationChatIds } from "../process/chatRuntimeState";
+import { activeGenerationChatIds } from "../process/chat/runtimeState";
 import { getProtectedChatIds } from "./chatWorkingSet";
 
 function makeTab(id: string, groupId: string, chatId: string): ChatTab {
