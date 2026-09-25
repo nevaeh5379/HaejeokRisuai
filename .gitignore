@@ -68,3 +68,6 @@ Cargo.lock
 
 
 .envrc
+
+# Launchpad PPA build artifacts
+/dist-ppa/

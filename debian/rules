@@ -1,0 +1,27 @@
+#!/usr/bin/make -f
+
+DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
+PACKAGE_VERSION := $(shell dpkg-parsechangelog -SVersion)
+UPSTREAM_VERSION := $(shell printf '%s\n' '$(PACKAGE_VERSION)' | sed 's/-.*//')
+PAYLOAD := payload/RisuAI_$(UPSTREAM_VERSION)_$(DEB_HOST_ARCH).deb
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+	test -f "$(PAYLOAD)"
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	rm -rf debian/haejeok-risuai
+	mkdir -p debian/haejeok-risuai
+	dpkg-deb -x "$(PAYLOAD)" debian/haejeok-risuai
+
+override_dh_strip:
+
+override_dh_dwz:
