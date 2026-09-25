@@ -21,6 +21,12 @@ The main `Publish` workflow calls `.github/workflows/ppa-publish.yml` after
 the GitHub release has been published. By default it uploads source packages
 for both Ubuntu Noble and Resolute with PPA revision `1`.
 
+Each Ubuntu series runs as a separate matrix job, with at most one upload
+running at a time. This keeps a failure for one series isolated so GitHub's
+"Re-run failed jobs" action does not upload an already successful series
+again. Launchpad uploads are retried up to four times with increasing delays
+to tolerate transient FTP failures.
+
 The upload workflow needs these GitHub Actions secrets:
 
 - `LAUNCHPAD_GPG_PRIVATE_KEY`: ASCII-armored secret key registered with the
@@ -73,6 +79,7 @@ fqdn = ppa.launchpad.net
 method = ftp
 incoming = ~nevaeh5379/ubuntu/haejeok-risuai/
 login = anonymous
+passive_ftp = 1
 allow_unsigned_uploads = 0
 ```
 

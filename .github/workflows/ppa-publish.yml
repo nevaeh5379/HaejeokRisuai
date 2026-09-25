@@ -51,15 +51,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    outputs:
+      series_matrix: ${{ steps.series.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Validate inputs
+      - name: Validate inputs and prepare series matrix
+        id: series
         shell: bash
         env:
           BUILD_NUMBER: ${{ inputs.build_number }}
@@ -71,18 +69,38 @@ jobs:
             exit 2
           fi
 
+          if [[ ! "$PPA_REVISION" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid PPA revision: $PPA_REVISION" >&2
+            exit 2
+          fi
+
           case "$SERIES" in
-            all|noble|resolute) ;;
+            all)
+              echo 'matrix=["noble","resolute"]' >> "$GITHUB_OUTPUT"
+              ;;
+            noble|resolute)
+              printf 'matrix=["%s"]\n' "$SERIES" >> "$GITHUB_OUTPUT"
+              ;;
             *)
               echo "Unsupported Ubuntu series: $SERIES" >&2
               exit 2
               ;;
           esac
 
-          if [[ ! "$PPA_REVISION" =~ ^[1-9][0-9]*$ ]]; then
-            echo "Invalid PPA revision: $PPA_REVISION" >&2
-            exit 2
-          fi
+  publish:
+    name: Publish PPA (${{ matrix.series }})
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        series: ${{ fromJSON(needs.prepare.outputs.series_matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install signing and upload tools
         run: |
@@ -151,50 +169,64 @@ jobs:
           method = ftp
           incoming = ~nevaeh5379/ubuntu/haejeok-risuai/
           login = anonymous
+          passive_ftp = 1
           allow_unsigned_uploads = 0
           EOF
 
-      - name: Build, sign, and upload source packages
+      - name: Build and sign source package
         if: steps.signing.outputs.configured == 'true'
+        id: package
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_NUMBER: ${{ inputs.build_number }}
-          SERIES: ${{ inputs.series }}
+          UBUNTU_SERIES: ${{ matrix.series }}
           PPA_REVISION: ${{ inputs.ppa_revision }}
         run: |
-          case "$SERIES" in
-            all)
-              SERIES_LIST=(noble resolute)
-              ;;
-            *)
-              SERIES_LIST=("$SERIES")
-              ;;
-          esac
+          ./packaging/ppa/build-source-package.sh \
+            "$BUILD_NUMBER" \
+            "$UBUNTU_SERIES" \
+            "$PPA_REVISION"
 
-          for UBUNTU_SERIES in "${SERIES_LIST[@]}"; do
-            ./packaging/ppa/build-source-package.sh \
-              "$BUILD_NUMBER" \
-              "$UBUNTU_SERIES" \
-              "$PPA_REVISION"
+          OUTPUT_DIR="dist-ppa/b${BUILD_NUMBER}-${UBUNTU_SERIES}-ppa${PPA_REVISION}"
+          CHANGES_FILE="$(
+            find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*_source.changes' -print -quit
+          )"
 
-            OUTPUT_DIR="dist-ppa/b${BUILD_NUMBER}-${UBUNTU_SERIES}-ppa${PPA_REVISION}"
-            CHANGES_FILE="$(
-              find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*_source.changes' -print -quit
-            )"
+          if [ -z "$CHANGES_FILE" ]; then
+            echo "No source changes file found in $OUTPUT_DIR" >&2
+            exit 1
+          fi
 
-            if [ -z "$CHANGES_FILE" ]; then
-              echo "No source changes file found in $OUTPUT_DIR" >&2
+          debsign \
+            -p"$PPA_GPG_PROGRAM" \
+            -k"$PPA_GPG_FINGERPRINT" \
+            "$CHANGES_FILE"
+
+          gpg --batch --verify "$CHANGES_FILE"
+          echo "changes_file=$CHANGES_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload source package to Launchpad
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        env:
+          CHANGES_FILE: ${{ steps.package.outputs.changes_file }}
+        run: |
+          for attempt in 1 2 3 4; do
+            echo "Launchpad upload attempt $attempt of 4"
+
+            if dput haejeok-risuai "$CHANGES_FILE"; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 4 ]; then
+              echo "Launchpad upload failed after $attempt attempts" >&2
               exit 1
             fi
 
-            debsign \
-              -p"$PPA_GPG_PROGRAM" \
-              -k"$PPA_GPG_FINGERPRINT" \
-              "$CHANGES_FILE"
-
-            gpg --batch --verify "$CHANGES_FILE"
-            dput haejeok-risuai "$CHANGES_FILE"
+            delay=$((attempt * 30))
+            echo "Upload failed; retrying in ${delay}s..."
+            sleep "$delay"
           done
 
       - name: Clean up signing material
