@@ -1,6 +1,6 @@
 import { decryptBuffer, encryptBuffer, selectSingleFile } from "../../util";
 import { language } from "../../../lang";
-import { alertNormal } from "../../alert";
+import { alertError, alertNormal } from "../../alert";
 import { prebuiltPresets } from "../../process/templates/templates";
 import type { PromptItem } from "../../process/prompt";
 import { safeStructuredClone } from "../../polyfill";
@@ -364,6 +364,38 @@ export async function downloadPreset(
   };
 }
 
+async function decodeRisuPresetData(
+  data: Uint8Array,
+  rpack: boolean,
+): Promise<any | null> {
+  const payload = rpack ? await decodeRPack(data) : data;
+  const decoded = await decodeMsgpack(fflate.decompressSync(payload));
+  console.log(decoded);
+  if (
+    (decoded.presetVersion === 0 || decoded.presetVersion === 2) &&
+    decoded.type === "preset"
+  ) {
+    return {
+      ...presetTemplate,
+      ...decodeMsgpack(
+        Buffer.from(
+          await decryptBuffer(decoded.preset ?? decoded.pres, "risupreset"),
+        ),
+      ),
+    };
+  }
+  return null;
+}
+
+function decodeJsonPresetData(data: Uint8Array): any {
+  const pre = {
+    ...presetTemplate,
+    ...JSON.parse(Buffer.from(data).toString("utf-8")),
+  };
+  console.log(pre);
+  return pre;
+}
+
 export async function importPreset(
   f: {
     name: string;
@@ -376,34 +408,43 @@ export async function importPreset(
   if (!f) {
     return;
   }
-  let pre: any;
-  if (f.name.endsWith(".risupreset") || f.name.endsWith(".risup")) {
-    let data = f.data;
-    if (f.name.endsWith(".risup")) {
-      data = await decodeRPack(data);
+
+  try {
+    const name = f.name.toLowerCase();
+    const isRisuPack = name.endsWith(".risupreset") || name.endsWith(".risup");
+    const isJson = name.endsWith(".json") || name.endsWith(".preset");
+
+    let pre: any = null;
+    if (isRisuPack) {
+      pre = await decodeRisuPresetData(f.data, name.endsWith(".risup")).catch(
+        () => null,
+      );
+      if (!pre) {
+        pre = decodeJsonPresetData(f.data);
+      }
+    } else if (isJson) {
+      pre = decodeJsonPresetData(f.data);
+    } else {
+      // Android document pickers can return a display name without the
+      // original extension, so sniff the contents before giving up.
+      pre =
+        (await decodeRisuPresetData(f.data, true).catch(() => null)) ??
+        (await decodeRisuPresetData(f.data, false).catch(() => null)) ??
+        decodeJsonPresetData(f.data);
     }
-    const decoded = await decodeMsgpack(fflate.decompressSync(data));
-    console.log(decoded);
-    if (
-      (decoded.presetVersion === 0 || decoded.presetVersion === 2) &&
-      decoded.type === "preset"
-    ) {
-      pre = {
-        ...presetTemplate,
-        ...decodeMsgpack(
-          Buffer.from(
-            await decryptBuffer(decoded.preset ?? decoded.pres, "risupreset"),
-          ),
-        ),
-      };
+
+    if (!pre) {
+      throw new Error("Unsupported or corrupted preset file");
     }
-  } else {
-    pre = {
-      ...presetTemplate,
-      ...JSON.parse(Buffer.from(f.data).toString("utf-8")),
-    };
-    console.log(pre);
+
+    await applyImportedPreset(pre);
+  } catch (error) {
+    console.error("Failed to import preset:", error);
+    alertError(error);
   }
+}
+
+async function applyImportedPreset(pre: any) {
   if (pre?.promptTemplate !== undefined) {
     pre.promptTemplate = normalizePromptTemplate(pre.promptTemplate);
   }
