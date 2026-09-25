@@ -223,6 +223,7 @@ class CharacterStore
   private olderChatPromises = new Map<string, Promise<number>>();
   // Full history can be loaded without expensive historical generation/prompt metadata.
   private generationOnlyMetadataChats = new Set<string>();
+  private persistedChatIds = new Set<string>();
   private hydratedCharacterLru: string[] = [];
   private inactiveDetailReleaseGeneration = 0;
 
@@ -259,6 +260,7 @@ class CharacterStore
     this.dirtyChatDeletes.clear();
     this.dirtyChatManifests.clear();
     this.generationOnlyMetadataChats.clear();
+    this.persistedChatIds.clear();
     this.hydratedCharacterLru = [];
     this.inactiveDetailReleaseGeneration += 1;
     this.dirtyCharacterIds = false;
@@ -268,6 +270,7 @@ class CharacterStore
       if (char.detailsLoaded !== false) this.touchHydratedCharacter(char.chaId);
       for (const chat of char.chats ?? []) {
         chat.id ||= uuidv4();
+        this.persistedChatIds.add(chat.id);
       }
     }
     this.charIdsSnapshot = characters.map((c) => c.chaId).join(",");
@@ -297,6 +300,12 @@ class CharacterStore
           if (!knownCharIds.has(c.chaId)) {
             knownCharIds.add(c.chaId);
             this.dirtyCharacters.add(c.chaId);
+            this.dirtyChatManifests.add(c.chaId);
+            for (const chat of c.chats ?? []) {
+              if (!chat) continue;
+              if (!chat.id) chat.id = uuidv4();
+              this.dirtyChats.add(chat.id);
+            }
             orderChanged = true;
           }
         }
@@ -328,7 +337,11 @@ class CharacterStore
     // Preserve the legacy invariant: every chat must have a stable id
     // (the old observe loop assigned these during traversal).
     for (const c of char.chats ?? []) {
-      if (c && !c.id) c.id = uuidv4();
+      if (c && !c.id) {
+        c.id = uuidv4();
+        this.dirtyChats.add(c.id);
+        this.dirtyChatManifests.add(char.chaId);
+      }
     }
 
     // Track only data that is actually persisted. Message bodies live in the
@@ -645,6 +658,8 @@ class CharacterStore
         messages: [],
         messageManifests: [],
       });
+      for (const id of committedChatIds) this.persistedChatIds.add(id);
+      for (const id of committedChatDeletes) this.persistedChatIds.delete(id);
     } catch (error) {
       for (const id of committedCharacterIds) {
         this.dirtyCharacterTouches.delete(id);
@@ -686,6 +701,30 @@ class CharacterStore
       this.dirtyChatManifests.size > 0 ||
       this.dirtyCharacterIds
     );
+  }
+
+  async ensureChatSaved(chatId: string): Promise<void> {
+    if (
+      this.persistedChatIds.has(chatId) &&
+      !this.dirtyChats.has(chatId) &&
+      !this.hasPendingWrites()
+    ) {
+      return;
+    }
+    for (const char of this.characters) {
+      const chat = char.chats?.find((c) => c?.id === chatId);
+      if (chat) {
+        if (!chat.id) chat.id = chatId;
+        this.markCharacterDirty(char.chaId);
+        this.markChatDirty(chatId);
+        this.markChatManifestDirty(char.chaId);
+        await this.flush();
+        return;
+      }
+    }
+    if (this.hasPendingWrites()) {
+      await this.flush();
+    }
   }
 
   // ── Public accessors ──────────────────────────────────────────────

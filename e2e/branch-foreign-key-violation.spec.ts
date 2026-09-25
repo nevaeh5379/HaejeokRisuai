@@ -29,8 +29,8 @@ async function waitForAppReady(page: Page) {
   await expect(page.getByText("Loading...")).toHaveCount(0, { timeout: 30_000 });
 }
 
-test.describe("branch foreign key constraint violation reproduction", () => {
-  test("reproduce SQLite foreign key constraint failure in WebSqliteStorage", async ({
+test.describe("branch foreign key constraint resolution", () => {
+  test("verify no SQLite foreign key constraint failure on reroll in WebSqliteStorage", async ({
     page,
   }) => {
     await waitForAppReady(page);
@@ -125,24 +125,36 @@ test.describe("branch foreign key constraint violation reproduction", () => {
     // Click the reroll button directly in the UI (this triggers createRerollBranch via UI)
     await rerollButton.click();
 
-    // Verify that SQLite foreign key constraint violation was triggered via UI interaction
-    await expect.poll(() => {
-      return (
-        pageErrors.some(
-          (err) =>
-            err.message.includes("SQLITE_CONSTRAINT_FOREIGNKEY") ||
-            err.message.includes("FOREIGN KEY constraint failed"),
-        ) ||
-        consoleErrors.some(
-          (text) =>
-            text.includes("SQLITE_CONSTRAINT_FOREIGNKEY") ||
-            text.includes("FOREIGN KEY constraint failed"),
-        )
-      );
-    }, { timeout: 10_000 }).toBe(true);
+    // Wait for the second generation to finish
+    await expect(page.locator(".loadmove")).toHaveCount(0, { timeout: 15_000 });
+
+    // Verify active branch was created
+    await page.waitForFunction(async () => {
+      const domainUrl = "/src/ts/stores/domain/index.ts";
+      const { characterStore } = (await import(domainUrl)) as {
+        characterStore: { characters: Array<{ chaId: string; chats: Array<{ id?: string; activeBranchId?: string }> }> };
+      };
+      const activeChat = characterStore.characters[0]?.chats?.[0];
+      return Boolean(activeChat?.activeBranchId);
+    });
+
+    // Verify that NO SQLite foreign key constraint violation occurred
+    expect(
+      pageErrors.some(
+        (err) =>
+          err.message.includes("SQLITE_CONSTRAINT_FOREIGNKEY") ||
+          err.message.includes("FOREIGN KEY constraint failed"),
+      ),
+    ).toBe(false);
+    expect(
+      consoleErrors.some(
+        (text) =>
+          text.includes("SQLITE_CONSTRAINT_FOREIGNKEY") ||
+          text.includes("FOREIGN KEY constraint failed"),
+      ),
+    ).toBe(false);
   });
 
-  // TODO: Add an end-to-end / UI-driven reproduction for PostgreSQL storage
-  // once the Node.js backend server environment is connected with the Playwright test runner.
-  // The current web E2E environment runs against the browser-local WebSqliteStorage (WASM/OPFS).
+  // PostgreSQL storage is also protected through ensureChatSaved & messageStore.flush
+  // before createChatBranch invocation.
 });

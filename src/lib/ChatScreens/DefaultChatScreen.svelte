@@ -392,6 +392,7 @@
         const currentChatPage = selectedChatIndex
         await preLoadChat(selectedChar, currentChatPage, { full: true })
         const activeChat = characterStore.characters[selectedChar].chats[currentChatPage]
+        activeChat.id ??= v4()
         const activePersonaName = personaStore.requireActive("sendMain").name
         let cha = activeChat.message
         let appendedUserMessage: Message | undefined
@@ -500,6 +501,8 @@
         parentBranchId: string,
     ) {
         activeChat.id ??= v4()
+        await characterStore.ensureChatSaved(activeChat.id)
+        await messageStore.flush()
         const storage = await getSqlBranchStorage()
         const forkMessage = activeChat.message[branchMessageIndex]
         if(!forkMessage?.chatId) throw new Error('Cannot reroll a message without a persistent message id')

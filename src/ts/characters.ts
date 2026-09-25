@@ -84,6 +84,10 @@ export function createNewCharacter() {
   checkCharOrder();
   characterStore.markCharacterDirty(char.chaId);
   characterStore.markCharacterOrderDirty();
+  if (char.chats?.[0]?.id) {
+    characterStore.markChatDirty(char.chats[0].id);
+    characterStore.markChatManifestDirty(char.chaId);
+  }
   return characterStore.characters.length - 1;
 }
 
@@ -94,6 +98,7 @@ export function createNewGroup() {
     firstMessage: "",
     chats: [
       {
+        id: uuidv4(),
         message: [],
         note: "",
         name: "Chat 1",
@@ -119,6 +124,10 @@ export function createNewGroup() {
   checkCharOrder();
   characterStore.markCharacterDirty(char.chaId);
   characterStore.markCharacterOrderDirty();
+  if (char.chats?.[0]?.id) {
+    characterStore.markChatDirty(char.chats[0].id);
+    characterStore.markChatManifestDirty(char.chaId);
+  }
   return characterStore.characters.length - 1;
 }
 

@@ -200,6 +200,8 @@
 
         if (createBranch) {
             currentChat.id ??= v4()
+            await characterStore.ensureChatSaved(currentChat.id)
+            await messageStore.flush()
             const storage = await getSqlBranchStorage()
             const branches = await storage.listChatBranches(currentChat.id)
             const parentBranchId = currentChat.activeBranchId
@@ -1031,6 +1033,8 @@
         const currentChat = char.chats[targetChatIndex]
 
         currentChat.id ??= v4()
+        await characterStore.ensureChatSaved(currentChat.id)
+        await messageStore.flush()
         const currentMessage = currentChat.message[targetIndex]
         if(!currentMessage?.chatId) throw new Error('Cannot branch a message without a persistent message id')
         const storage = await getSqlBranchStorage()

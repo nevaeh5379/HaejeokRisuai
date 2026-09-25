@@ -8,7 +8,9 @@ export function createBlankChar(): character {
     firstMessage: "",
     desc: "",
     notes: "",
-    chats: [{ message: [], note: "", name: "Chat 1", localLore: [] }],
+    chats: [
+      { id: uuidv4(), message: [], note: "", name: "Chat 1", localLore: [] },
+    ],
     chatFolders: [],
     chatPage: 0,
     emotionImages: [],
