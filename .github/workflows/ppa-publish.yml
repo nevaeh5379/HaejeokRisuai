@@ -1,0 +1,209 @@
+name: Publish PPA
+
+on:
+  workflow_call:
+    inputs:
+      build_number:
+        description: GitHub release build number without the b prefix
+        required: true
+        type: string
+      series:
+        description: Ubuntu series to publish, or all
+        required: false
+        type: string
+        default: all
+      ppa_revision:
+        description: PPA packaging revision
+        required: false
+        type: string
+        default: "1"
+    secrets:
+      LAUNCHPAD_GPG_PRIVATE_KEY:
+        required: false
+      LAUNCHPAD_GPG_PASSPHRASE:
+        required: false
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: GitHub release build number without the b prefix
+        required: true
+        type: string
+      series:
+        description: Ubuntu series to publish
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - noble
+          - resolute
+      ppa_revision:
+        description: PPA packaging revision
+        required: true
+        type: string
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ppa-${{ inputs.build_number }}-${{ inputs.ppa_revision }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate inputs
+        shell: bash
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          SERIES: ${{ inputs.series }}
+          PPA_REVISION: ${{ inputs.ppa_revision }}
+        run: |
+          if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "Invalid build number: $BUILD_NUMBER" >&2
+            exit 2
+          fi
+
+          case "$SERIES" in
+            all|noble|resolute) ;;
+            *)
+              echo "Unsupported Ubuntu series: $SERIES" >&2
+              exit 2
+              ;;
+          esac
+
+          if [[ ! "$PPA_REVISION" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid PPA revision: $PPA_REVISION" >&2
+            exit 2
+          fi
+
+      - name: Install signing and upload tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends devscripts dput
+
+      - name: Import Launchpad signing key
+        id: signing
+        shell: bash
+        env:
+          PRIVATE_KEY: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
+          PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "::warning::LAUNCHPAD_GPG_PRIVATE_KEY is not configured; skipping PPA upload."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          install -d -m 700 "$HOME/.gnupg"
+
+          KEY_FILE="$RUNNER_TEMP/launchpad-private-key.asc"
+          PASSPHRASE_FILE="$RUNNER_TEMP/launchpad-gpg-passphrase"
+          GPG_WRAPPER="$RUNNER_TEMP/launchpad-gpg"
+
+          umask 077
+          printf '%s\n' "$PRIVATE_KEY" > "$KEY_FILE"
+          printf '%s' "$PASSPHRASE" > "$PASSPHRASE_FILE"
+
+          gpg --batch --import "$KEY_FILE"
+          rm -f "$KEY_FILE"
+
+          FINGERPRINT="$(
+            gpg --batch --with-colons --list-secret-keys |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+
+          if [ -z "$FINGERPRINT" ]; then
+            echo "No secret OpenPGP key was imported" >&2
+            exit 1
+          fi
+
+          cat > "$GPG_WRAPPER" <<'EOF'
+          #!/usr/bin/env bash
+          exec /usr/bin/gpg \
+            --batch \
+            --yes \
+            --pinentry-mode loopback \
+            --passphrase-file "${PPA_GPG_PASSPHRASE_FILE:?}" \
+            "$@"
+          EOF
+          chmod 700 "$GPG_WRAPPER"
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "PPA_GPG_FINGERPRINT=$FINGERPRINT" >> "$GITHUB_ENV"
+          echo "PPA_GPG_PASSPHRASE_FILE=$PASSPHRASE_FILE" >> "$GITHUB_ENV"
+          echo "PPA_GPG_PROGRAM=$GPG_WRAPPER" >> "$GITHUB_ENV"
+
+      - name: Configure Launchpad upload target
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        run: |
+          cat > "$HOME/.dput.cf" <<'EOF'
+          [haejeok-risuai]
+          fqdn = ppa.launchpad.net
+          method = ftp
+          incoming = ~nevaeh5379/ubuntu/haejeok-risuai/
+          login = anonymous
+          allow_unsigned_uploads = 0
+          EOF
+
+      - name: Build, sign, and upload source packages
+        if: steps.signing.outputs.configured == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          SERIES: ${{ inputs.series }}
+          PPA_REVISION: ${{ inputs.ppa_revision }}
+        run: |
+          case "$SERIES" in
+            all)
+              SERIES_LIST=(noble resolute)
+              ;;
+            *)
+              SERIES_LIST=("$SERIES")
+              ;;
+          esac
+
+          for UBUNTU_SERIES in "${SERIES_LIST[@]}"; do
+            ./packaging/ppa/build-source-package.sh \
+              "$BUILD_NUMBER" \
+              "$UBUNTU_SERIES" \
+              "$PPA_REVISION"
+
+            OUTPUT_DIR="dist-ppa/b${BUILD_NUMBER}-${UBUNTU_SERIES}-ppa${PPA_REVISION}"
+            CHANGES_FILE="$(
+              find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*_source.changes' -print -quit
+            )"
+
+            if [ -z "$CHANGES_FILE" ]; then
+              echo "No source changes file found in $OUTPUT_DIR" >&2
+              exit 1
+            fi
+
+            debsign \
+              -p"$PPA_GPG_PROGRAM" \
+              -k"$PPA_GPG_FINGERPRINT" \
+              "$CHANGES_FILE"
+
+            gpg --batch --verify "$CHANGES_FILE"
+            dput haejeok-risuai "$CHANGES_FILE"
+          done
+
+      - name: Clean up signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            "${PPA_GPG_PASSPHRASE_FILE:-}" \
+            "${PPA_GPG_PROGRAM:-}" \
+            "$HOME/.dput.cf"
+          gpgconf --kill all || true
+          rm -rf "$HOME/.gnupg"

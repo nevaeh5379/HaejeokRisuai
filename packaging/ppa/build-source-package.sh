@@ -2,8 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REPOSITORY="nevaeh5379/HaejeokRisuAI"
+REPOSITORY="nevaeh5379/HaejeokRisuai"
 SERIES="${2:-noble}"
+PPA_REVISION="${3:-1}"
 BUILD_NUMBER="${1:-}"
 
 cd "$REPO_ROOT"
@@ -20,9 +21,19 @@ if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+if [[ ! "$SERIES" =~ ^[a-z][a-z0-9-]*$ ]]; then
+  echo "Invalid Ubuntu series: $SERIES" >&2
+  exit 2
+fi
+
+if [[ ! "$PPA_REVISION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Invalid PPA revision: $PPA_REVISION" >&2
+  exit 2
+fi
+
 VERSION="0.0.${BUILD_NUMBER}"
-PACKAGE_VERSION="${VERSION}-1~ppa1~${SERIES}1"
-OUT_DIR="$REPO_ROOT/dist-ppa/${TAG}-${SERIES}"
+PACKAGE_VERSION="${VERSION}-1~ppa${PPA_REVISION}~${SERIES}1"
+OUT_DIR="$REPO_ROOT/dist-ppa/${TAG}-${SERIES}-ppa${PPA_REVISION}"
 WORK_DIR="$(mktemp -d)"
 SOURCE_NAME="haejeok-risuai-${VERSION}"
 SOURCE_DIR="$WORK_DIR/$SOURCE_NAME"

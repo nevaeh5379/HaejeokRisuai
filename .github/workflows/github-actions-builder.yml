@@ -520,3 +520,12 @@ jobs:
             echo "Published release ${RELEASE_ID} is associated with tag ${ACTUAL_TAG}, expected ${BUILD_TAG}" >&2
             exit 1
           fi
+
+  publish-ppa:
+    needs: [prepare-release, publish-release]
+    uses: ./.github/workflows/ppa-publish.yml
+    with:
+      build_number: ${{ needs.prepare-release.outputs.build_number }}
+      series: all
+      ppa_revision: "1"
+    secrets: inherit

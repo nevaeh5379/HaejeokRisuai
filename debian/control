@@ -12,9 +12,9 @@ Build-Depends:
  libwebkit2gtk-4.1-dev
 Standards-Version: 4.7.2
 Rules-Requires-Root: no
-Homepage: https://github.com/nevaeh5379/HaejeokRisuAI
-Vcs-Git: https://github.com/nevaeh5379/HaejeokRisuAI.git
-Vcs-Browser: https://github.com/nevaeh5379/HaejeokRisuAI
+Homepage: https://github.com/nevaeh5379/HaejeokRisuai
+Vcs-Git: https://github.com/nevaeh5379/HaejeokRisuai.git
+Vcs-Browser: https://github.com/nevaeh5379/HaejeokRisuai
 
 Package: haejeok-risuai
 Architecture: amd64 arm64
