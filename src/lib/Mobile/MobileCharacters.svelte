@@ -28,6 +28,7 @@
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
+    import { getSafeNavigatorLanguages } from 'src/ts/locale';
 
     interface Props {
         endGrid?: () => void;
@@ -37,7 +38,7 @@
 
     let { endGrid = () => {}, search, hideTrash = false }: Props = $props();
 
-    const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' });
+    const agoFormatter = new Intl.RelativeTimeFormat(getSafeNavigatorLanguages(), { style: 'short' });
     const ITEM_HEIGHT = 76; // Height per character row in px
     const OVERSCAN = 4; // Extra items to render above/below viewport
 

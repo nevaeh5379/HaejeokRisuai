@@ -1,6 +1,7 @@
 <script lang="ts">
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
     import { language } from "src/lang";
+    import { getSafeNavigatorLanguage } from "src/ts/locale";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import Accordion from "src/lib/UI/Accordion.svelte";
 
@@ -26,7 +27,7 @@
                 settingsStore.state.banCharacterset.push(set)
             }
         }}>
-            {new Intl.DisplayNames([navigator.language,'en'], { type: 'script' }).of(set)} ({characterSetsPreview[set]})
+            {new Intl.DisplayNames([getSafeNavigatorLanguage(),'en'], { type: 'script' }).of(set)} ({characterSetsPreview[set]})
         </Button>
     {/each}
 </Accordion>
