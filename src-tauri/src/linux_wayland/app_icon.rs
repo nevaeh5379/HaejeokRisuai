@@ -2,12 +2,12 @@
 //!
 //! KWin (and most Wayland compositors) resolve a window's titlebar/taskbar
 //! icon by looking up a desktop entry named after the window's Wayland
-//! app-id. The app-id is derived from the executable name (`RisuAI` for
-//! bundled builds, `risuai` for `tauri dev`), so portable launches such as
-//! AppImages never match an installed entry and fall back to the generic
-//! Wayland icon. This module writes a hidden user-level desktop entry (plus
-//! the matching hicolor icon) on first launch so the window icon resolves
-//! without installing anything into system directories.
+//! app-id. The app-id is derived from the executable name (`haejeok-risuai`
+//! for bundled Linux builds, `risuai` for `tauri dev`), so portable launches
+//! such as AppImages never match an installed entry and fall back to the
+//! generic Wayland icon. This module writes a hidden user-level desktop
+//! entry (plus the matching hicolor icon) on first launch so the window icon
+//! resolves without installing anything into system directories.
 //!
 //! `tauri dev` registers its own hidden entry from `tooling/tauri.mjs`
 //! (marker `X-HaejeokRisuAI-Dev=true`), so this runtime registration is
