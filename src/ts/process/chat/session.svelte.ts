@@ -50,6 +50,26 @@ export interface PrepareChatSessionOptions {
   targetChatId?: string;
 }
 
+export interface CompletedChatSession {
+  status: "done";
+  result: boolean;
+}
+
+export interface ReadyChatSession {
+  status: "ready";
+  selectedChar: number;
+  selectedChat: number;
+  nowChatroom: character | groupChat;
+  currentChar: character;
+  currentChat: Chat;
+  promptInfo: MessagePresetInfo;
+  tokenizer: ChatTokenizer;
+  maxContextTokens: number;
+  findCharacter: (id: string) => character;
+}
+
+export type PrepareChatSessionResult = CompletedChatSession | ReadyChatSession;
+
 function createCharacterLookup() {
   const cache: Record<string, character> = {};
   return (id: string) => {
@@ -236,7 +256,7 @@ function buildReadySession(
   currentChar: character,
   calculatedChatTokens: number,
   findCharacter: (id: string) => character,
-) {
+): ReadyChatSession {
   options.errorContext.currentChar = currentChar;
   const tokenizer = createTokenizer(
     options.chatAdditonalTokens ?? calculatedChatTokens,
@@ -252,7 +272,7 @@ function buildReadySession(
   );
   selection.nowChatroom.chats[selection.selectedChat] = currentChat;
   return {
-    status: "ready" as const,
+    status: "ready",
     ...selection,
     currentChar,
     currentChat,
@@ -263,12 +283,14 @@ function buildReadySession(
   };
 }
 
-export async function prepareChatSession(options: PrepareChatSessionOptions) {
+export async function prepareChatSession(
+  options: PrepareChatSessionOptions,
+): Promise<PrepareChatSessionResult> {
   if (!(await initializeGeneration(options))) {
-    return { status: "done" as const, result: false };
+    return { status: "done", result: false };
   }
   const selection = await loadSelectedChat(options);
-  if (!selection) return { status: "done" as const, result: false };
+  if (!selection) return { status: "done", result: false };
 
   const calculatedChatTokens = presetStore.state.aiModel.startsWith("gpt")
     ? 5
