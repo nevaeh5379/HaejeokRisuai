@@ -4,30 +4,30 @@ import type {
   Chat,
   groupChat,
   Message,
-} from "../storage/database/schema";
+} from "../../storage/database/schema";
 import { replaceTargetChat, type ChatExecutionTarget } from "src/ts/chatTarget";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { ChatTokenizer } from "../tokenizer";
-import { getUserName } from "../util";
-import { getModelInfo, LLMFlags } from "../model/modellist";
-import { readImage } from "../globalApi.svelte";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { ChatTokenizer } from "../../tokenizer";
+import { getUserName } from "../../util";
+import { getModelInfo, LLMFlags } from "../../model/modellist";
+import { readImage } from "../../globalApi.svelte";
 import { v4 } from "uuid";
-import { exampleMessage } from "./exampleMessages";
-import { processScript, processScriptFull, risuChatParser } from "./scripts";
-import { runTrigger } from "./triggers";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { getInlayAsset } from "./files/inlays";
-import { runImageEmbedding } from "./transformers";
-import { getModuleAssets } from "./modules";
+import { exampleMessage } from "../exampleMessages";
+import { processScript, processScriptFull, risuChatParser } from "../scripts";
+import { runTrigger } from "../triggers";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { getInlayAsset } from "../files/inlays";
+import { runImageEmbedding } from "../transformers";
+import { getModuleAssets } from "../modules";
 import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import {
   generationOverride,
   type ChatGenerationOverrides,
-} from "./chatGenerationContext";
-import { getSelectedFirstMessage } from "../firstMessageSelection";
+} from "./generationContext";
+import { getSelectedFirstMessage } from "../../firstMessageSelection";
 
 type LorePrompt = Awaited<
-  ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>
+  ReturnType<typeof import("../lorebook.svelte").loadLoreBookV3Prompt>
 >;
 type DepthPrompt = LorePrompt["actives"][number];
 

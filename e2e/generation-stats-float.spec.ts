@@ -123,7 +123,7 @@ test.describe("Generation stats float position and toggle (E2E)", () => {
     await page.evaluate(async () => {
       const load = (path: string) => import(/* @vite-ignore */ path);
       const { startChatGenerationStats } = (await load(
-        "/src/ts/process/chatGenerationStats.ts",
+        "/src/ts/process/chat/generationStats.ts",
       )) as { startChatGenerationStats: (opts: any) => void };
       const { selectedCharID } = (await load(
         "/src/ts/stores.svelte.ts",
@@ -207,7 +207,7 @@ test.describe("Generation stats float position and toggle (E2E)", () => {
     await page.evaluate(async () => {
       const load = (path: string) => import(/* @vite-ignore */ path);
       const { cancelChatGenerationStats } = (await load(
-        "/src/ts/process/chatGenerationStats.ts",
+        "/src/ts/process/chat/generationStats.ts",
       )) as { cancelChatGenerationStats: (id: string) => void };
       cancelChatGenerationStats("test-gen-1");
     });

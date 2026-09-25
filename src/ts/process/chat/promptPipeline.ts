@@ -4,24 +4,24 @@ import type {
   Chat,
   groupChat,
   MessagePresetInfo,
-} from "../storage/database/schema";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { ChatTokenizer } from "../tokenizer";
-import { setChatProcessStage } from "./chatRuntimeState";
-import { risuChatParser } from "./scripts";
-import { preparePromptSections } from "./chatPromptSections";
+} from "../../storage/database/schema";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { ChatTokenizer } from "../../tokenizer";
+import { setChatProcessStage } from "./runtimeState";
+import { risuChatParser } from "../scripts";
+import { preparePromptSections } from "./promptSections";
 import {
   estimatePromptTemplateTokens,
   formatPromptForRequest,
-} from "./chatPromptTemplate";
-import { buildChatHistory } from "./chatHistoryBuilder";
-import { applyChatMemory } from "./chatMemory";
+} from "./promptTemplate";
+import { buildChatHistory } from "./historyBuilder";
+import { applyChatMemory } from "./memory";
 import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import {
   generationOverride,
   type ChatGenerationOverrides,
-} from "./chatGenerationContext";
+} from "./generationContext";
 import {
   applyMemoryPromptPolicy,
   applyTriggerPromptPolicy,
@@ -30,7 +30,7 @@ import {
 } from "@risuai/chat-core/prompt.cjs";
 
 type LorePrompt = Awaited<
-  ReturnType<typeof import("./lorebook.svelte").loadLoreBookV3Prompt>
+  ReturnType<typeof import("../lorebook.svelte").loadLoreBookV3Prompt>
 >;
 
 type PreparedPromptSections = Awaited<ReturnType<typeof preparePromptSections>>;

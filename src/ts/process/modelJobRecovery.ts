@@ -10,7 +10,7 @@ import { messageStore } from "../stores/domain/messageStore.svelte";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import type { Message } from "../storage/database/schema";
 import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
-import { setRemoteChatGeneration } from "./chatRuntimeState";
+import { setRemoteChatGeneration } from "./chat/runtimeState";
 
 export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
 

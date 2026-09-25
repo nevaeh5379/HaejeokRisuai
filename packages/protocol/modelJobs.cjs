@@ -11,7 +11,11 @@ const MODEL_JOB_TERMINAL_STATUSES = Object.freeze([
   "failed",
   "aborted",
 ]);
-const MODEL_JOB_FILTERS = Object.freeze(["active", "unclaimed"]);
+const MODEL_JOB_FILTERS = Object.freeze([
+  "active",
+  "unclaimed",
+  "running",
+]);
 const DEFAULT_MODEL_JOB_MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 function normalizeModelJobCreateRequest(

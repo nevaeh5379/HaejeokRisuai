@@ -4,34 +4,34 @@ import type {
   groupChat,
   Chat,
   MessagePresetInfo,
-} from "../storage/database/schema";
-import { changeToPreset } from "../storage/presets/presetService";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { presetStore } from "../stores/domain/presetStore.svelte";
-import { selectedCharID } from "../stores.svelte";
-import { alertToast } from "../alert";
-import { language } from "../../lang";
-import { ChatTokenizer } from "../tokenizer";
-import { findCharacterbyId, parseToggleSyntax } from "../util";
+} from "../../storage/database/schema";
+import { changeToPreset } from "../../storage/presets/presetService";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { presetStore } from "../../stores/domain/presetStore.svelte";
+import { selectedCharID } from "../../stores.svelte";
+import { alertToast } from "../../alert";
+import { language } from "../../../lang";
+import { ChatTokenizer } from "../../tokenizer";
+import { findCharacterbyId, parseToggleSyntax } from "../../util";
 import { v4 } from "uuid";
 import { selectGroupGenerationOrder } from "@risuai/chat-core/group.cjs";
-import { risuChatParser } from "./scripts";
-import { getModuleToggles } from "./modules";
-import { pluginV2 } from "../plugins/plugins.svelte";
-import { preLoadChat } from "./coldstorage.svelte";
-import { setChatProcessStage } from "./chatRuntimeState";
+import { risuChatParser } from "../scripts";
+import { getModuleToggles } from "../modules";
+import { pluginV2 } from "../../plugins/plugins.svelte";
+import { preLoadChat } from "../coldstorage.svelte";
+import { setChatProcessStage } from "./runtimeState";
 import {
   connectionOpen,
   peerRevertChat,
   peerSafeCheck,
   peerSync,
-} from "../sync/multiuser";
-import type { ChatErrorContext } from "./chatError.svelte";
+} from "../../sync/multiuser";
+import type { ChatErrorContext } from "./error.svelte";
 import {
   requireChatTargetFromIndexes,
   type ChatExecutionTarget,
-} from "../chatTarget";
+} from "../../chatTarget";
 
 export interface GroupGenerationRequest {
   chatProcessIndex: number;
@@ -49,6 +49,32 @@ export interface PrepareChatSessionOptions {
   targetCharacterId?: string;
   targetChatId?: string;
 }
+
+type SessionStatus = "done" | "ready";
+
+interface IChatSession {
+  status: SessionStatus;
+}
+
+export interface CompletedChatSession extends IChatSession {
+  status: "done";
+  result: boolean;
+}
+
+export interface ReadyChatSession extends IChatSession {
+  status: "ready";
+  selectedChar: number;
+  selectedChat: number;
+  nowChatroom: character | groupChat;
+  currentChar: character;
+  currentChat: Chat;
+  promptInfo: MessagePresetInfo;
+  tokenizer: ChatTokenizer;
+  maxContextTokens: number;
+  findCharacter: (id: string) => character;
+}
+
+export type PrepareChatSessionResult = CompletedChatSession | ReadyChatSession;
 
 function createCharacterLookup() {
   const cache: Record<string, character> = {};
@@ -236,7 +262,7 @@ function buildReadySession(
   currentChar: character,
   calculatedChatTokens: number,
   findCharacter: (id: string) => character,
-) {
+): ReadyChatSession {
   options.errorContext.currentChar = currentChar;
   const tokenizer = createTokenizer(
     options.chatAdditonalTokens ?? calculatedChatTokens,
@@ -252,7 +278,7 @@ function buildReadySession(
   );
   selection.nowChatroom.chats[selection.selectedChat] = currentChat;
   return {
-    status: "ready" as const,
+    status: "ready",
     ...selection,
     currentChar,
     currentChat,
@@ -263,12 +289,14 @@ function buildReadySession(
   };
 }
 
-export async function prepareChatSession(options: PrepareChatSessionOptions) {
+export async function prepareChatSession(
+  options: PrepareChatSessionOptions,
+): Promise<PrepareChatSessionResult> {
   if (!(await initializeGeneration(options))) {
-    return { status: "done" as const, result: false };
+    return { status: "done", result: false };
   }
   const selection = await loadSelectedChat(options);
-  if (!selection) return { status: "done" as const, result: false };
+  if (!selection) return { status: "done", result: false };
 
   const calculatedChatTokens = presetStore.state.aiModel.startsWith("gpt")
     ? 5

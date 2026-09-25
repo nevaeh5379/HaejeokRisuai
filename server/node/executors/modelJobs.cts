@@ -1,16 +1,21 @@
-"use strict";
-
-const fs = require("fs");
-const fsp = require("fs/promises");
-const path = require("path");
-const http = require("http");
-const https = require("https");
-const crypto = require("crypto");
-const { once } = require("events");
-const {
+/**
+ * Typed model-job execution for the Node server.
+ * Node 서버의 모델 잡 실행을 타이핑한 구현입니다.
+ */
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import http from "node:http";
+import https from "node:https";
+import crypto from "node:crypto";
+import { once } from "node:events";
+import type { Readable } from "node:stream";
+import {
   MODEL_JOB_TERMINAL_STATUSES,
   normalizeModelJobCreateRequest,
-} = require("../../../packages/protocol/modelJobs.cjs");
+  type DurableModelJobRecord,
+  type NormalizedCreateModelJobRequest,
+} from "../../../packages/protocol/modelJobs.cjs";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000;
@@ -18,16 +23,160 @@ const TAIL_WAIT_MS = 1000;
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 const RETAIN_TERMINAL = 50;
 const RETAIN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const TERMINAL = new Set(MODEL_JOB_TERMINAL_STATUSES);
+const TERMINAL = new Set<string>(MODEL_JOB_TERMINAL_STATUSES);
 
-function normalizeTimeout(value) {
+/**
+ * Minimal logger contract expected from the host server.
+ * 호스트 서버가 제공해야 하는 최소 로거 계약입니다.
+ */
+interface JobLogger {
+  error: (message: string, ...args: unknown[]) => void;
+  warn?: (message: string, ...args: unknown[]) => void;
+}
+
+/**
+ * Lifecycle phase emitted for the durable model-job realtime event.
+ * 내구성 모델 잡 실시간 이벤트로 전파되는 생명주기 단계입니다.
+ */
+type ModelJobEventPhase = "created" | "terminal";
+
+/** In-flight state tracked per running job. / 진행 중 잡마다 추적하는 상태입니다. */
+interface ActiveModelJob {
+  id: string;
+  controller: AbortController;
+  waiters: Array<() => void>;
+  bytesWritten: number;
+  sourceClientId: string | null;
+}
+
+/** Upstream request description consumed by requestUpstream. / 상단 요청 정보입니다. */
+interface UpstreamRequestArg {
+  targetUrl: string;
+  method: string;
+  headers: Record<string, string>;
+  bodyBuffer?: Buffer;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}
+
+/** Resolved upstream response handle. / 상단 응답 핸들입니다. */
+interface UpstreamResponse {
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: Readable;
+}
+
+/** Result shape for createJob. / 잡 생성 결과 형태입니다. */
+type CreateJobResult =
+  | { jobId: string; runPromise: Promise<void> }
+  | { error: string; httpStatus: number; jobId?: string };
+
+/** Result shape for claim/delete. / 잡 요청·삭제 결과 형태입니다. */
+type MutationJobResult =
+  | { success: true; aborted?: boolean; deleted?: boolean }
+  | { error: string; httpStatus: number };
+
+/**
+ * Minimal express app contract needed to register model-job routes.
+ * 모델 잡 라우트 등록에 필요한 최소 express 앱 계약입니다.
+ */
+interface RouteRegistrationApp {
+  post(
+    path: string,
+    ...handlers: RouteHandlerStack
+  ): unknown;
+  get(
+    path: string,
+    ...handlers: RouteHandlerStack
+  ): unknown;
+  delete(
+    path: string,
+    ...handlers: RouteHandlerStack
+  ): unknown;
+}
+
+/** Middleware chain where every handler may call the next guard. / 각 핸들러가 다음 가드를 호출할 수 있는 미들웨어 체인입니다. */
+type RouteHandlerStack = Array<
+  (req: RouteRequest, res: RouteResponse, next: () => void) => unknown
+>;
+
+/**
+ * Minimal request contract for the model-job HTTP routes.
+ * 모델 잡 HTTP 라우트에 필요한 최소 요청 계약입니다.
+ */
+interface RouteRequest {
+  body?: unknown;
+  query: Record<string, unknown>;
+  params: Record<string, string>;
+  headers: Record<string, string | string[] | undefined>;
+}
+
+/**
+ * Minimal response contract for the model-job HTTP routes.
+ * 모델 잡 HTTP 라우트에 필요한 최소 응답 계약입니다.
+ */
+interface RouteResponse {
+  status(statusCode: number): RouteResponse;
+  send(body?: unknown): unknown;
+  on(event: "close", listener: () => void): unknown;
+  once(event: "drain" | "close", listener: () => void): unknown;
+  off?(event: "drain" | "close", listener: () => void): unknown;
+  set(field: string, value: string): unknown;
+  flushHeaders(): void;
+  write(chunk: Buffer): boolean;
+  end(chunk?: unknown): unknown;
+}
+
+/** Route registration options. / 라우트 등록 옵션입니다. */
+interface RouteOptions {
+  auth?: (req: RouteRequest, res: RouteResponse) => Promise<boolean>;
+  limiter?: (req: RouteRequest, res: RouteResponse, next: () => void) => void;
+}
+
+/** Options accepted by createModelJobManager. / 관리자 생성 옵션입니다. */
+export interface ModelJobManagerOptions {
+  saveDir?: string;
+  logger?: JobLogger;
+  onEvent?: ((
+    phase: ModelJobEventPhase,
+    job: DurableModelJobRecord,
+    context: { sourceClientId?: string | null },
+  ) => void) | null;
+}
+
+/** Public manager surface. / 관리자의 공개 인터페이스입니다. */
+export interface ModelJobManager {
+  registerRoutes(app: RouteRegistrationApp, options?: RouteOptions): void;
+  createJob(
+    arg: unknown,
+    eventContext?: { sourceClientId?: unknown },
+  ): CreateJobResult;
+  getJob(jobId: string): DurableModelJobRecord | null;
+  listJobs(
+    filter: "active" | "unclaimed" | "running",
+  ): DurableModelJobRecord[] | null;
+  claimJob(jobId: string): Promise<MutationJobResult>;
+  deleteJob(jobId: string): Promise<MutationJobResult>;
+  streamJob(jobId: string, res: RouteResponse): Promise<void>;
+  cleanup(): void;
+  journalPath(jobId: string): string;
+  close(): Promise<void>;
+}
+
+function normalizeTimeout(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TIMEOUT_MS;
   return Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(parsed)));
 }
 
-function normalizeHeaders(input) {
-  const out = {};
+/**
+ * Copies caller headers, dropping hop-by-hop and proxy-auth headers.
+ * The journal must never persist secrets from the request.
+ * 호출자 헤더에서 홉별·프록시 인증 헤더를 제거해 복사합니다.
+ * 저널에는 요청의 비밀이 절대 남지 않아야 합니다.
+ */
+export function normalizeHeaders(input: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
   if (!input || typeof input !== "object" || Array.isArray(input)) return out;
   const blocked = new Set([
     "connection",
@@ -42,7 +191,9 @@ function normalizeHeaders(input) {
     "transfer-encoding",
     "upgrade",
   ]);
-  for (const [rawKey, rawValue] of Object.entries(input)) {
+  for (const [rawKey, rawValue] of Object.entries(
+    input as Record<string, unknown>,
+  )) {
     if (typeof rawKey !== "string" || typeof rawValue !== "string") continue;
     const key = rawKey.toLowerCase();
     if (!blocked.has(key)) out[key] = rawValue;
@@ -51,16 +202,21 @@ function normalizeHeaders(input) {
   return out;
 }
 
-function requestUpstream(targetUrl, arg) {
+function requestUpstream(
+  arg: UpstreamRequestArg,
+): Promise<UpstreamResponse> {
   return new Promise((resolve, reject) => {
-    const parsed = new URL(targetUrl);
+    const parsed = new URL(arg.targetUrl);
     const client = parsed.protocol === "https:" ? https : http;
-    const headers = { ...arg.headers, host: parsed.host };
+    const headers: Record<string, string | number> = {
+      ...arg.headers,
+      host: parsed.host,
+    };
     if (arg.bodyBuffer)
       headers["content-length"] = String(arg.bodyBuffer.length);
     let settled = false;
-    let upstreamResponse = null;
-    const fail = (error) => {
+    let upstreamResponse: Readable | null = null;
+    const fail = (error: Error) => {
       if (settled) return;
       settled = true;
       reject(error);
@@ -69,7 +225,10 @@ function requestUpstream(targetUrl, arg) {
       parsed,
       { method: arg.method, headers },
       (res) => {
-        if (settled) return res.destroy();
+        if (settled) {
+          res.destroy();
+          return;
+        }
         settled = true;
         upstreamResponse = res;
         resolve({
@@ -92,7 +251,10 @@ function requestUpstream(targetUrl, arg) {
         upstreamResponse?.destroy(error);
         req.destroy(error);
       };
-      if (arg.signal.aborted) return abort();
+      if (arg.signal.aborted) {
+        abort();
+        return;
+      }
       arg.signal.addEventListener("abort", abort, { once: true });
     }
     if (arg.bodyBuffer && arg.method !== "GET" && arg.method !== "HEAD") {
@@ -102,11 +264,29 @@ function requestUpstream(targetUrl, arg) {
   });
 }
 
-function createModelJobManager({
+/**
+ * Checks whether a running record still has a live, non-aborted request.
+ * A record whose in-flight request was already aborted must not block a new
+ * generation for the chat.
+ * 실행 중 레코드가 중단되지 않은 활성 요청을 아직 가지고 있는지 확인합니다.
+ * 진행 중 요청이 이미 중단된 레코드는 채팅의 새 생성을 막아서는 안 됩니다.
+ */
+function isRunningModelJobActive(
+  record: DurableModelJobRecord,
+  lookup: (jobId: string) => ActiveModelJob | undefined,
+): boolean {
+  if (record.status !== "running") return false;
+  if (record.recoverable === false) return true;
+  const job = lookup(record.id);
+  if (!job) return true;
+  return !job.controller.signal.aborted;
+}
+
+export function createModelJobManager({
   saveDir,
   logger = console,
   onEvent = null,
-} = {}) {
+}: ModelJobManagerOptions = {}): ModelJobManager {
   const root = path.join(
     saveDir || path.join(process.cwd(), "save"),
     "model-jobs",
@@ -114,22 +294,22 @@ function createModelJobManager({
   const metadataPath = path.join(root, "index.json");
   fs.mkdirSync(root, { recursive: true });
 
-  let records = [];
+  let records: DurableModelJobRecord[] = [];
   try {
-    const parsed = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-    if (Array.isArray(parsed)) records = parsed;
+    const parsed: unknown = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    if (Array.isArray(parsed)) records = parsed as DurableModelJobRecord[];
   } catch {
     /* first run or damaged sidecar */
   }
 
-  const activeJobs = new Map();
+  const activeJobs = new Map<string, ActiveModelJob>();
   let writeChain = Promise.resolve();
 
-  function journalPath(jobId) {
+  function journalPath(jobId: string): string {
     return path.join(root, `${jobId}.journal`);
   }
 
-  function persist() {
+  function persist(): Promise<void> {
     const snapshot = JSON.stringify(records, null, 2);
     writeChain = writeChain
       .then(async () => {
@@ -137,43 +317,47 @@ function createModelJobManager({
         await fsp.writeFile(tmp, snapshot, { mode: 0o600 });
         await fsp.rename(tmp, metadataPath);
       })
-      .catch((error) =>
+      .catch((error: unknown) =>
         logger.error("[model-jobs] metadata write failed", error),
       );
     return writeChain;
   }
 
-  function findRecord(jobId) {
+  function findRecord(jobId: string): DurableModelJobRecord | null {
     return records.find((record) => record.id === jobId) || null;
   }
 
-  function publicRecord(record) {
+  function publicRecord(record: DurableModelJobRecord | null) {
     if (!record) return null;
     const active = activeJobs.get(record.id);
-    return {
+    const merged: DurableModelJobRecord = {
       ...record,
       bytes: active?.bytesWritten ?? record.bytes ?? 0,
-      ...(active?.sourceClientId
-        ? { sourceClientId: active.sourceClientId }
-        : {}),
     };
+    if (active?.sourceClientId) merged.sourceClientId = active.sourceClientId;
+    return merged;
   }
 
-  function emitEvent(type, record, context = {}) {
+  function emitEvent(
+    type: ModelJobEventPhase,
+    record: DurableModelJobRecord,
+    context: { sourceClientId?: string | null } = {},
+  ): void {
     if (typeof onEvent !== "function" || !record) return;
     try {
-      onEvent(type, publicRecord(record), context);
+      const publicJob = publicRecord(record);
+      if (publicJob) onEvent(type, publicJob, context);
     } catch (error) {
       logger.warn?.("[model-jobs] event listener failed", error);
     }
   }
 
-  function notify(job) {
+  function notify(job: ActiveModelJob): void {
     const waiters = job.waiters.splice(0);
     for (const wake of waiters) wake();
   }
 
-  function waitForEvent(jobId) {
+  function waitForEvent(jobId: string): Promise<void> {
     const job = activeJobs.get(jobId);
     if (!job) return Promise.resolve();
     return new Promise((resolve) => {
@@ -191,7 +375,7 @@ function createModelJobManager({
     });
   }
 
-  function cleanup() {
+  function cleanup(): void {
     const now = Date.now();
     const terminal = records.filter((record) => TERMINAL.has(record.status));
     const removable = terminal
@@ -224,25 +408,21 @@ function createModelJobManager({
     void persist();
   }
 
-  async function runJob(job, arg) {
+  async function runJob(job: ActiveModelJob, arg: UpstreamRequestArg) {
     const stream = fs.createWriteStream(journalPath(job.id), { flags: "a" });
-    let writeError = null;
-    stream.on("error", (error) => {
+    let writeError: Error | null = null;
+    stream.on("error", (error: Error) => {
       writeError ||= error;
     });
-    let failure = null;
+    let failure: Error | null = null;
     try {
-      const upstream = await requestUpstream(arg.targetUrl, {
-        method: arg.method,
-        headers: arg.headers,
-        bodyBuffer: arg.bodyBuffer,
-        timeoutMs: arg.timeoutMs,
-        signal: job.controller.signal,
-      });
+      const upstream = await requestUpstream(arg);
       const record = findRecord(job.id);
       if (record) {
         record.upstreamStatus = upstream.status;
-        record.contentType = upstream.headers["content-type"] || null;
+        const contentType = upstream.headers["content-type"];
+        record.contentType =
+          typeof contentType === "string" ? contentType : null;
         await persist();
       }
       for await (const chunk of upstream.body) {
@@ -261,7 +441,7 @@ function createModelJobManager({
         throw error;
       }
     } catch (error) {
-      failure = error;
+      failure = error as Error;
     } finally {
       await new Promise((resolve) => stream.end(resolve));
       if (!failure && writeError) failure = writeError;
@@ -285,17 +465,22 @@ function createModelJobManager({
       notify(job);
     }
   }
-  function createJob(arg, eventContext = {}) {
+
+  function createJob(
+    arg: unknown,
+    eventContext: { sourceClientId?: unknown } = {},
+  ): CreateJobResult {
     const normalized = normalizeModelJobCreateRequest(arg);
-    if (normalized.error) return normalized;
-    const request = normalized.value;
+    if (normalized.error) {
+      return { error: normalized.error, httpStatus: normalized.httpStatus };
+    }
+    const request = normalized.value as NormalizedCreateModelJobRequest;
     const { chatId, recoverable } = request;
     if (recoverable) {
       const running = records.find(
         (record) =>
           record.chatId === chatId &&
-          record.status === "running" &&
-          record.recoverable !== false,
+          isRunningModelJobActive(record, (id) => activeJobs.get(id)),
       );
       if (running) {
         return {
@@ -308,7 +493,7 @@ function createModelJobManager({
 
     const id = crypto.randomUUID();
     const createdAt = Date.now();
-    const record = {
+    const record: DurableModelJobRecord = {
       id,
       chatId,
       generationId: request.generationId,
@@ -329,12 +514,16 @@ function createModelJobManager({
     };
     records.push(record);
     fs.closeSync(fs.openSync(journalPath(id), "w"));
-    const job = {
+    const sourceClientId =
+      typeof eventContext.sourceClientId === "string"
+        ? eventContext.sourceClientId
+        : null;
+    const job: ActiveModelJob = {
       id,
       controller: new AbortController(),
       waiters: [],
       bytesWritten: 0,
-      sourceClientId: eventContext.sourceClientId,
+      sourceClientId,
     };
     activeJobs.set(id, job);
     emitEvent("created", record, { sourceClientId: job.sourceClientId });
@@ -345,15 +534,25 @@ function createModelJobManager({
       headers: normalizeHeaders(request.headers),
       bodyBuffer: request.body ? Buffer.from(request.body, "utf8") : undefined,
       timeoutMs: normalizeTimeout(request.timeoutMs),
-    }).catch((error) => logger.error("[model-jobs] run failed", error));
+    }).catch((error: unknown) =>
+      logger.error("[model-jobs] run failed", error),
+    );
     return { jobId: id, runPromise };
   }
 
-  function getJob(jobId) {
+  function getJob(jobId: string): DurableModelJobRecord | null {
     return publicRecord(findRecord(jobId));
   }
 
-  function listJobs(filter) {
+  function listJobs(
+    filter: "active" | "unclaimed" | "running",
+  ): DurableModelJobRecord[] | null {
+    if (filter === "running") {
+      return records
+        .filter((record) => record.status === "running")
+        .map((record) => publicRecord(record))
+        .filter((record): record is DurableModelJobRecord => record !== null);
+    }
     if (filter === "active") {
       return records
         .filter(
@@ -361,7 +560,8 @@ function createModelJobManager({
             record.status === "running" && record.recoverable !== false,
         )
         .sort((a, b) => b.createdAt - a.createdAt)
-        .map(publicRecord);
+        .map((record) => publicRecord(record))
+        .filter((record): record is DurableModelJobRecord => record !== null);
     }
     if (filter === "unclaimed") {
       return records
@@ -371,12 +571,13 @@ function createModelJobManager({
         )
         .filter((record) => record.recoverable !== false && !record.claimed)
         .sort((a, b) => a.createdAt - b.createdAt)
-        .map(publicRecord);
+        .map((record) => publicRecord(record))
+        .filter((record): record is DurableModelJobRecord => record !== null);
     }
     return null;
   }
 
-  async function claimJob(jobId) {
+  async function claimJob(jobId: string): Promise<MutationJobResult> {
     const record = findRecord(jobId);
     if (!record) return { error: "Job not found", httpStatus: 404 };
     if (!TERMINAL.has(record.status)) {
@@ -387,7 +588,7 @@ function createModelJobManager({
     return { success: true };
   }
 
-  async function deleteJob(jobId) {
+  async function deleteJob(jobId: string): Promise<MutationJobResult> {
     const record = findRecord(jobId);
     if (!record) return { error: "Job not found", httpStatus: 404 };
     const active = activeJobs.get(jobId);
@@ -405,7 +606,7 @@ function createModelJobManager({
     return { success: true, deleted: true };
   }
 
-  async function streamJob(jobId, res) {
+  async function streamJob(jobId: string, res: RouteResponse): Promise<void> {
     let record = findRecord(jobId);
     if (!record) {
       res.status(404).send({ error: "Job not found" });
@@ -438,7 +639,7 @@ function createModelJobManager({
     }
     res.flushHeaders();
 
-    let handle;
+    let handle: fsp.FileHandle;
     try {
       handle = await fsp.open(journalPath(jobId), "r");
     } catch {
@@ -460,7 +661,15 @@ function createModelJobManager({
           offset += bytesRead;
           const ok = res.write(buffer.subarray(0, bytesRead));
           if (!ok && !clientGone) {
-            await Promise.race([once(res, "drain"), once(res, "close")]);
+            await new Promise<void>((resolve) => {
+              const settle = () => {
+                res.off?.("drain", settle);
+                res.off?.("close", settle);
+                resolve();
+              };
+              res.once("drain", settle);
+              res.once("close", settle);
+            });
           }
           continue;
         }
@@ -477,16 +686,17 @@ function createModelJobManager({
     if (!clientGone) res.end();
   }
 
-  function registerRoutes(app, { auth, limiter } = {}) {
+  function registerRoutes(app: RouteRegistrationApp, { auth, limiter }: RouteOptions = {}) {
     const guards = limiter ? [limiter] : [];
-    const ensureAuth = async (req, res) => !auth || (await auth(req, res));
+    const ensureAuth = async (req: RouteRequest, res: RouteResponse) =>
+      !auth || (await auth(req, res));
 
     app.post("/api/model-jobs", ...guards, async (req, res) => {
       if (!(await ensureAuth(req, res))) return;
       const result = createJob(req.body, {
         sourceClientId: req.headers["x-risu-client-id"],
       });
-      if (result.error) {
+      if ("error" in result && result.error) {
         res
           .status(result.httpStatus || 400)
           .send({ error: result.error, jobId: result.jobId });
@@ -502,7 +712,7 @@ function createModelJobManager({
         : req.query.unclaimed
           ? "unclaimed"
           : null;
-      const jobs = listJobs(filter);
+      const jobs = filter ? listJobs(filter) : null;
       if (!jobs)
         return res
           .status(400)
@@ -525,7 +735,7 @@ function createModelJobManager({
     app.post("/api/model-jobs/:id/claim", ...guards, async (req, res) => {
       if (!(await ensureAuth(req, res))) return;
       const result = await claimJob(req.params.id);
-      if (result.error)
+      if ("error" in result)
         return res
           .status(result.httpStatus || 400)
           .send({ error: result.error });
@@ -535,7 +745,7 @@ function createModelJobManager({
     app.delete("/api/model-jobs/:id", ...guards, async (req, res) => {
       if (!(await ensureAuth(req, res))) return;
       const result = await deleteJob(req.params.id);
-      if (result.error)
+      if ("error" in result)
         return res
           .status(result.httpStatus || 400)
           .send({ error: result.error });
@@ -582,8 +792,3 @@ function createModelJobManager({
     },
   };
 }
-
-module.exports = {
-  createModelJobManager,
-  normalizeHeaders,
-};

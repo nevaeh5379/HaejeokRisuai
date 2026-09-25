@@ -114,6 +114,10 @@ export interface RealtimeEventHub {
     input: GenerationStateInput | null | undefined,
     sourceClientId: unknown,
   ): GenerationStateRecord | null;
+  cancelGeneration(
+    chatId: string,
+    sourceClientId: unknown,
+  ): GenerationStateRecord | null;
   listActiveGenerations(): GenerationStateRecord[];
   clientCount(): number;
   latestEventId(): number;
@@ -314,6 +318,19 @@ export function createRealtimeEventHub(
     return record;
   }
 
+  function cancelGeneration(
+    chatId: string,
+    sourceClientId: unknown,
+  ): GenerationStateRecord | null {
+    pruneGenerationStates();
+    const active = activeGenerations.get(chatId);
+    if (!active) return null;
+    return updateGenerationState(
+      { chatId, lifecycleId: active.lifecycleId, state: "aborted" },
+      sourceClientId,
+    );
+  }
+
   /** Returns the current non-expired generation states. / 만료되지 않은 현재 생성 상태를 반환합니다. */
   function listActiveGenerations(): GenerationStateRecord[] {
     pruneGenerationStates();
@@ -435,6 +452,7 @@ export function createRealtimeEventHub(
     broadcast,
     broadcastTransient,
     updateGenerationState,
+    cancelGeneration,
     listActiveGenerations,
     clientCount: (): number => clients.size,
     latestEventId: (): number => sequence,

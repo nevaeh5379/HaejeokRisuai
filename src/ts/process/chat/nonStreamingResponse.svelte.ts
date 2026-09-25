@@ -4,21 +4,21 @@ import type {
   Chat,
   MessageGenerationInfo,
   MessagePresetInfo,
-} from "../storage/database/schema";
-import { characterStore } from "../stores/domain/characterStore.svelte";
+} from "../../storage/database/schema";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
 import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { processScriptFull } from "./scripts";
-import { addRerolls } from "./prereroll";
-import { runInlayScreen } from "./inlayScreen";
-import { sayTTS } from "./tts";
-import { trimUntilPunctuation } from "../util";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { processScriptFull } from "../scripts";
+import { addRerolls } from "../prereroll";
+import { runInlayScreen } from "../inlayScreen";
+import { sayTTS } from "../tts";
+import { trimUntilPunctuation } from "../../util";
 import {
   applyOutputTrigger,
   findMessageIndexByChatId,
   runChatOutputListeners,
-} from "./chatResponseShared.svelte";
-import { requireChatTargetFromIndexes } from "../chatTarget";
+} from "./responseShared.svelte";
+import { requireChatTargetFromIndexes } from "../../chatTarget";
 
 type NonStreamingRequest = Exclude<
   ChatModelResponse,

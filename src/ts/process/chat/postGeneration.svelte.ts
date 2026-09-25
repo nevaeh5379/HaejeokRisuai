@@ -1,18 +1,18 @@
 import { get } from "svelte/store";
-import type { character } from "../storage/database/schema";
-import { characterStore } from "../stores/domain/characterStore.svelte";
-import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { CharEmotion } from "../stores.svelte";
-import { tokenizeNum } from "../tokenizer";
-import { language } from "../../lang";
-import { requestChatData } from "./request/chatRequestOrchestrator";
-import { HypaProcesser } from "./memory/hypamemory";
-import { stableDiff } from "./stableDiff";
+import type { character } from "../../storage/database/schema";
+import { characterStore } from "../../stores/domain/characterStore.svelte";
+import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { CharEmotion } from "../../stores.svelte";
+import { tokenizeNum } from "../../tokenizer";
+import { language } from "../../../lang";
+import { requestChatData } from "../request/chatRequestOrchestrator";
+import { HypaProcesser } from "../memory/hypamemory";
+import { stableDiff } from "../stableDiff";
 import type {
   ChatModelResponse,
   OpenAIChat,
 } from "@risuai/chat-core/types.cjs";
-import { requireChatTargetFromIndexes } from "../chatTarget";
+import { requireChatTargetFromIndexes } from "../../chatTarget";
 
 type EmotionAsset = [string, string];
 type EmotionHistoryEntry = [string, string, number];

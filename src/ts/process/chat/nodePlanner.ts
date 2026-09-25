@@ -4,10 +4,10 @@ import type {
 } from "@risuai/chat-core/generation.cjs";
 import type { AutoContinuationDecision } from "@risuai/chat-core/finalization.cjs";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
-import { forageStorage } from "../globalApi.svelte";
-import { isNodeServer } from "../platform";
-import { NodeStorage } from "../storage/files/nodeStorage";
-import { ChatTokenizer, getServerTiktokenEncoding } from "../tokenizer";
+import { forageStorage } from "../../globalApi.svelte";
+import { isNodeServer } from "../../platform";
+import { NodeStorage } from "../../storage/files/nodeStorage";
+import { ChatTokenizer, getServerTiktokenEncoding } from "../../tokenizer";
 
 interface GenerationPlanRuntimeView {
   getGenerationSettings(): ChatGenerationSettings;
