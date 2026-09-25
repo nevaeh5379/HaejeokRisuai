@@ -1098,6 +1098,7 @@ html.tauri-sidebar-menu-popup:not(.tauri-macos-liquid-glass)
   --FontColorQuote1: #8c8d93;
   --FontColorQuote2: #8c8d93;
   --risu-animation-speed: 0.2s;
+  --risu-safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
   --risu-theme-bgcolor: #282a36;
   --risu-theme-darkbg: #21222c;
   --risu-theme-borderc: #6272a4;
@@ -3110,7 +3111,10 @@ html.theme-android-material .rs-setting-mobile-header {
 
 html.theme-android-material .rs-chat-input-area-container {
   padding-inline: 0.5rem;
-  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+
+html.capacitor-android .rs-chat-input-area-container {
+  padding-bottom: max(0.5rem, var(--risu-safe-area-inset-bottom));
 }
 
 html.theme-android-material .rs-chat-input-row {

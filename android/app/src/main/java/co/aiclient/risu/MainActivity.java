@@ -14,7 +14,7 @@ import com.getcapacitor.BridgeActivity;
 import java.util.Arrays;
 
 public class MainActivity extends BridgeActivity {
-
+    private final AndroidSafeArea safeArea = new AndroidSafeArea();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,7 +38,13 @@ public class MainActivity extends BridgeActivity {
                 ));
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {
-            getBridge().setWebViewClient(new RisuWebViewClient(getBridge(), getApplicationContext()));
+            WebView webView = getBridge().getWebView();
+            safeArea.install(webView);
+            getBridge().setWebViewClient(new RisuWebViewClient(
+                getBridge(),
+                getApplicationContext(),
+                safeArea::onPageFinished
+            ));
         }
         handleNativeIntent(getIntent());
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
