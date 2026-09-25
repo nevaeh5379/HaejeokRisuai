@@ -50,12 +50,18 @@ export interface PrepareChatSessionOptions {
   targetChatId?: string;
 }
 
-export interface CompletedChatSession {
+type SessionStatus = "done" | "ready";
+
+interface IChatSession {
+  status: SessionStatus;
+}
+
+export interface CompletedChatSession extends IChatSession {
   status: "done";
   result: boolean;
 }
 
-export interface ReadyChatSession {
+export interface ReadyChatSession extends IChatSession {
   status: "ready";
   selectedChar: number;
   selectedChat: number;
