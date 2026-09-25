@@ -2,7 +2,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
+    import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { registerPlugin } from '@capacitor/core';
     import { onMount } from 'svelte';
@@ -16,7 +16,8 @@
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
-    import { installAndroidNativeEntryHandler } from './ts/android/androidNativeIntegration';
+    import { installAndroidNativeEntryHandler, setAndroidNavigationBarHidden } from './ts/android/androidNativeIntegration';
+    import { shouldHideAndroidNavigationBar } from './ts/android/androidNavigationBar';
     import { routeAndroidNativeEntry } from './ts/android/androidNativeEntryRouter';
     import { refreshAndroidNativeSurfaces } from './ts/android/androidNativeSurfaces';
 
@@ -34,6 +35,18 @@
     let exitConfirmationOpen = false
 
     const nativeAppControl = registerPlugin<{ exitApp(): Promise<void> }>('NativeAppControl')
+
+    $effect(() => {
+        if (!isCapacitorAndroid) return
+        void setAndroidNavigationBarHidden(shouldHideAndroidNavigationBar({
+            chatEnabled: settingsStore.state.autoHideAndroidNavigationBar,
+            sidebarEnabled: settingsStore.state.autoHideAndroidNavigationBarInSidebar,
+            settingsOpen: $settingsOpen,
+            selectedCharacterId: $selectedCharID,
+            sidebarOpen: $sideBarStore,
+            mobileSidebar: $MobileSideBar,
+        }))
+    })
 
     onMount(() => {
         if (!isCapacitor) return
@@ -275,7 +288,7 @@
     {#if isTauriWindows}
         <NativeWindowResizeHandles />
     {/if}
-    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
+    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED === 'TRUE' || globalThis.__RISU_LEGAL_CONFIGURED__ === true)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
 

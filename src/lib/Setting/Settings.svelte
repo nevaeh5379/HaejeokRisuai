@@ -366,7 +366,7 @@
 {/snippet}
 
 {#snippet mobileMenuList()}
-    <div class="flex flex-col gap-5 p-4 pb-[max(env(safe-area-inset-bottom),32px)]">
+    <div class="flex flex-col gap-5 p-4 pb-[max(var(--risu-safe-area-inset-bottom),32px)]">
         <SettingsSearch onselect={handleSearchSelect} />
 
         {#if !$isLite}
@@ -772,7 +772,7 @@
                 {@render mobileMenuList()}
             {:else}
                 {#key $SettingsMenuIndex}
-                    <div class="py-4 px-4 pb-[max(env(safe-area-inset-bottom),32px)] flex flex-col min-w-0">
+                    <div class="py-4 px-4 pb-[max(var(--risu-safe-area-inset-bottom),32px)] flex flex-col min-w-0">
                         {@render pageContent()}
                     </div>
                 {/key}
@@ -822,7 +822,7 @@
                     {@render mobileMenuList()}
                 {:else}
                     {#key $SettingsMenuIndex}
-                        <div class="py-4 px-4 pb-[max(env(safe-area-inset-bottom),32px)] flex flex-col min-w-0">
+                        <div class="py-4 px-4 pb-[max(var(--risu-safe-area-inset-bottom),32px)] flex flex-col min-w-0">
                             {@render pageContent()}
                         </div>
                     {/key}

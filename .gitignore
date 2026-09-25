@@ -65,3 +65,9 @@ Cargo.lock
 /server/node/dist/
 /server/node/.tsbuild/
 /packages/backup-core/dist/
+
+
+.envrc
+
+# Launchpad PPA build artifacts
+/dist-ppa/

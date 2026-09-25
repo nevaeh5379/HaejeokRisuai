@@ -99,6 +99,11 @@ await bundle({
 });
 
 await bundle({
+  entry: resolve(nodeServerDir, "executors/modelJobs.cts"),
+  outfile: resolve(distDir, "executors/modelJobs.cjs"),
+});
+
+await bundle({
   entry: resolve(nodeServerDir, "http/realtimeEvents.cts"),
   outfile: resolve(distDir, "http/realtimeEvents.cjs"),
 });

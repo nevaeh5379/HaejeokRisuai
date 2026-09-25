@@ -16,7 +16,7 @@
     import { MobileGUI, sideBarClosing, sideBarStore, selectedCharID } from 'src/ts/stores.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
-    import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
+    import { activeGenerationChatIds } from 'src/ts/process/chat/runtimeState';
     import { isTauri, isTauriMacOS, isTauriWindows } from 'src/ts/platform';
     import { windowDragRegion } from 'src/ts/nativeWindowChrome';
     import { alertError } from 'src/ts/alert';

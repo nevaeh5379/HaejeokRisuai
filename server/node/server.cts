@@ -2503,6 +2503,31 @@ app.post(
   },
 );
 
+app.post(
+  "/api/realtime/generation-cancel",
+  authenticatedRouteLimiter,
+  requireNodeAuth,
+  async (req, res) => {
+    const chatId =
+      typeof req.body?.chatId === "string" ? req.body.chatId.trim() : "";
+    if (!chatId || chatId.length > 256) {
+      res.status(400).send({ error: "Invalid chat id" });
+      return;
+    }
+    const cancelled = realtimeEventHub.cancelGeneration(
+      chatId,
+      req.headers["x-risu-client-id"],
+    );
+    const runningJobs = modelJobManager.listJobs("running");
+    const jobs = (runningJobs ?? []).filter((job) => job.chatId === chatId);
+    await Promise.all(jobs.map((job) => modelJobManager.deleteJob(job.id)));
+    res.send({
+      success: true,
+      cancelled: Boolean(cancelled) || jobs.length > 0,
+    });
+  },
+);
+
 app.get(
   "/api/push/vapid-public-key",
   authenticatedRouteLimiter,

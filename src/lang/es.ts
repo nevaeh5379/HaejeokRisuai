@@ -972,6 +972,10 @@ export const languageSpanish = {
   translateInput: "Traducir Entrada",
   autoTranslation: "Traducción Automática",
   fullscreen: "Pantalla Completa",
+  autoHideAndroidNavigationBar:
+    "Ocultar automáticamente la barra de navegación en chats",
+  autoHideAndroidNavigationBarInSidebar:
+    "Ocultar automáticamente la barra de navegación en barras laterales",
   playMessage: "Reproducir Audio del Mensaje",
   iconSize: "Tamaño del Icono",
   createGroup: "Crear Chat de Grupo",

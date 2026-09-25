@@ -330,7 +330,7 @@ function runBuild(config = null) {
   const result = spawnSync(command, ["build"], {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, VITE_RISU_LEGAL_CONFIGURED: "TRUE" },
+    env: process.env,
   });
   if (result.status !== 0)
     fail(`Native build failed with exit code ${result.status ?? "unknown"}`);

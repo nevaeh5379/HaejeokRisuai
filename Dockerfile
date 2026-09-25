@@ -33,8 +33,10 @@ COPY . .
 
 # The build number changes every release, so keep it after dependency installation.
 ARG HAEJEOK_BUILD_NUMBER
+ARG VITE_RISU_LEGAL_CONFIGURED
 ENV HAEJEOK_BUILD_NUMBER=${HAEJEOK_BUILD_NUMBER}
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm build
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    VITE_RISU_LEGAL_CONFIGURED="${VITE_RISU_LEGAL_CONFIGURED}" pnpm build
 
 # ------------------------------------------------------------------------------------------
 

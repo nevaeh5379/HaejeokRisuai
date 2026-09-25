@@ -1558,6 +1558,8 @@ export const languageKorean = {
   translateInput: "입력창 번역하기",
   autoTranslation: "자동 번역",
   fullscreen: "전체 화면",
+  autoHideAndroidNavigationBar: "채팅에서 내비게이션 바 자동 숨김",
+  autoHideAndroidNavigationBarInSidebar: "사이드바에서 내비게이션 바 자동 숨김",
   playMessage: "메시지 소리 출력",
   iconSize: "아이콘 크기",
   createGroup: "그룹 챗 만들기",

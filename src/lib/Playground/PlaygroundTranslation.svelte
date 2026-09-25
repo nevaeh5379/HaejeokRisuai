@@ -6,12 +6,13 @@
     import Button from "../UI/GUI/Button.svelte";
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import { getLanguageCodes } from "src/ts/globalApi.svelte";
+    import { getSafeNavigatorLanguage } from "src/ts/locale";
     import OptionInput from "../UI/GUI/OptionInput.svelte";
     import CheckInput from "../UI/GUI/CheckInput.svelte";
     import { tokenize } from "src/ts/tokenizer";
 
 
-    const userPreferedLang = navigator.language.split('-')[0]
+    const userPreferedLang = getSafeNavigatorLanguage().split('-')[0]
 
     let r = $state('')
     let sourceLang = $state('en')

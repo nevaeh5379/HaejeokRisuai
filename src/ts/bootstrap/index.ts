@@ -5,7 +5,8 @@ import { changeLanguage } from "../../lang";
 import { installStartupData } from "../storage/database/databaseLifecycle";
 import { forageStorage } from "../globalApi.svelte";
 import { registerModelDynamic } from "../model/modellist";
-import { isCapacitor, isNodeServer, isTauri } from "../platform";
+import { isCapacitor, isNodeServer, isTauri, isTauriLinux } from "../platform";
+import { setLinuxWindowDecorationPreference } from "../linuxWindowIntegration";
 import { initNodeRealtimeSync } from "../process/nodeRealtimeSync";
 import { initDurableModelJobRecovery } from "../process/modelJobRecovery";
 import { syncChatResponsePush } from "../network/pushSubscriptions";
@@ -215,6 +216,16 @@ export async function loadData() {
       }
 
       installStartupData(startup, storage);
+      if (isTauriLinux) {
+        await setLinuxWindowDecorationPreference(
+          settingsStore.state.linuxWindowDecoration ?? "ssd",
+        ).catch((error) => {
+          console.warn(
+            "[Linux Wayland] Failed to sync the native decoration preference:",
+            error,
+          );
+        });
+      }
       await initPresetDomain(storage);
 
       // Non-English dictionaries are separate chunks. Resolve the one

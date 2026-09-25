@@ -17,6 +17,7 @@ import {
   applyWindowsTransparencyToDocument,
   initializeWindowsTransparency,
 } from "./ts/windowsTransparency";
+import { initializeLinuxWindowIntegration } from "./ts/linuxWindowIntegration";
 
 if (typeof window !== "undefined") {
   window.Buffer = Buffer;
@@ -39,7 +40,10 @@ async function start() {
   if (isTauri && !(await waitForTauriRuntimeReady())) {
     throw new Error("Tauri runtime initialization timed out");
   }
-  await initializeWindowsTransparency();
+  await Promise.all([
+    initializeWindowsTransparency(),
+    initializeLinuxWindowIntegration(),
+  ]);
 
   const sidebarMenuLaunch = isTauriMacOS
     ? parseTauriSidebarMenuLaunch(location.search)

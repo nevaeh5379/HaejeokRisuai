@@ -36,6 +36,7 @@ public class NativeIntegrationPlugin extends Plugin {
     private static final int MAX_SHARED_TEXT_LENGTH = 256 * 1024;
     private static final String UI_PREFS = "risu_native_ui";
     private static final String PREF_DARK_BARS = "dark_bars";
+    private static final String PREF_HIDE_NAVIGATION_BAR = "hide_navigation_bar";
     private static final ConcurrentLinkedQueue<JSObject> PENDING_ENTRIES =
         new ConcurrentLinkedQueue<>();
 
@@ -122,12 +123,35 @@ public class NativeIntegrationPlugin extends Plugin {
     @PluginMethod
     public void setSystemBarAppearance(PluginCall call) {
         boolean dark = Boolean.TRUE.equals(call.getBoolean("dark", true));
-        getContext().getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+        android.content.SharedPreferences prefs = getContext().getSharedPreferences(
+            UI_PREFS,
+            Context.MODE_PRIVATE
+        );
+        prefs
             .edit()
             .putBoolean(PREF_DARK_BARS, dark)
             .apply();
+        boolean hideNavigationBar = prefs.getBoolean(PREF_HIDE_NAVIGATION_BAR, false);
         getActivity().runOnUiThread(() -> {
-            applySystemBarAppearance(getActivity(), dark);
+            applySystemBarAppearance(getActivity(), dark, hideNavigationBar);
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void setNavigationBarHidden(PluginCall call) {
+        boolean hidden = Boolean.TRUE.equals(call.getBoolean("hidden", false));
+        android.content.SharedPreferences prefs = getContext().getSharedPreferences(
+            UI_PREFS,
+            Context.MODE_PRIVATE
+        );
+        prefs
+            .edit()
+            .putBoolean(PREF_HIDE_NAVIGATION_BAR, hidden)
+            .apply();
+        boolean dark = prefs.getBoolean(PREF_DARK_BARS, true);
+        getActivity().runOnUiThread(() -> {
+            applySystemBarAppearance(getActivity(), dark, hidden);
             call.resolve();
         });
     }
@@ -137,12 +161,17 @@ public class NativeIntegrationPlugin extends Plugin {
             UI_PREFS,
             Context.MODE_PRIVATE
         );
-        applySystemBarAppearance(activity, prefs.getBoolean(PREF_DARK_BARS, true));
+        applySystemBarAppearance(
+            activity,
+            prefs.getBoolean(PREF_DARK_BARS, true),
+            prefs.getBoolean(PREF_HIDE_NAVIGATION_BAR, false)
+        );
     }
 
     private static void applySystemBarAppearance(
         android.app.Activity activity,
-        boolean dark
+        boolean dark,
+        boolean hideNavigationBar
     ) {
         android.view.Window window = activity.getWindow();
         // Android always runs edge-to-edge with an immersive status bar.
@@ -163,6 +192,11 @@ public class NativeIntegrationPlugin extends Plugin {
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         );
         controller.hide(WindowInsetsCompat.Type.statusBars());
+        if (hideNavigationBar) {
+            controller.hide(WindowInsetsCompat.Type.navigationBars());
+        } else {
+            controller.show(WindowInsetsCompat.Type.navigationBars());
+        }
     }
 
     @PluginMethod

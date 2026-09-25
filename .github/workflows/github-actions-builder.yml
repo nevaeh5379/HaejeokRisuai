@@ -183,9 +183,16 @@ jobs:
             librsvg2-dev \
             libssl-dev \
             libxdo-dev \
+            libunwind-dev \
             libfuse2 \
             xdg-utils \
-            patchelf
+            patchelf \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-libav
           command -v xdg-mime
           command -v xdg-open
 
@@ -229,7 +236,7 @@ jobs:
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-          VITE_RISU_LEGAL_CONFIGURED: 'TRUE'
+          VITE_RISU_LEGAL_CONFIGURED: ${{ vars.VITE_RISU_LEGAL_CONFIGURED }}
         with:
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
           tagName: ${{ needs.prepare-release.outputs.build_tag }}
@@ -358,6 +365,7 @@ jobs:
       - name: Build signed Android release APK
         env:
           HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
+          VITE_RISU_LEGAL_CONFIGURED: ${{ vars.VITE_RISU_LEGAL_CONFIGURED }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -437,7 +445,7 @@ jobs:
       - name: Build Termux frontend
         env:
           HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
-          VITE_RISU_LEGAL_CONFIGURED: 'TRUE'
+          VITE_RISU_LEGAL_CONFIGURED: ${{ vars.VITE_RISU_LEGAL_CONFIGURED }}
         run: pnpm run build:protocol && pnpm run build:server && node tooling/vite-build.mjs
 
       - name: Prepare Termux runtime bundle
@@ -512,3 +520,12 @@ jobs:
             echo "Published release ${RELEASE_ID} is associated with tag ${ACTUAL_TAG}, expected ${BUILD_TAG}" >&2
             exit 1
           fi
+
+  publish-ppa:
+    needs: [prepare-release, publish-release]
+    uses: ./.github/workflows/ppa-publish.yml
+    with:
+      build_number: ${{ needs.prepare-release.outputs.build_number }}
+      series: all
+      ppa_revision: "1"
+    secrets: inherit

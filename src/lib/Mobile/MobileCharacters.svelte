@@ -28,6 +28,7 @@
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
     import AirisuMascot from "../UI/AirisuMascot.svelte";
+    import { getSafeNavigatorLanguages } from 'src/ts/locale';
 
     interface Props {
         endGrid?: () => void;
@@ -37,7 +38,7 @@
 
     let { endGrid = () => {}, search, hideTrash = false }: Props = $props();
 
-    const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' });
+    const agoFormatter = new Intl.RelativeTimeFormat(getSafeNavigatorLanguages(), { style: 'short' });
     const ITEM_HEIGHT = 76; // Height per character row in px
     const OVERSCAN = 4; // Extra items to render above/below viewport
 
@@ -818,7 +819,7 @@
 
             <!-- Sheet Content -->
             <div
-                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(env(safe-area-inset-bottom),20px)]"
+                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(var(--risu-safe-area-inset-bottom),20px)]"
             >
                 <!-- Header: Avatar + Character Name -->
                 <div class="flex items-center gap-3 border-b border-darkborderc/60 pb-3">

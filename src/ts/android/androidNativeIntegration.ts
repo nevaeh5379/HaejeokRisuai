@@ -34,6 +34,7 @@ interface NativeIntegrationPlugin {
     items: AndroidRecentChatWidgetItem[];
   }): Promise<void>;
   setSystemBarAppearance(options: { dark: boolean }): Promise<void>;
+  setNavigationBarHidden(options: { hidden: boolean }): Promise<void>;
   getSystemPalette(): Promise<{
     available: boolean;
     accentLight?: string;
@@ -116,6 +117,20 @@ export async function syncAndroidSystemBars(dark: boolean): Promise<void> {
   } catch (error) {
     console.warn(
       "[NativeIntegration] Failed to sync Android system bars:",
+      error,
+    );
+  }
+}
+
+export async function setAndroidNavigationBarHidden(
+  hidden: boolean,
+): Promise<void> {
+  if (!nativeIntegration) return;
+  try {
+    await nativeIntegration.setNavigationBarHidden({ hidden });
+  } catch (error) {
+    console.warn(
+      "[NativeIntegration] Failed to update Android navigation bar visibility:",
       error,
     );
   }

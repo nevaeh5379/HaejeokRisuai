@@ -22,11 +22,19 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
     public static final String THUMB_PREFIX = "/_risu_thumb_/";
     private final File assetRoot;
     private final File thumbnailRoot;
+    private final Runnable pageFinishedCallback;
 
-    public RisuWebViewClient(Bridge bridge, Context context) {
+    public RisuWebViewClient(Bridge bridge, Context context, Runnable pageFinishedCallback) {
         super(bridge);
         assetRoot = new File(context.getFilesDir(), "risuai-assets");
         thumbnailRoot = new File(context.getCacheDir(), "risu-image-thumbnails");
+        this.pageFinishedCallback = pageFinishedCallback;
+    }
+
+    @Override
+    public void onPageFinished(WebView view, String url) {
+        super.onPageFinished(view, url);
+        pageFinishedCallback.run();
     }
 
     @Override

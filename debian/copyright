@@ -1,0 +1,14 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Haejeok RisuAI
+Source: https://github.com/nevaeh5379/HaejeokRisuAI
+
+Files: *
+Copyright: 2024-2026 RisuAI contributors
+License: GPL-3.0-only
+ This program is licensed under the GNU General Public License version 3.
+ On Debian systems, the complete license text is available at
+ /usr/share/common-licenses/GPL-3.
+
+Files: debian/*
+Copyright: 2026 nevaeh5379
+License: GPL-3.0-only

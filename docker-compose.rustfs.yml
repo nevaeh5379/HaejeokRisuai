@@ -39,7 +39,10 @@ services:
 
   risuai:
     container_name: risuai
-    build: .
+    build:
+      context: .
+      args:
+        VITE_RISU_LEGAL_CONFIGURED: "${VITE_RISU_LEGAL_CONFIGURED:-}"
     image: risuai-full:local
     restart: unless-stopped
     labels:
@@ -56,6 +59,7 @@ services:
       RISU_STORAGE_STARTUP_TIMEOUT_MS: ${RISU_STORAGE_STARTUP_TIMEOUT_MS:-180000}
       RISU_STORAGE_STARTUP_HEARTBEAT_MS: ${RISU_STORAGE_STARTUP_HEARTBEAT_MS:-10000}
       RISUAI_MIGRATE_CONCURRENCY: ${RISUAI_MIGRATE_CONCURRENCY:-4}
+      VITE_RISU_LEGAL_CONFIGURED: "${VITE_RISU_LEGAL_CONFIGURED:-}"
       RISU_STORAGE_TYPE: s3
       RISU_S3_BOOTSTRAP_ENDPOINT: http://rustfs:9000
       RISU_S3_BOOTSTRAP_BUCKET: risuai-assets
