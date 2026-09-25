@@ -85,7 +85,10 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void handleNativeIntent(Intent intent) {
-        if (!NativeIntegrationPlugin.enqueueIntent(getApplicationContext(), intent)) return;
+        // The VIEW intent's URI grant (FLAG_GRANT_READ_URI_PERMISSION) is tied
+        // to the activity, so the activity context must be used — the
+        // application context has no grant and MediaStore queries return empty.
+        if (!NativeIntegrationPlugin.enqueueIntent(this, intent)) return;
         if (getBridge() == null || getBridge().getWebView() == null) return;
         getBridge().getWebView().evaluateJavascript(
                 "window.dispatchEvent(new Event('risu:native-entry-available'))",
