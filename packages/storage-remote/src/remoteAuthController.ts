@@ -6,6 +6,29 @@ import {
 
 export type RemoteAuthPasswordReason = "set-password" | "password";
 
+/**
+ * Upper bound for a single auth-check attempt. The check is a small status
+ * GET; anything slower is a stalled transport (typically a mobile network
+ * that just came back from the background), not a slow server.
+ *
+ * (KO) 인증 체크 1회 시도 상한. 체크는 작은 상태 GET이므로, 이를 초과하면
+ * 서버가 느린 것이 아니라 전송이 막힌 것(보통 백그라운드를 끝낸 직후의
+ * 모바일 네트워크)으로 간주한다.
+ */
+const AUTH_CHECK_TIMEOUT_MS = 15_000;
+
+/**
+ * Body shape of `GET /api/test_auth`. The server replies with exactly one
+ * of the known statuses; anything else is treated as "checked" (existing
+ * behavior for forward-compatible servers).
+ *
+ * (KO) `GET /api/test_auth` 응답 바디 형식. 서버는 알려진 상태 중 하나만
+ * 반환하며, 그 외 값은 "확인됨"으로 처리한다(기존 동작 유지).
+ */
+interface TestAuthBody {
+  status?: string;
+}
+
 export interface RemoteAuthControllerOptions {
   createAuth: () => Promise<string>;
   requestPassword: (reason: RemoteAuthPasswordReason) => Promise<string>;
@@ -127,57 +150,102 @@ export class RemoteAuthController {
   }
 
   private async runAuthCheck(): Promise<void> {
-    let response: Response;
-    try {
-      response = await this.apiClient.request("/api/test_auth", {
-        headers: { "risu-auth": await this.options.createAuth() },
-      });
-    } catch (error) {
-      await this.options.reportError?.(
-        "Failed to connect to backend server.",
-        false,
-      );
-      throw error;
-    }
-    if (!response.ok) {
-      const message = `Backend server responded with status ${response.status}. Please make sure the backend server is running.`;
-      await this.options.reportError?.(message, false);
-      throw new Error(message);
-    }
+    // Revalidation runs when the app returns to the foreground. Mobile
+    // networks come back half-dead after backgrounding (stale keep-alive
+    // sockets, Wi-Fi power-save, captive portals), so a single flaky
+    // transport answer must not be treated as a server failure.
+    const revalidating = this.authChecked;
+    let failureMessage = "";
+    let lastError: unknown = null;
+    // A non-2xx response means the transport reached *something* that
+    // answered authoritatively (the storage server, or a proxy speaking for
+    // it). Unlike a thrown fetch error or a malformed 200 body, it must not
+    // be soft-failed away during revalidation: the credentials may genuinely
+    // be rejected, and running protected storage operations with unvalidated
+    // credentials is worse than surfacing the error.
+    let authoritativeFailure = false;
 
-    let data: any;
-    try {
-      data = await response.json();
-    } catch {
-      const message = "Invalid JSON response from backend server.";
-      await this.options.reportError?.(message, false);
-      throw new Error(message);
-    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const timeoutController = new AbortController();
+      setTimeout(() => timeoutController.abort(), AUTH_CHECK_TIMEOUT_MS);
 
-    if (data?.status === "unset" || data?.status === "incorrect") {
-      const reason: RemoteAuthPasswordReason =
-        data.status === "unset" ? "set-password" : "password";
-      const digest = await digestRemotePassword(
-        await this.options.requestPassword(reason),
-        this.apiClient,
-      );
-      if (data.status === "unset") {
-        const setResponse = await this.apiClient.request("/api/set_password", {
-          method: "POST",
-          body: JSON.stringify({ password: digest }),
-          headers: { "content-type": "application/json" },
+      let response: Response;
+      try {
+        response = await this.apiClient.request("/api/test_auth", {
+          method: "GET",
+          cache: "no-store",
+          signal: timeoutController.signal,
+          requestTimeoutMs: AUTH_CHECK_TIMEOUT_MS,
+          headers: { "risu-auth": await this.options.createAuth() },
         });
-        if (!setResponse.ok) {
-          throw new Error(
-            `Setting the Node server password failed (${setResponse.status})`,
-          );
-        }
+      } catch (error) {
+        lastError = error;
+        failureMessage = "Failed to connect to backend server.";
+        continue;
       }
-      await this.authorizeKey(digest);
+      if (!response.ok) {
+        failureMessage = `Backend server responded with status ${response.status}. Please make sure the backend server is running.`;
+        // Authoritative answer: retry once (transient 5xx exists), but if it
+        // persists the failure must propagate instead of being soft-failed.
+        authoritativeFailure = true;
+        continue;
+      }
+
+      let data: TestAuthBody;
+      try {
+        data = await response.json();
+      } catch {
+        // A 200 whose body is not JSON never comes from the storage server:
+        // an intermediate device answered instead.
+        failureMessage = "Invalid JSON response from backend server.";
+        continue;
+      }
+
+      if (data?.status === "unset" || data?.status === "incorrect") {
+        // The server answered authoritatively, so this is not a transport
+        // failure — do not retry the check.
+        const reason: RemoteAuthPasswordReason =
+          data.status === "unset" ? "set-password" : "password";
+        const digest = await digestRemotePassword(
+          await this.options.requestPassword(reason),
+          this.apiClient,
+        );
+        if (data.status === "unset") {
+          const setResponse = await this.apiClient.request(
+            "/api/set_password",
+            {
+              method: "POST",
+              body: JSON.stringify({ password: digest }),
+              headers: { "content-type": "application/json" },
+            },
+          );
+          if (!setResponse.ok) {
+            throw new Error(
+              `Setting the Node server password failed (${setResponse.status})`,
+            );
+          }
+        }
+        await this.authorizeKey(digest);
+        return;
+      }
+
+      this.authChecked = true;
+      this.authValidatedAt = Date.now();
       return;
     }
 
-    this.authChecked = true;
-    this.authValidatedAt = Date.now();
+    if (revalidating && !authoritativeFailure) {
+      // The key was already validated and auth tokens are signed locally, so
+      // a transport-level failure (typically right after the app returns
+      // from the background) must not break every storage operation. Keep
+      // the last validated state; the next operation retries within the
+      // revalidation window. Authoritative HTTP failures are excluded: the
+      // server (or a proxy) answered, so the error must surface.
+      this.authValidatedAt = Date.now();
+      return;
+    }
+
+    await this.options.reportError?.(failureMessage, false);
+    throw lastError instanceof Error ? lastError : new Error(failureMessage);
   }
 }

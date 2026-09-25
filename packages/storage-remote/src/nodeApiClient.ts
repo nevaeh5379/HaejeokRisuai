@@ -584,9 +584,27 @@ export class NodeStorageSyncFinalizeError extends Error {
  *                {@link NodeApiClient.resolve}가 만든 절대 URL.
  * @param init  - Standard fetch options. 표준 fetch 옵션.
  */
+export interface NodeApiRequestInit extends RequestInit {
+  /**
+   * Per-request transport timeout in milliseconds.
+   *
+   * (KO) 요청 단위 전송 타임아웃(밀리초).
+   *
+   * @remarks
+   * (EN) Optional for the browser `fetch` (which has no per-request timeout),
+   * but native transports honor it: the Tauri and Capacitor HTTP plugins
+   * apply it as their connect/read timeout.
+   *
+   * (KO) 브라우저 `fetch`에는 선택 사항이지만(요청 단위 타임아웃이
+   * 없음), 네이티브 전송은 이를 적용한다: Tauri와 Capacitor HTTP 플러그인이
+   * 연결/읽기 타임아웃으로 사용한다.
+   */
+  requestTimeoutMs?: number;
+}
+
 export type NodeApiFetch = (
   input: string,
-  init?: RequestInit,
+  init?: NodeApiRequestInit,
 ) => Promise<Response>;
 
 /**
@@ -1042,7 +1060,7 @@ export class NodeApiClient {
    * @returns The raw fetch {@link Response}.
    *          fetch의 원시 {@link Response}.
    */
-  request(path: string, init?: RequestInit): Promise<Response> {
+  request(path: string, init?: NodeApiRequestInit): Promise<Response> {
     return this.fetcher(this.resolve(path), init);
   }
 
