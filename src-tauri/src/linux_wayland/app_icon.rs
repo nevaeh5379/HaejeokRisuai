@@ -24,8 +24,9 @@ use std::{
 const ENTRY_MARKER: &str = "X-HaejeokRisuAI-Portable=true";
 
 /// Icon name referenced by the desktop entry and installed into the user's
-/// hicolor icon theme directory.
-const ICON_NAME: &str = "RisuAI";
+/// hicolor icon theme directory. Must match the icon name that the deb/rpm
+/// bundles install (derived from productName).
+const ICON_NAME: &str = "HaejeokRisuai";
 
 const ICON_PNG: &[u8] = include_bytes!("../../icons/128x128.png");
 
@@ -145,7 +146,7 @@ fn desktop_entry(exec: &str, app_id: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name=RisuAI\n\
+         Name=HaejeokRisuai\n\
          Exec=\"{exec}\"\n\
          Icon={ICON_NAME}\n\
          Terminal=false\n\
@@ -197,14 +198,14 @@ mod tests {
 
     #[test]
     fn desktop_entry_is_well_formed() {
-        let entry = desktop_entry("/opt/RisuAI.AppImage", "RisuAI");
+        let entry = desktop_entry("/opt/HaejeokRisuai.AppImage", "haejeok-risuai");
         assert!(entry.starts_with("[Desktop Entry]\n"));
         assert!(entry.contains("Type=Application\n"));
-        assert!(entry.contains("Name=RisuAI\n"));
-        assert!(entry.contains("Exec=\"/opt/RisuAI.AppImage\"\n"));
-        assert!(entry.contains("Icon=RisuAI\n"));
+        assert!(entry.contains("Name=HaejeokRisuai\n"));
+        assert!(entry.contains("Exec=\"/opt/HaejeokRisuai.AppImage\"\n"));
+        assert!(entry.contains("Icon=HaejeokRisuai\n"));
         assert!(entry.contains("NoDisplay=true\n"));
-        assert!(entry.contains("StartupWMClass=RisuAI\n"));
+        assert!(entry.contains("StartupWMClass=haejeok-risuai\n"));
         assert!(entry.contains(ENTRY_MARKER));
         assert!(entry.ends_with('\n'));
     }
@@ -217,17 +218,17 @@ mod tests {
     #[test]
     fn appimage_mount_paths_are_treated_as_bundled() {
         assert!(is_bundled_data_dir(
-            Path::new("/tmp/.mount_RisuAI123/usr/share"),
+            Path::new("/tmp/.mount_haejeok-risuai/usr/share"),
             None
         ));
         assert!(is_bundled_data_dir(
-            Path::new("/opt/RisuAI.AppDir/usr/share"),
-            Some(Path::new("/opt/RisuAI.AppDir"))
+            Path::new("/opt/HaejeokRisuai.AppDir/usr/share"),
+            Some(Path::new("/opt/HaejeokRisuai.AppDir"))
         ));
         assert!(!is_bundled_data_dir(Path::new("/usr/share"), None));
         assert!(!is_bundled_data_dir(
             Path::new("/usr/share"),
-            Some(Path::new("/opt/RisuAI.AppDir"))
+            Some(Path::new("/opt/HaejeokRisuai.AppDir"))
         ));
     }
 }

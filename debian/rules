@@ -3,7 +3,7 @@
 DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
 PACKAGE_VERSION := $(shell dpkg-parsechangelog -SVersion)
 UPSTREAM_VERSION := $(shell printf '%s\n' '$(PACKAGE_VERSION)' | sed 's/-.*//')
-PAYLOAD := payload/RisuAI_$(UPSTREAM_VERSION)_$(DEB_HOST_ARCH).deb
+PAYLOAD := payload/HaejeokRisuai_$(UPSTREAM_VERSION)_$(DEB_HOST_ARCH).deb
 
 %:
 	dh $@

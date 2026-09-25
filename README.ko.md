@@ -119,6 +119,16 @@ Linux 릴리스는 여러 형식으로 제공됩니다:
 
 x86_64 및 ARM64 Linux 빌드가 모두 제공됩니다.
 
+> [!IMPORTANT]
+> `HaejeokRisuai` 제품명 변경 이후 Linux 패키지는 `haejeok-risuai`로 설치되고 릴리스 파일명은 `HaejeokRisuai_*` 형식입니다. 앱 데이터(채팅, 캐릭터, 설정)는 제품명이 아닌 앱 식별자 기반으로 저장되므로 **마이그레이션 시 데이터 손실은 없습니다**.
+>
+> - **deb**: 새 패키지 설치 시 구 `risuai` 패키지가 자동으로 제거됩니다 (`Provides`/`Replaces`/`Conflicts` 설정됨). `sudo apt install ./HaejeokRisuai_<버전>_amd64.deb`
+> - **rpm**: 새 패키지가 구 `risuai`를 대체(obsoletes)합니다. `sudo dnf install ./HaejeokRisuai_<버전>.rpm`
+> - **Arch Linux**: 패키지명은 이미 `haejeok-risuai`이므로 평소처럼 업그레이드하면 됩니다. 이전에 `risuai` 패키지를 설치한 적이 있다면 먼저 제거하세요: `sudo pacman -Rdd risuai`
+> - **AppImage**: 기존 `RisuAI_*.AppImage` 파일을 새 파일로 교체하세요.
+> - **Windows**: 새 빌드 설치 전에 설정 > 앱에서 기존 "RisuAI"를 제거하세요. 데이터는 `%APPDATA%`에 있으므로 영향을 받지 않습니다.
+> - **macOS**: 기존 `RisuAI.app`을 새 `HaejeokRisuai.app`으로 교체하세요.
+
 ### Docker 서버 (권장)
 
 권장되는 서버 배포 방식은 **PostgreSQL 17 + RustFS + restic**와 함께 사전 빌드된 Docker 이미지를 사용하는 것입니다.

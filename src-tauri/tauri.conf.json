@@ -23,6 +23,15 @@
     "linux": {
       "appimage": {
         "bundleMediaFramework": true
+      },
+      "deb": {
+        "provides": ["risuai"],
+        "conflicts": ["risuai"],
+        "replaces": ["risuai"]
+      },
+      "rpm": {
+        "provides": ["risuai"],
+        "obsoletes": ["risuai"]
       }
     },
     "createUpdaterArtifacts": true,
@@ -37,7 +46,7 @@
       }
     ]
   },
-  "productName": "RisuAI",
+  "productName": "HaejeokRisuai",
   "mainBinaryName": "RisuAI",
   "version": "0.0.0",
   "identifier": "co.aiclient.risu",

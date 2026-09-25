@@ -34,5 +34,5 @@ depends:
   - webkit2gtk-4.1
 
 archlinux:
-  pkgbase: risuai
+  pkgbase: haejeok-risuai
   packager: Haejeok RisuAI
