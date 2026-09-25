@@ -21,6 +21,7 @@ import { processChatResponse } from "./response.svelte";
 import { finalizeChatGeneration } from "./generationFinalizer.svelte";
 import { createChatErrorHandler, type ChatErrorContext } from "./error.svelte";
 import { prepareChatSession } from "./session.svelte";
+import { LocalPrepareChatSessionOptions } from "./localSessionOptions";
 import { buildGenerationPrompt } from "./promptPipeline";
 import {
   cancelChatGenerationStats,
@@ -104,30 +105,16 @@ export class LocalChatExecutor implements ChatExecutor {
     const stageTimings = createStageTimings();
     const generationStartedAt = Date.now();
 
-    const session = await prepareChatSession({
-      chatProcessIndex,
-      chatAdditonalTokens: arg.chatAdditonalTokens,
-      abortSignal,
-      errorContext,
-      throwError,
-      /**
-       * 그룹의 다음 구성원 생성을 같은 대상으로 다시 실행합니다.
-       * Runs generation for the next group member against the same target.
-       * 생성 순서, 추가 토큰, 취소 신호를 세션에서 전달받습니다.
-       * Receives the member index, extra tokens, and cancellation signal from the session.
-       *
-       * @returns 다음 구성원의 생성 결과 / Next member's generation result.
-       */
-      sendGroupMember: ({ chatProcessIndex, chatAdditonalTokens, signal }) =>
-        this.execute(chatProcessIndex, {
-          chatAdditonalTokens,
-          signal,
-          targetCharacterId: arg.targetCharacterId,
-          targetChatId: arg.targetChatId,
-        }),
-      targetCharacterId: arg.targetCharacterId,
-      targetChatId: arg.targetChatId,
-    });
+    const session = await prepareChatSession(
+      new LocalPrepareChatSessionOptions({
+        chatProcessIndex,
+        arg,
+        abortSignal,
+        errorContext,
+        throwError,
+        execute: (index, options) => this.execute(index, options),
+      }),
+    );
     if (session.status === "done") return session.result;
 
     const {
