@@ -914,6 +914,8 @@ export const languageChineseTraditional = {
   translateInput: "翻譯輸入",
   autoTranslation: "自動翻譯",
   fullscreen: "全螢幕",
+  autoHideAndroidNavigationBar: "在聊天中自動隱藏導覽列",
+  autoHideAndroidNavigationBarInSidebar: "在側邊欄中自動隱藏導覽列",
   playMessage: "收到訊息時播放音效",
   iconSize: "頭像大小",
   single: "單個",

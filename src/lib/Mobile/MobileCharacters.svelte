@@ -818,7 +818,7 @@
 
             <!-- Sheet Content -->
             <div
-                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(env(safe-area-inset-bottom),20px)]"
+                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(var(--risu-safe-area-inset-bottom),20px)]"
             >
                 <!-- Header: Avatar + Character Name -->
                 <div class="flex items-center gap-3 border-b border-darkborderc/60 pb-3">

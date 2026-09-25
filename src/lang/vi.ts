@@ -956,6 +956,9 @@ export const languageVietnamese = {
   translateInput: "Dịch đầu vào",
   autoTranslation: "Dịch tự động",
   fullscreen: "Toàn màn hình",
+  autoHideAndroidNavigationBar: "Tự động ẩn thanh điều hướng trong trò chuyện",
+  autoHideAndroidNavigationBarInSidebar:
+    "Tự động ẩn thanh điều hướng trong thanh bên",
   playMessage: "Phát âm thanh tin nhắn",
   iconSize: "Kích cỡ biểu tượng",
   createGroup: "Tạo trò chuyện nhóm",

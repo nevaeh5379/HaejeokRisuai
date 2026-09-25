@@ -878,6 +878,8 @@ export const languageChinese = {
   translateInput: "翻译输入",
   autoTranslation: "自动翻译",
   fullscreen: "全屏幕",
+  autoHideAndroidNavigationBar: "在聊天中自动隐藏导航栏",
+  autoHideAndroidNavigationBarInSidebar: "在侧边栏中自动隐藏导航栏",
   playMessage: "播放消息音效",
   iconSize: "头像大小",
   createGroup: "创建群组",

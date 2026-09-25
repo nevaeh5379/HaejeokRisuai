@@ -104,6 +104,8 @@ export interface DatabaseSettings {
   iconsize: number;
   theme: string;
   uiTheme?: "default" | "windows" | "android";
+  autoHideAndroidNavigationBar: boolean;
+  autoHideAndroidNavigationBarInSidebar: boolean;
   linuxWindowDecoration: "ssd" | "csd";
   androidWidgetBotCount?: number;
   subModel: string;
