@@ -8,7 +8,7 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 const { once } = require("events");
-const { createModelJobManager } = require("./modelJobs.cjs");
+const { createModelJobManager } = require("../dist/executors/modelJobs.cjs");
 
 async function listen(server) {
   server.listen(0, "127.0.0.1");

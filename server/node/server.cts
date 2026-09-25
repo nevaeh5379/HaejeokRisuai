@@ -2518,9 +2518,8 @@ app.post(
       chatId,
       req.headers["x-risu-client-id"],
     );
-    const jobs = modelJobManager
-      .listJobs("running")
-      .filter((job) => job.chatId === chatId);
+    const runningJobs = modelJobManager.listJobs("running");
+    const jobs = (runningJobs ?? []).filter((job) => job.chatId === chatId);
     await Promise.all(jobs.map((job) => modelJobManager.deleteJob(job.id)));
     res.send({
       success: true,
