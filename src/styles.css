@@ -3117,6 +3117,10 @@ html.capacitor-android .rs-chat-input-area-container {
   padding-bottom: max(0.5rem, var(--risu-safe-area-inset-bottom));
 }
 
+html.capacitor-android .rs-sidebar {
+  padding-bottom: var(--risu-safe-area-inset-bottom);
+}
+
 html.theme-android-material .rs-chat-input-row {
   border-radius: var(--risu-android-radius-lg);
   background: var(--risu-android-surface);

@@ -965,6 +965,10 @@ export const languageGerman = {
   translateInput: "Eingabe übersetzen",
   autoTranslation: "Automatische Übersetzung",
   fullscreen: "Vollbild",
+  autoHideAndroidNavigationBar:
+    "Navigationsleiste in Chats automatisch ausblenden",
+  autoHideAndroidNavigationBarInSidebar:
+    "Navigationsleiste in Seitenleisten automatisch ausblenden",
   playMessage: "Nachrichten-Ton abspielen",
   iconSize: "Icon-Größe",
   createGroup: "Gruppenchat erstellen",

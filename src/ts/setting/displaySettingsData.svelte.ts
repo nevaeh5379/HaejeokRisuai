@@ -345,6 +345,22 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ["fullscreen"],
   },
   {
+    id: "display.autoHideAndroidNavigationBar",
+    type: "check",
+    labelKey: "autoHideAndroidNavigationBar",
+    bindKey: "autoHideAndroidNavigationBar",
+    condition: () => isCapacitorAndroid,
+    keywords: ["android", "navigation", "bar", "immersive", "chat"],
+  },
+  {
+    id: "display.autoHideAndroidNavigationBarInSidebar",
+    type: "check",
+    labelKey: "autoHideAndroidNavigationBarInSidebar",
+    bindKey: "autoHideAndroidNavigationBarInSidebar",
+    condition: () => isCapacitorAndroid,
+    keywords: ["android", "navigation", "bar", "immersive", "sidebar"],
+  },
+  {
     id: "display.showMemoryLimit",
     type: "check",
     labelKey: "showMemoryLimit",

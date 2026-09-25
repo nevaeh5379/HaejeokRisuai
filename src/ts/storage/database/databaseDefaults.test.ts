@@ -8,6 +8,26 @@ import {
 } from "./databaseDefaults";
 
 describe("normalizeDatabaseDefaults", () => {
+  it("defaults and preserves Android navigation-bar settings", () => {
+    const defaults = normalizeSettingsInput({});
+    expect(defaults.autoHideAndroidNavigationBar).toBe(false);
+    expect(defaults.autoHideAndroidNavigationBarInSidebar).toBe(false);
+    expect(
+      normalizeSettingsInput({ autoHideAndroidNavigationBar: true })
+        .autoHideAndroidNavigationBar,
+    ).toBe(true);
+    expect(
+      normalizeSettingsInput({ autoHideAndroidNavigationBar: true })
+        .autoHideAndroidNavigationBarInSidebar,
+    ).toBe(true);
+    expect(
+      normalizeSettingsInput({
+        autoHideAndroidNavigationBar: true,
+        autoHideAndroidNavigationBarInSidebar: false,
+      }).autoHideAndroidNavigationBarInSidebar,
+    ).toBe(false);
+  });
+
   it("defaults and preserves image cache settings across normalization", () => {
     expect(normalizeSettingsInput({}).assetCacheEntries).toBe(128);
     expect(

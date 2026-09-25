@@ -47,6 +47,8 @@ const coreScalarDefaults = {
   iconsize: defaultNumber(100),
   theme: defaultString(),
   uiTheme: defaultString("default"),
+  autoHideAndroidNavigationBar: defaultBoolean(false),
+  autoHideAndroidNavigationBarInSidebar: defaultBoolean(false),
   linuxWindowDecoration: defaultPicklist(["ssd", "csd"], "ssd"),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
@@ -60,7 +62,13 @@ export type CoreValidatedDefaults = Required<
 >;
 
 export function normalizeCoreDatabaseSettings(data: Database): void {
+  const hadSidebarNavigationBarSetting =
+    typeof data.autoHideAndroidNavigationBarInSidebar === "boolean";
+  const legacyNavigationBarSetting = data.autoHideAndroidNavigationBar;
   Object.assign(data, parseDefaults(coreScalarDefaults, data));
+  if (!hadSidebarNavigationBarSetting && legacyNavigationBarSetting === true) {
+    data.autoHideAndroidNavigationBarInSidebar = true;
+  }
   data.formatingOrder ??= [
     "main",
     "description",

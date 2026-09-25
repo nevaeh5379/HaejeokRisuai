@@ -1652,6 +1652,10 @@ export const languageEnglish = {
   translateInput: "Translate Input",
   autoTranslation: "Auto Translation",
   fullscreen: "Fullscreen",
+  autoHideAndroidNavigationBar:
+    "Automatically hide the navigation bar in chats",
+  autoHideAndroidNavigationBarInSidebar:
+    "Automatically hide the navigation bar in sidebars",
   playMessage: "Play Message Audio",
   iconSize: "Icon Size",
   createGroup: "Create Group Chat",
