@@ -125,6 +125,32 @@ describe("RemoteAuthController auth check", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("propagates an authoritative HTTP failure during revalidation", async () => {
+    const apiClient = createClient();
+    const calls = recordRequests(apiClient);
+    const { controller, reportError } = createController(apiClient);
+    controller.authChecked = true;
+    controller.authValidatedAt = 0;
+    vi.spyOn(apiClient, "request").mockImplementation(
+      async (): Promise<Response> => {
+        calls.push({ path: "/api/test_auth" });
+        // The server's own rate limiter answered; this is authoritative.
+        return new Response("Too Many Requests", { status: 429 });
+      },
+    );
+
+    await expect(controller.ensureFresh()).rejects.toThrow(
+      "Backend server responded with status 429",
+    );
+    expect(reportError).toHaveBeenCalledWith(
+      "Backend server responded with status 429. Please make sure the backend server is running.",
+      false,
+    );
+    expect(calls).toHaveLength(2);
+    // The soft-fail path must not have refreshed the validation window.
+    expect(controller.authValidatedAt).toBe(0);
+  });
+
   it("reports the failure when the very first check cannot reach a valid server", async () => {
     const apiClient = createClient();
     const calls = recordRequests(apiClient);

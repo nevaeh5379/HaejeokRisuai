@@ -157,6 +157,13 @@ export class RemoteAuthController {
     const revalidating = this.authChecked;
     let failureMessage = "";
     let lastError: unknown = null;
+    // A non-2xx response means the transport reached *something* that
+    // answered authoritatively (the storage server, or a proxy speaking for
+    // it). Unlike a thrown fetch error or a malformed 200 body, it must not
+    // be soft-failed away during revalidation: the credentials may genuinely
+    // be rejected, and running protected storage operations with unvalidated
+    // credentials is worse than surfacing the error.
+    let authoritativeFailure = false;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const timeoutController = new AbortController();
@@ -178,6 +185,9 @@ export class RemoteAuthController {
       }
       if (!response.ok) {
         failureMessage = `Backend server responded with status ${response.status}. Please make sure the backend server is running.`;
+        // Authoritative answer: retry once (transient 5xx exists), but if it
+        // persists the failure must propagate instead of being soft-failed.
+        authoritativeFailure = true;
         continue;
       }
 
@@ -224,12 +234,13 @@ export class RemoteAuthController {
       return;
     }
 
-    if (revalidating) {
+    if (revalidating && !authoritativeFailure) {
       // The key was already validated and auth tokens are signed locally, so
       // a transport-level failure (typically right after the app returns
       // from the background) must not break every storage operation. Keep
       // the last validated state; the next operation retries within the
-      // revalidation window.
+      // revalidation window. Authoritative HTTP failures are excluded: the
+      // server (or a proxy) answered, so the error must surface.
       this.authValidatedAt = Date.now();
       return;
     }
