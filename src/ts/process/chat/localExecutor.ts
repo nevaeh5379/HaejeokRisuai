@@ -19,10 +19,7 @@ import { requireChatTargetFromIndexes } from "../../chatTarget";
 import { tryCreateNodeChatGenerationPlan } from "./nodePlanner";
 import { processChatResponse } from "./response.svelte";
 import { finalizeChatGeneration } from "./generationFinalizer.svelte";
-import {
-  createChatErrorHandler,
-  type ChatErrorContext,
-} from "./error.svelte";
+import { createChatErrorHandler, type ChatErrorContext } from "./error.svelte";
 import { prepareChatSession } from "./session.svelte";
 import { buildGenerationPrompt } from "./promptPipeline";
 import {
@@ -34,10 +31,29 @@ import {
 } from "./generationStats";
 
 export interface LocalChatExecutorSink {
+  /**
+   * 미리보기용으로 구성된 채팅 메시지를 전달합니다.
+   * Passes the prepared chat messages to the preview UI.
+   *
+   * @param chats - 미리볼 채팅 메시지 목록 / Chat messages to preview.
+   */
   setPreviewFormated(chats: OpenAIChat[]): void;
+
+  /**
+   * 요청 본문 미리보기 결과를 전달합니다.
+   * Passes the request body preview to the UI.
+   *
+   * @param body - 미리볼 요청 본문 / Request body to preview.
+   */
   setPreviewBody(body: string): void;
 }
 
+/**
+ * 채팅 생성의 네 단계 시작 시각과 소요 시간을 0으로 초기화합니다.
+ * Initializes the start times and durations of the four generation stages to zero.
+ *
+ * @returns 초기화된 단계별 시간 기록 / Initialized stage timing record.
+ */
 function createStageTimings(): ChatStageTimings {
   return {
     stage1Start: 0,
@@ -51,9 +67,29 @@ function createStageTimings(): ChatStageTimings {
   };
 }
 
+/**
+ * 로컬 런타임으로 채팅 생성을 준비하고 실행한 뒤 응답을 반영합니다.
+ * Prepares and runs chat generation through the local runtime, then applies the response.
+ */
 export class LocalChatExecutor implements ChatExecutor {
+  /**
+   * 미리보기 결과를 전달할 대상을 보관합니다.
+   * Stores the destination for preview results.
+   *
+   * @param sink - 미리보기 결과 수신자 / Receiver of preview results.
+   */
   constructor(private readonly sink: LocalChatExecutorSink) {}
 
+  /**
+   * 세션과 프롬프트를 준비하고, 모델 요청 및 응답 처리와 생성을 마무리합니다.
+   * Prepares the session and prompt, requests the model, processes its response, and finalizes generation.
+   * 미리보기에서는 결과를 sink에 전달하고, 취소 또는 처리 실패 시 일찍 종료합니다.
+   * In preview mode, sends the result to the sink; cancellation or failure ends the run early.
+   *
+   * @param chatProcessIndex - 그룹 채팅 생성 순서. -1은 일반 생성을 뜻합니다 / Group generation index; -1 means a regular generation.
+   * @param arg - 이어쓰기, 미리보기, 취소 신호와 대상 채팅 등의 실행 옵션 / Options for continuation, preview, cancellation, and the target chat.
+   * @returns 생성 또는 미리보기가 성공적으로 완료되었는지 여부 / Whether generation or preview completed successfully.
+   */
   async execute(
     chatProcessIndex = -1,
     arg: ChatSendOptions = {},
@@ -74,6 +110,14 @@ export class LocalChatExecutor implements ChatExecutor {
       abortSignal,
       errorContext,
       throwError,
+      /**
+       * 그룹의 다음 구성원 생성을 같은 대상으로 다시 실행합니다.
+       * Runs generation for the next group member against the same target.
+       * 생성 순서, 추가 토큰, 취소 신호를 세션에서 전달받습니다.
+       * Receives the member index, extra tokens, and cancellation signal from the session.
+       *
+       * @returns 다음 구성원의 생성 결과 / Next member's generation result.
+       */
       sendGroupMember: ({ chatProcessIndex, chatAdditonalTokens, signal }) =>
         this.execute(chatProcessIndex, {
           chatAdditonalTokens,
@@ -241,6 +285,10 @@ export class LocalChatExecutor implements ChatExecutor {
         generationInfo,
         promptInfo,
         generationId,
+        /**
+         * 모델 응답 완료 시 3단계 시간을 기록하고 후처리 단계로 전환합니다.
+         * Records stage three timing and switches to postprocessing when the model completes.
+         */
         onModelComplete: () => {
           const completedAt = Date.now();
           stageTimings.stage3Duration = completedAt - stageTimings.stage3Start;
@@ -250,6 +298,13 @@ export class LocalChatExecutor implements ChatExecutor {
           stageTimings.stage4Start = completedAt;
           setChatProcessStage(currentChat.id, 4);
         },
+        /**
+         * 응답 내용의 앞뒤 공백을 제거합니다.
+         * Trims leading and trailing whitespace from response content.
+         *
+         * @param data - 원본 응답 내용 / Original response content.
+         * @returns 공백을 제거한 내용 / Trimmed content.
+         */
         reformatContent: (data) => data.trim(),
         throwError,
       });
@@ -282,6 +337,13 @@ export class LocalChatExecutor implements ChatExecutor {
       usedContinueTokens: arg.usedContinueTokens,
       chatAdditonalTokens: arg.chatAdditonalTokens,
       throwError,
+      /**
+       * 기존 취소 신호와 채팅 대상을 유지하며 이어쓰기를 실행합니다.
+       * Continues generation with the same cancellation signal and chat target.
+       *
+       * @param resultTokens - 이어쓰기 판단에 사용할 누적 출력 토큰 수 / Accumulated output tokens used for continuation.
+       * @returns 이어쓰기 실행 결과 / Continuation result.
+       */
       continueGeneration: (resultTokens) =>
         this.execute(chatProcessIndex, {
           chatAdditonalTokens: arg.chatAdditonalTokens,
@@ -291,6 +353,12 @@ export class LocalChatExecutor implements ChatExecutor {
           targetCharacterId: arg.targetCharacterId,
           targetChatId: arg.targetChatId,
         }),
+      /**
+       * 기존 취소 신호와 채팅 대상을 유지하며 생성을 다시 요청합니다.
+       * Requests generation again with the same cancellation signal and chat target.
+       *
+       * @returns 재요청 실행 결과 / Retry result.
+       */
       resendGeneration: () =>
         this.execute(chatProcessIndex, {
           signal: abortSignal,
@@ -301,6 +369,13 @@ export class LocalChatExecutor implements ChatExecutor {
   }
 }
 
+/**
+ * 지정한 미리보기 수신자에 연결된 로컬 채팅 실행기를 만듭니다.
+ * Creates a local chat executor connected to the given preview sink.
+ *
+ * @param sink - 미리보기 결과 수신자 / Receiver of preview results.
+ * @returns 채팅 실행기 인터페이스 / Chat executor interface.
+ */
 export function createLocalChatExecutor(
   sink: LocalChatExecutorSink,
 ): ChatExecutor {
