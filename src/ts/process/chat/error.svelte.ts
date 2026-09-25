@@ -83,8 +83,23 @@ function handleChatError(context: ChatErrorContext, error: string) {
   }
 }
 
-export function createChatErrorHandler(context: ChatErrorContext) {
+/**
+ * Reports whether an error represents a cancellation rather than a failure.
+ * Cancellations must not be reported as failures because the server already
+ * broadcasts an `aborted` lifecycle event, and a second `failed` event would
+ * show other clients an error alert for an intentional cancellation.
+ * 오류가 실패가 아니라 의도적인 취소를 나타내는지 확인합니다.
+ */
+export function isCancellationError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+export function createChatErrorHandler(
+  context: ChatErrorContext,
+  signal?: AbortSignal,
+) {
   return (error: string) => {
+    if (signal?.aborted || isCancellationError(error)) return;
     reportNodeGenerationFailure(resolveErrorChat(context)?.id, error);
     handleChatError(context, error);
   };

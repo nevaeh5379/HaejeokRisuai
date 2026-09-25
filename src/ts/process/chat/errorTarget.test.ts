@@ -33,7 +33,10 @@ vi.mock("../nodeGenerationLifecycle", () => ({
   reportNodeGenerationFailure: reportFailure,
 }));
 
-import { createChatErrorHandler } from "./error.svelte";
+import {
+  createChatErrorHandler,
+  isCancellationError,
+} from "./error.svelte";
 
 test("keeps early generation errors pinned to the target chat", () => {
   const throwError = createChatErrorHandler({
@@ -52,4 +55,30 @@ test("keeps early generation errors pinned to the target chat", () => {
   expect(chatA.message).toHaveLength(1);
   expect(chatB.message).toHaveLength(0);
   expect(alertError).not.toHaveBeenCalled();
+});
+
+test("treats a remote abort as a cancellation, not a failure", () => {
+  reportFailure.mockClear();
+  appendMessage.mockClear();
+  alertError.mockClear();
+  chatA.message.length = 0;
+
+  const controller = new AbortController();
+  controller.abort();
+  const handler = createChatErrorHandler(
+    { selectedChar: -1, selectedChat: -1, targetChatId: "chat-a" },
+    controller.signal,
+  );
+
+  handler("This operation was aborted");
+
+  expect(reportFailure).not.toHaveBeenCalled();
+  expect(appendMessage).not.toHaveBeenCalled();
+  expect(alertError).not.toHaveBeenCalled();
+
+  const abortError = new Error("This operation was aborted");
+  abortError.name = "AbortError";
+  expect(isCancellationError(abortError)).toBe(true);
+  expect(isCancellationError(new Error("real failure"))).toBe(false);
+  expect(isCancellationError("string failure")).toBe(false);
 });
