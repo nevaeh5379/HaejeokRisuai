@@ -13,15 +13,15 @@ def asset(name: str) -> dict:
 
 
 ASSETS = [
-    asset("RisuAI_0.0.10_x64-setup.exe"),
+    asset("HaejeokRisuai_0.0.10_x64-setup.exe"),
     asset("RisuAI-Android-b10.apk.sha256"),
-    asset("RisuAI_0.0.10_amd64.AppImage.sig"),
-    asset("RisuAI_0.0.10_aarch64.dmg"),
-    asset("RisuAI_0.0.10_amd64.AppImage"),
+    asset("HaejeokRisuai_0.0.10_amd64.AppImage.sig"),
+    asset("HaejeokRisuai_0.0.10_aarch64.dmg"),
+    asset("HaejeokRisuai_0.0.10_amd64.AppImage"),
     asset("RisuAI-Android-b10.apk"),
     asset("RisuAI-Termux-b10.tar.gz"),
     asset("RisuAI-Termux-b10.tar.gz.sha256"),
-    asset("RisuAI_0.0.10_amd64.deb"),
+    asset("HaejeokRisuai_0.0.10_amd64.deb"),
     asset("latest.json"),
 ]
 
@@ -30,14 +30,14 @@ class FormatDownloadSectionTest(unittest.TestCase):
     def test_groups_installable_release_assets_into_platform_download_links(self):
         section = format_download_section(ASSETS)
 
-        self.assertRegex(section, r"macOS:\n- \[RisuAI_0\.0\.10_aarch64\.dmg\]")
+        self.assertRegex(section, r"macOS:\n- \[HaejeokRisuai_0\.0\.10_aarch64\.dmg\]")
         self.assertRegex(
             section,
-            r"Linux:\n- \[RisuAI_0\.0\.10_amd64\.AppImage\].*\n- \[RisuAI_0\.0\.10_amd64\.deb\]",
+            r"Linux:\n- \[HaejeokRisuai_0\.0\.10_amd64\.AppImage\].*\n- \[HaejeokRisuai_0\.0\.10_amd64\.deb\]",
         )
         self.assertRegex(section, r"Termux:\n- \[RisuAI-Termux-b10\.tar\.gz\]")
         self.assertRegex(section, r"Android:\n- \[RisuAI-Android-b10\.apk\]")
-        self.assertRegex(section, r"Windows:\n- \[RisuAI_0\.0\.10_x64-setup\.exe\]")
+        self.assertRegex(section, r"Windows:\n- \[HaejeokRisuai_0\.0\.10_x64-setup\.exe\]")
         self.assertNotRegex(section, r"sha256|\.sig|latest\.json")
 
     def test_replaces_an_existing_generated_section_without_duplicating_it(self):

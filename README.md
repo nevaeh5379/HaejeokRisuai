@@ -117,6 +117,16 @@ Linux releases are provided in several formats:
 
 Both x86_64 and ARM64 Linux builds are published.
 
+> [!IMPORTANT]
+> Since the `HaejeokRisuai` product rename, Linux packages install as `haejeok-risuai` and release files are named `HaejeokRisuai_*`. App data (chats, characters, settings) is keyed by the app identifier, not the product name, so **nothing is lost when migrating**.
+>
+> - **deb**: installing the new package automatically removes the old `risuai` package (`Provides`/`Replaces`/`Conflicts` are set). `sudo apt install ./HaejeokRisuai_<version>_amd64.deb`
+> - **rpm**: the new package obsoletes `risuai`. `sudo dnf install ./HaejeokRisuai_<version>.rpm`
+> - **Arch Linux**: the package was already named `haejeok-risuai`; upgrade as usual. If you previously installed a `risuai` package, remove it first: `sudo pacman -Rdd risuai`
+> - **AppImage**: replace the old `RisuAI_*.AppImage` file with the new one.
+> - **Windows**: uninstall the old "RisuAI" entry from Apps & Features before installing the new build; your data lives under `%APPDATA%` and is untouched.
+> - **macOS**: drag the new `HaejeokRisuai.app` into Applications, replacing the old `RisuAI.app`.
+
 ### Docker server (recommended)
 
 The recommended server path uses the prebuilt Docker image with **PostgreSQL 17 + RustFS + restic**.

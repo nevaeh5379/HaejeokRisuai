@@ -51,7 +51,7 @@ mkdir -p "$SOURCE_DIR/payload"
 
 download_payload() {
   local arch="$1"
-  local asset="RisuAI_${VERSION}_${arch}.deb"
+  local asset="HaejeokRisuai_${VERSION}_${arch}.deb"
   local target="$SOURCE_DIR/payload/$asset"
   local digest expected actual
 
