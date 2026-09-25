@@ -17,6 +17,7 @@
     "server.cts",
     "executors/modelJobs.cts",
     "http/packet.ts",
+    "api/db/backup/routes.ts",
     "http/realtimeEvents.cts",
     "sync/databaseMutations.cts",
     "sync/localBackupImportRecords.ts",

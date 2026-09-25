@@ -84,6 +84,11 @@ import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
 import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.js";
 import { Packet } from "./http/packet.js";
+import { registerBackupRoutes } from "./api/db/backup/routes.js";
+import type {
+  BackupConfig,
+  BackupRuntime,
+} from "./api/db/backup/routes.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
 const {
   createNodeProviderExecutor,
@@ -865,7 +870,7 @@ app.use("/api", (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let backupStorage = null;
-let backupConfig = {
+let backupConfig: BackupConfig = {
   vendor: null,
   enabled: false,
   poolMax: 10,
@@ -873,7 +878,7 @@ let backupConfig = {
   mirroring: { enabled: false },
   snapshot: { enabled: false, intervalMinutes: 60 },
 };
-const backupRuntime = {
+const backupRuntime: BackupRuntime = {
   initialized: false,
   lastMirrorAt: null,
   lastMirrorError: null,
@@ -5786,359 +5791,32 @@ app.post(
   },
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 백업 데이터베이스 API
-// /api/db-backup:         백업 설정 + 실시간 상태(revision lag, 마지막 미러/스냅샷)
-// /api/db-backup/test:    전달된 백업 연결 파라미터로 연결 테스트
-// /api/db-backup POST:    백업 설정 적용 + 초기화 + 최초 전체 백업
-// /api/db-backup/resync:  수동 전체 백업 (메인 전체 → 백업 replaceAll)
-// /api/db-backup DELETE:  백업 설정 해제
-// ─────────────────────────────────────────────────────────────────────────────
-
-function maskBackupParams(vendor, params: Record<string, any> = {}) {
-  const masked: Record<string, any> = {};
-  if (vendor === "postgres") {
-    masked.connectionString = maskPostgresConnectionString(
-      params.connectionString || "",
-    );
-    masked.poolMax = params.poolMax || 10;
-  } else if (vendor === "oracle") {
-    masked.user = params.user || "";
-    masked.tnsAlias = params.tnsAlias || "";
-    masked.walletPath = params.walletPath || "";
-    masked.poolMax = params.poolMax || 10;
-    masked.hasPassword = Boolean(params.password);
-    masked.hasWalletPassword = Boolean(params.walletPassword);
-  } else if (vendor === "azure") {
-    masked.server = params.server || "";
-    masked.database = params.database || "";
-    masked.user = params.user || "";
-    masked.port = params.port || 1433;
-    masked.poolMax = params.poolMax || 10;
-    masked.hasPassword = Boolean(params.password);
-  }
-  return masked;
-}
-
-async function getBackupConfigResponse() {
-  const configured = Boolean(backupConfig.vendor && backupConfig.enabled);
-  const active = Boolean(backupStorage?.enabled);
-  let primaryRevision = null;
-  let backupRevision = null;
-  let backupInitialized = false;
-  try {
-    if (postgresStorage.enabled) {
-      const primaryState = await postgresStorage.getState();
-      primaryRevision = primaryState.revision;
-    }
-  } catch (e) {}
-  if (active) {
-    try {
-      const backupState = await backupStorage.getState();
-      backupRevision = backupState.revision;
-      backupInitialized = Boolean(backupState.initialized);
-    } catch (e) {}
-  }
-  return {
-    configured,
-    enabled: active,
-    vendor: configured ? backupConfig.vendor : null,
-    managedByEnvironment: false,
-    mirroring: { enabled: Boolean(backupConfig.mirroring?.enabled) },
-    snapshot: {
-      enabled: Boolean(backupConfig.snapshot?.enabled),
-      intervalMinutes: backupConfig.snapshot?.intervalMinutes || 60,
-    },
-    params: configured
-      ? maskBackupParams(backupConfig.vendor, backupConfig.params)
-      : {},
-    primaryRevision,
-    backupRevision,
-    lag:
-      primaryRevision !== null && backupRevision !== null
-        ? Math.max(0, primaryRevision - backupRevision)
-        : null,
-    backupInitialized,
-    inFlight: backupRuntime.inFlight,
-    lastMirrorAt: backupRuntime.lastMirrorAt,
-    lastMirrorError: backupRuntime.lastMirrorError,
-    lastSnapshotAt: backupRuntime.lastSnapshotAt,
-    lastSnapshotError: backupRuntime.lastSnapshotError,
-    lastFullSyncAt: backupRuntime.lastFullSyncAt,
-    lastFullSyncError: backupRuntime.lastFullSyncError,
-  };
-}
-
-app.get("/api/db-backup", authenticatedRouteLimiter, async (req, res, next) => {
-  if (!(await checkAuth(req, res))) {
-    return;
-  }
-  try {
-    res.send(await getBackupConfigResponse());
-  } catch (error) {
-    next(error);
-  }
+registerBackupRoutes(app, {
+  limiter: authenticatedRouteLimiter,
+  checkAuth,
+  isSecureConfigRequest: isSecurePostgresConfigRequest,
+  getPrimaryStorage: () => postgresStorage,
+  getBackupStorage: () => backupStorage,
+  setBackupStorage: (storage) => { backupStorage = storage; },
+  getBackupConfig: () => backupConfig,
+  setBackupConfig: (config) => { backupConfig = config; },
+  runtime: backupRuntime,
+  savePath,
+  maskPostgresConnectionString,
+  supportedVendors: SUPPORTED_VENDORS,
+  testConnection,
+  normalizeVendorParams,
+  isVendorConfigComplete,
+  applyBackupConfig,
+  activateBackupStorage,
+  syncBackupSnapshotTimer,
+  enqueueBackupWrite,
+  mirrorFullBackupToBackup,
+  restoreBackupToMainDatabase,
+  deactivateBackupStorage,
+  removeBackupConfig,
+  StoragePayloadError,
 });
-
-app.post(
-  "/api/db-backup/test",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!isSecurePostgresConfigRequest(req)) {
-      res.status(403).send({
-        error:
-          "Backup database connection test requires HTTPS or a localhost connection",
-        code: "secure_transport_required",
-      });
-      return;
-    }
-    try {
-      const vendor = req.body?.vendor;
-      const params = req.body?.params || {};
-      if (!SUPPORTED_VENDORS.includes(vendor)) {
-        res
-          .status(400)
-          .send({ success: false, error: `Unsupported vendor: ${vendor}` });
-        return;
-      }
-      const result = await testConnection(vendor, params);
-      res.send(result);
-    } catch (error) {
-      res.send({ success: false, error: error.message || String(error) });
-    }
-  },
-);
-
-app.post(
-  "/api/db-backup",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!isSecurePostgresConfigRequest(req)) {
-      res.status(403).send({
-        error:
-          "Backup database configuration changes require HTTPS or a localhost connection",
-        code: "secure_transport_required",
-      });
-      return;
-    }
-    try {
-      const vendor = req.body?.vendor;
-      const params = req.body?.params || {};
-      if (!SUPPORTED_VENDORS.includes(vendor)) {
-        throw new StoragePayloadError(`Unsupported vendor: ${vendor}`);
-      }
-      const normalized = normalizeVendorParams(vendor, params);
-      if (!isVendorConfigComplete(vendor, normalized)) {
-        throw new StoragePayloadError(
-          "Required backup connection parameters are missing",
-        );
-      }
-      const mirroring = { enabled: req.body?.mirroring?.enabled === true };
-      const snapshot = {
-        enabled: req.body?.snapshot?.enabled === true,
-        intervalMinutes: req.body?.snapshot?.intervalMinutes,
-      };
-
-      // 기존 백업 풀 정리
-      if (backupStorage && typeof backupStorage.close === "function") {
-        try {
-          await backupStorage.close();
-        } catch (e) {}
-      }
-      backupStorage = null;
-      backupRuntime.initialized = false;
-
-      // 설정 저장 + 신규 인스턴스
-      const { backup, storage } = applyBackupConfig(savePath, {
-        vendor,
-        params: normalized,
-        mirroring,
-        snapshot,
-      });
-      backupConfig = backup;
-
-      // 초기화 (스키마 생성/확인)
-      await activateBackupStorage(storage);
-      console.log(`[db-backup] Backup storage configured (vendor: ${vendor}).`);
-
-      // 스냅샷 타이머 재설정
-      syncBackupSnapshotTimer();
-
-      // 최초 전체 백업: 메인 DB에서 백업 DB로 전체 적요 (직렬 큐)
-      void enqueueBackupWrite(
-        () =>
-          mirrorFullBackupToBackup().then((result) => {
-            backupRuntime.lastFullSyncAt = new Date().toISOString();
-            backupRuntime.lastFullSyncError = null;
-            return result;
-          }),
-        "full",
-      ).catch(() => {});
-
-      const resp = await getBackupConfigResponse();
-      res.send({ success: true, ...resp });
-    } catch (error) {
-      if (error instanceof StoragePayloadError) {
-        res
-          .status(400)
-          .send({ error: error.message, code: "invalid_backup_configuration" });
-        return;
-      }
-      next(error);
-    }
-  },
-);
-
-app.post(
-  "/api/db-backup/resync",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!backupStorage?.enabled) {
-      res.status(404).send({
-        error: "Backup database is not configured",
-        code: "backup_disabled",
-      });
-      return;
-    }
-    try {
-      res.setHeader("Content-Type", "application/x-ndjson");
-      res.setHeader("Transfer-Encoding", "chunked");
-
-      const sendProgress = (event) => {
-        if (res.writableEnded || res.closed) return;
-        res.write(JSON.stringify({ type: "progress", ...event }) + "\n");
-      };
-
-      const result = await enqueueBackupWrite(
-        () =>
-          mirrorFullBackupToBackup(sendProgress).then((r) => {
-            backupRuntime.lastFullSyncAt = new Date().toISOString();
-            backupRuntime.lastFullSyncError = null;
-            return r;
-          }),
-        "full",
-      );
-
-      res.write(
-        JSON.stringify({
-          type: "done",
-          success: true,
-          ...(result || {}),
-          lastFullSyncAt: backupRuntime.lastFullSyncAt,
-        }) + "\n",
-      );
-      res.end();
-    } catch (error) {
-      if (!res.headersSent) {
-        res.status(502).send({
-          success: false,
-          error: error?.message || "Backup full sync failed",
-          code: "backup_sync_failed",
-        });
-      } else {
-        res.write(
-          JSON.stringify({
-            type: "error",
-            error: error?.message || "Backup full sync failed",
-            code: "backup_sync_failed",
-          }) + "\n",
-        );
-        res.end();
-      }
-    }
-  },
-);
-
-app.post(
-  "/api/db-backup/restore",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!backupStorage?.enabled) {
-      res.status(404).send({
-        error: "Backup database is not configured",
-        code: "backup_disabled",
-      });
-      return;
-    }
-    try {
-      res.setHeader("Content-Type", "application/x-ndjson");
-      res.setHeader("Transfer-Encoding", "chunked");
-
-      const sendProgress = (event) => {
-        if (res.writableEnded || res.closed) return;
-        res.write(JSON.stringify({ type: "progress", ...event }) + "\n");
-      };
-
-      const result = await enqueueBackupWrite(
-        () => restoreBackupToMainDatabase(sendProgress),
-        "full",
-      );
-
-      res.write(
-        JSON.stringify({
-          type: "done",
-          success: true,
-          ...(result || {}),
-        }) + "\n",
-      );
-      res.end();
-    } catch (error) {
-      if (!res.headersSent) {
-        res.status(502).send({
-          success: false,
-          error: error?.message || "Backup restore to main failed",
-          code: "backup_restore_failed",
-        });
-      } else {
-        res.write(
-          JSON.stringify({
-            type: "error",
-            error: error?.message || "Backup restore to main failed",
-            code: "backup_restore_failed",
-          }) + "\n",
-        );
-        res.end();
-      }
-    }
-  },
-);
-
-app.delete(
-  "/api/db-backup",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!isSecurePostgresConfigRequest(req)) {
-      res.status(403).send({
-        error:
-          "Backup database removal requires HTTPS or a localhost connection",
-        code: "secure_transport_required",
-      });
-      return;
-    }
-    try {
-      await deactivateBackupStorage();
-      removeBackupConfig(savePath);
-      res.send({ success: true, ...(await getBackupConfigResponse()) });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
 
 nodeChatExecutor.registerRoutes(app, {
   auth: checkAuth,
