@@ -53,6 +53,10 @@ class MessageStore implements FlushableStore {
         const commit = this.pendingCommits[0];
         try {
           await commitSqlChanges(storage, commit);
+          // Successful commits are the common case; drop their counter entry
+          // so the map does not retain every SqlCommit (and its message
+          // payload) for the life of the session.
+          this.commitAttempts.delete(commit);
         } catch (error) {
           const attempts = (this.commitAttempts.get(commit) ?? 0) + 1;
           this.commitAttempts.set(commit, attempts);
