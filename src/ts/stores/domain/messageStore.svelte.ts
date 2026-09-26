@@ -35,12 +35,38 @@ function findChatAcrossCharacters(chatId: string): Chat | undefined {
 class MessageStore implements FlushableStore {
   private pendingCommits: SqlCommit[] = [];
   private queue = new StoreCommitQueue();
+  /**
+   * Per-commit retry counter. Transient failures (locked database, revision
+   * conflicts already retried by commitSqlChanges) keep the commit queued so
+   * the write survives — but a permanently failing commit must not sit at the
+   * queue head forever: hasPendingWrites() would stay true, silently blocking
+   * saving and the Android exit flow. After MAX_COMMIT_ATTEMPTS the commit is
+   * dropped with an error log so later writes can flush.
+   */
+  private commitAttempts = new Map<SqlCommit, number>();
+  private static readonly MAX_COMMIT_ATTEMPTS = 3;
 
   private drainPendingCommits(): Promise<void> {
     return this.queue.enqueue(async () => {
       const storage = await getSqlStorage();
       while (this.pendingCommits.length > 0) {
-        await commitSqlChanges(storage, this.pendingCommits[0]);
+        const commit = this.pendingCommits[0];
+        try {
+          await commitSqlChanges(storage, commit);
+        } catch (error) {
+          const attempts = (this.commitAttempts.get(commit) ?? 0) + 1;
+          this.commitAttempts.set(commit, attempts);
+          if (attempts < MessageStore.MAX_COMMIT_ATTEMPTS) {
+            // Transient failure: retain the commit for the next drain so the
+            // write survives, matching the pre-existing retry behaviour.
+            throw error;
+          }
+          console.error(
+            "[MessageStore] Dropping commit after repeated failures:",
+            error,
+          );
+          this.commitAttempts.delete(commit);
+        }
         this.pendingCommits.shift();
       }
     });
@@ -63,6 +89,7 @@ class MessageStore implements FlushableStore {
 
   resetPersistenceForTesting(): void {
     this.pendingCommits = [];
+    this.commitAttempts.clear();
     this.queue.reset();
   }
 
