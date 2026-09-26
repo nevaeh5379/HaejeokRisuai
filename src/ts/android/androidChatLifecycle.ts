@@ -33,7 +33,7 @@ const nativeChat = isAndroidNative
  * until app restart). 응답하지 않는 브릿지 호출이 채팅 마무리를 영구히
  * 멈추지 않도록 대기 시간을 제한합니다.
  */
-async function boundedNativeCall<T>(
+export async function boundedNativeCall<T>(
   promise: Promise<T>,
   timeoutMs: number,
 ): Promise<T | null> {
@@ -53,7 +53,7 @@ async function boundedNativeCall<T>(
   }
 }
 
-const NATIVE_BRIDGE_TIMEOUT_MS = 5000;
+export const NATIVE_BRIDGE_TIMEOUT_MS = 5000;
 
 export function usesNativeChatLifecycle(): boolean {
   return nativeChat !== null;
@@ -62,10 +62,7 @@ export function usesNativeChatLifecycle(): boolean {
 export async function beginNativeChatRequest(): Promise<void> {
   if (!nativeChat) return;
   try {
-    await boundedNativeCall(
-      nativeChat.begin(),
-      NATIVE_BRIDGE_TIMEOUT_MS,
-    );
+    await boundedNativeCall(nativeChat.begin(), NATIVE_BRIDGE_TIMEOUT_MS);
   } catch (error) {
     // Generation must still work if a vendor ROM refuses foreground service startup.
     console.warn("[NativeChat] Failed to start foreground generation:", error);

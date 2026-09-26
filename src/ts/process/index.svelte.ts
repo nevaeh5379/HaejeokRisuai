@@ -14,7 +14,9 @@ import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
 import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import {
   beginNativeChatRequest,
+  boundedNativeCall,
   endNativeChatRequest,
+  NATIVE_BRIDGE_TIMEOUT_MS,
 } from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
 import { localGenerationController } from "./chat/generationCancellation";
@@ -46,34 +48,6 @@ const localChatExecutor = createLocalChatExecutor({
     previewBody = body;
   },
 });
-
-/**
- * Bounds a native bridge call so a hung plugin promise can never hold the
- * chat generation lock forever. Android WebView bridge calls (notification
- * permission, foreground service) occasionally never settle on vendor ROMs;
- * without a bound, the sendChat finally block is never reached and the chat
- * stays marked as generating, blocking reroll/save/exit until app restart.
- * 안드로이드 브릿지 호출이 응답하지 않아도 채팅 생성 락이 영구 남지 않도록
- * 대기 시간을 제한합니다.
- */
-async function withBridgeTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), timeoutMs);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const NATIVE_BRIDGE_TIMEOUT_MS = 5000;
 
 export async function sendChat(
   chatProcessIndex = -1,
@@ -122,11 +96,11 @@ export async function sendChat(
       // notification permission prompt once the tab is backgrounded.
       // Both calls cross the native bridge; bound them so a vendor ROM hang
       // cannot leave the generation lock held forever.
-      await withBridgeTimeout(
+      await boundedNativeCall(
         ensureChatNotificationPermission(),
         NATIVE_BRIDGE_TIMEOUT_MS,
       );
-      await withBridgeTimeout(
+      await boundedNativeCall(
         beginNativeChatRequest(),
         NATIVE_BRIDGE_TIMEOUT_MS,
       );
@@ -157,7 +131,7 @@ export async function sendChat(
     }
     if (locked && targetChatId) endChatGeneration(targetChatId);
     if (targetChatId) {
-      await withBridgeTimeout(
+      await boundedNativeCall(
         endNodeGenerationLifecycle(
           targetChatId,
           lifecycleId,
@@ -167,10 +141,7 @@ export async function sendChat(
       );
     }
     if (keepAlive) {
-      await withBridgeTimeout(
-        endNativeChatRequest(),
-        NATIVE_BRIDGE_TIMEOUT_MS,
-      );
+      await boundedNativeCall(endNativeChatRequest(), NATIVE_BRIDGE_TIMEOUT_MS);
     }
   }
 }
