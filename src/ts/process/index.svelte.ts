@@ -14,7 +14,9 @@ import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
 import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
 import {
   beginNativeChatRequest,
+  boundedNativeCall,
   endNativeChatRequest,
+  NATIVE_BRIDGE_TIMEOUT_MS,
 } from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
 import { localGenerationController } from "./chat/generationCancellation";
@@ -92,8 +94,16 @@ export async function sendChat(
     if (keepAlive) {
       // Ask while we are still inside the send gesture: browsers drop the
       // notification permission prompt once the tab is backgrounded.
-      await ensureChatNotificationPermission();
-      await beginNativeChatRequest();
+      // Both calls cross the native bridge; bound them so a vendor ROM hang
+      // cannot leave the generation lock held forever.
+      await boundedNativeCall(
+        ensureChatNotificationPermission(),
+        NATIVE_BRIDGE_TIMEOUT_MS,
+      );
+      await boundedNativeCall(
+        beginNativeChatRequest(),
+        NATIVE_BRIDGE_TIMEOUT_MS,
+      );
     }
     const result = await runWithPresetChainGenerationGate(
       serializeForPresetChain,
@@ -121,12 +131,17 @@ export async function sendChat(
     }
     if (locked && targetChatId) endChatGeneration(targetChatId);
     if (targetChatId) {
-      await endNodeGenerationLifecycle(
-        targetChatId,
-        lifecycleId,
-        signal?.aborted === true,
+      await boundedNativeCall(
+        endNodeGenerationLifecycle(
+          targetChatId,
+          lifecycleId,
+          signal?.aborted === true,
+        ),
+        NATIVE_BRIDGE_TIMEOUT_MS,
       );
     }
-    if (keepAlive) await endNativeChatRequest();
+    if (keepAlive) {
+      await boundedNativeCall(endNativeChatRequest(), NATIVE_BRIDGE_TIMEOUT_MS);
+    }
   }
 }

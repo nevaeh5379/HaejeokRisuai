@@ -456,4 +456,40 @@ describe("messageStore", () => {
     });
     expect(messageStore.hasPendingWrites()).toBe(false);
   });
+
+  it("drops a permanently failing commit instead of blocking the queue forever", async () => {
+    const originalCommit = MockSqlStorage.prototype.commit;
+    vi.spyOn(mockStorage, "commit").mockImplementation(async () => {
+      throw new Error("disk I/O error");
+    });
+    const message = {
+      chatId: "msg-poison",
+      role: "char" as const,
+      data: "broken write",
+    };
+
+    await messageStore.appendMessage("chat-1", message);
+    expect(messageStore.hasPendingWrites()).toBe(true);
+
+    // Repeated flushes keep failing; after MAX_COMMIT_ATTEMPTS the poison
+    // commit is dropped instead of sitting at the queue head forever.
+    await messageStore.flush().catch(() => {});
+    await messageStore.flush().catch(() => {});
+    await messageStore.flush().catch(() => {});
+
+    expect(messageStore.hasPendingWrites()).toBe(false);
+
+    // Later writes must still flush after a poisoned commit was dropped.
+    vi.mocked(mockStorage.commit).mockImplementation(originalCommit);
+    const followUp = {
+      chatId: "msg-after",
+      role: "user" as const,
+      data: "still writable",
+    };
+    await messageStore.appendMessage("chat-1", followUp);
+
+    expect(messageStore.hasPendingWrites()).toBe(false);
+    const lastCommit = mockStorage.commits.at(-1)!;
+    expect(lastCommit.messages[0]).toMatchObject({ id: "msg-after" });
+  });
 });
