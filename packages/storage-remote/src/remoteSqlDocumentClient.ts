@@ -56,6 +56,16 @@ export class RemoteSqlDocumentClient {
     );
   }
 
+  async loadPlugin<T>(pluginId: string): Promise<T | null> {
+    const result = await this.getCached<{ plugin: T }>(
+      `/api/database-v2/plugins/${encodeURIComponent(pluginId)}`,
+      undefined,
+      "SQL plugin load failed",
+    );
+    if (result.status === "missing") return null;
+    return result.status === "ok" ? result.body.plugin : null;
+  }
+
   async loadPluginScript(pluginId: string): Promise<string | null> {
     const result = await this.getCached<{ script: string }>(
       `/api/database-v2/plugins/${encodeURIComponent(pluginId)}/script`,

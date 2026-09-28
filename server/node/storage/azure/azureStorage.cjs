@@ -2539,22 +2539,29 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async loadPlugins() {
-    if (this.pluginsCache) {
+  async loadPlugins(options = {}) {
+    const pluginId =
+      typeof options?.pluginId === "string" ? options.pluginId : null;
+    if (pluginId) assertId(pluginId, "pluginId");
+    if (!pluginId && this.pluginsCache) {
       return this.pluginsCache;
     }
+
     const pool = await this.getPool();
+    const recordsRequest = pool.request();
+    const valuesRequest = pool.request();
+    if (pluginId) {
+      recordsRequest.input("pluginId", sql.NVarChar(450), pluginId);
+      valuesRequest.input("pluginId", sql.NVarChar(450), pluginId);
+    }
+    const where = pluginId ? " WHERE plugin_id=@pluginId" : "";
     const [recordsResult, valuesResult] = await Promise.all([
-      pool
-        .request()
-        .query(
-          "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM [system].[plugin_records] ORDER BY position",
-        ),
-      pool
-        .request()
-        .query(
-          "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM [system].[plugin_values] ORDER BY plugin_id, node_id",
-        ),
+      recordsRequest.query(
+        `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM [system].[plugin_records]${where} ORDER BY position`,
+      ),
+      valuesRequest.query(
+        `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM [system].[plugin_values]${where} ORDER BY plugin_id, node_id`,
+      ),
     ]);
     const plugins = rebuildPluginRecords(
       recordsResult.recordset,
@@ -2565,7 +2572,7 @@ class AzureStorage extends SqlStorageBase {
       .update(JSON.stringify(plugins))
       .digest("hex");
     const result = { plugins, hash };
-    if (this.objectCacheEnabled) this.pluginsCache = result;
+    if (!pluginId && this.objectCacheEnabled) this.pluginsCache = result;
     return result;
   }
 

@@ -239,14 +239,70 @@ describe("PostgreSQL sync payload validation", () => {
     });
   });
 
-  it("exports DEFERRED_SETTING_KEYS including heavy domains and prompt keys", () => {
+  it("exports deferred settings without plugin definitions", () => {
     expect(DEFERRED_SETTING_KEYS).toContain("personas");
     expect(DEFERRED_SETTING_KEYS).toContain("botPresets");
     expect(DEFERRED_SETTING_KEYS).toContain("loreBook");
     expect(DEFERRED_SETTING_KEYS).toContain("modules");
     expect(DEFERRED_SETTING_KEYS).toContain("globalscript");
     expect(DEFERRED_SETTING_KEYS).toContain("mainPrompt");
-    expect(DEFERRED_SETTING_KEYS).toContain("plugins");
+    expect(DEFERRED_SETTING_KEYS).not.toContain("plugins");
+  });
+
+  it("filters a single plugin read by plugin_id", async () => {
+    const queries: { sql: string; params: unknown[] }[] = [];
+    const client = {
+      query: vi.fn(async (sql: string, params: unknown[] = []) => {
+        queries.push({ sql, params });
+        if (sql.includes("FROM system.plugin_records")) {
+          return {
+            rows: [
+              {
+                plugin_id: "plugin-id",
+                position: 0,
+                name: "single",
+                display_name: null,
+                api_version: null,
+                plugin_version: null,
+                update_url: null,
+                enabled: true,
+              },
+            ],
+          };
+        }
+        if (sql.includes("FROM system.plugin_values")) {
+          return {
+            rows: [
+              {
+                setting_key: "plugin-id",
+                node_id: 0,
+                parent_node_id: null,
+                value_type: "object",
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const storage = new PostgresStorage({
+      connectionString: "postgres://plugin-test",
+    });
+    storage.pool = { connect: vi.fn(async () => client) };
+
+    const result = await storage.loadPlugins({ pluginId: "plugin-id" });
+
+    expect(result.plugins).toHaveLength(1);
+    expect(result.plugins[0].id).toBe("plugin-id");
+    const pluginQueries = queries.filter((entry) =>
+      entry.sql.includes("plugin_"),
+    );
+    expect(pluginQueries).toHaveLength(2);
+    for (const query of pluginQueries) {
+      expect(query.sql).toContain("WHERE plugin_id = $1");
+      expect(query.params).toEqual(["plugin-id"]);
+    }
   });
 
   it("generates diff-based upsert clauses with IS DISTINCT FROM conditions", () => {

@@ -3968,27 +3968,39 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPlugins() {
+  async loadPlugins(options = {}) {
     this.assertEnabled();
-    if (this.pluginsCache) {
+    const pluginId =
+      typeof options?.pluginId === "string" ? options.pluginId : null;
+    if (pluginId) assertId(pluginId, "pluginId");
+    if (!pluginId && this.pluginsCache) {
       return this.pluginsCache;
     }
+
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const queries = [
-        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records ORDER BY position",
-        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values ORDER BY plugin_id, node_id",
-      ];
-      const results = await client.query(queries.join(";\n"));
-      const [records, values] = results.map((result) => result.rows);
+      const params = pluginId ? [pluginId] : [];
+      const where = pluginId ? " WHERE plugin_id = $1" : "";
+      const records = (
+        await client.query(
+          `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records${where} ORDER BY position`,
+          params,
+        )
+      ).rows;
+      const values = (
+        await client.query(
+          `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values${where} ORDER BY plugin_id, node_id`,
+          params,
+        )
+      ).rows;
       const plugins = rebuildPluginRecords(records, values);
       await client.query("COMMIT");
 
       const serialized = JSON.stringify(plugins);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
       const result = { plugins, hash };
-      if (this.objectCacheEnabled) this.pluginsCache = result;
+      if (!pluginId && this.objectCacheEnabled) this.pluginsCache = result;
       return result;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});

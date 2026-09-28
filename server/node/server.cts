@@ -6448,6 +6448,36 @@ app.get(
 );
 
 app.get(
+  "/api/database-v2/plugins/:pluginId",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!postgresStorage.enabled) {
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "sql_disabled",
+      });
+      return;
+    }
+    try {
+      const result = await postgresStorage.loadPlugins({
+        pluginId: req.params.pluginId,
+      });
+      const plugin = result.plugins[0] ?? null;
+      if (plugin === null) {
+        res
+          .status(404)
+          .send({ error: "Plugin not found", code: "plugin_not_found" });
+        return;
+      }
+      await sendCompressedJson(req, res, { plugin });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.get(
   "/api/database-v2/plugins/:pluginId/script",
   authenticatedRouteLimiter,
   async (req, res, next) => {

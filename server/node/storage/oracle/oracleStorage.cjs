@@ -3523,24 +3523,30 @@ class OracleStorage extends SqlStorageBase {
   // 설정 로드: loadPlugins, loadPluginCustomStorage, ...
   // ============================================================
 
-  async loadPlugins() {
+  async loadPlugins(options = {}) {
     this.assertEnabled();
-    if (this.pluginsCache) {
+    const pluginId =
+      typeof options?.pluginId === "string" ? options.pluginId : null;
+    if (pluginId) assertId(pluginId, "pluginId");
+    if (!pluginId && this.pluginsCache) {
       return this.pluginsCache;
     }
+
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET TRANSACTION READ ONLY");
+      const binds = pluginId ? [pluginId] : [];
+      const where = pluginId ? " WHERE plugin_id = :1" : "";
       const records = await fetchRows(
         conn,
-        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system_plugin_records ORDER BY position",
-        [],
+        `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system_plugin_records${where} ORDER BY position`,
+        binds,
         { clobColumns: [] },
       );
       const values = await fetchRows(
         conn,
-        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_plugin_values ORDER BY plugin_id, node_id",
-        [],
+        `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_plugin_values${where} ORDER BY plugin_id, node_id`,
+        binds,
         {
           clobColumns: [
             "member_key",
@@ -3555,7 +3561,7 @@ class OracleStorage extends SqlStorageBase {
       const serialized = JSON.stringify(plugins);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
       const result = { plugins, hash };
-      if (this.objectCacheEnabled) this.pluginsCache = result;
+      if (!pluginId && this.objectCacheEnabled) this.pluginsCache = result;
       return result;
     } catch (error) {
       try {
