@@ -18,3 +18,9 @@ export interface PluginScript {
   pluginId: string;
   script: string;
 }
+
+/** Arbitrary JSON-compatible data persisted on behalf of a plugin. */
+export type PluginStorageValue = unknown;
+
+/** Plugin-owned values indexed by their storage key. */
+export type PluginStorageRecord = Record<string, PluginStorageValue>;
