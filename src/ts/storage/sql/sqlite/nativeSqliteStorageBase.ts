@@ -15,6 +15,7 @@ import type { RisuModule } from "../../../process/modules";
 import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
 import type {
+  ISqlStorage,
   BotPresetSummary,
   SqlStartupDataResult,
   SqlDatabaseSnapshotResult,
@@ -42,6 +43,8 @@ import {
   type SqlCommitResult,
   SqlRevisionConflictError,
 } from "../sqlCommit";
+import type { IPluginStorage } from "../pluginStorage";
+import { SqlitePluginStorage } from "./sqlitePluginStorage";
 import {
   rebuildRelationalValue,
   decodedText,
@@ -152,7 +155,13 @@ import {
   SQLITE_BRANCH_SCHEMA_STATEMENTS,
 } from "@risuai/storage-sqlite/sqliteBranchStorage";
 
-export abstract class NativeSqliteStorageBase {
+export abstract class NativeSqliteStorageBase implements ISqlStorage {
+  abstract readonly backendKind: "tauri-sqlite" | "capacitor-sqlite";
+
+  readonly plugin: IPluginStorage = new SqlitePluginStorage(
+    this,
+    this.selectRows.bind(this) as SqliteSelectRows,
+  );
   protected revision = 0;
   protected readonly writeQueue = new AsyncSerialQueue();
   protected _enabled = false;
@@ -992,16 +1001,6 @@ export abstract class NativeSqliteStorageBase {
       ((await this.loadSettingValue("globalscript")) as
         customscript[] | undefined) ?? []
     );
-  }
-
-  async loadPlugins(options?: {
-    enabledOnly?: boolean;
-  }): Promise<any[] | null> {
-    const plugins =
-      ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
-    return options?.enabledOnly && plugins
-      ? plugins.filter((plugin) => plugin?.enabled)
-      : plugins;
   }
 
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {

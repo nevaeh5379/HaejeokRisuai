@@ -53,6 +53,11 @@ export interface SqlPluginScriptUpsert {
   script: string;
 }
 
+export interface SqlPluginEnabledUpdate {
+  id: string;
+  enabled: boolean;
+}
+
 export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
   baseRevision: number;
   idempotencyKey?: string;
@@ -83,6 +88,7 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
     deletes: string[];
     order?: string[];
     scripts?: SqlPluginScriptUpsert[];
+    enabled?: SqlPluginEnabledUpdate[];
   };
   characters: SqlCharacterUpsert[];
   characterTouches?: SqlCharacterTouch[];
@@ -134,6 +140,7 @@ export interface NormalizedSqlCommit {
     deletes: string[];
     order?: string[];
     scripts?: SqlPluginScriptUpsert[];
+    enabled?: SqlPluginEnabledUpdate[];
   };
   characters: SqlCharacterUpsert[];
   characterTouches: SqlCharacterTouch[];
@@ -352,7 +359,8 @@ export function deriveSqlCommitImpact(
         (commit.plugins.upserts.length > 0 ||
           commit.plugins.deletes.length > 0 ||
           commit.plugins.order !== undefined ||
-          (commit.plugins.scripts?.length ?? 0) > 0)),
+          (commit.plugins.scripts?.length ?? 0) > 0 ||
+          (commit.plugins.enabled?.length ?? 0) > 0)),
     ),
   };
 }
@@ -360,6 +368,7 @@ export function deriveSqlCommitImpact(
 export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
   "botPresets",
   "botPresetsId",
+  "plugins",
 ] as const);
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -575,8 +584,15 @@ class SqlCommitParser {
 
   private rejectReservedRoot(action: RejectReservedRootType, key: string) {
     if (!isReservedRootSettingKey(key)) return;
+    // Legacy plugin settings may be deleted by the one-time migration after
+    // their canonical plugin rows have been written in the same commit.
+    if (action === "DELETE" && key === "plugins") return;
 
-    throw new this.PayloadError(ERROR_MESSAGES[action](key));
+    throw new this.PayloadError(
+      key === "plugins" && action === "UPSERT"
+        ? "plugins must be written through the plugins domain"
+        : ERROR_MESSAGES[action](key),
+    );
   }
   // Parses generic root-setting upserts and deletes, applying the reserved-key
   // policy to both operations.
@@ -717,7 +733,22 @@ class SqlCommitParser {
               return { id: item.id, script: item.script };
             },
           );
-    return { upserts, deletes, order, scripts };
+    const enabled =
+      value.enabled === undefined
+        ? undefined
+        : this.parseRows(
+            value.enabled,
+            "plugins.enabled",
+            (item, index) => {
+              this.assertId(item.id, `plugins.enabled[${index}].id`);
+              if (typeof item.enabled !== "boolean")
+                throw new this.PayloadError(
+                  `plugins.enabled[${index}].enabled must be a boolean`,
+                );
+              return { id: item.id, enabled: item.enabled };
+            },
+          );
+    return { upserts, deletes, order, scripts, enabled };
   }
 
   // Parses plugin-storage upserts, deletes, and the optional clear operation.

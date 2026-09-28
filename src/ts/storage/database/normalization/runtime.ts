@@ -127,7 +127,10 @@ function applyPlatformRuntimePolicy(data: Database): void {
   }
 }
 
-export function normalizeRuntimeDatabaseSettings(data: Database): void {
+export function normalizeRuntimeDatabaseSettings(
+  data: Database,
+  context: { hasPlugins?: boolean } = {},
+): void {
   Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
   applyLocalBackupPerformanceDefaults(data);
   normalizeImageCacheSettings(data, isCapacitor);
@@ -144,8 +147,9 @@ export function normalizeRuntimeDatabaseSettings(data: Database): void {
   normalizeChatLoadSettings(data);
   migrateStreamingDisplayMode(data);
   applyPlatformRuntimePolicy(data);
-  data.enableRisuaiProTools ??= data.plugins.length > 0;
+  const hasPlugins = context.hasPlugins === true;
+  data.enableRisuaiProTools ??= hasPlugins;
   data.loadouts ??= [];
   data.customSidebarItems ??= [];
-  data.coldstorage ??= data?.plugins?.length === 0;
+  data.coldstorage ??= !hasPlugins;
 }

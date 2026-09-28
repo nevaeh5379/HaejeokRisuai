@@ -42,6 +42,7 @@ for (const method of [
   "loadPluginCustomStorage",
   "loadPluginCustomStorageKey",
   "loadPlugins",
+  "loadPluginScript",
   "loadPluginsData",
   "loadPrompts",
   "loadScripts",

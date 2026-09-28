@@ -3,6 +3,10 @@ import type {
   SqliteSelectRows,
 } from "./sqliteAdminQueries";
 import { loadSqliteModules } from "./sqliteDocumentQueries";
+import {
+  loadSqlitePlugins,
+  loadSqlitePluginScripts,
+} from "./sqlitePluginQueries";
 import { loadSqlitePluginCustomStorage } from "./sqlitePersistenceQueries";
 import { groupSqliteNodeValues, loadSqliteNodeValue } from "./sqliteNodeValues";
 import {
@@ -188,6 +192,17 @@ export async function exportSqliteDatabaseSnapshot(
   database.characters = characters;
   database.modules =
     await loadSqliteModules<Record<string, unknown>>(selectRows);
+
+  const pluginMetadata = await loadSqlitePlugins(selectRows);
+  const pluginScripts = await loadSqlitePluginScripts(selectRows);
+  database.plugins = pluginMetadata.map((plugin) => {
+    const { id, position: _position, ...metadata } = plugin;
+    const script = pluginScripts.get(id);
+    if (script === undefined) {
+      throw new Error(`Plugin script is missing: ${id}`);
+    }
+    return { ...metadata, script };
+  });
 
   const presetRows = await selectRows<{
     preset_id: string;

@@ -68,6 +68,7 @@ test("deriveSqlCommitImpact extracts affected domains and entity ids", () => {
         upserts: [{ id: "plugin-a", data: { name: "Plugin A" } }],
         deletes: ["plugin-b"],
         scripts: [{ id: "plugin-a", script: "console.log('a')" }],
+        enabled: [{ id: "plugin-a", enabled: false }],
       },
     }),
   );
@@ -161,6 +162,7 @@ test("validator keeps plugin metadata and scripts as separate payloads", () => {
       deletes: ["deleted-plugin"],
       order: ["plugin-id"],
       scripts: [{ id: "plugin-id", script: "console.log('plugin')" }],
+      enabled: [{ id: "plugin-id", enabled: false }],
     },
     characters: [],
     chats: [],
@@ -180,6 +182,7 @@ test("validator keeps plugin metadata and scripts as separate payloads", () => {
     deletes: ["deleted-plugin"],
     order: ["plugin-id"],
     scripts: [{ id: "plugin-id", script: "console.log('plugin')" }],
+    enabled: [{ id: "plugin-id", enabled: false }],
   });
 });
 

@@ -83,7 +83,8 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
       (commit.plugins.upserts.length > 0 ||
         commit.plugins.deletes.length > 0 ||
         commit.plugins.order !== undefined ||
-        (commit.plugins.scripts?.length ?? 0) > 0),
+        (commit.plugins.scripts?.length ?? 0) > 0 ||
+        (commit.plugins.enabled?.length ?? 0) > 0),
     ) ||
     commit.characters.length > 0 ||
     (commit.characterTouches !== undefined &&
@@ -243,6 +244,22 @@ export function buildSqlReplaceCommit(
     deletes: [],
     order: modules.map((module) => module.id),
   };
+
+  const plugins = Array.isArray(database.plugins) ? database.plugins : [];
+  const pluginIds = plugins.map(() => uuidv4());
+  commit.plugins = {
+    upserts: plugins.map((plugin, position) => {
+      const { script: _script, ...data } = plugin;
+      return { id: pluginIds[position], position, data };
+    }),
+    deletes: [],
+    order: pluginIds,
+    scripts: plugins.map((plugin, position) => ({
+      id: pluginIds[position],
+      script: plugin.script,
+    })),
+  };
+
   for (const [key, value] of Object.entries(database)) {
     if (
       key !== "characters" &&
@@ -252,6 +269,7 @@ export function buildSqlReplaceCommit(
       key !== "botPresets" &&
       key !== "botPresetsId" &&
       key !== "modules" &&
+      key !== "plugins" &&
       // Preset activation is owned by the presets section: the server derives
       // `activeBotPresetId` from presets.activeId and pushes it into the root
       // upserts itself. Emitting it here as well would duplicate the key in a

@@ -12,7 +12,7 @@ interface PluginRecordRow extends Record<string, unknown> {
   enabled: number;
 }
 
-export interface SqliteStoredPlugin {
+export interface SqlitePluginMetadata {
   id: string;
   position: number;
   name: string;
@@ -28,7 +28,7 @@ export interface SqliteStoredPlugin {
   allowedIPC?: string[];
 }
 
-function parseApiVersion(value: string | null): SqliteStoredPlugin["version"] {
+function parseApiVersion(value: string | null): SqlitePluginMetadata["version"] {
   switch (value) {
     case "1":
       return 1;
@@ -45,10 +45,10 @@ function parseApiVersion(value: string | null): SqliteStoredPlugin["version"] {
 function hydratePlugin(
   row: PluginRecordRow,
   extension: unknown,
-): SqliteStoredPlugin {
+): SqlitePluginMetadata {
   const data =
     extension && typeof extension === "object"
-      ? (extension as Partial<SqliteStoredPlugin>)
+      ? (extension as Partial<SqlitePluginMetadata>)
       : {};
   return {
     arguments: {},
@@ -70,7 +70,7 @@ function hydratePlugin(
 export async function loadSqlitePlugins(
   selectRows: SqliteSelectRows,
   options?: { enabledOnly?: boolean },
-): Promise<SqliteStoredPlugin[]> {
+): Promise<SqlitePluginMetadata[]> {
   const where = options?.enabledOnly ? "WHERE enabled = 1" : "";
   const rows = await selectRows<PluginRecordRow>(
     `SELECT plugin_id, position, name, display_name, api_version,
@@ -98,7 +98,7 @@ export async function loadSqlitePlugins(
 export async function loadSqlitePlugin(
   selectRows: SqliteSelectRows,
   pluginId: string,
-): Promise<SqliteStoredPlugin | null> {
+): Promise<SqlitePluginMetadata | null> {
   const rows = await selectRows<PluginRecordRow>(
     `SELECT plugin_id, position, name, display_name, api_version,
             plugin_version, update_url, enabled
@@ -129,4 +129,13 @@ export async function loadSqlitePluginScript(
     [pluginId],
   );
   return rows[0]?.script ?? null;
+}
+
+export async function loadSqlitePluginScripts(
+  selectRows: SqliteSelectRows,
+): Promise<Map<string, string>> {
+  const rows = await selectRows<{ plugin_id: string; script: string }>(
+    "SELECT plugin_id, script FROM plugin_scripts ORDER BY plugin_id",
+  );
+  return new Map(rows.map((row) => [row.plugin_id, row.script]));
 }

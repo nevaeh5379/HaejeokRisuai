@@ -3,6 +3,7 @@ import type { ISqlStorage } from "../storage/sql/ISqlStorage";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 
 /**
@@ -22,6 +23,7 @@ export async function initRuntimeSettings(storage: ISqlStorage): Promise<void> {
   // behavior. Persona hydration above deliberately stays outside this catch.
   try {
     await moduleStore.init(storage);
+    await pluginStore.init(storage);
 
     settingsStore.hydratePluginCustomStorageKeys(
       await storage.listPluginCustomStorageKeys(),

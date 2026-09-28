@@ -6447,6 +6447,33 @@ app.get(
   },
 );
 
+app.get(
+  "/api/database-v2/plugins/:pluginId/script",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) return;
+    if (!postgresStorage.enabled) {
+      res.status(404).send({
+        error: "SQL storage is not configured",
+        code: "sql_disabled",
+      });
+      return;
+    }
+    try {
+      const script = await postgresStorage.loadPluginScript(req.params.pluginId);
+      if (script === null) {
+        res
+          .status(404)
+          .send({ error: "Plugin script not found", code: "plugin_not_found" });
+        return;
+      }
+      await sendCompressedJson(req, res, { script });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 app.patch(
   "/api/database-v2/plugins/:pluginName/enabled",
   authenticatedRouteLimiter,
@@ -6485,11 +6512,10 @@ app.patch(
           .send({ error: "Plugin not found", code: "plugin_not_found" });
         return;
       }
-      plugin.enabled = enabled;
       const result = await databaseMutations.togglePlugin(
         {
           baseRevision,
-          plugins,
+          pluginId: plugin.id,
           pluginName: req.params.pluginName,
           enabled,
         },

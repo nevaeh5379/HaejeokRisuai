@@ -273,14 +273,17 @@ function createDatabaseMutations({
         await storage().sync({
           baseRevision: input.baseRevision,
           action: "plugin-toggle",
-          root: {
-            upserts: [{ key: "plugins", value: input.plugins }],
+          root: { upserts: [], deletes: [] },
+          plugins: {
+            upserts: [],
             deletes: [],
+            enabled: [{ id: input.pluginId, enabled: input.enabled }],
           },
         }),
       describe: (_result, input, rawSourceClientId) => ({
         action: "plugin-toggle",
         details: {
+          pluginsChanged: true,
           pluginName: input.pluginName,
           pluginEnabled: input.enabled,
         },

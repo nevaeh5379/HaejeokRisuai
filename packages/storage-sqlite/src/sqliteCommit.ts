@@ -439,6 +439,7 @@ export function countSqliteCommitStatements(commit: StorageSqlCommit): number {
       0,
     );
     total += commit.plugins.scripts?.length ?? 0;
+    total += commit.plugins.enabled?.length ?? 0;
     if (commit.plugins.order) total += 1 + commit.plugins.order.length;
   }
 
@@ -889,6 +890,13 @@ async function applyPlugins(commit: StorageSqlCommit, execute: SqliteExecute) {
        ON CONFLICT(plugin_id) DO UPDATE SET
          script=excluded.script, updated_at=datetime('now')`,
       [script.id, script.script],
+    );
+  }
+
+  for (const update of commit.plugins.enabled ?? []) {
+    await execute(
+      "UPDATE plugin_records SET enabled = ?, updated_at = datetime('now') WHERE plugin_id = ?",
+      [update.enabled ? 1 : 0, update.id],
     );
   }
 

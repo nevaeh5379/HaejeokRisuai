@@ -46,14 +46,24 @@ export class RemoteSqlDocumentClient {
     return { status: "ok", body: (await response.json()) as T };
   }
 
-  loadPlugins(enabledOnly: boolean, hash?: string) {
-    return this.getCached<{ plugins: unknown[]; hash: string }>(
+  loadPlugins<T>(enabledOnly: boolean, hash?: string) {
+    return this.getCached<{ plugins: T[]; hash: string }>(
       `/api/database-v2/plugins${enabledOnly ? "?enabledOnly=1" : ""}`,
       hash
         ? `"risu-plugins-${enabledOnly ? "runtime-" : ""}${hash}"`
         : undefined,
-      "PostgreSQL plugins load failed",
+      "SQL plugins load failed",
     );
+  }
+
+  async loadPluginScript(pluginId: string): Promise<string | null> {
+    const result = await this.getCached<{ script: string }>(
+      `/api/database-v2/plugins/${encodeURIComponent(pluginId)}/script`,
+      undefined,
+      "SQL plugin script load failed",
+    );
+    if (result.status === "missing") return null;
+    return result.status === "ok" ? result.body.script : null;
   }
 
   async setPluginEnabled(

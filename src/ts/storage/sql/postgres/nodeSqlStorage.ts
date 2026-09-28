@@ -13,6 +13,7 @@ import type {
   customscript,
 } from "../../database/schema";
 import type { RisuModule } from "../../../process/modules";
+import type { PluginMetadata } from "../../../plugins/pluginTypes";
 import type {
   INodeSqlStorageAdmin,
   SqlStartupDataResult,
@@ -49,6 +50,8 @@ import {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
+import type { IPluginStorage } from "../pluginStorage";
+import { NodePluginStorage } from "./nodePluginStorage";
 import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
 import {
   PortableDatabaseStreamValidator,
@@ -183,6 +186,7 @@ export {
 
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
+  readonly plugin: IPluginStorage;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
   private readonly clientId = getNodeClientSessionId();
@@ -219,9 +223,14 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     name: "risuaiPostgresScripts",
   });
 
-  private memoryPluginsCache: { hash: string; plugins: any[] } | null = null;
-  private memoryRuntimePluginsCache: { hash: string; plugins: any[] } | null =
-    null;
+  private memoryPluginsCache: {
+    hash: string;
+    plugins: PluginMetadata[];
+  } | null = null;
+  private memoryRuntimePluginsCache: {
+    hash: string;
+    plugins: PluginMetadata[];
+  } | null = null;
   private memoryPluginStorageCache: {
     hash: string;
     pluginCustomStorage: Record<string, any>;
@@ -291,6 +300,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.apiClient,
       this.getAuth,
       this.clientId,
+    );
+    this.plugin = new NodePluginStorage(
+      this,
+      this.documentClient,
+      this.loadPlugins.bind(this),
     );
   }
 
@@ -426,11 +440,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
 
   async loadPlugins(options?: {
     enabledOnly?: boolean;
-  }): Promise<any[] | null> {
+  }): Promise<PluginMetadata[] | null> {
     if (!(await this.ensureEnabled())) return null;
     const enabledOnly = options?.enabledOnly === true;
     const cacheKey = enabledOnly ? "runtime-cache" : "cache";
-    let cached: { hash: string; plugins: any[] } | null = enabledOnly
+    let cached: { hash: string; plugins: PluginMetadata[] } | null = enabledOnly
       ? this.memoryRuntimePluginsCache
       : this.memoryPluginsCache;
     if (!cached) {
@@ -440,7 +454,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         cached = null;
       }
     }
-    const result = await this.documentClient.loadPlugins(
+    const result = await this.documentClient.loadPlugins<PluginMetadata>(
       enabledOnly,
       cached?.hash,
     );
@@ -452,7 +466,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     if (result.status !== "ok") return null;
     const entry = {
       hash: result.body.hash,
-      plugins: (result.body.plugins ?? []) as any[],
+      plugins: result.body.plugins ?? [],
     };
     if (enabledOnly) this.memoryRuntimePluginsCache = entry;
     else this.memoryPluginsCache = entry;
