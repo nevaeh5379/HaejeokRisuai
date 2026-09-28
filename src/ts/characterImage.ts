@@ -105,18 +105,21 @@ class CharacterImageCache extends Map<string, string> {
         evictableFullResolutionCount += 1;
       }
     }
+    // Evict items by iterating over keys directly to avoid O(n^2) time complexity
+    // and massive garbage collection overhead that comes with spreading [...keys()] on every eviction.
     if (evictableFullResolutionCount > maxFullResolution) {
-      for (const key of [...super.keys()]) {
+      for (const key of super.keys()) {
         if (!this.isFullResolutionKey(key) || this.isPinned(key)) continue;
         this.delete(key);
         evictableFullResolutionCount -= 1;
         if (evictableFullResolutionCount <= maxFullResolution) break;
       }
     }
-    while (this.size > maxEntries) {
-      const oldest = [...super.keys()].find((key) => !this.isPinned(key));
-      if (oldest === undefined) break;
-      this.delete(oldest);
+    for (const key of super.keys()) {
+      if (this.size <= maxEntries) break;
+      if (!this.isPinned(key)) {
+        this.delete(key);
+      }
     }
   }
 }
@@ -134,7 +137,7 @@ export function unpinCharacterImageCache(key: string): void {
 }
 
 export function releaseCharacterImageCache(prefix: string): void {
-  for (const key of [...fullImageBlobCache.keys()]) {
+  for (const key of fullImageBlobCache.keys()) {
     if (key.startsWith(prefix)) fullImageBlobCache.delete(key);
   }
 }
