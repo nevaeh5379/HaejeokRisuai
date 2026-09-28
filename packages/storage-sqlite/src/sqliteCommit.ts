@@ -432,6 +432,16 @@ export function countSqliteCommitStatements(commit: StorageSqlCommit): number {
     if (commit.modules.order) total += 1 + commit.modules.order.length;
   }
 
+  if (commit.plugins) {
+    total += commit.plugins.deletes.length;
+    total += commit.plugins.upserts.reduce(
+      (count, entry) => count + 1 + countReplaceNodeStatements(entry.data),
+      0,
+    );
+    total += commit.plugins.scripts?.length ?? 0;
+    if (commit.plugins.order) total += 1 + commit.plugins.order.length;
+  }
+
   for (const entry of commit.characters) {
     const data = entry.data as Record<string, unknown>;
     total += 1 + countReplaceNodeStatements(data, replacingEntities);
@@ -492,8 +502,10 @@ export async function applySqliteCommit(
     await execute("DELETE FROM plugin_custom_storage");
     await execute("DELETE FROM bot_presets");
     await execute("DELETE FROM module_records");
+    await execute("DELETE FROM plugin_records");
   }
   await applyModules(commit, execute);
+  await applyPlugins(commit, execute);
   await applySettingUpsert(commit, execute);
   await applySettingDeletes(commit, execute);
 
@@ -819,6 +831,71 @@ async function applyModules(commit: StorageSqlCommit, execute: SqliteExecute) {
     for (const [position, id] of commit.modules.order.entries()) {
       await execute(
         "UPDATE module_records SET position = ? WHERE module_id = ?",
+        [position, id],
+      );
+    }
+  }
+}
+
+async function applyPlugins(commit: StorageSqlCommit, execute: SqliteExecute) {
+  if (!commit.plugins) return;
+
+  for (const id of commit.plugins.deletes) {
+    await execute("DELETE FROM plugin_records WHERE plugin_id = ?", [id]);
+  }
+  if (commit.plugins.order) {
+    await execute("UPDATE plugin_records SET position = position + 1000000000");
+  }
+  for (const entry of commit.plugins.upserts) {
+    const data = entry.data as Record<string, unknown>;
+    if (typeof data.name !== "string" || data.name.length === 0) {
+      throw new Error(`Plugin ${entry.id} must have a non-empty name`);
+    }
+    await execute(
+      `INSERT INTO plugin_records
+        (plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled, updated_at)
+       VALUES (?, COALESCE(?, (SELECT position FROM plugin_records WHERE plugin_id = ?),
+         (SELECT COALESCE(MAX(position) + 1, 0) FROM plugin_records)),
+         ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(plugin_id) DO UPDATE SET
+         position=excluded.position, name=excluded.name, display_name=excluded.display_name,
+         api_version=excluded.api_version, plugin_version=excluded.plugin_version,
+         update_url=excluded.update_url, enabled=excluded.enabled, updated_at=datetime('now')`,
+      [
+        entry.id,
+        entry.position ?? null,
+        entry.id,
+        data.name,
+        typeof data.displayName === "string" ? data.displayName : null,
+        data.version == null ? null : String(data.version),
+        typeof data.versionOfPlugin === "string" ? data.versionOfPlugin : null,
+        typeof data.updateURL === "string" ? data.updateURL : null,
+        data.enabled === false ? 0 : 1,
+      ],
+    );
+    await replaceNodes(
+      execute,
+      "plugin_extension_nodes",
+      ["plugin_id"],
+      [entry.id],
+      data,
+    );
+  }
+
+  for (const script of commit.plugins.scripts ?? []) {
+    await execute(
+      `INSERT INTO plugin_scripts (plugin_id, script, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(plugin_id) DO UPDATE SET
+         script=excluded.script, updated_at=datetime('now')`,
+      [script.id, script.script],
+    );
+  }
+
+  if (commit.plugins.order) {
+    for (const [position, id] of commit.plugins.order.entries()) {
+      await execute(
+        "UPDATE plugin_records SET position = ? WHERE plugin_id = ?",
         [position, id],
       );
     }

@@ -78,6 +78,13 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
         commit.modules.deletes.length > 0 ||
         commit.modules.order !== undefined),
     ) ||
+    Boolean(
+      commit.plugins &&
+      (commit.plugins.upserts.length > 0 ||
+        commit.plugins.deletes.length > 0 ||
+        commit.plugins.order !== undefined ||
+        (commit.plugins.scripts?.length ?? 0) > 0),
+    ) ||
     commit.characters.length > 0 ||
     (commit.characterTouches !== undefined &&
       commit.characterTouches.length > 0) ||

@@ -87,6 +87,41 @@ CREATE TABLE IF NOT EXISTS module_extension_nodes (
 );
 CREATE INDEX IF NOT EXISTS module_nodes_parent_idx ON module_extension_nodes (module_id, parent_node_id, node_order);
 
+CREATE TABLE IF NOT EXISTS plugin_records (
+    plugin_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    name TEXT NOT NULL,
+    display_name TEXT,
+    api_version TEXT,
+    plugin_version TEXT,
+    update_url TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS plugin_records_name_idx ON plugin_records (name);
+CREATE INDEX IF NOT EXISTS plugin_records_enabled_position_idx ON plugin_records (enabled, position);
+
+CREATE TABLE IF NOT EXISTS plugin_scripts (
+    plugin_id TEXT PRIMARY KEY REFERENCES plugin_records(plugin_id) ON DELETE CASCADE,
+    script TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS plugin_extension_nodes (
+    plugin_id TEXT NOT NULL REFERENCES plugin_records(plugin_id) ON DELETE CASCADE,
+    node_id INTEGER NOT NULL, parent_node_id INTEGER, node_order INTEGER NOT NULL CHECK (node_order >= 0),
+    object_key TEXT, object_key_encoded TEXT,
+    value_type TEXT NOT NULL CHECK (value_type IN ('null','undefined','boolean','number','string','array','object')),
+    text_value TEXT, encoded_text_value TEXT, number_value REAL,
+    boolean_value INTEGER CHECK (boolean_value IN (0, 1)),
+    PRIMARY KEY (plugin_id, node_id),
+    FOREIGN KEY (plugin_id, parent_node_id) REFERENCES plugin_extension_nodes(plugin_id, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL),
+    CHECK (object_key IS NULL OR object_key_encoded IS NULL)
+);
+CREATE INDEX IF NOT EXISTS plugin_nodes_parent_idx ON plugin_extension_nodes (plugin_id, parent_node_id, node_order);
+
 CREATE TABLE IF NOT EXISTS characters (
     id TEXT PRIMARY KEY, position INTEGER NOT NULL CHECK (position >= 0),
     kind TEXT NOT NULL DEFAULT 'character' CHECK (kind IN ('character', 'group')),
