@@ -137,6 +137,12 @@ function deriveSqlCommitImpact(commit) {
                 (commit.modules.upserts.length > 0 ||
                     commit.modules.deletes.length > 0 ||
                     commit.modules.order !== undefined))),
+        pluginsChanged: Boolean(replaceAll ||
+            (commit.plugins !== undefined &&
+                (commit.plugins.upserts.length > 0 ||
+                    commit.plugins.deletes.length > 0 ||
+                    commit.plugins.order !== undefined ||
+                    (commit.plugins.scripts?.length ?? 0) > 0))),
     };
 }
 exports.RESERVED_ROOT_SETTING_KEYS = Object.freeze([
@@ -351,6 +357,35 @@ class SqlCommitParser {
             : this.parseIds(value.order, "modules.order");
         return { upserts, deletes, order };
     }
+    parsePlugins(value) {
+        if (value === undefined)
+            return undefined;
+        if (!isRecord(value))
+            throw new this.PayloadError("plugins must be an object");
+        const upserts = this.parseRows(value.upserts, "plugins.upserts", (item, index) => {
+            this.assertId(item.id, `plugins.upserts[${index}].id`);
+            if (item.position !== undefined)
+                this.assertPosition(item.position, `plugins.upserts[${index}].position`);
+            if (!isRecord(item.data))
+                throw new this.PayloadError(`plugins.upserts[${index}].data must be an object`);
+            if (Object.prototype.hasOwnProperty.call(item.data, "script"))
+                throw new this.PayloadError(`plugins.upserts[${index}].data.script must be written through plugins.scripts`);
+            return { id: item.id, position: item.position, data: item.data };
+        });
+        const deletes = this.parseIds(value.deletes, "plugins.deletes");
+        const order = value.order === undefined
+            ? undefined
+            : this.parseIds(value.order, "plugins.order");
+        const scripts = value.scripts === undefined
+            ? undefined
+            : this.parseRows(value.scripts, "plugins.scripts", (item, index) => {
+                this.assertId(item.id, `plugins.scripts[${index}].id`);
+                if (typeof item.script !== "string")
+                    throw new this.PayloadError(`plugins.scripts[${index}].script must be a string`);
+                return { id: item.id, script: item.script };
+            });
+        return { upserts, deletes, order, scripts };
+    }
     // Parses plugin-storage upserts, deletes, and the optional clear operation.
     parsePluginStorage(value) {
         if (value === undefined) {
@@ -423,6 +458,7 @@ class SqlCommitParser {
         const root = this.parseRoot(payload.root);
         const presets = this.parsePresets(payload.presets);
         const modules = this.parseModules(payload.modules);
+        const plugins = this.parsePlugins(payload.plugins);
         const pluginStorage = this.parsePluginStorage(payload.pluginStorage);
         const entities = this.parseEntities(payload);
         return {
@@ -433,6 +469,7 @@ class SqlCommitParser {
             ...pluginStorage,
             presets,
             modules,
+            plugins,
             ...entities,
         };
     }

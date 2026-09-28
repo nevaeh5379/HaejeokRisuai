@@ -42,6 +42,17 @@ export interface SqlModuleUpsert {
   data: object;
 }
 
+export interface SqlPluginUpsert {
+  id: string;
+  position?: number;
+  data: object;
+}
+
+export interface SqlPluginScriptUpsert {
+  id: string;
+  script: string;
+}
+
 export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
   baseRevision: number;
   idempotencyKey?: string;
@@ -66,6 +77,12 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
     upserts: SqlModuleUpsert[];
     deletes: string[];
     order?: string[];
+  };
+  plugins?: {
+    upserts: SqlPluginUpsert[];
+    deletes: string[];
+    order?: string[];
+    scripts?: SqlPluginScriptUpsert[];
   };
   characters: SqlCharacterUpsert[];
   characterTouches?: SqlCharacterTouch[];
@@ -112,6 +129,12 @@ export interface NormalizedSqlCommit {
     deletes: string[];
     order?: string[];
   };
+  plugins?: {
+    upserts: SqlPluginUpsert[];
+    deletes: string[];
+    order?: string[];
+    scripts?: SqlPluginScriptUpsert[];
+  };
   characters: SqlCharacterUpsert[];
   characterTouches: SqlCharacterTouch[];
   chats: SqlChatUpsert[];
@@ -155,6 +178,7 @@ export interface SqlCommitImpact {
   readonly pluginStorageCleared: boolean;
   readonly presetsChanged: boolean;
   readonly modulesChanged: boolean;
+  readonly pluginsChanged: boolean;
 }
 
 /**
@@ -321,6 +345,14 @@ export function deriveSqlCommitImpact(
         (commit.modules.upserts.length > 0 ||
           commit.modules.deletes.length > 0 ||
           commit.modules.order !== undefined)),
+    ),
+    pluginsChanged: Boolean(
+      replaceAll ||
+      (commit.plugins !== undefined &&
+        (commit.plugins.upserts.length > 0 ||
+          commit.plugins.deletes.length > 0 ||
+          commit.plugins.order !== undefined ||
+          (commit.plugins.scripts?.length ?? 0) > 0)),
     ),
   };
 }
@@ -639,6 +671,55 @@ class SqlCommitParser {
     return { upserts, deletes, order };
   }
 
+  private parsePlugins(value: unknown): NormalizedSqlCommit["plugins"] {
+    if (value === undefined) return undefined;
+    if (!isRecord(value))
+      throw new this.PayloadError("plugins must be an object");
+
+    const upserts = this.parseRows(
+      value.upserts,
+      "plugins.upserts",
+      (item, index) => {
+        this.assertId(item.id, `plugins.upserts[${index}].id`);
+        if (item.position !== undefined)
+          this.assertPosition(
+            item.position,
+            `plugins.upserts[${index}].position`,
+          );
+        if (!isRecord(item.data))
+          throw new this.PayloadError(
+            `plugins.upserts[${index}].data must be an object`,
+          );
+        if (Object.prototype.hasOwnProperty.call(item.data, "script"))
+          throw new this.PayloadError(
+            `plugins.upserts[${index}].data.script must be written through plugins.scripts`,
+          );
+        return { id: item.id, position: item.position, data: item.data };
+      },
+    );
+    const deletes = this.parseIds(value.deletes, "plugins.deletes");
+    const order =
+      value.order === undefined
+        ? undefined
+        : this.parseIds(value.order, "plugins.order");
+    const scripts =
+      value.scripts === undefined
+        ? undefined
+        : this.parseRows(
+            value.scripts,
+            "plugins.scripts",
+            (item, index) => {
+              this.assertId(item.id, `plugins.scripts[${index}].id`);
+              if (typeof item.script !== "string")
+                throw new this.PayloadError(
+                  `plugins.scripts[${index}].script must be a string`,
+                );
+              return { id: item.id, script: item.script };
+            },
+          );
+    return { upserts, deletes, order, scripts };
+  }
+
   // Parses plugin-storage upserts, deletes, and the optional clear operation.
   private parsePluginStorage(value: unknown): {
     pluginStorageUpserts: SqlSettingUpsert[];
@@ -772,6 +853,7 @@ class SqlCommitParser {
     const root = this.parseRoot(payload.root);
     const presets = this.parsePresets(payload.presets);
     const modules = this.parseModules(payload.modules);
+    const plugins = this.parsePlugins(payload.plugins);
     const pluginStorage = this.parsePluginStorage(payload.pluginStorage);
     const entities = this.parseEntities(payload);
 
@@ -783,6 +865,7 @@ class SqlCommitParser {
       ...pluginStorage,
       presets,
       modules,
+      plugins,
       ...entities,
     };
   }
