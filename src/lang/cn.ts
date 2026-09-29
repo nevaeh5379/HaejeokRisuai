@@ -1391,6 +1391,7 @@ export const languageChinese = {
   parameters: "参数",
   sizeAndSpeed: "大小与速度",
   useLegacyGUI: "使用旧版接口",
+  useLiquidLoadingSpinner: "使用新加载动画（液体）",
   claudeCachingExperimental: "Claude 缓存",
   openClose: "开启／关闭",
   hideApiKeys: "隐藏 API 密钥",

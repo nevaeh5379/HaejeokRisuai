@@ -1402,6 +1402,7 @@ export const languageChineseTraditional = {
   parameters: "參數",
   sizeAndSpeed: "大小與速度",
   useLegacyGUI: "切換至舊版介面",
+  useLiquidLoadingSpinner: "使用新載入動畫（液體）",
   claudeCachingExperimental: "Claude 快取功能 (實驗性)",
   openClose: "開啟／關閉",
   hideApiKeys: "隱藏 API 金鑰",

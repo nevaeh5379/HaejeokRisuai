@@ -1459,6 +1459,7 @@ export const languageVietnamese = {
   parameters: "Tham số",
   sizeAndSpeed: "Kích thước và Tốc độ",
   useLegacyGUI: "Sử dụng GUI cũ",
+  useLiquidLoadingSpinner: "Dùng hoạt ảnh tải mới (lỏng)",
   claudeCachingExperimental: "Lưu trữ đệm Claude",
   openClose: "Mở/Đóng",
   hideApiKeys: "Ẩn khóa API",

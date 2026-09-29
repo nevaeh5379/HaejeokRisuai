@@ -1575,6 +1575,7 @@ export const languageEnglish = {
   loreBookToken: "Lorebook Max Tokens",
   lowSpecMode: "Low-spec Mode",
   waitingMinigame: "Waiting Minigame",
+  useLiquidLoadingSpinner: "Use New Loading Spinner (Liquid)",
   dinoPressStart: "Tap or press Space to start",
   dinoWaitingDescription:
     "Chrome Dino — play while waiting for the AI response",
