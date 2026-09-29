@@ -578,7 +578,10 @@ function getDomainDbValue(key: string): any {
   }
 }
 
-function setDomainDbValue(key: string, value: any): boolean {
+function setDomainDbValue(
+  key: string,
+  value: any,
+): true | false | Promise<void> {
   switch (key) {
     case "characters":
       characterStore.characters = value;
@@ -596,8 +599,7 @@ function setDomainDbValue(key: string, value: any): boolean {
       if (!Array.isArray(value)) {
         throw new TypeError("Plugin database plugins must be an array");
       }
-      void pluginStore.replaceCompatibilityPlugins(value);
-      return true;
+      return pluginStore.replaceCompatibilityPlugins(value);
     case "personas":
       personaStore.replace(value);
       return true;
@@ -615,8 +617,11 @@ function getAllowedDbValue(key: string): any {
   return settingsStore.state[key];
 }
 
-function setAllowedDbValue(key: string, value: any): void {
-  if (setDomainDbValue(key, value)) return;
+function setAllowedDbValue(key: string, value: any): void | Promise<void> {
+  const domainResult = setDomainDbValue(key, value);
+  if (domainResult !== false) {
+    return domainResult === true ? undefined : domainResult;
+  }
   if (isPresetStoreSettingKey(key)) {
     presetStore.set(key, value);
   } else {
@@ -827,7 +832,15 @@ export const getV2PluginAPIs = () => {
         set(target, prop, value) {
           if (typeof prop === "string") {
             if (allowedDbKeys.includes(prop)) {
-              setAllowedDbValue(prop, value);
+              const pending = setAllowedDbValue(prop, value);
+              if (pending) {
+                void pending.catch((error) => {
+                  console.error(
+                    `Failed to persist compatibility database key '${prop}':`,
+                    error,
+                  );
+                });
+              }
               return true;
             } else {
               settingsStore.setPluginCustomStorageKey(prop, value);
@@ -936,7 +949,15 @@ export const getV2PluginAPIs = () => {
       if (!newDb || typeof newDb !== "object") return;
       for (const key of Object.keys(newDb)) {
         if (allowedDbKeys.includes(key)) {
-          setAllowedDbValue(key, newDb[key]);
+          const pending = setAllowedDbValue(key, newDb[key]);
+          if (pending) {
+            void pending.catch((error) => {
+              console.error(
+                `Failed to persist compatibility database key '${key}':`,
+                error,
+              );
+            });
+          }
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }
@@ -953,7 +974,7 @@ export const getV2PluginAPIs = () => {
         }
 
         if (allowedDbKeys.includes(key)) {
-          setAllowedDbValue(key, newDb[key]);
+          await setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }
