@@ -1,8 +1,14 @@
 package co.aiclient.risu;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.os.SystemClock;
 import android.util.Base64;
+import android.util.Log;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -20,14 +26,23 @@ import java.util.Map;
 public final class RisuWebViewClient extends BridgeWebViewClient {
     public static final String ASSET_PREFIX = "/_risu_asset_/";
     public static final String THUMB_PREFIX = "/_risu_thumb_/";
+    private static final String TAG = "RisuWebViewClient";
+    /** Suppresses restarts when the renderer dies again shortly after one. */
+    private static final long RESTART_LOOP_GUARD_MS = 30_000;
+    private static long lastRendererRestartAt = 0L;
+
     private final File assetRoot;
     private final File thumbnailRoot;
+    private final Context context;
     private final Runnable pageFinishedCallback;
 
-    public RisuWebViewClient(Bridge bridge, Context context, Runnable pageFinishedCallback) {
+    public RisuWebViewClient(
+        Bridge bridge, Context context, Runnable pageFinishedCallback
+    ) {
         super(bridge);
         assetRoot = new File(context.getFilesDir(), "risuai-assets");
         thumbnailRoot = new File(context.getCacheDir(), "risu-image-thumbnails");
+        this.context = context;
         this.pageFinishedCallback = pageFinishedCallback;
     }
 
@@ -35,6 +50,46 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
     public void onPageFinished(WebView view, String url) {
         super.onPageFinished(view, url);
         pageFinishedCallback.run();
+    }
+
+    /**
+     * The renderer process died (e.g. a plugin sandbox exhausted the JS
+     * heap). The WebView is already unusable and Capacitor's Bridge owns
+     * it, so re-creating only the WebView is unsafe — restarting the
+     * Activity is the verified path. The app process survives, so
+     * persisted state is intact. Before restarting, blame the plugin
+     * that was mid-load when the renderer died so the next boot skips it.
+     */
+    @Override
+    public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return false; // API 26- only; default behavior below min
+        }
+        Log.e(TAG, "Renderer gone (crashed=" + detail.didCrash() + ")");
+        CrashGuardPlugin.blameLoadingPlugin(context);
+        restartActivity();
+        return true; // true = the app handled the crash
+    }
+
+    private void restartActivity() {
+        // Loop guard: if we restarted less than 30s ago and the renderer
+        // died again, the cause is likely the main bundle — stop restarting.
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastRendererRestartAt < RESTART_LOOP_GUARD_MS) {
+            Log.e(TAG, "Renderer died again within the restart guard window; not restarting.");
+            return;
+        }
+        lastRendererRestartAt = now;
+
+        Intent intent = context.getPackageManager()
+            .getLaunchIntentForPackage(context.getPackageName());
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            context.startActivity(intent);
+        }
+        if (context instanceof Activity) {
+            ((Activity) context).finish();
+        }
     }
 
     @Override

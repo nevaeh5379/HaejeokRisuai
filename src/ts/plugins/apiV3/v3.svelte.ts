@@ -1559,6 +1559,14 @@ type V3PluginInstance = {
 
 const v3PluginInstances: V3PluginInstance[] = [];
 
+/**
+ * CrashGuard: how long the "loading plugin X" ledger entry survives after
+ * the last sandbox finished loading. A renderer death inside this window
+ * blames the last-loaded plugin; after it, idle crashes restart without
+ * blaming anyone.
+ */
+const CRASH_GUARD_LEDGER_GRACE_MS = 10_000;
+
 export async function loadV3Plugins(plugins: RisuPlugin[]) {
   await Promise.all(
     v3PluginInstances.map(async (instance) => {
@@ -1576,8 +1584,19 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   // older mobile browsers, so let one document finish loading before the
   // next sandbox is created.
   for (const plugin of plugins) {
+    // CrashGuard: record which plugin is about to load so a renderer
+    // death mid-load can blame it (Android only; no-op elsewhere).
+    const { setLoadingPlugin } = await import("../pluginCrashGuard");
+    await setLoadingPlugin(plugin.name);
     await executePluginV3(plugin);
   }
+  // Boot finished loading plugin sandboxes. Keep the last ledger entry
+  // for a grace window so an init-path runaway is still attributable,
+  // then clear it — later idle crashes restart without blaming anyone.
+  const { clearLoadingPlugin } = await import("../pluginCrashGuard");
+  setTimeout(() => {
+    void clearLoadingPlugin();
+  }, CRASH_GUARD_LEDGER_GRACE_MS);
 }
 
 export async function executePluginV3(plugin: RisuPlugin) {

@@ -943,6 +943,8 @@ export const languageSpanish = {
   successExport:
     "Exportado y descargado exitosamente en tu directorio de descargas",
   successImport: "Importado exitosamente",
+  pluginsAutoDisabled:
+    "Se desactivaron los plugins que causaron un fallo: {0}. Puedes volver a activarlos en Ajustes.",
   importedCharacter: "Personaje Importado",
   alwaysActive: "Siempre Activo",
   additionalPrompt: "Prompt Adicional",

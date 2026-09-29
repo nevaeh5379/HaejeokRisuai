@@ -937,6 +937,8 @@ export const languageGerman = {
   successExport:
     "Erfolgreich exportiert und in Ihrem Download-Verzeichnis gespeichert",
   successImport: "Erfolgreich importiert",
+  pluginsAutoDisabled:
+    "Deaktiviertes Plugin(s), das einen Absturz verursacht hat: {0}. Du kannst es in den Einstellungen wieder aktivieren.",
   importedCharacter: "Importierter Charakter",
   alwaysActive: "Immer aktiv",
   additionalPrompt: "Zusätzliche Anweisung",

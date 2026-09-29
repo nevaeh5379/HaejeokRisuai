@@ -1602,6 +1602,8 @@ export const languageEnglish = {
   successExport:
     "Successfuly exported and downloaded to your download directory",
   successImport: "Successfuly imported",
+  pluginsAutoDisabled:
+    "Disabled plugin(s) that caused a crash: {0}. You can re-enable them in Settings.",
   importedCharacter: "Imported Character",
   alwaysActive: "Always Active",
   additionalPrompt: "Additional Prompt",

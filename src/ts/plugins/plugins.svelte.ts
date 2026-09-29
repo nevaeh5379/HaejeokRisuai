@@ -25,6 +25,10 @@ import {
   SafeIdbFactory,
   SafeLocalStorage,
 } from "./pluginSafeClass";
+import {
+  getBlockedPlugins,
+  clearBlockedPlugin,
+} from "./pluginCrashGuard";
 
 export const customProviderStore = writable([] as string[]);
 
@@ -500,9 +504,21 @@ export async function loadPlugins() {
     : (((await (await getSqlStorage()).loadPlugins({ enabledOnly: true })) as
         RisuPlugin[] | null) ?? []);
 
+  // CrashGuard: plugins the native side blamed for a renderer death
+  // mid-load are skipped until they are permanently disabled below.
+  const blocked = await getBlockedPlugins();
+  const blockedSet = new Set(blocked);
+
   const enabledPlugins = safeStructuredClone(plugins).filter(
-    (p: RisuPlugin) => p.enabled,
+    (p: RisuPlugin) => p.enabled && !blockedSet.has(p.name),
   );
+
+  // Keep the blocklist entries that matched an enabled plugin so they can
+  // be persisted (enabled=false) once boot stabilizes.
+  const blockedPresent = plugins.filter(
+    (p: RisuPlugin) => p.enabled && blockedSet.has(p.name),
+  );
+
   runtimePlugins = enabledPlugins;
   const pluginV2 = enabledPlugins.filter(
     (a: RisuPlugin) => a.version === 2 || a.version === "2.1",
@@ -516,6 +532,66 @@ export async function loadPlugins() {
   if (pluginV3.length > 0) {
     const { loadV3Plugins } = await import("./apiV3/v3.svelte");
     await loadV3Plugins(pluginV3);
+  }
+
+  if (blockedPresent.length > 0) {
+    await applyBlockedPlugins(blockedPresent);
+  }
+}
+
+/**
+ * CrashGuard follow-up: once boot stabilized far enough to load the
+ * remaining plugins, permanently disable the culprits in the DB (same
+ * path as the settings toggle), tell the native side to drop its
+ * blocklist entries, and surface what happened to the user.
+ */
+async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
+  const names = blockedPresent.map((p) => p.name);
+  console.warn(
+    `CrashGuard: permanently disabling plugin(s) blamed for a renderer crash: ${names.join(", ")}`,
+  );
+  for (const plugin of blockedPresent) {
+    try {
+      await setPluginEnabledByName(plugin.name, false);
+      await clearBlockedPlugin(plugin.name);
+    } catch (error) {
+      console.error(
+        `CrashGuard: failed to persist disabled state for ${plugin.name}`,
+        error,
+      );
+    }
+  }
+  const { alertToast } = await import("../alert");
+  alertToast(
+    language.pluginsAutoDisabled.replace("{0}", names.join(", ")),
+  );
+}
+
+/** Name-based variant of the togglePluginEnabled persistence path. */
+async function setPluginEnabledByName(
+  pluginName: string,
+  enabled: boolean,
+): Promise<void> {
+  await deferredSettingsLoader.ensureKey("plugins");
+  const storage = await getSqlStorage();
+  if (storage.setPluginEnabled) {
+    await storage.setPluginEnabled(pluginName, enabled);
+    settingsStore.hydrate((state) => {
+      const index = state.plugins?.findIndex(
+        (plugin) => plugin.name === pluginName,
+      );
+      if (index !== undefined && index !== -1) {
+        state.plugins[index].enabled = enabled;
+      }
+    });
+  } else {
+    const plugin = settingsStore.state.plugins?.find(
+      (p) => p.name === pluginName,
+    );
+    if (!plugin) return;
+    plugin.enabled = enabled;
+    settingsStore.set("plugins", settingsStore.state.plugins);
+    await settingsStore.flush();
   }
 }
 
