@@ -245,6 +245,25 @@ html.tauri-windows-vibrancy
   box-shadow: none;
 }
 
+html.tauri-windows-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .rs-chat-edge-fade-top {
+  left: 8px;
+  right: 8px;
+  border-top-left-radius: var(--risu-windows-chat-radius);
+  border-top-right-radius: var(--risu-windows-chat-radius);
+}
+
+html.tauri-windows-vibrancy
+  .default-chat-pane.has-chat-tabs
+  > .rs-chat-edge-fade-bottom {
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  border-bottom-left-radius: var(--risu-windows-chat-radius);
+  border-bottom-right-radius: var(--risu-windows-chat-radius);
+}
+
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
   position: relative;
   z-index: 3;

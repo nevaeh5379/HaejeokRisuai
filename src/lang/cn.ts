@@ -850,8 +850,7 @@ export const languageChinese = {
   userIcon: "你的头像",
   successExport: "已成功导出并保存至你的下载数据夹",
   successImport: "成功导入",
-  pluginsAutoDisabled:
-    "已禁用导致崩溃的插件：{0}。你可以在设置中重新启用。",
+  pluginsAutoDisabled: "已禁用导致崩溃的插件：{0}。你可以在设置中重新启用。",
   importedCharacter: "导入角色",
   alwaysActive: "始终激活",
   additionalPrompt: "附加提示词",
@@ -1483,6 +1482,20 @@ export const languageChinese = {
   home: "主页",
   showSavingIcon: "显示保存图标",
   showChatTabs: "显示聊天标签页",
+  chatEdgeFade: "聊天窗口边缘渐隐效果",
+  chatEdgeFadeDesc: "在聊天窗口顶部和底部边缘应用消息平滑渐隐效果。",
+  chatEdgeFadeSize: "聊天窗口边缘渐隐大小",
+  chatEdgeFadeCurve: "聊天窗口边缘渐隐曲线方式",
+  chatEdgeFadeCurveCosine: "余弦",
+  chatEdgeFadeCurveLinear: "线性",
+  chatEdgeFadeCurveEaseOut: "平缓末端",
+  chatEdgeFadeCurveBuffered: "包含缓冲区域",
+  chatEdgeFadeFromBottom: "底部渐隐从屏幕底部开始",
+  chatEdgeFadeFromBottomDesc:
+    "启用固定聊天输入框时，从屏幕底部而不是输入框上方开始应用底部渐隐效果。",
+  fixedChatTextareaBottomCover: "固定输入框底部遮挡层",
+  fixedChatTextareaBottomCoverDesc:
+    "使用固定聊天输入框时，用背景色填充边框下方的间隙，防止滚动的消息透出。",
   pluginVersionWarn:
     "这是插件的 {{plugin_version}} 版本。它与此版本的 Risuai 不兼容。请将插件更新到 {{required_version}} 版本。",
   imageTranslation: "图片翻译",

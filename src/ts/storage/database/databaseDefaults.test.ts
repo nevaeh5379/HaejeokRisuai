@@ -70,7 +70,8 @@ describe("normalizeDatabaseDefaults", () => {
     });
     expect(normalizeSettingsInput({}).androidWidgetBotCount).toBe(12);
     expect(
-      normalizeSettingsInput({ androidWidgetBotCount: 6 }).androidWidgetBotCount,
+      normalizeSettingsInput({ androidWidgetBotCount: 6 })
+        .androidWidgetBotCount,
     ).toBe(6);
     expect(custom.assetCacheEntries).toBe(80);
     expect(custom.assetCacheSizeMB).toBe(32);
@@ -169,6 +170,28 @@ describe("normalizeDatabaseDefaults", () => {
       showChatTabs: true,
     });
     expect(dbEnabled.showChatTabs).toBe(true);
+  });
+
+  it("preserves explicit chatEdgeFade, chatEdgeFadeSize, and chatEdgeFadeCurve settings", () => {
+    const dbDefault = normalizeDatabaseInput({});
+    expect(dbDefault.chatEdgeFade).toBe(false);
+    expect(dbDefault.chatEdgeFadeSize).toBe(48);
+    expect(dbDefault.chatEdgeFadeCurve).toBe("cosine");
+    expect(dbDefault.chatEdgeFadeFromBottom).toBe(false);
+    expect(dbDefault.fixedChatTextareaBottomCover).toBe(false);
+
+    const dbEnabled = normalizeDatabaseInput({
+      chatEdgeFade: true,
+      chatEdgeFadeSize: 64,
+      chatEdgeFadeCurve: "ease-out",
+      chatEdgeFadeFromBottom: true,
+      fixedChatTextareaBottomCover: true,
+    });
+    expect(dbEnabled.chatEdgeFade).toBe(true);
+    expect(dbEnabled.chatEdgeFadeSize).toBe(64);
+    expect(dbEnabled.chatEdgeFadeCurve).toBe("ease-out");
+    expect(dbEnabled.chatEdgeFadeFromBottom).toBe(true);
+    expect(dbEnabled.fixedChatTextareaBottomCover).toBe(true);
   });
 
   it("keeps relational character data outside schema normalization", () => {

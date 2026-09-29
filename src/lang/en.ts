@@ -2334,6 +2334,21 @@ export const languageEnglish = {
   home: "Home",
   showSavingIcon: "Show Saving Icon",
   showChatTabs: "Show Chat Tabs",
+  chatEdgeFade: "Chat Edge Fade",
+  chatEdgeFadeDesc:
+    "Applies a smooth fade-out effect to messages near the top and bottom edges of the chat screen.",
+  chatEdgeFadeSize: "Chat Edge Fade Size",
+  chatEdgeFadeCurve: "Chat Edge Fade Curve",
+  chatEdgeFadeCurveCosine: "Cosine",
+  chatEdgeFadeCurveLinear: "Linear",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Buffered",
+  chatEdgeFadeFromBottom: "Start Bottom Fade from Screen Bottom",
+  chatEdgeFadeFromBottomDesc:
+    "When fixed chat input is enabled, starts the bottom fade from the bottom of the screen instead of above the input box.",
+  fixedChatTextareaBottomCover: "Fixed Input Bottom Barrier",
+  fixedChatTextareaBottomCoverDesc:
+    "When fixed chat input is enabled, fills the bottom padding below the input border with the background color to prevent scrolled text from peeking through.",
   pluginVersionWarn:
     "This is {{plugin_version}} version of the plugin. Which is not compatible with this version of Risuai. Please update the plugin to {{required_version}} version.",
   imageTranslation: "Image Translation",

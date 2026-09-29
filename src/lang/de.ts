@@ -1577,6 +1577,21 @@ export const languageGerman = {
   home: "Startseite",
   showSavingIcon: "Speichersymbol anzeigen",
   showChatTabs: "Chat-Tabs anzeigen",
+  chatEdgeFade: "Chat-Rand-Ausblendeffekt",
+  chatEdgeFadeDesc:
+    "Wendet einen sanften Ausblendeffekt auf Nachrichten in der Nähe der oberen und unteren Kanten des Chatfensters an.",
+  chatEdgeFadeSize: "Chat-Rand-Ausblendgröße",
+  chatEdgeFadeCurve: "Chat-Rand-Ausblendungskurve",
+  chatEdgeFadeCurveCosine: "Kosinus",
+  chatEdgeFadeCurveLinear: "Linear",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Gepuffert",
+  chatEdgeFadeFromBottom: "Unten ausblenden ab Bildschirmrand",
+  chatEdgeFadeFromBottomDesc:
+    "Startet das Ausblenden am unteren Bildschirmrand statt über dem fixierten Eingabefeld.",
+  fixedChatTextareaBottomCover: "Untere Abdeckung für fixiertes Eingabefeld",
+  fixedChatTextareaBottomCoverDesc:
+    "Füllt den unteren Abstand unter dem fixierten Eingabefeld mit der Hintergrundfarbe aus, damit gescrollter Text nicht durchscheint.",
   pluginVersionWarn:
     "Dies ist Version {{plugin_version}} des Plugins, die nicht mit dieser Version von Risuai kompatibel ist. Bitte aktualisieren Sie das Plugin auf Version {{required_version}}.",
   imageTranslation: "Bildübersetzung",
