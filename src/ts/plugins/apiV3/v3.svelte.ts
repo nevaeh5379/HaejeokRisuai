@@ -907,7 +907,10 @@ const makeRisuaiAPIV3 = (
         if (includeOnly !== "all" && !includeOnly.includes(key)) {
           continue;
         }
-        (liteDB as any)[key] = $state.snapshot(db[key]);
+        (liteDB as any)[key] =
+          key === "plugins"
+            ? $state.snapshot(await pluginStore.loadCompatibilityPlugins())
+            : $state.snapshot(db[key]);
       }
       return liteDB;
     },

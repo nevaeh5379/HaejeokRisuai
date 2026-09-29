@@ -12,6 +12,9 @@ import { StoreCommitQueue } from "./storeCommitQueue";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 type PluginMetadataDraft = Omit<PluginMetadata, "id" | "position">;
+type CompatibilityPlugin = Omit<PluginMetadata, "id" | "position"> & {
+  script: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -190,16 +193,30 @@ class PluginStore
     return storedMetadata;
   }
 
-  compatibilityPlugins(): Array<
-    Omit<PluginMetadata, "id" | "position"> & { script: string }
-  > {
+  compatibilityPlugins(): CompatibilityPlugin[] {
     return this.plugins.map((plugin) => {
       const { id, position: _position, ...metadata } = plugin;
+      const script = this.scriptCache.get(id);
+      if (!script) {
+        throw new Error(
+          `Plugin script is not loaded for compatibility access: ${id}`,
+        );
+      }
       return {
         ...metadata,
-        script: this.scriptCache.get(id)?.script ?? "",
+        script: script.script,
       };
     });
+  }
+
+  async loadCompatibilityPlugins(): Promise<CompatibilityPlugin[]> {
+    // Keep reads sequential. A compatibility snapshot necessarily contains all
+    // scripts, but decoding them one at a time avoids a transient memory spike
+    // on older Android devices.
+    for (const plugin of this.plugins) {
+      await this.loadScript(plugin.id);
+    }
+    return this.compatibilityPlugins();
   }
 
   async replaceCompatibilityPlugins(

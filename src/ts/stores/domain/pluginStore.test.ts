@@ -59,4 +59,25 @@ describe("PluginStore", () => {
     expect(storage.plugin.loadAll).toHaveBeenCalledTimes(2);
     expect(storage.commit).not.toHaveBeenCalled();
   });
+
+  it("loads uncached scripts before creating a compatibility snapshot", async () => {
+    records = [plugin("plugin-1", "Enabled"), plugin("plugin-2", "Disabled")];
+    records[1].position = 1;
+    records[1].enabled = false;
+    storage.plugin.script.load = vi.fn(async (pluginId: string) => ({
+      pluginId,
+      script: `${pluginId}-source`,
+    }));
+    await pluginStore.init(storage);
+
+    expect(() => pluginStore.compatibilityPlugins()).toThrow(
+      "Plugin script is not loaded for compatibility access",
+    );
+
+    await expect(pluginStore.loadCompatibilityPlugins()).resolves.toEqual([
+      expect.objectContaining({ name: "Enabled", script: "plugin-1-source" }),
+      expect.objectContaining({ name: "Disabled", script: "plugin-2-source" }),
+    ]);
+    expect(storage.plugin.script.load).toHaveBeenCalledTimes(2);
+  });
 });
