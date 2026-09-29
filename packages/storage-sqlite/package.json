@@ -15,6 +15,7 @@
     "./sqlitePersistenceQueries": "./src/sqlitePersistenceQueries.ts",
     "./sqliteNodeValues": "./src/sqliteNodeValues.ts",
     "./sqliteDocumentQueries": "./src/sqliteDocumentQueries.ts",
+    "./sqlitePluginQueries": "./src/sqlitePluginQueries.ts",
     "./sqliteStartupQueries": "./src/sqliteStartupQueries.ts",
     "./sqliteSnapshotQueries": "./src/sqliteSnapshotQueries.ts",
     "./sqliteEntityQueries": "./src/sqliteEntityQueries.ts",

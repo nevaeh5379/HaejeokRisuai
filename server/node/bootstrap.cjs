@@ -12,6 +12,10 @@ const generatedStorageSyncApply = path.join(
   "dist/storageSyncSqlApply.cjs",
 );
 const serverSource = path.join(__dirname, "server.cts");
+const pluginStorageRoutesSource = path.join(
+  __dirname,
+  "api/database/plugins/routes.ts",
+);
 const packetSource = path.join(__dirname, "http/packet.ts");
 const mutationSource = path.join(__dirname, "sync/databaseMutations.cts");
 const storageSyncApplySource = path.join(
@@ -99,6 +103,7 @@ const needsBuild =
   backupCoreNeedsBuild ||
   (process.env.NODE_ENV !== "production" &&
     (isStale(serverSource, generatedServer) ||
+      isStale(pluginStorageRoutesSource, generatedServer) ||
       isStale(packetSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
       isStale(storageSyncApplySource, generatedStorageSyncApply) ||

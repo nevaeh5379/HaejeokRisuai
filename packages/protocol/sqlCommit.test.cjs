@@ -64,6 +64,12 @@ test("deriveSqlCommitImpact extracts affected domains and entity ids", () => {
         upserts: [{ id: "module-a", data: {} }],
         deletes: ["module-b"],
       },
+      plugins: {
+        upserts: [{ id: "plugin-a", data: { name: "Plugin A" } }],
+        deletes: ["plugin-b"],
+        scripts: [{ id: "plugin-a", script: "console.log('a')" }],
+        enabled: [{ id: "plugin-a", enabled: false }],
+      },
     }),
   );
 
@@ -83,6 +89,7 @@ test("deriveSqlCommitImpact extracts affected domains and entity ids", () => {
   assert.equal(impact.pluginStorageCleared, true);
   assert.equal(impact.presetsChanged, true);
   assert.equal(impact.modulesChanged, true);
+  assert.equal(impact.pluginsChanged, true);
 });
 
 test("character touches do not request a full character-index refresh", () => {
@@ -98,6 +105,7 @@ test("character touches do not request a full character-index refresh", () => {
   assert.equal(impact.rootChanged, false);
   assert.equal(impact.presetsChanged, false);
   assert.equal(impact.modulesChanged, false);
+  assert.equal(impact.pluginsChanged, false);
 });
 
 test("impact uses the validator-normalized action", () => {
@@ -133,8 +141,75 @@ test("replace-all marks every realtime domain changed without listing ids", () =
   assert.equal(impact.charactersChanged, true);
   assert.equal(impact.presetsChanged, true);
   assert.equal(impact.modulesChanged, true);
+  assert.equal(impact.pluginsChanged, true);
   assert.deepEqual(impact.chatIds, []);
   assert.deepEqual(impact.rootUpsertKeys, []);
+});
+
+test("validator keeps plugin metadata and scripts as separate payloads", () => {
+  const validate = createSqlCommitValidator({ PayloadError: Error });
+  const commit = validate({
+    baseRevision: 4,
+    root: { upserts: [], deletes: [] },
+    plugins: {
+      upserts: [
+        {
+          id: "plugin-id",
+          position: 2,
+          data: { name: "Plugin", enabled: true },
+        },
+      ],
+      deletes: ["deleted-plugin"],
+      order: ["plugin-id"],
+      scripts: [{ id: "plugin-id", script: "console.log('plugin')" }],
+      enabled: [{ id: "plugin-id", enabled: false }],
+    },
+    characters: [],
+    chats: [],
+    chatManifests: [],
+    messages: [],
+    messageManifests: [],
+  });
+
+  assert.deepEqual(commit.plugins, {
+    upserts: [
+      {
+        id: "plugin-id",
+        position: 2,
+        data: { name: "Plugin", enabled: true },
+      },
+    ],
+    deletes: ["deleted-plugin"],
+    order: ["plugin-id"],
+    scripts: [{ id: "plugin-id", script: "console.log('plugin')" }],
+    enabled: [{ id: "plugin-id", enabled: false }],
+  });
+});
+
+test("validator rejects script embedded in plugin metadata", () => {
+  const validate = createSqlCommitValidator({ PayloadError: Error });
+  assert.throws(
+    () =>
+      validate({
+        baseRevision: 0,
+        root: { upserts: [], deletes: [] },
+        plugins: {
+          upserts: [
+            {
+              id: "plugin-id",
+              data: { name: "Plugin", script: "not allowed here" },
+            },
+          ],
+          deletes: [],
+        },
+        characters: [],
+        chats: [],
+        chatManifests: [],
+        messages: [],
+        messageManifests: [],
+      }),
+    /must be written through plugins\.scripts/,
+  );
 });
 
 test("internal impact channel stays non-enumerable and never leaks", () => {

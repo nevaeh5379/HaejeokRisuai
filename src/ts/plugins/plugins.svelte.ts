@@ -16,8 +16,7 @@ import { presetStore } from "../stores/domain/presetStore.svelte";
 import { isPresetStoreSettingKey } from "../storage/sql/sqlDeferredSettings";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
-import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
-import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import {
@@ -26,29 +25,9 @@ import {
   SafeLocalStorage,
 } from "./pluginSafeClass";
 import { PluginCrashGuard } from "./pluginCrashGuard";
+import type { PluginMetadata } from "./pluginTypes";
 
 export const customProviderStore = writable([] as string[]);
-
-interface ProviderPlugin {
-  name: string;
-  displayName?: string;
-  script: string;
-  arguments: { [key: string]: "int" | "string" | string[] };
-  realArg: { [key: string]: number | string };
-  version?: 1 | 2 | "2.1" | "3.0";
-  customLink: ProviderPluginCustomLink[];
-  argMeta: { [key: string]: { [key: string]: string } };
-  versionOfPlugin?: string;
-  updateURL?: string;
-  enabled?: boolean;
-  allowedIPC?: string[];
-}
-interface ProviderPluginCustomLink {
-  link: string;
-  hoverText?: string;
-}
-
-export type RisuPlugin = ProviderPlugin;
 
 export async function createBlankPlugin() {
   await importPlugin(
@@ -81,7 +60,7 @@ const updateCache = new Map<
   { version: string; updateURL: string } | undefined
 >();
 
-export const checkPluginUpdate = async (plugin: RisuPlugin) => {
+export const checkPluginUpdate = async (plugin: PluginMetadata) => {
   try {
     if (!plugin.updateURL) {
       return;
@@ -129,7 +108,7 @@ export const checkPluginUpdate = async (plugin: RisuPlugin) => {
   }
 };
 
-export async function updatePlugin(plugin: RisuPlugin) {
+export async function updatePlugin(plugin: PluginMetadata) {
   try {
     if (!plugin.updateURL) {
       return false;
@@ -160,7 +139,6 @@ export async function importPlugin(
 ) {
   try {
     let jsFile = "";
-    let db = settingsStore.state;
     let isUpdate = argu.isUpdate || false;
     let originalPluginName = argu.originalPluginName || "";
     let isTypescript = argu.isTypescript || false;
@@ -202,7 +180,7 @@ export async function importPlugin(
     let arg: { [key: string]: "int" | "string" | string[] } = {};
     let realArg: { [key: string]: number | string } = {};
     let argMeta: { [key: string]: { [key: string]: string } } = {};
-    let customLink: ProviderPluginCustomLink[] = [];
+    let customLink: PluginMetadata["customLink"] = [];
     let updateURL: string = "";
     let versionOfPlugin: string = ""; //This is the version of the plugin itself, not the API version
     let apiVersion = "2.0";
@@ -409,55 +387,45 @@ export async function importPlugin(
       return;
     }
 
-    let pluginData: RisuPlugin = {
-      name: name,
-      script: jsFile,
-      realArg: realArg,
+    const pluginMetadata: Omit<PluginMetadata, "id" | "position"> = {
+      name,
+      realArg,
       arguments: arg,
-      displayName: displayName,
+      displayName,
       version: apiInternalVersion,
-      customLink: customLink,
-      argMeta: argMeta,
-      versionOfPlugin: versionOfPlugin,
-      updateURL: updateURL,
+      customLink,
+      argMeta,
+      versionOfPlugin,
+      updateURL,
       allowedIPC: ipcList,
       enabled: true,
     };
 
-    db.plugins ??= [];
+    const oldPlugin = pluginStore.getByName(pluginMetadata.name);
 
-    const oldPluginIndex = db.plugins.findIndex(
-      (p: RisuPlugin) => p.name === pluginData.name,
-    );
-
-    if (originalPluginName && originalPluginName !== pluginData.name) {
+    if (originalPluginName && originalPluginName !== pluginMetadata.name) {
       showError(
-        `When updating plugin "${originalPluginName}", the plugin name cannot be changed to "${pluginData.name}". Please keep the original name to update.`,
+        `When updating plugin "${originalPluginName}", the plugin name cannot be changed to "${pluginMetadata.name}". Please keep the original name to update.`,
       );
       return;
     }
 
-    if (!isUpdate && oldPluginIndex !== -1) {
+    if (!isUpdate && oldPlugin) {
       const c = await alertConfirm(language.duplicatePluginFoundUpdateIt);
       if (!c) {
         return;
       }
     }
 
-    if (oldPluginIndex !== -1) {
-      db.plugins[oldPluginIndex] = pluginData;
-    } else if (!isUpdate || argu.isHotReload) {
-      db.plugins.push(pluginData);
+    if (oldPlugin || !isUpdate || argu.isHotReload) {
+      await pluginStore.install(pluginMetadata, jsFile, oldPlugin?.id);
     }
 
-    if (argu.isHotReload && !hotReloading.includes(pluginData.name)) {
-      hotReloading.push(pluginData.name);
+    if (argu.isHotReload && !hotReloading.includes(pluginMetadata.name)) {
+      hotReloading.push(pluginMetadata.name);
     }
 
-    console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`);
-    settingsStore.set("plugins", db.plugins);
-    await settingsStore.flush();
-
+    console.log(`Imported plugin: ${pluginMetadata.name} (API v${apiVersion})`);
     await loadPlugins();
   } catch (error) {
     console.error(error);
@@ -466,64 +434,42 @@ export async function importPlugin(
 }
 
 let pluginTranslator = false;
-let runtimePlugins: RisuPlugin[] = [];
+let runtimePlugins: PluginMetadata[] = [];
 
-export function getRuntimePlugin(name: string): RisuPlugin | undefined {
+export function getRuntimePlugin(name: string): PluginMetadata | undefined {
   return runtimePlugins.find((plugin) => plugin.name === name);
 }
 
 export async function togglePluginEnabled(index: number): Promise<void> {
-  await deferredSettingsLoader.ensureKey("plugins");
-  const plugin = settingsStore.state.plugins?.[index];
+  const plugin = pluginStore.plugins[index];
   if (!plugin) return;
 
-  const enabled = !plugin.enabled;
-  const storage = await getSqlStorage();
-  if (storage.setPluginEnabled) {
-    await storage.setPluginEnabled(plugin.name, enabled);
-    settingsStore.hydrate((state) => {
-      if (state.plugins?.[index]?.name === plugin.name) {
-        state.plugins[index].enabled = enabled;
-      }
-    });
-  } else {
-    plugin.enabled = enabled;
-    settingsStore.set("plugins", settingsStore.state.plugins);
-    await settingsStore.flush();
-  }
+  await pluginStore.setEnabled(plugin.id, !plugin.enabled);
   await loadPlugins();
 }
 
 export async function loadPlugins() {
   console.log("Loading plugins...");
-  const plugins = deferredSettingsLoader.isLoaded("plugins")
-    ? (settingsStore.state.plugins ?? [])
-    : (((await (await getSqlStorage()).loadPlugins({ enabledOnly: true })) as
-        RisuPlugin[] | null) ?? []);
-
   // CrashGuard: plugins the native side blamed for a renderer death
   // mid-load are skipped until they are permanently disabled below.
   const crashGuard = PluginCrashGuard.getInstance();
   const blocked = (await crashGuard?.getBlocked()) ?? [];
   const blockedSet = new Set(blocked);
-
-  const enabledPlugins = safeStructuredClone(plugins).filter(
-    (p: RisuPlugin) => p.enabled && !blockedSet.has(p.name),
+  const enabled = pluginStore.enabled;
+  const enabledPlugins = safeStructuredClone(
+    enabled.filter((plugin) => !blockedSet.has(plugin.name)),
   );
 
   // Keep the blocklist entries that matched an enabled plugin so they can
   // be persisted (enabled=false) once boot stabilizes.
-  const blockedPresent = plugins.filter(
-    (p: RisuPlugin) => p.enabled && blockedSet.has(p.name),
+  const blockedPresent = enabled.filter((plugin) =>
+    blockedSet.has(plugin.name),
   );
-
   runtimePlugins = enabledPlugins;
   const pluginV2 = enabledPlugins.filter(
-    (a: RisuPlugin) => a.version === 2 || a.version === "2.1",
+    (plugin) => plugin.version === 2 || plugin.version === "2.1",
   );
-  const pluginV3 = enabledPlugins.filter(
-    (a: RisuPlugin) => a.version === "3.0",
-  );
+  const pluginV3 = enabledPlugins.filter((plugin) => plugin.version === "3.0");
 
   // HaejeokRisuai does not support V2 Plugins.
   // await loadV2Plugin(pluginV2);
@@ -543,7 +489,7 @@ export async function loadPlugins() {
  * path as the settings toggle), tell the native side to drop its
  * blocklist entries, and surface what happened to the user.
  */
-async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
+async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
   const names = blockedPresent.map((p) => p.name);
   console.warn(
     `CrashGuard: permanently disabling plugin(s) blamed for a renderer crash: ${names.join(", ")}`,
@@ -551,7 +497,7 @@ async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
   const crashGuard = PluginCrashGuard.getInstance();
   for (const plugin of blockedPresent) {
     try {
-      await setPluginEnabledByName(plugin.name, false);
+      await pluginStore.setEnabled(plugin.id, false);
       await crashGuard?.clearBlocked(plugin.name);
     } catch (error) {
       console.error(
@@ -562,34 +508,6 @@ async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
   }
   const { alertToast } = await import("../alert");
   alertToast(language.pluginsAutoDisabled.replace("{0}", names.join(", ")));
-}
-
-/** Name-based variant of the togglePluginEnabled persistence path. */
-async function setPluginEnabledByName(
-  pluginName: string,
-  enabled: boolean,
-): Promise<void> {
-  await deferredSettingsLoader.ensureKey("plugins");
-  const storage = await getSqlStorage();
-  if (storage.setPluginEnabled) {
-    await storage.setPluginEnabled(pluginName, enabled);
-    settingsStore.hydrate((state) => {
-      const index = state.plugins?.findIndex(
-        (plugin) => plugin.name === pluginName,
-      );
-      if (index !== undefined && index !== -1) {
-        state.plugins[index].enabled = enabled;
-      }
-    });
-  } else {
-    const plugin = settingsStore.state.plugins?.find(
-      (p) => p.name === pluginName,
-    );
-    if (!plugin) return;
-    plugin.enabled = enabled;
-    settingsStore.set("plugins", settingsStore.state.plugins);
-    await settingsStore.flush();
-  }
 }
 
 export type PluginV2ProviderArgument = {
@@ -679,6 +597,7 @@ const domainDbKeys = new Set([
   "characters",
   "modules",
   "enabledModules",
+  "plugins",
   "personas",
   "selectedPersona",
 ]);
@@ -691,6 +610,8 @@ function getDomainDbValue(key: string): any {
       return moduleStore.modules;
     case "enabledModules":
       return moduleStore.enabledModules;
+    case "plugins":
+      return pluginStore.compatibilityPlugins();
     case "personas":
       return personaStore.personas;
     case "selectedPersona":
@@ -698,7 +619,10 @@ function getDomainDbValue(key: string): any {
   }
 }
 
-function setDomainDbValue(key: string, value: any): boolean {
+function setDomainDbValue(
+  key: string,
+  value: any,
+): true | false | Promise<void> {
   switch (key) {
     case "characters":
       characterStore.characters = value;
@@ -712,6 +636,11 @@ function setDomainDbValue(key: string, value: any): boolean {
     case "enabledModules":
       moduleStore.enabledModules = value;
       return true;
+    case "plugins":
+      if (!Array.isArray(value)) {
+        throw new TypeError("Plugin database plugins must be an array");
+      }
+      return pluginStore.replaceCompatibilityPlugins(value);
     case "personas":
       personaStore.replace(value);
       return true;
@@ -729,8 +658,11 @@ function getAllowedDbValue(key: string): any {
   return settingsStore.state[key];
 }
 
-function setAllowedDbValue(key: string, value: any): void {
-  if (setDomainDbValue(key, value)) return;
+function setAllowedDbValue(key: string, value: any): void | Promise<void> {
+  const domainResult = setDomainDbValue(key, value);
+  if (domainResult !== false) {
+    return domainResult === true ? undefined : domainResult;
+  }
   if (isPresetStoreSettingKey(key)) {
     presetStore.set(key, value);
   } else {
@@ -752,9 +684,8 @@ export const getV2PluginAPIs = () => {
     risuFetch: globalFetch,
     nativeFetch: fetchNative,
     getArg: (arg: string) => {
-      const db = settingsStore.state;
       const [name, realArg] = arg.split("::");
-      for (const plugin of db.plugins) {
+      for (const plugin of pluginStore.plugins) {
         if (plugin.name === name) {
           return plugin.realArg[realArg];
         }
@@ -829,9 +760,8 @@ export const getV2PluginAPIs = () => {
       pluginV2.unload.add(func);
     },
     setArg: (arg: string, value: string | number) => {
-      const db = settingsStore.state;
       const [name, realArg] = arg.split("::");
-      for (const plugin of db.plugins) {
+      for (const plugin of pluginStore.plugins) {
         if (plugin.name === name) {
           plugin.realArg[realArg] = value;
         }
@@ -943,7 +873,15 @@ export const getV2PluginAPIs = () => {
         set(target, prop, value) {
           if (typeof prop === "string") {
             if (allowedDbKeys.includes(prop)) {
-              setAllowedDbValue(prop, value);
+              const pending = setAllowedDbValue(prop, value);
+              if (pending) {
+                void pending.catch((error) => {
+                  console.error(
+                    `Failed to persist compatibility database key '${prop}':`,
+                    error,
+                  );
+                });
+              }
               return true;
             } else {
               settingsStore.setPluginCustomStorageKey(prop, value);
@@ -1052,7 +990,15 @@ export const getV2PluginAPIs = () => {
       if (!newDb || typeof newDb !== "object") return;
       for (const key of Object.keys(newDb)) {
         if (allowedDbKeys.includes(key)) {
-          setAllowedDbValue(key, newDb[key]);
+          const pending = setAllowedDbValue(key, newDb[key]);
+          if (pending) {
+            void pending.catch((error) => {
+              console.error(
+                `Failed to persist compatibility database key '${key}':`,
+                error,
+              );
+            });
+          }
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }
@@ -1069,7 +1015,7 @@ export const getV2PluginAPIs = () => {
         }
 
         if (allowedDbKeys.includes(key)) {
-          setAllowedDbValue(key, newDb[key]);
+          await setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }
@@ -1109,7 +1055,7 @@ export const getV2PluginAPIs = () => {
   };
 };
 
-export async function loadV2Plugin(plugins: RisuPlugin[]) {
+export async function loadV2Plugin(plugins: PluginMetadata[]) {
   if (pluginV2.loaded) {
     for (const unload of pluginV2.unload) {
       await unload();
@@ -1128,6 +1074,7 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
   globalThis.__pluginApis__ = getV2PluginAPIs();
 
   for (const plugin of plugins) {
+    const script = (await pluginStore.loadScript(plugin.id)).script;
     let data = "";
     let version = plugin.version || 2;
 
@@ -1194,7 +1141,7 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
     };
 
     if (version === "2.1") {
-      const safety = await checkCodeSafety(plugin.script);
+      const safety = await checkCodeSafety(script);
       data = safety.modifiedCode;
       console.log("Safety check result:", safety);
       console.log("Loading V2.1 Plugin", plugin.name, data);
@@ -1207,7 +1154,7 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
 
       console.log("Loaded V2.1 Plugin", plugin.name);
     } else {
-      data = plugin.script;
+      data = script;
       console.log("Loading V2.0 Plugin", plugin.name);
 
       console.warn(
@@ -1239,14 +1186,18 @@ export async function pluginProcess(
   };
 }
 
-export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]) {
-  const trimmedPlugins: RisuPlugin[] = [];
+export async function handlePluginInstallViaPlugin(
+  plugins: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>,
+) {
+  const trimmedPlugins: Array<
+    Omit<PluginMetadata, "id" | "position"> & { script: string }
+  > = [];
   for (const plugin of plugins) {
-    if (
-      !settingsStore.state.plugins?.find(
-        (p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script,
-      )
-    ) {
+    const storedPlugin = pluginStore.getByName(plugin.name);
+    const samePlugin =
+      storedPlugin &&
+      (await pluginStore.loadScript(storedPlugin.id)).script === plugin.script;
+    if (!samePlugin) {
       if (plugin.version !== "3.0") {
         console.warn(
           `Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`,

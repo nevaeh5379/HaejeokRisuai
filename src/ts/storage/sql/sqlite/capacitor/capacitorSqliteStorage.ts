@@ -47,7 +47,7 @@ export class CapacitorSqliteStorage
 
   private dbOpen = false;
 
-  constructor(private readonly plugin: NativeSqlitePlugin = nativeSqlite) {
+  constructor(private readonly sqlitePlugin: NativeSqlitePlugin = nativeSqlite) {
     super();
   }
   protected readonly backendName = "CapacitorSqliteStorage";
@@ -57,7 +57,7 @@ export class CapacitorSqliteStorage
   }
 
   protected async openBackend(): Promise<void> {
-    await this.plugin.open({ database: "risuai-local" });
+    await this.sqlitePlugin.open({ database: "risuai-local" });
     this.dbOpen = true;
   }
 
@@ -70,7 +70,7 @@ export class CapacitorSqliteStorage
 
   protected async cleanupBackend(): Promise<void> {
     try {
-      if (this.dbOpen) await this.plugin.close();
+      if (this.dbOpen) await this.sqlitePlugin.close();
     } finally {
       this.dbOpen = false;
     }
@@ -87,7 +87,7 @@ export class CapacitorSqliteStorage
     bind: unknown[] = [],
   ): Promise<T[]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.plugin.query({ sql, bind });
+    const result = await this.sqlitePlugin.query({ sql, bind });
     return (result.values ?? []) as T[];
   }
 
@@ -95,7 +95,7 @@ export class CapacitorSqliteStorage
     queries: SqliteTransactionStatement[],
   ): Promise<Record<string, unknown>[][]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.plugin.queryBatch({ queries });
+    const result = await this.sqlitePlugin.queryBatch({ queries });
     return result.results ?? [];
   }
 
@@ -137,7 +137,7 @@ export class CapacitorSqliteStorage
     ) => Promise<T>,
   ): Promise<T> {
     if (!this.dbOpen) throw new Error("SQLite storage is not enabled");
-    const transaction = await this.plugin.beginTransaction({
+    const transaction = await this.sqlitePlugin.beginTransaction({
       expectedRevision,
     });
     let pendingBatch: SqliteTransactionStatement[] = [];
@@ -147,7 +147,7 @@ export class CapacitorSqliteStorage
       const chunk = pendingBatch;
       pendingBatch = [];
       batchPayloadChars = 0;
-      await this.plugin.executeBatch({
+      await this.sqlitePlugin.executeBatch({
         id: transaction.id,
         statements: chunk,
       });
@@ -169,13 +169,13 @@ export class CapacitorSqliteStorage
       };
       const result = await task(execute);
       await flushBatch();
-      await this.plugin.commitTransaction({ id: transaction.id });
+      await this.sqlitePlugin.commitTransaction({ id: transaction.id });
       return result;
     } catch (error) {
       pendingBatch = [];
       batchPayloadChars = 0;
       try {
-        await this.plugin.rollbackTransaction({ id: transaction.id });
+        await this.sqlitePlugin.rollbackTransaction({ id: transaction.id });
       } catch {
         // Preserve the original transaction error.
       }
@@ -184,7 +184,7 @@ export class CapacitorSqliteStorage
   }
 
   protected createRestoreStream() {
-    return new CapacitorSqliteRestoreStream(this.plugin);
+    return new CapacitorSqliteRestoreStream(this.sqlitePlugin);
   }
 
   async beginPortableDatabaseStreamRestore(

@@ -158,12 +158,48 @@ function mapColumnsToSettingValue(row) {
   return null;
 }
 
+function pluginExtensionData(data) {
+  return {
+    arguments: data.arguments || {},
+    realArg: data.realArg || {},
+    customLink: data.customLink || [],
+    argMeta: data.argMeta || {},
+    allowedIPC: data.allowedIPC || [],
+  };
+}
+
+function rebuildPluginRecords(records, valueRows) {
+  const extension = rebuildSettings(
+    records.map((row) => ({ key: row.plugin_id })),
+    valueRows,
+  );
+  return records.map((row) => ({
+    ...(extension[row.plugin_id] || {}),
+    id: row.plugin_id,
+    position: Number(row.position),
+    name: row.name,
+    displayName: row.display_name ?? undefined,
+    version:
+      row.api_version === "1"
+        ? 1
+        : row.api_version === "2"
+          ? 2
+          : row.api_version || undefined,
+    versionOfPlugin: row.plugin_version ?? undefined,
+    updateURL: row.update_url ?? undefined,
+    enabled: Boolean(row.enabled),
+  }));
+}
+
 // 감사 대상 테이블 목록 (PostgreSQL AUDITED_TABLES와 동일, 접두어 변환)
 const AUDITED_TABLES_QUALIFIED = [
   "system.settings",
   "system.setting_values",
   "system.module_records",
   "system.module_values",
+  "system.plugin_records",
+  "system.plugin_scripts",
+  "system.plugin_values",
   "system.plugin_custom_storage",
   "character.characters",
   ...SETTING_RELATION_DEFINITIONS.map((d) => d.table),
@@ -882,6 +918,9 @@ class OracleStorage extends SqlStorageBase {
       await this.runStartupStep("6c/8 ensure chat last-message invariant", () =>
         this.ensureLastMessageTimeInvariant(testConn),
       );
+      await this.runStartupStep("6d/8 ensure plugin storage schema", () =>
+        this.ensurePluginSchema(testConn),
+      );
       await this.runStartupStep("7/8 ensure asset catalog schema", () =>
         this.ensureAssetCatalogSchema(testConn),
       );
@@ -970,6 +1009,53 @@ class OracleStorage extends SqlStorageBase {
                 FOREIGN KEY (chat_id, origin_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED)`,
       `CREATE INDEX message_branch_parent_idx ON chat_message_branch_links (chat_id, parent_message_id)`,
       `CREATE INDEX message_branch_origin_idx ON chat_message_branch_links (chat_id, origin_branch_id)`,
+    ];
+    for (const statement of statements) {
+      try {
+        await connection.execute(statement);
+      } catch (error) {
+        if (!String(error?.message || "").includes("ORA-00955")) throw error;
+      }
+    }
+    await connection.commit();
+  }
+
+  async ensurePluginSchema(connection) {
+    const statements = [
+      `CREATE TABLE system_plugin_records (
+                plugin_id VARCHAR2(4000) PRIMARY KEY,
+                position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+                name VARCHAR2(4000) NOT NULL UNIQUE,
+                display_name VARCHAR2(4000),
+                api_version VARCHAR2(64),
+                plugin_version VARCHAR2(64),
+                update_url VARCHAR2(4000),
+                enabled NUMBER(1) DEFAULT 1 NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL)`,
+      `CREATE INDEX plugin_records_enabled_position_idx ON system_plugin_records (enabled, position)`,
+      `CREATE TABLE system_plugin_scripts (
+                plugin_id VARCHAR2(4000) PRIMARY KEY REFERENCES system_plugin_records(plugin_id) ON DELETE CASCADE,
+                script CLOB NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL)`,
+      `CREATE TABLE system_plugin_values (
+                plugin_id VARCHAR2(4000) NOT NULL REFERENCES system_plugin_records(plugin_id) ON DELETE CASCADE,
+                node_id INTEGER NOT NULL,
+                parent_node_id INTEGER,
+                member_key CLOB, encoded_member_key CLOB,
+                position INTEGER CHECK (position >= 0),
+                value_type VARCHAR2(32) NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+                text_value CLOB, encoded_text_value CLOB,
+                number_value BINARY_DOUBLE, boolean_value NUMBER(1),
+                PRIMARY KEY (plugin_id, node_id),
+                FOREIGN KEY (plugin_id, parent_node_id) REFERENCES system_plugin_values(plugin_id, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+                CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+                CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+                CHECK (text_value IS NULL OR encoded_text_value IS NULL))`,
+      `CREATE INDEX plugin_values_parent_idx ON system_plugin_values (plugin_id, parent_node_id, position, node_id)`,
+      `CREATE TABLE system_plugin_custom_storage (
+                key VARCHAR2(4000) PRIMARY KEY,
+                value JSON NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL)`,
     ];
     for (const statement of statements) {
       try {
@@ -2011,6 +2097,44 @@ class OracleStorage extends SqlStorageBase {
 
       const moduleResult = await this.loadModuleRecords();
       database.modules = moduleResult?.modules || database.modules || [];
+
+      const pluginRecords = await fetchRows(
+        conn,
+        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system_plugin_records ORDER BY position",
+      );
+      const pluginValues = await fetchRows(
+        conn,
+        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_plugin_values ORDER BY plugin_id, node_id",
+        [],
+        {
+          clobColumns: [
+            "member_key",
+            "encoded_member_key",
+            "text_value",
+            "encoded_text_value",
+          ],
+        },
+      );
+      const pluginScripts = await fetchRows(
+        conn,
+        "SELECT plugin_id, script FROM system_plugin_scripts ORDER BY plugin_id",
+        [],
+        { clobColumns: ["script"] },
+      );
+      const pluginScriptMap = new Map(
+        pluginScripts.map((row) => [row.plugin_id, row.script]),
+      );
+      database.plugins = rebuildPluginRecords(
+        pluginRecords,
+        pluginValues,
+      ).map((plugin) => {
+        const { id, position: _position, ...metadata } = plugin;
+        const script = pluginScriptMap.get(id);
+        if (script === undefined) {
+          throw new Error(`Plugin script is missing: ${id}`);
+        }
+        return { ...metadata, script };
+      });
 
       const presetRows = await fetchRows(
         conn,
@@ -3449,37 +3573,70 @@ class OracleStorage extends SqlStorageBase {
   // 설정 로드: loadPlugins, loadPluginCustomStorage, ...
   // ============================================================
 
-  async loadPlugins() {
+  async loadPlugins(options = {}) {
     this.assertEnabled();
-    if (this.pluginsCache) {
+    const pluginId =
+      typeof options?.pluginId === "string" ? options.pluginId : null;
+    if (pluginId) assertId(pluginId, "pluginId");
+    if (!pluginId && this.pluginsCache) {
       return this.pluginsCache;
     }
+
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET TRANSACTION READ ONLY");
-      const settings = await fetchRows(
+      const binds = pluginId ? [pluginId] : [];
+      const where = pluginId ? " WHERE plugin_id = :1" : "";
+      const records = await fetchRows(
         conn,
-        `SELECT * FROM system_settings WHERE key = 'plugins' ORDER BY key`,
+        `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system_plugin_records${where} ORDER BY position`,
+        binds,
+        { clobColumns: [] },
       );
-      const settingValues = await fetchRows(
+      const values = await fetchRows(
         conn,
-        `SELECT * FROM system_setting_values WHERE setting_key = 'plugins' ORDER BY setting_key, node_id`,
-        [],
-        { clobColumns: ["text_value", "encoded_text_value"] },
+        `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system_plugin_values${where} ORDER BY plugin_id, node_id`,
+        binds,
+        {
+          clobColumns: [
+            "member_key",
+            "encoded_member_key",
+            "text_value",
+            "encoded_text_value",
+          ],
+        },
       );
-      const rebuilt = rebuildSettings(settings, settingValues);
+      const plugins = rebuildPluginRecords(records, values);
       await conn.rollback();
-      const plugins = rebuilt.plugins || [];
       const serialized = JSON.stringify(plugins);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
       const result = { plugins, hash };
-      if (this.objectCacheEnabled) this.pluginsCache = result;
+      if (!pluginId && this.objectCacheEnabled) this.pluginsCache = result;
       return result;
     } catch (error) {
       try {
         await conn.rollback();
       } catch (e) {}
       throw error;
+    } finally {
+      try {
+        await conn.close();
+      } catch (e) {}
+    }
+  }
+
+  async loadPluginScript(pluginId) {
+    this.assertEnabled();
+    assertId(pluginId, "pluginId");
+    const conn = await this.pool.getConnection();
+    try {
+      const rows = await fetchRows(
+        conn,
+        "SELECT script FROM system_plugin_scripts WHERE plugin_id = :1",
+        [pluginId],
+        { clobColumns: ["script"] },
+      );
+      return rows[0]?.script ?? null;
     } finally {
       try {
         await conn.close();
@@ -3900,6 +4057,7 @@ class OracleStorage extends SqlStorageBase {
         await conn.execute("DELETE FROM system_plugin_custom_storage");
         await conn.execute("DELETE FROM system_bot_presets");
         await conn.execute("DELETE FROM system_module_records");
+        await conn.execute("DELETE FROM system_plugin_records");
         await conn.execute("DELETE FROM character_characters");
       }
 
@@ -3995,6 +4153,128 @@ class OracleStorage extends SqlStorageBase {
           for (const [position, id] of payload.modules.order.entries()) {
             await conn.execute(
               "UPDATE system_module_records SET position = :1 WHERE module_id = :2",
+              [position, id],
+            );
+          }
+        }
+      }
+
+      if (payload.plugins) {
+        const existing = await fetchRows(
+          conn,
+          "SELECT plugin_id, position FROM system_plugin_records ORDER BY position",
+        );
+        const positions = new Map(
+          existing.map((row) => [row.plugin_id, Number(row.position)]),
+        );
+
+        for (const id of payload.plugins.deletes) {
+          await conn.execute(
+            "DELETE FROM system_plugin_records WHERE plugin_id = :1",
+            [id],
+          );
+        }
+        if (payload.plugins.order) {
+          await conn.execute(
+            "UPDATE system_plugin_records SET position = position + 1000000000",
+          );
+        }
+
+        let nextPosition =
+          existing.reduce(
+            (max, row) => Math.max(max, Number(row.position)),
+            -1,
+          ) + 1;
+        const mergePlugin = `MERGE INTO system_plugin_records t
+          USING (SELECT :plugin_id plugin_id FROM dual) s
+          ON (t.plugin_id=s.plugin_id)
+          WHEN MATCHED THEN UPDATE SET
+            t.position=:position,t.name=:name,t.display_name=:display_name,
+            t.api_version=:api_version,t.plugin_version=:plugin_version,
+            t.update_url=:update_url,t.enabled=:enabled,t.updated_at=SYSTIMESTAMP
+          WHEN NOT MATCHED THEN INSERT
+            (plugin_id,position,name,display_name,api_version,plugin_version,update_url,enabled,updated_at)
+            VALUES
+            (:plugin_id,:position,:name,:display_name,:api_version,:plugin_version,:update_url,:enabled,SYSTIMESTAMP)`;
+        for (const entry of payload.plugins.upserts) {
+          const data = entry.data || {};
+          if (typeof data.name !== "string" || data.name.length === 0) {
+            throw new StoragePayloadError(
+              `Plugin ${entry.id} must have a non-empty name`,
+            );
+          }
+          await conn.execute(mergePlugin, {
+            plugin_id: entry.id,
+            position: entry.position ?? positions.get(entry.id) ?? nextPosition++,
+            name: data.name,
+            display_name:
+              typeof data.displayName === "string" ? data.displayName : null,
+            api_version: data.version == null ? null : String(data.version),
+            plugin_version:
+              typeof data.versionOfPlugin === "string"
+                ? data.versionOfPlugin
+                : null,
+            update_url:
+              typeof data.updateURL === "string" ? data.updateURL : null,
+            enabled: data.enabled === false ? 0 : 1,
+          });
+        }
+
+        if (payload.plugins.upserts.length > 0) {
+          await conn.executeMany(
+            "DELETE FROM system_plugin_values WHERE plugin_id = :1",
+            payload.plugins.upserts.map((entry) => [entry.id]),
+          );
+          const rows = payload.plugins.upserts.flatMap((entry) =>
+            splitSetting(entry.id, pluginExtensionData(entry.data)).values.map(
+              (row) => ({ ...row, plugin_id: row.setting_key }),
+            ),
+          );
+          await this._bulkInsertRows(
+            conn,
+            "system_plugin_values",
+            [
+              "plugin_id",
+              "node_id",
+              "parent_node_id",
+              "member_key",
+              "encoded_member_key",
+              "position",
+              "value_type",
+              "text_value",
+              "encoded_text_value",
+              "number_value",
+              "boolean_value",
+            ],
+            rows,
+            onProgress,
+          );
+        }
+
+        const mergeScript = `MERGE INTO system_plugin_scripts t
+          USING (SELECT :plugin_id plugin_id FROM dual) s
+          ON (t.plugin_id=s.plugin_id)
+          WHEN MATCHED THEN UPDATE SET t.script=:script,t.updated_at=SYSTIMESTAMP
+          WHEN NOT MATCHED THEN INSERT (plugin_id,script,updated_at)
+          VALUES (:plugin_id,:script,SYSTIMESTAMP)`;
+        for (const script of payload.plugins.scripts || []) {
+          await conn.execute(mergeScript, {
+            plugin_id: script.id,
+            script: script.script,
+          });
+        }
+
+        for (const update of payload.plugins.enabled || []) {
+          await conn.execute(
+            "UPDATE system_plugin_records SET enabled = :1, updated_at = SYSTIMESTAMP WHERE plugin_id = :2",
+            [update.enabled ? 1 : 0, update.id],
+          );
+        }
+
+        if (payload.plugins.order) {
+          for (const [position, id] of payload.plugins.order.entries()) {
+            await conn.execute(
+              "UPDATE system_plugin_records SET position = :1 WHERE plugin_id = :2",
               [position, id],
             );
           }
@@ -4802,7 +5082,11 @@ class OracleStorage extends SqlStorageBase {
       }
       const changedKeys = payload.rootUpserts.map((s) => s.key);
       const rootDeletes = payload.rootDeletes || [];
-      if (changedKeys.includes("plugins") || rootDeletes.includes("plugins")) {
+      if (
+        payload.plugins ||
+        changedKeys.includes("plugins") ||
+        rootDeletes.includes("plugins")
+      ) {
         this.pluginsCache = null;
       }
       if (

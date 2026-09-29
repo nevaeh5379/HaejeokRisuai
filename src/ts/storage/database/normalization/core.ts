@@ -80,7 +80,6 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
     "globalNote",
     "authorNote",
   ];
-  data.plugins ??= [];
   data.pluginCustomStorage ??= {};
   if (Array.isArray(data.promptTemplate)) {
     data.promptTemplate = normalizePromptTemplate(data.promptTemplate);

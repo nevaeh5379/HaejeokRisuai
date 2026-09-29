@@ -50,6 +50,8 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
+import type { IPluginStorage } from "../../pluginStorage";
+import { SqlitePluginStorage } from "../sqlitePluginStorage";
 import {
   applySqliteCommit,
   writeSqliteColdStorage,
@@ -305,6 +307,10 @@ function getWorkerRpc(): WorkerRpc {
 const DB_FILE = "/risuai-local.sqlite3";
 export class WebSqliteStorage implements ISqlStorage {
   readonly backendKind = "web-sqlite" as const;
+  readonly plugin: IPluginStorage = new SqlitePluginStorage(
+    this,
+    this.selectRows.bind(this) as SqliteSelectRows,
+  );
 
   private revision = 0;
   private initialized = false;
@@ -1064,15 +1070,6 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
 
-  async loadPlugins(options?: {
-    enabledOnly?: boolean;
-  }): Promise<any[] | null> {
-    const plugins =
-      ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
-    return options?.enabledOnly && plugins
-      ? plugins.filter((plugin) => plugin?.enabled)
-      : plugins;
-  }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
     return (await loadSqlitePluginCustomStorage(
       this.selectRows.bind(this) as SqliteSelectRows,

@@ -177,6 +177,49 @@ describe("SQL row commits", () => {
     ).toBe(true);
   });
 
+  it("stores plugin metadata and scripts in separate tables", async () => {
+    const commit = createEmptySqlCommit(1, "plugin-upsert");
+    commit.plugins = {
+      upserts: [
+        {
+          id: "plugin-id",
+          position: 0,
+          data: {
+            name: "plugin-name",
+            displayName: "Plugin",
+            version: "3.0",
+            enabled: true,
+            arguments: { prompt: "string" },
+            realArg: { prompt: "hello" },
+            customLink: [],
+            argMeta: {},
+            allowedIPC: ["clipboard"],
+          },
+        },
+      ],
+      deletes: [],
+      scripts: [{ id: "plugin-id", script: "console.log('plugin')" }],
+    };
+    expect(hasSqlCommitChanges(commit)).toBe(true);
+
+    const statements: { sql: string; bind: unknown[] }[] = [];
+    await applySqliteCommit(commit, (sql, bind = []) => {
+      statements.push({ sql, bind });
+    });
+
+    const metadata = statements.find(({ sql }) =>
+      sql.includes("INSERT INTO plugin_records"),
+    );
+    const script = statements.find(({ sql }) =>
+      sql.includes("INSERT INTO plugin_scripts"),
+    );
+    expect(metadata?.bind).not.toContain("console.log('plugin')");
+    expect(script?.bind).toEqual(["plugin-id", "console.log('plugin')"]);
+    expect(
+      statements.some(({ sql }) => sql.includes("plugin_extension_nodes")),
+    ).toBe(true);
+  });
+
   it("syncs pluginCustomStorage upserts and deletions to plugin_custom_storage table", async () => {
     const commit = createEmptySqlCommit(1);
     commit.pluginStorage = {

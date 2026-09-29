@@ -60,10 +60,9 @@ describe("shared SQL storage helpers", () => {
     await expect(storage.loadPrompts()).resolves.toMatchObject({
       hash: "hash",
     });
-    await expect(storage.loadBootstrapData()).resolves.toMatchObject({
-      database: { plugins: "plugins-value" },
-      hash: "hash",
-    });
+    const bootstrap = await storage.loadBootstrapData();
+    expect(bootstrap).toMatchObject({ hash: "hash" });
+    expect(bootstrap.database).not.toHaveProperty("plugins");
     const countAfterWarm = settingLoadCount;
     await storage.loadBootstrapData();
     expect(settingLoadCount).toBe(countAfterWarm);
@@ -94,7 +93,7 @@ describe("shared SQL storage helpers", () => {
   });
 
   it("keeps the deferred settings list in one provider-independent definition", () => {
-    expect(DEFERRED_SETTING_KEYS).toContain("plugins");
+    expect(DEFERRED_SETTING_KEYS).not.toContain("plugins");
     expect(DEFERRED_SETTING_KEYS).toContain("customBackground");
     expect(new Set(DEFERRED_SETTING_KEYS).size).toBe(
       DEFERRED_SETTING_KEYS.length,

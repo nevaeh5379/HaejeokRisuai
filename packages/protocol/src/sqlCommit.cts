@@ -42,6 +42,22 @@ export interface SqlModuleUpsert {
   data: object;
 }
 
+export interface SqlPluginUpsert {
+  id: string;
+  position?: number;
+  data: object;
+}
+
+export interface SqlPluginScriptUpsert {
+  id: string;
+  script: string;
+}
+
+export interface SqlPluginEnabledUpdate {
+  id: string;
+  enabled: boolean;
+}
+
 export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
   baseRevision: number;
   idempotencyKey?: string;
@@ -66,6 +82,13 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
     upserts: SqlModuleUpsert[];
     deletes: string[];
     order?: string[];
+  };
+  plugins?: {
+    upserts: SqlPluginUpsert[];
+    deletes: string[];
+    order?: string[];
+    scripts?: SqlPluginScriptUpsert[];
+    enabled?: SqlPluginEnabledUpdate[];
   };
   characters: SqlCharacterUpsert[];
   characterTouches?: SqlCharacterTouch[];
@@ -112,6 +135,13 @@ export interface NormalizedSqlCommit {
     deletes: string[];
     order?: string[];
   };
+  plugins?: {
+    upserts: SqlPluginUpsert[];
+    deletes: string[];
+    order?: string[];
+    scripts?: SqlPluginScriptUpsert[];
+    enabled?: SqlPluginEnabledUpdate[];
+  };
   characters: SqlCharacterUpsert[];
   characterTouches: SqlCharacterTouch[];
   chats: SqlChatUpsert[];
@@ -155,6 +185,7 @@ export interface SqlCommitImpact {
   readonly pluginStorageCleared: boolean;
   readonly presetsChanged: boolean;
   readonly modulesChanged: boolean;
+  readonly pluginsChanged: boolean;
 }
 
 /**
@@ -322,12 +353,22 @@ export function deriveSqlCommitImpact(
           commit.modules.deletes.length > 0 ||
           commit.modules.order !== undefined)),
     ),
+    pluginsChanged: Boolean(
+      replaceAll ||
+      (commit.plugins !== undefined &&
+        (commit.plugins.upserts.length > 0 ||
+          commit.plugins.deletes.length > 0 ||
+          commit.plugins.order !== undefined ||
+          (commit.plugins.scripts?.length ?? 0) > 0 ||
+          (commit.plugins.enabled?.length ?? 0) > 0)),
+    ),
   };
 }
 
 export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
   "botPresets",
   "botPresetsId",
+  "plugins",
 ] as const);
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -543,8 +584,15 @@ class SqlCommitParser {
 
   private rejectReservedRoot(action: RejectReservedRootType, key: string) {
     if (!isReservedRootSettingKey(key)) return;
+    // Legacy plugin settings may be deleted by the one-time migration after
+    // their canonical plugin rows have been written in the same commit.
+    if (action === "DELETE" && key === "plugins") return;
 
-    throw new this.PayloadError(ERROR_MESSAGES[action](key));
+    throw new this.PayloadError(
+      key === "plugins" && action === "UPSERT"
+        ? "plugins must be written through the plugins domain"
+        : ERROR_MESSAGES[action](key),
+    );
   }
   // Parses generic root-setting upserts and deletes, applying the reserved-key
   // policy to both operations.
@@ -637,6 +685,70 @@ class SqlCommitParser {
         ? undefined
         : this.parseIds(value.order, "modules.order");
     return { upserts, deletes, order };
+  }
+
+  private parsePlugins(value: unknown): NormalizedSqlCommit["plugins"] {
+    if (value === undefined) return undefined;
+    if (!isRecord(value))
+      throw new this.PayloadError("plugins must be an object");
+
+    const upserts = this.parseRows(
+      value.upserts,
+      "plugins.upserts",
+      (item, index) => {
+        this.assertId(item.id, `plugins.upserts[${index}].id`);
+        if (item.position !== undefined)
+          this.assertPosition(
+            item.position,
+            `plugins.upserts[${index}].position`,
+          );
+        if (!isRecord(item.data))
+          throw new this.PayloadError(
+            `plugins.upserts[${index}].data must be an object`,
+          );
+        if (Object.prototype.hasOwnProperty.call(item.data, "script"))
+          throw new this.PayloadError(
+            `plugins.upserts[${index}].data.script must be written through plugins.scripts`,
+          );
+        return { id: item.id, position: item.position, data: item.data };
+      },
+    );
+    const deletes = this.parseIds(value.deletes, "plugins.deletes");
+    const order =
+      value.order === undefined
+        ? undefined
+        : this.parseIds(value.order, "plugins.order");
+    const scripts =
+      value.scripts === undefined
+        ? undefined
+        : this.parseRows(
+            value.scripts,
+            "plugins.scripts",
+            (item, index) => {
+              this.assertId(item.id, `plugins.scripts[${index}].id`);
+              if (typeof item.script !== "string")
+                throw new this.PayloadError(
+                  `plugins.scripts[${index}].script must be a string`,
+                );
+              return { id: item.id, script: item.script };
+            },
+          );
+    const enabled =
+      value.enabled === undefined
+        ? undefined
+        : this.parseRows(
+            value.enabled,
+            "plugins.enabled",
+            (item, index) => {
+              this.assertId(item.id, `plugins.enabled[${index}].id`);
+              if (typeof item.enabled !== "boolean")
+                throw new this.PayloadError(
+                  `plugins.enabled[${index}].enabled must be a boolean`,
+                );
+              return { id: item.id, enabled: item.enabled };
+            },
+          );
+    return { upserts, deletes, order, scripts, enabled };
   }
 
   // Parses plugin-storage upserts, deletes, and the optional clear operation.
@@ -772,6 +884,7 @@ class SqlCommitParser {
     const root = this.parseRoot(payload.root);
     const presets = this.parsePresets(payload.presets);
     const modules = this.parseModules(payload.modules);
+    const plugins = this.parsePlugins(payload.plugins);
     const pluginStorage = this.parsePluginStorage(payload.pluginStorage);
     const entities = this.parseEntities(payload);
 
@@ -783,6 +896,7 @@ class SqlCommitParser {
       ...pluginStorage,
       presets,
       modules,
+      plugins,
       ...entities,
     };
   }
