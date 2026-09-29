@@ -1,5 +1,8 @@
 import { registerPlugin } from "@capacitor/core";
+import { getLogger } from "@logtape/logtape";
 import { isCapacitorAndroid } from "../platform";
+
+const logger = getLogger(["risuai", "plugins", "crashGuard"]);
 
 interface CrashGuardNative {
   setLoadingPlugin(options: { name: string }): Promise<void>;
@@ -33,7 +36,7 @@ export async function getBlockedPlugins(): Promise<string[]> {
   try {
     return (await guard.getBlockedPlugins()).plugins ?? [];
   } catch (error) {
-    console.error("CrashGuard: failed to read blocked plugins", error);
+    logger.error("failed to read blocked plugins {error}", { error });
     return [];
   }
 }
@@ -45,7 +48,7 @@ export async function setLoadingPlugin(name: string): Promise<void> {
   try {
     await guard.setLoadingPlugin({ name });
   } catch (error) {
-    console.error("CrashGuard: failed to set loading ledger", error);
+    logger.error("failed to set loading ledger {error}", { error, name });
   }
 }
 
@@ -56,7 +59,7 @@ export async function clearLoadingPlugin(): Promise<void> {
   try {
     await guard.clearLoadingPlugin();
   } catch (error) {
-    console.error("CrashGuard: failed to clear loading ledger", error);
+    logger.error("failed to clear loading ledger {error}", { error });
   }
 }
 
@@ -67,6 +70,6 @@ export async function clearBlockedPlugin(name: string): Promise<void> {
   try {
     await guard.clearBlockedPlugin({ name });
   } catch (error) {
-    console.error("CrashGuard: failed to clear blocked plugin", error);
+    logger.error("failed to clear blocked plugin {error}", { error, name });
   }
 }
