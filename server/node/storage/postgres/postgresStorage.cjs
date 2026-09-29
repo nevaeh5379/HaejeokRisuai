@@ -13,7 +13,9 @@ const {
   runStartupStage,
 } = require("../../http/startupDiagnostics.cjs");
 const {
+  decodePostgresScript,
   decodePostgresJsonValue,
+  encodePostgresScript,
   encodePostgresJsonValue,
 } = require("./postgresJsonCodec.cjs");
 const {
@@ -2711,7 +2713,10 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       const pluginScriptMap = new Map(
-        (pluginScripts || []).map((row) => [row.plugin_id, row.script]),
+        (pluginScripts || []).map((row) => [
+          row.plugin_id,
+          decodePostgresScript(row.script),
+        ]),
       );
       database.plugins = rebuildPluginRecords(
         pluginRecords || [],
@@ -4017,7 +4022,8 @@ class PostgresStorage extends SqlStorageBase {
       "SELECT script FROM system.plugin_scripts WHERE plugin_id = $1",
       [pluginId],
     );
-    return result.rows[0]?.script ?? null;
+    const script = result.rows[0]?.script;
+    return script == null ? null : decodePostgresScript(script);
   }
 
   async loadPluginCustomStorage() {
@@ -5027,7 +5033,7 @@ class PostgresStorage extends SqlStorageBase {
              VALUES ($1,$2,NOW())
              ON CONFLICT (plugin_id) DO UPDATE SET
               script=EXCLUDED.script, updated_at=NOW()`,
-            [script.id, script.script],
+            [script.id, encodePostgresScript(script.script)],
           );
         }
         for (const update of payload.plugins.enabled || []) {
