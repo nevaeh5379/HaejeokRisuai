@@ -83,6 +83,59 @@
     let showNewMessageButton = $state(false)
     let chatsInstance: any = $state()
     let chatScrollContainer: HTMLDivElement | undefined = $state()
+    const getEdgeFadeGradient = (direction: 'to bottom' | 'to top', curve: string) => {
+        if (curve === 'linear') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 80%, transparent) 20%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 60%, transparent) 40%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 40%, transparent) 60%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 20%, transparent) 80%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        if (curve === 'ease-out') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 95%, transparent) 15%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 85%, transparent) 30%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 70%, transparent) 48%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 50%, transparent) 65%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 30%, transparent) 80%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 12%, transparent) 92%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        if (curve === 'buffered') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `var(--color-bgcolor) 12%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 96%, transparent) 22%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 85%, transparent) 35%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 68%, transparent) 50%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 48%, transparent) 65%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 28%, transparent) 78%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 12%, transparent) 89%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        return `linear-gradient(${direction}, ` +
+            `var(--color-bgcolor) 0%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 98%, transparent) 8%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 93%, transparent) 17%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 82%, transparent) 28%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 65%, transparent) 40%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 45%, transparent) 53%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 25%, transparent) 67%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 9%, transparent) 81%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 2%, transparent) 92%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+    }
+    let edgeFadeSize = $derived(settingsStore.state.chatEdgeFadeSize ?? 48)
+    let edgeFadeCurve = $derived(settingsStore.state.chatEdgeFadeCurve ?? 'cosine')
+    let topFadeStyle = $derived(
+        `height: ${edgeFadeSize}px; background: ${getEdgeFadeGradient('to bottom', edgeFadeCurve)};`
+    )
+    let bottomFadeStyle = $derived(
+        `height: ${edgeFadeSize}px; background: ${getEdgeFadeGradient('to top', edgeFadeCurve)};`
+    )
     let isScrollingToMessage = $state(false)
     let loadingOlderMessages = $state(false)
     let readingFromBeginning = $state(false)
@@ -936,7 +989,26 @@
             {#if showTabBar}
                 <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
             {/if}
-            <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
+            {#if settingsStore.state.chatEdgeFade}
+                <div
+                    class="pointer-events-none absolute left-0 right-0 z-20 rs-chat-edge-fade-top"
+                    class:top-0={!showTabBar || settingsStore.state.showChatTabs === false}
+                    class:top-10={showTabBar && (settingsStore.state.showChatTabs ?? true)}
+                    style={topFadeStyle}
+                    aria-hidden="true"
+                ></div>
+                {#if !settingsStore.state.fixedChatTextarea}
+                    <div
+                        class="pointer-events-none absolute bottom-0 left-0 right-0 z-20 rs-chat-edge-fade-bottom"
+                        style={bottomFadeStyle}
+                        aria-hidden="true"
+                    ></div>
+                {/if}
+            {/if}
+            <div
+                bind:this={chatScrollContainer}
+                class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
+                onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
             const reachedPaginationEdge = readingFromBeginning
@@ -972,9 +1044,16 @@
             }
         }}>
             <div
-                    class="{settingsStore.state.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
+                    class="{settingsStore.state.fixedChatTextarea ? 'sticky relative pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
                     style="{settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
+                {#if settingsStore.state.chatEdgeFade && settingsStore.state.fixedChatTextarea}
+                    <div
+                        class="pointer-events-none absolute left-0 right-0 bottom-full"
+                        style={bottomFadeStyle}
+                        aria-hidden="true"
+                    ></div>
+                {/if}
                 <div class="flex items-stretch w-full rs-chat-input-row">
                     {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
                         <div onclick={()=>{toggleStickers = !toggleStickers}}

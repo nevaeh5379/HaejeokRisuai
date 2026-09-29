@@ -72,6 +72,12 @@ const featureScalarDefaults = {
   showSavingIcon: defaultBoolean(false),
   showPromptComparison: defaultBoolean(false),
   showChatTabs: defaultBoolean(true),
+  chatEdgeFade: defaultBoolean(false),
+  chatEdgeFadeSize: defaultNumber(48),
+  chatEdgeFadeCurve: defaultPicklist(
+    ["cosine", "linear", "ease-out", "buffered"] as const,
+    "cosine",
+  ),
   reasoningEffort: defaultNumber(0),
   verbosity: defaultNumber(1),
   hypaV3PresetId: defaultNumber(0),

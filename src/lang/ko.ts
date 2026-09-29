@@ -2234,6 +2234,15 @@ export const languageKorean = {
   home: "홈",
   showSavingIcon: "저장 아이콘 표시",
   showChatTabs: "채팅 탭 표시",
+  chatEdgeFade: "채팅창 경계 페이드 효과",
+  chatEdgeFadeDesc:
+    "채팅창 상단과 하단 경계에서 메시지가 부드럽게 흐려지며 사라지는 페이드 효과를 적용합니다.",
+  chatEdgeFadeSize: "채팅창 경계 페이드 크기",
+  chatEdgeFadeCurve: "채팅창 페이드 곡선 방식",
+  chatEdgeFadeCurveCosine: "코사인",
+  chatEdgeFadeCurveLinear: "선형",
+  chatEdgeFadeCurveEaseOut: "완만한 끝단",
+  chatEdgeFadeCurveBuffered: "완충 지대 포함",
   pluginVersionWarn:
     "이 플러그인은 {{plugin_version}} 버전입니다. 이 버전의 Risuai와 호환되지 않습니다. 플러그인을 {{required_version}} 버전으로 업데이트하세요.",
   imageTranslation: "이미지 번역",

@@ -2334,6 +2334,15 @@ export const languageEnglish = {
   home: "Home",
   showSavingIcon: "Show Saving Icon",
   showChatTabs: "Show Chat Tabs",
+  chatEdgeFade: "Chat Edge Fade",
+  chatEdgeFadeDesc:
+    "Applies a smooth fade-out effect to messages near the top and bottom edges of the chat screen.",
+  chatEdgeFadeSize: "Chat Edge Fade Size",
+  chatEdgeFadeCurve: "Chat Edge Fade Curve",
+  chatEdgeFadeCurveCosine: "Cosine",
+  chatEdgeFadeCurveLinear: "Linear",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Buffered",
   pluginVersionWarn:
     "This is {{plugin_version}} version of the plugin. Which is not compatible with this version of Risuai. Please update the plugin to {{required_version}} version.",
   imageTranslation: "Image Translation",

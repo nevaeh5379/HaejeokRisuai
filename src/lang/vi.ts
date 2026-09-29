@@ -1559,6 +1559,15 @@ export const languageVietnamese = {
   home: "Trang chủ",
   showSavingIcon: "Hiển thị biểu tượng đang lưu",
   showChatTabs: "Hiển thị tab trò chuyện",
+  chatEdgeFade: "Hiệu ứng làm mờ viền khung chat",
+  chatEdgeFadeDesc:
+    "Áp dụng hiệu ứng mờ dần mượt mà cho tin nhắn gần cạnh trên và dưới của màn hình trò chuyện.",
+  chatEdgeFadeSize: "Kích thước làm mờ viền khung chat",
+  chatEdgeFadeCurve: "Dạng đường cong làm mờ viền",
+  chatEdgeFadeCurveCosine: "Cosine",
+  chatEdgeFadeCurveLinear: "Tuyến tính",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Có vùng đệm",
   pluginVersionWarn:
     "Đây là phiên bản {{plugin_version}} của plugin, không tương thích với phiên bản Risuai này. Vui lòng cập nhật plugin lên phiên bản {{required_version}}.",
   imageTranslation: "Dịch hình ảnh",

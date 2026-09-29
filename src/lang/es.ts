@@ -1580,6 +1580,15 @@ export const languageSpanish = {
   home: "Inicio",
   showSavingIcon: "Mostrar Icono de Guardado",
   showChatTabs: "Mostrar pestañas de chat",
+  chatEdgeFade: "Efecto de desvanecimiento de bordes del chat",
+  chatEdgeFadeDesc:
+    "Aplica un suave efecto de desvanecimiento a los mensajes cerca de los bordes superior e inferior de la pantalla de chat.",
+  chatEdgeFadeSize: "Tamaño de desvanecimiento de bordes del chat",
+  chatEdgeFadeCurve: "Curva de desvanecimiento de bordes del chat",
+  chatEdgeFadeCurveCosine: "Coseno",
+  chatEdgeFadeCurveLinear: "Lineal",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Con búfer",
   pluginVersionWarn:
     "Esta es la versión {{plugin_version}} del plugin, que no es compatible con esta versión de Risuai. Por favor, actualiza el plugin a la versión {{required_version}}.",
   imageTranslation: "Traducción de Imagen",

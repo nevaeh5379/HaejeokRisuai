@@ -29,6 +29,8 @@ export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 export type GenerationStatsPosition =
   "bottom-right" | "bottom-left" | "top-right" | "top-left" | "off";
 
+export type ChatEdgeFadeCurve = "cosine" | "linear" | "ease-out" | "buffered";
+
 export interface ProviderModelOverride {
   ollamaModel?: string;
   ollamaModelName?: string;
@@ -92,9 +94,7 @@ export interface DatabaseSettings {
   forceReplaceUrl: string;
   language: string;
   translator: string;
-  plugins: Array<
-    Omit<PluginMetadata, "id" | "position"> & { script: string }
-  >;
+  plugins: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>;
   currentPluginProvider: string;
   zoomsize: number;
   customBackground: string;
@@ -403,11 +403,12 @@ export interface DatabaseSettings {
   assetMaxDifference: number;
   auxModelUnderModelSettings: boolean;
   menuSideBar: boolean;
-  pluginV2: Array<
-    Omit<PluginMetadata, "id" | "position"> & { script: string }
-  >;
+  pluginV2: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>;
   showSavingIcon: boolean;
   showChatTabs: boolean;
+  chatEdgeFade?: boolean;
+  chatEdgeFadeSize?: number;
+  chatEdgeFadeCurve?: ChatEdgeFadeCurve;
   presetRegex: customscript[];
   banCharacterset: string[];
   showPromptComparison: boolean;
