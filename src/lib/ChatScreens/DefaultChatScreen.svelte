@@ -15,6 +15,7 @@
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
+    import LiquidMergeSpinner from "../UI/LiquidMergeSpinner.svelte";
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
@@ -1045,7 +1046,11 @@
                                 class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
                                 style:height={inputHeight}
                         >
-                            <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {#if settingsStore.state.useLiquidLoadingSpinner}
+                                <LiquidMergeSpinner size={20} stage={currentChatProcessStage} autoMode={autoMode} />
+                            {:else}
+                                <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {/if}
                         </button>
                     {:else if $startupPhase !== 'chat-ready'}
                         <button
