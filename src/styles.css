@@ -204,17 +204,15 @@ html.tauri-windows-vibrancy .rs-main-content {
   background-color: var(--risu-theme-bgcolor);
 }
 
-/* Let Acrylic reach the tab strip without leaking through the chat body. The
- * shell owns the tint so the nested list does not compound its opacity. */
+/* Keep the window drag strip fully transparent while the chat body keeps its
+ * own readable surface. */
 html.tauri-windows-vibrancy
-  .rs-main-content:has(.default-chat-pane.has-chat-tabs) {
+  .rs-main-content:has(.default-chat-pane) {
   background-color: transparent;
 }
 
-/* Match the rounded content viewport used by Edge and other Windows 11 apps.
- * The pane owns the same material tint as the tab strip, so the small corner
- * cutouts reveal Acrylic/Mica instead of an opaque rectangular backdrop. */
-html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
+/* Match the rounded content viewport used by Edge and other Windows 11 apps. */
+html.tauri-windows-vibrancy .default-chat-pane {
   --risu-windows-chat-radius: 10px;
   --risu-windows-chat-outline: color-mix(
     in srgb,
@@ -226,7 +224,13 @@ html.tauri-windows-vibrancy .default-chat-pane.has-chat-tabs {
     var(--risu-theme-textcolor) 9%,
     var(--risu-theme-bgcolor)
   );
-  background-color: var(--risu-windows-sidebar-tint);
+  background-color: transparent;
+}
+
+html.tauri-windows-vibrancy
+  .default-chat-pane:not(.has-chat-tabs)
+  > .default-chat-screen {
+  background-color: var(--risu-theme-bgcolor);
 }
 
 html.tauri-windows-vibrancy
@@ -1643,6 +1647,11 @@ annotation {
     var(--risu-theme-bgcolor) var(--risu-windows-material-opacity, 95%),
     transparent
   );
+}
+
+.theme-windows-fluent.tauri-windows-vibrancy
+  .rs-main-content:has(.default-chat-pane) {
+  background-color: transparent;
 }
 
 /* Main Left Sidebar (WinUI 3 NavigationView) */
