@@ -1094,13 +1094,25 @@ export class NodeApiClient {
       signal,
     });
     if (!response.ok) {
+      const endpoint = this.resolve("/api/client-capabilities");
       if (response.status === 404) {
         throw new NodeApiCompatibilityError(
-          "This server is too old for remote storage. Upgrade the server before connecting.",
+          `The storage API endpoint was not found (HTTP 404): ${endpoint}. Check the server URL and reverse proxy route, or upgrade the server.`,
         );
       }
+      const body = await response.json().catch(() => null);
+      if (response.status === 403 && body?.code === "cors_denied") {
+        const origin = globalThis.location?.origin;
+        throw new Error(
+          `The storage server rejected this app origin (${origin || "unknown"}). Add it to RISUAI_ALLOWED_ORIGINS on the Node server. For changing localhost dev ports, use http://localhost:*.`,
+        );
+      }
+      const detail =
+        body && typeof body.error === "string" && body.error.trim()
+          ? ` ${body.error.trim()}`
+          : "";
       throw new Error(
-        `Could not read storage server capabilities (HTTP ${response.status}).`,
+        `Could not read storage server capabilities (HTTP ${response.status}) from ${endpoint}.${detail}`,
       );
     }
     return validateCapabilities(await response.json());

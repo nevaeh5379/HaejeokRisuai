@@ -238,11 +238,18 @@ When structured SQL storage and S3 are both active, RisuAI maintains an `asset_c
 
 Remote clients hosted on a different origin must be listed exactly in the
 comma-separated `RISUAI_ALLOWED_ORIGINS` environment variable. For example,
-`RISUAI_ALLOWED_ORIGINS=https://chat.example.com,http://localhost:5174`.
-Wildcards are rejected. Same-origin requests and native requests without an
+`RISUAI_ALLOWED_ORIGINS=https://chat.example.com,http://localhost:*`.
+The `:*` port wildcard is accepted only for `localhost`, `127.0.0.1`, and
+`[::1]`; host wildcards are rejected. Same-origin requests and native requests without an
 `Origin` header continue to work without configuration. Native app origins
 sent by the desktop/mobile shells (`tauri://localhost`, `http://tauri.localhost`,
 `capacitor://localhost`) are trusted automatically.
+
+For Docker Compose, set `RISUAI_ALLOWED_ORIGINS=http://localhost:*` in the
+server's `.env` file (append it to any existing allowed origins), then recreate
+the `risuai` service. Tauri dev currently uses `http://localhost:5174`; packaged Tauri
+uses a native app origin and does not need this entry. The Compose files pass
+the variable into the Node container without enabling the dev origin by default.
 
 Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 

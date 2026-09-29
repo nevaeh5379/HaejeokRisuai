@@ -57,7 +57,9 @@ describe("NodeApiClient", () => {
   });
 
   it("supplies an empty body for payload-free Capacitor mutations", async () => {
-    const streamedFetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const streamedFetch = vi.fn(
+      async () => new Response(null, { status: 204 }),
+    );
     const fetcher = createCapacitorNodeApiFetch(streamedFetch);
 
     await fetcher("https://storage.example/api/local-backup/import/jobs", {
@@ -123,6 +125,37 @@ describe("NodeApiClient", () => {
     );
     await expect(client.getCapabilities()).rejects.toBeInstanceOf(
       NodeApiCompatibilityError,
+    );
+  });
+
+  it("identifies a missing API route without assuming the server version", async () => {
+    const client = new NodeApiClient(
+      profile,
+      async () => new Response(null, { status: 404 }),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /storage\.example:7443\/api\/client-capabilities.*reverse proxy route/,
+    );
+  });
+
+  it("shows the server's reason for an unavailable capabilities endpoint", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json({ error: "SQL storage is unavailable" }, { status: 503 }),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /HTTP 503.*storage\.example:7443\/api\/client-capabilities.*SQL storage is unavailable/,
+    );
+  });
+
+  it("explains how to allow a Tauri dev origin rejected by the server", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json(
+        { error: "Origin is not allowed", code: "cors_denied" },
+        { status: 403 },
+      ),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /RISUAI_ALLOWED_ORIGINS/,
     );
   });
 
