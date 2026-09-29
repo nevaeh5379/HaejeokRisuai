@@ -692,8 +692,11 @@
 
     let inputHeight = $state("44px")
     // Numeric button height for sizing the liquid spinner (inputHeight is a
-    // "44px"-style string that grows with the textarea content).
-    let spinnerSize = $derived(parseInt(inputHeight) || 44)
+    // "44px"-style string that grows with the textarea content). The drops
+    // travel ±53px (+blur) within the 140px box during the split phase, so
+    // drawing at only 80% of the button height keeps them clear of the
+    // button's top/bottom borders.
+    let spinnerSize = $derived(Math.floor((parseInt(inputHeight) || 44) * 0.8))
     let inputEle:HTMLTextAreaElement = $state()
     let inputTranslateHeight = $state("44px")
     let inputTranslateEle:HTMLTextAreaElement = $state()
