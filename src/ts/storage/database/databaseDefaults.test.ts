@@ -28,6 +28,14 @@ describe("normalizeDatabaseDefaults", () => {
     ).toBe(false);
   });
 
+  it("defaults useLiquidLoadingSpinner to false", () => {
+    expect(normalizeSettingsInput({}).useLiquidLoadingSpinner).toBe(false);
+    expect(
+      normalizeSettingsInput({ useLiquidLoadingSpinner: true })
+        .useLiquidLoadingSpinner,
+    ).toBe(true);
+  });
+
   it("defaults and preserves image cache settings across normalization", () => {
     expect(normalizeSettingsInput({}).assetCacheEntries).toBe(128);
     expect(
