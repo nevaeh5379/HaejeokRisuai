@@ -12,6 +12,10 @@ const generatedStorageSyncApply = path.join(
   "dist/storageSyncSqlApply.cjs",
 );
 const serverSource = path.join(__dirname, "server.cts");
+const postgresStorageSources = [
+  path.join(__dirname, "storage/postgres/postgresStorage.cjs"),
+  path.join(__dirname, "storage/postgres/postgresJsonCodec.cjs"),
+];
 const pluginStorageRoutesSource = path.join(
   __dirname,
   "api/database/plugins/routes.ts",
@@ -103,6 +107,9 @@ const needsBuild =
   backupCoreNeedsBuild ||
   (process.env.NODE_ENV !== "production" &&
     (isStale(serverSource, generatedServer) ||
+      postgresStorageSources.some((source) =>
+        isStale(source, generatedServer),
+      ) ||
       isStale(pluginStorageRoutesSource, generatedServer) ||
       isStale(packetSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
