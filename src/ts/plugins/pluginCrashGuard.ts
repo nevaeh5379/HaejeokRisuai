@@ -11,6 +11,8 @@ interface CrashGuardNative {
   clearBlockedPlugin(options: { name: string }): Promise<void>;
 }
 
+type CrashGuardMethod = CrashGuardNative[keyof CrashGuardNative];
+
 export class PluginCrashGuard {
   private static instance: PluginCrashGuard | null = null;
 
@@ -32,44 +34,69 @@ export class PluginCrashGuard {
   }
 
   /**
+   * Helper: executes a native bridge method with this-binding,
+   * logging errors with context and returning undefined on failure.
+   * Constrained strictly to methods belonging to CrashGuardNative.
+   */
+  private async safeCall<T>(
+    action: Extract<CrashGuardMethod, () => Promise<T>>,
+    message: string,
+  ): Promise<T | undefined>;
+  private async safeCall<T, Arg extends object>(
+    action: Extract<CrashGuardMethod, (arg: Arg) => Promise<T>>,
+    message: string,
+    arg: Arg,
+  ): Promise<T | undefined>;
+  private async safeCall<T, Arg extends object>(
+    action: (arg?: Arg) => Promise<T>,
+    message: string,
+    arg?: Arg,
+  ): Promise<T | undefined> {
+    try {
+      return await action.call(this.native, arg);
+    } catch (error) {
+      logger.error(message, { error, ...arg });
+      return undefined;
+    }
+  }
+
+  /**
    * Native blocklist of plugins blamed for a renderer death mid-load.
    * Populated by the Android side when the WebView renderer dies while a
    * plugin sandbox is starting; consumed at the next boot to skip loading
    * the culprit and permanently disable it (see applyBlockedPlugins).
    */
   async getBlocked(): Promise<string[]> {
-    try {
-      return (await this.native.getBlockedPlugins()).plugins ?? [];
-    } catch (error) {
-      logger.error("failed to read blocked plugins {error}", { error });
-      return [];
-    }
+    const result = await this.safeCall(
+      this.native.getBlockedPlugins,
+      "failed to read blocked plugins {error}",
+    );
+    return result?.plugins ?? [];
   }
 
   /** Records "about to load plugin X" so a renderer death blames X. */
   async setLoading(name: string): Promise<void> {
-    try {
-      await this.native.setLoadingPlugin({ name });
-    } catch (error) {
-      logger.error("failed to set loading ledger {error}", { error, name });
-    }
+    await this.safeCall(
+      this.native.setLoadingPlugin,
+      "failed to set loading ledger {error}",
+      { name },
+    );
   }
 
   /** Clears the ledger once boot has stabilized. */
   async clearLoading(): Promise<void> {
-    try {
-      await this.native.clearLoadingPlugin();
-    } catch (error) {
-      logger.error("failed to clear loading ledger {error}", { error });
-    }
+    await this.safeCall(
+      this.native.clearLoadingPlugin,
+      "failed to clear loading ledger {error}",
+    );
   }
 
   /** Removes one entry from the native blocklist (after the DB caught up). */
   async clearBlocked(name: string): Promise<void> {
-    try {
-      await this.native.clearBlockedPlugin({ name });
-    } catch (error) {
-      logger.error("failed to clear blocked plugin {error}", { error, name });
-    }
+    await this.safeCall(
+      this.native.clearBlockedPlugin,
+      "failed to clear blocked plugin {error}",
+      { name },
+    );
   }
 }

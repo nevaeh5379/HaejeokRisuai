@@ -74,6 +74,17 @@ describe("pluginCrashGuard", () => {
     expect(first).not.toBeNull();
     expect(first).toBe(second);
   });
+
+  it("preserves `this` binding on native plugin methods", async () => {
+    let capturedThis: unknown = null;
+    mocks.clearLoadingPlugin.mockImplementation(function (this: unknown) {
+      capturedThis = this;
+      return Promise.resolve();
+    });
+    const guard = PluginCrashGuard.getInstance()!;
+    await guard.clearLoading();
+    expect(capturedThis).toBe(mocks.registerPlugin());
+  });
 });
 
 describe("pluginCrashGuard on non-Android platforms", () => {
