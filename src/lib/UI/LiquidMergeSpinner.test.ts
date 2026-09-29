@@ -56,6 +56,17 @@ describe("LiquidMergeSpinner", () => {
     ).toContain("48");
   });
 
+  it("scales the 140px inner box with a unitless transform factor", () => {
+    mountSpinner({ size: 20 });
+    const scaleBox = mounted!.target.querySelector(
+      ".liquid-scale",
+    ) as HTMLElement;
+    // 20 / 140 = 0.1429 — must be unitless, not "0.1429px" (which invalidates
+    // the whole transform and leaves the 140px box unscaled, the bug where
+    // the drops look gigantic inside a tiny container).
+    expect(scaleBox.style.transform).toBe("scale(0.1429)");
+  });
+
   // Stage colors must mirror the legacy .chat-process-stage-{1..4} / .autoload
   // colors in DefaultChatScreen.svelte exactly.
   it.each([

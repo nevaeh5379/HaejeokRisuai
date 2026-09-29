@@ -19,6 +19,12 @@
   let { size = 24, stage = 0, autoMode = false }: Props = $props();
   let filterId = `liquid-goo-${uuidv4().slice(0, 8)}`;
 
+  // The original animation geometry is a fixed 140px box; scaling that box
+  // down to the requested size requires a unitless scale factor. A unitless
+  // number is computed in JS because CSS scale() rejects the px value that
+  // calc(var(--liquid-spinner-size) / 140) would produce.
+  let scaleStyle = $derived(`transform: scale(${(size / 140).toFixed(4)})`);
+
   // Same colors as DefaultChatScreen.svelte's .chat-process-stage-{1..4} / .autoload.
   const STAGE_COLORS: Record<number, string> = {
     1: "#60a5fa", // blue
@@ -62,7 +68,7 @@
 
   <!-- 140px fixed inner box (matches the original HTML's geometry), scaled
        down to the requested size. Keeps the original keyframes math intact. -->
-  <div class="liquid-scale">
+  <div class="liquid-scale" style={scaleStyle}>
     <div class="liquid-rotor" style="filter: url(#{filterId})">
       <div class="liquid-drop liquid-neck"></div>
       <div class="liquid-drop liquid-a"></div>
@@ -87,7 +93,6 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    transform: scale(calc(var(--liquid-spinner-size) / 140));
   }
 
   .liquid-rotor {
