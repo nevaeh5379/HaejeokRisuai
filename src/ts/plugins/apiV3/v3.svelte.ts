@@ -1590,11 +1590,12 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   // iframe in the same task causes a large transient memory/CPU spike on
   // older mobile browsers, so let one document finish loading before the
   // next sandbox is created.
+  const { PluginCrashGuard } = await import("../pluginCrashGuard");
+  const crashGuard = PluginCrashGuard.getInstance();
   for (const plugin of plugins) {
     // CrashGuard: record which plugin is about to load so a renderer
     // death mid-load can blame it (Android only; no-op elsewhere).
-    const { pluginCrashGuard } = await import("../pluginCrashGuard");
-    await pluginCrashGuard.setLoading(plugin.name);
+    await crashGuard?.setLoading(plugin.name);
     await executePluginV3(plugin);
   }
   // Boot finished loading plugin sandboxes. Keep the last ledger entry
@@ -1603,13 +1604,12 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   // Cancel any timer from a previous loadPlugins() run (settings toggle,
   // plugin import, realtime sync): it would clear the ledger written by
   // this newer load and leave a later crash without a culprit to blame.
-  const { pluginCrashGuard } = await import("../pluginCrashGuard");
   if (crashGuardLedgerClearTimer !== null) {
     clearTimeout(crashGuardLedgerClearTimer);
   }
   crashGuardLedgerClearTimer = setTimeout(() => {
     crashGuardLedgerClearTimer = null;
-    void pluginCrashGuard.clearLoading();
+    void crashGuard?.clearLoading();
   }, CRASH_GUARD_LEDGER_GRACE_MS);
 }
 

@@ -12,16 +12,23 @@ interface CrashGuardNative {
 }
 
 export class PluginCrashGuard {
-  // Lazily created: keeps the module cheap to import on web/Tauri/Node where
-  // the crash guard is a no-op.
-  private nativeInstance: CrashGuardNative | null = null;
+  private static instance: PluginCrashGuard | null = null;
 
-  private getNativeGuard(): CrashGuardNative | null {
+  private constructor(private readonly native: CrashGuardNative) {}
+
+  /** Internal factory: builds the concrete instance when the platform is supported. */
+  private static create(): PluginCrashGuard {
+    const native = registerPlugin<CrashGuardNative>("CrashGuard");
+    return new PluginCrashGuard(native);
+  }
+
+  /** Public entry point: gates by platform and provides the singleton instance. */
+  static getInstance(): PluginCrashGuard | null {
     if (!isCapacitorAndroid) return null;
-    if (!this.nativeInstance) {
-      this.nativeInstance = registerPlugin<CrashGuardNative>("CrashGuard");
+    if (!PluginCrashGuard.instance) {
+      PluginCrashGuard.instance = PluginCrashGuard.create();
     }
-    return this.nativeInstance;
+    return PluginCrashGuard.instance;
   }
 
   /**
@@ -31,10 +38,8 @@ export class PluginCrashGuard {
    * the culprit and permanently disable it (see applyBlockedPlugins).
    */
   async getBlocked(): Promise<string[]> {
-    const guard = this.getNativeGuard();
-    if (!guard) return [];
     try {
-      return (await guard.getBlockedPlugins()).plugins ?? [];
+      return (await this.native.getBlockedPlugins()).plugins ?? [];
     } catch (error) {
       logger.error("failed to read blocked plugins {error}", { error });
       return [];
@@ -43,10 +48,8 @@ export class PluginCrashGuard {
 
   /** Records "about to load plugin X" so a renderer death blames X. */
   async setLoading(name: string): Promise<void> {
-    const guard = this.getNativeGuard();
-    if (!guard) return;
     try {
-      await guard.setLoadingPlugin({ name });
+      await this.native.setLoadingPlugin({ name });
     } catch (error) {
       logger.error("failed to set loading ledger {error}", { error, name });
     }
@@ -54,10 +57,8 @@ export class PluginCrashGuard {
 
   /** Clears the ledger once boot has stabilized. */
   async clearLoading(): Promise<void> {
-    const guard = this.getNativeGuard();
-    if (!guard) return;
     try {
-      await guard.clearLoadingPlugin();
+      await this.native.clearLoadingPlugin();
     } catch (error) {
       logger.error("failed to clear loading ledger {error}", { error });
     }
@@ -65,14 +66,10 @@ export class PluginCrashGuard {
 
   /** Removes one entry from the native blocklist (after the DB caught up). */
   async clearBlocked(name: string): Promise<void> {
-    const guard = this.getNativeGuard();
-    if (!guard) return;
     try {
-      await guard.clearBlockedPlugin({ name });
+      await this.native.clearBlockedPlugin({ name });
     } catch (error) {
       logger.error("failed to clear blocked plugin {error}", { error, name });
     }
   }
 }
-
-export const pluginCrashGuard = new PluginCrashGuard();

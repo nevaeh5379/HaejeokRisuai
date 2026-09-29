@@ -25,7 +25,7 @@ import {
   SafeIdbFactory,
   SafeLocalStorage,
 } from "./pluginSafeClass";
-import { pluginCrashGuard } from "./pluginCrashGuard";
+import { PluginCrashGuard } from "./pluginCrashGuard";
 
 export const customProviderStore = writable([] as string[]);
 
@@ -503,7 +503,8 @@ export async function loadPlugins() {
 
   // CrashGuard: plugins the native side blamed for a renderer death
   // mid-load are skipped until they are permanently disabled below.
-  const blocked = await pluginCrashGuard.getBlocked();
+  const crashGuard = PluginCrashGuard.getInstance();
+  const blocked = (await crashGuard?.getBlocked()) ?? [];
   const blockedSet = new Set(blocked);
 
   const enabledPlugins = safeStructuredClone(plugins).filter(
@@ -547,10 +548,11 @@ async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
   console.warn(
     `CrashGuard: permanently disabling plugin(s) blamed for a renderer crash: ${names.join(", ")}`,
   );
+  const crashGuard = PluginCrashGuard.getInstance();
   for (const plugin of blockedPresent) {
     try {
       await setPluginEnabledByName(plugin.name, false);
-      await pluginCrashGuard.clearBlocked(plugin.name);
+      await crashGuard?.clearBlocked(plugin.name);
     } catch (error) {
       console.error(
         `CrashGuard: failed to persist disabled state for ${plugin.name}`,

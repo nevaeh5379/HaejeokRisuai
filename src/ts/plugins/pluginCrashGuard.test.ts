@@ -15,7 +15,7 @@ vi.mock("@capacitor/core", () => ({
   registerPlugin: mocks.registerPlugin,
 }));
 
-import { pluginCrashGuard, PluginCrashGuard } from "./pluginCrashGuard";
+import { PluginCrashGuard } from "./pluginCrashGuard";
 
 describe("pluginCrashGuard", () => {
   beforeEach(() => {
@@ -26,20 +26,21 @@ describe("pluginCrashGuard", () => {
     mocks.getBlockedPlugins.mockResolvedValue({
       plugins: ["bad-plugin"],
     });
-    await expect(pluginCrashGuard.getBlocked()).resolves.toEqual([
-      "bad-plugin",
-    ]);
+    const guard = PluginCrashGuard.getInstance()!;
+    await expect(guard.getBlocked()).resolves.toEqual(["bad-plugin"]);
     expect(mocks.getBlockedPlugins).toHaveBeenCalled();
   });
 
   it("returns an empty list when the native bridge fails", async () => {
     mocks.getBlockedPlugins.mockRejectedValue(new Error("bridge down"));
-    await expect(pluginCrashGuard.getBlocked()).resolves.toEqual([]);
+    const guard = PluginCrashGuard.getInstance()!;
+    await expect(guard.getBlocked()).resolves.toEqual([]);
   });
 
   it("records the loading ledger before a sandbox starts", async () => {
     mocks.setLoadingPlugin.mockResolvedValue(undefined);
-    await pluginCrashGuard.setLoading("plugin-a");
+    const guard = PluginCrashGuard.getInstance()!;
+    await guard.setLoading("plugin-a");
     expect(mocks.setLoadingPlugin).toHaveBeenCalledWith({
       name: "plugin-a",
     });
@@ -47,13 +48,15 @@ describe("pluginCrashGuard", () => {
 
   it("clears the loading ledger after boot stabilizes", async () => {
     mocks.clearLoadingPlugin.mockResolvedValue(undefined);
-    await pluginCrashGuard.clearLoading();
+    const guard = PluginCrashGuard.getInstance()!;
+    await guard.clearLoading();
     expect(mocks.clearLoadingPlugin).toHaveBeenCalled();
   });
 
   it("removes a plugin from the native blocklist", async () => {
     mocks.clearBlockedPlugin.mockResolvedValue(undefined);
-    await pluginCrashGuard.clearBlocked("bad-plugin");
+    const guard = PluginCrashGuard.getInstance()!;
+    await guard.clearBlocked("bad-plugin");
     expect(mocks.clearBlockedPlugin).toHaveBeenCalledWith({
       name: "bad-plugin",
     });
@@ -61,9 +64,15 @@ describe("pluginCrashGuard", () => {
 
   it("swallows bridge errors for ledger writes", async () => {
     mocks.setLoadingPlugin.mockRejectedValue(new Error("bridge down"));
-    await expect(
-      pluginCrashGuard.setLoading("plugin-a"),
-    ).resolves.toBeUndefined();
+    const guard = PluginCrashGuard.getInstance()!;
+    await expect(guard.setLoading("plugin-a")).resolves.toBeUndefined();
+  });
+
+  it("returns the same singleton instance on repeated calls", () => {
+    const first = PluginCrashGuard.getInstance();
+    const second = PluginCrashGuard.getInstance();
+    expect(first).not.toBeNull();
+    expect(first).toBe(second);
   });
 });
 
@@ -76,9 +85,8 @@ describe("pluginCrashGuard on non-Android platforms", () => {
 
   it("is a no-op without registering the native plugin", async () => {
     const mod = await import("./pluginCrashGuard");
-    await expect(mod.pluginCrashGuard.getBlocked()).resolves.toEqual([]);
-    await mod.pluginCrashGuard.setLoading("plugin-a");
+    const guard = mod.PluginCrashGuard.getInstance();
+    expect(guard).toBeNull();
     expect(mocks.registerPlugin).not.toHaveBeenCalled();
-    expect(mocks.setLoadingPlugin).not.toHaveBeenCalled();
   });
 });
