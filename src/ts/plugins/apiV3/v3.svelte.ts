@@ -1567,6 +1567,13 @@ const v3PluginInstances: V3PluginInstance[] = [];
  */
 const CRASH_GUARD_LEDGER_GRACE_MS = 10_000;
 
+/**
+ * CrashGuard: pending grace-clear timer for the most recent loadPlugins()
+ * run. Kept so a newer run can cancel the previous one's timer before it
+ * clears a ledger it no longer owns.
+ */
+let crashGuardLedgerClearTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function loadV3Plugins(plugins: RisuPlugin[]) {
   await Promise.all(
     v3PluginInstances.map(async (instance) => {
@@ -1593,8 +1600,15 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   // Boot finished loading plugin sandboxes. Keep the last ledger entry
   // for a grace window so an init-path runaway is still attributable,
   // then clear it — later idle crashes restart without blaming anyone.
+  // Cancel any timer from a previous loadPlugins() run (settings toggle,
+  // plugin import, realtime sync): it would clear the ledger written by
+  // this newer load and leave a later crash without a culprit to blame.
   const { clearLoadingPlugin } = await import("../pluginCrashGuard");
-  setTimeout(() => {
+  if (crashGuardLedgerClearTimer !== null) {
+    clearTimeout(crashGuardLedgerClearTimer);
+  }
+  crashGuardLedgerClearTimer = setTimeout(() => {
+    crashGuardLedgerClearTimer = null;
     void clearLoadingPlugin();
   }, CRASH_GUARD_LEDGER_GRACE_MS);
 }

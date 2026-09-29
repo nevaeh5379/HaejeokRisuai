@@ -90,22 +90,30 @@ public class CrashGuardPlugin extends Plugin {
      * Called from RisuWebViewClient.onRenderProcessGone — no JS is alive.
      * Moves the pending "loading" ledger entry into the persistent
      * blocklist so the next boot skips the culprit plugin.
+     *
+     * @return true if a NEW culprit was added to the blocklist. The caller
+     *         uses this to bypass the restart-loop guard: each blocked
+     *         culprit makes the next boot strictly safer, so restarting
+     *         is always progress even when deaths come in quick
+     *         succession (multi-culprit boot loops).
      */
-    static void blameLoadingPlugin(Context context) {
+    static boolean blameLoadingPlugin(Context context) {
         SharedPreferences p = prefs(context);
         String loading = p.getString(KEY_LOADING, null);
-        if (loading == null || loading.isEmpty()) return; // no culprit — plain restart
+        if (loading == null || loading.isEmpty()) return false; // no culprit — plain restart
         try {
             JSONArray arr = new JSONArray(p.getString(KEY_BLOCKED, "[]"));
             for (int i = 0; i < arr.length(); i++) {
-                if (loading.equals(arr.getString(i))) return; // already blocked
+                if (loading.equals(arr.getString(i))) return false; // already blocked
             }
             arr.put(loading);
             // Synchronous commit: the activity is about to be restarted.
             p.edit().putString(KEY_BLOCKED, arr.toString())
                 .remove(KEY_LOADING) // consumed
                 .commit();
+            return true;
         } catch (Exception ignored) {
+            return false;
         }
     }
 }

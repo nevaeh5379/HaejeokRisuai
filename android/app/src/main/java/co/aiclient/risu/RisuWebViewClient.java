@@ -66,16 +66,22 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
             return false; // API 26- only; default behavior below min
         }
         Log.e(TAG, "Renderer gone (crashed=" + detail.didCrash() + ")");
-        CrashGuardPlugin.blameLoadingPlugin(context);
-        restartActivity();
+        boolean blamedNewCulprit = CrashGuardPlugin.blameLoadingPlugin(context);
+        restartActivity(blamedNewCulprit);
         return true; // true = the app handled the crash
     }
 
-    private void restartActivity() {
+    private void restartActivity(boolean bypassLoopGuard) {
         // Loop guard: if we restarted less than 30s ago and the renderer
-        // died again, the cause is likely the main bundle — stop restarting.
+        // died again, the cause is likely the main bundle — stop
+        // restarting. Exception: when this death blamed a NEW culprit
+        // plugin, the next boot loads strictly fewer plugins, so each
+        // restart is guaranteed progress toward a clean boot. Multi-
+        // culprit crashes on slow devices routinely die within the
+        // guard window; suppressing the restart there would leave a dead
+        // WebView instead of converging.
         long now = SystemClock.elapsedRealtime();
-        if (now - lastRendererRestartAt < RESTART_LOOP_GUARD_MS) {
+        if (!bypassLoopGuard && now - lastRendererRestartAt < RESTART_LOOP_GUARD_MS) {
             Log.e(TAG, "Renderer died again within the restart guard window; not restarting.");
             return;
         }
