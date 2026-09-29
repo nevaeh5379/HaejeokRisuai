@@ -120,10 +120,35 @@ describe("remote API CORS", () => {
   });
 
   it("requires exact origin configuration", () => {
-    expect(() => parseAllowedOrigins("*")).toThrow(/exact origins/);
+    expect(() => parseAllowedOrigins("*")).toThrow(/only as the port/);
+    expect(() => parseAllowedOrigins("https://example.com:*")).toThrow(
+      /only as the port/,
+    );
     expect(() => parseAllowedOrigins("https://example.com/path")).toThrow(
       /Invalid CORS origin/,
     );
+  });
+
+  it("allows explicitly configured loopback hosts on changing dev ports", () => {
+    const middleware = createRemoteCorsMiddleware(
+      parseAllowedOrigins("http://localhost:*"),
+    );
+    for (const origin of ["http://localhost:5174", "http://localhost:6200"]) {
+      const { res, headers } = response();
+      const next = vi.fn();
+      middleware(request(origin), res, next);
+      expect(next).toHaveBeenCalledOnce();
+      expect(headers.get("access-control-allow-origin")).toBe(origin);
+    }
+    for (const origin of [
+      "http://127.0.0.1:5174",
+      "https://localhost:5174",
+      "http://localhost.evil:5174",
+    ]) {
+      const { res } = response();
+      middleware(request(origin), res, vi.fn());
+      expect(res.statusCode).toBe(403);
+    }
   });
 
   it("answers preflights from native app origins", () => {

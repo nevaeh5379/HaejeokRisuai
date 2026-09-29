@@ -1,4 +1,12 @@
-const ALLOWED_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+const ALLOWED_METHODS = [
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "OPTIONS",
+];
 const ALLOWED_HEADERS = [
   "accept",
   "cache-control",
@@ -22,6 +30,8 @@ const NATIVE_APP_ORIGINS = new Set([
   "http://tauri.localhost",
   "capacitor://localhost",
 ]);
+const LOOPBACK_PORT_WILDCARD =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\*$/i;
 
 function normalizeConfiguredOrigin(value) {
   const url = new URL(String(value).trim());
@@ -42,14 +52,28 @@ function parseAllowedOrigins(value = "") {
   const origins = new Set();
   for (const item of String(value).split(",")) {
     if (!item.trim()) continue;
-    if (item.trim() === "*") {
+    const entry = item.trim();
+    if (LOOPBACK_PORT_WILDCARD.test(entry)) {
+      origins.add(entry.toLowerCase());
+      continue;
+    }
+    if (entry.includes("*")) {
       throw new Error(
-        "RISUAI_ALLOWED_ORIGINS requires exact origins and does not accept '*'.",
+        "RISUAI_ALLOWED_ORIGINS accepts '*' only as the port of a localhost or loopback origin.",
       );
     }
-    origins.add(normalizeConfiguredOrigin(item));
+    origins.add(normalizeConfiguredOrigin(entry));
   }
   return origins;
+}
+
+function isConfiguredOriginAllowed(origin, configured) {
+  if (configured.has(origin)) return true;
+  const url = new URL(origin);
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+    return false;
+  }
+  return configured.has(`${url.protocol}//${url.hostname}:*`);
 }
 
 function appendVaryOrigin(res) {
@@ -94,12 +118,16 @@ function createRemoteCorsMiddleware(allowedOrigins) {
       try {
         origin = normalizeConfiguredOrigin(originValue);
       } catch {
-        res.status(403).send({ error: "Origin is not allowed", code: "cors_denied" });
+        res
+          .status(403)
+          .send({ error: "Origin is not allowed", code: "cors_denied" });
         return;
       }
       const sameOrigin = origin === requestOrigin(req);
-      if (!sameOrigin && !configured.has(origin)) {
-        res.status(403).send({ error: "Origin is not allowed", code: "cors_denied" });
+      if (!sameOrigin && !isConfiguredOriginAllowed(origin, configured)) {
+        res
+          .status(403)
+          .send({ error: "Origin is not allowed", code: "cors_denied" });
         return;
       }
     }
@@ -119,7 +147,9 @@ function createRemoteCorsMiddleware(allowedOrigins) {
         .split(",")
         .map((value) => value.trim().toLowerCase())
         .filter(Boolean);
-      if (requestedHeaders.some((header) => !ALLOWED_HEADERS.includes(header))) {
+      if (
+        requestedHeaders.some((header) => !ALLOWED_HEADERS.includes(header))
+      ) {
         res
           .status(403)
           .send({ error: "CORS header is not allowed", code: "cors_denied" });
