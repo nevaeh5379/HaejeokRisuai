@@ -40,6 +40,7 @@
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
+    import { tilt } from "src/ts/gui/tilt";
     import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
     import { checkCharOrder, getFileSrc, getPreparedNativeThumbnailSrc, saveAsset } from "src/ts/globalApi.svelte";
@@ -764,6 +765,7 @@
         <div
             role="button" tabindex="0"
             class="rs-sidebar-bot-btn"
+            use:tilt
             onpointerenter={() => void preloadChatSidebarPanel()}
             onfocus={() => void preloadChatSidebarPanel()}
             onclick={() => {
@@ -930,6 +932,7 @@
               <div
                   role="button" tabindex="0"
                   class="rs-sidebar-bot-btn"
+                  use:tilt
                   onpointerenter={() => void preloadChatSidebarPanel()}
                   onfocus={() => void preloadChatSidebarPanel()}
                   onclick={() => {

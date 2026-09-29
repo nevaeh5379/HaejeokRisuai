@@ -1690,7 +1690,12 @@ annotation {
 }
 
 .sidebar-avatar {
+  transform: perspective(280px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  will-change: transform;
   transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
     filter 0.2s ease,
     border-color 0.2s ease,
@@ -1719,24 +1724,26 @@ annotation {
     z-index 0s 0.38s;
 }
 
-/* Hover effect: balanced spring expansion without vertical offset clipping */
+/* Hover effect: graceful spring rise and expansion on the container */
 .rs-sidebar-bot-btn:hover {
   z-index: 10;
   transform: scale(1.05);
   filter: brightness(1.05);
   transition:
-    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
     filter 0.2s ease,
     z-index 0s 0s;
 }
 
+/* Smooth real-time 3D tilt tracking on the inner avatar */
 .rs-sidebar-bot-btn:hover .sidebar-avatar {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.12s ease-out,
+    box-shadow 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Active / Pressed: tactile squishy "jelly" press feedback.
-   Squashes vertically slightly more than horizontally (scale 0.91, 0.89)
-   with instant touch-down response */
+/* Active / Pressed: tactile squishy "jelly" press feedback */
 .rs-sidebar-bot-btn:active {
   transform: translate3d(0, 1px, 0) scale(0.91, 0.89);
   filter: brightness(0.93);
@@ -1757,6 +1764,9 @@ annotation {
 
 /* Respect user's motion preference */
 @media (prefers-reduced-motion: reduce) {
+  .sidebar-avatar {
+    transform: none !important;
+  }
   .rs-sidebar-bot-btn {
     transition: transform 0.15s ease, filter 0.15s ease !important;
   }
