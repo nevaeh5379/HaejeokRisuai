@@ -2,6 +2,11 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
+const { encodePostgresScript, decodePostgresScript } =
+  require("./postgresJsonCodec.cjs") as {
+    encodePostgresScript: (script: string) => string;
+    decodePostgresScript: (script: string) => string;
+  };
 const {
   DEFERRED_SETTING_KEYS,
   buildUpsertClause,
@@ -49,6 +54,31 @@ const { rebuildSettings, splitSetting } =
   };
 
 describe("PostgreSQL storage sync finalize concurrency", () => {
+  it("round trips plugin scripts containing NUL or unpaired surrogates", () => {
+    for (const script of ["plain script", "a\0b", "a\ud800b"]) {
+      const stored = encodePostgresScript(script);
+      expect(stored).not.toContain("\0");
+      expect(decodePostgresScript(stored)).toBe(script);
+    }
+    expect(encodePostgresScript("plain script")).toBe("plain script");
+    const reservedPrefix = encodePostgresScript("\0").split(":")[0] + ":";
+    expect(decodePostgresScript(encodePostgresScript(reservedPrefix))).toBe(
+      reservedPrefix,
+    );
+  });
+
+  it("loads encoded plugin scripts as their original source", async () => {
+    const storage = new PostgresStorage({
+      connectionString: "postgres://plugin-test",
+    });
+    storage.pool = {
+      query: vi.fn(async () => ({
+        rows: [{ script: encodePostgresScript("before\0after") }],
+      })),
+    };
+    expect(await storage.loadPluginScript("plugin-id")).toBe("before\0after");
+  });
+
   function storageAtRevision(revision: number) {
     const queries: string[] = [];
     const client = {

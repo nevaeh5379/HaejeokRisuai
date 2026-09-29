@@ -1,5 +1,27 @@
 const POSTGRES_TEXT_TAG = "__risu_pg_text_utf16le_v1_8e81b0b9__";
 const POSTGRES_OBJECT_ENTRIES_TAG = "__risu_pg_object_entries_v1_8e81b0b9__";
+const POSTGRES_SCRIPT_TAG = "__risu_pg_script_utf16le_v1_8e81b0b9__:";
+
+function encodePostgresScript(script) {
+  if (canUsePostgresText(script) && !script.startsWith(POSTGRES_SCRIPT_TAG)) {
+    return script;
+  }
+  return (
+    POSTGRES_SCRIPT_TAG + Buffer.from(script, "utf16le").toString("base64")
+  );
+}
+
+function decodePostgresScript(script) {
+  if (typeof script !== "string" || !script.startsWith(POSTGRES_SCRIPT_TAG)) {
+    return script;
+  }
+  const encoded = script.slice(POSTGRES_SCRIPT_TAG.length);
+  const buffer = Buffer.from(encoded, "base64");
+  if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded) {
+    return script;
+  }
+  return buffer.toString("utf16le");
+}
 
 function defineJsonProperty(target, key, value) {
   Object.defineProperty(target, key, {
@@ -154,6 +176,8 @@ function canUsePostgresText(value) {
 
 module.exports = {
   canUsePostgresText,
+  decodePostgresScript,
   decodePostgresJsonValue,
+  encodePostgresScript,
   encodePostgresJsonValue,
 };
