@@ -1593,8 +1593,8 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   for (const plugin of plugins) {
     // CrashGuard: record which plugin is about to load so a renderer
     // death mid-load can blame it (Android only; no-op elsewhere).
-    const { setLoadingPlugin } = await import("../pluginCrashGuard");
-    await setLoadingPlugin(plugin.name);
+    const { pluginCrashGuard } = await import("../pluginCrashGuard");
+    await pluginCrashGuard.setLoading(plugin.name);
     await executePluginV3(plugin);
   }
   // Boot finished loading plugin sandboxes. Keep the last ledger entry
@@ -1603,13 +1603,13 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   // Cancel any timer from a previous loadPlugins() run (settings toggle,
   // plugin import, realtime sync): it would clear the ledger written by
   // this newer load and leave a later crash without a culprit to blame.
-  const { clearLoadingPlugin } = await import("../pluginCrashGuard");
+  const { pluginCrashGuard } = await import("../pluginCrashGuard");
   if (crashGuardLedgerClearTimer !== null) {
     clearTimeout(crashGuardLedgerClearTimer);
   }
   crashGuardLedgerClearTimer = setTimeout(() => {
     crashGuardLedgerClearTimer = null;
-    void clearLoadingPlugin();
+    void pluginCrashGuard.clearLoading();
   }, CRASH_GUARD_LEDGER_GRACE_MS);
 }
 

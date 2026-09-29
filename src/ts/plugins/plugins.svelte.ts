@@ -25,10 +25,7 @@ import {
   SafeIdbFactory,
   SafeLocalStorage,
 } from "./pluginSafeClass";
-import {
-  getBlockedPlugins,
-  clearBlockedPlugin,
-} from "./pluginCrashGuard";
+import { pluginCrashGuard } from "./pluginCrashGuard";
 
 export const customProviderStore = writable([] as string[]);
 
@@ -506,7 +503,7 @@ export async function loadPlugins() {
 
   // CrashGuard: plugins the native side blamed for a renderer death
   // mid-load are skipped until they are permanently disabled below.
-  const blocked = await getBlockedPlugins();
+  const blocked = await pluginCrashGuard.getBlocked();
   const blockedSet = new Set(blocked);
 
   const enabledPlugins = safeStructuredClone(plugins).filter(
@@ -553,7 +550,7 @@ async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
   for (const plugin of blockedPresent) {
     try {
       await setPluginEnabledByName(plugin.name, false);
-      await clearBlockedPlugin(plugin.name);
+      await pluginCrashGuard.clearBlocked(plugin.name);
     } catch (error) {
       console.error(
         `CrashGuard: failed to persist disabled state for ${plugin.name}`,
@@ -562,9 +559,7 @@ async function applyBlockedPlugins(blockedPresent: RisuPlugin[]) {
     }
   }
   const { alertToast } = await import("../alert");
-  alertToast(
-    language.pluginsAutoDisabled.replace("{0}", names.join(", ")),
-  );
+  alertToast(language.pluginsAutoDisabled.replace("{0}", names.join(", ")));
 }
 
 /** Name-based variant of the togglePluginEnabled persistence path. */
