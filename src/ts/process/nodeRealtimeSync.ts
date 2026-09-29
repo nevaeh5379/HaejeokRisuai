@@ -15,6 +15,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import {
   PRESET_STORE_SETTING_KEYS,
@@ -255,6 +256,7 @@ async function applyDatabaseChange(
     change.action === "plugin-toggle" ||
     rootKeys.includes("plugins")
   ) {
+    await pluginStore.refreshFromStorage();
     const { loadPlugins } = await import("../plugins/plugins.svelte");
     await loadPlugins();
   }

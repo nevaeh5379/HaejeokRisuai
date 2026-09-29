@@ -294,9 +294,13 @@ class PluginStore
   }
 
   async refreshFromStorage(): Promise<void> {
-    if (!this.storage) return;
+    const storage = this.storage;
+    if (!storage || !this.loaded) return;
     await this.flush();
-    await this.init(this.storage);
+    if (this.hasPendingWrites()) {
+      throw new Error("Cannot refresh plugins while local changes are pending");
+    }
+    await this.init(storage);
   }
 
   async flush(): Promise<void> {
