@@ -1012,6 +1012,7 @@ export const languageKorean = {
   generationStatsComplete: "완료",
   generationStatsSeconds: "초",
   generationStatsPosition: "응답 대기 플로팅 창",
+  useLiquidLoadingSpinner: "새로운 로딩 스피너 디자인 적용",
   generationStatsPositionBottomRight: "오른쪽 아래 (기본값)",
   generationStatsPositionBottomLeft: "왼쪽 아래",
   generationStatsPositionTopRight: "오른쪽 위",

@@ -15,6 +15,7 @@
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
+    import LiquidMergeSpinner from "../UI/LiquidMergeSpinner.svelte";
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
@@ -690,6 +691,12 @@
     })
 
     let inputHeight = $state("44px")
+    // Numeric button height for sizing the liquid spinner (inputHeight is a
+    // "44px"-style string that grows with the textarea content). The drops
+    // travel ±53px (+blur) within the 140px box during the split phase, so
+    // drawing at only 80% of the button height keeps them clear of the
+    // button's top/bottom borders.
+    let spinnerSize = $derived(Math.floor((parseInt(inputHeight) || 44) * 0.8))
     let inputEle:HTMLTextAreaElement = $state()
     let inputTranslateHeight = $state("44px")
     let inputTranslateEle:HTMLTextAreaElement = $state()
@@ -1045,7 +1052,11 @@
                                 class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
                                 style:height={inputHeight}
                         >
-                            <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {#if settingsStore.state.useLiquidLoadingSpinner}
+                                <LiquidMergeSpinner size={spinnerSize} stage={currentChatProcessStage} autoMode={autoMode} />
+                            {:else}
+                                <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {/if}
                         </button>
                     {:else if $startupPhase !== 'chat-ready'}
                         <button

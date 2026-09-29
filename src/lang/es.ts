@@ -1480,6 +1480,7 @@ export const languageSpanish = {
   parameters: "Parámetros",
   sizeAndSpeed: "Tamaño y Velocidad",
   useLegacyGUI: "Usar Interfaz Legacy",
+  useLiquidLoadingSpinner: "Usar nuevo spinner de carga (líquido)",
   claudeCachingExperimental: "Claude Caching",
   openClose: "Abrir/Cerrar",
   hideApiKeys: "Ocultar Claves API",

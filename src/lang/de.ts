@@ -1477,6 +1477,7 @@ export const languageGerman = {
   parameters: "Parameter",
   sizeAndSpeed: "Größe und Geschwindigkeit",
   useLegacyGUI: "Alte GUI verwenden",
+  useLiquidLoadingSpinner: "Neuen Lade-Spinner verwenden (Liquid)",
   claudeCachingExperimental: "Claude-Caching",
   openClose: "Öffnen/Schließen",
   hideApiKeys: "API-Schlüssel ausblenden",

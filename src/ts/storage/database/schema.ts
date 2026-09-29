@@ -533,6 +533,7 @@ export interface DatabaseSettings {
   hideAllImages?: boolean;
   lowSpecMode?: boolean;
   waitingMinigame?: boolean;
+  useLiquidLoadingSpinner?: boolean;
   preloadRecentSessionThumbnails?: boolean;
   assetCacheEntries?: number;
   assetCacheSizeMB?: number;

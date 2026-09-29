@@ -337,6 +337,13 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ["minigame", "dino", "waiting", "게임"],
   },
   {
+    id: "display.useLiquidLoadingSpinner",
+    type: "check",
+    labelKey: "useLiquidLoadingSpinner",
+    bindKey: "useLiquidLoadingSpinner",
+    keywords: ["spinner", "loading", "liquid", "스피너", "로딩"],
+  },
+  {
     id: "display.fullScreen",
     type: "check",
     labelKey: "fullscreen",
