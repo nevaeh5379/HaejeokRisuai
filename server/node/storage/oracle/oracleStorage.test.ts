@@ -21,6 +21,7 @@ const {
       columns: string[],
       rows: Record<string, any>[],
     ) => Promise<void>;
+    ensurePluginSchema: (connection: object) => Promise<void>;
   };
   normalizeEmptyStringBinds: (binds: unknown) => unknown;
   remapRowColumns: (
@@ -440,6 +441,51 @@ describe("Oracle reserved-word column mapping", () => {
     expect(binds[0][7]).toBe("output...");
     expect(binds[0][8]).toBe("g");
     expect(binds[0][9]).toBe('{"event":"test"}');
+  });
+});
+
+describe("Oracle plugin schema migration", () => {
+  it("creates missing plugin tables for an existing schema-v4 database", async () => {
+    const storage = new OracleStorage({});
+    const execute = vi.fn(async (statement: string) => {
+      if (statement.includes("plugin_records_enabled_position_idx")) {
+        throw new Error(
+          "ORA-00955: name is already used by an existing object",
+        );
+      }
+      return { rows: [], rowsAffected: 0 };
+    });
+    const commit = vi.fn(async () => undefined);
+
+    await expect(
+      storage.ensurePluginSchema({ execute, commit }),
+    ).resolves.toBeUndefined();
+
+    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute.mock.calls.map(([statement]) => statement)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE system_plugin_records"),
+        expect.stringContaining("CREATE TABLE system_plugin_scripts"),
+        expect.stringContaining("CREATE TABLE system_plugin_values"),
+        expect.stringContaining("CREATE TABLE system_plugin_custom_storage"),
+      ]),
+    );
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it("does not hide unexpected plugin-schema creation failures", async () => {
+    const storage = new OracleStorage({});
+    const connection = {
+      execute: vi.fn(async () => {
+        throw new Error("ORA-01031: insufficient privileges");
+      }),
+      commit: vi.fn(async () => undefined),
+    };
+
+    await expect(storage.ensurePluginSchema(connection)).rejects.toThrow(
+      "ORA-01031",
+    );
+    expect(connection.commit).not.toHaveBeenCalled();
   });
 });
 
