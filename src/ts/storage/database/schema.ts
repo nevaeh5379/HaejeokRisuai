@@ -409,6 +409,8 @@ export interface DatabaseSettings {
   chatEdgeFade?: boolean;
   chatEdgeFadeSize?: number;
   chatEdgeFadeCurve?: ChatEdgeFadeCurve;
+  chatEdgeFadeFromBottom?: boolean;
+  fixedChatTextareaBottomCover?: boolean;
   presetRegex: customscript[];
   banCharacterset: string[];
   showPromptComparison: boolean;

@@ -1491,6 +1491,12 @@ export const languageChineseTraditional = {
   chatEdgeFadeCurveLinear: "線性",
   chatEdgeFadeCurveEaseOut: "平緩末端",
   chatEdgeFadeCurveBuffered: "包含緩衝區域",
+  chatEdgeFadeFromBottom: "底部漸隱從螢幕底部開始",
+  chatEdgeFadeFromBottomDesc:
+    "啟用固定聊天輸入框時，從螢幕底部而不是輸入框上方開始套用底部漸隱效果。",
+  fixedChatTextareaBottomCover: "固定輸入框底部遮擋層",
+  fixedChatTextareaBottomCoverDesc:
+    "使用固定對話輸入框時，以背景色填補邊框下方的留白，防止滾動的訊息透出。",
   pluginVersionWarn:
     "這是 {{plugin_version}} 版本的外掛，與當前 Risuai 版本不相容。請更新外掛至 {{required_version}} 版本。",
   imageTranslation: "圖像翻譯",

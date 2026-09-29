@@ -1568,6 +1568,12 @@ export const languageVietnamese = {
   chatEdgeFadeCurveLinear: "Tuyến tính",
   chatEdgeFadeCurveEaseOut: "Ease-out",
   chatEdgeFadeCurveBuffered: "Có vùng đệm",
+  chatEdgeFadeFromBottom: "Làm mờ cạnh dưới từ đáy màn hình",
+  chatEdgeFadeFromBottomDesc:
+    "Khi cố định khung chat, bắt đầu làm mờ từ đáy màn hình thay vì phía trên ô nhập.",
+  fixedChatTextareaBottomCover: "Màn chắn đáy cho khung nhập cố định",
+  fixedChatTextareaBottomCoverDesc:
+    "Khi cố định khung chat ở dưới, lấp đầy phần đệm phía dưới viền bằng màu nền để tin nhắn cuộn không bị lộ ra.",
   pluginVersionWarn:
     "Đây là phiên bản {{plugin_version}} của plugin, không tương thích với phiên bản Risuai này. Vui lòng cập nhật plugin lên phiên bản {{required_version}}.",
   imageTranslation: "Dịch hình ảnh",

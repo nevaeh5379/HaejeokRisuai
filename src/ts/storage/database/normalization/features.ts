@@ -78,6 +78,8 @@ const featureScalarDefaults = {
     ["cosine", "linear", "ease-out", "buffered"] as const,
     "cosine",
   ),
+  chatEdgeFadeFromBottom: defaultBoolean(false),
+  fixedChatTextareaBottomCover: defaultBoolean(false),
   reasoningEffort: defaultNumber(0),
   verbosity: defaultNumber(1),
   hypaV3PresetId: defaultNumber(0),

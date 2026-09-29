@@ -177,15 +177,21 @@ describe("normalizeDatabaseDefaults", () => {
     expect(dbDefault.chatEdgeFade).toBe(false);
     expect(dbDefault.chatEdgeFadeSize).toBe(48);
     expect(dbDefault.chatEdgeFadeCurve).toBe("cosine");
+    expect(dbDefault.chatEdgeFadeFromBottom).toBe(false);
+    expect(dbDefault.fixedChatTextareaBottomCover).toBe(false);
 
     const dbEnabled = normalizeDatabaseInput({
       chatEdgeFade: true,
       chatEdgeFadeSize: 64,
       chatEdgeFadeCurve: "ease-out",
+      chatEdgeFadeFromBottom: true,
+      fixedChatTextareaBottomCover: true,
     });
     expect(dbEnabled.chatEdgeFade).toBe(true);
     expect(dbEnabled.chatEdgeFadeSize).toBe(64);
     expect(dbEnabled.chatEdgeFadeCurve).toBe("ease-out");
+    expect(dbEnabled.chatEdgeFadeFromBottom).toBe(true);
+    expect(dbEnabled.fixedChatTextareaBottomCover).toBe(true);
   });
 
   it("keeps relational character data outside schema normalization", () => {

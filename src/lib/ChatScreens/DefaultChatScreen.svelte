@@ -997,7 +997,7 @@
                     style={topFadeStyle}
                     aria-hidden="true"
                 ></div>
-                {#if !settingsStore.state.fixedChatTextarea}
+                {#if !settingsStore.state.fixedChatTextarea || settingsStore.state.chatEdgeFadeFromBottom}
                     <div
                         class="pointer-events-none absolute bottom-0 left-0 right-0 z-20 rs-chat-edge-fade-bottom"
                         style={bottomFadeStyle}
@@ -1044,13 +1044,20 @@
             }
         }}>
             <div
-                    class="{settingsStore.state.fixedChatTextarea ? 'sticky relative pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
+                    class="{settingsStore.state.fixedChatTextarea ? 'sticky relative pt-2 pb-2 right-0 bottom-0' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
                     style="{settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
-                {#if settingsStore.state.chatEdgeFade && settingsStore.state.fixedChatTextarea}
+                {#if settingsStore.state.fixedChatTextarea && settingsStore.state.fixedChatTextareaBottomCover}
                     <div
-                        class="pointer-events-none absolute left-0 right-0 bottom-full"
-                        style={bottomFadeStyle}
+                        class="pointer-events-none absolute left-0 right-0 bottom-0 bg-bgcolor"
+                        style="height: max(0.5rem, var(--risu-safe-area-inset-bottom, 0.5rem));"
+                        aria-hidden="true"
+                    ></div>
+                {/if}
+                {#if settingsStore.state.chatEdgeFade && settingsStore.state.fixedChatTextarea && !settingsStore.state.chatEdgeFadeFromBottom}
+                    <div
+                        class="pointer-events-none absolute left-0 right-0"
+                        style="bottom: calc(100% - 0.5rem); {bottomFadeStyle}"
                         aria-hidden="true"
                     ></div>
                 {/if}
@@ -1062,7 +1069,7 @@
                         </div>
                     {/if}
 
-                    <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
+                    <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-bgcolor rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
                               bind:value={messageInput}
                               bind:this={inputEle}
                               onkeydown={(e) => {
@@ -1128,7 +1135,7 @@
                     {#if currentChatGenerating || doingChatInputTranslate}
                         <button
                                 aria-labelledby="cancel"
-                                class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
+                                class="peer-focus:border-textcolor bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
                                 style:height={inputHeight}
                         >
                             {#if settingsStore.state.useLiquidLoadingSpinner}
@@ -1147,7 +1154,7 @@
                             }}
                             disabled={presetStore.activeStatus !== 'error'}
                             title={presetStore.error ?? 'Chat runtime is loading'}
-                            class="flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs rs-chat-loading-btn"
+                            class="bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs rs-chat-loading-btn"
                             style:height={inputHeight}
                         >
                             {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
@@ -1155,7 +1162,7 @@
                     {:else}
                         <button
                                 onclick={send}
-                                class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send rs-chat-send-btn"
+                                class="bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send rs-chat-send-btn"
                                 style:height={inputHeight}
                         >
                             <Send />
@@ -1167,7 +1174,7 @@
                                 openMenu = !openMenu
                                 e.stopPropagation()
                             }}
-                                class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                                class="peer-focus:border-textcolor bg-bgcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
                                 style:height={inputHeight}
                         >
                             <MenuIcon />
@@ -1183,7 +1190,7 @@
                                 })
                             }
                         }}
-                             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                             class="peer-focus:border-textcolor bg-bgcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
                              style:height={inputHeight}
                         >
                             <Plus />
@@ -1212,7 +1219,7 @@
                     <label for='messageInputTranslate' class="text-textcolor ml-4">
                         <LanguagesIcon />
                     </label>
-                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
+                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-bgcolor input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
                               bind:value={messageInputTranslate}
                               bind:this={inputTranslateEle}
                               onkeydown={(e) => {
@@ -1235,7 +1242,7 @@
             {/if}
 
             {#if fileInput.length > 0}
-                <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
+                <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md bg-bgcolor">
                     {#each fileInput as file, i}
                         {#await getInlayAsset(file) then inlayAsset}
                             <div class="relative">

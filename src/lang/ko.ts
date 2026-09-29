@@ -2243,6 +2243,12 @@ export const languageKorean = {
   chatEdgeFadeCurveLinear: "선형",
   chatEdgeFadeCurveEaseOut: "완만한 끝단",
   chatEdgeFadeCurveBuffered: "완충 지대 포함",
+  chatEdgeFadeFromBottom: "하단 페이드 화면 맨 밑에서 시작",
+  chatEdgeFadeFromBottomDesc:
+    "채팅창 하단 고정 사용 시, 하단 페이드 효과를 입력칸 위가 아니라 화면 맨 밑에서부터 시작합니다.",
+  fixedChatTextareaBottomCover: "고정 입력창 하단 차단막",
+  fixedChatTextareaBottomCoverDesc:
+    "채팅창 하단 고정 사용 시, 입력창 테두리 아래 여백을 배경색으로 채워 스크롤된 메시지가 비치지 않도록 가립니다.",
   pluginVersionWarn:
     "이 플러그인은 {{plugin_version}} 버전입니다. 이 버전의 Risuai와 호환되지 않습니다. 플러그인을 {{required_version}} 버전으로 업데이트하세요.",
   imageTranslation: "이미지 번역",

@@ -1490,6 +1490,12 @@ export const languageChinese = {
   chatEdgeFadeCurveLinear: "线性",
   chatEdgeFadeCurveEaseOut: "平缓末端",
   chatEdgeFadeCurveBuffered: "包含缓冲区域",
+  chatEdgeFadeFromBottom: "底部渐隐从屏幕底部开始",
+  chatEdgeFadeFromBottomDesc:
+    "启用固定聊天输入框时，从屏幕底部而不是输入框上方开始应用底部渐隐效果。",
+  fixedChatTextareaBottomCover: "固定输入框底部遮挡层",
+  fixedChatTextareaBottomCoverDesc:
+    "使用固定聊天输入框时，用背景色填充边框下方的间隙，防止滚动的消息透出。",
   pluginVersionWarn:
     "这是插件的 {{plugin_version}} 版本。它与此版本的 Risuai 不兼容。请将插件更新到 {{required_version}} 版本。",
   imageTranslation: "图片翻译",
