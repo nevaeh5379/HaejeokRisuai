@@ -17,7 +17,6 @@ import { isPresetStoreSettingKey } from "../storage/sql/sqlDeferredSettings";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
 import { pluginStore } from "../stores/domain/pluginStore.svelte";
-import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
 import {
@@ -25,6 +24,7 @@ import {
   SafeIdbFactory,
   SafeLocalStorage,
 } from "./pluginSafeClass";
+import { PluginCrashGuard } from "./pluginCrashGuard";
 import type { PluginMetadata } from "./pluginTypes";
 
 export const customProviderStore = writable([] as string[]);
@@ -425,9 +425,7 @@ export async function importPlugin(
       hotReloading.push(pluginMetadata.name);
     }
 
-    console.log(
-      `Imported plugin: ${pluginMetadata.name} (API v${apiVersion})`,
-    );
+    console.log(`Imported plugin: ${pluginMetadata.name} (API v${apiVersion})`);
     await loadPlugins();
   } catch (error) {
     console.error(error);
@@ -452,14 +450,26 @@ export async function togglePluginEnabled(index: number): Promise<void> {
 
 export async function loadPlugins() {
   console.log("Loading plugins...");
-  const enabledPlugins = safeStructuredClone(pluginStore.enabled);
+  // CrashGuard: plugins the native side blamed for a renderer death
+  // mid-load are skipped until they are permanently disabled below.
+  const crashGuard = PluginCrashGuard.getInstance();
+  const blocked = (await crashGuard?.getBlocked()) ?? [];
+  const blockedSet = new Set(blocked);
+  const enabled = pluginStore.enabled;
+  const enabledPlugins = safeStructuredClone(
+    enabled.filter((plugin) => !blockedSet.has(plugin.name)),
+  );
+
+  // Keep the blocklist entries that matched an enabled plugin so they can
+  // be persisted (enabled=false) once boot stabilizes.
+  const blockedPresent = enabled.filter((plugin) =>
+    blockedSet.has(plugin.name),
+  );
   runtimePlugins = enabledPlugins;
   const pluginV2 = enabledPlugins.filter(
     (plugin) => plugin.version === 2 || plugin.version === "2.1",
   );
-  const pluginV3 = enabledPlugins.filter(
-    (plugin) => plugin.version === "3.0",
-  );
+  const pluginV3 = enabledPlugins.filter((plugin) => plugin.version === "3.0");
 
   // HaejeokRisuai does not support V2 Plugins.
   // await loadV2Plugin(pluginV2);
@@ -467,6 +477,37 @@ export async function loadPlugins() {
     const { loadV3Plugins } = await import("./apiV3/v3.svelte");
     await loadV3Plugins(pluginV3);
   }
+
+  if (blockedPresent.length > 0) {
+    await applyBlockedPlugins(blockedPresent);
+  }
+}
+
+/**
+ * CrashGuard follow-up: once boot stabilized far enough to load the
+ * remaining plugins, permanently disable the culprits in the DB (same
+ * path as the settings toggle), tell the native side to drop its
+ * blocklist entries, and surface what happened to the user.
+ */
+async function applyBlockedPlugins(blockedPresent: PluginMetadata[]) {
+  const names = blockedPresent.map((p) => p.name);
+  console.warn(
+    `CrashGuard: permanently disabling plugin(s) blamed for a renderer crash: ${names.join(", ")}`,
+  );
+  const crashGuard = PluginCrashGuard.getInstance();
+  for (const plugin of blockedPresent) {
+    try {
+      await pluginStore.setEnabled(plugin.id, false);
+      await crashGuard?.clearBlocked(plugin.name);
+    } catch (error) {
+      console.error(
+        `CrashGuard: failed to persist disabled state for ${plugin.name}`,
+        error,
+      );
+    }
+  }
+  const { alertToast } = await import("../alert");
+  alertToast(language.pluginsAutoDisabled.replace("{0}", names.join(", ")));
 }
 
 export type PluginV2ProviderArgument = {
@@ -1146,9 +1187,7 @@ export async function pluginProcess(
 }
 
 export async function handlePluginInstallViaPlugin(
-  plugins: Array<
-    Omit<PluginMetadata, "id" | "position"> & { script: string }
-  >,
+  plugins: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>,
 ) {
   const trimmedPlugins: Array<
     Omit<PluginMetadata, "id" | "position"> & { script: string }

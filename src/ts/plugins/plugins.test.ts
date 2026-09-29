@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { getV2PluginAPIs, importPlugin } from "./plugins.svelte";
+import {
+  getRuntimePlugin,
+  getV2PluginAPIs,
+  importPlugin,
+  loadPlugins,
+} from "./plugins.svelte";
+import { PluginCrashGuard } from "./pluginCrashGuard";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { pluginStore } from "../stores/domain/pluginStore.svelte";
@@ -267,5 +273,43 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
       id: "update-test-id",
       script: expect.stringContaining('Risuai.log("updated");'),
     });
+  });
+
+  it("skips a crash-blocked plugin and disables it through the plugin store", async () => {
+    pluginStore.plugins = [
+      {
+        id: "blocked-plugin-id",
+        position: 0,
+        name: "BlockedPlugin",
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: 1,
+        enabled: true,
+      },
+    ];
+    const clearBlocked = vi.fn(async () => undefined);
+    const guard = vi.spyOn(PluginCrashGuard, "getInstance").mockReturnValue({
+      getBlocked: vi.fn(async () => ["BlockedPlugin"]),
+      clearBlocked,
+    } as unknown as PluginCrashGuard);
+    const setEnabled = vi
+      .spyOn(pluginStore, "setEnabled")
+      .mockImplementation(async (id, enabled) => {
+        expect(id).toBe("blocked-plugin-id");
+        pluginStore.plugins[0].enabled = enabled;
+      });
+
+    try {
+      await loadPlugins();
+
+      expect(getRuntimePlugin("BlockedPlugin")).toBeUndefined();
+      expect(setEnabled).toHaveBeenCalledWith("blocked-plugin-id", false);
+      expect(clearBlocked).toHaveBeenCalledWith("BlockedPlugin");
+    } finally {
+      setEnabled.mockRestore();
+      guard.mockRestore();
+    }
   });
 });

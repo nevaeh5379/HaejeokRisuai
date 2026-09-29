@@ -34,7 +34,8 @@ public class MainActivity extends BridgeActivity {
                         NativeChatPlugin.class,
                         NativeAppControlPlugin.class,
                         NativeIntegrationPlugin.class,
-                        NativeUpdaterPlugin.class
+                        NativeUpdaterPlugin.class,
+                        CrashGuardPlugin.class
                 ));
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {

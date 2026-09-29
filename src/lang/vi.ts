@@ -927,6 +927,8 @@ export const languageVietnamese = {
   userIcon: "Biểu tượng của bạn",
   successExport: "Đã xuất thành công và tải xuống thư mục tải xuống của bạn",
   successImport: "Đã nhập thành công",
+  pluginsAutoDisabled:
+    "Đã tắt plugin gây sự cố: {0}. Bạn có thể bật lại trong Cài đặt.",
   importedCharacter: "Ký tự đã nhập",
   alwaysActive: "Luôn luôn hoạt động",
   additionalPrompt: "Lời nhắc bổ sung",

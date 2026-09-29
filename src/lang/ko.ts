@@ -1508,6 +1508,8 @@ export const languageKorean = {
   userIcon: "유저 아이콘",
   successExport: "성공적으로 엑스포트하여 다운로드 경로에 다운로드했습니다.",
   successImport: "성공적으로 임포트했습니다.",
+  pluginsAutoDisabled:
+    "문제를 일으킨 플러그인을 비활성화했어요: {0}. 설정에서 다시 켤 수 있어요.",
   importedCharacter: "성공적으로 임포트 됨.",
   alwaysActive: "언제나 활성화",
   additionalPrompt: "추가 프롬프트",

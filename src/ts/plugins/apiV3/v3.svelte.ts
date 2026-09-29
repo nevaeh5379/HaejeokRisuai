@@ -731,10 +731,7 @@ const authorizationHeaders = [
   "proxy-authorization",
 ];
 
-const makeRisuaiAPIV3 = (
-  iframe: HTMLIFrameElement,
-  plugin: PluginMetadata,
-) => {
+const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
   const oldApis = getV2PluginAPIs();
   return {
     //Old APIs from v2.1
@@ -1564,6 +1561,21 @@ type V3PluginInstance = {
 
 const v3PluginInstances: V3PluginInstance[] = [];
 
+/**
+ * CrashGuard: how long the "loading plugin X" ledger entry survives after
+ * the last sandbox finished loading. A renderer death inside this window
+ * blames the last-loaded plugin; after it, idle crashes restart without
+ * blaming anyone.
+ */
+const CRASH_GUARD_LEDGER_GRACE_MS = 10_000;
+
+/**
+ * CrashGuard: pending grace-clear timer for the most recent loadPlugins()
+ * run. Kept so a newer run can cancel the previous one's timer before it
+ * clears a ledger it no longer owns.
+ */
+let crashGuardLedgerClearTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function loadV3Plugins(plugins: PluginMetadata[]) {
   await Promise.all(
     v3PluginInstances.map(async (instance) => {
@@ -1580,9 +1592,27 @@ export async function loadV3Plugins(plugins: PluginMetadata[]) {
   // iframe in the same task causes a large transient memory/CPU spike on
   // older mobile browsers, so let one document finish loading before the
   // next sandbox is created.
+  const { PluginCrashGuard } = await import("../pluginCrashGuard");
+  const crashGuard = PluginCrashGuard.getInstance();
   for (const plugin of plugins) {
+    // CrashGuard: record which plugin is about to load so a renderer
+    // death mid-load can blame it (Android only; no-op elsewhere).
+    await crashGuard?.setLoading(plugin.name);
     await executePluginV3(plugin);
   }
+  // Boot finished loading plugin sandboxes. Keep the last ledger entry
+  // for a grace window so an init-path runaway is still attributable,
+  // then clear it — later idle crashes restart without blaming anyone.
+  // Cancel any timer from a previous loadPlugins() run (settings toggle,
+  // plugin import, realtime sync): it would clear the ledger written by
+  // this newer load and leave a later crash without a culprit to blame.
+  if (crashGuardLedgerClearTimer !== null) {
+    clearTimeout(crashGuardLedgerClearTimer);
+  }
+  crashGuardLedgerClearTimer = setTimeout(() => {
+    crashGuardLedgerClearTimer = null;
+    void crashGuard?.clearLoading();
+  }, CRASH_GUARD_LEDGER_GRACE_MS);
 }
 
 export async function executePluginV3(plugin: PluginMetadata) {
