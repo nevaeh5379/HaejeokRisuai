@@ -30,8 +30,7 @@ const nativeChat = isAndroidNative
  * hang chat finalization. Every helper below already swallows rejections, but
  * a hung bridge call never rejects — it just never resolves, which used to
  * leave the chat generation lock held forever (reroll/save/exit all blocked
- * until app restart). 응답하지 않는 브릿지 호출이 채팅 마무리를 영구히
- * 멈추지 않도록 대기 시간을 제한합니다.
+ * until app restart).
  */
 export async function boundedNativeCall<T>(
   promise: Promise<T>,

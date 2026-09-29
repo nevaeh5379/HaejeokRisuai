@@ -94,16 +94,11 @@ export async function sendChat(
     if (keepAlive) {
       // Ask while we are still inside the send gesture: browsers drop the
       // notification permission prompt once the tab is backgrounded.
-      // Both calls cross the native bridge; bound them so a vendor ROM hang
-      // cannot leave the generation lock held forever.
-      await boundedNativeCall(
-        ensureChatNotificationPermission(),
-        NATIVE_BRIDGE_TIMEOUT_MS,
-      );
-      await boundedNativeCall(
-        beginNativeChatRequest(),
-        NATIVE_BRIDGE_TIMEOUT_MS,
-      );
+      // Both calls cross the native bridge; the lifecycle helpers bound
+      // their bridge calls internally, so a vendor ROM hang cannot leave
+      // the generation lock held forever.
+      await ensureChatNotificationPermission();
+      await beginNativeChatRequest();
     }
     const result = await runWithPresetChainGenerationGate(
       serializeForPresetChain,
@@ -141,7 +136,8 @@ export async function sendChat(
       );
     }
     if (keepAlive) {
-      await boundedNativeCall(endNativeChatRequest(), NATIVE_BRIDGE_TIMEOUT_MS);
+      // endNativeChatRequest bounds its bridge call internally.
+      await endNativeChatRequest();
     }
   }
 }

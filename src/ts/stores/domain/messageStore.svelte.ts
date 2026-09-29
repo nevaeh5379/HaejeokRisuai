@@ -52,6 +52,25 @@ class MessageStore implements FlushableStore {
   private drainPendingCommits(): Promise<void> {
     return this.queue.enqueue(async () => {
       const storage = await getSqlStorage();
+      // First, retry commits stashed by earlier repeated failures. Each gets
+      // a single best-effort attempt: if storage is still broken the commit
+      // goes back to droppedCommits instead of the queue, so a permanent
+      // failure cannot re-block saving or the Android exit flow.
+      if (this.droppedCommits.length > 0) {
+        const retries = this.droppedCommits;
+        this.droppedCommits = [];
+        for (const commit of retries) {
+          try {
+            await commitSqlChanges(storage, commit);
+          } catch (error) {
+            console.error(
+              "[MessageStore] Retrying stashed commit failed:",
+              error,
+            );
+            this.droppedCommits.push(commit);
+          }
+        }
+      }
       while (this.pendingCommits.length > 0) {
         const commit = this.pendingCommits[0];
         try {
@@ -92,16 +111,13 @@ class MessageStore implements FlushableStore {
 
   /** Retry any writes retained after an earlier transient storage failure. */
   async flush(): Promise<void> {
+    // drainPendingCommits retries commits stashed by earlier repeated
+    // failures with a single best-effort attempt each; a failure there does
+    // not leave the commit pending, so hasPendingWrites() stays false and
+    // the exit/backup paths are not re-blocked.
     await this.queue.enqueue(async () => {});
-    if (this.droppedCommits.length > 0) {
-      // Retrying a previously stashed commit is a best-effort recovery
-      // attempt, not a pending write: hasPendingWrites() must not depend on
-      // it, or a permanent failure would again block exit/backup forever.
-      const retries = this.droppedCommits;
-      this.droppedCommits = [];
-      this.pendingCommits.unshift(...retries);
-    }
-    if (this.pendingCommits.length > 0) await this.drainPendingCommits();
+    if (this.pendingCommits.length > 0 || this.droppedCommits.length > 0)
+      await this.drainPendingCommits();
   }
 
   hasPendingWrites(): boolean {
