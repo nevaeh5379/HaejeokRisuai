@@ -715,6 +715,7 @@
         ondragover={dragTabListOver}
         ondragleave={leaveTabListDrag}
         ondrop={(event) => void dropTabList(event)}
+        use:windowDragRegion={{ windowsOnly: true, selfOnly: true }}
         class="rs-chat-tab-list shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
@@ -803,6 +804,12 @@
             <path data-chat-pane-shape class="rs-chat-pane-surface-shape" />
         </svg>
     {/if}
+{:else if isTauriWindows}
+    <div
+        class="absolute inset-x-0 top-0 z-10 h-10 bg-transparent"
+        use:windowDragRegion
+        aria-hidden="true"
+    ></div>
 {/if}
 
 {#if contextMenu && showTabs}
