@@ -4,8 +4,17 @@
   import { v4 as uuidv4 } from "uuid";
 
   interface Props {
-    /** Rendered size in px (width & height). Default 24. */
+    /**
+     * Visual size in px (width & height) of the spinning drops area.
+     * Default 24. The element's layout footprint stays at layoutSize so
+     * the surrounding button keeps its square shape.
+     */
     size?: number;
+    /**
+     * Layout footprint in px (width & height). Defaults to 16 (1rem),
+     * matching the legacy .loadmove spinner so buttons don't widen.
+     */
+    layoutSize?: number;
     /**
      * Chat process stage (0-4). Controls the liquid color, mirroring
      * the legacy .loadmove chat-process-stage-{1..4} colors in
@@ -16,7 +25,8 @@
     autoMode?: boolean;
   }
 
-  let { size = 24, stage = 0, autoMode = false }: Props = $props();
+  let { size = 24, layoutSize = 16, stage = 0, autoMode = false }: Props =
+    $props();
   let filterId = `liquid-goo-${uuidv4().slice(0, 8)}`;
 
   // The original animation geometry is a fixed 140px box; scaling that box
@@ -40,7 +50,7 @@
 
 <div
   class="liquid-spinner"
-  style="--liquid-spinner-size: {size}px; --liquid-color: {color};"
+  style="--liquid-spinner-size: {size}px; --liquid-layout-size: {layoutSize}px; --liquid-color: {color};"
   aria-hidden="true"
 >
   <svg class="liquid-svg" width="0" height="0" aria-hidden="true">
@@ -79,17 +89,20 @@
 
 <style>
   .liquid-spinner {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: var(--liquid-spinner-size);
-    height: var(--liquid-spinner-size);
-    overflow: clip;
+    position: relative;
+    width: var(--liquid-layout-size);
+    height: var(--liquid-layout-size);
+    /* The visual (larger) spinner is absolutely centered so it doesn't
+       participate in layout — keeps surrounding buttons square. */
   }
 
   .liquid-scale {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     width: 140px;
     height: 140px;
+    margin: -70px 0 0 -70px; /* center the 140px box on the footprint */
     display: flex;
     justify-content: center;
     align-items: center;

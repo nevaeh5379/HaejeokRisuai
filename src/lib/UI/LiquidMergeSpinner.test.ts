@@ -67,6 +67,22 @@ describe("LiquidMergeSpinner", () => {
     expect(scaleBox.style.transform).toBe("scale(0.1429)");
   });
 
+  it("keeps the layout footprint at layoutSize, not the visual size", () => {
+    // The chat cancel button must stay square: the element only occupies
+    // layoutSize (16px, same as legacy .loadmove) while the animation paints
+    // larger, absolutely-positioned content on top.
+    mountSpinner({ size: 44 });
+    const root = mounted!.target.querySelector(
+      ".liquid-spinner",
+    ) as HTMLElement;
+    expect(root.style.getPropertyValue("--liquid-layout-size")).toContain(
+      "16",
+    );
+    expect(root.style.getPropertyValue("--liquid-spinner-size")).toContain(
+      "44",
+    );
+  });
+
   // Stage colors must mirror the legacy .chat-process-stage-{1..4} / .autoload
   // colors in DefaultChatScreen.svelte exactly.
   it.each([
