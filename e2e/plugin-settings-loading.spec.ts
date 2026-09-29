@@ -20,18 +20,17 @@ async function preparePluginLoad(page: Page, empty = false, failOnce = false) {
       !document.body.innerText.includes("Welcome to Haejeok RisuAI"),
   );
   await expect(page.getByText("Loading...", { exact: true })).toHaveCount(0);
+  await page.waitForFunction(
+    () => performance.getEntriesByName("plugins-ready").length > 0,
+  );
 
   return page.evaluate(
     async ({ empty, failOnce }) => {
-      const settingsUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
-      const loaderUrl = "/src/ts/stores/domain/deferredSettingsLoader.ts";
+      const pluginStoreUrl = "/src/ts/stores/domain/pluginStore.svelte.ts";
       const storageUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";
       const storesUrl = "/src/ts/stores.svelte.ts";
       const langUrl = "/src/lang/index.ts";
-      const { settingsStore } = await import(/* @vite-ignore */ settingsUrl);
-      const { deferredSettingsLoader } = await import(
-        /* @vite-ignore */ loaderUrl
-      );
+      const { pluginStore } = await import(/* @vite-ignore */ pluginStoreUrl);
       const { getSqlStorage } = await import(/* @vite-ignore */ storageUrl);
       const { settingsOpen, SettingsMenuIndex } = await import(
         /* @vite-ignore */ storesUrl
@@ -40,47 +39,41 @@ async function preparePluginLoad(page: Page, empty = false, failOnce = false) {
       if (empty) await lang.changeLanguage("ko");
       const { language } = lang;
       const storage = await getSqlStorage();
-      await deferredSettingsLoader.ensureAll();
-      settingsStore.set(
-        "plugins",
-        empty
-          ? []
-          : [
-              {
-                name: "Deferred database plugin",
-                script: "",
-                arguments: {},
-                realArg: {},
-                argMeta: {},
-                customLink: [],
-                version: "3.0",
-                enabled: false,
-              },
-            ],
-      );
-      await settingsStore.flush();
+      if (!empty) {
+        await pluginStore.install(
+          {
+            name: "Deferred database plugin",
+            arguments: {},
+            realArg: {},
+            argMeta: {},
+            customLink: [],
+            version: "3.0",
+            enabled: false,
+          },
+          "",
+        );
+      }
       // Keep the actual SQLite data, but restore the cold UI state.
-      settingsStore.hydrateSettingKey("plugins", []);
-      const control = { calls: 0, release: () => {} };
+      pluginStore.plugins = [];
+      pluginStore.loaded = false;
+      const control = { calls: 0, pending: true, release: () => {} };
       const gate = new Promise<void>((resolve) => {
         control.release = resolve;
       });
       (window as any).__pluginLoad = control;
-      const originalLoad = storage.loadSettingKey.bind(storage);
-      storage.loadSettingKey = async (key: string) => {
-        if (key === "plugins") {
+      const originalLoadAll = storage.plugin.loadAll.bind(storage.plugin);
+      storage.plugin.loadAll = async (options?: { enabledOnly?: boolean }) => {
+        if (control.pending) {
+          control.pending = false;
           control.calls += 1;
           await gate;
-          if (failOnce && control.calls === 1)
+          if (failOnce && control.calls === 1) {
+            control.pending = true;
             throw new Error("Simulated plugin read failure");
+          }
         }
-        return originalLoad(key);
+        return originalLoadAll(options);
       };
-      deferredSettingsLoader.init({
-        storage,
-        unloadedKeys: ["plugins"],
-        hydrateSettingKey: settingsStore.hydrateSettingKey.bind(settingsStore),
-      });
       SettingsMenuIndex.set(-1);
       settingsOpen.set(true);
       return {
