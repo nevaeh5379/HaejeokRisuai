@@ -691,6 +691,9 @@
     })
 
     let inputHeight = $state("44px")
+    // Numeric button height for sizing the liquid spinner (inputHeight is a
+    // "44px"-style string that grows with the textarea content).
+    let spinnerSize = $derived(parseInt(inputHeight) || 44)
     let inputEle:HTMLTextAreaElement = $state()
     let inputTranslateHeight = $state("44px")
     let inputTranslateEle:HTMLTextAreaElement = $state()
@@ -1047,7 +1050,7 @@
                                 style:height={inputHeight}
                         >
                             {#if settingsStore.state.useLiquidLoadingSpinner}
-                                <LiquidMergeSpinner size={20} stage={currentChatProcessStage} autoMode={autoMode} />
+                                <LiquidMergeSpinner size={spinnerSize} stage={currentChatProcessStage} autoMode={autoMode} />
                             {:else}
                                 <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
                             {/if}
