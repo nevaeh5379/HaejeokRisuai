@@ -49,6 +49,8 @@ import {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
+import type { IPluginStorage } from "../pluginStorage";
+import { NodePluginStorage } from "./nodePluginStorage";
 import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
 import {
   PortableDatabaseStreamValidator,
@@ -183,6 +185,7 @@ export {
 
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
+  readonly plugin: IPluginStorage;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
   private readonly clientId = getNodeClientSessionId();
@@ -193,9 +196,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   private readonly commitClient: RemoteSqlCommitClient;
   private readonly readClient: RemoteSqlReadClient;
   private readonly documentClient: RemoteSqlDocumentClient;
-  private pluginsCacheForage = localforage.createInstance({
-    name: "risuaiPostgresPlugins",
-  });
   private pluginStorageCacheForage = localforage.createInstance({
     name: "risuaiPostgresPluginStorage",
   });
@@ -219,9 +219,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     name: "risuaiPostgresScripts",
   });
 
-  private memoryPluginsCache: { hash: string; plugins: any[] } | null = null;
-  private memoryRuntimePluginsCache: { hash: string; plugins: any[] } | null =
-    null;
   private memoryPluginStorageCache: {
     hash: string;
     pluginCustomStorage: Record<string, any>;
@@ -292,6 +289,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.getAuth,
       this.clientId,
     );
+    this.plugin = new NodePluginStorage(this, this.documentClient);
   }
 
   isEnabled() {
@@ -422,72 +420,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       initialized: summary.initialized,
       records: summary.records,
     };
-  }
-
-  async loadPlugins(options?: {
-    enabledOnly?: boolean;
-  }): Promise<any[] | null> {
-    if (!(await this.ensureEnabled())) return null;
-    const enabledOnly = options?.enabledOnly === true;
-    const cacheKey = enabledOnly ? "runtime-cache" : "cache";
-    let cached: { hash: string; plugins: any[] } | null = enabledOnly
-      ? this.memoryRuntimePluginsCache
-      : this.memoryPluginsCache;
-    if (!cached) {
-      try {
-        cached = await this.pluginsCacheForage.getItem(cacheKey);
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadPlugins(
-      enabledOnly,
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) {
-      if (enabledOnly) this.memoryRuntimePluginsCache = cached;
-      else this.memoryPluginsCache = cached;
-      return cached.plugins ?? [];
-    }
-    if (result.status !== "ok") return null;
-    const entry = {
-      hash: result.body.hash,
-      plugins: (result.body.plugins ?? []) as any[],
-    };
-    if (enabledOnly) this.memoryRuntimePluginsCache = entry;
-    else this.memoryPluginsCache = entry;
-    try {
-      await this.pluginsCacheForage.setItem(cacheKey, entry);
-    } catch {}
-    return entry.plugins;
-  }
-
-  async setPluginEnabled(pluginName: string, enabled: boolean): Promise<void> {
-    if (!(await this.ensureEnabled())) {
-      throw new Error("SQL storage is not enabled");
-    }
-    let body: { revision?: number };
-    try {
-      body = await this.documentClient.setPluginEnabled(
-        pluginName,
-        enabled,
-        this.revision,
-      );
-    } catch (error) {
-      if (error && typeof error === "object" && "revision" in error) {
-        throw new NodeSqlRevisionConflictError((error as any).revision);
-      }
-      throw error;
-    }
-    if (body.revision != null) this.applyRemoteRevision(body.revision);
-    this.memoryPluginsCache = null;
-    this.memoryRuntimePluginsCache = null;
-    try {
-      await Promise.all([
-        this.pluginsCacheForage.removeItem("cache"),
-        this.pluginsCacheForage.removeItem("runtime-cache"),
-      ]);
-    } catch {}
   }
 
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {

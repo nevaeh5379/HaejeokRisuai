@@ -1,4 +1,4 @@
-import type { RisuPlugin } from "../../plugins/plugins.svelte";
+import type { PluginMetadata } from "../../plugins/pluginTypes";
 import type { triggerscript as triggerscriptMain } from "../../process/triggers";
 import type { NAISettings } from "../../process/models/nai";
 import type { ColorScheme } from "../../gui/colorscheme";
@@ -92,7 +92,9 @@ export interface DatabaseSettings {
   forceReplaceUrl: string;
   language: string;
   translator: string;
-  plugins: RisuPlugin[];
+  plugins: Array<
+    Omit<PluginMetadata, "id" | "position"> & { script: string }
+  >;
   currentPluginProvider: string;
   zoomsize: number;
   customBackground: string;
@@ -401,7 +403,9 @@ export interface DatabaseSettings {
   assetMaxDifference: number;
   auxModelUnderModelSettings: boolean;
   menuSideBar: boolean;
-  pluginV2: RisuPlugin[];
+  pluginV2: Array<
+    Omit<PluginMetadata, "id" | "position"> & { script: string }
+  >;
   showSavingIcon: boolean;
   showChatTabs: boolean;
   presetRegex: customscript[];

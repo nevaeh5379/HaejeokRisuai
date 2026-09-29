@@ -547,22 +547,47 @@ describe("NodeSqlStorage browser client", () => {
 
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
-    (storage as any).pluginsCacheForage = {
+    (storage.plugin as any).pluginsCache = {
       getItem: vi.fn(async () => null),
       setItem: vi.fn(async () => undefined),
-      removeItem: vi.fn(async () => undefined),
     };
 
-    expect(await storage.loadPlugins({ enabledOnly: true })).toHaveLength(1);
+    expect(await storage.plugin.loadAll({ enabledOnly: true })).toHaveLength(1);
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/database-v2/plugins?enabledOnly=1",
     );
 
-    expect(await storage.loadPlugins()).toHaveLength(2);
+    expect(await storage.plugin.loadAll()).toHaveLength(2);
     expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/plugins");
   });
 
-  it("toggles one plugin with a tiny revision-guarded request", async () => {
+  it("loads one plugin through the plugin storage single-record endpoint", async () => {
+    const plugin = {
+      id: "plugin-id",
+      position: 0,
+      name: "single",
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+      enabled: true,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ plugin }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodeSqlStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    expect(await storage.plugin.load("plugin-id")).toEqual(plugin);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/plugins/plugin-id",
+    );
+  });
+
+  it("toggles one plugin through the plugin storage commit", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ success: true, revision: 12 }), {
         status: 200,
@@ -573,21 +598,20 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
     (storage as any).revision = 11;
-    (storage as any).pluginsCacheForage = {
-      getItem: vi.fn(async () => null),
-      setItem: vi.fn(async () => undefined),
-      removeItem: vi.fn(async () => undefined),
-    };
-
-    await storage.setPluginEnabled("large-plugin", true);
+    await storage.plugin.setEnabled("plugin-id", true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "/api/database-v2/plugins/large-plugin/enabled",
-    );
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/commit");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      method: "PATCH",
-      body: JSON.stringify({ enabled: true, baseRevision: 11 }),
+      method: "POST",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+      baseRevision: 11,
+      plugins: {
+        upserts: [],
+        deletes: [],
+        enabled: [{ id: "plugin-id", enabled: true }],
+      },
     });
     expect(storage.getRevision()).toBe(12);
   });

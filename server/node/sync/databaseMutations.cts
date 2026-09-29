@@ -2,8 +2,13 @@
 
 import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/realtimeEvents.cjs";
 import type { RealtimeEventBroadcaster } from "../../../packages/protocol/realtimeEvents.cjs";
-import type { SqlCommitImpact } from "../../../packages/protocol/sqlCommit.cjs";
+import type {
+  SqlCommitImpact,
+  SqlCommitResult,
+  SqlPluginEnabledUpdate,
+} from "../../../packages/protocol/sqlCommit.cjs";
 import { attachSqlCommitImpactSink } from "../../../packages/protocol/sqlCommit.cjs";
+import type { PluginMetadata } from "../../../src/ts/plugins/pluginTypes.js";
 
 const { normalizeClientId } = require("../http/realtimeEvents.cjs");
 
@@ -26,6 +31,18 @@ type ServerMutationStorage = {
   deleteMessage: (chatId: string, messageId: string) => Promise<any>;
 };
 
+export type PluginToggleInput = {
+  baseRevision: number;
+  enabled: SqlPluginEnabledUpdate["enabled"];
+  pluginId: SqlPluginEnabledUpdate["id"];
+  pluginName: PluginMetadata["name"];
+};
+
+export type PluginToggleMutation = (
+  input: PluginToggleInput,
+  rawSourceClientId: string | readonly string[] | undefined,
+) => Promise<SqlCommitResult>;
+
 type MutationArgs = {
   commit: [payload: unknown, rawSourceClientId: unknown, options?: unknown];
   restoreBackup: [payload: any, options: any, rawSourceClientId: unknown];
@@ -47,7 +64,7 @@ type MutationArgs = {
     },
     rawSourceClientId: unknown,
   ];
-  togglePlugin: [input: any, rawSourceClientId: unknown];
+  togglePlugin: Parameters<PluginToggleMutation>;
   createChatBranch: [input: any, rawSourceClientId: unknown];
   activateChatBranch: [
     chatId: string,
@@ -273,14 +290,17 @@ function createDatabaseMutations({
         await storage().sync({
           baseRevision: input.baseRevision,
           action: "plugin-toggle",
-          root: {
-            upserts: [{ key: "plugins", value: input.plugins }],
+          root: { upserts: [], deletes: [] },
+          plugins: {
+            upserts: [],
             deletes: [],
+            enabled: [{ id: input.pluginId, enabled: input.enabled }],
           },
         }),
       describe: (_result, input, rawSourceClientId) => ({
         action: "plugin-toggle",
         details: {
+          pluginsChanged: true,
           pluginName: input.pluginName,
           pluginEnabled: input.enabled,
         },

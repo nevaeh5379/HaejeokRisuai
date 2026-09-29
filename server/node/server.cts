@@ -84,6 +84,7 @@ import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
 import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.js";
 import { Packet } from "./http/packet.js";
+import { registerPluginStorageRoutes } from "./api/database/plugins/routes.js";
 const { createNodeChatExecutor } = require("./executors/chatExecutor.cjs");
 const {
   createNodeProviderExecutor,
@@ -6399,283 +6400,24 @@ app.get(
   },
 );
 
-app.get(
-  "/api/database-v2/plugins",
+registerPluginStorageRoutes({
+  app,
   authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!postgresStorage.enabled) {
-      res.status(404).send({
-        error: "PostgreSQL storage is not configured",
-        code: "postgres_disabled",
-      });
-      return;
-    }
-
-    try {
-      const result = await postgresStorage.loadPlugins();
-      const enabledOnly =
-        req.query.enabledOnly === "1" || req.query.enabledOnly === "true";
-      const plugins = enabledOnly
-        ? result.plugins.filter((plugin) => plugin?.enabled)
-        : result.plugins;
-      const hash = enabledOnly
-        ? crypto
-            .createHash("sha256")
-            .update(JSON.stringify(plugins))
-            .digest("hex")
-        : result.hash;
-      const etag = `"risu-plugins-${enabledOnly ? "runtime-" : ""}${hash}"`;
-      res.setHeader("ETag", etag);
-      res.setHeader("Cache-Control", "private, no-cache");
-      const requestEtag = normalizeAuthHeader(req.headers["if-none-match"]);
-      if (
-        requestEtag
-          .split(",")
-          .map((value) => value.trim())
-          .includes(etag)
-      ) {
-        res.status(304).end();
-        return;
-      }
-      await sendCompressedJson(req, res, { plugins, hash });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-
-app.patch(
-  "/api/database-v2/plugins/:pluginName/enabled",
-  authenticatedRouteLimiter,
-  requireNodeAuth,
+  checkAuth,
+  databaseMutations,
+  getStorage: () => postgresStorage,
+  isPayloadError: (error: Error): boolean =>
+    error instanceof PostgresPayloadError ||
+    error instanceof StoragePayloadError,
+  isRevisionConflictError: (
+    error: Error,
+  ): error is Error & { revision: number } =>
+    error instanceof PostgresRevisionConflictError ||
+    error instanceof StorageRevisionConflictError,
   postgresJsonParser,
-  async (req, res, next) => {
-    if (!postgresStorage.enabled) {
-      res.status(404).send({
-        error: "SQL storage is not configured",
-        code: "postgres_disabled",
-      });
-      return;
-    }
-    try {
-      const enabled = req.body?.enabled;
-      const baseRevision = Number(req.body?.baseRevision);
-      if (
-        typeof enabled !== "boolean" ||
-        !Number.isSafeInteger(baseRevision) ||
-        baseRevision < 0
-      ) {
-        res.status(400).send({
-          error: "enabled and baseRevision are required",
-          code: "invalid_plugin_toggle",
-        });
-        return;
-      }
-      const loaded = await postgresStorage.loadPlugins();
-      const plugins = loaded.plugins.map((plugin) => ({ ...plugin }));
-      const plugin = plugins.find(
-        (item) => item?.name === req.params.pluginName,
-      );
-      if (!plugin) {
-        res
-          .status(404)
-          .send({ error: "Plugin not found", code: "plugin_not_found" });
-        return;
-      }
-      plugin.enabled = enabled;
-      const result = await databaseMutations.togglePlugin(
-        {
-          baseRevision,
-          plugins,
-          pluginName: req.params.pluginName,
-          enabled,
-        },
-        req.headers["x-risu-client-id"],
-      );
-      res.send({ success: true, revision: result.revision });
-    } catch (error) {
-      if (
-        error instanceof PostgresRevisionConflictError ||
-        error instanceof StorageRevisionConflictError
-      ) {
-        res.status(409).send({
-          error: error.message,
-          code: "revision_conflict",
-          revision: error.revision,
-        });
-        return;
-      }
-      if (
-        error instanceof PostgresPayloadError ||
-        error instanceof StoragePayloadError
-      ) {
-        res.status(400).send({
-          error: error.message,
-          code: "invalid_plugin_toggle",
-        });
-        return;
-      }
-      next(error);
-    }
-  },
-);
-
-app.get(
-  "/api/database-v2/plugin-custom-storage/keys",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!postgresStorage.enabled) {
-      res.status(404).send({
-        error: "PostgreSQL storage is not configured",
-        code: "postgres_disabled",
-      });
-      return;
-    }
-
-    try {
-      const keys = await postgresStorage.listPluginCustomStorageKeys();
-      await sendCompressedJson(req, res, { keys });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-
-app.get(
-  "/api/database-v2/plugin-custom-storage/keys/:key",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!postgresStorage.enabled) {
-      res.status(404).send({
-        error: "PostgreSQL storage is not configured",
-        code: "postgres_disabled",
-      });
-      return;
-    }
-
-    try {
-      const result = await postgresStorage.loadPluginCustomStorageKey(
-        req.params.key,
-      );
-      if (!result.exists) {
-        res.status(404).send({
-          error: `Plugin custom storage key not found: ${req.params.key}`,
-        });
-        return;
-      }
-      const etag = `"risu-plugin-key-${result.hash}"`;
-      res.setHeader("ETag", etag);
-      res.setHeader("Cache-Control", "private, no-cache");
-      const requestEtag = normalizeAuthHeader(req.headers["if-none-match"]);
-      if (
-        requestEtag
-          .split(",")
-          .map((value) => value.trim())
-          .includes(etag)
-      ) {
-        res.status(304).end();
-        return;
-      }
-      await sendCompressedJson(req, res, {
-        key: result.key,
-        value: result.value,
-        hash: result.hash,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-
-app.get(
-  "/api/database-v2/plugin-custom-storage",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!postgresStorage.enabled) {
-      res.status(404).send({
-        error: "PostgreSQL storage is not configured",
-        code: "postgres_disabled",
-      });
-      return;
-    }
-
-    try {
-      const result = await postgresStorage.loadPluginCustomStorage();
-      const etag = `"risu-plugin-storage-${result.hash}"`;
-      res.setHeader("ETag", etag);
-      res.setHeader("Cache-Control", "private, no-cache");
-      const requestEtag = normalizeAuthHeader(req.headers["if-none-match"]);
-      if (
-        requestEtag
-          .split(",")
-          .map((value) => value.trim())
-          .includes(etag)
-      ) {
-        res.status(304).end();
-        return;
-      }
-      await sendCompressedJson(req, res, {
-        pluginCustomStorage: result.pluginCustomStorage,
-        hash: result.hash,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-
-app.get(
-  "/api/database-v2/plugins-data",
-  authenticatedRouteLimiter,
-  async (req, res, next) => {
-    if (!(await checkAuth(req, res))) {
-      return;
-    }
-    if (!postgresStorage.enabled) {
-      res.status(404).send({
-        error: "PostgreSQL storage is not configured",
-        code: "postgres_disabled",
-      });
-      return;
-    }
-
-    try {
-      const result = await postgresStorage.loadPluginsData();
-      const etag = `"risu-plugins-data-${result.hash}"`;
-      res.setHeader("ETag", etag);
-      res.setHeader("Cache-Control", "private, no-cache");
-      const requestEtag = normalizeAuthHeader(req.headers["if-none-match"]);
-      if (
-        requestEtag
-          .split(",")
-          .map((value) => value.trim())
-          .includes(etag)
-      ) {
-        res.status(304).end();
-        return;
-      }
-      await sendCompressedJson(req, res, {
-        plugins: result.plugins,
-        pluginCustomStorage: result.pluginCustomStorage,
-        hash: result.hash,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
+  requireNodeAuth,
+  sendCompressedJson,
+});
 
 app.get(
   "/api/database-v2/personas",
@@ -8480,8 +8222,7 @@ app.post(
           : await assetStorageManager.deleteAssetKeys(keys, target);
       if (
         target === "s3" ||
-        (target === "active" &&
-          assetStorageManager.getStorage().type === "s3")
+        (target === "active" && assetStorageManager.getStorage().type === "s3")
       ) {
         await removeAssetCatalogKeys(deriveCatalogDeleteKeys(keys));
       }
@@ -8527,12 +8268,9 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await storage.migrateFromLocal(
-        savePath,
-        (progress) => {
-          res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
-        },
-      );
+      const result = await storage.migrateFromLocal(savePath, (progress) => {
+        res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
+      });
 
       if (storage.type === "s3" && canUseAssetCatalog()) {
         await resyncAssetCatalogFull().catch((error) => {
@@ -8577,12 +8315,9 @@ app.post(
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Transfer-Encoding", "chunked");
 
-      const result = await storage.rollbackToLocal(
-        savePath,
-        (progress) => {
-          res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
-        },
-      );
+      const result = await storage.rollbackToLocal(savePath, (progress) => {
+        res.write(JSON.stringify({ type: "progress", ...progress }) + "\n");
+      });
 
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();
@@ -8618,11 +8353,9 @@ app.post(
     res.setHeader("Connection", "keep-alive");
 
     try {
-      const result = await storage.generateMissingThumbnails(
-        (progress) => {
-          res.write(JSON.stringify(progress) + "\n");
-        },
-      );
+      const result = await storage.generateMissingThumbnails((progress) => {
+        res.write(JSON.stringify(progress) + "\n");
+      });
 
       res.write(JSON.stringify({ type: "done", ...result }) + "\n");
       res.end();

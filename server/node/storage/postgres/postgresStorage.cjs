@@ -61,6 +61,9 @@ const AUDITED_TABLES = [
   "system.setting_values",
   "system.module_records",
   "system.module_values",
+  "system.plugin_records",
+  "system.plugin_scripts",
+  "system.plugin_values",
   "system.plugin_custom_storage",
   "character.characters",
   ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
@@ -243,6 +246,85 @@ async function replaceModuleValueRows(client, upserts) {
     ],
     rows,
   );
+}
+
+function pluginExtensionData(data) {
+  return {
+    arguments: data.arguments || {},
+    realArg: data.realArg || {},
+    customLink: data.customLink || [],
+    argMeta: data.argMeta || {},
+    allowedIPC: data.allowedIPC || [],
+  };
+}
+
+async function replacePluginValueRows(client, upserts) {
+  if (upserts.length === 0) return;
+  const ids = upserts.map((item) => item.id);
+  await client.query(
+    "DELETE FROM system.plugin_values WHERE plugin_id = ANY($1::text[])",
+    [ids],
+  );
+  const rows = upserts.flatMap((item) =>
+    splitSetting(item.id, pluginExtensionData(item.data)).values.map((row) => ({
+      ...row,
+      plugin_id: row.setting_key,
+    })),
+  );
+  await bulkInsert(
+    client,
+    "system.plugin_values",
+    [
+      "plugin_id",
+      "node_id",
+      "parent_node_id",
+      "member_key",
+      "encoded_member_key",
+      "position",
+      "value_type",
+      "text_value",
+      "encoded_text_value",
+      "number_value",
+      "boolean_value",
+    ],
+    [
+      "text",
+      "integer",
+      "integer",
+      "text",
+      "text",
+      "integer",
+      "text",
+      "text",
+      "text",
+      "double precision",
+      "boolean",
+    ],
+    rows,
+  );
+}
+
+function rebuildPluginRecords(records, valueRows) {
+  const extension = rebuildSettings(
+    records.map((row) => ({ key: row.plugin_id })),
+    valueRows,
+  );
+  return records.map((row) => ({
+    ...(extension[row.plugin_id] || {}),
+    id: row.plugin_id,
+    position: Number(row.position),
+    name: row.name,
+    displayName: row.display_name ?? undefined,
+    version:
+      row.api_version === "1"
+        ? 1
+        : row.api_version === "2"
+          ? 2
+          : row.api_version || undefined,
+    versionOfPlugin: row.plugin_version ?? undefined,
+    updateURL: row.update_url ?? undefined,
+    enabled: Boolean(row.enabled),
+  }));
 }
 
 function rebuildSettingRows(settings, valueRows) {
@@ -2560,6 +2642,9 @@ class PostgresStorage extends SqlStorageBase {
         "SELECT * FROM chat.message_prompt_items ORDER BY chat_id, message_id, position",
         "SELECT module_id, position FROM system.module_records ORDER BY position",
         "SELECT module_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.module_values ORDER BY module_id, node_id",
+        "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records ORDER BY position",
+        "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values ORDER BY plugin_id, node_id",
+        "SELECT plugin_id, script FROM system.plugin_scripts ORDER BY plugin_id",
         "SELECT preset_id, position, name, image, api_type, ai_model, data, content_hash FROM system.bot_presets ORDER BY position",
       ];
 
@@ -2597,6 +2682,9 @@ class PostgresStorage extends SqlStorageBase {
         promptItems,
         moduleRecords,
         moduleValues,
+        pluginRecords,
+        pluginValues,
+        pluginScripts,
         botPresetRows,
       ] = rows;
 
@@ -2621,6 +2709,21 @@ class PostgresStorage extends SqlStorageBase {
       } else {
         database.modules = database.modules || [];
       }
+
+      const pluginScriptMap = new Map(
+        (pluginScripts || []).map((row) => [row.plugin_id, row.script]),
+      );
+      database.plugins = rebuildPluginRecords(
+        pluginRecords || [],
+        pluginValues || [],
+      ).map((plugin) => {
+        const { id, position: _position, ...metadata } = plugin;
+        const script = pluginScriptMap.get(id);
+        if (script === undefined) {
+          throw new Error(`Plugin script is missing: ${id}`);
+        }
+        return { ...metadata, script };
+      });
 
       if (botPresetRows && botPresetRows.length > 0) {
         database.botPresets = botPresetRows.map((row) => {
@@ -3865,32 +3968,39 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPlugins() {
+  async loadPlugins(options = {}) {
     this.assertEnabled();
-    if (this.pluginsCache) {
+    const pluginId =
+      typeof options?.pluginId === "string" ? options.pluginId : null;
+    if (pluginId) assertId(pluginId, "pluginId");
+    if (!pluginId && this.pluginsCache) {
       return this.pluginsCache;
     }
+
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const queries = [
-        "SELECT * FROM system.settings WHERE key = 'plugins' ORDER BY key",
-        "SELECT * FROM system.setting_values WHERE setting_key = 'plugins' ORDER BY setting_key, node_id",
-      ];
-      const results = await client.query(queries.join(";\n"));
-      const [settings, settingValues] = results.map((result) => result.rows);
-      const rebuilt = rebuildSettings(settings, settingValues);
+      const params = pluginId ? [pluginId] : [];
+      const where = pluginId ? " WHERE plugin_id = $1" : "";
+      const records = (
+        await client.query(
+          `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM system.plugin_records${where} ORDER BY position`,
+          params,
+        )
+      ).rows;
+      const values = (
+        await client.query(
+          `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM system.plugin_values${where} ORDER BY plugin_id, node_id`,
+          params,
+        )
+      ).rows;
+      const plugins = rebuildPluginRecords(records, values);
       await client.query("COMMIT");
 
-      const plugins = rebuilt.plugins || [];
       const serialized = JSON.stringify(plugins);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
-
-      const result = {
-        plugins,
-        hash,
-      };
-      if (this.objectCacheEnabled) this.pluginsCache = result;
+      const result = { plugins, hash };
+      if (!pluginId && this.objectCacheEnabled) this.pluginsCache = result;
       return result;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
@@ -3898,6 +4008,16 @@ class PostgresStorage extends SqlStorageBase {
     } finally {
       client.release();
     }
+  }
+
+  async loadPluginScript(pluginId) {
+    this.assertEnabled();
+    assertId(pluginId, "pluginId");
+    const result = await this.pool.query(
+      "SELECT script FROM system.plugin_scripts WHERE plugin_id = $1",
+      [pluginId],
+    );
+    return result.rows[0]?.script ?? null;
   }
 
   async loadPluginCustomStorage() {
@@ -4776,6 +4896,7 @@ class PostgresStorage extends SqlStorageBase {
         await client.query("DELETE FROM system.plugin_custom_storage");
         await client.query("DELETE FROM system.bot_presets");
         await client.query("DELETE FROM system.module_records");
+        await client.query("DELETE FROM system.plugin_records");
         await client.query("DELETE FROM character.characters");
       }
 
@@ -4834,6 +4955,91 @@ class PostgresStorage extends SqlStorageBase {
           for (const [position, id] of payload.modules.order.entries()) {
             await client.query(
               "UPDATE system.module_records SET position = $1 WHERE module_id = $2",
+              [position, id],
+            );
+          }
+        }
+      }
+
+      if (payload.plugins) {
+        const existing = (
+          await client.query(
+            "SELECT plugin_id, position FROM system.plugin_records ORDER BY position",
+          )
+        ).rows;
+        const positions = new Map(
+          existing.map((row) => [row.plugin_id, Number(row.position)]),
+        );
+
+        if (payload.plugins.deletes.length) {
+          await client.query(
+            "DELETE FROM system.plugin_records WHERE plugin_id = ANY($1::text[])",
+            [payload.plugins.deletes],
+          );
+        }
+        if (payload.plugins.order) {
+          await client.query(
+            "UPDATE system.plugin_records SET position = position + 1000000000",
+          );
+        }
+        let nextPosition =
+          existing.reduce(
+            (max, row) => Math.max(max, Number(row.position)),
+            -1,
+          ) + 1;
+        for (const entry of payload.plugins.upserts) {
+          const data = entry.data || {};
+          if (typeof data.name !== "string" || data.name.length === 0) {
+            throw new PostgresPayloadError(
+              `Plugin ${entry.id} must have a non-empty name`,
+            );
+          }
+          const position =
+            entry.position ?? positions.get(entry.id) ?? nextPosition++;
+          await client.query(
+            `INSERT INTO system.plugin_records
+              (plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+             ON CONFLICT (plugin_id) DO UPDATE SET
+              position=EXCLUDED.position, name=EXCLUDED.name,
+              display_name=EXCLUDED.display_name, api_version=EXCLUDED.api_version,
+              plugin_version=EXCLUDED.plugin_version, update_url=EXCLUDED.update_url,
+              enabled=EXCLUDED.enabled, updated_at=NOW()`,
+            [
+              entry.id,
+              position,
+              data.name,
+              typeof data.displayName === "string" ? data.displayName : null,
+              data.version == null ? null : String(data.version),
+              typeof data.versionOfPlugin === "string"
+                ? data.versionOfPlugin
+                : null,
+              typeof data.updateURL === "string" ? data.updateURL : null,
+              data.enabled !== false,
+            ],
+          );
+        }
+        await replacePluginValueRows(client, payload.plugins.upserts);
+
+        for (const script of payload.plugins.scripts || []) {
+          await client.query(
+            `INSERT INTO system.plugin_scripts (plugin_id, script, updated_at)
+             VALUES ($1,$2,NOW())
+             ON CONFLICT (plugin_id) DO UPDATE SET
+              script=EXCLUDED.script, updated_at=NOW()`,
+            [script.id, script.script],
+          );
+        }
+        for (const update of payload.plugins.enabled || []) {
+          await client.query(
+            "UPDATE system.plugin_records SET enabled = $1, updated_at = NOW() WHERE plugin_id = $2",
+            [update.enabled, update.id],
+          );
+        }
+        if (payload.plugins.order) {
+          for (const [position, id] of payload.plugins.order.entries()) {
+            await client.query(
+              "UPDATE system.plugin_records SET position = $1 WHERE plugin_id = $2",
               [position, id],
             );
           }
@@ -6102,6 +6308,7 @@ class PostgresStorage extends SqlStorageBase {
         await client.query("COMMIT");
       }
       if (
+        payload.plugins ||
         changedSettingKeys.includes("plugins") ||
         payload.rootDeletes.includes("plugins")
       ) {

@@ -2,7 +2,6 @@
 // Do not edit: pnpm check verifies that runtime and type ownership agree.
 export type ProtocolSettingKeys = {
   DEFERRED_SETTING_KEYS:
-    | "plugins"
     | "pluginCustomStorage"
     | "personas"
     | "botPresets"
@@ -46,7 +45,6 @@ export type ProtocolSettingKeys = {
     | "promptSettings"
     | "customPromptTemplateToggle";
   DEFERRED_STARTUP_SETTING_KEYS:
-    | "plugins"
     | "loadouts"
     | "loreBook"
     | "globalscript"
@@ -79,6 +77,7 @@ export type ProtocolSettingKeys = {
     | "userNote"
     | "personaPrompt"
     | "modules"
+    | "plugins"
     | "enabledModules"
     | "moduleFolders"
     | "moduleOrder"
@@ -171,7 +170,6 @@ export type ProtocolSettingKeys = {
     | "botPresets"
     | "botPresetsId";
   BOOTSTRAP_SETTING_KEYS:
-    | "plugins"
     | "pluginCustomStorage"
     | "loreBook"
     | "globalscript"

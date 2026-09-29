@@ -116,6 +116,39 @@ function mapColumnsToSettingValue(row) {
   return null;
 }
 
+function pluginExtensionData(data) {
+  return {
+    arguments: data.arguments || {},
+    realArg: data.realArg || {},
+    customLink: data.customLink || [],
+    argMeta: data.argMeta || {},
+    allowedIPC: data.allowedIPC || [],
+  };
+}
+
+function rebuildPluginRecords(records, valueRows) {
+  const extension = rebuildSettings(
+    records.map((row) => ({ key: row.plugin_id })),
+    valueRows,
+  );
+  return records.map((row) => ({
+    ...(extension[row.plugin_id] || {}),
+    id: row.plugin_id,
+    position: Number(row.position),
+    name: row.name,
+    displayName: row.display_name ?? undefined,
+    version:
+      row.api_version === "1"
+        ? 1
+        : row.api_version === "2"
+          ? 2
+          : row.api_version || undefined,
+    versionOfPlugin: row.plugin_version ?? undefined,
+    updateURL: row.update_url ?? undefined,
+    enabled: Boolean(row.enabled),
+  }));
+}
+
 const AZURE_SCHEMA_VERSION = 4;
 const RELATIONAL_SCHEMA_LAYOUT = "relational-schema-v3";
 const MAX_SYNC_ROWS = 250000;
@@ -125,6 +158,9 @@ const AUDITED_TABLES = [
   "system.setting_values",
   "system.module_records",
   "system.module_values",
+  "system.plugin_records",
+  "system.plugin_scripts",
+  "system.plugin_values",
   "system.bot_presets",
   "system.personas",
   "system.modules",
@@ -1179,6 +1215,39 @@ class AzureStorage extends SqlStorageBase {
 
     const moduleResult = await this.loadModuleRecords();
     database.modules = moduleResult?.modules || database.modules || [];
+
+    const [pluginRecordsResult, pluginValuesResult, pluginScriptsResult] =
+      await Promise.all([
+        pool
+          .request()
+          .query(
+            "SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM [system].[plugin_records] ORDER BY position",
+          ),
+        pool
+          .request()
+          .query(
+            "SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM [system].[plugin_values] ORDER BY plugin_id, node_id",
+          ),
+        pool
+          .request()
+          .query(
+            "SELECT plugin_id, script FROM [system].[plugin_scripts] ORDER BY plugin_id",
+          ),
+      ]);
+    const pluginScriptMap = new Map(
+      pluginScriptsResult.recordset.map((row) => [row.plugin_id, row.script]),
+    );
+    database.plugins = rebuildPluginRecords(
+      pluginRecordsResult.recordset,
+      pluginValuesResult.recordset,
+    ).map((plugin) => {
+      const { id, position: _position, ...metadata } = plugin;
+      const script = pluginScriptMap.get(id);
+      if (script === undefined) {
+        throw new Error(`Plugin script is missing: ${id}`);
+      }
+      return { ...metadata, script };
+    });
 
     const presetRows = (
       await pool
@@ -2470,17 +2539,54 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async loadPlugins() {
-    if (this.pluginsCache) {
+  async loadPlugins(options = {}) {
+    const pluginId =
+      typeof options?.pluginId === "string" ? options.pluginId : null;
+    if (pluginId) assertId(pluginId, "pluginId");
+    if (!pluginId && this.pluginsCache) {
       return this.pluginsCache;
     }
-    const { settings, hash } = await this.loadSettingKeys(["plugins"]);
-    const result = {
-      plugins: settings.plugins || [],
-      hash,
-    };
-    if (this.objectCacheEnabled) this.pluginsCache = result;
+
+    const pool = await this.getPool();
+    const recordsRequest = pool.request();
+    const valuesRequest = pool.request();
+    if (pluginId) {
+      recordsRequest.input("pluginId", sql.NVarChar(450), pluginId);
+      valuesRequest.input("pluginId", sql.NVarChar(450), pluginId);
+    }
+    const where = pluginId ? " WHERE plugin_id=@pluginId" : "";
+    const [recordsResult, valuesResult] = await Promise.all([
+      recordsRequest.query(
+        `SELECT plugin_id, position, name, display_name, api_version, plugin_version, update_url, enabled FROM [system].[plugin_records]${where} ORDER BY position`,
+      ),
+      valuesRequest.query(
+        `SELECT plugin_id AS setting_key, node_id, parent_node_id, member_key, encoded_member_key, position, value_type, text_value, encoded_text_value, number_value, boolean_value FROM [system].[plugin_values]${where} ORDER BY plugin_id, node_id`,
+      ),
+    ]);
+    const plugins = rebuildPluginRecords(
+      recordsResult.recordset,
+      valuesResult.recordset,
+    );
+    const hash = crypto
+      .createHash("sha256")
+      .update(JSON.stringify(plugins))
+      .digest("hex");
+    const result = { plugins, hash };
+    if (!pluginId && this.objectCacheEnabled) this.pluginsCache = result;
     return result;
+  }
+
+  async loadPluginScript(pluginId) {
+    assertId(pluginId, "pluginId");
+    const pool = await this.getPool();
+    const request = pool.request();
+    request.input("pluginId", sql.NVarChar(450), pluginId);
+    const rows = (
+      await request.query(
+        "SELECT script FROM [system].[plugin_scripts] WHERE plugin_id=@pluginId",
+      )
+    ).recordset;
+    return rows[0]?.script ?? null;
   }
 
   async loadPluginCustomStorage() {
@@ -2859,6 +2965,7 @@ class AzureStorage extends SqlStorageBase {
           .query("DELETE FROM [system].[plugin_custom_storage];");
         await tx.request().query("DELETE FROM [system].[bot_presets];");
         await tx.request().query("DELETE FROM [system].[module_records];");
+        await tx.request().query("DELETE FROM [system].[plugin_records];");
       }
 
       if (payload.modules) {
@@ -2977,6 +3084,164 @@ class AzureStorage extends SqlStorageBase {
             request.input("position", sql.Int, position);
             await request.query(
               "UPDATE [system].[module_records] SET position=@position WHERE module_id=@id",
+            );
+          }
+        }
+      }
+
+      if (payload.plugins) {
+        const existing = (
+          await tx
+            .request()
+            .query(
+              "SELECT plugin_id, position FROM [system].[plugin_records] ORDER BY position",
+            )
+        ).recordset;
+        const positions = new Map(
+          existing.map((row) => [row.plugin_id, Number(row.position)]),
+        );
+
+        for (const id of payload.plugins.deletes) {
+          const request = tx.request();
+          request.input("pluginId", sql.NVarChar(450), id);
+          await request.query(
+            "DELETE FROM [system].[plugin_records] WHERE plugin_id=@pluginId",
+          );
+        }
+        if (payload.plugins.order) {
+          await tx
+            .request()
+            .query(
+              "UPDATE [system].[plugin_records] SET position=position+1000000000",
+            );
+        }
+
+        let nextPosition =
+          existing.reduce(
+            (max, row) => Math.max(max, Number(row.position)),
+            -1,
+          ) + 1;
+        for (const entry of payload.plugins.upserts) {
+          const data = entry.data || {};
+          if (typeof data.name !== "string" || data.name.length === 0) {
+            throw new StoragePayloadError(
+              `Plugin ${entry.id} must have a non-empty name`,
+            );
+          }
+          const request = tx.request();
+          request.input("pluginId", sql.NVarChar(450), entry.id);
+          request.input(
+            "position",
+            sql.Int,
+            entry.position ?? positions.get(entry.id) ?? nextPosition++,
+          );
+          request.input("name", sql.NVarChar(450), data.name);
+          request.input(
+            "displayName",
+            sql.NVarChar(sql.MAX),
+            typeof data.displayName === "string" ? data.displayName : null,
+          );
+          request.input(
+            "apiVersion",
+            sql.NVarChar(64),
+            data.version == null ? null : String(data.version),
+          );
+          request.input(
+            "pluginVersion",
+            sql.NVarChar(64),
+            typeof data.versionOfPlugin === "string"
+              ? data.versionOfPlugin
+              : null,
+          );
+          request.input(
+            "updateUrl",
+            sql.NVarChar(sql.MAX),
+            typeof data.updateURL === "string" ? data.updateURL : null,
+          );
+          request.input("enabled", sql.Bit, data.enabled === false ? 0 : 1);
+          await request.query(`MERGE [system].[plugin_records] AS t
+            USING (SELECT @pluginId plugin_id) AS s ON t.plugin_id=s.plugin_id
+            WHEN MATCHED THEN UPDATE SET
+              position=@position,name=@name,display_name=@displayName,
+              api_version=@apiVersion,plugin_version=@pluginVersion,
+              update_url=@updateUrl,enabled=@enabled,updated_at=SYSDATETIMEOFFSET()
+            WHEN NOT MATCHED THEN INSERT
+              (plugin_id,position,name,display_name,api_version,plugin_version,update_url,enabled)
+              VALUES (@pluginId,@position,@name,@displayName,@apiVersion,@pluginVersion,@updateUrl,@enabled);`);
+        }
+
+        if (payload.plugins.upserts.length > 0) {
+          for (const entry of payload.plugins.upserts) {
+            const request = tx.request();
+            request.input("pluginId", sql.NVarChar(450), entry.id);
+            await request.query(
+              "DELETE FROM [system].[plugin_values] WHERE plugin_id=@pluginId",
+            );
+          }
+          const rows = payload.plugins.upserts.flatMap((entry) =>
+            splitSetting(entry.id, pluginExtensionData(entry.data)).values.map(
+              (row) => ({ ...row, plugin_id: row.setting_key }),
+            ),
+          );
+          await bulkInsert(
+            tx,
+            "system.plugin_values",
+            [
+              "plugin_id",
+              "node_id",
+              "parent_node_id",
+              "member_key",
+              "encoded_member_key",
+              "position",
+              "value_type",
+              "text_value",
+              "encoded_text_value",
+              "number_value",
+              "boolean_value",
+            ],
+            [
+              "nvarchar(450)",
+              "int",
+              "int",
+              "nvarchar(max)",
+              "nvarchar(max)",
+              "int",
+              "nvarchar(32)",
+              "nvarchar(max)",
+              "nvarchar(max)",
+              "float",
+              "bit",
+            ],
+            rows,
+          );
+        }
+
+        for (const script of payload.plugins.scripts || []) {
+          const request = tx.request();
+          request.input("pluginId", sql.NVarChar(450), script.id);
+          request.input("script", sql.NVarChar(sql.MAX), script.script);
+          await request.query(`MERGE [system].[plugin_scripts] AS t
+            USING (SELECT @pluginId plugin_id) AS s ON t.plugin_id=s.plugin_id
+            WHEN MATCHED THEN UPDATE SET script=@script,updated_at=SYSDATETIMEOFFSET()
+            WHEN NOT MATCHED THEN INSERT (plugin_id,script) VALUES (@pluginId,@script);`);
+        }
+
+        for (const update of payload.plugins.enabled || []) {
+          const request = tx.request();
+          request.input("pluginId", sql.NVarChar(450), update.id);
+          request.input("enabled", sql.Bit, update.enabled ? 1 : 0);
+          await request.query(
+            "UPDATE [system].[plugin_records] SET enabled=@enabled,updated_at=SYSDATETIMEOFFSET() WHERE plugin_id=@pluginId",
+          );
+        }
+
+        if (payload.plugins.order) {
+          for (const [position, id] of payload.plugins.order.entries()) {
+            const request = tx.request();
+            request.input("pluginId", sql.NVarChar(450), id);
+            request.input("position", sql.Int, position);
+            await request.query(
+              "UPDATE [system].[plugin_records] SET position=@position WHERE plugin_id=@pluginId",
             );
           }
         }
@@ -4217,6 +4482,7 @@ class AzureStorage extends SqlStorageBase {
     const changedSettingKeys = payload.rootUpserts?.map((row) => row.key) || [];
     const rootDeletes = payload.rootDeletes || [];
     if (
+      payload.plugins ||
       changedSettingKeys.includes("plugins") ||
       rootDeletes.includes("plugins")
     ) {

@@ -33,6 +33,19 @@ export interface SqlModuleUpsert {
     position?: number;
     data: object;
 }
+export interface SqlPluginUpsert {
+    id: string;
+    position?: number;
+    data: object;
+}
+export interface SqlPluginScriptUpsert {
+    id: string;
+    script: string;
+}
+export interface SqlPluginEnabledUpdate {
+    id: string;
+    enabled: boolean;
+}
 export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
     baseRevision: number;
     idempotencyKey?: string;
@@ -57,6 +70,13 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
         upserts: SqlModuleUpsert[];
         deletes: string[];
         order?: string[];
+    };
+    plugins?: {
+        upserts: SqlPluginUpsert[];
+        deletes: string[];
+        order?: string[];
+        scripts?: SqlPluginScriptUpsert[];
+        enabled?: SqlPluginEnabledUpdate[];
     };
     characters: SqlCharacterUpsert[];
     characterTouches?: SqlCharacterTouch[];
@@ -105,6 +125,13 @@ export interface NormalizedSqlCommit {
         upserts: SqlModuleUpsert[];
         deletes: string[];
         order?: string[];
+    };
+    plugins?: {
+        upserts: SqlPluginUpsert[];
+        deletes: string[];
+        order?: string[];
+        scripts?: SqlPluginScriptUpsert[];
+        enabled?: SqlPluginEnabledUpdate[];
     };
     characters: SqlCharacterUpsert[];
     characterTouches: SqlCharacterTouch[];
@@ -156,6 +183,7 @@ export interface SqlCommitImpact {
     readonly pluginStorageCleared: boolean;
     readonly presetsChanged: boolean;
     readonly modulesChanged: boolean;
+    readonly pluginsChanged: boolean;
 }
 /**
  * Internal callback installed on mutation options. Vendors invoke it once per
@@ -208,6 +236,6 @@ export declare function readSqlCommitImpactSink(options: unknown): SqlCommitImpa
  * @returns The compact impact description. 압축된 영향 설명입니다.
  */
 export declare function deriveSqlCommitImpact(commit: NormalizedSqlCommit): SqlCommitImpact;
-export declare const RESERVED_ROOT_SETTING_KEYS: readonly ["botPresets", "botPresetsId"];
+export declare const RESERVED_ROOT_SETTING_KEYS: readonly ["botPresets", "botPresetsId", "plugins"];
 export declare function createSqlCommitValidator(options: SqlCommitValidatorOptions): SqlCommitValidator;
 export {};

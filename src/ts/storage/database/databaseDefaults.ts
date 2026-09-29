@@ -128,6 +128,7 @@ function normalizeLegacyPersonaMirrors(data: Database): void {
 function normalizeAggregateDomains(data: Database): void {
   normalizeLegacyPersonaMirrors(data);
   data.characters ??= [];
+  data.plugins ??= [];
   data.modules ??= [];
   data.enabledModules ??= [];
   data.moduleFolders ??= [];
@@ -187,7 +188,9 @@ export function normalizeDatabaseDefaults(
   normalizeContentDatabaseSettings(data);
   normalizeProviderDatabaseSettings(data);
   normalizeFeatureDatabaseSettings(data);
-  normalizeRuntimeDatabaseSettings(data);
+  normalizeRuntimeDatabaseSettings(data, {
+    hasPlugins: Array.isArray(data.plugins) && data.plugins.length > 0,
+  });
   normalizeAggregateDomains(data);
   return input as Database | NormalizedDatabaseInput;
 }
