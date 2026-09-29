@@ -748,7 +748,7 @@
       }
     }} ondragenter={preventAll}></div>
     {#each charImages as char, ind}
-      <div class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
+      <div class="group relative flex items-center px-2"
         role="listitem"
         draggable="true"
         ondragstart={(e) => {avatarDragStart({index:ind}, e)}}
@@ -763,6 +763,7 @@
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
             role="button" tabindex="0"
+            class="rs-sidebar-bot-btn"
             onpointerenter={() => void preloadChatSidebarPanel()}
             onfocus={() => void preloadChatSidebarPanel()}
             onclick={() => {
@@ -928,6 +929,7 @@
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div
                   role="button" tabindex="0"
+                  class="rs-sidebar-bot-btn"
                   onpointerenter={() => void preloadChatSidebarPanel()}
                   onfocus={() => void preloadChatSidebarPanel()}
                   onclick={() => {
