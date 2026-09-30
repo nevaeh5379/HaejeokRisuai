@@ -731,6 +731,14 @@ await Risuai.setDatabaseLite(db);
 
 `getDatabase()` returns `null` if the user has not granted database access consent.
 
+The default and `'all'` retain the existing payload, including currently loaded
+chat history. Request only the needed keys with `includeOnly` to avoid copying
+unneeded domains. Internally, the host transfers a graph in small batches and
+preserves the existing key read order around lazy plugin loading. The iframe assembles the ordinary
+detached database object before resolving the existing API promise; the host does
+not first deep-copy the plain character/chat/message graph. No new plugin API or
+metadata-only payload is introduced.
+
 **Allowed database keys:**
 - `characters`
 - `modules`
