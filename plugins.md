@@ -731,6 +731,22 @@ await Risuai.setDatabaseLite(db);
 
 `getDatabase()` returns `null` if the user has not granted database access consent.
 
+The optional `includeOnly` argument accepts an array of allowed keys or `'all'`
+(the default). Request only the keys you need to reduce copying and iframe transfer.
+`getDatabase()`, including the default and `'all'`, retains its existing payload
+with currently loaded chat history. `setDatabase()`, `setDatabaseLite()`, and
+`getChatFromIndex()` also retain their existing behavior.
+
+For an opt-in lightweight read, use `await Risuai.getDatabaseMetadata(['characters'])`.
+It uses the same database consent and key selection rules, but omits chat `message`,
+`btwSessions`, and legacy `branchState` before copying. It does not fetch unloaded
+details. Read currently loaded individual chats through `getChatFromIndex()`.
+
+Save edited metadata with `await Risuai.setDatabaseMetadata(db)` to preserve omitted
+history and live pagination by character/chat ID. Keep IDs intact: unmatched chats
+without `message` are rejected. Explicit `message` arrays retain replacement behavior.
+Do not send metadata-only payloads to the legacy database or character/chat setters.
+
 **Allowed database keys:**
 - `characters`
 - `modules`

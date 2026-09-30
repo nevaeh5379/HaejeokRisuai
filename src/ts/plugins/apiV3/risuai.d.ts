@@ -381,7 +381,7 @@ interface Persona {
  * Plugins can only access these specific database properties for security.
  */
 interface DatabaseSubset {
-    /** Array of characters and group chats */
+    /** Array of characters and group chats, including currently loaded chat history. */
     characters?: any[];
     /** Risuai modules */
     modules?: RisuModule[];
@@ -1447,6 +1447,8 @@ interface RisuaiPluginAPI {
      * customCSS, guiHTML, colorSchemeName, characterOrder, selectedPersona
      *
      * Use includeOnly to limit which keys to retrieve for better performance.
+     * Existing behavior is preserved: currently loaded chat history is included.
+     * Use getDatabaseMetadata for an opt-in payload without message-bearing fields.
      * 
      * @example
      * ```typescript
@@ -1456,7 +1458,22 @@ interface RisuaiPluginAPI {
      * }
      * ```
      */
-    getDatabase(includeOnly:string[]|'all' = 'all'): Promise<DatabaseSubset|null>;
+    getDatabase(includeOnly?:string[]|'all'): Promise<DatabaseSubset|null>;
+
+    /**
+     * Opt-in lightweight database read, with the same consent and includeOnly rules
+     * as getDatabase. Character chats omit message, btwSessions and branchState
+     * before snapshotting. Unloaded details are not fetched.
+     * Save edited metadata with setDatabaseMetadata, not the legacy setters.
+     */
+    getDatabaseMetadata(includeOnly?:string[]|'all'): Promise<DatabaseSubset|null>;
+
+    /**
+     * Saves metadata while preserving omitted history and live pagination by
+     * character/chat ID. Keep IDs intact; unmatched chats without message are rejected.
+     * Explicit message arrays replace history. Legacy setters are unchanged.
+     */
+    setDatabaseMetadata(db: DatabaseSubset): Promise<void>;
 
     /**
      * Sets the database (lightweight save)

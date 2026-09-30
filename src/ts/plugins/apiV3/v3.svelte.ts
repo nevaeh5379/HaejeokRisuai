@@ -11,6 +11,10 @@ import {
 } from "../plugins.svelte";
 import type { PluginMetadata } from "../pluginTypes";
 import { SandboxHost } from "./factory";
+import {
+  snapshotPluginDatabase,
+  restoreDatabaseChatHistory,
+} from "./databasePayload.svelte";
 
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import DOMPurify from "dompurify";
@@ -878,6 +882,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
     removeRisuChatListener: oldApis.removeRisuChatListener,
     setDatabaseLite: oldApis.setDatabaseLite,
     setDatabase: oldApis.setDatabase,
+    setDatabaseMetadata: (db: any) =>
+      oldApis.setDatabase(
+        restoreDatabaseChatHistory(db, characterStore.characters),
+      ),
     loadPlugins: oldApis.loadPlugins,
     readImage: oldApis.readImage,
     readInlay: async (id: string) => {
@@ -898,18 +906,23 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       if (!conf) {
         return null;
       }
-      const db = oldApis.getDatabase();
-      const liteDB = {};
-      for (const key of allowedDbKeys) {
-        if (includeOnly !== "all" && !includeOnly.includes(key)) {
-          continue;
-        }
-        (liteDB as any)[key] =
-          key === "plugins"
-            ? $state.snapshot(await pluginStore.loadCompatibilityPlugins())
-            : $state.snapshot(db[key]);
-      }
-      return liteDB;
+      return snapshotPluginDatabase(
+        oldApis.getDatabase(),
+        allowedDbKeys,
+        () => pluginStore.loadCompatibilityPlugins(),
+        includeOnly,
+      );
+    },
+    getDatabaseMetadata: async (includeOnly: string[] | "all" = "all") => {
+      const conf = await getPluginPermission(plugin.name, "db", "periodically");
+      if (!conf) return null;
+      return snapshotPluginDatabase(
+        oldApis.getDatabase(),
+        allowedDbKeys,
+        () => pluginStore.loadCompatibilityPlugins(),
+        includeOnly,
+        true,
+      );
     },
 
     installPlugin: handlePluginInstallViaPlugin,
