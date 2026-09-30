@@ -855,6 +855,18 @@ html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
     background-color 150ms ease;
 }
 
+html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle-right {
+  top: 60px !important;
+  right: 0 !important;
+  left: auto !important;
+  width: 3rem !important;
+  height: 3rem !important;
+  transition:
+    opacity 150ms ease,
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
 html.tauri-macos-vibrancy .rs-chat-tab {
   --risu-macos-tab-surface: color-mix(
     in srgb,
@@ -1784,6 +1796,11 @@ annotation {
   background-color: var(--risu-theme-darkbg);
 }
 
+.theme-windows-fluent .rs-sidebar.sidebar-right {
+  border-left: 1px solid var(--fluent-card-stroke) !important;
+  border-right: none !important;
+}
+
 .theme-windows-fluent.tauri-windows-vibrancy .rs-sidebar {
   background-color: transparent !important;
 }
@@ -1811,6 +1828,11 @@ annotation {
   background-color: var(--risu-theme-borderc) !important;
   transform-origin: center;
   transition: height 160ms cubic-bezier(0, 0, 0, 1), opacity 160ms ease, transform 160ms ease !important;
+}
+
+.theme-windows-fluent .rs-sidebar.sidebar-right .rs-sidebar-indicator {
+  left: auto !important;
+  right: 0px !important;
 }
 
 .theme-windows-fluent .rs-sidebar .rs-sidebar-indicator-active {
@@ -1916,6 +1938,11 @@ annotation {
   padding-bottom: 10px !important;
   padding-left: 10px !important;
   padding-right: 10px !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel.sidebar-right {
+  border-left: 1px solid var(--fluent-card-stroke) !important;
+  border-right: none !important;
 }
 
 /* Hide empty top button */

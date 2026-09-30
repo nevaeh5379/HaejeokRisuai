@@ -63,10 +63,19 @@
     import { onMount } from 'svelte';
     import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
     import { btwRuntime } from 'src/ts/process/btwRuntime.svelte';
+    import { computeSidebarLayoutOrder } from "../../ts/gui/sidebarPosition";
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
   let devTool = $state(false)
+
+  let isExperimental = $derived(!!settingsStore.state.useExperimental);
+  let sidebarRight = $derived(isExperimental && !!settingsStore.state.sidebarRight);
+  let botListRight = $derived(isExperimental && !!settingsStore.state.botListRight);
+  let invertOrder = $derived(isExperimental && !!settingsStore.state.invertSidebarBotListOrder);
+  let layoutOrder = $derived(computeSidebarLayoutOrder(sidebarRight, botListRight, invertOrder));
+  let botListOrder = $derived(layoutOrder.botListOrder);
+  let sidebarPanelOrder = $derived(layoutOrder.sidebarPanelOrder);
 
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
@@ -554,11 +563,15 @@
 </script>
 {#if settingsStore.state.menuSideBar}
 <div
-  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar rs-sidebar-titlebar-inset"
+  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  class:rs-sidebar-titlebar-inset={!botListRight}
+  class:sidebar-right={botListRight}
+  style:order={botListOrder}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
   class:risu-sub-sidebar-close={$sideBarClosing}
+  class:right-side={botListRight}
   class:hidden={hidden}
   class:flex={!hidden}
 >
@@ -635,11 +648,14 @@
 {:else}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
-  class:rs-sidebar-titlebar-inset={!settingsStore.state.hamburgerButtonBottom}
+  class:rs-sidebar-titlebar-inset={!botListRight && !settingsStore.state.hamburgerButtonBottom}
+  class:sidebar-right={botListRight}
+  style:order={botListOrder}
   class:editMode
   class:dynamic-sidebar={$DynamicGUI}
   class:risu-sub-sidebar={!$sideBarClosing}
   class:risu-sub-sidebar-close={$sideBarClosing}
+  class:right-side={botListRight}
   class:hidden={hidden}
   class:flex={!hidden}
 >
@@ -652,7 +668,9 @@
       ></div>
     {:else}
       <div
-        class="absolute inset-y-0 left-0 w-1.5 z-20"
+        class="absolute inset-y-0 w-1.5 z-20"
+        class:left-0={!botListRight}
+        class:right-0={botListRight}
         use:windowDragRegion
         aria-hidden="true"
       ></div>
@@ -1094,16 +1112,19 @@
 {/if}
 <div
   class="setting-area rs-sidebar-panel relative h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
+  class:sidebar-right={sidebarRight}
+  style:order={sidebarPanelOrder}
   class:overflow-hidden={btwRuntime.open}
   class:overflow-y-auto={!btwRuntime.open}
   class:py-0={btwRuntime.open}
   class:py-6={!btwRuntime.open}
   class:risu-sidebar={!$sideBarClosing}
+  class:risu-sidebar-close={$sideBarClosing}
+  class:right-side={sidebarRight}
   class:w-96={$sideBarSize === 0}
   class:w-110={$sideBarSize === 1}
   class:w-124={$sideBarSize === 2}
   class:w-138={$sideBarSize === 3}
-  class:risu-sidebar-close={$sideBarClosing}
   class:min-w-96={!$DynamicGUI && $sideBarSize === 0}
   class:min-w-110={!$DynamicGUI && $sideBarSize === 1}
   class:min-w-124={!$DynamicGUI && $sideBarSize === 2}
@@ -1325,6 +1346,67 @@
     }
   }
 
+  @keyframes sidebar-transition-close-non-dynamic-right {
+    from {
+      width: var(--sidebar-size);
+      min-width: var(--sidebar-size);
+      left: 0rem;
+    }
+    to {
+      width: 0rem;
+      min-width: 0rem;
+      left: 3rem;
+    }
+  }
+
+  @keyframes sub-sidebar-transition-close-width-right {
+    from {
+      width: 5rem;
+      min-width: 5rem;
+      max-width: 5rem;
+      left: 0rem;
+    }
+    to {
+      width: 0rem;
+      min-width: 0rem;
+      max-width: 0rem;
+      left: 10rem;
+    }
+  }
+
+  @keyframes sidebar-transition-right {
+    from {
+      transform: translateX(calc(100% + 5rem));
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes sidebar-transition-close-right {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(100% + 5rem));
+    }
+  }
+  @keyframes sub-sidebar-transition-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes sub-sidebar-transition-close-right {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+
   .risu-sidebar:not(.dynamic-sidebar) {
     animation-name: sidebar-transition-non-dynamic;
     animation-duration: var(--risu-animation-speed);
@@ -1335,12 +1417,18 @@
     animation-fill-mode: forwards;
     position: relative;
   }
+  .risu-sidebar-close.right-side:not(.dynamic-sidebar) {
+    animation-name: sidebar-transition-close-non-dynamic-right;
+  }
   .risu-sidebar.dynamic-sidebar {
     animation-name: sidebar-transition;
     animation-duration: var(--risu-animation-speed);
     /* translateX keeps the panel on the GPU compositor so the hundreds of
        child nodes inside the sidebar are not re-laid-out every frame. */
     will-change: transform;
+  }
+  .risu-sidebar.dynamic-sidebar.right-side {
+    animation-name: sidebar-transition-right;
   }
   .risu-sidebar-close.dynamic-sidebar {
     animation-name: sidebar-transition-close;
@@ -1349,7 +1437,9 @@
     position: relative;
     will-change: transform;
   }
-
+  .risu-sidebar-close.dynamic-sidebar.right-side {
+    animation-name: sidebar-transition-close-right;
+  }
 
   .risu-sub-sidebar:not(.dynamic-sidebar) {
     animation-name: sub-sidebar-transition-width;
@@ -1360,11 +1450,18 @@
     animation-duration: var(--risu-animation-speed);
     animation-fill-mode: forwards;
     position: relative;
+    overflow: hidden;
+  }
+  .risu-sub-sidebar-close.right-side:not(.dynamic-sidebar) {
+    animation-name: sub-sidebar-transition-close-width-right;
   }
   .risu-sub-sidebar.dynamic-sidebar {
     animation-name: sub-sidebar-transition;
     animation-duration: var(--risu-animation-speed);
     will-change: transform;
+  }
+  .risu-sub-sidebar.dynamic-sidebar.right-side {
+    animation-name: sub-sidebar-transition-right;
   }
   .risu-sub-sidebar-close.dynamic-sidebar {
     animation-name: sub-sidebar-transition-close;
@@ -1372,6 +1469,9 @@
     animation-fill-mode: forwards;
     position: relative;
     will-change: transform;
+  }
+  .risu-sub-sidebar-close.dynamic-sidebar.right-side {
+    animation-name: sub-sidebar-transition-close-right;
   }
   .sidebar-dark-animation{
     animation-name: sidebar-dark-animation;
