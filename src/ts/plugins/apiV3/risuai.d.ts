@@ -1456,7 +1456,7 @@ interface RisuaiPluginAPI {
      * }
      * ```
      */
-    getDatabase(includeOnly:string[]|'all' = 'all'): Promise<DatabaseSubset|null>;
+    getDatabase(includeOnly?:string[]|'all'): Promise<DatabaseSubset|null>;
 
     /**
      * Sets the database (lightweight save)

@@ -1,3 +1,5 @@
+import { DeferredDatabaseSnapshot } from "./databaseSnapshot.svelte";
+
 type MsgType =
   | "CALL_ROOT"
   | "CALL_INSTANCE"
@@ -888,6 +890,11 @@ export class SandboxHost {
             result = await instance[data.method!](...args);
           }
 
+          // No await between the expensive snapshot and its iframe transfer.
+          // Concurrent API calls therefore cannot accumulate completed host copies.
+          if (result instanceof DeferredDatabaseSnapshot) {
+            result = result.materialize();
+          }
           response.result = this.serialize(result);
           const {
             result: streamResult,
@@ -906,8 +913,6 @@ export class SandboxHost {
           for (const id of usedAbortIds) this.abortControllers.delete(id);
         }
 
-        console.log("Original request:", data);
-        console.log("Original response:", response, transferables);
         try {
           this.iframe.contentWindow?.postMessage(response, "*", transferables);
         } catch (error) {
@@ -925,6 +930,11 @@ export class SandboxHost {
             );
           } catch (_) {}
           console.error("Failed to post message to iframe:", error);
+        } finally {
+          // postMessage has already synchronously cloned the payload. Do not keep
+          // the database on the response envelope (or in console history).
+          delete response.result;
+          transferables.length = 0;
         }
       }
     };
