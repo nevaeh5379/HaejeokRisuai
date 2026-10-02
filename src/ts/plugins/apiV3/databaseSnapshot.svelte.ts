@@ -117,6 +117,7 @@ export class DatabaseSnapshotTransfer {
   }
 }
 
+// TODO: 데이터베이스 매개변수 타입을 제대로 하기
 export function prepareDatabaseSnapshot(
   database: Record<string, unknown>,
   allowedKeys: string[],
