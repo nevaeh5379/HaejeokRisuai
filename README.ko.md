@@ -229,6 +229,15 @@ Haejeok RisuAI는 [RisuAI](https://github.com/kwaroran/RisuAI)를 기반으로 �
 
 만약 변경 사항이 원작 프로젝트에도 적합한 내용이라면, 업스트림 RisuAI에 별도로 기여(PR)할 수 있습니다.
 
+## 안전모드
+
+안전모드에서는 `loadPlugins()`를 건너뛰며 설치된 플러그인과 설정은 유지됩니다.
+
+- **웹:** 현재 주소에 `?safe=1`을 붙입니다. 기존 쿼리가 있다면 `&safe=1`을 붙입니다.
+- **Android:** 지원하는 런처에서 앱 아이콘을 길게 누르고 **안전모드로 실행**을 선택합니다.
+- **Tauri / Node:** 실행 시 환경변수 `HAEJEOK_SAFE_MODE=1`을 지정합니다.
+  Node에서는 해당 서버가 제공하는 프런트엔드에 적용됩니다.
+
 ## 라이선스
 
 이 프로젝트는 저장소의 [GNU General Public License v3.0](LICENSE)에 따라 배포됩니다.

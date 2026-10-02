@@ -14,6 +14,11 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+fn get_safe_mode() -> bool {
+    std::env::var("HAEJEOK_SAFE_MODE").as_deref() == Ok("1")
+}
+
 use base64::{engine::general_purpose, Engine as _};
 use oauth2::basic::BasicClient;
 use oauth2::{
@@ -1484,6 +1489,7 @@ fn main() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
+            get_safe_mode,
             native_request,
             check_auth,
             check_requirements_local,

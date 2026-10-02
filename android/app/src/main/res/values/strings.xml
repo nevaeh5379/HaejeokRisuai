@@ -1,5 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="safe_mode_shortcut">Start in safe mode</string>
     <string name="app_name">Risuai</string>
     <string name="chat_generation_channel">Chat generation</string>
     <string name="chat_generation_active">Generating a reply…</string>
