@@ -87,7 +87,8 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (ACTION_SAFE_MODE.equals(intent.getAction())) {
+        // BridgeActivity also dispatches the launch intent from load() during onCreate.
+        if (ACTION_SAFE_MODE.equals(intent.getAction()) && !safeMode) {
             safeMode = true;
             recreate();
             return;
