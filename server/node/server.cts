@@ -2328,7 +2328,7 @@ app.get("/", async (req, res, next) => {
     const legalConfigured =
       process.env.VITE_RISU_LEGAL_CONFIGURED?.trim().toUpperCase() === "TRUE";
     head.innerHTML =
-      `<script>globalThis.__NODE__ = true;globalThis.__RISU_LEGAL_CONFIGURED__ = ${legalConfigured}</script>` +
+      `<script>globalThis.__NODE__ = true;globalThis.__HAEJEOK_SAFE_MODE__ = ${process.env.HAEJEOK_SAFE_MODE === "1"};globalThis.__RISU_LEGAL_CONFIGURED__ = ${legalConfigured}</script>` +
       head.innerHTML;
 
     const html = root.toString();

@@ -4,7 +4,7 @@
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
-    import { registerPlugin } from '@capacitor/core';
+    import { nativeAppControl } from './ts/android/nativeAppControl';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
@@ -33,8 +33,6 @@
     let keepingSessionAlive = $state(false)
     let RealmPopUp = $state<typeof RealmPopUpType | null>(null)
     let exitConfirmationOpen = false
-
-    const nativeAppControl = registerPlugin<{ exitApp(): Promise<void> }>('NativeAppControl')
 
     $effect(() => {
         if (!isCapacitorAndroid) return

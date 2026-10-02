@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="safe_mode"
+        android:enabled="true"
+        android:icon="@drawable/ic_stat_risu"
+        android:shortcutShortLabel="@string/safe_mode_shortcut"
+        android:shortcutLongLabel="@string/safe_mode_shortcut">
+        <intent
+            android:action="co.aiclient.risu.action.SAFE_MODE"
+            android:targetPackage="co.aiclient.risu"
+            android:targetClass="co.aiclient.risu.MainActivity" />
+    </shortcut>
     <share-target android:targetClass="co.aiclient.risu.MainActivity">
         <data android:mimeType="text/*" />
         <category android:name="co.aiclient.risu.category.SHARE_CHARACTER" />

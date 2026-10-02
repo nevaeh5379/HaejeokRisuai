@@ -14,10 +14,15 @@ import com.getcapacitor.BridgeActivity;
 import java.util.Arrays;
 
 public class MainActivity extends BridgeActivity {
+    public static final String ACTION_SAFE_MODE = "co.aiclient.risu.action.SAFE_MODE";
+    private static final String STATE_SAFE_MODE = "haejeok_safe_mode";
+    private boolean safeMode;
     private final AndroidSafeArea safeArea = new AndroidSafeArea();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        safeMode = ACTION_SAFE_MODE.equals(getIntent().getAction())
+            || (savedInstanceState != null && savedInstanceState.getBoolean(STATE_SAFE_MODE));
         SplashScreen.installSplashScreen(this);
         // Hybrid E2E tools need a debuggable WebView context to inspect the
         // bundled Capacitor UI. Never expose it from release builds.
@@ -82,7 +87,22 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (ACTION_SAFE_MODE.equals(intent.getAction())) {
+            safeMode = true;
+            recreate();
+            return;
+        }
         handleNativeIntent(intent);
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        outState.putBoolean(STATE_SAFE_MODE, safeMode);
+        super.onSaveInstanceState(outState);
+    }
+
+    boolean isSafeMode() {
+        return safeMode;
     }
 
     private void handleNativeIntent(Intent intent) {

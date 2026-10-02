@@ -26,6 +26,7 @@ import {
 } from "./pluginSafeClass";
 import { PluginCrashGuard } from "./pluginCrashGuard";
 import type { PluginMetadata } from "./pluginTypes";
+import { isSafeModeEnabled } from "../safeMode";
 
 export const customProviderStore = writable([] as string[]);
 
@@ -449,6 +450,7 @@ export async function togglePluginEnabled(index: number): Promise<void> {
 }
 
 export async function loadPlugins() {
+  if (await isSafeModeEnabled()) return;
   console.log("Loading plugins...");
   // CrashGuard: plugins the native side blamed for a renderer death
   // mid-load are skipped until they are permanently disabled below.
@@ -1055,113 +1057,10 @@ export const getV2PluginAPIs = () => {
   };
 };
 
+/**
+ * @deprecated HaejeokRisuai not supported V2 Plugin. do not use it.
+ */
 export async function loadV2Plugin(plugins: PluginMetadata[]) {
-  if (pluginV2.loaded) {
-    for (const unload of pluginV2.unload) {
-      await unload();
-    }
-
-    pluginV2.providers.clear();
-    pluginV2.editdisplay.clear();
-    pluginV2.editoutput.clear();
-    pluginV2.editprocess.clear();
-    pluginV2.editinput.clear();
-    pluginV2.chatOutput.clear();
-  }
-
-  pluginV2.loaded = true;
-
-  globalThis.__pluginApis__ = getV2PluginAPIs();
-
-  for (const plugin of plugins) {
-    const script = (await pluginStore.loadScript(plugin.id)).script;
-    let data = "";
-    let version = plugin.version || 2;
-
-    const createRealScript = (data: string): string => {
-      const tt = (
-        window as unknown as Window & {
-          trustedTypes?: {
-            createPolicy: (
-              name: string,
-              rules: { createScript: (input: string) => string },
-            ) => { createScript: (input: string) => string };
-          };
-        }
-      ).trustedTypes;
-      const policyFactory = tt ?? {
-        createPolicy: (
-          _name: string,
-          rules: { createScript: (input: string) => string },
-        ) => rules, // Just return the rules object as the "policy"
-      };
-
-      const policy = policyFactory.createPolicy("plugin-policy", {
-        createScript: (_input) => {
-          return `(async () => {
-                        const risuFetch = globalThis.__pluginApis__.risuFetch
-                        const nativeFetch = globalThis.__pluginApis__.nativeFetch
-                        const getArg = globalThis.__pluginApis__.getArg
-                        const printLog = globalThis.__pluginApis__.printLog
-                        const getChar = globalThis.__pluginApis__.getChar
-                        const setChar = globalThis.__pluginApis__.setChar
-                        const addProvider = globalThis.__pluginApis__.addProvider
-                        const addRisuScriptHandler = globalThis.__pluginApis__.addRisuScriptHandler
-                        const removeRisuScriptHandler = globalThis.__pluginApis__.removeRisuScriptHandler
-                        const addRisuReplacer = globalThis.__pluginApis__.addRisuReplacer
-                        const removeRisuReplacer = globalThis.__pluginApis__.removeRisuReplacer
-                        const onUnload = globalThis.__pluginApis__.onUnload
-                        const setArg = globalThis.__pluginApis__.setArg
-                        const saveAsset = globalThis.__pluginApis__.saveAsset
-                        const readImage = globalThis.__pluginApis__.readImage
-                        ${
-                          version === "2.1"
-                            ? `
-                            const safeGlobalThis = globalThis.__pluginApis__.getSafeGlobalThis()
-                            const Risuai = globalThis.__pluginApis__
-                            const safeLocalStorage = globalThis.__pluginApis__.safeLocalStorage
-                            const safeIdbFactory = globalThis.__pluginApis__.safeIdbFactory
-                            const alertStore = globalThis.__pluginApis__.alertStore
-                            const safeDocument = globalThis.__pluginApis__.safeDocument
-                            const getDatabase = globalThis.__pluginApis__.getDatabase
-                            const setDatabaseLite = globalThis.__pluginApis__.setDatabaseLite
-                            const setDatabase = globalThis.__pluginApis__.setDatabase
-                            const loadPlugins = globalThis.__pluginApis__.loadPlugins
-                            const SafeFunction = globalThis.__pluginApis__.SafeFunction
-                        `
-                            : ""
-                        }
-
-                        ${data}
-                    })();`;
-        },
-      });
-
-      return policy.createScript(data);
-    };
-
-    if (version === "2.1") {
-      const safety = await checkCodeSafety(script);
-      data = safety.modifiedCode;
-      console.log("Safety check result:", safety);
-      console.log("Loading V2.1 Plugin", plugin.name, data);
-
-      try {
-        new Function(createRealScript(data))();
-      } catch (error) {
-        console.error(error);
-      }
-
-      console.log("Loaded V2.1 Plugin", plugin.name);
-    } else {
-      data = script;
-      console.log("Loading V2.0 Plugin", plugin.name);
-
-      console.warn(
-        `Plugin 2.0 is removed and no longer supported. Please update plugin "${plugin.name}" to API version 3.0`,
-      );
-    }
-  }
 }
 
 export async function translatorPlugin(text: string, from: string, to: string) {

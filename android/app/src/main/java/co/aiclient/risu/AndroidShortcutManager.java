@@ -31,7 +31,9 @@ final class AndroidShortcutManager {
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
         if (manager == null) return 0;
 
-        int platformMax = Math.max(1, manager.getMaxShortcutCountPerActivity());
+        // Static recovery shortcuts share the per-activity limit with chat shortcuts.
+        int platformMax = Math.max(0,
+            manager.getMaxShortcutCountPerActivity() - manager.getManifestShortcuts().size());
         int limit = Math.min(DEFAULT_MAX_SHORTCUTS, platformMax);
         List<ShortcutInfo> shortcuts = new ArrayList<>();
         SharedPreferences.Editor mappings = context

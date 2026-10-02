@@ -227,6 +227,15 @@ Upstream development, documentation, and community resources belong to the origi
 
 If a change is suitable for the original project as well, contributions can still be prepared separately for upstream RisuAI.
 
+## Safe mode
+
+Safe mode skips `loadPlugins()` without changing installed plugins or their settings.
+
+- **Web:** add `?safe=1` to the current URL (or `&safe=1` if it already has a query).
+- **Android:** long-press the app icon and select **Start in safe mode** on a supported launcher.
+- **Tauri / Node:** launch with the runtime environment variable `HAEJEOK_SAFE_MODE=1`.
+  For Node, this applies to the frontend served by that server.
+
 ## License
 
 This project is distributed under the repository's [GNU General Public License v3.0](LICENSE).
