@@ -10,6 +10,12 @@ import {
 // target resolution, cloning, loading, validation, and transaction execution.
 export const snapshotEqual = isEqual;
 
+export function diffSnapshotIds(ids: string[], oldIds: string[]) {
+  if (snapshotEqual(ids, oldIds)) return null;
+  const retained = new Set(ids);
+  return { ids, removed: oldIds.filter((id) => !retained.has(id)) };
+}
+
 export function appendChatSnapshotChanges(
   commit: SqlCommit,
   characterId: string,
@@ -53,12 +59,11 @@ export function appendChatSnapshotChanges(
   }
   const ids = next.message.map((message) => message.chatId!);
   const oldIds = old?.message.map((message) => message.chatId!) ?? [];
-  if (!snapshotEqual(ids, oldIds)) {
-    commit.messageManifests.push({ chatId: next.id!, ids });
-    const retained = new Set(ids);
-    const removed = oldIds.filter((id) => !retained.has(id));
-    if (removed.length)
-      commit.messageDeletes!.push({ chatId: next.id!, ids: removed });
+  const changes = diffSnapshotIds(ids, oldIds);
+  if (changes) {
+    commit.messageManifests.push({ chatId: next.id!, ids: changes.ids });
+    if (changes.removed.length)
+      commit.messageDeletes!.push({ chatId: next.id!, ids: changes.removed });
   }
 }
 

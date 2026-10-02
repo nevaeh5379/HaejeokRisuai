@@ -22,6 +22,7 @@ import { messageStore } from "./messageStore.svelte";
 import { StoreCommitQueue } from "./storeCommitQueue";
 import {
   appendChatSnapshotChanges,
+  diffSnapshotIds,
   keepResidentWindow,
   snapshotEqual,
 } from "./characterSnapshot";
@@ -269,10 +270,7 @@ class CharacterStore
   init(characters: (character | groupChat)[], storage: ISqlStorage): void {
     this.storage = storage;
     this.cancelScheduledTouchCommit();
-    this.arrayDispose?.();
-    this.arrayDispose = null;
-    this.activeDispose?.();
-    this.activeDispose = null;
+    this.disposeCharacterObservers();
     this.dirtyCharacters.clear();
     this.dirtyCharacterDeletes.clear();
     this.dirtyCharacterTouches.clear();
@@ -735,24 +733,15 @@ class CharacterStore
       if (!id) return;
       incoming.chaId = id;
       this.identifySnapshotInputs([incoming]);
-      await this.snapshotWrites.enqueue(async () => {
-        const storage = this.storage || (await getSqlStorage());
-        await this.validateSnapshotInputs([incoming], storage);
-        await this.flushSnapshotPredecessors();
+      await this.enqueueCharacterSnapshotWrite([incoming], async (storage) => {
         const current = await this.loadSnapshotCharacter(id);
         const position = this.characters.indexOf(current);
-        const commit = createEmptySqlCommit(
-          storage.getRevision(),
+        const next = await this.commitSnapshot(
+          storage,
           "snapshot-character",
+          (commit) =>
+            this.prepareCharacterSnapshot(commit, position, incoming, current),
         );
-        const next = await this.prepareCharacterSnapshot(
-          commit,
-          position,
-          incoming,
-          current,
-        );
-        if (hasSqlCommitChanges(commit))
-          await commitSqlChanges(storage, commit);
         const characters = [...this.characters];
         const targetPosition = characters.findIndex(
           (character) => character.chaId === id,
@@ -771,37 +760,36 @@ class CharacterStore
     saveAll: async (values: SnapshotCharacter[]): Promise<void> => {
       const incoming = safeStructuredClone(values);
       this.identifySnapshotInputs(incoming);
-      await this.snapshotWrites.enqueue(async () => {
-        const storage = this.storage || (await getSqlStorage());
-        await this.validateSnapshotInputs(incoming, storage);
-        await this.flushSnapshotPredecessors();
-        const commit = createEmptySqlCommit(
-          storage.getRevision(),
+      await this.enqueueCharacterSnapshotWrite(incoming, async (storage) => {
+        const nextCharacters = await this.commitSnapshot(
+          storage,
           "snapshot-characters",
+          async (commit) => {
+            const characters: SnapshotCharacter[] = [];
+            for (const [position, next] of incoming.entries()) {
+              const current = this.getById(next.chaId)
+                ? await this.loadSnapshotCharacter(next.chaId)
+                : undefined;
+              characters.push(
+                await this.prepareCharacterSnapshot(
+                  commit,
+                  position,
+                  next,
+                  current,
+                ),
+              );
+            }
+            const changes = diffSnapshotIds(
+              characters.map((character) => character.chaId),
+              this.characters.map((character) => character.chaId),
+            );
+            if (changes) {
+              commit.characterIds = changes.ids;
+              commit.characterDeletes = changes.removed;
+            }
+            return characters;
+          },
         );
-        const nextCharacters: SnapshotCharacter[] = [];
-        for (const [position, next] of incoming.entries()) {
-          const current = this.getById(next.chaId)
-            ? await this.loadSnapshotCharacter(next.chaId)
-            : undefined;
-          nextCharacters.push(
-            await this.prepareCharacterSnapshot(
-              commit,
-              position,
-              next,
-              current,
-            ),
-          );
-        }
-        const ids = nextCharacters.map((character) => character.chaId);
-        const oldIds = this.characters.map((character) => character.chaId);
-        if (!snapshotEqual(ids, oldIds)) {
-          commit.characterIds = ids;
-          const retained = new Set(ids);
-          commit.characterDeletes = oldIds.filter((id) => !retained.has(id));
-        }
-        if (hasSqlCommitChanges(commit))
-          await commitSqlChanges(storage, commit);
         this.applySnapshotCharacters(
           nextCharacters,
           incoming
@@ -853,20 +841,19 @@ class CharacterStore
               `Chat changed while saving snapshot: ${resolved.chatId}`,
             );
           const storage = this.storage || (await getSqlStorage());
-          const commit = createEmptySqlCommit(
-            storage.getRevision(),
+          const next = await this.commitSnapshot(
+            storage,
             "snapshot-chat",
+            (commit) =>
+              this.prepareChatSnapshot(
+                commit,
+                current.chaId,
+                position,
+                incoming,
+                old,
+                position,
+              ),
           );
-          const next = this.prepareChatSnapshot(
-            commit,
-            current.chaId,
-            position,
-            incoming,
-            old,
-            position,
-          );
-          if (hasSqlCommitChanges(commit))
-            await commitSqlChanges(storage, commit);
           // Do not let observers turn a successful snapshot into another write.
           const residentCharacter = this.getById(target.characterId);
           const residentPosition =
@@ -1020,6 +1007,29 @@ class CharacterStore
     }
   }
 
+  private enqueueCharacterSnapshotWrite(
+    values: SnapshotCharacter[],
+    write: (storage: ISqlStorage) => Promise<void>,
+  ): Promise<void> {
+    return this.snapshotWrites.enqueue(async () => {
+      const storage = this.storage || (await getSqlStorage());
+      await this.validateSnapshotInputs(values, storage);
+      await this.flushSnapshotPredecessors();
+      await write(storage);
+    });
+  }
+
+  private async commitSnapshot<T>(
+    storage: ISqlStorage,
+    action: SqlCommit["action"],
+    prepare: (commit: SqlCommit) => T | Promise<T>,
+  ): Promise<T> {
+    const commit = createEmptySqlCommit(storage.getRevision(), action);
+    const next = await prepare(commit);
+    if (hasSqlCommitChanges(commit)) await commitSqlChanges(storage, commit);
+    return next;
+  }
+
   private prepareChatSnapshot(
     commit: SqlCommit,
     characterId: string,
@@ -1035,13 +1045,16 @@ class CharacterStore
       incoming.detailsLoaded === false ? { ...old, ...incoming } : incoming;
     if (incoming.detailsLoaded === false && old) {
       if (old.scriptstate || incoming.scriptstate) {
-        next.scriptstate = { ...old.scriptstate, ...incoming.scriptstate };
+        next.scriptstate = mergeVariableRecord(
+          old.scriptstate,
+          incoming.scriptstate,
+        );
       }
       if (old.GLGlobalVariables || incoming.GLGlobalVariables) {
-        next.GLGlobalVariables = {
-          ...old.GLGlobalVariables,
-          ...incoming.GLGlobalVariables,
-        };
+        next.GLGlobalVariables = mergeVariableRecord(
+          old.GLGlobalVariables,
+          incoming.GLGlobalVariables,
+        );
       }
     }
     const incomingMessages = incoming.message ?? [];
@@ -1135,12 +1148,13 @@ class CharacterStore
       );
       residentChats.push(keepResidentWindow(complete, previous?.chat));
     }
-    const ids = residentChats.map((chat) => chat.id!);
-    const oldIds = current?.chats.map((chat) => chat.id!) ?? [];
-    if (!snapshotEqual(ids, oldIds)) {
-      commit.chatManifests.push({ characterId: next.chaId, ids });
-      const retained = new Set(ids);
-      commit.chatDeletes!.push(...oldIds.filter((id) => !retained.has(id)));
+    const changes = diffSnapshotIds(
+      residentChats.map((chat) => chat.id!),
+      current?.chats.map((chat) => chat.id!) ?? [],
+    );
+    if (changes) {
+      commit.chatManifests.push({ characterId: next.chaId, ids: changes.ids });
+      commit.chatDeletes!.push(...changes.removed);
     }
     next.chats = residentChats;
     return next;
@@ -1151,12 +1165,8 @@ class CharacterStore
     refreshedChats: string[],
   ): void {
     const selectedId = this.currentCharacter?.chaId;
-    this.arrayDispose?.();
-    this.activeDispose?.();
-    this.characters = characters;
-    this.charIdsSnapshot = characters
-      .map((character) => character.chaId)
-      .join(",");
+    this.disposeCharacterObservers();
+    this.replaceCharacterArray(characters, selectedId);
     const retainedChats = new Set(
       characters.flatMap((character) => character.chats.map((chat) => chat.id)),
     );
@@ -1165,15 +1175,34 @@ class CharacterStore
       if (!retainedChats.has(id) || refreshedChatIds.has(id))
         this.generationOnlyMetadataChats.delete(id);
     }
+    this.observeArray();
+    this.select(this.selectedId);
+    selectedCharID.set(this.selectedId);
+  }
+
+  private disposeCharacterObservers(): void {
+    this.arrayDispose?.();
+    this.arrayDispose = null;
+    this.activeDispose?.();
+    this.activeDispose = null;
+  }
+
+  private replaceCharacterArray(
+    characters: SnapshotCharacter[],
+    selectedCharacterId: string | undefined,
+  ): void {
+    this.characters = characters;
+    this.selectedId = selectedCharacterId
+      ? characters.findIndex(
+          (character) => character.chaId === selectedCharacterId,
+        )
+      : -1;
+    this.charIdsSnapshot = characters
+      .map((character) => character.chaId)
+      .join(",");
     this.hydratedCharacterLru = this.hydratedCharacterLru.filter((id) =>
       characters.some((character) => character.chaId === id),
     );
-    this.observeArray();
-    const selectedIndex = characters.findIndex(
-      (character) => character.chaId === selectedId,
-    );
-    this.select(selectedIndex);
-    selectedCharID.set(selectedIndex);
   }
 
   // ── Public accessors ──────────────────────────────────────────────
@@ -1411,10 +1440,7 @@ class CharacterStore
     const selectedCharacterId = this.characters[this.selectedId]?.chaId;
     const warmChangedIds: string[] = [];
 
-    this.arrayDispose?.();
-    this.arrayDispose = null;
-    this.activeDispose?.();
-    this.activeDispose = null;
+    this.disposeCharacterObservers();
 
     const nextCharacters = startup.characters.map((summary) => {
       summary.chaId ||= uuidv4();
@@ -1438,18 +1464,7 @@ class CharacterStore
       return current;
     });
 
-    this.characters = nextCharacters;
-    this.selectedId = selectedCharacterId
-      ? this.characters.findIndex(
-          (character) => character.chaId === selectedCharacterId,
-        )
-      : -1;
-    this.charIdsSnapshot = this.characters
-      .map((character) => character.chaId)
-      .join(",");
-    this.hydratedCharacterLru = this.hydratedCharacterLru.filter((id) =>
-      this.characters.some((character) => character.chaId === id),
-    );
+    this.replaceCharacterArray(nextCharacters, selectedCharacterId);
     this.observeArray();
     this.observeActive();
 
@@ -1738,10 +1753,7 @@ class CharacterStore
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    this.arrayDispose?.();
-    this.arrayDispose = null;
-    this.activeDispose?.();
-    this.activeDispose = null;
+    this.disposeCharacterObservers();
     this.generationOnlyMetadataChats.clear();
     this.hydratedCharacterLru = [];
     this.inactiveDetailReleaseGeneration += 1;
