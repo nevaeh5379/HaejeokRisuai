@@ -1,3 +1,4 @@
+import { selectedCharID } from "./stores/domain/characterSelection";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { writable } from "svelte/store";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
@@ -106,7 +107,7 @@ export const AccountWarning = writable("");
 export const DynamicGUI = writable(false);
 export const sideBarClosing = writable(false);
 export const sideBarStore = writable(window.innerWidth > 1024);
-export const selectedCharID = writable(-1);
+export { selectedCharID } from "./stores/domain/characterSelection";
 export const pendingCharID = writable(-1);
 export const CurrentTriggerIdStore = writable<string | null>(null);
 export const CharEmotion = writable(

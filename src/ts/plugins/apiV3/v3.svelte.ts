@@ -10,13 +10,6 @@ import {
   type PluginV2ProviderOptions,
 } from "../plugins.svelte";
 import type { PluginMetadata } from "../pluginTypes";
-import {
-  getPluginCharacter,
-  getPluginCharacters,
-  getPluginChat,
-  setPluginCharacter,
-  setPluginChat,
-} from "../pluginCharacterApi";
 import { SandboxHost } from "./factory";
 
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
@@ -915,7 +908,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
           key === "plugins"
             ? $state.snapshot(await pluginStore.loadCompatibilityPlugins())
             : key === "characters"
-              ? await getPluginCharacters()
+              ? await characterStore.snapshot.loadAll()
               : $state.snapshot(db[key]);
       }
       return liteDB;
@@ -1015,10 +1008,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       const runtimePlugin = getRuntimePlugin(plugin.name);
       if (runtimePlugin) runtimePlugin.realArg[key] = value;
     },
-    getCharacterFromIndex: getPluginCharacter,
-    setCharacterToIndex: setPluginCharacter,
-    getChatFromIndex: getPluginChat,
-    setChatToIndex: setPluginChat,
+    getCharacterFromIndex: characterStore.snapshot.load,
+    setCharacterToIndex: characterStore.snapshot.save,
+    getChatFromIndex: characterStore.snapshot.chat.load,
+    setChatToIndex: characterStore.snapshot.chat.save,
     getCurrentCharacterIndex: () => {
       return get(selectedCharID);
     },

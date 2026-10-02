@@ -27,11 +27,6 @@ import {
 import { PluginCrashGuard } from "./pluginCrashGuard";
 import type { PluginMetadata } from "./pluginTypes";
 import { isSafeModeEnabled } from "../safeMode";
-import {
-  getPluginCharacter,
-  replacePluginCharacters,
-  setPluginCharacter,
-} from "./pluginCharacterApi";
 
 export const customProviderStore = writable([] as string[]);
 
@@ -632,7 +627,7 @@ function setDomainDbValue(
 ): true | false | Promise<void> {
   switch (key) {
     case "characters":
-      return replacePluginCharacters(value);
+      return characterStore.snapshot.saveAll(value);
     case "modules":
       if (!Array.isArray(value)) {
         throw new TypeError("Plugin database modules must be an array");
@@ -698,10 +693,10 @@ export const getV2PluginAPIs = () => {
       }
     },
     getChar: async () =>
-      (await getPluginCharacter(get(selectedCharID))) ?? undefined,
+      (await characterStore.snapshot.load(get(selectedCharID))) ?? undefined,
     setChar: (char: any) => {
       const charid = get(selectedCharID);
-      return setPluginCharacter(charid, char);
+      return characterStore.snapshot.save(charid, char);
     },
     addProvider: (
       name: string,

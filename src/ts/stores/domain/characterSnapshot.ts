@@ -1,0 +1,96 @@
+import isEqual from "lodash/isEqual";
+import type { Chat } from "../../storage/database/schema";
+import {
+  sqlChatData,
+  sqlMessageData,
+  type SqlCommit,
+} from "../../storage/sql/sqlCommit";
+
+// Only delta construction and resident-window bounds live here; the Store owns
+// target resolution, cloning, loading, validation, and transaction execution.
+export const snapshotEqual = isEqual;
+
+export function appendChatSnapshotChanges(
+  commit: SqlCommit,
+  characterId: string,
+  position: number,
+  next: Chat,
+  old?: Chat,
+  previousPosition?: number,
+): void {
+  if (
+    !old ||
+    previousPosition !== position ||
+    !snapshotEqual(sqlChatData(next), sqlChatData(old))
+  ) {
+    commit.chats.push({
+      id: next.id!,
+      characterId,
+      position,
+      data: sqlChatData(next),
+    });
+  }
+  const oldMessages = new Map(
+    old?.message.map((message, index) => [
+      message.chatId,
+      { message, index },
+    ]) ?? [],
+  );
+  for (const [index, message] of next.message.entries()) {
+    const previous = oldMessages.get(message.chatId);
+    if (
+      !previous ||
+      previous.index !== index ||
+      !snapshotEqual(sqlMessageData(message), sqlMessageData(previous.message))
+    ) {
+      commit.messages.push({
+        id: message.chatId!,
+        chatId: next.id!,
+        position: index,
+        data: sqlMessageData(message),
+      });
+    }
+  }
+  const ids = next.message.map((message) => message.chatId!);
+  const oldIds = old?.message.map((message) => message.chatId!) ?? [];
+  if (!snapshotEqual(ids, oldIds)) {
+    commit.messageManifests.push({ chatId: next.id!, ids });
+    const retained = new Set(ids);
+    const removed = oldIds.filter((id) => !retained.has(id));
+    if (removed.length)
+      commit.messageDeletes!.push({ chatId: next.id!, ids: removed });
+  }
+}
+
+export function keepResidentWindow(next: Chat, previous?: Chat): Chat {
+  if (
+    !previous ||
+    (previous.messagesLoaded !== false &&
+      previous.messagesFullyLoaded !== false)
+  )
+    return next;
+  const total = next.message.length;
+  if (previous.messagesLoaded === false) {
+    return {
+      ...next,
+      message: [],
+      messagesLoaded: false,
+      messagesFullyLoaded: false,
+      messageTotal: total,
+    };
+  }
+  const count = previous.message.length;
+  const atEnd =
+    (previous.messageOffset ?? 0) + count >= (previous.messageTotal ?? 0);
+  const offset = atEnd
+    ? Math.max(0, total - count)
+    : Math.min(previous.messageOffset ?? 0, Math.max(0, total - count));
+  const message = next.message.slice(offset, offset + count);
+  return {
+    ...next,
+    message,
+    messageOffset: offset,
+    messageTotal: total,
+    messagesFullyLoaded: message.length === total,
+  };
+}

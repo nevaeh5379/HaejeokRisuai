@@ -68,6 +68,11 @@ test("plugin snapshots and writes preserve request tags and two chat states afte
         messages: chat.message,
       })),
     );
+    const siblingIndex = createNewCharacter();
+    characterStore.characters[siblingIndex].name = "Reorder sibling";
+    characterStore.characters[siblingIndex].chats = [];
+    const siblingId = characterStore.characters[siblingIndex].chaId;
+    await characterStore.flush();
     await changeChar(index);
     characterStore.characters[index].chats[0] = (await storage.loadChat(
       character.chats[0].id!,
@@ -97,9 +102,20 @@ try {
     const chat = await risuai.getChatFromIndex(index, 0);
     chat.message[12].data += ' <request-id>current-request</request-id>';
     await risuai.setChatToIndex(index, 0, chat);
+    const database = await risuai.getDatabase(['characters']);
+    const original = database.characters.find(value => value.chaId === character.chaId);
+    const sibling = database.characters.find(value => value.name === 'Reorder sibling');
+    const added = { ...original, chaId: crypto.randomUUID(), name: 'Added by plugin', chats: [], chatPage: 0 };
+    database.characters = [sibling, original, added];
+    await risuai.setDatabase(database);
+
   }
   const character = await risuai.getCharacter();
+  const database = await risuai.getDatabase(['characters']);
   await risuai.pluginStorage.setItem('compatibility-result', {
+    ids: database.characters.map(value => value.chaId),
+    names: database.characters.map(value => value.name),
+    selected: character.chaId,
     run: (prior?.run ?? 0) + 1, length: character.chats[0].message.length,
     role: character.chats[0].message[12].role,
     states: character.chats.map(chat => chat.scriptstate.$plugin),
@@ -113,7 +129,11 @@ try {
     );
     await executePluginV3(plugin);
 
-    return { characterId: character.chaId, chatId: character.chats[0].id! };
+    return {
+      characterId: character.chaId,
+      siblingId,
+      chatId: character.chats[0].id!,
+    };
   });
   const readResult = () =>
     page.evaluate(async () => {
@@ -123,9 +143,20 @@ try {
       )) as typeof import("../src/ts/plugins/plugins.svelte");
       return getV2PluginAPIs().pluginStorage.getItem("compatibility-result");
     });
-  await expect
-    .poll(readResult)
-    .toMatchObject({ run: 1, length: 14, role: "user" });
+  await page.getByRole("button", { name: "YES", exact: true }).click();
+  await expect.poll(readResult).toMatchObject({
+    run: 1,
+    length: 14,
+    role: "user",
+    selected: seeded.characterId,
+    ids: [seeded.siblingId, seeded.characterId, expect.any(String)],
+    names: [
+      "Reorder sibling",
+      "Plugin compatibility regression",
+      "Added by plugin",
+    ],
+  });
+  const firstResult = await readResult();
   const saved = await page.evaluate(async (chatId) => {
     const domainUrl = "/src/ts/stores/domain/index.ts";
     const storageUrl = "/src/ts/storage/sql/sqlStorageFactory.ts";
@@ -184,6 +215,9 @@ try {
 
   await expect.poll(readResult).toMatchObject({
     run: 2,
+    ids: firstResult.ids,
+    names: firstResult.names,
+    selected: seeded.characterId,
     states: ["first-after", "second-after"],
     older: expect.stringContaining("older-request"),
     current: expect.stringContaining("current-request"),
