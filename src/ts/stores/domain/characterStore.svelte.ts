@@ -1161,6 +1161,58 @@ class CharacterStore
     return promise;
   }
 
+  /** Full plugin snapshots must not expand the application's resident history. */
+  async getFullChatSnapshot(chatId: string): Promise<Chat> {
+    const character = this.characters.find((character) =>
+      character.chats?.some((chat) => chat.id === chatId),
+    );
+    const chat = character?.chats.find((chat) => chat.id === chatId);
+    if (!chat) throw new Error(`Chat not found: ${chatId}`);
+    if (
+      chat.detailsLoaded !== false &&
+      chat.messagesLoaded !== false &&
+      chat.messagesFullyLoaded !== false &&
+      !this.generationOnlyMetadataChats.has(chatId)
+    ) {
+      return $state.snapshot(chat);
+    }
+
+    const storage = this.storage || (await getSqlStorage());
+    const loaded = await storage.loadChat(chatId);
+    if (
+      !loaded ||
+      loaded.detailsLoaded === false ||
+      loaded.messagesLoaded === false ||
+      loaded.messagesFullyLoaded === false
+    )
+      throw new Error(`Cannot load complete chat: ${chatId}`);
+    const current = $state.snapshot(chat);
+    const completeHistory =
+      current.messagesLoaded !== false && current.messagesFullyLoaded !== false;
+    let message: Chat["message"];
+    if (completeHistory) {
+      const loadedById = new Map(
+        loaded.message.map((message) => [message.chatId, message]),
+      );
+      message = current.message.map((message) => ({
+        ...loadedById.get(message.chatId),
+        ...message,
+      }));
+    } else {
+      message = mergeLoadedMessages(loaded.message, current.message);
+    }
+    const snapshot = { ...loaded, ...current, message };
+    if (current.detailsLoaded === false) {
+      mergeLoadedChatVariables(snapshot, loaded, current);
+    }
+    snapshot.detailsLoaded = true;
+    snapshot.messagesLoaded = true;
+    snapshot.messagesFullyLoaded = true;
+    snapshot.messageOffset = 0;
+    snapshot.messageTotal = message.length;
+    return snapshot;
+  }
+
   async loadOlderChatMessages(chatId: string, limit = 60): Promise<number> {
     const currentPromise = this.olderChatPromises.get(chatId);
     if (currentPromise) return currentPromise;

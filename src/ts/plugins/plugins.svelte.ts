@@ -27,6 +27,11 @@ import {
 import { PluginCrashGuard } from "./pluginCrashGuard";
 import type { PluginMetadata } from "./pluginTypes";
 import { isSafeModeEnabled } from "../safeMode";
+import {
+  getPluginCharacter,
+  replacePluginCharacters,
+  setPluginCharacter,
+} from "./pluginCharacterApi";
 
 export const customProviderStore = writable([] as string[]);
 
@@ -627,8 +632,7 @@ function setDomainDbValue(
 ): true | false | Promise<void> {
   switch (key) {
     case "characters":
-      characterStore.characters = value;
-      return true;
+      return replacePluginCharacters(value);
     case "modules":
       if (!Array.isArray(value)) {
         throw new TypeError("Plugin database modules must be an array");
@@ -693,14 +697,11 @@ export const getV2PluginAPIs = () => {
         }
       }
     },
-    getChar: () => {
-      return characterStore.getCharacterByIndex(characterStore.selectedId, {
-        snapshot: true,
-      });
-    },
+    getChar: async () =>
+      (await getPluginCharacter(get(selectedCharID))) ?? undefined,
     setChar: (char: any) => {
       const charid = get(selectedCharID);
-      characterStore.setCharacterByIndex(charid, char);
+      return setPluginCharacter(charid, char);
     },
     addProvider: (
       name: string,
@@ -988,19 +989,11 @@ export const getV2PluginAPIs = () => {
         return settingsStore.getPluginCustomStorageKeys().length;
       },
     },
-    setDatabaseLite: (newDb: any) => {
+    setDatabaseLite: async (newDb: any) => {
       if (!newDb || typeof newDb !== "object") return;
       for (const key of Object.keys(newDb)) {
         if (allowedDbKeys.includes(key)) {
-          const pending = setAllowedDbValue(key, newDb[key]);
-          if (pending) {
-            void pending.catch((error) => {
-              console.error(
-                `Failed to persist compatibility database key '${key}':`,
-                error,
-              );
-            });
-          }
+          await setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
         }
@@ -1060,8 +1053,7 @@ export const getV2PluginAPIs = () => {
 /**
  * @deprecated HaejeokRisuai not supported V2 Plugin. do not use it.
  */
-export async function loadV2Plugin(plugins: PluginMetadata[]) {
-}
+export async function loadV2Plugin(plugins: PluginMetadata[]) {}
 
 export async function translatorPlugin(text: string, from: string, to: string) {
   return false;
