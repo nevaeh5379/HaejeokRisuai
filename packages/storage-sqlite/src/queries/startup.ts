@@ -81,7 +81,7 @@ export function buildSettingRowsQuery(
          THEN 1 ELSE 0 END AS startup_oversized,`
     : "";
   return {
-    sql: `SELECT s.key AS setting_key, s.domain AS setting_domain, s.value_type AS setting_value_type,
+    sql: `SELECT s.key AS setting_key, s.value_type AS setting_value_type,
             s.text_value AS setting_text_value, s.encoded_text_value AS setting_encoded_text_value,
             s.number_value AS setting_number_value, s.boolean_value AS setting_boolean_value,
             n.node_id, n.parent_node_id, n.node_order,

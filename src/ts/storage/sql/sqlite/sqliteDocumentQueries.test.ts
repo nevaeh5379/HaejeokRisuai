@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import protocolSettings from "@risuai/protocol/settings.json";
 import * as sqliteDocument from "@risuai/storage-sqlite/queries/document";
 import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
@@ -82,15 +83,29 @@ describe("SQLite document queries", () => {
     ).resolves.toEqual([{ id: "module-a", name: "Module" }]);
   });
 
-  it("loads prompt-domain values through the shared node mapper", async () => {
+  it("loads every protocol prompt key without relying on the domain column", async () => {
     const selectRows = vi
       .fn()
-      .mockResolvedValueOnce([{ key: "main" }])
       .mockResolvedValueOnce([
-        valueNode("main", "prompt"),
+        { key: "mainPrompt" },
+        { key: "supaMemoryPrompt" },
+        { key: "emotionPrompt" },
+      ])
+      .mockResolvedValueOnce([
+        valueNode("mainPrompt", "prompt"),
+        valueNode("supaMemoryPrompt", "supa"),
+        valueNode("emotionPrompt", "emotion"),
       ]) as unknown as SqliteSelectRows;
     await expect(sqliteDocument.loadPrompts(selectRows)).resolves.toEqual({
-      main: "prompt",
+      mainPrompt: "prompt",
+      supaMemoryPrompt: "supa",
+      emotionPrompt: "emotion",
     });
+    const calls = (selectRows as unknown as ReturnType<typeof vi.fn>).mock
+      .calls;
+    for (const [sql, params] of calls) {
+      expect(sql).not.toContain("domain");
+      expect(params).toEqual(protocolSettings.PROMPT_SETTING_KEYS);
+    }
   });
 });

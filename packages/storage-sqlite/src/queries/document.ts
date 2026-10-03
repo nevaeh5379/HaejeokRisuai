@@ -1,3 +1,4 @@
+import protocolSettings from "@risuai/protocol/settings.json";
 import * as sqliteNodes from "./nodes";
 import type { SqliteSelectRows } from "../types";
 
@@ -104,8 +105,11 @@ export async function loadModules<TModule extends object>(
 export async function loadPrompts(
   selectRows: SqliteSelectRows,
 ): Promise<Record<string, unknown>> {
+  const promptKeys = protocolSettings.PROMPT_SETTING_KEYS;
+  const placeholders = promptKeys.map(() => "?").join(",");
   const keys = await selectRows<{ key: string }>(
-    "SELECT key FROM system_settings WHERE domain = 'prompt' ORDER BY key",
+    `SELECT key FROM system_settings WHERE key IN (${placeholders}) ORDER BY key`,
+    [...promptKeys],
   );
   if (keys.length === 0) return {};
   const nodeRows = await selectRows(
@@ -113,8 +117,9 @@ export async function loadPrompts(
             object_key_encoded, value_type, text_value, encoded_text_value,
             number_value, boolean_value
        FROM setting_extension_nodes
-      WHERE setting_key IN (SELECT key FROM system_settings WHERE domain = 'prompt')
+      WHERE setting_key IN (${placeholders})
       ORDER BY setting_key, node_id`,
+    [...promptKeys],
   );
   const values = sqliteNodes.groupValues(nodeRows, "setting_key");
   return Object.fromEntries(keys.map(({ key }) => [key, values.get(key)]));

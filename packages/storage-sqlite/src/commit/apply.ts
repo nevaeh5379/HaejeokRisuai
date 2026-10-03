@@ -23,114 +23,6 @@ export function presetContentHash(value: unknown): string {
   return `${serialized.length}-${(hash >>> 0).toString(16)}`;
 }
 
-const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
-  model: new Set([
-    "apiType",
-    "aiModel",
-    "subModel",
-    "temperature",
-    "maxContext",
-    "maxResponse",
-    "frequencyPenalty",
-    "PresensePenalty",
-    "bias",
-    "customModels",
-    "fallbackModels",
-    "seperateModels",
-    "providerModelOverrides",
-  ]),
-  provider: new Set([
-    "openAIKey",
-    "proxyKey",
-    "forceReplaceUrl",
-    "openrouterKey",
-    "claudeAPIKey",
-    "nanogptKey",
-    "koboldURL",
-    "textgenWebUIStreamURL",
-    "textgenWebUIBlockingURL",
-    "OaiCompAPIKeys",
-  ]),
-  prompt: new Set([
-    "mainPrompt",
-    "jailbreak",
-    "globalNote",
-    "additionalPrompt",
-    "descriptionPrefix",
-    "promptTemplate",
-    "promptSettings",
-    "instructChatTemplate",
-    "JinjaTemplate",
-    "globalscript",
-  ]),
-  memory: new Set([
-    "supaMemoryPrompt",
-    "supaMemoryKey",
-    "hypaMemoryKey",
-    "voyageApiKey",
-    "hypaMemory",
-    "hypav2",
-    "hypaModel",
-    "memoryAlgorithmType",
-  ]),
-  translation: new Set([
-    "language",
-    "translator",
-    "translatorType",
-    "translatorInputLanguage",
-    "autoTranslate",
-    "useAutoTranslateInput",
-    "deeplOptions",
-    "deeplXOptions",
-  ]),
-  media: new Set([
-    "sdProvider",
-    "webUiUrl",
-    "sdSteps",
-    "sdCFG",
-    "sdConfig",
-    "NAIImgUrl",
-    "NAIApiKey",
-    "NAIImgModel",
-    "NAIImgConfig",
-    "ttsAutoSpeech",
-    "elevenLabKey",
-    "voicevoxUrl",
-  ]),
-  ui: new Set([
-    "zoomsize",
-    "customBackground",
-    "fullScreen",
-    "iconsize",
-    "theme",
-    "textTheme",
-    "customTextTheme",
-    "colorScheme",
-    "colorSchemeName",
-    "customColorScheme",
-    "characterOrder",
-    "hotkeys",
-  ]),
-  collection: new Set([
-    "botPresets",
-    "personas",
-    "modules",
-    "moduleFolders",
-    "moduleOrder",
-    "loreBook",
-    "loadouts",
-    "plugins",
-    "pluginV2",
-    "translatorPresets",
-  ]),
-};
-
-export function settingDomain(key: string): string {
-  for (const [domain, keys] of Object.entries(SETTING_DOMAINS))
-    if (keys.has(key)) return domain;
-  return "account-sync-compatibility";
-}
-
 function assertCanonicalRootSetting(key: string): void {
   if (isLegacyPersonaMirrorKey(key)) {
     throw new Error(
@@ -944,13 +836,12 @@ async function applySettingUpsert(
     await execute(
       `INSERT INTO system_settings
             (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
+            VALUES (?, 'root', ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
             domain=excluded.domain, value_type=excluded.value_type, text_value=excluded.text_value,
             encoded_text_value=excluded.encoded_text_value, number_value=excluded.number_value,
             boolean_value=excluded.boolean_value, updated_at=datetime('now')`,
       [
         upsert.key,
-        settingDomain(upsert.key),
         root.value_type,
         root.text_value,
         root.encoded_text_value,
