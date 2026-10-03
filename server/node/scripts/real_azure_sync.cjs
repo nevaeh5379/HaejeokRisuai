@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const fflate = require("fflate");
 const { Unpackr } = require("msgpackr/index-no-eval");
-const { AzureStorage } = require("../storage/azure/azureStorage.cjs");
+const { AzureStorage } = require("../storage/azure/azureStorage.cts");
 const {
   loadAzureEnvFile,
   readAzureConfigFromEnv,

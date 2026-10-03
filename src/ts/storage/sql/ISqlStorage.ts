@@ -267,6 +267,22 @@ export interface ISqlStorage {
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 
+  listGlobalAuthorNotes(): Promise<
+    import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteMetadata[]
+  >;
+  getGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteMetadata
+    | null
+  >;
+  readGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow | null
+  >;
+  getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
+
   loadPersonas(): Promise<RisuPersona[]>;
   listBotPresets(): Promise<BotPresetSummary[]>;
   loadBotPreset(id: string): Promise<StoredBotPreset | null>;

@@ -11,7 +11,7 @@ const {
   restoreEmptyStringInRow,
   toOracleColumn,
   wrapConnectionForEmptyStrings,
-} = require(".//oracleStorage.cjs") as {
+} = require(".//oracleStorage.cts") as {
   COLUMN_NAME_MAP: Record<string, string>;
   ORACLE_EMPTY_STRING_SENTINEL: string;
   OracleStorage: new (options: Record<string, unknown>) => {
@@ -189,7 +189,7 @@ describe("Oracle connection wrapper", () => {
 });
 
 describe("sync round-trip with empty string setting values", () => {
-  // oracleStorage.cjs sync()와 동일한 바인드 구성 방식 재현
+  // oracleStorage.cts sync()와 동일한 바인드 구성 방식 재현
   function buildSettingBinds(values: Record<string, any>[]) {
     return values.map((row) => [
       row.setting_key,
@@ -610,7 +610,8 @@ describe("Oracle storage sync finalize concurrency", () => {
 
     expect(
       queries.some(
-        (sql) => sql.includes("system_storage_meta") && sql.includes("FOR UPDATE"),
+        (sql) =>
+          sql.includes("system_storage_meta") && sql.includes("FOR UPDATE"),
       ),
     ).toBe(false);
     expect(

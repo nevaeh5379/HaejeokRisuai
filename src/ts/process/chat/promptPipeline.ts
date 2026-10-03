@@ -83,7 +83,10 @@ async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
 ) {
-  const chatTarget = createExecutionTarget(options);
+  const chatTarget = {
+    ...createExecutionTarget(options),
+    authorNoteContent: sections.authorNoteContent,
+  };
   const renderContext = createRenderContext(
     options.currentChar,
     sections,

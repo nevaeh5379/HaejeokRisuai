@@ -1,4 +1,4 @@
-const { OracleStorage } = require("../storage/oracle/oracleStorage.cjs");
+const { OracleStorage } = require("../storage/oracle/oracleStorage.cts");
 const {
   loadOracleEnvFile,
   readOracleConfigFromEnv,

@@ -2,7 +2,7 @@
  * A lifecycle state accepted by realtime generation synchronization.
  * 실시간 생성 동기화에서 허용하는 생명주기 상태입니다.
  */
-export type { GenerationLifecycleState } from "../../../packages/protocol/realtimeEvents.cjs";
+export type { GenerationLifecycleState } from "../../../packages/protocol/dist/realtimeEvents.cjs";
 
 import type {
   GenerationLifecycleState,
@@ -13,7 +13,7 @@ import type {
   RealtimeEventPayload,
   RealtimeGenerationState,
   RealtimeTransientEventName,
-} from "../../../packages/protocol/realtimeEvents.cjs";
+} from "../../../packages/protocol/dist/realtimeEvents.cjs";
 
 /**
  * A validated generation state retained and broadcast by the hub.

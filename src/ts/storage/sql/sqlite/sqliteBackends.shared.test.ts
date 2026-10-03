@@ -339,7 +339,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     // The deferred loader owns hydration: defaults are immediately usable,
     // then the targeted storage value replaces them without becoming a write.
-    installStartupData(startup!, storage);
+    await installStartupData(startup!, storage);
     queryLog.clear();
     const live = settingsStore.state;
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
@@ -389,7 +389,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       ).toBe(false);
     }
 
-    installStartupData(startup!, storage);
+    await installStartupData(startup!, storage);
     expect(settingsStore.getBootstrapState().mainPrompt).not.toBe(
       "leaky-mainPrompt",
     );

@@ -1,3 +1,4 @@
+import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
@@ -231,6 +232,9 @@ export class CapacitorSqliteStorage
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       let totalStatements =
         sqliteCommit.countStatements(rootCommit) +
+        5 +
+        (database.globalAuthorNotes?.filter((note) => note.id !== "__none__")
+          .length ?? 0) +
         (rootCommit.replaceAll ? 3 : 0) +
         2;
       for (const batch of iterateSqlReplaceEntityCommits(
@@ -326,6 +330,10 @@ export class CapacitorSqliteStorage
         await write("DELETE FROM plugin_custom_storage");
         await write("DELETE FROM characters");
       }
+      await authorNoteSql.applyAuthorNotes(
+        { ...this.authorNoteDatabase(), execute: write },
+        rootCommit.authorNotes,
+      );
       await sqliteCommit.apply(rootCommit, write);
       for (const batch of iterateSqlReplaceEntityCommits(
         database,
@@ -371,6 +379,11 @@ export class CapacitorSqliteStorage
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
     const currentRevision = Number(meta?.revision) || 0;
+    const receipt = await authorNoteSql.readAuthorNoteReceipt(
+      this.authorNoteDatabase(),
+      commit,
+    );
+    if (receipt) return receipt;
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
@@ -380,12 +393,19 @@ export class CapacitorSqliteStorage
     const revision = currentRevision + 1;
     const action =
       commit.action || (commit.replaceAll ? "replace-all" : "sync");
+    let authorNotes: Awaited<
+      ReturnType<typeof authorNoteSql.applyAuthorNotes>
+    > = [];
     await this.runNativeTransaction(currentRevision, async (execute) => {
       if (commit.replaceAll) {
         await execute("DELETE FROM system_settings");
         await execute("DELETE FROM plugin_custom_storage");
         await execute("DELETE FROM characters");
       }
+      authorNotes = await authorNoteSql.applyAuthorNotes(
+        { ...this.authorNoteDatabase(), execute },
+        commit.authorNotes,
+      );
       await sqliteCommit.apply(commit, execute);
       await execute(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
@@ -395,8 +415,31 @@ export class CapacitorSqliteStorage
         "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
         [revision, action],
       );
+      await authorNoteSql.writeAuthorNoteReceipt(
+        { ...this.authorNoteDatabase(), execute },
+        commit,
+        {
+          revision,
+          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+            id,
+            contentHash,
+            updatedAt,
+          })),
+        },
+      );
     });
     this.revision = revision;
-    return { revision };
+    return {
+      revision,
+      ...(authorNotes.length
+        ? {
+            authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+              id,
+              contentHash,
+              updatedAt,
+            })),
+          }
+        : {}),
+    };
   }
 }

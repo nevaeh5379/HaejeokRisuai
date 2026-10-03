@@ -5,11 +5,12 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { buildFullBackupPayload } = require("../../../packages/backup-core/dist/node/fullPayload.js") as {
-  buildFullBackupPayload: (
-    database: Record<string, unknown>,
-  ) => Record<string, any>;
-};
+const { buildFullBackupPayload } =
+  require("../../../packages/backup-core/dist/node/fullPayload.js") as {
+    buildFullBackupPayload: (
+      database: Record<string, unknown>,
+    ) => Record<string, any>;
+  };
 const {
   normalizeBackupConfigSection,
   instantiateVendorStorage,
@@ -41,13 +42,13 @@ const {
   MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES: number;
   DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES: number;
 };
-const { PostgresStorage } = require("./postgres/postgresStorage.cjs") as {
+const { PostgresStorage } = require("./postgres/postgresStorage.cts") as {
   PostgresStorage: new (options: Record<string, any>) => Record<string, any>;
 };
-const { OracleStorage } = require("./oracle/oracleStorage.cjs") as {
+const { OracleStorage } = require("./oracle/oracleStorage.cts") as {
   OracleStorage: new (options: Record<string, any>) => Record<string, any>;
 };
-const { AzureStorage } = require("./azure/azureStorage.cjs") as {
+const { AzureStorage } = require("./azure/azureStorage.cts") as {
   AzureStorage: new (options: Record<string, any>) => Record<string, any>;
 };
 

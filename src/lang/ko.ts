@@ -1,4 +1,24 @@
 export const languageKorean = {
+  globalAuthorNote: {
+    discard: "초안 버리기",
+    discardDraftConfirm: "보관한 초안을 영구적으로 버릴까요?",
+    local: "로컬 노트",
+    name: "노트 이름",
+    create: "범용 노트 생성",
+    rename: "이름 변경",
+    deleteConfirm: "범용 노트를 삭제할까요? 참조하는 챗은 없음으로 처리됩니다.",
+    saveFailed:
+      "노트를 저장하지 못했습니다. 초안은 보관됩니다. 다시 불러오거나 명시적으로 덮어쓰세요.",
+    discardConfirm: "초안을 폐기하고 저장된 노트를 다시 불러올까요?",
+    overwriteConfirm: "현재 초안으로 범용 노트를 강제 덮어쓸까요?",
+    reload: "다시 불러오기",
+    overwrite: "강제 덮어쓰기",
+    unsaved: "저장되지 않은 작가의 노트 초안",
+    allowScriptWrite: "스크립트의 범용 작가의 노트 쓰기 허용",
+    scriptBlocked: "스크립트의 범용 작가의 노트 쓰기가 차단되어 있습니다.",
+    scriptConflict:
+      "범용 노트가 변경되었거나 삭제되어 스크립트 쓰기를 생략했습니다.",
+  },
   moduleSandboxGroups: {
     tab: "묶음",
     new: "새 묶음",

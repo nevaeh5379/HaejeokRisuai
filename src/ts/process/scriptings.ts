@@ -1,3 +1,8 @@
+import { AuthorNoteError } from "@risuai/protocol/dist/authorNotes.cjs";
+import { readNote, NoteSource } from "../authorNote";
+import { globalAuthorNoteStore } from "../stores/domain/globalAuthorNoteStore";
+import { alertToast } from "../alert";
+import { language } from "../../lang";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { resolveChatTarget, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
@@ -67,6 +72,9 @@ interface BasicScriptingEngineState {
   char?: character | groupChat | simpleCharacterArgument;
   chat?: Chat;
   chatTarget?: ChatExecutionTarget;
+  authorNote?:
+    import("../stores/domain/globalAuthorNoteStore").GlobalAuthorNote | null;
+  authorNoteRaw?: string;
   triggerId?: string;
   setVar?: (key: string, value: string) => boolean | void;
   getVar?: (key: string) => string;
@@ -162,6 +170,21 @@ export async function runScripted(
       .filter((id): id is string => Boolean(id));
     ScriptingEngineState.char = char;
     ScriptingEngineState.chat = chat;
+    ScriptingEngineState.authorNote = undefined;
+    ScriptingEngineState.authorNoteRaw = undefined;
+    if (chat && NoteSource.get(chat).mode === "global") {
+      const note = await globalAuthorNoteStore.get(chat.globalAuthorNoteId!);
+      ScriptingEngineState.authorNote = note;
+      try {
+        ScriptingEngineState.authorNoteRaw = note
+          ? await note.getContent()
+          : "";
+      } catch (error) {
+        if (error instanceof AuthorNoteError && error.code === "missing")
+          ScriptingEngineState.authorNoteRaw = "";
+        else throw error;
+      }
+    }
     ScriptingEngineState.chatTarget = arg.chatTarget;
     ScriptingEngineState.triggerId = arg.triggerId;
     ScriptingEngineState.setVar = setVar;
@@ -899,8 +922,54 @@ export async function runScripted(
       });
 
       declareAPI("getAuthorsNote", (id: string) => {
-        return ScriptingEngineState.chat?.note ?? "";
+        const chat = ScriptingEngineState.chat;
+        if (!chat) return "";
+        return NoteSource.get(chat).mode === "local"
+          ? (chat.note ?? "")
+          : (ScriptingEngineState.authorNoteRaw ?? "");
       });
+      declareAPI(
+        type === "lua" ? "setAuthorsNoteMain" : "setAuthorsNote",
+        async (id: string, content: string) => {
+          if (!ScriptingSafeIds.has(id) || typeof content !== "string")
+            return false;
+          const chat = ScriptingEngineState.chat;
+          if (!chat) return false;
+          const source = NoteSource.get(chat);
+          if (source.mode === "local") {
+            chat.note = content;
+            const stored = ScriptingEngineState.chatTarget
+              ? resolveChatTarget(ScriptingEngineState.chatTarget)?.chat
+              : null;
+            if (stored) {
+              stored.note = content;
+              if (stored.id) characterStore.markChatDirty(stored.id);
+            }
+            return true;
+          }
+          if (ScriptingEditDisplayIds.has(id)) return false;
+          if (!(await globalAuthorNoteStore.getAllowScriptWrite())) {
+            alertToast(language.globalAuthorNote.scriptBlocked);
+            return false;
+          }
+          let note = ScriptingEngineState.authorNote;
+          if (note === undefined || note?.id !== source.noteId) {
+            note = await globalAuthorNoteStore.get(source.noteId);
+            ScriptingEngineState.authorNote = note;
+            if (note) await note.getContent();
+          }
+          if (!note || note.id === "__none__") return false;
+          try {
+            await globalAuthorNoteStore.setScriptContent(note, content);
+            ScriptingEngineState.authorNoteRaw = content;
+            return true;
+          } catch (error) {
+            if (!(error instanceof AuthorNoteError)) throw error;
+            alertToast(language.globalAuthorNote.scriptConflict);
+            return false;
+          }
+        },
+      );
 
       declareAPI("getBackgroundEmbedding", (id: string) => {
         if (!ScriptingSafeIds.has(id)) return;
@@ -1490,6 +1559,8 @@ function releaseScriptingExecutionContext(engineState: ScriptingEngineState) {
   engineState.char = undefined;
   engineState.chat = undefined;
   engineState.chatTarget = undefined;
+  engineState.authorNote = undefined;
+  engineState.authorNoteRaw = undefined;
   engineState.triggerId = undefined;
   engineState.setVar = undefined;
   engineState.getVar = undefined;
@@ -1603,6 +1674,10 @@ function axLLM(id, prompt, useMultimodal, options)
     useMultimodal = useMultimodal or false
     options = options or {}
     return json.decode(axLLMMain(id, json.encode(prompt), useMultimodal, json.encode(options)):await())
+end
+
+function setAuthorsNote(id, content)
+    return setAuthorsNoteMain(id, content):await()
 end
 
 function getCharacterImage(id)

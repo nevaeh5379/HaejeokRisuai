@@ -6,7 +6,7 @@ const { EventEmitter } = require("events");
 const { createRealtimeEventHub } = require("../dist/http/realtimeEvents.cjs");
 const {
   parseRealtimeEvent,
-} = require("../../../packages/protocol/realtimeEvents.cjs");
+} = require("../../../packages/protocol/dist/realtimeEvents.cjs");
 
 class FakeResponse extends EventEmitter {
   constructor() {

@@ -6,7 +6,7 @@ const { createDatabaseMutations } = require("../dist/databaseMutations.cjs");
 const {
   deriveSqlCommitImpact,
   readSqlCommitImpactSink,
-} = require("../../../packages/protocol/sqlCommit.cjs");
+} = require("../../../packages/protocol/dist/sqlCommit.cjs");
 
 /**
  * Emulates the storage vendors: validateSyncPayload normally derives the

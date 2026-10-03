@@ -44,7 +44,13 @@ function runBootstrap(newerSource?: string, nodeEnv = "development") {
 }
 
 describe("Node server bootstrap bundle freshness", () => {
-  it.each(["postgresStorage.cjs", "postgresJsonCodec.cjs"])(
+  it("rebuilds when a protocol TypeScript source changes", () => {
+    const { spawnSync } = runBootstrap(
+      path.resolve(serverRoot, "../../packages/protocol/src/authorNotes.cts"),
+    );
+    expect(spawnSync).toHaveBeenCalledOnce();
+  });
+  it.each(["postgresStorage.cts", "postgresJsonCodec.cjs"])(
     "rebuilds an existing bundle when %s changes",
     (file) => {
       const { spawnSync, loadServer } = runBootstrap(
@@ -52,7 +58,9 @@ describe("Node server bootstrap bundle freshness", () => {
       );
       expect(spawnSync).toHaveBeenCalledOnce();
       expect(spawnSync.mock.calls[0][1]).toEqual([
-        path.resolve(serverRoot, "../../tooling/build-node-server.mjs"),
+        "--import",
+        "tsx",
+        path.resolve(serverRoot, "../../tooling/build-node-server.ts"),
       ]);
       expect(loadServer).toHaveBeenCalledWith(
         path.join(serverRoot, "dist/server.cjs"),

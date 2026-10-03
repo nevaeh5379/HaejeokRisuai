@@ -58,7 +58,15 @@ export interface SqlPluginEnabledUpdate {
   enabled: boolean;
 }
 
+import {
+  AuthorNoteError,
+  parseAuthorNoteOperations,
+  type AuthorNoteOperation,
+  type AuthorNoteRow,
+} from "./authorNotes.cjs";
+
 export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
+  authorNotes?: AuthorNoteOperation[];
   baseRevision: number;
   idempotencyKey?: string;
   replaceAll?: boolean;
@@ -103,6 +111,7 @@ export interface SqlCommit<TPreset extends object = Record<string, unknown>> {
 }
 
 export interface SqlCommitResult {
+  authorNotes?: Pick<AuthorNoteRow, "id" | "contentHash" | "updatedAt">[];
   revision: number;
 }
 
@@ -116,8 +125,10 @@ export interface SqlCommitValidatorOptions {
 }
 
 export interface NormalizedSqlCommit {
+  idempotencyKey?: string;
   replaceAll: boolean;
   action?: string;
+  authorNotes?: AuthorNoteOperation[];
   baseRevision: number;
   rootUpserts: SqlSettingUpsert[];
   rootDeletes: string[];
@@ -369,6 +380,8 @@ export const RESERVED_ROOT_SETTING_KEYS = Object.freeze([
   "botPresets",
   "botPresetsId",
   "plugins",
+  "globalAuthorNotes",
+  "globalAuthorNoteSettings",
 ] as const);
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -721,33 +734,25 @@ class SqlCommitParser {
     const scripts =
       value.scripts === undefined
         ? undefined
-        : this.parseRows(
-            value.scripts,
-            "plugins.scripts",
-            (item, index) => {
-              this.assertId(item.id, `plugins.scripts[${index}].id`);
-              if (typeof item.script !== "string")
-                throw new this.PayloadError(
-                  `plugins.scripts[${index}].script must be a string`,
-                );
-              return { id: item.id, script: item.script };
-            },
-          );
+        : this.parseRows(value.scripts, "plugins.scripts", (item, index) => {
+            this.assertId(item.id, `plugins.scripts[${index}].id`);
+            if (typeof item.script !== "string")
+              throw new this.PayloadError(
+                `plugins.scripts[${index}].script must be a string`,
+              );
+            return { id: item.id, script: item.script };
+          });
     const enabled =
       value.enabled === undefined
         ? undefined
-        : this.parseRows(
-            value.enabled,
-            "plugins.enabled",
-            (item, index) => {
-              this.assertId(item.id, `plugins.enabled[${index}].id`);
-              if (typeof item.enabled !== "boolean")
-                throw new this.PayloadError(
-                  `plugins.enabled[${index}].enabled must be a boolean`,
-                );
-              return { id: item.id, enabled: item.enabled };
-            },
-          );
+        : this.parseRows(value.enabled, "plugins.enabled", (item, index) => {
+            this.assertId(item.id, `plugins.enabled[${index}].id`);
+            if (typeof item.enabled !== "boolean")
+              throw new this.PayloadError(
+                `plugins.enabled[${index}].enabled must be a boolean`,
+              );
+            return { id: item.id, enabled: item.enabled };
+          });
     return { upserts, deletes, order, scripts, enabled };
   }
 
@@ -887,13 +892,33 @@ class SqlCommitParser {
     const plugins = this.parsePlugins(payload.plugins);
     const pluginStorage = this.parsePluginStorage(payload.pluginStorage);
     const entities = this.parseEntities(payload);
+    let authorNotes: AuthorNoteOperation[] | undefined;
+    try {
+      authorNotes = parseAuthorNoteOperations(payload.authorNotes);
+    } catch (error) {
+      if (error instanceof AuthorNoteError) throw error;
+      throw new this.PayloadError(
+        error instanceof Error ? error.message : "Invalid author note domain",
+      );
+    }
 
+    if (payload.idempotencyKey !== undefined) {
+      this.assertId(payload.idempotencyKey, "idempotencyKey");
+      if ((payload.idempotencyKey as string).length > 128)
+        throw new this.PayloadError(
+          "idempotencyKey must be at most 128 characters",
+        );
+    }
     return {
+      ...(payload.idempotencyKey === undefined
+        ? {}
+        : { idempotencyKey: payload.idempotencyKey as string }),
       replaceAll: Boolean(payload.replaceAll),
       action: this.parseAction(payload.action),
       baseRevision,
       ...root,
       ...pluginStorage,
+      authorNotes,
       presets,
       modules,
       plugins,

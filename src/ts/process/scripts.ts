@@ -1,3 +1,4 @@
+import { readNote } from "../authorNote";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
@@ -109,6 +110,17 @@ function generateScriptCacheKey(
   cbsConditions: CbsConditions = {},
   chatTarget?: ChatExecutionTarget,
 ) {
+  if (
+    chatTarget?.authorNoteContent !== undefined &&
+    scripts.some(
+      (script) =>
+        script.type === mode &&
+        (script.flag?.includes("<cbs>") ||
+          script.ableFlag ||
+          /author_?note/i.test(script.in + script.out)),
+    )
+  )
+    return "";
   const targetKey = chatTarget
     ? `${chatTarget.characterId}:${chatTarget.chatId}`
     : "selected";
@@ -131,6 +143,7 @@ function generateScriptCacheKey(
 }
 
 function cacheScript(hash: string, result: string) {
+  if (!hash) return;
   const previous = processScriptCache.get(hash);
   if (previous) processScriptCacheChars -= hash.length + previous.length;
   processScriptCache.set(hash, result);
@@ -167,6 +180,21 @@ export async function processScriptFull(
   cbsConditions: CbsConditions = {},
   chatTarget?: ChatExecutionTarget,
 ) {
+  const noteChat = chatTarget
+    ? resolveChatTarget(chatTarget)?.chat
+    : characterStore.characters[get(selectedCharID)]?.chats?.[
+        characterStore.characters[get(selectedCharID)]?.chatPage
+      ];
+  if (noteChat && chatTarget?.authorNoteContent === undefined) {
+    const authorNoteContent = await readNote(noteChat);
+    chatTarget = {
+      characterId: characterStore.characters[get(selectedCharID)]?.chaId ?? "",
+      chatId: noteChat.id ?? "",
+      ...chatTarget,
+      authorNoteContent,
+    };
+  }
+
   let db = settingsStore.state;
   let emoChanged = false;
   data = await runLuaEditTrigger(

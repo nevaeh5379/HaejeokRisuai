@@ -1,3 +1,9 @@
+export type SqlStorageRow = Record<string, unknown>;
+const {
+  authorNoteDatabase,
+  withAuthorNoteDatabase,
+  notes: authorNoteSql,
+} = require("../authorNotes.cts") as import("../authorNotes.cts").AuthorNotesAdapter;
 const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
@@ -59,6 +65,8 @@ const BULK_INSERT_BATCH_ROWS = Math.max(
   Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || "1000", 10) || 1000,
 );
 const AUDITED_TABLES = [
+  "system.global_author_notes",
+  "system.global_author_note_settings",
   "system.settings",
   "system.setting_values",
   "system.module_records",
@@ -68,7 +76,7 @@ const AUDITED_TABLES = [
   "system.plugin_values",
   "system.plugin_custom_storage",
   "character.characters",
-  ...SETTING_RELATION_DEFINITIONS.map((definition) => definition.table),
+  ...SETTING_RELATION_DEFINITIONS.map((definition: any) => definition.table),
   "character.attributes",
   "character.tags",
   "character.greetings",
@@ -133,19 +141,19 @@ const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 
 const STARTUP_EXCLUDED_SETTING_KEYS = [
-  ...new Set([
+  ...new Set<any>([
     ...DEFERRED_STARTUP_SETTING_KEYS,
     ...SETTINGS_STORE_EXCLUDED_KEYS,
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key) => `'${key}'`,
+  (key: any) => `'${key}'`,
 ).join(", ");
 const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
-  (key) => `'${key}'`,
+  (key: any) => `'${key}'`,
 ).join(", ");
 
-function mapSettingValueToColumns(value) {
+function mapSettingValueToColumns(value: any) {
   if (typeof value === "boolean") {
     return { text_val: null, num_val: null, bool_val: value };
   }
@@ -161,15 +169,15 @@ function mapSettingValueToColumns(value) {
   return { text_val: null, num_val: null, bool_val: null };
 }
 
-async function replaceSettingValueRows(client, upserts) {
+async function replaceSettingValueRows(client: any, upserts: any) {
   if (upserts.length === 0) return;
-  const keys = upserts.map((item) => item.key);
+  const keys = upserts.map((item: any) => item.key);
   await client.query(
     "DELETE FROM system.setting_values WHERE setting_key = ANY($1::text[])",
     [keys],
   );
   const rows = upserts.flatMap(
-    (item) => splitSetting(item.key, item.value).values,
+    (item: any) => splitSetting(item.key, item.value).values,
   );
   await bulkInsert(
     client,
@@ -204,15 +212,15 @@ async function replaceSettingValueRows(client, upserts) {
   );
 }
 
-async function replaceModuleValueRows(client, upserts) {
+async function replaceModuleValueRows(client: any, upserts: any) {
   if (upserts.length === 0) return;
-  const ids = upserts.map((item) => item.id);
+  const ids = upserts.map((item: any) => item.id);
   await client.query(
     "DELETE FROM system.module_values WHERE module_id = ANY($1::text[])",
     [ids],
   );
-  const rows = upserts.flatMap((item) =>
-    splitSetting(item.id, item.data).values.map((row) => ({
+  const rows = upserts.flatMap((item: any) =>
+    splitSetting(item.id, item.data).values.map((row: any) => ({
       ...row,
       module_id: row.setting_key,
     })),
@@ -250,7 +258,7 @@ async function replaceModuleValueRows(client, upserts) {
   );
 }
 
-function pluginExtensionData(data) {
+function pluginExtensionData(data: any) {
   return {
     arguments: data.arguments || {},
     realArg: data.realArg || {},
@@ -260,18 +268,20 @@ function pluginExtensionData(data) {
   };
 }
 
-async function replacePluginValueRows(client, upserts) {
+async function replacePluginValueRows(client: any, upserts: any) {
   if (upserts.length === 0) return;
-  const ids = upserts.map((item) => item.id);
+  const ids = upserts.map((item: any) => item.id);
   await client.query(
     "DELETE FROM system.plugin_values WHERE plugin_id = ANY($1::text[])",
     [ids],
   );
-  const rows = upserts.flatMap((item) =>
-    splitSetting(item.id, pluginExtensionData(item.data)).values.map((row) => ({
-      ...row,
-      plugin_id: row.setting_key,
-    })),
+  const rows = upserts.flatMap((item: any) =>
+    splitSetting(item.id, pluginExtensionData(item.data)).values.map(
+      (row: any) => ({
+        ...row,
+        plugin_id: row.setting_key,
+      }),
+    ),
   );
   await bulkInsert(
     client,
@@ -306,12 +316,12 @@ async function replacePluginValueRows(client, upserts) {
   );
 }
 
-function rebuildPluginRecords(records, valueRows) {
+function rebuildPluginRecords(records: any, valueRows: any) {
   const extension = rebuildSettings(
-    records.map((row) => ({ key: row.plugin_id })),
+    records.map((row: any) => ({ key: row.plugin_id })),
     valueRows,
   );
-  return records.map((row) => ({
+  return records.map((row: any) => ({
     ...(extension[row.plugin_id] || {}),
     id: row.plugin_id,
     position: Number(row.position),
@@ -329,7 +339,7 @@ function rebuildPluginRecords(records, valueRows) {
   }));
 }
 
-function rebuildSettingRows(settings, valueRows) {
+function rebuildSettingRows(settings: any, valueRows: any) {
   const rebuilt = rebuildSettings(settings, valueRows);
   for (const row of settings) {
     if (!Object.prototype.hasOwnProperty.call(rebuilt, row.key)) {
@@ -339,7 +349,7 @@ function rebuildSettingRows(settings, valueRows) {
   return rebuilt;
 }
 
-function mapColumnsToSettingValue(row) {
+function mapColumnsToSettingValue(row: any) {
   if (row.bool_val !== null && row.bool_val !== undefined) return row.bool_val;
   if (row.num_val !== null && row.num_val !== undefined)
     return Number(row.num_val);
@@ -361,7 +371,8 @@ function mapColumnsToSettingValue(row) {
 }
 
 class PostgresRevisionConflictError extends Error {
-  constructor(revision) {
+  readonly revision: number;
+  constructor(revision: any) {
     super("PostgreSQL storage revision conflict");
     this.name = "PostgresRevisionConflictError";
     this.revision = revision;
@@ -369,7 +380,7 @@ class PostgresRevisionConflictError extends Error {
 }
 
 class PostgresPayloadError extends Error {
-  constructor(message) {
+  constructor(message: any) {
     super(message);
     this.name = "PostgresPayloadError";
   }
@@ -393,7 +404,7 @@ const {
   maxIdLength: 1024,
 });
 
-function assertDbExplorerIdentifier(value, field) {
+function assertDbExplorerIdentifier(value: any, field: any) {
   if (typeof value !== "string" || value.length === 0 || value.length > 128) {
     throw new PostgresPayloadError(
       `${field} must be a valid table or column name`,
@@ -415,7 +426,7 @@ function assertDbExplorerIdentifier(value, field) {
   );
 }
 
-function dbExplorerSelectExpression(columnName, dataType) {
+function dbExplorerSelectExpression(columnName: any, dataType: any) {
   const column = `"${columnName}"`;
   switch (dataType) {
     case "bigint":
@@ -429,7 +440,7 @@ function dbExplorerSelectExpression(columnName, dataType) {
   }
 }
 
-function assertSqlIdentifier(value) {
+function assertSqlIdentifier(value: any) {
   if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
@@ -448,18 +459,18 @@ function assertSqlIdentifier(value) {
 }
 
 async function bulkInsert(
-  client,
-  table,
-  columns,
-  columnTypes,
-  rows,
+  client: any,
+  table: any,
+  columns: any,
+  columnTypes: any,
+  rows: any,
   suffix = "",
 ) {
   if (rows.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
-  const quotedColumns = columns.map((col) => `"${col}"`);
+  const quotedColumns = columns.map((col: any) => `"${col}"`);
   const unnest = columns
-    .map((_, index) => `$${index + 1}::${columnTypes[index]}[]`)
+    .map((_: any, index: any) => `$${index + 1}::${columnTypes[index]}[]`)
     .join(", ");
   const query = `INSERT INTO ${quotedTable} (${quotedColumns.join(", ")})
          SELECT * FROM UNNEST(${unnest}) AS item(${quotedColumns.join(", ")})
@@ -468,7 +479,7 @@ async function bulkInsert(
   // Keep only one column-major parameter batch alive during large restores.
   for (let start = 0; start < rows.length; start += BULK_INSERT_BATCH_ROWS) {
     const end = Math.min(rows.length, start + BULK_INSERT_BATCH_ROWS);
-    const parameters = columns.map((column, columnIndex) => {
+    const parameters = columns.map((column: any, columnIndex: any) => {
       const values = new Array(end - start);
       for (let rowIndex = start; rowIndex < end; rowIndex++) {
         const value = rows[rowIndex][column];
@@ -486,14 +497,14 @@ async function bulkInsert(
 }
 
 async function beginAuditRevision(
-  client,
+  client: any,
   {
     storageRevision = null,
     databaseInitialized = null,
     scope,
     action,
     restoredFrom = null,
-  },
+  }: any,
 ) {
   const result = await client.query(
     `WITH inserted AS (
@@ -511,32 +522,34 @@ async function beginAuditRevision(
 }
 
 function buildUpsertClause(
-  table,
-  pkColumns,
-  valueColumns,
+  table: any,
+  pkColumns: any,
+  valueColumns: any,
   updateTimestamp = false,
 ) {
   if (valueColumns.length === 0) {
-    return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(", ")}) DO NOTHING`;
+    return `ON CONFLICT (${pkColumns.map((c: any) => `"${c}"`).join(", ")}) DO NOTHING`;
   }
   const quotedTable = assertSqlIdentifier(table);
-  const sets = valueColumns.map((c) => `"${c}" = EXCLUDED."${c}"`);
+  const sets = valueColumns.map((c: any) => `"${c}" = EXCLUDED."${c}"`);
   if (updateTimestamp) {
     sets.push('"updated_at" = NOW()');
   }
-  const leftCols = valueColumns.map((c) => `${quotedTable}."${c}"`).join(", ");
-  const rightCols = valueColumns.map((c) => `EXCLUDED."${c}"`).join(", ");
-  return `ON CONFLICT (${pkColumns.map((c) => `"${c}"`).join(", ")}) DO UPDATE SET
+  const leftCols = valueColumns
+    .map((c: any) => `${quotedTable}."${c}"`)
+    .join(", ");
+  const rightCols = valueColumns.map((c: any) => `EXCLUDED."${c}"`).join(", ");
+  return `ON CONFLICT (${pkColumns.map((c: any) => `"${c}"`).join(", ")}) DO UPDATE SET
         ${sets.join(", ")}
         WHERE (${leftCols}) IS DISTINCT FROM (${rightCols})`;
 }
 
 async function prunePositionalChildren(
-  client,
-  table,
-  ownerColumn,
-  lengthsByOwner,
-  subKindColumn = null,
+  client: any,
+  table: any,
+  ownerColumn: any,
+  lengthsByOwner: any,
+  subKindColumn: any = null,
 ) {
   if (lengthsByOwner.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
@@ -544,9 +557,9 @@ async function prunePositionalChildren(
 
   if (subKindColumn) {
     const subKindCol = `"${subKindColumn}"`;
-    const owners = lengthsByOwner.map((item) => item.ownerId);
-    const subKinds = lengthsByOwner.map((item) => item.subKind);
-    const lengths = lengthsByOwner.map((item) => item.length);
+    const owners = lengthsByOwner.map((item: any) => item.ownerId);
+    const subKinds = lengthsByOwner.map((item: any) => item.subKind);
+    const lengths = lengthsByOwner.map((item: any) => item.length);
     await client.query(
       `DELETE FROM ${quotedTable} AS target
              USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(owner_id, sub_kind, target_len)
@@ -556,8 +569,8 @@ async function prunePositionalChildren(
       [owners, subKinds, lengths],
     );
   } else {
-    const owners = lengthsByOwner.map((item) => item.ownerId);
-    const lengths = lengthsByOwner.map((item) => item.length);
+    const owners = lengthsByOwner.map((item: any) => item.ownerId);
+    const lengths = lengthsByOwner.map((item: any) => item.length);
     await client.query(
       `DELETE FROM ${quotedTable} AS target
              USING UNNEST($1::text[], $2::integer[]) AS spec(owner_id, target_len)
@@ -569,11 +582,11 @@ async function prunePositionalChildren(
 }
 
 async function pruneKeyedChildren(
-  client,
-  table,
-  ownerColumn,
-  keyColumn,
-  keysByOwner,
+  client: any,
+  table: any,
+  ownerColumn: any,
+  keyColumn: any,
+  keysByOwner: any,
 ) {
   if (keysByOwner.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
@@ -595,7 +608,7 @@ async function pruneKeyedChildren(
 }
 
 class PostgresStorage extends SqlStorageBase {
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     super();
     this.connectionString = options.connectionString || "";
     this.poolMax = Number.parseInt(options.poolMax || "10", 10);
@@ -625,7 +638,7 @@ class PostgresStorage extends SqlStorageBase {
     console.log("[PostgreSQL] Structured storage is ready.");
   }
 
-  runStartupStep(operation, task) {
+  runStartupStep(operation: any, task: any) {
     return runStartupStage(
       {
         scope: "PostgreSQL startup",
@@ -646,7 +659,7 @@ class PostgresStorage extends SqlStorageBase {
     return this.postgresSchemaSql;
   }
 
-  async verifyPostgresSchema(query) {
+  async verifyPostgresSchema(query: any) {
     const result = await query(
       "SELECT schema_version, schema_layout FROM system.storage_meta WHERE singleton = TRUE",
     );
@@ -664,7 +677,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async recoverMissingPostgresSchema(query) {
+  async recoverMissingPostgresSchema(query: any) {
     if (this.schemaRecoveryPromise) {
       return this.schemaRecoveryPromise;
     }
@@ -692,7 +705,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async ensureConnectedClientSchema(query) {
+  async ensureConnectedClientSchema(query: any) {
     const existingMeta = await query(
       "SELECT to_regclass('system.storage_meta') AS table_name",
     );
@@ -703,7 +716,7 @@ class PostgresStorage extends SqlStorageBase {
     await this.verifyPostgresSchema(query);
   }
 
-  async ensureLastMessageTimeInvariant(query) {
+  async ensureLastMessageTimeInvariant(query: any) {
     const triggerName = "messages_last_message_time_after_insert";
     const existing = await query(
       `SELECT 1 FROM pg_trigger
@@ -731,24 +744,24 @@ class PostgresStorage extends SqlStorageBase {
     await query(triggerSql);
   }
 
-  installPoolSchemaRecovery(pool) {
-    pool.on("error", (error) => {
+  installPoolSchemaRecovery(pool: any) {
+    pool.on("error", (error: any) => {
       console.warn(
         "[PostgreSQL] Idle pool connection failed; a later request will reconnect:",
         error.message || error,
       );
     });
-    pool.on("connect", (client) => {
+    pool.on("connect", (client: any) => {
       const originalQuery = client.query.bind(client);
       const schemaReady = this.ensureConnectedClientSchema(originalQuery);
       schemaReady.catch(() => {});
-      client.query = (...args) => {
+      client.query = (...args: any[]) => {
         const callback =
           typeof args[args.length - 1] === "function" ? args.pop() : null;
         if (callback) {
           schemaReady
             .then(() => originalQuery(...args, callback))
-            .catch((error) => callback(error));
+            .catch((error: any) => callback(error));
           return;
         }
         return schemaReady.then(() => originalQuery(...args));
@@ -756,7 +769,7 @@ class PostgresStorage extends SqlStorageBase {
     });
   }
 
-  async createInitializedPool(connectionString, poolMax) {
+  async createInitializedPool(connectionString: any, poolMax: any) {
     const pool = new Pool({
       connectionString,
       max: Number.isSafeInteger(poolMax) && poolMax > 0 ? poolMax : 10,
@@ -795,6 +808,9 @@ class PostgresStorage extends SqlStorageBase {
       await this.runStartupStep("6/6 verify applied storage schema", () =>
         this.verifyPostgresSchema(pool.query.bind(pool)),
       );
+      await authorNoteSql.ensureAuthorNoteReceipts(
+        authorNoteDatabase("postgres", pool),
+      );
       this.installPoolSchemaRecovery(pool);
       return pool;
     } catch (error) {
@@ -803,7 +819,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async reconfigure(options = {}) {
+  async reconfigure(options: any = {}) {
     this.invalidateBootstrapCache();
     const connectionString = options.connectionString || "";
     const parsedPoolMax = Number.parseInt(options.poolMax || "10", 10);
@@ -878,12 +894,12 @@ class PostgresStorage extends SqlStorageBase {
       initialized: Boolean(row.initialized),
       records: {
         ...records,
-        total: Object.values(records).reduce((a, b) => a + b, 0),
+        total: Object.values(records).reduce((a: any, b: any) => a + b, 0),
       },
     };
   }
 
-  async isAssetCatalogInitialized(sourceId) {
+  async isAssetCatalogInitialized(sourceId: any) {
     this.assertEnabled();
     const result = await this.pool.query(
       "SELECT initialized, source_id FROM system.asset_catalog_state WHERE singleton = TRUE",
@@ -904,7 +920,7 @@ class PostgresStorage extends SqlStorageBase {
       : await this.pool.query(
           "SELECT asset_key FROM system.asset_catalog ORDER BY asset_key",
         );
-    return result.rows.map((row) => row.asset_key);
+    return result.rows.map((row: any) => row.asset_key);
   }
 
   async listAssetCatalogEntries(prefix = "") {
@@ -917,7 +933,7 @@ class PostgresStorage extends SqlStorageBase {
       : await this.pool.query(
           "SELECT asset_key, size_bytes, etag, updated_at FROM system.asset_catalog ORDER BY asset_key",
         );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       key: row.asset_key,
       size: row.size_bytes === null ? null : Number(row.size_bytes),
       etag: row.etag ?? null,
@@ -936,12 +952,12 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async upsertAssetCatalog(entries) {
+  async upsertAssetCatalog(entries: any) {
     this.assertEnabled();
     if (!Array.isArray(entries) || entries.length === 0) return 0;
-    const keys = entries.map((entry) => entry.key);
-    const sizes = entries.map((entry) => entry.size ?? null);
-    const etags = entries.map((entry) => entry.etag ?? null);
+    const keys = entries.map((entry: any) => entry.key);
+    const sizes = entries.map((entry: any) => entry.size ?? null);
+    const etags = entries.map((entry: any) => entry.etag ?? null);
     await this.pool.query(
       `INSERT INTO system.asset_catalog (asset_key, size_bytes, etag)
              SELECT * FROM UNNEST($1::text[], $2::bigint[], $3::text[])
@@ -954,7 +970,7 @@ class PostgresStorage extends SqlStorageBase {
     return entries.length;
   }
 
-  async removeAssetCatalog(keys) {
+  async removeAssetCatalog(keys: any) {
     this.assertEnabled();
     if (!Array.isArray(keys) || keys.length === 0) return 0;
     const result = await this.pool.query(
@@ -964,7 +980,7 @@ class PostgresStorage extends SqlStorageBase {
     return result.rowCount;
   }
 
-  async replaceAssetCatalog(prefix, entries, sourceId) {
+  async replaceAssetCatalog(prefix: any, entries: any, sourceId: any) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
@@ -978,9 +994,9 @@ class PostgresStorage extends SqlStorageBase {
         await client.query("DELETE FROM system.asset_catalog");
       }
       if (entries.length > 0) {
-        const keys = entries.map((entry) => entry.key);
-        const sizes = entries.map((entry) => entry.size ?? null);
-        const etags = entries.map((entry) => entry.etag ?? null);
+        const keys = entries.map((entry: any) => entry.key);
+        const sizes = entries.map((entry: any) => entry.size ?? null);
+        const etags = entries.map((entry: any) => entry.etag ?? null);
         await client.query(
           `INSERT INTO system.asset_catalog (asset_key, size_bytes, etag)
                      SELECT * FROM UNNEST($1::text[], $2::bigint[], $3::text[])`,
@@ -1003,7 +1019,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listRevisions(rawLimit = null) {
+  async listRevisions(rawLimit: any = null) {
     this.assertEnabled();
     let sql = `SELECT revision.id, revision.storage_revision, revision.database_initialized,
                     revision.scope, revision.action, revision.restored_from_revision,
@@ -1021,14 +1037,14 @@ class PostgresStorage extends SqlStorageBase {
       rawLimit !== 0 &&
       rawLimit !== "0"
     ) {
-      const parsedLimit = Number.parseInt(rawLimit, 10);
+      const parsedLimit = Number.parseInt(String(rawLimit), 10);
       if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
         sql += " LIMIT $1";
         params.push(parsedLimit);
       }
     }
     const result = await this.pool.query(sql, params);
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       ...row,
       id: Number(row.id),
       storage_revision:
@@ -1040,7 +1056,7 @@ class PostgresStorage extends SqlStorageBase {
     }));
   }
 
-  async getRevisionDetails(rawRevisionId) {
+  async getRevisionDetails(rawRevisionId: any) {
     this.assertEnabled();
     const revisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(revisionId) || revisionId <= 0) {
@@ -1065,8 +1081,8 @@ class PostgresStorage extends SqlStorageBase {
       [revisionId],
     );
 
-    const tableMap = new Map();
-    const auditLogs = auditResult.rows.map((row) => {
+    const tableMap = new Map<any, any>();
+    const auditLogs = auditResult.rows.map((row: any) => {
       const table = row.table_name;
       const op = row.operation;
       if (!tableMap.has(table)) {
@@ -1116,7 +1132,7 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async getRevisionDiff(rawBaseId, rawTargetId) {
+  async getRevisionDiff(rawBaseId: any, rawTargetId: any) {
     this.assertEnabled();
     const baseId = Number(rawBaseId);
     const targetId = Number(rawTargetId);
@@ -1141,7 +1157,7 @@ class PostgresStorage extends SqlStorageBase {
       [minId, maxId],
     );
 
-    const tableMap = new Map();
+    const tableMap = new Map<any, any>();
     for (const row of auditResult.rows) {
       const table = row.table_name;
       const op = row.operation;
@@ -1179,7 +1195,7 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async previewRestore(rawRevisionId) {
+  async previewRestore(rawRevisionId: any) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
@@ -1207,7 +1223,7 @@ class PostgresStorage extends SqlStorageBase {
       [targetRevisionId],
     );
 
-    const tableMap = new Map();
+    const tableMap = new Map<any, any>();
     let restoreInsertCount = 0;
     let restoreDeleteCount = 0;
     let restoreUpdateCount = 0;
@@ -1249,7 +1265,7 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async getRestoreMetadata(client) {
+  async getRestoreMetadata(client: any) {
     const result = await client.query(
       `SELECT (namespace.nspname || '.' || class.relname) AS table_name,
                     attribute.attname AS column_name,
@@ -1272,7 +1288,7 @@ class PostgresStorage extends SqlStorageBase {
              ORDER BY namespace.nspname, class.relname, attribute.attnum`,
       [AUDITED_TABLES],
     );
-    const metadata = new Map();
+    const metadata = new Map<any, any>();
     for (const row of result.rows) {
       const table = metadata.get(row.table_name) || {
         columns: [],
@@ -1289,7 +1305,7 @@ class PostgresStorage extends SqlStorageBase {
     return metadata;
   }
 
-  async restoreRevision(rawRevisionId) {
+  async restoreRevision(rawRevisionId: any) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
@@ -1344,38 +1360,38 @@ class PostgresStorage extends SqlStorageBase {
         if (event.operation === "INSERT") {
           const source = event.after_row;
           const where = table.primary
-            .map((column, index) => `"${column}" = $${index + 1}`)
+            .map((column: any, index: any) => `"${column}" = $${index + 1}`)
             .join(" AND ");
           await client.query(
             `DELETE FROM ${quotedTable} WHERE ${where}`,
-            table.primary.map((column) => source[column]),
+            table.primary.map((column: any) => source[column]),
           );
           continue;
         }
         const source = event.before_row;
-        const columns = table.columns.map((column) => column.name);
-        const values = table.columns.map((column) => {
+        const columns = table.columns.map((column: any) => column.name);
+        const values = table.columns.map((column: any) => {
           const value = source[column.name];
           if (column.type !== "jsonb") return value;
           if (value === null && !column.notNull) return null;
           return JSON.stringify(value);
         });
         const placeholders = table.columns
-          .map((column, index) => `$${index + 1}::${column.type}`)
+          .map((column: any, index: any) => `$${index + 1}::${column.type}`)
           .join(", ");
         const updateColumns = columns.filter(
-          (column) => !table.primary.includes(column),
+          (column: any) => !table.primary.includes(column),
         );
         const conflictAction =
           updateColumns.length === 0
             ? "DO NOTHING"
             : `DO UPDATE SET ${updateColumns
-                .map((column) => `"${column}" = EXCLUDED."${column}"`)
+                .map((column: any) => `"${column}" = EXCLUDED."${column}"`)
                 .join(", ")}`;
         await client.query(
-          `INSERT INTO ${quotedTable} (${columns.map((c) => `"${c}"`).join(", ")})
+          `INSERT INTO ${quotedTable} (${columns.map((c: any) => `"${c}"`).join(", ")})
                      VALUES (${placeholders})
-                     ON CONFLICT (${table.primary.map((c) => `"${c}"`).join(", ")}) ${conflictAction}`,
+                     ON CONFLICT (${table.primary.map((c: any) => `"${c}"`).join(", ")}) ${conflictAction}`,
           values,
         );
       }
@@ -1403,7 +1419,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadColdStorage(key) {
+  async loadColdStorage(key: any) {
     this.assertEnabled();
     const normalizedKey = normalizeColdStorageKey(key);
     const client = await this.pool.connect();
@@ -1453,34 +1469,38 @@ class PostgresStorage extends SqlStorageBase {
       const loaded = await client.query(
         tableNames
           .map(
-            (table) =>
+            (table: any) =>
               `SELECT * FROM ${assertSqlIdentifier(table)}
                  WHERE archive_id = current_setting('risu.archive_id')::uuid ORDER BY 1, 2, 3`,
           )
           .join(";\n"),
       );
       const rows = Object.fromEntries(
-        tableNames.map((table, index) => [table, loaded[index].rows]),
+        tableNames.map((table: any, index: any) => [table, loaded[index].rows]),
       );
       let data;
       if (archive.kind === "legacy") {
         const legacy = rows["cold.archive_attributes"].find(
-          (item) => item.key === "legacy",
+          (item: any) => item.key === "legacy",
         );
         data = legacy ? decodePostgresJsonValue(legacy.value) : [];
       } else {
-        const presence = (entityType, chatPosition, entityPosition) =>
-          new Set(
+        const presence = (
+          entityType: any,
+          chatPosition: any,
+          entityPosition: any,
+        ) =>
+          new Set<any>(
             rows["cold.field_presence"]
               .filter(
-                (item) =>
+                (item: any) =>
                   item.entity_type === entityType &&
                   item.chat_position === chatPosition &&
                   item.entity_position === entityPosition,
               )
-              .map((item) => item.field_name),
+              .map((item: any) => item.field_name),
           );
-        const retainPresentFields = (value, fields) => {
+        const retainPresentFields = (value: any, fields: any) => {
           if (fields.size === 0) return value;
           for (const field of Object.keys(value))
             if (!fields.has(field)) delete value[field];
@@ -1515,13 +1535,15 @@ class PostgresStorage extends SqlStorageBase {
           rows["cold.messages"],
           "chat_position",
         );
-        const messageKey = (chatPosition, messagePosition) =>
+        const messageKey = (chatPosition: any, messagePosition: any) =>
           `${chatPosition}\0${messagePosition}`;
-        const groupColdMessages = (items) =>
-          new Map(
-            items.reduce((entries, item) => {
+        const groupColdMessages = (items: any) =>
+          new Map<any, any>(
+            items.reduce((entries: any, item: any) => {
               const key = messageKey(item.chat_position, item.message_position);
-              const value = entries.find(([candidate]) => candidate === key);
+              const value = entries.find(
+                ([candidate]: any) => candidate === key,
+              );
               if (value) value[1].push(item);
               else entries.push([key, [item]]);
               return entries;
@@ -1530,14 +1552,14 @@ class PostgresStorage extends SqlStorageBase {
         const messageAttributes = groupColdMessages(
           rows["cold.message_attributes"],
         );
-        const messageGenerations = new Map(
-          rows["cold.message_generation"].map((item) => [
+        const messageGenerations = new Map<any, any>(
+          rows["cold.message_generation"].map((item: any) => [
             messageKey(item.chat_position, item.message_position),
             item,
           ]),
         );
-        const messagePromptInfos = new Map(
-          rows["cold.message_prompt_info"].map((item) => [
+        const messagePromptInfos = new Map<any, any>(
+          rows["cold.message_prompt_info"].map((item: any) => [
             messageKey(item.chat_position, item.message_position),
             item,
           ]),
@@ -1548,9 +1570,9 @@ class PostgresStorage extends SqlStorageBase {
         const messagePromptItems = groupColdMessages(
           rows["cold.message_prompt_items"],
         );
-        const rebuiltChats = rows["cold.chats"].map((chatRow) => {
+        const rebuiltChats = rows["cold.chats"].map((chatRow: any) => {
           const messages = (messagesByPosition.get(chatRow.position) || []).map(
-            (messageRow) => {
+            (messageRow: any) => {
               const relationKey = messageKey(
                 messageRow.chat_position,
                 messageRow.position,
@@ -1603,7 +1625,7 @@ class PostgresStorage extends SqlStorageBase {
           const chat = rebuiltChats[0] || { message: [] };
           data = chat;
         } else {
-          const characterRow = {
+          const characterRow: Record<string, any> = {
             id: archive.owner_character_id || normalizedKey,
           };
           for (const [key, value] of Object.entries(archive)) {
@@ -1615,7 +1637,7 @@ class PostgresStorage extends SqlStorageBase {
             character: retainPresentFields(
               rebuildCharacter(characterRow, {
                 attributes: rows["cold.archive_attributes"].filter(
-                  (item) => item.key !== "legacy",
+                  (item: any) => item.key !== "legacy",
                 ),
                 tags: rows["cold.character_tags"],
                 greetings: rows["cold.character_greetings"],
@@ -1661,7 +1683,7 @@ class PostgresStorage extends SqlStorageBase {
     return result.rows;
   }
 
-  async upsertColdStorage(key, value) {
+  async upsertColdStorage(key: any, value: any) {
     this.assertEnabled();
     const normalizedKey = normalizeColdStorageKey(key);
     const splitValue = splitColdStorageValue(value);
@@ -1687,7 +1709,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async upsertColdStorageWithClient(client, key, splitValue) {
+  async upsertColdStorageWithClient(client: any, key: any, splitValue: any) {
     let character = null;
     if (splitValue.kind === "character") {
       const characterData = splitValue.data.character;
@@ -1765,7 +1787,7 @@ class PostgresStorage extends SqlStorageBase {
       [archive],
       `ON CONFLICT (id) DO UPDATE SET ${archiveColumns
         .slice(1)
-        .map((column) => `"${column}" = EXCLUDED."${column}"`)
+        .map((column: any) => `"${column}" = EXCLUDED."${column}"`)
         .join(", ")},
                 revision = cold.archives.revision + 1, updated_at = NOW()`,
     );
@@ -1803,7 +1825,7 @@ class PostgresStorage extends SqlStorageBase {
         },
       ];
     } else if (character) {
-      archiveAttributes = character.attributes.map((item) => ({
+      archiveAttributes = character.attributes.map((item: any) => ({
         ...item,
         archive_id: key,
       }));
@@ -1816,15 +1838,15 @@ class PostgresStorage extends SqlStorageBase {
       archiveAttributes,
     );
     const presenceRows = [
-      ...(splitValue.characterFields || []).map((fieldName) => ({
+      ...(splitValue.characterFields || []).map((fieldName: any) => ({
         archive_id: key,
         entity_type: "character",
         chat_position: -1,
         entity_position: -1,
         field_name: fieldName,
       })),
-      ...splitValue.chats.flatMap((chat) =>
-        (chat.fields || []).map((fieldName) => ({
+      ...splitValue.chats.flatMap((chat: any) =>
+        (chat.fields || []).map((fieldName: any) => ({
           archive_id: key,
           entity_type: "chat",
           chat_position: chat.position,
@@ -1832,8 +1854,8 @@ class PostgresStorage extends SqlStorageBase {
           field_name: fieldName,
         })),
       ),
-      ...splitValue.messages.flatMap((message) =>
-        (message.fields || []).map((fieldName) => ({
+      ...splitValue.messages.flatMap((message: any) =>
+        (message.fields || []).map((fieldName: any) => ({
           archive_id: key,
           entity_type: "message",
           chat_position: message.chatPosition,
@@ -1855,8 +1877,8 @@ class PostgresStorage extends SqlStorageBase {
       ["uuid", "text", "integer", "integer", "text"],
       presenceRows,
     );
-    const mapCharacterRows = (name) =>
-      (character?.[name] || []).map((item) => {
+    const mapCharacterRows = (name: any) =>
+      (character?.[name] || []).map((item: any) => {
         const mapped = { ...item, archive_id: key };
         delete mapped.character_id;
         delete mapped.group_id;
@@ -2011,7 +2033,7 @@ class PostgresStorage extends SqlStorageBase {
       splitValue.kind === "chat"
         ? [{ position: 0, data: splitValue.data }]
         : splitValue.chats;
-    const splitChats = chatInputs.map((chat) =>
+    const splitChats = chatInputs.map((chat: any) =>
       splitChat({
         id: chat.data.id || `cold-chat-${chat.position}`,
         characterId: character?.core.id || "",
@@ -2019,7 +2041,7 @@ class PostgresStorage extends SqlStorageBase {
         data: chat.data,
       }),
     );
-    const coldChats = splitChats.map((item, index) => ({
+    const coldChats = splitChats.map((item: any, index: any) => ({
       archive_id: key,
       position: item.core.position,
       original_chat_id: chatInputs[index].data.id ?? null,
@@ -2072,9 +2094,9 @@ class PostgresStorage extends SqlStorageBase {
       ],
       coldChats,
     );
-    const mapChatRows = (name) =>
-      splitChats.flatMap((item) =>
-        item[name].map((row) => {
+    const mapChatRows = (name: any) =>
+      splitChats.flatMap((item: any) =>
+        item[name].map((row: any) => {
           const mapped = {
             ...row,
             archive_id: key,
@@ -2089,8 +2111,8 @@ class PostgresStorage extends SqlStorageBase {
       "cold.chat_attributes",
       ["archive_id", "chat_position", "key", "value"],
       ["uuid", "integer", "text", "jsonb"],
-      splitChats.flatMap((item) =>
-        item.attributes.map((row) => ({
+      splitChats.flatMap((item: any) =>
+        item.attributes.map((row: any) => ({
           ...row,
           archive_id: key,
           chat_position: item.core.position,
@@ -2194,7 +2216,7 @@ class PostgresStorage extends SqlStorageBase {
       mapChatRows("lore"),
     );
 
-    const splitMessages = splitValue.messages.map((message) =>
+    const splitMessages = splitValue.messages.map((message: any) =>
       splitMessage({
         id: message.data.chatId || `cold-message-${message.position}`,
         chatId: `cold-chat-${message.chatPosition}`,
@@ -2202,7 +2224,7 @@ class PostgresStorage extends SqlStorageBase {
         data: message.data,
       }),
     );
-    const coldMessages = splitMessages.map((item, index) => ({
+    const coldMessages = splitMessages.map((item: any, index: any) => ({
       archive_id: key,
       chat_position: splitValue.messages[index].chatPosition,
       position: item.core.position,
@@ -2252,7 +2274,7 @@ class PostgresStorage extends SqlStorageBase {
       ],
       coldMessages,
     );
-    const messageOwner = (item, index) => ({
+    const messageOwner = (item: any, index: any) => ({
       archive_id: key,
       chat_position: splitValue.messages[index].chatPosition,
       message_position: item.core.position,
@@ -2262,8 +2284,8 @@ class PostgresStorage extends SqlStorageBase {
       "cold.message_attributes",
       ["archive_id", "chat_position", "message_position", "key", "value"],
       ["uuid", "integer", "integer", "text", "jsonb"],
-      splitMessages.flatMap((item, index) =>
-        item.attributes.map((row) => ({
+      splitMessages.flatMap((item: any, index: any) =>
+        item.attributes.map((row: any) => ({
           ...row,
           ...messageOwner(item, index),
         })),
@@ -2300,7 +2322,7 @@ class PostgresStorage extends SqlStorageBase {
         "double precision",
         "double precision",
       ],
-      splitMessages.flatMap((item, index) =>
+      splitMessages.flatMap((item: any, index: any) =>
         item.generation
           ? [{ ...item.generation, ...messageOwner(item, index) }]
           : [],
@@ -2311,7 +2333,7 @@ class PostgresStorage extends SqlStorageBase {
       "cold.message_prompt_info",
       ["archive_id", "chat_position", "message_position", "prompt_name"],
       ["uuid", "integer", "integer", "text"],
-      splitMessages.flatMap((item, index) =>
+      splitMessages.flatMap((item: any, index: any) =>
         item.prompt
           ? [{ ...item.prompt.info, ...messageOwner(item, index) }]
           : [],
@@ -2329,8 +2351,8 @@ class PostgresStorage extends SqlStorageBase {
         "toggle_value",
       ],
       ["uuid", "integer", "integer", "integer", "text", "text"],
-      splitMessages.flatMap((item, index) =>
-        (item.prompt?.toggles || []).map((row) => ({
+      splitMessages.flatMap((item: any, index: any) =>
+        (item.prompt?.toggles || []).map((row: any) => ({
           ...row,
           ...messageOwner(item, index),
         })),
@@ -2347,8 +2369,8 @@ class PostgresStorage extends SqlStorageBase {
         "payload",
       ],
       ["uuid", "integer", "integer", "integer", "jsonb"],
-      splitMessages.flatMap((item, index) =>
-        (item.prompt?.items || []).map((row) => ({
+      splitMessages.flatMap((item: any, index: any) =>
+        (item.prompt?.items || []).map((row: any) => ({
           ...row,
           ...messageOwner(item, index),
         })),
@@ -2361,7 +2383,7 @@ class PostgresStorage extends SqlStorageBase {
     return archiveResult.rows[0];
   }
 
-  async deleteColdStorage(rawKeys) {
+  async deleteColdStorage(rawKeys: any) {
     this.assertEnabled();
     const keys = validateColdStorageKeys(rawKeys);
     if (keys.length === 0) {
@@ -2388,7 +2410,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async pruneColdStorage(rawRetainedKeys) {
+  async pruneColdStorage(rawRetainedKeys: any) {
     this.assertEnabled();
     const retainedKeys = validateColdStorageKeys(
       rawRetainedKeys,
@@ -2415,7 +2437,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async migrateLegacyColdStorage(savePath) {
+  async migrateLegacyColdStorage(savePath: any) {
     this.assertEnabled();
     const candidates = await findLegacyColdStorageFiles(savePath);
     if (candidates.length === 0) {
@@ -2424,11 +2446,13 @@ class PostgresStorage extends SqlStorageBase {
 
     const importedResult = await this.pool.query(
       "SELECT id::text AS key FROM cold.legacy_imports WHERE id = ANY($1::uuid[])",
-      [candidates.map((candidate) => candidate.key)],
+      [candidates.map((candidate: any) => candidate.key)],
     );
-    const imported = new Set(importedResult.rows.map((row) => row.key));
+    const imported = new Set<any>(
+      importedResult.rows.map((row: any) => row.key),
+    );
     const pending = candidates.filter(
-      (candidate) => !imported.has(candidate.key),
+      (candidate: any) => !imported.has(candidate.key),
     );
     if (pending.length === 0) {
       return { migrated: 0, skipped: 0 };
@@ -2492,11 +2516,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async exportColdStorageToLegacy(savePath) {
+  async exportColdStorageToLegacy(savePath: any) {
     this.assertEnabled();
     await fs.mkdir(savePath, { recursive: true });
     const items = await this.listColdStorage();
-    const exportedKeys = new Set();
+    const exportedKeys = new Set<any>();
     let exported = 0;
     for (const item of items) {
       const loaded = await this.loadColdStorage(item.key);
@@ -2519,7 +2543,7 @@ class PostgresStorage extends SqlStorageBase {
     }
 
     const staleFiles = (await findLegacyColdStorageFiles(savePath)).filter(
-      (candidate) => !exportedKeys.has(candidate.key),
+      (candidate: any) => !exportedKeys.has(candidate.key),
     );
     if (staleFiles.length > 0) {
       const rollbackPath = path.join(
@@ -2566,9 +2590,9 @@ class PostgresStorage extends SqlStorageBase {
       ];
       const [settingsRows, settingValueRows, characterRows] = (
         await client.query(queries.join(";\n"))
-      ).map((result) => result.rows);
+      ).map((result: any) => result.rows);
       const settings = rebuildSettingRows(settingsRows, settingValueRows);
-      const characters = characterRows.map((row) => ({
+      const characters = characterRows.map((row: any) => ({
         chaId: row.id,
         type: row.kind || "character",
         name: row.name || "",
@@ -2595,6 +2619,39 @@ class PostgresStorage extends SqlStorageBase {
     } finally {
       client.release();
     }
+  }
+
+  async listGlobalAuthorNotes() {
+    return withAuthorNoteDatabase(
+      this,
+      "postgres",
+      authorNoteSql.listAuthorNotes,
+    );
+  }
+  async getGlobalAuthorNote(id: string) {
+    return withAuthorNoteDatabase(
+      this,
+      "postgres",
+      (
+        db: import("../../../../packages/protocol/dist/authorNoteSql.cjs").AuthorNoteSql,
+      ) => authorNoteSql.getAuthorNote(db, id),
+    );
+  }
+  async readGlobalAuthorNote(id: string) {
+    return withAuthorNoteDatabase(
+      this,
+      "postgres",
+      (
+        db: import("../../../../packages/protocol/dist/authorNoteSql.cjs").AuthorNoteSql,
+      ) => authorNoteSql.readAuthorNote(db, id),
+    );
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return withAuthorNoteDatabase(
+      this,
+      "postgres",
+      authorNoteSql.allowAuthorNoteScriptWrite,
+    );
   }
 
   async exportDatabaseSnapshot() {
@@ -2651,7 +2708,7 @@ class PostgresStorage extends SqlStorageBase {
       ];
 
       const results = await client.query(loadQueries.join(";\n"));
-      const rows = results.map((result) => result.rows);
+      const rows = results.map((result: any) => result.rows);
       const [
         settings,
         settingValues,
@@ -2691,20 +2748,26 @@ class PostgresStorage extends SqlStorageBase {
       ] = rows;
 
       const database = rebuildSettingRows(settings, settingValues);
+      Object.assign(
+        database,
+        await authorNoteSql.exportAuthorNotes(
+          authorNoteDatabase("postgres", client),
+        ),
+      );
       database.pluginCustomStorage = Object.fromEntries(
         (
           await client.query(
             "SELECT key, value FROM system.plugin_custom_storage ORDER BY key",
           )
-        ).rows.map((row) => [row.key, row.value]),
+        ).rows.map((row: any) => [row.key, row.value]),
       );
 
       if (moduleRecords && moduleRecords.length > 0) {
         const rebuiltModules = rebuildSettings(
-          moduleRecords.map((row) => ({ key: row.module_id })),
+          moduleRecords.map((row: any) => ({ key: row.module_id })),
           moduleValues,
         );
-        database.modules = moduleRecords.map((row) => ({
+        database.modules = moduleRecords.map((row: any) => ({
           ...rebuiltModules[row.module_id],
           id: row.module_id,
         }));
@@ -2712,8 +2775,8 @@ class PostgresStorage extends SqlStorageBase {
         database.modules = database.modules || [];
       }
 
-      const pluginScriptMap = new Map(
-        (pluginScripts || []).map((row) => [
+      const pluginScriptMap = new Map<any, any>(
+        (pluginScripts || []).map((row: any) => [
           row.plugin_id,
           decodePostgresScript(row.script),
         ]),
@@ -2721,7 +2784,7 @@ class PostgresStorage extends SqlStorageBase {
       database.plugins = rebuildPluginRecords(
         pluginRecords || [],
         pluginValues || [],
-      ).map((plugin) => {
+      ).map((plugin: any) => {
         const { id, position: _position, ...metadata } = plugin;
         const script = pluginScriptMap.get(id);
         if (script === undefined) {
@@ -2731,7 +2794,7 @@ class PostgresStorage extends SqlStorageBase {
       });
 
       if (botPresetRows && botPresetRows.length > 0) {
-        database.botPresets = botPresetRows.map((row) => {
+        database.botPresets = botPresetRows.map((row: any) => {
           const data =
             typeof row.data === "string" ? JSON.parse(row.data) : row.data;
           const { id: _id, ...rest } = data;
@@ -2740,7 +2803,7 @@ class PostgresStorage extends SqlStorageBase {
         const activeId = database.activeBotPresetId;
         database.botPresetsId = Math.max(
           0,
-          botPresetRows.findIndex((row) => row.preset_id === activeId),
+          botPresetRows.findIndex((row: any) => row.preset_id === activeId),
         );
       } else {
         database.botPresets = database.botPresets || [];
@@ -2799,7 +2862,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadCharacter(characterId) {
+  async loadCharacter(characterId: any) {
     this.assertEnabled();
     assertId(characterId, "characterId");
     const client = await this.pool.connect();
@@ -2879,7 +2942,7 @@ class PostgresStorage extends SqlStorageBase {
   // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
   // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
   // analysis needs these without hydrating lore, scripts or chats.
-  async loadCharacterAssetFields(characterId) {
+  async loadCharacterAssetFields(characterId: any) {
     this.assertEnabled();
     assertId(characterId, "characterId");
     const client = await this.pool.connect();
@@ -2902,7 +2965,7 @@ class PostgresStorage extends SqlStorageBase {
         return null;
       }
 
-      const assets = {};
+      const assets: Record<string, any> = {};
       const core = charRes.rows[0];
       if (core.image !== null && core.image !== undefined)
         assets.image = core.image;
@@ -2910,18 +2973,18 @@ class PostgresStorage extends SqlStorageBase {
         assets[row.key] = decodePostgresJsonValue(row.value);
       }
       if (emotionsRes.rows.length) {
-        assets.emotionImages = emotionsRes.rows.map((item) => [
+        assets.emotionImages = emotionsRes.rows.map((item: any) => [
           item.emotion,
           item.asset,
         ]);
       }
       const additionalAssets = assetsRes.rows
-        .filter((item) => item.asset_source === "additional")
-        .map((item) => [item.name, item.uri, item.extension]);
+        .filter((item: any) => item.asset_source === "additional")
+        .map((item: any) => [item.name, item.uri, item.extension]);
       if (additionalAssets.length) assets.additionalAssets = additionalAssets;
       const ccAssets = assetsRes.rows
-        .filter((item) => item.asset_source === "character-card")
-        .map((item) => ({
+        .filter((item: any) => item.asset_source === "character-card")
+        .map((item: any) => ({
           type: item.asset_type,
           uri: item.uri,
           name: item.name,
@@ -2939,7 +3002,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async _loadLinearMessagesForBranchMigration(client, chatId) {
+  async _loadLinearMessagesForBranchMigration(client: any, chatId: any) {
     const migrationQueries = [
       "SELECT * FROM chat.messages WHERE chat_id = $1 ORDER BY position, id",
       "SELECT * FROM chat.message_attributes WHERE chat_id = $1 ORDER BY message_id, key",
@@ -2962,14 +3025,14 @@ class PostgresStorage extends SqlStorageBase {
     ] = migrationResults;
     const relations = {
       attributes: groupMessageRows(attributesRes.rows),
-      generation: new Map(
-        generationsRes.rows.map((row) => [
+      generation: new Map<any, any>(
+        generationsRes.rows.map((row: any) => [
           `${row.chat_id}\0${row.message_id}`,
           row,
         ]),
       ),
-      promptInfo: new Map(
-        promptInfosRes.rows.map((row) => [
+      promptInfo: new Map<any, any>(
+        promptInfosRes.rows.map((row: any) => [
           `${row.chat_id}\0${row.message_id}`,
           row,
         ]),
@@ -2977,7 +3040,7 @@ class PostgresStorage extends SqlStorageBase {
       promptToggles: groupMessageRows(promptTogglesRes.rows),
       promptItems: groupMessageRows(promptItemsRes.rows),
     };
-    return messagesRes.rows.map((row) => {
+    return messagesRes.rows.map((row: any) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key),
@@ -2989,7 +3052,7 @@ class PostgresStorage extends SqlStorageBase {
     });
   }
 
-  async migrateLegacyBranchState(client, chatId) {
+  async migrateLegacyBranchState(client: any, chatId: any) {
     const legacyRes = await client.query(
       `SELECT
                 (SELECT COUNT(*)::integer FROM chat.branches WHERE chat_id = $1) AS branch_count,
@@ -3029,7 +3092,7 @@ class PostgresStorage extends SqlStorageBase {
       chatId,
     ]);
 
-    const splitMessages = plan.messages.map((message) =>
+    const splitMessages = plan.messages.map((message: any) =>
       splitMessage({
         chatId,
         id: message.id,
@@ -3069,7 +3132,7 @@ class PostgresStorage extends SqlStorageBase {
         "text",
         "boolean",
       ],
-      splitMessages.map((item) => item.core),
+      splitMessages.map((item: any) => item.core),
       buildUpsertClause(
         "chat.messages",
         ["chat_id", "id"],
@@ -3078,7 +3141,7 @@ class PostgresStorage extends SqlStorageBase {
       ),
     );
 
-    const ids = splitMessages.map((item) => item.core.id);
+    const ids = splitMessages.map((item: any) => item.core.id);
     if (ids.length > 0) {
       for (const table of [
         "chat.message_attributes",
@@ -3098,8 +3161,8 @@ class PostgresStorage extends SqlStorageBase {
       "chat.message_attributes",
       ["chat_id", "message_id", "key", "value"],
       ["text", "text", "text", "jsonb"],
-      splitMessages.flatMap((item) =>
-        item.attributes.map((row) => ({
+      splitMessages.flatMap((item: any) =>
+        item.attributes.map((row: any) => ({
           ...row,
           chat_id: item.core.chat_id,
           message_id: item.core.id,
@@ -3135,7 +3198,7 @@ class PostgresStorage extends SqlStorageBase {
         "double precision",
         "double precision",
       ],
-      splitMessages.flatMap((item) =>
+      splitMessages.flatMap((item: any) =>
         item.generation ? [item.generation] : [],
       ),
     );
@@ -3144,7 +3207,7 @@ class PostgresStorage extends SqlStorageBase {
       "chat.message_prompt_info",
       ["chat_id", "message_id", "prompt_name"],
       ["text", "text", "text"],
-      splitMessages.flatMap((item) =>
+      splitMessages.flatMap((item: any) =>
         item.prompt?.info ? [item.prompt.info] : [],
       ),
     );
@@ -3153,14 +3216,14 @@ class PostgresStorage extends SqlStorageBase {
       "chat.message_prompt_toggles",
       ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
       ["text", "text", "integer", "text", "text"],
-      splitMessages.flatMap((item) => item.prompt?.toggles || []),
+      splitMessages.flatMap((item: any) => item.prompt?.toggles || []),
     );
     await bulkInsert(
       client,
       "chat.message_prompt_items",
       ["chat_id", "message_id", "position", "payload"],
       ["text", "text", "integer", "jsonb"],
-      splitMessages.flatMap((item) => item.prompt?.items || []),
+      splitMessages.flatMap((item: any) => item.prompt?.items || []),
     );
 
     await bulkInsert(
@@ -3176,7 +3239,7 @@ class PostgresStorage extends SqlStorageBase {
         "created_at",
       ],
       ["text", "text", "text", "text", "text", "text", "bigint"],
-      plan.branches.map((branch) => ({
+      plan.branches.map((branch: any) => ({
         chat_id: chatId,
         id: branch.id,
         parent_branch_id: branch.parentBranchId ?? null,
@@ -3191,7 +3254,7 @@ class PostgresStorage extends SqlStorageBase {
       "chat.message_branch_links",
       ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
       ["text", "text", "text", "text"],
-      plan.links.map((link) => ({
+      plan.links.map((link: any) => ({
         chat_id: chatId,
         message_id: link.messageId,
         parent_message_id: link.parentMessageId ?? null,
@@ -3207,8 +3270,8 @@ class PostgresStorage extends SqlStorageBase {
     return true;
   }
 
-  async ensureChatBranchGraphs(client, chatIds) {
-    const ids = [...new Set((chatIds || []).filter(Boolean))];
+  async ensureChatBranchGraphs(client: any, chatIds: any) {
+    const ids = [...new Set<any>((chatIds || []).filter(Boolean))];
     if (ids.length === 0) return;
     await client.query(
       `INSERT INTO chat.branches
@@ -3261,7 +3324,7 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async ensureChatBranchGraph(client, chatId) {
+  async ensureChatBranchGraph(client: any, chatId: any) {
     await this.migrateLegacyBranchState(client, chatId);
     let result = await client.query(
       "SELECT branch_id FROM chat.active_branches WHERE chat_id = $1",
@@ -3276,11 +3339,11 @@ class PostgresStorage extends SqlStorageBase {
     return result.rows[0]?.branch_id ?? null;
   }
 
-  async linkIncomingMessagesToActiveBranches(client, splitMessages) {
+  async linkIncomingMessagesToActiveBranches(client: any, splitMessages: any) {
     if (!splitMessages || splitMessages.length === 0) return;
-    const chatIds = splitMessages.map((item) => item.core.chat_id);
-    const messageIds = splitMessages.map((item) => item.core.id);
-    const positions = splitMessages.map((item) => item.core.position);
+    const chatIds = splitMessages.map((item: any) => item.core.chat_id);
+    const messageIds = splitMessages.map((item: any) => item.core.id);
+    const positions = splitMessages.map((item: any) => item.core.position);
     const inserted = await client.query(
       `WITH incoming(chat_id, message_id, position) AS (
                  SELECT * FROM UNNEST($1::text[], $2::text[], $3::integer[])
@@ -3312,13 +3375,13 @@ class PostgresStorage extends SqlStorageBase {
       [chatIds, messageIds, positions],
     );
     if (inserted.rows.length === 0) return;
-    const positionByKey = new Map(
-      splitMessages.map((item) => [
+    const positionByKey = new Map<any, any>(
+      splitMessages.map((item: any) => [
         `${item.core.chat_id}\0${item.core.id}`,
         Number(item.core.position) || 0,
       ]),
     );
-    const heads = new Map();
+    const heads = new Map<any, any>();
     for (const row of inserted.rows) {
       const key = `${row.chat_id}\0${row.origin_branch_id}`;
       const position =
@@ -3341,7 +3404,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async detachMessagesFromBranchGraph(client, deletions) {
+  async detachMessagesFromBranchGraph(client: any, deletions: any) {
     for (const deletion of deletions || []) {
       for (const messageId of deletion.ids || []) {
         await client.query(
@@ -3376,7 +3439,12 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async _loadBranchPageWithClient(client, chatId, branchId, options = {}) {
+  async _loadBranchPageWithClient(
+    client: any,
+    chatId: any,
+    branchId: any,
+    options: any = {},
+  ) {
     const countRes = await client.query(
       `WITH RECURSIVE branch_path(message_id) AS (
                  SELECT head_message_id FROM chat.branches WHERE chat_id = $1 AND id = $2
@@ -3423,7 +3491,7 @@ class PostgresStorage extends SqlStorageBase {
               OFFSET $3 LIMIT $4`,
       [chatId, branchId, offset, pageSize],
     );
-    const ids = messagesRes.rows.map((row) => row.id);
+    const ids = messagesRes.rows.map((row: any) => row.id);
     if (ids.length === 0) {
       return { messages: [], offset, total, hasMore: offset > 0 };
     }
@@ -3475,16 +3543,22 @@ class PostgresStorage extends SqlStorageBase {
     }
     const relations = {
       attributes: groupMessageRows(attributes),
-      generation: new Map(
-        generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      generation: new Map<any, any>(
+        generations.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
-      promptInfo: new Map(
-        promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      promptInfo: new Map<any, any>(
+        promptInfos.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
       promptToggles: groupMessageRows(promptToggles),
       promptItems: groupMessageRows(promptItems),
     };
-    const messages = messagesRes.rows.map((row) => {
+    const messages = messagesRes.rows.map((row: any) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key),
@@ -3497,11 +3571,11 @@ class PostgresStorage extends SqlStorageBase {
     return { messages, offset, total, hasMore: offset > 0 };
   }
 
-  async _activeBranchIdWithClient(client, chatId) {
+  async _activeBranchIdWithClient(client: any, chatId: any) {
     return await this.ensureChatBranchGraph(client, chatId);
   }
 
-  async loadChat(chatId, options = {}) {
+  async loadChat(chatId: any, options: any = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3575,7 +3649,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatMessages(chatId, options = {}) {
+  async loadChatMessages(chatId: any, options: any = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3602,7 +3676,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatMessagePage(chatId, before, limit) {
+  async loadChatMessagePage(chatId: any, before: any, limit: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3626,7 +3700,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listChatBranches(chatId) {
+  async listChatBranches(chatId: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3639,7 +3713,7 @@ class PostgresStorage extends SqlStorageBase {
         [chatId],
       );
       await client.query("COMMIT");
-      return result.rows.map((row) => ({
+      return result.rows.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -3656,7 +3730,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
+  async loadChatBranchGraphPage(chatId: any, rawOffset: any, rawLimit: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
@@ -3693,7 +3767,7 @@ class PostgresStorage extends SqlStorageBase {
          OFFSET $2 LIMIT $3`,
         [chatId, offset, limit],
       );
-      const ids = messagesRes.rows.map((row) => row.id);
+      const ids = messagesRes.rows.map((row: any) => row.id);
       let attributes = [];
       let generations = [];
       let promptInfos = [];
@@ -3733,16 +3807,22 @@ class PostgresStorage extends SqlStorageBase {
       }
       const relations = {
         attributes: groupMessageRows(attributes),
-        generation: new Map(
-          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        generation: new Map<any, any>(
+          generations.map((row: any) => [
+            `${row.chat_id}\0${row.message_id}`,
+            row,
+          ]),
         ),
-        promptInfo: new Map(
-          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        promptInfo: new Map<any, any>(
+          promptInfos.map((row: any) => [
+            `${row.chat_id}\0${row.message_id}`,
+            row,
+          ]),
         ),
         promptToggles: groupMessageRows(promptToggles),
         promptItems: groupMessageRows(promptItems),
       };
-      const messages = messagesRes.rows.map((row) => {
+      const messages = messagesRes.rows.map((row: any) => {
         const key = `${row.chat_id}\0${row.id}`;
         return rebuildMessage(row, {
           attributes: relations.attributes.get(key),
@@ -3752,7 +3832,7 @@ class PostgresStorage extends SqlStorageBase {
           promptItems: relations.promptItems.get(key),
         });
       });
-      const branches = branchResult.rows.map((row) => ({
+      const branches = branchResult.rows.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -3761,7 +3841,7 @@ class PostgresStorage extends SqlStorageBase {
         reason: row.reason,
         createdAt: Number(row.created_at) || 0,
       }));
-      const links = messagesRes.rows.map((row) => ({
+      const links = messagesRes.rows.map((row: any) => ({
         messageId: row.id,
         position: Number(row.position) || 0,
         parentMessageId: row.parent_message_id ?? undefined,
@@ -3785,7 +3865,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatBranchGraph(chatId) {
+  async loadChatBranchGraph(chatId: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const client = await this.pool.connect();
@@ -3815,7 +3895,7 @@ class PostgresStorage extends SqlStorageBase {
         [chatId],
       );
       await client.query("COMMIT");
-      const branches = branchResult.rows.map((row) => ({
+      const branches = branchResult.rows.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -3824,14 +3904,14 @@ class PostgresStorage extends SqlStorageBase {
         reason: row.reason,
         createdAt: Number(row.created_at) || 0,
       }));
-      const messages = graphRows.rows.map((row) => {
+      const messages = graphRows.rows.map((row: any) => {
         const message = rebuildMessage(row);
         if (row.graph_generation_model != null) {
           message.generationInfo = { model: row.graph_generation_model };
         }
         return message;
       });
-      const links = graphRows.rows.map((row) => ({
+      const links = graphRows.rows.map((row: any) => ({
         messageId: row.id,
         parentMessageId: row.parent_message_id ?? undefined,
         originBranchId: row.origin_branch_id,
@@ -3850,7 +3930,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadBranchMessages(chatId, branchId, options = {}) {
+  async loadBranchMessages(chatId: any, branchId: any, options: any = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
@@ -3877,7 +3957,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async createChatBranch(input) {
+  async createChatBranch(input: any) {
     this.assertEnabled();
     assertId(input?.chatId, "chatId");
     assertId(input?.id, "branchId");
@@ -3946,7 +4026,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async activateChatBranch(chatId, branchId) {
+  async activateChatBranch(chatId: any, branchId: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
@@ -3973,7 +4053,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPlugins(options = {}) {
+  async loadPlugins(options: any = {}) {
     this.assertEnabled();
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;
@@ -4015,7 +4095,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPluginScript(pluginId) {
+  async loadPluginScript(pluginId: any) {
     this.assertEnabled();
     assertId(pluginId, "pluginId");
     const result = await this.pool.query(
@@ -4041,7 +4121,7 @@ class PostgresStorage extends SqlStorageBase {
       ).rows;
       await client.query("COMMIT");
       const pluginCustomStorage = Object.fromEntries(
-        rows.map((row) => [row.key, row.value]),
+        rows.map((row: any) => [row.key, row.value]),
       );
       const serialized = JSON.stringify(pluginCustomStorage);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
@@ -4069,7 +4149,7 @@ class PostgresStorage extends SqlStorageBase {
         "SELECT key FROM system.plugin_custom_storage ORDER BY key",
       );
       await client.query("COMMIT");
-      return result.rows.map((row) => row.key);
+      return result.rows.map((row: any) => row.key);
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
       throw error;
@@ -4078,7 +4158,7 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async loadPluginCustomStorageKey(storageKey) {
+  async loadPluginCustomStorageKey(storageKey: any) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
@@ -4121,10 +4201,10 @@ class PostgresStorage extends SqlStorageBase {
     const result = await this.pool.query(
       "SELECT key FROM system.settings ORDER BY key",
     );
-    return result.rows.map((row) => row.key);
+    return result.rows.map((row: any) => row.key);
   }
 
-  async loadSettingKeys(keys) {
+  async loadSettingKeys(keys: any) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
@@ -4149,7 +4229,7 @@ class PostgresStorage extends SqlStorageBase {
           )
         ).rows;
         rebuilt.pluginCustomStorage = Object.fromEntries(
-          pluginRows.map((row) => [row.key, row.value]),
+          pluginRows.map((row: any) => [row.key, row.value]),
         );
       }
       const serialized = JSON.stringify(rebuilt);
@@ -4184,10 +4264,10 @@ class PostgresStorage extends SqlStorageBase {
       await client.query("COMMIT");
       if (modules.length === 0) return null;
       const rebuilt = rebuildSettings(
-        modules.map((row) => ({ key: row.module_id })),
+        modules.map((row: any) => ({ key: row.module_id })),
         values,
       );
-      const result = modules.map((row) => ({
+      const result = modules.map((row: any) => ({
         ...rebuilt[row.module_id],
         id: row.module_id,
       }));
@@ -4213,7 +4293,7 @@ class PostgresStorage extends SqlStorageBase {
       `SELECT preset_id, position, name, image, api_type, ai_model, content_hash
              FROM system.bot_presets ORDER BY position`,
     );
-    const presets = result.rows.map((row) => ({
+    const presets = result.rows.map((row: any) => ({
       id: row.preset_id,
       position: Number(row.position),
       name: row.name || "",
@@ -4233,7 +4313,7 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async loadBotPreset(id) {
+  async loadBotPreset(id: any) {
     this.assertEnabled();
     const started = process.hrtime.bigint();
     const result = await this.pool.query(
@@ -4249,7 +4329,7 @@ class PostgresStorage extends SqlStorageBase {
     };
   }
 
-  async executeRevision(action, scope = "database", callback) {
+  async executeRevision(action: any, scope = "database", callback: any) {
     this.assertEnabled();
     const client = await this.pool.connect();
     try {
@@ -4284,7 +4364,10 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+  async runStorageSyncFinalizeTransaction(
+    expectedRevision: any,
+    callback: any,
+  ) {
     this.assertEnabled();
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
       throw new PostgresPayloadError(
@@ -4350,11 +4433,11 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async updateSetting(key, value) {
+  async updateSetting(key: any, value: any) {
     return await this.executeRevision(
       `setting:update (${key})`,
       "database",
-      async (client) => {
+      async (client: any) => {
         const mapped = mapSettingValueToColumns(value);
         await client.query(
           `INSERT INTO system.settings (key, text_val, num_val, bool_val, updated_at)
@@ -4389,11 +4472,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async deleteSetting(key) {
+  async deleteSetting(key: any) {
     return await this.executeRevision(
       `setting:delete (${key})`,
       "database",
-      async (client) => {
+      async (client: any) => {
         await client.query("DELETE FROM system.settings WHERE key = $1", [key]);
         this.invalidateBootstrapCache([key]);
         return { key };
@@ -4401,11 +4484,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async saveBotPreset(preset, position = 0) {
+  async saveBotPreset(preset: any, position = 0) {
     return await this.executeRevision(
       `preset:save (${preset.name || position})`,
       "database",
-      async (client) => {
+      async (client: any) => {
         const id = preset.id || crypto.randomUUID();
         const data = { ...preset };
         delete data.id;
@@ -4437,11 +4520,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async saveModule(moduleData) {
+  async saveModule(moduleData: any) {
     return await this.executeRevision(
       `module:save (${moduleData.name || moduleData.id})`,
       "database",
-      async (client) => {
+      async (client: any) => {
         const id = moduleData.id;
         const records = (
           await client.query(
@@ -4450,14 +4533,14 @@ class PostgresStorage extends SqlStorageBase {
         ).rows;
         const nextPosition =
           records.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
         let entries = [
           {
             id,
             position:
-              records.find((row) => row.module_id === id)?.position ??
+              records.find((row: any) => row.module_id === id)?.position ??
               nextPosition,
             data: moduleData,
           },
@@ -4475,9 +4558,9 @@ class PostgresStorage extends SqlStorageBase {
           ).rows;
           const legacy = rebuildSettingRows(settings, values).modules;
           if (Array.isArray(legacy)) {
-            const merged = legacy.filter((module) => module?.id !== id);
+            const merged = legacy.filter((module: any) => module?.id !== id);
             merged.push(moduleData);
-            entries = merged.map((data, position) => ({
+            entries = merged.map((data: any, position: any) => ({
               id: data.id,
               position,
               data,
@@ -4499,11 +4582,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async deleteModule(moduleId) {
+  async deleteModule(moduleId: any) {
     return await this.executeRevision(
       `module:delete (${moduleId})`,
       "database",
-      async (client) => {
+      async (client: any) => {
         const records = (
           await client.query(
             "SELECT module_id FROM system.module_records LIMIT 1",
@@ -4523,8 +4606,12 @@ class PostgresStorage extends SqlStorageBase {
           const legacy = rebuildSettingRows(settings, values).modules;
           if (Array.isArray(legacy)) {
             const entries = legacy
-              .filter((module) => module?.id !== moduleId)
-              .map((data, position) => ({ id: data.id, position, data }));
+              .filter((module: any) => module?.id !== moduleId)
+              .map((data: any, position: any) => ({
+                id: data.id,
+                position,
+                data,
+              }));
             for (const entry of entries) {
               await client.query(
                 "INSERT INTO system.module_records (module_id, position) VALUES ($1, $2)",
@@ -4544,11 +4631,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async saveMessage(chatId, message) {
+  async saveMessage(chatId: any, message: any) {
     return await this.executeRevision(
       "message:save",
       "database",
-      async (client) => {
+      async (client: any) => {
         const split = splitMessage({
           id: message.chatId || message.id,
           chatId,
@@ -4601,7 +4688,7 @@ class PostgresStorage extends SqlStorageBase {
             "chat.message_attributes",
             ["chat_id", "message_id", "key", "value"],
             ["text", "text", "text", "jsonb"],
-            split.attributes.map((r) => ({
+            split.attributes.map((r: any) => ({
               ...r,
               chat_id: chatId,
               message_id: split.core.id,
@@ -4618,7 +4705,7 @@ class PostgresStorage extends SqlStorageBase {
           "chat.message_attributes",
           "chat_id",
           "key",
-          [{ ownerId: chatId, keys: split.attributes.map((r) => r.key) }],
+          [{ ownerId: chatId, keys: split.attributes.map((r: any) => r.key) }],
         );
 
         if (split.generation) {
@@ -4738,11 +4825,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async deleteMessage(chatId, messageId) {
+  async deleteMessage(chatId: any, messageId: any) {
     return await this.executeRevision(
       "message:delete",
       "database",
-      async (client) => {
+      async (client: any) => {
         await this.detachMessagesFromBranchGraph(client, [
           { chatId, ids: [messageId] },
         ]);
@@ -4755,11 +4842,11 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async clearStorageSyncColdStorage(client) {
+  async clearStorageSyncColdStorage(client: any) {
     await client.query("DELETE FROM cold.archives");
   }
 
-  async applyStorageSyncColdStorageRecord(client, key, value) {
+  async applyStorageSyncColdStorageRecord(client: any, key: any, value: any) {
     const normalizedKey = normalizeColdStorageKey(key);
     const splitValue = splitColdStorageValue(value);
     return await this.upsertColdStorageWithClient(
@@ -4769,8 +4856,12 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async applyStorageSyncBranchRecords(client, branches, activeBranches) {
-    const branchRows = (branches || []).map((record) => {
+  async applyStorageSyncBranchRecords(
+    client: any,
+    branches: any,
+    activeBranches: any,
+  ) {
+    const branchRows = (branches || []).map((record: any) => {
       assertId(record.chatId, "branch.chatId");
       assertId(record.data?.id, "branch.id");
       const reason = record.data?.reason;
@@ -4824,8 +4915,8 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async applyStorageSyncMessageLinks(client, records) {
-    const rows = (records || []).map((record) => ({
+  async applyStorageSyncMessageLinks(client: any, records: any) {
+    const rows = (records || []).map((record: any) => ({
       chat_id: record.chatId,
       message_id: record.id,
       parent_message_id: record.parentMessageId ?? null,
@@ -4845,7 +4936,7 @@ class PostgresStorage extends SqlStorageBase {
     );
   }
 
-  async sync(rawPayload, options = {}) {
+  async sync(rawPayload: any, options: any = {}) {
     this.assertEnabled();
     const onProgress =
       typeof options === "function" ? options : options?.onProgress;
@@ -4871,6 +4962,14 @@ class PostgresStorage extends SqlStorageBase {
           "SELECT revision, initialized FROM system.storage_meta WHERE singleton = TRUE FOR UPDATE",
         );
         currentRevision = Number(metaResult.rows[0].revision);
+        const receipt = await authorNoteSql.readAuthorNoteReceipt(
+          authorNoteDatabase("postgres", client),
+          payload,
+        );
+        if (receipt) {
+          await client.query("COMMIT");
+          return receipt;
+        }
         if (payload.baseRevision !== currentRevision) {
           throw new PostgresRevisionConflictError(currentRevision);
         }
@@ -4896,6 +4995,13 @@ class PostgresStorage extends SqlStorageBase {
           );
         }
       }
+
+      const noteDb = authorNoteDatabase("postgres", client);
+      if (payload.replaceAll) await authorNoteSql.resetAuthorNotes(noteDb);
+      const authorNotes = await authorNoteSql.applyAuthorNotes(
+        noteDb,
+        payload.authorNotes,
+      );
 
       if (payload.replaceAll) {
         await client.query("DELETE FROM system.settings");
@@ -4944,8 +5050,8 @@ class PostgresStorage extends SqlStorageBase {
             "UPDATE system.module_records SET position = position + 1000000000",
           );
         }
-        const positions = new Map(
-          existing.map((row) => [row.module_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.module_id, Number(row.position)]),
         );
         for (const entry of payload.modules.upserts) {
           const position = entry.position ?? positions.get(entry.id) ?? 0;
@@ -4973,8 +5079,8 @@ class PostgresStorage extends SqlStorageBase {
             "SELECT plugin_id, position FROM system.plugin_records ORDER BY position",
           )
         ).rows;
-        const positions = new Map(
-          existing.map((row) => [row.plugin_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.plugin_id, Number(row.position)]),
         );
 
         if (payload.plugins.deletes.length) {
@@ -4990,7 +5096,7 @@ class PostgresStorage extends SqlStorageBase {
         }
         let nextPosition =
           existing.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
         for (const entry of payload.plugins.upserts) {
@@ -5060,8 +5166,12 @@ class PostgresStorage extends SqlStorageBase {
           "SELECT text_val FROM system.settings WHERE key = 'activeBotPresetId'",
         );
         const currentActiveId = currentActiveResult.rows[0]?.text_val;
-        const originalIds = existingResult.rows.map((row) => row.preset_id);
-        const ids = new Set(existingResult.rows.map((row) => row.preset_id));
+        const originalIds = existingResult.rows.map(
+          (row: any) => row.preset_id,
+        );
+        const ids = new Set<any>(
+          existingResult.rows.map((row: any) => row.preset_id),
+        );
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
         if (ids.size === 0)
@@ -5069,8 +5179,8 @@ class PostgresStorage extends SqlStorageBase {
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
-            new Set(payload.presets.order).size !== ids.size ||
-            payload.presets.order.some((id) => !ids.has(id)))
+            new Set<any>(payload.presets.order).size !== ids.size ||
+            payload.presets.order.some((id: any) => !ids.has(id)))
         ) {
           throw new PostgresPayloadError(
             "Preset order must contain every preset ID exactly once",
@@ -5090,11 +5200,11 @@ class PostgresStorage extends SqlStorageBase {
         }
         let nextPosition =
           existingResult.rows.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
-        const existingPositions = new Map(
-          existingResult.rows.map((row) => [
+        const existingPositions = new Map<any, any>(
+          existingResult.rows.map((row: any) => [
             row.preset_id,
             Number(row.position),
           ]),
@@ -5144,11 +5254,13 @@ class PostgresStorage extends SqlStorageBase {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = originalIds.indexOf(currentActiveId);
             activeId =
-              originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) ||
+              originalIds
+                .slice(deletedIndex + 1)
+                .find((id: any) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
                 .reverse()
-                .find((id) => ids.has(id)) ||
+                .find((id: any) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }
@@ -5166,10 +5278,10 @@ class PostgresStorage extends SqlStorageBase {
       });
       dedupeRootUpserts(payload);
       const rootSettingUpserts = payload.rootUpserts.filter(
-        (row) => row.key !== "pluginCustomStorage",
+        (row: any) => row.key !== "pluginCustomStorage",
       );
       if (rootSettingUpserts.length > 0) {
-        const settingRows = rootSettingUpserts.map((row) => {
+        const settingRows = rootSettingUpserts.map((row: any) => {
           const mapped = mapSettingValueToColumns(row.value);
           return { key: row.key, ...mapped };
         });
@@ -5188,12 +5300,14 @@ class PostgresStorage extends SqlStorageBase {
         );
         await replaceSettingValueRows(client, rootSettingUpserts);
       }
-      const changedSettingKeys = rootSettingUpserts.map((item) => item.key);
+      const changedSettingKeys = rootSettingUpserts.map(
+        (item: any) => item.key,
+      );
       const projectedSettings = projectSettings(rootSettingUpserts);
       if (changedSettingKeys.length > 0) {
-        const changedSettingKeySet = new Set(changedSettingKeys);
+        const changedSettingKeySet = new Set<any>(changedSettingKeys);
         for (const definition of SETTING_RELATION_DEFINITIONS) {
-          const projectedKeys = definition.settingKeys.filter((key) =>
+          const projectedKeys = definition.settingKeys.filter((key: any) =>
             changedSettingKeySet.has(key),
           );
           if (projectedKeys.length === 0) continue;
@@ -5322,7 +5436,7 @@ class PostgresStorage extends SqlStorageBase {
           "bigint",
           "bigint",
         ],
-        splitCharacters.map((item) => item.core),
+        splitCharacters.map((item: any) => item.core),
         buildUpsertClause(
           "character.characters",
           ["id"],
@@ -5331,12 +5445,15 @@ class PostgresStorage extends SqlStorageBase {
         ),
       );
 
-      const characterRows = (name) =>
-        splitCharacters.flatMap((item) => item[name]);
+      const characterRows = (name: any) =>
+        splitCharacters.flatMap((item: any) => item[name]);
 
       // 1. attributes (PK: character_id, key)
-      const charAttrRows = splitCharacters.flatMap((item) =>
-        item.attributes.map((row) => ({ ...row, character_id: item.core.id })),
+      const charAttrRows = splitCharacters.flatMap((item: any) =>
+        item.attributes.map((row: any) => ({
+          ...row,
+          character_id: item.core.id,
+        })),
       );
       await bulkInsert(
         client,
@@ -5355,9 +5472,9 @@ class PostgresStorage extends SqlStorageBase {
         "character.attributes",
         "character_id",
         "key",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
-          keys: (c.attributes || []).map((a) => a.key),
+          keys: (c.attributes || []).map((a: any) => a.key),
         })),
       );
 
@@ -5378,7 +5495,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.tags",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.tags || []).length,
         })),
@@ -5401,19 +5518,19 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.greetings",
         "character_id",
-        splitCharacters.flatMap((c) => [
+        splitCharacters.flatMap((c: any) => [
           {
             ownerId: c.core.id,
             subKind: "alternate",
             length: (c.greetings || []).filter(
-              (g) => g.greeting_type === "alternate",
+              (g: any) => g.greeting_type === "alternate",
             ).length,
           },
           {
             ownerId: c.core.id,
             subKind: "group-only",
             length: (c.greetings || []).filter(
-              (g) => g.greeting_type === "group-only",
+              (g: any) => g.greeting_type === "group-only",
             ).length,
           },
         ]),
@@ -5437,7 +5554,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.biases",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.biases || []).length,
         })),
@@ -5460,7 +5577,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.emotions",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.emotions || []).length,
         })),
@@ -5483,7 +5600,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.modules",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.modules || []).length,
         })),
@@ -5506,7 +5623,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.group_members",
         "group_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.groupMembers || []).length,
         })),
@@ -5529,7 +5646,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.chat_folders",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.chatFolders || []).length,
         })),
@@ -5582,18 +5699,20 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.scripts",
         "character_id",
-        splitCharacters.flatMap((c) => [
+        splitCharacters.flatMap((c: any) => [
           {
             ownerId: c.core.id,
             subKind: "custom",
-            length: (c.scripts || []).filter((s) => s.script_kind === "custom")
-              .length,
+            length: (c.scripts || []).filter(
+              (s: any) => s.script_kind === "custom",
+            ).length,
           },
           {
             ownerId: c.core.id,
             subKind: "trigger",
-            length: (c.scripts || []).filter((s) => s.script_kind === "trigger")
-              .length,
+            length: (c.scripts || []).filter(
+              (s: any) => s.script_kind === "trigger",
+            ).length,
           },
         ]),
         "script_kind",
@@ -5616,7 +5735,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.sd_data",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.sdData || []).length,
         })),
@@ -5655,7 +5774,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.assets",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.assets || []).length,
         })),
@@ -5730,7 +5849,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "character.lore_entries",
         "character_id",
-        splitCharacters.map((c) => ({
+        splitCharacters.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.lore || []).length,
         })),
@@ -5787,15 +5906,16 @@ class PostgresStorage extends SqlStorageBase {
           "integer",
           "text",
         ],
-        splitChats.map((item) => item.core),
+        splitChats.map((item: any) => item.core),
         buildUpsertClause("chat.chats", ["id"], chatColumns.slice(1), true),
       );
 
-      const chatRows = (name) => splitChats.flatMap((item) => item[name]);
+      const chatRows = (name: any) =>
+        splitChats.flatMap((item: any) => item[name]);
 
       // 1. attributes (PK: chat_id, key)
-      const chatAttrRows = splitChats.flatMap((item) =>
-        item.attributes.map((row) => ({ ...row, chat_id: item.core.id })),
+      const chatAttrRows = splitChats.flatMap((item: any) =>
+        item.attributes.map((row: any) => ({ ...row, chat_id: item.core.id })),
       );
       await bulkInsert(
         client,
@@ -5810,9 +5930,9 @@ class PostgresStorage extends SqlStorageBase {
         "chat.attributes",
         "chat_id",
         "key",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
-          keys: (c.attributes || []).map((a) => a.key),
+          keys: (c.attributes || []).map((a: any) => a.key),
         })),
       );
 
@@ -5833,7 +5953,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.suggestions",
         "chat_id",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.suggestions || []).length,
         })),
@@ -5856,7 +5976,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.modules",
         "chat_id",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.modules || []).length,
         })),
@@ -5887,9 +6007,9 @@ class PostgresStorage extends SqlStorageBase {
         "chat.script_state",
         "chat_id",
         "key",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
-          keys: (c.scriptState || []).map((s) => s.key),
+          keys: (c.scriptState || []).map((s: any) => s.key),
         })),
       );
 
@@ -5910,7 +6030,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.bookmarks",
         "chat_id",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.bookmarks || []).length,
         })),
@@ -5934,9 +6054,9 @@ class PostgresStorage extends SqlStorageBase {
         "chat.memory",
         "chat_id",
         "memory_type",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
-          keys: (c.memory || []).map((m) => m.memory_type),
+          keys: (c.memory || []).map((m: any) => m.memory_type),
         })),
       );
 
@@ -6009,7 +6129,7 @@ class PostgresStorage extends SqlStorageBase {
         client,
         "chat.lore_entries",
         "chat_id",
-        splitChats.map((c) => ({
+        splitChats.map((c: any) => ({
           ownerId: c.core.id,
           length: (c.lore || []).length,
         })),
@@ -6021,13 +6141,13 @@ class PostgresStorage extends SqlStorageBase {
         count: payload.messages.length,
       });
       const splitMessages = payload.messages.map(splitMessage);
-      const affectedMessageChatIds = new Set([
-        ...splitMessages.map((item) => item.core.chat_id),
-        ...(payload.messageDeletes || []).map((item) => item.chatId),
+      const affectedMessageChatIds = new Set<any>([
+        ...splitMessages.map((item: any) => item.core.chat_id),
+        ...(payload.messageDeletes || []).map((item: any) => item.chatId),
       ]);
       await this.ensureChatBranchGraphs(
         client,
-        splitMessages.map((item) => item.core.chat_id),
+        splitMessages.map((item: any) => item.core.chat_id),
       );
       const messageColumns = [
         "chat_id",
@@ -6061,7 +6181,7 @@ class PostgresStorage extends SqlStorageBase {
           "text",
           "boolean",
         ],
-        splitMessages.map((item) => item.core),
+        splitMessages.map((item: any) => item.core),
         buildUpsertClause(
           "chat.messages",
           ["chat_id", "id"],
@@ -6074,8 +6194,8 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       // 1. message_attributes
-      const msgAttrRows = splitMessages.flatMap((item) =>
-        item.attributes.map((row) => ({
+      const msgAttrRows = splitMessages.flatMap((item: any) =>
+        item.attributes.map((row: any) => ({
           ...row,
           chat_id: item.core.chat_id,
           message_id: item.core.id,
@@ -6094,7 +6214,7 @@ class PostgresStorage extends SqlStorageBase {
         ),
       );
       for (const item of splitMessages) {
-        const keys = (item.attributes || []).map((a) => a.key);
+        const keys = (item.attributes || []).map((a: any) => a.key);
         if (keys.length === 0) {
           await client.query(
             "DELETE FROM chat.message_attributes WHERE chat_id = $1 AND message_id = $2",
@@ -6109,7 +6229,7 @@ class PostgresStorage extends SqlStorageBase {
       }
 
       // 2. message_generation
-      const genRows = splitMessages.flatMap((item) =>
+      const genRows = splitMessages.flatMap((item: any) =>
         item.generation ? [item.generation] : [],
       );
       await bulkInsert(
@@ -6158,21 +6278,21 @@ class PostgresStorage extends SqlStorageBase {
           ],
         ),
       );
-      const msgsWithoutGen = splitMessages.filter((m) => !m.generation);
+      const msgsWithoutGen = splitMessages.filter((m: any) => !m.generation);
       if (msgsWithoutGen.length > 0) {
         await client.query(
           `DELETE FROM chat.message_generation AS target
                      USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id`,
           [
-            msgsWithoutGen.map((m) => m.core.chat_id),
-            msgsWithoutGen.map((m) => m.core.id),
+            msgsWithoutGen.map((m: any) => m.core.chat_id),
+            msgsWithoutGen.map((m: any) => m.core.id),
           ],
         );
       }
 
       // 3. message_prompt_info
-      const promptInfoRows = splitMessages.flatMap((item) =>
+      const promptInfoRows = splitMessages.flatMap((item: any) =>
         item.prompt ? [item.prompt.info] : [],
       );
       await bulkInsert(
@@ -6187,22 +6307,24 @@ class PostgresStorage extends SqlStorageBase {
           ["prompt_name"],
         ),
       );
-      const msgsWithoutPrompt = splitMessages.filter((m) => !m.prompt?.info);
+      const msgsWithoutPrompt = splitMessages.filter(
+        (m: any) => !m.prompt?.info,
+      );
       if (msgsWithoutPrompt.length > 0) {
         await client.query(
           `DELETE FROM chat.message_prompt_info AS target
                      USING UNNEST($1::text[], $2::text[]) AS spec(chat_id, message_id)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id`,
           [
-            msgsWithoutPrompt.map((m) => m.core.chat_id),
-            msgsWithoutPrompt.map((m) => m.core.id),
+            msgsWithoutPrompt.map((m: any) => m.core.chat_id),
+            msgsWithoutPrompt.map((m: any) => m.core.id),
           ],
         );
       }
 
       // 4. message_prompt_toggles
       const toggleRows = splitMessages.flatMap(
-        (item) => item.prompt?.toggles || [],
+        (item: any) => item.prompt?.toggles || [],
       );
       await bulkInsert(
         client,
@@ -6222,16 +6344,16 @@ class PostgresStorage extends SqlStorageBase {
                      USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id AND target.position >= spec.target_len`,
           [
-            splitMessages.map((m) => m.core.chat_id),
-            splitMessages.map((m) => m.core.id),
-            splitMessages.map((m) => (m.prompt?.toggles || []).length),
+            splitMessages.map((m: any) => m.core.chat_id),
+            splitMessages.map((m: any) => m.core.id),
+            splitMessages.map((m: any) => (m.prompt?.toggles || []).length),
           ],
         );
       }
 
       // 5. message_prompt_items
       const promptItemRows = splitMessages.flatMap(
-        (item) => item.prompt?.items || [],
+        (item: any) => item.prompt?.items || [],
       );
       await bulkInsert(
         client,
@@ -6251,9 +6373,9 @@ class PostgresStorage extends SqlStorageBase {
                      USING UNNEST($1::text[], $2::text[], $3::integer[]) AS spec(chat_id, message_id, target_len)
                      WHERE target.chat_id = spec.chat_id AND target.message_id = spec.message_id AND target.position >= spec.target_len`,
           [
-            splitMessages.map((m) => m.core.chat_id),
-            splitMessages.map((m) => m.core.id),
-            splitMessages.map((m) => (m.prompt?.items || []).length),
+            splitMessages.map((m: any) => m.core.chat_id),
+            splitMessages.map((m: any) => m.core.id),
+            splitMessages.map((m: any) => (m.prompt?.items || []).length),
           ],
         );
       }
@@ -6311,6 +6433,16 @@ class PostgresStorage extends SqlStorageBase {
                    WHERE singleton = TRUE`,
           [nextRevision],
         );
+        await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
+          revision: nextRevision,
+          authorNotes: authorNotes.map(
+            ({ id, contentHash, updatedAt }: any) => ({
+              id,
+              contentHash,
+              updatedAt,
+            }),
+          ),
+        });
         await client.query("COMMIT");
       }
       if (
@@ -6332,6 +6464,11 @@ class PostgresStorage extends SqlStorageBase {
       ]);
       return {
         revision: nextRevision,
+        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }: any) => ({
+          id,
+          contentHash,
+          updatedAt,
+        })),
         changed: {
           root: payload.rootUpserts.length + payload.rootDeletes.length,
           characters: payload.characters.length,
@@ -6347,9 +6484,9 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
-  async listRecentChats(rawLimit, activeChatId = null) {
+  async listRecentChats(rawLimit: any, activeChatId: any = null) {
     this.assertEnabled();
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 100)
       : 50;
@@ -6381,7 +6518,7 @@ class PostgresStorage extends SqlStorageBase {
               LIMIT $1`,
       [limit, activeChatId],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       characterId: row.character_id,
       characterName: row.character_name || "",
       characterImage: row.character_image || null,
@@ -6396,7 +6533,7 @@ class PostgresStorage extends SqlStorageBase {
     }));
   }
 
-  async searchMessages(rawQuery, rawScope = "all", rawLimit = 50) {
+  async searchMessages(rawQuery: any, rawScope = "all", rawLimit = 50) {
     this.assertEnabled();
     const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
     if (!query) {
@@ -6409,7 +6546,7 @@ class PostgresStorage extends SqlStorageBase {
     }
     const scope =
       rawScope === "active" || rawScope === "cold" ? rawScope : "all";
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 50;
@@ -6443,7 +6580,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $3`,
       [query, scope, limit],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       storageState: row.storage_state,
       archiveId: row.archive_id,
       characterId: row.character_id,
@@ -6475,7 +6612,7 @@ class PostgresStorage extends SqlStorageBase {
              GROUP BY model
              ORDER BY total_output_tokens DESC, total_input_tokens DESC`,
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       model: row.model,
       messageCount: row.message_count,
       totalInputTokens: Number(row.total_input_tokens),
@@ -6528,7 +6665,7 @@ class PostgresStorage extends SqlStorageBase {
             GROUP BY c.id, c.name, c.image, c.kind, c.position, c.last_interaction_time, cms.total_messages, cms.user_messages, cms.bot_messages, cms.avg_bot_len, cms.avg_user_len
             ORDER BY c.position ASC`,
     );
-    return result.rows.map((row) => {
+    return result.rows.map((row: any) => {
       const totalSessions = Number(row.total_sessions || 0);
       const totalMessages = Number(row.total_messages || 0);
       return {
@@ -6553,7 +6690,7 @@ class PostgresStorage extends SqlStorageBase {
     });
   }
 
-  async searchCharactersByTag(rawTag, rawLimit = 100) {
+  async searchCharactersByTag(rawTag: any, rawLimit = 100) {
     this.assertEnabled();
     const tag = typeof rawTag === "string" ? rawTag.trim() : "";
     if (!tag) {
@@ -6562,7 +6699,7 @@ class PostgresStorage extends SqlStorageBase {
     if (tag.length > 256) {
       throw new PostgresPayloadError("tag must be at most 256 characters");
     }
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
@@ -6575,7 +6712,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $2`,
       [tag, limit],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       image: row.image,
@@ -6583,7 +6720,7 @@ class PostgresStorage extends SqlStorageBase {
     }));
   }
 
-  async searchCharactersByName(rawName, rawLimit = 100) {
+  async searchCharactersByName(rawName: any, rawLimit = 100) {
     this.assertEnabled();
     const name = typeof rawName === "string" ? rawName.trim() : "";
     if (!name) {
@@ -6592,7 +6729,7 @@ class PostgresStorage extends SqlStorageBase {
     if (name.length > 256) {
       throw new PostgresPayloadError("name must be at most 256 characters");
     }
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
@@ -6604,7 +6741,7 @@ class PostgresStorage extends SqlStorageBase {
              LIMIT $2`,
       [name, limit],
     );
-    return result.rows.map((row) => ({
+    return result.rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       image: row.image,
@@ -6620,15 +6757,15 @@ class PostgresStorage extends SqlStorageBase {
              WHERE table_schema IN ('system', 'character', 'chat', 'cold') AND table_type = 'BASE TABLE'
              ORDER BY table_schema, table_name`,
     );
-    const tables = result.rows.map((row) =>
+    const tables = result.rows.map((row: any) =>
       assertDbExplorerIdentifier(row.table_name, "table name"),
     );
-    const counts = new Map();
+    const counts = new Map<any, any>();
     for (let i = 0; i < tables.length; i += 25) {
       const union = tables
         .slice(i, i + 25)
         .map(
-          (name) =>
+          (name: any) =>
             `SELECT '${name}' AS table_name, COUNT(*)::text AS row_count FROM ${assertSqlIdentifier(name)}`,
         )
         .join(" UNION ALL ");
@@ -6637,13 +6774,13 @@ class PostgresStorage extends SqlStorageBase {
         counts.set(row.table_name, row.row_count);
       }
     }
-    return tables.map((name) => ({
+    return tables.map((name: any) => ({
       name,
       rowCount: Number(counts.get(name) ?? "0"),
     }));
   }
 
-  async getDbExplorerTableColumns(table) {
+  async getDbExplorerTableColumns(table: any) {
     this.assertEnabled();
     const validated = assertDbExplorerIdentifier(table, "table name");
     const parts = validated.split(".");
@@ -6676,10 +6813,10 @@ class PostgresStorage extends SqlStorageBase {
              WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary`,
       [schemaName, tableName],
     );
-    const primaryKeys = new Set(
-      primaryKeyResult.rows.map((row) => row.column_name),
+    const primaryKeys = new Set<any>(
+      primaryKeyResult.rows.map((row: any) => row.column_name),
     );
-    return columns.rows.map((row) => ({
+    return columns.rows.map((row: any) => ({
       name: assertDbExplorerIdentifier(row.column_name, "column name"),
       dataType: row.data_type,
       nullable: row.is_nullable === "YES",
@@ -6688,13 +6825,13 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async getDbExplorerTableRows(
-    table,
+    table: any,
     rawOffset = 0,
     rawLimit = 50,
-    rawSortColumn = null,
+    rawSortColumn: any = null,
     rawSortOrder = "asc",
     rawSearch = "",
-    rawColumns = null,
+    rawColumns: any = null,
   ) {
     this.assertEnabled();
     const validated = assertDbExplorerIdentifier(table, "table name");
@@ -6712,7 +6849,9 @@ class PostgresStorage extends SqlStorageBase {
       const visibleNames = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
-        const match = columns.find((column) => column.name === validatedCol);
+        const match = columns.find(
+          (column: any) => column.name === validatedCol,
+        );
         if (!match) {
           throw new PostgresPayloadError("column was not found in the table");
         }
@@ -6720,26 +6859,28 @@ class PostgresStorage extends SqlStorageBase {
           visibleNames.push(validatedCol);
         }
       }
-      visibleColumns = columns.filter((column) =>
+      visibleColumns = columns.filter((column: any) =>
         visibleNames.includes(column.name),
       );
     }
 
     const searchTerm =
       typeof rawSearch === "string" ? rawSearch.trim().slice(0, 200) : "";
-    const parsedOffset = Number.parseInt(rawOffset, 10);
+    const parsedOffset = Number.parseInt(String(rawOffset), 10);
     const offset =
       Number.isSafeInteger(parsedOffset) && parsedOffset >= 0
         ? parsedOffset
         : 0;
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), DB_EXPLORER_MAX_ROWS)
       : 50;
 
     let sortColumn = columns[0].name;
     if (typeof rawSortColumn === "string" && rawSortColumn.length > 0) {
-      const match = columns.find((column) => column.name === rawSortColumn);
+      const match = columns.find(
+        (column: any) => column.name === rawSortColumn,
+      );
       if (!match) {
         throw new PostgresPayloadError(
           "sort column was not found in the table",
@@ -6750,7 +6891,9 @@ class PostgresStorage extends SqlStorageBase {
     const sortOrder = rawSortOrder === "desc" ? "DESC" : "ASC";
 
     const selectList = visibleColumns
-      .map((column) => dbExplorerSelectExpression(column.name, column.dataType))
+      .map((column: any) =>
+        dbExplorerSelectExpression(column.name, column.dataType),
+      )
       .join(", ");
 
     const searchTerms = [];
@@ -6758,7 +6901,7 @@ class PostgresStorage extends SqlStorageBase {
     if (searchTerm.length > 0) {
       const escaped = searchTerm.replace(/([%_\\])/g, "\\$1");
       const conditions = visibleColumns
-        .map((column) => `("${column.name}")::text ILIKE $1`)
+        .map((column: any) => `("${column.name}")::text ILIKE $1`)
         .join(" OR ");
       whereClause = ` WHERE (${conditions})`;
       searchTerms.push(`%${escaped}%`);

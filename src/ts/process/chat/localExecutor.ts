@@ -126,6 +126,7 @@ export class LocalChatExecutor implements ChatExecutor {
       tokenizer,
       maxContextTokens,
       findCharacter,
+      chatTarget,
     } = session;
     let currentChat = session.currentChat;
     let generationInfo: MessageGenerationInfo | undefined;
@@ -143,6 +144,7 @@ export class LocalChatExecutor implements ChatExecutor {
       continued: arg.continue,
       findCharacter,
       throwError,
+      chatTarget,
     });
     if (!prompt.ok) return false;
     currentChat = prompt.currentChat;

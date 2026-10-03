@@ -1,3 +1,4 @@
+import { AuthorNoteError } from "../../packages/protocol/dist/authorNotes.cjs";
 const express = require("express");
 const app = express();
 const {
@@ -200,7 +201,7 @@ const {
 const {
   readStorageSyncSqlRecords,
   validateStorageSyncSqlRecord,
-} = require("./sync/storageSyncSqlRecords.cjs");
+} = require("./sync/storageSyncSqlRecords.cts");
 const {
   describeStorageTarget,
   readStorageStartupSettings,
@@ -212,7 +213,7 @@ const {
   PostgresPayloadError,
   PostgresRevisionConflictError,
   PostgresStorage,
-} = require("./storage/postgres/postgresStorage.cjs");
+} = require("./storage/postgres/postgresStorage.cts");
 const {
   StoragePayloadError,
   StorageRevisionConflictError,
@@ -6591,6 +6592,36 @@ app.get(
   },
 );
 
+for (const [path, load] of [
+  ["", () => postgresStorage.listGlobalAuthorNotes()],
+  ["/script-write", () => postgresStorage.getGlobalAuthorNoteScriptWrite()],
+  [
+    "/:id/content",
+    (req) => postgresStorage.readGlobalAuthorNote(req.params.id),
+  ],
+  ["/:id", (req) => postgresStorage.getGlobalAuthorNote(req.params.id)],
+] as const) {
+  app.get(
+    `/api/database-v2/author-notes${path}`,
+    authenticatedRouteLimiter,
+    async (req, res, next) => {
+      if (!(await checkAuth(req, res))) return;
+      if (!postgresStorage.enabled) {
+        res.status(404).send({ error: "SQL storage is not configured" });
+        return;
+      }
+      try {
+        res.setHeader("Cache-Control", "no-store");
+        res.send({
+          value: await (load as (req: any) => Promise<unknown>)(req),
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+}
+
 app.get(
   "/api/database-v2/modules",
   authenticatedRouteLimiter,
@@ -7367,6 +7398,23 @@ app.post(
       }
       res.send({ success: true, ...result });
     } catch (error) {
+      if (error instanceof AuthorNoteError) {
+        res
+          .status(
+            error.code === "conflict"
+              ? 409
+              : error.code === "missing"
+                ? 404
+                : 403,
+          )
+          .send({
+            error: error.message,
+            code: `author_note_${error.code}`,
+            noteId: error.noteId,
+          });
+        return;
+      }
+
       if (
         error instanceof PostgresRevisionConflictError ||
         error instanceof StorageRevisionConflictError

@@ -51,9 +51,7 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
-import {
-  createBackupContainerEntryHeader,
-} from "@risuai/backup-core/containerStream";
+import { createBackupContainerEntryHeader } from "@risuai/backup-core/containerStream";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -2940,7 +2938,7 @@ export async function loadInternalBackup() {
       "SQL storage returned no startup data after backup restore",
     );
   }
-  installStartupData(startup, storage);
+  await installStartupData(startup, storage);
   alertNormal("Loaded backup");
 }
 

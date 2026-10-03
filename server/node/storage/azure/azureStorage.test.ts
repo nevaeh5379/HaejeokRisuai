@@ -6,7 +6,7 @@ const {
   AzureStorage,
   assertSqlIdentifier,
   normalizeColdStorageKey,
-} = require(".//azureStorage.cjs");
+} = require(".//azureStorage.cts");
 const {
   resolveVendor,
   createStorageDriver,
@@ -582,9 +582,9 @@ describe("Azure storage sync finalize concurrency", () => {
     ).resolves.toMatchObject({ revision: 8 });
 
     expect(withTransaction).not.toHaveBeenCalled();
-    expect(
-      queries.some((sql) => sql.includes("UPDLOCK, HOLDLOCK")),
-    ).toBe(false);
+    expect(queries.some((sql) => sql.includes("UPDLOCK, HOLDLOCK"))).toBe(
+      false,
+    );
     expect(
       queries.some((sql) => sql.includes("INSERT INTO [system].[revisions]")),
     ).toBe(false);

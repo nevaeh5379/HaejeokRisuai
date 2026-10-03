@@ -1,3 +1,4 @@
+import { globalAuthorNoteStore } from "../../stores/domain/globalAuthorNoteStore";
 import { changeLanguage } from "../../../lang";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
@@ -8,10 +9,10 @@ import {
   type SettingsInput,
 } from "./databaseDefaults";
 
-export function installStartupData(
+export async function installStartupData(
   startup: SqlStartupDataResult,
   storage: ISqlStorage,
-): void {
+): Promise<void> {
   normalizeSettingsDefaults(startup.settings as SettingsInput);
 
   const language = startup.settings.language;
@@ -23,6 +24,7 @@ export function installStartupData(
     });
   }
 
+  await globalAuthorNoteStore.init(storage);
   characterStore.init(startup.characters, storage);
   settingsStore.init(startup.settings, storage);
   deferredSettingsLoader.init({

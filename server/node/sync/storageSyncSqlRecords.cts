@@ -1,20 +1,34 @@
-"use strict";
+export type StorageSyncSqlRecordState = {
+  sourceRevision: number | null;
+  entityPhase: boolean;
+};
+type StorageSyncSqlRecord = Record<string, unknown> & { type: string };
+interface StorageSyncSqlRecordOptions {
+  expectedRecordCount?: number;
+  expectedSourceRevision?: number;
+  onRecord?: (
+    record: StorageSyncSqlRecord,
+    index: number,
+  ) => unknown | Promise<unknown>;
+}
 
-const fs = require("fs");
+const fs = require("node:fs") as typeof import("node:fs");
 const {
   decodeStorageSyncValue,
 } = require("../../../packages/protocol/storageSyncValueCodec.cjs");
 
 const STORAGE_SYNC_SQL_RECORD_MAX_BYTES = 16 * 1024 * 1024;
 const STORAGE_SYNC_SQL_READ_CHUNK_BYTES = 256 * 1024;
-const ROOT_RECORD_TYPES = new Set([
+const ROOT_RECORD_TYPES = new Set<string>([
+  "author-note",
+  "author-note-settings",
   "setting",
   "plugin-storage",
   "module",
   "preset",
   "cold-storage",
 ]);
-const ENTITY_RECORD_TYPES = new Set([
+const ENTITY_RECORD_TYPES = new Set<string>([
   "character",
   "chat",
   "branch",
@@ -23,14 +37,23 @@ const ENTITY_RECORD_TYPES = new Set([
 ]);
 
 class StorageSyncSqlRecordError extends Error {
-  constructor(message, code = "invalid_sql_record", recordIndex = null) {
+  readonly code: string;
+  readonly recordIndex: number | null;
+  constructor(
+    message: string,
+    code = "invalid_sql_record",
+    recordIndex: number | null = null,
+  ) {
     super(message);
     this.name = "StorageSyncSqlRecordError";
     this.code = code;
     this.recordIndex = recordIndex;
   }
 }
-function requireObject(value, index) {
+function requireObject(
+  value: unknown,
+  index: number,
+): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new StorageSyncSqlRecordError(
       "Storage sync SQL record must be an object",
@@ -38,10 +61,14 @@ function requireObject(value, index) {
       index,
     );
   }
-  return value;
 }
 
-function requireString(value, label, index, allowEmpty = false) {
+function requireString(
+  value: unknown,
+  label: string,
+  index: number,
+  allowEmpty = false,
+): asserts value is string {
   if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
     throw new StorageSyncSqlRecordError(
       `${label} must be a ${allowEmpty ? "string" : "non-empty string"}`,
@@ -58,8 +85,12 @@ function requireString(value, label, index, allowEmpty = false) {
   }
 }
 
-function requirePosition(value, label, index) {
-  if (!Number.isSafeInteger(value) || value < 0) {
+function requirePosition(
+  value: unknown,
+  label: string,
+  index: number,
+): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new StorageSyncSqlRecordError(
       `${label} must be a non-negative safe integer`,
       "invalid_sql_record",
@@ -67,13 +98,18 @@ function requirePosition(value, label, index) {
     );
   }
 }
-function validateRecord(record, index, state) {
+function validateRecord(
+  record: unknown,
+  index: number,
+  state: StorageSyncSqlRecordState,
+): asserts record is StorageSyncSqlRecord {
   requireObject(record, index);
   requireString(record.type, "record.type", index);
   if (index === 0) {
     if (
       record.type !== "meta" ||
       record.formatVersion !== 1 ||
+      typeof record.revision !== "number" ||
       !Number.isSafeInteger(record.revision) ||
       record.revision < 0
     ) {
@@ -112,6 +148,22 @@ function validateRecord(record, index, state) {
     );
   }
   switch (record.type) {
+    case "author-note":
+      requireObject(record.data, index);
+      requireString(record.data.id, "author-note.id", index);
+      if (
+        typeof record.data.name !== "string" ||
+        typeof record.data.content !== "string" ||
+        typeof record.data.updatedAt !== "number" ||
+        !Number.isSafeInteger(record.data.updatedAt) ||
+        record.data.updatedAt < 0
+      )
+        throw new StorageSyncSqlRecordError("Invalid author note row");
+      break;
+    case "author-note-settings":
+      if (typeof record.allowScriptWrite !== "boolean")
+        throw new StorageSyncSqlRecordError("Invalid author note settings");
+      break;
     case "setting":
     case "plugin-storage":
     case "cold-storage":
@@ -148,19 +200,27 @@ function validateRecord(record, index, state) {
       break;
   }
 }
-async function readStorageSyncSqlRecords(filePath, options = {}) {
+async function readStorageSyncSqlRecords(
+  filePath: string,
+  options: StorageSyncSqlRecordOptions = {},
+) {
   const expectedRecordCount = options.expectedRecordCount;
   if (
     expectedRecordCount !== undefined &&
     (!Number.isSafeInteger(expectedRecordCount) || expectedRecordCount < 0)
   ) {
-    throw new TypeError("expectedRecordCount must be a non-negative safe integer");
+    throw new TypeError(
+      "expectedRecordCount must be a non-negative safe integer",
+    );
   }
 
-  const state = { sourceRevision: null, entityPhase: false };
-  const counts = Object.create(null);
+  const state: StorageSyncSqlRecordState = {
+    sourceRevision: null,
+    entityPhase: false,
+  };
+  const counts: Record<string, number> = Object.create(null);
   const decoder = new TextDecoder("utf-8", { fatal: true });
-  let lineChunks = [];
+  let lineChunks: Buffer[] = [];
   let lineBytes = 0;
   let recordCount = 0;
 
@@ -179,17 +239,17 @@ async function readStorageSyncSqlRecords(filePath, options = {}) {
     lineChunks = [];
     lineBytes = 0;
 
-    let parsed;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(decoder.decode(line));
     } catch (error) {
       throw new StorageSyncSqlRecordError(
-        `Storage sync SQL record ${recordCount} is not valid UTF-8 JSON: ${error.message}`,
+        `Storage sync SQL record ${recordCount} is not valid UTF-8 JSON: ${error instanceof Error ? error.message : String(error)}`,
         "invalid_sql_json",
         recordCount,
       );
     }
-    const record = decodeStorageSyncValue(parsed);
+    const record: unknown = decodeStorageSyncValue(parsed);
     validateRecord(record, recordCount, state);
     counts[record.type] = (counts[record.type] || 0) + 1;
     await options.onRecord?.(record, recordCount);

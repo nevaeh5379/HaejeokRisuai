@@ -84,7 +84,9 @@
     "moduleFolders",
     "moduleOrder",
     "moduleSandboxGroups",
-    "activeBotPresetId"
+    "activeBotPresetId",
+    "globalAuthorNotes",
+    "globalAuthorNoteSettings"
   ],
   "PRESET_STORE_SETTING_KEYS": [
     "apiType",

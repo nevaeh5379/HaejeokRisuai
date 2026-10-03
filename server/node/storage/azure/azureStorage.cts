@@ -1,8 +1,14 @@
+export type SqlStorageRow = Record<string, unknown>;
 // Azure SQL Database / Microsoft SQL Server Storage Driver for RisuAI
 // PostgresStorage / OracleStorage 인터페이스와 100% 호환.
 // postgresRelationalCodec.cjs / postgresJsonCodec.cjs / postgresSettingsCodec.cjs 재사용.
 
-"use strict";
+("use strict");
+const {
+  authorNoteDatabase,
+  withAuthorNoteDatabase,
+  notes: authorNoteSql,
+} = require("../authorNotes.cts") as import("../authorNotes.cts").AuthorNotesAdapter;
 
 const sql = require("mssql");
 const crypto = require("crypto");
@@ -78,7 +84,7 @@ const {
   suppressLegacyReadErrors: true,
 });
 
-function mapSettingValueToColumns(value) {
+function mapSettingValueToColumns(value: any) {
   if (typeof value === "boolean") {
     return { text_val: null, num_val: null, bool_val: value ? 1 : 0 };
   }
@@ -94,7 +100,7 @@ function mapSettingValueToColumns(value) {
   return { text_val: null, num_val: null, bool_val: null };
 }
 
-function mapColumnsToSettingValue(row) {
+function mapColumnsToSettingValue(row: any) {
   if (row.bool_val !== null && row.bool_val !== undefined)
     return Boolean(row.bool_val);
   if (row.num_val !== null && row.num_val !== undefined)
@@ -116,7 +122,7 @@ function mapColumnsToSettingValue(row) {
   return null;
 }
 
-function pluginExtensionData(data) {
+function pluginExtensionData(data: any) {
   return {
     arguments: data.arguments || {},
     realArg: data.realArg || {},
@@ -126,12 +132,12 @@ function pluginExtensionData(data) {
   };
 }
 
-function rebuildPluginRecords(records, valueRows) {
+function rebuildPluginRecords(records: any, valueRows: any) {
   const extension = rebuildSettings(
-    records.map((row) => ({ key: row.plugin_id })),
+    records.map((row: any) => ({ key: row.plugin_id })),
     valueRows,
   );
-  return records.map((row) => ({
+  return records.map((row: any) => ({
     ...(extension[row.plugin_id] || {}),
     id: row.plugin_id,
     position: Number(row.position),
@@ -154,6 +160,8 @@ const RELATIONAL_SCHEMA_LAYOUT = "relational-schema-v3";
 const MAX_SYNC_ROWS = 250000;
 
 const AUDITED_TABLES = [
+  "system.global_author_notes",
+  "system.global_author_note_settings",
   "system.settings",
   "system.setting_values",
   "system.module_records",
@@ -256,19 +264,19 @@ const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 const STARTUP_EXCLUDED_SETTING_KEYS = [
-  ...new Set([
+  ...new Set<any>([
     ...DEFERRED_STARTUP_SETTING_KEYS,
     ...SETTINGS_STORE_EXCLUDED_KEYS,
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key) => `'${key.replace(/'/g, "''")}'`,
+  (key: any) => `'${key.replace(/'/g, "''")}'`,
 ).join(", ");
 const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
-  (key) => `'${key.replace(/'/g, "''")}'`,
+  (key: any) => `'${key.replace(/'/g, "''")}'`,
 ).join(", ");
 
-function assertSqlIdentifier(value) {
+function assertSqlIdentifier(value: any) {
   if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
@@ -286,7 +294,7 @@ function assertSqlIdentifier(value) {
   throw new Error(`Unsafe SQL identifier: ${value}`);
 }
 
-function assertDbExplorerIdentifier(value, field) {
+function assertDbExplorerIdentifier(value: any, field: any) {
   if (typeof value !== "string" || value.length === 0 || value.length > 128) {
     throw new StoragePayloadError(
       `${field} must be a non-empty string of at most 128 characters`,
@@ -306,8 +314,8 @@ function assertDbExplorerIdentifier(value, field) {
   throw new StoragePayloadError(`${field} contains invalid characters`);
 }
 
-function groupColdMessageRows(rows) {
-  const grouped = new Map();
+function groupColdMessageRows(rows: any) {
+  const grouped = new Map<any, any>();
   for (const row of rows) {
     const key = `${row.archive_id}\0${row.chat_position}\0${row.message_position}`;
     const items = grouped.get(key) || [];
@@ -321,12 +329,12 @@ function groupColdMessageRows(rows) {
  * Bulk insert helper using SQL Server OPENJSON
  */
 async function bulkInsert(
-  reqOrTx,
-  table,
-  columns,
-  columnTypes,
-  rows,
-  mergeKeyColumns = null,
+  reqOrTx: any,
+  table: any,
+  columns: any,
+  columnTypes: any,
+  rows: any,
+  mergeKeyColumns: any = null,
 ) {
   if (!rows || rows.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
@@ -367,8 +375,8 @@ async function bulkInsert(
   );
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const preparedChunk = chunk.map((row) => {
-      const obj = {};
+    const preparedChunk = chunk.map((row: any) => {
+      const obj: Record<string, any> = {};
       for (let c = 0; c < columns.length; c++) {
         const col = columns[c];
         const type = (columnTypes[c] || "").toLowerCase();
@@ -401,12 +409,14 @@ async function bulkInsert(
       mergeKeyColumns.length > 0
     ) {
       const matchConditions = mergeKeyColumns
-        .map((k) => `target.[${k}] = source.[${k}]`)
+        .map((k: any) => `target.[${k}] = source.[${k}]`)
         .join(" AND ");
-      const nonKeyCols = columns.filter((c) => !mergeKeyColumns.includes(c));
+      const nonKeyCols = columns.filter(
+        (c: any) => !mergeKeyColumns.includes(c),
+      );
       let updateClause = "";
       if (nonKeyCols.length > 0) {
-        updateClause = `WHEN MATCHED THEN UPDATE SET ${nonKeyCols.map((c) => `[${c}] = source.[${c}]`).join(", ")}`;
+        updateClause = `WHEN MATCHED THEN UPDATE SET ${nonKeyCols.map((c: any) => `[${c}] = source.[${c}]`).join(", ")}`;
       } else {
         updateClause = `WHEN MATCHED THEN UPDATE SET target.[${mergeKeyColumns[0]}] = source.[${mergeKeyColumns[0]}]`;
       }
@@ -423,13 +433,13 @@ async function bulkInsert(
                 ON ${matchConditions}
                 ${updateClause}
                 WHEN NOT MATCHED THEN
-                    INSERT (${columns.map((c) => `[${c}]`).join(", ")})
-                    VALUES (${columns.map((c) => `source.[${c}]`).join(", ")});
+                    INSERT (${columns.map((c: any) => `[${c}]`).join(", ")})
+                    VALUES (${columns.map((c: any) => `source.[${c}]`).join(", ")});
             `;
       await req.query(mergeSql);
     } else {
       const insertSql = `
-                INSERT INTO ${quotedTable} (${columns.map((c) => `[${c}]`).join(", ")})
+                INSERT INTO ${quotedTable} (${columns.map((c: any) => `[${c}]`).join(", ")})
                 SELECT ${selectColExprs.join(", ")}
                 FROM OPENJSON(@bulkPayload)
                 WITH (
@@ -442,7 +452,7 @@ async function bulkInsert(
 }
 
 class AzureStorage extends SqlStorageBase {
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     super();
     this.options = { ...options };
     this.server = options.server || process.env.AZURE_HOST || "";
@@ -493,7 +503,7 @@ class AzureStorage extends SqlStorageBase {
         },
       };
       const p = new sql.ConnectionPool(config);
-      p.on("error", (err) => {
+      p.on("error", (err: any) => {
         console.error("[AzureStorage] Pool error:", err);
       });
       await this.runStartupStep("1/7 connect to database", () => p.connect());
@@ -507,7 +517,7 @@ class AzureStorage extends SqlStorageBase {
     }
   }
 
-  runStartupStep(operation, task) {
+  runStartupStep(operation: any, task: any) {
     return runStartupStage(
       {
         scope: "Azure SQL startup",
@@ -531,7 +541,7 @@ class AzureStorage extends SqlStorageBase {
     }
   }
 
-  async withTransaction(callback) {
+  async withTransaction(callback: any) {
     const pool = await this.getPool();
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
@@ -605,6 +615,9 @@ class AzureStorage extends SqlStorageBase {
       this.ensureLastMessageTimeInvariant(pool),
     );
 
+    await authorNoteSql.ensureAuthorNoteReceipts(
+      authorNoteDatabase("azure", pool),
+    );
     // Ensure storage_meta exists
     const metaRes = await this.runStartupStep(
       "6/7 ensure storage metadata row",
@@ -640,7 +653,7 @@ class AzureStorage extends SqlStorageBase {
     }
   }
 
-  async ensureLastMessageTimeInvariant(pool) {
+  async ensureLastMessageTimeInvariant(pool: any) {
     const existing = (
       await pool
         .request()
@@ -713,12 +726,12 @@ class AzureStorage extends SqlStorageBase {
       initialized: Boolean(row.initialized),
       records: {
         ...records,
-        total: Object.values(records).reduce((a, b) => a + b, 0),
+        total: Object.values(records).reduce((a: any, b: any) => a + b, 0),
       },
     };
   }
 
-  async isAssetCatalogInitialized(sourceId) {
+  async isAssetCatalogInitialized(sourceId: any) {
     const pool = await this.getPool();
     const result = await pool
       .request()
@@ -742,7 +755,7 @@ class AzureStorage extends SqlStorageBase {
     }
     query += " ORDER BY asset_key";
     const result = await request.query(query);
-    return result.recordset.map((row) => row.asset_key);
+    return result.recordset.map((row: any) => row.asset_key);
   }
 
   async listAssetCatalogEntries(prefix = "") {
@@ -757,7 +770,7 @@ class AzureStorage extends SqlStorageBase {
     }
     query += " ORDER BY asset_key";
     const result = await request.query(query);
-    return result.recordset.map((row) => ({
+    return result.recordset.map((row: any) => ({
       key: row.asset_key,
       size:
         row.size_bytes === null || row.size_bytes === undefined
@@ -781,14 +794,14 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async upsertAssetCatalog(entries) {
+  async upsertAssetCatalog(entries: any) {
     if (!Array.isArray(entries) || entries.length === 0) return 0;
     const pool = await this.getPool();
     const batchSize = 400;
     for (let offset = 0; offset < entries.length; offset += batchSize) {
       const chunk = entries.slice(offset, offset + batchSize);
       const request = pool.request();
-      const values = chunk.map((entry, index) => {
+      const values = chunk.map((entry: any, index: any) => {
         request.input(`key_${index}`, sql.NVarChar(900), entry.key);
         request.input(`size_${index}`, sql.BigInt, entry.size ?? null);
         request.input(`etag_${index}`, sql.NVarChar(900), entry.etag ?? null);
@@ -807,7 +820,7 @@ class AzureStorage extends SqlStorageBase {
     return entries.length;
   }
 
-  async removeAssetCatalog(keys) {
+  async removeAssetCatalog(keys: any) {
     if (!Array.isArray(keys) || keys.length === 0) return 0;
     const pool = await this.getPool();
     let removed = 0;
@@ -815,7 +828,7 @@ class AzureStorage extends SqlStorageBase {
     for (let offset = 0; offset < keys.length; offset += batchSize) {
       const chunk = keys.slice(offset, offset + batchSize);
       const request = pool.request();
-      const placeholders = chunk.map((key, index) => {
+      const placeholders = chunk.map((key: any, index: any) => {
         request.input(`key_${index}`, sql.NVarChar(900), key);
         return `@key_${index}`;
       });
@@ -827,8 +840,8 @@ class AzureStorage extends SqlStorageBase {
     return removed;
   }
 
-  async replaceAssetCatalog(prefix, entries, sourceId) {
-    return await this.withTransaction(async (transaction) => {
+  async replaceAssetCatalog(prefix: any, entries: any, sourceId: any) {
+    return await this.withTransaction(async (transaction: any) => {
       if (prefix) {
         await transaction
           .request()
@@ -847,7 +860,7 @@ class AzureStorage extends SqlStorageBase {
       for (let offset = 0; offset < entries.length; offset += batchSize) {
         const chunk = entries.slice(offset, offset + batchSize);
         const request = transaction.request();
-        const values = chunk.map((entry, index) => {
+        const values = chunk.map((entry: any, index: any) => {
           request.input(`key_${index}`, sql.NVarChar(900), entry.key);
           request.input(`size_${index}`, sql.BigInt, entry.size ?? null);
           request.input(`etag_${index}`, sql.NVarChar(900), entry.etag ?? null);
@@ -915,7 +928,7 @@ class AzureStorage extends SqlStorageBase {
             `WHERE [key] NOT IN (${STARTUP_EXCLUDED_KEYS_SQL_LITERAL}) ORDER BY [key]`,
         )
     ).recordset;
-    const settingKeys = new Set(settings.map((row) => row.key));
+    const settingKeys = new Set<any>(settings.map((row: any) => row.key));
     const settingValues = (
       await pool
         .request()
@@ -927,7 +940,7 @@ class AzureStorage extends SqlStorageBase {
     ).recordset;
     const rebuiltSettings = rebuildSettings(
       settings,
-      settingValues.filter((row) => settingKeys.has(row.setting_key)),
+      settingValues.filter((row: any) => settingKeys.has(row.setting_key)),
     );
     for (const row of settings) {
       if (!Object.prototype.hasOwnProperty.call(rebuiltSettings, row.key)) {
@@ -943,9 +956,9 @@ class AzureStorage extends SqlStorageBase {
             `ORDER BY position, id`,
         )
     ).recordset;
-    const asTimestamp = (value) =>
+    const asTimestamp = (value: any) =>
       value instanceof Date ? value.getTime() : (value ?? undefined);
-    const characters = characterRows.map((row) => ({
+    const characters = characterRows.map((row: any) => ({
       chaId: row.id,
       type: row.kind || "character",
       name: row.name || "",
@@ -967,6 +980,35 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
+  async listGlobalAuthorNotes() {
+    return withAuthorNoteDatabase(this, "azure", authorNoteSql.listAuthorNotes);
+  }
+  async getGlobalAuthorNote(id: string) {
+    return withAuthorNoteDatabase(
+      this,
+      "azure",
+      (
+        db: import("../../../../packages/protocol/dist/authorNoteSql.cjs").AuthorNoteSql,
+      ) => authorNoteSql.getAuthorNote(db, id),
+    );
+  }
+  async readGlobalAuthorNote(id: string) {
+    return withAuthorNoteDatabase(
+      this,
+      "azure",
+      (
+        db: import("../../../../packages/protocol/dist/authorNoteSql.cjs").AuthorNoteSql,
+      ) => authorNoteSql.readAuthorNote(db, id),
+    );
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return withAuthorNoteDatabase(
+      this,
+      "azure",
+      authorNoteSql.allowAuthorNoteScriptWrite,
+    );
+  }
+
   async exportDatabaseSnapshot() {
     const pool = await this.getPool();
     const state = await this.getState();
@@ -979,7 +1021,7 @@ class AzureStorage extends SqlStorageBase {
     const settingsQuery = `SELECT [key], [text_val], [num_val], [bool_val] FROM [system].[settings] WHERE [key] NOT IN (${LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL}) ORDER BY [key]`;
     const settingsRes = await pool.request().query(settingsQuery);
     const settings = settingsRes.recordset;
-    const settingKeys = new Set(settings.map((row) => row.key));
+    const settingKeys = new Set<any>(settings.map((row: any) => row.key));
     const settingValuesRes = await pool
       .request()
       .query(
@@ -987,7 +1029,7 @@ class AzureStorage extends SqlStorageBase {
       );
     const database = rebuildSettings(
       settings,
-      settingValuesRes.recordset.filter((row) =>
+      settingValuesRes.recordset.filter((row: any) =>
         settingKeys.has(row.setting_key),
       ),
     );
@@ -1002,8 +1044,16 @@ class AzureStorage extends SqlStorageBase {
           "SELECT [key], [value] FROM [system].[plugin_custom_storage] ORDER BY [key]",
         )
     ).recordset;
+    Object.assign(
+      database,
+      await withAuthorNoteDatabase(
+        this,
+        "azure",
+        authorNoteSql.exportAuthorNotes,
+      ),
+    );
     database.pluginCustomStorage = Object.fromEntries(
-      pluginRows.map((row) => [row.key, JSON.parse(row.value)]),
+      pluginRows.map((row: any) => [row.key, JSON.parse(row.value)]),
     );
 
     // 2. Characters & 3. Chats
@@ -1234,13 +1284,16 @@ class AzureStorage extends SqlStorageBase {
             "SELECT plugin_id, script FROM [system].[plugin_scripts] ORDER BY plugin_id",
           ),
       ]);
-    const pluginScriptMap = new Map(
-      pluginScriptsResult.recordset.map((row) => [row.plugin_id, row.script]),
+    const pluginScriptMap = new Map<any, any>(
+      pluginScriptsResult.recordset.map((row: any) => [
+        row.plugin_id,
+        row.script,
+      ]),
     );
     database.plugins = rebuildPluginRecords(
       pluginRecordsResult.recordset,
       pluginValuesResult.recordset,
-    ).map((plugin) => {
+    ).map((plugin: any) => {
       const { id, position: _position, ...metadata } = plugin;
       const script = pluginScriptMap.get(id);
       if (script === undefined) {
@@ -1257,7 +1310,7 @@ class AzureStorage extends SqlStorageBase {
         )
     ).recordset;
     if (presetRows.length > 0) {
-      database.botPresets = presetRows.map((row) => {
+      database.botPresets = presetRows.map((row: any) => {
         const data =
           typeof row.data === "string" ? JSON.parse(row.data) : row.data;
         const { id: _id, ...rest } = data;
@@ -1266,7 +1319,7 @@ class AzureStorage extends SqlStorageBase {
       const activeId = database.activeBotPresetId;
       database.botPresetsId = Math.max(
         0,
-        presetRows.findIndex((row) => row.preset_id === activeId),
+        presetRows.findIndex((row: any) => row.preset_id === activeId),
       );
     } else {
       database.botPresets = database.botPresets || [];
@@ -1280,7 +1333,7 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async loadCharacter(characterId) {
+  async loadCharacter(characterId: any) {
     const pool = await this.getPool();
     const [
       charRes,
@@ -1413,7 +1466,7 @@ class AzureStorage extends SqlStorageBase {
   // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
   // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
   // analysis needs these without hydrating lore, scripts or chats.
-  async loadCharacterAssetFields(characterId) {
+  async loadCharacterAssetFields(characterId: any) {
     const pool = await this.getPool();
     const [charRes, attrsRes, emotionsRes, assetsRes] = await Promise.all([
       pool
@@ -1440,7 +1493,7 @@ class AzureStorage extends SqlStorageBase {
         ),
     ]);
     if (charRes.recordset.length === 0) return null;
-    const fields = {};
+    const fields: Record<string, any> = {};
     const core = charRes.recordset[0];
     if (core.image !== null && core.image !== undefined)
       fields.image = core.image;
@@ -1450,18 +1503,18 @@ class AzureStorage extends SqlStorageBase {
       fields[row.key] = decodePostgresJsonValue(parsed);
     }
     if (emotionsRes.recordset.length) {
-      fields.emotionImages = emotionsRes.recordset.map((item) => [
+      fields.emotionImages = emotionsRes.recordset.map((item: any) => [
         item.emotion,
         item.asset,
       ]);
     }
     const additionalAssets = assetsRes.recordset
-      .filter((item) => item.asset_source === "additional")
-      .map((item) => [item.name, item.uri, item.extension]);
+      .filter((item: any) => item.asset_source === "additional")
+      .map((item: any) => [item.name, item.uri, item.extension]);
     if (additionalAssets.length) fields.additionalAssets = additionalAssets;
     const ccAssets = assetsRes.recordset
-      .filter((item) => item.asset_source === "character-card")
-      .map((item) => ({
+      .filter((item: any) => item.asset_source === "character-card")
+      .map((item: any) => ({
         type: item.asset_type,
         uri: item.uri,
         name: item.name,
@@ -1471,8 +1524,8 @@ class AzureStorage extends SqlStorageBase {
     return { assets: fields };
   }
 
-  async _loadLinearMessagesForBranchMigration(target, chatId) {
-    const query = async (sqlText) =>
+  async _loadLinearMessagesForBranchMigration(target: any, chatId: any) {
+    const query = async (sqlText: any) =>
       target
         .request()
         .input("legacyChatId", sql.NVarChar(450), chatId)
@@ -1506,14 +1559,14 @@ class AzureStorage extends SqlStorageBase {
     ]);
     const relations = {
       attributes: groupMessageRows(attrsRes.recordset),
-      generation: new Map(
-        generationRes.recordset.map((row) => [
+      generation: new Map<any, any>(
+        generationRes.recordset.map((row: any) => [
           `${row.chat_id}\0${row.message_id}`,
           row,
         ]),
       ),
-      promptInfo: new Map(
-        promptInfoRes.recordset.map((row) => [
+      promptInfo: new Map<any, any>(
+        promptInfoRes.recordset.map((row: any) => [
           `${row.chat_id}\0${row.message_id}`,
           row,
         ]),
@@ -1521,7 +1574,7 @@ class AzureStorage extends SqlStorageBase {
       promptToggles: groupMessageRows(togglesRes.recordset),
       promptItems: groupMessageRows(itemsRes.recordset),
     };
-    return messagesRes.recordset.map((row) => {
+    return messagesRes.recordset.map((row: any) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key) || [],
@@ -1533,7 +1586,7 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async migrateLegacyBranchState(target, chatId) {
+  async migrateLegacyBranchState(target: any, chatId: any) {
     let req = target.request();
     req.input("legacyBranchChatId", sql.NVarChar(450), chatId);
     const legacyRes = await req.query(`
@@ -1574,7 +1627,7 @@ class AzureStorage extends SqlStorageBase {
             DELETE FROM [chat].[branches] WHERE chat_id = @legacyBranchChatId;
         `);
 
-    const splitMessages = plan.messages.map((message) =>
+    const splitMessages = plan.messages.map((message: any) =>
       splitMessage({
         chatId,
         id: message.id,
@@ -1615,7 +1668,7 @@ class AzureStorage extends SqlStorageBase {
       "chat.messages",
       msgCols,
       msgTypes,
-      splitMessages.map((item) => item.core),
+      splitMessages.map((item: any) => item.core),
       ["chat_id", "id"],
     );
 
@@ -1625,7 +1678,7 @@ class AzureStorage extends SqlStorageBase {
         "legacyMessagePairs",
         sql.NVarChar(sql.MAX),
         JSON.stringify(
-          splitMessages.map((item) => ({
+          splitMessages.map((item: any) => ({
             chat_id: chatId,
             message_id: item.core.id,
           })),
@@ -1649,8 +1702,8 @@ class AzureStorage extends SqlStorageBase {
       "chat.message_attributes",
       ["chat_id", "message_id", "key", "value"],
       ["nvarchar(450)", "nvarchar(450)", "nvarchar(450)", "nvarchar(max)"],
-      splitMessages.flatMap((item) =>
-        item.attributes.map((attr) => ({
+      splitMessages.flatMap((item: any) =>
+        item.attributes.map((attr: any) => ({
           chat_id: chatId,
           message_id: item.core.id,
           key: attr.key,
@@ -1687,7 +1740,7 @@ class AzureStorage extends SqlStorageBase {
         "float",
         "float",
       ],
-      splitMessages.flatMap((item) =>
+      splitMessages.flatMap((item: any) =>
         item.generation
           ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }]
           : [],
@@ -1698,7 +1751,7 @@ class AzureStorage extends SqlStorageBase {
       "chat.message_prompt_info",
       ["chat_id", "message_id", "prompt_name"],
       ["nvarchar(450)", "nvarchar(450)", "nvarchar(max)"],
-      splitMessages.flatMap((item) =>
+      splitMessages.flatMap((item: any) =>
         item.prompt?.info
           ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }]
           : [],
@@ -1715,8 +1768,8 @@ class AzureStorage extends SqlStorageBase {
         "nvarchar(450)",
         "nvarchar(max)",
       ],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.toggles || []).map((row) => ({
+      splitMessages.flatMap((item: any) =>
+        (item.prompt?.toggles || []).map((row: any) => ({
           ...row,
           chat_id: chatId,
           message_id: item.core.id,
@@ -1728,8 +1781,8 @@ class AzureStorage extends SqlStorageBase {
       "chat.message_prompt_items",
       ["chat_id", "message_id", "position", "payload"],
       ["nvarchar(450)", "nvarchar(450)", "int", "nvarchar(max)"],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.items || []).map((row) => ({
+      splitMessages.flatMap((item: any) =>
+        (item.prompt?.items || []).map((row: any) => ({
           chat_id: chatId,
           message_id: item.core.id,
           position: row.position,
@@ -1759,7 +1812,7 @@ class AzureStorage extends SqlStorageBase {
         "nvarchar(32)",
         "bigint",
       ],
-      plan.branches.map((branch) => ({
+      plan.branches.map((branch: any) => ({
         chat_id: chatId,
         id: branch.id,
         parent_branch_id: branch.parentBranchId ?? null,
@@ -1774,7 +1827,7 @@ class AzureStorage extends SqlStorageBase {
       "chat.message_branch_links",
       ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
       ["nvarchar(450)", "nvarchar(450)", "nvarchar(450)", "nvarchar(450)"],
-      plan.links.map((link) => ({
+      plan.links.map((link: any) => ({
         chat_id: chatId,
         message_id: link.messageId,
         parent_message_id: link.parentMessageId ?? null,
@@ -1790,10 +1843,10 @@ class AzureStorage extends SqlStorageBase {
     return true;
   }
 
-  async ensureChatBranchGraphs(target, chatIds) {
-    const ids = [...new Set((chatIds || []).filter(Boolean))];
+  async ensureChatBranchGraphs(target: any, chatIds: any) {
+    const ids = [...new Set<any>((chatIds || []).filter(Boolean))];
     if (ids.length === 0) return;
-    const payload = JSON.stringify(ids.map((id) => ({ id })));
+    const payload = JSON.stringify(ids.map((id: any) => ({ id })));
     let req = target.request();
     req.input("branchChatIds", sql.NVarChar(sql.MAX), payload);
     await req.query(`
@@ -1861,7 +1914,7 @@ class AzureStorage extends SqlStorageBase {
         `);
   }
 
-  async ensureChatBranchGraph(target, chatId) {
+  async ensureChatBranchGraph(target: any, chatId: any) {
     await this.migrateLegacyBranchState(target, chatId);
     let active = await this._activeBranchId(target, chatId);
     if (active) return active;
@@ -1870,10 +1923,10 @@ class AzureStorage extends SqlStorageBase {
     return active;
   }
 
-  async linkIncomingMessagesToActiveBranches(target, splitMessages) {
+  async linkIncomingMessagesToActiveBranches(target: any, splitMessages: any) {
     if (!splitMessages || splitMessages.length === 0) return;
     const payload = JSON.stringify(
-      splitMessages.map((item) => ({
+      splitMessages.map((item: any) => ({
         chat_id: item.core.chat_id,
         message_id: item.core.id,
         position: item.core.position,
@@ -1911,13 +1964,13 @@ class AzureStorage extends SqlStorageBase {
               JOIN [chat].[active_branches] active ON active.chat_id = ordered.chat_id
               JOIN [chat].[branches] branch ON branch.chat_id = active.chat_id AND branch.id = active.branch_id;
         `);
-    const positionByKey = new Map(
-      splitMessages.map((item) => [
+    const positionByKey = new Map<any, any>(
+      splitMessages.map((item: any) => [
         `${item.core.chat_id}\0${item.core.id}`,
         Number(item.core.position) || 0,
       ]),
     );
-    const heads = new Map();
+    const heads = new Map<any, any>();
     for (const row of inserted.recordset || []) {
       const key = `${row.chat_id}\0${row.origin_branch_id}`;
       const position =
@@ -1945,7 +1998,7 @@ class AzureStorage extends SqlStorageBase {
     }
   }
 
-  async detachMessagesFromBranchGraph(target, deletions) {
+  async detachMessagesFromBranchGraph(target: any, deletions: any) {
     for (const deletion of deletions || []) {
       for (const messageId of deletion.ids || []) {
         const req = target.request();
@@ -1978,7 +2031,7 @@ class AzureStorage extends SqlStorageBase {
     }
   }
 
-  async _activeBranchId(target, chatId) {
+  async _activeBranchId(target: any, chatId: any) {
     const req = target.request();
     req.input("activeChatId", sql.NVarChar(450), chatId);
     const result = await req.query(
@@ -1987,7 +2040,12 @@ class AzureStorage extends SqlStorageBase {
     return result.recordset[0]?.branch_id ?? null;
   }
 
-  async _loadBranchPage(target, chatId, branchId, options = {}) {
+  async _loadBranchPage(
+    target: any,
+    chatId: any,
+    branchId: any,
+    options: any = {},
+  ) {
     let req = target.request();
     req.input("branchChatId", sql.NVarChar(450), chatId);
     req.input("branchId", sql.NVarChar(450), branchId);
@@ -2040,11 +2098,11 @@ class AzureStorage extends SqlStorageBase {
              OFFSET @branchOffset ROWS FETCH NEXT @branchPageSize ROWS ONLY
              OPTION (MAXRECURSION 0);
         `);
-    const ids = messagesRes.recordset.map((row) => row.id);
+    const ids = messagesRes.recordset.map((row: any) => row.id);
     if (ids.length === 0)
       return { messages: [], offset, total, hasMore: offset > 0 };
     const idsPayload = JSON.stringify(ids);
-    const relationQuery = async (query) => {
+    const relationQuery = async (query: any) => {
       const request = target.request();
       request.input("branchRelationChatId", sql.NVarChar(450), chatId);
       request.input("branchMessageIds", sql.NVarChar(sql.MAX), idsPayload);
@@ -2093,16 +2151,22 @@ class AzureStorage extends SqlStorageBase {
     }
     const relations = {
       attributes: groupMessageRows(attributes),
-      generation: new Map(
-        generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      generation: new Map<any, any>(
+        generations.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
-      promptInfo: new Map(
-        promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      promptInfo: new Map<any, any>(
+        promptInfos.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
       promptToggles: groupMessageRows(promptToggles),
       promptItems: groupMessageRows(promptItems),
     };
-    const messages = messagesRes.recordset.map((row) => {
+    const messages = messagesRes.recordset.map((row: any) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key) || [],
@@ -2115,10 +2179,12 @@ class AzureStorage extends SqlStorageBase {
     return { messages, offset, total, hasMore: offset > 0 };
   }
 
-  async loadChat(chatId, options = {}) {
+  async loadChat(chatId: any, options: any = {}) {
     assertId(chatId, "chatId");
     const pool = await this.getPool();
-    await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+    await this.withTransaction((tx: any) =>
+      this.ensureChatBranchGraph(tx, chatId),
+    );
     const activeBranchId = await this._activeBranchId(pool, chatId);
     const [
       chatRes,
@@ -2206,10 +2272,12 @@ class AzureStorage extends SqlStorageBase {
     return chat;
   }
 
-  async loadChatMessages(chatId, options = {}) {
+  async loadChatMessages(chatId: any, options: any = {}) {
     assertId(chatId, "chatId");
     const pool = await this.getPool();
-    await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+    await this.withTransaction((tx: any) =>
+      this.ensureChatBranchGraph(tx, chatId),
+    );
     const branchId = await this._activeBranchId(pool, chatId);
     if (!branchId) return [];
     return (
@@ -2217,10 +2285,12 @@ class AzureStorage extends SqlStorageBase {
     ).messages;
   }
 
-  async loadChatMessagePage(chatId, before, limit) {
+  async loadChatMessagePage(chatId: any, before: any, limit: any) {
     assertId(chatId, "chatId");
     const pool = await this.getPool();
-    await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+    await this.withTransaction((tx: any) =>
+      this.ensureChatBranchGraph(tx, chatId),
+    );
     const branchId = await this._activeBranchId(pool, chatId);
     if (!branchId) return { messages: [], offset: 0, total: 0, hasMore: false };
     return await this._loadBranchPage(pool, chatId, branchId, {
@@ -2230,17 +2300,19 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async listChatBranches(chatId) {
+  async listChatBranches(chatId: any) {
     assertId(chatId, "chatId");
     const pool = await this.getPool();
-    await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+    await this.withTransaction((tx: any) =>
+      this.ensureChatBranchGraph(tx, chatId),
+    );
     const req = pool.request();
     req.input("branchListChatId", sql.NVarChar(450), chatId);
     const result = await req.query(`
             SELECT id, chat_id, parent_branch_id, fork_message_id, head_message_id, reason, created_at
               FROM [chat].[branches] WHERE chat_id = @branchListChatId ORDER BY created_at, id
         `);
-    return result.recordset.map((row) => ({
+    return result.recordset.map((row: any) => ({
       id: row.id,
       chatId: row.chat_id,
       parentBranchId: row.parent_branch_id ?? undefined,
@@ -2251,14 +2323,14 @@ class AzureStorage extends SqlStorageBase {
     }));
   }
 
-  async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
+  async loadChatBranchGraphPage(chatId: any, rawOffset: any, rawLimit: any) {
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
     const limit = Math.min(
       1000,
       Math.max(1, Math.floor(Number(rawLimit) || 256)),
     );
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       await this.ensureChatBranchGraph(tx, chatId);
       let request = tx.request();
       request.input("graphChatId", sql.NVarChar(450), chatId);
@@ -2291,7 +2363,7 @@ class AzureStorage extends SqlStorageBase {
       ORDER BY messages.position, messages.id
         OFFSET @graphOffset ROWS FETCH NEXT @graphLimit ROWS ONLY`);
       const rows = messageResult.recordset;
-      const ids = rows.map((row) => row.id);
+      const ids = rows.map((row: any) => row.id);
       let attributes = [];
       let generations = [];
       let promptInfos = [];
@@ -2299,7 +2371,7 @@ class AzureStorage extends SqlStorageBase {
       let promptItems = [];
       if (ids.length > 0) {
         const idsPayload = JSON.stringify(ids);
-        const relationQuery = async (query) => {
+        const relationQuery = async (query: any) => {
           const relationRequest = tx.request();
           relationRequest.input(
             "graphRelationChatId",
@@ -2339,16 +2411,22 @@ class AzureStorage extends SqlStorageBase {
       }
       const relations = {
         attributes: groupMessageRows(attributes),
-        generation: new Map(
-          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        generation: new Map<any, any>(
+          generations.map((row: any) => [
+            `${row.chat_id}\0${row.message_id}`,
+            row,
+          ]),
         ),
-        promptInfo: new Map(
-          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        promptInfo: new Map<any, any>(
+          promptInfos.map((row: any) => [
+            `${row.chat_id}\0${row.message_id}`,
+            row,
+          ]),
         ),
         promptToggles: groupMessageRows(promptToggles),
         promptItems: groupMessageRows(promptItems),
       };
-      const messages = rows.map((row) => {
+      const messages = rows.map((row: any) => {
         const key = `${row.chat_id}\0${row.id}`;
         return rebuildMessage(row, {
           attributes: relations.attributes.get(key) || [],
@@ -2358,7 +2436,7 @@ class AzureStorage extends SqlStorageBase {
           promptItems: relations.promptItems.get(key) || [],
         });
       });
-      const branches = branchResult.recordset.map((row) => ({
+      const branches = branchResult.recordset.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -2372,7 +2450,7 @@ class AzureStorage extends SqlStorageBase {
         activeBranchId:
           branchResult.recordset[0]?.active_branch_id ?? undefined,
         messages,
-        links: rows.map((row) => ({
+        links: rows.map((row: any) => ({
           messageId: row.id,
           position: Number(row.position) || 0,
           parentMessageId: row.parent_message_id ?? undefined,
@@ -2385,10 +2463,12 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async loadChatBranchGraph(chatId) {
+  async loadChatBranchGraph(chatId: any) {
     assertId(chatId, "chatId");
     const pool = await this.getPool();
-    await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+    await this.withTransaction((tx: any) =>
+      this.ensureChatBranchGraph(tx, chatId),
+    );
 
     const branchReq = pool.request();
     branchReq.input("graphChatId", sql.NVarChar(450), chatId);
@@ -2416,7 +2496,7 @@ class AzureStorage extends SqlStorageBase {
           ORDER BY messages.position, messages.id
         `);
 
-    const branches = branchResult.recordset.map((row) => ({
+    const branches = branchResult.recordset.map((row: any) => ({
       id: row.id,
       chatId: row.chat_id,
       parentBranchId: row.parent_branch_id ?? undefined,
@@ -2425,14 +2505,14 @@ class AzureStorage extends SqlStorageBase {
       reason: row.reason,
       createdAt: Number(row.created_at) || 0,
     }));
-    const messages = graphResult.recordset.map((row) => {
+    const messages = graphResult.recordset.map((row: any) => {
       const message = rebuildMessage(row);
       if (row.graph_generation_model != null) {
         message.generationInfo = { model: row.graph_generation_model };
       }
       return message;
     });
-    const links = graphResult.recordset.map((row) => ({
+    const links = graphResult.recordset.map((row: any) => ({
       messageId: row.id,
       parentMessageId: row.parent_message_id ?? undefined,
       originBranchId: row.origin_branch_id,
@@ -2445,11 +2525,13 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async loadBranchMessages(chatId, branchId, options = {}) {
+  async loadBranchMessages(chatId: any, branchId: any, options: any = {}) {
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
     const pool = await this.getPool();
-    await this.withTransaction((tx) => this.ensureChatBranchGraph(tx, chatId));
+    await this.withTransaction((tx: any) =>
+      this.ensureChatBranchGraph(tx, chatId),
+    );
     return (
       await this._loadBranchPage(pool, chatId, branchId, {
         limit: options.messageLimit,
@@ -2458,7 +2540,7 @@ class AzureStorage extends SqlStorageBase {
     ).messages;
   }
 
-  async createChatBranch(input) {
+  async createChatBranch(input: any) {
     assertId(input?.chatId, "chatId");
     assertId(input?.id, "branchId");
     if (input?.parentBranchId) assertId(input.parentBranchId, "parentBranchId");
@@ -2473,7 +2555,7 @@ class AzureStorage extends SqlStorageBase {
     const createdAt = Number.isFinite(Number(input?.createdAt))
       ? Math.trunc(Number(input.createdAt))
       : Date.now();
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       await this.ensureChatBranchGraph(tx, chatId);
       const activeId = await this._activeBranchId(tx, chatId);
       const parentBranchId = parentInput ?? activeId;
@@ -2517,10 +2599,10 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async activateChatBranch(chatId, branchId) {
+  async activateChatBranch(chatId: any, branchId: any) {
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
-    await this.withTransaction(async (tx) => {
+    await this.withTransaction(async (tx: any) => {
       await this.ensureChatBranchGraph(tx, chatId);
       let req = tx.request();
       req.input("activateChatId", sql.NVarChar(450), chatId);
@@ -2539,7 +2621,7 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async loadPlugins(options = {}) {
+  async loadPlugins(options: any = {}) {
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;
     if (pluginId) assertId(pluginId, "pluginId");
@@ -2576,7 +2658,7 @@ class AzureStorage extends SqlStorageBase {
     return result;
   }
 
-  async loadPluginScript(pluginId) {
+  async loadPluginScript(pluginId: any) {
     assertId(pluginId, "pluginId");
     const pool = await this.getPool();
     const request = pool.request();
@@ -2602,7 +2684,7 @@ class AzureStorage extends SqlStorageBase {
         )
     ).recordset;
     const pluginCustomStorage = Object.fromEntries(
-      rows.map((row) => [row.key, JSON.parse(row.value)]),
+      rows.map((row: any) => [row.key, JSON.parse(row.value)]),
     );
     const hash = crypto
       .createHash("sha256")
@@ -2623,10 +2705,10 @@ class AzureStorage extends SqlStorageBase {
       .query(
         "SELECT [key] FROM [system].[plugin_custom_storage] ORDER BY [key]",
       );
-    return res.recordset.map((row) => row.key);
+    return res.recordset.map((row: any) => row.key);
   }
 
-  async loadPluginCustomStorageKey(storageKey) {
+  async loadPluginCustomStorageKey(storageKey: any) {
     const pool = await this.getPool();
     const request = pool.request();
     request.input("key", sql.NVarChar(450), storageKey);
@@ -2651,10 +2733,10 @@ class AzureStorage extends SqlStorageBase {
     const result = await pool
       .request()
       .query("SELECT [key] FROM [system].[settings] ORDER BY [key]");
-    return result.recordset.map((row) => row.key);
+    return result.recordset.map((row: any) => row.key);
   }
 
-  async loadSettingKeys(keys) {
+  async loadSettingKeys(keys: any) {
     const pool = await this.getPool();
     if (!Array.isArray(keys) || keys.length === 0) {
       return {
@@ -2662,13 +2744,15 @@ class AzureStorage extends SqlStorageBase {
         hash: crypto.createHash("sha256").update("{}").digest("hex"),
       };
     }
-    const normalizedKeys = [...new Set(keys.map((key) => String(key)))];
+    const normalizedKeys = [
+      ...new Set<any>(keys.map((key: any) => String(key))),
+    ];
     if (normalizedKeys.length > 1000) {
       throw new StoragePayloadError("Too many setting keys requested");
     }
     const settingsRequest = pool.request();
     const valuesRequest = pool.request();
-    const keyParameters = normalizedKeys.map((key, index) => {
+    const keyParameters = normalizedKeys.map((key: any, index: any) => {
       const name = `settingKey${index}`;
       settingsRequest.input(name, sql.NVarChar(450), key);
       valuesRequest.input(name, sql.NVarChar(450), key);
@@ -2693,7 +2777,7 @@ class AzureStorage extends SqlStorageBase {
           )
       ).recordset;
       rebuilt.pluginCustomStorage = Object.fromEntries(
-        pluginRows.map((row) => [row.key, JSON.parse(row.value)]),
+        pluginRows.map((row: any) => [row.key, JSON.parse(row.value)]),
       );
     }
     const serialized = JSON.stringify(rebuilt);
@@ -2722,10 +2806,10 @@ class AzureStorage extends SqlStorageBase {
         )
     ).recordset;
     const rebuilt = rebuildSettings(
-      modules.map((row) => ({ key: row.module_id })),
+      modules.map((row: any) => ({ key: row.module_id })),
       values,
     );
-    const result = modules.map((row) => ({
+    const result = modules.map((row: any) => ({
       ...rebuilt[row.module_id],
       id: row.module_id,
     }));
@@ -2746,7 +2830,7 @@ class AzureStorage extends SqlStorageBase {
         .query(`SELECT preset_id, position, name, image, api_type, ai_model, content_hash
             FROM [system].[bot_presets] ORDER BY position`)
     ).recordset;
-    const presets = rows.map((row) => ({
+    const presets = rows.map((row: any) => ({
       id: row.preset_id,
       position: Number(row.position),
       name: row.name || "",
@@ -2765,7 +2849,7 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async loadBotPreset(id) {
+  async loadBotPreset(id: any) {
     const started = process.hrtime.bigint();
     const pool = await this.getPool();
     const request = pool.request();
@@ -2783,7 +2867,7 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async reconfigure(options = {}) {
+  async reconfigure(options: any = {}) {
     this.invalidateBootstrapCache();
     if (this.pool) {
       try {
@@ -2805,7 +2889,10 @@ class AzureStorage extends SqlStorageBase {
     return database;
   }
 
-  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+  async runStorageSyncFinalizeTransaction(
+    expectedRevision: any,
+    callback: any,
+  ) {
     this.assertEnabled();
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
       throw new StoragePayloadError(
@@ -2817,7 +2904,7 @@ class AzureStorage extends SqlStorageBase {
         "Storage sync finalize callback is required",
       );
     }
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       const metaRes = await tx
         .request()
         .query(
@@ -2875,7 +2962,7 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async sync(rawPayload, options = {}) {
+  async sync(rawPayload: any, options: any = {}) {
     const payload = validateSyncPayload(rawPayload);
     // Report the compact commit impact to the internal realtime channel right
     // after validation; it is never serialized into the sync result.
@@ -2888,7 +2975,7 @@ class AzureStorage extends SqlStorageBase {
         ? (options.externalTransaction ?? null)
         : null;
 
-    const runSync = async (tx) => {
+    const runSync = async (tx: any) => {
       let currentRevision;
       let nextRevision;
       let revisionId;
@@ -2917,6 +3004,11 @@ class AzureStorage extends SqlStorageBase {
           initialized: false,
         };
         currentRevision = parseInt(meta.revision, 10) || 0;
+        const receipt = await authorNoteSql.readAuthorNoteReceipt(
+          authorNoteDatabase("azure", tx),
+          payload,
+        );
+        if (receipt) return receipt;
         nextRevision = currentRevision + 1;
       }
 
@@ -2924,9 +3016,9 @@ class AzureStorage extends SqlStorageBase {
         throw new StorageRevisionConflictError(currentRevision);
       }
 
-      const affectedMessageChatIds = new Set([
-        ...(payload.messages || []).map((item) => item.chatId),
-        ...(payload.messageDeletes || []).map((item) => item.chatId),
+      const affectedMessageChatIds = new Set<any>([
+        ...(payload.messages || []).map((item: any) => item.chatId),
+        ...(payload.messageDeletes || []).map((item: any) => item.chatId),
       ]);
 
       // 2. Create revision row
@@ -2958,6 +3050,13 @@ class AzureStorage extends SqlStorageBase {
         onProgress({ stage: "start", message: "Starting transaction" });
 
       // 3. Process Settings
+      const noteDb = authorNoteDatabase("azure", tx);
+      if (payload.replaceAll) await authorNoteSql.resetAuthorNotes(noteDb);
+      const authorNotes = await authorNoteSql.applyAuthorNotes(
+        noteDb,
+        payload.authorNotes,
+      );
+
       if (payload.replaceAll) {
         await tx.request().query("DELETE FROM [system].[settings];");
         await tx
@@ -3014,8 +3113,8 @@ class AzureStorage extends SqlStorageBase {
               "UPDATE [system].[module_records] SET position=position+1000000000",
             );
         }
-        const positions = new Map(
-          existing.map((row) => [row.module_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.module_id, Number(row.position)]),
         );
         for (const entry of payload.modules.upserts) {
           const request = tx.request();
@@ -3032,15 +3131,15 @@ class AzureStorage extends SqlStorageBase {
         }
         if (payload.modules.upserts.length > 0) {
           const ids = payload.modules.upserts
-            .map((entry) => `'${entry.id.replace(/'/g, "''")}'`)
+            .map((entry: any) => `'${entry.id.replace(/'/g, "''")}'`)
             .join(", ");
           await tx
             .request()
             .query(
               `DELETE FROM [system].[module_values] WHERE module_id IN (${ids})`,
             );
-          const rows = payload.modules.upserts.flatMap((entry) =>
-            splitSetting(entry.id, entry.data).values.map((row) => ({
+          const rows = payload.modules.upserts.flatMap((entry: any) =>
+            splitSetting(entry.id, entry.data).values.map((row: any) => ({
               ...row,
               module_id: row.setting_key,
             })),
@@ -3097,8 +3196,8 @@ class AzureStorage extends SqlStorageBase {
               "SELECT plugin_id, position FROM [system].[plugin_records] ORDER BY position",
             )
         ).recordset;
-        const positions = new Map(
-          existing.map((row) => [row.plugin_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.plugin_id, Number(row.position)]),
         );
 
         for (const id of payload.plugins.deletes) {
@@ -3118,7 +3217,7 @@ class AzureStorage extends SqlStorageBase {
 
         let nextPosition =
           existing.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
         for (const entry of payload.plugins.upserts) {
@@ -3178,9 +3277,9 @@ class AzureStorage extends SqlStorageBase {
               "DELETE FROM [system].[plugin_values] WHERE plugin_id=@pluginId",
             );
           }
-          const rows = payload.plugins.upserts.flatMap((entry) =>
+          const rows = payload.plugins.upserts.flatMap((entry: any) =>
             splitSetting(entry.id, pluginExtensionData(entry.data)).values.map(
-              (row) => ({ ...row, plugin_id: row.setting_key }),
+              (row: any) => ({ ...row, plugin_id: row.setting_key }),
             ),
           );
           await bulkInsert(
@@ -3262,8 +3361,8 @@ class AzureStorage extends SqlStorageBase {
               "SELECT text_val FROM [system].[settings] WHERE [key]='activeBotPresetId'",
             )
         ).recordset[0]?.text_val;
-        const originalIds = existing.map((row) => row.preset_id);
-        const ids = new Set(existing.map((row) => row.preset_id));
+        const originalIds = existing.map((row: any) => row.preset_id);
+        const ids = new Set<any>(existing.map((row: any) => row.preset_id));
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
         if (!ids.size)
@@ -3271,8 +3370,8 @@ class AzureStorage extends SqlStorageBase {
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
-            new Set(payload.presets.order).size !== ids.size ||
-            payload.presets.order.some((id) => !ids.has(id)))
+            new Set<any>(payload.presets.order).size !== ids.size ||
+            payload.presets.order.some((id: any) => !ids.has(id)))
         )
           throw new StoragePayloadError(
             "Preset order must contain every preset ID exactly once",
@@ -3291,11 +3390,11 @@ class AzureStorage extends SqlStorageBase {
         }
         let nextPosition =
           existing.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
-        const positions = new Map(
-          existing.map((row) => [row.preset_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.preset_id, Number(row.position)]),
         );
         for (const entry of payload.presets.upserts) {
           const data = { ...entry.data };
@@ -3342,11 +3441,13 @@ class AzureStorage extends SqlStorageBase {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = originalIds.indexOf(currentActiveId);
             activeId =
-              originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) ||
+              originalIds
+                .slice(deletedIndex + 1)
+                .find((id: any) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
                 .reverse()
-                .find((id) => ids.has(id)) ||
+                .find((id: any) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }
@@ -3359,10 +3460,10 @@ class AzureStorage extends SqlStorageBase {
 
       dedupeRootUpserts(payload);
       const rootSettingUpserts = (payload.rootUpserts || []).filter(
-        (row) => row.key !== "pluginCustomStorage",
+        (row: any) => row.key !== "pluginCustomStorage",
       );
       if (rootSettingUpserts.length > 0) {
-        const settingRows = rootSettingUpserts.map((row) => {
+        const settingRows = rootSettingUpserts.map((row: any) => {
           const mapped = mapSettingValueToColumns(row.value);
           return { key: row.key, ...mapped };
         });
@@ -3375,7 +3476,7 @@ class AzureStorage extends SqlStorageBase {
           ["key"],
         );
         const changedKeysList = rootSettingUpserts
-          .map((row) => `'${row.key.replace(/'/g, "''")}'`)
+          .map((row: any) => `'${row.key.replace(/'/g, "''")}'`)
           .join(", ");
         await tx
           .request()
@@ -3383,7 +3484,7 @@ class AzureStorage extends SqlStorageBase {
             `DELETE FROM [system].[setting_values] WHERE setting_key IN (${changedKeysList});`,
           );
         const settingValueRows = rootSettingUpserts.flatMap(
-          (row) => splitSetting(row.key, row.value).values,
+          (row: any) => splitSetting(row.key, row.value).values,
         );
         await bulkInsert(
           tx,
@@ -3418,12 +3519,14 @@ class AzureStorage extends SqlStorageBase {
         );
       }
 
-      const changedSettingKeys = rootSettingUpserts.map((item) => item.key);
+      const changedSettingKeys = rootSettingUpserts.map(
+        (item: any) => item.key,
+      );
 
       const projectedSettings = projectSettings(rootSettingUpserts);
       if (changedSettingKeys.length > 0) {
         const keysList = changedSettingKeys
-          .map((k) => `'${k.replace(/'/g, "''")}'`)
+          .map((k: any) => `'${k.replace(/'/g, "''")}'`)
           .join(", ");
         for (const definition of SETTING_RELATION_DEFINITIONS) {
           await tx
@@ -3447,7 +3550,7 @@ class AzureStorage extends SqlStorageBase {
       }
       if (payload.rootDeletes && payload.rootDeletes.length > 0) {
         const delKeys = payload.rootDeletes
-          .map((k) => `'${k.replace(/'/g, "''")}'`)
+          .map((k: any) => `'${k.replace(/'/g, "''")}'`)
           .join(", ");
         await tx
           .request()
@@ -3514,7 +3617,7 @@ class AzureStorage extends SqlStorageBase {
           for (const del of payload.messageDeletes) {
             if (del.ids.length > 0) {
               const delIdsList = del.ids
-                .map((id) => `'${id.replace(/'/g, "''")}'`)
+                .map((id: any) => `'${id.replace(/'/g, "''")}'`)
                 .join(", ");
               const delReq = tx.request();
               delReq.input("msg_del_chat_id", sql.NVarChar(450), del.chatId);
@@ -3630,11 +3733,13 @@ class AzureStorage extends SqlStorageBase {
             "character.characters",
             charScalarCols,
             charScalarTypes,
-            splitFull.map((c) => c.core),
+            splitFull.map((c: any) => c.core),
             ["id"],
           );
 
-          const changedCharacterIds = fullPayloadChars.map((row) => row.id);
+          const changedCharacterIds = fullPayloadChars.map(
+            (row: any) => row.id,
+          );
           const characterChildTables = [
             "character.attributes",
             "character.tags",
@@ -3654,7 +3759,7 @@ class AzureStorage extends SqlStorageBase {
             charDelReq.input(
               "charIdsPayload",
               sql.NVarChar(sql.MAX),
-              JSON.stringify(changedCharacterIds.map((id) => ({ id }))),
+              JSON.stringify(changedCharacterIds.map((id: any) => ({ id }))),
             );
             for (const table of characterChildTables) {
               const ownerColumn =
@@ -3669,8 +3774,8 @@ class AzureStorage extends SqlStorageBase {
             }
           }
 
-          const charAttrRows = splitFull.flatMap((c) =>
-            (c.attributes || []).map((attr) => ({
+          const charAttrRows = splitFull.flatMap((c: any) =>
+            (c.attributes || []).map((attr: any) => ({
               character_id: c.core.id,
               key: attr.key,
               value: JSON.stringify(attr.value),
@@ -3684,7 +3789,7 @@ class AzureStorage extends SqlStorageBase {
             charAttrRows,
           );
 
-          const charTagRows = splitFull.flatMap((c) => c.tags || []);
+          const charTagRows = splitFull.flatMap((c: any) => c.tags || []);
           await bulkInsert(
             tx,
             "character.tags",
@@ -3693,7 +3798,9 @@ class AzureStorage extends SqlStorageBase {
             charTagRows,
           );
 
-          const charGreetingRows = splitFull.flatMap((c) => c.greetings || []);
+          const charGreetingRows = splitFull.flatMap(
+            (c: any) => c.greetings || [],
+          );
           await bulkInsert(
             tx,
             "character.greetings",
@@ -3702,7 +3809,7 @@ class AzureStorage extends SqlStorageBase {
             charGreetingRows,
           );
 
-          const charBiasRows = splitFull.flatMap((c) => c.biases || []);
+          const charBiasRows = splitFull.flatMap((c: any) => c.biases || []);
           await bulkInsert(
             tx,
             "character.biases",
@@ -3711,7 +3818,9 @@ class AzureStorage extends SqlStorageBase {
             charBiasRows,
           );
 
-          const charEmotionRows = splitFull.flatMap((c) => c.emotions || []);
+          const charEmotionRows = splitFull.flatMap(
+            (c: any) => c.emotions || [],
+          );
           await bulkInsert(
             tx,
             "character.emotions",
@@ -3720,7 +3829,7 @@ class AzureStorage extends SqlStorageBase {
             charEmotionRows,
           );
 
-          const charModuleRows = splitFull.flatMap((c) => c.modules || []);
+          const charModuleRows = splitFull.flatMap((c: any) => c.modules || []);
           await bulkInsert(
             tx,
             "character.modules",
@@ -3730,7 +3839,7 @@ class AzureStorage extends SqlStorageBase {
           );
 
           const charGroupMemberRows = splitFull.flatMap(
-            (c) => c.groupMembers || [],
+            (c: any) => c.groupMembers || [],
           );
           await bulkInsert(
             tx,
@@ -3740,7 +3849,9 @@ class AzureStorage extends SqlStorageBase {
             charGroupMemberRows,
           );
 
-          const charFolderRows = splitFull.flatMap((c) => c.chatFolders || []);
+          const charFolderRows = splitFull.flatMap(
+            (c: any) => c.chatFolders || [],
+          );
           await bulkInsert(
             tx,
             "character.chat_folders",
@@ -3763,8 +3874,8 @@ class AzureStorage extends SqlStorageBase {
             charFolderRows,
           );
 
-          const charScriptRows = splitFull.flatMap((c) =>
-            (c.scripts || []).map((s) => ({
+          const charScriptRows = splitFull.flatMap((c: any) =>
+            (c.scripts || []).map((s: any) => ({
               ...s,
               trigger_payload: s.trigger_payload
                 ? JSON.stringify(s.trigger_payload)
@@ -3801,7 +3912,7 @@ class AzureStorage extends SqlStorageBase {
             charScriptRows,
           );
 
-          const charSdDataRows = splitFull.flatMap((c) => c.sdData || []);
+          const charSdDataRows = splitFull.flatMap((c: any) => c.sdData || []);
           await bulkInsert(
             tx,
             "character.sd_data",
@@ -3810,7 +3921,7 @@ class AzureStorage extends SqlStorageBase {
             charSdDataRows,
           );
 
-          const charAssetRows = splitFull.flatMap((c) => c.assets || []);
+          const charAssetRows = splitFull.flatMap((c: any) => c.assets || []);
           await bulkInsert(
             tx,
             "character.assets",
@@ -3837,8 +3948,8 @@ class AzureStorage extends SqlStorageBase {
             charAssetRows,
           );
 
-          const charLoreRows = splitFull.flatMap((c) =>
-            (c.lore || []).map((l) => ({
+          const charLoreRows = splitFull.flatMap((c: any) =>
+            (c.lore || []).map((l: any) => ({
               ...l,
               cache_payload:
                 l.cache_payload !== null && l.cache_payload !== undefined
@@ -3937,7 +4048,7 @@ class AzureStorage extends SqlStorageBase {
             "character.characters",
             shallowCols,
             shallowTypes,
-            splitShallow.map((c) => c.core),
+            splitShallow.map((c: any) => c.core),
             ["id"],
           );
         }
@@ -4033,11 +4144,11 @@ class AzureStorage extends SqlStorageBase {
             "chat.chats",
             chatScalarCols,
             chatScalarTypes,
-            splitFull.map((c) => c.core),
+            splitFull.map((c: any) => c.core),
             ["id"],
           );
 
-          const changedChatIds = fullPayloadChats.map((row) => row.id);
+          const changedChatIds = fullPayloadChats.map((row: any) => row.id);
           const chatChildTables = [
             "chat.attributes",
             "chat.suggestions",
@@ -4052,7 +4163,7 @@ class AzureStorage extends SqlStorageBase {
             chatDelReq.input(
               "chatIdsPayload",
               sql.NVarChar(sql.MAX),
-              JSON.stringify(changedChatIds.map((id) => ({ id }))),
+              JSON.stringify(changedChatIds.map((id: any) => ({ id }))),
             );
             for (const table of chatChildTables) {
               await chatDelReq.query(`
@@ -4063,8 +4174,8 @@ class AzureStorage extends SqlStorageBase {
             }
           }
 
-          const chatAttrRows = splitFull.flatMap((c) =>
-            (c.attributes || []).map((attr) => ({
+          const chatAttrRows = splitFull.flatMap((c: any) =>
+            (c.attributes || []).map((attr: any) => ({
               chat_id: c.core.id,
               key: attr.key,
               value: JSON.stringify(attr.value),
@@ -4079,7 +4190,7 @@ class AzureStorage extends SqlStorageBase {
           );
 
           const chatSuggestionRows = splitFull.flatMap(
-            (c) => c.suggestions || [],
+            (c: any) => c.suggestions || [],
           );
           await bulkInsert(
             tx,
@@ -4089,7 +4200,7 @@ class AzureStorage extends SqlStorageBase {
             chatSuggestionRows,
           );
 
-          const chatModuleRows = splitFull.flatMap((c) => c.modules || []);
+          const chatModuleRows = splitFull.flatMap((c: any) => c.modules || []);
           await bulkInsert(
             tx,
             "chat.modules",
@@ -4099,7 +4210,7 @@ class AzureStorage extends SqlStorageBase {
           );
 
           const chatScriptStateRows = splitFull.flatMap(
-            (c) => c.scriptState || [],
+            (c: any) => c.scriptState || [],
           );
           await bulkInsert(
             tx,
@@ -4123,7 +4234,9 @@ class AzureStorage extends SqlStorageBase {
             chatScriptStateRows,
           );
 
-          const chatBookmarkRows = splitFull.flatMap((c) => c.bookmarks || []);
+          const chatBookmarkRows = splitFull.flatMap(
+            (c: any) => c.bookmarks || [],
+          );
           await bulkInsert(
             tx,
             "chat.bookmarks",
@@ -4132,8 +4245,8 @@ class AzureStorage extends SqlStorageBase {
             chatBookmarkRows,
           );
 
-          const chatMemoryRows = splitFull.flatMap((c) =>
-            (c.memory || []).map((m) => ({
+          const chatMemoryRows = splitFull.flatMap((c: any) =>
+            (c.memory || []).map((m: any) => ({
               ...m,
               payload: JSON.stringify(m.payload),
             })),
@@ -4146,8 +4259,8 @@ class AzureStorage extends SqlStorageBase {
             chatMemoryRows,
           );
 
-          const chatLoreRows = splitFull.flatMap((c) =>
-            (c.lore || []).map((l) => ({
+          const chatLoreRows = splitFull.flatMap((c: any) =>
+            (c.lore || []).map((l: any) => ({
               ...l,
               cache_payload:
                 l.cache_payload !== null && l.cache_payload !== undefined
@@ -4227,7 +4340,7 @@ class AzureStorage extends SqlStorageBase {
             "chat.chats",
             shallowCols,
             shallowTypes,
-            splitShallow.map((c) => c.core),
+            splitShallow.map((c: any) => c.core),
             ["id"],
           );
         }
@@ -4244,7 +4357,7 @@ class AzureStorage extends SqlStorageBase {
         const splitMessages = payload.messages.map(splitMessage);
         await this.ensureChatBranchGraphs(
           tx,
-          splitMessages.map((item) => item.core.chat_id),
+          splitMessages.map((item: any) => item.core.chat_id),
         );
 
         const msgScalarCols = [
@@ -4281,14 +4394,14 @@ class AzureStorage extends SqlStorageBase {
           "chat.messages",
           msgScalarCols,
           msgScalarTypes,
-          splitMessages.map((m) => m.core),
+          splitMessages.map((m: any) => m.core),
           ["chat_id", "id"],
         );
         if (!external?.storageSyncImport) {
           await this.linkIncomingMessagesToActiveBranches(tx, splitMessages);
         }
 
-        const msgOwnerPairs = splitMessages.map((m) => ({
+        const msgOwnerPairs = splitMessages.map((m: any) => ({
           chat_id: m.core.chat_id,
           message_id: m.core.id,
         }));
@@ -4316,8 +4429,8 @@ class AzureStorage extends SqlStorageBase {
                     `);
         }
 
-        const msgAttrRows = splitMessages.flatMap((m) =>
-          (m.attributes || []).map((attr) => ({
+        const msgAttrRows = splitMessages.flatMap((m: any) =>
+          (m.attributes || []).map((attr: any) => ({
             chat_id: m.core.chat_id,
             message_id: m.core.id,
             key: attr.key,
@@ -4332,7 +4445,7 @@ class AzureStorage extends SqlStorageBase {
           msgAttrRows,
         );
 
-        const msgGenRows = splitMessages.flatMap((m) =>
+        const msgGenRows = splitMessages.flatMap((m: any) =>
           m.generation
             ? [
                 {
@@ -4375,7 +4488,7 @@ class AzureStorage extends SqlStorageBase {
           msgGenRows,
         );
 
-        const msgPromptInfoRows = splitMessages.flatMap((m) =>
+        const msgPromptInfoRows = splitMessages.flatMap((m: any) =>
           m.prompt?.info
             ? [
                 {
@@ -4394,8 +4507,8 @@ class AzureStorage extends SqlStorageBase {
           msgPromptInfoRows,
         );
 
-        const msgPromptToggleRows = splitMessages.flatMap((m) =>
-          (m.prompt?.toggles || []).map((row) => ({
+        const msgPromptToggleRows = splitMessages.flatMap((m: any) =>
+          (m.prompt?.toggles || []).map((row: any) => ({
             ...row,
             chat_id: m.core.chat_id,
             message_id: m.core.id,
@@ -4415,8 +4528,8 @@ class AzureStorage extends SqlStorageBase {
           msgPromptToggleRows,
         );
 
-        const msgPromptItemRows = splitMessages.flatMap((m) =>
-          (m.prompt?.items || []).map((row) => ({
+        const msgPromptItemRows = splitMessages.flatMap((m: any) =>
+          (m.prompt?.items || []).map((row: any) => ({
             chat_id: m.core.chat_id,
             message_id: m.core.id,
             position: row.position,
@@ -4467,10 +4580,26 @@ class AzureStorage extends SqlStorageBase {
               `);
       }
 
+      if (!external)
+        await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
+          revision: nextRevision,
+          authorNotes: authorNotes.map(
+            ({ id, contentHash, updatedAt }: any) => ({
+              id,
+              contentHash,
+              updatedAt,
+            }),
+          ),
+        });
       if (onProgress) onProgress({ stage: "finish", message: "Sync complete" });
 
       return {
         revision: nextRevision,
+        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }: any) => ({
+          id,
+          contentHash,
+          updatedAt,
+        })),
         ...(revisionId == null ? {} : { revisionId: String(revisionId) }),
       };
     };
@@ -4479,7 +4608,8 @@ class AzureStorage extends SqlStorageBase {
       ? await runSync(external.client)
       : await this.withTransaction(runSync);
 
-    const changedSettingKeys = payload.rootUpserts?.map((row) => row.key) || [];
+    const changedSettingKeys =
+      payload.rootUpserts?.map((row: any) => row.key) || [];
     const rootDeletes = payload.rootDeletes || [];
     if (
       payload.plugins ||
@@ -4499,7 +4629,7 @@ class AzureStorage extends SqlStorageBase {
     return syncResult;
   }
 
-  async commitDatabaseSync(payload, options = {}) {
+  async commitDatabaseSync(payload: any, options: any = {}) {
     return this.sync(payload, options);
   }
 
@@ -4512,10 +4642,10 @@ class AzureStorage extends SqlStorageBase {
     const res = await pool
       .request()
       .query("SELECT id FROM [cold].[archives] ORDER BY updated_at DESC");
-    return res.recordset.map((r) => r.id.toLowerCase());
+    return res.recordset.map((r: any) => r.id.toLowerCase());
   }
 
-  async getColdStorageItem(key) {
+  async getColdStorageItem(key: any) {
     const normalizedKey = normalizeColdStorageKey(key);
     const pool = await this.getPool();
 
@@ -4539,7 +4669,7 @@ class AzureStorage extends SqlStorageBase {
     const attributes = attrRes.recordset;
 
     if (kind === "legacy") {
-      const rawAttr = attributes.find((a) => a.key === "raw");
+      const rawAttr = attributes.find((a: any) => a.key === "raw");
       if (rawAttr) {
         return JSON.parse(rawAttr.value);
       }
@@ -4788,7 +4918,7 @@ class AzureStorage extends SqlStorageBase {
     for (const chatRow of chatsRes.recordset) {
       const chatPos = chatRow.position;
       const msgRows = msgsByChatPos.get(chatPos) || [];
-      const reconstructedMsgs = msgRows.map((msgRow) => {
+      const reconstructedMsgs = msgRows.map((msgRow: any) => {
         const msgKey = `${normalizedKey}\0${chatPos}\0${msgRow.position}`;
         return rebuildMessage(
           msgRow,
@@ -4882,7 +5012,7 @@ class AzureStorage extends SqlStorageBase {
     const res = await pool
       .request()
       .query("SELECT id FROM [cold].[archives] ORDER BY updated_at DESC, id");
-    return res.recordset.map((r) => r.id);
+    return res.recordset.map((r: any) => r.id);
   }
 
   async listColdStorage() {
@@ -4904,7 +5034,7 @@ class AzureStorage extends SqlStorageBase {
             FROM [cold].[archives] a
             ORDER BY a.updated_at DESC, a.id
         `);
-    return res.recordset.map((r) => ({
+    return res.recordset.map((r: any) => ({
       key: r.key,
       kind: r.kind,
       revision: parseInt(r.revision, 10) || 0,
@@ -4915,7 +5045,7 @@ class AzureStorage extends SqlStorageBase {
     }));
   }
 
-  async inspectColdStorage(key) {
+  async inspectColdStorage(key: any) {
     const loaded = await this.loadColdStorage(key);
     if (!loaded) return null;
     return {
@@ -4938,7 +5068,7 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async loadColdStorage(key) {
+  async loadColdStorage(key: any) {
     const normalizedKey = normalizeColdStorageKey(key);
     const pool = await this.getPool();
 
@@ -5077,7 +5207,7 @@ class AzureStorage extends SqlStorageBase {
         ),
     ]);
 
-    const msgsByChatPos = new Map();
+    const msgsByChatPos = new Map<any, any>();
     for (const m of msgsRes.recordset) {
       const arr = msgsByChatPos.get(m.chat_position) || [];
       arr.push({
@@ -5099,7 +5229,7 @@ class AzureStorage extends SqlStorageBase {
       msgsByChatPos.set(m.chat_position, arr);
     }
 
-    const chats = chatsRes.recordset.map((c) => ({
+    const chats = chatsRes.recordset.map((c: any) => ({
       id: c.original_chat_id,
       name: c.name,
       note: c.note,
@@ -5180,11 +5310,11 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async upsertColdStorage(key, value) {
+  async upsertColdStorage(key: any, value: any) {
     const normalizedKey = normalizeColdStorageKey(key);
     const split = splitColdStorageValue(value);
 
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       const metaRes = await tx
         .request()
         .query(
@@ -5227,7 +5357,7 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async upsertColdStorageWithClient(tx, key, splitValue) {
+  async upsertColdStorageWithClient(tx: any, key: any, splitValue: any) {
     let character = null;
     if (splitValue.kind === "character") {
       const characterData = splitValue.data.character;
@@ -5474,11 +5604,11 @@ class AzureStorage extends SqlStorageBase {
     return res.recordset[0];
   }
 
-  async deleteColdStorage(rawKeys) {
+  async deleteColdStorage(rawKeys: any) {
     const keys = validateColdStorageKeys(rawKeys);
     if (keys.length === 0) return { deleted: 0 };
 
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       const metaRes = await tx
         .request()
         .query(
@@ -5505,7 +5635,9 @@ class AzureStorage extends SqlStorageBase {
         `EXEC sp_set_session_context @key = N'risu_revision_id', @value = @rev_id;`,
       );
 
-      const keysList = keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");
+      const keysList = keys
+        .map((k: any) => `'${k.replace(/'/g, "''")}'`)
+        .join(", ");
       const delRes = await tx
         .request()
         .query(`DELETE FROM [cold].[archives] WHERE id IN (${keysList});`);
@@ -5520,13 +5652,13 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async pruneColdStorage(rawRetainedKeys) {
+  async pruneColdStorage(rawRetainedKeys: any) {
     const retainedKeys = validateColdStorageKeys(
       rawRetainedKeys,
       "retainedKeys",
     );
 
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       const metaRes = await tx
         .request()
         .query(
@@ -5556,7 +5688,7 @@ class AzureStorage extends SqlStorageBase {
       let delQuery = "DELETE FROM [cold].[archives]";
       if (retainedKeys.length > 0) {
         const keysList = retainedKeys
-          .map((k) => `'${k.replace(/'/g, "''")}'`)
+          .map((k: any) => `'${k.replace(/'/g, "''")}'`)
           .join(", ");
         delQuery += ` WHERE id NOT IN (${keysList})`;
       }
@@ -5572,30 +5704,30 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async migrateLegacyColdStorage(savePath) {
+  async migrateLegacyColdStorage(savePath: any) {
     this.assertEnabled();
     const candidates = await findLegacyColdStorageFiles(savePath);
     if (candidates.length === 0) return { migrated: 0, skipped: 0 };
 
     const pool = await this.getPool();
     const keysList = candidates
-      .map((c) => `'${c.key.replace(/'/g, "''")}'`)
+      .map((c: any) => `'${c.key.replace(/'/g, "''")}'`)
       .join(", ");
     const importedRes = await pool
       .request()
       .query(
         `SELECT id FROM [cold].[legacy_imports] WHERE id IN (${keysList})`,
       );
-    const imported = new Set(
-      importedRes.recordset.map((r) => r.id.toLowerCase()),
+    const imported = new Set<any>(
+      importedRes.recordset.map((r: any) => r.id.toLowerCase()),
     );
     const pending = candidates.filter(
-      (c) => !imported.has(c.key.toLowerCase()),
+      (c: any) => !imported.has(c.key.toLowerCase()),
     );
 
     if (pending.length === 0) return { migrated: 0, skipped: 0 };
 
-    return await this.withTransaction(async (tx) => {
+    return await this.withTransaction(async (tx: any) => {
       const metaRes = await tx
         .request()
         .query(
@@ -5671,11 +5803,11 @@ class AzureStorage extends SqlStorageBase {
     });
   }
 
-  async exportColdStorageToLegacy(savePath) {
+  async exportColdStorageToLegacy(savePath: any) {
     this.assertEnabled();
     await fs.mkdir(savePath, { recursive: true });
     const items = await this.listColdStorage();
-    const exportedKeys = new Set();
+    const exportedKeys = new Set<any>();
     let exported = 0;
 
     for (const item of items) {
@@ -5702,7 +5834,7 @@ class AzureStorage extends SqlStorageBase {
   // Revisions & Audit Log
   // ============================================================
 
-  async listRevisions(rawLimit = null) {
+  async listRevisions(rawLimit: any = null) {
     const pool = await this.getPool();
     let topClause = "";
     if (
@@ -5713,7 +5845,7 @@ class AzureStorage extends SqlStorageBase {
       rawLimit !== 0 &&
       rawLimit !== "0"
     ) {
-      const parsedLimit = Number.parseInt(rawLimit, 10);
+      const parsedLimit = Number.parseInt(String(rawLimit), 10);
       if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
         topClause = `TOP (${parsedLimit})`;
       }
@@ -5727,7 +5859,7 @@ class AzureStorage extends SqlStorageBase {
             ORDER BY r.id DESC
         `);
 
-    return res.recordset.map((r) => ({
+    return res.recordset.map((r: any) => ({
       id: Number(r.id),
       storage_revision:
         r.storage_revision === null ? null : Number(r.storage_revision),
@@ -5747,7 +5879,7 @@ class AzureStorage extends SqlStorageBase {
     return await this.listRevisions();
   }
 
-  async getRevisionDetails(id) {
+  async getRevisionDetails(id: any) {
     const pool = await this.getPool();
     const revReq = pool.request();
     revReq.input("id", sql.BigInt, id);
@@ -5763,8 +5895,8 @@ class AzureStorage extends SqlStorageBase {
     );
 
     const row = revRes.recordset[0];
-    const tableMap = new Map();
-    const auditLogs = auditRes.recordset.map((a) => {
+    const tableMap = new Map<any, any>();
+    const auditLogs = auditRes.recordset.map((a: any) => {
       const table = a.table_name;
       const op = a.operation;
       if (!tableMap.has(table)) {
@@ -5818,11 +5950,11 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async getRevision(id) {
+  async getRevision(id: any) {
     return await this.getRevisionDetails(id);
   }
 
-  async getRevisionDiff(baseId, targetId) {
+  async getRevisionDiff(baseId: any, targetId: any) {
     const pool = await this.getPool();
     const minId = Math.min(Number(baseId), Number(targetId));
     const maxId = Math.max(Number(baseId), Number(targetId));
@@ -5834,7 +5966,7 @@ class AzureStorage extends SqlStorageBase {
       "SELECT * FROM [system].[audit_log] WHERE revision_id > @min_id AND revision_id <= @max_id ORDER BY sequence",
     );
 
-    const tableMap = new Map();
+    const tableMap = new Map<any, any>();
     for (const a of auditRes.recordset) {
       const table = a.table_name;
       const op = a.operation;
@@ -5880,7 +6012,7 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async previewRestore(rawRevisionId) {
+  async previewRestore(rawRevisionId: any) {
     const targetRevisionId = Number(rawRevisionId);
     const pool = await this.getPool();
     const targetReq = pool.request();
@@ -5905,7 +6037,7 @@ class AzureStorage extends SqlStorageBase {
       "SELECT * FROM [system].[audit_log] WHERE revision_id > @target_id ORDER BY sequence DESC",
     );
 
-    const tableMap = new Map();
+    const tableMap = new Map<any, any>();
     let restoreInsertCount = 0;
     let restoreDeleteCount = 0;
     let restoreUpdateCount = 0;
@@ -5947,8 +6079,8 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  async restoreRevision(targetRevisionId) {
-    return await this.withTransaction(async (tx) => {
+  async restoreRevision(targetRevisionId: any) {
+    const result = await this.withTransaction(async (tx: any) => {
       const metaRes = await tx
         .request()
         .query(
@@ -6000,10 +6132,10 @@ class AzureStorage extends SqlStorageBase {
             WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA IN ('system', 'character', 'chat', 'cold')
             ORDER BY TABLE_SCHEMA, TABLE_NAME
         `);
-    return res.recordset.map((r) => r.full_name);
+    return res.recordset.map((r: any) => r.full_name);
   }
 
-  async getTableSchema(fullTableName) {
+  async getTableSchema(fullTableName: any) {
     const [schema, table] = fullTableName.split(".");
     const pool = await this.getPool();
     const req = pool.request();
@@ -6018,7 +6150,7 @@ class AzureStorage extends SqlStorageBase {
     return res.recordset;
   }
 
-  async getTableRows(fullTableName, { limit = 50, offset = 0 } = {}) {
+  async getTableRows(fullTableName: any, { limit = 50, offset = 0 }: any = {}) {
     const pool = await this.getPool();
     const [schema, table] = fullTableName.split(".");
     const safeTable = `[${schema}].[${table}]`;
@@ -6057,7 +6189,7 @@ class AzureStorage extends SqlStorageBase {
             GROUP BY model
             ORDER BY total_output_tokens DESC, total_input_tokens DESC
         `);
-    return res.recordset.map((row) => ({
+    return res.recordset.map((row: any) => ({
       model: row.model,
       messageCount: parseInt(row.message_count, 10) || 0,
       totalInputTokens: parseInt(row.total_input_tokens, 10) || 0,
@@ -6065,9 +6197,9 @@ class AzureStorage extends SqlStorageBase {
     }));
   }
 
-  async listRecentChats(rawLimit, activeChatId = null) {
+  async listRecentChats(rawLimit: any, activeChatId: any = null) {
     this.assertEnabled();
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 100)
       : 50;
@@ -6107,7 +6239,7 @@ class AzureStorage extends SqlStorageBase {
                       END DESC,
                       ch.id
         `);
-    return result.recordset.map((row) => ({
+    return result.recordset.map((row: any) => ({
       characterId: row.character_id,
       characterName: row.character_name || "",
       characterImage: row.character_image || null,
@@ -6168,7 +6300,7 @@ class AzureStorage extends SqlStorageBase {
             GROUP BY c.id, c.name, c.image, c.kind, c.position, c.last_interaction_time, cms.total_messages, cms.user_messages, cms.bot_messages, cms.avg_bot_len, cms.avg_user_len
             ORDER BY c.position ASC
         `);
-    return res.recordset.map((row) => {
+    return res.recordset.map((row: any) => {
       const totalSessions = parseInt(row.total_sessions, 10) || 0;
       const totalMessages = parseInt(row.total_messages, 10) || 0;
       return {
@@ -6204,15 +6336,15 @@ class AzureStorage extends SqlStorageBase {
             WHERE TABLE_SCHEMA IN ('system', 'character', 'chat', 'cold') AND TABLE_TYPE = 'BASE TABLE'
             ORDER BY TABLE_SCHEMA, TABLE_NAME
         `);
-    const tables = res.recordset.map((row) =>
+    const tables = res.recordset.map((row: any) =>
       assertDbExplorerIdentifier(row.table_name, "table name"),
     );
-    const counts = new Map();
+    const counts = new Map<any, any>();
     for (let i = 0; i < tables.length; i += 25) {
       const unionParts = tables
         .slice(i, i + 25)
         .map(
-          (name) =>
+          (name: any) =>
             `SELECT '${name.replace(/'/g, "''")}' AS table_name, CAST(COUNT(*) AS NVARCHAR(20)) AS row_count FROM ${assertSqlIdentifier(name)}`,
         )
         .join(" UNION ALL ");
@@ -6221,13 +6353,13 @@ class AzureStorage extends SqlStorageBase {
         counts.set(row.table_name, row.row_count);
       }
     }
-    return tables.map((name) => ({
+    return tables.map((name: any) => ({
       name,
       rowCount: Number(counts.get(name) ?? "0"),
     }));
   }
 
-  async getDbExplorerTableColumns(table) {
+  async getDbExplorerTableColumns(table: any) {
     this.assertEnabled();
     const pool = await this.getPool();
     const validated = assertDbExplorerIdentifier(table, "table name");
@@ -6266,9 +6398,11 @@ class AzureStorage extends SqlStorageBase {
                     JOIN sys.tables AS t ON t.object_id = i.object_id
                     JOIN sys.schemas AS s ON s.schema_id = t.schema_id
                     WHERE s.name = @schema AND t.name = @table AND i.is_primary_key = 1`);
-    const primaryKeys = new Set(pkRes.recordset.map((row) => row.column_name));
+    const primaryKeys = new Set<any>(
+      pkRes.recordset.map((row: any) => row.column_name),
+    );
 
-    return colRes.recordset.map((row) => ({
+    return colRes.recordset.map((row: any) => ({
       name: assertDbExplorerIdentifier(row.COLUMN_NAME, "column name"),
       dataType: row.DATA_TYPE,
       nullable: row.IS_NULLABLE === "YES",
@@ -6277,13 +6411,13 @@ class AzureStorage extends SqlStorageBase {
   }
 
   async getDbExplorerTableRows(
-    table,
+    table: any,
     rawOffset = 0,
     rawLimit = 50,
-    rawSortColumn = null,
+    rawSortColumn: any = null,
     rawSortOrder = "asc",
     rawSearch = "",
-    rawColumns = null,
+    rawColumns: any = null,
   ) {
     this.assertEnabled();
     const pool = await this.getPool();
@@ -6302,7 +6436,9 @@ class AzureStorage extends SqlStorageBase {
       const visibleNames = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
-        const match = columns.find((column) => column.name === validatedCol);
+        const match = columns.find(
+          (column: any) => column.name === validatedCol,
+        );
         if (!match) {
           throw new StoragePayloadError("column was not found in the table");
         }
@@ -6310,19 +6446,19 @@ class AzureStorage extends SqlStorageBase {
           visibleNames.push(validatedCol);
         }
       }
-      visibleColumns = columns.filter((column) =>
+      visibleColumns = columns.filter((column: any) =>
         visibleNames.includes(column.name),
       );
     }
 
     const searchTerm =
       typeof rawSearch === "string" ? rawSearch.trim().slice(0, 200) : "";
-    const parsedOffset = Number.parseInt(rawOffset, 10);
+    const parsedOffset = Number.parseInt(String(rawOffset), 10);
     const offset =
       Number.isSafeInteger(parsedOffset) && parsedOffset >= 0
         ? parsedOffset
         : 0;
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), DB_EXPLORER_MAX_ROWS)
       : 50;
@@ -6333,7 +6469,7 @@ class AzureStorage extends SqlStorageBase {
     const sortOrder = rawSortOrder === "desc" ? "DESC" : "ASC";
 
     const columnList = visibleColumns
-      .map((col) => assertSqlIdentifier(col.name))
+      .map((col: any) => assertSqlIdentifier(col.name))
       .join(", ");
 
     // Total count
@@ -6346,7 +6482,7 @@ class AzureStorage extends SqlStorageBase {
     let whereClause = "";
     const request = pool.request();
     if (searchTerm) {
-      const likeParts = visibleColumns.map((col, idx) => {
+      const likeParts = visibleColumns.map((col: any, idx: any) => {
         request.input(`search_${idx}`, sql.NVarChar(4000), `%${searchTerm}%`);
         return `${assertSqlIdentifier(col.name)} LIKE @search_${idx}`;
       });
@@ -6369,8 +6505,8 @@ class AzureStorage extends SqlStorageBase {
       `SELECT ${columnList} FROM ${quotedTable}${whereClause}${orderBy} OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
     );
 
-    const rows = rowsRes.recordset.map((row) => {
-      const obj = {};
+    const rows = rowsRes.recordset.map((row: any) => {
+      const obj: Record<string, any> = {};
       for (const col of visibleColumns) {
         obj[col.name] = row[col.name];
       }
@@ -6378,7 +6514,7 @@ class AzureStorage extends SqlStorageBase {
     });
 
     return {
-      columns: visibleColumns.map((col) => ({
+      columns: visibleColumns.map((col: any) => ({
         name: col.name,
         dataType: col.dataType,
       })),
@@ -6389,7 +6525,7 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
-  static async testConnection(config = {}) {
+  static async testConnection(config: any = {}) {
     const testPool = new sql.ConnectionPool({
       server: config.server || process.env.AZURE_HOST,
       port: parseInt(config.port || "1433", 10),

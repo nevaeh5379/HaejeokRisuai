@@ -77,6 +77,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
 };
 
 export type matcherArg = {
+  authorNoteContent?: string;
   chatID: number;
   db: SettingsState;
   chara: character | string;
@@ -478,8 +479,11 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getPresetSettings();
       const { chat } = resolveRoom(matcherArg);
-      if (chat?.note) {
-        return risuChatParser(chat.note, matcherArg);
+      const raw =
+        matcherArg.authorNoteContent ??
+        (chat?.globalAuthorNoteId === undefined ? chat?.note : "");
+      if (raw) {
+        return risuChatParser(raw, matcherArg);
       }
       const template = db.promptTemplate;
       if (template) {
