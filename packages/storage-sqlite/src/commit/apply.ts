@@ -2,12 +2,8 @@ import type { SqlCommit } from "@risuai/protocol/sqlCommit.cjs";
 
 type StorageSqlCommit = SqlCommit<object>;
 import protocolSettings from "@risuai/protocol/settings.json";
-import {
-  flattenRelationalValue,
-  MAX_RELATIONAL_NODE_DEPTH,
-  RELATIONAL_NODE_COLUMNS,
-  type RelationalNodeRow,
-} from "./relationalNodeCodec";
+import * as nodeCodec from "../schema/codec";
+import type { SqliteExecute } from "../types";
 
 const LEGACY_PERSONA_MIRROR_KEY_SET = new Set<string>(
   protocolSettings.LEGACY_PERSONA_MIRROR_KEYS,
@@ -16,11 +12,6 @@ const LEGACY_PERSONA_MIRROR_KEY_SET = new Set<string>(
 function isLegacyPersonaMirrorKey(key: string): boolean {
   return LEGACY_PERSONA_MIRROR_KEY_SET.has(key);
 }
-
-export type SqliteExecute = (
-  sql: string,
-  bind?: unknown[],
-) => void | Promise<void>;
 
 export function presetContentHash(value: unknown): string {
   const serialized = JSON.stringify(value);
@@ -32,114 +23,6 @@ export function presetContentHash(value: unknown): string {
   return `${serialized.length}-${(hash >>> 0).toString(16)}`;
 }
 
-const SETTING_DOMAINS: Record<string, ReadonlySet<string>> = {
-  model: new Set([
-    "apiType",
-    "aiModel",
-    "subModel",
-    "temperature",
-    "maxContext",
-    "maxResponse",
-    "frequencyPenalty",
-    "PresensePenalty",
-    "bias",
-    "customModels",
-    "fallbackModels",
-    "seperateModels",
-    "providerModelOverrides",
-  ]),
-  provider: new Set([
-    "openAIKey",
-    "proxyKey",
-    "forceReplaceUrl",
-    "openrouterKey",
-    "claudeAPIKey",
-    "nanogptKey",
-    "koboldURL",
-    "textgenWebUIStreamURL",
-    "textgenWebUIBlockingURL",
-    "OaiCompAPIKeys",
-  ]),
-  prompt: new Set([
-    "mainPrompt",
-    "jailbreak",
-    "globalNote",
-    "additionalPrompt",
-    "descriptionPrefix",
-    "promptTemplate",
-    "promptSettings",
-    "instructChatTemplate",
-    "JinjaTemplate",
-    "globalscript",
-  ]),
-  memory: new Set([
-    "supaMemoryPrompt",
-    "supaMemoryKey",
-    "hypaMemoryKey",
-    "voyageApiKey",
-    "hypaMemory",
-    "hypav2",
-    "hypaModel",
-    "memoryAlgorithmType",
-  ]),
-  translation: new Set([
-    "language",
-    "translator",
-    "translatorType",
-    "translatorInputLanguage",
-    "autoTranslate",
-    "useAutoTranslateInput",
-    "deeplOptions",
-    "deeplXOptions",
-  ]),
-  media: new Set([
-    "sdProvider",
-    "webUiUrl",
-    "sdSteps",
-    "sdCFG",
-    "sdConfig",
-    "NAIImgUrl",
-    "NAIApiKey",
-    "NAIImgModel",
-    "NAIImgConfig",
-    "ttsAutoSpeech",
-    "elevenLabKey",
-    "voicevoxUrl",
-  ]),
-  ui: new Set([
-    "zoomsize",
-    "customBackground",
-    "fullScreen",
-    "iconsize",
-    "theme",
-    "textTheme",
-    "customTextTheme",
-    "colorScheme",
-    "colorSchemeName",
-    "customColorScheme",
-    "characterOrder",
-    "hotkeys",
-  ]),
-  collection: new Set([
-    "botPresets",
-    "personas",
-    "modules",
-    "moduleFolders",
-    "moduleOrder",
-    "loreBook",
-    "loadouts",
-    "plugins",
-    "pluginV2",
-    "translatorPresets",
-  ]),
-};
-
-export function settingDomain(key: string): string {
-  for (const [domain, keys] of Object.entries(SETTING_DOMAINS))
-    if (keys.has(key)) return domain;
-  return "account-sync-compatibility";
-}
-
 function assertCanonicalRootSetting(key: string): void {
   if (isLegacyPersonaMirrorKey(key)) {
     throw new Error(
@@ -148,10 +31,10 @@ function assertCanonicalRootSetting(key: string): void {
   }
 }
 
-function nodeBind(ownerValues: unknown[], row: RelationalNodeRow): unknown[] {
+function nodeBind(ownerValues: unknown[], row: nodeCodec.NodeRow): unknown[] {
   return [
     ...ownerValues,
-    ...RELATIONAL_NODE_COLUMNS.map((column) => row[column]),
+    ...nodeCodec.NODE_COLUMNS.map((column) => row[column]),
   ];
 }
 
@@ -163,9 +46,9 @@ function countRelationalValueNodes(value: unknown): number {
   const ancestors = new Set<object>();
 
   const visit = (current: unknown, depth: number): void => {
-    if (depth > MAX_RELATIONAL_NODE_DEPTH) {
+    if (depth > nodeCodec.MAX_NODE_DEPTH) {
       throw new Error(
-        `Relational value exceeds maximum depth ${MAX_RELATIONAL_NODE_DEPTH}`,
+        `Relational value exceeds maximum depth ${nodeCodec.MAX_NODE_DEPTH}`,
       );
     }
     count++;
@@ -227,7 +110,7 @@ function countCharacterTagStatements(value: unknown): number {
 
 export function messageExtensionData(
   data: Record<string, any>,
-  content: RelationalNodeRow,
+  content: nodeCodec.NodeRow,
 ): Record<string, unknown> {
   const extension: Record<string, any> = { ...data };
   delete extension.role;
@@ -265,7 +148,7 @@ async function replaceNodes(
   value: unknown,
   skipDelete = false,
 ): Promise<void> {
-  const rows = flattenRelationalValue(value);
+  const rows = nodeCodec.flatten(value);
   const ownerWhere = ownerColumns
     .map((column) => `${column} = ?`)
     .join(" AND ");
@@ -279,9 +162,9 @@ async function replaceNodes(
     ]);
   }
 
-  const columns = [...ownerColumns, ...RELATIONAL_NODE_COLUMNS];
+  const columns = [...ownerColumns, ...nodeCodec.NODE_COLUMNS];
   const conflictColumns = [...ownerColumns, "node_id"];
-  const mutableColumns = RELATIONAL_NODE_COLUMNS.filter(
+  const mutableColumns = nodeCodec.NODE_COLUMNS.filter(
     (column) => column !== "node_id",
   );
   const rowPlaceholders = `(${columns.map(() => "?").join(", ")})`;
@@ -369,7 +252,7 @@ function coldKind(value: unknown): string {
   return "unknown";
 }
 
-export async function writeSqliteColdStorage(
+export async function writeColdStorage(
   execute: SqliteExecute,
   key: string,
   value: unknown,
@@ -389,7 +272,7 @@ export async function writeSqliteColdStorage(
   );
 }
 
-export function countSqliteCommitStatements(commit: StorageSqlCommit): number {
+export function countStatements(commit: StorageSqlCommit): number {
   let total = commit.replaceAll ? 3 : 0;
   const replacingEntities = commit.action === "replace-entities";
 
@@ -458,7 +341,7 @@ export function countSqliteCommitStatements(commit: StorageSqlCommit): number {
 
   for (const entry of commit.messages) {
     const data = entry.data as Record<string, any>;
-    const content = flattenRelationalValue(
+    const content = nodeCodec.flatten(
       typeof data.data === "string" ? data.data : String(data.data ?? ""),
     )[0];
     const extension = messageExtensionData(data, content);
@@ -482,7 +365,7 @@ export function countSqliteCommitStatements(commit: StorageSqlCommit): number {
   return total;
 }
 
-export async function applySqliteCommit(
+export async function apply(
   commit: StorageSqlCommit,
   execute: SqliteExecute,
 ): Promise<void> {
@@ -568,7 +451,7 @@ export async function applySqliteCommit(
 
   for (const entry of commit.messages) {
     const data = entry.data as Record<string, any>;
-    const content = flattenRelationalValue(
+    const content = nodeCodec.flatten(
       typeof data.data === "string" ? data.data : String(data.data ?? ""),
     )[0];
     await execute(
@@ -776,7 +659,7 @@ async function applyPresets(commit: StorageSqlCommit, execute: SqliteExecute) {
   }
   if (commit.presets.activeId !== undefined) {
     const value = commit.presets.activeId;
-    const root = flattenRelationalValue(value)[0];
+    const root = nodeCodec.flatten(value)[0];
     await execute(
       `INSERT INTO system_settings
                 (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
@@ -910,7 +793,10 @@ async function applyPlugins(commit: StorageSqlCommit, execute: SqliteExecute) {
   }
 }
 
-async function applyPluginStorage(commit: StorageSqlCommit, execute: SqliteExecute) {
+async function applyPluginStorage(
+  commit: StorageSqlCommit,
+  execute: SqliteExecute,
+) {
   if (commit.pluginStorage.clear)
     await execute("DELETE FROM plugin_custom_storage");
 
@@ -926,7 +812,10 @@ async function applyPluginStorage(commit: StorageSqlCommit, execute: SqliteExecu
   }
 }
 
-async function applySettingDeletes(commit: StorageSqlCommit, execute: SqliteExecute) {
+async function applySettingDeletes(
+  commit: StorageSqlCommit,
+  execute: SqliteExecute,
+) {
   for (const key of commit.root.deletes) {
     if (key === "botPresets" || key === "botPresetsId")
       throw new Error(`${key} is not a root setting`);
@@ -934,23 +823,25 @@ async function applySettingDeletes(commit: StorageSqlCommit, execute: SqliteExec
   }
 }
 
-async function applySettingUpsert(commit: StorageSqlCommit, execute: SqliteExecute) {
+async function applySettingUpsert(
+  commit: StorageSqlCommit,
+  execute: SqliteExecute,
+) {
   for (const upsert of commit.root.upserts) {
     assertCanonicalRootSetting(upsert.key);
     if (upsert.key === "botPresets" || upsert.key === "botPresetsId")
       throw new Error(`${upsert.key} must be written through presets`);
     if (upsert.key === "pluginCustomStorage") continue;
-    const root = flattenRelationalValue(upsert.value)[0];
+    const root = nodeCodec.flatten(upsert.value)[0];
     await execute(
       `INSERT INTO system_settings
             (key, domain, value_type, text_value, encoded_text_value, number_value, boolean_value, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
+            VALUES (?, 'root', ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET
             domain=excluded.domain, value_type=excluded.value_type, text_value=excluded.text_value,
             encoded_text_value=excluded.encoded_text_value, number_value=excluded.number_value,
             boolean_value=excluded.boolean_value, updated_at=datetime('now')`,
       [
         upsert.key,
-        settingDomain(upsert.key),
         root.value_type,
         root.text_value,
         root.encoded_text_value,

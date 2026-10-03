@@ -1,13 +1,13 @@
-import { decodedText, rebuildRelationalValue } from "./relationalNodeCodec";
+import * as nodeCodec from "../schema/codec";
 import type {
   SqliteSelectRowSets,
   SqliteSelectRows,
-} from "./sqliteAdminQueries";
-import type { SqliteTransactionStatement } from "./sqliteQueries";
+  SqliteStatement,
+} from "../types";
 
-export const SQLITE_STARTUP_SETTING_TEXT_LIMIT = 256 * 1024;
+export const SETTING_TEXT_LIMIT = 256 * 1024;
 
-export interface SqliteStartupCharacter {
+export interface Character {
   id: string;
   kind: "character" | "group";
   name: string;
@@ -18,11 +18,11 @@ export interface SqliteStartupCharacter {
   lastInteraction?: number;
 }
 
-export interface SqliteStartupProjection {
+export interface Projection {
   status: "ready" | "empty";
   revision: number;
   settings: Map<string, unknown>;
-  characters: SqliteStartupCharacter[];
+  characters: Character[];
   deferredSettingKeys: string[];
 }
 
@@ -33,12 +33,12 @@ export interface SqliteStartupProjection {
  *
  * @remarks
  * This function only builds SQL; the storage adapter executes it. A `LEFT JOIN`
- * preserves roots without nodes so {@link rebuildSqliteSettingRows} can restore
+ * preserves roots without nodes so {@link rebuildSettingRows} can restore
  * their scalar values. Excluded keys are filtered with `WHERE`, rather than a
  * join condition, to prevent their root payloads from being returned as well.
  *
  * SQL만 구성하며 실행은 저장소 어댑터가 담당한다. `LEFT JOIN`으로 노드가 없는
- * 설정 루트도 유지하여 {@link rebuildSqliteSettingRows}에서 단일 값을 복원한다.
+ * 설정 루트도 유지하여 {@link rebuildSettingRows}에서 단일 값을 복원한다.
  * 제외할 키는 조인 조건이 아닌 `WHERE`에서 걸러야 설정 루트의 원본 값도
  * 조회 결과에서 빠진다.
  *
@@ -57,18 +57,18 @@ export interface SqliteStartupProjection {
  * @param deferredKeyList - Setting keys to omit entirely; defaults to none.
  * 이번 조회에서 행 전체를 제외할 설정 키 목록. 기본값은 빈 목록이다.
  * @param shallow - Whether to bound node text using
- * {@link SQLITE_STARTUP_SETTING_TEXT_LIMIT}; defaults to `false`.
- * 노드 텍스트에 {@link SQLITE_STARTUP_SETTING_TEXT_LIMIT} 제한을 적용할지 여부.
+ * {@link SETTING_TEXT_LIMIT}; defaults to `false`.
+ * 노드 텍스트에 {@link SETTING_TEXT_LIMIT} 제한을 적용할지 여부.
  * 기본값은 `false`이다.
  * @returns SQL ordered by setting key and node ID, with excluded keys supplied
  * as positional bind values.
  * 설정 키와 노드 ID 순으로 정렬하는 SQL 및 제외할 키를 담은 위치 기반 바인딩 값.
  */
-export function buildSqliteSettingRowsQuery(
+export function buildSettingRowsQuery(
   deferredKeyList: readonly string[] = [],
   shallow = false,
-): SqliteTransactionStatement {
-  const limit = SQLITE_STARTUP_SETTING_TEXT_LIMIT;
+): SqliteStatement {
+  const limit = SETTING_TEXT_LIMIT;
   const project = (column: string) =>
     shallow
       ? `CASE WHEN length(n.${column}) > ${limit} THEN NULL ELSE n.${column} END`
@@ -81,7 +81,7 @@ export function buildSqliteSettingRowsQuery(
          THEN 1 ELSE 0 END AS startup_oversized,`
     : "";
   return {
-    sql: `SELECT s.key AS setting_key, s.domain AS setting_domain, s.value_type AS setting_value_type,
+    sql: `SELECT s.key AS setting_key, s.value_type AS setting_value_type,
             s.text_value AS setting_text_value, s.encoded_text_value AS setting_encoded_text_value,
             s.number_value AS setting_number_value, s.boolean_value AS setting_boolean_value,
             n.node_id, n.parent_node_id, n.node_order,
@@ -127,8 +127,8 @@ export function buildSqliteSettingRowsQuery(
  * 해당 설정 전체의 로딩을 미룬다. 명시적으로 지연한 키는 SQL에서 행이 제외되어도
  * `deferredKeys`에 유지된다.
  *
- * @param rows - Rows shaped by {@link buildSqliteSettingRowsQuery}.
- * {@link buildSqliteSettingRowsQuery}가 생성한 SQL의 조회 결과 행.
+ * @param rows - Rows shaped by {@link buildSettingRowsQuery}.
+ * {@link buildSettingRowsQuery}가 생성한 SQL의 조회 결과 행.
  * @param deferredKeyList - Keys to skip during reconstruction and retain for
  * later loading; defaults to none.
  * 복원을 건너뛰고 나중에 로딩하도록 기록할 키 목록. 기본값은 빈 목록이다.
@@ -139,7 +139,7 @@ export function buildSqliteSettingRowsQuery(
  * `deferredKeys`, 입력에 존재하는 비어 있지 않은 고유 키의 수 `keyCount`.
  * `keyCount`에는 값 복원을 미룬 키도 포함된다.
  */
-export function rebuildSqliteSettingRows(
+export function rebuildSettingRows(
   rows: readonly Record<string, unknown>[],
   deferredKeyList: readonly string[] = [],
 ): {
@@ -163,7 +163,7 @@ export function rebuildSqliteSettingRows(
   for (const [key, nodes] of grouped) {
     if (deferredKeys.has(key)) continue;
     if (nodes.length > 0) {
-      values.set(key, rebuildRelationalValue(nodes));
+      values.set(key, nodeCodec.rebuild(nodes));
       continue;
     }
     const root = rootRows.get(key);
@@ -172,7 +172,7 @@ export function rebuildSqliteSettingRows(
       case "string":
         values.set(
           key,
-          decodedText(
+          nodeCodec.decodeText(
             root?.setting_text_value ?? root?.text_value,
             root?.setting_encoded_text_value ?? root?.encoded_text_value,
           ),
@@ -241,17 +241,17 @@ export function rebuildSqliteSettingRows(
  * 시작 상태, 리비전, 복원된 설정, 위치 순으로 정렬된 캐릭터 요약,
  * 지연 로딩이 필요한 설정 키 목록.
  */
-export async function loadSqliteStartupProjection(
+export async function loadProjection(
   selectRowSets: SqliteSelectRowSets,
   revision: number,
   deferredSettingKeys: readonly string[],
   excludedSettingKeys: readonly string[],
-): Promise<SqliteStartupProjection> {
+): Promise<Projection> {
   const excludedKeys = [
     ...new Set([...deferredSettingKeys, ...excludedSettingKeys]),
   ];
-  const queries: SqliteTransactionStatement[] = [
-    buildSqliteSettingRowsQuery(excludedKeys, true),
+  const queries: SqliteStatement[] = [
+    buildSettingRowsQuery(excludedKeys, true),
     {
       sql: "SELECT id, position, kind, name, image, trash_time, creation_time, modification_time, last_interaction_time, details_loaded FROM characters ORDER BY position",
       bind: [],
@@ -262,7 +262,7 @@ export async function loadSqliteStartupProjection(
     },
   ];
   const [settingRows, characterRows, metaRows] = await selectRowSets(queries);
-  const rebuilt = rebuildSqliteSettingRows(settingRows, excludedKeys);
+  const rebuilt = rebuildSettingRows(settingRows, excludedKeys);
   const excluded = new Set(excludedSettingKeys);
   const settings = new Map(
     [...rebuilt.values].filter(([key]) => !excluded.has(key)),
@@ -326,7 +326,7 @@ export async function loadSqliteStartupProjection(
  * counts, and their total.
  * 정규화한 리비전과 초기화 상태, 네 종류의 레코드 수 및 그 합계.
  */
-export async function getSqliteStorageSyncSummary(
+export async function getSyncSummary(
   selectRows: SqliteSelectRows,
   fallbackRevision: number,
 ) {

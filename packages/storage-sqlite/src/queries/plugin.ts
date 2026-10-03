@@ -1,5 +1,5 @@
-import type { SqliteSelectRows } from "./sqliteAdminQueries";
-import { groupSqliteNodeValues } from "./sqliteNodeValues";
+import * as sqliteNodes from "./nodes";
+import type { SqliteSelectRows } from "../types";
 
 interface PluginRecordRow extends Record<string, unknown> {
   plugin_id: string;
@@ -12,7 +12,7 @@ interface PluginRecordRow extends Record<string, unknown> {
   enabled: number;
 }
 
-export interface SqlitePluginMetadata {
+export interface Metadata {
   id: string;
   position: number;
   name: string;
@@ -28,7 +28,7 @@ export interface SqlitePluginMetadata {
   allowedIPC?: string[];
 }
 
-function parseApiVersion(value: string | null): SqlitePluginMetadata["version"] {
+function parseApiVersion(value: string | null): Metadata["version"] {
   switch (value) {
     case "1":
       return 1;
@@ -42,13 +42,10 @@ function parseApiVersion(value: string | null): SqlitePluginMetadata["version"] 
   }
 }
 
-function hydratePlugin(
-  row: PluginRecordRow,
-  extension: unknown,
-): SqlitePluginMetadata {
+function hydratePlugin(row: PluginRecordRow, extension: unknown): Metadata {
   const data =
     extension && typeof extension === "object"
-      ? (extension as Partial<SqlitePluginMetadata>)
+      ? (extension as Partial<Metadata>)
       : {};
   return {
     arguments: {},
@@ -67,10 +64,10 @@ function hydratePlugin(
   };
 }
 
-export async function loadSqlitePlugins(
+export async function loadAll(
   selectRows: SqliteSelectRows,
   options?: { enabledOnly?: boolean },
-): Promise<SqlitePluginMetadata[]> {
+): Promise<Metadata[]> {
   const where = options?.enabledOnly ? "WHERE enabled = 1" : "";
   const rows = await selectRows<PluginRecordRow>(
     `SELECT plugin_id, position, name, display_name, api_version,
@@ -91,14 +88,14 @@ export async function loadSqlitePlugins(
       ORDER BY plugin_id, node_id`,
     ids,
   );
-  const extensions = groupSqliteNodeValues(nodeRows, "plugin_id");
+  const extensions = sqliteNodes.groupValues(nodeRows, "plugin_id");
   return rows.map((row) => hydratePlugin(row, extensions.get(row.plugin_id)));
 }
 
-export async function loadSqlitePlugin(
+export async function load(
   selectRows: SqliteSelectRows,
   pluginId: string,
-): Promise<SqlitePluginMetadata | null> {
+): Promise<Metadata | null> {
   const rows = await selectRows<PluginRecordRow>(
     `SELECT plugin_id, position, name, display_name, api_version,
             plugin_version, update_url, enabled
@@ -116,11 +113,11 @@ export async function loadSqlitePlugin(
       ORDER BY node_id`,
     [pluginId],
   );
-  const extensions = groupSqliteNodeValues(nodeRows, "plugin_id");
+  const extensions = sqliteNodes.groupValues(nodeRows, "plugin_id");
   return hydratePlugin(rows[0], extensions.get(pluginId));
 }
 
-export async function loadSqlitePluginScript(
+export async function loadScript(
   selectRows: SqliteSelectRows,
   pluginId: string,
 ): Promise<string | null> {
@@ -131,11 +128,57 @@ export async function loadSqlitePluginScript(
   return rows[0]?.script ?? null;
 }
 
-export async function loadSqlitePluginScripts(
+export async function loadScripts(
   selectRows: SqliteSelectRows,
 ): Promise<Map<string, string>> {
   const rows = await selectRows<{ plugin_id: string; script: string }>(
     "SELECT plugin_id, script FROM plugin_scripts ORDER BY plugin_id",
   );
   return new Map(rows.map((row) => [row.plugin_id, row.script]));
+}
+
+// ── Plugin custom storage ────────────────────────────────────────────
+
+export async function loadCustomStorage(
+  selectRows: SqliteSelectRows,
+): Promise<Record<string, unknown> | null> {
+  const rows = await selectRows<{ key: string; value: string }>(
+    "SELECT key, value FROM plugin_custom_storage",
+  );
+  if (rows.length === 0) return null;
+  const storage: Record<string, unknown> = {};
+  for (const row of rows) {
+    try {
+      storage[row.key] = JSON.parse(row.value);
+    } catch {
+      storage[row.key] = row.value;
+    }
+  }
+  return storage;
+}
+
+export async function listCustomStorageKeys(
+  selectRows: SqliteSelectRows,
+): Promise<string[]> {
+  const rows = await selectRows<{ key: string }>(
+    "SELECT key FROM plugin_custom_storage ORDER BY key",
+  );
+  return rows.map((row) => row.key);
+}
+
+export async function loadCustomStorageKey(
+  selectRows: SqliteSelectRows,
+  key: string,
+): Promise<unknown> {
+  const rows = await selectRows<{ value: string }>(
+    "SELECT value FROM plugin_custom_storage WHERE key = ?",
+    [key],
+  );
+  const row = rows[0];
+  if (!row) return undefined;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return row.value;
+  }
 }

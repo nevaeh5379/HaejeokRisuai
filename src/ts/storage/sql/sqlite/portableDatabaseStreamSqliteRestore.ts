@@ -1,11 +1,6 @@
-import {
-  applySqliteCommit,
-  type SqliteExecute,
-} from "@risuai/storage-sqlite/sqliteCommit";
-import {
-  createEmptySqlCommit,
-  type SqlCommit,
-} from "../sqlCommit";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
+import type { SqliteExecute } from "@risuai/storage-sqlite/types";
+import { createEmptySqlCommit, type SqlCommit } from "../sqlCommit";
 import type {
   PortableDatabaseStreamFragment,
   PortableDatabaseStreamManifest,
@@ -60,17 +55,21 @@ function buildCommit(
       break;
     case "module":
       commit.modules = {
-        upserts: asRecords(records, type).map(
-          ({ id, position, data }) => ({ id, position, data: data as any }),
-        ),
+        upserts: asRecords(records, type).map(({ id, position, data }) => ({
+          id,
+          position,
+          data: data as any,
+        })),
         deletes: [],
       };
       break;
     case "preset":
       commit.presets = {
-        upserts: asRecords(records, type).map(
-          ({ id, position, data }) => ({ id, position, data: data as any }),
-        ),
+        upserts: asRecords(records, type).map(({ id, position, data }) => ({
+          id,
+          position,
+          data: data as any,
+        })),
         deletes: [],
       };
       break;
@@ -204,7 +203,7 @@ export class PortableDatabaseStreamSqliteApplier {
       }
     } else {
       const commit = buildCommit(this.baseRevision, type, records);
-      await applySqliteCommit(commit as any, this.execute);
+      await sqliteCommit.apply(commit as any, this.execute);
       if (type === "message") {
         for (const record of asRecords(records, type)) {
           await this.execute(
@@ -223,7 +222,10 @@ export class PortableDatabaseStreamSqliteApplier {
     }
 
     this.appliedRecords += records.length;
-    this.onProgress?.({ appliedRecords: this.appliedRecords, recordType: type });
+    this.onProgress?.({
+      appliedRecords: this.appliedRecords,
+      recordType: type,
+    });
   }
 
   async finish(manifest: PortableDatabaseStreamManifest): Promise<number> {
@@ -365,7 +367,10 @@ export async function createPortableDatabaseStreamSqliteSession(options: {
 
   const send = (
     command:
-      | Omit<Extract<RestoreCommand, { kind: "fragment" }>, "resolve" | "reject">
+      | Omit<
+          Extract<RestoreCommand, { kind: "fragment" }>,
+          "resolve" | "reject"
+        >
       | Omit<Extract<RestoreCommand, { kind: "finish" }>, "resolve" | "reject">
       | Omit<Extract<RestoreCommand, { kind: "abort" }>, "resolve" | "reject">,
   ) =>

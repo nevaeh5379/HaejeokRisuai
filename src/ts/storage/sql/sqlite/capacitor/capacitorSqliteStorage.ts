@@ -1,11 +1,10 @@
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  isSqlitePragmaStatement,
-  splitSqliteStatements,
-} from "@risuai/storage-sqlite/sqliteSchemaStatements";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
+import * as sqliteStatements from "@risuai/storage-sqlite/schema/statements";
+import type { SqliteStatement } from "@risuai/storage-sqlite/types";
 import {
   buildSqlReplaceRootCommit,
   iterateSqlReplaceEntityCommits,
@@ -13,11 +12,6 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import {
-  applySqliteCommit,
-  countSqliteCommitStatements,
-} from "@risuai/storage-sqlite/sqliteCommit";
-import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
@@ -27,10 +21,12 @@ import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/port
 // The Android native backend applies connection-local PRAGMAs itself. Keep
 // those out of the shared DDL script and send the remaining statements through
 // the same native transaction API used by normal commits.
-const capacitorSchemaStatements = splitSqliteStatements(sqliteSchemaSql)
+const capacitorSchemaStatements = sqliteStatements
+  .split(sqliteSchemaSql)
   .map((statement) => statement.trim())
   .filter(
-    (statement) => statement.length > 0 && !isSqlitePragmaStatement(statement),
+    (statement) =>
+      statement.length > 0 && !sqliteStatements.isPragma(statement),
   );
 
 /**
@@ -47,7 +43,9 @@ export class CapacitorSqliteStorage
 
   private dbOpen = false;
 
-  constructor(private readonly sqlitePlugin: NativeSqlitePlugin = nativeSqlite) {
+  constructor(
+    private readonly sqlitePlugin: NativeSqlitePlugin = nativeSqlite,
+  ) {
     super();
   }
   protected readonly backendName = "CapacitorSqliteStorage";
@@ -92,7 +90,7 @@ export class CapacitorSqliteStorage
   }
 
   protected override async selectRowSets(
-    queries: SqliteTransactionStatement[],
+    queries: SqliteStatement[],
   ): Promise<Record<string, unknown>[][]> {
     if (!this.dbOpen) throw new Error("Database not opened");
     const result = await this.sqlitePlugin.queryBatch({ queries });
@@ -101,7 +99,7 @@ export class CapacitorSqliteStorage
 
   protected async executeNativeTransaction(
     expectedRevision: number | null,
-    statements: SqliteTransactionStatement[],
+    statements: SqliteStatement[],
     onProgress?: (completed: number, total: number) => void,
   ): Promise<void> {
     const total = statements.length;
@@ -140,7 +138,7 @@ export class CapacitorSqliteStorage
     const transaction = await this.sqlitePlugin.beginTransaction({
       expectedRevision,
     });
-    let pendingBatch: SqliteTransactionStatement[] = [];
+    let pendingBatch: SqliteStatement[] = [];
     let batchPayloadChars = 0;
     const flushBatch = async () => {
       if (pendingBatch.length === 0) return;
@@ -232,14 +230,14 @@ export class CapacitorSqliteStorage
       onProgress?.("Counting SQL operations...", 0.025);
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       let totalStatements =
-        countSqliteCommitStatements(rootCommit) +
+        sqliteCommit.countStatements(rootCommit) +
         (rootCommit.replaceAll ? 3 : 0) +
         2;
       for (const batch of iterateSqlReplaceEntityCommits(
         database,
         currentRevision,
       )) {
-        totalStatements += countSqliteCommitStatements(batch);
+        totalStatements += sqliteCommit.countStatements(batch);
       }
       onProgress?.(
         `SQL restore plan ready (${totalStatements} statements)`,
@@ -328,12 +326,12 @@ export class CapacitorSqliteStorage
         await write("DELETE FROM plugin_custom_storage");
         await write("DELETE FROM characters");
       }
-      await applySqliteCommit(rootCommit, write);
+      await sqliteCommit.apply(rootCommit, write);
       for (const batch of iterateSqlReplaceEntityCommits(
         database,
         currentRevision,
       )) {
-        await applySqliteCommit(batch, write);
+        await sqliteCommit.apply(batch, write);
       }
       await write(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
@@ -388,7 +386,7 @@ export class CapacitorSqliteStorage
         await execute("DELETE FROM plugin_custom_storage");
         await execute("DELETE FROM characters");
       }
-      await applySqliteCommit(commit, execute);
+      await sqliteCommit.apply(commit, execute);
       await execute(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
         [revision],

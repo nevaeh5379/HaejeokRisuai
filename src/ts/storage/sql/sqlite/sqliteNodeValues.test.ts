@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  groupSqliteNodeValues,
-  loadSqliteNodeValue,
-  loadSqliteSettingValue,
-} from "@risuai/storage-sqlite/sqliteNodeValues";
-import type { SqliteSelectRows } from "@risuai/storage-sqlite/sqliteAdminQueries";
+import * as sqliteNodes from "@risuai/storage-sqlite/queries/nodes";
+import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
 
 function textNode(value: string, owner?: string) {
   return {
@@ -28,7 +24,7 @@ describe("SQLite node value reader", () => {
       textNode("hello"),
     ]) as unknown as SqliteSelectRows;
     await expect(
-      loadSqliteNodeValue(
+      sqliteNodes.loadValue(
         selectRows,
         "setting_extension_nodes",
         "setting_key = ?",
@@ -47,9 +43,9 @@ describe("SQLite node value reader", () => {
     const selectRows = vi.fn(async () => [
       textNode("value"),
     ]) as unknown as SqliteSelectRows;
-    await expect(loadSqliteSettingValue(selectRows, "theme")).resolves.toBe(
-      "value",
-    );
+    await expect(
+      sqliteNodes.loadSettingValue(selectRows, "theme"),
+    ).resolves.toBe("value");
     expect(selectRows).toHaveBeenCalledWith(
       expect.stringContaining("setting_key = ?"),
       ["theme"],
@@ -57,7 +53,7 @@ describe("SQLite node value reader", () => {
   });
 
   it("rebuilds one relational value for each owner", () => {
-    const values = groupSqliteNodeValues(
+    const values = sqliteNodes.groupValues(
       [textNode("first", "a"), textNode("second", "b")],
       "owner_id",
     );

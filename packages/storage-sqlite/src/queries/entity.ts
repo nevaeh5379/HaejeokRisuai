@@ -1,6 +1,6 @@
-import type { SqliteSelectRows } from "./sqliteAdminQueries";
-import { decodedText } from "./relationalNodeCodec";
-import { groupSqliteNodeValues, loadSqliteNodeValue } from "./sqliteNodeValues";
+import * as sqliteNodes from "./nodes";
+import * as nodeCodec from "../schema/codec";
+import type { SqliteSelectRows } from "../types";
 
 interface CharacterExistsRow extends Record<string, unknown> {
   id: string;
@@ -14,22 +14,22 @@ interface ChatShellRow extends Record<string, unknown> {
   last_message_time: number | null;
 }
 
-export interface SqliteChatShell extends Record<string, unknown> {
+export interface ChatShell extends Record<string, unknown> {
   id: string;
   message: unknown[];
   messagesLoaded: false;
   detailsLoaded: true;
 }
-export interface SqliteCharacterDocument extends Record<string, unknown> {
+export interface CharacterDocument extends Record<string, unknown> {
   chaId: string;
-  chats: SqliteChatShell[];
+  chats: ChatShell[];
   detailsLoaded: true;
 }
 
-export async function loadSqliteCharacterChats(
+export async function loadCharacterChats(
   selectRows: SqliteSelectRows,
   characterId: string,
-): Promise<SqliteChatShell[]> {
+): Promise<ChatShell[]> {
   const chatRows = await selectRows<ChatShellRow>(
     "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
     [characterId],
@@ -44,13 +44,13 @@ export async function loadSqliteCharacterChats(
       ORDER BY chat_id, node_id`,
     [characterId],
   );
-  const values = groupSqliteNodeValues(nodeRows, "chat_id");
+  const values = sqliteNodes.groupValues(nodeRows, "chat_id");
   return chatRows.map((row) => {
     const loaded = values.get(row.id);
     const chat =
       loaded && typeof loaded === "object"
-        ? ({ ...(loaded as Record<string, unknown>) } as SqliteChatShell)
-        : ({} as SqliteChatShell);
+        ? ({ ...(loaded as Record<string, unknown>) } as ChatShell)
+        : ({} as ChatShell);
     chat.id = row.id;
     chat.name = row.name ?? "";
     chat.note = row.note ?? "";
@@ -63,17 +63,17 @@ export async function loadSqliteCharacterChats(
   });
 }
 
-export async function loadSqliteCharacterDocument(
+export async function loadCharacterDocument(
   selectRows: SqliteSelectRows,
   characterId: string,
-): Promise<SqliteCharacterDocument | null> {
+): Promise<CharacterDocument | null> {
   const rows = await selectRows<CharacterExistsRow>(
     "SELECT id FROM characters WHERE id = ?",
     [characterId],
   );
   if (rows.length === 0) return null;
   const extension =
-    ((await loadSqliteNodeValue(
+    ((await sqliteNodes.loadValue(
       selectRows,
       "character_extension_nodes",
       "character_id = ?",
@@ -83,8 +83,8 @@ export async function loadSqliteCharacterDocument(
     ...extension,
     chaId: characterId,
     detailsLoaded: true,
-    chats: await loadSqliteCharacterChats(selectRows, characterId),
-  } as SqliteCharacterDocument;
+    chats: await loadCharacterChats(selectRows, characterId),
+  } as CharacterDocument;
   return character;
 }
 
@@ -102,7 +102,7 @@ interface RecentChatRow extends Record<string, unknown> {
   last_message_encoded: string | null;
 }
 
-export interface SqliteRecentChatMetadata {
+export interface RecentChatMetadata {
   characterId: string;
   characterName: string;
   characterImage: string | null;
@@ -115,11 +115,11 @@ export interface SqliteRecentChatMetadata {
   lastMessage: string;
 }
 
-export async function listSqliteRecentChats(
+export async function listRecentChats(
   selectRows: SqliteSelectRows,
   limit = 50,
   activeChatId?: string,
-): Promise<SqliteRecentChatMetadata[]> {
+): Promise<RecentChatMetadata[]> {
   const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 100));
   const rows = await selectRows<RecentChatRow>(
     `SELECT c.id AS character_id,
@@ -169,6 +169,57 @@ export async function listSqliteRecentChats(
     folderId: row.folder_id ?? null,
     lastDate:
       row.last_message_time == null ? null : Number(row.last_message_time),
-    lastMessage: decodedText(row.last_message_text, row.last_message_encoded),
+    lastMessage: nodeCodec.decodeText(
+      row.last_message_text,
+      row.last_message_encoded,
+    ),
   }));
+}
+
+// ── Character asset-field query (storage analyzer) ───────────────────
+
+export const CHARACTER_ASSET_FIELD_KEYS = [
+  "image",
+  "emotionImages",
+  "emotions",
+  "additionalAssets",
+  "ccAssets",
+  "customBackground",
+  "gptSoVitsConfig",
+  "vits",
+] as const;
+
+/**
+ * Builds a query that reads only the asset-bearing root subtrees of a
+ * character's extension-node tree. Node ids are dense preorder indices, so
+ * every subtree rooted at one of the asset field keys is exactly the set of
+ * nodes in [node_id, next_root_node_id) sharing the same root — the recursive
+ * CTE collects descendants from the selected roots and the outer WHERE
+ * excludes everything else.
+ */
+export function buildCharacterAssetFieldsQuery(characterId: string): {
+  sql: string;
+  bind: string[];
+} {
+  const placeholders = CHARACTER_ASSET_FIELD_KEYS.map(() => "?").join(",");
+  return {
+    sql: `WITH RECURSIVE asset_nodes(chat_id, node_id) AS (
+       SELECT character_id, node_id FROM character_extension_nodes
+        WHERE character_id = ? AND parent_node_id = 0
+          AND object_key IN (${placeholders})
+       UNION ALL
+       SELECT child.character_id, child.node_id
+         FROM character_extension_nodes child
+         JOIN asset_nodes ON child.character_id = asset_nodes.chat_id
+            AND child.parent_node_id = asset_nodes.node_id
+     )
+     SELECT node_id, parent_node_id, node_order, object_key,
+            object_key_encoded, value_type, text_value, encoded_text_value,
+            number_value, boolean_value
+       FROM character_extension_nodes
+      WHERE character_id = ?
+        AND (node_id = 0 OR node_id IN (SELECT node_id FROM asset_nodes))
+      ORDER BY node_id`,
+    bind: [characterId, ...CHARACTER_ASSET_FIELD_KEYS, characterId],
+  };
 }

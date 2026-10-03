@@ -9,7 +9,7 @@ function isWordChar(char: string): boolean {
  * inside strings, comments, or CREATE TRIGGER ... BEGIN ... END bodies as
  * statement boundaries.
  */
-export function splitSqliteStatements(sql: string): string[] {
+export function split(sql: string): string[] {
   const statements: string[] = [];
   let start = 0;
   let quote: QuoteMode = null;
@@ -115,7 +115,7 @@ export function splitSqliteStatements(sql: string): string[] {
   return statements;
 }
 
-export function isSqlitePragmaStatement(statement: string): boolean {
+export function isPragma(statement: string): boolean {
   const withoutLeadingTrivia = statement.replace(
     /^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/,
     "",

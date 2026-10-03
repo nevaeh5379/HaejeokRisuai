@@ -1,7 +1,6 @@
-export const SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME =
-  "messages_last_message_time_after_insert";
+export const TRIGGER_NAME = "messages_last_message_time_after_insert";
 
-export const SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL = `
+export const BACKFILL_SQL = `
   UPDATE chats
      SET last_message_time = (
        SELECT sent_time
