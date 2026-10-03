@@ -17,7 +17,7 @@
     "build": "pnpm run build:protocol && pnpm run build:server && node tooling/vite-build.mjs --sourcemap",
     "build:protocol": "tsx tooling/build-protocol.ts",
     "build:server": "tsx tooling/build-node-server.ts && tsx tooling/check-node-runtime-dependencies.ts",
-    "tauribuild": "pnpm run check:server && vite build",
+    "tauribuild": "pnpm run build:protocol && pnpm run check:server && vite build",
     "preview": "vite preview",
     "check": "pnpm run check:backup-core && pnpm run check:protocol && pnpm run check:server && svelte-check --tsconfig ./tsconfig.json",
     "check:server-types": "tsc -p server/node/tsconfig.server.json --noEmit",
