@@ -855,6 +855,18 @@ html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
     background-color 150ms ease;
 }
 
+html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle-right {
+  top: 60px !important;
+  right: 0 !important;
+  left: auto !important;
+  width: 3rem !important;
+  height: 3rem !important;
+  transition:
+    opacity 150ms ease,
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
 html.tauri-macos-vibrancy .rs-chat-tab {
   --risu-macos-tab-surface: color-mix(
     in srgb,
@@ -1673,10 +1685,120 @@ annotation {
   background-color: transparent;
 }
 
+/* ==========================================================================
+   Sidebar Bot / Avatar Interactive Elastic & Tactile Interaction
+   ========================================================================== */
+
+.rs-sidebar [role="listitem"] {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+  transition: z-index 0s 0.38s;
+}
+
+.rs-sidebar [role="listitem"]:hover {
+  z-index: 10;
+  transition: z-index 0s 0s;
+}
+
+.sidebar-avatar {
+  transform: perspective(280px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 0.2s ease,
+    border-color 0.2s ease,
+    outline-color 0.2s ease;
+}
+
+.rs-sidebar-bot-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  border-radius: 9999px;
+  transform: translate3d(0, 0, 0) scale(1);
+  transform-origin: center center;
+  will-change: transform;
+  /* Smooth spring rebound when unhovered or released, keeping z-index elevated until animation completes */
+  transition:
+    transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 0.2s ease,
+    z-index 0s 0.38s;
+}
+
+/* Hover effect: graceful spring rise and expansion on the container */
+.rs-sidebar-bot-btn:hover {
+  z-index: 10;
+  transform: scale(1.05);
+  filter: brightness(1.05);
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 0.2s ease,
+    z-index 0s 0s;
+}
+
+/* Smooth real-time 3D tilt tracking on the inner avatar */
+.rs-sidebar-bot-btn:hover .sidebar-avatar {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.12s ease-out,
+    box-shadow 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Active / Pressed: tactile squishy "jelly" press feedback */
+.rs-sidebar-bot-btn:active {
+  transform: translate3d(0, 1px, 0) scale(0.91, 0.89);
+  filter: brightness(0.93);
+  transition:
+    transform 0.08s cubic-bezier(0.2, 0.8, 0.4, 1),
+    filter 0.08s ease;
+}
+
+.rs-sidebar-bot-btn:active .sidebar-avatar {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Keyboard focus accessible outline */
+.rs-sidebar-bot-btn:focus-visible {
+  outline: 2px solid var(--risu-theme-selected, #3b82f6);
+  outline-offset: 3px;
+}
+
+/* Respect user's motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-avatar {
+    transform: none !important;
+  }
+  .rs-sidebar-bot-btn {
+    transition: transform 0.15s ease, filter 0.15s ease !important;
+  }
+  .rs-sidebar-bot-btn:hover {
+    transform: scale(1.02) !important;
+  }
+  .rs-sidebar-bot-btn:active {
+    transform: scale(0.97) !important;
+  }
+}
+
 /* Main Left Sidebar (WinUI 3 NavigationView) */
 .theme-windows-fluent .rs-sidebar {
   border-right: 1px solid var(--fluent-card-stroke) !important;
   background-color: var(--risu-theme-darkbg);
+}
+
+.theme-windows-fluent .rs-sidebar.sidebar-right {
+  border-left: 1px solid var(--fluent-card-stroke) !important;
+  border-right: none !important;
 }
 
 .theme-windows-fluent.tauri-windows-vibrancy .rs-sidebar {
@@ -1708,6 +1830,11 @@ annotation {
   transition: height 160ms cubic-bezier(0, 0, 0, 1), opacity 160ms ease, transform 160ms ease !important;
 }
 
+.theme-windows-fluent .rs-sidebar.sidebar-right .rs-sidebar-indicator {
+  left: auto !important;
+  right: 0px !important;
+}
+
 .theme-windows-fluent .rs-sidebar .rs-sidebar-indicator-active {
   height: 24px !important;
   opacity: 1 !important;
@@ -1724,11 +1851,10 @@ annotation {
 .theme-windows-fluent .rs-sidebar .sidebar-avatar {
   border-radius: 6px !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: transform 120ms ease;
 }
 
 .theme-windows-fluent .rs-sidebar [role="listitem"]:active .sidebar-avatar {
-  transform: scale(0.96);
+  transform: none;
 }
 
 /* Add character button (+) */
@@ -1812,6 +1938,11 @@ annotation {
   padding-bottom: 10px !important;
   padding-left: 10px !important;
   padding-right: 10px !important;
+}
+
+.theme-windows-fluent .rs-sidebar-panel.sidebar-right {
+  border-left: 1px solid var(--fluent-card-stroke) !important;
+  border-right: none !important;
 }
 
 /* Hide empty top button */

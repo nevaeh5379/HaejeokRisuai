@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { tooltipRight } from "src/ts/gui/tooltip";
+  import { tooltipLeft, tooltipRight } from "src/ts/gui/tooltip";
+  import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 
   type LazySource = string | Promise<string> | (() => string | Promise<string>);
 
@@ -100,6 +101,13 @@
       getSharedObserver().unobserve(avatarElement);
     };
   });
+
+  function avatarTooltip(node: HTMLElement, tip: string) {
+    const isRight =
+      !!settingsStore.state.useExperimental &&
+      !!settingsStore.state.botListRight;
+    return (isRight ? tooltipLeft : tooltipRight)(node, tip);
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -109,7 +117,7 @@
       class:border-selected={bordered}
       class:rounded-md={bordered}
       oncontextmenu={oncontextmenu}
-      onclick={onClick} use:tooltipRight={name}
+      onclick={onClick} use:avatarTooltip={name}
       role="button"
       tabindex="0"
       data-char-id={chaId}
