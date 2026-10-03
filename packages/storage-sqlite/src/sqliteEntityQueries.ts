@@ -88,6 +88,14 @@ export async function loadSqliteCharacterDocument(
   return character;
 }
 
+export const SQLITE_RECENT_CHAT_PREVIEW_CHARACTERS = 4096;
+
+// content_encoded is base64-encoded UTF-16LE. Eight base64 characters decode
+// to six bytes, so keeping this limit aligned to groups of eight guarantees an
+// even number of bytes for decodedText() while still bounding the SQL result.
+const SQLITE_RECENT_CHAT_PREVIEW_ENCODED_CHARACTERS =
+  Math.floor((SQLITE_RECENT_CHAT_PREVIEW_CHARACTERS * 2) / 6) * 8;
+
 interface RecentChatRow extends Record<string, unknown> {
   character_id: string;
   character_name: string;
@@ -131,8 +139,8 @@ export async function listSqliteRecentChats(
             ch.name AS chat_name,
             ch.folder_id AS folder_id,
             ch.last_message_time AS last_message_time,
-            m.content_text AS last_message_text,
-            m.content_encoded AS last_message_encoded
+            substr(m.content_text, 1, ${SQLITE_RECENT_CHAT_PREVIEW_CHARACTERS}) AS last_message_text,
+            substr(m.content_encoded, 1, ${SQLITE_RECENT_CHAT_PREVIEW_ENCODED_CHARACTERS}) AS last_message_encoded
        FROM chats ch
        JOIN characters c ON c.id = ch.character_id
   LEFT JOIN messages m ON m.chat_id = ch.id
