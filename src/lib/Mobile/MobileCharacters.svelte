@@ -538,7 +538,7 @@
                 {#if topOffsetY > 0}
                     <div style="height: {topOffsetY}px; flex-shrink: 0; width: 100%;"></div>
                 {/if}
-                {#each visibleItems as { item: char, index }}
+                {#each visibleItems as { item: char, index } (char.c.chaId ?? index)}
                     <!-- Character Row -->
                     <div
                         role="button"

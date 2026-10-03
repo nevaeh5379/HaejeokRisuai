@@ -366,13 +366,13 @@
                     <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                     <div></div>
                     {:else}
-                    {#each chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id) as chat}
-                    <button data-risu-chat-idx={chara.chats.indexOf(chat)} onclick={() => {
+                    {#each chara.chats.map((chat, idx) => ({ chat, idx })).filter(({ chat }) => chat.folderId == chara.chatFolders[i].id) as { chat, idx } (chat.id ?? idx)}
+                    <button data-risu-chat-idx={idx} onclick={() => {
                         if(!editMode){
-                            changeChatTo(chara.chats.indexOf(chat))
+                            changeChatTo(idx)
                             $ReloadGUIPointer += 1
                         }
-                    }} class="risu-chats rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]" class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
+                    }} class="risu-chats rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]" class:bg-selected={idx === chara.chatPage}>
                         {#if editMode}
                             <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
@@ -482,7 +482,7 @@
         </div>
         <!-- chat without folder div -->
         <div class="risu-chat flex flex-col">
-            {#each chara.chats as chat, i}
+            {#each chara.chats as chat, i (chat.id ?? i)}
             {#if chat.folderId == null}
             <button data-risu-chat-idx={i} onclick={() => {
                 if(!editMode){
