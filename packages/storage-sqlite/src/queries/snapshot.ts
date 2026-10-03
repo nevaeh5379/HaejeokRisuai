@@ -1,25 +1,15 @@
-import type {
-  SqliteSelectRowSets,
-  SqliteSelectRows,
-} from "./sqliteAdminQueries";
-import { loadSqliteModules } from "./sqliteDocumentQueries";
-import {
-  loadSqlitePlugins,
-  loadSqlitePluginScripts,
-} from "./sqlitePluginQueries";
-import { loadSqlitePluginCustomStorage } from "./sqlitePersistenceQueries";
-import { groupSqliteNodeValues, loadSqliteNodeValue } from "./sqliteNodeValues";
-import {
-  buildSqliteSettingRowsQuery,
-  rebuildSqliteSettingRows,
-} from "./sqliteStartupQueries";
+import * as sqliteDocument from "./document";
+import * as sqliteNodes from "./nodes";
+import * as sqlitePlugin from "./plugin";
+import * as sqliteStartup from "./startup";
+import type { SqliteSelectRowSets, SqliteSelectRows } from "../types";
 
-export interface SqliteSnapshotResult {
+export interface Result {
   revision: number;
   database: Record<string, unknown> | null;
 }
 
-export interface SqliteSnapshotOptions {
+export interface Options {
   selectRows: SqliteSelectRows;
   selectRowSets: SqliteSelectRowSets;
   revision: number;
@@ -62,7 +52,7 @@ interface SnapshotCharacter extends Record<string, unknown> {
 async function loadSnapshotChats(
   selectRows: SqliteSelectRows,
   characterId: string,
-  loadChatMessages: SqliteSnapshotOptions["loadChatMessages"],
+  loadChatMessages: Options["loadChatMessages"],
 ): Promise<SnapshotChat[]> {
   const chatRows = await selectRows<ChatRow>(
     "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE character_id = ? ORDER BY position",
@@ -79,7 +69,7 @@ async function loadSnapshotChats(
         [characterId],
       )
     : [];
-  const values = groupSqliteNodeValues(nodeRows, "chat_id");
+  const values = sqliteNodes.groupValues(nodeRows, "chat_id");
   const chats: SnapshotChat[] = [];
   for (const row of chatRows) {
     const chat = {
@@ -104,10 +94,10 @@ async function loadSnapshotChats(
 async function loadSnapshotCharacter(
   selectRows: SqliteSelectRows,
   row: CharacterRow,
-  loadChatMessages: SqliteSnapshotOptions["loadChatMessages"],
+  loadChatMessages: Options["loadChatMessages"],
 ): Promise<SnapshotCharacter> {
   const extension =
-    ((await loadSqliteNodeValue(
+    ((await sqliteNodes.loadValue(
       selectRows,
       "character_extension_nodes",
       "character_id = ?",
@@ -150,9 +140,7 @@ function parsePresetRows(rows: Array<{ preset_id: string; data: string }>): {
   return { ids, presets };
 }
 
-export async function exportSqliteDatabaseSnapshot(
-  options: SqliteSnapshotOptions,
-): Promise<SqliteSnapshotResult> {
+export async function exportDatabase(options: Options): Promise<Result> {
   const {
     selectRows,
     selectRowSets,
@@ -160,7 +148,9 @@ export async function exportSqliteDatabaseSnapshot(
     legacyPersonaMirrorKeys,
     loadChatMessages,
   } = options;
-  const settingQuery = buildSqliteSettingRowsQuery(legacyPersonaMirrorKeys);
+  const settingQuery = sqliteStartup.buildSettingRowsQuery(
+    legacyPersonaMirrorKeys,
+  );
   const [settingRows, characterRows, metaRows] = await selectRowSets([
     settingQuery,
     {
@@ -172,7 +162,7 @@ export async function exportSqliteDatabaseSnapshot(
       bind: [],
     },
   ]);
-  const settings = rebuildSqliteSettingRows(
+  const settings = sqliteStartup.rebuildSettingRows(
     settingRows,
     legacyPersonaMirrorKeys,
   );
@@ -182,7 +172,7 @@ export async function exportSqliteDatabaseSnapshot(
   >;
 
   database.pluginCustomStorage =
-    (await loadSqlitePluginCustomStorage(selectRows)) ?? {};
+    (await sqlitePlugin.loadCustomStorage(selectRows)) ?? {};
   const characters: SnapshotCharacter[] = [];
   for (const row of characterRows as unknown as CharacterRow[]) {
     characters.push(
@@ -191,10 +181,10 @@ export async function exportSqliteDatabaseSnapshot(
   }
   database.characters = characters;
   database.modules =
-    await loadSqliteModules<Record<string, unknown>>(selectRows);
+    await sqliteDocument.loadModules<Record<string, unknown>>(selectRows);
 
-  const pluginMetadata = await loadSqlitePlugins(selectRows);
-  const pluginScripts = await loadSqlitePluginScripts(selectRows);
+  const pluginMetadata = await sqlitePlugin.loadAll(selectRows);
+  const pluginScripts = await sqlitePlugin.loadScripts(selectRows);
   database.plugins = pluginMetadata.map((plugin) => {
     const { id, position: _position, ...metadata } = plugin;
     const script = pluginScripts.get(id);

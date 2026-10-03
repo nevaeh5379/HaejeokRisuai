@@ -1,14 +1,11 @@
 import type { LegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
-import {
-  flattenRelationalValue,
-  RELATIONAL_NODE_COLUMNS,
-} from "./relationalNodeCodec";
-import { messageExtensionData } from "./sqliteCommit";
-import type { SqliteTransactionStatement } from "./sqliteQueries";
+import * as sqliteCommit from "../commit/apply";
+import * as nodeCodec from "../schema/codec";
+import type { SqliteSelectRows, SqliteStatement } from "../types";
 
 // Kept separate from sqlite-schema.sql because native backends validate and
 // reuse existing relational-schema-v3 databases without replaying that file.
-export const SQLITE_BRANCH_SCHEMA_STATEMENTS: SqliteTransactionStatement[] = [
+export const SCHEMA_STATEMENTS: SqliteStatement[] = [
   {
     sql: "CREATE TABLE IF NOT EXISTS chat_branches (chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE, id TEXT NOT NULL, parent_branch_id TEXT, fork_message_id TEXT, head_message_id TEXT, reason TEXT NOT NULL CHECK (reason IN ('root','manual','reroll')), created_at INTEGER NOT NULL, PRIMARY KEY (chat_id, id), FOREIGN KEY (chat_id, parent_branch_id) REFERENCES chat_branches(chat_id, id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, fork_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY (chat_id, head_message_id) REFERENCES messages(chat_id, id) DEFERRABLE INITIALLY DEFERRED)",
     bind: [],
@@ -35,7 +32,7 @@ export const SQLITE_BRANCH_SCHEMA_STATEMENTS: SqliteTransactionStatement[] = [
   },
 ];
 
-export function rootBranchId(chatId: string): string {
+export function getRootId(chatId: string): string {
   return `${chatId}:root`;
 }
 
@@ -43,10 +40,8 @@ export function rootBranchId(chatId: string): string {
  * Converts a legacy linear chat into a root branch entirely inside SQLite.
  * The window function avoids one JS/native bridge statement per message.
  */
-export function ensureSqliteBranchGraphStatements(
-  chatId: string,
-): SqliteTransactionStatement[] {
-  const rootId = rootBranchId(chatId);
+export function ensureGraphStatements(chatId: string): SqliteStatement[] {
+  const rootId = getRootId(chatId);
   return [
     {
       sql: `INSERT OR IGNORE INTO chat_branches
@@ -82,7 +77,7 @@ export function ensureSqliteBranchGraphStatements(
   ];
 }
 
-export interface SqliteChatBranchSummary {
+export interface Summary {
   id: string;
   chatId: string;
   parentBranchId?: string;
@@ -92,7 +87,7 @@ export interface SqliteChatBranchSummary {
   createdAt: number;
 }
 
-export interface SqliteChatBranchRow extends Record<string, unknown> {
+export interface Row extends Record<string, unknown> {
   id: string;
   chat_id: string;
   parent_branch_id: string | null;
@@ -102,9 +97,7 @@ export interface SqliteChatBranchRow extends Record<string, unknown> {
   created_at: number;
 }
 
-export function mapSqliteChatBranchRow(
-  row: SqliteChatBranchRow,
-): SqliteChatBranchSummary {
+export function mapRow(row: Row): Summary {
   return {
     id: row.id,
     chatId: row.chat_id,
@@ -116,7 +109,7 @@ export function mapSqliteChatBranchRow(
   };
 }
 
-export interface SqliteCreateChatBranchInput {
+export interface CreateInput {
   chatId: string;
   id: string;
   parentBranchId?: string;
@@ -125,8 +118,8 @@ export interface SqliteCreateChatBranchInput {
   createdAt: number;
 }
 
-export async function getSqliteActiveBranchId(
-  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+export async function getActiveId(
+  selectRows: SqliteSelectRows,
   chatId: string,
 ): Promise<string | undefined> {
   const rows = await selectRows<{ branch_id: string }>(
@@ -136,8 +129,8 @@ export async function getSqliteActiveBranchId(
   return rows[0]?.branch_id;
 }
 
-export async function getSqliteChatBranchCount(
-  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+export async function count(
+  selectRows: SqliteSelectRows,
   chatId: string,
 ): Promise<number> {
   const rows = await selectRows<{ total: number }>(
@@ -147,26 +140,24 @@ export async function getSqliteChatBranchCount(
   return Number(rows[0]?.total ?? 0);
 }
 
-export async function listSqliteChatBranches(
-  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+export async function list(
+  selectRows: SqliteSelectRows,
   chatId: string,
-): Promise<SqliteChatBranchSummary[]> {
-  const rows = await selectRows<SqliteChatBranchRow>(
+): Promise<Summary[]> {
+  const rows = await selectRows<Row>(
     `SELECT id, chat_id, parent_branch_id, fork_message_id,
             head_message_id, reason, created_at
        FROM chat_branches WHERE chat_id = ? ORDER BY created_at, id`,
     [chatId],
   );
-  return rows.map(mapSqliteChatBranchRow);
+  return rows.map(mapRow);
 }
 
-export async function loadSqliteChatBranchMetadata(
-  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+export async function loadMetadata(
+  selectRows: SqliteSelectRows,
   chatId: string,
-): Promise<{ branches: SqliteChatBranchSummary[]; activeBranchId?: string }> {
-  const rows = await selectRows<
-    SqliteChatBranchRow & { active_branch_id?: string }
-  >(
+): Promise<{ branches: Summary[]; activeBranchId?: string }> {
+  const rows = await selectRows<Row & { active_branch_id?: string }>(
     `SELECT branch.id, branch.chat_id, branch.parent_branch_id, branch.fork_message_id,
             branch.head_message_id, branch.reason, branch.created_at,
             active.branch_id AS active_branch_id
@@ -176,15 +167,15 @@ export async function loadSqliteChatBranchMetadata(
     [chatId],
   );
   return {
-    branches: rows.map(mapSqliteChatBranchRow),
+    branches: rows.map(mapRow),
     activeBranchId: rows[0]?.active_branch_id ?? undefined,
   };
 }
 
-export function buildSqliteCreateChatBranchStatements(
-  input: SqliteCreateChatBranchInput,
+export function buildCreateStatements(
+  input: CreateInput,
   parentBranchId: string,
-): SqliteTransactionStatement[] {
+): SqliteStatement[] {
   return [
     {
       sql: `INSERT INTO chat_branches
@@ -208,22 +199,22 @@ export function buildSqliteCreateChatBranchStatements(
   ];
 }
 
-export async function loadSqliteChatBranch(
-  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+export async function load(
+  selectRows: SqliteSelectRows,
   chatId: string,
   branchId: string,
-): Promise<SqliteChatBranchSummary | null> {
-  const rows = await selectRows<SqliteChatBranchRow>(
+): Promise<Summary | null> {
+  const rows = await selectRows<Row>(
     `SELECT id, chat_id, parent_branch_id, fork_message_id,
             head_message_id, reason, created_at
        FROM chat_branches WHERE chat_id = ? AND id = ?`,
     [chatId, branchId],
   );
-  return rows[0] ? mapSqliteChatBranchRow(rows[0]) : null;
+  return rows[0] ? mapRow(rows[0]) : null;
 }
 
-export async function sqliteChatBranchExists(
-  selectRows: import("./sqliteAdminQueries").SqliteSelectRows,
+export async function exists(
+  selectRows: SqliteSelectRows,
   chatId: string,
   branchId: string,
 ): Promise<boolean> {
@@ -234,10 +225,10 @@ export async function sqliteChatBranchExists(
   return rows.length > 0;
 }
 
-export function buildSqliteActivateChatBranchStatement(
+export function buildActivateStatement(
   chatId: string,
   branchId: string,
-): SqliteTransactionStatement {
+): SqliteStatement {
   return {
     sql: "UPDATE chat_active_branches SET branch_id = ? WHERE chat_id = ?",
     bind: [branchId, chatId],
@@ -251,11 +242,11 @@ function nodeInsertStatements(
   ownerColumns: string[],
   ownerValues: unknown[],
   value: unknown,
-): SqliteTransactionStatement[] {
-  const rows = flattenRelationalValue(value);
-  const columns = [...ownerColumns, ...RELATIONAL_NODE_COLUMNS];
+): SqliteStatement[] {
+  const rows = nodeCodec.flatten(value);
+  const columns = [...ownerColumns, ...nodeCodec.NODE_COLUMNS];
   const placeholders = `(${columns.map(() => "?").join(",")})`;
-  const statements: SqliteTransactionStatement[] = [];
+  const statements: SqliteStatement[] = [];
   for (
     let offset = 0;
     offset < rows.length;
@@ -266,7 +257,7 @@ function nodeInsertStatements(
       sql: `INSERT INTO ${table} (${columns.join(",")}) VALUES ${batch.map(() => placeholders).join(",")}`,
       bind: batch.flatMap((row) => [
         ...ownerValues,
-        ...RELATIONAL_NODE_COLUMNS.map((column) => row[column]),
+        ...nodeCodec.NODE_COLUMNS.map((column) => row[column]),
       ]),
     });
   }
@@ -276,13 +267,13 @@ function nodeInsertStatements(
 function sqliteMessageStatements(
   chatId: string,
   message: LegacyBranchMigrationPlan["messages"][number],
-): SqliteTransactionStatement[] {
+): SqliteStatement[] {
   const data = message.data as Record<string, any>;
-  const content = flattenRelationalValue(
+  const content = nodeCodec.flatten(
     typeof data.data === "string" ? data.data : String(data.data ?? ""),
   )[0];
-  const extension = messageExtensionData(data, content);
-  const statements: SqliteTransactionStatement[] = [
+  const extension = sqliteCommit.messageExtensionData(data, content);
+  const statements: SqliteStatement[] = [
     {
       sql: `INSERT INTO messages
           (chat_id,id,position,role,content_text,content_encoded,sender_name,sent_time,generation_model,input_tokens,output_tokens)
@@ -324,18 +315,18 @@ function sqliteMessageStatements(
   return statements;
 }
 
-export function buildSqliteLegacyBranchMigrationStatements(
+export function buildLegacyMigrationStatements(
   chatId: string,
   chatExtensionData: Record<string, unknown>,
   plan: LegacyBranchMigrationPlan,
-): SqliteTransactionStatement[] {
+): SqliteStatement[] {
   // Keep the legacy branchState extension as archival migration input. Runtime
   // loaders ignore it once persistent branches exist, but preserving it avoids
   // destroying branch-specific script/global state before that state has its own
   // persistent branch table. This is data retention, not a runtime fallback.
   void chatExtensionData;
 
-  const statements: SqliteTransactionStatement[] = [
+  const statements: SqliteStatement[] = [
     {
       sql: "DELETE FROM chat_active_branches WHERE chat_id = ?",
       bind: [chatId],

@@ -4,10 +4,10 @@ import { isTauri } from "../../../../platform";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { appDataDir, join } from "@tauri-apps/api/path";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import { splitSqliteStatements } from "@risuai/storage-sqlite/sqliteSchemaStatements";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as sqliteStatements from "@risuai/storage-sqlite/schema/statements";
+import type { SqliteStatement } from "@risuai/storage-sqlite/types";
 import { SqlRevisionConflictError } from "../../sqlCommit";
-import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
 import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 
@@ -59,7 +59,7 @@ export class TauriSqliteStorage
 
   protected async applySchema(): Promise<void> {
     if (!this.db) throw new Error("Database not opened");
-    for (const statement of splitSqliteStatements(sqliteSchemaSql)) {
+    for (const statement of sqliteStatements.split(sqliteSchemaSql)) {
       await this.db.execute(statement);
     }
   }
@@ -97,7 +97,7 @@ export class TauriSqliteStorage
       "sqlite_begin_stream_transaction",
       { expectedRevision },
     );
-    let pending: SqliteTransactionStatement[] = [];
+    let pending: SqliteStatement[] = [];
     let pendingChars = 0;
     const flush = async () => {
       if (pending.length === 0) return;
@@ -115,7 +115,8 @@ export class TauriSqliteStorage
         pendingChars +=
           sql.length +
           bind.reduce<number>(
-            (sum, value) => sum + (typeof value === "string" ? value.length : 0),
+            (sum, value) =>
+              sum + (typeof value === "string" ? value.length : 0),
             0,
           );
         if (pending.length >= 64 || pendingChars >= 256 * 1024) {
@@ -167,7 +168,7 @@ export class TauriSqliteStorage
 
   protected async executeNativeTransaction(
     expectedRevision: number | null,
-    statements: SqliteTransactionStatement[],
+    statements: SqliteStatement[],
     onProgress?: (completed: number, total: number) => void,
   ): Promise<void> {
     if (!this.dbPath) throw new Error("SQLite storage is not enabled");

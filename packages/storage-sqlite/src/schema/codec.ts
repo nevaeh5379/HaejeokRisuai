@@ -1,48 +1,53 @@
-export const RELATIONAL_SCHEMA_LAYOUT = "relational-schema-v3";
-export const SQLITE_SCHEMA_VERSION = 3;
-export const MAX_RELATIONAL_NODE_DEPTH = 128;
+export const SCHEMA_LAYOUT = "relational-schema-v3";
+export const SCHEMA_VERSION = 3;
+export const MAX_NODE_DEPTH = 128;
 
-export class SqlSchemaResetRequiredError extends Error {
+export class SchemaResetRequiredError extends Error {
   constructor(foundVersion: unknown, foundLayout: unknown) {
     super(
-      `Local database reset required: found ${String(foundVersion)}/${String(foundLayout)}, expected ${SQLITE_SCHEMA_VERSION}/${RELATIONAL_SCHEMA_LAYOUT}`,
+      `Local database reset required: found ${String(foundVersion)}/${String(foundLayout)}, expected ${SCHEMA_VERSION}/${SCHEMA_LAYOUT}`,
     );
-    this.name = "SqlSchemaResetRequiredError";
+    this.name = "SchemaResetRequiredError";
   }
 }
 
-export type RelationalNodeType =
+export type NodeType =
   "null" | "undefined" | "boolean" | "number" | "string" | "array" | "object";
 
-export interface RelationalNodeRow {
+export interface NodeRow {
   [key: string]: unknown;
   node_id: number;
   parent_node_id: number | null;
   node_order: number;
   object_key: string | null;
   object_key_encoded: string | null;
-  value_type: RelationalNodeType;
+  value_type: NodeType;
   text_value: string | null;
   encoded_text_value: string | null;
   number_value: number | null;
   boolean_value: number | null;
 }
 
-export interface RelationalNodeCodecOptions {
+export interface Options {
   maxDepth?: number;
   maxRows?: number;
 }
 
 type BufferLike = {
-  from(value: Uint8Array | string, encoding?: string): {
+  from(
+    value: Uint8Array | string,
+    encoding?: string,
+  ): {
     toString(encoding?: string): string;
     [Symbol.iterator](): Iterator<number>;
   };
 };
 
 function nodeBuffer(): BufferLike {
-  const candidate = (globalThis as typeof globalThis & { Buffer?: BufferLike }).Buffer;
-  if (!candidate) throw new Error("Base64 codec is unavailable in this runtime");
+  const candidate = (globalThis as typeof globalThis & { Buffer?: BufferLike })
+    .Buffer;
+  if (!candidate)
+    throw new Error("Base64 codec is unavailable in this runtime");
   return candidate;
 }
 
@@ -101,7 +106,7 @@ function encodedText(value: string): {
     : { text: null, encoded: encodeUtf16(value) };
 }
 
-export function decodedText(text: unknown, encoded: unknown): string {
+export function decodeText(text: unknown, encoded: unknown): string {
   if (encoded !== null && encoded !== undefined && encoded !== "") {
     return decodeUtf16(String(encoded));
   }
@@ -126,13 +131,10 @@ function defineEntry(
  * involved, and empty containers, null, object insertion order, NUL, and
  * unpaired UTF-16 surrogates survive a round trip.
  */
-export function flattenRelationalValue(
-  value: unknown,
-  options: RelationalNodeCodecOptions = {},
-): RelationalNodeRow[] {
-  const maxDepth = options.maxDepth ?? MAX_RELATIONAL_NODE_DEPTH;
+export function flatten(value: unknown, options: Options = {}): NodeRow[] {
+  const maxDepth = options.maxDepth ?? MAX_NODE_DEPTH;
   const maxRows = options.maxRows ?? Infinity;
-  const rows: RelationalNodeRow[] = [];
+  const rows: NodeRow[] = [];
   const ancestors = new Set<object>();
 
   const append = (
@@ -150,7 +152,7 @@ export function flattenRelationalValue(
     const nodeId = rows.length;
     const encodedKey =
       key === null ? { text: null, encoded: null } : encodedText(key);
-    const row: RelationalNodeRow = {
+    const row: NodeRow = {
       node_id: nodeId,
       parent_node_id: parentNodeId,
       node_order: nodeOrder,
@@ -217,9 +219,7 @@ export function flattenRelationalValue(
   return rows;
 }
 
-export function rebuildRelationalValue(
-  input: readonly Record<string, unknown>[],
-): unknown {
+export function rebuild(input: readonly Record<string, unknown>[]): unknown {
   if (input.length === 0) throw new Error("Relational value has no root node");
   const rows = [...input].sort(
     (left, right) => Number(left.node_id) - Number(right.node_id),
@@ -243,7 +243,7 @@ export function rebuildRelationalValue(
   }
 
   const build = (row: Record<string, unknown>, depth: number): unknown => {
-    if (depth > MAX_RELATIONAL_NODE_DEPTH)
+    if (depth > MAX_NODE_DEPTH)
       throw new Error("Relational value exceeds maximum depth");
     switch (row.value_type) {
       case "null":
@@ -259,7 +259,7 @@ export function rebuildRelationalValue(
         return Number(row.number_value);
       }
       case "string":
-        return decodedText(row.text_value, row.encoded_text_value);
+        return decodeText(row.text_value, row.encoded_text_value);
       case "array":
         return (children.get(Number(row.node_id)) ?? []).map((child) =>
           build(child, depth + 1),
@@ -267,7 +267,7 @@ export function rebuildRelationalValue(
       case "object": {
         const result: Record<string, unknown> = {};
         for (const child of children.get(Number(row.node_id)) ?? []) {
-          const key = decodedText(child.object_key, child.object_key_encoded);
+          const key = decodeText(child.object_key, child.object_key_encoded);
           defineEntry(result, key, build(child, depth + 1));
         }
         return result;
@@ -281,7 +281,7 @@ export function rebuildRelationalValue(
   return build(rows[0], 0);
 }
 
-export const RELATIONAL_NODE_COLUMNS = [
+export const NODE_COLUMNS = [
   "node_id",
   "parent_node_id",
   "node_order",

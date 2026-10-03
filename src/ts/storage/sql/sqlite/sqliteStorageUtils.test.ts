@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   AsyncSerialQueue,
-  normalizeSqliteLimit,
-  normalizeSqlitePageEnd,
-} from "./sqliteStorageUtils";
+  normalizeLimit,
+  normalizePageEnd,
+} from "@risuai/storage-sqlite/util";
 
 describe("sqlite storage utilities", () => {
   it("normalizes invalid SQLite pagination inputs", () => {
-    expect(normalizeSqliteLimit(0)).toBe(1);
-    expect(normalizeSqliteLimit(3.9)).toBe(3);
-    expect(normalizeSqliteLimit(Number.NaN)).toBe(1);
-    expect(normalizeSqliteLimit(Number.POSITIVE_INFINITY)).toBe(1);
-    expect(normalizeSqlitePageEnd(undefined, 10)).toBe(10);
-    expect(normalizeSqlitePageEnd(8.9, 10)).toBe(8);
-    expect(normalizeSqlitePageEnd(Number.NaN, 10)).toBe(10);
-    expect(normalizeSqlitePageEnd(-3, 10)).toBe(0);
+    expect(normalizeLimit(0)).toBe(1);
+    expect(normalizeLimit(3.9)).toBe(3);
+    expect(normalizeLimit(Number.NaN)).toBe(1);
+    expect(normalizeLimit(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(normalizePageEnd(undefined, 10)).toBe(10);
+    expect(normalizePageEnd(8.9, 10)).toBe(8);
+    expect(normalizePageEnd(Number.NaN, 10)).toBe(10);
+    expect(normalizePageEnd(-3, 10)).toBe(0);
   });
 
   it("serializes writes and keeps working after a rejection", async () => {

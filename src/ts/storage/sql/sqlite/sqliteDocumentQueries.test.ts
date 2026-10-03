@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  listSqliteBotPresets,
-  loadSqliteBotPreset,
-  loadSqliteModules,
-  loadSqlitePrompts,
-  loadSqliteSettingValues,
-} from "@risuai/storage-sqlite/sqliteDocumentQueries";
-import type { SqliteSelectRows } from "@risuai/storage-sqlite/sqliteAdminQueries";
-import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
+import * as sqliteDocument from "@risuai/storage-sqlite/queries/document";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
+import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
 
 function valueNode(owner: string, value: string, ownerKey = "setting_key") {
   return {
@@ -32,7 +26,7 @@ describe("SQLite document queries", () => {
       valueNode("b", "B"),
     ]) as unknown as SqliteSelectRows;
     await expect(
-      loadSqliteSettingValues(selectRows, ["a", "b", "c"]),
+      sqliteDocument.loadSettingValues(selectRows, ["a", "b", "c"]),
     ).resolves.toEqual(
       new Map([
         ["a", "A"],
@@ -54,7 +48,7 @@ describe("SQLite document queries", () => {
         content_hash: "hash",
       },
     ]) as unknown as SqliteSelectRows;
-    await expect(listSqliteBotPresets(summaryRows)).resolves.toEqual([
+    await expect(sqliteDocument.listBotPresets(summaryRows)).resolves.toEqual([
       {
         id: "preset-a",
         position: 2,
@@ -70,23 +64,21 @@ describe("SQLite document queries", () => {
       { data: JSON.stringify({ name: "Preset" }) },
     ]) as unknown as SqliteSelectRows;
     await expect(
-      loadSqliteBotPreset<{ name: string }>(presetRows, "preset-a"),
+      sqliteDocument.loadBotPreset<{ name: string }>(presetRows, "preset-a"),
     ).resolves.toEqual({ id: "preset-a", name: "Preset" });
   });
 
   it("rebuilds module records without app-specific module types", async () => {
-    const moduleRows = flattenRelationalValue({ name: "Module" }).map(
-      (row) => ({
-        ...row,
-        module_id: "module-a",
-      }),
-    );
+    const moduleRows = nodeCodec.flatten({ name: "Module" }).map((row) => ({
+      ...row,
+      module_id: "module-a",
+    }));
     const selectRows = vi
       .fn()
       .mockResolvedValueOnce([{ module_id: "module-a" }])
       .mockResolvedValueOnce(moduleRows) as unknown as SqliteSelectRows;
     await expect(
-      loadSqliteModules<{ name: string }>(selectRows),
+      sqliteDocument.loadModules<{ name: string }>(selectRows),
     ).resolves.toEqual([{ id: "module-a", name: "Module" }]);
   });
 
@@ -97,7 +89,7 @@ describe("SQLite document queries", () => {
       .mockResolvedValueOnce([
         valueNode("main", "prompt"),
       ]) as unknown as SqliteSelectRows;
-    await expect(loadSqlitePrompts(selectRows)).resolves.toEqual({
+    await expect(sqliteDocument.loadPrompts(selectRows)).resolves.toEqual({
       main: "prompt",
     });
   });

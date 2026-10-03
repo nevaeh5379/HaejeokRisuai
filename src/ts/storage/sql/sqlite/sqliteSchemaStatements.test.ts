@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  isSqlitePragmaStatement,
-  splitSqliteStatements,
-} from "@risuai/storage-sqlite/sqliteSchemaStatements";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as sqliteStatements from "@risuai/storage-sqlite/schema/statements";
 
-describe("splitSqliteStatements", () => {
+describe("sqliteStatements.split", () => {
   it("keeps trigger bodies and quoted/comment semicolons intact", () => {
-    const statements = splitSqliteStatements(`
+    const statements = sqliteStatements.split(`
       CREATE TABLE demo (value TEXT);
       INSERT INTO demo VALUES ('a;b'); -- ; ignored
       CREATE VIEW demo_view AS SELECT value AS trigger FROM demo;
@@ -28,15 +25,15 @@ describe("splitSqliteStatements", () => {
 
   it("recognizes PRAGMA statements after leading comments", () => {
     expect(
-      isSqlitePragmaStatement("-- comment\nPRAGMA foreign_keys = ON;"),
+      sqliteStatements.isPragma("-- comment\nPRAGMA foreign_keys = ON;"),
     ).toBe(true);
     expect(
-      isSqlitePragmaStatement("/* comment */ CREATE TABLE x (id INTEGER);"),
+      sqliteStatements.isPragma("/* comment */ CREATE TABLE x (id INTEGER);"),
     ).toBe(false);
   });
 
   it("splits the production schema into executable statements", () => {
-    const statements = splitSqliteStatements(sqliteSchemaSql);
+    const statements = sqliteStatements.split(sqliteSchemaSql);
     const triggers = statements.filter((statement) =>
       /^\s*CREATE\s+TRIGGER\b/i.test(statement),
     );

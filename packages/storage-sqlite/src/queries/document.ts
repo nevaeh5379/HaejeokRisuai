@@ -1,10 +1,7 @@
-import type { SqliteSelectRows } from "./sqliteAdminQueries";
-import {
-  groupSqliteNodeValues,
-  loadSqliteSettingValue,
-} from "./sqliteNodeValues";
+import * as sqliteNodes from "./nodes";
+import type { SqliteSelectRows } from "../types";
 
-export interface SqliteBotPresetSummary {
+export interface BotPresetSummary {
   id: string;
   position: number;
   name: string;
@@ -14,7 +11,7 @@ export interface SqliteBotPresetSummary {
   hash: string;
 }
 
-export async function loadSqliteSettingValues(
+export async function loadSettingValues(
   selectRows: SqliteSelectRows,
   keys: readonly string[],
 ): Promise<Map<string, unknown>> {
@@ -28,11 +25,11 @@ export async function loadSqliteSettingValues(
       ORDER BY setting_key, node_id`,
     [...keys],
   );
-  const grouped = groupSqliteNodeValues(rows, "setting_key");
+  const grouped = sqliteNodes.groupValues(rows, "setting_key");
   return new Map(keys.map((key) => [key, grouped.get(key)]));
 }
 
-export async function listSqliteSettingKeys(
+export async function listSettingKeys(
   selectRows: SqliteSelectRows,
 ): Promise<string[]> {
   const rows = await selectRows<{ key: string }>(
@@ -41,9 +38,9 @@ export async function listSqliteSettingKeys(
   return rows.map((row) => row.key);
 }
 
-export async function listSqliteBotPresets(
+export async function listBotPresets(
   selectRows: SqliteSelectRows,
-): Promise<SqliteBotPresetSummary[]> {
+): Promise<BotPresetSummary[]> {
   const rows = await selectRows<{
     preset_id: string;
     position: number;
@@ -66,7 +63,7 @@ export async function listSqliteBotPresets(
   }));
 }
 
-export async function loadSqliteBotPreset<TPreset extends object>(
+export async function loadBotPreset<TPreset extends object>(
   selectRows: SqliteSelectRows,
   id: string,
 ): Promise<(TPreset & { id: string }) | null> {
@@ -78,7 +75,7 @@ export async function loadSqliteBotPreset<TPreset extends object>(
   return { ...(JSON.parse(rows[0].data) as TPreset), id };
 }
 
-export async function loadSqliteModules<TModule extends object>(
+export async function loadModules<TModule extends object>(
   selectRows: SqliteSelectRows,
 ): Promise<TModule[]> {
   const rows = await selectRows<{ module_id: string }>(
@@ -86,7 +83,7 @@ export async function loadSqliteModules<TModule extends object>(
   );
   if (rows.length === 0) {
     return (
-      ((await loadSqliteSettingValue(selectRows, "modules")) as
+      ((await sqliteNodes.loadSettingValue(selectRows, "modules")) as
         TModule[] | undefined) ?? []
     );
   }
@@ -97,14 +94,14 @@ export async function loadSqliteModules<TModule extends object>(
        FROM module_extension_nodes
       ORDER BY module_id, node_id`,
   );
-  const values = groupSqliteNodeValues(nodeRows, "module_id");
+  const values = sqliteNodes.groupValues(nodeRows, "module_id");
   return rows.map(({ module_id }) => ({
     ...(values.get(module_id) as TModule),
     id: module_id,
   }));
 }
 
-export async function loadSqlitePrompts(
+export async function loadPrompts(
   selectRows: SqliteSelectRows,
 ): Promise<Record<string, unknown>> {
   const keys = await selectRows<{ key: string }>(
@@ -119,6 +116,6 @@ export async function loadSqlitePrompts(
       WHERE setting_key IN (SELECT key FROM system_settings WHERE domain = 'prompt')
       ORDER BY setting_key, node_id`,
   );
-  const values = groupSqliteNodeValues(nodeRows, "setting_key");
+  const values = sqliteNodes.groupValues(nodeRows, "setting_key");
   return Object.fromEntries(keys.map(({ key }) => [key, values.get(key)]));
 }

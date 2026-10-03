@@ -1,9 +1,9 @@
 import type { SqlCommit } from "@risuai/protocol/sqlCommit.cjs";
 import { mergeLegacyModulesIntoCommit } from "@risuai/storage-core/sqlCommitCompatibility";
-import type { SqliteSelectRows } from "./sqliteAdminQueries";
-import { loadSqliteSettingValue } from "./sqliteNodeValues";
+import * as sqliteNodes from "../queries/nodes";
+import type { SqliteSelectRows } from "../types";
 
-export async function prepareSqliteModuleCommit<TPreset extends object>(
+export async function prepareModules<TPreset extends object>(
   selectRows: SqliteSelectRows,
   commit: SqlCommit<TPreset>,
 ): Promise<void> {
@@ -14,11 +14,11 @@ export async function prepareSqliteModuleCommit<TPreset extends object>(
   if (Number(rows[0]?.count) !== 0) return;
   mergeLegacyModulesIntoCommit(
     commit,
-    await loadSqliteSettingValue(selectRows, "modules"),
+    await sqliteNodes.loadSettingValue(selectRows, "modules"),
   );
 }
 
-export async function validateSqlitePresetCommit<TPreset extends object>(
+export async function validatePresets<TPreset extends object>(
   selectRows: SqliteSelectRows,
   commit: SqlCommit<TPreset>,
 ): Promise<void> {
@@ -52,7 +52,7 @@ export async function validateSqlitePresetCommit<TPreset extends object>(
   }
   if (commit.presets.activeId !== undefined) return;
 
-  const current = (await loadSqliteSettingValue(
+  const current = (await sqliteNodes.loadSettingValue(
     selectRows,
     "activeBotPresetId",
   )) as string | undefined;

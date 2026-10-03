@@ -1,27 +1,24 @@
-import {
-  buildBranchMessageCountQuery,
-  buildBranchMessageRowsQuery,
-  normalizeSqliteLimit,
-  type SqliteTransactionStatement,
-} from "./sqliteQueries";
+import * as sqliteMessages from "./messages";
+import type { SqliteStatement } from "../types";
+import { normalizeLimit } from "../util";
 
-export interface SqliteChatLoadPlan {
-  chat: SqliteTransactionStatement;
-  extension: SqliteTransactionStatement;
-  total: SqliteTransactionStatement;
-  messages: SqliteTransactionStatement;
-  activeBranch: SqliteTransactionStatement;
-  branchCount: SqliteTransactionStatement;
+export interface LoadPlan {
+  chat: SqliteStatement;
+  extension: SqliteStatement;
+  total: SqliteStatement;
+  messages: SqliteStatement;
+  activeBranch: SqliteStatement;
+  branchCount: SqliteStatement;
 }
 
-export function buildSqliteChatLoadPlan(
+export function buildLoadPlan(
   chatId: string,
   requestedMessageLimit?: number,
-): SqliteChatLoadPlan {
+): LoadPlan {
   const limit =
     requestedMessageLimit === undefined
       ? undefined
-      : normalizeSqliteLimit(requestedMessageLimit);
+      : normalizeLimit(requestedMessageLimit);
   return {
     chat: {
       sql: "SELECT id, name, note, folder_id, last_message_time FROM chats WHERE id = ?",
@@ -34,8 +31,8 @@ export function buildSqliteChatLoadPlan(
               FROM chat_extension_nodes WHERE chat_id = ? ORDER BY node_id`,
       bind: [chatId],
     },
-    total: buildBranchMessageCountQuery(chatId),
-    messages: buildBranchMessageRowsQuery(chatId, undefined, limit),
+    total: sqliteMessages.buildBranchCountQuery(chatId),
+    messages: sqliteMessages.buildBranchRowsQuery(chatId, undefined, limit),
     activeBranch: {
       sql: "SELECT branch_id FROM chat_active_branches WHERE chat_id = ?",
       bind: [chatId],
@@ -47,9 +44,7 @@ export function buildSqliteChatLoadPlan(
   };
 }
 
-export function sqliteChatLoadStatements(
-  plan: SqliteChatLoadPlan,
-): SqliteTransactionStatement[] {
+export function loadStatements(plan: LoadPlan): SqliteStatement[] {
   return [
     plan.chat,
     plan.extension,
@@ -60,7 +55,7 @@ export function sqliteChatLoadStatements(
   ];
 }
 
-export interface SqliteChatRow extends Record<string, unknown> {
+export interface Row extends Record<string, unknown> {
   id: string;
   name: string | null;
   note: string | null;
@@ -68,7 +63,7 @@ export interface SqliteChatRow extends Record<string, unknown> {
   last_message_time: number | null;
 }
 
-export interface SqliteChatDocument extends Record<string, unknown> {
+export interface ChatDocument extends Record<string, unknown> {
   id: string;
   message: unknown[];
   messageOffset: number;
@@ -78,14 +73,14 @@ export interface SqliteChatDocument extends Record<string, unknown> {
   detailsLoaded: boolean;
 }
 
-export function hydrateSqliteChatDocument(
-  row: SqliteChatRow,
+export function hydrateDocument(
+  row: Row,
   extension: Record<string, unknown>,
   messages: unknown[],
   total: number,
   activeBranchId: string,
-): SqliteChatDocument {
-  const chat = { ...extension } as SqliteChatDocument;
+): ChatDocument {
+  const chat = { ...extension } as ChatDocument;
   chat.id = row.id;
   chat.name = row.name ?? "";
   chat.note = row.note ?? "";
@@ -102,27 +97,27 @@ export function hydrateSqliteChatDocument(
   return chat;
 }
 
-export interface SqliteMessagePagePlan {
-  statement: SqliteTransactionStatement;
+export interface MessagePagePlan {
+  statement: SqliteStatement;
   offset: number;
   total: number;
   hasMore: boolean;
 }
 
-export function buildSqliteMessagePagePlan(
+export function buildMessagePagePlan(
   chatId: string,
   before: number | undefined,
   total: number,
   requestedLimit: number,
-): SqliteMessagePagePlan {
+): MessagePagePlan {
   const end =
     before === undefined || !Number.isFinite(before)
       ? total
       : Math.min(total, Math.max(0, Math.floor(before)));
-  const limit = normalizeSqliteLimit(requestedLimit);
+  const limit = normalizeLimit(requestedLimit);
   const offset = Math.max(0, end - limit);
   return {
-    statement: buildBranchMessageRowsQuery(
+    statement: sqliteMessages.buildBranchRowsQuery(
       chatId,
       undefined,
       end - offset,

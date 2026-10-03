@@ -7,25 +7,14 @@ import type {
   NodePostgresTableInfo,
   NodePostgresTokenUsage,
 } from "@risuai/protocol/databaseApi.cjs";
-import {
-  normalizeSqliteLimit,
-  type SqliteTransactionStatement,
-} from "./sqliteQueries";
-
-export type SqliteSelectRows = <T extends Record<string, unknown>>(
-  sql: string,
-  bind?: unknown[],
-) => Promise<T[]>;
-
-export type SqliteSelectRowSets = (
-  queries: SqliteTransactionStatement[],
-) => Promise<Record<string, unknown>[][]>;
+import type { SqliteSelectRowSets, SqliteSelectRows } from "../types";
+import { normalizeLimit } from "../util";
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-export async function searchSqliteMessages(
+export async function searchMessages(
   selectRows: SqliteSelectRows,
   query: string,
   limit = 50,
@@ -41,7 +30,7 @@ export async function searchSqliteMessages(
   }>(
     `SELECT chat_id, id, position, role, sent_time, sender_name, content_text
        FROM messages WHERE content_text LIKE ? ORDER BY sent_time DESC LIMIT ?`,
-    [`%${query}%`, normalizeSqliteLimit(limit)],
+    [`%${query}%`, normalizeLimit(limit)],
   );
   return rows.map((row) => ({
     storageState: "active" as const,
@@ -59,7 +48,7 @@ export async function searchSqliteMessages(
   }));
 }
 
-export async function getSqliteTokenUsage(
+export async function getTokenUsage(
   selectRows: SqliteSelectRows,
 ): Promise<NodePostgresTokenUsage[]> {
   const rows = await selectRows<{
@@ -80,7 +69,7 @@ export async function getSqliteTokenUsage(
   }));
 }
 
-export async function getSqliteBotChatStats(
+export async function getBotChatStats(
   selectRows: SqliteSelectRows,
 ): Promise<NodePostgresBotChatStats[]> {
   const chars = await selectRows<{
@@ -219,7 +208,7 @@ async function getColumns(
   }));
 }
 
-export async function listSqliteDbTables(
+export async function listTables(
   selectRows: SqliteSelectRows,
   selectRowSets: SqliteSelectRowSets,
 ): Promise<NodePostgresTableInfo[]> {
@@ -238,7 +227,7 @@ export async function listSqliteDbTables(
   }));
 }
 
-export async function getSqliteDbTableData(
+export async function getTableData(
   selectRows: SqliteSelectRows,
   selectRowSets: SqliteSelectRowSets,
   table: string,
@@ -260,7 +249,7 @@ export async function getSqliteDbTableData(
   if (columns.length === 0)
     throw new Error(`SQLite table has no columns: ${table}`);
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
-  const limit = normalizeSqliteLimit(options.limit ?? 50);
+  const limit = normalizeLimit(options.limit ?? 50);
   const quotedTable = quoteIdentifier(table);
   const search = options.search?.trim() ?? "";
   const where = search
@@ -298,7 +287,7 @@ export async function getSqliteDbTableData(
   };
 }
 
-export async function searchSqliteCharacters(
+export async function searchCharacters(
   selectRows: SqliteSelectRows,
   field: "tag" | "name",
   value: string,
@@ -314,7 +303,7 @@ export async function searchSqliteCharacters(
     name: string;
     image: string | null;
     kind: string;
-  }>(sql, [`%${value}%`, normalizeSqliteLimit(limit)]);
+  }>(sql, [`%${value}%`, normalizeLimit(limit)]);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,

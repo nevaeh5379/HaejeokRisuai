@@ -1,11 +1,8 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
 import { createEmptySqlCommit, SqlRevisionConflictError } from "../sqlCommit";
-import {
-  flattenRelationalValue,
-  rebuildRelationalValue,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import {
   makeWebStorage,
   makeTauriStorage,
@@ -232,9 +229,7 @@ describe("WebSqliteStorage", () => {
         "SELECT COUNT(*) AS count FROM setting_extension_nodes WHERE setting_key = 'writeAmplificationTest'",
       )
       .get() as { count: number };
-    expect(Number(count.count)).toBe(
-      flattenRelationalValue(shrunkValue).length,
-    );
+    expect(Number(count.count)).toBe(nodeCodec.flatten(shrunkValue).length);
     database.close();
   });
 
