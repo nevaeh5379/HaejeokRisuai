@@ -69,6 +69,11 @@ export interface ReadyChatSession extends IChatSession {
   nowChatroom: character | groupChat;
   currentChar: character;
   currentChat: Chat;
+  /**
+   * 생성 시점의 author note 스냅샷을 포함한 실행 대상입니다.
+   * Execution target carrying the author note snapshot read for this generation.
+   */
+  chatTarget: ChatExecutionTarget;
   promptInfo: MessagePresetInfo;
   tokenizer: ChatTokenizer;
   maxContextTokens: number;
@@ -92,15 +97,18 @@ async function runCurrentChatVariables(
   currentChar: character,
   chatTarget: ChatExecutionTarget,
 ) {
-  chatTarget = { ...chatTarget, authorNoteContent: await readNote(chat) };
+  const targetWithNote: ChatExecutionTarget = {
+    ...chatTarget,
+    authorNoteContent: await readNote(chat),
+  };
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
       chara: currentChar,
       runVar: true,
-      chatTarget,
+      chatTarget: targetWithNote,
     });
   }
-  return chat;
+  return targetWithNote;
 }
 
 async function applyPresetChain(chatProcessIndex: number) {
@@ -273,17 +281,18 @@ async function buildReadySession(
     selection.selectedChar,
     selection.selectedChat,
   );
-  const currentChat = await runCurrentChatVariables(
-    selection.nowChatroom.chats[selection.selectedChat],
+  const currentChat = selection.nowChatroom.chats[selection.selectedChat];
+  const chatTargetWithNote = await runCurrentChatVariables(
+    currentChat,
     currentChar,
     chatTarget,
   );
-  selection.nowChatroom.chats[selection.selectedChat] = currentChat;
   return {
     status: "ready",
     ...selection,
     currentChar,
     currentChat,
+    chatTarget: chatTargetWithNote,
     promptInfo: buildPromptInfo(selection.nowChatroom),
     tokenizer,
     maxContextTokens: presetStore.state.maxContext,
