@@ -1,7 +1,8 @@
+import { AuthorNoteError } from "@risuai/protocol/dist/authorNotes.cjs";
 import type {
   SqlCommit,
   SqlCommitResult,
-} from "@risuai/protocol/sqlCommit.cjs";
+} from "@risuai/protocol/dist/sqlCommit.cjs";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export class NodeSqlRevisionConflictError extends Error {
@@ -50,6 +51,8 @@ async function responseError(
   fallback: string,
 ): Promise<Error> {
   const body = await response.json().catch(() => null);
+  if (typeof body?.code === "string" && body.code.startsWith("author_note_"))
+    return new AuthorNoteError(body.code.slice(12), body.noteId);
   return new Error(body?.error || `${fallback} (${response.status})`);
 }
 
@@ -92,7 +95,10 @@ export class RemoteSqlCommitClient {
 
       if (response.status === 409) {
         const conflict = await response.json().catch(() => null);
-        const revision = Number(conflict?.revision);
+        if (conflict?.code === "author_note_conflict")
+          throw new AuthorNoteError("conflict", conflict.noteId);
+        const revision =
+          conflict?.revision === undefined ? NaN : Number(conflict.revision);
         if (Number.isSafeInteger(revision) && attempt < 2) {
           pending = { ...pending, baseRevision: revision };
           continue;

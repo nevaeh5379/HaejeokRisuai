@@ -1,5 +1,6 @@
+export type SqlStorageRow = Record<string, unknown>;
 // Oracle Storage 구현체 (PostgresStorage 인터페이스 호환)
-// PostgreSQL의 postgresStorage.cjs를 Oracle 23c+ (Autonomous Database) 방언으로 구현.
+// PostgreSQL의 postgresStorage.cts를 Oracle 23c+ (Autonomous Database) 방언으로 구현.
 // postgresRelationalCodec.cjs / postgresJsonCodec.cjs / postgresSettingsCodec.cjs 재사용.
 //
 // 주요 차이점:
@@ -13,7 +14,12 @@
 // - 스키마 점 표기(system.settings) → 접두어(system_settings)
 // - row 컬럼명 대문자 → 소문자 변환 필요
 
-"use strict";
+("use strict");
+const {
+  authorNoteDatabase,
+  withAuthorNoteDatabase,
+  notes: authorNoteSql,
+} = require("../authorNotes.cts") as import("../authorNotes.cts").AuthorNotesAdapter;
 
 const oracledb = require("oracledb");
 const crypto = require("crypto");
@@ -111,7 +117,7 @@ const SCHEMA_PREFIX_MAP = {
 };
 
 // 점 표기 테이블명을 접두어 테이블명으로 변환
-function mapTableName(qualifiedName) {
+function mapTableName(qualifiedName: any) {
   for (const [prefix, replacement] of Object.entries(SCHEMA_PREFIX_MAP)) {
     if (qualifiedName.startsWith(prefix)) {
       return replacement + qualifiedName.slice(prefix.length);
@@ -120,7 +126,7 @@ function mapTableName(qualifiedName) {
   return qualifiedName;
 }
 
-function mapSettingValueToColumns(value) {
+function mapSettingValueToColumns(value: any) {
   if (typeof value === "boolean") {
     return { text_val: null, num_val: null, bool_val: value ? 1 : 0 };
   }
@@ -136,7 +142,7 @@ function mapSettingValueToColumns(value) {
   return { text_val: null, num_val: null, bool_val: null };
 }
 
-function mapColumnsToSettingValue(row) {
+function mapColumnsToSettingValue(row: any) {
   if (row.bool_val !== null && row.bool_val !== undefined)
     return Boolean(row.bool_val);
   if (row.num_val !== null && row.num_val !== undefined)
@@ -158,7 +164,7 @@ function mapColumnsToSettingValue(row) {
   return null;
 }
 
-function pluginExtensionData(data) {
+function pluginExtensionData(data: any) {
   return {
     arguments: data.arguments || {},
     realArg: data.realArg || {},
@@ -168,12 +174,12 @@ function pluginExtensionData(data) {
   };
 }
 
-function rebuildPluginRecords(records, valueRows) {
+function rebuildPluginRecords(records: any, valueRows: any) {
   const extension = rebuildSettings(
-    records.map((row) => ({ key: row.plugin_id })),
+    records.map((row: any) => ({ key: row.plugin_id })),
     valueRows,
   );
-  return records.map((row) => ({
+  return records.map((row: any) => ({
     ...(extension[row.plugin_id] || {}),
     id: row.plugin_id,
     position: Number(row.position),
@@ -193,6 +199,8 @@ function rebuildPluginRecords(records, valueRows) {
 
 // 감사 대상 테이블 목록 (PostgreSQL AUDITED_TABLES와 동일, 접두어 변환)
 const AUDITED_TABLES_QUALIFIED = [
+  "global_author_notes",
+  "global_author_note_settings",
   "system.settings",
   "system.setting_values",
   "system.module_records",
@@ -202,7 +210,7 @@ const AUDITED_TABLES_QUALIFIED = [
   "system.plugin_values",
   "system.plugin_custom_storage",
   "character.characters",
-  ...SETTING_RELATION_DEFINITIONS.map((d) => d.table),
+  ...SETTING_RELATION_DEFINITIONS.map((d: any) => d.table),
   "character.attributes",
   "character.tags",
   "character.greetings",
@@ -268,20 +276,20 @@ const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
 const STARTUP_EXCLUDED_SETTING_KEYS = [
-  ...new Set([
+  ...new Set<any>([
     ...DEFERRED_STARTUP_SETTING_KEYS,
     ...SETTINGS_STORE_EXCLUDED_KEYS,
   ]),
 ];
 const STARTUP_EXCLUDED_KEYS_SQL_LITERAL = STARTUP_EXCLUDED_SETTING_KEYS.map(
-  (key) => `'${key.replace(/'/g, "''")}'`,
+  (key: any) => `'${key.replace(/'/g, "''")}'`,
 ).join(", ");
 const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
-  (key) => `'${key.replace(/'/g, "''")}'`,
+  (key: any) => `'${key.replace(/'/g, "''")}'`,
 ).join(", ");
 
 // Oracle은 점 표기를 식별자로 사용 불가. 접두어 테이블명으로 변환 후 따옴표 처리.
-function assertSqlIdentifier(value) {
+function assertSqlIdentifier(value: any) {
   if (typeof value !== "string") {
     throw new Error(`Unsafe SQL identifier: ${value}`);
   }
@@ -306,21 +314,21 @@ function assertSqlIdentifier(value) {
 
 // oracledb OUT_FORMAT_OBJECT는 컬럼명을 대문자로 반환.
 // postgresRelationalCodec.cjs는 소문자 컬럼명을 가정하므로 변환 필요.
-function lowercaseRowKeys(row) {
+function lowercaseRowKeys(row: any) {
   if (!row || typeof row !== "object") return row;
-  const result = {};
+  const result: Record<string, any> = {};
   for (const key of Object.keys(row)) {
     result[key.toLowerCase()] = row[key];
   }
   return result;
 }
 
-function lowercaseRows(rows) {
+function lowercaseRows(rows: any) {
   return (rows || []).map(lowercaseRowKeys);
 }
 
 // Oracle BLOB을 Buffer로 변환 (fetchInfo BUFFER 모드 사용 시 이미 Buffer)
-async function blobToBuffer(value) {
+async function blobToBuffer(value: any) {
   if (value === null || value === undefined) return null;
   if (Buffer.isBuffer(value)) return value;
   if (typeof value === "string") return Buffer.from(value, "utf8");
@@ -330,9 +338,9 @@ async function blobToBuffer(value) {
       return Buffer.isBuffer(data) ? data : Buffer.from(data);
     }
     if (typeof value.on === "function") {
-      return await new Promise((resolve, reject) => {
+      return await new Promise((resolve: any, reject: any) => {
         const chunks = [];
-        value.on("data", (chunk) => chunks.push(chunk));
+        value.on("data", (chunk: any) => chunks.push(chunk));
         value.on("end", () => resolve(Buffer.concat(chunks)));
         value.on("error", reject);
       });
@@ -342,7 +350,7 @@ async function blobToBuffer(value) {
 }
 
 // Oracle DATE/TIMESTAMP를 Unix epoch ms (PostgreSQL 호환) 로 변환
-function timestampToNumber(value) {
+function timestampToNumber(value: any) {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return value;
   if (value instanceof Date) return value.getTime();
@@ -350,12 +358,12 @@ function timestampToNumber(value) {
 }
 
 // NUMBER(1) → boolean 변환
-function num1ToBool(value) {
+function num1ToBool(value: any) {
   if (value === null || value === undefined) return null;
   return value === 1;
 }
 
-function booleanToNum1(value) {
+function booleanToNum1(value: any) {
   if (value === null || value === undefined) return null;
   return value ? 1 : 0;
 }
@@ -373,18 +381,18 @@ function booleanToNum1(value) {
 // ============================================================
 const ORACLE_EMPTY_STRING_SENTINEL = "\u0000";
 
-function normalizeEmptyStringBind(value) {
+function normalizeEmptyStringBind(value: any) {
   return typeof value === "string" && value === ""
     ? ORACLE_EMPTY_STRING_SENTINEL
     : value;
 }
 
 // execute 바인드(플랫 배열/스칼라/객체)와 executeMany 바인드(배열의 배열/객체의 배열) 모두 처리
-function normalizeEmptyStringBinds(binds) {
+function normalizeEmptyStringBinds(binds: any) {
   if (binds === undefined || binds === null) return binds;
   if (!Array.isArray(binds)) {
     if (typeof binds === "object" && !Buffer.isBuffer(binds)) {
-      const obj = {};
+      const obj: Record<string, any> = {};
       for (const [k, v] of Object.entries(binds)) {
         obj[k] = normalizeEmptyStringBind(v);
       }
@@ -392,10 +400,10 @@ function normalizeEmptyStringBinds(binds) {
     }
     return normalizeEmptyStringBind(binds);
   }
-  return binds.map((entry) => {
+  return binds.map((entry: any) => {
     if (Array.isArray(entry)) return entry.map(normalizeEmptyStringBind);
     if (entry && typeof entry === "object" && !Buffer.isBuffer(entry)) {
-      const obj = {};
+      const obj: Record<string, any> = {};
       for (const [k, v] of Object.entries(entry)) {
         obj[k] = normalizeEmptyStringBind(v);
       }
@@ -405,7 +413,7 @@ function normalizeEmptyStringBinds(binds) {
   });
 }
 
-function restoreEmptyStringInRow(row) {
+function restoreEmptyStringInRow(row: any) {
   if (!row || typeof row !== "object") return row;
   for (const key of Object.keys(row)) {
     if (row[key] === ORACLE_EMPTY_STRING_SENTINEL) row[key] = "";
@@ -417,14 +425,15 @@ function restoreEmptyStringInRow(row) {
 // oracledb는 arguments.length로 바인드 전달 여부를 판별하므로
 // (execute: 1~3개, executeMany: 2~3개), undefined를 명시 전달하면
 // NJS-005가 발생한다. 호출 arity를 그대로 보존한다.
-function wrapConnectionForEmptyStrings(connection) {
+function wrapConnectionForEmptyStrings(connection: any) {
   if (!connection || connection.__risuEmptyStringWrapped) return connection;
   connection.__risuEmptyStringWrapped = true;
   return new Proxy(connection, {
-    get(target, prop) {
+    get(target: any, prop: any) {
+      if (prop === "__risuRawConnection") return target;
       const value = target[prop];
       if (prop === "execute" || prop === "executeMany") {
-        return (...args) => {
+        return (...args: any[]) => {
           if (args.length < 2 || args[1] === undefined) {
             return target[prop](args[0]);
           }
@@ -457,20 +466,20 @@ const COLUMN_NAME_MAP = {
 
 // 쓰기쪽: codec(=PostgreSQL) 컬럼명 → Oracle 컬럼명
 const ORACLE_COLUMN_NAME_MAP = Object.fromEntries(
-  Object.entries(COLUMN_NAME_MAP).map(([oracleName, codecName]) => [
+  Object.entries(COLUMN_NAME_MAP).map(([oracleName, codecName]: any) => [
     codecName,
     oracleName,
   ]),
 );
 
-function toOracleColumn(name) {
+function toOracleColumn(name: any) {
   return ORACLE_COLUMN_NAME_MAP[name] || name;
 }
 
 // row의 컬럼명을 codec 호환 이름으로 역매핑
-function remapRowColumns(row) {
+function remapRowColumns(row: any) {
   if (!row || typeof row !== "object") return row;
-  const result = {};
+  const result: Record<string, any> = {};
   for (const key of Object.keys(row)) {
     const lowerKey = key.toLowerCase();
     const mappedKey = COLUMN_NAME_MAP[lowerKey] || lowerKey;
@@ -479,12 +488,12 @@ function remapRowColumns(row) {
   return result;
 }
 
-function remapRows(rows) {
-  return (rows || []).map((row) => remapRowColumns(lowercaseRowKeys(row)));
+function remapRows(rows: any) {
+  return (rows || []).map((row: any) => remapRowColumns(lowercaseRowKeys(row)));
 }
 
 // CLOB → string 변환 (oracledb는 CLOB을 Lob 스트림으로 반환할 수 있음)
-async function clobToString(value) {
+async function clobToString(value: any) {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") return value;
   if (Buffer.isBuffer(value)) return value.toString("utf8");
@@ -496,10 +505,10 @@ async function clobToString(value) {
         : Buffer.from(data).toString("utf8");
     }
     if (typeof value.on === "function") {
-      return await new Promise((resolve, reject) => {
+      return await new Promise((resolve: any, reject: any) => {
         const chunks = [];
         value.setEncoding("utf8");
-        value.on("data", (chunk) => chunks.push(chunk));
+        value.on("data", (chunk: any) => chunks.push(chunk));
         value.on("end", () => resolve(chunks.join("")));
         value.on("error", reject);
       });
@@ -512,12 +521,20 @@ async function clobToString(value) {
 }
 
 // row의 모든 CLOB/LOB 컬럼을 미리 읽어서 string/Buffer로 변환
-async function hydrateLobs(row, lobColumns = [], blobColumns = []) {
+async function hydrateLobs(
+  row: any,
+  lobColumns: any = [],
+  blobColumns: any = [],
+) {
   if (!row || typeof row !== "object") return row;
   const result = { ...row };
   // 대소문자 구분 없이 LOB 컬럼 매칭 (Oracle은 대문자, clobColumns는 소문자)
-  const lowerLobCols = new Set(lobColumns.map((c) => c.toLowerCase()));
-  const lowerBlobCols = new Set(blobColumns.map((c) => c.toLowerCase()));
+  const lowerLobCols = new Set<any>(
+    lobColumns.map((c: any) => c.toLowerCase()),
+  );
+  const lowerBlobCols = new Set<any>(
+    blobColumns.map((c: any) => c.toLowerCase()),
+  );
   for (const key of Object.keys(result)) {
     const lowerKey = key.toLowerCase();
     if (
@@ -540,8 +557,13 @@ async function hydrateLobs(row, lobColumns = [], blobColumns = []) {
 
 // PostgreSQL 호환 행 반환 (oracledb 결과 → pg 호환 row)
 // fetchInfo로 BUFFER/BLOB을 Buffer로, CLOB은 자동 문자열 변환 (oracledb 6.x thin 모드)
-async function fetchRows(connection, sql, binds = [], options = {}) {
-  const fetchInfo = {};
+async function fetchRows(
+  connection: any,
+  sql: any,
+  binds: any = [],
+  options: any = {},
+) {
+  const fetchInfo: Record<string, any> = {};
   // BLOB 컬럼은 BUFFER로 직접 받기
   if (options.blobColumns) {
     for (const col of options.blobColumns) {
@@ -557,17 +579,22 @@ async function fetchRows(connection, sql, binds = [], options = {}) {
   // CLOB 컬럼 미리 읽기 (oracledb thin 모드는 CLOB을 자동으로 문자열로 반환하지만 안전을 위해)
   if (options.clobColumns && options.clobColumns.length > 0) {
     rows = await Promise.all(
-      rows.map((row) =>
+      rows.map((row: any) =>
         hydrateLobs(row, options.clobColumns, options.blobColumns || []),
       ),
     );
   }
   // 컬럼명 소문자 변환 + 예약어 역매핑 + Oracle sentinel → '' 복원
-  return rows.map((row) => restoreEmptyStringInRow(remapRowColumns(row)));
+  return rows.map((row: any) => restoreEmptyStringInRow(remapRowColumns(row)));
 }
 
 // 단일 행 반환
-async function fetchOne(connection, sql, binds = [], options = {}) {
+async function fetchOne(
+  connection: any,
+  sql: any,
+  binds: any = [],
+  options: any = {},
+) {
   const rows = await fetchRows(connection, sql, binds, {
     ...options,
     fetchOptions: { ...options.fetchOptions, maxRows: 1 },
@@ -576,12 +603,12 @@ async function fetchOne(connection, sql, binds = [], options = {}) {
 }
 
 // PostgreSQL 호환 결과 객체 생성
-function pgResult(rows) {
+function pgResult(rows: any) {
   return { rows, rowCount: rows.length };
 }
 
 // 바인드 변수 변환: pg 스타일($1, $2) → Oracle 스타일(:1, :2)
-function convertSql(sql) {
+function convertSql(sql: any) {
   // $1, $2, ... → :1, :2, ...
   let converted = sql.replace(/\$(\d+)/g, ":$1");
   // ::type 캐스트 제거 (Oracle은 CAST() 사용)
@@ -623,29 +650,29 @@ function convertSql(sql) {
 // PostgreSQL의 bulkInsert()를 Oracle executemany로 대체
 // columnTypes: Oracle 타입 (oracledb.DB_TYPE_*)
 async function bulkInsert(
-  connection,
-  table,
-  columns,
-  columnTypes,
-  rows,
-  conflictAction = null,
+  connection: any,
+  table: any,
+  columns: any,
+  columnTypes: any,
+  rows: any,
+  conflictAction: any = null,
 ) {
   if (rows.length === 0) return;
   const quotedTable = assertSqlIdentifier(table);
-  const quotedColumns = columns.map((col) => `${col.toUpperCase()}`);
+  const quotedColumns = columns.map((col: any) => `${col.toUpperCase()}`);
   const batchRows = Math.max(
     1,
     Number.parseInt(process.env.RISUAI_SQL_BATCH_ROWS || "1000", 10) || 1000,
   );
 
   // Oracle 바인드 변수명 생성 (:1, :2, ...)
-  const bindNames = columns.map((_, i) => `:${i + 1}`).join(", ");
+  const bindNames = columns.map((_: any, i: any) => `:${i + 1}`).join(", ");
 
   if (conflictAction) {
     // MERGE INTO 기반 upsert
     const mergeSql = `MERGE INTO ${quotedTable} target
-             USING (SELECT ${columns.map((c, i) => `:${i + 1} AS ${c.toUpperCase()}`).join(", ")} FROM dual) src
-             ON (${columns.map((c) => `${c.toUpperCase()}`).join(", ") === quotedColumns.join(", ") ? "1=0" : "1=0"})
+             USING (SELECT ${columns.map((c: any, i: any) => `:${i + 1} AS ${c.toUpperCase()}`).join(", ")} FROM dual) src
+             ON (${columns.map((c: any) => `${c.toUpperCase()}`).join(", ") === quotedColumns.join(", ") ? "1=0" : "1=0"})
              WHEN NOT MATCHED THEN INSERT (${quotedColumns.join(", ")})
                  VALUES (${bindNames})`;
     // 단순 INSERT로 fallback (conflictAction은 호출부에서 MERGE로 직접 구현)
@@ -653,8 +680,8 @@ async function bulkInsert(
     for (let start = 0; start < rows.length; start += batchRows) {
       const binds = rows
         .slice(start, start + batchRows)
-        .map((row) =>
-          columns.map((col, index) =>
+        .map((row: any) =>
+          columns.map((col: any, index: any) =>
             prepareBindValue(row[col], columnTypes[index]),
           ),
         );
@@ -665,8 +692,8 @@ async function bulkInsert(
     for (let start = 0; start < rows.length; start += batchRows) {
       const binds = rows
         .slice(start, start + batchRows)
-        .map((row) =>
-          columns.map((col, index) =>
+        .map((row: any) =>
+          columns.map((col: any, index: any) =>
             prepareBindValue(row[col], columnTypes[index]),
           ),
         );
@@ -676,7 +703,7 @@ async function bulkInsert(
 }
 
 // Oracle 타입에 맞게 값 변환
-function prepareBindValue(value, oracleType) {
+function prepareBindValue(value: any, oracleType: any) {
   if (value === undefined) return null;
   if (value === null) return null;
   // boolean → NUMBER(1)
@@ -690,7 +717,7 @@ function prepareBindValue(value, oracleType) {
   return value;
 }
 
-function assertDbExplorerIdentifier(value, field) {
+function assertDbExplorerIdentifier(value: any, field: any) {
   if (typeof value !== "string" || value.length === 0 || value.length > 128) {
     throw new StoragePayloadError(
       `${field} must be a valid table or column name`,
@@ -710,7 +737,7 @@ function assertDbExplorerIdentifier(value, field) {
   );
 }
 
-function dbExplorerSelectExpression(columnName, dataType) {
+function dbExplorerSelectExpression(columnName: any, dataType: any) {
   const column = columnName.toUpperCase();
   switch (dataType.toLowerCase()) {
     case "number":
@@ -728,14 +755,14 @@ function dbExplorerSelectExpression(columnName, dataType) {
 }
 
 async function beginAuditRevision(
-  connection,
+  connection: any,
   {
     storageRevision = null,
     databaseInitialized = null,
     scope,
     action,
     restoredFrom = null,
-  },
+  }: any,
 ) {
   const result = await connection.execute(
     `INSERT INTO system_revisions
@@ -763,9 +790,9 @@ async function beginAuditRevision(
 }
 
 async function deleteMessageChildren(
-  connection,
-  pairs,
-  tables = [
+  connection: any,
+  pairs: any,
+  tables: any = [
     "chat_message_attributes",
     "chat_message_generation",
     "chat_message_prompt_info",
@@ -778,7 +805,7 @@ async function deleteMessageChildren(
     // Oracle은 UNNEST 대신 개별 DELETE 사용
     // executemany로 chat_id/message_id 쌍 삭제
     const deleteSql = `DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = :1 AND message_id = :2`;
-    const binds = pairs.map((p) => [String(p.chatId), String(p.id)]);
+    const binds = pairs.map((p: any) => [String(p.chatId), String(p.id)]);
     const bindDefs = [
       { type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
       { type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
@@ -788,7 +815,7 @@ async function deleteMessageChildren(
 }
 
 class OracleStorage extends SqlStorageBase {
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     super();
     this.user = options.user || "";
     this.password = options.password || "";
@@ -818,7 +845,7 @@ class OracleStorage extends SqlStorageBase {
     console.log("[Oracle] Structured storage is ready.");
   }
 
-  runStartupStep(operation, task) {
+  runStartupStep(operation: any, task: any) {
     return runStartupStage(
       {
         scope: "Oracle startup",
@@ -850,7 +877,7 @@ class OracleStorage extends SqlStorageBase {
     );
     // 모든 연결이 빈 문자열 sentinel 정규화 래퍼를 통과하도록 getConnection 래핑
     const realGetConnection = pool.getConnection.bind(pool);
-    pool.getConnection = async (...args) =>
+    pool.getConnection = async (...args: any[]) =>
       wrapConnectionForEmptyStrings(await realGetConnection(...args));
     try {
       // 연결 테스트
@@ -921,6 +948,23 @@ class OracleStorage extends SqlStorageBase {
       await this.runStartupStep("6d/8 ensure plugin storage schema", () =>
         this.ensurePluginSchema(testConn),
       );
+      await this.runStartupStep(
+        "6e/8 ensure global author note schema",
+        async () => {
+          const schema = await fs.readFile(
+            path.join(__dirname, "oracle-schema.sql"),
+            "utf8",
+          );
+          await this.applySchema(
+            testConn,
+            schema.slice(schema.indexOf("CREATE TABLE global_author_notes")),
+          );
+          await authorNoteSql.ensureAuthorNoteReceipts(
+            authorNoteDatabase("oracle", testConn),
+          );
+          await testConn.commit();
+        },
+      );
       await this.runStartupStep("7/8 ensure asset catalog schema", () =>
         this.ensureAssetCatalogSchema(testConn),
       );
@@ -958,7 +1002,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async ensureLastMessageTimeInvariant(connection) {
+  async ensureLastMessageTimeInvariant(connection: any) {
     const existing = await connection.execute(
       `SELECT trigger_name FROM user_triggers WHERE trigger_name = 'CHAT_MESSAGES_LAST_MESSAGE_TIME'`,
       [],
@@ -983,7 +1027,7 @@ class OracleStorage extends SqlStorageBase {
     await this.applySchema(connection, triggerSql);
   }
 
-  async ensureBranchSchema(connection) {
+  async ensureBranchSchema(connection: any) {
     const statements = [
       `CREATE TABLE chat_branches (
                 chat_id VARCHAR2(4000) NOT NULL REFERENCES chat_chats(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
@@ -1020,7 +1064,7 @@ class OracleStorage extends SqlStorageBase {
     await connection.commit();
   }
 
-  async ensurePluginSchema(connection) {
+  async ensurePluginSchema(connection: any) {
     const statements = [
       `CREATE TABLE system_plugin_records (
                 plugin_id VARCHAR2(4000) PRIMARY KEY,
@@ -1067,7 +1111,7 @@ class OracleStorage extends SqlStorageBase {
     await connection.commit();
   }
 
-  async ensureAssetCatalogSchema(connection) {
+  async ensureAssetCatalogSchema(connection: any) {
     const statements = [
       `CREATE TABLE system_asset_catalog_state (
                 singleton NUMBER(1) DEFAULT 1 PRIMARY KEY,
@@ -1107,7 +1151,7 @@ class OracleStorage extends SqlStorageBase {
   }
 
   // 스키마 SQL을 분할하여 순차 실행 (/ 구분자 + 세미콜론)
-  async applySchema(connection, schemaSql) {
+  async applySchema(connection: any, schemaSql: any) {
     // 블록 주석 제거
     const cleaned = schemaSql.replace(/\/\*[\s\S]*?\*\//g, "");
     const lines = cleaned.split("\n");
@@ -1173,7 +1217,11 @@ class OracleStorage extends SqlStorageBase {
 
   // Oracle은 VARCHAR2 -> CLOB 컬럼 타입 직접 변경(ALTER TABLE MODIFY) 시 ORA-22858 발생.
   // 임시 컬럼을 추가하고 데이터를 복사한 후 기존 컬럼을 교체한다.
-  async _migrateVarchar2ToClob(connection, tableName, columnName) {
+  async _migrateVarchar2ToClob(
+    connection: any,
+    tableName: any,
+    columnName: any,
+  ) {
     try {
       const checkSql = `SELECT data_type FROM user_tab_cols WHERE table_name = UPPER(:1) AND column_name = UPPER(:2)`;
       const res = await connection.execute(checkSql, [tableName, columnName], {
@@ -1211,7 +1259,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async reconfigure(options = {}) {
+  async reconfigure(options: any = {}) {
     this.invalidateBootstrapCache();
     const tnsAlias = options.tnsAlias || "";
     const parsedPoolMax = Number.parseInt(options.poolMax || "10", 10);
@@ -1302,7 +1350,7 @@ class OracleStorage extends SqlStorageBase {
         initialized: num1ToBool(row?.initialized),
         records: {
           ...records,
-          total: Object.values(records).reduce((a, b) => a + b, 0),
+          total: Object.values(records).reduce((a: any, b: any) => a + b, 0),
         },
       };
     } finally {
@@ -1310,7 +1358,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async isAssetCatalogInitialized(sourceId) {
+  async isAssetCatalogInitialized(sourceId: any) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
     try {
@@ -1339,7 +1387,7 @@ class OracleStorage extends SqlStorageBase {
             conn,
             `SELECT asset_key FROM system_asset_catalog ORDER BY asset_key`,
           );
-      return rows.map((row) => row.asset_key);
+      return rows.map((row: any) => row.asset_key);
     } finally {
       await conn.close();
     }
@@ -1360,7 +1408,7 @@ class OracleStorage extends SqlStorageBase {
             conn,
             `SELECT asset_key, size_bytes, etag, updated_at FROM system_asset_catalog ORDER BY asset_key`,
           );
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         key: row.asset_key,
         size:
           row.size_bytes === null || row.size_bytes === undefined
@@ -1392,7 +1440,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async upsertAssetCatalog(entries) {
+  async upsertAssetCatalog(entries: any) {
     this.assertEnabled();
     if (!Array.isArray(entries) || entries.length === 0) return 0;
     const conn = await this.pool.getConnection();
@@ -1407,7 +1455,7 @@ class OracleStorage extends SqlStorageBase {
                     target.updated_at = SYSTIMESTAMP
                  WHEN NOT MATCHED THEN INSERT (asset_key, size_bytes, etag)
                     VALUES (src.asset_key, src.size_bytes, src.etag)`,
-        entries.map((entry) => [
+        entries.map((entry: any) => [
           entry.key,
           entry.size ?? null,
           entry.etag ?? null,
@@ -1427,14 +1475,14 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async removeAssetCatalog(keys) {
+  async removeAssetCatalog(keys: any) {
     this.assertEnabled();
     if (!Array.isArray(keys) || keys.length === 0) return 0;
     const conn = await this.pool.getConnection();
     try {
       const result = await conn.executeMany(
         `DELETE FROM system_asset_catalog WHERE asset_key = :1`,
-        keys.map((key) => [key]),
+        keys.map((key: any) => [key]),
         { autoCommit: true },
       );
       return result.rowsAffected || 0;
@@ -1443,7 +1491,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async replaceAssetCatalog(prefix, entries, sourceId) {
+  async replaceAssetCatalog(prefix: any, entries: any, sourceId: any) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
     try {
@@ -1459,7 +1507,7 @@ class OracleStorage extends SqlStorageBase {
         await conn.executeMany(
           `INSERT INTO system_asset_catalog (asset_key, size_bytes, etag)
                      VALUES (:1, :2, :3)`,
-          entries.map((entry) => [
+          entries.map((entry: any) => [
             entry.key,
             entry.size ?? null,
             entry.etag ?? null,
@@ -1493,7 +1541,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async listRevisions(rawLimit = null) {
+  async listRevisions(rawLimit: any = null) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
     try {
@@ -1514,14 +1562,14 @@ class OracleStorage extends SqlStorageBase {
         rawLimit !== 0 &&
         rawLimit !== "0"
       ) {
-        const parsedLimit = Number.parseInt(rawLimit, 10);
+        const parsedLimit = Number.parseInt(String(rawLimit), 10);
         if (Number.isSafeInteger(parsedLimit) && parsedLimit > 0) {
           sql += " FETCH FIRST :1 ROWS ONLY";
           params.push(parsedLimit);
         }
       }
       const rows = await fetchRows(conn, sql, params);
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         ...row,
         id: Number(row.id),
         storage_revision:
@@ -1541,7 +1589,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async getRevisionDetails(id) {
+  async getRevisionDetails(id: any) {
     this.assertEnabled();
     const revisionId = Number(id);
     const conn = await this.pool.getConnection();
@@ -1560,8 +1608,8 @@ class OracleStorage extends SqlStorageBase {
         [revisionId],
       );
 
-      const tableMap = new Map();
-      const auditLogs = auditRows.map((a) => {
+      const tableMap = new Map<any, any>();
+      const auditLogs = auditRows.map((a: any) => {
         const table = a.table_name;
         const op = a.operation;
         if (!tableMap.has(table)) {
@@ -1621,7 +1669,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async getRevisionDiff(baseId, targetId) {
+  async getRevisionDiff(baseId: any, targetId: any) {
     this.assertEnabled();
     const minId = Math.min(Number(baseId), Number(targetId));
     const maxId = Math.max(Number(baseId), Number(targetId));
@@ -1633,7 +1681,7 @@ class OracleStorage extends SqlStorageBase {
         [minId, maxId],
       );
 
-      const tableMap = new Map();
+      const tableMap = new Map<any, any>();
       for (const a of auditRows) {
         const table = a.table_name;
         const op = a.operation;
@@ -1682,7 +1730,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async previewRestore(rawRevisionId) {
+  async previewRestore(rawRevisionId: any) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
     const conn = await this.pool.getConnection();
@@ -1711,7 +1759,7 @@ class OracleStorage extends SqlStorageBase {
         [targetRevisionId],
       );
 
-      const tableMap = new Map();
+      const tableMap = new Map<any, any>();
       let restoreInsertCount = 0;
       let restoreDeleteCount = 0;
       let restoreUpdateCount = 0;
@@ -1813,7 +1861,7 @@ class OracleStorage extends SqlStorageBase {
         [],
         { clobColumns: ["image"] },
       );
-      const characters = characterRows.map((row) => ({
+      const characters = characterRows.map((row: any) => ({
         chaId: row.id,
         type: row.kind || "character",
         name: row.name || "",
@@ -1845,6 +1893,39 @@ class OracleStorage extends SqlStorageBase {
         await conn.close();
       } catch (e) {}
     }
+  }
+
+  async listGlobalAuthorNotes() {
+    return withAuthorNoteDatabase(
+      this,
+      "oracle",
+      authorNoteSql.listAuthorNotes,
+    );
+  }
+  async getGlobalAuthorNote(id: string) {
+    return withAuthorNoteDatabase(
+      this,
+      "oracle",
+      (
+        db: import("../../../../packages/protocol/dist/authorNoteSql.cjs").AuthorNoteSql,
+      ) => authorNoteSql.getAuthorNote(db, id),
+    );
+  }
+  async readGlobalAuthorNote(id: string) {
+    return withAuthorNoteDatabase(
+      this,
+      "oracle",
+      (
+        db: import("../../../../packages/protocol/dist/authorNoteSql.cjs").AuthorNoteSql,
+      ) => authorNoteSql.readAuthorNote(db, id),
+    );
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return withAuthorNoteDatabase(
+      this,
+      "oracle",
+      authorNoteSql.allowAuthorNoteScriptWrite,
+    );
   }
 
   async exportDatabaseSnapshot() {
@@ -2039,6 +2120,12 @@ class OracleStorage extends SqlStorageBase {
       );
 
       const database = rebuildSettings(allSettings, allSettingValues);
+      Object.assign(
+        database,
+        await authorNoteSql.exportAuthorNotes(
+          authorNoteDatabase("oracle", conn),
+        ),
+      );
       for (const row of allSettings)
         if (!Object.prototype.hasOwnProperty.call(database, row.key)) {
           database[row.key] = mapColumnsToSettingValue(row);
@@ -2050,7 +2137,7 @@ class OracleStorage extends SqlStorageBase {
         { clobColumns: ["value"] },
       );
       database.pluginCustomStorage = Object.fromEntries(
-        pluginRows.map((row) => [row.key, JSON.parse(row.value)]),
+        pluginRows.map((row: any) => [row.key, JSON.parse(row.value)]),
       );
       const characterRelations = createCharacterRelations({
         attributes: characterAttributes,
@@ -2121,20 +2208,19 @@ class OracleStorage extends SqlStorageBase {
         [],
         { clobColumns: ["script"] },
       );
-      const pluginScriptMap = new Map(
-        pluginScripts.map((row) => [row.plugin_id, row.script]),
+      const pluginScriptMap = new Map<any, any>(
+        pluginScripts.map((row: any) => [row.plugin_id, row.script]),
       );
-      database.plugins = rebuildPluginRecords(
-        pluginRecords,
-        pluginValues,
-      ).map((plugin) => {
-        const { id, position: _position, ...metadata } = plugin;
-        const script = pluginScriptMap.get(id);
-        if (script === undefined) {
-          throw new Error(`Plugin script is missing: ${id}`);
-        }
-        return { ...metadata, script };
-      });
+      database.plugins = rebuildPluginRecords(pluginRecords, pluginValues).map(
+        (plugin: any) => {
+          const { id, position: _position, ...metadata } = plugin;
+          const script = pluginScriptMap.get(id);
+          if (script === undefined) {
+            throw new Error(`Plugin script is missing: ${id}`);
+          }
+          return { ...metadata, script };
+        },
+      );
 
       const presetRows = await fetchRows(
         conn,
@@ -2143,7 +2229,7 @@ class OracleStorage extends SqlStorageBase {
         { clobColumns: ["data"] },
       );
       if (presetRows.length > 0) {
-        database.botPresets = presetRows.map((row) => {
+        database.botPresets = presetRows.map((row: any) => {
           const data =
             typeof row.data === "string" ? JSON.parse(row.data) : row.data;
           const { id: _id, ...rest } = data;
@@ -2152,7 +2238,7 @@ class OracleStorage extends SqlStorageBase {
         const activeId = database.activeBotPresetId;
         database.botPresetsId = Math.max(
           0,
-          presetRows.findIndex((row) => row.preset_id === activeId),
+          presetRows.findIndex((row: any) => row.preset_id === activeId),
         );
       } else {
         database.botPresets = database.botPresets || [];
@@ -2177,7 +2263,7 @@ class OracleStorage extends SqlStorageBase {
   // 엔티티 로드: loadCharacter, loadChat, loadChatMessages
   // ============================================================
 
-  async loadCharacter(characterId) {
+  async loadCharacter(characterId: any) {
     this.assertEnabled();
     assertId(characterId, "characterId");
     const conn = await this.pool.getConnection();
@@ -2335,7 +2421,7 @@ class OracleStorage extends SqlStorageBase {
   // Asset-bearing fields only (image, customBackground, gptSoVitsConfig, vits,
   // emotionImages, additionalAssets, ccAssets). The storage explorer's orphan
   // analysis needs these without hydrating lore, scripts or chats.
-  async loadCharacterAssetFields(characterId) {
+  async loadCharacterAssetFields(characterId: any) {
     this.assertEnabled();
     assertId(characterId, "characterId");
     const conn = await this.pool.getConnection();
@@ -2370,25 +2456,25 @@ class OracleStorage extends SqlStorageBase {
           { clobColumns: ["uri", "extra_value"] },
         ),
       ]);
-      const fields = {};
+      const fields: Record<string, any> = {};
       if (charRow.image !== null && charRow.image !== undefined)
         fields.image = charRow.image;
       for (const row of attributes) {
         fields[row.key_value] = decodePostgresJsonValue(row.value);
       }
       if (emotions.length) {
-        fields.emotionImages = emotions.map((item) => [
+        fields.emotionImages = emotions.map((item: any) => [
           item.emotion,
           item.asset,
         ]);
       }
       const additionalAssets = assets
-        .filter((item) => item.asset_source === "additional")
-        .map((item) => [item.name, item.uri, item.extension]);
+        .filter((item: any) => item.asset_source === "additional")
+        .map((item: any) => [item.name, item.uri, item.extension]);
       if (additionalAssets.length) fields.additionalAssets = additionalAssets;
       const ccAssets = assets
-        .filter((item) => item.asset_source === "character-card")
-        .map((item) => ({
+        .filter((item: any) => item.asset_source === "character-card")
+        .map((item: any) => ({
           type: item.asset_type,
           uri: item.uri,
           name: item.name,
@@ -2409,7 +2495,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async _loadLinearMessagesForBranchMigration(conn, chatId) {
+  async _loadLinearMessagesForBranchMigration(conn: any, chatId: any) {
     const [
       messages,
       attributes,
@@ -2453,16 +2539,22 @@ class OracleStorage extends SqlStorageBase {
     ]);
     const relations = {
       attributes: groupMessageRows(attributes),
-      generation: new Map(
-        generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      generation: new Map<any, any>(
+        generations.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
-      promptInfo: new Map(
-        promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      promptInfo: new Map<any, any>(
+        promptInfos.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
       promptToggles: groupMessageRows(promptToggles),
       promptItems: groupMessageRows(promptItems),
     };
-    return messages.map((row) => {
+    return messages.map((row: any) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key),
@@ -2474,7 +2566,7 @@ class OracleStorage extends SqlStorageBase {
     });
   }
 
-  async _upsertMessagesForBranchMigration(conn, splitMessages) {
+  async _upsertMessagesForBranchMigration(conn: any, splitMessages: any) {
     if (splitMessages.length === 0) return;
     const messageColumns = [
       "chat_id",
@@ -2493,22 +2585,22 @@ class OracleStorage extends SqlStorageBase {
     const updateCols = messageColumns.slice(2);
     const upsertSql = `BEGIN
             UPDATE chat_messages SET
-                ${updateCols.map((column) => `${column.toUpperCase()} = :${column}`).join(", ")},
+                ${updateCols.map((column: any) => `${column.toUpperCase()} = :${column}`).join(", ")},
                 updated_at = SYSTIMESTAMP
             WHERE chat_id = :chat_id AND id = :id;
             IF SQL%ROWCOUNT = 0 THEN
-                INSERT INTO chat_messages (${messageColumns.map((column) => column.toUpperCase()).join(", ")})
-                VALUES (${messageColumns.map((column) => `:${column}`).join(", ")});
+                INSERT INTO chat_messages (${messageColumns.map((column: any) => column.toUpperCase()).join(", ")})
+                VALUES (${messageColumns.map((column: any) => `:${column}`).join(", ")});
             END IF;
         END;`;
-    const bindDefs = {};
+    const bindDefs: Record<string, any> = {};
     for (const column of messageColumns) {
       const type = this._getColumnBindType("chat_messages", column);
       bindDefs[column] =
         type === oracledb.DB_TYPE_VARCHAR ? { type, maxSize: 4000 } : { type };
     }
-    const binds = splitMessages.map((item) => {
-      const row = {};
+    const binds = splitMessages.map((item: any) => {
+      const row: Record<string, any> = {};
       for (const column of messageColumns) {
         const type = this._getColumnBindType("chat_messages", column);
         row[column] = this._formatBindValue(item.core[column], type, false);
@@ -2518,7 +2610,7 @@ class OracleStorage extends SqlStorageBase {
     await conn.executeMany(upsertSql, binds, { bindDefs });
   }
 
-  async migrateLegacyBranchState(conn, chatId) {
+  async migrateLegacyBranchState(conn: any, chatId: any) {
     const legacyRow = await fetchOne(
       conn,
       `
@@ -2568,7 +2660,7 @@ class OracleStorage extends SqlStorageBase {
       chatId,
     ]);
 
-    const splitMessages = plan.messages.map((message) =>
+    const splitMessages = plan.messages.map((message: any) =>
       splitMessage({
         chatId,
         id: message.id,
@@ -2578,15 +2670,15 @@ class OracleStorage extends SqlStorageBase {
     );
     await deleteMessageChildren(
       conn,
-      plan.messages.map((message) => ({ chatId, id: message.id })),
+      plan.messages.map((message: any) => ({ chatId, id: message.id })),
     );
     await this._upsertMessagesForBranchMigration(conn, splitMessages);
     await this._bulkInsertRows(
       conn,
       "chat_message_attributes",
       ["chat_id", "message_id", "key_value", "value"],
-      splitMessages.flatMap((item) =>
-        item.attributes.map((row) => ({
+      splitMessages.flatMap((item: any) =>
+        item.attributes.map((row: any) => ({
           chat_id: chatId,
           message_id: item.core.id,
           key_value: row.key,
@@ -2610,7 +2702,7 @@ class OracleStorage extends SqlStorageBase {
         "stage3_time",
         "stage4_time",
       ],
-      splitMessages.flatMap((item) =>
+      splitMessages.flatMap((item: any) =>
         item.generation
           ? [{ ...item.generation, chat_id: chatId, message_id: item.core.id }]
           : [],
@@ -2620,7 +2712,7 @@ class OracleStorage extends SqlStorageBase {
       conn,
       "chat_message_prompt_info",
       ["chat_id", "message_id", "prompt_name"],
-      splitMessages.flatMap((item) =>
+      splitMessages.flatMap((item: any) =>
         item.prompt?.info
           ? [{ ...item.prompt.info, chat_id: chatId, message_id: item.core.id }]
           : [],
@@ -2630,8 +2722,8 @@ class OracleStorage extends SqlStorageBase {
       conn,
       "chat_message_prompt_toggles",
       ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.toggles || []).map((row) => ({
+      splitMessages.flatMap((item: any) =>
+        (item.prompt?.toggles || []).map((row: any) => ({
           ...row,
           chat_id: chatId,
           message_id: item.core.id,
@@ -2642,8 +2734,8 @@ class OracleStorage extends SqlStorageBase {
       conn,
       "chat_message_prompt_items",
       ["chat_id", "message_id", "position", "payload"],
-      splitMessages.flatMap((item) =>
-        (item.prompt?.items || []).map((row) => ({
+      splitMessages.flatMap((item: any) =>
+        (item.prompt?.items || []).map((row: any) => ({
           ...row,
           chat_id: chatId,
           message_id: item.core.id,
@@ -2663,7 +2755,7 @@ class OracleStorage extends SqlStorageBase {
         "reason",
         "created_at",
       ],
-      plan.branches.map((branch) => ({
+      plan.branches.map((branch: any) => ({
         chat_id: chatId,
         id: branch.id,
         parent_branch_id: branch.parentBranchId ?? null,
@@ -2677,7 +2769,7 @@ class OracleStorage extends SqlStorageBase {
       conn,
       "chat_message_branch_links",
       ["chat_id", "message_id", "parent_message_id", "origin_branch_id"],
-      plan.links.map((link) => ({
+      plan.links.map((link: any) => ({
         chat_id: chatId,
         message_id: link.messageId,
         parent_message_id: link.parentMessageId ?? null,
@@ -2691,8 +2783,8 @@ class OracleStorage extends SqlStorageBase {
     return true;
   }
 
-  async ensureChatBranchGraphs(conn, chatIds) {
-    const ids = [...new Set((chatIds || []).filter(Boolean))];
+  async ensureChatBranchGraphs(conn: any, chatIds: any) {
+    const ids = [...new Set<any>((chatIds || []).filter(Boolean))];
     if (ids.length === 0) return;
     const idsJson = JSON.stringify(ids);
     await conn.execute(
@@ -2773,7 +2865,7 @@ class OracleStorage extends SqlStorageBase {
     );
   }
 
-  async ensureChatBranchGraph(conn, chatId) {
+  async ensureChatBranchGraph(conn: any, chatId: any) {
     await this.migrateLegacyBranchState(conn, chatId);
     let active = await this._activeBranchId(conn, chatId);
     if (active) return active;
@@ -2782,9 +2874,9 @@ class OracleStorage extends SqlStorageBase {
     return active;
   }
 
-  async linkIncomingMessagesToActiveBranches(conn, splitMessages) {
+  async linkIncomingMessagesToActiveBranches(conn: any, splitMessages: any) {
     if (!splitMessages || splitMessages.length === 0) return;
-    const incoming = splitMessages.map((item) => ({
+    const incoming = splitMessages.map((item: any) => ({
       chat_id: item.core.chat_id,
       message_id: item.core.id,
       position: item.core.position,
@@ -2809,7 +2901,7 @@ class OracleStorage extends SqlStorageBase {
     );
     if (unlinked.length === 0) return;
     const unlinkedJson = JSON.stringify(
-      unlinked.map((row) => ({
+      unlinked.map((row: any) => ({
         chat_id: row.chat_id,
         message_id: row.message_id,
         position: Number(row.position) || 0,
@@ -2843,7 +2935,7 @@ class OracleStorage extends SqlStorageBase {
         `,
       { unlinkedJson },
     );
-    const heads = new Map();
+    const heads = new Map<any, any>();
     for (const row of unlinked) {
       const key = `${row.chat_id}\0${row.branch_id}`;
       const position = Number(row.position) || 0;
@@ -2865,7 +2957,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async detachMessagesFromBranchGraph(conn, deletions) {
+  async detachMessagesFromBranchGraph(conn: any, deletions: any) {
     for (const deletion of deletions || []) {
       for (const messageId of deletion.ids || []) {
         await conn.execute(
@@ -2904,7 +2996,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async _activeBranchId(conn, chatId) {
+  async _activeBranchId(conn: any, chatId: any) {
     const row = await fetchOne(
       conn,
       `SELECT branch_id FROM chat_active_branches WHERE chat_id = :1`,
@@ -2913,7 +3005,12 @@ class OracleStorage extends SqlStorageBase {
     return row?.branch_id ?? null;
   }
 
-  async _loadBranchPage(conn, chatId, branchId, options = {}) {
+  async _loadBranchPage(
+    conn: any,
+    chatId: any,
+    branchId: any,
+    options: any = {},
+  ) {
     const countRow = await fetchOne(
       conn,
       `
@@ -2971,7 +3068,7 @@ class OracleStorage extends SqlStorageBase {
         blobColumns: ["content_binary"],
       },
     );
-    const ids = messages.map((row) => row.id);
+    const ids = messages.map((row: any) => row.id);
     if (ids.length === 0)
       return { messages: [], offset, total, hasMore: offset > 0 };
     const idsJson = JSON.stringify(ids);
@@ -3022,16 +3119,22 @@ class OracleStorage extends SqlStorageBase {
     }
     const relations = {
       attributes: groupMessageRows(attributes),
-      generation: new Map(
-        generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      generation: new Map<any, any>(
+        generations.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
-      promptInfo: new Map(
-        promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+      promptInfo: new Map<any, any>(
+        promptInfos.map((row: any) => [
+          `${row.chat_id}\0${row.message_id}`,
+          row,
+        ]),
       ),
       promptToggles: groupMessageRows(promptToggles),
       promptItems: groupMessageRows(promptItems),
     };
-    const rebuilt = messages.map((row) => {
+    const rebuilt = messages.map((row: any) => {
       const key = `${row.chat_id}\0${row.id}`;
       return rebuildMessage(row, {
         attributes: relations.attributes.get(key),
@@ -3044,7 +3147,7 @@ class OracleStorage extends SqlStorageBase {
     return { messages: rebuilt, offset, total, hasMore: offset > 0 };
   }
 
-  async loadChat(chatId, options = {}) {
+  async loadChat(chatId: any, options: any = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const conn = await this.pool.getConnection();
@@ -3144,7 +3247,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatMessages(chatId, options = {}) {
+  async loadChatMessages(chatId: any, options: any = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const conn = await this.pool.getConnection();
@@ -3172,7 +3275,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatMessagePage(chatId, before, limit) {
+  async loadChatMessagePage(chatId: any, before: any, limit: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const conn = await this.pool.getConnection();
@@ -3200,7 +3303,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async listChatBranches(chatId) {
+  async listChatBranches(chatId: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const conn = await this.pool.getConnection();
@@ -3215,7 +3318,7 @@ class OracleStorage extends SqlStorageBase {
         [chatId],
       );
       await conn.commit();
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -3236,7 +3339,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatBranchGraphPage(chatId, rawOffset, rawLimit) {
+  async loadChatBranchGraphPage(chatId: any, rawOffset: any, rawLimit: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
@@ -3276,7 +3379,7 @@ class OracleStorage extends SqlStorageBase {
         { graphChatId: chatId, graphOffset: offset, graphLimit: limit },
         { clobColumns: ["content_text"], blobColumns: ["content_binary"] },
       );
-      const ids = messages.map((row) => row.id);
+      const ids = messages.map((row: any) => row.id);
       let attributes = [];
       let generations = [];
       let promptInfos = [];
@@ -3317,16 +3420,22 @@ class OracleStorage extends SqlStorageBase {
       }
       const relations = {
         attributes: groupMessageRows(attributes),
-        generation: new Map(
-          generations.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        generation: new Map<any, any>(
+          generations.map((row: any) => [
+            `${row.chat_id}\0${row.message_id}`,
+            row,
+          ]),
         ),
-        promptInfo: new Map(
-          promptInfos.map((row) => [`${row.chat_id}\0${row.message_id}`, row]),
+        promptInfo: new Map<any, any>(
+          promptInfos.map((row: any) => [
+            `${row.chat_id}\0${row.message_id}`,
+            row,
+          ]),
         ),
         promptToggles: groupMessageRows(promptToggles),
         promptItems: groupMessageRows(promptItems),
       };
-      const rebuilt = messages.map((row) => {
+      const rebuilt = messages.map((row: any) => {
         const key = `${row.chat_id}\0${row.id}`;
         return rebuildMessage(row, {
           attributes: relations.attributes.get(key),
@@ -3336,7 +3445,7 @@ class OracleStorage extends SqlStorageBase {
           promptItems: relations.promptItems.get(key),
         });
       });
-      const branches = branchesRows.map((row) => ({
+      const branches = branchesRows.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -3350,7 +3459,7 @@ class OracleStorage extends SqlStorageBase {
         branches,
         activeBranchId: branchesRows[0]?.active_branch_id ?? undefined,
         messages: rebuilt,
-        links: messages.map((row) => ({
+        links: messages.map((row: any) => ({
           messageId: row.id,
           position: Number(row.position) || 0,
           parentMessageId: row.parent_message_id ?? undefined,
@@ -3372,7 +3481,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadChatBranchGraph(chatId) {
+  async loadChatBranchGraph(chatId: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     const conn = await this.pool.getConnection();
@@ -3411,7 +3520,7 @@ class OracleStorage extends SqlStorageBase {
         },
       );
       await conn.commit();
-      const branches = branchesRows.map((row) => ({
+      const branches = branchesRows.map((row: any) => ({
         id: row.id,
         chatId: row.chat_id,
         parentBranchId: row.parent_branch_id ?? undefined,
@@ -3420,14 +3529,14 @@ class OracleStorage extends SqlStorageBase {
         reason: row.reason,
         createdAt: Number(row.created_at) || 0,
       }));
-      const messages = graphRows.map((row) => {
+      const messages = graphRows.map((row: any) => {
         const message = rebuildMessage(row);
         if (row.graph_generation_model != null) {
           message.generationInfo = { model: row.graph_generation_model };
         }
         return message;
       });
-      const links = graphRows.map((row) => ({
+      const links = graphRows.map((row: any) => ({
         messageId: row.id,
         parentMessageId: row.parent_message_id ?? undefined,
         originBranchId: row.origin_branch_id,
@@ -3450,7 +3559,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadBranchMessages(chatId, branchId, options = {}) {
+  async loadBranchMessages(chatId: any, branchId: any, options: any = {}) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
@@ -3475,7 +3584,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async createChatBranch(input) {
+  async createChatBranch(input: any) {
     this.assertEnabled();
     assertId(input?.chatId, "chatId");
     assertId(input?.id, "branchId");
@@ -3539,7 +3648,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async activateChatBranch(chatId, branchId) {
+  async activateChatBranch(chatId: any, branchId: any) {
     this.assertEnabled();
     assertId(chatId, "chatId");
     assertId(branchId, "branchId");
@@ -3573,7 +3682,7 @@ class OracleStorage extends SqlStorageBase {
   // 설정 로드: loadPlugins, loadPluginCustomStorage, ...
   // ============================================================
 
-  async loadPlugins(options = {}) {
+  async loadPlugins(options: any = {}) {
     this.assertEnabled();
     const pluginId =
       typeof options?.pluginId === "string" ? options.pluginId : null;
@@ -3625,7 +3734,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadPluginScript(pluginId) {
+  async loadPluginScript(pluginId: any) {
     this.assertEnabled();
     assertId(pluginId, "pluginId");
     const conn = await this.pool.getConnection();
@@ -3661,7 +3770,7 @@ class OracleStorage extends SqlStorageBase {
       );
       await conn.rollback();
       const pluginCustomStorage = Object.fromEntries(
-        rows.map((row) => [row.key, JSON.parse(row.value)]),
+        rows.map((row: any) => [row.key, JSON.parse(row.value)]),
       );
       const serialized = JSON.stringify(pluginCustomStorage);
       const hash = crypto.createHash("sha256").update(serialized).digest("hex");
@@ -3690,7 +3799,7 @@ class OracleStorage extends SqlStorageBase {
         `SELECT key FROM system_plugin_custom_storage ORDER BY key`,
       );
       await conn.rollback();
-      return rows.map((row) => row.key);
+      return rows.map((row: any) => row.key);
     } catch (error) {
       try {
         await conn.rollback();
@@ -3703,7 +3812,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadPluginCustomStorageKey(storageKey) {
+  async loadPluginCustomStorageKey(storageKey: any) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
     try {
@@ -3743,7 +3852,7 @@ class OracleStorage extends SqlStorageBase {
         conn,
         "SELECT key FROM system_settings ORDER BY key",
       );
-      return rows.map((row) => row.key);
+      return rows.map((row: any) => row.key);
     } finally {
       try {
         await conn.close();
@@ -3751,13 +3860,13 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadSettingKeys(keys) {
+  async loadSettingKeys(keys: any) {
     this.assertEnabled();
     const conn = await this.pool.getConnection();
     try {
       await conn.execute("SET TRANSACTION READ ONLY");
       // Oracle IN 목록: 바인드 변수 목록 생성
-      const inClause = keys.map((_, i) => `:${i + 1}`).join(", ");
+      const inClause = keys.map((_: any, i: any) => `:${i + 1}`).join(", ");
       const settings = await fetchRows(
         conn,
         `SELECT * FROM system_settings WHERE key IN (${inClause}) ORDER BY key`,
@@ -3779,7 +3888,7 @@ class OracleStorage extends SqlStorageBase {
           { clobColumns: ["value"] },
         );
         rebuilt.pluginCustomStorage = Object.fromEntries(
-          pluginRows.map((row) => [row.key, JSON.parse(row.value)]),
+          pluginRows.map((row: any) => [row.key, JSON.parse(row.value)]),
         );
       }
       const serialized = JSON.stringify(rebuilt);
@@ -3820,10 +3929,10 @@ class OracleStorage extends SqlStorageBase {
         },
       );
       const rebuilt = rebuildSettings(
-        modules.map((row) => ({ key: row.module_id })),
+        modules.map((row: any) => ({ key: row.module_id })),
         values,
       );
-      const result = modules.map((row) => ({
+      const result = modules.map((row: any) => ({
         ...rebuilt[row.module_id],
         id: row.module_id,
       }));
@@ -3853,7 +3962,7 @@ class OracleStorage extends SqlStorageBase {
         [],
         { clobColumns: ["image"] },
       );
-      const presets = rows.map((row) => ({
+      const presets = rows.map((row: any) => ({
         id: row.preset_id,
         position: Number(row.position),
         name: row.name || "",
@@ -3877,7 +3986,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadBotPreset(id) {
+  async loadBotPreset(id: any) {
     this.assertEnabled();
     const started = process.hrtime.bigint();
     const conn = await this.pool.getConnection();
@@ -3908,7 +4017,10 @@ class OracleStorage extends SqlStorageBase {
   // Destructive storage sync must never auto-rebase. The revision is checked
   // again while the metadata row is locked in the same transaction that will
   // apply the replacement.
-  async runStorageSyncFinalizeTransaction(expectedRevision, callback) {
+  async runStorageSyncFinalizeTransaction(
+    expectedRevision: any,
+    callback: any,
+  ) {
     this.assertEnabled();
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
       throw new StoragePayloadError(
@@ -3981,7 +4093,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async sync(rawPayload, options = {}) {
+  async sync(rawPayload: any, options: any = {}) {
     this.assertEnabled();
     const onProgress =
       typeof options === "function" ? options : options?.onProgress;
@@ -4025,6 +4137,14 @@ class OracleStorage extends SqlStorageBase {
           `SELECT revision FROM system_storage_meta WHERE singleton = 1 FOR UPDATE`,
         );
         currentRevision = Number(metaRow.revision);
+        const receipt = await authorNoteSql.readAuthorNoteReceipt(
+          authorNoteDatabase("oracle", conn),
+          payload,
+        );
+        if (receipt) {
+          await conn.commit();
+          return receipt;
+        }
         nextRevision = currentRevision + 1;
       }
       if (payload.baseRevision !== currentRevision) {
@@ -4033,9 +4153,9 @@ class OracleStorage extends SqlStorageBase {
           `Oracle data changed in another session (server revision ${currentRevision}). Reload before saving again.`,
         );
       }
-      const affectedMessageChatIds = new Set([
-        ...(payload.messages || []).map((item) => item.chatId),
-        ...(payload.messageDeletes || []).map((item) => item.chatId),
+      const affectedMessageChatIds = new Set<any>([
+        ...(payload.messages || []).map((item: any) => item.chatId),
+        ...(payload.messageDeletes || []).map((item: any) => item.chatId),
       ]);
       if (!external) {
         await beginAuditRevision(conn, {
@@ -4046,6 +4166,13 @@ class OracleStorage extends SqlStorageBase {
             payload.action || (payload.replaceAll ? "replace-all" : "sync"),
         });
       }
+
+      const noteDb = authorNoteDatabase("oracle", conn);
+      if (payload.replaceAll) await authorNoteSql.resetAuthorNotes(noteDb);
+      const authorNotes = await authorNoteSql.applyAuthorNotes(
+        noteDb,
+        payload.authorNotes,
+      );
 
       if (payload.replaceAll) {
         onProgress?.({
@@ -4104,8 +4231,8 @@ class OracleStorage extends SqlStorageBase {
             "UPDATE system_module_records SET position = position + 1000000000",
           );
         }
-        const positions = new Map(
-          existing.map((row) => [row.module_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.module_id, Number(row.position)]),
         );
         const mergeModule = `MERGE INTO system_module_records t
                     USING (SELECT :module_id module_id FROM dual) s ON (t.module_id=s.module_id)
@@ -4121,10 +4248,10 @@ class OracleStorage extends SqlStorageBase {
         if (payload.modules.upserts.length > 0) {
           await conn.executeMany(
             "DELETE FROM system_module_values WHERE module_id = :1",
-            payload.modules.upserts.map((entry) => [entry.id]),
+            payload.modules.upserts.map((entry: any) => [entry.id]),
           );
-          const rows = payload.modules.upserts.flatMap((entry) =>
-            splitSetting(entry.id, entry.data).values.map((row) => ({
+          const rows = payload.modules.upserts.flatMap((entry: any) =>
+            splitSetting(entry.id, entry.data).values.map((row: any) => ({
               ...row,
               module_id: row.setting_key,
             })),
@@ -4164,8 +4291,8 @@ class OracleStorage extends SqlStorageBase {
           conn,
           "SELECT plugin_id, position FROM system_plugin_records ORDER BY position",
         );
-        const positions = new Map(
-          existing.map((row) => [row.plugin_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.plugin_id, Number(row.position)]),
         );
 
         for (const id of payload.plugins.deletes) {
@@ -4182,7 +4309,7 @@ class OracleStorage extends SqlStorageBase {
 
         let nextPosition =
           existing.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
         const mergePlugin = `MERGE INTO system_plugin_records t
@@ -4205,7 +4332,8 @@ class OracleStorage extends SqlStorageBase {
           }
           await conn.execute(mergePlugin, {
             plugin_id: entry.id,
-            position: entry.position ?? positions.get(entry.id) ?? nextPosition++,
+            position:
+              entry.position ?? positions.get(entry.id) ?? nextPosition++,
             name: data.name,
             display_name:
               typeof data.displayName === "string" ? data.displayName : null,
@@ -4223,11 +4351,11 @@ class OracleStorage extends SqlStorageBase {
         if (payload.plugins.upserts.length > 0) {
           await conn.executeMany(
             "DELETE FROM system_plugin_values WHERE plugin_id = :1",
-            payload.plugins.upserts.map((entry) => [entry.id]),
+            payload.plugins.upserts.map((entry: any) => [entry.id]),
           );
-          const rows = payload.plugins.upserts.flatMap((entry) =>
+          const rows = payload.plugins.upserts.flatMap((entry: any) =>
             splitSetting(entry.id, pluginExtensionData(entry.data)).values.map(
-              (row) => ({ ...row, plugin_id: row.setting_key }),
+              (row: any) => ({ ...row, plugin_id: row.setting_key }),
             ),
           );
           await this._bulkInsertRows(
@@ -4291,8 +4419,8 @@ class OracleStorage extends SqlStorageBase {
           "SELECT text_val FROM system_settings WHERE key = 'activeBotPresetId'",
         );
         const currentActiveId = currentActiveRows[0]?.text_val;
-        const originalIds = existing.map((row) => row.preset_id);
-        const ids = new Set(existing.map((row) => row.preset_id));
+        const originalIds = existing.map((row: any) => row.preset_id);
+        const ids = new Set<any>(existing.map((row: any) => row.preset_id));
         for (const id of payload.presets.deletes) ids.delete(id);
         for (const entry of payload.presets.upserts) ids.add(entry.id);
         if (!ids.size)
@@ -4300,8 +4428,8 @@ class OracleStorage extends SqlStorageBase {
         if (
           payload.presets.order &&
           (payload.presets.order.length !== ids.size ||
-            new Set(payload.presets.order).size !== ids.size ||
-            payload.presets.order.some((id) => !ids.has(id)))
+            new Set<any>(payload.presets.order).size !== ids.size ||
+            payload.presets.order.some((id: any) => !ids.has(id)))
         ) {
           throw new StoragePayloadError(
             "Preset order must contain every preset ID exactly once",
@@ -4319,11 +4447,11 @@ class OracleStorage extends SqlStorageBase {
           );
         let nextPosition =
           existing.reduce(
-            (max, row) => Math.max(max, Number(row.position)),
+            (max: any, row: any) => Math.max(max, Number(row.position)),
             -1,
           ) + 1;
-        const positions = new Map(
-          existing.map((row) => [row.preset_id, Number(row.position)]),
+        const positions = new Map<any, any>(
+          existing.map((row: any) => [row.preset_id, Number(row.position)]),
         );
         const mergePreset = `MERGE INTO system_bot_presets t USING (SELECT :preset_id preset_id FROM dual) s
                     ON (t.preset_id=s.preset_id) WHEN MATCHED THEN UPDATE SET t.position=:position,t.name=:name,t.image=:image,
@@ -4364,11 +4492,13 @@ class OracleStorage extends SqlStorageBase {
           if (!currentActiveId || !ids.has(currentActiveId)) {
             const deletedIndex = originalIds.indexOf(currentActiveId);
             activeId =
-              originalIds.slice(deletedIndex + 1).find((id) => ids.has(id)) ||
+              originalIds
+                .slice(deletedIndex + 1)
+                .find((id: any) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
                 .reverse()
-                .find((id) => ids.has(id)) ||
+                .find((id: any) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }
@@ -4387,7 +4517,7 @@ class OracleStorage extends SqlStorageBase {
       });
       dedupeRootUpserts(payload);
       const rootSettingUpserts = payload.rootUpserts.filter(
-        (row) => row.key !== "pluginCustomStorage",
+        (row: any) => row.key !== "pluginCustomStorage",
       );
       if (rootSettingUpserts.length > 0) {
         const mergeSql = `MERGE INTO system_settings t
@@ -4400,17 +4530,17 @@ class OracleStorage extends SqlStorageBase {
                         t.updated_at = SYSTIMESTAMP
                     WHEN NOT MATCHED THEN INSERT (key, text_val, num_val, bool_val, updated_at)
                         VALUES (s.key, s.text_val, s.num_val, s.bool_val, SYSTIMESTAMP)`;
-        const settingBinds = rootSettingUpserts.map((row) => {
+        const settingBinds = rootSettingUpserts.map((row: any) => {
           const mapped = mapSettingValueToColumns(row.value);
           return { key: row.key, ...mapped };
         });
         await conn.executeMany(mergeSql, settingBinds);
         await conn.executeMany(
           `DELETE FROM system_setting_values WHERE setting_key = :1`,
-          rootSettingUpserts.map((row) => [row.key]),
+          rootSettingUpserts.map((row: any) => [row.key]),
         );
         const settingValueRows = rootSettingUpserts.flatMap(
-          (row) => splitSetting(row.key, row.value).values,
+          (row: any) => splitSetting(row.key, row.value).values,
         );
         await this._bulkInsertRows(
           conn,
@@ -4432,21 +4562,21 @@ class OracleStorage extends SqlStorageBase {
           onProgress,
         );
       }
-      const changedSettingKeys = rootSettingUpserts.map((s) => s.key);
+      const changedSettingKeys = rootSettingUpserts.map((s: any) => s.key);
 
       // 관계형 설정 테이블
       const projectedSettings = projectSettings(rootSettingUpserts);
       if (changedSettingKeys.length > 0) {
-        const changedSet = new Set(changedSettingKeys);
+        const changedSet = new Set<any>(changedSettingKeys);
         for (const definition of SETTING_RELATION_DEFINITIONS) {
-          const projectedKeys = definition.settingKeys.filter((k) =>
+          const projectedKeys = definition.settingKeys.filter((k: any) =>
             changedSet.has(k),
           );
           if (projectedKeys.length === 0) continue;
           const delSql = `DELETE FROM ${assertSqlIdentifier(definition.table)} WHERE setting_key = :1`;
           await conn.executeMany(
             delSql,
-            projectedKeys.map((k) => [k]),
+            projectedKeys.map((k: any) => [k]),
           );
         }
       }
@@ -4465,7 +4595,7 @@ class OracleStorage extends SqlStorageBase {
       if (payload.rootDeletes.length > 0) {
         await conn.executeMany(
           `DELETE FROM system_settings WHERE key = :1`,
-          payload.rootDeletes.map((k) => [k]),
+          payload.rootDeletes.map((k: any) => [k]),
         );
       }
       if (payload.pluginStorageClear) {
@@ -4474,7 +4604,7 @@ class OracleStorage extends SqlStorageBase {
       if (payload.pluginStorageDeletes?.length) {
         await conn.executeMany(
           "DELETE FROM system_plugin_custom_storage WHERE key = :1",
-          payload.pluginStorageDeletes.map((key) => [key]),
+          payload.pluginStorageDeletes.map((key: any) => [key]),
         );
       }
       if (payload.pluginStorageUpserts?.length) {
@@ -4486,7 +4616,7 @@ class OracleStorage extends SqlStorageBase {
                     VALUES (source.key, source.value, SYSTIMESTAMP)`;
         await conn.executeMany(
           pluginSql,
-          payload.pluginStorageUpserts.map((item) => [
+          payload.pluginStorageUpserts.map((item: any) => [
             item.key,
             JSON.stringify(item.value),
           ]),
@@ -4539,15 +4669,15 @@ class OracleStorage extends SqlStorageBase {
         const updateCols = characterColumns.slice(1);
         const upsertSql = `BEGIN
                     UPDATE character_characters SET
-                        ${updateCols.map((c) => `${c.toUpperCase()} = :${c}`).join(", ")},
+                        ${updateCols.map((c: any) => `${c.toUpperCase()} = :${c}`).join(", ")},
                         updated_at = SYSTIMESTAMP
                     WHERE id = :id;
                     IF SQL%ROWCOUNT = 0 THEN
-                        INSERT INTO character_characters (${characterColumns.map((c) => c.toUpperCase()).join(", ")})
-                        VALUES (${characterColumns.map((c) => `:${c}`).join(", ")});
+                        INSERT INTO character_characters (${characterColumns.map((c: any) => c.toUpperCase()).join(", ")})
+                        VALUES (${characterColumns.map((c: any) => `:${c}`).join(", ")});
                     END IF;
                 END;`;
-        const characterBindDefs = {};
+        const characterBindDefs: Record<string, any> = {};
         for (const c of characterColumns) {
           const t = this._getColumnBindType("character_characters", c);
           characterBindDefs[c] =
@@ -4555,8 +4685,8 @@ class OracleStorage extends SqlStorageBase {
               ? { type: t, maxSize: 4000 }
               : { type: t };
         }
-        const binds = splitCharacters.map((item) => {
-          const row = {};
+        const binds = splitCharacters.map((item: any) => {
+          const row: Record<string, any> = {};
           for (const c of characterColumns) {
             const v = item.core[c];
             const t = this._getColumnBindType("character_characters", c);
@@ -4569,7 +4699,7 @@ class OracleStorage extends SqlStorageBase {
         });
       }
 
-      const changedCharacterIds = payload.characters.map((r) => r.id);
+      const changedCharacterIds = payload.characters.map((r: any) => r.id);
       const characterChildTables = [
         "character_attributes",
         "character_tags",
@@ -4591,20 +4721,20 @@ class OracleStorage extends SqlStorageBase {
           const delSql = `DELETE FROM ${assertSqlIdentifier(table)} WHERE ${ownerColumn.toUpperCase()} = :1`;
           await conn.executeMany(
             delSql,
-            changedCharacterIds.map((id) => [id]),
+            changedCharacterIds.map((id: any) => [id]),
           );
         }
       }
 
       // 캐릭터 자식 테이블 bulk insert
-      const characterRows = (name) =>
-        splitCharacters.flatMap((item) => item[name]);
+      const characterRows = (name: any) =>
+        splitCharacters.flatMap((item: any) => item[name]);
       await this._bulkInsertRows(
         conn,
         "character_attributes",
         ["character_id", "key_value", "value"],
-        splitCharacters.flatMap((item) =>
-          item.attributes.map((r) => ({
+        splitCharacters.flatMap((item: any) =>
+          item.attributes.map((r: any) => ({
             character_id: item.core.id,
             key_value: r.key,
             value: r.value,
@@ -4733,7 +4863,7 @@ class OracleStorage extends SqlStorageBase {
           `UPDATE character_characters
                      SET last_interaction_time = :2, updated_at = SYSTIMESTAMP
                      WHERE id = :1`,
-          payload.characterTouches.map((touch) => [
+          payload.characterTouches.map((touch: any) => [
             touch.id,
             touch.lastInteraction,
           ]),
@@ -4766,15 +4896,15 @@ class OracleStorage extends SqlStorageBase {
         const updateCols = chatColumns.slice(1);
         const upsertSql = `BEGIN
                     UPDATE chat_chats SET
-                        ${updateCols.map((c) => `${c.toUpperCase()} = :${c}`).join(", ")},
+                        ${updateCols.map((c: any) => `${c.toUpperCase()} = :${c}`).join(", ")},
                         updated_at = SYSTIMESTAMP
                     WHERE id = :id;
                     IF SQL%ROWCOUNT = 0 THEN
-                        INSERT INTO chat_chats (${chatColumns.map((c) => c.toUpperCase()).join(", ")})
-                        VALUES (${chatColumns.map((c) => `:${c}`).join(", ")});
+                        INSERT INTO chat_chats (${chatColumns.map((c: any) => c.toUpperCase()).join(", ")})
+                        VALUES (${chatColumns.map((c: any) => `:${c}`).join(", ")});
                     END IF;
                 END;`;
-        const chatBindDefs = {};
+        const chatBindDefs: Record<string, any> = {};
         for (const c of chatColumns) {
           const t = this._getColumnBindType("chat_chats", c);
           chatBindDefs[c] =
@@ -4782,8 +4912,8 @@ class OracleStorage extends SqlStorageBase {
               ? { type: t, maxSize: 4000 }
               : { type: t };
         }
-        const binds = splitChats.map((item) => {
-          const row = {};
+        const binds = splitChats.map((item: any) => {
+          const row: Record<string, any> = {};
           for (const c of chatColumns) {
             const v = item.core[c];
             const t = this._getColumnBindType("chat_chats", c);
@@ -4793,7 +4923,7 @@ class OracleStorage extends SqlStorageBase {
         });
         await conn.executeMany(upsertSql, binds, { bindDefs: chatBindDefs });
       }
-      const changedChatIds = payload.chats.map((r) => r.id);
+      const changedChatIds = payload.chats.map((r: any) => r.id);
       const chatChildTables = [
         "chat_attributes",
         "chat_suggestions",
@@ -4808,17 +4938,18 @@ class OracleStorage extends SqlStorageBase {
           const delSql = `DELETE FROM ${assertSqlIdentifier(table)} WHERE chat_id = :1`;
           await conn.executeMany(
             delSql,
-            changedChatIds.map((id) => [id]),
+            changedChatIds.map((id: any) => [id]),
           );
         }
       }
-      const chatRows = (name) => splitChats.flatMap((item) => item[name]);
+      const chatRows = (name: any) =>
+        splitChats.flatMap((item: any) => item[name]);
       await this._bulkInsertRows(
         conn,
         "chat_attributes",
         ["chat_id", "key_value", "value"],
-        splitChats.flatMap((item) =>
-          item.attributes.map((r) => ({
+        splitChats.flatMap((item: any) =>
+          item.attributes.map((r: any) => ({
             chat_id: item.core.id,
             key_value: r.key,
             value: r.value,
@@ -4926,22 +5057,22 @@ class OracleStorage extends SqlStorageBase {
         await deleteMessageChildren(conn, payload.messages);
         await this.ensureChatBranchGraphs(
           conn,
-          splitMessages.map((item) => item.core.chat_id),
+          splitMessages.map((item: any) => item.core.chat_id),
         );
       }
       if (splitMessages.length > 0) {
         const updateCols = messageColumns.slice(2);
         const upsertSql = `BEGIN
                     UPDATE chat_messages SET
-                        ${updateCols.map((column) => `${column.toUpperCase()} = :${column}`).join(", ")},
+                        ${updateCols.map((column: any) => `${column.toUpperCase()} = :${column}`).join(", ")},
                         updated_at = SYSTIMESTAMP
                     WHERE chat_id = :chat_id AND id = :id;
                     IF SQL%ROWCOUNT = 0 THEN
-                        INSERT INTO chat_messages (${messageColumns.map((column) => column.toUpperCase()).join(", ")})
-                        VALUES (${messageColumns.map((column) => `:${column}`).join(", ")});
+                        INSERT INTO chat_messages (${messageColumns.map((column: any) => column.toUpperCase()).join(", ")})
+                        VALUES (${messageColumns.map((column: any) => `:${column}`).join(", ")});
                     END IF;
                 END;`;
-        const bindDefs = {};
+        const bindDefs: Record<string, any> = {};
         for (const column of messageColumns) {
           const type = this._getColumnBindType("chat_messages", column);
           bindDefs[column] =
@@ -4949,8 +5080,8 @@ class OracleStorage extends SqlStorageBase {
               ? { type, maxSize: 4000 }
               : { type };
         }
-        const binds = splitMessages.map((item) => {
-          const row = {};
+        const binds = splitMessages.map((item: any) => {
+          const row: Record<string, any> = {};
           for (const column of messageColumns) {
             const type = this._getColumnBindType("chat_messages", column);
             row[column] = this._formatBindValue(item.core[column], type, false);
@@ -4971,8 +5102,8 @@ class OracleStorage extends SqlStorageBase {
         conn,
         "chat_message_attributes",
         ["chat_id", "message_id", "key_value", "value"],
-        splitMessages.flatMap((item) =>
-          item.attributes.map((r) => ({
+        splitMessages.flatMap((item: any) =>
+          item.attributes.map((r: any) => ({
             chat_id: item.core.chat_id,
             message_id: item.core.id,
             key_value: r.key,
@@ -4997,7 +5128,7 @@ class OracleStorage extends SqlStorageBase {
           "stage3_time",
           "stage4_time",
         ],
-        splitMessages.flatMap((item) =>
+        splitMessages.flatMap((item: any) =>
           item.generation ? [item.generation] : [],
         ),
         onProgress,
@@ -5006,7 +5137,7 @@ class OracleStorage extends SqlStorageBase {
         conn,
         "chat_message_prompt_info",
         ["chat_id", "message_id", "prompt_name"],
-        splitMessages.flatMap((item) =>
+        splitMessages.flatMap((item: any) =>
           item.prompt ? [item.prompt.info] : [],
         ),
         onProgress,
@@ -5015,14 +5146,14 @@ class OracleStorage extends SqlStorageBase {
         conn,
         "chat_message_prompt_toggles",
         ["chat_id", "message_id", "position", "toggle_key", "toggle_value"],
-        splitMessages.flatMap((item) => item.prompt?.toggles || []),
+        splitMessages.flatMap((item: any) => item.prompt?.toggles || []),
         onProgress,
       );
       await this._bulkInsertRows(
         conn,
         "chat_message_prompt_items",
         ["chat_id", "message_id", "position", "payload"],
-        splitMessages.flatMap((item) => item.prompt?.items || []),
+        splitMessages.flatMap((item: any) => item.prompt?.items || []),
         onProgress,
       );
 
@@ -5030,13 +5161,13 @@ class OracleStorage extends SqlStorageBase {
       if (payload.characterDeletes?.length) {
         await conn.executeMany(
           `DELETE FROM character_characters WHERE id = :1`,
-          payload.characterDeletes.map((id) => [id]),
+          payload.characterDeletes.map((id: any) => [id]),
         );
       }
       if (payload.chatDeletes?.length) {
         await conn.executeMany(
           `DELETE FROM chat_chats WHERE id = :1`,
-          payload.chatDeletes.map((id) => [id]),
+          payload.chatDeletes.map((id: any) => [id]),
         );
       }
       if (payload.messageDeletes) {
@@ -5045,7 +5176,7 @@ class OracleStorage extends SqlStorageBase {
           if (del.ids.length > 0) {
             await conn.executeMany(
               `DELETE FROM chat_messages WHERE chat_id = :1 AND id = :2`,
-              del.ids.map((id) => [del.chatId, id]),
+              del.ids.map((id: any) => [del.chatId, id]),
             );
           }
         }
@@ -5062,7 +5193,7 @@ class OracleStorage extends SqlStorageBase {
                              FETCH FIRST 1 ROW ONLY
                         ), updated_at = SYSTIMESTAMP
                       WHERE ch.id = :1`,
-          Array.from(affectedMessageChatIds).map((id) => [id]),
+          Array.from(affectedMessageChatIds).map((id: any) => [id]),
         );
       }
 
@@ -5078,9 +5209,19 @@ class OracleStorage extends SqlStorageBase {
                    WHERE singleton = 1`,
           [nextRevision],
         );
+        await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
+          revision: nextRevision,
+          authorNotes: authorNotes.map(
+            ({ id, contentHash, updatedAt }: any) => ({
+              id,
+              contentHash,
+              updatedAt,
+            }),
+          ),
+        });
         await conn.commit();
       }
-      const changedKeys = payload.rootUpserts.map((s) => s.key);
+      const changedKeys = payload.rootUpserts.map((s: any) => s.key);
       const rootDeletes = payload.rootDeletes || [];
       if (
         payload.plugins ||
@@ -5103,6 +5244,11 @@ class OracleStorage extends SqlStorageBase {
       });
       return {
         revision: nextRevision,
+        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }: any) => ({
+          id,
+          contentHash,
+          updatedAt,
+        })),
         changed: {
           root: payload.rootUpserts.length + payload.rootDeletes.length,
           characters: payload.characters.length,
@@ -5126,17 +5272,19 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  _getColumnBindType(table, column) {
+  _getColumnBindType(table: any, column: any) {
     const col = column.toLowerCase();
     const mappedTable = mapTableName(table);
-    const jsonCols = new Set(
-      this._getJsonColumnsForTable(mappedTable).map((c) => c.toLowerCase()),
+    const jsonCols = new Set<any>(
+      this._getJsonColumnsForTable(mappedTable).map((c: any) =>
+        c.toLowerCase(),
+      ),
     );
     if (jsonCols.has(col)) {
       return oracledb.DB_TYPE_CLOB;
     }
-    const lobCols = new Set(
-      this._getLobColumnsForTable(mappedTable).map((c) => c.toLowerCase()),
+    const lobCols = new Set<any>(
+      this._getLobColumnsForTable(mappedTable).map((c: any) => c.toLowerCase()),
     );
     if (lobCols.has(col)) {
       if (col === "content_binary" || col === "data") {
@@ -5145,7 +5293,7 @@ class OracleStorage extends SqlStorageBase {
       return oracledb.DB_TYPE_CLOB;
     }
 
-    const numberCols = new Set([
+    const numberCols = new Set<any>([
       "position",
       "book_position",
       "lore_position",
@@ -5224,7 +5372,7 @@ class OracleStorage extends SqlStorageBase {
     return oracledb.DB_TYPE_VARCHAR;
   }
 
-  _formatBindValue(v, bindType, isJson) {
+  _formatBindValue(v: any, bindType: any, isJson: any) {
     if (isJson) {
       if (v === null || v === undefined) return "null";
       if (typeof v === "string") {
@@ -5259,51 +5407,58 @@ class OracleStorage extends SqlStorageBase {
   }
 
   // 범용 bulk insert 헬퍼 (행 객체 배열 → executemany)
-  async _bulkInsertRows(connection, table, columns, rows, onProgress) {
+  async _bulkInsertRows(
+    connection: any,
+    table: any,
+    columns: any,
+    rows: any,
+    onProgress?: (progress: unknown) => void,
+  ) {
     if (!rows || rows.length === 0) return;
     const quotedTable = assertSqlIdentifier(mapTableName(table));
-    const lobCols = new Set(
-      this._getLobColumnsForTable(table).map((c) => c.toLowerCase()),
+    const lobCols = new Set<any>(
+      this._getLobColumnsForTable(table).map((c: any) => c.toLowerCase()),
     );
-    const jsonColumns = new Set(
-      this._getJsonColumnsForTable(table).map((c) => c.toLowerCase()),
+    const jsonColumns = new Set<any>(
+      this._getJsonColumnsForTable(table).map((c: any) => c.toLowerCase()),
     );
 
     // ORA-24816 방지: Oracle은 LOB/LONG/JSON 컬럼이 non-LOB 컬럼 뒤에 오도록 요구함
     const orderedColumns = [
       ...columns.filter(
-        (c) =>
+        (c: any) =>
           !lobCols.has(c.toLowerCase()) && !jsonColumns.has(c.toLowerCase()),
       ),
       ...columns.filter(
-        (c) => lobCols.has(c.toLowerCase()) || jsonColumns.has(c.toLowerCase()),
+        (c: any) =>
+          lobCols.has(c.toLowerCase()) || jsonColumns.has(c.toLowerCase()),
       ),
     ];
 
     // SQL 컬럼: Oracle 이름 (codec 이름이 넘어와도 예약어 회피 이름으로 변환)
-    const quotedCols = orderedColumns.map((c) =>
+    const quotedCols = orderedColumns.map((c: any) =>
       toOracleColumn(c).toUpperCase(),
     );
     // JSON 컬럼은 JSON(:n) 함수로 명시적 변환 (문자열/객체 모두 처리)
     const bindNames = orderedColumns
-      .map((c, i) =>
+      .map((c: any, i: any) =>
         jsonColumns.has(c.toLowerCase()) ? `JSON(:${i + 1})` : `:${i + 1}`,
       )
       .join(", ");
     const insertSql = `INSERT INTO ${quotedTable} (${quotedCols.join(", ")}) VALUES (${bindNames})`;
 
-    const bindTypes = orderedColumns.map((c) =>
+    const bindTypes = orderedColumns.map((c: any) =>
       this._getColumnBindType(table, c),
     );
-    const bindDefs = bindTypes.map((t) => {
+    const bindDefs = bindTypes.map((t: any) => {
       if (t === oracledb.DB_TYPE_VARCHAR) {
         return { type: t, maxSize: 4000 };
       }
       return { type: t };
     });
 
-    const binds = rows.map((row) =>
-      orderedColumns.map((c, i) => {
+    const binds = rows.map((row: any) =>
+      orderedColumns.map((c: any, i: any) => {
         // 행 객체는 공용 codec의 컬럼명 프로퍼티를 쓸 수 있음
         const codecColumn = COLUMN_NAME_MAP[c.toLowerCase()] || c;
         const v0 = row[c];
@@ -5331,7 +5486,7 @@ class OracleStorage extends SqlStorageBase {
   }
 
   // 테이블별 LOB (CLOB/BLOB) 컬럼 목록 (스키마 기반)
-  _getLobColumnsForTable(table) {
+  _getLobColumnsForTable(table: any) {
     const mapped = mapTableName(table);
     const lobCols = {
       system_setting_values: [
@@ -5434,7 +5589,7 @@ class OracleStorage extends SqlStorageBase {
   }
 
   // 테이블별 JSON 컬럼 목록 (스키마 기반)
-  _getJsonColumnsForTable(table) {
+  _getJsonColumnsForTable(table: any) {
     const mapped = mapTableName(table);
     const jsonCols = {
       character_attributes: ["value"],
@@ -5462,9 +5617,9 @@ class OracleStorage extends SqlStorageBase {
   // 검색: searchMessages, searchCharactersByTag, searchCharactersByName
   // ============================================================
 
-  async listRecentChats(rawLimit, activeChatId = null) {
+  async listRecentChats(rawLimit: any, activeChatId: any = null) {
     this.assertEnabled();
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 100)
       : 50;
@@ -5501,7 +5656,7 @@ class OracleStorage extends SqlStorageBase {
         { limit, activeChatId },
         { clobColumns: ["character_image", "last_message_text"] },
       );
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         characterId: row.character_id,
         characterName: row.character_name || "",
         characterImage: row.character_image || null,
@@ -5521,7 +5676,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async searchMessages(rawQuery, rawScope = "all", rawLimit = 50) {
+  async searchMessages(rawQuery: any, rawScope = "all", rawLimit = 50) {
     this.assertEnabled();
     const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
     if (!query)
@@ -5532,7 +5687,7 @@ class OracleStorage extends SqlStorageBase {
       );
     const scope =
       rawScope === "active" || rawScope === "cold" ? rawScope : "all";
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 50;
@@ -5569,7 +5724,7 @@ class OracleStorage extends SqlStorageBase {
         { clobColumns: ["snippet"] },
       );
       await conn.rollback();
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         storageState: row.storage_state,
         archiveId: row.archive_id
           ? Buffer.from(row.archive_id).toString("hex")
@@ -5616,7 +5771,7 @@ class OracleStorage extends SqlStorageBase {
                  GROUP BY model
                  ORDER BY total_output_tokens DESC, total_input_tokens DESC`,
       );
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         model: row.model,
         messageCount: Number(row.message_count),
         totalInputTokens: Number(row.total_input_tokens),
@@ -5679,7 +5834,7 @@ class OracleStorage extends SqlStorageBase {
                 ORDER BY c.position ASC
             `,
       );
-      return rows.map((row) => {
+      return rows.map((row: any) => {
         const totalSessions = Number(row.total_sessions) || 0;
         const totalMessages = Number(row.total_messages) || 0;
         return {
@@ -5709,13 +5864,13 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async searchCharactersByTag(rawTag, rawLimit = 100) {
+  async searchCharactersByTag(rawTag: any, rawLimit = 100) {
     this.assertEnabled();
     const tag = typeof rawTag === "string" ? rawTag.trim() : "";
     if (!tag) throw new StoragePayloadError("tag must be a non-empty string");
     if (tag.length > 256)
       throw new StoragePayloadError("tag must be at most 256 characters");
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
@@ -5732,7 +5887,7 @@ class OracleStorage extends SqlStorageBase {
         [tag, limit],
         { clobColumns: ["image"] },
       );
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         id: row.id,
         name: row.name,
         image: row.image,
@@ -5745,13 +5900,13 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async searchCharactersByName(rawName, rawLimit = 100) {
+  async searchCharactersByName(rawName: any, rawLimit = 100) {
     this.assertEnabled();
     const name = typeof rawName === "string" ? rawName.trim() : "";
     if (!name) throw new StoragePayloadError("name must be a non-empty string");
     if (name.length > 256)
       throw new StoragePayloadError("name must be at most 256 characters");
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
@@ -5767,7 +5922,7 @@ class OracleStorage extends SqlStorageBase {
         [name, limit],
         { clobColumns: ["image"] },
       );
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         id: row.id,
         name: row.name,
         image: row.image,
@@ -5799,7 +5954,7 @@ class OracleStorage extends SqlStorageBase {
       );
       // 접두어 테이블명을 점 표기로 변환 (클라이언트 호환성)
       const tables = rows
-        .map((r) => {
+        .map((r: any) => {
           const name = r.table_name.toLowerCase();
           if (name.startsWith("system_")) return "system." + name.slice(7);
           if (name.startsWith("character_"))
@@ -5808,12 +5963,12 @@ class OracleStorage extends SqlStorageBase {
           if (name.startsWith("cold_")) return "cold." + name.slice(5);
           return name;
         })
-        .map((name) => assertDbExplorerIdentifier(name, "table name"));
-      const counts = new Map();
+        .map((name: any) => assertDbExplorerIdentifier(name, "table name"));
+      const counts = new Map<any, any>();
       for (let i = 0; i < tables.length; i += 25) {
         const batch = tables.slice(i, i + 25);
         const union = batch
-          .map((name) => {
+          .map((name: any) => {
             const mapped = mapTableName(name);
             return `SELECT '${name}' AS table_name, TO_CHAR(COUNT(*)) AS row_count FROM ${assertSqlIdentifier(mapped)}`;
           })
@@ -5825,7 +5980,7 @@ class OracleStorage extends SqlStorageBase {
           }
         }
       }
-      return tables.map((name) => ({
+      return tables.map((name: any) => ({
         name,
         rowCount: Number(counts.get(name) ?? "0"),
       }));
@@ -5836,7 +5991,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async getDbExplorerTableColumns(table) {
+  async getDbExplorerTableColumns(table: any) {
     this.assertEnabled();
     const validated = assertDbExplorerIdentifier(table, "table name");
     const parts = validated.split(".");
@@ -5868,10 +6023,10 @@ class OracleStorage extends SqlStorageBase {
                  ORDER BY cc.position`,
         [mappedTable],
       );
-      const primaryKeys = new Set(
-        pkRows.map((r) => r.column_name.toLowerCase()),
+      const primaryKeys = new Set<any>(
+        pkRows.map((r: any) => r.column_name.toLowerCase()),
       );
-      return colRows.map((row) => ({
+      return colRows.map((row: any) => ({
         name: row.column_name.toLowerCase(),
         dataType: row.data_type,
         nullable: row.is_nullable === "Y" || row.is_nullable === "y",
@@ -5885,13 +6040,13 @@ class OracleStorage extends SqlStorageBase {
   }
 
   async getDbExplorerTableRows(
-    table,
+    table: any,
     rawOffset = 0,
     rawLimit = 50,
-    rawSortColumn = null,
+    rawSortColumn: any = null,
     rawSortOrder = "asc",
     rawSearch = "",
-    rawColumns = null,
+    rawColumns: any = null,
   ) {
     this.assertEnabled();
     const validated = assertDbExplorerIdentifier(table, "table name");
@@ -5909,30 +6064,32 @@ class OracleStorage extends SqlStorageBase {
       const visibleNames = [];
       for (const name of rawColumns) {
         const validatedCol = assertDbExplorerIdentifier(name, "column name");
-        const match = columns.find((c) => c.name === validatedCol);
+        const match = columns.find((c: any) => c.name === validatedCol);
         if (!match)
           throw new StoragePayloadError("column was not found in the table");
         if (!visibleNames.includes(validatedCol))
           visibleNames.push(validatedCol);
       }
-      visibleColumns = columns.filter((c) => visibleNames.includes(c.name));
+      visibleColumns = columns.filter((c: any) =>
+        visibleNames.includes(c.name),
+      );
     }
 
     const searchTerm =
       typeof rawSearch === "string" ? rawSearch.trim().slice(0, 200) : "";
-    const parsedOffset = Number.parseInt(rawOffset, 10);
+    const parsedOffset = Number.parseInt(String(rawOffset), 10);
     const offset =
       Number.isSafeInteger(parsedOffset) && parsedOffset >= 0
         ? parsedOffset
         : 0;
-    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const parsedLimit = Number.parseInt(String(rawLimit), 10);
     const limit = Number.isSafeInteger(parsedLimit)
       ? Math.min(Math.max(parsedLimit, 1), DB_EXPLORER_MAX_ROWS)
       : 50;
 
     let sortColumn = columns[0].name;
     if (typeof rawSortColumn === "string" && rawSortColumn.length > 0) {
-      const match = columns.find((c) => c.name === rawSortColumn);
+      const match = columns.find((c: any) => c.name === rawSortColumn);
       if (!match)
         throw new StoragePayloadError("sort column was not found in the table");
       sortColumn = match.name;
@@ -5942,7 +6099,7 @@ class OracleStorage extends SqlStorageBase {
     const conn = await this.pool.getConnection();
     try {
       const selectList = visibleColumns
-        .map((c) => dbExplorerSelectExpression(c.name, c.dataType))
+        .map((c: any) => dbExplorerSelectExpression(c.name, c.dataType))
         .join(", ");
 
       let whereClause = "";
@@ -5950,7 +6107,7 @@ class OracleStorage extends SqlStorageBase {
       if (searchTerm.length > 0) {
         const escaped = searchTerm.replace(/[\\%_]/g, "\\$&");
         const conditions = visibleColumns
-          .map((c) => {
+          .map((c: any) => {
             binds.push(`%${escaped}%`);
             return `LOWER(${dbExplorerSelectExpression(c.name, c.dataType)}) LIKE LOWER(:${binds.length}) ESCAPE '\\'`;
           })
@@ -5993,7 +6150,7 @@ class OracleStorage extends SqlStorageBase {
   // 리비전 복원: restoreRevision
   // ============================================================
 
-  async restoreRevision(rawRevisionId) {
+  async restoreRevision(rawRevisionId: any) {
     this.assertEnabled();
     const targetRevisionId = Number(rawRevisionId);
     if (!Number.isSafeInteger(targetRevisionId) || targetRevisionId <= 0) {
@@ -6086,7 +6243,7 @@ class OracleStorage extends SqlStorageBase {
   // 콜드 스토리지: upsertColdStorage, upsertColdStorageWithClient
   // ============================================================
 
-  async upsertColdStorage(key, value) {
+  async upsertColdStorage(key: any, value: any) {
     this.assertEnabled();
     const normalizedKey = normalizeColdStorageKey(key);
     const splitValue = splitColdStorageValue(value);
@@ -6116,7 +6273,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async upsertColdStorageWithClient(conn, key, splitValue) {
+  async upsertColdStorageWithClient(conn: any, key: any, splitValue: any) {
     // UUID 문자열 → RAW(16)
     const rawKey = Buffer.from(key.replace(/-/g, ""), "hex");
     let character = null;
@@ -6181,15 +6338,15 @@ class OracleStorage extends SqlStorageBase {
     const updateArchiveCols = archiveColumns.slice(1);
     const upsertSql = `BEGIN
             UPDATE cold_archives SET
-                ${updateArchiveCols.map((c) => `${c.toUpperCase()} = :${c}`).join(", ")},
+                ${updateArchiveCols.map((c: any) => `${c.toUpperCase()} = :${c}`).join(", ")},
                 revision = revision + 1, updated_at = SYSTIMESTAMP
             WHERE id = :id;
             IF SQL%ROWCOUNT = 0 THEN
-                INSERT INTO cold_archives (${archiveColumns.map((c) => c.toUpperCase()).join(", ")})
-                VALUES (${archiveColumns.map((c) => `:${c}`).join(", ")});
+                INSERT INTO cold_archives (${archiveColumns.map((c: any) => c.toUpperCase()).join(", ")})
+                VALUES (${archiveColumns.map((c: any) => `:${c}`).join(", ")});
             END IF;
         END;`;
-    const archiveBinds = {};
+    const archiveBinds: Record<string, any> = {};
     for (const c of archiveColumns) {
       const v = archive[c];
       if (typeof v === "boolean") archiveBinds[c] = v ? 1 : 0;
@@ -6234,12 +6391,12 @@ class OracleStorage extends SqlStorageBase {
   }
 
   // PostgresStorage 호환을 위한 메서드명 별칭
-  async exportColdStorageToLegacy(savePath) {
+  async exportColdStorageToLegacy(savePath: any) {
     // PostgreSQL 구현과 동일 로직, 쿼리만 Oracle 변환
     this.assertEnabled();
     await fs.mkdir(savePath, { recursive: true });
     const items = await this.listColdStorage();
-    const exportedKeys = new Set();
+    const exportedKeys = new Set<any>();
     let exported = 0;
     for (const item of items) {
       const loaded = await this.loadColdStorage(item.key);
@@ -6260,7 +6417,7 @@ class OracleStorage extends SqlStorageBase {
       exported += 1;
     }
     const staleFiles = (await findLegacyColdStorageFiles(savePath)).filter(
-      (candidate) => !exportedKeys.has(candidate.key),
+      (candidate: any) => !exportedKeys.has(candidate.key),
     );
     if (staleFiles.length > 0) {
       const rollbackPath = path.join(
@@ -6297,7 +6454,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async loadColdStorage(key) {
+  async loadColdStorage(key: any) {
     this.assertEnabled();
     const normalizedKey = normalizeColdStorageKey(key);
     const conn = await this.pool.getConnection();
@@ -6357,7 +6514,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async deleteColdStorage(rawKeys) {
+  async deleteColdStorage(rawKeys: any) {
     this.assertEnabled();
     const keys = validateColdStorageKeys(rawKeys);
     if (keys.length === 0) return { deleted: 0 };
@@ -6370,7 +6527,9 @@ class OracleStorage extends SqlStorageBase {
       });
       // Oracle: IN 목록 대신 executemany 사용
       const deleteSql = `DELETE FROM cold_archives WHERE id = :1`;
-      const binds = keys.map((k) => [Buffer.from(k.replace(/-/g, ""), "hex")]);
+      const binds = keys.map((k: any) => [
+        Buffer.from(k.replace(/-/g, ""), "hex"),
+      ]);
       const result = await conn.executeMany(deleteSql, binds);
       await conn.commit();
       return { deleted: result.rowsAffected };
@@ -6386,7 +6545,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async pruneColdStorage(rawRetainedKeys) {
+  async pruneColdStorage(rawRetainedKeys: any) {
     this.assertEnabled();
     const retainedKeys = validateColdStorageKeys(
       rawRetainedKeys,
@@ -6407,11 +6566,11 @@ class OracleStorage extends SqlStorageBase {
         conn,
         `SELECT LOWER(RAWTOHEX(id)) AS key FROM cold_archives`,
       );
-      const retainedSet = new Set(retainedKeys);
-      const toDelete = allRows.filter((r) => !retainedSet.has(r.key));
+      const retainedSet = new Set<any>(retainedKeys);
+      const toDelete = allRows.filter((r: any) => !retainedSet.has(r.key));
       if (toDelete.length > 0) {
         const deleteSql = `DELETE FROM cold_archives WHERE id = :1`;
-        const binds = toDelete.map((r) => [
+        const binds = toDelete.map((r: any) => [
           Buffer.from(r.key.replace(/-/g, ""), "hex"),
         ]);
         await conn.executeMany(deleteSql, binds);
@@ -6430,7 +6589,7 @@ class OracleStorage extends SqlStorageBase {
     }
   }
 
-  async migrateLegacyColdStorage(savePath) {
+  async migrateLegacyColdStorage(savePath: any) {
     this.assertEnabled();
     const candidates = await findLegacyColdStorageFiles(savePath);
     if (candidates.length === 0) return { migrated: 0, skipped: 0 };

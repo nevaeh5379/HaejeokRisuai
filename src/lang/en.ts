@@ -1,4 +1,24 @@
 export const languageEnglish = {
+  globalAuthorNote: {
+    discard: "Discard draft",
+    discardDraftConfirm: "Discard this retained draft permanently?",
+    local: "Local note",
+    name: "Note name",
+    create: "New shared note",
+    rename: "Rename",
+    deleteConfirm: "Delete this shared note? Chats that use it will use None.",
+    saveFailed:
+      "This note could not be saved. Your draft is retained. Reload or explicitly overwrite the stored note.",
+    discardConfirm: "Discard this draft and reload the stored note?",
+    overwriteConfirm: "Overwrite this shared note with your draft?",
+    reload: "Reload",
+    overwrite: "Force overwrite",
+    unsaved: "Unsaved author note draft",
+    allowScriptWrite: "Allow scripts to write shared author notes",
+    scriptBlocked: "Writing shared author notes from scripts is disabled.",
+    scriptConflict:
+      "The shared author note changed or was deleted. This script write was skipped.",
+  },
   moduleSandboxGroups: {
     tab: "Bundles",
     new: "New bundle",

@@ -8,7 +8,7 @@ const { STORAGE_SYNC_CHUNK_SIZE_BYTES } = require("./storageSync.cjs");
 const {
   StorageSyncSqlRecordError,
   readStorageSyncSqlRecords,
-} = require("./storageSyncSqlRecords.cjs");
+} = require("./storageSyncSqlRecords.cts");
 
 const STORAGE_SYNC_SQL_FORMAT_VERSION = 1;
 const MAX_SYNC_SQL_STREAM_BYTES = 64 * 1024 * 1024 * 1024;

@@ -1,4 +1,4 @@
-import type { SqlCommit } from "@risuai/protocol/sqlCommit.cjs";
+import type { SqlCommit } from "@risuai/protocol/dist/sqlCommit.cjs";
 
 type StorageSqlCommit = SqlCommit<object>;
 import protocolSettings from "@risuai/protocol/settings.json";

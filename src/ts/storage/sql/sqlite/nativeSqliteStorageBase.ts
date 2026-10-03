@@ -1,3 +1,4 @@
+import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
 import type {
   botPreset,
   character,
@@ -155,6 +156,12 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       // additive DDL such as triggers reaches existing relational-schema-v3
       // databases without forcing a destructive schema-version migration.
       await this.applySchema();
+      await authorNoteSql.ensureAuthorNoteReceipts({
+        ...this.authorNoteDatabase(),
+        execute: async (sql, bind = []) => {
+          await this.executeNativeTransaction(null, [{ sql, bind }]);
+        },
+      });
       if (!existingSchema) await this.loadRevisionFromMeta();
       await this.ensurePerformanceIndexes();
       await this.ensureLastMessageTimeInvariant(hadLastMessageTimeTrigger);
@@ -326,6 +333,11 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
     const currentRevision = Number(meta?.revision) || 0;
+    const receipt = await authorNoteSql.readAuthorNoteReceipt(
+      this.authorNoteDatabase(),
+      commit,
+    );
+    if (receipt) return receipt;
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
@@ -341,6 +353,10 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       await append("DELETE FROM plugin_custom_storage");
       await append("DELETE FROM characters");
     }
+    const authorNotes = await authorNoteSql.applyAuthorNotes(
+      { ...this.authorNoteDatabase(), execute: append },
+      commit.authorNotes,
+    );
     await sqliteCommit.apply(commit, append);
     const revision = currentRevision + 1;
     await append(
@@ -353,13 +369,36 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
       [revision, action],
     );
+    await authorNoteSql.writeAuthorNoteReceipt(
+      { ...this.authorNoteDatabase(), execute: append },
+      commit,
+      {
+        revision,
+        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+          id,
+          contentHash,
+          updatedAt,
+        })),
+      },
+    );
     await this.executeNativeTransaction(
       currentRevision,
       statements,
       onProgress,
     );
     this.revision = revision;
-    return { revision };
+    return {
+      revision,
+      ...(authorNotes.length
+        ? {
+            authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+              id,
+              contentHash,
+              updatedAt,
+            })),
+          }
+        : {}),
+    };
   }
 
   async setColdStorageItem(key: string, value: unknown): Promise<boolean> {
@@ -914,6 +953,28 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
           }[]
         | undefined) ?? []
     );
+  }
+
+  protected authorNoteDatabase(): authorNoteSql.AuthorNoteSql {
+    return {
+      dialect: "sqlite",
+      query: this.selectRows.bind(this),
+      execute: async () => {
+        throw new Error("Read-only note connection");
+      },
+    };
+  }
+  async listGlobalAuthorNotes() {
+    return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
+  }
+  async getGlobalAuthorNote(id: string) {
+    return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
+  }
+  async readGlobalAuthorNote(id: string) {
+    return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return authorNoteSql.allowAuthorNoteScriptWrite(this.authorNoteDatabase());
   }
 
   async loadModules(): Promise<RisuModule[]> {

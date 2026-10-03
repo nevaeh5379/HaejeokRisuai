@@ -1,3 +1,4 @@
+import { readNote } from "../../authorNote";
 import { get } from "svelte/store";
 import type {
   character,
@@ -86,11 +87,12 @@ function createCharacterLookup() {
   };
 }
 
-function runCurrentChatVariables(
+async function runCurrentChatVariables(
   chat: Chat,
   currentChar: character,
   chatTarget: ChatExecutionTarget,
 ) {
+  chatTarget = { ...chatTarget, authorNoteContent: await readNote(chat) };
   for (const message of chat.message) {
     message.data = risuChatParser(message.data, {
       chara: currentChar,
@@ -256,13 +258,13 @@ function createTokenizer(additionalTokens: number) {
   );
 }
 
-function buildReadySession(
+async function buildReadySession(
   options: PrepareChatSessionOptions,
   selection: NonNullable<Awaited<ReturnType<typeof loadSelectedChat>>>,
   currentChar: character,
   calculatedChatTokens: number,
   findCharacter: (id: string) => character,
-): ReadyChatSession {
+): Promise<ReadyChatSession> {
   options.errorContext.currentChar = currentChar;
   const tokenizer = createTokenizer(
     options.chatAdditonalTokens ?? calculatedChatTokens,
@@ -271,7 +273,7 @@ function buildReadySession(
     selection.selectedChar,
     selection.selectedChat,
   );
-  const currentChat = runCurrentChatVariables(
+  const currentChat = await runCurrentChatVariables(
     selection.nowChatroom.chats[selection.selectedChat],
     currentChar,
     chatTarget,

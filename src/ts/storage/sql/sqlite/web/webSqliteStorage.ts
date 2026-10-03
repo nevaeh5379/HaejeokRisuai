@@ -1,3 +1,4 @@
+import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
 import { v4 as uuidv4 } from "uuid";
 import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
 import type {
@@ -297,6 +298,13 @@ export class WebSqliteStorage implements ISqlStorage {
       const result = await rpc.init();
       this._enabled = result.enabled;
       this.revision = result.revision;
+      if (result.enabled)
+        await authorNoteSql.ensureAuthorNoteReceipts({
+          ...this.authorNoteDatabase(),
+          execute: async (sql, bind = []) => {
+            await this.run(sql, bind);
+          },
+        });
       console.info(`[WebSqliteStorage] SQLite VFS: ${result.vfs ?? "unknown"}`);
       this.initialized = true;
       return result.enabled;
@@ -458,6 +466,14 @@ export class WebSqliteStorage implements ISqlStorage {
         "SELECT revision FROM system_storage_meta WHERE singleton = 1",
       );
       const currentRevision = Number(meta?.revision) || 0;
+      const receipt = await authorNoteSql.readAuthorNoteReceipt(
+        this.authorNoteDatabase(),
+        commit,
+      );
+      if (receipt) {
+        await this.run("COMMIT");
+        return receipt;
+      }
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
       await sqliteCommitPrep.prepareModules(
@@ -474,6 +490,10 @@ export class WebSqliteStorage implements ISqlStorage {
         await append("DELETE FROM plugin_custom_storage");
         await append("DELETE FROM characters");
       }
+      const authorNotes = await authorNoteSql.applyAuthorNotes(
+        { ...this.authorNoteDatabase(), execute: append },
+        commit.authorNotes,
+      );
       await sqliteCommit.apply(commit, append);
       const revision = currentRevision + 1;
       await append(
@@ -491,11 +511,36 @@ export class WebSqliteStorage implements ISqlStorage {
           [revision, action],
         );
       }
+      await authorNoteSql.writeAuthorNoteReceipt(
+        { ...this.authorNoteDatabase(), execute: append },
+        commit,
+        {
+          revision,
+          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+            id,
+            contentHash,
+            updatedAt,
+          })),
+        },
+      );
       if (!this.rpc) throw new Error("Database not opened");
       await this.rpc.execBatch(statements);
       await this.run("COMMIT");
       this.revision = revision;
-      return { revision };
+      return {
+        revision,
+        ...(authorNotes.length
+          ? {
+              authorNotes: authorNotes.map(
+                ({ id, contentHash, updatedAt }) => ({
+                  id,
+                  contentHash,
+                  updatedAt,
+                }),
+              ),
+            }
+          : {}),
+      };
     } catch (error) {
       try {
         await this.run("ROLLBACK");
@@ -985,6 +1030,28 @@ export class WebSqliteStorage implements ISqlStorage {
         { name: string; data: loreBook[] }[] | undefined) ?? []
     );
   }
+  private authorNoteDatabase(): authorNoteSql.AuthorNoteSql {
+    return {
+      dialect: "sqlite",
+      query: this.selectRows.bind(this),
+      execute: async () => {
+        throw new Error("Read-only note connection");
+      },
+    };
+  }
+  async listGlobalAuthorNotes() {
+    return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
+  }
+  async getGlobalAuthorNote(id: string) {
+    return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
+  }
+  async readGlobalAuthorNote(id: string) {
+    return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return authorNoteSql.allowAuthorNoteScriptWrite(this.authorNoteDatabase());
+  }
+
   async loadModules(): Promise<RisuModule[]> {
     return await sqliteDocument.loadModules<RisuModule>(
       this.selectRows.bind(this) as SqliteSelectRows,

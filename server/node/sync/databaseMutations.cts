@@ -1,13 +1,13 @@
 "use strict";
 
-import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/realtimeEvents.cjs";
-import type { RealtimeEventBroadcaster } from "../../../packages/protocol/realtimeEvents.cjs";
+import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/dist/realtimeEvents.cjs";
+import type { RealtimeEventBroadcaster } from "../../../packages/protocol/dist/realtimeEvents.cjs";
 import type {
   SqlCommitImpact,
   SqlCommitResult,
   SqlPluginEnabledUpdate,
-} from "../../../packages/protocol/sqlCommit.cjs";
-import { attachSqlCommitImpactSink } from "../../../packages/protocol/sqlCommit.cjs";
+} from "../../../packages/protocol/dist/sqlCommit.cjs";
+import { attachSqlCommitImpactSink } from "../../../packages/protocol/dist/sqlCommit.cjs";
 import type { PluginMetadata } from "../../../src/ts/plugins/pluginTypes.js";
 
 const { normalizeClientId } = require("../http/realtimeEvents.cjs");

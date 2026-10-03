@@ -568,6 +568,12 @@ class CharacterStore
       for (const char of this.characters) {
         const chatIdx = char.chats?.findIndex((c) => c?.id === chatId);
         if (chatIdx !== undefined && chatIdx >= 0) {
+          const chat = char.chats[chatIdx];
+          if (
+            chat.globalAuthorNoteId !== undefined &&
+            !(await storage.getGlobalAuthorNote(chat.globalAuthorNoteId))
+          )
+            chat.globalAuthorNoteId = "__none__";
           chats.push({
             id: chatId,
             characterId: char.chaId,

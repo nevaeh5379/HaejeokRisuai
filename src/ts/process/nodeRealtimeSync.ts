@@ -49,7 +49,7 @@ import {
   type RealtimeGenerationState,
   type RealtimeModelJobEvent,
   type RealtimeReadyEvent,
-} from "@risuai/protocol/realtimeEvents.cjs";
+} from "@risuai/protocol/dist/realtimeEvents.cjs";
 
 let started = false;
 let streamController: AbortController | null = null;
@@ -102,7 +102,7 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
     deferredSettingsLoader.isLoaded(key),
   );
 
-  installStartupData(startup, storage);
+  await installStartupData(startup, storage);
   pruneInvalidChatTabs();
   await initPresetDomain(storage);
   await changeLanguage(settingsStore.state.language);

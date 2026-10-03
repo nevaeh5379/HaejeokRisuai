@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
 const { PostgresRevisionConflictError, PostgresStorage } =
-  require(".//postgresStorage.cjs") as {
+  require(".//postgresStorage.cts") as {
     PostgresRevisionConflictError: new (revision: number) => Error;
     PostgresStorage: new (options?: { connectionString?: string }) => {
       enabled: boolean;

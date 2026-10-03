@@ -18,11 +18,11 @@ export type {
   SqlMessageUpsert,
   SqlModuleUpsert,
   SqlCommitResult,
-} from "../../../../packages/protocol/sqlCommit.cjs";
+} from "../../../../packages/protocol/dist/sqlCommit.cjs";
 import type {
   SqlCommit as ProtocolSqlCommit,
   SqlPresetUpsert as ProtocolSqlPresetUpsert,
-} from "../../../../packages/protocol/sqlCommit.cjs";
+} from "../../../../packages/protocol/dist/sqlCommit.cjs";
 
 export type SqlPresetUpsert = ProtocolSqlPresetUpsert<botPreset>;
 export type SqlCommit = ProtocolSqlCommit<botPreset>;
@@ -62,6 +62,7 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
       commit.pluginStorage.clear),
   );
   return (
+    (commit.authorNotes?.length ?? 0) > 0 ||
     commit.root.upserts.length > 0 ||
     commit.root.deletes.length > 0 ||
     hasPluginChanges ||
@@ -185,6 +186,14 @@ export function buildSqlReplaceCommit(
   }
   const commit = createEmptySqlCommit(baseRevision, "replace-all");
   commit.replaceAll = true;
+  commit.authorNotes = [
+    {
+      type: "restore",
+      rows: database.globalAuthorNotes ?? [],
+      allowScriptWrite:
+        database.globalAuthorNoteSettings?.allowScriptWrite ?? false,
+    },
+  ];
   commit.characterIds = [];
 
   database.pluginCustomStorage ??= {};
@@ -262,6 +271,8 @@ export function buildSqlReplaceCommit(
 
   for (const [key, value] of Object.entries(database)) {
     if (
+      key !== "globalAuthorNotes" &&
+      key !== "globalAuthorNoteSettings" &&
       key !== "characters" &&
       value !== undefined &&
       typeof value !== "function" &&

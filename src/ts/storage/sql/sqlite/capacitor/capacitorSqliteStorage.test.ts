@@ -124,7 +124,7 @@ describe("CapacitorSqliteStorage", () => {
       ),
     ).toBe(false);
 
-    installStartupData(loaded!, storage);
+    await installStartupData(loaded!, storage);
     expect(
       (settingsStore.getStateRecord() as any).largeStartupProbe,
     ).toBeUndefined();

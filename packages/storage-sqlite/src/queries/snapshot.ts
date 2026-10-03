@@ -1,3 +1,4 @@
+import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
 import * as sqliteDocument from "./document";
 import * as sqliteNodes from "./nodes";
 import * as sqlitePlugin from "./plugin";
@@ -180,6 +181,16 @@ export async function exportDatabase(options: Options): Promise<Result> {
     );
   }
   database.characters = characters;
+  Object.assign(
+    database,
+    await authorNoteSql.exportAuthorNotes({
+      dialect: "sqlite",
+      query: selectRows,
+      execute: async () => {
+        throw new Error("Read-only snapshot");
+      },
+    }),
+  );
   database.modules =
     await sqliteDocument.loadModules<Record<string, unknown>>(selectRows);
 

@@ -8,7 +8,7 @@ const {
   deriveSqlCommitImpact,
   readSqlCommitImpactSink,
   SQL_COMMIT_IMPACT_CHANNEL,
-} = require("./sqlCommit.cjs");
+} = require("./dist/sqlCommit.cjs");
 
 /** Builds a minimal normalized commit for impact-derivation assertions. */
 function normalizedCommit(overrides) {

@@ -23,7 +23,7 @@ server/node/
 └── ssl/                   # Local TLS certificate generation helpers
 ```
 
-The server is bundled by esbuild (`tooling/build-node-server.mjs`) into
+The server is bundled by esbuild (`tooling/build-node-server.ts`) into
 single-file outputs in `dist/` (`server.cjs`, `databaseMutations.cjs`,
 `storageSyncSqlApply.cjs`). node_modules packages and `packages/*` workspace
 packages stay external. `__dirname` references are resolved to their source

@@ -1,9 +1,12 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { buildProtocol } from "./build-protocol.ts";
+
+buildProtocol();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nodeServerDir = resolve(root, "server/node");
@@ -36,7 +39,7 @@ if (backupCoreResult.status !== 0) {
  *   instead of embedding the CI checkout path.
  */
 
-function externalizePackages() {
+function externalizePackages(): esbuild.Plugin {
   return {
     name: "externalize-packages",
     setup(build) {
@@ -46,15 +49,14 @@ function externalizePackages() {
         return { path: args.path, external: true };
       });
       // Bare specifiers (node_modules) stay external.
-      build.onResolve({ filter: /^[^./]/ }, (args) => ({
-        path: args.path,
-        external: true,
-      }));
+      build.onResolve({ filter: /^[^./]/ }, (args) =>
+        isAbsolute(args.path) ? null : { path: args.path, external: true },
+      );
     },
   };
 }
 
-function runtimeRelativeDirnames(bundleDirectory) {
+function runtimeRelativeDirnames(bundleDirectory: string): esbuild.Plugin {
   return {
     name: "runtime-relative-dirnames",
     setup(build) {
@@ -62,13 +64,26 @@ function runtimeRelativeDirnames(bundleDirectory) {
         let contents = await readFile(args.path, "utf8");
         if (contents.includes("__dirname")) {
           const sourceDirectory = dirname(args.path);
-          const fromBundleDirectory = relative(bundleDirectory, sourceDirectory);
+          const fromBundleDirectory = relative(bundleDirectory, sourceDirectory)
+            .split("\\")
+            .join("/");
           const runtimeDirectory = fromBundleDirectory
             ? `require("node:path").resolve(__dirname, ${JSON.stringify(fromBundleDirectory)})`
             : "__dirname";
           contents = contents.replaceAll("__dirname", `(${runtimeDirectory})`);
         }
         const isTypeScript = /\.(c|m)?ts$/.test(args.path);
+        // CTS type-only exports still mark the source as ESM in esbuild's
+        // bundler. Compile them as CommonJS before bundling module.exports.
+        if (args.path.endsWith(".cts")) {
+          const compiled = await esbuild.transform(contents, {
+            loader: "ts",
+            format: "cjs",
+            target: "node20",
+            sourcefile: args.path,
+          });
+          return { contents: compiled.code, loader: "js" };
+        }
         return {
           contents,
           loader: isTypeScript ? "ts" : "js",
@@ -78,7 +93,7 @@ function runtimeRelativeDirnames(bundleDirectory) {
   };
 }
 
-async function bundle({ entry, outfile }) {
+async function bundle({ entry, outfile }: { entry: string; outfile: string }) {
   await esbuild.build({
     entryPoints: [entry],
     outfile,

@@ -5,7 +5,7 @@ const {
   createSqlCommitValidator,
   deriveSqlCommitImpact,
   readSqlCommitImpactSink,
-} = require("../../../packages/protocol/sqlCommit.cjs");
+} = require("../../../packages/protocol/dist/sqlCommit.cjs");
 
 const DEFAULT_MAX_COLD_STORAGE_KEYS = 250000;
 const MAX_COLD_STORAGE_CHATS_PER_CHARACTER = 100000;

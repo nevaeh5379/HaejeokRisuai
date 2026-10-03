@@ -33,6 +33,7 @@ CREATE INDEX IF NOT EXISTS bot_presets_model_idx ON bot_presets (api_type, ai_mo
 CREATE TABLE IF NOT EXISTS system_revisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     storage_revision INTEGER, database_initialized INTEGER,
+    note_commit_key TEXT, note_commit_hash TEXT, note_commit_result TEXT,
     scope TEXT NOT NULL CHECK (scope IN ('database', 'cold-storage', 'restore')),
     action TEXT NOT NULL,
     restored_from_revision INTEGER REFERENCES system_revisions(id),
@@ -332,3 +333,15 @@ CREATE TABLE IF NOT EXISTS plugin_custom_storage (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS global_author_notes (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+ content_hash TEXT NOT NULL CHECK(length(content_hash) = 64 AND content_hash NOT GLOB '*[^0-9a-f]*'),
+ updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS global_author_note_settings (
+ singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+ allow_script_write INTEGER NOT NULL DEFAULT 0 CHECK(allow_script_write IN (0, 1)), updated_at INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO global_author_notes VALUES ('__none__', '', '', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 0);
+INSERT OR IGNORE INTO global_author_note_settings VALUES (1, 0, 0);

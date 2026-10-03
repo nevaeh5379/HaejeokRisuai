@@ -1,4 +1,4 @@
-import type { SqlCommit } from "@risuai/protocol/sqlCommit.cjs";
+import type { SqlCommit } from "@risuai/protocol/dist/sqlCommit.cjs";
 
 export function mergeLegacyModulesIntoCommit<TPreset extends object>(
   commit: SqlCommit<TPreset>,

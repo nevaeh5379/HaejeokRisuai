@@ -13,7 +13,7 @@ const generatedStorageSyncApply = path.join(
 );
 const serverSource = path.join(__dirname, "server.cts");
 const postgresStorageSources = [
-  path.join(__dirname, "storage/postgres/postgresStorage.cjs"),
+  path.join(__dirname, "storage/postgres/postgresStorage.cts"),
   path.join(__dirname, "storage/postgres/postgresJsonCodec.cjs"),
 ];
 const pluginStorageRoutesSource = path.join(
@@ -30,6 +30,14 @@ const localBackupImportRecordsSource = path.join(
   __dirname,
   "sync/localBackupImportRecords.ts",
 );
+const protocolSources = [
+  "src/authorNotes.cts",
+  "src/authorNoteSql.cts",
+  "src/sqlCommit.cts",
+  "src/realtimeEvents.cts",
+  "settings.json",
+  "tsconfig.json",
+].map((source) => path.join(root, "packages/protocol", source));
 const backupCoreRoot = path.join(root, "packages/backup-core");
 const backupCoreOutputs = [
   path.join(backupCoreRoot, "dist/assetScope.js"),
@@ -106,7 +114,8 @@ const needsBuild =
   !fs.existsSync(generatedStorageSyncApply) ||
   backupCoreNeedsBuild ||
   (process.env.NODE_ENV !== "production" &&
-    (isStale(serverSource, generatedServer) ||
+    (protocolSources.some((source) => isStale(source, generatedServer)) ||
+      isStale(serverSource, generatedServer) ||
       postgresStorageSources.some((source) =>
         isStale(source, generatedServer),
       ) ||
@@ -117,13 +126,13 @@ const needsBuild =
       isStale(localBackupImportRecordsSource, generatedServer)));
 
 if (needsBuild) {
-  const builder = path.join(root, "tooling/build-node-server.mjs");
+  const builder = path.join(root, "tooling/build-node-server.ts");
   if (!fs.existsSync(builder)) {
     throw new Error(
       "Generated Node server is missing and build tooling is unavailable",
     );
   }
-  const result = spawnSync(process.execPath, [builder], {
+  const result = spawnSync(process.execPath, ["--import", "tsx", builder], {
     cwd: root,
     stdio: "inherit",
   });

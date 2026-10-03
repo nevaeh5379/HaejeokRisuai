@@ -1,3 +1,4 @@
+import { readNote, resolveNote } from "../../authorNote";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import type { character, Chat, groupChat } from "../../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
@@ -200,7 +201,10 @@ function buildAuthorAndControlPrompts(
   target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
-  const authorNote = currentChat.note || getAuthorNoteDefaultText();
+  const authorNote = resolveNote(
+    target?.authorNoteContent ?? currentChat.note,
+    getAuthorNoteDefaultText(),
+  );
   if (authorNote) {
     sections.authorNote.push({
       role: "system",
@@ -477,10 +481,16 @@ export async function preparePromptSections(
   target?: ChatExecutionTarget,
   generation?: ChatGenerationOverrides,
 ) {
+  const authorNoteContent =
+    target?.authorNoteContent ?? (await readNote(currentChat));
   const sections = createPromptSections();
-  const scopedTarget: ChatExecutionTarget | undefined = target
-    ? { ...target, globalVariables: generation?.chatVariables }
-    : target;
+  const scopedTarget: ChatExecutionTarget = {
+    characterId: nowChatroom.chaId ?? "",
+    chatId: currentChat.id ?? "",
+    ...target,
+    authorNoteContent,
+    globalVariables: generation?.chatVariables ?? target?.globalVariables,
+  };
   const { promptTemplate, usingPromptTemplate } = resolvePromptTemplate(
     currentChar,
     generation,
@@ -532,6 +542,7 @@ export async function preparePromptSections(
   );
 
   return {
+    authorNoteContent,
     unformated: sections,
     promptTemplate,
     usingPromptTemplate,

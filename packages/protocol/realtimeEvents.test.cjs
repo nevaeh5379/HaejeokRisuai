@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseRealtimeEvent } = require("./realtimeEvents.cjs");
+const { parseRealtimeEvent } = require("./dist/realtimeEvents.cjs");
 
 test("parseRealtimeEvent narrows database-change summaries", () => {
   const chatIds = ["chat-a"];

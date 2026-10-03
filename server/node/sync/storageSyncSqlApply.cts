@@ -33,12 +33,13 @@ class VendorApplyPayloadError extends Error {
   }
 }
 
-const { createSqlStorageHelpers } = require("../storage/sqlStorageCommon.cjs") as {
-  createSqlStorageHelpers: (options: Record<string, unknown>) => {
-    normalizeColdStorageKey: (key: string) => string;
-    splitColdStorageValue: (value: unknown) => unknown;
+const { createSqlStorageHelpers } =
+  require("../storage/sqlStorageCommon.cjs") as {
+    createSqlStorageHelpers: (options: Record<string, unknown>) => {
+      normalizeColdStorageKey: (key: string) => string;
+      splitColdStorageValue: (value: unknown) => unknown;
+    };
   };
-};
 
 const compatibleColdHelpers = createSqlStorageHelpers({
   PayloadError: VendorApplyPayloadError,
@@ -172,7 +173,7 @@ async function applyVendorBranchRecords(
     );
     return;
   }
-  const { bulkInsert } = require("../storage/azure/azureStorage.cjs") as {
+  const { bulkInsert } = require("../storage/azure/azureStorage.cts") as {
     bulkInsert: (
       target: any,
       table: string,
@@ -293,7 +294,7 @@ async function applyVendorMessageLinks(
     return;
   }
 
-  const { bulkInsert } = require("../storage/azure/azureStorage.cjs") as {
+  const { bulkInsert } = require("../storage/azure/azureStorage.cts") as {
     bulkInsert: (
       target: any,
       table: string,
@@ -336,9 +337,6 @@ async function finalizeVendorStorageSyncImport(
   `);
 }
 
-
-
-
 const DEFAULT_STORAGE_SYNC_APPLY_BATCH_SIZE = 256;
 const DEFAULT_STORAGE_SYNC_APPLY_BATCH_BYTES = 16 * 1024 * 1024;
 
@@ -368,11 +366,34 @@ function basePayload(context) {
 function recordPayload(type, records, context) {
   const base = basePayload(context);
   switch (type) {
+    case "author-note":
+      return {
+        ...base,
+        authorNotes: [
+          {
+            type: "restore",
+            clear: false,
+            rows: records.map((record) => record.data),
+            allowScriptWrite: false,
+          },
+        ],
+      };
+    case "author-note-settings":
+      return {
+        ...base,
+        authorNotes: records.map((record) => ({
+          type: "settings",
+          allowScriptWrite: record.allowScriptWrite,
+        })),
+      };
     case "setting":
       return {
         ...base,
         root: {
-          upserts: records.map((record) => ({ key: record.key, value: record.value })),
+          upserts: records.map((record) => ({
+            key: record.key,
+            value: record.value,
+          })),
           deletes: [],
         },
       };
@@ -380,7 +401,10 @@ function recordPayload(type, records, context) {
       return {
         ...base,
         pluginStorage: {
-          upserts: records.map((record) => ({ key: record.key, value: record.value })),
+          upserts: records.map((record) => ({
+            key: record.key,
+            value: record.value,
+          })),
           deletes: [],
           clear: false,
         },
@@ -456,7 +480,18 @@ async function applyBatch(
 ) {
   if (records.length === 0) return;
   const external = externalTransaction(client, context);
-  if (["setting", "plugin-storage", "module", "preset", "character", "chat"].includes(type)) {
+  if (
+    [
+      "author-note",
+      "author-note-settings",
+      "setting",
+      "plugin-storage",
+      "module",
+      "preset",
+      "character",
+      "chat",
+    ].includes(type)
+  ) {
     await sqlStorage.sync(recordPayload(type, records, context), {
       externalTransaction: external,
     });
@@ -471,33 +506,16 @@ async function applyBatch(
   }
   if (type === "cold-storage") {
     for (const record of records) {
-      await applyVendorColdStorageRecord(
-        vendor,
-        sqlStorage,
-        client,
-        record,
-      );
+      await applyVendorColdStorageRecord(vendor, sqlStorage, client, record);
     }
     return;
   }
   if (type === "branch") {
-    await applyVendorBranchRecords(
-      vendor,
-      sqlStorage,
-      client,
-      records,
-      [],
-    );
+    await applyVendorBranchRecords(vendor, sqlStorage, client, records, []);
     return;
   }
   if (type === "active-branch") {
-    await applyVendorBranchRecords(
-      vendor,
-      sqlStorage,
-      client,
-      [],
-      records,
-    );
+    await applyVendorBranchRecords(vendor, sqlStorage, client, [], records);
     return;
   }
   throw new StorageSyncSqlApplyError(
@@ -572,10 +590,7 @@ async function applyStorageSyncSqlRecords(options) {
   const validation = await sqlStaging.validate(session, {
     onRecord: async (record) => {
       if (record.type === "meta") return;
-      const recordBytes = Buffer.byteLength(
-        JSON.stringify(record),
-        "utf8",
-      );
+      const recordBytes = Buffer.byteLength(JSON.stringify(record), "utf8");
       if (
         pendingType !== record.type ||
         pending.length >= batchSize ||

@@ -12,6 +12,8 @@ type PersistedRecordType = PersistedRecord["type"];
 
 const RECORD_TYPES: PersistedRecordType[] = [
   "meta",
+  "author-note",
+  "author-note-settings",
   "setting",
   "plugin-storage",
   "module",
@@ -100,6 +102,14 @@ export class PortableDatabaseStreamCollector {
           throw new Error("Invalid streaming database metadata");
         }
         this.sourceRevision = record.revision;
+        break;
+      case "author-note":
+        (this.database.globalAuthorNotes ??= []).push(record.data);
+        break;
+      case "author-note-settings":
+        this.database.globalAuthorNoteSettings = {
+          allowScriptWrite: record.allowScriptWrite,
+        };
         break;
       case "setting":
         this.database[record.key] = record.value;

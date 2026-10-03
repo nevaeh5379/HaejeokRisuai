@@ -1,3 +1,4 @@
+import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
 import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
 import type { SqliteExecute } from "@risuai/storage-sqlite/types";
 import { createEmptySqlCommit, type SqlCommit } from "../sqlCommit";
@@ -38,6 +39,22 @@ function buildCommit(
     "local-backup-stream-restore",
   );
   switch (type) {
+    case "author-note":
+      commit.authorNotes = [
+        {
+          type: "restore",
+          clear: false,
+          rows: asRecords(records, type).map((record) => record.data),
+          allowScriptWrite: false,
+        },
+      ];
+      break;
+    case "author-note-settings":
+      commit.authorNotes = asRecords(records, type).map((record) => ({
+        type: "settings",
+        allowScriptWrite: record.allowScriptWrite,
+      }));
+      break;
     case "setting":
       commit.root.upserts.push(
         ...asRecords(records, type).map(({ key, value }) => ({ key, value })),
@@ -122,6 +139,13 @@ export class PortableDatabaseStreamSqliteApplier {
   ) {}
 
   async initialize(): Promise<void> {
+    await authorNoteSql.resetAuthorNotes({
+      dialect: "sqlite",
+      query: async () => [],
+      execute: async (sql, bind) => {
+        await this.execute(sql, bind);
+      },
+    });
     await this.execute("DELETE FROM system_settings");
     await this.execute("DELETE FROM plugin_custom_storage");
     await this.execute("DELETE FROM characters");
@@ -203,6 +227,16 @@ export class PortableDatabaseStreamSqliteApplier {
       }
     } else {
       const commit = buildCommit(this.baseRevision, type, records);
+      await authorNoteSql.applyAuthorNotes(
+        {
+          dialect: "sqlite",
+          query: async () => [],
+          execute: async (sql, bind) => {
+            await this.execute(sql, bind);
+          },
+        },
+        commit.authorNotes,
+      );
       await sqliteCommit.apply(commit as any, this.execute);
       if (type === "message") {
         for (const record of asRecords(records, type)) {

@@ -1,4 +1,4 @@
-import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/realtimeEvents.cjs";
+import type { RealtimeDatabaseChangeEvent } from "../../../packages/protocol/dist/realtimeEvents.cjs";
 
 /**
  * Canonical wire shape of a database-change realtime event, shared with the

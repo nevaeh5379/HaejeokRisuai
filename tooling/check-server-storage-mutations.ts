@@ -1,8 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const DIRECT_READ_METHODS = new Set([
+  "listGlobalAuthorNotes",
+  "getGlobalAuthorNote",
+  "readGlobalAuthorNote",
+  "getGlobalAuthorNoteScriptWrite",
   "exportDatabaseSnapshot",
   "getAssetCatalogStats",
   "getBotChatStats",
@@ -84,15 +89,15 @@ const CLIENT_VISIBLE_WRITE_METHODS = new Set([
   "updateSetting",
 ]);
 
-function isPrimaryStorageReference(node) {
+function isPrimaryStorageReference(node: ts.Node) {
   return ts.isIdentifier(node) && node.text === "postgresStorage";
 }
 
-function isSafePreviousStorageAlias(node) {
+function isSafePreviousStorageAlias(node: ts.Node) {
   return ts.isIdentifier(node) && node.text === "previousStorage";
 }
 
-function locationOf(sourceFile, node) {
+function locationOf(sourceFile: ts.SourceFile, node: ts.Node) {
   const { line, character } = sourceFile.getLineAndCharacterOfPosition(
     node.getStart(sourceFile),
   );
@@ -109,9 +114,9 @@ export function checkServerStorageMutations(
     true,
     ts.ScriptKind.TS,
   );
-  const violations = [];
+  const violations: string[] = [];
 
-  function visit(node) {
+  function visit(node: ts.Node) {
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -191,19 +196,22 @@ export function checkServerStorageMutations(
       `Server storage mutation policy failed:\n${violations
         .map((entry) => `  - ${entry}`)
         .join("\n")}`,
-    );
+    ) as Error & { violations: string[] };
     error.violations = violations;
     throw error;
   }
   return true;
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === resolve(process.argv[1])
+) {
   try {
     checkServerStorageMutations();
     console.log("Server storage mutation policy: OK");
   } catch (error) {
-    console.error(error.message);
+    console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   }
 }

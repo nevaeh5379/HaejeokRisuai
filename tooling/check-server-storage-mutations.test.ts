@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkServerStorageMutations } from "./check-server-storage-mutations.mjs";
+import { checkServerStorageMutations } from "./check-server-storage-mutations.ts";
 
-function withFixture(source, run) {
+function withFixture<T>(source: string, run: (file: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "risu-mutation-policy-"));
   const file = join(dir, "server.cjs");
   writeFileSync(file, source);
