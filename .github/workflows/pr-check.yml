@@ -295,6 +295,50 @@ jobs:
           path: android-e2e/artifacts/
           retention-days: 14
 
+  tauri-build-check:
+    name: Linux / Tauri Build
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.tauri == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: install pnpm
+        shell: bash
+        run: |
+          npm install --global pnpm@12.3.4
+          pnpm --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v5
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Mirrors src-tauri/tauri.conf.json beforeBuildCommand on a clean
+      # checkout, so Publish-time tauribuild failures surface at PR time.
+      - name: Tauri beforeBuildCommand (pnpm tauribuild)
+        run: pnpm tauribuild
+
   tauri-check:
     name: Linux / Tauri Rust Check
     needs: changes
