@@ -907,7 +907,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
         (liteDB as any)[key] =
           key === "plugins"
             ? $state.snapshot(await pluginStore.loadCompatibilityPlugins())
-            : $state.snapshot(db[key]);
+            : key === "characters"
+              ? await characterStore.snapshot.loadAll()
+              : $state.snapshot(db[key]);
       }
       return liteDB;
     },
@@ -1006,40 +1008,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       const runtimePlugin = getRuntimePlugin(plugin.name);
       if (runtimePlugin) runtimePlugin.realArg[key] = value;
     },
-    getCharacterFromIndex: (index: number) => {
-      const char = characterStore.characters[index];
-      if (char) {
-        return $state.snapshot(char);
-      }
-      return null;
-    },
-    setCharacterToIndex: (index: number, char: any) => {
-      if (characterStore.characters[index]) {
-        characterStore.characters[index] = char;
-        if (char?.chaId) characterStore.markCharacterDirty(char.chaId);
-      }
-    },
-    getChatFromIndex: (characterIndex: number, chatIndex: number) => {
-      const char = characterStore.characters[characterIndex];
-      if (char) {
-        const chats = char.chats;
-        if (chats && chats[chatIndex]) {
-          return $state.snapshot(chats[chatIndex]);
-        }
-      }
-      return null;
-    },
-    setChatToIndex: (characterIndex: number, chatIndex: number, chat: any) => {
-      const char = characterStore.characters[characterIndex];
-      if (char) {
-        const chats = char.chats;
-        if (chats && chats[chatIndex]) {
-          char.chats[chatIndex] = chat;
-          if (chat?.id) characterStore.markChatDirty(chat.id);
-          characterStore.markChatManifestDirty(char.chaId);
-        }
-      }
-    },
+    getCharacterFromIndex: characterStore.snapshot.load,
+    setCharacterToIndex: characterStore.snapshot.save,
+    getChatFromIndex: characterStore.snapshot.chat.load,
+    setChatToIndex: characterStore.snapshot.chat.save,
     getCurrentCharacterIndex: () => {
       return get(selectedCharID);
     },

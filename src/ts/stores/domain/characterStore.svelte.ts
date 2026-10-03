@@ -2,13 +2,33 @@ import type { character, groupChat, Chat } from "../../storage/database/schema";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import { v4 as uuidv4 } from "uuid";
-import { sqlCharacterData, sqlChatData } from "../../storage/sql/sqlCommit";
+import {
+  createEmptySqlCommit,
+  hasSqlCommitChanges,
+  type SqlCommit,
+  sqlCharacterData,
+  sqlChatData,
+} from "../../storage/sql/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
 import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { isCapacitor } from "../../platform";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
+
+import { safeStructuredClone } from "../../polyfill";
+import { selectedCharID } from "./characterSelection";
+import { messageStore } from "./messageStore.svelte";
+import { StoreCommitQueue } from "./storeCommitQueue";
+import {
+  appendChatSnapshotChanges,
+  diffSnapshotIds,
+  keepResidentWindow,
+  snapshotEqual,
+} from "./characterSnapshot";
+
+type SnapshotCharacter = character | groupChat;
+type SnapshotTarget = number | string;
 
 // Keep persisted history ordering, overlay newer in-memory fields, and retain
 // stable-ID messages that have not reached storage yet.
@@ -200,6 +220,8 @@ class CharacterStore
     FlushableStore
 {
   private storage: ISqlStorage | null = null;
+  private snapshotWrites = new StoreCommitQueue();
+  private metadataWrites = new StoreCommitQueue();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private touchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private touchIdleHandle: number | null = null;
@@ -248,10 +270,7 @@ class CharacterStore
   init(characters: (character | groupChat)[], storage: ISqlStorage): void {
     this.storage = storage;
     this.cancelScheduledTouchCommit();
-    this.arrayDispose?.();
-    this.arrayDispose = null;
-    this.activeDispose?.();
-    this.activeDispose = null;
+    this.disposeCharacterObservers();
     this.dirtyCharacters.clear();
     this.dirtyCharacterDeletes.clear();
     this.dirtyCharacterTouches.clear();
@@ -515,7 +534,11 @@ class CharacterStore
     }, 300);
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
+    return this.metadataWrites.enqueue(() => this.flushChanges());
+  }
+
+  private async flushChanges(): Promise<void> {
     this.cancelScheduledTouchCommit();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -685,6 +708,500 @@ class CharacterStore
       this.dirtyChatDeletes.size > 0 ||
       this.dirtyChatManifests.size > 0 ||
       this.dirtyCharacterIds
+    );
+  }
+
+  /** Detached, durable snapshots. Arrow functions remain bound in plugin APIs. */
+  readonly snapshot = {
+    load: async (target: SnapshotTarget): Promise<SnapshotCharacter | null> => {
+      const id = this.snapshotCharacterId(target);
+      return id ? this.loadCharacterSnapshot(id) : null;
+    },
+    loadAll: async (): Promise<SnapshotCharacter[]> => {
+      const ids = this.characters.map((character) => character.chaId);
+      const snapshots: SnapshotCharacter[] = [];
+      for (const id of ids)
+        snapshots.push(await this.loadCharacterSnapshot(id));
+      return snapshots;
+    },
+    save: async (
+      target: SnapshotTarget,
+      value: SnapshotCharacter,
+    ): Promise<void> => {
+      const id = this.snapshotCharacterId(target);
+      const incoming = safeStructuredClone(value);
+      if (!id) return;
+      incoming.chaId = id;
+      this.identifySnapshotInputs([incoming]);
+      await this.enqueueCharacterSnapshotWrite([incoming], async (storage) => {
+        const current = await this.loadSnapshotCharacter(id);
+        const position = this.characters.indexOf(current);
+        const next = await this.commitSnapshot(
+          storage,
+          "snapshot-character",
+          (commit) =>
+            this.prepareCharacterSnapshot(commit, position, incoming, current),
+        );
+        const characters = [...this.characters];
+        const targetPosition = characters.findIndex(
+          (character) => character.chaId === id,
+        );
+        if (targetPosition < 0)
+          throw new Error(`Character changed while saving snapshot: ${id}`);
+        characters[targetPosition] = next;
+        this.applySnapshotCharacters(
+          characters,
+          incoming.detailsLoaded !== false
+            ? next.chats.map((chat) => chat.id!)
+            : [],
+        );
+      });
+    },
+    saveAll: async (values: SnapshotCharacter[]): Promise<void> => {
+      const incoming = safeStructuredClone(values);
+      this.identifySnapshotInputs(incoming);
+      await this.enqueueCharacterSnapshotWrite(incoming, async (storage) => {
+        const nextCharacters = await this.commitSnapshot(
+          storage,
+          "snapshot-characters",
+          async (commit) => {
+            const characters: SnapshotCharacter[] = [];
+            for (const [position, next] of incoming.entries()) {
+              const current = this.getById(next.chaId)
+                ? await this.loadSnapshotCharacter(next.chaId)
+                : undefined;
+              characters.push(
+                await this.prepareCharacterSnapshot(
+                  commit,
+                  position,
+                  next,
+                  current,
+                ),
+              );
+            }
+            const changes = diffSnapshotIds(
+              characters.map((character) => character.chaId),
+              this.characters.map((character) => character.chaId),
+            );
+            if (changes) {
+              commit.characterIds = changes.ids;
+              commit.characterDeletes = changes.removed;
+            }
+            return characters;
+          },
+        );
+        this.applySnapshotCharacters(
+          nextCharacters,
+          incoming
+            .filter((character) => character.detailsLoaded !== false)
+            .flatMap((character) => character.chats.map((chat) => chat.id!)),
+        );
+      });
+    },
+    chat: {
+      load: async (
+        character: SnapshotTarget,
+        chat: SnapshotTarget,
+      ): Promise<Chat | null> => {
+        const target = this.captureSnapshotChat(character, chat);
+        if (!target) return null;
+        const resolved = await this.resolveSnapshotChat(target);
+        return resolved ? this.getFullChatSnapshot(resolved.chatId) : null;
+      },
+      save: async (
+        character: SnapshotTarget,
+        chat: SnapshotTarget,
+        value: Chat,
+      ): Promise<void> => {
+        const target = this.captureSnapshotChat(character, chat);
+        const incoming = safeStructuredClone(value);
+        if (!target) return;
+        await this.snapshotWrites.enqueue(async () => {
+          // Resolve immediately visible IDs before any await. A startup shell
+          // needs hydration before its numeric chat index can be interpreted.
+          const resolved = await this.resolveSnapshotChat(target);
+          if (!resolved) return;
+          incoming.id = resolved.chatId;
+          await this.flushSnapshotPredecessors();
+          const current = await this.loadSnapshotCharacter(target.characterId);
+          let position = current.chats.findIndex(
+            (chat) => chat.id === resolved.chatId,
+          );
+          if (position < 0)
+            throw new Error(
+              `Chat changed while saving snapshot: ${resolved.chatId}`,
+            );
+          const previous = current.chats[position];
+          const old = await this.getFullChatSnapshot(resolved.chatId);
+          position = current.chats.findIndex(
+            (chat) => chat.id === resolved.chatId,
+          );
+          if (position < 0)
+            throw new Error(
+              `Chat changed while saving snapshot: ${resolved.chatId}`,
+            );
+          const storage = this.storage || (await getSqlStorage());
+          const next = await this.commitSnapshot(
+            storage,
+            "snapshot-chat",
+            (commit) =>
+              this.prepareChatSnapshot(
+                commit,
+                current.chaId,
+                position,
+                incoming,
+                old,
+                position,
+              ),
+          );
+          // Do not let observers turn a successful snapshot into another write.
+          const residentCharacter = this.getById(target.characterId);
+          const residentPosition =
+            residentCharacter?.chats.findIndex(
+              (chat) => chat.id === resolved.chatId,
+            ) ?? -1;
+          if (!residentCharacter || residentPosition < 0)
+            throw new Error(
+              `Chat changed while saving snapshot: ${resolved.chatId}`,
+            );
+          this.activeDispose?.();
+          residentCharacter.chats[residentPosition] = keepResidentWindow(
+            next,
+            previous,
+          );
+          this.generationOnlyMetadataChats.delete(resolved.chatId);
+          this.observeActive();
+        });
+      },
+    },
+  };
+
+  private snapshotCharacterId(target: SnapshotTarget): string | undefined {
+    return typeof target === "number"
+      ? this.characters[target]?.chaId
+      : this.getById(target)?.chaId;
+  }
+
+  private captureSnapshotChat(character: SnapshotTarget, chat: SnapshotTarget) {
+    const characterId = this.snapshotCharacterId(character);
+    if (!characterId) return null;
+    const current = this.getById(characterId)!;
+    const chatId = typeof chat === "string" ? chat : current.chats?.[chat]?.id;
+    return { characterId, chatId, chat };
+  }
+
+  private async resolveSnapshotChat(target: {
+    characterId: string;
+    chatId?: string;
+    chat: SnapshotTarget;
+  }) {
+    const current = await this.loadSnapshotCharacter(target.characterId);
+    const chatId =
+      target.chatId ??
+      (typeof target.chat === "number"
+        ? current.chats[target.chat]?.id
+        : target.chat);
+    return chatId && current.chats.some((chat) => chat.id === chatId)
+      ? { chatId }
+      : null;
+  }
+
+  private async loadSnapshotCharacter(id: string): Promise<SnapshotCharacter> {
+    if (this.getById(id)?.detailsLoaded === false)
+      await this.ensureCharacterDetails(id);
+    const current = this.getById(id);
+    if (!current || current.detailsLoaded === false)
+      throw new Error(`Cannot load complete character: ${id}`);
+    return current;
+  }
+
+  private async loadCharacterSnapshot(id: string): Promise<SnapshotCharacter> {
+    const current = await this.loadSnapshotCharacter(id);
+    const snapshot = safeStructuredClone($state.snapshot(current));
+    for (let index = 0; index < snapshot.chats.length; index++) {
+      snapshot.chats[index] = await this.getFullChatSnapshot(
+        snapshot.chats[index].id!,
+      );
+    }
+    return snapshot;
+  }
+
+  private identifySnapshotInputs(values: SnapshotCharacter[]): void {
+    if (!Array.isArray(values))
+      throw new TypeError("Character snapshots must be an array");
+    const characterIds = new Set<string>();
+    const chatIds = new Set<string>();
+    for (const character of values) {
+      character.chaId ||= uuidv4();
+      if (characterIds.has(character.chaId))
+        throw new Error(`Duplicate character ID: ${character.chaId}`);
+      characterIds.add(character.chaId);
+      for (const chat of character.chats ?? []) {
+        chat.id ||= uuidv4();
+        if (chatIds.has(chat.id))
+          throw new Error(`Duplicate chat ID: ${chat.id}`);
+        chatIds.add(chat.id);
+      }
+    }
+  }
+
+  private async validateSnapshotInputs(
+    values: SnapshotCharacter[],
+    storage: ISqlStorage,
+  ): Promise<void> {
+    // Chat IDs are global. Warm parents already establish ownership; only
+    // unknown IDs require inspecting cold parents, one metadata row at a time.
+    const needed = new Set(
+      values.flatMap((character) =>
+        (character.chats ?? []).map((chat) => chat.id!),
+      ),
+    );
+    const owners = new Map<string, string>();
+    for (const character of values) {
+      if (!this.getById(character.chaId) && character.detailsLoaded === false) {
+        throw new Error(
+          `New character requires a complete snapshot: ${character.chaId}`,
+        );
+      }
+    }
+    for (const character of this.characters) {
+      for (const chat of character.chats ?? []) {
+        if (chat.id && needed.has(chat.id))
+          owners.set(chat.id, character.chaId);
+      }
+    }
+    if ([...needed].some((id) => !owners.has(id))) {
+      for (const character of this.characters) {
+        if (character.detailsLoaded !== false) continue;
+        const current = await storage.loadCharacter(character.chaId);
+        if (!current || current.detailsLoaded === false)
+          throw new Error(`Cannot load complete character: ${character.chaId}`);
+        for (const chat of current.chats ?? []) {
+          if (chat.id && needed.has(chat.id))
+            owners.set(chat.id, character.chaId);
+        }
+      }
+    }
+    for (const character of values) {
+      for (const chat of character.chats ?? []) {
+        const owner = owners.get(chat.id!);
+        if (owner && owner !== character.chaId)
+          throw new Error(`Chat ID belongs to another character: ${chat.id}`);
+        if (
+          !owner &&
+          (chat.detailsLoaded === false ||
+            chat.messagesLoaded === false ||
+            chat.messagesFullyLoaded === false)
+        ) {
+          throw new Error(`New chat requires a complete snapshot: ${chat.id}`);
+        }
+      }
+    }
+  }
+
+  private async flushSnapshotPredecessors(): Promise<void> {
+    await messageStore.flush();
+    await this.flush();
+    if (this.hasPendingWrites() || messageStore.hasUnsavedWrites()) {
+      throw new Error("Cannot save snapshots while storage writes are pending");
+    }
+  }
+
+  private enqueueCharacterSnapshotWrite(
+    values: SnapshotCharacter[],
+    write: (storage: ISqlStorage) => Promise<void>,
+  ): Promise<void> {
+    return this.snapshotWrites.enqueue(async () => {
+      const storage = this.storage || (await getSqlStorage());
+      await this.validateSnapshotInputs(values, storage);
+      await this.flushSnapshotPredecessors();
+      await write(storage);
+    });
+  }
+
+  private async commitSnapshot<T>(
+    storage: ISqlStorage,
+    action: SqlCommit["action"],
+    prepare: (commit: SqlCommit) => T | Promise<T>,
+  ): Promise<T> {
+    const commit = createEmptySqlCommit(storage.getRevision(), action);
+    const next = await prepare(commit);
+    if (hasSqlCommitChanges(commit)) await commitSqlChanges(storage, commit);
+    return next;
+  }
+
+  private prepareChatSnapshot(
+    commit: SqlCommit,
+    characterId: string,
+    position: number,
+    incoming: Chat,
+    old?: Chat,
+    previousPosition?: number,
+  ): Chat {
+    const partial =
+      incoming.messagesLoaded === false ||
+      incoming.messagesFullyLoaded === false;
+    const next =
+      incoming.detailsLoaded === false ? { ...old, ...incoming } : incoming;
+    if (incoming.detailsLoaded === false && old) {
+      if (old.scriptstate || incoming.scriptstate) {
+        next.scriptstate = mergeVariableRecord(
+          old.scriptstate,
+          incoming.scriptstate,
+        );
+      }
+      if (old.GLGlobalVariables || incoming.GLGlobalVariables) {
+        next.GLGlobalVariables = mergeVariableRecord(
+          old.GLGlobalVariables,
+          incoming.GLGlobalVariables,
+        );
+      }
+    }
+    const incomingMessages = incoming.message ?? [];
+    const usedIds = new Set<string>();
+    const offset = partial ? (incoming.messageOffset ?? 0) : 0;
+    for (const [index, message] of incomingMessages.entries()) {
+      message.chatId ||=
+        (partial ? old?.message[offset + index]?.chatId : undefined) ||
+        uuidv4();
+      if (usedIds.has(message.chatId)) message.chatId = uuidv4();
+      usedIds.add(message.chatId);
+    }
+    if (partial && old) {
+      const updates = new Map(
+        incomingMessages.map((message) => [message.chatId, message]),
+      );
+      next.message = old.message.map(
+        (message) => updates.get(message.chatId) ?? message,
+      );
+      const oldIds = new Set(old.message.map((message) => message.chatId));
+      next.message.push(
+        ...incomingMessages.filter((message) => !oldIds.has(message.chatId)),
+      );
+    }
+    next.message ??= [];
+    next.detailsLoaded = true;
+    next.messagesLoaded = true;
+    next.messagesFullyLoaded = true;
+    next.messageOffset = 0;
+    next.messageTotal = next.message.length;
+    appendChatSnapshotChanges(
+      commit,
+      characterId,
+      position,
+      next,
+      old,
+      previousPosition,
+    );
+    return next;
+  }
+
+  private async prepareCharacterSnapshot(
+    commit: SqlCommit,
+    position: number,
+    incoming: SnapshotCharacter,
+    current?: SnapshotCharacter,
+  ): Promise<SnapshotCharacter> {
+    const partial = incoming.detailsLoaded === false;
+    const next =
+      partial && current
+        ? Object.assign(
+            safeStructuredClone($state.snapshot(current)),
+            incoming,
+            { chats: safeStructuredClone($state.snapshot(current.chats)) },
+          )
+        : incoming;
+    next.detailsLoaded = true;
+    next.chatPage = Math.min(
+      Math.max(Math.trunc(Number(next.chatPage)) || 0, 0),
+      Math.max(0, (next.chats ?? []).length - 1),
+    );
+    if (
+      !current ||
+      this.characters.indexOf(current) !== position ||
+      !snapshotEqual(sqlCharacterData(next), sqlCharacterData(current))
+    ) {
+      commit.characters.push({
+        id: next.chaId,
+        position,
+        data: sqlCharacterData(next),
+      });
+    }
+    if (partial) return next;
+    const previousChats = new Map(
+      current?.chats.map((chat, position) => [chat.id, { chat, position }]) ??
+        [],
+    );
+    const residentChats: Chat[] = [];
+    for (const [index, chat] of (next.chats ?? []).entries()) {
+      const previous = previousChats.get(chat.id);
+      const old = previous
+        ? await this.getFullChatSnapshot(chat.id!)
+        : undefined;
+      const complete = this.prepareChatSnapshot(
+        commit,
+        next.chaId,
+        index,
+        chat,
+        old,
+        previous?.position,
+      );
+      residentChats.push(keepResidentWindow(complete, previous?.chat));
+    }
+    const changes = diffSnapshotIds(
+      residentChats.map((chat) => chat.id!),
+      current?.chats.map((chat) => chat.id!) ?? [],
+    );
+    if (changes) {
+      commit.chatManifests.push({ characterId: next.chaId, ids: changes.ids });
+      commit.chatDeletes!.push(...changes.removed);
+    }
+    next.chats = residentChats;
+    return next;
+  }
+
+  private applySnapshotCharacters(
+    characters: SnapshotCharacter[],
+    refreshedChats: string[],
+  ): void {
+    const selectedId = this.currentCharacter?.chaId;
+    this.disposeCharacterObservers();
+    this.replaceCharacterArray(characters, selectedId);
+    const retainedChats = new Set(
+      characters.flatMap((character) => character.chats.map((chat) => chat.id)),
+    );
+    const refreshedChatIds = new Set(refreshedChats);
+    for (const id of this.generationOnlyMetadataChats) {
+      if (!retainedChats.has(id) || refreshedChatIds.has(id))
+        this.generationOnlyMetadataChats.delete(id);
+    }
+    this.observeArray();
+    this.select(this.selectedId);
+    selectedCharID.set(this.selectedId);
+  }
+
+  private disposeCharacterObservers(): void {
+    this.arrayDispose?.();
+    this.arrayDispose = null;
+    this.activeDispose?.();
+    this.activeDispose = null;
+  }
+
+  private replaceCharacterArray(
+    characters: SnapshotCharacter[],
+    selectedCharacterId: string | undefined,
+  ): void {
+    this.characters = characters;
+    this.selectedId = selectedCharacterId
+      ? characters.findIndex(
+          (character) => character.chaId === selectedCharacterId,
+        )
+      : -1;
+    this.charIdsSnapshot = characters
+      .map((character) => character.chaId)
+      .join(",");
+    this.hydratedCharacterLru = this.hydratedCharacterLru.filter((id) =>
+      characters.some((character) => character.chaId === id),
     );
   }
 
@@ -923,10 +1440,7 @@ class CharacterStore
     const selectedCharacterId = this.characters[this.selectedId]?.chaId;
     const warmChangedIds: string[] = [];
 
-    this.arrayDispose?.();
-    this.arrayDispose = null;
-    this.activeDispose?.();
-    this.activeDispose = null;
+    this.disposeCharacterObservers();
 
     const nextCharacters = startup.characters.map((summary) => {
       summary.chaId ||= uuidv4();
@@ -950,18 +1464,7 @@ class CharacterStore
       return current;
     });
 
-    this.characters = nextCharacters;
-    this.selectedId = selectedCharacterId
-      ? this.characters.findIndex(
-          (character) => character.chaId === selectedCharacterId,
-        )
-      : -1;
-    this.charIdsSnapshot = this.characters
-      .map((character) => character.chaId)
-      .join(",");
-    this.hydratedCharacterLru = this.hydratedCharacterLru.filter((id) =>
-      this.characters.some((character) => character.chaId === id),
-    );
+    this.replaceCharacterArray(nextCharacters, selectedCharacterId);
     this.observeArray();
     this.observeActive();
 
@@ -1161,6 +1664,58 @@ class CharacterStore
     return promise;
   }
 
+  /** Full plugin snapshots must not expand the application's resident history. */
+  async getFullChatSnapshot(chatId: string): Promise<Chat> {
+    const character = this.characters.find((character) =>
+      character.chats?.some((chat) => chat.id === chatId),
+    );
+    const chat = character?.chats.find((chat) => chat.id === chatId);
+    if (!chat) throw new Error(`Chat not found: ${chatId}`);
+    if (
+      chat.detailsLoaded !== false &&
+      chat.messagesLoaded !== false &&
+      chat.messagesFullyLoaded !== false &&
+      !this.generationOnlyMetadataChats.has(chatId)
+    ) {
+      return safeStructuredClone($state.snapshot(chat));
+    }
+
+    const storage = this.storage || (await getSqlStorage());
+    const loaded = await storage.loadChat(chatId);
+    if (
+      !loaded ||
+      loaded.detailsLoaded === false ||
+      loaded.messagesLoaded === false ||
+      loaded.messagesFullyLoaded === false
+    )
+      throw new Error(`Cannot load complete chat: ${chatId}`);
+    const current = $state.snapshot(chat);
+    const completeHistory =
+      current.messagesLoaded !== false && current.messagesFullyLoaded !== false;
+    let message: Chat["message"];
+    if (completeHistory) {
+      const loadedById = new Map(
+        loaded.message.map((message) => [message.chatId, message]),
+      );
+      message = current.message.map((message) => ({
+        ...loadedById.get(message.chatId),
+        ...message,
+      }));
+    } else {
+      message = mergeLoadedMessages(loaded.message, current.message);
+    }
+    const snapshot = { ...loaded, ...current, message };
+    if (current.detailsLoaded === false) {
+      mergeLoadedChatVariables(snapshot, loaded, current);
+    }
+    snapshot.detailsLoaded = true;
+    snapshot.messagesLoaded = true;
+    snapshot.messagesFullyLoaded = true;
+    snapshot.messageOffset = 0;
+    snapshot.messageTotal = message.length;
+    return safeStructuredClone(snapshot);
+  }
+
   async loadOlderChatMessages(chatId: string, limit = 60): Promise<number> {
     const currentPromise = this.olderChatPromises.get(chatId);
     if (currentPromise) return currentPromise;
@@ -1198,10 +1753,7 @@ class CharacterStore
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    this.arrayDispose?.();
-    this.arrayDispose = null;
-    this.activeDispose?.();
-    this.activeDispose = null;
+    this.disposeCharacterObservers();
     this.generationOnlyMetadataChats.clear();
     this.hydratedCharacterLru = [];
     this.inactiveDetailReleaseGeneration += 1;
