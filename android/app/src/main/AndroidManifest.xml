@@ -44,6 +44,52 @@
                 <data android:scheme="co.aiclient.risu" />
             </intent-filter>
 
+            <!-- .risup: senders that include no MIME type (path holds filename) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.risup" />
+            </intent-filter>
+
+            <!-- .risup: senders that include a MIME type (path holds filename) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.risup" />
+            </intent-filter>
+
+            <!-- .risup: opaque providers (MediaStore etc.) where the URI path
+                 has no filename; unknown extensions are sent as octet-stream.
+                 The actual .risup check happens in NativeIntegrationPlugin. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <!-- Samsung My Files (and similar managers) send VIEW intents for
+                 unknown extensions with an opaque MediaStore URI and a
+                 ZERO-LENGTH MIME type, which only matches a */* wildcard
+                 filter (null-type intents skip typed filters, and typeless
+                 filters reject the empty-string type). Claim content://media
+                 broadly; NativeIntegrationPlugin validates the real
+                 extension, and normal files still resolve elsewhere. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:host="media" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
