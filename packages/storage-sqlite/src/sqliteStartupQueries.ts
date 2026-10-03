@@ -57,7 +57,7 @@ export function buildSqliteSettingRowsQuery(
        FROM system_settings s
        LEFT JOIN setting_extension_nodes n ON n.setting_key = s.key${
          deferredKeyList.length
-           ? ` AND s.key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
+           ? ` WHERE s.key NOT IN (${deferredKeyList.map(() => "?").join(",")})`
            : ""
        }
        ORDER BY s.key, n.node_id`,
