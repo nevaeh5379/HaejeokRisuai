@@ -210,7 +210,7 @@ describe.each([
     expect(characterStore.characters[0].chats[0].message).toHaveLength(12);
   });
 
-  it("commits no message rows when only plugin state changes", async () => {
+  it("rewrites every chat and message row even when only plugin state changes", async () => {
     const snapshot = await getPluginCharacter(0);
     snapshot!.chats[0].scriptstate!.$plugin = "after";
     await characterStore.flush();
@@ -219,8 +219,10 @@ describe.each([
     const pluginCommit = commit.mock.calls
       .map(([commit]) => commit)
       .find((commit) => commit.action === "snapshot-character");
-    expect(pluginCommit!.messages).toEqual([]);
-    expect(pluginCommit!.chats).toHaveLength(1);
+    expect(pluginCommit!.chats).toHaveLength(2);
+    expect(pluginCommit!.messages.map((message) => message.id)).toEqual(
+      expect.arrayContaining(["m0", "m13"]),
+    );
   });
 
   it("rejects failed writes without reporting or retaining an unsaved plugin state", async () => {
@@ -547,7 +549,7 @@ describe.each([
     expect(await restart()).toEqual([]);
   });
 
-  it("skips identical snapshots, including observer flushes, and leaves revision unchanged", async () => {
+  it("rewrites identical snapshots unconditionally while preserving content", async () => {
     const snapshots = await characterStore.snapshot.loadAll();
     flushSync();
     await characterStore.flush();
@@ -560,8 +562,9 @@ describe.each([
     await characterStore.snapshot.chat.save(0, 0, snapshots[0].chats[0]);
     flushSync();
     await characterStore.flush();
-    expect(commit).not.toHaveBeenCalled();
-    expect(storage.getRevision()).toBe(revision);
+    expect(commit).toHaveBeenCalled();
+    expect(storage.getRevision()).toBeGreaterThan(revision);
+    expect(await restart()).toEqual(snapshots);
   });
 
   it("rolls back earlier SQL changes when the final revision update fails, then retries successfully", async () => {
@@ -611,19 +614,17 @@ describe.each([
     expect(restarted[1].chats[0].message[0].data).toBe("changed message");
   });
 
-  it("keeps cold character chats when a metadata-only shell has an empty chat list", async () => {
+  it("rejects a metadata-only shell because snapshot inputs must be complete", async () => {
     const shell = characterStore.getCharacterByIndex(0, { snapshot: true })!;
     expect(shell.detailsLoaded).toBe(false);
     expect(shell.chats).toEqual([]);
-    shell.name = "shell edit";
-    await characterStore.snapshot.saveAll([
-      shell,
-      characterStore.getCharacterByIndex(1, { snapshot: true })!,
-    ]);
-    const restored = (await restart())[0];
-    expect(restored.name).toBe("shell edit");
-    expect(restored.chats.map((chat) => chat.id)).toEqual(["chat-1", "chat-2"]);
-    expect(restored.chats[0].message).toHaveLength(14);
+    await expect(
+      characterStore.snapshot.saveAll([
+        shell,
+        characterStore.getCharacterByIndex(1, { snapshot: true })!,
+      ]),
+    ).rejects.toThrow("requires a complete snapshot");
+    expect((await restart())[0].name).not.toBe("shell edit");
   });
 
   it("uses messageOffset for ID-less partial edits and adjusts the resident tail after additions", async () => {

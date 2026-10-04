@@ -6,8 +6,8 @@ import {
   type SqlCommit,
 } from "../../storage/sql/sqlCommit";
 
-// Only delta construction and resident-window bounds live here; the Store owns
-// target resolution, cloning, loading, validation, and transaction execution.
+// Only deletion/manifest diffs and resident-window bounds live here; the
+// Store owns target resolution, cloning, loading, validation, and commits.
 export const snapshotEqual = isEqual;
 
 export function diffSnapshotIds(ids: string[], oldIds: string[]) {
@@ -22,40 +22,23 @@ export function appendChatSnapshotChanges(
   position: number,
   next: Chat,
   old?: Chat,
-  previousPosition?: number,
 ): void {
-  if (
-    !old ||
-    previousPosition !== position ||
-    !snapshotEqual(sqlChatData(next), sqlChatData(old))
-  ) {
-    commit.chats.push({
-      id: next.id!,
-      characterId,
-      position,
-      data: sqlChatData(next),
-    });
-  }
-  const oldMessages = new Map(
-    old?.message.map((message, index) => [
-      message.chatId,
-      { message, index },
-    ]) ?? [],
-  );
+  // Snapshot saves rewrite their full scope unconditionally. `old` is only
+  // the deletion baseline: it tells which stored messages the complete
+  // input no longer contains.
+  commit.chats.push({
+    id: next.id!,
+    characterId,
+    position,
+    data: sqlChatData(next),
+  });
   for (const [index, message] of next.message.entries()) {
-    const previous = oldMessages.get(message.chatId);
-    if (
-      !previous ||
-      previous.index !== index ||
-      !snapshotEqual(sqlMessageData(message), sqlMessageData(previous.message))
-    ) {
-      commit.messages.push({
-        id: message.chatId!,
-        chatId: next.id!,
-        position: index,
-        data: sqlMessageData(message),
-      });
-    }
+    commit.messages.push({
+      id: message.chatId!,
+      chatId: next.id!,
+      position: index,
+      data: sqlMessageData(message),
+    });
   }
   const ids = next.message.map((message) => message.chatId!);
   const oldIds = old?.message.map((message) => message.chatId!) ?? [];

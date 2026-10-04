@@ -24,7 +24,6 @@ import {
   appendChatSnapshotChanges,
   diffSnapshotIds,
   keepResidentWindow,
-  snapshotEqual,
 } from "./characterSnapshot";
 
 type SnapshotCharacter = character | groupChat;
@@ -211,6 +210,7 @@ function toCharacterSummary(
     chatPage,
   } as unknown as character | groupChat;
 }
+
 
 class CharacterStore
   implements
@@ -740,6 +740,9 @@ class CharacterStore
       incoming.chaId = id;
       this.identifySnapshotInputs([incoming]);
       await this.enqueueCharacterSnapshotWrite([incoming], async (storage) => {
+        // incoming is the complete replacement state. The resident record is
+        // only the diff baseline: hydration is needed so omitted chats and
+        // unchanged rows can be detected; content comes solely from incoming.
         const current = await this.loadSnapshotCharacter(id);
         const position = this.characters.indexOf(current);
         const next = await this.commitSnapshot(
@@ -757,9 +760,7 @@ class CharacterStore
         characters[targetPosition] = next;
         this.applySnapshotCharacters(
           characters,
-          incoming.detailsLoaded !== false
-            ? next.chats.map((chat) => chat.id!)
-            : [],
+          next.chats.map((chat) => chat.id!),
         );
       });
     },
@@ -773,6 +774,8 @@ class CharacterStore
           async (commit) => {
             const characters: SnapshotCharacter[] = [];
             for (const [position, next] of incoming.entries()) {
+              // Diff baseline only: hydration keeps omitted chats detectable.
+              // New characters have no baseline and diff against nothing.
               const current = this.getById(next.chaId)
                 ? await this.loadSnapshotCharacter(next.chaId)
                 : undefined;
@@ -798,9 +801,9 @@ class CharacterStore
         );
         this.applySnapshotCharacters(
           nextCharacters,
-          incoming
-            .filter((character) => character.detailsLoaded !== false)
-            .flatMap((character) => character.chats.map((chat) => chat.id!)),
+          incoming.flatMap((character) =>
+            character.chats.map((chat) => chat.id!),
+          ),
         );
       });
     },
@@ -823,8 +826,6 @@ class CharacterStore
         const incoming = safeStructuredClone(value);
         if (!target) return;
         await this.snapshotWrites.enqueue(async () => {
-          // Resolve immediately visible IDs before any await. A startup shell
-          // needs hydration before its numeric chat index can be interpreted.
           const resolved = await this.resolveSnapshotChat(target);
           if (!resolved) return;
           incoming.id = resolved.chatId;
@@ -857,7 +858,6 @@ class CharacterStore
                 position,
                 incoming,
                 old,
-                position,
               ),
           );
           // Do not let observers turn a successful snapshot into another write.
@@ -939,6 +939,11 @@ class CharacterStore
     const chatIds = new Set<string>();
     for (const character of values) {
       character.chaId ||= uuidv4();
+      //TODO 플러그인 측에서 전달받은 캐릭터 객체는 detailsLoaded가 없을 수 있음 (detailsLoaded는 해적리스의 고유 변수)
+      if (character.detailsLoaded === false)
+        throw new Error(
+          `Character ${character.chaId} requires a complete snapshot`,
+        );
       if (characterIds.has(character.chaId))
         throw new Error(`Duplicate character ID: ${character.chaId}`);
       characterIds.add(character.chaId);
@@ -963,13 +968,6 @@ class CharacterStore
       ),
     );
     const owners = new Map<string, string>();
-    for (const character of values) {
-      if (!this.getById(character.chaId) && character.detailsLoaded === false) {
-        throw new Error(
-          `New character requires a complete snapshot: ${character.chaId}`,
-        );
-      }
-    }
     for (const character of this.characters) {
       for (const chat of character.chats ?? []) {
         if (chat.id && needed.has(chat.id))
@@ -1042,7 +1040,6 @@ class CharacterStore
     position: number,
     incoming: Chat,
     old?: Chat,
-    previousPosition?: number,
   ): Chat {
     const partial =
       incoming.messagesLoaded === false ||
@@ -1091,14 +1088,7 @@ class CharacterStore
     next.messagesFullyLoaded = true;
     next.messageOffset = 0;
     next.messageTotal = next.message.length;
-    appendChatSnapshotChanges(
-      commit,
-      characterId,
-      position,
-      next,
-      old,
-      previousPosition,
-    );
+    appendChatSnapshotChanges(commit, characterId, position, next, old);
     return next;
   }
 
@@ -1108,32 +1098,17 @@ class CharacterStore
     incoming: SnapshotCharacter,
     current?: SnapshotCharacter,
   ): Promise<SnapshotCharacter> {
-    const partial = incoming.detailsLoaded === false;
-    const next =
-      partial && current
-        ? Object.assign(
-            safeStructuredClone($state.snapshot(current)),
-            incoming,
-            { chats: safeStructuredClone($state.snapshot(current.chats)) },
-          )
-        : incoming;
+    const next = incoming;
     next.detailsLoaded = true;
     next.chatPage = Math.min(
       Math.max(Math.trunc(Number(next.chatPage)) || 0, 0),
       Math.max(0, (next.chats ?? []).length - 1),
     );
-    if (
-      !current ||
-      this.characters.indexOf(current) !== position ||
-      !snapshotEqual(sqlCharacterData(next), sqlCharacterData(current))
-    ) {
-      commit.characters.push({
-        id: next.chaId,
-        position,
-        data: sqlCharacterData(next),
-      });
-    }
-    if (partial) return next;
+    commit.characters.push({
+      id: next.chaId,
+      position,
+      data: sqlCharacterData(next),
+    });
     const previousChats = new Map(
       current?.chats.map((chat, position) => [chat.id, { chat, position }]) ??
         [],
@@ -1150,7 +1125,6 @@ class CharacterStore
         index,
         chat,
         old,
-        previous?.position,
       );
       residentChats.push(keepResidentWindow(complete, previous?.chat));
     }
