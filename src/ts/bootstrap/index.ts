@@ -215,7 +215,7 @@ export async function loadData() {
         }
       }
 
-      installStartupData(startup, storage);
+      await installStartupData(startup, storage);
       if (isTauriLinux) {
         await setLinuxWindowDecorationPreference(
           settingsStore.state.linuxWindowDecoration ?? "ssd",

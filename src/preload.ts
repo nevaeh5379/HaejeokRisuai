@@ -12,6 +12,9 @@ export function preLoadCheck() {
 
   if (typeof window !== "undefined") {
     const flushStores = () => {
+      void import("./ts/authorNoteEditor")
+        .then(({ flushAuthorNoteEditors }) => flushAuthorNoteEditors())
+        .catch(() => undefined);
       void import("./ts/stores/domain/settingsStore.svelte").then(
         ({ settingsStore }) => settingsStore.flush(),
       );

@@ -6,9 +6,10 @@
     "strict": true,
     "declaration": true,
     "rootDir": "src",
-    "outDir": ".",
+    "outDir": "dist",
+    "noEmitOnError": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "files": ["src/sqlCommit.cts", "src/realtimeEvents.cts"]
+  "files": ["src/authorNoteSql.cts", "src/sqlCommit.cts", "src/realtimeEvents.cts"]
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { makeCapacitorStorage } from "../sqliteTestHarness";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
 import { buildFullDatabase } from "../sqliteTestFixtures";
 import { presetTemplate } from "../../../presets/presetDefaults";
 import { installStartupData } from "../../../database/databaseLifecycle";
@@ -124,7 +124,7 @@ describe("CapacitorSqliteStorage", () => {
       ),
     ).toBe(false);
 
-    installStartupData(loaded!, storage);
+    await installStartupData(loaded!, storage);
     expect(
       (settingsStore.getStateRecord() as any).largeStartupProbe,
     ).toBeUndefined();

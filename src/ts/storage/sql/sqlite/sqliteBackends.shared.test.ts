@@ -26,11 +26,8 @@ import {
   PROMPT_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
 } from "../sqlDeferredSettings";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  flattenRelationalValue,
-  type RelationalNodeRow,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import {
   makeWebStorage,
   makeTauriStorage,
@@ -110,13 +107,24 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     })) {
       records.push(record);
     }
-    expect(records[0]).toMatchObject({ type: "meta", revision: storage.getRevision() });
-    expect(records.filter((record) => record.type === "character")).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      type: "meta",
+      revision: storage.getRevision(),
+    });
+    expect(
+      records.filter((record) => record.type === "character"),
+    ).toHaveLength(2);
     expect(records.filter((record) => record.type === "chat")).toHaveLength(2);
-    expect(records.filter((record) => record.type === "message")).toHaveLength(3);
+    expect(records.filter((record) => record.type === "message")).toHaveLength(
+      3,
+    );
     expect(records.some((record) => record.type === "module")).toBe(true);
-    const chat = records.find((record) => record.type === "chat" && record.id === "chat-1");
-    expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
+    const chat = records.find(
+      (record) => record.type === "chat" && record.id === "chat-1",
+    );
+    expect(
+      chat && "data" in chat ? (chat.data as any).message : undefined,
+    ).toBeUndefined();
     database.close();
   });
 
@@ -165,9 +173,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(restoredGraph.branches).toEqual(sourceGraph.branches);
     expect(restoredGraph.activeBranchId).toBe(sourceGraph.activeBranchId);
     expect(restoredGraph.links).toEqual(sourceGraph.links);
-    expect(
-      restoredGraph.messages.map((message) => message.chatId),
-    ).toEqual(sourceGraph.messages.map((message) => message.chatId));
+    expect(restoredGraph.messages.map((message) => message.chatId)).toEqual(
+      sourceGraph.messages.map((message) => message.chatId),
+    );
     expect(targetHarness.storage.getRevision()).toBe(1);
 
     sourceHarness.database.close();
@@ -258,7 +266,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     await storage.commit(commit);
     queryLog.clear();
     const keys = await storage.listSettingKeys?.();
-    expect(keys).toEqual(expect.arrayContaining(["alpha-setting", "beta-setting"]));
+    expect(keys).toEqual(
+      expect.arrayContaining(["alpha-setting", "beta-setting"]),
+    );
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
     database.close();
   });
@@ -329,7 +339,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     // The deferred loader owns hydration: defaults are immediately usable,
     // then the targeted storage value replaces them without becoming a write.
-    installStartupData(startup!, storage);
+    await installStartupData(startup!, storage);
     queryLog.clear();
     const live = settingsStore.state;
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
@@ -379,7 +389,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       ).toBe(false);
     }
 
-    installStartupData(startup!, storage);
+    await installStartupData(startup!, storage);
     expect(settingsStore.getBootstrapState().mainPrompt).not.toBe(
       "leaky-mainPrompt",
     );
@@ -850,7 +860,10 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       reason: "reroll",
       createdAt: 201,
     });
-    const append = createEmptySqlCommit(storage.getRevision(), "graph-page-message");
+    const append = createEmptySqlCommit(
+      storage.getRevision(),
+      "graph-page-message",
+    );
     append.messages.push({
       id: "m-alt-page",
       chatId: "chat-1",
@@ -874,12 +887,16 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(links).toHaveLength(3);
     expect(links.find((link) => link.messageId === "m1")?.position).toBe(0);
     expect(links.find((link) => link.messageId === "m2")?.position).toBe(1);
-    expect(links.find((link) => link.messageId === "m-alt-page")?.position).toBe(1);
-    expect(messages.find((message) => message.chatId === "m1")?.promptInfo?.promptName).toBe(
-      "preset",
-    );
     expect(
-      messages.find((message) => message.chatId === "m-alt-page")?.promptInfo?.promptName,
+      links.find((link) => link.messageId === "m-alt-page")?.position,
+    ).toBe(1);
+    expect(
+      messages.find((message) => message.chatId === "m1")?.promptInfo
+        ?.promptName,
+    ).toBe("preset");
+    expect(
+      messages.find((message) => message.chatId === "m-alt-page")?.promptInfo
+        ?.promptName,
     ).toBe("alt");
     expect(first.branches).toHaveLength(2);
     expect(first.activeBranchId).toBe("reroll-page");

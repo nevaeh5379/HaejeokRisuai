@@ -7,8 +7,8 @@ import {
   makeCapacitorStorage,
 } from "./sqliteTestHarness";
 import { buildFullDatabase } from "./sqliteTestFixtures";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import { CHARACTER_ASSET_FIELD_KEYS } from "./sqliteStorageUtils";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as sqliteEntity from "@risuai/storage-sqlite/queries/entity";
 import type { ISqlStorage } from "../ISqlStorage";
 
 type MakeStorage = (database: DatabaseSync) => ISqlStorage;
@@ -29,7 +29,7 @@ describe.each(backendFactories)(
       const full = (await storage.loadCharacter("char-1")) as any;
       const assets = (await storage.loadCharacterAssetFields("char-1")) as any;
 
-      for (const key of CHARACTER_ASSET_FIELD_KEYS) {
+      for (const key of sqliteEntity.CHARACTER_ASSET_FIELD_KEYS) {
         expect(assets[key]).toEqual(full[key]);
       }
       // Non-asset fields must not leak in.

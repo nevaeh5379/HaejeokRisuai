@@ -18,7 +18,7 @@ const {
   validateColdStorageKeys,
   validateColdStorageValue,
   validateSyncPayload,
-} = require(".//postgresStorage.cjs") as {
+} = require(".//postgresStorage.cts") as {
   DEFERRED_SETTING_KEYS: string[];
   buildUpsertClause: (
     table: string,

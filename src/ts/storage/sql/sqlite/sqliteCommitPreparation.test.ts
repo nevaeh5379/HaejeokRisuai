@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createEmptySqlCommit } from "../sqlCommit";
-import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
-import {
-  prepareSqliteModuleCommit,
-  validateSqlitePresetCommit,
-} from "@risuai/storage-sqlite/sqliteCommitPreparation";
-import type { SqliteSelectRows } from "@risuai/storage-sqlite/sqliteAdminQueries";
+import * as sqliteCommitPrep from "@risuai/storage-sqlite/commit/prepare";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
+import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
 
 describe("SQLite commit preparation", () => {
   it("migrates legacy modules only when the relational table is empty", async () => {
@@ -21,12 +18,12 @@ describe("SQLite commit preparation", () => {
     const selectRows = vi.fn(async (sql: string) => {
       if (sql.includes("COUNT(*)")) return [{ count: 0 }];
       if (sql.includes("setting_extension_nodes")) {
-        return flattenRelationalValue(legacy);
+        return nodeCodec.flatten(legacy);
       }
       throw new Error(`Unexpected SQL: ${sql}`);
     }) as unknown as SqliteSelectRows;
 
-    await prepareSqliteModuleCommit(selectRows, commit);
+    await sqliteCommitPrep.prepareModules(selectRows, commit);
 
     expect(commit.modules.upserts.map((entry) => entry.id)).toEqual([
       "legacy",
@@ -43,7 +40,7 @@ describe("SQLite commit preparation", () => {
       { count: 3 },
     ]) as unknown as SqliteSelectRows;
 
-    await prepareSqliteModuleCommit(selectRows, commit);
+    await sqliteCommitPrep.prepareModules(selectRows, commit);
 
     expect(selectRows).toHaveBeenCalledTimes(1);
     expect(commit.root.deletes).not.toContain("modules");
@@ -63,7 +60,7 @@ describe("SQLite commit preparation", () => {
       throw new Error(`Unexpected SQL: ${sql}`);
     }) as unknown as SqliteSelectRows;
 
-    await validateSqlitePresetCommit(selectRows, commit);
+    await sqliteCommitPrep.validatePresets(selectRows, commit);
 
     expect(commit.presets.activeId).toBe("b");
   });
@@ -77,7 +74,7 @@ describe("SQLite commit preparation", () => {
     ]) as unknown as SqliteSelectRows;
 
     await expect(
-      validateSqlitePresetCommit(selectRows, commit),
+      sqliteCommitPrep.validatePresets(selectRows, commit),
     ).rejects.toThrow("Preset order must contain every preset ID exactly once");
   });
 
@@ -89,7 +86,7 @@ describe("SQLite commit preparation", () => {
     ]) as unknown as SqliteSelectRows;
 
     await expect(
-      validateSqlitePresetCommit(selectRows, commit),
+      sqliteCommitPrep.validatePresets(selectRows, commit),
     ).rejects.toThrow("At least one bot preset must remain");
   });
 });

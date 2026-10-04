@@ -627,7 +627,11 @@ export interface Database
     PersonaStoreData,
     ModuleStoreData,
     PresetStoreData,
-    LegacyPersonaMirrorData {}
+    LegacyPersonaMirrorData {
+  /** Internal serialization boundary; live data belongs to the independent note store. */
+  globalAuthorNotes?: import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow[];
+  globalAuthorNoteSettings?: { allowScriptWrite: boolean };
+}
 
 export type LegacyPersonaMirrorKey = keyof LegacyPersonaMirrorData;
 
@@ -639,6 +643,8 @@ export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey> & {
 
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
 export type DomainStoreSettingKey =
+  | "globalAuthorNotes"
+  | "globalAuthorNoteSettings"
   | keyof PersonaStoreData
   | keyof ModuleStoreData
   | keyof PresetStoreData
@@ -1290,6 +1296,7 @@ export interface BtwSession {
 export interface Chat {
   message: Message[];
   note: string;
+  globalAuthorNoteId?: string;
   name: string;
   localLore: loreBook[];
   sdData?: string;

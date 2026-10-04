@@ -123,6 +123,8 @@ function supportedDatabaseRecord(
   }
   return [
     "meta",
+    "author-note",
+    "author-note-settings",
     "setting",
     "plugin-storage",
     "module",

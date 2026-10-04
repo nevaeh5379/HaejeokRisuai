@@ -79,9 +79,15 @@ function validateRestoreId(id: string): string {
 function recordTier(record: RestoreRecord): number {
   if (record.type === "meta") return 0;
   if (
-    ["setting", "plugin-storage", "module", "preset", "cold-storage"].includes(
-      record.type,
-    )
+    [
+      "author-note",
+      "author-note-settings",
+      "setting",
+      "plugin-storage",
+      "module",
+      "preset",
+      "cold-storage",
+    ].includes(record.type)
   ) {
     return 1;
   }
@@ -109,18 +115,18 @@ export class LocalBackupImportRecordStore {
    * decode = decodeRecord(pgJson^-1), applied LIFO.
    */
   private encodePayload(record: RestoreRecord): string {
-    const { encodePostgresJsonValue } = require(
-      "../storage/postgres/postgresJsonCodec.cjs",
-    );
+    const {
+      encodePostgresJsonValue,
+    } = require("../storage/postgres/postgresJsonCodec.cjs");
     return JSON.stringify(
       encodePostgresJsonValue(this.adapter.encodeRecord(record)),
     );
   }
 
   private decodePayload(payload: string): RestoreRecord {
-    const { decodePostgresJsonValue } = require(
-      "../storage/postgres/postgresJsonCodec.cjs",
-    );
+    const {
+      decodePostgresJsonValue,
+    } = require("../storage/postgres/postgresJsonCodec.cjs");
     return this.adapter.decodeRecord(
       decodePostgresJsonValue(JSON.parse(payload)),
     );

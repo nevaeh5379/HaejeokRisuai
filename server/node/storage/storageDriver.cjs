@@ -14,7 +14,7 @@ const {
 const {
   PostgresRevisionConflictError,
   PostgresPayloadError,
-} = require("./postgres/postgresStorage.cjs");
+} = require("./postgres/postgresStorage.cts");
 
 // 공통 에러 타입 (구현체 무관 및 server.cjs 핸들러 호환)
 class StorageRevisionConflictError extends PostgresRevisionConflictError {
@@ -231,7 +231,7 @@ function instantiateVendorStorage(vendor, params = {}, options = {}) {
       ? options.poolMax
       : 10;
   if (vendor === "azure") {
-    const { AzureStorage } = require("./azure/azureStorage.cjs");
+    const { AzureStorage } = require("./azure/azureStorage.cts");
     return new AzureStorage({
       server: params.server || "",
       database: params.database || "",
@@ -246,7 +246,7 @@ function instantiateVendorStorage(vendor, params = {}, options = {}) {
     });
   }
   if (vendor === "oracle") {
-    const { OracleStorage } = require("./oracle/oracleStorage.cjs");
+    const { OracleStorage } = require("./oracle/oracleStorage.cts");
     return new OracleStorage({
       user: params.user || "",
       password: params.password || "",
@@ -257,7 +257,7 @@ function instantiateVendorStorage(vendor, params = {}, options = {}) {
       enabled: options.enabled !== false,
     });
   }
-  const { PostgresStorage } = require("./postgres/postgresStorage.cjs");
+  const { PostgresStorage } = require("./postgres/postgresStorage.cts");
   return new PostgresStorage({
     connectionString: params.connectionString || "",
     poolMax,
@@ -514,17 +514,17 @@ function createStorageDriver(options = {}) {
   const vendor = resolveVendor(options);
 
   if (vendor === "azure") {
-    const { AzureStorage } = require("./azure/azureStorage.cjs");
+    const { AzureStorage } = require("./azure/azureStorage.cts");
     return new AzureStorage(options);
   }
 
   if (vendor === "oracle") {
-    const { OracleStorage } = require("./oracle/oracleStorage.cjs");
+    const { OracleStorage } = require("./oracle/oracleStorage.cts");
     return new OracleStorage(options);
   }
 
   // 기본: postgres
-  const { PostgresStorage } = require("./postgres/postgresStorage.cjs");
+  const { PostgresStorage } = require("./postgres/postgresStorage.cts");
   return new PostgresStorage(options);
 }
 
@@ -660,7 +660,7 @@ function createServerStorage(savePath, options = {}) {
   }
 
   if (vendor === "azure") {
-    const { AzureStorage } = require("./azure/azureStorage.cjs");
+    const { AzureStorage } = require("./azure/azureStorage.cts");
     let azureConfig;
     if (
       storedConfig.vendor === "azure" &&
@@ -693,7 +693,7 @@ function createServerStorage(savePath, options = {}) {
   }
 
   if (vendor === "oracle") {
-    const { OracleStorage } = require("./oracle/oracleStorage.cjs");
+    const { OracleStorage } = require("./oracle/oracleStorage.cts");
     let oracleConfig;
     if (
       storedConfig.vendor === "oracle" &&
@@ -730,7 +730,7 @@ function createServerStorage(savePath, options = {}) {
   }
 
   // postgres
-  const { PostgresStorage } = require("./postgres/postgresStorage.cjs");
+  const { PostgresStorage } = require("./postgres/postgresStorage.cts");
   let connectionString = "";
   if (postgresConfig && postgresConfig.enabled) {
     connectionString = postgresConfig.connectionString;

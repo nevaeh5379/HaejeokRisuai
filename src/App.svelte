@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { flushDurableStores } from "./ts/stores/domain/flushDurableStores";
+    import AuthorNoteDraftRecovery from "./lib/Others/AuthorNoteDraftRecovery.svelte";
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
@@ -113,11 +115,7 @@
                     import('./lang'),
                 ])
                 if (await alertConfirm(language.exitAppConfirm)) {
-                    const flushResults = await Promise.allSettled([
-                        settingsStore.flush(),
-                        characterStore.flush(),
-                        messageStore.flush(),
-                    ])
+                    const flushResults = await Promise.allSettled([flushDurableStores()])
                     if (
                         flushResults.some((result) => result.status === 'rejected') ||
                         settingsStore.hasPendingWrites() ||
@@ -511,3 +509,5 @@
         }
     }
 </style>
+
+<AuthorNoteDraftRecovery />

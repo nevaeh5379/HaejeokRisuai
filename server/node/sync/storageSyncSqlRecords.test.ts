@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const {
   StorageSyncSqlRecordError,
   readStorageSyncSqlRecords,
-} = require(".//storageSyncSqlRecords.cjs");
+} = require(".//storageSyncSqlRecords.cts");
 const {
   encodeStorageSyncValue,
 } = require("../../../packages/protocol/storageSyncValueCodec.cjs");

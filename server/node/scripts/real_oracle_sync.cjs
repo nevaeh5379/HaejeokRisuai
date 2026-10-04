@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const fflate = require("fflate");
 const { Unpackr } = require("msgpackr/index-no-eval");
-const { OracleStorage } = require("../storage/oracle/oracleStorage.cjs");
+const { OracleStorage } = require("../storage/oracle/oracleStorage.cts");
 const {
   loadOracleEnvFile,
   readOracleConfigFromEnv,

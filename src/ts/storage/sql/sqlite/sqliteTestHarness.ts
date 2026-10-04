@@ -16,16 +16,8 @@ import { vi } from "vitest";
 import { WebSqliteStorage } from "./web/webSqliteStorage";
 import { TauriSqliteStorage } from "./tauri/tauriSqliteStorage";
 import { CapacitorSqliteStorage } from "./capacitor/capacitorSqliteStorage";
-import {
-  flattenRelationalValue,
-  rebuildRelationalValue,
-  type RelationalNodeRow,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import { rebuildMessageRows } from "./sqliteStorageUtils";
-
-// Re-export so migrated suites keep working with a single import.
-export { flattenRelationalValue, rebuildRelationalValue };
-export type { RelationalNodeRow };
 
 // ── Query log ────────────────────────────────────────────────────────
 
@@ -192,7 +184,7 @@ export function makeWebStorage(database: DatabaseSync): WebSqliteStorage {
         if (transform === "relational") {
           return {
             value: rows.length
-              ? rebuildRelationalValue(rows as RelationalNodeRow[])
+              ? nodeCodec.rebuild(rows as nodeCodec.NodeRow[])
               : undefined,
           };
         }

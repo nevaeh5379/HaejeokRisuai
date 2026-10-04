@@ -15,6 +15,11 @@
   },
   "include": [
     "server.cts",
+    "storage/authorNotes.cts",
+    "storage/postgres/postgresStorage.cts",
+    "storage/oracle/oracleStorage.cts",
+    "storage/azure/azureStorage.cts",
+    "sync/storageSyncSqlRecords.cts",
     "api/database/plugins/routes.ts",
     "executors/modelJobs.cts",
     "http/packet.ts",

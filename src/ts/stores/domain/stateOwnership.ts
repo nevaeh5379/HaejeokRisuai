@@ -1,4 +1,4 @@
-import type { ProtocolSettingKeys } from "../../../../packages/protocol/settingKeys";
+import type { ProtocolSettingKeys } from "../../../../packages/protocol/dist/settingKeys";
 import type { DatabaseSettings } from "../../storage/database/schema";
 
 export type PresetSettingKey = ProtocolSettingKeys["PRESET_STORE_SETTING_KEYS"];

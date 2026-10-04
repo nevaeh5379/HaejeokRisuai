@@ -334,7 +334,7 @@ describe("LocalBackupImportService streaming restore", () => {
         job.id,
         chunked([framed("database.risudat", legacy)]),
       ),
-    ).resolves.toMatchObject({ status: "complete", recordCount: 2 });
+    ).resolves.toMatchObject({ status: "complete", recordCount: 3 });
     expect(state.activeRecords).toContainEqual({
       type: "setting",
       key: "language",

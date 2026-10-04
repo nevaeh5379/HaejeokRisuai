@@ -1,3 +1,5 @@
+import { globalAuthorNoteStore } from "./globalAuthorNoteStore";
+import { flushAuthorNoteEditors } from "../../authorNoteEditor";
 import { characterStore } from "./characterStore.svelte";
 import { messageStore } from "./messageStore.svelte";
 import { moduleStore } from "./moduleStore.svelte";
@@ -16,6 +18,8 @@ const durableStores: readonly FlushableStore[] = [
 ];
 
 export async function flushDurableStores(): Promise<void> {
+  await flushAuthorNoteEditors();
+  await globalAuthorNoteStore.waitForPendingWrites();
   await Promise.all(durableStores.map((store) => store.flush()));
   if (durableStores.some((store) => store.hasPendingWrites())) {
     throw new Error(

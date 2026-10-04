@@ -10,6 +10,17 @@ const LEGACY_PERSONA_MIRROR_KEYS = new Set<string>(
 );
 
 export type LegacyBackupSqlRecord =
+  | {
+      type: "author-note";
+      data: {
+        id: string;
+        name: string;
+        content: string;
+        contentHash: string;
+        updatedAt: number;
+      };
+    }
+  | { type: "author-note-settings"; allowScriptWrite: boolean }
   | { type: "meta"; formatVersion: 1; revision: number }
   | { type: "setting"; key: string; value: unknown }
   | { type: "plugin-storage"; key: string; value: unknown }
@@ -213,24 +224,20 @@ export function* iterateLegacyBackupSqlRecords(
       : 0,
   );
 
-  const { database, branchGraphs } =
-    preparePortableDatabaseForBranchRestore(source) as {
-      database: Record<string, any>;
-      branchGraphs: PortableBranchGraphMap;
-    };
+  const { database, branchGraphs } = preparePortableDatabaseForBranchRestore(
+    source,
+  ) as {
+    database: Record<string, any>;
+    branchGraphs: PortableBranchGraphMap;
+  };
 
-  const presets = Array.isArray(database.botPresets)
-    ? database.botPresets
-    : [];
+  const presets = Array.isArray(database.botPresets) ? database.botPresets : [];
   const presetIds = presets.map(() => idFactory());
   const activePresetIndex =
     presets.length > 0
       ? Math.max(
           0,
-          Math.min(
-            Number(database.botPresetsId) || 0,
-            presets.length - 1,
-          ),
+          Math.min(Number(database.botPresetsId) || 0, presets.length - 1),
         )
       : -1;
 
@@ -238,6 +245,8 @@ export function* iterateLegacyBackupSqlRecords(
 
   const excludedSettings = new Set([
     "characters",
+    "globalAuthorNotes",
+    "globalAuthorNoteSettings",
     "modules",
     "botPresets",
     "botPresetsId",
@@ -263,6 +272,14 @@ export function* iterateLegacyBackupSqlRecords(
       value: presetIds[activePresetIndex],
     };
   }
+
+  for (const data of database.globalAuthorNotes ?? [])
+    yield { type: "author-note", data };
+  yield {
+    type: "author-note-settings",
+    allowScriptWrite:
+      database.globalAuthorNoteSettings?.allowScriptWrite ?? false,
+  };
 
   const pluginStorage =
     database.pluginCustomStorage &&
@@ -342,16 +359,10 @@ export function* iterateLegacyBackupSqlRecords(
       };
 
       const graph = branchGraphs[chatId];
-      if (
-        graph &&
-        Array.isArray(graph.branches) &&
-        graph.branches.length > 0
-      ) {
+      if (graph && Array.isArray(graph.branches) && graph.branches.length > 0) {
         yield* graphRecords(chatId, graph, idFactory);
       } else {
-        const messages = Array.isArray(chat.message)
-          ? chat.message
-          : [];
+        const messages = Array.isArray(chat.message) ? chat.message : [];
         yield* linearChatRecords(chatId, messages, idFactory);
       }
     }

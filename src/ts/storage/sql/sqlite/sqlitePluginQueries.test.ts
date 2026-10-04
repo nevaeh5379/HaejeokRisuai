@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SqliteSelectRows } from "@risuai/storage-sqlite/sqliteAdminQueries";
-import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
-import {
-  loadSqlitePlugin,
-  loadSqlitePlugins,
-  loadSqlitePluginScript,
-} from "@risuai/storage-sqlite/sqlitePluginQueries";
+import * as sqlitePlugin from "@risuai/storage-sqlite/queries/plugin";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
+import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
 
 const record = {
   plugin_id: "plugin-id",
@@ -33,7 +29,7 @@ const metadata = {
 };
 
 function extensionRows() {
-  return flattenRelationalValue(metadata).map((row) => ({
+  return nodeCodec.flatten(metadata).map((row) => ({
     ...row,
     plugin_id: "plugin-id",
   }));
@@ -47,7 +43,7 @@ describe("SQLite plugin queries", () => {
       .mockResolvedValueOnce(extensionRows());
     const selectRows = selectRowsMock as unknown as SqliteSelectRows;
 
-    await expect(loadSqlitePlugins(selectRows)).resolves.toEqual([
+    await expect(sqlitePlugin.loadAll(selectRows)).resolves.toEqual([
       {
         id: "plugin-id",
         position: 3,
@@ -68,7 +64,7 @@ describe("SQLite plugin queries", () => {
     const selectRows = selectRowsMock as unknown as SqliteSelectRows;
 
     await expect(
-      loadSqlitePlugins(selectRows, { enabledOnly: true }),
+      sqlitePlugin.loadAll(selectRows, { enabledOnly: true }),
     ).resolves.toEqual([]);
 
     expect(String(selectRowsMock.mock.calls[0][0])).toContain(
@@ -82,18 +78,20 @@ describe("SQLite plugin queries", () => {
       .mockResolvedValueOnce([record])
       .mockResolvedValueOnce(extensionRows()) as unknown as SqliteSelectRows;
 
-    await expect(loadSqlitePlugin(metadataRows, "plugin-id")).resolves.toEqual({
-      id: "plugin-id",
-      position: 3,
-      ...metadata,
-    });
+    await expect(sqlitePlugin.load(metadataRows, "plugin-id")).resolves.toEqual(
+      {
+        id: "plugin-id",
+        position: 3,
+        ...metadata,
+      },
+    );
 
     const scriptRows = vi.fn(async () => [
       { script: "console.log('plugin')" },
     ]) as unknown as SqliteSelectRows;
 
     await expect(
-      loadSqlitePluginScript(scriptRows, "plugin-id"),
+      sqlitePlugin.loadScript(scriptRows, "plugin-id"),
     ).resolves.toBe("console.log('plugin')");
   });
 });

@@ -227,6 +227,33 @@ jobs:
           console.log(`Tauri bundle version synchronized to ${version.tauriVersion}`);
           NODE
 
+      - name: Prepare AppImage AppRun permissions
+        if: startsWith(matrix.settings.platform, 'ubuntu-')
+        shell: bash
+        run: |
+          case "${{ matrix.settings.target }}" in
+            x86_64-*) TOOLS_ARCH=x86_64 ;;
+            aarch64-*) TOOLS_ARCH=aarch64 ;;
+            *)
+              echo "Unsupported AppImage tools architecture for ${{ matrix.settings.target }}" >&2
+              exit 1
+              ;;
+          esac
+
+          APPRUN_TMP=$(mktemp)
+          trap 'rm -f "$APPRUN_TMP"' EXIT
+          curl -fsSL --retry 3 \
+            "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-${TOOLS_ARCH}" \
+            -o "$APPRUN_TMP"
+
+          for TOOLS_DIR in \
+            "${XDG_CACHE_HOME:-$HOME/.cache}/tauri" \
+            "src-tauri/target/.tauri"; do
+            mkdir -p "$TOOLS_DIR"
+            install -m 0755 "$APPRUN_TMP" "$TOOLS_DIR/AppRun-${TOOLS_ARCH}"
+            test "$(stat -c '%a' "$TOOLS_DIR/AppRun-${TOOLS_ARCH}")" = 755
+          done
+
       - name: Build and upload Tauri bundles
         uses: tauri-apps/tauri-action@action-v1.0.0
         env:
@@ -244,6 +271,36 @@ jobs:
           releaseDraft: true
           args: ${{ matrix.settings.args }}
           tauriScript: pnpm tauri
+
+      - name: Verify AppImage AppRun permissions
+        if: startsWith(matrix.settings.platform, 'ubuntu-')
+        shell: bash
+        run: |
+          APPIMAGE_DIR="src-tauri/target/${{ matrix.settings.target }}/release/bundle/appimage"
+          APPIMAGE_PATH=$(find "$APPIMAGE_DIR" -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+          if [ -z "$APPIMAGE_PATH" ]; then
+            echo "Unable to find the AppImage in $APPIMAGE_DIR" >&2
+            exit 1
+          fi
+
+          APPIMAGE_PATH=$(realpath "$APPIMAGE_PATH")
+          chmod +x "$APPIMAGE_PATH"
+          EXTRACT_DIR="$RUNNER_TEMP/appimage-permission-check-${{ matrix.settings.package_arch }}"
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
+          (cd "$EXTRACT_DIR" && "$APPIMAGE_PATH" --appimage-extract >/dev/null)
+
+          WRAPPED_APPRUN="$EXTRACT_DIR/squashfs-root/AppRun.wrapped"
+          if [ ! -f "$WRAPPED_APPRUN" ]; then
+            echo "AppRun.wrapped was not found in the AppImage" >&2
+            exit 1
+          fi
+
+          MODE=$(stat -c '%a' "$WRAPPED_APPRUN")
+          if [ "$MODE" != 755 ]; then
+            echo "AppRun.wrapped has mode $MODE; expected 755" >&2
+            exit 1
+          fi
 
       - name: Build Arch Linux package
         if: startsWith(matrix.settings.platform, 'ubuntu-')

@@ -65,6 +65,7 @@ Cargo.lock
 /server/node/dist/
 /server/node/.tsbuild/
 /packages/backup-core/dist/
+/packages/protocol/dist/
 
 
 .envrc

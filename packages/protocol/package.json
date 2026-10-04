@@ -3,7 +3,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "build": "tsx ../../tooling/build-protocol.ts",
+    "check": "tsx ../../tooling/build-protocol.ts"
   }
 }

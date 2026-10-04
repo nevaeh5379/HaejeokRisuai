@@ -24,6 +24,8 @@ import {
 
 function sourceSql(revision = 7): ISqlStorage {
   return {
+    listGlobalAuthorNotes: async () => [],
+    getGlobalAuthorNoteScriptWrite: async () => false,
     getRevision: () => revision,
     getStorageSyncSummary: async () => ({
       revision,
@@ -427,7 +429,6 @@ describe("stageLocalStorageToRemote", () => {
   });
 });
 
-
 describe("syncLocalStorageToRemote", () => {
   it("finalizes a staged transfer and clears its resume identity", async () => {
     const target = new FakeRemoteTarget("finalize-1");
@@ -444,7 +445,10 @@ describe("syncLocalStorageToRemote", () => {
     });
 
     expect(result.resumedFinalized).toBe(false);
-    expect(result.finalized).toMatchObject({ status: "completed", revision: 12 });
+    expect(result.finalized).toMatchObject({
+      status: "completed",
+      revision: 12,
+    });
     expect(target.log.at(-1)).toBe("finalize");
     expect(phases.slice(-2)).toEqual(["finalizing", "completed"]);
     expect(loadStorageSyncResumeState(resumeStorage)).toBeNull();

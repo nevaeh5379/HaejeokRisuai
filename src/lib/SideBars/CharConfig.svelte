@@ -1,4 +1,5 @@
 <script lang="ts">
+    import AuthorNoteEditor from "./AuthorNoteEditor.svelte";
     import { language } from "../../lang";
     import { saveImage as saveAsset } from "../../ts/storage/files/assetPersistence";
 import type { character, groupChat } from "../../ts/storage/database/schema";
@@ -282,17 +283,14 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             {:else if charMainTab === 2}
                 <div class="flex items-center justify-between mb-1 shrink-0">
                     <span class="text-textcolor flex items-center gap-1">{language.authorNote} <Help key="chatNote"/></span>
+                  {#if !characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].globalAuthorNoteId}
                     <span class="rs-charconfig-token-badge text-textcolor2 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+                  {/if}
                 </div>
                 <div class="flex-1 min-h-0 flex flex-col mb-1">
-                    <TextAreaInput
-                        height="full"
-                        className="flex-1 h-full min-h-0"
-                        autocomplete="off"
-                        bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
-                        highlight
-                        placeholder={getAuthorNoteDefaultText()}
-                    />
+                    {#key `${characterStore.characters[$selectedCharID].chaId}/${characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id}`}
+                        <AuthorNoteEditor target={{ characterId: characterStore.characters[$selectedCharID].chaId, chatId: characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id! }} />
+                    {/key}
                 </div>
             {/if}
         </div>
@@ -348,14 +346,12 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         </div>
 
         <span class="text-textcolor">{language.authorNote} <Help key="chatNote"/></span>
-        <TextAreaInput
-            margin="both"
-            autocomplete="off"
-            bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
-            highlight
-            placeholder={getAuthorNoteDefaultText()}
-        />
+        {#key `${characterStore.characters[$selectedCharID].chaId}/${characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id}`}
+                        <AuthorNoteEditor target={{ characterId: characterStore.characters[$selectedCharID].chaId, chatId: characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id! }} />
+                    {/key}
+                  {#if !characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].globalAuthorNoteId}
         <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+                  {/if}
 
         {#if !$MobileGUI}
             <div class="flex mt-2 items-center">

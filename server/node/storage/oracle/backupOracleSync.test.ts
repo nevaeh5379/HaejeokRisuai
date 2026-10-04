@@ -11,7 +11,7 @@ const {
   normalizeEmptyStringBinds,
   toOracleColumn,
   COLUMN_NAME_MAP,
-} = require(".//oracleStorage.cjs");
+} = require(".//oracleStorage.cts");
 const {
   splitCharacter,
   splitChat,

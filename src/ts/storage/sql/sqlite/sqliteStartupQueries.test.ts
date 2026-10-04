@@ -1,14 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildSqliteSettingRowsQuery,
-  getSqliteStorageSyncSummary,
-  loadSqliteStartupProjection,
-  SQLITE_STARTUP_SETTING_TEXT_LIMIT,
-} from "@risuai/storage-sqlite/sqliteStartupQueries";
+import * as sqliteStartup from "@risuai/storage-sqlite/queries/startup";
 import type {
   SqliteSelectRowSets,
   SqliteSelectRows,
-} from "@risuai/storage-sqlite/sqliteAdminQueries";
+} from "@risuai/storage-sqlite/types";
 
 function scalarSetting(key: string, value: string, oversized = false) {
   return {
@@ -23,9 +18,9 @@ function scalarSetting(key: string, value: string, oversized = false) {
 
 describe("SQLite startup queries", () => {
   it("builds a bounded shallow setting projection", () => {
-    const query = buildSqliteSettingRowsQuery(["large"], true);
+    const query = sqliteStartup.buildSettingRowsQuery(["large"], true);
     expect(query.bind).toEqual(["large"]);
-    expect(query.sql).toContain(`> ${SQLITE_STARTUP_SETTING_TEXT_LIMIT}`);
+    expect(query.sql).toContain(`> ${sqliteStartup.SETTING_TEXT_LIMIT}`);
     expect(query.sql).toContain("startup_oversized");
   });
 
@@ -51,7 +46,7 @@ describe("SQLite startup queries", () => {
       [{ initialized: 1 }],
     ]) as unknown as SqliteSelectRowSets;
 
-    const projection = await loadSqliteStartupProjection(
+    const projection = await sqliteStartup.loadProjection(
       selectRowSets,
       7,
       ["lazy"],
@@ -87,7 +82,7 @@ describe("SQLite startup queries", () => {
       },
     ]) as unknown as SqliteSelectRows;
 
-    await expect(getSqliteStorageSyncSummary(selectRows, 1)).resolves.toEqual({
+    await expect(sqliteStartup.getSyncSummary(selectRows, 1)).resolves.toEqual({
       revision: 9,
       initialized: true,
       records: {
