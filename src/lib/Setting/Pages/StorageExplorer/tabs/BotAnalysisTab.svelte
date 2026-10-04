@@ -145,7 +145,7 @@
                             {#if bot.avatarKey}
                                 {@const _ = onLoadThumbnail(bot.avatarKey)}
                                 {#if thumbnailUrls.has(bot.avatarKey)}
-                                    <img src={thumbnailUrls.get(bot.avatarKey)} alt={bot.name} class="h-full w-full object-cover" />
+                                    <img src={thumbnailUrls.get(bot.avatarKey)} alt={bot.name} class="h-full w-full object-cover" loading="lazy" decoding="async" />
                                 {:else}
                                     <div class="flex h-full w-full items-center justify-center text-xs text-textcolor2">...</div>
                                 {/if}
