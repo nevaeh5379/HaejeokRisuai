@@ -124,6 +124,11 @@ class MessageStore implements FlushableStore {
     return this.pendingCommits.length > 0;
   }
 
+  /** Snapshot replacement must also refuse writes retained after repeated failures. */
+  hasUnsavedWrites(): boolean {
+    return this.hasPendingWrites() || this.droppedCommits.length > 0;
+  }
+
   resetPersistenceForTesting(): void {
     this.pendingCommits = [];
     this.droppedCommits = [];
