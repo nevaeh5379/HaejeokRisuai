@@ -1,25 +1,22 @@
-# Haejeok RisuAI
+# HaejeokRisuai
 
 [English](README.md) | [한국어](README.ko.md)
 
-> 이 문서는 LLM 의해 작성되었습니다. 헛소리 혹은 개소리를 포함되어 있을 수도 있으니 참고해주세요.
+> 이 문서는 LLM 의해 작성되었습니다. 헛소리 혹은 개소리, 호들갑, AI 슬롭을 포함되어 있을 수도 있으니 참고해주세요.
 
-<picture>
-  <img alt="Haejeok RisuAI" src="./public/logo_typo_small.avif" width="400"/>
-</picture>
-
+<img width="100%" src="./public/logo_typo.svg"/>
 [![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![TypeScript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Tauri](https://img.shields.io/badge/tauri-2.5-%2324C8D8?logo=tauri)](https://tauri.app/) [![Vite](https://img.shields.io/badge/vite-8-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/)
 
-**Haejeok RisuAI**는 [RisuAI](https://github.com/kwaroran/RisuAI)의 독립적인 포크(fork) 프로젝트로, 셀프 호스팅, 서버 환경 운영, 데스크톱 배포, 그리고 개인 인프라를 위한 실용적인 배포 경로를 유지하는 데 중점을 두고 있습니다.
+**HaejeokRisuai**는 [RisuAI](https://github.com/kwaroran/RisuAI)의 독립적인 포크(fork) 프로젝트로, 셀프 호스팅, 서버 환경 운영, 데스크톱 배포, 그리고 개인 인프라를 위한 실용적인 배포 경로를 유지하는 데 중점을 두고 있습니다.
 
 업스트림 프로젝트와 독립적으로 Haejeok 고유의 변경 사항을 개발 및 배포하면서도, RisuAI의 핵심 채팅 경험을 그대로 유지합니다.
 
 > [!IMPORTANT]
-> Haejeok RisuAI는 공식 RisuAI 릴리스가 아닙니다. 버그 보고, 릴리스, 배포 지원 및 프로젝트 고유의 변경 사항은 업스트림 프로젝트가 아닌 본 저장소로 문의해 주시기 바랍니다.
+> HaejeokRisuai는 공식 RisuAI 릴리스가 아닙니다. 버그 보고, 릴리스, 배포 지원 및 프로젝트 고유의 변경 사항은 업스트림 프로젝트가 아닌 본 저장소로 문의해 주시기 바랍니다.
 
 ## 프로젝트 현황
 
-Haejeok RisuAI는 현재 활발히 개발 중인 독립 빌드입니다. 현재 테스트 및 문서화가 집중적으로 이루어지고 있는 주요 서버 배포 방식은 **Docker + PostgreSQL + RustFS**입니다. 저장소 내에 다른 배포 모드도 존재할 수 있으나, 명시적으로 문서화되지 않은 경우 테스트가 덜 진행된 것으로 간주해야 합니다.
+HaejeokRisuai는 현재 활발히 개발 중인 독립 빌드입니다. 현재 테스트 및 문서화가 집중적으로 이루어지고 있는 주요 서버 배포 방식은 **Docker + PostgreSQL + RustFS**입니다. 저장소 내에 다른 배포 모드도 존재할 수 있으나, 명시적으로 문서화되지 않은 경우 테스트가 덜 진행된 것으로 간주해야 합니다.
 
 ## 무엇이 다른가요?
 
@@ -82,7 +79,7 @@ A. 아니요
 
 ## 주요 기능
 
-Haejeok RisuAI는 RisuAI의 방대한 기능을 이어받았습니다:
+HaejeokRisuai는 RisuAI의 방대한 기능을 이어받았습니다:
 
 - OpenAI, Claude, Gemini, OpenRouter 및 호환 엔드포인트 등 다양한 AI API 제공자 지원
 - 캐릭터 카드, 그룹 챗, 로어북(Lorebook), 정규식 스크립트, 플러그인 및 커스텀 프롬프팅
@@ -92,7 +89,7 @@ Haejeok RisuAI는 RisuAI의 방대한 기능을 이어받았습니다:
 
 ## 스크린샷
 
-아래 스크린샷은 업스트림 UI 참고 이미지이며 최신 Haejeok RisuAI 빌드와 완전히 일치하지 않을 수 있습니다.
+아래 스크린샷은 업스트림 UI 참고 이미지이며 최신 HaejeokRisuai 빌드와 완전히 일치하지 않을 수 있습니다.
 
 |         스크린샷 1         |         스크린샷 2         |
 | :------------------------: | :------------------------: |
@@ -108,7 +105,7 @@ Haejeok RisuAI는 RisuAI의 방대한 기능을 이어받았습니다:
 
 ### 데스크톱 릴리스
 
-사전 빌드된 데스크톱 릴리스는 [Haejeok RisuAI 릴리스](https://github.com/nevaeh5379/HaejeokRisuAI/releases) 페이지를 통해 배포됩니다.
+사전 빌드된 데스크톱 릴리스는 [HaejeokRisuai 릴리스](https://github.com/nevaeh5379/HaejeokRisuAI/releases) 페이지를 통해 배포됩니다.
 
 Linux 릴리스는 여러 형식으로 제공됩니다:
 
@@ -149,7 +146,7 @@ curl -fsSL https://raw.githubusercontent.com/nevaeh5379/HaejeokRisuAI/main/insta
 
 설치 프로그램이 구성하는 항목:
 
-- `ubfaole9/risuai:latest` 기반의 Haejeok RisuAI
+- `ubfaole9/risuai:latest` 기반의 HaejeokRisuai
 - PostgreSQL 17 (`postgres:17-alpine`)
 - RustFS S3 호환 오브젝트 스토리지
 - 암호화된 스냅샷 저장을 위한 restic
@@ -208,22 +205,22 @@ pnpm dev
 
 ## 법적 고지 및 업스트림 서비스
 
-- [Haejeok RisuAI 이용약관](docs/TERMS.md)
-- [Haejeok RisuAI 개인정보처리방침](docs/PRIVACY.md)
+- [HaejeokRisuai 이용약관](docs/TERMS.md)
+- [HaejeokRisuai 개인정보처리방침](docs/PRIVACY.md)
 - [원작 RisuAI 서비스 약관](https://sv.risuai.xyz/hub/tos)
 - [RisuRealm 콘텐츠 규정](https://realm.risuai.net/help/content-rules)
 
-Haejeok RisuAI는 내장 Risu 계정 로그인이나 계정 동기화 기능을 제공하지 않습니다. RisuRealm 및 기타 업스트림에서 호스팅하는 서비스는 원작 RisuAI 메인테이너가 운영하는 별도의 서비스이며, 각 서비스의 자체 정책을 따릅니다.
+HaejeokRisuai는 내장 Risu 계정 로그인이나 계정 동기화 기능을 제공하지 않습니다. RisuRealm 및 기타 업스트림에서 호스팅하는 서비스는 원작 RisuAI 메인테이너가 운영하는 별도의 서비스이며, 각 서비스의 자체 정책을 따릅니다.
 
 ## 커뮤니티 및 기술 지원
 
-Haejeok RisuAI의 버그, 배포 문제, 프로젝트 고유 기능 제안은 [Haejeok RisuAI 이슈 트래커](https://github.com/nevaeh5379/HaejeokRisuAI/issues)를 이용해 주세요.
+HaejeokRisuai의 버그, 배포 문제, 프로젝트 고유 기능 제안은 [HaejeokRisuai 이슈 트래커](https://github.com/nevaeh5379/HaejeokRisuAI/issues)를 이용해 주세요.
 
-업스트림 RisuAI Discord 서버, 웹사이트 및 지원 채널은 Haejeok RisuAI의 지원 채널이 아닙니다.
+업스트림 RisuAI Discord 서버, 웹사이트 및 지원 채널은 HaejeokRisuai의 지원 채널이 아닙니다.
 
 ## 업스트림 프로젝트
 
-Haejeok RisuAI는 [RisuAI](https://github.com/kwaroran/RisuAI)를 기반으로 하며, Git 커밋 기록과 GPL-3.0 라이선스 소스 헤리티지를 유지하고 있습니다.
+HaejeokRisuai는 [RisuAI](https://github.com/kwaroran/RisuAI)를 기반으로 하며, Git 커밋 기록과 GPL-3.0 라이선스 소스 헤리티지를 유지하고 있습니다.
 
 업스트림의 개발, 문서 및 커뮤니티 리소스는 원작 RisuAI 프로젝트의 소유입니다. Haejeok 고유의 릴리스와 변경 사항은 본 저장소에서 독자적으로 유지 관리됩니다.
 
