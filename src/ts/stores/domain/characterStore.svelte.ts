@@ -211,6 +211,33 @@ function toCharacterSummary(
   } as unknown as character | groupChat;
 }
 
+function mergeLoadedCharacterDetails(
+  currentCharacter: character | groupChat,
+  fullChar: character | groupChat,
+): character | groupChat {
+  const existingChats = currentCharacter.chats ?? [];
+  const currentChatPage = currentCharacter.chatPage ?? 0;
+  const activeChatId = existingChats[currentChatPage]?.id;
+  const loadedChats = fullChar.chats ?? [];
+  const mergedChats = mergeLoadedChats(loadedChats, existingChats);
+  const activeChatIndex = activeChatId
+    ? mergedChats.findIndex((chat) => chat.id === activeChatId)
+    : -1;
+  const preferredChatPage =
+    existingChats.length > 0 ? currentChatPage : (fullChar.chatPage ?? 0);
+
+  return Object.assign(currentCharacter, fullChar, {
+    chats: mergedChats,
+    chatPage:
+      activeChatIndex >= 0
+        ? activeChatIndex
+        : Math.min(
+            Math.max(preferredChatPage, 0),
+            Math.max(0, mergedChats.length - 1),
+          ),
+    detailsLoaded: true,
+  });
+}
 
 class CharacterStore
   implements
@@ -922,11 +949,25 @@ class CharacterStore
   }
 
   private async loadCharacterSnapshot(id: string): Promise<SnapshotCharacter> {
-    const current = await this.loadSnapshotCharacter(id);
-    const snapshot = safeStructuredClone($state.snapshot(current));
+    const resident = this.getById(id);
+    if (!resident) throw new Error(`Cannot load complete character: ${id}`);
+
+    let snapshot: SnapshotCharacter;
+    if (resident.detailsLoaded === false) {
+      const storage = this.storage || (await getSqlStorage());
+      const stored = await (storage.loadCharacterForSelection?.(id) ??
+        storage.loadCharacter(id));
+      if (!stored || stored.detailsLoaded === false)
+        throw new Error(`Cannot load complete character: ${id}`);
+      const detached = safeStructuredClone($state.snapshot(resident));
+      snapshot = mergeLoadedCharacterDetails(detached, stored);
+    } else {
+      snapshot = safeStructuredClone($state.snapshot(resident));
+    }
+
     for (let index = 0; index < snapshot.chats.length; index++) {
-      snapshot.chats[index] = await this.getFullChatSnapshot(
-        snapshot.chats[index].id!,
+      snapshot.chats[index] = await this.buildFullChatSnapshot(
+        snapshot.chats[index],
       );
     }
     return snapshot;
@@ -1466,33 +1507,10 @@ class CharacterStore
           const idx = this.characters.findIndex((c) => c.chaId === chaId);
           if (idx >= 0) {
             const currentCharacter = this.characters[idx];
-            const existingChats = currentCharacter.chats ?? [];
-            const currentChatPage = currentCharacter.chatPage ?? 0;
-            const activeChatId = existingChats[currentChatPage]?.id;
-            const loadedChats = fullChar.chats ?? [];
-            const mergedChats = mergeLoadedChats(loadedChats, existingChats);
-            const activeChatIndex = activeChatId
-              ? mergedChats.findIndex((chat) => chat.id === activeChatId)
-              : -1;
-            // A startup summary has no chat rows, so its synthetic chatPage=0
-            // is not a live UI selection. Restore the persisted page from the
-            // hydrated character in that case. Idle-evicted summaries keep
-            // their chat rows and must retain the user's current selection.
-            const preferredChatPage =
-              existingChats.length > 0
-                ? currentChatPage
-                : (fullChar.chatPage ?? 0);
-            this.characters[idx] = Object.assign(currentCharacter, fullChar, {
-              chats: mergedChats,
-              chatPage:
-                activeChatIndex >= 0
-                  ? activeChatIndex
-                  : Math.min(
-                      Math.max(preferredChatPage, 0),
-                      Math.max(0, mergedChats.length - 1),
-                    ),
-              detailsLoaded: true,
-            });
+            this.characters[idx] = mergeLoadedCharacterDetails(
+              currentCharacter,
+              fullChar,
+            );
             this.touchHydratedCharacter(chaId);
             if (idx === this.selectedId) {
               this.observeActive();
@@ -1644,13 +1662,9 @@ class CharacterStore
     return promise;
   }
 
-  /** Full plugin snapshots must not expand the application's resident history. */
-  async getFullChatSnapshot(chatId: string): Promise<Chat> {
-    const character = this.characters.find((character) =>
-      character.chats?.some((chat) => chat.id === chatId),
-    );
-    const chat = character?.chats.find((chat) => chat.id === chatId);
-    if (!chat) throw new Error(`Chat not found: ${chatId}`);
+  private async buildFullChatSnapshot(chat: Chat): Promise<Chat> {
+    const chatId = chat.id;
+    if (!chatId) throw new Error("Chat snapshot requires an ID");
     if (
       chat.detailsLoaded !== false &&
       chat.messagesLoaded !== false &&
@@ -1694,6 +1708,16 @@ class CharacterStore
     snapshot.messageOffset = 0;
     snapshot.messageTotal = message.length;
     return safeStructuredClone(snapshot);
+  }
+
+  /** Full plugin snapshots must not expand the application's resident history. */
+  async getFullChatSnapshot(chatId: string): Promise<Chat> {
+    const character = this.characters.find((character) =>
+      character.chats?.some((chat) => chat.id === chatId),
+    );
+    const chat = character?.chats.find((chat) => chat.id === chatId);
+    if (!chat) throw new Error(`Chat not found: ${chatId}`);
+    return this.buildFullChatSnapshot(chat);
   }
 
   async loadOlderChatMessages(chatId: string, limit = 60): Promise<number> {

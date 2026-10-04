@@ -103,12 +103,18 @@ describe.each([
   });
 
   it("reads inactive histories without retaining them in the app", async () => {
-    const snapshot = await getPluginCharacter(0);
-    expect(snapshot!.chats[0].message).toHaveLength(14);
-    expect(snapshot!.chats[1].message[0].data).toBe("three");
-    expect(snapshot!.chats[1].scriptstate).toEqual({
+    const residentChats = characterStore.characters[0].chats;
+    expect(characterStore.characters[0].detailsLoaded).toBe(false);
+
+    const snapshots = await getPluginCharacters();
+    const snapshot = snapshots[0];
+    expect(snapshot.chats[0].message).toHaveLength(14);
+    expect(snapshot.chats[1].message[0].data).toBe("three");
+    expect(snapshot.chats[1].scriptstate).toEqual({
       $plugin: "second-before",
     });
+    expect(characterStore.characters[0].detailsLoaded).toBe(false);
+    expect(characterStore.characters[0].chats).toBe(residentChats);
     expect(
       characterStore.characters[0].chats.every((chat) => !chat.message.length),
     ).toBe(true);
