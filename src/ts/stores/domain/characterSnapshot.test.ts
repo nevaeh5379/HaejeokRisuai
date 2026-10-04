@@ -86,18 +86,19 @@ describe.each([
     await characterStore.flush();
   }
 
-  it("returns full absolute message indexes without hydrating resident history", async () => {
+  it("reads persisted histories directly without hydrating resident history", async () => {
     await loadResidentPage();
     const resident = characterStore.characters[0].chats[0];
-    resident.message[0].data = "newer in-memory edit";
+    resident.message[0].data = "resident-only edit";
     const snapshot = await getPluginChat(0, 0);
     expect(snapshot!.message).toHaveLength(14);
     expect(snapshot!.message[0].data).toBe("message 0");
-    expect(snapshot!.message[2].data).toBe("newer in-memory edit");
+    expect(snapshot!.message[2].data).toBe("message 2");
     expect(snapshot!.message[12].role).toBe("user");
     expect(snapshot!.messageOffset).toBe(0);
     expect(resident.message).toHaveLength(12);
     expect(resident.messageOffset).toBe(2);
+    expect(resident.message[0].data).toBe("resident-only edit");
     snapshot!.message[12].data = "snapshot-only";
     expect(resident.message[10].data).toBe("message 12");
   });
@@ -134,7 +135,8 @@ describe.each([
     expect((await storage.loadChat("chat-2"))!.scriptstate).toEqual({
       $plugin: "second-after",
     });
-    expect(characterStore.characters[0].chats[0].messagesLoaded).toBe(false);
+    expect(characterStore.characters[0].detailsLoaded).toBe(false);
+    expect(characterStore.characters[0].chats).toEqual([]);
     await characterStore.flush();
     characterStore.dispose();
     characterStore.init((await storage.loadStartupData())!.characters, storage);
@@ -671,7 +673,6 @@ describe.each([
     expect(characterStore.characters[0].chats[1]).toMatchObject({
       message: [],
       messagesLoaded: false,
-      messageTotal: 2,
     });
   });
 
@@ -789,8 +790,9 @@ describe.each([
     expect(value.message[1].chatId).toBe("m0");
   });
 
-  it("rejects failed initial detail hydration instead of treating it as an empty chat list", async () => {
+  it("rejects unavailable stored character details instead of treating them as an empty chat list", async () => {
     expect(characterStore.characters[0].chats).toEqual([]);
+    vi.spyOn(storage, "loadCharacter").mockResolvedValue(null);
     vi.spyOn(storage, "loadCharacterForSelection").mockResolvedValue(null);
     await expect(characterStore.snapshot.chat.load(0, 0)).rejects.toThrow(
       "Cannot load complete character",
@@ -911,10 +913,11 @@ describe.each([
     expect(value.chaId).toBe("");
     expect(value.chats[0].id).toBeUndefined();
     expect(value.chats[0].message[0].chatId).toBeUndefined();
+    const stored = (await characterStore.snapshot.load(0))!;
     const ids = [
-      characterStore.characters[0].chaId,
-      characterStore.characters[0].chats[0].id,
-      characterStore.characters[0].chats[0].message[0].chatId,
+      stored.chaId,
+      stored.chats[0].id,
+      stored.chats[0].message[0].chatId,
     ];
     expect(ids.every(Boolean)).toBe(true);
     const restarted = (await restart())[0];
@@ -1056,10 +1059,11 @@ describe.each([
       flushSync();
       release();
       await saving;
+      const startup = (await storage.loadStartupData())!;
       expect(
         characterStore.characters.map((character) => character.chaId),
-      ).toEqual(["char-2", "char-1"]);
-      const saved = characterStore.getById("char-1")!;
+      ).toEqual(startup.characters.map((character) => character.chaId));
+      const saved = (await characterStore.snapshot.load("char-1"))!;
       expect(new Set(saved.chats.map((chat) => chat.id)).size).toBe(2);
       expect(
         saved.chats.find((chat) => chat.id === "chat-1")!.scriptstate!.$plugin,
