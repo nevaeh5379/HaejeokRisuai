@@ -2862,6 +2862,24 @@ class PostgresStorage extends SqlStorageBase {
     }
   }
 
+  async getChatIds(characterId: string): Promise<string[] | null> {
+    this.assertEnabled();
+    assertId(characterId, "characterId");
+    const result = await this.pool.query(
+      `SELECT characters.id AS character_id, chats.id AS chat_id
+       FROM character.characters AS characters
+       LEFT JOIN chat.chats AS chats ON chats.character_id = characters.id
+       WHERE characters.id = $1
+       ORDER BY chats.position, chats.id`,
+      [characterId],
+    );
+    const rows: SqlStorageRow[] = result.rows;
+    if (rows.length === 0) return null;
+    return rows.flatMap((row) =>
+      typeof row.chat_id === "string" ? [row.chat_id] : [],
+    );
+  }
+
   async loadCharacter(characterId: any) {
     this.assertEnabled();
     assertId(characterId, "characterId");

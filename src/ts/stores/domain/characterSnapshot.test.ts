@@ -790,12 +790,11 @@ describe.each([
     expect(value.message[1].chatId).toBe("m0");
   });
 
-  it("rejects unavailable stored character details instead of treating them as an empty chat list", async () => {
+  it("rejects a missing stored character instead of treating it as an empty chat list", async () => {
     expect(characterStore.characters[0].chats).toEqual([]);
-    vi.spyOn(storage, "loadCharacter").mockResolvedValue(null);
-    vi.spyOn(storage, "loadCharacterForSelection").mockResolvedValue(null);
+    vi.spyOn(storage.character, "getChatIds").mockResolvedValue(null);
     await expect(characterStore.snapshot.chat.load(0, 0)).rejects.toThrow(
-      "Cannot load complete character",
+      "Character not found",
     );
     await expect(
       characterStore.snapshot.chat.save(0, 0, {
@@ -804,7 +803,7 @@ describe.each([
         localLore: [],
         message: [],
       }),
-    ).rejects.toThrow("Cannot load complete character");
+    ).rejects.toThrow("Character not found");
     expect((await storage.loadChat("chat-1"))!.message).toHaveLength(14);
   });
 

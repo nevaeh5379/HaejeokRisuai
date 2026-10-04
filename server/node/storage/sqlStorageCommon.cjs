@@ -68,6 +68,9 @@ function mergeLegacyModulesIntoPayload(payload, legacyModules) {
 
 class SqlStorageBase {
   constructor() {
+    this.character = {
+      getChatIds: (characterId) => this.getChatIds(characterId),
+    };
     this.objectCacheEnabled = process.env.RISUAI_SQL_OBJECT_CACHE === "1";
     this.pluginsCache = null;
     this.pluginCustomStorageCache = null;
@@ -96,6 +99,12 @@ class SqlStorageBase {
     this.bootstrapCacheGeneration += 1;
     this.bootstrapCache = null;
     this.bootstrapCachePromise = null;
+  }
+
+  async getChatIds() {
+    throw new Error(
+      "getChatIds() must be implemented by the SQL storage driver",
+    );
   }
 
   async loadChatMessages(chatId) {

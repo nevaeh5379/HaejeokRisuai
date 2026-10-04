@@ -6835,6 +6835,44 @@ app.get(
 );
 
 app.get(
+  "/api/database-v2/characters/:characterId/chat-ids",
+  authenticatedRouteLimiter,
+  async (req, res, next) => {
+    if (!(await checkAuth(req, res))) {
+      return;
+    }
+    if (!postgresStorage.enabled) {
+      res.status(404).send({
+        error: "PostgreSQL storage is not configured",
+        code: "postgres_disabled",
+      });
+      return;
+    }
+
+    try {
+      const chatIds = await postgresStorage.character.getChatIds(
+        req.params.characterId,
+      );
+      if (chatIds === null) {
+        res
+          .status(404)
+          .send({ error: "Character not found", code: "character_not_found" });
+        return;
+      }
+      await sendCompressedJson(req, res, { chatIds });
+    } catch (error) {
+      if (error instanceof PostgresPayloadError) {
+        res
+          .status(400)
+          .send({ error: error.message, code: "invalid_character_id" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.get(
   "/api/database-v2/characters/:characterId/asset-fields",
   authenticatedRouteLimiter,
   async (req, res, next) => {

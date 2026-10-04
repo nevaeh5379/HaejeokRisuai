@@ -1333,6 +1333,24 @@ class AzureStorage extends SqlStorageBase {
     };
   }
 
+  async getChatIds(characterId: string): Promise<string[] | null> {
+    const pool = await this.getPool();
+    const result = await pool
+      .request()
+      .input("id", sql.NVarChar(450), characterId)
+      .query(`SELECT characters.id AS character_id, chats.id AS chat_id
+              FROM [character].[characters] AS characters
+              LEFT JOIN [chat].[chats] AS chats
+                ON chats.character_id = characters.id
+              WHERE characters.id = @id
+              ORDER BY chats.position, chats.id`);
+    const rows = result.recordset as SqlStorageRow[];
+    if (rows.length === 0) return null;
+    return rows.flatMap((row) =>
+      typeof row.chat_id === "string" ? [row.chat_id] : [],
+    );
+  }
+
   async loadCharacter(characterId: any) {
     const pool = await this.getPool();
     const [

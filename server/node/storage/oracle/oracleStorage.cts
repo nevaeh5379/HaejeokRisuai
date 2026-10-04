@@ -2263,6 +2263,33 @@ class OracleStorage extends SqlStorageBase {
   // 엔티티 로드: loadCharacter, loadChat, loadChatMessages
   // ============================================================
 
+  async getChatIds(characterId: string): Promise<string[] | null> {
+    this.assertEnabled();
+    assertId(characterId, "characterId");
+    const conn = await this.pool.getConnection();
+    try {
+      const result = await conn.execute(
+        `SELECT characters.id AS character_id, chats.id AS chat_id
+         FROM character_characters characters
+         LEFT JOIN chat_chats chats ON chats.character_id = characters.id
+         WHERE characters.id = :1
+         ORDER BY chats.position, chats.id`,
+        [characterId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const rows = (result.rows || []) as SqlStorageRow[];
+      if (rows.length === 0) return null;
+      return rows.flatMap((row) => {
+        const chatId = row.CHAT_ID ?? row.chat_id;
+        return typeof chatId === "string" ? [chatId] : [];
+      });
+    } finally {
+      try {
+        await conn.close();
+      } catch (e) {}
+    }
+  }
+
   async loadCharacter(characterId: any) {
     this.assertEnabled();
     assertId(characterId, "characterId");

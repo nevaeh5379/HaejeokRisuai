@@ -186,6 +186,12 @@ export {
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
   readonly plugin: IPluginStorage;
+  readonly character = {
+    getChatIds: async (characterId: string): Promise<string[] | null> => {
+      if (!(await this.ensureEnabled())) return null;
+      return this.readClient.character.getChatIds(characterId);
+    },
+  };
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
   private readonly clientId = getNodeClientSessionId();

@@ -10,6 +10,21 @@ export interface RemoteCreateChatBranchInput {
 }
 
 export class RemoteSqlReadClient {
+  readonly character = {
+    getChatIds: async (characterId: string): Promise<string[] | null> => {
+      const response = await this.apiClient.request(
+        `/api/database-v2/characters/${encodeURIComponent(characterId)}/chat-ids`,
+        { method: "GET", cache: "no-cache", headers: await this.authHeaders() },
+      );
+      if (response.status === 404) return null;
+      if (response.status < 200 || response.status >= 300) {
+        throw await this.error(response, "SQL character chat ID load failed");
+      }
+      const body: { chatIds?: string[] } = await response.json();
+      return Array.isArray(body.chatIds) ? body.chatIds : [];
+    },
+  };
+
   constructor(
     private readonly apiClient: NodeApiClient,
     private readonly getAuth: () => Promise<string>,

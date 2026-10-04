@@ -240,6 +240,23 @@ export class WebSqliteStorage implements ISqlStorage {
     this,
     this.selectRows.bind(this) as SqliteSelectRows,
   );
+  readonly character = {
+    getChatIds: async (characterId: string): Promise<string[] | null> => {
+      const rows = await this.selectRows<{
+        character_id: string;
+        chat_id: string | null;
+      }>(
+        `SELECT characters.id AS character_id, chats.id AS chat_id
+         FROM characters
+         LEFT JOIN chats ON chats.character_id = characters.id
+         WHERE characters.id = ?
+         ORDER BY chats.position, chats.id`,
+        [characterId],
+      );
+      if (rows.length === 0) return null;
+      return rows.flatMap((row) => (row.chat_id ? [row.chat_id] : []));
+    },
+  };
 
   private revision = 0;
   private initialized = false;

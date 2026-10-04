@@ -137,6 +137,10 @@ export interface SqlChatMetadata {
   lastDate: number | null;
 }
 
+export interface SqlCharacterStorage {
+  getChatIds(characterId: string): Promise<string[] | null>;
+}
+
 export interface SqlRecentChatMetadata {
   characterId: string;
   characterName: string;
@@ -181,6 +185,7 @@ export interface BotPresetSummary {
 export interface ISqlStorage {
   readonly backendKind: SqlBackendKind;
   readonly plugin: IPluginStorage;
+  readonly character: SqlCharacterStorage;
 
   isEnabled(): boolean;
   getRevision(): number;
@@ -279,7 +284,8 @@ export interface ISqlStorage {
   readGlobalAuthorNote(
     id: string,
   ): Promise<
-    import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow | null
+    | import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow
+    | null
   >;
   getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
 

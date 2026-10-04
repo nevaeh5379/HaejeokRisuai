@@ -837,18 +837,6 @@ class CharacterStore
           );
           if (!resolved) return;
           incoming.id = resolved.chatId;
-          const current = await storage.loadCharacter(target.characterId);
-          if (!current || current.detailsLoaded === false)
-            throw new Error(
-              `Cannot load complete character: ${target.characterId}`,
-            );
-          const position = current.chats.findIndex(
-            (chat) => chat.id === resolved.chatId,
-          );
-          if (position < 0)
-            throw new Error(
-              `Chat changed while saving snapshot: ${resolved.chatId}`,
-            );
           const old = await this.loadStoredChatSnapshot(
             storage,
             resolved.chatId,
@@ -856,8 +844,8 @@ class CharacterStore
           await this.commitSnapshot(storage, "snapshot-chat", (commit) =>
             this.prepareChatSnapshot(
               commit,
-              current.chaId,
-              position,
+              target.characterId,
+              resolved.position,
               incoming,
               old,
             ),
@@ -891,17 +879,15 @@ class CharacterStore
       chat: SnapshotTarget;
     },
   ) {
-    const current = await storage.loadCharacter(target.characterId);
-    if (!current || current.detailsLoaded === false)
-      throw new Error(`Cannot load complete character: ${target.characterId}`);
+    const chatIds = await storage.character.getChatIds(target.characterId);
+    if (chatIds === null)
+      throw new Error(`Character not found: ${target.characterId}`);
     const chatId =
       target.chatId ??
-      (typeof target.chat === "number"
-        ? current.chats[target.chat]?.id
-        : target.chat);
-    return chatId && current.chats.some((chat) => chat.id === chatId)
-      ? { chatId }
-      : null;
+      (typeof target.chat === "number" ? chatIds[target.chat] : target.chat);
+    if (!chatId) return null;
+    const position = chatIds.indexOf(chatId);
+    return position >= 0 ? { chatId, position } : null;
   }
 
   private async loadStoredChatSnapshot(
