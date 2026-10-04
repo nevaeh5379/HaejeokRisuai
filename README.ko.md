@@ -5,7 +5,7 @@
 > 이 문서는 LLM 의해 작성되었습니다. 헛소리 혹은 개소리를 포함되어 있을 수도 있으니 참고해주세요.
 
 <picture>
-  <img alt="Haejeok RisuAI" src="./public/logo_typo_small.avif" width="400"/>
+  <img alt="Haejeok RisuAI" src="./public/./public/logo_typo.svg"/>
 </picture>
 
 [![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![TypeScript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Tauri](https://img.shields.io/badge/tauri-2.5-%2324C8D8?logo=tauri)](https://tauri.app/) [![Vite](https://img.shields.io/badge/vite-8-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/)
