@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync } from "svelte";
 import { get } from "svelte/store";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
 import {
   makeHarness,
   makeWebStorage,
