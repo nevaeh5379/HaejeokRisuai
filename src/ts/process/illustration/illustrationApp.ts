@@ -523,46 +523,21 @@ export async function enqueueAnswerIllustrations(
     if (!targetMessage) {
       throw new Error(`Illustration message not found: ${target.messageId}`);
     }
-    if (
-      targetMessage.role !== "char" ||
-      !resolveIllustrationSettings(
-        settingsStore.state.illustration,
-        targetChar.illustration,
-      ).enabled
-    )
-      return;
+
+    //TODO 이 조건문은 enqueueAnswerIllustrations 함수 불러오기전에 했어야 합니다.
+    // if (
+    //   targetMessage.role !== "char" ||
+    //   !resolveIllustrationSettings(
+    //     settingsStore.state.illustration,
+    //     targetChar.illustration,
+    //   ).enabled
+    // )
+      // return;
     if (!findIllustrationMarkers(targetMessage.data).length) return;
-    const originalData = targetMessage.data,
-      originalBranch = targetChat.activeBranchId;
-    await characterStore.flush();
-    await messageStore.flush();
-    const persistedChat = await (
-      await getSqlStorage()
-    ).loadChat(target.chatId, { messageLimit: 1 });
-    // Re-read stable IDs after persistence; hydration or user edits may replace the resident objects.
-    // 한국어: 저장 중 적재 갱신·사용자 편집으로 객체가 바뀔 수 있으므로 안정적인 ID로 다시 조회.
-    targetChar = characterStore.getById(target.characterId);
-    targetChat = targetChar?.chats?.find((chat) => chat.id === target.chatId);
-    targetMessage = targetChat?.message.find(
-      (message) => message.chatId === target.messageId,
-    );
-    if (
-      !persistedChat ||
-      !targetChar ||
-      targetChar.type === "group" ||
-      !targetChat ||
-      !targetMessage ||
-      targetMessage.data !== originalData ||
-      targetChat.activeBranchId !== originalBranch ||
-      (originalBranch && originalBranch !== persistedChat.activeBranchId)
-    )
-      return;
-    // Newly created chats have no resident branch ID until their first SQL hydration.
-    targetChat.activeBranchId = persistedChat.activeBranchId;
     const items = prepareIllustrations(
       targetMessage,
       v4,
-      persistedChat.activeBranchId,
+      targetChat.activeBranchId,
       usesAppIllustrationExecutor() ? "app" : "server",
       appRunId,
     );
