@@ -138,7 +138,9 @@ async function fixture() {
       loadChat: storage.loadChat.bind(storage),
       loadChatMessagePage: storage.loadChatMessagePage.bind(storage),
       loadCharacter: storage.loadCharacter.bind(storage),
-      loadSettingKey: storage.loadSettingKey.bind(storage),
+      loadSettingKey: async (key: string) => ({
+        value: await storage.loadSettingKey(key),
+      }),
       getStorageSyncSummary: async () => ({ revision: storage.getRevision() }),
     }),
     commit: (payload) => storage.commit(payload),

@@ -42,7 +42,7 @@ type Storage = IllustrationStorageReader & {
    *
    * 한국어: 앱 데이터베이스 전체를 보관하지 않고 설정 한 항목을 읽는 함수.
    */
-  loadSettingKey(key: string): Promise<unknown>;
+  loadSettingKey(key: string): Promise<{ value: unknown }>;
   /**
    * Reads the SQL revision used to reject stale message commits.
    *
@@ -247,7 +247,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
     return {
       char,
       illustration: resolveIllustrationSettings(
-        (await storage.loadSettingKey("illustration")) as any,
+        (await storage.loadSettingKey("illustration")).value as any,
         char.illustration,
       ),
     };
@@ -328,7 +328,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         await Promise.all(
           IMAGE_GENERATION_SETTING_KEYS.map(async (key) => [
             key,
-            await storage.loadSettingKey(key),
+            (await storage.loadSettingKey(key)).value,
           ]),
         ),
       ) as any;
