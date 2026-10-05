@@ -22,6 +22,10 @@ import { processPostGenerationEffects } from "./postGeneration.svelte";
 import { tryCreateNodeAutoContinuationDecision } from "./nodePlanner";
 import { notifyChatResponse } from "../../chatNotifications";
 import { requireChatTargetFromIndexes } from "../../chatTarget";
+import type {
+  IllustrationContext,
+  IllustrationTarget,
+} from "@risuai/protocol/dist/illustration.mjs";
 
 function updateGenerationStageTimings(
   generationInfo: MessageGenerationInfo,
@@ -107,6 +111,8 @@ function commitRecentMessages(selectedChar: number, selectedChat: number) {
 }
 
 export interface FinalizeChatGenerationOptions {
+  illustrationContext?: IllustrationContext;
+  illustrationTarget?: Omit<IllustrationTarget, "illustrationId">;
   req: ChatModelResponse;
   result: string;
   emoChanged: boolean;
@@ -195,5 +201,19 @@ export async function finalizeChatGeneration(
   const effects = await runFinalEffects(options);
   if (effects.returnEarly) return true;
   completeGeneration(options);
+  if (
+    options.illustrationContext &&
+    options.illustrationTarget &&
+    !options.abortSignal.aborted
+  ) {
+    const target = options.illustrationTarget;
+    // Capture strings from this request only; queueing must not retain the session/database.
+    const context = options.illustrationContext;
+    void import("../illustration/illustrationApp")
+      .then(({ enqueueAnswerIllustrations }) =>
+        enqueueAnswerIllustrations(target, context),
+      )
+      .catch((error) => console.error("Illustration scheduling failed", error));
+  }
   return true;
 }

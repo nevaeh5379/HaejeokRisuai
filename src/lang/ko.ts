@@ -1,4 +1,13 @@
 export const languageKorean = {
+  illustration: {
+    title: "채팅 삽화", description: "메인 모델이 <Illustration>으로 위치를 표시하고, 보조 모델이 태그를 작성하면 이미지 제공자가 각 자리에 그림을 만듭니다. 일반 1:1 채팅에서 사용할 수 있습니다.",
+    characterHelp: "범용 설정을 상속하거나 개별 변경할 수 있습니다. 캐릭터 지침과 그림 프롬프트는 범용 내용 뒤에 추가됩니다.",
+    appFallback: "이 보조 모델은 앱에서 실행됩니다. Node에서도 앱을 종료하면 삽화 생성이 중단됩니다.",
+    enabled: "삽화 사용", includeDescription: "캐릭터 설명 포함", includePersona: "페르소나 포함", includeLorebook: "활성 로어북 포함", includeMemory: "사용 메모리 포함",
+    recentMessages: "이전 메시지 수", markerInstructions: "메인 모델 표식 사용 지침", tagInstructions: "보조 모델 태그 작성 지침", basePrompt: "기본 그림 태그", negativePrompt: "네거티브 프롬프트",
+    inherit: "범용 설정 사용", on: "켜기", off: "끄기", queued: "삽화 대기 중", tagging: "그림 태그 작성 중", generating: "이미지 생성 중", complete: "삽화 완성", failed: "삽화 생성 실패", interrupted: "삽화 생성 중단",
+    retry: "재시도", regenerate: "같은 태그로 재생성", rewrite: "태그부터 다시 만들기", tags: "그림 태그", operationFailed: "삽화 정보를 변경하지 못했습니다. 다시 시도하세요.",
+  },
   globalAuthorNote: {
     discard: "초안 버리기",
     discardDraftConfirm: "보관한 초안을 영구적으로 버릴까요?",

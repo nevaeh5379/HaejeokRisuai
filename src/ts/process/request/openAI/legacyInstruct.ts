@@ -50,14 +50,6 @@ export async function requestOpenAILegacyInstruct(
 ): Promise<requestDataResponse> {
   const db = settingsStore.state;
   const prompt = buildOpenAILegacyInstructPrompt(arg.formated);
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        error: "This model is not supported in preview mode",
-      }),
-    };
-  }
 
   let body: any = {
     model: "gpt-3.5-turbo-instruct",
@@ -83,6 +75,12 @@ export async function requestOpenAILegacyInstruct(
   );
 
   const requestURL = arg.customURL ?? DEFAULT_OPENAI_COMPLETIONS_URL;
+  if (arg.previewBody)
+    return {
+      type: "success",
+      result: JSON.stringify({ url: requestURL, body, headers }),
+    };
+
   const remoteTransport =
     requestURL === DEFAULT_OPENAI_COMPLETIONS_URL &&
     arg.modelInfo.format === LLMFormat.OpenAILegacyInstruct

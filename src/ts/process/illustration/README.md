@@ -1,0 +1,17 @@
+# Chat illustrations
+
+Enable **Chat illustrations** under the global image generation settings, or override inheritance in a character's image settings. Configure the existing auxiliary model and image provider. The illustration instructions, base tags and negative prompt are independent of emotion images and character screen image prompts.
+
+After a completed one-to-one reply and all automatic continuations, every narrative `<Illustration>` marker becomes a persisted slot. Code and reasoning regions are excluded. Opening old messages never starts image generation. The auxiliary request includes only the selected information, the previous configured messages and the answer up to that slot. Old history is trimmed first; an oversized required scene fails with a retry action. Automatic tasks reuse the prompt pipeline's active lore and used memory; explicit rewrites use current settings and historical context without generating new memory.
+
+The app and Node each have a separate sequential illustration queue. Chat generation and navigation stay available. Retry reuses saved tags and prompts; regenerate retains those tags; rewrite creates new tags with current instructions. An existing image remains visible until its replacement is durably stored. Every transition checks stable character, chat, message and slot IDs, active branch, message text hash and job version. Invalidated results are discarded, and only newly stored unreferenced results are removed.
+
+`packages/protocol/src/illustration*.cts` owns the portable settings, marker/context logic, SQL paging and queue runner. `imageGeneration.cts` owns the shared image provider behavior; `imageGenerationBrowser.ts` and `server/node/executors/illustrationImages.ts` supply browser and Node image transports/codecs. Execution modules and browser image processing load on demand. Messages retain only metadata and inlay IDs; request context and credentials are held for the duration of a task and released afterward.
+
+`build:protocol` emits both Node `.cjs` and browser `.mjs` entry points from those same TypeScript sources. Browser imports use native ES modules so development and HMR do not depend on Vite's CommonJS optimization cache.
+
+Node exposes authenticated `POST /api/illustrations/jobs`, `GET /api/illustrations/jobs` and `POST /api/illustrations/jobs/retry`, using `IllustrationJobRequest` and `IllustrationJobResponse`. GET supplies the four target IDs as query parameters. POST supplies those IDs, the expected `version`, an optional `action` (`retry`, `regenerate`, `rewrite`) and, when new tags are needed, a prepared auxiliary HTTP request. The server performs the auxiliary request, generates/stores the image and commits through the existing SQL revision/event service after HTTP acceptance, without a connected client. Duplicate accepted requests do not generate another image. Echo uses a local `risu:echo` prepared request. Plugin and WebLLM auxiliary models use the app executor on Node and show an app-lifetime notice.
+
+Interrupted app or server jobs become `interrupted` when viewed after restart; they require an explicit retry. Queues are never automatically replayed on startup. Metadata uses the existing SQL extension fields and completed images use the standard inlay backup entries.
+
+Verification includes portable lifecycle tests, SQLite-backed authenticated HTTP executor tests and Chromium streaming/navigation/regeneration/reload/backup-restore tests. Native Tauri, Android devices and live paid image/model providers require separate validation.

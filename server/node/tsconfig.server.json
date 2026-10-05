@@ -22,6 +22,8 @@
     "sync/storageSyncSqlRecords.cts",
     "api/database/plugins/routes.ts",
     "executors/modelJobs.cts",
+    "executors/illustrationExecutor.ts",
+    "executors/illustrationImages.ts",
     "http/packet.ts",
     "http/realtimeEvents.cts",
     "sync/databaseMutations.cts",

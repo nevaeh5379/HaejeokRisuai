@@ -511,7 +511,7 @@ export async function preparePromptSections(
     generation,
   );
 
-  await buildDescriptionPrompt(
+  const descriptionPrompt = await buildDescriptionPrompt(
     sections,
     currentChar,
     currentChat,
@@ -542,6 +542,7 @@ export async function preparePromptSections(
   );
 
   return {
+    illustrationDescription: descriptionPrompt.content,
     authorNoteContent,
     unformated: sections,
     promptTemplate,

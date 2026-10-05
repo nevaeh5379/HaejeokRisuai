@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "files": ["src/authorNoteSql.cts", "src/sqlCommit.cts", "src/realtimeEvents.cts"]
+  "files": ["src/authorNoteSql.cts", "src/sqlCommit.cts", "src/realtimeEvents.cts", "src/illustration.cts", "src/illustrationRunner.cts", "src/illustrationStorage.cts", "src/imageGeneration.cts"]
 }

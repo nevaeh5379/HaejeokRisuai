@@ -606,6 +606,7 @@
                     bind:retranslate={retranslate}
                     {renderRawStreaming}
                     {rawStreamingText}
+                    sourceMessage={renderedSourceMessage}
                     chatTarget={effectiveChatTarget} />
             {/key}
             {#if !hideButtons && idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}

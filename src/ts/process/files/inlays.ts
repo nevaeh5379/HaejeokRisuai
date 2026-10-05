@@ -34,7 +34,21 @@ export function resetInlayRemoteWriteState() {
   remoteWriteFailed = false;
 }
 
-async function writeInlayStorage(id: string, asset: InlayAsset) {
+async function writeInlayStorage(
+  id: string,
+  asset: InlayAsset,
+  durable = false,
+) {
+  if (durable) {
+    const storage = await getRemoteNodeStorage();
+    if (storage) {
+      await putRemoteInlayAsset(id, asset);
+      await writeCachedInlay(id, asset);
+    } else {
+      await writeCachedInlay(id, asset, true);
+    }
+    return;
+  }
   await writeCachedInlay(id, asset);
   try {
     const storage = await getRemoteNodeStorage();
@@ -135,7 +149,7 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
 
 export async function writeInlayImageFromBytes(
   data: Uint8Array,
-  arg: { name?: string; ext?: string; id?: string } = {},
+  arg: { name?: string; ext?: string; id?: string; durable?: boolean } = {},
 ) {
   const imgObj = new Image();
   const ext = arg.ext ?? "png";
@@ -153,7 +167,7 @@ export async function writeInlayImageFromBytes(
 
 export async function writeInlayImage(
   imgObj: HTMLImageElement,
-  arg: { name?: string; ext?: string; id?: string } = {},
+  arg: { name?: string; ext?: string; id?: string; durable?: boolean } = {},
 ) {
   let drawHeight = 0;
   let drawWidth = 0;
@@ -162,61 +176,70 @@ export async function writeInlayImage(
   if (!ctx) {
     throw new Error("2D canvas context is unavailable");
   }
-  await new Promise((resolve, reject) => {
-    const processImage = () => {
-      drawHeight = imgObj.naturalHeight;
-      drawWidth = imgObj.naturalWidth;
-      if (drawWidth <= 0 || drawHeight <= 0) {
-        reject(new Error("Failed to load image for inlay"));
+  try {
+    await new Promise((resolve, reject) => {
+      const processImage = () => {
+        drawHeight = imgObj.naturalHeight;
+        drawWidth = imgObj.naturalWidth;
+        if (drawWidth <= 0 || drawHeight <= 0) {
+          reject(new Error("Failed to load image for inlay"));
+          return;
+        }
+
+        //resize image to fit inlay, if total pixels exceed 1024*1024
+        const maxPixels = 1024 * 1024;
+        const currentPixels = drawHeight * drawWidth;
+
+        if (currentPixels > maxPixels) {
+          const scaleFactor = Math.sqrt(maxPixels / currentPixels);
+          drawWidth = Math.floor(drawWidth * scaleFactor);
+          drawHeight = Math.floor(drawHeight * scaleFactor);
+        }
+
+        canvas.width = drawWidth;
+        canvas.height = drawHeight;
+        ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
+        resolve(null);
+      };
+
+      if (imgObj.complete) {
+        processImage();
         return;
       }
 
-      //resize image to fit inlay, if total pixels exceed 1024*1024
-      const maxPixels = 1024 * 1024;
-      const currentPixels = drawHeight * drawWidth;
+      imgObj.onload = processImage;
+      imgObj.onerror = () =>
+        reject(new Error("Failed to load image for inlay"));
+    });
+    const imageBlob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("Failed to encode inlay image"));
+        }
+      }, "image/png"),
+    );
 
-      if (currentPixels > maxPixels) {
-        const scaleFactor = Math.sqrt(maxPixels / currentPixels);
-        drawWidth = Math.floor(drawWidth * scaleFactor);
-        drawHeight = Math.floor(drawHeight * scaleFactor);
-      }
+    const imgid = arg.id ?? v4();
 
-      canvas.width = drawWidth;
-      canvas.height = drawHeight;
-      ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight);
-      resolve(null);
-    };
-
-    if (imgObj.complete) {
-      processImage();
-      return;
-    }
-
-    imgObj.onload = processImage;
-    imgObj.onerror = () => reject(new Error("Failed to load image for inlay"));
-  });
-  const imageBlob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error("Failed to encode inlay image"));
-      }
-    }, "image/png"),
-  );
-
-  const imgid = arg.id ?? v4();
-
-  await writeInlayStorage(imgid, {
-    name: arg.name ?? imgid,
-    data: imageBlob,
-    ext: "png",
-    height: drawHeight,
-    width: drawWidth,
-    type: "image",
-  });
-
-  return `${imgid}`;
+    await writeInlayStorage(
+      imgid,
+      {
+        name: arg.name ?? imgid,
+        data: imageBlob,
+        ext: "png",
+        height: drawHeight,
+        width: drawWidth,
+        type: "image",
+      },
+      arg.durable,
+    );
+    return `${imgid}`;
+  } finally {
+    imgObj.onload = imgObj.onerror = null;
+    canvas.width = canvas.height = 0;
+  }
 }
 
 export type InlaySignature = {

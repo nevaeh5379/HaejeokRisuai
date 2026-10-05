@@ -26,15 +26,6 @@ export async function requestHorde(
   const currentChar = resolveRequestCharacter(arg);
   const abortSignal = arg.abortSignal;
 
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        error: "Preview body is not supported for Horde",
-      }),
-    };
-  }
-
   const prompt = applyChatTemplate(formated, {
     currentChar,
     chatTarget: arg.triggerTarget,
@@ -79,6 +70,16 @@ export async function requestHorde(
     headers,
     getAdditionalParameters(arg.aiModel),
   );
+
+  if (arg.previewBody)
+    return {
+      type: "success",
+      result: JSON.stringify({
+        url: STABLE_HORDE_TEXT_ASYNC_URL,
+        body: finalBody,
+        headers,
+      }),
+    };
 
   const remote = await tryExecuteNodeProvider(
     LLMFormat.Horde,

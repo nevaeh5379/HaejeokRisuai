@@ -1,4 +1,13 @@
 export const languageEnglish = {
+  illustration: {
+    title: "Chat illustrations", description: "The main model places <Illustration> markers. The auxiliary model writes tags, then your image provider fills each position. Supports one-to-one chats.",
+    characterHelp: "Inherit global settings or override them here. Character instructions and image prompts are appended after the global text.",
+    appFallback: "This auxiliary model runs in the app. Illustration generation stops when the app closes, including on Node.",
+    enabled: "Enable illustrations", includeDescription: "Include character description", includePersona: "Include persona", includeLorebook: "Include active lorebook", includeMemory: "Include used memory",
+    recentMessages: "Previous messages", markerInstructions: "Main model marker instructions", tagInstructions: "Auxiliary model tag instructions", basePrompt: "Base image tags", negativePrompt: "Negative prompt",
+    inherit: "Use global", on: "On", off: "Off", queued: "Illustration queued", tagging: "Writing image tags", generating: "Generating image", complete: "Illustration complete", failed: "Illustration failed", interrupted: "Illustration interrupted",
+    retry: "Retry", regenerate: "Regenerate with these tags", rewrite: "Rewrite tags and regenerate", tags: "Image tags", operationFailed: "Unable to update the illustration. Please retry.",
+  },
   globalAuthorNote: {
     discard: "Discard draft",
     discardDraftConfirm: "Discard this retained draft permanently?",

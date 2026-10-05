@@ -10,6 +10,7 @@
     "@dqbd/tiktoken": "^1.0.22",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
+    "fflate": "^0.8.3",
     "msgpackr": "2.1.0",
     "mssql": "^12.7.0",
     "node-html-parser": "^9.0.2",

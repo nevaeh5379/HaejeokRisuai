@@ -221,9 +221,10 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
 
 export async function encode(
   data: string,
+  modelOverride?: string,
 ): Promise<number[] | Uint32Array | Int32Array> {
   const db = settingsStore.state;
-  const modelInfo = getModelInfo(presetStore.state.aiModel);
+  const modelInfo = getModelInfo(modelOverride ?? presetStore.state.aiModel);
   const pluginTokenizer =
     pluginV2.providerOptions.get(presetStore.state.currentPluginProvider)
       ?.tokenizer ?? "none";
@@ -232,7 +233,7 @@ export async function encode(
   if (db.useTokenizerCaching) {
     cacheKey = getHash(
       data,
-      presetStore.state.aiModel,
+      modelOverride ?? presetStore.state.aiModel,
       db.customTokenizer,
       presetStore.state.currentPluginProvider,
       db.googleClaudeTokenizing,

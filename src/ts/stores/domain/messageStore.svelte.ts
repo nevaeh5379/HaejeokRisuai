@@ -250,6 +250,7 @@ class MessageStore implements FlushableStore {
     chatId: string,
     msgs: Message[],
     previousMessageIds: string[] = [],
+    requireDurable = false,
   ): Promise<void> {
     const chat = findChatAcrossCharacters(chatId);
     const allMessages = chat?.message ?? msgs;
@@ -299,6 +300,7 @@ class MessageStore implements FlushableStore {
       });
     } catch (error) {
       console.error("[MessageStore] Failed to commit messages:", error);
+      if (requireDurable) throw error;
     }
   }
 

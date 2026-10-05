@@ -10,6 +10,9 @@ import isEqual from "lodash/isEqual"
     import type { ChatExecutionTarget } from "src/ts/chatTarget";
     import { getFileSrc, isLiveObjectUrl, onBlobUrlsRevoked, untrackObjectUrl } from "src/ts/globalApi.svelte";
     import { isTauriAssetUrl } from "src/ts/mediaSrc";
+    import { mount, unmount, tick } from "svelte";
+    import IllustrationSlot from "./IllustrationSlot.svelte";
+    import type { Message } from "src/ts/storage/database/schema";
 
     interface Props {
         character?: simpleCharacterArgument|string|null
@@ -26,6 +29,7 @@ import isEqual from "lodash/isEqual"
         renderRawStreaming?: boolean
         rawStreamingText?: string
         chatTarget?: ChatExecutionTarget
+        sourceMessage?: Message
     }
 
     let {
@@ -42,6 +46,7 @@ import isEqual from "lodash/isEqual"
         renderRawStreaming = false,
         rawStreamingText = '',
         chatTarget,
+        sourceMessage,
     }: Props =  $props()
 
     // svelte-ignore non_reactive_update
@@ -246,7 +251,13 @@ import isEqual from "lodash/isEqual"
             lastRetryKey = retryKey
             assetRetries = 0
         }
-        return markParsing(msgDisplay, character, idx)
+        let display = msgDisplay;
+        for (const item of sourceMessage?.illustrations ?? []) {
+            if (!/^[\w-]+$/.test(item.id) || !item.token || !display?.includes(item.token)) continue;
+            const placeholder = `<span data-risu-illustration="${item.id}"></span>`;
+            display = display.replace(item.token, item.imageId ? `${item.token}${placeholder}` : placeholder);
+        }
+        return markParsing(display, character, idx)
     })
 
     const hasStaleBlobImages = () => {
@@ -292,6 +303,29 @@ import isEqual from "lodash/isEqual"
         return () => {
             bodyRoot?.removeEventListener('error', onError, true)
         }
+    })
+
+    $effect(() => {
+        const parsed = markParsingResult;
+        const target = chatTarget;
+        const messageId = sourceMessage?.chatId;
+        const ids = sourceMessage?.illustrations?.map((i) => i.id) ?? [];
+        const root = bodyRoot;
+        const mounted: ReturnType<typeof mount>[] = [];
+        let cancelled = false;
+        if (root && target && messageId && ids.length && !shouldRenderRawStreaming) {
+            void parsed.then(async () => {
+                await tick();
+                if (cancelled) return;
+                for (const id of ids) {
+                    const host = root.querySelector(`[data-risu-illustration="${CSS.escape(id)}"]`);
+                    if (host) mounted.push(mount(IllustrationSlot, { target: host, props: {
+                        target: { characterId: target.characterId, chatId: target.chatId, messageId, illustrationId: id },
+                    } }));
+                }
+            }).catch(() => {});
+        }
+        return () => { cancelled = true; for (const component of mounted) void unmount(component); };
     })
  </script>
 

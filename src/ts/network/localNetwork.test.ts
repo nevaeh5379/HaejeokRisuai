@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { isLocalNetworkHost, isLocalNetworkUrl } from "./localNetwork";
+import {
+  canUseBrowserLocalNetwork,
+  isLocalNetworkHost,
+  isLocalNetworkUrl,
+} from "./localNetwork";
 
 describe("isLocalNetworkHost", () => {
   it("accepts localhost and loopback hosts", () => {
@@ -58,4 +62,46 @@ describe("isLocalNetworkUrl", () => {
     expect(isLocalNetworkUrl("")).toBe(false);
     expect(isLocalNetworkUrl("not-a-url")).toBe(false);
   });
+});
+
+describe("canUseBrowserLocalNetwork", () => {
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "allows CORS-enabled local requests from a loopback app at %s",
+    (host) => {
+      expect(
+        canUseBrowserLocalNetwork(
+          "http://localhost:8080/v1",
+          `http://${host}:5174`,
+        ),
+      ).toBe(true);
+      expect(
+        canUseBrowserLocalNetwork(
+          "http://192.168.1.2:8080/v1",
+          `http://${host}:5174`,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.each([
+    "https://risuai.xyz",
+    "https://example.com",
+    "http://192.168.1.2:5174",
+    "http://localhost.example.com",
+    "file:///index.html",
+    "invalid",
+  ])("keeps the web local-network guard for %s", (app) =>
+    expect(canUseBrowserLocalNetwork("http://localhost:8080/v1", app)).toBe(
+      false,
+    ),
+  );
+
+  it.each([
+    "https://api.openai.com/v1",
+    "file://localhost/model",
+    "ftp://localhost/model",
+    "invalid",
+  ])("does not change routing for %s", (url) =>
+    expect(canUseBrowserLocalNetwork(url, "http://localhost:5174")).toBe(false),
+  );
 });

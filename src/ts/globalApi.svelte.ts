@@ -64,7 +64,10 @@ import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { isCapacitor, isTauri, isNodeServer } from "./platform";
-import { isLocalNetworkUrl } from "./network/localNetwork";
+import {
+  canUseBrowserLocalNetwork,
+  isLocalNetworkUrl,
+} from "./network/localNetwork";
 import {
   decodeProxyJobWsChunk,
   formatProxyStreamErrorMessage,
@@ -1019,6 +1022,11 @@ export async function globalFetch(
     const urlHost = new URL(url).hostname;
     const useLocalNetworkRoute =
       arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
+    const browserLocalNetwork =
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer &&
+      canUseBrowserLocalNetwork(url, window.location.href);
     const forcePlainFetch =
       ((knownHostes.includes(urlHost) && !isTauri) ||
         db.usePlainFetch ||
@@ -1026,7 +1034,13 @@ export async function globalFetch(
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute;
 
-    if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
+    if (
+      useLocalNetworkRoute &&
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer &&
+      !browserLocalNetwork
+    ) {
       return {
         ok: false,
         headers: {},
@@ -1039,7 +1053,8 @@ export async function globalFetch(
       knownHostes.includes(urlHost) &&
       !isTauri &&
       !isCapacitor &&
-      !isNodeServer
+      !isNodeServer &&
+      !browserLocalNetwork
     ) {
       return {
         ok: false,
@@ -1138,6 +1153,9 @@ export async function globalFetch(
 
     try {
       if (useLocalNetworkRoute) {
+        if (browserLocalNetwork) {
+          return await fetchWithPlainFetch(url, requestArg);
+        }
         if (isTauri) {
           return await fetchWithTauri(url, requestArg);
         }
@@ -2493,7 +2511,13 @@ export async function fetchNative(
 
   const useLocalNetworkRoute =
     arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
-  if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
+  if (
+    useLocalNetworkRoute &&
+    !isTauri &&
+    !isCapacitor &&
+    !isNodeServer &&
+    !canUseBrowserLocalNetwork(url, window.location.href)
+  ) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
   const throughProxy = isNodeServer && useLocalNetworkRoute;

@@ -35,6 +35,10 @@ const protocolSources = [
   "src/authorNoteSql.cts",
   "src/sqlCommit.cts",
   "src/realtimeEvents.cts",
+  "src/illustration.cts",
+  "src/illustrationRunner.cts",
+  "src/illustrationStorage.cts",
+  "src/imageGeneration.cts",
   "settings.json",
   "tsconfig.json",
 ].map((source) => path.join(root, "packages/protocol", source));
@@ -120,6 +124,8 @@ const needsBuild =
         isStale(source, generatedServer),
       ) ||
       isStale(pluginStorageRoutesSource, generatedServer) ||
+      isStale(path.join(__dirname, "executors/illustrationExecutor.ts"), generatedServer) ||
+      isStale(path.join(__dirname, "executors/illustrationImages.ts"), generatedServer) ||
       isStale(packetSource, generatedServer) ||
       isStale(mutationSource, generatedMutations) ||
       isStale(storageSyncApplySource, generatedStorageSyncApply) ||

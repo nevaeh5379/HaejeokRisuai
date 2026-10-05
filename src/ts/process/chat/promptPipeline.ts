@@ -6,6 +6,7 @@ import type {
   MessagePresetInfo,
 } from "../../storage/database/schema";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
+import { resolveIllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
 import { ChatTokenizer } from "../../tokenizer";
 import { setChatProcessStage } from "./runtimeState";
 import { risuChatParser } from "../scripts";
@@ -82,6 +83,7 @@ function createRenderContext(
 async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
+  appendedInstructions: OpenAIChat[] = [],
 ) {
   const chatTarget = {
     ...createExecutionTarget(options),
@@ -104,7 +106,11 @@ async function buildHistoryStage(
     currentChat: options.currentChat,
     usingPromptTemplate: sections.usingPromptTemplate,
     tokenizer: options.tokenizer,
-    currentTokens: presetStore.state.maxResponse + 50 + estimate.tokens,
+    currentTokens:
+      presetStore.state.maxResponse +
+      50 +
+      estimate.tokens +
+      (await options.tokenizer.tokenizeChats(appendedInstructions)),
     lorePrompt: sections.lorepmt,
     resolvePosition: sections.resolvePosition,
     findCharacter: options.findCharacter,
@@ -220,7 +226,29 @@ export async function buildGenerationPrompt(
     createExecutionTarget(options),
     options.generation,
   );
-  const historyStage = await buildHistoryStage(options, sections);
+  const illustration = resolveIllustrationSettings(
+    settingsStore.state.illustration,
+    options.currentChar.illustration,
+  );
+  const markerInstructions: OpenAIChat[] =
+    illustration.enabled &&
+    options.nowChatroom.type !== "group" &&
+    illustration.markerInstructions
+      ? [
+          {
+            role: "system",
+            content: risuChatParser(illustration.markerInstructions, {
+              chara: options.currentChar,
+              chatTarget: createExecutionTarget(options),
+            }),
+          },
+        ]
+      : [];
+  const historyStage = await buildHistoryStage(
+    options,
+    sections,
+    markerInstructions,
+  );
   if (!historyStage.ok) return { ok: false as const };
   const memory = await applyMemoryStage(options, historyStage.history);
   if (!memory.ok) return { ok: false as const };
@@ -237,6 +265,7 @@ export async function buildGenerationPrompt(
     historyStage,
     memories,
   );
+  formated.push(...markerInstructions);
   return {
     ok: true as const,
     formated,
@@ -249,5 +278,32 @@ export async function buildGenerationPrompt(
         }),
     ),
     currentChat: memory.currentChat,
+    illustrationContext:
+      illustration.enabled && options.nowChatroom.type !== "group"
+        ? {
+            description: sections.illustrationDescription,
+            persona: sections.unformated.personaPrompt
+              .map((m) => m.content)
+              .join("\n\n"),
+            lorebook: illustration.includeLorebook
+              ? sections.lorepmt.actives
+                  .map((lore) =>
+                    risuChatParser(sections.resolvePosition(lore.prompt), {
+                      chara: options.currentChar,
+                      chatTarget: createExecutionTarget(options),
+                    }),
+                  )
+                  .join("\n\n")
+              : undefined,
+            memory: illustration.includeMemory
+              ? formated
+                  .filter(
+                    (m) => m.memo === "supaMemory" || m.memo === "hypaMemory",
+                  )
+                  .map((m) => m.content)
+                  .join("\n\n")
+              : undefined,
+          }
+        : undefined,
   };
 }

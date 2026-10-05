@@ -82,6 +82,8 @@ const {
   normalizeClientId,
 } = require("./http/realtimeEvents.cjs");
 import { createDatabaseMutations } from "./sync/databaseMutations.cjs";
+import { createNodeIllustrationExecutor } from "./executors/illustrationExecutor.js";
+import { createIllustrationImages } from "./executors/illustrationImages.js";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
 import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.js";
 import { Packet } from "./http/packet.js";
@@ -6145,6 +6147,24 @@ app.delete(
 nodeChatExecutor.registerRoutes(app, {
   auth: checkAuth,
   limiter: authenticatedRouteLimiter,
+});
+const illustrationImages = createIllustrationImages(
+  () => assetStorageManager.getStorage(),
+  upsertAssetCatalogEntries,
+  sanitizeTargetUrl,
+);
+const illustrationExecutor = createNodeIllustrationExecutor({
+  getStorage: () => postgresStorage,
+  commit: (payload) => databaseMutations.commit(payload, undefined),
+  imageRuntime: illustrationImages.runtime,
+  storeImage: illustrationImages.storeImage,
+  removeImage: illustrationImages.removeImage,
+  sanitizeUrl: sanitizeTargetUrl,
+});
+illustrationExecutor.registerRoutes(app, {
+  auth: checkAuth,
+  limiter: authenticatedRouteLimiter,
+  jsonParser: express.json({ limit: "16mb" }),
 });
 nodeProviderExecutor.registerRoutes(app, {
   auth: checkAuth,

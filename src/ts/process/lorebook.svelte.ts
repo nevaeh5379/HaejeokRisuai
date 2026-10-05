@@ -93,6 +93,8 @@ export async function loadLoreBookV3Prompt(
     chat?: Chat;
     moduleIds?: string[];
     chatVariables?: Record<string, string>;
+    /** Illustration tag rewrites evaluate lore against a historical scene without changing chat variables. */
+    readOnly?: boolean;
   },
 ) {
   const resolved = target
@@ -863,7 +865,7 @@ export async function loadLoreBookV3Prompt(
         });
         activatedIndexes.push(i);
 
-        if (keepActivateAfterMatch) {
+        if (keepActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_ka_" +
               (fullLore[i].id ??
@@ -872,7 +874,7 @@ export async function loadLoreBookV3Prompt(
             chatVarTarget,
           );
         }
-        if (dontActivateAfterMatch) {
+        if (dontActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_da_" +
               (fullLore[i].id ??

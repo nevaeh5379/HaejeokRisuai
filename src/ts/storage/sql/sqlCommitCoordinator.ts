@@ -50,3 +50,44 @@ export function commitSqlChanges(
   );
   return trackedOperation;
 }
+
+/** Illustration updates must re-read on conflicts, rather than rebase a stale message body. */
+export function mutateSqlMessage<T>(
+  storage: ISqlStorage,
+  prepare: () => Promise<{ commit: SqlCommit; result: T } | null>,
+): Promise<T | null> {
+  const finishSave = beginSave();
+  const previous = storageQueues.get(storage) ?? Promise.resolve();
+  const operation = previous
+    .catch(() => undefined)
+    .then(async () => {
+      let previousConflict = 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const revision = Math.max(storage.getRevision(), previousConflict);
+        const prepared = await prepare();
+        if (!prepared) return null;
+        try {
+          await storage.commit({
+            ...prepared.commit,
+            action: "illustration",
+            baseRevision: revision,
+          });
+          return prepared.result;
+        } catch (error) {
+          const revision = conflictRevision(error);
+          if (revision === null || attempt === 2) throw error;
+          previousConflict = revision;
+        }
+      }
+      return null;
+    })
+    .finally(finishSave);
+  storageQueues.set(
+    storage,
+    operation.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return operation;
+}

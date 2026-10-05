@@ -42,15 +42,6 @@ export async function requestNovelAI(
     generate_once: true;
   }[] = [];
 
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        error: "This model is not supported in preview mode",
-      }),
-    };
-  }
-
   for (let i = 0; i < biasString.length; i++) {
     const bia = biasString[i];
     const tokens = await tokenizeNum(bia[0]);
@@ -96,6 +87,12 @@ export async function requestNovelAI(
       result: "Unsupported NovelAI transport variant",
     };
   }
+  if (arg.previewBody)
+    return {
+      type: "success",
+      result: JSON.stringify({ url: novelAIUrl, body, headers }),
+    };
+
   const remoteTransport = await tryExecuteNodeProviderTransport(
     LLMFormat.NovelAI,
     { body, headers, variant },

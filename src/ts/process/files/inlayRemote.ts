@@ -177,11 +177,11 @@ export async function readCachedInlay(id: string): Promise<InlayAsset | null> {
   return cached;
 }
 
-export async function writeCachedInlay(id: string, asset: InlayAsset) {
-  rememberInCache(id, asset);
+export async function writeCachedInlay(id: string, asset: InlayAsset, durable = false) {
   try {
     await cacheStorage.setItem(id, asset);
-  } catch {}
+  } catch (error) { if (durable) throw error; }
+  rememberInCache(id, asset);
 }
 
 export async function removeCachedInlay(id: string) {

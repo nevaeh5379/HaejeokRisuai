@@ -1,6 +1,7 @@
 <script lang="ts">
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+  import IllustrationSettings from "./IllustrationSettings.svelte";
 import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
@@ -265,6 +266,7 @@ import Check from "src/lib/UI/GUI/CheckInput.svelte";
 {/if}
 
 {#if submenu === 3 || submenu === -1}
+    <IllustrationSettings />
     <Accordion name={language.imageGeneration} styled disabled={submenu !== -1}>
         <span class="text-textcolor mt-2">{language.imageGeneration} {language.provider} <Help key="sdProvider"/></span>
         <SelectInput className="mt-2 mb-4" bind:value={settingsStore.state.sdProvider}>

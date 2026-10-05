@@ -23,6 +23,7 @@ import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { Loadout } from "../../loadout";
+import type { Illustration, IllustrationOverrides, IllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -65,6 +66,7 @@ export interface RisuPersona {
 }
 
 export interface DatabaseSettings {
+  illustration?: IllustrationSettings;
   apiType: string;
   openAIKey: string;
   proxyKey: string;
@@ -719,6 +721,7 @@ export interface loreBook {
 }
 
 export interface character {
+  illustration?: IllustrationOverrides;
   type?: "character";
   name: string;
   image?: string;
@@ -1345,6 +1348,7 @@ export interface ChatFolder {
 }
 
 export interface Message {
+  illustrations?: Illustration[];
   role: "user" | "char";
   data: string;
   saying?: string;

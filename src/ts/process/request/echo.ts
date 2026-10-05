@@ -14,6 +14,15 @@ export async function requestEcho(
   const db = settingsStore.state;
   const delay = db.echoDelay ?? 0;
   const message = db.echoMessage ?? "Echo Message";
+  if (arg.previewBody)
+    return {
+      type: "success",
+      result: JSON.stringify({
+        url: "risu:echo",
+        headers: {},
+        body: { message, delayMs: Math.max(0, Math.round(delay * 1000)) },
+      }),
+    };
   const remote = await tryExecuteNodeProvider(
     arg.modelInfo?.format ?? LLMFormat.Echo,
     {
