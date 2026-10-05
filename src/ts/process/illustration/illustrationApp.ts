@@ -53,7 +53,7 @@ const serverSubmissions = new IllustrationQueue();
  * Resolves a stable chat target from the currently resident character store.
  *
  * 한국어: 안정적인 대상 ID로 현재 캐릭터 저장소에 적재된 채팅을 찾는 함수.
- *
+ * @deprecated 중복
  * @returns A one-to-one character/chat pair, or null for groups or missing targets. / 1:1 캐릭터·채팅 쌍 또는 그룹·삭제된 대상일 때 null.
  */
 function resolveTarget(
