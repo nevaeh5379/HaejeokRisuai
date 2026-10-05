@@ -536,7 +536,6 @@ export async function enqueueAnswerIllustrations(
     if (!findIllustrationMarkers(targetMessage.data).length) return;
     const items = prepareIllustrations(
       targetMessage,
-      v4,
       targetChat.activeBranchId,
       usesAppIllustrationExecutor() ? "app" : "server",
       appRunId,

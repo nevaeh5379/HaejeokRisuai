@@ -336,7 +336,6 @@ export function illustrationSourceHash(message: IllustrationMessage): string {
  * 한국어: 처리 가능한 표식을 대기 자리로 교체하고 메시지에 삽화 메타데이터를 추가하는 함수.
  *
  * @param message - Message mutated in place. / 본문·메타데이터를 직접 변경할 메시지.
- * @param createId - Factory for a fresh slot ID. / 새 삽화 ID 생성 함수.
  * @param branchId - Active branch captured at preparation. / 준비 시점의 활성 분기 ID.
  * @param executor - App or server responsible for execution. / 작업을 실행할 앱 또는 서버.
  * @param runId - Current executor process/session ID. / 현재 실행 주체의 실행 ID.
@@ -344,7 +343,6 @@ export function illustrationSourceHash(message: IllustrationMessage): string {
  */
 export function prepareIllustrations(
   message: IllustrationMessage,
-  createId: () => string,
   branchId: string | undefined,
   executor: Illustration["executor"],
   runId: string,
@@ -352,7 +350,7 @@ export function prepareIllustrations(
   const positions = findIllustrationMarkers(message.data);
   if (!positions.length) return [];
   const items = positions.map((): Illustration => {
-    const id = createId();
+    const id = crypto.randomUUID();
     return {
       id,
       token: illustrationToken(id),

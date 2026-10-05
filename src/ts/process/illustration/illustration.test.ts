@@ -21,8 +21,7 @@ import {
 
 function answer(data = "A garden.<Illustration>A storm.<Illustration>") {
   const message: IllustrationMessage = { role: "char", data, chatId: "answer" };
-  let id = 0;
-  prepareIllustrations(message, () => `slot-${++id}`, "branch", "app", "run");
+  prepareIllustrations(message, "branch", "app", "run");
   return message;
 }
 
@@ -38,10 +37,7 @@ describe("illustration positions and scene context", () => {
     expect(findIllustrationMarkers(text)).toHaveLength(2);
     const message = answer(text);
     expect(canonicalIllustrationText(message)).toBe(text);
-    expect(message.illustrations.map((i) => i.id)).toEqual([
-      "slot-1",
-      "slot-2",
-    ]);
+    expect(new Set(message.illustrations.map((i) => i.id)).size).toBe(2);
   });
 
   it.each([
@@ -252,7 +248,7 @@ describe("illustration execution lifecycle", () => {
     ]);
     expect(r.adapter.createTags).toHaveBeenCalledTimes(2);
     expect(r.message.data).toBe(
-      "A garden.{{illustration::slot-1}}A storm.{{inlay::image}}",
+      `A garden.${r.message.illustrations[0].token}A storm.{{inlay::image}}`,
     );
     expect(r.runner.has(r.targets[0])).toBe(false);
   });
