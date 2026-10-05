@@ -1937,20 +1937,6 @@ function isLocalNetworkHost(hostname) {
   return false;
 }
 
-function normalizeAuthenticatedProxyTarget(raw) {
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-      return null;
-    if (parsed.username || parsed.password) return null;
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
 function normalizeHubProxyTarget(raw, base = hubURL) {
   if (typeof raw !== "string" || raw.trim() === "") return null;
   try {
@@ -2587,11 +2573,7 @@ const reverseProxyFunc = async (req, res, next) => {
     });
     return;
   }
-  const proxyTarget = normalizeAuthenticatedProxyTarget(String(urlParam));
-  if (!proxyTarget) {
-    res.status(400).send({ error: "Invalid proxy URL" });
-    return;
-  }
+  const proxyTarget = String(urlParam);
   const header = normalizeForwardHeaders(
     req.headers["risu-header"]
       ? JSON.parse(decodeURIComponent(req.headers["risu-header"]))
@@ -2680,11 +2662,7 @@ const reverseProxyFunc_get = async (req, res, next) => {
     });
     return;
   }
-  const proxyTarget = normalizeAuthenticatedProxyTarget(String(urlParam));
-  if (!proxyTarget) {
-    res.status(400).send({ error: "Invalid proxy URL" });
-    return;
-  }
+  const proxyTarget = String(urlParam);
   const header = normalizeForwardHeaders(
     req.headers["risu-header"]
       ? JSON.parse(decodeURIComponent(req.headers["risu-header"]))
