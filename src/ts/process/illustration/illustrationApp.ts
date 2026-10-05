@@ -508,7 +508,8 @@ export async function enqueueAnswerIllustrations(
     }
 
     if (targetChar.type === "group") {
-      logger.warn(`targetChar type is group: ${targetChar.chaId}`)
+      logger.warn(`targetChar type is group: ${targetChar.chaId}`);
+      return;
     }
     let targetChat = targetChar.chats?.find(
       (chat) => chat.id === target.chatId,
