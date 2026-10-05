@@ -41,7 +41,9 @@ import { prepareBrowserProviderContext } from "../request/providerContextAdapter
 import { LLMFormat } from "../../model/modellist";
 import type { character, Message } from "../../storage/database/schema";
 import { v4 } from "uuid";
+import { getLogger } from "@logtape/logtape";
 
+const logger = getLogger(["haejeok-risuai", "illustration"])
 const appRunId = v4();
 const contexts = new Map<string, IllustrationContext>();
 const scheduling = new Set<string>();
@@ -505,7 +507,9 @@ export async function enqueueAnswerIllustrations(
       );
     }
 
-    if (targetChar.type === "group") return;
+    if (targetChar.type === "group") {
+      logger.warn(`targetChar type is group: ${targetChar.chaId}`)
+    }
     let targetChat = targetChar.chats?.find(
       (chat) => chat.id === target.chatId,
     );
