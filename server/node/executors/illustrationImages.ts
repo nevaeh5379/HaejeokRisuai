@@ -43,30 +43,26 @@ const hex = (key: string) => Buffer.from(key).toString("hex");
  *
  * @param getAssets - Resolves the active asset storage. / 활성 자산 저장소 조회 함수.
  * @param recordAssets - Registers saved asset sizes in the existing catalog. / 저장 자산 크기를 기존 목록에 등록하는 함수.
- * @param sanitizeUrl - Existing proxy URL validator. / 기존 프록시 URL 검증 함수.
  * @returns Image runtime and inlay save/remove operations. / 이미지 실행 어댑터·인레이 저장 및 제거 함수.
  */
 export function createIllustrationImages(
   getAssets: () => Assets,
   recordAssets: (entries: { key: string; size: number }[]) => Promise<void>,
-  sanitizeUrl: (url: string) => string | null,
 ) {
   /**
-   * Validates the destination, rejects redirects and applies a default ten-minute timeout.
+   * Rejects redirects and applies a default ten-minute timeout.
    *
-   * 한국어: 목적지 검증·리디렉션 차단·기본 10분 제한을 적용해 요청하는 함수.
+   * 한국어: 리디렉션 차단·기본 10분 제한을 적용해 요청하는 함수.
    */
-  const checkedFetch: typeof fetch = async (input, init) => {
-    const url = sanitizeUrl(String(input));
-    if (!url) throw new Error("Invalid image provider URL");
-    return fetch(url, {
+  const providerFetch: typeof fetch = async (input, init) => {
+    return fetch(input, {
       ...init,
       redirect: "error",
       signal: init?.signal ?? AbortSignal.timeout(10 * 60 * 1000),
     });
   };
   const runtime: ImageGenerationRuntime = {
-    fetchNative: checkedFetch,
+    fetchNative: providerFetch,
     /**
      * Adapts JSON or raw-byte HTTP responses to the shared provider transport contract.
      *
@@ -76,7 +72,7 @@ export function createIllustrationImages(
       const headers = new Headers(options.headers);
       if (!headers.has("content-type"))
         headers.set("content-type", "application/json");
-      const response = await checkedFetch(url, {
+      const response = await providerFetch(url, {
         method: options.method ?? (options.body ? "POST" : "GET"),
         headers,
         ...(options.body ? { body: JSON.stringify(options.body) } : {}),

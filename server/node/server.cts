@@ -6151,7 +6151,6 @@ nodeChatExecutor.registerRoutes(app, {
 const illustrationImages = createIllustrationImages(
   () => assetStorageManager.getStorage(),
   upsertAssetCatalogEntries,
-  sanitizeTargetUrl,
 );
 const illustrationExecutor = createNodeIllustrationExecutor({
   getStorage: () => postgresStorage,
@@ -6159,7 +6158,6 @@ const illustrationExecutor = createNodeIllustrationExecutor({
   imageRuntime: illustrationImages.runtime,
   storeImage: illustrationImages.storeImage,
   removeImage: illustrationImages.removeImage,
-  sanitizeUrl: sanitizeTargetUrl,
 });
 illustrationExecutor.registerRoutes(app, {
   auth: checkAuth,

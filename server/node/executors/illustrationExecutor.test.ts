@@ -103,7 +103,6 @@ async function fixture() {
   const message = chat.message[1];
   const [item] = prepareIllustrations(
     message,
-    () => "slot",
     chat.activeBranchId,
     "server",
     "client-run",
@@ -133,7 +132,6 @@ async function fixture() {
   const imageAdapter = createIllustrationImages(
     () => assets,
     async () => {},
-    (url) => url,
   );
   const deps = {
     getStorage: () => ({
@@ -147,7 +145,6 @@ async function fixture() {
     imageRuntime: imageAdapter.runtime,
     storeImage: imageAdapter.storeImage,
     removeImage: imageAdapter.removeImage,
-    sanitizeUrl: (url) => url,
   };
   const executor = createNodeIllustrationExecutor(deps);
   const api = express();
@@ -166,7 +163,7 @@ async function fixture() {
     characterId: "char-1",
     chatId: "chat-1",
     messageId: "m2",
-    illustrationId: "slot",
+    illustrationId: item.id,
   };
   const request: IllustrationJobRequest = {
     ...target,

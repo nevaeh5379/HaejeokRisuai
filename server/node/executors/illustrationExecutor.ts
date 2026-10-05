@@ -52,9 +52,9 @@ type Storage = IllustrationStorageReader & {
 };
 
 /**
- * Injects server persistence, image transport and authenticated proxy URL policy.
+ * Injects server persistence and image transport.
  *
- * 한국어: 서버 저장·이미지 전송·인증 프록시 URL 정책을 주입하는 의존성 계약.
+ * 한국어: 서버 저장·이미지 전송을 주입하는 의존성 계약.
  */
 interface Dependencies {
   /**
@@ -83,12 +83,6 @@ interface Dependencies {
    */
   removeImage(id: string): Promise<void>;
   fetchImpl?: typeof fetch;
-  /**
-   * Validates URLs using the existing authenticated model proxy policy.
-   *
-   * 한국어: 기존 인증 모델 프록시 정책으로 요청 URL을 검증하는 함수.
-   */
-  sanitizeUrl?(url: string): string | null;
 }
 
 /**
@@ -163,7 +157,7 @@ export function decodeIllustrationTagResponse(data: any): string {
  *
  * 한국어: 메인 채팅 작업 잠금과 독립적으로 실행되는 서버 삽화 큐를 만드는 함수.
  *
- * @param deps - SQL, transport, asset storage and URL validation adapters. / SQL·전송·자산 저장·URL 검증 어댑터.
+ * @param deps - SQL, transport and asset storage adapters. / SQL·전송·자산 저장 어댑터.
  * @returns Job acceptance, state queries, route registration and pending-job checks. / 작업 접수·상태 조회·라우트 등록·대기 작업 조회 기능.
  * @remarks
  * Accepted jobs outlive the client connection. Prepared requests, including credentials, stay in RAM
@@ -410,10 +404,10 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
    * @param raw - Submitted target, version, action and optional prepared tag request. / 요청 대상·버전·조작·선택적 준비 태그 요청.
    * @returns Accepted persisted state without waiting for generation completion. / 생성 완료를 기다리지 않는 접수 상태 응답.
    * @remarks
-   * Repeated initial submissions reuse existing terminal/pending work. Validates URL, headers,
+   * Repeated initial submissions reuse existing terminal/pending work. Validates headers,
    * body and request size; forces nonstreaming tags and releases transient requests after completion.
    * 한국어: 반복된 최초 접수는 기존 완료·실패·대기 작업을 재사용.
-   * URL·헤더·본문·요청 크기 검증 후 비스트리밍 태그 작성으로 고정하고 종료 후 임시 요청을 해제.
+   * 헤더·본문·요청 크기 검증 후 비스트리밍 태그 작성으로 고정하고 종료 후 임시 요청을 해제.
    */
   function accept(
     raw: IllustrationJobRequest,
@@ -448,14 +442,6 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         }
         let request: IllustrationTagRequest | undefined;
         if (raw.tagRequest) {
-          const url =
-            raw.tagRequest.url === "risu:echo"
-              ? raw.tagRequest.url
-              : deps.sanitizeUrl
-                ? deps.sanitizeUrl(raw.tagRequest.url)
-                : raw.tagRequest.url;
-          if (!url || (url !== "risu:echo" && !/^https?:\/\//.test(url)))
-            throw new TypeError("Invalid submodel URL");
           if (
             !raw.tagRequest.body ||
             typeof raw.tagRequest.body !== "object" ||
@@ -477,7 +463,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             )
               headers[key.toLowerCase()] = value;
           }
-          request = { url, headers, body: { ...raw.tagRequest.body } };
+          request = {
+            url: raw.tagRequest.url,
+            headers,
+            body: { ...raw.tagRequest.body },
+          };
           if ("stream" in request.body) request.body.stream = false;
           if (Buffer.byteLength(JSON.stringify(request)) > 16 * 1024 * 1024)
             throw new TypeError("Submodel request exceeds 16 MiB");
