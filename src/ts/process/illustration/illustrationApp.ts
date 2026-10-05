@@ -483,6 +483,7 @@ async function submit(
  *
  * @param target - IDs captured for the completed answer. / 완성된 답변에서 캡처한 대상 ID.
  * @param context - Description/persona and actual lore/memory from that generation. / 해당 생성에서 사용한 설명·페르소나·실제 로어·메모리.
+ * @throws When the initial character, chat or message lookup fails. / 최초 캐릭터·채팅·메시지 조회 실패 시.
  * @remarks
  * Flushes the answer first, revalidates its text/branch, then durably commits tokens before queueing.
  * Submits background jobs without awaiting image completion so subsequent chats remain available.
@@ -497,49 +498,70 @@ export async function enqueueAnswerIllustrations(
   if (scheduling.has(answerKey)) return;
   scheduling.add(answerKey);
   try {
-    let resolved = resolveTarget(target);
-    let message = resolved?.chat.message.find(
-      (m) => m.chatId === target.messageId,
+    let targetChar = characterStore.getById(target.characterId);
+    if (!targetChar) {
+      throw new Error(
+        `Illustration character not found: ${target.characterId}`,
+      );
+    }
+
+    if (targetChar.type === "group") return;
+    let targetChat = targetChar.chats?.find(
+      (chat) => chat.id === target.chatId,
     );
+    if (!targetChat) {
+      throw new Error(`Illustration chat not found: ${target.chatId}`);
+    }
+    let targetMessage = targetChat.message.find(
+      (message) => message.chatId === target.messageId,
+    );
+    if (!targetMessage) {
+      throw new Error(`Illustration message not found: ${target.messageId}`);
+    }
     if (
-      !resolved ||
-      !message ||
-      message.role !== "char" ||
+      targetMessage.role !== "char" ||
       !resolveIllustrationSettings(
         settingsStore.state.illustration,
-        resolved.char.illustration,
+        targetChar.illustration,
       ).enabled
     )
       return;
-    if (!findIllustrationMarkers(message.data).length) return;
-    const originalData = message.data,
-      originalBranch = resolved.chat.activeBranchId;
+    if (!findIllustrationMarkers(targetMessage.data).length) return;
+    const originalData = targetMessage.data,
+      originalBranch = targetChat.activeBranchId;
     await characterStore.flush();
     await messageStore.flush();
     const persistedChat = await (
       await getSqlStorage()
     ).loadChat(target.chatId, { messageLimit: 1 });
-    resolved = resolveTarget(target);
-    message = resolved?.chat.message.find((m) => m.chatId === target.messageId);
+    // Re-read stable IDs after persistence; hydration or user edits may replace the resident objects.
+    // 한국어: 저장 중 적재 갱신·사용자 편집으로 객체가 바뀔 수 있으므로 안정적인 ID로 다시 조회.
+    targetChar = characterStore.getById(target.characterId);
+    targetChat = targetChar?.chats?.find((chat) => chat.id === target.chatId);
+    targetMessage = targetChat?.message.find(
+      (message) => message.chatId === target.messageId,
+    );
     if (
       !persistedChat ||
-      !resolved ||
-      !message ||
-      message.data !== originalData ||
-      resolved.chat.activeBranchId !== originalBranch ||
+      !targetChar ||
+      targetChar.type === "group" ||
+      !targetChat ||
+      !targetMessage ||
+      targetMessage.data !== originalData ||
+      targetChat.activeBranchId !== originalBranch ||
       (originalBranch && originalBranch !== persistedChat.activeBranchId)
     )
       return;
     // Newly created chats have no resident branch ID until their first SQL hydration.
-    resolved.chat.activeBranchId = persistedChat.activeBranchId;
+    targetChat.activeBranchId = persistedChat.activeBranchId;
     const items = prepareIllustrations(
-      message,
+      targetMessage,
       v4,
       persistedChat.activeBranchId,
       usesAppIllustrationExecutor() ? "app" : "server",
       appRunId,
     );
-    await messageStore.commitMessages(target.chatId, [message], [], true);
+    await messageStore.commitMessages(target.chatId, [targetMessage], [], true);
     await messageStore.flush();
     for (const item of items) {
       const slot = { ...target, illustrationId: item.id };
