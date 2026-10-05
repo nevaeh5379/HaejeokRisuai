@@ -219,6 +219,18 @@ export async function countTokenTexts(texts: string[]): Promise<number[]> {
   return results;
 }
 
+/**
+ * Tokenizes text with the effective model and existing tokenizer/cache configuration.
+ *
+ * 한국어: 적용 모델과 기존 토큰 계산기·캐시 설정으로 텍스트를 토큰화하는 함수.
+ *
+ * @param data - Text to tokenize. / 토큰화할 텍스트.
+ * @param modelOverride - Optional model used for tokenizer selection and cache identity. / 계산기 선택·캐시 식별에 사용할 선택적 모델.
+ * @returns Encoded token IDs in the tokenizer's native array format. / 토큰 계산기의 배열 형식으로 반환한 토큰 ID.
+ * @remarks
+ * The override lets illustration prompts use the submodel budget without changing the selected preset.
+ * 한국어: 모델 변경값으로 선택된 프리셋을 바꾸지 않고 삽화 프롬프트의 보조 모델 한도를 계산.
+ */
 export async function encode(
   data: string,
   modelOverride?: string,

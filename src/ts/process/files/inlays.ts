@@ -34,6 +34,18 @@ export function resetInlayRemoteWriteState() {
   remoteWriteFailed = false;
 }
 
+/**
+ * Stores an inlay using either strict durable writes or the legacy best-effort remote cache path.
+ *
+ * 한국어: 엄격한 영구 저장 또는 기존 원격 캐시 방식으로 인레이를 저장하는 함수.
+ *
+ * @param id - Inlay ID referenced by message tokens. / 메시지 토큰에서 참조할 인레이 ID.
+ * @param asset - Media metadata and content. / 미디어 메타데이터·내용.
+ * @param durable - Requires remote storage or persistent local cache to succeed before returning. / 반환 전에 원격 저장·로컬 영구 캐시 성공을 요구할지 여부.
+ * @remarks
+ * Durable illustration saves propagate failures so an unsaved image cannot replace the old token.
+ * 한국어: 삽화 영구 저장 실패를 호출부에 전달해 저장되지 않은 그림으로 기존 토큰을 교체하는 상황을 방지.
+ */
 async function writeInlayStorage(
   id: string,
   asset: InlayAsset,
@@ -147,6 +159,15 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   return null;
 }
 
+/**
+ * Decodes image bytes and delegates resizing, PNG encoding and storage to the browser inlay writer.
+ *
+ * 한국어: 이미지 바이트를 해석하고 크기 조절·PNG 변환·저장을 브라우저 인레이 작성기로 넘기는 함수.
+ *
+ * @param data - Source image bytes. / 원본 이미지 바이트.
+ * @param arg - Optional name, source extension, ID and durable-save requirement. / 선택적 이름·원본 확장자·ID·영구 저장 요구 설정.
+ * @returns Saved inlay ID. / 저장된 인레이 ID.
+ */
 export async function writeInlayImageFromBytes(
   data: Uint8Array,
   arg: { name?: string; ext?: string; id?: string; durable?: boolean } = {},
@@ -165,6 +186,18 @@ export async function writeInlayImageFromBytes(
   }
 }
 
+/**
+ * Scales an image to at most 1024 squared pixels, encodes PNG and saves it as an inlay.
+ *
+ * 한국어: 이미지를 최대 1024×1024 픽셀 수로 줄이고 PNG로 변환해 인레이로 저장하는 함수.
+ *
+ * @param imgObj - Loaded or loading image element. / 로딩 중이거나 로딩된 이미지 요소.
+ * @param arg - Optional name, extension, ID and durable-save requirement. / 선택적 이름·확장자·ID·영구 저장 요구 설정.
+ * @returns Saved inlay ID after the selected storage path succeeds. / 선택한 저장 경로 성공 후 인레이 ID.
+ * @remarks
+ * Releases event handlers and canvas backing memory even when decoding or persistence fails.
+ * 한국어: 이미지 해석·저장 실패 시에도 이벤트 핸들러·캔버스 메모리를 해제.
+ */
 export async function writeInlayImage(
   imgObj: HTMLImageElement,
   arg: { name?: string; ext?: string; id?: string; durable?: boolean } = {},
@@ -178,6 +211,11 @@ export async function writeInlayImage(
   }
   try {
     await new Promise((resolve, reject) => {
+      /**
+       * Validates decoded dimensions and draws the aspect-preserving inlay-sized image.
+       *
+       * 한국어: 해석된 크기를 검증하고 비율을 유지한 인레이 크기로 그림을 그리는 함수.
+       */
       const processImage = () => {
         drawHeight = imgObj.naturalHeight;
         drawWidth = imgObj.naturalWidth;

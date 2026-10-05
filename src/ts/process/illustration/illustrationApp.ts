@@ -49,6 +49,13 @@ const submissions = new Set<string>();
 const actions = new Set<string>();
 const serverSubmissions = new IllustrationQueue();
 
+/**
+ * Resolves a stable chat target from the currently resident character store.
+ *
+ * 한국어: 안정적인 대상 ID로 현재 캐릭터 저장소에 적재된 채팅을 찾는 함수.
+ *
+ * @returns A one-to-one character/chat pair, or null for groups or missing targets. / 1:1 캐릭터·채팅 쌍 또는 그룹·삭제된 대상일 때 null.
+ */
 function resolveTarget(
   target: Pick<IllustrationTarget, "characterId" | "chatId">,
 ) {
@@ -61,6 +68,13 @@ function resolveTarget(
     : null;
 }
 
+/**
+ * Reads the target character's current effective illustration settings.
+ *
+ * 한국어: 대상 캐릭터의 현재 범용·개별 설정을 합쳐 실제 삽화 설정을 읽는 함수.
+ *
+ * @throws When the resident chat no longer exists. / 적재된 대상 채팅이 사라진 경우.
+ */
 function getSettings(target: IllustrationTarget) {
   const resolved = resolveTarget(target);
   if (!resolved) throw new Error("The illustration chat was removed");
@@ -70,6 +84,19 @@ function getSettings(target: IllustrationTarget) {
   );
 }
 
+/**
+ * Persists a slot transition against fresh SQL data and mirrors it to a matching resident message.
+ *
+ * 한국어: 최신 SQL 데이터를 검증해 삽화 상태 변경을 저장하고 일치하는 적재 메시지에도 반영하는 함수.
+ *
+ * @param target - Stable slot identifiers. / 안정적인 삽화 대상 ID.
+ * @param version - Expected job version. / 일치해야 하는 작업 버전.
+ * @param change - Mutation applied to a validated record. / 검증한 정보에 적용할 변경 함수.
+ * @returns Updated record, or null for an edited, deleted or switched target. / 갱신 정보 또는 편집·삭제·분기 전환 시 null.
+ * @remarks
+ * Rechecks resident edits after asynchronous reads and rebuilds changes on SQL revision conflicts.
+ * 한국어: 비동기 조회 후 메모리상의 편집을 다시 확인하고 SQL 리비전 충돌 시 변경을 새로 준비.
+ */
 async function update(
   target: IllustrationTarget,
   version: number,
@@ -141,6 +168,17 @@ async function update(
   return result;
 }
 
+/**
+ * Prepares a bounded submodel prompt for this slot using captured or historical context.
+ *
+ * 한국어: 캡처한 문맥 또는 과거 장면 문맥으로 해당 자리의 보조 모델 요청을 한도에 맞춰 준비하는 함수.
+ *
+ * @remarks
+ * Automatic jobs reuse the answer's actual lore/memory; explicit rewrites reconstruct current context.
+ * Token counting uses the selected submodel without changing the global model preset.
+ * 한국어: 자동 작업은 답변의 실제 로어·메모리를 재사용하고 명시적 재작성은 현재 설정으로 문맥을 재구성.
+ * 범용 모델 프리셋을 바꾸지 않고 선택한 보조 모델로 토큰 수를 계산.
+ */
 async function tagArguments(
   target: IllustrationTarget,
   record: IllustrationRecord,
@@ -202,6 +240,13 @@ async function tagArguments(
   return { ...arg, formated, staticModel: prepared.aiModel };
 }
 
+/**
+ * Selects app execution for local storage or browser-only Plugin/WebLLM submodels.
+ *
+ * 한국어: 로컬 저장소 또는 브라우저 전용 Plugin·WebLLM 보조 모델이면 앱 실행을 선택하는 함수.
+ *
+ * @returns False only when Node storage can use a server-capable submodel. / Node 저장소에서 서버 지원 보조 모델을 사용하는 경우에만 false.
+ */
 export function usesAppIllustrationExecutor(): boolean {
   if (!(forageStorage.realStorage instanceof NodeStorage)) return true;
   const { prepared } = prepareBrowserProviderContext(
@@ -216,6 +261,11 @@ export function usesAppIllustrationExecutor(): boolean {
 
 const runner = createIllustrationRunner({
   update,
+  /**
+   * Calls the submodel and flattens supported nonstreaming tag responses.
+   *
+   * 한국어: 보조 모델을 호출하고 지원되는 비스트리밍 태그 응답을 하나의 텍스트로 합치는 함수.
+   */
   createTags: async (target, record) => {
     const response = await requestChatDataMain(
       await tagArguments(target, record),
@@ -227,6 +277,11 @@ const runner = createIllustrationRunner({
       throw new Error("The submodel returned no image tags");
     return response.result;
   },
+  /**
+   * Combines scene tags with the target's current independent illustration prompts.
+   *
+   * 한국어: 장면 태그에 대상의 현재 삽화 전용 기본·네거티브 프롬프트를 적용하는 함수.
+   */
   prompts: async (tags, target) => {
     const settings = getSettings(target);
     return {
@@ -234,6 +289,11 @@ const runner = createIllustrationRunner({
       negativePrompt: settings.negativePrompt,
     };
   },
+  /**
+   * Lazily loads the image core/browser adapter and generates an image for the latest character.
+   *
+   * 한국어: 이미지 공통 로직·브라우저 어댑터를 지연 로딩해 최신 대상 캐릭터의 그림을 생성하는 함수.
+   */
   createImage: async (prompt, negative, target) => {
     const { executeImageGeneration } =
       await import("@risuai/protocol/dist/imageGeneration.mjs");
@@ -251,6 +311,11 @@ const runner = createIllustrationRunner({
     if (!image) throw new Error("The image provider returned no image");
     return image;
   },
+  /**
+   * Validates a base64 image data URL and durably saves it as an inlay before returning its ID.
+   *
+   * 한국어: Base64 그림 데이터 URL을 검증하고 인레이 영구 저장 후 ID를 반환하는 함수.
+   */
   storeImage: async (data) => {
     const { writeInlayImageFromBytes } = await import("../files/inlays");
     if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(data))
@@ -261,11 +326,20 @@ const runner = createIllustrationRunner({
       { ext: mime, durable: true },
     );
   },
+  /**
+   * Lazily loads asset cleanup for a newly orphaned inlay.
+   *
+   * 한국어: 새로 생긴 미사용 인레이를 정리하는 자산 모듈을 지연 로딩하는 함수.
+   */
   removeImage: async (id) => {
     const { removeInlayAsset } = await import("../files/inlays");
     await removeInlayAsset(id);
   },
-  // Provider bodies may echo credentials. Keep only safe actionable errors in persisted metadata.
+  /**
+   * Keeps allowlisted actionable errors and hides provider responses that may contain credentials.
+   *
+   * 한국어: 허용한 해결 가능한 오류만 남기고 인증 정보가 포함될 수 있는 제공자 응답을 숨기는 함수.
+   */
   summarizeError: (error) => {
     const text =
       error instanceof Error ? error.message : "Illustration generation failed";
@@ -277,6 +351,17 @@ const runner = createIllustrationRunner({
   },
 });
 
+/**
+ * Sends an authenticated illustration API request and checks its response shape.
+ *
+ * 한국어: 인증된 삽화 API 요청을 보내고 응답 형식을 확인하는 함수.
+ *
+ * @param storage - Node storage owning the API client and authentication. / API 클라이언트·인증을 소유한 Node 저장소.
+ * @param path - Illustration API path. / 삽화 API 경로.
+ * @param body - Optional POST body; omission selects GET. / POST 본문, 생략 시 GET 요청.
+ * @returns Server execution identity and slot state. / 서버 실행 식별자·삽화 상태.
+ * @throws When the request fails or the response lacks required fields. / 요청 실패 또는 필수 응답 필드 누락 시.
+ */
 async function serverRequest(
   storage: NodeStorage,
   path: string,
@@ -300,6 +385,17 @@ async function serverRequest(
   return data;
 }
 
+/**
+ * Deduplicates and dispatches a slot version to the app queue or detached Node queue.
+ *
+ * 한국어: 삽화 버전의 중복 요청을 막고 앱 큐 또는 독립 Node 큐로 보내는 함수.
+ *
+ * @remarks
+ * Prepares server tag requests sequentially and releases captured context after dispatch/execution.
+ * A lost acceptance response queries server state rather than overwriting a potentially running job.
+ * 한국어: 서버 태그 요청을 순차 준비하고 전송·실행 종료 후 캡처 문맥을 해제.
+ * 접수 응답 유실 시 서버 상태를 조회해 실행 중일 수 있는 작업을 실패 상태로 덮어쓰지 않는 방식.
+ */
 async function submit(
   target: IllustrationTarget,
   item: Illustration,
@@ -380,6 +476,19 @@ async function submit(
   }
 }
 
+/**
+ * Prepares and schedules all markers only after a new one-to-one answer has fully completed.
+ *
+ * 한국어: 새 1:1 답변이 완전히 끝난 뒤 모든 삽화 표식을 준비하고 실행을 예약하는 함수.
+ *
+ * @param target - IDs captured for the completed answer. / 완성된 답변에서 캡처한 대상 ID.
+ * @param context - Description/persona and actual lore/memory from that generation. / 해당 생성에서 사용한 설명·페르소나·실제 로어·메모리.
+ * @remarks
+ * Flushes the answer first, revalidates its text/branch, then durably commits tokens before queueing.
+ * Submits background jobs without awaiting image completion so subsequent chats remain available.
+ * 한국어: 답변 저장 후 본문·분기를 다시 확인하고 대기 토큰을 영구 저장한 뒤 큐에 등록.
+ * 그림 완료를 기다리지 않는 백그라운드 작업으로 다음 채팅을 허용.
+ */
 export async function enqueueAnswerIllustrations(
   target: Omit<IllustrationTarget, "illustrationId">,
   context: IllustrationContext,
@@ -443,6 +552,19 @@ export async function enqueueAnswerIllustrations(
   }
 }
 
+/**
+ * Starts an explicit retry, same-tag regeneration or full tag rewrite for a slot.
+ *
+ * 한국어: 삽화 자리의 재시도·같은 태그 재생성·태그부터 다시 작성을 시작하는 함수.
+ *
+ * @param target - Stable slot identifiers. / 안정적인 삽화 대상 ID.
+ * @param action - Requested retry/regenerate/rewrite operation. / 재시도·재생성·태그 재작성 조작.
+ * @remarks
+ * Deduplicates clicks, increments the version and keeps the old image until replacement succeeds.
+ * Only a rewrite discards tags/prompts; the new task uses the currently selected executor.
+ * 한국어: 중복 클릭 방지·버전 증가 후 교체 성공까지 기존 그림을 유지.
+ * 태그 재작성만 기존 태그·프롬프트를 비우며 새 작업은 현재 선택한 실행 주체를 사용.
+ */
 export async function illustrationAction(
   target: IllustrationTarget,
   action: IllustrationAction,
@@ -496,6 +618,13 @@ export async function illustrationAction(
   }
 }
 
+/**
+ * Queries Node job state and refreshes the resident message only when version/branch/text still match.
+ *
+ * 한국어: Node 작업 상태를 조회하고 버전·분기·본문이 일치할 때만 적재 메시지를 갱신하는 함수.
+ *
+ * @returns Server state, or null outside Node storage or when the API request fails. / 서버 상태 또는 Node 저장소가 아니거나 API 요청 실패 시 null.
+ */
 export async function queryServerIllustration(
   target: IllustrationTarget,
 ): Promise<IllustrationJobResponse | null> {
@@ -530,7 +659,15 @@ export async function queryServerIllustration(
   return result;
 }
 
-/** Viewing a historical message may mark an abandoned job; it never starts generation. */
+/**
+ * Reconciles a busy slot on view without automatically starting a generation request.
+ *
+ * 한국어: 화면에 보인 처리 중 삽화의 상태를 확인하되 자동 생성 요청은 시작하지 않는 함수.
+ *
+ * @remarks
+ * Polls server jobs and marks abandoned app jobs interrupted so the user can retry explicitly.
+ * 한국어: 서버 작업은 조회하고 중단된 앱 작업은 interrupted로 표시해 사용자 재시도를 기다리는 방식.
+ */
 export async function recoverIllustration(target: IllustrationTarget) {
   const resolved = resolveTarget(target);
   const message = resolved?.chat.message.find(

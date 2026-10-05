@@ -12,7 +12,26 @@ import { risuChatParser } from "../scripts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../../polyfill";
 
-/** Explicit rewrites use current settings and cached memories ending before this scene. No summarizer is called. */
+/**
+ * Reconstructs optional context for an explicit tag rewrite at a historical illustration slot.
+ *
+ * 한국어: 과거 삽화 자리의 명시적 태그 재작성을 위해 선택한 문맥을 재구성하는 함수.
+ *
+ * @param storage - Storage used for bounded history/cache reads. / 제한된 이력·캐시 조회용 저장소.
+ * @param target - Stable target identifiers. / 안정적인 대상 ID.
+ * @param char - Current character configuration. / 현재 캐릭터 설정.
+ * @param chat - Chat metadata for module and persona selection. / 모듈·페르소나 선택에 사용할 채팅 메타데이터.
+ * @param message - Target answer. / 대상 답변.
+ * @param item - Slot defining the scene boundary. / 장면의 끝을 지정하는 삽화 자리.
+ * @param position - Absolute answer position in storage. / 저장소에서 답변의 절대 위치.
+ * @param settings - Current context inclusion settings. / 현재 문맥 포함 설정.
+ * @returns Selected descriptions, read-only lore and eligible cached memory. / 선택한 설명·읽기 전용 로어·사용 가능한 캐시 메모리.
+ * @remarks
+ * Lore scanning uses only history and the answer prefix; cached summaries must precede the answer.
+ * Does not update lore activation flags or run a memory summarizer.
+ * 한국어: 이전 대화·표식 직전 답변만으로 로어를 조회하고 답변 이전 메시지에 해당하는 캐시 요약만 사용.
+ * 로어 활성화 상태 변경과 메모리 요약 생성은 실행하지 않는 방식.
+ */
 export async function currentIllustrationContext(
   storage: ISqlStorage,
   target: IllustrationTarget,
@@ -24,6 +43,11 @@ export async function currentIllustrationContext(
   settings: IllustrationSettings,
 ): Promise<IllustrationContext> {
   const chatTarget = { characterId: target.characterId, chatId: target.chatId };
+  /**
+   * Expands chat placeholders using the explicit character/chat target.
+   *
+   * 한국어: 명시한 캐릭터·채팅 대상으로 문맥 텍스트의 치환 구문을 해석하는 함수.
+   */
   const parse = (text: string) =>
     risuChatParser(text, { chara: char, chatTarget });
   const context: IllustrationContext = {

@@ -51,7 +51,20 @@ export function commitSqlChanges(
   return trackedOperation;
 }
 
-/** Illustration updates must re-read on conflicts, rather than rebase a stale message body. */
+/**
+ * Serializes an illustration message mutation with other SQL saves and rebuilds it on conflicts.
+ *
+ * 한국어: 다른 SQL 저장과 삽화 메시지 변경을 순차 처리하고 충돌 시 변경 내용을 다시 준비하는 함수.
+ *
+ * @param storage - Storage instance whose save queue and revision are used. / 저장 큐·리비전을 사용할 저장소.
+ * @param prepare - Fresh read/validation producing a commit and result, or null when invalidated. / 최신 조회·검증 후 저장·결과를 만들거나 무효화 시 null을 반환하는 함수.
+ * @returns The durably committed result, or null when preparation rejects the target. / 영구 저장한 결과 또는 준비 단계에서 대상 무효화 시 null.
+ * @remarks
+ * Captures the revision before reading, retries at most three times and reruns prepare each time.
+ * Never rebases an already prepared message body onto a newer revision.
+ * 한국어: 조회 전에 리비전을 확보하고 최대 3회 시도하며 매번 prepare를 다시 실행.
+ * 이미 준비한 메시지 본문을 새 리비전에 그대로 적용하지 않는 방식.
+ */
 export function mutateSqlMessage<T>(
   storage: ISqlStorage,
   prepare: () => Promise<{ commit: SqlCommit; result: T } | null>,

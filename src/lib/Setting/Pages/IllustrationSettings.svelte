@@ -16,6 +16,17 @@
     const { prepared } = prepareBrowserProviderContext({ formated: [], bias: {} }, "submodel");
     return prepared.modelInfo.format === LLMFormat.Plugin || prepared.modelInfo.format === LLMFormat.WebLLM;
   });
+  /**
+   * Updates the owning settings store or deletes a character override to restore inheritance.
+   *
+   * 한국어: 설정 소유 저장소를 갱신하거나 캐릭터 변경값을 삭제해 범용 설정 상속을 복원하는 함수.
+   *
+   * @param key - Illustration setting being edited. / 편집할 삽화 설정 키.
+   * @param value - New value, or undefined to inherit for a character. / 새 값 또는 캐릭터 상속 복원용 undefined.
+   * @remarks
+   * Global changes use settingsStore.set so deferred SQL persistence detects the new setting.
+   * 한국어: 새 범용 설정을 지연 SQL 저장에서 감지하도록 settingsStore.set으로 변경.
+   */
   function set<K extends keyof IllustrationSettings>(key: K, value: IllustrationSettings[K] | undefined) {
     if (characterId && char) {
       char.illustration = { ...char.illustration, [key]: value };

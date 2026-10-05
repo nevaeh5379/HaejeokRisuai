@@ -246,6 +246,19 @@ class MessageStore implements FlushableStore {
     }
   }
 
+  /**
+   * Persists message changes and necessary manifest updates for the chat's resident window.
+   *
+   * 한국어: 채팅에 적재된 메시지 구간의 변경과 필요한 목록 갱신을 저장하는 메서드.
+   *
+   * @param chatId - Stable owning chat ID. / 메시지가 속한 안정적인 채팅 ID.
+   * @param msgs - Messages to upsert. / 추가·갱신할 메시지.
+   * @param previousMessageIds - Earlier IDs used to detect removed messages. / 삭제된 메시지를 찾을 이전 ID 목록.
+   * @param requireDurable - Rethrows commit failure for callers that must confirm persistence. / 저장 성공을 확인해야 하는 호출부에 실패를 다시 전달할지 여부.
+   * @remarks
+   * Illustration scheduling requires durable token/metadata commits before generation is submitted.
+   * 한국어: 삽화 예약은 생성 접수 전에 토큰·메타데이터의 영구 저장 성공을 요구.
+   */
   async commitMessages(
     chatId: string,
     msgs: Message[],

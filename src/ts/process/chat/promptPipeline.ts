@@ -80,6 +80,15 @@ function createRenderContext(
   };
 }
 
+/**
+ * Builds bounded dialogue history after reserving tokens for output, prompt sections and appended instructions.
+ *
+ * 한국어: 출력·프롬프트 구간·추가 지침의 토큰을 예약한 뒤 한도에 맞는 이전 대화를 구성하는 함수.
+ *
+ * @param options - Generation target, tokenizer and runtime options. / 생성 대상·토큰 계산기·실행 설정.
+ * @param sections - Prepared prompt sections and active lore. / 준비된 프롬프트 구간·활성 로어.
+ * @param appendedInstructions - Extra system instructions, including illustration marker usage. / 삽화 표식 사용을 포함한 추가 시스템 지침.
+ */
 async function buildHistoryStage(
   options: BuildGenerationPromptOptions,
   sections: PreparedPromptSections,
@@ -214,6 +223,19 @@ export interface BuildGenerationPromptOptions {
   generation?: ChatGenerationOverrides;
 }
 
+/**
+ * Assembles the main chat prompt and captures context actually used for automatic illustrations.
+ *
+ * 한국어: 메인 채팅 프롬프트를 구성하고 자동 삽화에 사용할 실제 생성 문맥을 캡처하는 함수.
+ *
+ * @param options - Character/chat snapshots and prompt-generation dependencies. / 캐릭터·채팅 사본과 프롬프트 생성 의존성.
+ * @returns Prepared prompt data, or an unsuccessful result when history/memory preparation fails. / 준비된 프롬프트 정보 또는 이력·메모리 준비 실패 결과.
+ * @remarks
+ * Enabled one-to-one chats reserve and append marker instructions. The returned illustration context
+ * reuses this request's descriptions, persona, active lore and included memory without rerunning them.
+ * 한국어: 삽화를 켠 1:1 채팅은 표식 지침 토큰을 예약하고 지침을 추가.
+ * 반환한 삽화 문맥은 해당 요청의 설명·페르소나·활성 로어·실제 포함 메모리를 재실행 없이 재사용.
+ */
 export async function buildGenerationPrompt(
   options: BuildGenerationPromptOptions,
 ) {

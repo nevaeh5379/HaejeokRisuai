@@ -45,6 +45,16 @@ export function buildOpenAILegacyInstructPrompt(
   );
 }
 
+/**
+ * Prepares or executes a legacy OpenAI completions request from the formatted chat prompt.
+ *
+ * 한국어: 형식화한 채팅 프롬프트로 기존 OpenAI completions 요청을 준비하거나 실행하는 함수.
+ *
+ * @param arg - Provider arguments, including custom URL and preview selection. / 사용자 URL·미리보기 선택을 포함한 제공자 인자.
+ * @remarks
+ * Preview returns final URL/headers/body without executing so Node illustration jobs can run independently.
+ * 한국어: 미리보기는 실행 없이 최종 URL·헤더·본문을 반환해 Node 삽화 작업의 독립 실행을 지원.
+ */
 export async function requestOpenAILegacyInstruct(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {

@@ -111,7 +111,17 @@ function commitRecentMessages(selectedChar: number, selectedChat: number) {
 }
 
 export interface FinalizeChatGenerationOptions {
+  /**
+   * Carries the completed request's scene strings without retaining its full session.
+   *
+   * 한국어: 전체 세션을 보관하지 않고 완료 요청의 장면 문자열만 전달하는 문맥.
+   */
   illustrationContext?: IllustrationContext;
+  /**
+   * Identifies the final answer independently of later selection changes.
+   *
+   * 한국어: 이후 선택 변경과 무관하게 최종 답변을 지정하는 안정적인 대상 ID.
+   */
   illustrationTarget?: Omit<IllustrationTarget, "illustrationId">;
   req: ChatModelResponse;
   result: string;
@@ -178,6 +188,19 @@ function completeGeneration(options: FinalizeChatGenerationOptions) {
   commitRecentMessages(options.selectedChar, options.selectedChat);
 }
 
+/**
+ * Handles continuation/resend decisions, completes chat effects and schedules eligible illustrations.
+ *
+ * 한국어: 이어쓰기·재전송 판단과 채팅 후처리를 끝내고 삽화 작업을 예약하는 함수.
+ *
+ * @param options - Response, lifecycle hooks and captured final-answer target/context. / 응답·생성 수명 주기 함수·캡처한 최종 답변 대상 및 문맥.
+ * @returns The lifecycle result, including any delegated continuation/resend result. / 이어쓰기·재전송 처리 결과를 포함한 생성 수명 주기 결과.
+ * @remarks
+ * Illustration scheduling occurs only after all continuations and final effects, and is not awaited.
+ * It therefore does not hold the main chat busy while images are generated.
+ * 한국어: 모든 이어쓰기·최종 후처리가 끝난 뒤 삽화를 예약하며 이미지 완료는 기다리지 않는 방식.
+ * 그림 생성이 메인 채팅의 처리 중 상태를 계속 유지하지 않도록 분리.
+ */
 export async function finalizeChatGeneration(
   options: FinalizeChatGenerationOptions,
 ): Promise<boolean> {

@@ -25,23 +25,79 @@ import {
   type ImageGenerationSettings,
 } from "../../../packages/protocol/dist/imageGeneration.cjs";
 
+/**
+ * Extends paged message reads with settings, character metadata and SQL revisions.
+ *
+ * 한국어: 메시지 페이지 조회에 설정·캐릭터 메타데이터·SQL 리비전 조회를 추가한 서버 저장소 계약.
+ */
 type Storage = IllustrationStorageReader & {
+  /**
+   * Loads character metadata used to validate chat ownership and generation settings.
+   *
+   * 한국어: 채팅 소속·생성 설정 검증에 사용할 캐릭터 메타데이터를 읽는 함수.
+   */
   loadCharacter(id: string): Promise<any>;
+  /**
+   * Reads one setting without retaining the full application database.
+   *
+   * 한국어: 앱 데이터베이스 전체를 보관하지 않고 설정 한 항목을 읽는 함수.
+   */
   loadSettingKey(key: string): Promise<unknown>;
+  /**
+   * Reads the SQL revision used to reject stale message commits.
+   *
+   * 한국어: 오래된 메시지 저장을 거부하기 위한 SQL 리비전을 읽는 함수.
+   */
   getStorageSyncSummary(): Promise<{ revision: number }>;
 };
 
+/**
+ * Injects server persistence, image transport and authenticated proxy URL policy.
+ *
+ * 한국어: 서버 저장·이미지 전송·인증 프록시 URL 정책을 주입하는 의존성 계약.
+ */
 interface Dependencies {
+  /**
+   * Resolves the currently active SQL storage backend.
+   *
+   * 한국어: 현재 활성 SQL 저장소를 찾는 함수.
+   */
   getStorage(): Storage;
+  /**
+   * Commits a revision-guarded mutation through the existing SQL notification path.
+   *
+   * 한국어: 기존 SQL 변경 알림 경로로 리비전 검증 변경을 저장하는 함수.
+   */
   commit(payload: unknown): Promise<unknown>;
   imageRuntime: ImageGenerationRuntime;
+  /**
+   * Saves image data durably and returns its inlay ID.
+   *
+   * 한국어: 이미지 데이터를 영구 저장하고 인레이 ID를 반환하는 함수.
+   */
   storeImage(data: string): Promise<string>;
+  /**
+   * Removes a newly stored image when its message update is invalidated.
+   *
+   * 한국어: 메시지 갱신이 무효화된 새 그림을 제거하는 함수.
+   */
   removeImage(id: string): Promise<void>;
   fetchImpl?: typeof fetch;
-  /** Uses the same URL policy as the existing authenticated model proxy. */
+  /**
+   * Validates URLs using the existing authenticated model proxy policy.
+   *
+   * 한국어: 기존 인증 모델 프록시 정책으로 요청 URL을 검증하는 함수.
+   */
   sanitizeUrl?(url: string): string | null;
 }
 
+/**
+ * Validates all target IDs at the HTTP boundary and copies only accepted fields.
+ *
+ * 한국어: HTTP 입력의 대상 ID를 검증하고 허용된 필드만 복사하는 함수.
+ *
+ * @throws For missing, oversized or control-character-containing IDs. / 누락·길이 초과·제어 문자 포함 ID 입력 시.
+ */
 function normalizeTarget(value: any): IllustrationTarget {
   const target = {} as IllustrationTarget;
   for (const key of [
@@ -62,6 +118,15 @@ function normalizeTarget(value: any): IllustrationTarget {
   return target;
 }
 
+/**
+ * Extracts tag text from supported provider response shapes, excluding thinking blocks.
+ *
+ * 한국어: 지원하는 제공자 응답 형식에서 사고 블록을 제외한 태그 텍스트를 추출하는 함수.
+ *
+ * @param data - Parsed JSON response from the submodel. / 보조 모델의 파싱된 JSON 응답.
+ * @returns Joined visible text; the shared runner performs final tag cleanup. / 화면용 텍스트를 합친 결과, 최종 태그 정리는 공통 실행기에서 처리.
+ * @throws When no supported text field or block list exists. / 지원하는 텍스트 필드·블록 목록이 없는 경우.
+ */
 export function decodeIllustrationTagResponse(data: any): string {
   const result =
     data?.choices?.[0]?.message?.content ??
@@ -93,12 +158,36 @@ export function decodeIllustrationTagResponse(data: any): string {
   throw new Error("The submodel returned no image tags");
 }
 
+/**
+ * Creates a detached server illustration queue independent of the main chat job lock.
+ *
+ * 한국어: 메인 채팅 작업 잠금과 독립적으로 실행되는 서버 삽화 큐를 만드는 함수.
+ *
+ * @param deps - SQL, transport, asset storage and URL validation adapters. / SQL·전송·자산 저장·URL 검증 어댑터.
+ * @returns Job acceptance, state queries, route registration and pending-job checks. / 작업 접수·상태 조회·라우트 등록·대기 작업 조회 기능.
+ * @remarks
+ * Accepted jobs outlive the client connection. Prepared requests, including credentials, stay in RAM
+ * only until completion; persisted metadata contains progress and results, not those requests.
+ * 한국어: 접수 작업은 클라이언트 연결 종료 후에도 계속 진행.
+ * 인증 정보를 포함한 준비 요청은 종료까지 메모리에만 보관하며 저장 메타데이터에는 상태·결과만 기록.
+ */
 export function createNodeIllustrationExecutor(deps: Dependencies) {
   const runId = randomUUID();
   const inputs = new Map<string, IllustrationTagRequest | undefined>();
   const accepting = new Set<string>();
   let acceptance: Promise<unknown> = Promise.resolve();
 
+  /**
+   * Reloads and commits a slot transition, retrying up to five times on SQL revision conflicts.
+   *
+   * 한국어: 삽화 상태 변경을 다시 읽어 저장하고 SQL 리비전 충돌 시 최대 5회 시도하는 함수.
+   *
+   * @param target - Stable slot identifiers. / 안정적인 삽화 대상 ID.
+   * @param version - Expected persisted version. / 일치해야 하는 저장 버전.
+   * @param change - Transition applied to the latest loaded record. / 최신 정보에 적용할 상태 변경.
+   * @param interrupt - Allows recovery/actions to bypass text/branch guards while retaining the version check. / 복구·조작 시 버전 검증은 유지하고 본문·분기 검증을 생략할지 여부.
+   * @returns Updated record, or null if missing or invalidated. / 갱신 정보 또는 대상 누락·무효화 시 null.
+   */
   async function update(
     target: IllustrationTarget,
     version: number,
@@ -145,6 +234,13 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
     return null;
   }
 
+  /**
+   * Checks character/chat ownership and resolves current global/character illustration settings.
+   *
+   * 한국어: 캐릭터·채팅 소속을 검증하고 현재 범용·캐릭터 삽화 설정을 합치는 함수.
+   *
+   * @throws For deleted targets or unsupported group chats. / 삭제된 대상 또는 지원하지 않는 그룹 채팅인 경우.
+   */
   async function settings(target: IllustrationTarget) {
     const storage = deps.getStorage();
     const char = await storage.loadCharacter(target.characterId);
@@ -165,6 +261,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
 
   const runner = createIllustrationRunner({
     update,
+    /**
+     * Executes the transient submodel request, including Echo delays and Horde result polling.
+     *
+     * 한국어: 작업 중 임시 보관한 보조 모델 요청을 실행하고 Echo 지연·Horde 결과 조회도 처리하는 함수.
+     */
     createTags: async (target, record) => {
       const request = inputs.get(
         `${illustrationJobKey(target)}:${record.item.version}`,
@@ -209,6 +310,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
       }
       return decodeIllustrationTagResponse(data);
     },
+    /**
+     * Applies current illustration base/negative prompts to generated scene tags.
+     *
+     * 한국어: 생성된 장면 태그에 현재 삽화 기본·네거티브 프롬프트를 적용하는 함수.
+     */
     prompts: async (tags, target) => {
       const { illustration } = await settings(target);
       return {
@@ -216,6 +322,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         negativePrompt: illustration.negativePrompt,
       };
     },
+    /**
+     * Reads only image-provider settings and invokes the shared core with the Node runtime.
+     *
+     * 한국어: 이미지 제공자 설정만 읽어 Node 실행 어댑터로 공통 그림 생성 로직을 호출하는 함수.
+     */
     createImage: async (prompt, negative, target) => {
       const { char } = await settings(target);
       const storage = deps.getStorage();
@@ -239,6 +350,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
     },
     storeImage: deps.storeImage,
     removeImage: deps.removeImage,
+    /**
+     * Persists allowlisted summaries while hiding arbitrary provider responses and secrets.
+     *
+     * 한국어: 허용된 오류 요약만 저장하고 임의의 제공자 응답·인증 정보를 숨기는 함수.
+     */
     summarizeError: (error) => {
       const text = error instanceof Error ? error.message : "";
       return /^(Submodel HTTP \d+|The submodel returned no image tags|The submodel job (failed|timed out)|The image provider returned no image)$/.test(
@@ -249,6 +365,15 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
     },
   });
 
+  /**
+   * Returns persisted job state and marks server work absent from this process as interrupted.
+   *
+   * 한국어: 저장된 작업 상태를 반환하고 현재 프로세스에 없는 서버 작업을 중단 상태로 표시하는 함수.
+   *
+   * @remarks
+   * Does not restart jobs after a server restart; retries require an explicit action.
+   * 한국어: 서버 재시작 후 자동 재실행 없이 명시적 재시도를 기다리는 방식.
+   */
   async function get(
     target: IllustrationTarget,
   ): Promise<IllustrationJobResponse> {
@@ -277,6 +402,19 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
     return { runId, illustration: item };
   }
 
+  /**
+   * Serializes request acceptance, validates inputs and starts detached versioned work.
+   *
+   * 한국어: 요청 접수를 순차 처리하고 입력 검증 후 독립적인 버전별 작업을 시작하는 함수.
+   *
+   * @param raw - Submitted target, version, action and optional prepared tag request. / 요청 대상·버전·조작·선택적 준비 태그 요청.
+   * @returns Accepted persisted state without waiting for generation completion. / 생성 완료를 기다리지 않는 접수 상태 응답.
+   * @remarks
+   * Repeated initial submissions reuse existing terminal/pending work. Validates URL, headers,
+   * body and request size; forces nonstreaming tags and releases transient requests after completion.
+   * 한국어: 반복된 최초 접수는 기존 완료·실패·대기 작업을 재사용.
+   * URL·헤더·본문·요청 크기 검증 후 비스트리밍 태그 작성으로 고정하고 종료 후 임시 요청을 해제.
+   */
   function accept(
     raw: IllustrationJobRequest,
   ): Promise<IllustrationJobResponse> {
@@ -395,6 +533,18 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
     return task;
   }
 
+  /**
+   * Registers authenticated create/retry/query routes with caller-provided request guards.
+   *
+   * 한국어: 전달받은 요청 보호 미들웨어와 인증으로 삽화 생성·재시도·조회 라우트를 등록하는 함수.
+   *
+   * @param app - Express-compatible HTTP application. / Express 호환 HTTP 앱.
+   * @remarks
+   * Uses the supplied authentication, optional limiter and JSON parser. Accepted POST requests
+   * return HTTP 202; untrusted internal errors are replaced by safe messages.
+   * 한국어: 전달한 인증·선택적 요청 제한·JSON 파서를 사용.
+   * 접수된 POST 요청은 HTTP 202를 반환하고 내부 오류 내용은 안전한 안내로 대체.
+   */
   function registerRoutes(
     app: any,
     {
@@ -425,14 +575,12 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
               ),
             );
         } catch (error) {
-          res
-            .status(error instanceof TypeError ? 400 : 500)
-            .send({
-              error:
-                error instanceof TypeError
-                  ? error.message
-                  : "Unable to start the illustration",
-            });
+          res.status(error instanceof TypeError ? 400 : 500).send({
+            error:
+              error instanceof TypeError
+                ? error.message
+                : "Unable to start the illustration",
+          });
         }
       });
     }

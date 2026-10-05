@@ -1,6 +1,16 @@
 import { Buffer } from "buffer";
 
+/**
+ * Supplies platform-specific HTTP, reference-image and ZIP processing to the provider core.
+ *
+ * 한국어: 제공자 공통 로직에 플랫폼별 HTTP·참조 이미지·ZIP 처리를 제공하는 실행 계약.
+ */
 export interface ImageGenerationRuntime {
+  /**
+   * Sends a JSON request and returns parsed provider data or raw image bytes.
+   *
+   * 한국어: JSON 요청을 보내 파싱한 제공자 응답 또는 이미지 원시 바이트를 반환하는 함수.
+   */
   fetchJson(
     url: string,
     options: {
@@ -15,12 +25,41 @@ export interface ImageGenerationRuntime {
     status?: number;
     headers?: Record<string, string>;
   }>;
+  /**
+   * Sends a native/raw request, including multipart bodies and image downloads.
+   *
+   * 한국어: 멀티파트 본문·그림 다운로드를 포함한 네이티브·원시 요청을 보내는 함수.
+   */
   fetchNative(url: string, options?: RequestInit): Promise<Response>;
+  /**
+   * Reads a stored reference or character image by asset path.
+   *
+   * 한국어: 자산 경로로 저장된 참조·캐릭터 이미지를 읽는 함수.
+   */
   readImage(path?: string): Promise<Uint8Array | null>;
+  /**
+   * Fits base64 reference bytes into the provider's required reference canvas.
+   *
+   * 한국어: Base64 참조 그림을 제공자가 요구하는 참조 캔버스에 맞추는 함수.
+   */
   resizeReference(base64: string): Promise<string>;
+  /**
+   * Extracts image data from a provider's ZIP response.
+   *
+   * 한국어: 제공자의 ZIP 응답에서 이미지 데이터를 추출하는 함수.
+   */
   unzipImage(data: Uint8Array): Promise<string>;
 }
 
+/**
+ * Collects existing image-provider configuration independently of illustration instructions.
+ *
+ * 한국어: 삽화 지침과 분리해 기존 이미지 제공자 연결·생성 설정을 모은 계약.
+ *
+ * @remarks
+ * May include API keys; use transiently and do not copy into illustration metadata.
+ * 한국어: API 키가 포함될 수 있으므로 임시 사용하며 삽화 메타데이터에 복사 금지.
+ */
 export interface ImageGenerationSettings {
   openAIKey: string;
   sdProvider: string;
@@ -68,6 +107,11 @@ export interface ImageGenerationSettings {
   };
 }
 
+/**
+ * Lists the minimal settings adapters must read for existing image providers.
+ *
+ * 한국어: 기존 이미지 제공자를 위해 어댑터가 읽어야 할 최소 설정 키 목록.
+ */
 export const IMAGE_GENERATION_SETTING_KEYS = [
   "sdProvider",
   "webUiUrl",
@@ -99,6 +143,11 @@ export const IMAGE_GENERATION_SETTING_KEYS = [
   "wavespeedImage",
 ] as const;
 
+/**
+ * Describes WebUI dimensions, sampling and high-resolution generation options.
+ *
+ * 한국어: WebUI의 크기·샘플링·고해상도 생성 옵션.
+ */
 interface sdConfig {
   width: number;
   height: number;
@@ -110,6 +159,11 @@ interface sdConfig {
   hr_upscaler: string;
 }
 
+/**
+ * Preserves NovelAI sampling, image-to-image, vibe and character-reference options.
+ *
+ * 한국어: NovelAI 샘플링·이미지 변환·vibe·캐릭터 참조 기능을 유지하는 설정.
+ */
 export interface NAIImgConfig {
   width: number;
   height: number;
@@ -146,17 +200,32 @@ export interface NAIImgConfig {
   style_aware: boolean;
 }
 
+/**
+ * Defines the NovelAI V4 positive caption and ordering options.
+ *
+ * 한국어: NovelAI V4의 긍정 캡션·좌표·순서 옵션.
+ */
 interface NAIImgConfigV4Prompt {
   caption: NAIImgConfigV4Caption;
   use_coords: boolean;
   use_order: boolean;
 }
 
+/**
+ * Groups the overall caption and per-character captions for NovelAI V4.
+ *
+ * 한국어: NovelAI V4의 전체 캡션과 캐릭터별 캡션 묶음.
+ */
 interface NAIImgConfigV4Caption {
   base_caption: string;
   char_captions: NAIImgConfigV4CharCaption[];
 }
 
+/**
+ * Associates a NovelAI character caption with its normalized image coordinates.
+ *
+ * 한국어: NovelAI 캐릭터 캡션과 정규화한 이미지 좌표 정보.
+ */
 interface NAIImgConfigV4CharCaption {
   char_caption: string;
   centers: {
@@ -165,11 +234,21 @@ interface NAIImgConfigV4CharCaption {
   }[];
 }
 
+/**
+ * Defines the NovelAI V4 negative caption and legacy undesired-content mode.
+ *
+ * 한국어: NovelAI V4 네거티브 캡션·기존 원하지 않는 내용 처리 옵션.
+ */
 interface NAIImgConfigV4NegativePrompt {
   caption: NAIImgConfigV4Caption;
   legacy_uc: boolean;
 }
 
+/**
+ * Describes an imported NovelAI vibe reference with model-specific cached encodings.
+ *
+ * 한국어: 모델별 캐시 인코딩과 가져오기 정보를 포함한 NovelAI vibe 참조 데이터.
+ */
 interface NAIVibeData {
   identifier: string;
   version: number;
@@ -191,6 +270,11 @@ interface NAIVibeData {
   };
 }
 
+/**
+ * Stores a NovelAI vibe encoding and its extracted-information setting.
+ *
+ * 한국어: NovelAI vibe 인코딩과 정보 추출 설정.
+ */
 interface NAIVibeEncoding {
   encoding: string;
   params: {
@@ -198,6 +282,11 @@ interface NAIVibeEncoding {
   };
 }
 
+/**
+ * Configures a ComfyUI workflow, legacy prompt input nodes and polling timeout.
+ *
+ * 한국어: ComfyUI 워크플로·기존 방식의 프롬프트 입력 노드·결과 대기 시간 설정.
+ */
 interface ComfyConfig {
   workflow: string;
   posNodeID: string;
@@ -207,6 +296,24 @@ interface ComfyConfig {
   timeout: number;
 }
 
+/**
+ * Builds, executes and decodes a request for the selected existing image provider.
+ *
+ * 한국어: 선택한 기존 이미지 제공자의 요청 구성·실행·결과 해석을 처리하는 공통 함수.
+ *
+ * @param db - Image-provider settings, including transient credentials. / 임시 인증 정보를 포함한 이미지 제공자 설정.
+ * @param runtime - Browser or Node transport/image-processing operations. / 브라우저·Node 전송 및 이미지 처리 동작.
+ * @param genPrompt - Final positive prompt. / 최종 긍정 프롬프트.
+ * @param currentChar - Character image used by applicable reference modes. / 참조 모드에서 사용할 캐릭터 이미지.
+ * @param neg - Final negative prompt where supported. / 지원 제공자에 적용할 최종 네거티브 프롬프트.
+ * @returns An image data URL or provider URL, or a false/empty failure result. / 이미지 데이터 URL·제공자 URL 또는 실패 시 false·빈 문자열.
+ * @throws For provider, transport or decoding errors not handled by a provider branch. / 제공자 분기에서 처리하지 않은 요청·전송·해석 오류 시.
+ * @remarks
+ * Creates no chat metadata or inlay assets; callers are responsible for storing the returned image.
+ * Existing provider-specific options and asynchronous polling stay in this shared core.
+ * 한국어: 채팅 메타데이터·인레이 자산 저장은 수행하지 않으며 반환한 그림 저장은 호출부에서 처리.
+ * 기존 제공자별 옵션·비동기 결과 조회를 공통 로직에서 유지.
+ */
 export async function executeImageGeneration(
   db: ImageGenerationSettings,
   runtime: ImageGenerationRuntime,
@@ -222,8 +329,18 @@ export async function executeImageGeneration(
     readImage,
     unzipImage: processZip,
   } = runtime;
+  /**
+   * Chooses an inclusive integer seed range for provider requests.
+   *
+   * 한국어: 제공자 요청용 시드를 양 끝을 포함하는 정수 범위에서 선택하는 함수.
+   */
   const random = (min: number, max: number) =>
     Math.floor(Math.random() * (max - min + 1)) + min;
+  /**
+   * Converts provider failures into thrown errors without depending on application alerts.
+   *
+   * 한국어: 앱 알림 모듈에 의존하지 않고 제공자 실패를 예외로 전달하는 함수.
+   */
   const alertError = (error: unknown): never => {
     throw error instanceof Error
       ? error
@@ -586,6 +703,11 @@ export async function executeImageGeneration(
     const { workflow, posNodeID, posInputName, negNodeID, negInputName } =
       db.comfyConfig;
     const baseUrl = new URL(db.comfyUiUrl);
+    /**
+     * Builds a ComfyUI endpoint while preserving its optional API prefix and query parameters.
+     *
+     * 한국어: 선택적인 API 접두사·쿼리를 유지하며 ComfyUI 요청 주소를 구성하는 함수.
+     */
     const createUrl = (
       pathname: string,
       params: Record<string, string> = {},
@@ -596,6 +718,11 @@ export async function executeImageGeneration(
       url.search = new URLSearchParams(params).toString();
       return url.toString();
     };
+    /**
+     * Sends a ComfyUI JSON request and rejects unsuccessful provider responses.
+     *
+     * 한국어: ComfyUI JSON 요청을 보내고 실패 응답을 예외로 처리하는 함수.
+     */
     const fetchWrapper = async (url: string, options = {}) => {
       const response = await globalFetch(url, options);
       if (!response.ok) {

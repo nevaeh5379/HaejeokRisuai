@@ -8,6 +8,14 @@ import type {
 } from "./requestContracts";
 import { tryExecuteNodeProvider } from "./nodeProviderExecutor";
 
+/**
+ * Returns the configured Echo message after its delay, or previews a server-executable Echo request.
+ *
+ * 한국어: 설정된 지연 후 Echo 메시지를 반환하거나 서버에서 실행할 Echo 요청을 미리 구성하는 함수.
+ *
+ * @param arg - Provider arguments; previewBody selects preparation without execution. / 제공자 인자, previewBody이면 실행 없이 요청 준비.
+ * @returns Chat response or serialized URL/headers/body for the Node illustration worker. / 채팅 응답 또는 Node 삽화 작업용 URL·헤더·본문의 직렬화 결과.
+ */
 export async function requestEcho(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
