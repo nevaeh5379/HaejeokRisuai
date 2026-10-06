@@ -40,6 +40,7 @@ import {
   getAdditionalParameters,
   isReasoningCapabilityParameter,
 } from "../shared";
+import { safeStructuredClone } from "../../../polyfill";
 
 import type {
   OpenAIChatExtra,
@@ -415,10 +416,7 @@ function sanitizeResponsesContinuationItem(item: any): ResponseItem | null {
 }
 
 function cloneResponsesBodyForRequest<T>(value: T): T {
-  if (typeof structuredClone === "function") {
-    return structuredClone(value);
-  }
-  return JSON.parse(JSON.stringify(value));
+  return safeStructuredClone(value);
 }
 
 function toExternalResponsesBody(
