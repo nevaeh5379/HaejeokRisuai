@@ -1,5 +1,6 @@
 export const languageEnglish = {
   illustration: {
+    previousImage: "Previous illustration", nextImage: "Next illustration",
     errorStages: { prepare: "Starting illustration", tags: "Writing image tags", image: "Generating image", save: "Saving image", status: "Checking illustration status" },
     errorReasons: {
       connection: "Could not connect. Check your network, provider URL and whether the server is running. Browser access may also be blocked by CORS.",

@@ -169,6 +169,13 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
           version,
           ({ message, item }) => {
             const token = `{{inlay::${storedId}}}`;
+            item.imageIds = [
+              ...new Set([
+                ...(item.imageIds ?? []),
+                ...(item.imageId ? [item.imageId] : []),
+                storedId!,
+              ]),
+            ];
             message.data = message.data.replace(item.token, token);
             Object.assign(item, {
               token,

@@ -193,6 +193,8 @@ export interface Illustration {
   prompt?: string;
   negativePrompt?: string;
   imageId?: string;
+  /** Generated inlay IDs in chronological order, without loading image bytes. */
+  imageIds?: string[];
   error?: string;
   errorDetails?: IllustrationErrorDetails;
 }

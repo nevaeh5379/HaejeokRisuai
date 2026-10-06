@@ -1,5 +1,6 @@
 export const languageKorean = {
   illustration: {
+    previousImage: "?? ??", nextImage: "?? ??",
     errorStages: { prepare: "삽화 시작", tags: "그림 태그 작성", image: "이미지 생성", save: "이미지 저장", status: "삽화 상태 확인" },
     errorReasons: {
       connection: "서버에 연결하지 못했습니다. 네트워크, 제공자 주소, 서버 실행 여부를 확인하세요. 브라우저에서는 CORS로 연결이 차단될 수도 있습니다.",

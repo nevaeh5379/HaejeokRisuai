@@ -9,6 +9,8 @@ const { item } = vi.hoisted(() => ({
     status: "failed",
     error: "fallback",
     errorDetails: undefined as IllustrationErrorDetails | undefined,
+    imageId: undefined as string | undefined,
+    imageIds: undefined as string[] | undefined,
   },
 }));
 const { recoverIllustration } = vi.hoisted(() => ({
@@ -39,12 +41,123 @@ vi.mock("src/lang", async () => {
 
 let app: ReturnType<typeof mount>;
 let target: HTMLDivElement;
+vi.mock("src/ts/process/files/inlays", () => ({
+  getInlayAssetBlob: vi.fn(async () => ({
+    data: new Blob(["image"], { type: "image/png" }),
+  })),
+}));
 afterEach(async () => {
   if (app) await unmount(app);
   target?.remove();
   vi.useRealTimers();
   recoverIllustration.mockReset();
+  item.imageId = undefined;
+  item.imageIds = undefined;
+  vi.restoreAllMocks();
 });
+
+it("opens the latest image, navigates both ways and releases image URLs", async () => {
+  const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+  vi.mocked(getInlayAssetBlob).mockClear();
+  let sequence = 0;
+  vi.spyOn(URL, "createObjectURL").mockImplementation(
+    () => `blob:image-${++sequence}`,
+  );
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  item.status = "complete";
+  item.error = "";
+  item.errorDetails = undefined;
+  item.imageId = "latest";
+  item.imageIds = ["old", "middle", "latest"];
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  flushSync();
+  await vi.waitFor(() => {
+    flushSync();
+    expect(target.querySelector("img")).not.toBeNull();
+  });
+  const buttons = target.querySelectorAll<HTMLButtonElement>(
+    "[data-risu-illustration-image] button",
+  );
+  expect(buttons[1].disabled).toBe(true);
+  expect(getInlayAssetBlob).toHaveBeenLastCalledWith("latest");
+  buttons[0].click();
+  flushSync();
+  await vi.waitFor(() => {
+    flushSync();
+    expect(getInlayAssetBlob).toHaveBeenLastCalledWith("middle");
+  });
+  buttons[0].click();
+  flushSync();
+  await vi.waitFor(() => {
+    flushSync();
+    expect(getInlayAssetBlob).toHaveBeenLastCalledWith("old");
+  });
+  expect(buttons[0].disabled).toBe(true);
+  buttons[1].click();
+  flushSync();
+  await vi.waitFor(() => {
+    flushSync();
+    expect(getInlayAssetBlob).toHaveBeenLastCalledWith("middle");
+  });
+  expect(target.textContent).toContain("2 / 3");
+  await unmount(app);
+  app = undefined;
+  expect(revoke).toHaveBeenCalledTimes(sequence);
+});
+
+it.each([false, true])(
+  "handles legacy single images with hideImages=%s",
+  async (hideImages) => {
+    const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+    vi.mocked(getInlayAssetBlob).mockClear();
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:legacy");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    item.status = "complete";
+    item.error = "";
+    item.errorDetails = undefined;
+    item.imageId = "legacy";
+    target = document.createElement("div");
+    document.body.appendChild(target);
+    app = mount(IllustrationSlot, {
+      target,
+      props: {
+        hideImages,
+        target: {
+          characterId: "character",
+          chatId: "chat",
+          messageId: "message",
+          illustrationId: "slot",
+        },
+      },
+    });
+    flushSync();
+    if (hideImages) {
+      expect(target.querySelector("[data-risu-illustration-image]")).toBeNull();
+      expect(getInlayAssetBlob).not.toHaveBeenCalled();
+    } else {
+      await vi.waitFor(() => {
+        flushSync();
+        expect(target.querySelector("img")).not.toBeNull();
+      });
+      expect(getInlayAssetBlob).toHaveBeenCalledWith("legacy");
+      expect(
+        target.querySelectorAll("[data-risu-illustration-image] button"),
+      ).toHaveLength(0);
+    }
+  },
+);
 
 it("shows a temporary connection error when status polling fails, and clears it after reconnection", async () => {
   vi.useFakeTimers();

@@ -319,6 +319,25 @@ describe("illustration execution lifecycle", () => {
     expect(r.message.data).toContain("{{inlay::replacement}}");
     expect(item.status).toBe("complete");
     expect(item.errorDetails).toBeUndefined();
+    expect(item.imageIds).toEqual(["image", "replacement"]);
+  });
+
+  it("keeps a legacy image and successive rerolls in chronological history", async () => {
+    const r = runtime(answer("Scene.<Illustration>"));
+    const item = r.message.illustrations[0];
+    r.message.data = r.message.data.replace(item.token, "{{inlay::legacy}}");
+    item.token = "{{inlay::legacy}}";
+    item.imageId = "legacy";
+    r.adapter.storeImage
+      .mockResolvedValueOnce("second")
+      .mockResolvedValueOnce("third");
+    await r.runner.run(r.targets[0], 1);
+    item.version++;
+    item.status = "queued";
+    await r.runner.run(r.targets[0], 2);
+    expect(item.imageIds).toEqual(["legacy", "second", "third"]);
+    expect(item.imageId).toBe("third");
+    expect(r.adapter.removeImage).not.toHaveBeenCalled();
   });
 
   it("rewrites tags while preserving the old image", async () => {

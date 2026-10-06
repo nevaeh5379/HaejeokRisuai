@@ -253,7 +253,7 @@ import isEqual from "lodash/isEqual"
         for (const item of sourceMessage?.illustrations ?? []) {
             if (!/^[\w-]+$/.test(item.id) || !item.token || !display?.includes(item.token)) continue;
             const placeholder = `<span data-risu-illustration="${item.id}"></span>`;
-            display = display.replace(item.token, item.imageId ? `<span data-risu-illustration-image="${item.id}">${item.token}</span>${placeholder}` : placeholder);
+            display = display.replace(item.token, placeholder);
         }
         return display;
     })
@@ -276,6 +276,8 @@ import isEqual from "lodash/isEqual"
             return false
         }
         for(const img of bodyRoot.querySelectorAll(`img[src^="blob:"]`)){
+            // IllustrationSlot owns and releases its URLs independently of the parser cache.
+            if(img.closest('[data-risu-illustration-image]')) continue;
             if(!isLiveObjectUrl(img.getAttribute('src') || '')){
                 return true
             }
@@ -316,25 +318,12 @@ import isEqual from "lodash/isEqual"
         }
     })
 
-    $effect(() => {
+    let illustrationWidth = $derived.by(() => {
         const targetCharacter = characterStore.characters.find((c) => c.chaId === chatTarget?.characterId);
-        const width = resolveIllustrationSettings(
+        return resolveIllustrationSettings(
             settingsStore.state.illustration,
             targetCharacter?.type === "group" ? undefined : targetCharacter?.illustration,
         ).displayWidth;
-        const parsed = markParsingResult;
-        const root = bodyRoot;
-        let cancelled = false;
-        if (root && !shouldRenderRawStreaming) {
-            void parsed.then(async () => {
-                await tick();
-                if (cancelled) return;
-                for (const image of root.querySelectorAll<HTMLElement>("[data-risu-illustration-image]")) {
-                    image.style.width = `${width}%`;
-                }
-            }).catch(() => {});
-        }
-        return () => { cancelled = true; };
     })
 
     $effect(() => {
@@ -342,6 +331,8 @@ import isEqual from "lodash/isEqual"
         const target = chatTarget;
         const messageId = sourceMessageId;
         const ids: string[] = JSON.parse(illustrationIds);
+        const width = illustrationWidth;
+        const hideImages = settingsStore.state.hideAllImages;
         const root = bodyRoot;
         const mounted: ReturnType<typeof mount>[] = [];
         let cancelled = false;
@@ -353,6 +344,7 @@ import isEqual from "lodash/isEqual"
                     const host = root.querySelector(`[data-risu-illustration="${CSS.escape(id)}"]`);
                     if (host) mounted.push(mount(IllustrationSlot, { target: host, props: {
                         target: { characterId: target.characterId, chatId: target.chatId, messageId, illustrationId: id },
+                        width, hideImages,
                     } }));
                 }
             }).catch(() => {});

@@ -3,11 +3,34 @@
   import { language } from "src/lang";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
   import { describeIllustrationError, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
-  let { target }: { target: IllustrationTarget } = $props();
+  let { target, width = 100, hideImages = false }: { target: IllustrationTarget; width?: number; hideImages?: boolean } = $props();
   let item = $derived(characterStore.characters.find((c) => c.chaId === target.characterId)?.chats?.find((c) => c.id === target.chatId)?.message?.find((m) => m.chatId === target.messageId)?.illustrations?.find((i) => i.id === target.illustrationId));
   let working = $state(false);
   let error = $state("");
   let busy = $derived(working || (item && isIllustrationBusy(item.status)));
+  let selectedImageId = $state<string>();
+  let imageUrl = $state("");
+  let images = $derived([...new Set([...(item?.imageIds ?? []), ...(item?.imageId ? [item.imageId] : [])])]);
+  let imageIndex = $derived(Math.max(0, images.indexOf(selectedImageId ?? item?.imageId ?? "")));
+  let displayedImageId = $derived(images[imageIndex]);
+  let latestImageId = $derived(item?.imageId);
+  $effect(() => { selectedImageId = latestImageId; });
+  $effect(() => {
+    const id = hideImages ? undefined : displayedImageId;
+    let cancelled = false;
+    let url = "";
+    imageUrl = "";
+    if (id) void import("src/ts/process/files/inlays").then(async ({ getInlayAssetBlob }) => {
+      if (cancelled) return;
+      const asset = await getInlayAssetBlob(id);
+      if (cancelled || !(asset?.data instanceof Blob)) return;
+      url = URL.createObjectURL(asset.data);
+      imageUrl = url;
+    }).catch((caught) => {
+      if (!cancelled) error = formatError(describeIllustrationError(caught, "save"));
+    });
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+  });
   function formatError(details: IllustrationErrorDetails) {
     const reason = details.stage === "save" && details.code === "unknown"
       ? language.illustration.saveError : language.illustration.errorReasons[details.code];
@@ -64,6 +87,20 @@
 </script>
 
 {#if item}
+  {#if displayedImageId && !hideImages}
+    <span data-risu-illustration-image={item.id} class="not-prose my-2 inline-flex max-w-full items-center gap-1" style:width={`${width}%`}>
+      {#if images.length > 1}
+        <button type="button" aria-label={language.illustration.previousImage} title={language.illustration.previousImage} class="shrink-0 rounded bg-darkbutton p-2 text-textcolor disabled:opacity-30" disabled={imageIndex === 0} onclick={(e) => { e.stopPropagation(); selectedImageId = images[imageIndex - 1]; }} onpointerdown={(e) => e.stopPropagation()}>❮</button>
+      {/if}
+      <span class="flex min-w-0 flex-1 flex-col items-center gap-1">
+        {#if imageUrl}<img src={imageUrl} alt={language.illustration.title} class="h-auto max-w-full" loading="lazy" />{/if}
+        {#if images.length > 1}<span class="text-xs text-textcolor2" aria-live="polite">{imageIndex + 1} / {images.length}</span>{/if}
+      </span>
+      {#if images.length > 1}
+        <button type="button" aria-label={language.illustration.nextImage} title={language.illustration.nextImage} class="shrink-0 rounded bg-darkbutton p-2 text-textcolor disabled:opacity-30" disabled={imageIndex === images.length - 1} onclick={(e) => { e.stopPropagation(); selectedImageId = images[imageIndex + 1]; }} onpointerdown={(e) => e.stopPropagation()}>❯</button>
+      {/if}
+    </span>
+  {/if}
   <!-- Stop message click-to-edit from consuming illustration controls. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <span role="group" aria-label={language.illustration.title} class="not-prose my-2 flex flex-wrap items-center gap-2 rounded border border-darkborderc bg-darkbg p-2 text-sm text-textcolor"
