@@ -1,5 +1,6 @@
 export const languageKorean = {
   illustration: {
+    displayWidth: "삽화 크기 (%)", displayWidthHelp: "채팅 영역 너비를 기준으로 10~100%로 조절합니다. 기본값은 50%이며, 이미지 비율은 유지됩니다.",
     title: "채팅 삽화", description: "메인 모델이 <Illustration>으로 위치를 표시하고, 보조 모델이 태그를 작성하면 이미지 제공자가 각 자리에 그림을 만듭니다. 일반 1:1 채팅에서 사용할 수 있습니다.",
     characterHelp: "범용 설정을 상속하거나 개별 변경할 수 있습니다. 캐릭터 지침과 그림 프롬프트는 범용 내용 뒤에 추가됩니다.",
     appFallback: "이 보조 모델은 앱에서 실행됩니다. Node에서도 앱을 종료하면 삽화 생성이 중단됩니다.",

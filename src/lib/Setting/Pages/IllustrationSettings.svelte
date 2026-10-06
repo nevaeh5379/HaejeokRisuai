@@ -35,6 +35,17 @@
       settingsStore.set("illustration", { ...DEFAULT_ILLUSTRATION_SETTINGS, ...settingsStore.state.illustration, [key]: value });
     }
   }
+  function setDisplayWidth(input: HTMLInputElement) {
+    if (input.value === "" && characterId) {
+      set("displayWidth", undefined);
+      return;
+    }
+    const width = resolveIllustrationSettings({
+      displayWidth: input.value === "" ? DEFAULT_ILLUSTRATION_SETTINGS.displayWidth : input.valueAsNumber,
+    }).displayWidth;
+    input.value = String(width);
+    set("displayWidth", width);
+  }
   const booleans = ["enabled", "includeDescription", "includePersona", "includeLorebook", "includeMemory"] as const;
   const texts = ["markerInstructions", "tagInstructions", "basePrompt", "negativePrompt"] as const;
 </script>
@@ -55,6 +66,18 @@
       </select>
     </label>
   {/each}
+  <label class="flex items-center justify-between gap-2">
+    <span>{language.illustration.displayWidth}</span>
+    <span class="flex flex-wrap items-center justify-end gap-2">
+      <input class="w-24 accent-textcolor" type="range" min="10" max="100" step="1" aria-label={language.illustration.displayWidth}
+        value={effective.displayWidth} oninput={(e) => set("displayWidth", e.currentTarget.valueAsNumber)} />
+      <input class="w-24 rounded border border-darkborderc bg-darkbg p-1" type="number" min="10" max="100" step="1" aria-label={language.illustration.displayWidth}
+        value={own.displayWidth ?? (characterId ? "" : effective.displayWidth)} placeholder={String(effective.displayWidth)}
+        onchange={(e) => setDisplayWidth(e.currentTarget)} />
+      <span>%</span>
+    </span>
+  </label>
+  <p class="text-sm text-textcolor2">{language.illustration.displayWidthHelp}</p>
   <label class="flex items-center justify-between gap-2">
     <span>{language.illustration.recentMessages}</span>
     <input class="w-24 rounded border border-darkborderc bg-darkbg p-1" type="number" min="0" step="1"

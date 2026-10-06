@@ -67,6 +67,7 @@ describe("illustration positions and scene context", () => {
   it("defaults to off, inherits context, and appends character instructions after global text", () => {
     expect(resolveIllustrationSettings()).toMatchObject({
       enabled: false,
+      displayWidth: 50,
       recentMessages: 6,
       includeDescription: true,
       includePersona: true,
@@ -89,6 +90,25 @@ describe("illustration positions and scene context", () => {
       basePrompt: "quality\n\nred",
       negativePrompt: "",
     });
+  });
+
+  it("inherits illustration width, allows character overrides, and bounds imported values", () => {
+    expect(resolveIllustrationSettings({ displayWidth: 75 }).displayWidth).toBe(
+      75,
+    );
+    expect(
+      resolveIllustrationSettings({ displayWidth: 75 }, { displayWidth: 30 })
+        .displayWidth,
+    ).toBe(30);
+    expect(resolveIllustrationSettings({ displayWidth: 0 }).displayWidth).toBe(
+      10,
+    );
+    expect(
+      resolveIllustrationSettings({ displayWidth: 150 }).displayWidth,
+    ).toBe(100);
+    expect(
+      resolveIllustrationSettings({ displayWidth: NaN }).displayWidth,
+    ).toBe(50);
   });
 
   it("only includes requested information and excludes later messages and later parts of an answer", () => {

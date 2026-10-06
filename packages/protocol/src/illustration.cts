@@ -9,6 +9,7 @@
  */
 export interface IllustrationSettings {
   enabled: boolean;
+  displayWidth: number;
   recentMessages: number;
   includeDescription: boolean;
   includePersona: boolean;
@@ -27,6 +28,7 @@ export interface IllustrationSettings {
  */
 export const DEFAULT_ILLUSTRATION_SETTINGS: Readonly<IllustrationSettings> = {
   enabled: false,
+  displayWidth: 50,
   recentMessages: 6,
   includeDescription: true,
   includePersona: true,
@@ -188,6 +190,9 @@ export function resolveIllustrationSettings(
   result.recentMessages = Number.isFinite(result.recentMessages)
     ? Math.max(0, Math.floor(result.recentMessages))
     : 6;
+  result.displayWidth = Number.isFinite(result.displayWidth)
+    ? Math.max(10, Math.min(100, Math.round(result.displayWidth)))
+    : DEFAULT_ILLUSTRATION_SETTINGS.displayWidth;
   return result;
 }
 

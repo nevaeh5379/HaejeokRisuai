@@ -13,6 +13,7 @@ import isEqual from "lodash/isEqual"
     import { mount, unmount, tick } from "svelte";
     import IllustrationSlot from "./IllustrationSlot.svelte";
     import type { Message } from "src/ts/storage/database/schema";
+    import { resolveIllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
 
     interface Props {
         character?: simpleCharacterArgument|string|null
@@ -255,7 +256,7 @@ import isEqual from "lodash/isEqual"
         for (const item of sourceMessage?.illustrations ?? []) {
             if (!/^[\w-]+$/.test(item.id) || !item.token || !display?.includes(item.token)) continue;
             const placeholder = `<span data-risu-illustration="${item.id}"></span>`;
-            display = display.replace(item.token, item.imageId ? `${item.token}${placeholder}` : placeholder);
+            display = display.replace(item.token, item.imageId ? `<span data-risu-illustration-image="${item.id}">${item.token}</span>${placeholder}` : placeholder);
         }
         return markParsing(display, character, idx)
     })
@@ -303,6 +304,27 @@ import isEqual from "lodash/isEqual"
         return () => {
             bodyRoot?.removeEventListener('error', onError, true)
         }
+    })
+
+    $effect(() => {
+        const targetCharacter = characterStore.characters.find((c) => c.chaId === chatTarget?.characterId);
+        const width = resolveIllustrationSettings(
+            settingsStore.state.illustration,
+            targetCharacter?.type === "group" ? undefined : targetCharacter?.illustration,
+        ).displayWidth;
+        const parsed = markParsingResult;
+        const root = bodyRoot;
+        let cancelled = false;
+        if (root && !shouldRenderRawStreaming) {
+            void parsed.then(async () => {
+                await tick();
+                if (cancelled) return;
+                for (const image of root.querySelectorAll<HTMLElement>("[data-risu-illustration-image]")) {
+                    image.style.width = `${width}%`;
+                }
+            }).catch(() => {});
+        }
+        return () => { cancelled = true; };
     })
 
     $effect(() => {

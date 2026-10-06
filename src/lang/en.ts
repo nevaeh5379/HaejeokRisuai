@@ -1,5 +1,6 @@
 export const languageEnglish = {
   illustration: {
+    displayWidth: "Illustration size (%)", displayWidthHelp: "Width relative to the chat area (10–100%). Default: 50%. The image keeps its aspect ratio.",
     title: "Chat illustrations", description: "The main model places <Illustration> markers. The auxiliary model writes tags, then your image provider fills each position. Supports one-to-one chats.",
     characterHelp: "Inherit global settings or override them here. Character instructions and image prompts are appended after the global text.",
     appFallback: "This auxiliary model runs in the app. Illustration generation stops when the app closes, including on Node.",

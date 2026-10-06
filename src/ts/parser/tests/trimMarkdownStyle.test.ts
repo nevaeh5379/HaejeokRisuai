@@ -74,6 +74,23 @@ const expectScopedStyles = (body: HTMLElement, count: number) => {
 };
 
 describe("trimMarkdown style handling", () => {
+  it("preserves illustration image wrappers through markdown and sanitization", async () => {
+    const out = await ParseMarkdown(
+      'Scene.<span data-risu-illustration-image="slot"><img src="https://example.com/illustration.png"></span><span data-risu-illustration="slot"></span>Next scene.',
+      null,
+      "normal",
+    );
+    const body = parse(out);
+    expect(
+      body.querySelector('[data-risu-illustration-image="slot"] img'),
+    ).not.toBeNull();
+    expect(
+      body.querySelector('[data-risu-illustration="slot"]'),
+    ).not.toBeNull();
+    expect(body.textContent).toContain("Scene.");
+    expect(body.textContent).toContain("Next scene.");
+  });
+
   it("removes signature inlay markers without creating a media URL", async () => {
     const out = await ParseMarkdown(
       "{{inlayeddata::signature-id}}visible",
