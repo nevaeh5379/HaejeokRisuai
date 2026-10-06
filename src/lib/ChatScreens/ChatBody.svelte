@@ -10,10 +10,11 @@ import isEqual from "lodash/isEqual"
     import type { ChatExecutionTarget } from "src/ts/chatTarget";
     import { getFileSrc, isLiveObjectUrl, onBlobUrlsRevoked, untrackObjectUrl } from "src/ts/globalApi.svelte";
     import { isTauriAssetUrl } from "src/ts/mediaSrc";
-    import { mount, unmount, tick } from "svelte";
+    import { mount, unmount, tick, onDestroy } from "svelte";
     import IllustrationSlot from "./IllustrationSlot.svelte";
     import type { Message } from "src/ts/storage/database/schema";
     import { resolveIllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
+    import { illustrationDisplayLayout } from "src/ts/process/illustration/illustrationDisplay";
 
     interface Props {
         character?: simpleCharacterArgument|string|null
@@ -50,11 +51,10 @@ import isEqual from "lodash/isEqual"
         sourceMessage,
     }: Props =  $props()
 
-    // svelte-ignore non_reactive_update
-    let lastParsed = ''
+    let translationLoadingHtml = $state('')
     let lastCharArg:string|simpleCharacterArgument = null
     let lastChatId = -10
-    // Bumped when a blob URL embedded in lastParsed was revoked by asset
+    // Bumped when a blob URL embedded in parsed HTML was revoked by asset
     // cache eviction, so the memoized HTML must be rebuilt. Without this,
     // low-spec eviction makes images vanish until a manual reload.
     let assetRev = $state(0)
@@ -77,15 +77,17 @@ import isEqual from "lodash/isEqual"
 
     let shouldRenderRawStreaming = $derived(renderRawStreaming && !translated && !retranslate)
 
+    // SQL hydration may replace the target object without changing the chat.
+    let parsingTargetKey = $derived(JSON.stringify(chatTarget ?? null))
+    let parsingTarget: ChatExecutionTarget | undefined = $derived(JSON.parse(parsingTargetKey) ?? undefined)
+
     const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, tries?:number) => {
         // track 'translated' and 'retranslate' state
         translated;
         retranslate;
-        let lastParsedQueue = ''
         let mode = 'notrim' as const
         try {
             if((!isEqual(lastCharArg, charArg)) || (chatID !== lastChatId)){
-                lastParsedQueue = ''
                 lastCharArg = charArg
                 lastChatId = chatID
                 let translateText = false
@@ -95,8 +97,8 @@ import isEqual from "lodash/isEqual"
                             const cache = settingsStore.state.translateBeforeHTMLFormatting
                             ? await getLLMCache(data)
                             : !settingsStore.state.legacyTranslation
-                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), chatTarget))
-                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget))
+                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), parsingTarget))
+                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), parsingTarget))
                   
                             translateText = cache !== null
                         }
@@ -122,7 +124,7 @@ import isEqual from "lodash/isEqual"
             }
             if(retranslate || translated){
                 if (settingsStore.state.showTranslationLoading) {
-                    lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
+                    translationLoadingHtml = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
                 }
 
                 let transResult
@@ -130,28 +132,25 @@ import isEqual from "lodash/isEqual"
                 if(settingsStore.state.translatorType === 'llm' && settingsStore.state.translateBeforeHTMLFormatting){
                     await sleep(100)
                     translating = true
-                    data = await translateHTML(data, false, charArg, chatID, retranslate, chatTarget)
+                    data = await translateHTML(data, false, charArg, chatID, retranslate, parsingTarget)
                     translating = false
-                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
-                    lastParsedQueue = marked
+                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), parsingTarget)
                     lastCharArg = charArg
                     transResult = marked
                 }
                 else if(!settingsStore.state.legacyTranslation){
-                    const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), chatTarget)
+                    const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), parsingTarget)
                     translating = true
-                    const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate, chatTarget))
+                    const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate, parsingTarget))
                     translating = false
-                    lastParsedQueue = translated
                     lastCharArg = charArg
                     transResult = translated
                 }
                 else{
-                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
+                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), parsingTarget)
                     translating = true
-                    const translated = await translateHTML(marked, false, charArg, chatID, retranslate, chatTarget)
+                    const translated = await translateHTML(marked, false, charArg, chatID, retranslate, parsingTarget)
                     translating = false
-                    lastParsedQueue = translated
                     lastCharArg = charArg
                     transResult = translated
                 }
@@ -163,8 +162,7 @@ import isEqual from "lodash/isEqual"
                 return transResult
             }
             else{
-                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), chatTarget)
-                lastParsedQueue = marked
+                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), parsingTarget)
                 lastCharArg = charArg
                 return marked
             }   
@@ -178,8 +176,7 @@ import isEqual from "lodash/isEqual"
             return await markParsing(data, charArg, chatID, (tries ?? 0) + 1)
         }
         finally{
-            //since trimMarkdown is fast, we don't need to cache it
-            lastParsed = lastParsedQueue
+            translationLoadingHtml = ''
         }
     }
 
@@ -248,18 +245,15 @@ import isEqual from "lodash/isEqual"
     // Metadata is replaced on every illustration progress update. Keep the
     // parser dependent on the displayed text so tagging/status changes do not
     // create a new parsing promise or replace the message DOM.
-    let illustrationDisplay = $derived.by(() => {
-        let display = msgDisplay;
-        for (const item of sourceMessage?.illustrations ?? []) {
-            if (!/^[\w-]+$/.test(item.id) || !item.token || !display?.includes(item.token)) continue;
-            const placeholder = `<span data-risu-illustration="${item.id}"></span>`;
-            display = display.replace(item.token, placeholder);
-        }
-        return display;
-    })
-    let illustrationIds = $derived(JSON.stringify(sourceMessage?.illustrations?.map((i) => i.id) ?? []))
-    let sourceMessageId = $derived(sourceMessage?.chatId)
-    let parsingRetryKey = $derived(`${idx}|${msgDisplay?.length ?? 0}`)
+    let illustrationLayout = $derived(illustrationDisplayLayout(msgDisplay, sourceMessage?.illustrations))
+    let illustrationDisplay = $derived(illustrationLayout.display)
+    // Chat normalizes the display before CBS; slot identity comes from the stored narrative.
+    let illustrationBindings = $derived(illustrationDisplayLayout(sourceMessage?.data, sourceMessage?.illustrations).bindings)
+    let illustrationTargetKey = $derived(chatTarget && sourceMessage?.chatId
+        ? JSON.stringify([chatTarget.characterId, chatTarget.chatId, sourceMessage.chatId]) : '')
+    // Generated inlay tokens vary in length while the rendered slot stays the same.
+    // Only visible text changes may invalidate the parsing promise and its DOM.
+    let parsingRetryKey = $derived(`${idx}|${illustrationDisplay?.length ?? 0}`)
 
     let markParsingResult = $derived.by(() => {
         assetRev;
@@ -269,6 +263,17 @@ import isEqual from "lodash/isEqual"
             assetRetries = 0
         }
         return markParsing(illustrationDisplay, character, idx)
+    })
+    // Keep one HTML block alive. An await block can switch through its pending
+    // branch when upstream props are refreshed, replacing otherwise identical DOM.
+    let parsedHtml = $state('')
+    $effect(() => {
+        const parsed = markParsingResult;
+        let cancelled = false;
+        void parsed.then((html) => {
+            if (!cancelled && html !== undefined) parsedHtml = html;
+        });
+        return () => { cancelled = true; };
     })
 
     const hasStaleBlobImages = () => {
@@ -304,6 +309,8 @@ import isEqual from "lodash/isEqual"
 
         const onError = (e: Event) => {
             const img = e.target as HTMLImageElement
+            // A slot owns its image lifecycle; its failures must never replace the chat body.
+            if(img?.closest('[data-risu-illustration-image]')) return;
             const src = img?.getAttribute('src') || ''
             if(src.startsWith('blob:')){
                 // Image failed to load after its blob was evicted; re-parse
@@ -326,39 +333,52 @@ import isEqual from "lodash/isEqual"
         ).displayWidth;
     })
 
+    const illustrationMounts = new Map<string, { host: Element; component: ReturnType<typeof mount> }>();
+    onDestroy(() => {
+        for (const { component } of illustrationMounts.values()) void unmount(component);
+        illustrationMounts.clear();
+    });
+
     $effect(() => {
         const parsed = markParsingResult;
-        const target = chatTarget;
-        const messageId = sourceMessageId;
-        const ids: string[] = JSON.parse(illustrationIds);
-        const width = illustrationWidth;
-        const hideImages = settingsStore.state.hideAllImages;
+        const targetKey = illustrationTargetKey;
+        const bindings: { id: string; index: number }[] = JSON.parse(illustrationBindings);
         const root = bodyRoot;
-        const mounted: ReturnType<typeof mount>[] = [];
+        const rawStreaming = shouldRenderRawStreaming;
         let cancelled = false;
-        if (root && target && messageId && ids.length && !shouldRenderRawStreaming) {
-            void parsed.then(async () => {
-                await tick();
-                if (cancelled) return;
-                for (const id of ids) {
-                    const host = root.querySelector(`[data-risu-illustration="${CSS.escape(id)}"]`);
-                    if (host) mounted.push(mount(IllustrationSlot, { target: host, props: {
-                        target: { characterId: target.characterId, chatId: target.chatId, messageId, illustrationId: id },
-                        width, hideImages,
-                    } }));
+        void parsed.then(async () => {
+            await tick();
+            if (cancelled) return;
+            const hosts = new Map<string, { id: string; host: Element }>();
+            if (root && targetKey && !rawStreaming) {
+                for (const { id, index } of bindings) {
+                    const host = root.querySelector(`[data-risu-illustration="${index}"]`);
+                    if (host) hosts.set(`${targetKey}:${id}`, { id, host });
                 }
-            }).catch(() => {});
-        }
-        return () => { cancelled = true; for (const component of mounted) void unmount(component); };
+            }
+            for (const [key, mounted] of illustrationMounts) {
+                if (hosts.get(key)?.host === mounted.host) continue;
+                void unmount(mounted.component);
+                illustrationMounts.delete(key);
+            }
+            for (const [key, { id, host }] of hosts) {
+                if (illustrationMounts.has(key)) continue;
+                const [characterId, chatId, messageId] = JSON.parse(targetKey);
+                const component = mount(IllustrationSlot, { target: host, props: {
+                    target: { characterId, chatId, messageId, illustrationId: id },
+                    get width() { return illustrationWidth; },
+                    get hideImages() { return settingsStore.state.hideAllImages; },
+                } });
+                illustrationMounts.set(key, { host, component });
+            }
+        }).catch(() => {});
+        return () => { cancelled = true; };
     })
  </script>
 
 {#if shouldRenderRawStreaming}
     <span class="whitespace-pre-wrap">{rawStreamingText}</span>
 {:else}
-    {#await markParsingResult}
-        {@html addMetadataToElement(trimMarkdown(lastParsed), modelShortName)}
-    {:then md}
-        {@html addMetadataToElement(trimMarkdown(md), modelShortName)}
-    {/await}
+    {@html translationLoadingHtml}
+    {@html addMetadataToElement(trimMarkdown(parsedHtml), modelShortName)}
 {/if}
