@@ -245,20 +245,30 @@ import isEqual from "lodash/isEqual"
         assetRev++
     }
 
-    let markParsingResult = $derived.by(() => {
-        assetRev;
-        const retryKey = `${idx}|${msgDisplay?.length ?? 0}`
-        if(retryKey !== lastRetryKey){
-            lastRetryKey = retryKey
-            assetRetries = 0
-        }
+    // Metadata is replaced on every illustration progress update. Keep the
+    // parser dependent on the displayed text so tagging/status changes do not
+    // create a new parsing promise or replace the message DOM.
+    let illustrationDisplay = $derived.by(() => {
         let display = msgDisplay;
         for (const item of sourceMessage?.illustrations ?? []) {
             if (!/^[\w-]+$/.test(item.id) || !item.token || !display?.includes(item.token)) continue;
             const placeholder = `<span data-risu-illustration="${item.id}"></span>`;
             display = display.replace(item.token, item.imageId ? `<span data-risu-illustration-image="${item.id}">${item.token}</span>${placeholder}` : placeholder);
         }
-        return markParsing(display, character, idx)
+        return display;
+    })
+    let illustrationIds = $derived(JSON.stringify(sourceMessage?.illustrations?.map((i) => i.id) ?? []))
+    let sourceMessageId = $derived(sourceMessage?.chatId)
+    let parsingRetryKey = $derived(`${idx}|${msgDisplay?.length ?? 0}`)
+
+    let markParsingResult = $derived.by(() => {
+        assetRev;
+        const retryKey = parsingRetryKey
+        if(retryKey !== lastRetryKey){
+            lastRetryKey = retryKey
+            assetRetries = 0
+        }
+        return markParsing(illustrationDisplay, character, idx)
     })
 
     const hasStaleBlobImages = () => {
@@ -330,8 +340,8 @@ import isEqual from "lodash/isEqual"
     $effect(() => {
         const parsed = markParsingResult;
         const target = chatTarget;
-        const messageId = sourceMessage?.chatId;
-        const ids = sourceMessage?.illustrations?.map((i) => i.id) ?? [];
+        const messageId = sourceMessageId;
+        const ids: string[] = JSON.parse(illustrationIds);
         const root = bodyRoot;
         const mounted: ReturnType<typeof mount>[] = [];
         let cancelled = false;
