@@ -1,10 +1,12 @@
 import {
   cleanIllustrationTags,
+  describeIllustrationError,
   IllustrationQueue,
   validIllustration,
   type Illustration,
   type IllustrationMessage,
   type IllustrationTarget,
+  type IllustrationErrorStage,
 } from "./illustration.cjs";
 
 /**
@@ -121,10 +123,12 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
   const run = (target: IllustrationTarget, version: number) =>
     queue.enqueue(`${illustrationJobKey(target)}:${version}`, async () => {
       let storedId: string | undefined;
+      let stage: IllustrationErrorStage = "prepare";
       try {
         let record = await runtime.update(target, version, () => {});
         if (!record) return;
         if (!record.item.tags) {
+          stage = "tags";
           record = await runtime.update(target, version, ({ item }) => {
             item.status = "tagging";
           });
@@ -148,14 +152,17 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
         record = await runtime.update(target, version, ({ item }) => {
           item.status = "generating";
           delete item.error;
+          delete item.errorDetails;
         });
         if (!record) return;
+        stage = "image";
         const data = await runtime.createImage(
           record.item.prompt!,
           record.item.negativePrompt ?? "",
           target,
         );
         if (!(await runtime.update(target, version, () => {}))) return;
+        stage = "save";
         storedId = await runtime.storeImage(data);
         const completed = await runtime.update(
           target,
@@ -169,6 +176,7 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
               status: "complete",
             });
             delete item.error;
+            delete item.errorDetails;
           },
         );
         if (completed) storedId = undefined;
@@ -177,6 +185,7 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
           .update(target, version, ({ item }) => {
             item.status = "failed";
             item.error = runtime.summarizeError(error);
+            item.errorDetails = describeIllustrationError(error, stage);
           })
           .catch(() => {});
       } finally {

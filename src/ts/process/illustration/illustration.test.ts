@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildIllustrationPrompt,
+  describeIllustrationError,
+  IllustrationRequestError,
+  summarizeIllustrationError,
   canonicalIllustrationText,
   cleanIllustrationTags,
   findIllustrationMarkers,
@@ -237,7 +240,7 @@ function runtime(message = answer()) {
     createImage: vi.fn(async () => "data:image/png;base64,image"),
     storeImage: vi.fn(async () => "image"),
     removeImage: vi.fn(async () => {}),
-    summarizeError: () => "failed",
+    summarizeError: (_error: unknown) => "failed",
   };
   return {
     message,
@@ -254,6 +257,30 @@ function runtime(message = answer()) {
 }
 
 describe("illustration execution lifecycle", () => {
+  it.each([
+    [
+      "tags",
+      "createTags",
+      new Error("fetch failed", { cause: { code: "ECONNREFUSED" } }),
+      "connection",
+    ],
+    ["image", "createImage", new IllustrationRequestError("auth", 401), "auth"],
+    ["save", "storeImage", new Error("disk full api-key-secret"), "unknown"],
+  ] as const)(
+    "records the %s failure stage without storing provider text",
+    async (stage, method, error, code) => {
+      const r = runtime(answer("Scene.<Illustration>"));
+      r.adapter.summarizeError = summarizeIllustrationError;
+      r.adapter[method].mockRejectedValueOnce(error);
+      await r.runner.run(r.targets[0], 1);
+      expect(r.message.illustrations[0]).toMatchObject({
+        status: "failed",
+        errorDetails: { stage, code },
+      });
+      expect(JSON.stringify(r.message)).not.toContain("api-key-secret");
+    },
+  );
+
   it("deduplicates clicks, processes in order and continues after a failed image", async () => {
     const r = runtime();
     r.adapter.createImage.mockRejectedValueOnce(new Error("provider failed"));
@@ -291,6 +318,7 @@ describe("illustration execution lifecycle", () => {
     expect(r.adapter.createTags).toHaveBeenCalledTimes(1);
     expect(r.message.data).toContain("{{inlay::replacement}}");
     expect(item.status).toBe("complete");
+    expect(item.errorDetails).toBeUndefined();
   });
 
   it("rewrites tags while preserving the old image", async () => {

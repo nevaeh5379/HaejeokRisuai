@@ -1,5 +1,21 @@
 export const languageEnglish = {
   illustration: {
+    errorStages: { prepare: "Starting illustration", tags: "Writing image tags", image: "Generating image", save: "Saving image", status: "Checking illustration status" },
+    errorReasons: {
+      connection: "Could not connect. Check your network, provider URL and whether the server is running. Browser access may also be blocked by CORS.",
+      timeout: "The request timed out. Check the provider's status, then retry.",
+      auth: "Authentication or access was denied. Check the API key and permissions for this provider.",
+      rateLimit: "The provider's request or quota limit was reached. Check your quota or retry later.",
+      server: "The server returned an error. Check the provider's status and retry later.",
+      http: "The server rejected the request. Check the endpoint, selected model and generation settings.",
+      configuration: "Required settings are missing or unsupported. Check the submodel, provider URL and API key.",
+      contextLimit: "The instructions and scene exceed the submodel's context limit. Reduce the included context or instructions.",
+      emptyTags: "The submodel returned no image tags. Check the submodel and tag instructions.",
+      noImage: "The provider returned no image. Check the model and generation settings.",
+      invalidResponse: "The response could not be read as the expected JSON or image. Check the endpoint and provider format.",
+      unknown: "The operation failed unexpectedly. Check the settings for this stage and retry.",
+    },
+    saveError: "Could not save the image or its chat record. Check available storage and the database connection, then retry.",
     displayWidth: "Illustration size (%)", displayWidthHelp: "Width relative to the chat area (10–100%). Default: 50%. The image keeps its aspect ratio.",
     title: "Chat illustrations", description: "The main model places <Illustration> markers. The auxiliary model writes tags, then your image provider fills each position. Supports one-to-one chats.",
     characterHelp: "Inherit global settings or override them here. Character instructions and image prompts are appended after the global text.",

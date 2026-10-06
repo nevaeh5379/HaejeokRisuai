@@ -2,12 +2,18 @@
   import { onMount } from "svelte";
   import { language } from "src/lang";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-  import { isIllustrationBusy, type IllustrationAction, type IllustrationTarget } from "@risuai/protocol/dist/illustration.mjs";
+  import { describeIllustrationError, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
   let { target }: { target: IllustrationTarget } = $props();
   let item = $derived(characterStore.characters.find((c) => c.chaId === target.characterId)?.chats?.find((c) => c.id === target.chatId)?.message?.find((m) => m.chatId === target.messageId)?.illustrations?.find((i) => i.id === target.illustrationId));
   let working = $state(false);
   let error = $state("");
   let busy = $derived(working || (item && isIllustrationBusy(item.status)));
+  function formatError(details: IllustrationErrorDetails) {
+    const reason = details.stage === "save" && details.code === "unknown"
+      ? language.illustration.saveError : language.illustration.errorReasons[details.code];
+    return `${language.illustration.errorStages[details.stage]}: ${reason}${details.status ? ` (HTTP ${details.status})` : ""}`;
+  }
+  let itemError = $derived(item?.errorDetails ? formatError(item.errorDetails) : item?.error);
   /**
    * Lazily dispatches a user action and prevents duplicate clicks while acceptance is pending.
    *
@@ -25,7 +31,7 @@
     try {
       const { illustrationAction } = await import("src/ts/process/illustration/illustrationApp");
       await illustrationAction(target, kind);
-    } catch { error = language.illustration.operationFailed; }
+    } catch (caught) { error = formatError(describeIllustrationError(caught, "prepare")); }
     finally { working = false; }
   }
   onMount(() => {
@@ -41,8 +47,15 @@
      */
     const recover = async () => {
       if (stopped || !item || !isIllustrationBusy(item.status)) return;
-      const { recoverIllustration } = await import("src/ts/process/illustration/illustrationApp");
-      if (!stopped) await recoverIllustration(target).catch(() => {});
+      try {
+        const { recoverIllustration } = await import("src/ts/process/illustration/illustrationApp");
+        if (!stopped) {
+          await recoverIllustration(target);
+          if (!stopped) error = "";
+        }
+      } catch (caught) {
+        if (!stopped) error = formatError(describeIllustrationError(caught, "status"));
+      }
     };
     void recover();
     const timer = setInterval(() => { void recover(); }, 5000);
@@ -56,7 +69,7 @@
   <span role="group" aria-label={language.illustration.title} class="not-prose my-2 flex flex-wrap items-center gap-2 rounded border border-darkborderc bg-darkbg p-2 text-sm text-textcolor"
     onclick={(e) => e.stopPropagation()} onpointerdown={(e) => e.stopPropagation()}>
     {#if item.status !== "complete"}<span aria-live="polite">{language.illustration[item.status]}</span>{/if}
-    {#if item.error || error}<span class="text-draculared">{error || item.error}</span>{/if}
+    {#if itemError || error}<span role="alert" class="text-draculared">{error || itemError}</span>{/if}
     {#if item.status === "failed" || item.status === "interrupted"}
       <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("retry")}>{language.illustration.retry}</button>
     {/if}

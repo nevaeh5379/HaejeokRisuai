@@ -7,6 +7,9 @@ import {
   prepareIllustrations,
   resolveIllustrationSettings,
   validIllustration,
+  describeIllustrationError,
+  IllustrationRequestError,
+  summarizeIllustrationError,
   type Illustration,
   type IllustrationAction,
   type IllustrationContext,
@@ -43,7 +46,7 @@ import type { character, Message } from "../../storage/database/schema";
 import { v4 } from "uuid";
 import { getLogger } from "@logtape/logtape";
 
-const logger = getLogger(["haejeok-risuai", "illustration"])
+const logger = getLogger(["haejeok-risuai", "illustration"]);
 const appRunId = v4();
 const contexts = new Map<string, IllustrationContext>();
 const scheduling = new Set<string>();
@@ -276,7 +279,11 @@ const runner = createIllustrationRunner({
     if (response.type === "multiline")
       return response.result.map((entry) => entry[1]).join("\n");
     if (response.type !== "success")
-      throw new Error("The submodel returned no image tags");
+      throw new Error(
+        response.type === "fail"
+          ? response.result
+          : "The submodel returned no image tags",
+      );
     return response.result;
   },
   /**
@@ -342,15 +349,7 @@ const runner = createIllustrationRunner({
    *
    * 한국어: 허용한 해결 가능한 오류만 남기고 인증 정보가 포함될 수 있는 제공자 응답을 숨기는 함수.
    */
-  summarizeError: (error) => {
-    const text =
-      error instanceof Error ? error.message : "Illustration generation failed";
-    return /^(Illustration instructions and current scene exceed the submodel context limit|The submodel returned no image tags|The illustration (chat|message|character) was removed|The image provider returned (invalid image data|no image)|Image canvas is unavailable)$/.test(
-      text,
-    )
-      ? text
-      : "Illustration generation or storage failed. Check the submodel and image provider settings, then retry.";
-  },
+  summarizeError: summarizeIllustrationError,
 });
 
 /**
@@ -377,11 +376,12 @@ async function serverRequest(
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  const data = await response.json();
   if (!response.ok)
-    throw new Error(
-      data.error ?? `Illustration server request failed (${response.status})`,
+    throw new IllustrationRequestError(
+      describeIllustrationError({ status: response.status }, "prepare").code,
+      response.status,
     );
+  const data = await response.json();
   if (!data.illustration || typeof data.runId !== "string")
     throw new Error("Invalid illustration server response");
   return data;
@@ -437,7 +437,11 @@ async function submit(
             "submodel",
           );
           if (response.type !== "success")
-            throw new Error("Unable to prepare the submodel request");
+            throw new Error(
+              response.type === "fail"
+                ? response.result
+                : "Unable to prepare the submodel request",
+            );
           const prepared = JSON.parse(response.result);
           if (!prepared.url || !prepared.body)
             throw new Error(
@@ -461,16 +465,22 @@ async function submit(
     } else {
       await runner.run(target, item.version);
     }
-  } catch {
+  } catch (error) {
     // An accepted server job outlives this request; a lost response must not fail it.
     if (serverDispatched) {
-      await queryServerIllustration(target);
-      return;
+      const recovered = await queryServerIllustration(target);
+      if (
+        recovered ||
+        !(error instanceof IllustrationRequestError) ||
+        !error.status ||
+        error.status >= 500
+      )
+        return;
     }
     await update(target, item.version, ({ item }) => {
       item.status = "failed";
-      item.error =
-        "Unable to start the illustration. Check the submodel, image provider and connection, then retry.";
+      item.error = summarizeIllustrationError(error);
+      item.errorDetails = describeIllustrationError(error, "prepare");
     });
   } finally {
     submissions.delete(key);
@@ -532,7 +542,7 @@ export async function enqueueAnswerIllustrations(
     //     targetChar.illustration,
     //   ).enabled
     // )
-      // return;
+    // return;
     if (!findIllustrationMarkers(targetMessage.data).length) return;
     const items = prepareIllustrations(
       targetMessage,
@@ -606,6 +616,7 @@ export async function illustrationAction(
     item.runId = appRunId;
     item.executor = usesAppIllustrationExecutor() ? "app" : "server";
     delete item.error;
+    delete item.errorDetails;
     if (action === "rewrite") {
       delete item.tags;
       delete item.prompt;
@@ -628,6 +639,7 @@ export async function illustrationAction(
  */
 export async function queryServerIllustration(
   target: IllustrationTarget,
+  throwOnFailure = false,
 ): Promise<IllustrationJobResponse | null> {
   const storage = forageStorage.realStorage;
   if (!(storage instanceof NodeStorage)) return null;
@@ -635,7 +647,10 @@ export async function queryServerIllustration(
   const result = await serverRequest(
     storage,
     `/api/illustrations/jobs?${query}`,
-  ).catch(() => null);
+  ).catch((error) => {
+    if (throwOnFailure) throw error;
+    return null;
+  });
   if (result) {
     const resolved = resolveTarget(target);
     const resident = resolved?.chat.message.find(
@@ -692,12 +707,13 @@ export async function recoverIllustration(target: IllustrationTarget) {
   )
     return;
   if (item.executor === "server") {
-    await queryServerIllustration(target);
+    await queryServerIllustration(target, true);
     return;
   }
   if (!runner.has(target)) {
     item.status = "interrupted";
     item.error = "Illustration interrupted. Retry to continue.";
+    delete item.errorDetails;
     await messageStore.commitMessages(target.chatId, [message], [], true);
   }
 }

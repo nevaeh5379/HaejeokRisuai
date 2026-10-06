@@ -47,6 +47,130 @@ export type IllustrationStatus =
   "queued" | "tagging" | "generating" | "complete" | "failed" | "interrupted";
 export type IllustrationAction = "retry" | "regenerate" | "rewrite";
 
+export type IllustrationErrorStage =
+  "prepare" | "tags" | "image" | "save" | "status";
+export type IllustrationErrorCode =
+  | "connection"
+  | "timeout"
+  | "auth"
+  | "rateLimit"
+  | "server"
+  | "http"
+  | "configuration"
+  | "contextLimit"
+  | "emptyTags"
+  | "noImage"
+  | "invalidResponse"
+  | "unknown";
+export interface IllustrationErrorDetails {
+  stage: IllustrationErrorStage;
+  code: IllustrationErrorCode;
+  status?: number;
+}
+
+/** Carries safe transport diagnostics without retaining provider bodies or credentials. */
+export class IllustrationRequestError extends Error {
+  constructor(
+    readonly code: IllustrationErrorCode,
+    readonly status?: number,
+  ) {
+    super(
+      status ? `Request failed (HTTP ${status})` : `Request failed: ${code}`,
+    );
+    this.name = "IllustrationRequestError";
+  }
+}
+
+/** Classifies errors into bounded diagnostics; arbitrary response text is never persisted. */
+export function describeIllustrationError(
+  error: unknown,
+  stage: IllustrationErrorStage,
+): IllustrationErrorDetails {
+  if (error instanceof IllustrationRequestError)
+    return {
+      stage,
+      code: error.code,
+      ...(error.status ? { status: error.status } : {}),
+    };
+  const value = error as {
+    message?: unknown;
+    name?: unknown;
+    cause?: { code?: unknown };
+    status?: unknown;
+  } | null;
+  const text = (
+    typeof error === "string"
+      ? error
+      : typeof value?.message === "string"
+        ? value.message
+        : ""
+  ).slice(0, 4096);
+  let code: IllustrationErrorCode = "unknown";
+  if (
+    value?.name === "TimeoutError" ||
+    /timed?\s*out|timeout|took longer than expected/i.test(text)
+  )
+    code = "timeout";
+  else if (
+    /Failed to fetch|fetch failed|NetworkError|Network request failed|Load failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|EAI_AGAIN|ERR_CONNECTION/i.test(
+      `${text} ${value?.cause?.code ?? ""}`,
+    )
+  )
+    code = "connection";
+  else if (
+    value?.name === "SyntaxError" ||
+    /invalid image data|no accepted image|Cannot read properties|not valid JSON|Unexpected token/i.test(
+      text,
+    )
+  )
+    code = "invalidResponse";
+  else if (/exceed.*context limit/i.test(text)) code = "contextLimit";
+  else if (/no image tags/i.test(text)) code = "emptyTags";
+  else if (/returned no image|no result URL/i.test(text)) code = "noImage";
+  else if (
+    /Invalid URL|URL is not set|enter .*API key|prepared submodel request is missing|cannot prepare a server illustration request|provider is unavailable/i.test(
+      text,
+    )
+  )
+    code = "configuration";
+  else if (
+    /incorrect API key|invalid.api.key|unauthorized|authentication failed/i.test(
+      text,
+    )
+  )
+    code = "auth";
+  else if (/rate.limit|insufficient.quota|quota exceeded/i.test(text))
+    code = "rateLimit";
+  if (code !== "unknown") return { stage, code };
+  const status =
+    typeof value?.status === "number"
+      ? value.status
+      : Number(
+          /\b(?:HTTP|status(?: code)?)\s*[:=]?\s*([45]\d{2})\b/i.exec(
+            text,
+          )?.[1],
+        );
+  if (Number.isInteger(status) && status >= 400 && status <= 599)
+    return {
+      stage,
+      status,
+      code:
+        status === 401 || status === 403
+          ? "auth"
+          : status === 429
+            ? "rateLimit"
+            : status >= 500
+              ? "server"
+              : "http",
+    };
+  return { stage, code };
+}
+
+export function summarizeIllustrationError(error: unknown): string {
+  const { code, status } = describeIllustrationError(error, "prepare");
+  return `Illustration operation failed: ${code}${status ? ` (HTTP ${status})` : ""}.`;
+}
+
 /**
  * Persists one slot's identity, edit guards, progress and reusable generation results.
  *
@@ -70,6 +194,7 @@ export interface Illustration {
   negativePrompt?: string;
   imageId?: string;
   error?: string;
+  errorDetails?: IllustrationErrorDetails;
 }
 
 /**

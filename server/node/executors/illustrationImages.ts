@@ -77,6 +77,10 @@ export function createIllustrationImages(
         headers,
         ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       });
+      if (!response.ok) {
+        await response.body?.cancel();
+        return { ok: false, status: response.status, data: null };
+      }
       return {
         ok: response.ok,
         status: response.status,

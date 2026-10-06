@@ -300,6 +300,7 @@ describe("Node illustrations with real SQLite and HTTP providers", () => {
     expect(message.illustrations[0]).toMatchObject({
       status: "failed",
       tags: "sunset, red dress",
+      errorDetails: { stage: "image", code: "server", status: 503 },
     });
     expect(JSON.stringify(message)).not.toContain("api-key-secret");
     message.illustrations[0].version++;

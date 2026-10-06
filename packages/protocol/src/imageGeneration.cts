@@ -1,4 +1,8 @@
 import { Buffer } from "buffer";
+import {
+  describeIllustrationError,
+  IllustrationRequestError,
+} from "./illustration.cjs";
 
 /**
  * Supplies platform-specific HTTP, reference-image and ZIP processing to the provider core.
@@ -323,12 +327,37 @@ export async function executeImageGeneration(
   },
   neg: string,
 ): Promise<string | false> {
-  const {
-    fetchJson: globalFetch,
-    fetchNative,
-    readImage,
-    unzipImage: processZip,
-  } = runtime;
+  const { readImage, unzipImage: processZip } = runtime;
+  // Preserve transport status before provider-specific code reduces errors to response text.
+  const globalFetch: ImageGenerationRuntime["fetchJson"] = async (
+    url,
+    options,
+  ) => {
+    const response = await runtime.fetchJson(url, options);
+    if (!response.ok) {
+      const transport = describeIllustrationError(response.data, "image");
+      const details =
+        transport.code === "connection" || transport.code === "timeout"
+          ? transport
+          : describeIllustrationError({ status: response.status }, "image");
+      throw new IllustrationRequestError(details.code, details.status);
+    }
+    return response;
+  };
+  const fetchNative: ImageGenerationRuntime["fetchNative"] = async (
+    url,
+    options,
+  ) => {
+    const response = await runtime.fetchNative(url, options);
+    if (!response.ok) {
+      const details = describeIllustrationError(
+        { status: response.status },
+        "image",
+      );
+      throw new IllustrationRequestError(details.code, details.status);
+    }
+    return response;
+  };
   /**
    * Chooses an inclusive integer seed range for provider requests.
    *

@@ -3,6 +3,9 @@ import {
   isIllustrationBusy,
   resolveIllustrationSettings,
   illustrationSourceHash,
+  describeIllustrationError,
+  IllustrationRequestError,
+  summarizeIllustrationError,
   type IllustrationJobRequest,
   type IllustrationJobResponse,
   type IllustrationTagRequest,
@@ -281,7 +284,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         redirect: "error",
         signal: AbortSignal.timeout(10 * 60 * 1000),
       });
-      if (!response.ok) throw new Error(`Submodel HTTP ${response.status}`);
+      if (!response.ok)
+        throw new IllustrationRequestError(
+          describeIllustrationError({ status: response.status }, "tags").code,
+          response.status,
+        );
       const data = await response.json();
       // Horde accepts a task first; poll its authenticated result on the server.
       if (request.url.includes("/api/v2/generate/text/async")) {
@@ -294,7 +301,11 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             signal: AbortSignal.timeout(60000),
             redirect: "error",
           });
-          if (!status.ok) throw new Error(`Submodel HTTP ${status.status}`);
+          if (!status.ok)
+            throw new IllustrationRequestError(
+              describeIllustrationError({ status: status.status }, "tags").code,
+              status.status,
+            );
           const result = await status.json();
           if (result.faulted) throw new Error("The submodel job failed");
           if (result.done) return decodeIllustrationTagResponse(result);
@@ -349,14 +360,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
      *
      * 한국어: 허용된 오류 요약만 저장하고 임의의 제공자 응답·인증 정보를 숨기는 함수.
      */
-    summarizeError: (error) => {
-      const text = error instanceof Error ? error.message : "";
-      return /^(Submodel HTTP \d+|The submodel returned no image tags|The submodel job (failed|timed out)|The image provider returned no image)$/.test(
-        text,
-      )
-        ? text
-        : "Illustration generation or storage failed. Check provider settings and retry.";
-    },
+    summarizeError: summarizeIllustrationError,
   });
 
   /**
@@ -388,6 +392,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         ({ item }) => {
           item.status = "interrupted";
           item.error = "Server illustration interrupted. Retry to continue.";
+          delete item.errorDetails;
         },
         true,
       );
@@ -499,6 +504,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
                 throw new TypeError("A prepared submodel request is required");
               Object.assign(item, { runId, status: "queued" });
               delete item.error;
+              delete item.errorDetails;
             },
             Boolean(raw.action),
           );
