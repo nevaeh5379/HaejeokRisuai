@@ -26,6 +26,8 @@ describe("illustration diagnostics", () => {
     [new Error("HTTP 429 api-key-secret"), "rateLimit"],
     [new Error("The image provider returned no image"), "noImage"],
     [new Error("OpenAI Compatible API URL is not set"), "configuration"],
+    [new Error("Image provider is not set"), "configuration"],
+    [new Error("Unsupported image provider: unknown-bot"), "configuration"],
   ])("classifies %s as %s", (error, code) => {
     expect(describeIllustrationError(error, "tags").code).toBe(code);
     expect(summarizeIllustrationError(error)).not.toContain("api-key-secret");
@@ -79,5 +81,28 @@ describe("illustration diagnostics", () => {
     await expect(
       executeImageGeneration(settings, runtime, "tags", {}, ""),
     ).rejects.toMatchObject({ code: "connection", status: undefined });
+  });
+
+  it("throws when image provider is unconfigured or unsupported", async () => {
+    const runtime = {} as ImageGenerationRuntime;
+    const emptyProviderSettings = {
+      sdProvider: "",
+    } as unknown as ImageGenerationSettings;
+    await expect(
+      executeImageGeneration(emptyProviderSettings, runtime, "tags", {}, ""),
+    ).rejects.toThrow("Image provider is not set");
+
+    const unsupportedProviderSettings = {
+      sdProvider: "unknown-provider",
+    } as unknown as ImageGenerationSettings;
+    await expect(
+      executeImageGeneration(
+        unsupportedProviderSettings,
+        runtime,
+        "tags",
+        {},
+        "",
+      ),
+    ).rejects.toThrow("Unsupported image provider: unknown-provider");
   });
 });

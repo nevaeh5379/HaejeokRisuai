@@ -23,7 +23,12 @@ import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
 import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
 import type { Loadout } from "../../loadout";
-import type { Illustration, IllustrationOverrides, IllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
+import type {
+  Illustration,
+  IllustrationOverrides,
+  IllustrationSettings,
+} from "@risuai/protocol/dist/illustration.mjs";
+import type { ImageProviderId } from "@risuai/protocol/dist/imageGeneration.mjs";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -118,7 +123,7 @@ export interface DatabaseSettings {
   formatversion: number;
   waifuWidth: number;
   waifuWidth2: number;
-  sdProvider: string;
+  sdProvider: ImageProviderId;
   webUiUrl: string;
   sdSteps: number;
   sdCFG: number;

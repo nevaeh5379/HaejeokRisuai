@@ -128,7 +128,7 @@ export function describeIllustrationError(
   else if (/no image tags/i.test(text)) code = "emptyTags";
   else if (/returned no image|no result URL/i.test(text)) code = "noImage";
   else if (
-    /Invalid URL|URL is not set|enter .*API key|prepared submodel request is missing|cannot prepare a server illustration request|provider is unavailable/i.test(
+    /Invalid URL|URL is not set|enter .*API key|prepared submodel request is missing|cannot prepare a server illustration request|provider is unavailable|provider is not set|unsupported.*provider/i.test(
       text,
     )
   )

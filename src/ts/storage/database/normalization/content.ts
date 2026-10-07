@@ -1,15 +1,17 @@
+import { IMAGE_PROVIDER_IDS } from "@risuai/protocol/dist/imageGeneration.mjs";
 import { defaultAutoSuggestPrompt } from "../../presets/defaultPrompts";
 import type { Database } from "../schema";
 import {
   defaultBoolean,
   defaultNumber,
+  defaultPicklist,
   defaultString,
   mergeDefaults,
   parseDefaults,
 } from "./valibotDefaults";
 
 const contentScalarDefaults = {
-  sdProvider: defaultString(),
+  sdProvider: defaultPicklist(["", ...IMAGE_PROVIDER_IDS], ""),
   webUiUrl: defaultString("http://127.0.0.1:7860/"),
   sdSteps: defaultNumber(30),
   sdCFG: defaultNumber(7),

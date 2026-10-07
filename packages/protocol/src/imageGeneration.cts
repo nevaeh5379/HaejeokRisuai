@@ -66,7 +66,7 @@ export interface ImageGenerationRuntime {
  */
 export interface ImageGenerationSettings {
   openAIKey: string;
-  sdProvider: string;
+  sdProvider: ImageProviderId;
   webUiUrl: string;
   sdSteps: number;
   sdCFG: number;
@@ -310,11 +310,11 @@ interface ImageGenerationCharacter {
 }
 
 /**
- * Result of one provider call: an image data URL or provider URL, or a legacy empty/false value.
+ * Result of one provider call: an image data URL or provider URL.
  *
- * 한국어: 제공자 호출 결과. 이미지 데이터 URL·제공자 URL 또는 기존 호환용 빈 문자열·false.
+ * 한국어: 제공자 호출 결과. 이미지 데이터 URL 또는 제공자 URL.
  */
-type ImageGenerationResult = string | false;
+type ImageGenerationResult = string;
 
 /**
  * Per-call state shared by every provider handler.
@@ -1478,28 +1478,52 @@ async function generateWithWavespeed(
 // ---------------------------------------------------------------------------
 
 /**
- * Maps each `sdProvider` value to its handler.
+ * Maps every registered image provider ID to its handler.
  *
- * 한국어: 각 `sdProvider` 값을 처리 함수에 연결하는 등록표.
+ * 한국어: 등록된 모든 이미지 제공자 ID를 처리 함수에 연결하는 등록표.
+ */
+export const IMAGE_PROVIDER_HANDLERS = {
+  webui: generateWithWebUi,
+  novelai: generateWithNovelAI,
+  dalle: generateWithDallE,
+  stability: generateWithStability,
+  comfy: generateWithComfyUi,
+  comfyui: generateWithComfyUi,
+  kei: rejectKeiProvider,
+  fal: generateWithFal,
+  Imagen: generateWithImagen,
+  "openai-compat": generateWithOpenAICompatible,
+  wavespeed: generateWithWavespeed,
+} as const satisfies Record<string, ImageProviderHandler>;
+
+/**
+ * Union of every provider ID that has a registered handler, derived directly from `IMAGE_PROVIDER_HANDLERS`.
+ *
+ * 한국어: `IMAGE_PROVIDER_HANDLERS`에서 직접 도출한 등록된 제공자 ID 유니온 타입.
+ */
+export type ImageProviderId = keyof typeof IMAGE_PROVIDER_HANDLERS;
+
+/**
+ * Array of every registered provider ID, derived directly from `IMAGE_PROVIDER_HANDLERS` keys.
+ *
+ * 한국어: `IMAGE_PROVIDER_HANDLERS`의 키로부터 직접 도출한 등록된 제공자 ID 배열.
+ */
+export const IMAGE_PROVIDER_IDS = Object.keys(
+  IMAGE_PROVIDER_HANDLERS,
+) as unknown as readonly [ImageProviderId, ...ImageProviderId[]];
+
+/**
+ * Narrows a stored `sdProvider` string to a provider that has a registered handler.
+ *
+ * 한국어: 저장된 `sdProvider` 문자열을 등록된 처리 함수가 있는 제공자 ID로 좁히는 타입 가드.
  *
  * @remarks
- * A `Map` avoids matching inherited object keys such as `toString`.
- * 한국어: `toString` 같은 상속 키가 일치하지 않도록 일반 객체 대신 `Map`을 사용.
+ * Uses an own-property check so inherited keys such as `toString` never match.
+ * 한국어: `toString` 같은 상속 키가 일치하지 않도록 자체 속성만 검사.
  */
-const IMAGE_PROVIDER_HANDLERS: ReadonlyMap<string, ImageProviderHandler> =
-  new Map<string, ImageProviderHandler>([
-    ["webui", generateWithWebUi],
-    ["novelai", generateWithNovelAI],
-    ["dalle", generateWithDallE],
-    ["stability", generateWithStability],
-    ["comfy", generateWithComfyUi],
-    ["comfyui", generateWithComfyUi],
-    ["kei", rejectKeiProvider],
-    ["fal", generateWithFal],
-    ["Imagen", generateWithImagen],
-    ["openai-compat", generateWithOpenAICompatible],
-    ["wavespeed", generateWithWavespeed],
-  ]);
+function isImageProviderId(value: string): value is ImageProviderId {
+  return Object.prototype.hasOwnProperty.call(IMAGE_PROVIDER_HANDLERS, value);
+}
 
 /**
  * Builds, executes and decodes a request for the selected existing image provider.
@@ -1511,8 +1535,8 @@ const IMAGE_PROVIDER_HANDLERS: ReadonlyMap<string, ImageProviderHandler> =
  * @param genPrompt - Final positive prompt. / 최종 긍정 프롬프트.
  * @param currentChar - Character image used by applicable reference modes. / 참조 모드에서 사용할 캐릭터 이미지.
  * @param neg - Final negative prompt where supported. / 지원 제공자에 적용할 최종 네거티브 프롬프트.
- * @returns An image data URL or provider URL, or an empty string for an unknown provider. / 이미지 데이터 URL·제공자 URL 또는 알 수 없는 제공자일 때 빈 문자열.
- * @throws For provider, transport or decoding errors. / 제공자·전송·해석 오류 시.
+ * @returns An image data URL or provider URL. / 이미지 데이터 URL·제공자 URL.
+ * @throws For unsupported providers, missing configuration, transport or decoding errors. / 미지원 제공자·설정 누락·전송·해석 오류 시.
  * @remarks
  * Creates no chat metadata or inlay assets; callers are responsible for storing the returned image.
  * Provider-specific request building and polling live in the per-provider handlers above.
@@ -1525,12 +1549,15 @@ export async function executeImageGeneration(
   genPrompt: string,
   currentChar: ImageGenerationCharacter,
   neg: string,
-): Promise<string | false> {
-  const handler = IMAGE_PROVIDER_HANDLERS.get(db.sdProvider);
-  // Unknown providers keep the legacy empty-string result instead of throwing.
-  // 한국어: 알 수 없는 제공자는 예외 대신 기존처럼 빈 문자열을 반환.
-  if (!handler) return "";
-  return handler({
+): Promise<string> {
+  if (!isImageProviderId(db.sdProvider)) {
+    throwProviderError(
+      db.sdProvider
+        ? `Unsupported image provider: ${db.sdProvider}`
+        : "Image provider is not set",
+    );
+  }
+  return IMAGE_PROVIDER_HANDLERS[db.sdProvider]({
     db,
     runtime,
     fetchJson: createStatusPreservingFetchJson(runtime),
