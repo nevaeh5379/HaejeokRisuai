@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { language } from "src/lang";
+  import { illustrationViewer } from "src/ts/gui/illustrationViewer";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
   import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
   import { describeIllustrationError, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
@@ -94,7 +95,13 @@
         <button type="button" aria-label={language.illustration.previousImage} title={language.illustration.previousImage} class="shrink-0 rounded bg-darkbutton p-2 text-textcolor disabled:opacity-30" disabled={imageIndex === 0} onclick={(e) => { e.stopPropagation(); selectedImageId = images[imageIndex - 1]; }} onpointerdown={(e) => e.stopPropagation()}>❮</button>
       {/if}
       <span class="flex min-w-0 flex-1 flex-col items-center gap-1">
-        {#if imageUrl}<img src={imageUrl} alt={language.illustration.title} class="h-auto max-w-full" loading="lazy" />{/if}
+        {#if imageUrl}
+          {#key imageUrl}
+            <button type="button" use:illustrationViewer aria-label={`${language.illustration.title}: ${language.fullscreen}`} title={language.fullscreen} class="flex max-w-full cursor-zoom-in justify-center rounded focus-visible:outline-2 focus-visible:outline-textcolor">
+              <img src={imageUrl} alt={language.illustration.title} class="h-auto max-w-full" loading="lazy" />
+            </button>
+          {/key}
+        {/if}
         {#if images.length > 1}<span class="text-xs text-textcolor2" aria-live="polite">{imageIndex + 1} / {images.length}</span>{/if}
       </span>
       {#if images.length > 1}

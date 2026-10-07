@@ -134,6 +134,7 @@
     "tippy.js": "^6.3.7",
     "uuid": "^14.0.2",
     "valibot": "^1.4.2",
+    "viewerjs": "^1.15.2",
     "wasmoon": "^1.16.0",
     "wavefile": "^11.0.0",
     "web-push": "^3.6.7",

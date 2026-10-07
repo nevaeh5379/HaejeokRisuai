@@ -88,7 +88,7 @@ it("opens the latest image, navigates both ways and releases image URLs", async 
     expect(target.querySelector("img")).not.toBeNull();
   });
   const buttons = target.querySelectorAll<HTMLButtonElement>(
-    "[data-risu-illustration-image] button",
+    "[data-risu-illustration-image] > button",
   );
   expect(buttons[1].disabled).toBe(true);
   expect(getInlayAssetBlob).toHaveBeenLastCalledWith("latest");
@@ -153,7 +153,7 @@ it.each([false, true])(
       });
       expect(getInlayAssetBlob).toHaveBeenCalledWith("legacy");
       expect(
-        target.querySelectorAll("[data-risu-illustration-image] button"),
+        target.querySelectorAll("[data-risu-illustration-image] > button"),
       ).toHaveLength(0);
     }
   },
