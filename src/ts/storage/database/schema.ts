@@ -123,7 +123,7 @@ export interface DatabaseSettings {
   formatversion: number;
   waifuWidth: number;
   waifuWidth2: number;
-  sdProvider: ImageProviderId;
+  sdProvider: ImageProviderId | "";
   webUiUrl: string;
   sdSteps: number;
   sdCFG: number;
