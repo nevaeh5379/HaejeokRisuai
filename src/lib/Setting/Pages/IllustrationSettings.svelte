@@ -6,6 +6,7 @@
   import { prepareBrowserProviderContext } from "src/ts/process/request/providerContextAdapter";
   import { LLMFormat } from "src/ts/model/modellist";
   import { isNodeServer } from "src/ts/platform";
+  import Help from "src/lib/Others/Help.svelte";
 
   let { characterId }: { characterId?: string } = $props();
   let char = $derived(characterStore.characters.find((c) => c.chaId === characterId) as character | undefined);
@@ -51,8 +52,10 @@
 </script>
 
 <section class="my-4 flex flex-col gap-3 rounded-md border border-darkborderc p-3 text-textcolor">
-  <h3 class="font-bold">{language.illustration.title}</h3>
-  <p class="text-sm text-textcolor2">{language.illustration.description}</p>
+  <div class="flex items-center gap-1.5">
+    <h3 class="font-bold">{language.illustration.title}</h3>
+    <Help text={language.illustration.description} name={language.illustration.title} />
+  </div>
   {#if characterId}<p class="text-sm text-textcolor2">{language.illustration.characterHelp}</p>{/if}
   {#if isNodeServer && browserSubmodel}<p class="text-sm text-draculared">{language.illustration.appFallback}</p>{/if}
   {#each booleans as key}
