@@ -69,8 +69,11 @@
       </select>
     </label>
   {/each}
-  <label class="flex items-center justify-between gap-2">
-    <span>{language.illustration.displayWidth}</span>
+  <div class="flex items-center justify-between gap-2">
+    <span class="flex items-center gap-1.5">
+      <span>{language.illustration.displayWidth}</span>
+      <Help text={language.illustration.displayWidthHelp} name={language.illustration.displayWidth} />
+    </span>
     <span class="flex flex-wrap items-center justify-end gap-2">
       <input class="w-24 accent-textcolor" type="range" min="10" max="100" step="1" aria-label={language.illustration.displayWidth}
         value={effective.displayWidth} oninput={(e) => set("displayWidth", e.currentTarget.valueAsNumber)} />
@@ -79,8 +82,7 @@
         onchange={(e) => setDisplayWidth(e.currentTarget)} />
       <span>%</span>
     </span>
-  </label>
-  <p class="text-sm text-textcolor2">{language.illustration.displayWidthHelp}</p>
+  </div>
   <label class="flex items-center justify-between gap-2">
     <span>{language.illustration.recentMessages}</span>
     <input class="w-24 rounded border border-darkborderc bg-darkbg p-1" type="number" min="0" step="1"
