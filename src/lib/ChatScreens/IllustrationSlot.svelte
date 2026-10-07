@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { language } from "src/lang";
   import { illustrationViewer } from "src/ts/gui/illustrationViewer";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
@@ -12,6 +12,21 @@
   let busy = $derived(!settingsStore.state.useChatIllustrations || working || (item && isIllustrationBusy(item.status)));
   let selectedImageId = $state<string>();
   let imageUrl = $state("");
+  let imageWidth = $state<number>();
+  let imageHeight = $state<number>();
+  let activeImageUrl = "";
+  const replaceImageUrl = async (url: string) => {
+    const previous = activeImageUrl;
+    activeImageUrl = url;
+    imageUrl = url;
+    // Update the existing image before releasing its previous backing blob.
+    await tick();
+    if (previous) URL.revokeObjectURL(previous);
+  };
+  onDestroy(() => {
+    if (activeImageUrl) URL.revokeObjectURL(activeImageUrl);
+    activeImageUrl = "";
+  });
   let images = $derived([...new Set([...(item?.imageIds ?? []), ...(item?.imageId ? [item.imageId] : [])])]);
   let imageIndex = $derived(Math.max(0, images.indexOf(selectedImageId ?? item?.imageId ?? "")));
   let displayedImageId = $derived(images[imageIndex]);
@@ -20,18 +35,21 @@
   $effect(() => {
     const id = hideImages ? undefined : displayedImageId;
     let cancelled = false;
-    let url = "";
-    imageUrl = "";
+    // Keep the current image and its dimensions while the next asset is read.
+    if (!id) {
+      void replaceImageUrl("");
+      imageWidth = undefined;
+      imageHeight = undefined;
+    }
     if (id) void import("src/ts/process/files/inlays").then(async ({ getInlayAssetBlob }) => {
       if (cancelled) return;
       const asset = await getInlayAssetBlob(id);
       if (cancelled || !(asset?.data instanceof Blob)) return;
-      url = URL.createObjectURL(asset.data);
-      imageUrl = url;
+      void replaceImageUrl(URL.createObjectURL(asset.data));
     }).catch((caught) => {
       if (!cancelled) error = formatError(describeIllustrationError(caught, "save"));
     });
-    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+    return () => { cancelled = true; };
   });
   function formatError(details: IllustrationErrorDetails) {
     const reason = details.stage === "save" && details.code === "unknown"
@@ -96,11 +114,13 @@
       {/if}
       <span class="flex min-w-0 flex-1 flex-col items-center gap-1">
         {#if imageUrl}
-          {#key imageUrl}
-            <button type="button" use:illustrationViewer aria-label={`${language.illustration.title}: ${language.fullscreen}`} title={language.fullscreen} class="flex max-w-full cursor-zoom-in justify-center rounded focus-visible:outline-2 focus-visible:outline-textcolor">
-              <img src={imageUrl} alt={language.illustration.title} class="h-auto max-w-full" loading="lazy" />
-            </button>
-          {/key}
+          <button type="button" use:illustrationViewer={imageUrl} aria-label={`${language.illustration.title}: ${language.fullscreen}`} title={language.fullscreen} class="flex max-w-full cursor-zoom-in justify-center rounded focus-visible:outline-2 focus-visible:outline-textcolor">
+            <img src={imageUrl} width={imageWidth} height={imageHeight} alt={language.illustration.title} class="h-auto max-w-full" loading="lazy" onload={(event) => {
+              const image = event.currentTarget as HTMLImageElement;
+              imageWidth = image.naturalWidth || undefined;
+              imageHeight = image.naturalHeight || undefined;
+            }} />
+          </button>
         {/if}
         {#if images.length > 1}<span class="text-xs text-textcolor2" aria-live="polite">{imageIndex + 1} / {images.length}</span>{/if}
       </span>

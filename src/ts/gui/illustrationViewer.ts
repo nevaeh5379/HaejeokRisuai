@@ -1,7 +1,10 @@
 import type Viewer from "viewerjs";
 
 /** Loads a single-image viewer on demand and releases it with its image button. */
-export function illustrationViewer(button: HTMLButtonElement) {
+export function illustrationViewer(
+  button: HTMLButtonElement,
+  imageUrl?: string,
+) {
   let viewer: Viewer | undefined;
   let loading = false;
   let disposed = false;
@@ -55,6 +58,10 @@ export function illustrationViewer(button: HTMLButtonElement) {
   button.addEventListener("click", open);
   button.addEventListener("pointerdown", stopPointer);
   return {
+    update(nextImageUrl: string) {
+      if (nextImageUrl !== imageUrl) close();
+      imageUrl = nextImageUrl;
+    },
     destroy() {
       disposed = true;
       button.removeEventListener("click", open);

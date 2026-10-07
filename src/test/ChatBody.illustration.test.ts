@@ -237,12 +237,47 @@ it("never reparses or replaces chat DOM during illustration progress, rerolls, n
   const previous = host!.querySelector<HTMLButtonElement>(
     '[aria-label="Previous"]',
   )!;
+  const image = host!.querySelector("img")!;
+  const imageButton = image.parentElement;
+  const previousUrl = image.getAttribute("src");
+  Object.defineProperties(image, {
+    naturalWidth: { value: 640, configurable: true },
+    naturalHeight: { value: 960, configurable: true },
+  });
+  image.dispatchEvent(new Event("load"));
+  const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+  let finishRead!: (
+    asset: Awaited<ReturnType<typeof getInlayAssetBlob>>,
+  ) => void;
+  vi.mocked(getInlayAssetBlob).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }) as ReturnType<typeof getInlayAssetBlob>,
+  );
   previous.click();
   await settle();
+  expect(host!.querySelector("img")).toBe(image);
+  expect(image.getAttribute("src")).toBe(previousUrl);
+  expect(image.getAttribute("width")).toBe("640");
+  expect(image.getAttribute("height")).toBe("960");
+  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previousUrl);
+  finishRead({
+    data: new Blob(["previous image"]),
+    name: "previous",
+    ext: "png",
+    type: "image",
+  });
+  await settle();
+  expect(host!.querySelector("img")).toBe(image);
+  expect(image.parentElement).toBe(imageButton);
+  expect(image.getAttribute("src")).not.toBe(previousUrl);
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith(previousUrl);
   assertStable();
   const next = host!.querySelector<HTMLButtonElement>('[aria-label="Next"]')!;
   next.click();
   await settle();
+  expect(host!.querySelector("img")).toBe(image);
   assertStable();
   await vi.waitFor(async () => {
     await settle();

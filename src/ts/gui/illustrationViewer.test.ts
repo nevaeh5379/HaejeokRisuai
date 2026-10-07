@@ -73,6 +73,17 @@ it("destroys an open viewer when its image is removed", async () => {
   expect(destroy).toHaveBeenCalledTimes(1);
 });
 
+it("closes the viewer when the retained image changes", async () => {
+  const { button } = setup();
+  button.click();
+  await vi.dynamicImportSettled();
+  action.update("blob:next-illustration");
+  expect(destroy).toHaveBeenCalledTimes(1);
+  button.click();
+  await vi.dynamicImportSettled();
+  expect(create).toHaveBeenCalledTimes(2);
+});
+
 it("does not open a viewer after disposal during lazy loading", async () => {
   const { button } = setup();
   button.click();
