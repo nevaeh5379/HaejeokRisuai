@@ -1217,9 +1217,9 @@ function buildFalRequestBody(
 }
 
 /**
- * Generates an image with fal.ai and returns the provider image URL.
+ * Generates an image with fal.ai and downloads it as a persistable data URL.
  *
- * 한국어: fal.ai로 그림을 생성하고 제공자 그림 URL을 반환하는 함수.
+ * 한국어: fal.ai로 그림을 생성하고 저장 가능한 데이터 URL로 내려받는 함수.
  */
 async function generateWithFal(
   context: ImageGenerationContext,
@@ -1235,7 +1235,14 @@ async function generateWithFal(
   });
   const image = response.data?.images?.[0]?.url;
   if (!image) throwProviderError(JSON.stringify(response.data));
-  return image;
+  const downloaded = await fetchJson(image, {
+    method: "GET",
+    rawResponse: true,
+  });
+  const mimeType = (downloaded.headers?.["content-type"] || "image/png")
+    .split(";")[0]
+    .trim();
+  return `data:${mimeType};base64,${Buffer.from(downloaded.data).toString("base64")}`;
 }
 
 // ---------------------------------------------------------------------------

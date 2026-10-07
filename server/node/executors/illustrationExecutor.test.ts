@@ -121,6 +121,7 @@ async function fixture(useChatIllustrations = true) {
   });
 
   const files = new Map<string, Uint8Array>();
+  const catalog = new Map<string, number>();
   const assets = {
     read: async (key: string) => files.get(key),
     write: async (key: string, data: Uint8Array) => {
@@ -132,7 +133,12 @@ async function fixture(useChatIllustrations = true) {
   };
   const imageAdapter = createIllustrationImages(
     () => assets,
-    async () => {},
+    async (entries) => {
+      entries.forEach(({ key, size }) => catalog.set(key, size));
+    },
+    async (keys) => {
+      keys.forEach((key) => catalog.delete(key));
+    },
   );
   const deps = {
     getStorage: () => ({
@@ -185,6 +191,7 @@ async function fixture(useChatIllustrations = true) {
     request,
     apiUrl,
     files,
+    catalog,
     counts: () => ({ images, tags }),
     failImage: (value: boolean) => {
       rejectImage = value;
@@ -209,7 +216,148 @@ async function finished(f: Awaited<ReturnType<typeof fixture>>) {
   );
 }
 
+async function addSlots(f: Awaited<ReturnType<typeof fixture>>, count: number) {
+  const chat = await f.storage.loadChat("chat-1");
+  const message = chat.message.find((m) => m.chatId === "m2");
+  message.data = "A sunset." + "<Illustration>".repeat(count);
+  message.illustrations = [];
+  const items = prepareIllustrations(
+    message,
+    chat.activeBranchId,
+    "server",
+    "client-run",
+  );
+  await f.storage.commit({
+    baseRevision: f.storage.getRevision(),
+    root: { upserts: [], deletes: [] },
+    characters: [],
+    chats: [],
+    chatManifests: [],
+    messageManifests: [],
+    messages: [{ id: "m2", chatId: "chat-1", position: 1, data: message }],
+  });
+  return items.map((item) => ({ ...f.request, illustrationId: item.id }));
+}
+
 describe("Node illustrations with real SQLite and HTTP providers", () => {
+  it("bounds accepted and accepting jobs, returns 429, and frees capacity after completion", async () => {
+    const f = await fixture();
+    const requests = await addSlots(f, 9);
+    let unblock!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    f.duringImage(() => blocked);
+    try {
+      const accepting = requests
+        .slice(0, 8)
+        .map((request) => f.executor.accept(request));
+      const response = await fetch(`${f.apiUrl}/api/illustrations/jobs`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "risu-auth": "authenticated",
+        },
+        body: JSON.stringify(requests[8]),
+      });
+      expect(response.status).toBe(429);
+      await Promise.all(accepting);
+      expect((await f.message()).illustrations[8].runId).toBe("client-run");
+    } finally {
+      unblock();
+    }
+    await vi.waitFor(
+      () => {
+        expect(requests.some((request) => f.executor.has(request))).toBe(false);
+      },
+      { timeout: 5000 },
+    );
+    await f.executor.accept(requests[8]);
+    await vi.waitFor(() => expect(f.executor.has(requests[8])).toBe(false), {
+      timeout: 5000,
+    });
+  });
+
+  it("bounds aggregate request bytes before SQL acceptance and releases rejected reservations", async () => {
+    const f = await fixture();
+    const requests = await addSlots(f, 3);
+    let unblock!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    f.duringImage(() => blocked);
+    const largeRequests = requests.map((request) => ({
+      ...request,
+      tagRequest: {
+        ...request.tagRequest,
+        body: { padding: "x".repeat(11 * 1024 * 1024) },
+      },
+    }));
+    const executor = createNodeIllustrationExecutor({
+      ...f.deps,
+      // Avoid transmitting oversized mock prompts; retain them in the actual executor queue.
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ text: "sunset, red dress" })),
+    });
+    try {
+      const first = executor.accept(largeRequests[0]);
+      const second = executor.accept(largeRequests[1]);
+      await expect(executor.accept(largeRequests[2])).rejects.toThrow(
+        "queue is full",
+      );
+      await Promise.all([first, second]);
+    } finally {
+      unblock();
+    }
+    await vi.waitFor(
+      () =>
+        expect(requests.some((request) => executor.has(request))).toBe(false),
+      { timeout: 5000 },
+    );
+    // Invalid acceptance must also release its reservation, even on repeated failures.
+    for (let i = 0; i < 10; i++) {
+      await expect(
+        executor.accept({ ...requests[2], version: 0 }),
+      ).rejects.toThrow("Invalid illustration version");
+    }
+    await executor.accept(requests[2]);
+    await vi.waitFor(() => expect(executor.has(requests[2])).toBe(false), {
+      timeout: 5000,
+    });
+  });
+
+  it("removes the logical catalog entry if the answer is edited after the inlay is stored", async () => {
+    const f = await fixture();
+    const executor = createNodeIllustrationExecutor({
+      ...f.deps,
+      storeImage: async (data) => {
+        const id = await f.deps.storeImage(data);
+        expect(f.catalog.has(`inlay_${id}.risuinlay`)).toBe(true);
+        const message = await f.message();
+        message.data += "user edit";
+        await f.storage.commit({
+          baseRevision: f.storage.getRevision(),
+          root: { upserts: [], deletes: [] },
+          characters: [],
+          chats: [],
+          chatManifests: [],
+          messageManifests: [],
+          messages: [
+            { id: "m2", chatId: "chat-1", position: 1, data: message },
+          ],
+        });
+        return id;
+      },
+    });
+    await executor.accept(f.request);
+    await vi.waitFor(() => expect(executor.has(f.target)).toBe(false), {
+      timeout: 5000,
+    });
+    expect(f.files.size).toBe(0);
+    expect(f.catalog.size).toBe(0);
+    expect((await f.message()).illustrations[0].imageId).toBeUndefined();
+  });
+
   it("rejects generation when the beta feature is disabled even with enabled illustration settings", async () => {
     const f = await fixture(false);
     await expect(f.executor.accept(f.request)).rejects.toThrow(

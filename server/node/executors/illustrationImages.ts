@@ -43,11 +43,13 @@ const hex = (key: string) => Buffer.from(key).toString("hex");
  *
  * @param getAssets - Resolves the active asset storage. / 활성 자산 저장소 조회 함수.
  * @param recordAssets - Registers saved asset sizes in the existing catalog. / 저장 자산 크기를 기존 목록에 등록하는 함수.
+ * @param removeAssets - Removes logical asset keys from the catalog. / 자산 목록에서 논리 키를 제거하는 함수.
  * @returns Image runtime and inlay save/remove operations. / 이미지 실행 어댑터·인레이 저장 및 제거 함수.
  */
 export function createIllustrationImages(
   getAssets: () => Assets,
   recordAssets: (entries: { key: string; size: number }[]) => Promise<void>,
+  removeAssets: (keys: string[]) => Promise<void>,
 ) {
   /**
    * Rejects redirects and applies a default ten-minute timeout.
@@ -182,12 +184,14 @@ export function createIllustrationImages(
     runtime,
     storeImage,
     /**
-     * Deletes an orphaned inlay's encoded asset from server storage.
+     * Deletes an orphaned inlay from server storage and its logical asset catalog.
      *
      * 한국어: 미사용 인레이의 인코딩된 자산을 서버 저장소에서 삭제하는 함수.
      */
     removeImage: async (id: string) => {
-      await getAssets().remove([hex(`inlay_${id}.risuinlay`)]);
+      const key = `inlay_${id}.risuinlay`;
+      await getAssets().remove([hex(key)]);
+      await removeAssets([key]);
     },
   };
 }

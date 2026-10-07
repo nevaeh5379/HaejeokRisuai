@@ -88,6 +88,17 @@ interface Dependencies {
   fetchImpl?: typeof fetch;
 }
 
+// Include jobs still awaiting SQL acceptance so that chain cannot retain unlimited bodies.
+const MAX_PENDING_JOBS = 8;
+const MAX_PENDING_REQUEST_BYTES = 32 * 1024 * 1024;
+const MAX_TAG_REQUEST_BYTES = 16 * 1024 * 1024;
+
+class IllustrationQueueFullError extends Error {
+  constructor() {
+    super("Illustration queue is full. Retry after pending jobs finish.");
+  }
+}
+
 /**
  * Validates all target IDs at the HTTP boundary and copies only accepted fields.
  *
@@ -173,6 +184,8 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
   const inputs = new Map<string, IllustrationTagRequest | undefined>();
   const accepting = new Set<string>();
   let acceptance: Promise<unknown> = Promise.resolve();
+  let pendingJobs = 0;
+  let pendingRequestBytes = 0;
 
   /**
    * Reloads and commits a slot transition, retrying up to five times on SQL revision conflicts.
@@ -419,6 +432,25 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
   function accept(
     raw: IllustrationJobRequest,
   ): Promise<IllustrationJobResponse> {
+    let requestBytes: number;
+    try {
+      if (pendingJobs >= MAX_PENDING_JOBS)
+        throw new IllustrationQueueFullError();
+      requestBytes = Buffer.byteLength(JSON.stringify(raw));
+      if (requestBytes > MAX_TAG_REQUEST_BYTES + 4096)
+        throw new TypeError("Illustration request exceeds 16 MiB");
+      if (pendingRequestBytes + requestBytes > MAX_PENDING_REQUEST_BYTES)
+        throw new IllustrationQueueFullError();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    pendingJobs++;
+    pendingRequestBytes += requestBytes;
+    let handedToRunner = false;
+    const release = () => {
+      pendingJobs--;
+      pendingRequestBytes -= requestBytes;
+    };
     const task = acceptance
       .catch(() => {})
       .then(async () => {
@@ -476,7 +508,9 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
             body: { ...raw.tagRequest.body },
           };
           if ("stream" in request.body) request.body.stream = false;
-          if (Buffer.byteLength(JSON.stringify(request)) > 16 * 1024 * 1024)
+          if (
+            Buffer.byteLength(JSON.stringify(request)) > MAX_TAG_REQUEST_BYTES
+          )
             throw new TypeError("Submodel request exceeds 16 MiB");
         }
         accepting.add(illustrationJobKey(target));
@@ -521,11 +555,16 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
           );
         const key = `${illustrationJobKey(target)}:${record.item.version}`;
         inputs.set(key, request);
+        handedToRunner = true;
         void runner.run(target, record.item.version).finally(() => {
           inputs.delete(key);
+          release();
         });
         accepting.delete(illustrationJobKey(target));
         return { runId, illustration: record.item };
+      })
+      .finally(() => {
+        if (!handedToRunner) release();
       });
     acceptance = task.catch(() => {});
     return task;
@@ -573,12 +612,21 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
               ),
             );
         } catch (error) {
-          res.status(error instanceof TypeError ? 400 : 500).send({
-            error:
-              error instanceof TypeError
-                ? error.message
-                : "Unable to start the illustration",
-          });
+          res
+            .status(
+              error instanceof IllustrationQueueFullError
+                ? 429
+                : error instanceof TypeError
+                  ? 400
+                  : 500,
+            )
+            .send({
+              error:
+                error instanceof TypeError ||
+                error instanceof IllustrationQueueFullError
+                  ? error.message
+                  : "Unable to start the illustration",
+            });
         }
       });
     }
