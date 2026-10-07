@@ -39,7 +39,7 @@ async function listen(app: express.Express) {
   return `http://127.0.0.1:${typeof address === "object" ? address.port : 0}`;
 }
 
-async function fixture() {
+async function fixture(useChatIllustrations = true) {
   const image = await sharp({
     create: { width: 8, height: 8, channels: 3, background: "red" },
   })
@@ -77,6 +77,7 @@ async function fixture() {
   const { storage, database } = makeHarness(makeTauriStorage, schema);
   await storage.init();
   const db = buildFullDatabase();
+  db.useChatIllustrations = useChatIllustrations;
   db.illustration = resolveIllustrationSettings({
     enabled: true,
     basePrompt: "quality",
@@ -209,6 +210,15 @@ async function finished(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("Node illustrations with real SQLite and HTTP providers", () => {
+  it("rejects generation when the beta feature is disabled even with enabled illustration settings", async () => {
+    const f = await fixture(false);
+    await expect(f.executor.accept(f.request)).rejects.toThrow(
+      "Chat illustrations are disabled",
+    );
+    expect(f.counts()).toEqual({ images: 0, tags: 0 });
+    expect((await f.message()).illustrations[0].status).toBe("queued");
+  });
+
   it("finishes after HTTP acceptance without any client polling, stores an inlay, and ignores replay", async () => {
     const f = await fixture();
     const response = await fetch(`${f.apiUrl}/api/illustrations/jobs`, {

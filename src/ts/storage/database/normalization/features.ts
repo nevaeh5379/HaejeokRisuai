@@ -23,6 +23,7 @@ const llmFormatOptions = Object.values(LLMFormat) as [
 ];
 
 const featureScalarDefaults = {
+  useChatIllustrations: defaultBoolean(false),
   useInstructPrompt: defaultBoolean(false),
   hanuraiEnable: defaultBoolean(false),
   hanuraiSplit: defaultBoolean(false),

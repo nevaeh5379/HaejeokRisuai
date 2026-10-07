@@ -266,7 +266,9 @@ import Check from "src/lib/UI/GUI/CheckInput.svelte";
 {/if}
 
 {#if submenu === 3 || submenu === -1}
-    <IllustrationSettings />
+    {#if settingsStore.state.useChatIllustrations}
+        <IllustrationSettings />
+    {/if}
     <Accordion name={language.imageGeneration} styled disabled={submenu !== -1}>
         <span class="text-textcolor mt-2">{language.imageGeneration} {language.provider} <Help key="sdProvider"/></span>
         <SelectInput className="mt-2 mb-4" bind:value={settingsStore.state.sdProvider}>

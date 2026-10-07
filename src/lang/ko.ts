@@ -1,4 +1,5 @@
 export const languageKorean = {
+  useChatIllustrations: "채팅 삽화 기능 사용 (베타)",
   illustration: {
     previousImage: "?? ??", nextImage: "?? ??",
     errorStages: { prepare: "삽화 시작", tags: "그림 태그 작성", image: "이미지 생성", save: "이미지 저장", status: "삽화 상태 확인" },

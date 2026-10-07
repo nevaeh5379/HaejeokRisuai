@@ -593,7 +593,9 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                 }
             }}/>
         {/if}
-        <IllustrationSettings characterId={characterStore.characters[$selectedCharID].chaId} />
+        {#if settingsStore.state.useChatIllustrations}
+            <IllustrationSettings characterId={characterStore.characters[$selectedCharID].chaId} />
+        {/if}
     {:else if viewSubMenu === 2}
         <AdditionalAssetsSection />
     {/if}

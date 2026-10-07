@@ -66,6 +66,7 @@ export interface RisuPersona {
 }
 
 export interface DatabaseSettings {
+  useChatIllustrations: boolean;
   illustration?: IllustrationSettings;
   apiType: string;
   openAIKey: string;

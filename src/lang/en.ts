@@ -1,4 +1,5 @@
 export const languageEnglish = {
+  useChatIllustrations: "Enable chat illustrations (Beta)",
   illustration: {
     previousImage: "Previous illustration", nextImage: "Next illustration",
     errorStages: { prepare: "Starting illustration", tags: "Writing image tags", image: "Generating image", save: "Saving image", status: "Checking illustration status" },

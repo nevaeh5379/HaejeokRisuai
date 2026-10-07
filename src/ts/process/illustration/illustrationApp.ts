@@ -81,6 +81,8 @@ function resolveTarget(
  * @throws When the resident chat no longer exists. / 적재된 대상 채팅이 사라진 경우.
  */
 function getSettings(target: IllustrationTarget) {
+  if (!settingsStore.state.useChatIllustrations)
+    throw new Error("Chat illustrations are disabled");
   const resolved = resolveTarget(target);
   if (!resolved) throw new Error("The illustration chat was removed");
   return resolveIllustrationSettings(
@@ -404,6 +406,10 @@ async function submit(
   action?: IllustrationAction,
 ) {
   const key = illustrationJobKey(target);
+  if (!settingsStore.state.useChatIllustrations) {
+    contexts.delete(key);
+    return;
+  }
   if (submissions.has(key) || runner.has(target)) return;
   submissions.add(key);
   let serverDispatched = false;
@@ -506,6 +512,7 @@ export async function enqueueAnswerIllustrations(
   target: Omit<IllustrationTarget, "illustrationId">,
   context: IllustrationContext,
 ) {
+  if (!settingsStore.state.useChatIllustrations) return;
   const answerKey = JSON.stringify(target);
   if (scheduling.has(answerKey)) return;
   scheduling.add(answerKey);
@@ -580,6 +587,7 @@ export async function illustrationAction(
   target: IllustrationTarget,
   action: IllustrationAction,
 ) {
+  if (!settingsStore.state.useChatIllustrations) return;
   const key = illustrationJobKey(target);
   if (actions.has(key) || submissions.has(key) || runner.has(target)) return;
   actions.add(key);

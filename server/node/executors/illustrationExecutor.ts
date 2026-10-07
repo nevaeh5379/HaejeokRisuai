@@ -240,6 +240,8 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
    */
   async function settings(target: IllustrationTarget) {
     const storage = deps.getStorage();
+    if ((await storage.loadSettingKey("useChatIllustrations")).value !== true)
+      throw new TypeError("Chat illustrations are disabled");
     const char = await storage.loadCharacter(target.characterId);
     if (
       !char ||

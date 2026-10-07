@@ -252,6 +252,7 @@ export async function buildGenerationPrompt(
     settingsStore.state.illustration,
     options.currentChar.illustration,
   );
+  illustration.enabled &&= settingsStore.state.useChatIllustrations === true;
   const markerInstructions: OpenAIChat[] =
     illustration.enabled &&
     options.nowChatroom.type !== "group" &&

@@ -8,6 +8,17 @@ import {
 } from "./databaseDefaults";
 
 describe("normalizeDatabaseDefaults", () => {
+  it("keeps chat illustrations opt-in and preserves existing illustration settings", () => {
+    const illustration = { enabled: true, basePrompt: "quality" };
+    const disabled = normalizeSettingsInput({ illustration });
+    expect(disabled.useChatIllustrations).toBe(false);
+    expect(disabled.illustration).toMatchObject(illustration);
+    expect(
+      normalizeSettingsInput({ useChatIllustrations: true, illustration })
+        .useChatIllustrations,
+    ).toBe(true);
+  });
+
   it("defaults and preserves Android navigation-bar settings", () => {
     const defaults = normalizeSettingsInput({});
     expect(defaults.autoHideAndroidNavigationBar).toBe(false);

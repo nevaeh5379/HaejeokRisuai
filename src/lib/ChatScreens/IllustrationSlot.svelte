@@ -2,12 +2,13 @@
   import { onMount } from "svelte";
   import { language } from "src/lang";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
+  import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
   import { describeIllustrationError, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
   let { target, width = 100, hideImages = false }: { target: IllustrationTarget; width?: number; hideImages?: boolean } = $props();
   let item = $derived(characterStore.characters.find((c) => c.chaId === target.characterId)?.chats?.find((c) => c.id === target.chatId)?.message?.find((m) => m.chatId === target.messageId)?.illustrations?.find((i) => i.id === target.illustrationId));
   let working = $state(false);
   let error = $state("");
-  let busy = $derived(working || (item && isIllustrationBusy(item.status)));
+  let busy = $derived(!settingsStore.state.useChatIllustrations || working || (item && isIllustrationBusy(item.status)));
   let selectedImageId = $state<string>();
   let imageUrl = $state("");
   let images = $derived([...new Set([...(item?.imageIds ?? []), ...(item?.imageId ? [item.imageId] : [])])]);
