@@ -10,6 +10,8 @@
 export interface IllustrationSettings {
   enabled: boolean;
   displayWidth: number;
+  generationCount: number;
+  tagRequestMode: "sequential" | "parallel";
   recentMessages: number;
   includeDescription: boolean;
   includePersona: boolean;
@@ -29,6 +31,8 @@ export interface IllustrationSettings {
 export const DEFAULT_ILLUSTRATION_SETTINGS: Readonly<IllustrationSettings> = {
   enabled: false,
   displayWidth: 50,
+  generationCount: 1,
+  tagRequestMode: "sequential",
   recentMessages: 6,
   includeDescription: true,
   includePersona: true,
@@ -189,14 +193,45 @@ export interface Illustration {
   branchId?: string;
   executor: "app" | "server";
   runId: string;
+  /** Monotonic persisted progress counter, used to reject late status snapshots. */
+  progress?: number;
   tags?: string;
   prompt?: string;
   negativePrompt?: string;
   imageId?: string;
   /** Generated inlay IDs in chronological order, without loading image bytes. */
   imageIds?: string[];
+  /** Bounded per-image prompts and progress for the current batch; no image bytes. */
+  batch?: {
+    version: number;
+    count: number;
+    entries: IllustrationBatchEntry[];
+  };
   error?: string;
   errorDetails?: IllustrationErrorDetails;
+}
+
+export interface IllustrationBatchEntry {
+  tags?: string;
+  prompt?: string;
+  negativePrompt?: string;
+  imageId?: string;
+}
+
+/** Checks whether any image in the requested batch still needs a submodel call. */
+export function needsIllustrationTags(
+  item: Illustration,
+  count: number,
+  action?: IllustrationAction,
+): boolean {
+  if (action === "rewrite") return true;
+  const entries = item.batch?.entries ?? [{ tags: item.tags }];
+  const size = action === "retry" && item.batch ? item.batch.count : count;
+  return Array.from(
+    { length: normalizeIllustrationGenerationCount(size) },
+    (_, index) =>
+      !entries[index]?.tags && !(action === "retry" && entries[index]?.imageId),
+  ).some(Boolean);
 }
 
 /**
@@ -320,7 +355,19 @@ export function resolveIllustrationSettings(
   result.displayWidth = Number.isFinite(result.displayWidth)
     ? Math.max(10, Math.min(100, Math.round(result.displayWidth)))
     : DEFAULT_ILLUSTRATION_SETTINGS.displayWidth;
+  result.generationCount = normalizeIllustrationGenerationCount(
+    result.generationCount,
+  );
+  result.tagRequestMode =
+    result.tagRequestMode === "parallel" ? "parallel" : "sequential";
   return result;
+}
+
+/** Limits each slot to a small batch suitable for low-memory devices. */
+export function normalizeIllustrationGenerationCount(value: number): number {
+  return Number.isFinite(value)
+    ? Math.max(1, Math.min(8, Math.floor(value)))
+    : 1;
 }
 
 /**

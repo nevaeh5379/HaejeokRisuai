@@ -1,39 +1,18 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
-import type { IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
 import IllustrationSlot from "src/lib/ChatScreens/IllustrationSlot.svelte";
+import { item, characterStore } from "./fixtures/IllustrationSlotState.svelte";
 
-const { item } = vi.hoisted(() => ({
-  item: {
-    id: "slot",
-    status: "failed",
-    error: "fallback",
-    errorDetails: undefined as IllustrationErrorDetails | undefined,
-    imageId: undefined as string | undefined,
-    imageIds: undefined as string[] | undefined,
-  },
-}));
 const { recoverIllustration } = vi.hoisted(() => ({
   recoverIllustration: vi.fn(),
 }));
 vi.mock("src/ts/process/illustration/illustrationApp", () => ({
   recoverIllustration,
 }));
-vi.mock("src/ts/stores/domain/characterStore.svelte", () => ({
-  characterStore: {
-    characters: [
-      {
-        chaId: "character",
-        chats: [
-          {
-            id: "chat",
-            message: [{ chatId: "message", illustrations: [item] }],
-          },
-        ],
-      },
-    ],
-  },
-}));
+vi.mock(
+  "src/ts/stores/domain/characterStore.svelte",
+  async () => import("./fixtures/IllustrationSlotState.svelte"),
+);
 vi.mock("src/lang", async () => {
   const { languageKorean } = await import("src/lang/ko");
   return { language: languageKorean };
@@ -53,7 +32,133 @@ afterEach(async () => {
   recoverIllustration.mockReset();
   item.imageId = undefined;
   item.imageIds = undefined;
+  item.batch = undefined;
+  item.tags = undefined;
+  characterStore.characters[0].chats[0].message[0].illustrations = [item];
   vi.restoreAllMocks();
+});
+
+it("updates the displayed image as server snapshots save each image in a batch", async () => {
+  const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+  vi.mocked(getInlayAssetBlob).mockClear();
+  vi.mocked(getInlayAssetBlob).mockResolvedValue({
+    data: new Blob(["image"], { type: "image/png" }),
+    name: "image",
+    ext: "png",
+    type: "image",
+    width: 640,
+    height: 960,
+  });
+  let sequence = 0;
+  vi.spyOn(URL, "createObjectURL").mockImplementation(
+    () => `blob:saved-${++sequence}`,
+  );
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  item.status = "generating";
+  item.error = "";
+  item.errorDetails = undefined;
+  item.batch = { version: 1, count: 4, entries: [{}, {}, {}, {}] };
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  flushSync();
+  const message = characterStore.characters[0].chats[0].message[0];
+  for (let index = 1; index <= 4; index++) {
+    message.illustrations[0] = {
+      ...item,
+      tags: "next image tags",
+      imageId: `saved-${index}`,
+      imageIds: Array.from(
+        { length: index },
+        (_, offset) => `saved-${offset + 1}`,
+      ),
+      batch: {
+        version: 1,
+        count: 4,
+        entries: Array.from({ length: 4 }, (_, offset) =>
+          offset < index
+            ? { imageId: `saved-${offset + 1}`, tags: `tags-${offset + 1}` }
+            : {},
+        ),
+      },
+    };
+    flushSync();
+    await vi.waitFor(() => {
+      flushSync();
+      expect(target.querySelector("img")?.getAttribute("src")).toBe(
+        `blob:saved-${index}`,
+      );
+      expect(target.querySelector("img")?.getAttribute("loading")).toBe(
+        "eager",
+      );
+      expect(target.querySelector("img")?.getAttribute("width")).toBe("640");
+      expect(target.querySelector("img")?.getAttribute("height")).toBe("960");
+      expect(getInlayAssetBlob).toHaveBeenLastCalledWith(`saved-${index}`);
+      expect(target.querySelector("details span")?.textContent).toBe(
+        `tags-${index}`,
+      );
+    });
+  }
+  const details = target.querySelector("details")!;
+  details.open = true;
+  const buttons = target.querySelectorAll<HTMLButtonElement>(
+    "[data-risu-illustration-image] > button",
+  );
+  for (let index = 3; index >= 1; index--) {
+    buttons[0].click();
+    flushSync();
+    expect(details.querySelector("span")?.textContent).toBe(`tags-${index}`);
+    expect(details.open).toBe(true);
+  }
+  buttons[1].click();
+  flushSync();
+  expect(details.querySelector("span")?.textContent).toBe("tags-2");
+});
+
+it("shows partial batch progress and loads only the selected image while generation is active", async () => {
+  const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+  vi.mocked(getInlayAssetBlob).mockClear();
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:first");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  item.status = "generating";
+  item.error = "";
+  item.errorDetails = undefined;
+  item.imageId = "first";
+  item.imageIds = ["first"];
+  item.batch = {
+    version: 1,
+    count: 4,
+    entries: [{ imageId: "first" }, {}, {}, {}],
+  };
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  await vi.waitFor(() => {
+    flushSync();
+    expect(target.querySelector("img")).not.toBeNull();
+    expect(target.textContent).toContain("저장된 삽화: 1 / 4");
+  });
+  expect(getInlayAssetBlob).toHaveBeenCalledExactlyOnceWith("first");
 });
 
 it("opens the latest image, navigates both ways and releases image URLs", async () => {
@@ -128,6 +233,7 @@ it.each([false, true])(
     item.error = "";
     item.errorDetails = undefined;
     item.imageId = "legacy";
+    item.tags = "legacy tags";
     target = document.createElement("div");
     document.body.appendChild(target);
     app = mount(IllustrationSlot, {
@@ -143,6 +249,9 @@ it.each([false, true])(
       },
     });
     flushSync();
+    expect(target.querySelector("details span")?.textContent).toBe(
+      "legacy tags",
+    );
     if (hideImages) {
       expect(target.querySelector("[data-risu-illustration-image]")).toBeNull();
       expect(getInlayAssetBlob).not.toHaveBeenCalled();
@@ -191,9 +300,80 @@ it("shows a temporary connection error when status polling fails, and clears it 
     "네트워크",
   );
   expect(item.status).toBe("generating");
-  await vi.advanceTimersByTimeAsync(5000);
+  await vi.advanceTimersByTimeAsync(1000);
   flushSync();
   expect(target.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("retries an initially unavailable image without waiting for another image ID or a page reload", async () => {
+  vi.useFakeTimers();
+  const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+  vi.mocked(getInlayAssetBlob).mockClear();
+  vi.mocked(getInlayAssetBlob).mockResolvedValueOnce(null);
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:available");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  item.status = "complete";
+  item.imageId = "new";
+  item.error = "";
+  item.errorDetails = undefined;
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  flushSync();
+  await vi.dynamicImportSettled();
+  flushSync();
+  expect(getInlayAssetBlob).toHaveBeenCalledTimes(1);
+  expect(target.querySelector("img")).toBeNull();
+  await vi.advanceTimersByTimeAsync(250);
+  flushSync();
+  expect(getInlayAssetBlob).toHaveBeenCalledTimes(2);
+  expect(target.querySelector("img")?.getAttribute("src")).toBe(
+    "blob:available",
+  );
+});
+
+it("does not overlap polling requests when the Node server responds slowly", async () => {
+  vi.useFakeTimers();
+  item.status = "generating";
+  item.error = "";
+  item.errorDetails = undefined;
+  let release!: () => void;
+  recoverIllustration.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  flushSync();
+  await vi.dynamicImportSettled();
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(recoverIllustration).toHaveBeenCalledTimes(1);
+  release();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(recoverIllustration).toHaveBeenCalledTimes(2);
 });
 
 it.each([

@@ -6132,6 +6132,9 @@ const illustrationImages = createIllustrationImages(
   removeAssetCatalogKeys,
 );
 const illustrationExecutor = createNodeIllustrationExecutor({
+  onProgress: (target) => {
+    realtimeEventHub.broadcast("illustration-progress", target);
+  },
   getStorage: () => postgresStorage,
   commit: (payload) => databaseMutations.commit(payload, undefined),
   imageRuntime: illustrationImages.runtime,

@@ -1,6 +1,9 @@
 export const languageKorean = {
   useChatIllustrations: "채팅 삽화 기능 사용 (베타)",
   illustration: {
+    generationCount: "자리당 삽화 생성 장수", generationCountHelp: "각 삽화 자리에서 1~8장을 생성합니다(기본 1장). 장마다 보조 모델에 태그를 요청하며, 완성된 장부터 표시합니다. 재시도는 실패하거나 빠진 장만 채우며 이미 완성된 그림은 유지합니다. 장수만큼 보조 모델·그림 생성 요청이 발생합니다.",
+    tagRequestMode: "보조 모델 요청 방식", tagRequestModeHelp: "순차 요청: 태그 작성·그림 생성·저장을 한 장씩 마친 뒤 다음 장을 시작합니다. 동시 요청: 최대 4개의 태그 요청을 동시에 보내고, 다른 요청이 진행 중이어도 도착한 태그부터 그림 생성에 넘깁니다. 두 방식 모두 그림 생성과 저장은 한 장씩 처리합니다.", sequential: "순차 요청", parallel: "동시 요청",
+    batchProgress: "저장된 삽화",
     previousImage: "?? ??", nextImage: "?? ??",
     errorStages: { prepare: "삽화 시작", tags: "그림 태그 작성", image: "이미지 생성", save: "이미지 저장", status: "삽화 상태 확인" },
     errorReasons: {

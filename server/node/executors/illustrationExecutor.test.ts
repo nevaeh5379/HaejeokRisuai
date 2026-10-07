@@ -39,7 +39,11 @@ async function listen(app: express.Express) {
   return `http://127.0.0.1:${typeof address === "object" ? address.port : 0}`;
 }
 
-async function fixture(useChatIllustrations = true) {
+async function fixture(
+  useChatIllustrations = true,
+  generationCount = 1,
+  tagRequestMode: "sequential" | "parallel" = "sequential",
+) {
   const image = await sharp({
     create: { width: 8, height: 8, channels: 3, background: "red" },
   })
@@ -51,9 +55,16 @@ async function fixture(useChatIllustrations = true) {
     tags = 0;
   let rejectImage = false;
   let beforeImage: (() => Promise<void> | void) | undefined;
+  let beforeTags: ((index: number) => Promise<void> | void) | undefined;
+  let activeTags = 0,
+    maximumTags = 0;
   provider.post("/tags", async (_req, res) => {
-    tags++;
+    const index = ++tags;
+    activeTags++;
+    maximumTags = Math.max(maximumTags, activeTags);
+    await beforeTags?.(index);
     await new Promise((r) => setTimeout(r, 30));
+    activeTags--;
     res.send({
       choices: [
         { message: { content: "<think>reason</think>sunset, red dress" } },
@@ -79,6 +90,8 @@ async function fixture(useChatIllustrations = true) {
   const db = buildFullDatabase();
   db.useChatIllustrations = useChatIllustrations;
   db.illustration = resolveIllustrationSettings({
+    generationCount,
+    tagRequestMode,
     enabled: true,
     basePrompt: "quality",
     negativePrompt: "bad anatomy",
@@ -199,6 +212,10 @@ async function fixture(useChatIllustrations = true) {
     duringImage: (fn: () => Promise<void> | void) => {
       beforeImage = fn;
     },
+    duringTags: (fn: (index: number) => Promise<void> | void) => {
+      beforeTags = fn;
+    },
+    tagConcurrency: () => maximumTags,
     message: async () =>
       (await storage.loadChat("chat-1")).message.find((m) => m.chatId === "m2"),
   };
@@ -240,6 +257,80 @@ async function addSlots(f: Awaited<ReturnType<typeof fixture>>, count: number) {
 }
 
 describe("Node illustrations with real SQLite and HTTP providers", () => {
+  it("notifies the saved image after SQL commit while subsequent images are still pending", async () => {
+    const f = await fixture(true, 4, "parallel");
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.duringImage(() => (f.counts().images === 2 ? blocked : undefined));
+    const onProgress = vi.fn();
+    const executor = createNodeIllustrationExecutor({ ...f.deps, onProgress });
+    await executor.accept(f.request);
+    try {
+      await vi.waitFor(() => expect(onProgress).toHaveBeenCalledTimes(1));
+      expect(onProgress).toHaveBeenCalledWith(f.target);
+      const item = (await f.message()).illustrations[0];
+      expect(item.imageIds).toHaveLength(1);
+      expect(item.progress).toBeGreaterThan(0);
+      expect(item.status).not.toBe("complete");
+      expect(f.files.size).toBe(1);
+    } finally {
+      release();
+    }
+    await finished(f);
+    expect(onProgress).toHaveBeenCalledTimes(5); // Four saved images and the final state.
+  });
+  it("sends parallel submodel HTTP requests and saves the first image before the remaining tags arrive", async () => {
+    const f = await fixture(true, 4, "parallel");
+    let release!: () => void;
+    const blockedTags = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.duringTags((index) => (index === 1 ? undefined : blockedTags));
+    await f.executor.accept(f.request);
+    try {
+      await vi.waitFor(
+        () => {
+          expect(f.counts()).toEqual({ tags: 4, images: 1 });
+          expect(f.files.size).toBe(1);
+        },
+        { timeout: 5000 },
+      );
+      expect(f.tagConcurrency()).toBe(4);
+      expect((await f.message()).illustrations[0].status).not.toBe("complete");
+    } finally {
+      release();
+    }
+    await finished(f);
+    expect(f.counts()).toEqual({ tags: 4, images: 4 });
+    expect((await f.message()).illustrations[0].imageIds).toHaveLength(4);
+    expect((await f.message()).illustrations[0].status).toBe("complete");
+  });
+  it("stores four images in one slot and retries only the failed member without repeating tags", async () => {
+    const f = await fixture(true, 4);
+    f.duringImage(() => {
+      const { images } = f.counts();
+      if (images > 1) expect(f.files.size).toBeGreaterThan(0);
+      f.failImage(images === 2);
+    });
+    await f.executor.accept(f.request);
+    await finished(f);
+    const item = (await f.message()).illustrations[0];
+    expect(f.counts()).toEqual({ tags: 4, images: 4 });
+    expect(item.status).toBe("failed");
+    expect(item.imageIds).toHaveLength(3);
+    expect(f.catalog.size).toBe(3);
+    await f.executor.accept({ ...f.target, version: 1, action: "retry" });
+    await finished(f);
+    const complete = (await f.message()).illustrations[0];
+    expect(f.counts()).toEqual({ tags: 4, images: 5 });
+    expect(complete.status).toBe("complete");
+    expect(complete.imageIds).toHaveLength(4);
+    expect(complete.batch!.entries.every((entry) => entry.imageId)).toBe(true);
+    expect(f.files.size).toBe(4);
+    expect(f.catalog.size).toBe(4);
+  });
   it("bounds accepted and accepting jobs, returns 429, and frees capacity after completion", async () => {
     const f = await fixture();
     const requests = await addSlots(f, 9);

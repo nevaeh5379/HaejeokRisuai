@@ -4,6 +4,7 @@ import {
   fitIllustrationPrompt,
   illustrationSourceHash,
   isIllustrationBusy,
+  needsIllustrationTags,
   prepareIllustrations,
   resolveIllustrationSettings,
   validIllustration,
@@ -18,6 +19,7 @@ import {
   type IllustrationTarget,
   IllustrationQueue,
 } from "@risuai/protocol/dist/illustration.mjs";
+import { applyIllustrationProgress } from "./illustrationProgress";
 import {
   canUpdateIllustration,
   createIllustrationRunner,
@@ -128,6 +130,7 @@ async function update(
     if (!canUpdateIllustration(record, version)) return null;
     const originalData = message.data;
     change(record);
+    item.progress = (item.progress ?? 0) + 1;
     // A user may have edited or deleted the resident message while SQL was loading.
     const latest = resolveTarget(target);
     const latestMessage = latest?.chat.message.find(
@@ -267,6 +270,8 @@ export function usesAppIllustrationExecutor(): boolean {
 }
 
 const runner = createIllustrationRunner({
+  generationCount: async (target) => getSettings(target).generationCount,
+  tagRequestMode: async (target) => getSettings(target).tagRequestMode,
   update,
   /**
    * Calls the submodel and flattens supported nonstreaming tag responses.
@@ -437,7 +442,13 @@ async function submit(
           return;
         const record = { ...located, item: latestItem };
         let tagRequest: IllustrationJobRequest["tagRequest"];
-        if (!record.item.tags || action === "rewrite") {
+        if (
+          needsIllustrationTags(
+            record.item,
+            getSettings(target).generationCount,
+            action,
+          )
+        ) {
           const response = await requestChatDataMain(
             { ...(await tagArguments(target, record)), previewBody: true },
             "submodel",
@@ -618,6 +629,7 @@ export async function illustrationAction(
       if (!resolved || !item || !message.data.includes(item.token)) return;
     }
     item.version++;
+    if (action === "retry" && item.batch) item.batch.version = item.version;
     item.branchId = resolved.chat.activeBranchId;
     item.sourceHash = illustrationSourceHash(message);
     item.status = "queued";
@@ -626,6 +638,7 @@ export async function illustrationAction(
     delete item.error;
     delete item.errorDetails;
     if (action === "rewrite") {
+      delete item.batch;
       delete item.tags;
       delete item.prompt;
       delete item.negativePrompt;
@@ -645,42 +658,77 @@ export async function illustrationAction(
  *
  * @returns Server state, or null outside Node storage or when the API request fails. / 서버 상태 또는 Node 저장소가 아니거나 API 요청 실패 시 null.
  */
+const statusQueries = new Map<string, Promise<IllustrationJobResponse>>();
+
 export async function queryServerIllustration(
   target: IllustrationTarget,
   throwOnFailure = false,
 ): Promise<IllustrationJobResponse | null> {
   const storage = forageStorage.realStorage;
   if (!(storage instanceof NodeStorage)) return null;
-  const query = new URLSearchParams({ ...target });
-  const result = await serverRequest(
-    storage,
-    `/api/illustrations/jobs?${query}`,
-  ).catch((error) => {
+  const key = illustrationJobKey(target);
+  let task = statusQueries.get(key);
+  if (!task) {
+    task = (async () => {
+      const query = new URLSearchParams({ ...target });
+      const result = await serverRequest(
+        storage,
+        `/api/illustrations/jobs?${query}`,
+      );
+      // Re-resolve after the request: SSE hydration may have replaced the message.
+      const resolved = resolveTarget(target);
+      const resident = resolved?.chat.message.find(
+        (m) => m.chatId === target.messageId,
+      );
+      if (resident)
+        applyIllustrationProgress(
+          resident,
+          result.illustration,
+          resolved.chat.activeBranchId,
+        );
+      return result;
+    })().finally(() => {
+      statusQueries.delete(key);
+    });
+    statusQueries.set(key, task);
+  }
+  return task.catch((error) => {
     if (throwOnFailure) throw error;
     return null;
   });
-  if (result) {
-    const resolved = resolveTarget(target);
-    const resident = resolved?.chat.message.find(
-      (m) => m.chatId === target.messageId,
-    );
-    const item = resident?.illustrations?.find(
-      (i) => i.id === target.illustrationId,
-    );
-    if (resident && item?.version === result.illustration.version) {
-      const located = await readIllustrationMessage(storage.sql, target);
-      if (
-        located &&
-        located.branchId === resolved.chat.activeBranchId &&
-        illustrationSourceHash(resident) ===
-          illustrationSourceHash(located.message)
-      ) {
-        resident.data = located.message.data;
-        resident.illustrations = located.message.illustrations;
-      }
-    }
+}
+
+/** Refreshes only an already resident slot when its server commit notification arrives. */
+const progressRefreshes = new Map<
+  string,
+  { dirty: boolean; task: Promise<void> }
+>();
+
+export function refreshServerIllustration(
+  target: IllustrationTarget,
+): Promise<void> {
+  const resolved = resolveTarget(target);
+  const item = resolved?.chat.message
+    .find((m) => m.chatId === target.messageId)
+    ?.illustrations?.find((i) => i.id === target.illustrationId);
+  if (item?.executor !== "server") return Promise.resolve();
+  const key = illustrationJobKey(target);
+  const pending = progressRefreshes.get(key);
+  if (pending) {
+    pending.dirty = true;
+    return pending.task;
   }
-  return result;
+  const refresh = { dirty: false, task: Promise.resolve() };
+  refresh.task = (async () => {
+    do {
+      refresh.dirty = false;
+      await queryServerIllustration(target);
+    } while (refresh.dirty);
+  })().finally(() => {
+    progressRefreshes.delete(key);
+  });
+  progressRefreshes.set(key, refresh);
+  return refresh.task;
 }
 
 /**

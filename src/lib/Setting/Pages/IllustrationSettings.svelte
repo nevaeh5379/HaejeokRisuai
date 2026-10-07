@@ -56,6 +56,31 @@
     <h3 class="font-bold">{language.illustration.title}</h3>
     <Help text={language.illustration.description} name={language.illustration.title} />
   </div>
+  <label class="flex items-center justify-between gap-2">
+    <span class="flex items-center gap-1.5">
+      <span>{language.illustration.generationCount}</span>
+      <Help text={language.illustration.generationCountHelp} name={language.illustration.generationCount} />
+    </span>
+    <select class="rounded border border-darkborderc bg-darkbg p-1 text-textcolor" aria-label={language.illustration.generationCount}
+      value={characterId && own.generationCount === undefined ? "inherit" : String(effective.generationCount)}
+      onchange={(e) => set("generationCount", e.currentTarget.value === "inherit" ? undefined : Number(e.currentTarget.value))}>
+      {#if characterId}<option value="inherit">{language.illustration.inherit} ({effective.generationCount})</option>{/if}
+      {#each [1, 2, 3, 4, 5, 6, 7, 8] as count}<option value={String(count)}>{count}</option>{/each}
+    </select>
+  </label>
+  <label class="flex items-center justify-between gap-2">
+    <span class="flex items-center gap-1.5">
+      <span>{language.illustration.tagRequestMode}</span>
+      <Help text={language.illustration.tagRequestModeHelp} name={language.illustration.tagRequestMode} />
+    </span>
+    <select class="rounded border border-darkborderc bg-darkbg p-1 text-textcolor" aria-label={language.illustration.tagRequestMode}
+      value={characterId && own.tagRequestMode === undefined ? "inherit" : effective.tagRequestMode}
+      onchange={(e) => set("tagRequestMode", e.currentTarget.value === "inherit" ? undefined : e.currentTarget.value === "parallel" ? "parallel" : "sequential")}>
+      {#if characterId}<option value="inherit">{language.illustration.inherit} ({language.illustration[effective.tagRequestMode]})</option>{/if}
+      <option value="sequential">{language.illustration.sequential}</option>
+      <option value="parallel">{language.illustration.parallel}</option>
+    </select>
+  </label>
   {#if characterId}<p class="text-sm text-textcolor2">{language.illustration.characterHelp}</p>{/if}
   {#if isNodeServer && browserSubmodel}<p class="text-sm text-draculared">{language.illustration.appFallback}</p>{/if}
   {#each booleans as key}

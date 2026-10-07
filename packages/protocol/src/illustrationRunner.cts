@@ -3,6 +3,7 @@ import {
   describeIllustrationError,
   IllustrationQueue,
   validIllustration,
+  normalizeIllustrationGenerationCount,
   type Illustration,
   type IllustrationMessage,
   type IllustrationTarget,
@@ -26,6 +27,10 @@ export interface IllustrationRecord {
  * 한국어: 공통 실행기에 저장·보조 모델·이미지 제공자·자산 처리 동작을 제공하는 플랫폼 계약.
  */
 export interface IllustrationRuntime {
+  generationCount?(target: IllustrationTarget): Promise<number>;
+  tagRequestMode?(
+    target: IllustrationTarget,
+  ): Promise<"sequential" | "parallel">;
   /**
    * Reads, validates and persists a transition against the latest slot version.
    *
@@ -100,6 +105,68 @@ export function illustrationJobKey(target: IllustrationTarget): string {
   ]);
 }
 
+type ReadyEntry = {
+  index: number;
+  tags?: string;
+  failure?: { error: unknown };
+};
+
+/**
+ * Prefetches at most four tag requests, yielding results in arrival order.
+ * Only the consumer writes SQL or generates images. The bounded completion queue holds text,
+ * and exiting drains in-flight work before releasing the executor's request reservation.
+ */
+async function* readyBatchEntries(
+  runtime: IllustrationRuntime,
+  target: IllustrationTarget,
+  record: IllustrationRecord,
+  count: number,
+  mode: "sequential" | "parallel",
+): AsyncGenerator<ReadyEntry> {
+  const indices = Array.from({ length: count }, (_, index) => index).filter(
+    (index) => !record.item.batch!.entries[index]?.imageId,
+  );
+  if (mode === "sequential") {
+    for (const index of indices) yield { index };
+    return;
+  }
+  const ready: ReadyEntry[] = [];
+  let next = 0;
+  let stopped = false;
+  let wake: (() => void) | undefined;
+  const worker = async () => {
+    while (!stopped && next < indices.length) {
+      const index = indices[next++];
+      let result: ReadyEntry;
+      try {
+        const tags =
+          record.item.batch!.entries[index]?.tags ??
+          cleanIllustrationTags(await runtime.createTags(target, record));
+        result = { index, tags };
+      } catch (error) {
+        result = { index, failure: { error } };
+      }
+      if (stopped) return;
+      ready.push(result);
+      wake?.();
+      wake = undefined;
+    }
+  };
+  const workers = Array.from({ length: Math.min(4, indices.length) }, worker);
+  try {
+    for (let completed = 0; completed < indices.length; completed++) {
+      if (!ready.length)
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      yield ready.shift()!;
+    }
+  } finally {
+    stopped = true;
+    await Promise.allSettled(workers);
+  }
+}
+
 /**
  * Creates a serial tag-to-image runner shared by the app and Node adapters.
  *
@@ -127,66 +194,146 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
       try {
         let record = await runtime.update(target, version, () => {});
         if (!record) return;
-        if (!record.item.tags) {
-          stage = "tags";
+        if (record.item.batch?.version !== version) {
+          const count = normalizeIllustrationGenerationCount(
+            (await runtime.generationCount?.(target)) ??
+              record.item.batch?.count ??
+              1,
+          );
+          record = await runtime.update(target, version, ({ item }) => {
+            const previous = item.batch?.entries ?? [
+              {
+                tags: item.tags,
+                prompt: item.prompt,
+                negativePrompt: item.negativePrompt,
+              },
+            ];
+            item.batch = {
+              version,
+              count,
+              entries: Array.from({ length: count }, (_, index) => {
+                const { tags, prompt, negativePrompt } = previous[index] ?? {};
+                return { tags, prompt, negativePrompt };
+              }),
+            };
+          });
+          if (!record) return;
+        }
+        const count = normalizeIllustrationGenerationCount(
+          record.item.batch!.count,
+        );
+        const mode = (await runtime.tagRequestMode?.(target)) ?? "sequential";
+        if (mode === "parallel") {
           record = await runtime.update(target, version, ({ item }) => {
             item.status = "tagging";
           });
           if (!record) return;
-          const tags = cleanIllustrationTags(
-            await runtime.createTags(target, record),
-          );
-          const prompts = await runtime.prompts(tags, target);
-          record = await runtime.update(target, version, ({ item }) => {
-            Object.assign(item, prompts, { tags });
-          });
-          if (!record) return;
         }
-        if (!record.item.prompt) {
-          const prompts = await runtime.prompts(record.item.tags!, target);
-          record = await runtime.update(target, version, ({ item }) => {
-            Object.assign(item, prompts);
-          });
+        let failure:
+          { error: unknown; stage: IllustrationErrorStage } | undefined;
+        for await (const ready of readyBatchEntries(
+          runtime,
+          target,
+          record,
+          count,
+          mode,
+        )) {
+          const { index } = ready;
+          stage = "prepare";
+          record = await runtime.update(target, version, () => {});
           if (!record) return;
-        }
-        record = await runtime.update(target, version, ({ item }) => {
-          item.status = "generating";
-          delete item.error;
-          delete item.errorDetails;
-        });
-        if (!record) return;
-        stage = "image";
-        const data = await runtime.createImage(
-          record.item.prompt!,
-          record.item.negativePrompt ?? "",
-          target,
-        );
-        if (!(await runtime.update(target, version, () => {}))) return;
-        stage = "save";
-        storedId = await runtime.storeImage(data);
-        const completed = await runtime.update(
-          target,
-          version,
-          ({ message, item }) => {
-            const token = `{{inlay::${storedId}}}`;
-            item.imageIds = [
-              ...new Set([
-                ...(item.imageIds ?? []),
-                ...(item.imageId ? [item.imageId] : []),
-                storedId!,
-              ]),
-            ];
-            message.data = message.data.replace(item.token, token);
-            Object.assign(item, {
-              token,
-              imageId: storedId,
-              status: "complete",
+          if (record.item.batch!.entries[index]?.imageId) continue;
+          try {
+            if (ready.failure) {
+              stage = "tags";
+              throw ready.failure.error;
+            }
+            let entry = record.item.batch!.entries[index];
+            if (!entry.tags) {
+              stage = "tags";
+              record = await runtime.update(target, version, ({ item }) => {
+                item.status = "tagging";
+              });
+              if (!record) return;
+              const tags = cleanIllustrationTags(
+                ready.tags ?? (await runtime.createTags(target, record)),
+              );
+              const prompts = await runtime.prompts(tags, target);
+              record = await runtime.update(target, version, ({ item }) => {
+                Object.assign(item.batch!.entries[index], prompts, { tags });
+              });
+              if (!record) return;
+              entry = record.item.batch!.entries[index];
+            }
+            if (!entry.prompt) {
+              const prompts = await runtime.prompts(entry.tags!, target);
+              record = await runtime.update(target, version, ({ item }) => {
+                Object.assign(item.batch!.entries[index], prompts);
+              });
+              if (!record) return;
+              entry = record.item.batch!.entries[index];
+            }
+            record = await runtime.update(target, version, ({ item }) => {
+              item.status = "generating";
+              Object.assign(item, {
+                tags: entry.tags,
+                prompt: entry.prompt,
+                negativePrompt: entry.negativePrompt,
+              });
+              delete item.error;
+              delete item.errorDetails;
             });
+            if (!record) return;
+            stage = "image";
+            const data = await runtime.createImage(
+              entry.prompt!,
+              entry.negativePrompt ?? "",
+              target,
+            );
+            if (!(await runtime.update(target, version, () => {}))) return;
+            stage = "save";
+            storedId = await runtime.storeImage(data);
+            const completed = await runtime.update(
+              target,
+              version,
+              ({ message, item }) => {
+                const token = `{{inlay::${storedId}}}`;
+                item.imageIds = [
+                  ...new Set([
+                    ...(item.imageIds ?? []),
+                    ...(item.imageId ? [item.imageId] : []),
+                    storedId!,
+                  ]),
+                ];
+                item.batch!.entries[index].imageId = storedId;
+                message.data = message.data.replace(item.token, token);
+                Object.assign(item, { token, imageId: storedId });
+              },
+            );
+            if (!completed) return;
+            storedId = undefined;
+          } catch (error) {
+            failure = { error, stage };
+          } finally {
+            if (storedId) {
+              await runtime.removeImage(storedId).catch(() => {});
+              storedId = undefined;
+            }
+          }
+        }
+        await runtime.update(target, version, ({ item }) => {
+          item.status = failure ? "failed" : "complete";
+          if (failure) {
+            item.error = runtime.summarizeError(failure.error);
+            item.errorDetails = describeIllustrationError(
+              failure.error,
+              failure.stage,
+            );
+          } else {
             delete item.error;
             delete item.errorDetails;
-          },
-        );
-        if (completed) storedId = undefined;
+          }
+        });
       } catch (error) {
         await runtime
           .update(target, version, ({ item }) => {

@@ -9,6 +9,7 @@
   let item = $derived(characterStore.characters.find((c) => c.chaId === target.characterId)?.chats?.find((c) => c.id === target.chatId)?.message?.find((m) => m.chatId === target.messageId)?.illustrations?.find((i) => i.id === target.illustrationId));
   let working = $state(false);
   let error = $state("");
+  let imageError = $state("");
   let busy = $derived(!settingsStore.state.useChatIllustrations || working || (item && isIllustrationBusy(item.status)));
   let selectedImageId = $state<string>();
   let imageUrl = $state("");
@@ -30,26 +31,43 @@
   let images = $derived([...new Set([...(item?.imageIds ?? []), ...(item?.imageId ? [item.imageId] : [])])]);
   let imageIndex = $derived(Math.max(0, images.indexOf(selectedImageId ?? item?.imageId ?? "")));
   let displayedImageId = $derived(images[imageIndex]);
+  let displayedTags = $derived((displayedImageId
+    ? item?.batch?.entries.find((entry) => entry.imageId === displayedImageId)?.tags
+    : undefined) ?? item?.tags);
   let latestImageId = $derived(item?.imageId);
   $effect(() => { selectedImageId = latestImageId; });
   $effect(() => {
     const id = hideImages ? undefined : displayedImageId;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    imageError = "";
     // Keep the current image and its dimensions while the next asset is read.
     if (!id) {
       void replaceImageUrl("");
       imageWidth = undefined;
       imageHeight = undefined;
     }
-    if (id) void import("src/ts/process/files/inlays").then(async ({ getInlayAssetBlob }) => {
-      if (cancelled) return;
-      const asset = await getInlayAssetBlob(id);
-      if (cancelled || !(asset?.data instanceof Blob)) return;
-      void replaceImageUrl(URL.createObjectURL(asset.data));
-    }).catch((caught) => {
-      if (!cancelled) error = formatError(describeIllustrationError(caught, "save"));
-    });
-    return () => { cancelled = true; };
+    if (id) {
+      const load = async (attempt = 0) => {
+        try {
+          const { getInlayAssetBlob } = await import("src/ts/process/files/inlays");
+          if (cancelled) return;
+          const asset = await getInlayAssetBlob(id);
+          if (cancelled) return;
+          if (!(asset?.data instanceof Blob)) throw new Error("Illustration image is not available yet");
+          imageError = "";
+          imageWidth = asset.width || undefined;
+          imageHeight = asset.height || undefined;
+          void replaceImageUrl(URL.createObjectURL(asset.data));
+        } catch (caught) {
+          if (cancelled) return;
+          if (attempt < 3) retryTimer = setTimeout(() => { void load(attempt + 1); }, 250 * 2 ** attempt);
+          else imageError = formatError(describeIllustrationError(caught, "save"));
+        }
+      };
+      void load();
+    }
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   });
   function formatError(details: IllustrationErrorDetails) {
     const reason = details.stage === "save" && details.code === "unknown"
@@ -79,6 +97,7 @@
   }
   onMount(() => {
     let stopped = false;
+    let recovering = false;
     /**
      * Polls a visible busy slot for progress or interruption without starting new generation.
      *
@@ -89,7 +108,8 @@
      * 한국어: 지연 로딩 전후 해제 여부를 확인해 사라진 화면의 삽화 갱신을 방지.
      */
     const recover = async () => {
-      if (stopped || !item || !isIllustrationBusy(item.status)) return;
+      if (stopped || recovering || !item || !isIllustrationBusy(item.status)) return;
+      recovering = true;
       try {
         const { recoverIllustration } = await import("src/ts/process/illustration/illustrationApp");
         if (!stopped) {
@@ -98,10 +118,12 @@
         }
       } catch (caught) {
         if (!stopped) error = formatError(describeIllustrationError(caught, "status"));
+      } finally {
+        recovering = false;
       }
     };
     void recover();
-    const timer = setInterval(() => { void recover(); }, 5000);
+    const timer = setInterval(() => { void recover(); }, 1000);
     return () => { stopped = true; clearInterval(timer); };
   });
 </script>
@@ -115,7 +137,9 @@
       <span class="flex min-w-0 flex-1 flex-col items-center gap-1">
         {#if imageUrl}
           <button type="button" use:illustrationViewer={imageUrl} aria-label={`${language.illustration.title}: ${language.fullscreen}`} title={language.fullscreen} class="flex max-w-full cursor-zoom-in justify-center rounded focus-visible:outline-2 focus-visible:outline-textcolor">
-            <img src={imageUrl} width={imageWidth} height={imageHeight} alt={language.illustration.title} class="h-auto max-w-full" loading="lazy" onload={(event) => {
+            <img src={imageUrl} width={imageWidth} height={imageHeight} alt={language.illustration.title} class="h-auto max-w-full" loading="eager" decoding="async" onerror={() => {
+              imageError = formatError(describeIllustrationError(new Error("Illustration image could not be decoded"), "save"));
+            }} onload={(event) => {
               const image = event.currentTarget as HTMLImageElement;
               imageWidth = image.naturalWidth || undefined;
               imageHeight = image.naturalHeight || undefined;
@@ -134,7 +158,8 @@
   <span role="group" aria-label={language.illustration.title} class="not-prose my-2 flex flex-wrap items-center gap-2 rounded border border-darkborderc bg-darkbg p-2 text-sm text-textcolor"
     onclick={(e) => e.stopPropagation()} onpointerdown={(e) => e.stopPropagation()}>
     {#if item.status !== "complete"}<span aria-live="polite">{language.illustration[item.status]}</span>{/if}
-    {#if itemError || error}<span role="alert" class="text-draculared">{error || itemError}</span>{/if}
+    {#if item.batch && item.batch.count > 1}<span aria-live="polite">{language.illustration.batchProgress}: {item.batch.entries.filter((entry) => entry.imageId).length} / {item.batch.count}</span>{/if}
+    {#if itemError || error || imageError}<span role="alert" class="text-draculared">{error || imageError || itemError}</span>{/if}
     {#if item.status === "failed" || item.status === "interrupted"}
       <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("retry")}>{language.illustration.retry}</button>
     {/if}
@@ -142,6 +167,6 @@
       <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("regenerate")}>{language.illustration.regenerate}</button>
     {/if}
     <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("rewrite")}>{language.illustration.rewrite}</button>
-    {#if item.tags}<details><summary>{language.illustration.tags}</summary><span class="whitespace-pre-wrap">{item.tags}</span></details>{/if}
+    {#if displayedTags}<details><summary>{language.illustration.tags}</summary><span class="whitespace-pre-wrap">{displayedTags}</span></details>{/if}
   </span>
 {/if}

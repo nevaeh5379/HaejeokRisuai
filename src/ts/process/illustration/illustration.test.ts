@@ -29,6 +29,46 @@ function answer(data = "A garden.<Illustration>A storm.<Illustration>") {
 }
 
 describe("illustration positions and scene context", () => {
+  it("defaults to sequential tags and supports inherited or overridden parallel mode", () => {
+    expect(resolveIllustrationSettings().tagRequestMode).toBe("sequential");
+    expect(
+      resolveIllustrationSettings({ tagRequestMode: "parallel" })
+        .tagRequestMode,
+    ).toBe("parallel");
+    expect(
+      resolveIllustrationSettings(
+        { tagRequestMode: "parallel" },
+        { tagRequestMode: "sequential" },
+      ).tagRequestMode,
+    ).toBe("sequential");
+    expect(
+      resolveIllustrationSettings({ tagRequestMode: "invalid" as "parallel" })
+        .tagRequestMode,
+    ).toBe("sequential");
+  });
+  it("inherits image count and clamps invalid or oversized imported batches", () => {
+    expect(
+      resolveIllustrationSettings({ generationCount: 4 }).generationCount,
+    ).toBe(4);
+    expect(
+      resolveIllustrationSettings(
+        { generationCount: 4 },
+        { generationCount: 2 },
+      ).generationCount,
+    ).toBe(2);
+    for (const [value, expected] of [
+      [0, 1],
+      [-2, 1],
+      [4.9, 4],
+      [99, 8],
+      [NaN, 1],
+      [Infinity, 1],
+    ]) {
+      expect(
+        resolveIllustrationSettings({ generationCount: value }).generationCount,
+      ).toBe(expected);
+    }
+  });
   it("does nothing without a marker and recognizes all markers after split streaming/continuation text is joined", () => {
     expect(findIllustrationMarkers("No picture.")).toEqual([]);
     const text = [
@@ -71,6 +111,7 @@ describe("illustration positions and scene context", () => {
     expect(resolveIllustrationSettings()).toMatchObject({
       enabled: false,
       displayWidth: 50,
+      generationCount: 1,
       recentMessages: 6,
       includeDescription: true,
       includePersona: true,
@@ -211,7 +252,11 @@ describe("illustration positions and scene context", () => {
   });
 });
 
-function runtime(message = answer()) {
+function runtime(
+  message = answer(),
+  generationCount = 1,
+  tagRequestMode: "sequential" | "parallel" = "sequential",
+) {
   const targets: IllustrationTarget[] = message.illustrations.map((item) => ({
     characterId: "char",
     chatId: "chat",
@@ -231,13 +276,18 @@ function runtime(message = answer()) {
     return record;
   });
   const adapter = {
+    generationCount: vi.fn(async () => generationCount),
+    tagRequestMode: vi.fn(async () => tagRequestMode),
     update,
     createTags: vi.fn(async () => "tags"),
     prompts: vi.fn(async (tags) => ({
       prompt: `base, ${tags}`,
       negativePrompt: "negative",
     })),
-    createImage: vi.fn(async () => "data:image/png;base64,image"),
+    createImage: vi.fn(
+      async (_prompt: string, _negative: string, _target: IllustrationTarget) =>
+        "data:image/png;base64,image",
+    ),
     storeImage: vi.fn(async () => "image"),
     removeImage: vi.fn(async () => {}),
     summarizeError: (_error: unknown) => "failed",
@@ -257,6 +307,234 @@ function runtime(message = answer()) {
 }
 
 describe("illustration execution lifecycle", () => {
+  it("starts four tag requests together and generates in arrival order without waiting for all tags", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 4, "parallel");
+    const releases: ((tags: string) => void)[] = [];
+    r.adapter.createTags.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    let releaseImage!: () => void;
+    const blockedImage = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+    r.adapter.createImage.mockImplementationOnce(async () => {
+      await blockedImage;
+      return "data";
+    });
+    r.adapter.storeImage.mockImplementation(
+      async () => `image-${r.adapter.storeImage.mock.calls.length}`,
+    );
+    const task = r.runner.run(r.targets[0], 1);
+    await vi.waitFor(() => expect(releases).toHaveLength(4));
+    releases[1]("second");
+    await vi.waitFor(() =>
+      expect(r.adapter.createImage).toHaveBeenCalledExactlyOnceWith(
+        "base, second",
+        "negative",
+        r.targets[0],
+      ),
+    );
+    // These results arrive while the first image is still generating. Their FIFO order matters.
+    releases[3]("fourth");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releases[0]("first");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releases[2]("third");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.adapter.createImage).toHaveBeenCalledTimes(1);
+    releaseImage();
+    await task;
+    expect(r.adapter.createImage.mock.calls.map(([prompt]) => prompt)).toEqual([
+      "base, second",
+      "base, fourth",
+      "base, first",
+      "base, third",
+    ]);
+    expect(r.message.illustrations[0].status).toBe("complete");
+    expect(r.message.illustrations[0].imageIds).toHaveLength(4);
+  });
+
+  it("bounds parallel tags to four requests and continues after a rejected request", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 8, "parallel");
+    let active = 0,
+      maximum = 0;
+    r.adapter.createTags.mockImplementation(async () => {
+      const index = r.adapter.createTags.mock.calls.length;
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active--;
+      if (index === 2) throw new Error("one tag request failed");
+      return `tags-${index}`;
+    });
+    r.adapter.storeImage.mockImplementation(
+      async () => `image-${r.adapter.storeImage.mock.calls.length}`,
+    );
+    await r.runner.run(r.targets[0], 1);
+    expect(maximum).toBe(4);
+    expect(active).toBe(0);
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(8);
+    expect(r.adapter.createImage).toHaveBeenCalledTimes(7);
+    const item = r.message.illustrations[0];
+    expect(item.status).toBe("failed");
+    expect(item.errorDetails?.stage).toBe("tags");
+    item.version++;
+    item.batch!.version = item.version;
+    await r.runner.run(r.targets[0], 2);
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(9);
+    expect(r.adapter.createImage).toHaveBeenCalledTimes(8);
+    expect(item.status).toBe("complete");
+  });
+
+  it("stops starting tag requests after invalidation and drains in-flight calls before releasing the job", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 8, "parallel");
+    const releases: ((tags: string) => void)[] = [];
+    r.adapter.createTags.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    r.adapter.createImage.mockImplementationOnce(async () => {
+      r.remove();
+      return "invalid image";
+    });
+    const task = r.runner.run(r.targets[0], 1);
+    await vi.waitFor(() => expect(releases).toHaveLength(4));
+    releases[0]("first");
+    await vi.waitFor(() =>
+      expect(r.adapter.createImage).toHaveBeenCalledTimes(1),
+    );
+    expect(releases).toHaveLength(5);
+    expect(r.runner.has(r.targets[0])).toBe(true);
+    releases.slice(1).forEach((resolve) => resolve("remaining"));
+    await task;
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(5);
+    expect(r.adapter.storeImage).not.toHaveBeenCalled();
+    expect(r.runner.has(r.targets[0])).toBe(false);
+  });
+  it("requests four independent tag/image pairs and displays each saved image immediately", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 4);
+    const events: string[] = [];
+    r.adapter.createTags.mockImplementation(async () => {
+      const index = r.adapter.createTags.mock.calls.length;
+      events.push(`tags-${index}`);
+      if (index > 1) {
+        expect(r.message.illustrations[0].imageIds).toHaveLength(index - 1);
+        expect(r.message.illustrations[0].status).not.toBe("complete");
+      }
+      return `tags-${index}`;
+    });
+    r.adapter.createImage.mockImplementation(async (prompt) => {
+      events.push(prompt);
+      return "image data";
+    });
+    r.adapter.storeImage.mockImplementation(
+      async () => `image-${r.adapter.storeImage.mock.calls.length}`,
+    );
+    await r.runner.run(r.targets[0], 1);
+    expect(events).toEqual([
+      "tags-1",
+      "base, tags-1",
+      "tags-2",
+      "base, tags-2",
+      "tags-3",
+      "base, tags-3",
+      "tags-4",
+      "base, tags-4",
+    ]);
+    expect(r.message.illustrations[0]).toMatchObject({
+      status: "complete",
+      imageIds: ["image-1", "image-2", "image-3", "image-4"],
+    });
+    expect(r.message.data).toBe("Scene.{{inlay::image-4}}");
+  });
+
+  it("preserves partial success and retries only missing images with their own saved prompts", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 4);
+    r.adapter.createTags.mockImplementation(
+      async () => `tags-${r.adapter.createTags.mock.calls.length}`,
+    );
+    r.adapter.createImage
+      .mockResolvedValueOnce("data")
+      .mockRejectedValueOnce(new Error("failed second image"));
+    r.adapter.storeImage.mockImplementation(
+      async () => `image-${r.adapter.storeImage.mock.calls.length}`,
+    );
+    await r.runner.run(r.targets[0], 1);
+    const item = r.message.illustrations[0];
+    expect(item.status).toBe("failed");
+    expect(item.imageIds).toHaveLength(3);
+    item.version++;
+    item.batch!.version = item.version;
+    item.status = "queued";
+    await r.runner.run(r.targets[0], 2);
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(4);
+    expect(r.adapter.createImage).toHaveBeenCalledTimes(5);
+    expect(r.adapter.createImage).toHaveBeenLastCalledWith(
+      "base, tags-2",
+      "negative",
+      r.targets[0],
+    );
+    expect(item.status).toBe("complete");
+    expect(item.imageIds).toHaveLength(4);
+    expect(item.batch!.entries.every((entry) => entry.imageId)).toBe(true);
+  });
+
+  it("retries failed tag requests without repeating successful batch entries", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 4);
+    r.adapter.createTags.mockRejectedValueOnce(new Error("tag failure"));
+    r.adapter.storeImage.mockImplementation(
+      async () => `image-${r.adapter.storeImage.mock.calls.length}`,
+    );
+    await r.runner.run(r.targets[0], 1);
+    const item = r.message.illustrations[0];
+    expect(item.status).toBe("failed");
+    expect(item.errorDetails?.stage).toBe("tags");
+    expect(item.imageIds).toHaveLength(3);
+    item.version++;
+    item.batch!.version = item.version;
+    await r.runner.run(r.targets[0], 2);
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(5);
+    expect(r.adapter.createImage).toHaveBeenCalledTimes(4);
+    expect(item.status).toBe("complete");
+  });
+
+  it("regenerates each batch entry using its own tags while retaining previous images", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 4);
+    r.adapter.createTags.mockImplementation(
+      async () => `tags-${r.adapter.createTags.mock.calls.length}`,
+    );
+    r.adapter.storeImage.mockImplementation(
+      async () => `image-${r.adapter.storeImage.mock.calls.length}`,
+    );
+    await r.runner.run(r.targets[0], 1);
+    r.message.illustrations[0].version++;
+    await r.runner.run(r.targets[0], 2);
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(4);
+    expect(
+      r.adapter.createImage.mock.calls.slice(4).map(([prompt]) => prompt),
+    ).toEqual(["base, tags-1", "base, tags-2", "base, tags-3", "base, tags-4"]);
+    expect(r.message.illustrations[0].imageIds).toHaveLength(8);
+  });
+
+  it("stops further batch requests after an edit while storing a later image and removes only the orphan", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 4);
+    r.adapter.storeImage
+      .mockResolvedValueOnce("first")
+      .mockImplementationOnce(async () => {
+        r.message.data += "edit";
+        return "orphan";
+      });
+    await r.runner.run(r.targets[0], 1);
+    expect(r.adapter.createTags).toHaveBeenCalledTimes(2);
+    expect(r.adapter.createImage).toHaveBeenCalledTimes(2);
+    expect(r.adapter.removeImage).toHaveBeenCalledExactlyOnceWith("orphan");
+    expect(r.message.illustrations[0].imageIds).toEqual(["first"]);
+  });
   it.each([
     [
       "tags",
@@ -348,6 +626,7 @@ describe("illustration execution lifecycle", () => {
     item.status = "queued";
     delete item.tags;
     delete item.prompt;
+    delete item.batch;
     r.adapter.createTags.mockImplementationOnce(async () => {
       expect(r.message.data).toContain("{{inlay::image}}");
       return "new tags";

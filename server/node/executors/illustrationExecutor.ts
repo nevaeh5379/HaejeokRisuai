@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   isIllustrationBusy,
+  needsIllustrationTags,
   resolveIllustrationSettings,
   illustrationSourceHash,
   describeIllustrationError,
@@ -86,6 +87,7 @@ interface Dependencies {
    */
   removeImage(id: string): Promise<void>;
   fetchImpl?: typeof fetch;
+  onProgress?(target: IllustrationTarget): void;
 }
 
 // Include jobs still awaiting SQL acceptance so that chain cannot retain unlimited bodies.
@@ -215,7 +217,10 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
       if (!item || item.version !== version) return null;
       const record: IllustrationRecord = { ...located, item };
       if (!interrupt && !canUpdateIllustration(record, version)) return null;
+      const previousImageId = item.imageId;
+      const previousStatus = item.status;
       change(record);
+      item.progress = (item.progress ?? 0) + 1;
       const { chatId: _id, ...data } = record.message;
       try {
         await deps.commit({
@@ -235,6 +240,16 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
           ],
           messageManifests: [],
         });
+        if (
+          item.imageId !== previousImageId ||
+          (item.status !== previousStatus && !isIllustrationBusy(item.status))
+        ) {
+          try {
+            deps.onProgress?.(target);
+          } catch (error) {
+            console.warn("Illustration progress notification failed", error);
+          }
+        }
         return record;
       } catch (error) {
         if (!Number.isSafeInteger(error?.currentRevision) || attempt === 4)
@@ -273,6 +288,10 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
 
   const runner = createIllustrationRunner({
     update,
+    generationCount: async (target) =>
+      (await settings(target)).illustration.generationCount,
+    tagRequestMode: async (target) =>
+      (await settings(target)).illustration.tagRequestMode,
     /**
      * Executes the transient submodel request, including Echo delays and Horde result polling.
      *
@@ -463,7 +482,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
         )
           throw new TypeError("Invalid illustration action");
         if (runner.has(target, raw.version)) return get(target);
-        await settings(target);
+        const { illustration } = await settings(target);
         const existing = await readIllustrationMessage(
           deps.getStorage(),
           target,
@@ -528,15 +547,25 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
                 if (!message.data.includes(item.token))
                   throw new TypeError("Illustration position was removed");
                 item.version++;
+                if (raw.action === "retry" && item.batch)
+                  item.batch.version = item.version;
                 item.branchId = branchId;
                 item.sourceHash = illustrationSourceHash(message);
                 if (raw.action === "rewrite") {
+                  delete item.batch;
                   delete item.tags;
                   delete item.prompt;
                   delete item.negativePrompt;
                 }
               }
-              if (!item.tags && !request)
+              if (
+                needsIllustrationTags(
+                  item,
+                  illustration.generationCount,
+                  raw.action,
+                ) &&
+                !request
+              )
                 throw new TypeError("A prepared submodel request is required");
               Object.assign(item, { runId, status: "queued" });
               delete item.error;

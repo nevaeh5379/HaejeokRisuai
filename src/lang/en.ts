@@ -1,6 +1,9 @@
 export const languageEnglish = {
   useChatIllustrations: "Enable chat illustrations (Beta)",
   illustration: {
+    generationCount: "Images per illustration", generationCountHelp: "Generate 1–8 images at each illustration position (default: 1). Each image gets its own auxiliary model request. Images appear as they finish. Retry fills only missing images; completed images stay available. Uses one model and image request per image.",
+    tagRequestMode: "Auxiliary model requests", tagRequestModeHelp: "Sequential: write tags, generate and save one image, then start the next. Parallel: send up to four tag requests at once and pass each result to image generation in arrival order, while other tag requests continue. Image generation and saving run one at a time in both modes.", sequential: "Sequential", parallel: "Parallel",
+    batchProgress: "Images saved",
     previousImage: "Previous illustration", nextImage: "Next illustration",
     errorStages: { prepare: "Starting illustration", tags: "Writing image tags", image: "Generating image", save: "Saving image", status: "Checking illustration status" },
     errorReasons: {
