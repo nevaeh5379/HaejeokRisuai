@@ -1478,7 +1478,9 @@ html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:active {
 }
 
 [data-risu-illustration-image] {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 50%;
   max-width: 100%;
   margin-inline: auto;

@@ -88,7 +88,7 @@
 
 {#if item}
   {#if displayedImageId && !hideImages}
-    <span data-risu-illustration-image={item.id} class="not-prose my-2 inline-flex max-w-full items-center gap-1" style:width={`${width}%`}>
+    <span data-risu-illustration-image={item.id} class="not-prose my-2 flex max-w-full items-center justify-center gap-1" style:width={`${width}%`}>
       {#if images.length > 1}
         <button type="button" aria-label={language.illustration.previousImage} title={language.illustration.previousImage} class="shrink-0 rounded bg-darkbutton p-2 text-textcolor disabled:opacity-30" disabled={imageIndex === 0} onclick={(e) => { e.stopPropagation(); selectedImageId = images[imageIndex - 1]; }} onpointerdown={(e) => e.stopPropagation()}>❮</button>
       {/if}
