@@ -6,12 +6,14 @@ import { buildProtocol } from "./tooling/build-protocol.ts";
 buildProtocol();
 
 export default defineConfig({
+  define: { __COMFYUI_FRONTEND_VERSION__: JSON.stringify("1.57.0") },
   plugins: [svelte()],
   oxc: {
     include: [/\.(?:[jt]sx?|cts)(?:$|\?)/],
   },
   resolve: {
     alias: {
+      "@": resolve(process.cwd(), "packages/comfyui-workflow/compat"),
       src: "/src",
       "@risuai/chat-core": resolve(process.cwd(), "packages/chat-core"),
       "@risuai/protocol": resolve(process.cwd(), "packages/protocol"),

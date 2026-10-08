@@ -32,8 +32,8 @@
   let imageIndex = $derived(Math.max(0, images.indexOf(selectedImageId ?? item?.imageId ?? "")));
   let displayedImageId = $derived(images[imageIndex]);
   let displayedTags = $derived((displayedImageId
-    ? item?.batch?.entries.find((entry) => entry.imageId === displayedImageId)?.tags
-    : undefined) ?? item?.tags);
+    ? item?.imageTags?.[displayedImageId] ?? item?.batch?.entries.find((entry) => entry.imageId === displayedImageId)?.tags
+    : undefined) ?? (!displayedImageId || displayedImageId === item?.imageId ? item?.tags : undefined));
   let latestImageId = $derived(item?.imageId);
   $effect(() => { selectedImageId = latestImageId; });
   $effect(() => {
@@ -72,7 +72,7 @@
   function formatError(details: IllustrationErrorDetails) {
     const reason = details.stage === "save" && details.code === "unknown"
       ? language.illustration.saveError : language.illustration.errorReasons[details.code];
-    return `${language.illustration.errorStages[details.stage]}: ${reason}${details.status ? ` (HTTP ${details.status})` : ""}`;
+    return `${language.illustration.errorStages[details.stage]}: ${reason}${details.status ? ` (HTTP ${details.status})` : ""}${details.providerDiagnostic ? `\n${details.providerDiagnostic}` : ""}`;
   }
   let itemError = $derived(item?.errorDetails ? formatError(item.errorDetails) : item?.error);
   /**
@@ -159,7 +159,7 @@
     onclick={(e) => e.stopPropagation()} onpointerdown={(e) => e.stopPropagation()}>
     {#if item.status !== "complete"}<span aria-live="polite">{language.illustration[item.status]}</span>{/if}
     {#if item.batch && item.batch.count > 1}<span aria-live="polite">{language.illustration.batchProgress}: {item.batch.entries.filter((entry) => entry.imageId).length} / {item.batch.count}</span>{/if}
-    {#if itemError || error || imageError}<span role="alert" class="text-draculared">{error || imageError || itemError}</span>{/if}
+    {#if itemError || error || imageError}<span role="alert" class="text-draculared whitespace-pre-wrap break-words">{error || imageError || itemError}</span>{/if}
     {#if item.status === "failed" || item.status === "interrupted"}
       <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("retry")}>{language.illustration.retry}</button>
     {/if}

@@ -1,5 +1,7 @@
 export const languageEnglish = {
   comfyWorkflows: {
+    loadingList: "Loading workflow list…", loadingWorkflow: "Downloading workflow JSON…", loadingNodes: "Loading node definitions…", converting: "Converting workflow JSON…", loadingViewer: "Opening JSON view…",
+    requestTimeout: "ComfyUI workflow operation timed out after 30 seconds. Check the server connection and try again.",
     editJson: "Edit JSON", viewJson: "View JSON", invalidJson: "Enter valid workflow JSON to open the tree view.",
     working: "Working…",
     saved: "Saved workflows", name: "Workflow name", add: "Add workflow", remove: "Delete workflow",

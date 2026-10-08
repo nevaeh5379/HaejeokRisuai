@@ -1,5 +1,6 @@
 import {
   cleanIllustrationTags,
+  retainIllustrationImageTags,
   describeIllustrationError,
   IllustrationQueue,
   validIllustration,
@@ -201,6 +202,7 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
               1,
           );
           record = await runtime.update(target, version, ({ item }) => {
+            retainIllustrationImageTags(item);
             const previous = item.batch?.entries ?? [
               {
                 tags: item.tags,
@@ -306,6 +308,7 @@ export function createIllustrationRunner(runtime: IllustrationRuntime) {
                   ]),
                 ];
                 item.batch!.entries[index].imageId = storedId;
+                (item.imageTags ??= {})[storedId!] = entry.tags!;
                 message.data = message.data.replace(item.token, token);
                 Object.assign(item, { token, imageId: storedId });
               },

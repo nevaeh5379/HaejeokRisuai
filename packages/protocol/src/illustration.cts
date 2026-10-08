@@ -70,6 +70,8 @@ export interface IllustrationErrorDetails {
   stage: IllustrationErrorStage;
   code: IllustrationErrorCode;
   status?: number;
+  /** Bounded ComfyUI validation codes and input names, without response bodies. */
+  providerDiagnostic?: string;
 }
 
 /** Carries safe transport diagnostics without retaining provider bodies or credentials. */
@@ -77,6 +79,7 @@ export class IllustrationRequestError extends Error {
   constructor(
     readonly code: IllustrationErrorCode,
     readonly status?: number,
+    readonly providerDiagnostic?: string,
   ) {
     super(
       status ? `Request failed (HTTP ${status})` : `Request failed: ${code}`,
@@ -95,6 +98,9 @@ export function describeIllustrationError(
       stage,
       code: error.code,
       ...(error.status ? { status: error.status } : {}),
+      ...(error.providerDiagnostic
+        ? { providerDiagnostic: error.providerDiagnostic }
+        : {}),
     };
   const value = error as {
     message?: unknown;
@@ -201,6 +207,8 @@ export interface Illustration {
   imageId?: string;
   /** Generated inlay IDs in chronological order, without loading image bytes. */
   imageIds?: string[];
+  /** Tags for retained images, without duplicating prompts or image bytes. */
+  imageTags?: Record<string, string>;
   /** Bounded per-image prompts and progress for the current batch; no image bytes. */
   batch?: {
     version: number;
@@ -216,6 +224,17 @@ export interface IllustrationBatchEntry {
   prompt?: string;
   negativePrompt?: string;
   imageId?: string;
+}
+
+/** Preserves existing image tags before a batch is replaced or rewritten. */
+export function retainIllustrationImageTags(item: Illustration): void {
+  const tags = { ...item.imageTags };
+  if (item.imageId && item.tags && !Object.hasOwn(tags, item.imageId))
+    tags[item.imageId] = item.tags;
+  for (const entry of item.batch?.entries ?? []) {
+    if (entry.imageId && entry.tags) tags[entry.imageId] = entry.tags;
+  }
+  if (Object.keys(tags).length) item.imageTags = tags;
 }
 
 /** Checks whether any image in the requested batch still needs a submodel call. */

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   isIllustrationBusy,
   needsIllustrationTags,
+  retainIllustrationImageTags,
   resolveIllustrationSettings,
   illustrationSourceHash,
   describeIllustrationError,
@@ -560,6 +561,7 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
                 item.branchId = branchId;
                 item.sourceHash = illustrationSourceHash(message);
                 if (raw.action === "rewrite") {
+                  retainIllustrationImageTags(item);
                   delete item.batch;
                   delete item.tags;
                   delete item.prompt;

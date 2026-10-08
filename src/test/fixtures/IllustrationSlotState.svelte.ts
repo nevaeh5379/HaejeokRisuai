@@ -11,6 +11,7 @@ export const item = $state({
   errorDetails: undefined as IllustrationErrorDetails | undefined,
   imageId: undefined as string | undefined,
   imageIds: undefined as string[] | undefined,
+  imageTags: undefined as Illustration["imageTags"],
   batch: undefined as Illustration["batch"],
 });
 

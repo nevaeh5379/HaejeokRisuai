@@ -1,4 +1,5 @@
 import { AuthorNoteError } from "../../packages/protocol/dist/authorNotes.cjs";
+import { proxyResponseHeaders } from "./http/proxyResponseHeaders.js";
 const express = require("express");
 const app = express();
 const {
@@ -2232,17 +2233,12 @@ async function runProxyStreamJob(job, arg) {
 }
 
 async function forwardUpstreamResponse(originalResponse, res) {
-  const head = new Headers(originalResponse.headers);
-  head.delete("content-security-policy");
-  head.delete("content-security-policy-report-only");
-  head.delete("clear-site-data");
-  head.delete("Cache-Control");
-  head.delete("Content-Encoding");
+  const head = proxyResponseHeaders(originalResponse.headers);
 
   const contentType = (head.get("content-type") || "").toLowerCase();
   const isSSE = contentType.includes("text/event-stream");
   if (isSSE) {
-    head.set("Cache-Control", "no-cache, no-transform");
+    head.set("Cache-Control", "no-store, no-transform");
     head.set("Connection", "keep-alive");
     head.set("X-Accel-Buffering", "no");
     head.delete("content-length");
@@ -2611,12 +2607,7 @@ const reverseProxyFunc = async (req, res, next) => {
     // get response body as stream
     const originalBody = originalResponse.body;
     // get response headers
-    const head = new Headers(originalResponse.headers);
-    head.delete("content-security-policy");
-    head.delete("content-security-policy-report-only");
-    head.delete("clear-site-data");
-    head.delete("Cache-Control");
-    head.delete("Content-Encoding");
+    const head = proxyResponseHeaders(originalResponse.headers);
     const headObj = {};
     for (let [k, v] of head) {
       headObj[k] = v;
@@ -2688,12 +2679,7 @@ const reverseProxyFunc_get = async (req, res, next) => {
     // get response body as stream
     const originalBody = originalResponse.body;
     // get response headers
-    const head = new Headers(originalResponse.headers);
-    head.delete("content-security-policy");
-    head.delete("content-security-policy-report-only");
-    head.delete("clear-site-data");
-    head.delete("Cache-Control");
-    head.delete("Content-Encoding");
+    const head = proxyResponseHeaders(originalResponse.headers);
     const headObj = {};
     for (let [k, v] of head) {
       headObj[k] = v;

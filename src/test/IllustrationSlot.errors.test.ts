@@ -32,10 +32,43 @@ afterEach(async () => {
   recoverIllustration.mockReset();
   item.imageId = undefined;
   item.imageIds = undefined;
+  item.imageTags = undefined;
   item.batch = undefined;
   item.tags = undefined;
   characterStore.characters[0].chats[0].message[0].illustrations = [item];
   vi.restoreAllMocks();
+});
+
+it("displays ComfyUI node validation details with the HTTP error", () => {
+  item.status = "failed";
+  item.error = "";
+  item.errorDetails = {
+    stage: "image",
+    code: "http",
+    status: 400,
+    providerDiagnostic:
+      "ComfyUI: prompt_outputs_failed_validation\nNode 18: required_input_missing (loras)",
+  };
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  flushSync();
+  expect(target.querySelector('[role="alert"]')?.textContent).toContain(
+    "HTTP 400",
+  );
+  expect(target.querySelector('[role="alert"]')?.textContent).toContain(
+    "Node 18: required_input_missing (loras)",
+  );
 });
 
 it("updates the displayed image as server snapshots save each image in a batch", async () => {
@@ -123,6 +156,50 @@ it("updates the displayed image as server snapshots save each image in a batch",
   buttons[1].click();
   flushSync();
   expect(details.querySelector("span")?.textContent).toBe("tags-2");
+});
+
+it("updates retained image tags after regeneration and does not substitute latest tags for missing history", () => {
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:image");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  item.status = "complete";
+  item.error = "";
+  item.errorDetails = undefined;
+  item.imageIds = ["unknown", "old", "new"];
+  item.imageId = "new";
+  item.tags = "new tags";
+  item.imageTags = { old: "old tags", new: "new tags" };
+  item.batch = {
+    version: 2,
+    count: 1,
+    entries: [{ imageId: "new", tags: "new tags" }],
+  };
+  target = document.createElement("div");
+  document.body.appendChild(target);
+  app = mount(IllustrationSlot, {
+    target,
+    props: {
+      target: {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+    },
+  });
+  flushSync();
+  expect(target.querySelector("details span")?.textContent).toBe("new tags");
+  const buttons = target.querySelectorAll<HTMLButtonElement>(
+    "[data-risu-illustration-image] > button",
+  );
+  buttons[0].click();
+  flushSync();
+  expect(target.querySelector("details span")?.textContent).toBe("old tags");
+  buttons[0].click();
+  flushSync();
+  expect(target.querySelector("details")).toBeNull();
+  buttons[1].click();
+  flushSync();
+  expect(target.querySelector("details span")?.textContent).toBe("old tags");
 });
 
 it("shows partial batch progress and loads only the selected image while generation is active", async () => {

@@ -6,6 +6,7 @@ import {
   isIllustrationBusy,
   needsIllustrationTags,
   prepareIllustrations,
+  retainIllustrationImageTags,
   resolveIllustrationSettings,
   validIllustration,
   describeIllustrationError,
@@ -638,6 +639,7 @@ export async function illustrationAction(
     delete item.error;
     delete item.errorDetails;
     if (action === "rewrite") {
+      retainIllustrationImageTags(item);
       delete item.batch;
       delete item.tags;
       delete item.prompt;

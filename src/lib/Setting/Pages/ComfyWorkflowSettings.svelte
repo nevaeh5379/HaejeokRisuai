@@ -1,7 +1,14 @@
 <script lang="ts">
   import { language } from "src/lang";
   import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-  import { fetchNative } from "src/ts/globalApi.svelte";
+  import { globalFetch } from "src/ts/globalApi.svelte";
+  import {
+    fetchComfyWorkflowJson,
+    withComfyWorkflowTimeout,
+    COMFY_WORKFLOW_LIST_PATH,
+    parseComfyWorkflowList,
+    fetchComfyWorkflowObjectInfo,
+  } from "src/ts/process/comfyWorkflowRequest";
   import { selectSingleFile } from "src/ts/util";
   import { alertConfirm, alertNormal } from "src/ts/alert";
   import {
@@ -23,6 +30,7 @@
   let serverFile = $state("");
   let listed = $state(false);
   let error = $state("");
+  let phase = $state("");
   $effect(() => {
     // Changing servers invalidates the previously fetched file list.
     settingsStore.state.comfyUiUrl;
@@ -38,29 +46,50 @@
     if (busy) return;
     busy = true;
     error = "";
+    phase = language.comfyWorkflows.working;
     try {
       await action();
     } catch (cause) {
-      error = String(cause);
+      error = `${phase}\n${cause instanceof Error ? cause.message : String(cause)}`;
     } finally {
       busy = false;
+      phase = "";
     }
   }
   async function getJson(path: string, url: string) {
-    const response = await fetchNative(createComfyUrlBuilder(url)(path), {
-      method: "GET",
-      requestTimeoutMs: 30000,
-    });
-    if (!response.ok) throw new Error(`ComfyUI HTTP ${response.status}: ${path}`);
-    return response.json();
+    return fetchComfyWorkflowJson(
+      createComfyUrlBuilder(url)(path),
+      globalFetch,
+      language.comfyWorkflows.requestTimeout,
+    );
   }
   async function prepare(value: unknown, url: string) {
+    phase = language.comfyWorkflows.converting;
     const { readApiWorkflow, convertComfyWorkflow } =
-      await import("src/ts/process/comfyWorkflow");
+      await withComfyWorkflowTimeout(
+        () => import("src/ts/process/comfyWorkflow"),
+        language.comfyWorkflows.requestTimeout,
+      );
     const api = readApiWorkflow(value);
     if (api) return JSON.stringify(api, null, 2);
-    const info = await getJson("/object_info", url);
-    return JSON.stringify(convertComfyWorkflow(value, info), null, 2);
+    phase = language.comfyWorkflows.loadingNodes;
+    const info = await fetchComfyWorkflowObjectInfo(
+      value,
+      (path) => getJson(path, url),
+      createComfyUrlBuilder(url),
+      (completed, total) => {
+        phase = `${language.comfyWorkflows.loadingNodes} (${completed}/${total})`;
+      },
+    );
+    phase = language.comfyWorkflows.converting;
+    return JSON.stringify(
+      await withComfyWorkflowTimeout(
+        () => convertComfyWorkflow(value, info),
+        language.comfyWorkflows.requestTimeout,
+      ),
+      null,
+      2,
+    );
   }
   function add(name = "Workflow", workflow = "") {
     const item: ComfyWorkflow = { id: crypto.randomUUID(), name, workflow };
@@ -70,6 +99,7 @@
   async function importFile() {
     const file = await selectSingleFile(["json"]);
     if (!file) return;
+    phase = language.comfyWorkflows.loadingWorkflow;
     const workflow = await prepare(
       JSON.parse(new TextDecoder().decode(file.data)),
       settingsStore.state.comfyUiUrl,
@@ -77,19 +107,19 @@
     add(file.name.replace(/\.json$/i, ""), workflow);
   }
   async function listServer() {
+    phase = language.comfyWorkflows.loadingList;
     const url = settingsStore.state.comfyUiUrl;
-    const files: unknown = await getJson(
-      "/userdata?dir=workflows&recurse=true&split=false",
-      url,
-    );
+    const files = await getJson(COMFY_WORKFLOW_LIST_PATH, url);
     if (url !== settingsStore.state.comfyUiUrl) return;
-    if (!Array.isArray(files) || !files.every((file) => typeof file === "string"))
-      throw new Error("Invalid ComfyUI workflow list.");
-    serverFiles = files.filter((file: string) => file.endsWith(".json")).sort();
+    serverFiles = parseComfyWorkflowList(
+      files,
+      createComfyUrlBuilder(url)(COMFY_WORKFLOW_LIST_PATH),
+    );
     serverFile = serverFiles[0] ?? "";
     listed = true;
   }
   async function importServer() {
+    phase = language.comfyWorkflows.loadingWorkflow;
     const file = serverFile;
     const url = settingsStore.state.comfyUiUrl;
     const value = await getJson(
@@ -136,8 +166,8 @@
     <span class="text-textcolor">{language.comfyWorkflows.name}</span>
     <TextInput size="sm" bind:value={selected.name} />
     {#key selected.id}
-      {#await import("./ComfyWorkflowJson.svelte")}
-        <p class="text-sm text-textcolor2" role="status">{language.comfyWorkflows.working}</p>
+      {#await withComfyWorkflowTimeout(() => import("./ComfyWorkflowJson.svelte"), language.comfyWorkflows.requestTimeout)}
+        <p class="text-sm text-textcolor2" role="status">{language.comfyWorkflows.loadingViewer}</p>
       {:then viewer}
         <viewer.default bind:workflow={selected.workflow} />
       {:catch cause}
@@ -155,8 +185,6 @@
   </div>
   <p class="text-xs text-textcolor2">{language.comfyWorkflows.help}</p>
   <button class={buttonClass} disabled={busy} onclick={() => run(listServer)}>{language.comfyWorkflows.load}</button>
-  {#if busy}<p class="text-sm text-textcolor2" role="status">{language.comfyWorkflows.working}</p>{/if}
-  {#if error}<p class="text-sm text-draculared break-words" role="alert">{error}</p>{/if}
   {#if serverFiles.length}
     <SelectInput size="sm" bind:value={serverFile} disabled={busy}>
       {#each serverFiles as file}<OptionInput value={file}>{file}</OptionInput>{/each}
@@ -165,4 +193,6 @@
   {:else if listed}
     <p class="text-xs text-textcolor2" role="status">{language.comfyWorkflows.empty}</p>
   {/if}
+  {#if busy}<p class="text-sm text-textcolor2" role="status">{phase}</p>{/if}
+  {#if error}<p class="text-sm text-draculared break-words whitespace-pre-wrap" role="alert">{error}</p>{/if}
 </div>

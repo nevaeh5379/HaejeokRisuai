@@ -1,5 +1,7 @@
 export const languageKorean = {
   comfyWorkflows: {
+    loadingList: "워크플로 목록 불러오는 중…", loadingWorkflow: "워크플로 JSON 다운로드 중…", loadingNodes: "노드 정보 불러오는 중…", converting: "워크플로 JSON 변환 중…", loadingViewer: "JSON 뷰어 여는 중…",
+    requestTimeout: "ComfyUI 워크플로 처리 시간이 30초를 초과했습니다. 서버 연결을 확인한 뒤 다시 시도해 주세요.",
     editJson: "JSON 편집", viewJson: "JSON 보기", invalidJson: "트리 보기를 열려면 올바른 워크플로 JSON을 입력하세요.",
     working: "처리 중…",
     saved: "저장된 워크플로", name: "워크플로 이름", add: "워크플로 추가", remove: "워크플로 삭제",

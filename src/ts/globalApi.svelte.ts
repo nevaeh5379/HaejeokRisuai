@@ -64,6 +64,7 @@ import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { isCapacitor, isTauri, isNodeServer } from "./platform";
+import { fetchProxy } from "./network/proxyFetch";
 import {
   canUseBrowserLocalNetwork,
   isLocalNetworkUrl,
@@ -1380,7 +1381,7 @@ async function fetchWithProxy(
         ? arg.body.toString()
         : JSON.stringify(arg.body);
 
-    const response = await fetch(furl, {
+    const response = await fetchProxy(furl, {
       body,
       headers,
       method: arg.method ?? "POST",
@@ -2780,7 +2781,7 @@ export async function fetchNative(
         }
       }
 
-      const r = await fetch(nodeProxy2Url, {
+      const r = await fetchProxy(nodeProxy2Url, {
         body: realBody as any,
         headers: arg.useRisuTk
           ? {

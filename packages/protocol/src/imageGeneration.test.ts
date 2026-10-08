@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { describeIllustrationError } from "./illustration.cts";
 import {
   executeImageGeneration,
   createComfyUrlBuilder,
@@ -107,6 +108,67 @@ describe("ComfyUI workflow library", () => {
     );
     expect(config.workflows[1].workflow).toBe(workflow);
   });
+
+  it.each([false, true])(
+    "preserves ComfyUI validation identifiers from an HTTP 400 (text body: %s)",
+    async (textBody) => {
+      const data = {
+        error: {
+          type: "prompt_outputs_failed_validation",
+          message: "private scene",
+        },
+        node_errors: {
+          "18": {
+            errors: [
+              {
+                type: "required_input_missing",
+                message: "private scene",
+                details: "secret",
+                extra_info: {
+                  input_name: "loras",
+                  received_value: "private scene",
+                },
+              },
+            ],
+          },
+        },
+      };
+      const runtime = {
+        fetchJson: vi
+          .fn()
+          .mockResolvedValue({
+            ok: false,
+            status: 400,
+            data: textBody ? JSON.stringify(data) : data,
+          }),
+      } as unknown as ImageGenerationRuntime;
+      let caught: unknown;
+      try {
+        await executeImageGeneration(
+          {
+            sdProvider: "comfyui",
+            comfyUiUrl: "http://localhost:8188",
+            comfyConfig: config,
+          } as ImageGenerationSettings,
+          runtime,
+          "tags",
+          {},
+          "",
+        );
+      } catch (error) {
+        caught = error;
+      }
+      expect(describeIllustrationError(caught, "image")).toEqual({
+        stage: "image",
+        code: "http",
+        status: 400,
+        providerDiagnostic:
+          "ComfyUI: prompt_outputs_failed_validation\nNode 18: required_input_missing (loras)",
+      });
+      expect(JSON.stringify(caught)).not.toContain("private scene");
+      expect(JSON.stringify(caught)).not.toContain("secret");
+    },
+  );
 });
 
 describe("Fal image generation", () => {

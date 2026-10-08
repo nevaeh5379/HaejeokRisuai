@@ -10,6 +10,7 @@ import {
   fitIllustrationPrompt,
   illustrationSourceHash,
   prepareIllustrations,
+  retainIllustrationImageTags,
   resolveIllustrationSettings,
   validIllustration,
   IllustrationQueue,
@@ -519,6 +520,40 @@ describe("illustration execution lifecycle", () => {
       r.adapter.createImage.mock.calls.slice(4).map(([prompt]) => prompt),
     ).toEqual(["base, tags-1", "base, tags-2", "base, tags-3", "base, tags-4"]);
     expect(r.message.illustrations[0].imageIds).toHaveLength(8);
+    expect(r.message.illustrations[0].imageTags).toEqual(
+      Object.fromEntries(
+        Array.from({ length: 8 }, (_, index) => [
+          `image-${index + 1}`,
+          `tags-${(index % 4) + 1}`,
+        ]),
+      ),
+    );
+  });
+
+  it("retains legacy and batch tags before rewriting without storing prompts", () => {
+    const item = answer("Scene.<Illustration>").illustrations![0];
+    Object.assign(item, {
+      imageId: "second",
+      tags: "second tags",
+      prompt: "private prompt",
+      imageTags: { older: "older tags" },
+      batch: {
+        version: 1,
+        count: 2,
+        entries: [
+          { imageId: "first", tags: "first tags" },
+          { imageId: "second", tags: "second tags" },
+        ],
+      },
+    });
+    retainIllustrationImageTags(item);
+    delete item.batch;
+    delete item.tags;
+    expect(item.imageTags).toEqual({
+      older: "older tags",
+      first: "first tags",
+      second: "second tags",
+    });
   });
 
   it("stops further batch requests after an edit while storing a later image and removes only the orphan", async () => {

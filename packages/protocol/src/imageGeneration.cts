@@ -385,6 +385,7 @@ type ImageProviderHandler = (
  */
 function createStatusPreservingFetchJson(
   runtime: ImageGenerationRuntime,
+  provider: ImageProviderId,
 ): ImageGenerationRuntime["fetchJson"] {
   return async (url, options) => {
     const response = await runtime.fetchJson(url, options);
@@ -394,10 +395,64 @@ function createStatusPreservingFetchJson(
         transport.code === "connection" || transport.code === "timeout"
           ? transport
           : describeIllustrationError({ status: response.status }, "image");
-      throw new IllustrationRequestError(details.code, details.status);
+      const diagnostic =
+        (provider === "comfyui" || provider === "comfy") &&
+        response.status === 400
+          ? comfyValidationDiagnostic(response.data)
+          : undefined;
+      throw new IllustrationRequestError(
+        details.code,
+        details.status,
+        diagnostic,
+      );
     }
     return response;
   };
+}
+
+/** Retain validation identifiers only; details/extra_info can contain prompt values. */
+function comfyValidationDiagnostic(data: unknown): string | undefined {
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!data || typeof data !== "object") return undefined;
+  const response = data as {
+    error?: { type?: unknown };
+    node_errors?: unknown;
+  };
+  const identifier = (value: unknown): value is string =>
+    typeof value === "string" && /^[a-zA-Z_][a-zA-Z0-9_]{0,79}$/.test(value);
+  const lines: string[] = [];
+  if (identifier(response.error?.type))
+    lines.push(`ComfyUI: ${response.error.type}`);
+  if (response.node_errors && typeof response.node_errors === "object") {
+    for (const [id, value] of Object.entries(response.node_errors).slice(
+      0,
+      8,
+    )) {
+      if (
+        !/^\d+(?::\d+)*$/.test(id) ||
+        id.length > 80 ||
+        !value ||
+        typeof value !== "object"
+      )
+        continue;
+      const errors = (value as { errors?: unknown }).errors;
+      if (!Array.isArray(errors)) continue;
+      for (const error of errors.slice(0, 3)) {
+        if (!error || !identifier(error.type)) continue;
+        const input = error.extra_info?.input_name;
+        lines.push(
+          `Node ${id}: ${error.type}${identifier(input) ? ` (${input})` : ""}`,
+        );
+      }
+    }
+  }
+  return lines.length ? lines.join("\n").slice(0, 1024) : undefined;
 }
 
 /**
@@ -1588,7 +1643,7 @@ export async function executeImageGeneration(
   return IMAGE_PROVIDER_HANDLERS[db.sdProvider]({
     db,
     runtime,
-    fetchJson: createStatusPreservingFetchJson(runtime),
+    fetchJson: createStatusPreservingFetchJson(runtime, db.sdProvider),
     fetchNative: createStatusPreservingFetchNative(runtime),
     prompt: genPrompt,
     negativePrompt: neg,
