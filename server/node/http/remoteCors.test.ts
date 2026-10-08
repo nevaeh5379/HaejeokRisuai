@@ -2,15 +2,11 @@
 import "tsx/cjs";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
-import type { CorsRequest, CorsResponse } from "./remoteCors.cts";
+import type { Request, RequestHandler, Response } from "express";
 
 const require = createRequire(import.meta.url);
 const { createRemoteCorsMiddleware } = require("./remoteCors.cts") as {
-  createRemoteCorsMiddleware: () => (
-    req: CorsRequest,
-    res: CorsResponse,
-    next: () => void,
-  ) => void;
+  createRemoteCorsMiddleware: () => RequestHandler;
 };
 
 function response() {
@@ -57,7 +53,11 @@ function invoke(
   res: ReturnType<typeof response>["res"],
   next = vi.fn(),
 ) {
-  createRemoteCorsMiddleware()(req, res, next);
+  createRemoteCorsMiddleware()(
+    req as unknown as Request,
+    res as unknown as Response,
+    next,
+  );
   return next;
 }
 

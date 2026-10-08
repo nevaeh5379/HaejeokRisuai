@@ -1,21 +1,4 @@
-export interface CorsRequest {
-  method: string;
-  get(name: string): string | undefined;
-}
-
-export interface CorsResponse {
-  getHeader(name: string): string | number | string[] | undefined;
-  setHeader(name: string, value: string): unknown;
-  status(code: number): CorsResponse;
-  send(body: { error: string; code: string }): unknown;
-  end(): unknown;
-}
-
-type CorsMiddleware = (
-  req: CorsRequest,
-  res: CorsResponse,
-  next: () => void,
-) => void;
+import type { RequestHandler, Response } from "express";
 
 const ALLOWED_METHODS = [
   "GET",
@@ -40,7 +23,7 @@ const ALLOWED_HEADERS = [
 ];
 const EXPOSED_HEADERS = ["content-length", "content-type", "etag"];
 
-function appendVaryOrigin(res: CorsResponse): void {
+function appendVaryOrigin(res: Response): void {
   const current = String(res.getHeader("Vary") || "")
     .split(",")
     .map((value) => value.trim())
@@ -51,7 +34,7 @@ function appendVaryOrigin(res: CorsResponse): void {
   res.setHeader("Vary", current.join(", "));
 }
 
-function createRemoteCorsMiddleware(): CorsMiddleware {
+function createRemoteCorsMiddleware(): RequestHandler {
   return function remoteCors(req, res, next) {
     const origin = req.get("origin");
     if (!origin) {
