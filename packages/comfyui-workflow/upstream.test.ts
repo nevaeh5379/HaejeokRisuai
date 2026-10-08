@@ -75,16 +75,18 @@ describe("ComfyUI Export (API) upstream runtime", () => {
     });
   });
 
-  it("does not reject backend-only nodes for saved preview widget values", async () => {
+  it("ignores extra saved widget values on backend-only nodes", async () => {
     const value = structuredClone(defaultWorkflow);
     const decode = value.nodes.find((node) => node.type === "VAEDecode")!;
-    Object.assign(decode, { id: 18, widgets_values: [null, "preview"] });
-    const saveLink = value.links.find((link) => link[1] === 8)!;
-    saveLink[1] = 18;
-    for (const link of value.links) if (link[3] === 8) link[3] = 18;
+    decode.widgets_values = [null, "preview"];
+
+    expect(value).toMatchSnapshot();
     const output = await workflowToPrompt(value, info);
-    expect(output["18"].inputs).toEqual({ samples: ["3", 0], vae: ["4", 2] });
-    expect(output["9"].inputs.images).toEqual(["18", 0]);
+    expect(output[String(decode.id)].inputs).toEqual({
+      samples: ["3", 0],
+      vae: ["4", 2],
+    });
+    expect(output["9"].inputs.images).toEqual([String(decode.id), 0]);
   });
 
   it("flattens the upstream subgraph and resolves its promoted seed", async () => {
