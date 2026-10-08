@@ -12,6 +12,7 @@ import {
   textifyReadableStream,
 } from "src/ts/globalApi.svelte";
 import { simplifySchema } from "src/ts/util";
+import { safeStructuredClone } from "src/ts/polyfill";
 import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
 
 import { extractJSON, getOpenAIJSONSchema } from "../../templates/jsonSchema";
@@ -415,10 +416,7 @@ function sanitizeResponsesContinuationItem(item: any): ResponseItem | null {
 }
 
 function cloneResponsesBodyForRequest<T>(value: T): T {
-  if (typeof structuredClone === "function") {
-    return structuredClone(value);
-  }
-  return JSON.parse(JSON.stringify(value));
+  return safeStructuredClone(value);
 }
 
 function toExternalResponsesBody(
