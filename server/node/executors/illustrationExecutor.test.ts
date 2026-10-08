@@ -633,6 +633,42 @@ describe("Node illustrations with real SQLite and HTTP providers", () => {
     ).rejects.toThrow("action");
   });
 
+  it("regenerates a selected older image on the server without using the latest tags", async () => {
+    const f = await fixture(true, 2);
+    await f.executor.accept(f.request);
+    await finished(f);
+    const message = await f.message();
+    const item = message.illustrations[0];
+    const selectedImageId = item.imageIds[0];
+    item.tags = "different latest tags";
+    item.imageTags[item.imageId] = "different latest tags";
+    item.batch.entries.find((entry) => entry.imageId === item.imageId).tags =
+      "different latest tags";
+    await f.storage.commit({
+      baseRevision: f.storage.getRevision(),
+      root: { upserts: [], deletes: [] },
+      characters: [],
+      chats: [],
+      chatManifests: [],
+      messages: [{ id: "m2", chatId: "chat-1", position: 1, data: message }],
+      messageManifests: [],
+    });
+    await f.executor.accept({
+      ...f.target,
+      version: 1,
+      action: "regenerate",
+      selectedImageId,
+    });
+    await finished(f);
+    const result = (await f.message()).illustrations[0];
+    expect(result.status).toBe("complete");
+    expect(result.batch.entries.map((entry) => entry.tags)).toEqual([
+      "sunset, red dress",
+      "sunset, red dress",
+    ]);
+    expect(f.counts()).toEqual({ tags: 2, images: 4 });
+  });
+
   it("retains settings and metadata through SQL export/restore and branch creation", async () => {
     const f = await fixture();
     await f.executor.accept(f.request);

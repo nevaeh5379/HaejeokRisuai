@@ -11,6 +11,7 @@ import {
   illustrationSourceHash,
   prepareIllustrations,
   retainIllustrationImageTags,
+  prepareIllustrationRegeneration,
   resolveIllustrationSettings,
   validIllustration,
   IllustrationQueue,
@@ -308,6 +309,45 @@ function runtime(
 }
 
 describe("illustration execution lifecycle", () => {
+  it("regenerates every requested image from the selected older tags and rebuilds prompts", async () => {
+    const r = runtime(answer("Scene.<Illustration>"), 3);
+    const item = r.message.illustrations![0];
+    Object.assign(item, {
+      imageId: "latest",
+      imageIds: ["old", "latest"],
+      tags: "latest tags",
+      prompt: "latest prompt",
+      imageTags: { old: "selected tags", latest: "latest tags" },
+    });
+    prepareIllustrationRegeneration(item, "old", 3);
+    item.version++;
+    await r.runner.run(r.targets[0], item.version);
+    expect(r.adapter.createTags).not.toHaveBeenCalled();
+    expect(r.adapter.createImage.mock.calls.map(([prompt]) => prompt)).toEqual([
+      "base, selected tags",
+      "base, selected tags",
+      "base, selected tags",
+    ]);
+    expect(item.imageTags?.old).toBe("selected tags");
+    expect(item.imageTags?.latest).toBe("latest tags");
+  });
+
+  it("rejects unknown images or missing saved tags before changing a slot", () => {
+    const item = answer("Scene.<Illustration>").illustrations![0];
+    Object.assign(item, {
+      imageId: "latest",
+      imageIds: ["unknown", "latest"],
+      tags: "latest tags",
+    });
+    const original = structuredClone(item);
+    expect(() => prepareIllustrationRegeneration(item, "unknown", 1)).toThrow(
+      "no saved tags",
+    );
+    expect(() => prepareIllustrationRegeneration(item, "removed", 1)).toThrow(
+      "unavailable",
+    );
+    expect(item).toEqual(original);
+  });
   it("starts four tag requests together and generates in arrival order without waiting for all tags", async () => {
     const r = runtime(answer("Scene.<Illustration>"), 4, "parallel");
     const releases: ((tags: string) => void)[] = [];

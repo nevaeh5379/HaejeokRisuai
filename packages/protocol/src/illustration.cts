@@ -237,6 +237,46 @@ export function retainIllustrationImageTags(item: Illustration): void {
   if (Object.keys(tags).length) item.imageTags = tags;
 }
 
+/** Resolves tags for the selected image without borrowing a newer image's tags. */
+export function illustrationImageTags(
+  item: Illustration,
+  imageId?: string,
+): string | undefined {
+  if (!imageId) return item.tags;
+  return (
+    item.imageTags?.[imageId] ??
+    item.batch?.entries.find((entry) => entry.imageId === imageId)?.tags ??
+    (imageId === item.imageId ? item.tags : undefined)
+  );
+}
+
+/** Prepares a fresh batch using only the selected image's tags. */
+export function prepareIllustrationRegeneration(
+  item: Illustration,
+  imageId: string | undefined,
+  count: number,
+): void {
+  const selected = imageId ?? item.imageId;
+  if (
+    !selected ||
+    (selected !== item.imageId && !item.imageIds?.includes(selected))
+  )
+    throw new TypeError("The selected illustration image is unavailable");
+  const tags = illustrationImageTags(item, selected);
+  if (!tags)
+    throw new TypeError("The selected illustration image has no saved tags");
+  retainIllustrationImageTags(item);
+  item.tags = tags;
+  delete item.prompt;
+  delete item.negativePrompt;
+  const size = normalizeIllustrationGenerationCount(count);
+  item.batch = {
+    version: item.version + 1,
+    count: size,
+    entries: Array.from({ length: size }, () => ({ tags })),
+  };
+}
+
 /** Checks whether any image in the requested batch still needs a submodel call. */
 export function needsIllustrationTags(
   item: Illustration,
@@ -322,6 +362,7 @@ export interface IllustrationTagRequest {
 export interface IllustrationJobRequest extends IllustrationTarget {
   version: number;
   action?: IllustrationAction;
+  selectedImageId?: string;
   tagRequest?: IllustrationTagRequest;
 }
 

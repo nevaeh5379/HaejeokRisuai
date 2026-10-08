@@ -4,7 +4,7 @@
   import { illustrationViewer } from "src/ts/gui/illustrationViewer";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
   import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-  import { describeIllustrationError, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
+  import { describeIllustrationError, illustrationImageTags, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
   let { target, width = 100, hideImages = false }: { target: IllustrationTarget; width?: number; hideImages?: boolean } = $props();
   let item = $derived(characterStore.characters.find((c) => c.chaId === target.characterId)?.chats?.find((c) => c.id === target.chatId)?.message?.find((m) => m.chatId === target.messageId)?.illustrations?.find((i) => i.id === target.illustrationId));
   let working = $state(false);
@@ -31,9 +31,7 @@
   let images = $derived([...new Set([...(item?.imageIds ?? []), ...(item?.imageId ? [item.imageId] : [])])]);
   let imageIndex = $derived(Math.max(0, images.indexOf(selectedImageId ?? item?.imageId ?? "")));
   let displayedImageId = $derived(images[imageIndex]);
-  let displayedTags = $derived((displayedImageId
-    ? item?.imageTags?.[displayedImageId] ?? item?.batch?.entries.find((entry) => entry.imageId === displayedImageId)?.tags
-    : undefined) ?? (!displayedImageId || displayedImageId === item?.imageId ? item?.tags : undefined));
+  let displayedTags = $derived(item ? illustrationImageTags(item, displayedImageId) : undefined);
   let latestImageId = $derived(item?.imageId);
   $effect(() => { selectedImageId = latestImageId; });
   $effect(() => {
@@ -87,11 +85,12 @@
    */
   async function action(kind: IllustrationAction) {
     if (working) return;
+    const actionImageId = kind === "regenerate" ? displayedImageId : undefined;
     working = true;
     error = "";
     try {
       const { illustrationAction } = await import("src/ts/process/illustration/illustrationApp");
-      await illustrationAction(target, kind);
+      await illustrationAction(target, kind, actionImageId);
     } catch (caught) { error = formatError(describeIllustrationError(caught, "prepare")); }
     finally { working = false; }
   }
@@ -164,7 +163,7 @@
       <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("retry")}>{language.illustration.retry}</button>
     {/if}
     {#if item.imageId}
-      <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("regenerate")}>{language.illustration.regenerate}</button>
+      <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy || !displayedTags} onclick={() => action("regenerate")}>{language.illustration.regenerate}</button>
     {/if}
     <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("rewrite")}>{language.illustration.rewrite}</button>
     {#if displayedTags}<details><summary>{language.illustration.tags}</summary><span class="whitespace-pre-wrap">{displayedTags}</span></details>{/if}

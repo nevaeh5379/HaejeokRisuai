@@ -3,11 +3,16 @@ import { flushSync, mount, unmount } from "svelte";
 import IllustrationSlot from "src/lib/ChatScreens/IllustrationSlot.svelte";
 import { item, characterStore } from "./fixtures/IllustrationSlotState.svelte";
 
-const { recoverIllustration } = vi.hoisted(() => ({
+const { recoverIllustration, illustrationAction } = vi.hoisted(() => ({
   recoverIllustration: vi.fn(),
+  illustrationAction: vi.fn(),
 }));
 vi.mock("src/ts/process/illustration/illustrationApp", () => ({
   recoverIllustration,
+  illustrationAction,
+}));
+vi.mock("src/ts/stores/domain/settingsStore.svelte", () => ({
+  settingsStore: { state: { useChatIllustrations: true } },
 }));
 vi.mock(
   "src/ts/stores/domain/characterStore.svelte",
@@ -30,6 +35,7 @@ afterEach(async () => {
   target?.remove();
   vi.useRealTimers();
   recoverIllustration.mockReset();
+  illustrationAction.mockReset();
   item.imageId = undefined;
   item.imageIds = undefined;
   item.imageTags = undefined;
@@ -158,7 +164,7 @@ it("updates the displayed image as server snapshots save each image in a batch",
   expect(details.querySelector("span")?.textContent).toBe("tags-2");
 });
 
-it("updates retained image tags after regeneration and does not substitute latest tags for missing history", () => {
+it("updates retained image tags and regenerates the selected image without substituting missing history", async () => {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:image");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   item.status = "complete";
@@ -194,9 +200,31 @@ it("updates retained image tags after regeneration and does not substitute lates
   buttons[0].click();
   flushSync();
   expect(target.querySelector("details span")?.textContent).toBe("old tags");
+  const regenerate = Array.from(
+    target.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((button) => button.textContent === "같은 태그로 재생성")!;
+  expect(regenerate.disabled).toBe(false);
+  regenerate.click();
+  await vi.waitFor(() =>
+    expect(illustrationAction).toHaveBeenCalledWith(
+      {
+        characterId: "character",
+        chatId: "chat",
+        messageId: "message",
+        illustrationId: "slot",
+      },
+      "regenerate",
+      "old",
+    ),
+  );
+  await vi.waitFor(() => {
+    flushSync();
+    expect(regenerate.disabled).toBe(false);
+  });
   buttons[0].click();
   flushSync();
   expect(target.querySelector("details")).toBeNull();
+  expect(regenerate.disabled).toBe(true);
   buttons[1].click();
   flushSync();
   expect(target.querySelector("details span")?.textContent).toBe("old tags");

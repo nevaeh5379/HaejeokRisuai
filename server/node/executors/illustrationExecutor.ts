@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   isIllustrationBusy,
   needsIllustrationTags,
+  prepareIllustrationRegeneration,
   retainIllustrationImageTags,
   resolveIllustrationSettings,
   illustrationSourceHash,
@@ -555,6 +556,12 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
               if (raw.action && !isIllustrationBusy(item.status)) {
                 if (!message.data.includes(item.token))
                   throw new TypeError("Illustration position was removed");
+                if (raw.action === "regenerate")
+                  prepareIllustrationRegeneration(
+                    item,
+                    raw.selectedImageId,
+                    illustration.generationCount,
+                  );
                 item.version++;
                 if (raw.action === "retry" && item.batch)
                   item.batch.version = item.version;

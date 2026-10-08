@@ -6,6 +6,7 @@ import {
   isIllustrationBusy,
   needsIllustrationTags,
   prepareIllustrations,
+  prepareIllustrationRegeneration,
   retainIllustrationImageTags,
   resolveIllustrationSettings,
   validIllustration,
@@ -410,6 +411,7 @@ async function submit(
   target: IllustrationTarget,
   item: Illustration,
   action?: IllustrationAction,
+  selectedImageId?: string,
 ) {
   const key = illustrationJobKey(target);
   if (!settingsStore.state.useChatIllustrations) {
@@ -477,6 +479,7 @@ async function submit(
           version: item.version,
           action,
           tagRequest,
+          selectedImageId,
         } satisfies IllustrationJobRequest);
         // SQL realtime events carry all later progress, including completion after this client exits.
       });
@@ -591,13 +594,16 @@ export async function enqueueAnswerIllustrations(
  * @param action - Requested retry/regenerate/rewrite operation. / 재시도·재생성·태그 재작성 조작.
  * @remarks
  * Deduplicates clicks, increments the version and keeps the old image until replacement succeeds.
- * Only a rewrite discards tags/prompts; the new task uses the currently selected executor.
+ * Regeneration uses the selected image's saved tags; rewriting requests new tags.
+ * The new task uses the currently selected executor.
  * 한국어: 중복 클릭 방지·버전 증가 후 교체 성공까지 기존 그림을 유지.
- * 태그 재작성만 기존 태그·프롬프트를 비우며 새 작업은 현재 선택한 실행 주체를 사용.
+ * 재생성은 선택한 그림의 저장된 태그를 사용하고 재작성은 새 태그를 요청.
+ * 새 작업은 현재 선택한 실행 주체를 사용.
  */
 export async function illustrationAction(
   target: IllustrationTarget,
   action: IllustrationAction,
+  selectedImageId?: string,
 ) {
   if (!settingsStore.state.useChatIllustrations) return;
   const key = illustrationJobKey(target);
@@ -629,6 +635,12 @@ export async function illustrationAction(
       );
       if (!resolved || !item || !message.data.includes(item.token)) return;
     }
+    if (action === "regenerate")
+      prepareIllustrationRegeneration(
+        item,
+        selectedImageId,
+        getSettings(target).generationCount,
+      );
     item.version++;
     if (action === "retry" && item.batch) item.batch.version = item.version;
     item.branchId = resolved.chat.activeBranchId;
@@ -647,7 +659,7 @@ export async function illustrationAction(
     }
     await messageStore.commitMessages(target.chatId, [message], [], true);
     await messageStore.flush();
-    void submit(target, item, action);
+    void submit(target, item, action, selectedImageId);
   } finally {
     actions.delete(key);
   }
