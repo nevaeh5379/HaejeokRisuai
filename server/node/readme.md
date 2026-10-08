@@ -237,8 +237,8 @@ When S3 is enabled:
 When structured SQL storage and S3 are both active, RisuAI maintains an `asset_catalog` mirroring **every object** in the S3 bucket (assets, thumbnails, database.bin). The first use performs one full bucket listing to initialize it; later uploads and deletes update it incrementally, so subsequent backups and the Storage Explorer query SQL instead of running `ListObjectsV2`. The catalog is scoped to the configured endpoint and bucket. Use `POST /api/asset-catalog/resync` (or the Storage Explorer's Resync button) after modifying the bucket outside RisuAI, or because lazily generated thumbnails are only tracked after a resync.
 
 The Node API accepts requests from any origin without an origin allowlist.
-CORS responses echo the requesting origin, and preflight requests still validate
-supported request headers. `RISUAI_ALLOWED_ORIGINS` is no longer used by the
+The `cors` middleware echoes the requesting origin and handles preflight
+responses with the supported methods and request headers. `RISUAI_ALLOWED_ORIGINS` is no longer used by the
 server; existing deployment configurations can retain it for compatibility.
 API authentication remains required on protected routes.
 

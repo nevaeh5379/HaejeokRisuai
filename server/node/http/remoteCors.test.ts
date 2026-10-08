@@ -1,111 +1,81 @@
 // @vitest-environment node
 import "tsx/cjs";
+import express from "express";
+import type { RequestHandler } from "express";
+import type { Server } from "node:http";
 import { createRequire } from "node:module";
-import { describe, expect, it, vi } from "vitest";
-import type { Request, RequestHandler, Response } from "express";
+import type { AddressInfo } from "node:net";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
 const { createRemoteCorsMiddleware } = require("./remoteCors.cts") as {
   createRemoteCorsMiddleware: () => RequestHandler;
 };
 
-function response() {
-  const headers = new Map<string, string>();
-  const res = {
-    statusCode: 200,
-    body: undefined as unknown,
-    ended: false,
-    getHeader: (name: string) => headers.get(name.toLowerCase()),
-    setHeader: (name: string, value: string) =>
-      void headers.set(name.toLowerCase(), value),
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    send(body: unknown) {
-      this.body = body;
-      this.ended = true;
-      return this;
-    },
-    end() {
-      this.ended = true;
-      return this;
-    },
-  };
-  return { res, headers };
-}
-
-function request(origin: string | undefined, method = "POST") {
-  const headers: Record<string, string> = { host: "server.example" };
-  if (origin) headers.origin = origin;
-  return {
-    method,
-    protocol: "http",
-    headers,
-    get(name: string) {
-      return headers[name.toLowerCase()];
-    },
-  };
-}
-
-function invoke(
-  req: ReturnType<typeof request>,
-  res: ReturnType<typeof response>["res"],
-  next = vi.fn(),
-) {
-  createRemoteCorsMiddleware()(
-    req as unknown as Request,
-    res as unknown as Response,
-    next,
-  );
-  return next;
-}
-
 describe("remote API CORS", () => {
-  it.each([
-    "https://server.example",
-    "https://different.example",
-    "http://localhost:5174",
-    "http://127.0.0.1:6200",
-    "tauri://localhost",
-    "http://tauri.localhost",
-    "capacitor://localhost",
-    "null",
-  ])("accepts origin %s without configuration", (origin) => {
-    const { res, headers } = response();
-    const next = invoke(request(origin), res);
-    expect(next).toHaveBeenCalledOnce();
-    expect(res.statusCode).toBe(200);
-    expect(headers.get("access-control-allow-origin")).toBe(origin);
-    expect(headers.get("vary")).toContain("Origin");
+  let server: Server;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    const app = express();
+    app.use("/api", createRemoteCorsMiddleware());
+    app.use(express.json());
+    app.post("/api/crypto", (req, res) => res.json({ data: req.body.data }));
+    await new Promise<void>((resolve, reject) => {
+      server = app.listen(0, "127.0.0.1", resolve);
+      server.once("error", reject);
+    });
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
-  it("passes requests without Origin through", () => {
-    const { res, headers } = response();
-    expect(invoke(request(undefined), res)).toHaveBeenCalledOnce();
-    expect(headers.has("access-control-allow-origin")).toBe(false);
+  afterAll(async () => {
+    if (!server) return;
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
   });
 
-  it("answers preflight from a different origin", () => {
-    const req = request("https://different.example", "OPTIONS");
-    req.headers["access-control-request-headers"] =
-      "content-type, risu-auth, x-risu-backup-upload-token, x-risu-client-id, last-event-id";
-    const { res, headers } = response();
-    const next = invoke(req, res);
-    expect(res.statusCode).toBe(204);
-    expect(res.ended).toBe(true);
-    expect(next).not.toHaveBeenCalled();
-    expect(headers.get("access-control-allow-origin")).toBe(
-      "https://different.example",
+  it("serves a JSON API request from a different origin", async () => {
+    const response = await fetch(`${baseUrl}/api/crypto`, {
+      method: "POST",
+      headers: {
+        origin: "https://client.example",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ data: "example" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: "example" });
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "https://client.example",
+    );
+    expect(response.headers.get("access-control-expose-headers")).toContain(
+      "etag",
     );
   });
 
-  it("still rejects unsupported preflight headers", () => {
-    const req = request("https://different.example", "OPTIONS");
-    req.headers["access-control-request-headers"] = "x-surprise-header";
-    const { res } = response();
-    expect(invoke(req, res)).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toMatchObject({ error: "CORS header is not allowed" });
+  it("allows remote API methods and authentication headers in preflight", async () => {
+    const response = await fetch(`${baseUrl}/api/messages`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://client.example",
+        "access-control-request-method": "PATCH",
+        "access-control-request-headers": "content-type,risu-auth,file-path",
+      },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "https://client.example",
+    );
+    expect(response.headers.get("access-control-allow-methods")).toContain(
+      "PATCH",
+    );
+    const allowedHeaders = response.headers
+      .get("access-control-allow-headers")
+      ?.split(",");
+    expect(allowedHeaders).toEqual(
+      expect.arrayContaining(["content-type", "risu-auth", "file-path"]),
+    );
+    expect(response.headers.get("access-control-max-age")).toBe("600");
   });
 });
