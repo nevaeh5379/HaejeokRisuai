@@ -9,7 +9,6 @@
     type ComfyWorkflow,
   } from "@risuai/protocol/dist/imageGeneration.mjs";
   import TextInput from "src/lib/UI/GUI/TextInput.svelte";
-  import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
   import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
   import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
 
@@ -136,7 +135,15 @@
     </SelectInput>
     <span class="text-textcolor">{language.comfyWorkflows.name}</span>
     <TextInput size="sm" bind:value={selected.name} />
-    <TextAreaInput size="sm" height="32" bind:value={selected.workflow} />
+    {#key selected.id}
+      {#await import("./ComfyWorkflowJson.svelte")}
+        <p class="text-sm text-textcolor2" role="status">{language.comfyWorkflows.working}</p>
+      {:then viewer}
+        <viewer.default bind:workflow={selected.workflow} />
+      {:catch cause}
+        <p class="text-sm text-draculared" role="alert">{String(cause)}</p>
+      {/await}
+    {/key}
   {/if}
   <div class="flex flex-wrap gap-2">
     <button class={buttonClass} disabled={busy} onclick={() => add()}>{language.comfyWorkflows.add}</button>

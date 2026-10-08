@@ -154,6 +154,9 @@ importers:
       '@huggingface/transformers':
         specifier: ^4.2.0
         version: 4.2.0
+      '@humanspeak/svelte-json-view-lite':
+        specifier: ^0.2.5
+        version: 0.2.5(svelte@5.57.0(@typescript-eslint/types@8.58.0))
       '@logtape/logtape':
         specifier: ^2.3.5
         version: 2.3.5
@@ -514,16 +517,16 @@ importers:
         version: 3.1121.0
       '@aws-sdk/lib-storage':
         specifier: ^3.1121.0
-        version: 3.1121.0
+        version: 3.1121.0(@aws-sdk/client-s3@3.1121.0)
       '@dqbd/tiktoken':
         specifier: ^1.0.22
         version: 1.0.22
       express:
         specifier: ^5.2.1
-        version: 5.2.1
+        version: 5.2.1(supports-color@7.2.0)
       express-rate-limit:
         specifier: ^8.7.0
-        version: 8.7.0
+        version: 8.7.0(express@5.2.1(supports-color@7.2.0))(supports-color@7.2.0)
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -532,7 +535,7 @@ importers:
         version: 2.1.0
       mssql:
         specifier: ^12.7.0
-        version: 12.7.0
+        version: 12.7.0(supports-color@7.2.0)
       node-html-parser:
         specifier: ^9.0.2
         version: 9.0.2
@@ -547,10 +550,10 @@ importers:
         version: 8.23.0
       sharp:
         specifier: ^0.35.4
-        version: 0.35.4
+        version: 0.35.4(@types/node@26.4.0)
       web-push:
         specifier: ^3.6.7
-        version: 3.6.7
+        version: 3.6.7(supports-color@7.2.0)
       ws:
         specifier: ^8.21.3
         version: 8.21.3
@@ -1050,6 +1053,11 @@ packages:
 
   '@huggingface/transformers@4.2.0':
     resolution: {integrity: sha512-8BRCoBMH0XsWaEIamuR0LrJGAfftgHAfb2Vrffy0VKlSAE/MnUJ5/h/zTfEP3fDIft+nk7TqB8xXEyABGitBjQ==}
+
+  '@humanspeak/svelte-json-view-lite@0.2.5':
+    resolution: {integrity: sha512-3QgB8kNws2XGIJetnu1VWVM2YcMaKucaIu82wqcjKhYmSJM1g7ANR0kCtEbhi1UVp/YpMjqlT0HqW5T33jXBFA==}
+    peerDependencies:
+      svelte: ^5.0.0
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -6325,6 +6333,10 @@ snapshots:
       '@huggingface/tokenizers': 0.1.3
       onnxruntime-web: 1.26.0-dev.20260416-b7804b056c
       sharp: 0.34.5
+
+  '@humanspeak/svelte-json-view-lite@0.2.5(svelte@5.57.0(@typescript-eslint/types@8.58.0))':
+    dependencies:
+      svelte: 5.57.0(@typescript-eslint/types@8.58.0)
 
   '@img/colour@1.1.0': {}
 

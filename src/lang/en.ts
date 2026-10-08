@@ -1,5 +1,6 @@
 export const languageEnglish = {
   comfyWorkflows: {
+    editJson: "Edit JSON", viewJson: "View JSON", invalidJson: "Enter valid workflow JSON to open the tree view.",
     working: "Working…",
     saved: "Saved workflows", name: "Workflow name", add: "Add workflow", remove: "Delete workflow",
     importFile: "Import JSON", convert: "Convert / validate JSON", load: "Load from ComfyUI", importServer: "Import selected workflow",

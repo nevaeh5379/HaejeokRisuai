@@ -1,5 +1,6 @@
 export const languageKorean = {
   comfyWorkflows: {
+    editJson: "JSON 편집", viewJson: "JSON 보기", invalidJson: "트리 보기를 열려면 올바른 워크플로 JSON을 입력하세요.",
     working: "처리 중…",
     saved: "저장된 워크플로", name: "워크플로 이름", add: "워크플로 추가", remove: "워크플로 삭제",
     importFile: "JSON 가져오기", convert: "JSON 변환 / 검증", load: "ComfyUI에서 불러오기", importServer: "선택한 워크플로 가져오기",

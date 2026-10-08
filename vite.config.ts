@@ -231,6 +231,13 @@ export default defineConfig(({ command, mode }) => {
                 priority: 90,
               },
               {
+                // The workflow JSON viewer is only needed when its settings open.
+                // Keep it out of the eagerly loaded catch-all vendor chunk.
+                name: "json-view",
+                test: /node_modules[\\/]@humanspeak[\\/]svelte-json-view-lite/,
+                priority: 80,
+              },
+              {
                 // Monaco editor is large and only needed for code/script editing.
                 // Group all monaco modules into a single chunk to avoid ~80
                 // per-language worker requests on initial load.
