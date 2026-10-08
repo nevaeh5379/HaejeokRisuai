@@ -446,6 +446,9 @@ importers:
       '@types/wicg-file-system-access':
         specifier: ^2023.10.7
         version: 2023.10.7
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
       appium:
         specifier: 3.7.0
         version: 3.7.0(@types/node@26.4.0)(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)
@@ -2378,6 +2381,9 @@ packages:
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
   '@types/yauzl@2.10.3':
     resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
@@ -7407,6 +7413,10 @@ snapshots:
     dependencies:
       '@types/node': 26.4.0
 
+  '@types/ws@8.18.2':
+    dependencies:
+      '@types/node': 26.4.0
+
   '@types/yauzl@2.10.3':
     dependencies:
       '@types/node': 26.4.0
@@ -8741,7 +8751,7 @@ snapshots:
     dependencies:
       '@types/node': 26.4.0
       '@types/whatwg-mimetype': 3.0.2
-      '@types/ws': 8.18.1
+      '@types/ws': 8.18.2
       buffer-image-size: 0.6.4
       entities: 7.0.1
       whatwg-mimetype: 3.0.0

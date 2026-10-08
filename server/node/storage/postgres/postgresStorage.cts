@@ -607,6 +607,8 @@ async function pruneKeyedChildren(
   }
 }
 
+export type PostgresStorageContract = PostgresStorage;
+
 class PostgresStorage extends SqlStorageBase {
   constructor(options: any = {}) {
     super();
