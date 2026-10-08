@@ -2,7 +2,10 @@ import type {
   ImageGenerationRuntime,
   ImageGenerationSettings,
 } from "@risuai/protocol/dist/imageGeneration.mjs";
-import { IMAGE_GENERATION_SETTING_KEYS } from "@risuai/protocol/dist/imageGeneration.mjs";
+import {
+  IMAGE_GENERATION_SETTING_KEYS,
+  getComfyGenerationConfig,
+} from "@risuai/protocol/dist/imageGeneration.mjs";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { PRESET_STORE_SETTING_KEYS } from "../storage/sql/sqlDeferredSettings";
@@ -23,7 +26,11 @@ export function getImageGenerationSettings(): ImageGenerationSettings {
     IMAGE_GENERATION_SETTING_KEYS.map((key) => [
       key,
       safeStructuredClone(
-        presetKeys.has(key) ? presetStore.state[key] : settingsStore.state[key],
+        key === "comfyConfig"
+          ? getComfyGenerationConfig(settingsStore.state.comfyConfig)
+          : presetKeys.has(key)
+            ? presetStore.state[key]
+            : settingsStore.state[key],
       ),
     ]),
   ) as unknown as ImageGenerationSettings;

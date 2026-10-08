@@ -1225,6 +1225,8 @@ interface NAIVibeEncoding {
 
 interface ComfyConfig {
   workflow: string;
+  workflows?: import("@risuai/protocol/dist/imageGeneration.mjs").ComfyWorkflow[];
+  selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;
   negNodeID: string;

@@ -1,4 +1,12 @@
 export const languageEnglish = {
+  comfyWorkflows: {
+    working: "Working…",
+    saved: "Saved workflows", name: "Workflow name", add: "Add workflow", remove: "Delete workflow",
+    importFile: "Import JSON", convert: "Convert / validate JSON", load: "Load from ComfyUI", importServer: "Import selected workflow",
+    empty: "No saved workflows. Save the workflow in ComfyUI first, then load again. An unsaved open workflow is not included.",
+    help: "Import workflow JSON or API JSON. Put {{risu_prompt}} and {{risu_neg}} in text inputs for Risu prompts. Subgraphs and custom frontend widgets may require ComfyUI Export (API).",
+    removeConfirm: "Delete this workflow?", converted: "Workflow JSON is ready to use.",
+  },
   useChatIllustrations: "Enable chat illustrations (Beta)",
   illustration: {
     generationCount: "Images per illustration", generationCountHelp: "Generate 1–8 images at each illustration position (default: 1). Each image gets its own auxiliary model request. Images appear as they finish. Retry fills only missing images; completed images stay available. Uses one model and image request per image.",

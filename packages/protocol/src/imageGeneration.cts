@@ -291,13 +291,34 @@ interface NAIVibeEncoding {
  *
  * 한국어: ComfyUI 워크플로·기존 방식의 프롬프트 입력 노드·결과 대기 시간 설정.
  */
-interface ComfyConfig {
+export interface ComfyWorkflow {
+  id: string;
+  name: string;
   workflow: string;
+}
+
+export interface ComfyConfig {
+  workflow: string;
+  workflows?: ComfyWorkflow[];
+  selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;
   negNodeID: string;
   negInputName: string;
   timeout: number;
+}
+
+/** Snapshot only the active workflow so image jobs do not copy the entire library. */
+export function getComfyGenerationConfig(config: ComfyConfig): ComfyConfig {
+  const selected =
+    config.workflows?.find((item) => item.id === config.selectedWorkflowId) ??
+    config.workflows?.[0];
+  const {
+    workflows: _workflows,
+    selectedWorkflowId: _selectedId,
+    ...settings
+  } = config;
+  return { ...settings, workflow: selected?.workflow ?? config.workflow };
 }
 
 /**
@@ -1006,15 +1027,14 @@ const COMFY_POLL_INTERVAL_MS = 1000;
  *
  * 한국어: 선택적인 `/api` 접두사·쿼리를 유지하며 ComfyUI 요청 주소를 구성하는 함수를 만드는 함수.
  */
-function createComfyUrlBuilder(
+export function createComfyUrlBuilder(
   comfyUiUrl: string,
 ): (pathname: string, params?: Record<string, string>) => string {
-  const baseUrl = new URL(comfyUiUrl);
+  const baseUrl = new URL(comfyUiUrl.replace(/\/+$/, "") + "/");
   return (pathname, params = {}) => {
-    const url = comfyUiUrl.endsWith("/api")
-      ? new URL(`${comfyUiUrl}${pathname}`)
-      : new URL(pathname, baseUrl);
-    url.search = new URLSearchParams(params).toString();
+    const url = new URL(pathname.replace(/^\/+/, ""), baseUrl);
+    for (const [key, value] of Object.entries(params))
+      url.searchParams.set(key, value);
     return url.toString();
   };
 }
@@ -1128,7 +1148,8 @@ async function generateWithComfyUi(
   const legacy = db.sdProvider === "comfy";
   const createUrl = createComfyUrlBuilder(db.comfyUiUrl);
   return rethrowAsError(async () => {
-    const workflow = JSON.parse(db.comfyConfig.workflow);
+    const config = getComfyGenerationConfig(db.comfyConfig);
+    const workflow = JSON.parse(config.workflow);
     injectComfyPrompts(
       workflow,
       legacy,

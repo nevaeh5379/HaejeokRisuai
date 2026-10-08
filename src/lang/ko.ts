@@ -1,4 +1,12 @@
 export const languageKorean = {
+  comfyWorkflows: {
+    working: "처리 중…",
+    saved: "저장된 워크플로", name: "워크플로 이름", add: "워크플로 추가", remove: "워크플로 삭제",
+    importFile: "JSON 가져오기", convert: "JSON 변환 / 검증", load: "ComfyUI에서 불러오기", importServer: "선택한 워크플로 가져오기",
+    empty: "저장된 워크플로가 없습니다. ComfyUI에서 워크플로를 먼저 저장한 뒤 다시 불러오세요. 저장하지 않고 열어 둔 작업은 포함되지 않습니다.",
+    help: "일반 워크플로 또는 API JSON을 가져올 수 있습니다. Risu 프롬프트를 사용하려면 텍스트 입력에 {{risu_prompt}}와 {{risu_neg}}를 넣으세요. 서브그래프와 특수 프런트엔드 위젯은 ComfyUI의 Export (API)가 필요할 수 있습니다.",
+    removeConfirm: "이 워크플로를 삭제할까요?", converted: "사용할 수 있는 워크플로 JSON입니다.",
+  },
   useChatIllustrations: "채팅 삽화 기능 사용 (베타)",
   illustration: {
     generationCount: "자리당 삽화 생성 장수", generationCountHelp: "각 삽화 자리에서 1~8장을 생성합니다(기본 1장). 장마다 보조 모델에 태그를 요청하며, 완성된 장부터 표시합니다. 재시도는 실패하거나 빠진 장만 채우며 이미 완성된 그림은 유지합니다. 장수만큼 보조 모델·그림 생성 요청이 발생합니다.",

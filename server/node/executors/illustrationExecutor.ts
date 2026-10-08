@@ -24,6 +24,7 @@ import {
 } from "../../../packages/protocol/dist/illustrationStorage.cjs";
 import {
   executeImageGeneration,
+  getComfyGenerationConfig,
   IMAGE_GENERATION_SETTING_KEYS,
   type ImageGenerationRuntime,
   type ImageGenerationSettings,
@@ -371,10 +372,17 @@ export function createNodeIllustrationExecutor(deps: Dependencies) {
       const storage = deps.getStorage();
       const imageSettings: ImageGenerationSettings = Object.fromEntries(
         await Promise.all(
-          IMAGE_GENERATION_SETTING_KEYS.map(async (key) => [
-            key,
-            (await storage.loadSettingKey(key)).value,
-          ]),
+          IMAGE_GENERATION_SETTING_KEYS.map(async (key) => {
+            const value = (await storage.loadSettingKey(key)).value;
+            return [
+              key,
+              key === "comfyConfig" && value != null
+                ? getComfyGenerationConfig(
+                    value as ImageGenerationSettings["comfyConfig"],
+                  )
+                : value,
+            ];
+          }),
         ),
       ) as any;
       const image = await executeImageGeneration(
