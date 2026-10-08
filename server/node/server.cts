@@ -1,10 +1,7 @@
 import { AuthorNoteError } from "../../packages/protocol/dist/authorNotes.cjs";
 const express = require("express");
 const app = express();
-const {
-  createRemoteCorsMiddleware,
-  parseAllowedOrigins,
-} = require("./http/remoteCors.cjs");
+const { createRemoteCorsMiddleware } = require("./http/remoteCors.cts");
 if (process.env.TRUST_PROXY) {
   app.set(
     "trust proxy",
@@ -332,12 +329,7 @@ app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   next();
 });
-app.use(
-  "/api",
-  createRemoteCorsMiddleware(
-    parseAllowedOrigins(process.env.RISUAI_ALLOWED_ORIGINS || ""),
-  ),
-);
+app.use("/api", createRemoteCorsMiddleware());
 
 app.use(publicContentLimiter, async (req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD") {

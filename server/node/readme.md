@@ -236,25 +236,11 @@ When S3 is enabled:
 
 When structured SQL storage and S3 are both active, RisuAI maintains an `asset_catalog` mirroring **every object** in the S3 bucket (assets, thumbnails, database.bin). The first use performs one full bucket listing to initialize it; later uploads and deletes update it incrementally, so subsequent backups and the Storage Explorer query SQL instead of running `ListObjectsV2`. The catalog is scoped to the configured endpoint and bucket. Use `POST /api/asset-catalog/resync` (or the Storage Explorer's Resync button) after modifying the bucket outside RisuAI, or because lazily generated thumbnails are only tracked after a resync.
 
-Remote clients hosted on a different origin must be listed exactly in the
-comma-separated `RISUAI_ALLOWED_ORIGINS` environment variable. For example,
-`RISUAI_ALLOWED_ORIGINS=https://chat.example.com,http://localhost:*`.
-The `:*` port wildcard is accepted only for `localhost`, `127.0.0.1`, and
-`[::1]`; host wildcards are rejected. Same-origin requests and native requests without an
-`Origin` header continue to work without configuration. Native app origins
-sent by the desktop/mobile shells (`tauri://localhost`, `http://tauri.localhost`,
-`capacitor://localhost`) are trusted automatically.
-
-For an installation managed by `./risuai.sh`, set
-`RISUAI_ALLOWED_ORIGINS=http://localhost:*` in `.risuai/rustfs.env` (append it
-to any existing allowed origins), then run `./risuai.sh rebuild`. The script
-does not use the repository root `.env` for an installed Docker stack. Run
-`./risuai.sh config` to check the saved value and configuration path. For a
-plain Docker Compose installation, set the same variable in the Compose `.env`
-file and recreate the `risuai` service. Tauri dev currently uses
-`http://localhost:5174`; packaged Tauri uses a native app origin and does not
-need this entry. The Compose files pass the variable into the Node container
-without enabling the dev origin by default.
+The Node API accepts requests from any origin without an origin allowlist.
+The `cors` middleware echoes the requesting origin and handles preflight
+responses with the supported methods and request headers. `RISUAI_ALLOWED_ORIGINS` is no longer used by the
+server; existing deployment configurations can retain it for compatibility.
+API authentication remains required on protected routes.
 
 Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 
