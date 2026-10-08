@@ -23,6 +23,7 @@
     "api/database/plugins/routes.ts",
     "executors/modelJobs.cts",
     "http/packet.ts",
+    "http/remoteCors.cts",
     "http/realtimeEvents.cts",
     "sync/databaseMutations.cts",
     "sync/localBackupImportRecords.ts",

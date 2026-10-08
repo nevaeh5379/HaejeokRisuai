@@ -1,9 +1,17 @@
+// @vitest-environment node
+import "tsx/cjs";
+import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
+import type { CorsRequest, CorsResponse } from "./remoteCors.cts";
 
-const {
-  createRemoteCorsMiddleware,
-  parseAllowedOrigins,
-} = require(".//remoteCors.cjs");
+const require = createRequire(import.meta.url);
+const { createRemoteCorsMiddleware } = require("./remoteCors.cts") as {
+  createRemoteCorsMiddleware: () => (
+    req: CorsRequest,
+    res: CorsResponse,
+    next: () => void,
+  ) => void;
+};
 
 function response() {
   const headers = new Map<string, string>();
@@ -31,12 +39,12 @@ function response() {
   return { res, headers };
 }
 
-function request(origin: string | undefined, method = "GET") {
+function request(origin: string | undefined, method = "POST") {
   const headers: Record<string, string> = { host: "server.example" };
   if (origin) headers.origin = origin;
   return {
     method,
-    protocol: "https",
+    protocol: "http",
     headers,
     get(name: string) {
       return headers[name.toLowerCase()];
@@ -44,119 +52,60 @@ function request(origin: string | undefined, method = "GET") {
   };
 }
 
+function invoke(
+  req: ReturnType<typeof request>,
+  res: ReturnType<typeof response>["res"],
+  next = vi.fn(),
+) {
+  createRemoteCorsMiddleware()(req, res, next);
+  return next;
+}
+
 describe("remote API CORS", () => {
-  it("accepts exact configured origins and emits Vary", () => {
-    const middleware = createRemoteCorsMiddleware(
-      parseAllowedOrigins("https://app.example, http://localhost:5174"),
-    );
+  it.each([
+    "https://server.example",
+    "https://different.example",
+    "http://localhost:5174",
+    "http://127.0.0.1:6200",
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "capacitor://localhost",
+    "null",
+  ])("accepts origin %s without configuration", (origin) => {
     const { res, headers } = response();
-    const next = vi.fn();
-    middleware(request("https://app.example"), res, next);
+    const next = invoke(request(origin), res);
     expect(next).toHaveBeenCalledOnce();
-    expect(headers.get("access-control-allow-origin")).toBe(
-      "https://app.example",
-    );
+    expect(res.statusCode).toBe(200);
+    expect(headers.get("access-control-allow-origin")).toBe(origin);
     expect(headers.get("vary")).toContain("Origin");
   });
 
-  it("allows the server's own origin without configuration", () => {
-    const middleware = createRemoteCorsMiddleware(new Set());
-    const { res } = response();
-    const next = vi.fn();
-    middleware(request("https://server.example"), res, next);
-    expect(next).toHaveBeenCalledOnce();
+  it("passes requests without Origin through", () => {
+    const { res, headers } = response();
+    expect(invoke(request(undefined), res)).toHaveBeenCalledOnce();
+    expect(headers.has("access-control-allow-origin")).toBe(false);
   });
 
-  it("rejects unlisted origins", () => {
-    const middleware = createRemoteCorsMiddleware(new Set());
-    const { res } = response();
-    const next = vi.fn();
-    middleware(request("https://attacker.example"), res, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toMatchObject({ code: "cors_denied" });
-  });
-
-  it("allows native app origins (Tauri/Capacitor) without configuration", () => {
-    for (const origin of [
-      "tauri://localhost",
-      "http://tauri.localhost",
-      "capacitor://localhost",
-    ]) {
-      const middleware = createRemoteCorsMiddleware(new Set());
-      const { res, headers } = response();
-      const next = vi.fn();
-      middleware(request(origin), res, next);
-      expect(next).toHaveBeenCalledOnce();
-      expect(headers.get("access-control-allow-origin")).toBe(origin);
-    }
-  });
-
-  it("still rejects other non-http(s) origins", () => {
-    const middleware = createRemoteCorsMiddleware(new Set());
-    const { res } = response();
-    const next = vi.fn();
-    middleware(request("ftp://attacker.example"), res, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-  });
-
-  it("answers valid preflight and rejects unknown headers", () => {
-    const middleware = createRemoteCorsMiddleware(
-      new Set(["https://app.example"]),
-    );
-    const allowed = request("https://app.example", "OPTIONS");
-    allowed.headers["access-control-request-headers"] =
+  it("answers preflight from a different origin", () => {
+    const req = request("https://different.example", "OPTIONS");
+    req.headers["access-control-request-headers"] =
       "content-type, risu-auth, x-risu-backup-upload-token, x-risu-client-id, last-event-id";
-    const allowedResponse = response();
-    middleware(allowed, allowedResponse.res, vi.fn());
-    expect(allowedResponse.res.statusCode).toBe(204);
-
-    const denied = request("https://app.example", "OPTIONS");
-    denied.headers["access-control-request-headers"] = "x-surprise-header";
-    const deniedResponse = response();
-    middleware(denied, deniedResponse.res, vi.fn());
-    expect(deniedResponse.res.statusCode).toBe(403);
-  });
-
-  it("requires exact origin configuration", () => {
-    expect(() => parseAllowedOrigins("*")).toThrow(/only as the port/);
-    expect(() => parseAllowedOrigins("https://example.com:*")).toThrow(
-      /only as the port/,
-    );
-    expect(() => parseAllowedOrigins("https://example.com/path")).toThrow(
-      /Invalid CORS origin/,
-    );
-  });
-
-  it("allows explicitly configured loopback hosts on changing dev ports", () => {
-    const middleware = createRemoteCorsMiddleware(
-      parseAllowedOrigins("http://localhost:*"),
-    );
-    for (const origin of ["http://localhost:5174", "http://localhost:6200"]) {
-      const { res, headers } = response();
-      const next = vi.fn();
-      middleware(request(origin), res, next);
-      expect(next).toHaveBeenCalledOnce();
-      expect(headers.get("access-control-allow-origin")).toBe(origin);
-    }
-    for (const origin of [
-      "http://127.0.0.1:5174",
-      "https://localhost:5174",
-      "http://localhost.evil:5174",
-    ]) {
-      const { res } = response();
-      middleware(request(origin), res, vi.fn());
-      expect(res.statusCode).toBe(403);
-    }
-  });
-
-  it("answers preflights from native app origins", () => {
-    const middleware = createRemoteCorsMiddleware(new Set());
-    const req = request("tauri://localhost", "OPTIONS");
-    req.headers["access-control-request-headers"] = "content-type, risu-auth";
-    const { res } = response();
-    middleware(req, res, vi.fn());
+    const { res, headers } = response();
+    const next = invoke(req, res);
     expect(res.statusCode).toBe(204);
+    expect(res.ended).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+    expect(headers.get("access-control-allow-origin")).toBe(
+      "https://different.example",
+    );
+  });
+
+  it("still rejects unsupported preflight headers", () => {
+    const req = request("https://different.example", "OPTIONS");
+    req.headers["access-control-request-headers"] = "x-surprise-header";
+    const { res } = response();
+    expect(invoke(req, res)).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "CORS header is not allowed" });
   });
 });

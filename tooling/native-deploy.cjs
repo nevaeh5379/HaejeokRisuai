@@ -5,7 +5,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const { setTimeout: sleep } = require("node:timers/promises");
-const { parseAllowedOrigins } = require("../server/node/http/remoteCors.cjs");
 
 const root = path.resolve(__dirname, "..");
 const stateDir = path.join(root, ".risuai");
@@ -56,7 +55,7 @@ function defaultAllowedOrigins(host) {
 }
 
 function normalizeAllowedOrigins(value) {
-  return Array.from(parseAllowedOrigins(value || "")).join(",");
+  return String(value || "").trim();
 }
 
 function parseInstallArgs(args, env = process.env) {
