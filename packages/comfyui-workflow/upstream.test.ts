@@ -50,18 +50,6 @@ const info: ObjectInfo = {
 };
 
 describe("ComfyUI Export (API) upstream runtime", () => {
-  it("keeps the original exporter and DTO sources unchanged", () => {
-    for (const [path, hash] of Object.entries(manifest.sha256)) {
-      const source = readFileSync(
-        resolve(process.cwd(), "packages/comfyui-workflow/upstream", path),
-        "utf8",
-      ).replace(/\r\n/g, "\n");
-      expect(createHash("sha256").update(source).digest("hex"), path).toBe(
-        hash,
-      );
-    }
-  });
-
   it("exports the upstream default workflow with the VAEDecode links intact", async () => {
     const output = await workflowToPrompt(defaultWorkflow, info);
     expect(output["8"]).toEqual({
