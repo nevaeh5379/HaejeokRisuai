@@ -21,6 +21,7 @@ import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/files/nodeStorage";
+import { createTokenizerQueue } from "./tokenizerQueue";
 import type { TokenizerEncoding } from "../../packages/protocol/compute.cjs";
 
 const MAX_CACHE_SIZE = 128;
@@ -426,6 +427,8 @@ let tikParser: Tiktoken = null;
 let tokenizersTokenizer: Tokenizer = null;
 let tokenizersType: tokenizerType = null;
 let lastTikModel = "cl100k_base";
+const queueTiktoken = createTokenizerQueue();
+const queueWebTokenizer = createTokenizerQueue();
 
 const googleCloudTokenizedCache = new LRUMap<string, number>(128);
 
@@ -484,32 +487,35 @@ async function gemmaTokenize(text: string) {
 }
 
 async function tikJS(text: string, model = "cl100k_base") {
-  if (!tikParser || lastTikModel !== model) {
-    tikParser?.free();
-    if (model === "cl100k_base") {
-      const { Tiktoken } = await import("@dqbd/tiktoken");
-      const cl100k_base =
-        await import("@dqbd/tiktoken/encoders/cl100k_base.json");
-      lastTikModel = model;
+  return queueTiktoken(async () => {
+    if (!tikParser || lastTikModel !== model) {
+      tikParser?.free();
+      tikParser = null;
+      if (model === "cl100k_base") {
+        const { Tiktoken } = await import("@dqbd/tiktoken");
+        const cl100k_base =
+          await import("@dqbd/tiktoken/encoders/cl100k_base.json");
+        lastTikModel = model;
 
-      tikParser = new Tiktoken(
-        cl100k_base.bpe_ranks,
-        cl100k_base.special_tokens,
-        cl100k_base.pat_str,
-      );
+        tikParser = new Tiktoken(
+          cl100k_base.bpe_ranks,
+          cl100k_base.special_tokens,
+          cl100k_base.pat_str,
+        );
+      }
+      if (model === "o200k_base") {
+        const { Tiktoken } = await import("@dqbd/tiktoken");
+        const o200k_base = await import("src/etc/o200k_base.json");
+        lastTikModel = model;
+        tikParser = new Tiktoken(
+          o200k_base.bpe_ranks,
+          o200k_base.special_tokens,
+          o200k_base.pat_str,
+        );
+      }
     }
-    if (model === "o200k_base") {
-      const { Tiktoken } = await import("@dqbd/tiktoken");
-      const o200k_base = await import("src/etc/o200k_base.json");
-      lastTikModel = model;
-      tikParser = new Tiktoken(
-        o200k_base.bpe_ranks,
-        o200k_base.special_tokens,
-        o200k_base.pat_str,
-      );
-    }
-  }
-  return tikParser.encode(text);
+    return tikParser.encode(text);
+  });
 }
 
 async function geminiTokenizer(text: string) {
@@ -541,78 +547,80 @@ async function geminiTokenizer(text: string) {
 }
 
 async function tokenizeWebTokenizers(text: string, type: tokenizerType) {
-  if (type !== tokenizersType || !tokenizersTokenizer) {
-    tokenizersTokenizer?.dispose();
-    tokenizersTokenizer = null;
-    const webTokenizer = await import("@mlc-ai/web-tokenizers");
-    switch (type) {
-      case "novellist":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-          await (await fetch("/token/trin/spiece.model")).arrayBuffer(),
-        );
-        break;
-      case "claude":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (await fetch("/token/claude/claude.json")).arrayBuffer(),
-        );
-        break;
-      case "llama3":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (await fetch("/token/llama/llama3.json")).arrayBuffer(),
-        );
-        break;
-      case "cohere":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (await fetch("/token/cohere/tokenizer.json")).arrayBuffer(),
-        );
-        break;
-      case "novelai":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-          await (await fetch("/token/nai/nerdstash_v2.model")).arrayBuffer(),
-        );
+  return queueWebTokenizer(async () => {
+    if (type !== tokenizersType || !tokenizersTokenizer) {
+      tokenizersTokenizer?.dispose();
+      tokenizersTokenizer = null;
+      const webTokenizer = await import("@mlc-ai/web-tokenizers");
+      switch (type) {
+        case "novellist":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
+            await (await fetch("/token/trin/spiece.model")).arrayBuffer(),
+          );
+          break;
+        case "claude":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (await fetch("/token/claude/claude.json")).arrayBuffer(),
+          );
+          break;
+        case "llama3":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (await fetch("/token/llama/llama3.json")).arrayBuffer(),
+          );
+          break;
+        case "cohere":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (await fetch("/token/cohere/tokenizer.json")).arrayBuffer(),
+          );
+          break;
+        case "novelai":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
+            await (await fetch("/token/nai/nerdstash_v2.model")).arrayBuffer(),
+          );
 
-        break;
-      case "llama":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-          await (await fetch("/token/llama/llama.model")).arrayBuffer(),
-        );
-        break;
-      case "mistral":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-          await (await fetch("/token/mistral/tokenizer.model")).arrayBuffer(),
-        );
-        break;
-      case "gemma":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-          await (await fetch("/token/gemma/tokenizer.model")).arrayBuffer(),
-        );
-        break;
-      case "DeepSeek":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (await fetch("/token/deepseek/tokenizer.json")).arrayBuffer(),
-        );
-        break;
-      case "DeepSeekV4":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (
-            await fetch("/token/deepseek/v4/tokenizer.json")
-          ).arrayBuffer(),
-        );
-        break;
-      case "GLM4":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (await fetch("/token/glm4/tokenizer.json")).arrayBuffer(),
-        );
-        break;
-      case "GLM5":
-        tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-          await (await fetch("/token/glm5/tokenizer.json")).arrayBuffer(),
-        );
-        break;
+          break;
+        case "llama":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
+            await (await fetch("/token/llama/llama.model")).arrayBuffer(),
+          );
+          break;
+        case "mistral":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
+            await (await fetch("/token/mistral/tokenizer.model")).arrayBuffer(),
+          );
+          break;
+        case "gemma":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
+            await (await fetch("/token/gemma/tokenizer.model")).arrayBuffer(),
+          );
+          break;
+        case "DeepSeek":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (await fetch("/token/deepseek/tokenizer.json")).arrayBuffer(),
+          );
+          break;
+        case "DeepSeekV4":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (
+              await fetch("/token/deepseek/v4/tokenizer.json")
+            ).arrayBuffer(),
+          );
+          break;
+        case "GLM4":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (await fetch("/token/glm4/tokenizer.json")).arrayBuffer(),
+          );
+          break;
+        case "GLM5":
+          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
+            await (await fetch("/token/glm5/tokenizer.json")).arrayBuffer(),
+          );
+          break;
+      }
+      tokenizersType = type;
     }
-    tokenizersType = type;
-  }
-  return tokenizersTokenizer.encode(text);
+    return tokenizersTokenizer.encode(text);
+  });
 }
 
 export async function tokenizerChar(char: character) {
