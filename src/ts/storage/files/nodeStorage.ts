@@ -3,7 +3,10 @@ import { alertError, alertInput, waitAlert } from "../../alert";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
-import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
+import {
+  RemoteAuthIdentity,
+  type RemoteAuthKeyPair,
+} from "@risuai/storage-remote/remoteAuthIdentity";
 import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
 import { RemoteStorageSyncClient } from "@risuai/storage-remote/remoteStorageSyncClient";
 import { RemoteSyncAssetReader } from "@risuai/storage-remote/remoteSyncAssetReader";
@@ -317,7 +320,7 @@ export class NodeStorage {
     await this.computeClient.cancelHypaMemorySession(sessionId);
   }
 
-  async getKeyPair(): Promise<CryptoKeyPair> {
+  async getKeyPair(): Promise<RemoteAuthKeyPair> {
     return await this.authIdentity.getKeyPair();
   }
 

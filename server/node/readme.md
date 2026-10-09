@@ -45,6 +45,18 @@ SQL vendor modules, tokenizers, S3, image processing, and OIDC load on demand.
 Concurrent first requests share their loading Promise. Storage factories and
 token counting return Promises; storage constructors remain synchronous.
 
+## Browser authentication
+
+Remote authentication uses a lazily loaded JavaScript P-256 signer, so it also
+works when accessing the app over HTTP at a LAN or Tailscale IP without browser
+security overrides. The server still verifies the existing ES256 token format.
+
+After upgrading from the Web Crypto signer, enter the server password once to
+register a new device key. Old authentication keys are not converted. New keys
+persist in browser IndexedDB as private-key bytes and a public JWK, rather than
+non-extractable `CryptoKey` objects. Other browser features that require a secure
+context still need HTTPS.
+
 ## PostgreSQL storage
 
 PostgreSQL can be configured from **Advanced Settings → PostgreSQL Storage** when using the Node server. Configuration changes are accepted only over HTTPS or a localhost connection. The authenticated settings page stores the connection string only on the server in `save/__postgres_config.json` with owner-only file permissions; it is never written into the Risuai application database.
