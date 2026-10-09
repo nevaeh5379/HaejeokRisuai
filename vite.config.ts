@@ -219,6 +219,13 @@ export default defineConfig(({ command, mode }) => {
                 priority: 90,
               },
               {
+                // Remote auth imports these only when signing. Keep the pure-JS
+                // crypto implementation out of the eagerly preloaded vendor chunk.
+                name: "remote-auth-crypto",
+                test: /node_modules[\\/]@noble[\\/](?:curves|hashes)(?=[\\/]|$)/,
+                priority: 80,
+              },
+              {
                 // Monaco editor is large and only needed for code/script editing.
                 // Group all monaco modules into a single chunk to avoid ~80
                 // per-language worker requests on initial load.

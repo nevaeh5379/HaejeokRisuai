@@ -69,6 +69,7 @@
     "@logtape/logtape": "^2.3.5",
     "@lucide/svelte": "^1.35.0",
     "@mlc-ai/web-tokenizers": "^0.1.6",
+    "@noble/curves": "2.4.0",
     "@risuai/ccardlib": "^0.4.2",
     "@smithy/node-http-handler": "^4.12.1",
     "@smithy/protocol-http": "^5.6.2",

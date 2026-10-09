@@ -298,10 +298,10 @@ describe("NodeStorage authentication identity", () => {
     const { remoteAuthKeyStoreName } =
       await import("@risuai/storage-remote/remoteAuthIdentity");
     expect(remoteAuthKeyStoreName("https://one.example")).toBe(
-      "node:aHR0cHM6Ly9vbmUuZXhhbXBsZQ",
+      "node:noble-p256-v1:aHR0cHM6Ly9vbmUuZXhhbXBsZQ",
     );
     expect(remoteAuthKeyStoreName("https://two.example")).toBe(
-      "node:aHR0cHM6Ly90d28uZXhhbXBsZQ",
+      "node:noble-p256-v1:aHR0cHM6Ly90d28uZXhhbXBsZQ",
     );
   });
 
@@ -309,9 +309,9 @@ describe("NodeStorage authentication identity", () => {
     const { RemoteAuthIdentity } =
       await import("@risuai/storage-remote/remoteAuthIdentity");
     const keyPair = {
-      privateKey: { type: "private" },
-      publicKey: { type: "public" },
-    } as unknown as CryptoKeyPair;
+      privateKey: new Uint8Array(32),
+      publicKey: { kty: "EC", crv: "P-256" },
+    };
     const loadKeyPair = vi.fn(async () => {
       await Promise.resolve();
       return keyPair;
