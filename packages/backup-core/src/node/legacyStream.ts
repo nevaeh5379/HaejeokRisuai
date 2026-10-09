@@ -8,7 +8,7 @@ import {
 import { join } from "node:path";
 import { createUnzip } from "node:zlib";
 import { Unpackr } from "msgpackr";
-import settings from "../../../protocol/settings.json";
+import settings from "../../../protocol/settings.json" with { type: "json" };
 import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 import {
   LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
