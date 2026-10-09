@@ -1,15 +1,4 @@
-export type { ISerialisedGraph as ComfyWorkflowJSON } from "../../../../lib/litegraph/src/types/serialisation";
-export type ComfyApiWorkflow = Record<
-  string,
-  {
-    class_type: string;
-    inputs: Record<string, unknown>;
-    _meta?: Record<string, string>;
-  }
->;
-
-// This host adapter replaces only optional node-pack metadata validation.
-// The upstream graphToPrompt body remains unchanged; no Zod runtime is loaded.
+// Lightweight validation for optional node-pack metadata; no Zod runtime.
 const repoId = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
 const version =
   /^(?:[0-9a-f]{4,40}|(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[\da-z-]+(?:\.[\da-z-]+)*)?(?:\+[\da-z-]+(?:\.[\da-z-]+)*)?)$/i;
@@ -22,7 +11,7 @@ const parser = (
     return { data: data !== undefined && valid(data) ? data : undefined };
   },
 });
-export const zNodePackMetadata = {
+export const nodePackMetadata = {
   shape: {
     cnr_id: parser((value) => value.length <= 100 && repoId.test(value)),
     aux_id: parser((value) => {

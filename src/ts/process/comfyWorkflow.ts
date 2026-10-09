@@ -1,5 +1,5 @@
-export type { ObjectInfo } from "../../../packages/comfyui-workflow/graph";
-import type { ObjectInfo } from "../../../packages/comfyui-workflow/graph";
+export type { ObjectInfo } from "../../../packages/comfyui-workflow";
+import type { ObjectInfo } from "../../../packages/comfyui-workflow";
 
 export type ApiWorkflow = Record<
   string,

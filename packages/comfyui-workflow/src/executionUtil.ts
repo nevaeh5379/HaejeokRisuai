@@ -1,35 +1,30 @@
-import type {
-  ExecutableLGraphNode,
-  ExecutionId,
-  LGraph
-} from '@/lib/litegraph/src/litegraph'
+// Adapted from Comfy-Org/ComfyUI_frontend, revision 6b0f2bd013fa16c33932085ba519cf8967b03fa7.
+// Upstream source: src/utils/executionUtil.ts
+import type { WorkflowGraph } from "./graph";
 import {
   ExecutableNodeDTO,
-  LGraphEventMode
-} from '@/lib/litegraph/src/litegraph'
-import type {
-  ComfyApiWorkflow,
-  ComfyWorkflowJSON
-} from '@/platform/workflow/validation/schemas/workflowSchema'
-
-import { zNodePackMetadata } from '@/platform/workflow/validation/schemas/workflowSchema'
-
-import { compressWidgetInputSlots } from './litegraphUtil'
+  type ExecutableLGraphNode,
+  type ExecutionId,
+} from "./executableNodeDTO";
+import { LGraphEventMode } from "./globalEnums";
+import type { ComfyApiWorkflow, SerializedWorkflow } from "./types";
+import { nodePackMetadata } from "./nodePackMetadata";
+import { compressWidgetInputSlots } from "./litegraphUtil";
 
 type ExportedWidgetValueWrapper = {
-  __type__?: unknown
-  __value__: unknown
-}
+  __type__?: unknown;
+  __value__: unknown;
+};
 
 function isExportedWidgetValueWrapper(
-  value: unknown
+  value: unknown,
 ): value is ExportedWidgetValueWrapper {
   return (
-    typeof value === 'object' &&
+    typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    '__value__' in value
-  )
+    "__value__" in value
+  );
 }
 
 /**
@@ -40,11 +35,11 @@ function isExportedWidgetValueWrapper(
 export function unwrapExportedWidgetValue(value: unknown): unknown {
   if (
     isExportedWidgetValueWrapper(value) &&
-    (value.__type__ === 'CURVE' || Array.isArray(value.__value__))
+    (value.__type__ === "CURVE" || Array.isArray(value.__value__))
   ) {
-    return value.__value__
+    return value.__value__;
   }
-  return value
+  return value;
 }
 
 /**
@@ -57,61 +52,59 @@ export function unwrapExportedWidgetValue(value: unknown): unknown {
  * @returns The workflow and node links
  */
 export const graphToPrompt = async (
-  graph: LGraph,
-  options: { sortNodes?: boolean } = {}
-): Promise<{ workflow: ComfyWorkflowJSON; output: ComfyApiWorkflow }> => {
-  const { sortNodes = false } = options
+  graph: WorkflowGraph,
+  options: { sortNodes?: boolean } = {},
+): Promise<{ workflow: SerializedWorkflow; output: ComfyApiWorkflow }> => {
+  const { sortNodes = false } = options;
 
   for (const node of graph.computeExecutionOrder(false)) {
     const innerNodes = node.getInnerNodes
       ? node.getInnerNodes(new Map())
-      : [node]
+      : [node];
     for (const innerNode of innerNodes) {
       if (innerNode.isVirtualNode) {
-        innerNode.applyToGraph?.()
+        innerNode.applyToGraph?.();
       }
     }
   }
 
-  const workflow = graph.serialize({ sortNodes })
+  const workflow = graph.serialize({ sortNodes });
 
   // Remove localized_name from the workflow
   for (const node of workflow.nodes) {
     for (const slot of node.inputs ?? []) {
-      delete slot.localized_name
+      delete slot.localized_name;
     }
     for (const slot of node.outputs ?? []) {
-      delete slot.localized_name
+      delete slot.localized_name;
     }
   }
 
-  compressWidgetInputSlots(workflow)
-  workflow.extra ??= {}
-  workflow.extra.frontendVersion = __COMFYUI_FRONTEND_VERSION__
+  compressWidgetInputSlots(workflow);
 
-  const nodeDtoMap = new Map<ExecutionId, ExecutableLGraphNode>()
+  const nodeDtoMap = new Map<ExecutionId, ExecutableLGraphNode>();
   for (const node of graph.computeExecutionOrder(false)) {
     const dto: ExecutableLGraphNode = new ExecutableNodeDTO(
       node,
       [],
-      nodeDtoMap
-    )
+      nodeDtoMap,
+    );
 
-    nodeDtoMap.set(dto.id, dto)
+    nodeDtoMap.set(dto.id, dto);
 
     if (
       node.mode === LGraphEventMode.NEVER ||
       node.mode === LGraphEventMode.BYPASS
     ) {
-      continue
+      continue;
     }
 
     for (const innerNode of dto.getInnerNodes()) {
-      nodeDtoMap.set(innerNode.id, innerNode)
+      nodeDtoMap.set(innerNode.id, innerNode);
     }
   }
 
-  const output: ComfyApiWorkflow = {}
+  const output: ComfyApiWorkflow = {};
   // Process nodes in order of execution
   for (const node of nodeDtoMap.values()) {
     // Don't serialize muted nodes
@@ -120,60 +113,62 @@ export const graphToPrompt = async (
       node.mode === LGraphEventMode.NEVER ||
       node.mode === LGraphEventMode.BYPASS
     ) {
-      continue
+      continue;
     }
 
-    const inputs: ComfyApiWorkflow[string]['inputs'] = {}
-    const { widgets } = node
+    const inputs: ComfyApiWorkflow[string]["inputs"] = {};
+    const { widgets } = node;
 
     // Store all widget values in the API prompt.
     // Note: widget.options.serialize controls prompt inclusion (checked here).
     // widget.serialize controls workflow persistence (checked by LGraphNode).
     if (widgets) {
       for (const [i, widget] of widgets.entries()) {
-        if (!widget.name || widget.options.serialize === false) continue
+        if (!widget.name || widget.options.serialize === false) continue;
 
         const widgetValue = widget.serializeValue
           ? await widget.serializeValue(node, i)
-          : widget.value
+          : widget.value;
         // By default, Array values are reserved to represent node connections.
         // We need to wrap the array as an object to avoid the misinterpretation
         // of the array as a node connection.
         // The backend automatically unwraps the object to an array during
         // execution.
         inputs[widget.name] =
-          widget.type === 'curve' && widgetValue != null
-            ? { __type__: 'CURVE', __value__: widgetValue }
+          widget.type === "curve" && widgetValue != null
+            ? { __type__: "CURVE", __value__: widgetValue }
             : Array.isArray(widgetValue)
               ? { __value__: widgetValue }
-              : widgetValue
+              : widgetValue;
       }
     }
 
     // Store all node links
     for (const [i, input] of node.inputs.entries()) {
-      const resolvedInput = node.resolveInput(i)
-      if (!resolvedInput) continue
+      const resolvedInput = node.resolveInput(i);
+      if (!resolvedInput) continue;
 
       // Resolved to an actual widget value rather than a node connection
       if (resolvedInput.widgetInfo) {
-        const { value } = resolvedInput.widgetInfo
-        inputs[input.name] = Array.isArray(value) ? { __value__: value } : value
-        continue
+        const { value } = resolvedInput.widgetInfo;
+        inputs[input.name] = Array.isArray(value)
+          ? { __value__: value }
+          : value;
+        continue;
       }
 
-      inputs[input.name] = [resolvedInput.origin_id, resolvedInput.origin_slot]
+      inputs[input.name] = [resolvedInput.origin_id, resolvedInput.origin_slot];
     }
 
-    const cnrId = zNodePackMetadata.shape.cnr_id.safeParse(
-      node.properties.cnr_id
-    ).data
-    const auxId = zNodePackMetadata.shape.aux_id.safeParse(
-      node.properties.aux_id
-    ).data
-    const packVersion = zNodePackMetadata.shape.ver.safeParse(
-      node.properties.ver
-    ).data
+    const cnrId = nodePackMetadata.shape.cnr_id.safeParse(
+      node.properties.cnr_id,
+    ).data;
+    const auxId = nodePackMetadata.shape.aux_id.safeParse(
+      node.properties.aux_id,
+    ).data;
+    const packVersion = nodePackMetadata.shape.ver.safeParse(
+      node.properties.ver,
+    ).data;
     output[node.id] = {
       inputs,
       // TODO(huchenlei): Filter out all nodes that cannot be mapped to a
@@ -185,9 +180,9 @@ export const graphToPrompt = async (
         title: node.title,
         ...(cnrId && { cnr_id: cnrId }),
         ...(auxId && { aux_id: auxId }),
-        ...(packVersion && { ver: packVersion })
-      }
-    }
+        ...(packVersion && { ver: packVersion }),
+      },
+    };
   }
 
   // Remove inputs connected to removed nodes
@@ -198,10 +193,10 @@ export const graphToPrompt = async (
         input.length === 2 &&
         !Object.hasOwn(output, input[0])
       ) {
-        delete inputs[i]
+        delete inputs[i];
       }
     }
   }
 
-  return { workflow: workflow as ComfyWorkflowJSON, output }
-}
+  return { workflow: workflow as SerializedWorkflow, output };
+};

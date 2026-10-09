@@ -4,6 +4,10 @@ import {
   readApiWorkflow,
   type ObjectInfo,
 } from "./comfyWorkflow";
+import {
+  InvalidLinkError,
+  RecursionError,
+} from "../../../packages/comfyui-workflow/src/errors";
 
 const info: ObjectInfo = {
   Source: { input: { required: { text: ["STRING"] } } },
@@ -263,28 +267,26 @@ describe("ComfyUI serialized graph conversion", async () => {
         info,
       ),
     ).rejects.toThrow("/object_info");
-    await expect(
-      convertComfyWorkflow(
-        {
-          nodes: [
-            { id: 1, type: "Sink", inputs: [{ name: "model", link: 99 }] },
-          ],
-          links: [],
-        },
-        info,
-      ),
-    ).rejects.toThrow("No link found");
-    await expect(
-      convertComfyWorkflow(
-        {
-          nodes: [
-            { id: 1, type: "Reroute", inputs: [{ name: "in", link: 1 }] },
-            { id: 2, type: "Sink", inputs: [{ name: "model", link: 1 }] },
-          ],
-          links: [[1, 1, 0, 2, 0, "MODEL"]],
-        },
-        info,
-      ),
-    ).rejects.toThrow("Circular reference");
+    const invalidLink = convertComfyWorkflow(
+      {
+        nodes: [{ id: 1, type: "Sink", inputs: [{ name: "model", link: 99 }] }],
+        links: [],
+      },
+      info,
+    );
+    await expect(invalidLink).rejects.toThrow(InvalidLinkError);
+    await expect(invalidLink).rejects.toThrow("No link found");
+    const circular = convertComfyWorkflow(
+      {
+        nodes: [
+          { id: 1, type: "Reroute", inputs: [{ name: "in", link: 1 }] },
+          { id: 2, type: "Sink", inputs: [{ name: "model", link: 1 }] },
+        ],
+        links: [[1, 1, 0, 2, 0, "MODEL"]],
+      },
+      info,
+    );
+    await expect(circular).rejects.toThrow(RecursionError);
+    await expect(circular).rejects.toThrow("Circular reference");
   });
 });

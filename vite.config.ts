@@ -47,7 +47,6 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     define: {
-      __COMFYUI_FRONTEND_VERSION__: JSON.stringify("1.57.0"),
       "import.meta.env.VITE_RISU_LEGAL_CONFIGURED": JSON.stringify(
         legalConfigured ? "TRUE" : "",
       ),
@@ -316,7 +315,6 @@ export default defineConfig(({ command, mode }) => {
 
     resolve: {
       alias: {
-        "@": resolve(process.cwd(), "packages/comfyui-workflow/compat"),
         src: "/src",
         "@risuai/chat-core": resolve(process.cwd(), "packages/chat-core"),
         "@risuai/protocol": resolve(process.cwd(), "packages/protocol"),

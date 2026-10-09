@@ -1,14 +1,14 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import manifest from "./upstream.json";
+import { describe, expect, it, vi } from "vitest";
 import defaultWorkflow from "./fixtures/default.json";
 import linkSeedWorkflow from "./fixtures/link-seed.json";
 import nestedWorkflow from "./fixtures/nested-subgraph.json";
 import { workflowToPrompt } from "./index";
-import { WorkflowGraph, type ObjectInfo } from "./graph";
-import { graphToPrompt } from "./upstream/src/utils/executionUtil";
+import { WorkflowGraph } from "./src/graph";
+import type { ObjectInfo, SerializedGraph } from "./src/types";
+import { graphToPrompt } from "./src/executionUtil";
+import { ExecutableNodeDTO } from "./src/executableNodeDTO";
+import { InvalidLinkError, NullGraphError } from "./src/errors";
+import { widgetValueStore } from "./src/widgetValueStore";
 
 const info: ObjectInfo = {
   CheckpointLoaderSimple: {
@@ -49,7 +49,7 @@ const info: ObjectInfo = {
   },
 };
 
-describe("ComfyUI Export (API) upstream runtime", () => {
+describe("ComfyUI Export (API) runtime", () => {
   it("exports the upstream default workflow with the VAEDecode links intact", async () => {
     const output = await workflowToPrompt(defaultWorkflow, info);
     expect(output["8"]).toEqual({
@@ -80,7 +80,6 @@ describe("ComfyUI Export (API) upstream runtime", () => {
     const decode = value.nodes.find((node) => node.type === "VAEDecode")!;
     decode.widgets_values = [null, "preview"];
 
-    expect(value).toMatchSnapshot();
     const output = await workflowToPrompt(value, info);
     expect(output[String(decode.id)].inputs).toEqual({
       samples: ["3", 0],
@@ -130,10 +129,98 @@ describe("ComfyUI Export (API) upstream runtime", () => {
       options: { serialize: false },
     });
     try {
-      const { output } = await graphToPrompt(graph);
+      const { output, workflow } = await graphToPrompt(graph);
+      expect(workflow).not.toHaveProperty("extra");
       expect(output["1"].inputs).toEqual({
         text: { __value__: ["runtime", "value"] },
       });
+    } finally {
+      graph.dispose();
+    }
+  });
+
+  it("rejects a detached node with NullGraphError", () => {
+    const graph = new WorkflowGraph(
+      {
+        nodes: [{ id: 1, type: "Text", widgets_values: ["saved"] }],
+        links: [],
+      },
+      { Text: { input: { required: { text: ["STRING"] } } } },
+    );
+    try {
+      const detached = Object.assign(Object.create(graph.nodes[0]), {
+        graph: undefined,
+      });
+      expect(() => new ExecutableNodeDTO(detached, [], new Map())).toThrow(
+        NullGraphError,
+      );
+    } finally {
+      graph.dispose();
+    }
+  });
+
+  it.each(["success", "conversion failure", "loading failure"])(
+    "releases promoted widgets after %s",
+    async (scenario) => {
+      const value = structuredClone(linkSeedWorkflow) as SerializedGraph;
+      if (scenario === "conversion failure") {
+        value.nodes.find((node) => node.type === "VAEDecode")!.inputs![0].link =
+          999999;
+      } else if (scenario === "loading failure") {
+        // The subgraph at the end of the fixture registers its promoted widget
+        // before loading this additional node fails.
+        value.nodes.push({ id: 11, type: "MissingBackend" });
+      }
+      const registrations = vi.spyOn(widgetValueStore, "setWidget");
+      try {
+        if (scenario === "success") {
+          expect(
+            (await workflowToPrompt(value, info))["10:3"].inputs.seed,
+          ).toBe(1);
+        } else if (scenario === "conversion failure") {
+          await expect(workflowToPrompt(value, info)).rejects.toThrow(
+            InvalidLinkError,
+          );
+        } else {
+          await expect(workflowToPrompt(value, info)).rejects.toThrow(
+            "/object_info",
+          );
+        }
+        expect(registrations).toHaveBeenCalled();
+        for (const [id] of registrations.mock.calls) {
+          expect(widgetValueStore.getWidget(id)).toBeUndefined();
+        }
+      } finally {
+        registrations.mockRestore();
+      }
+    },
+  );
+
+  it("keeps promoted widget values isolated across repeated conversions", async () => {
+    for (const seed of [101, 202]) {
+      const value = structuredClone(linkSeedWorkflow);
+      value.nodes.find((node) => node.id === 10)!.widgets_values = [seed];
+      const output = await workflowToPrompt(value, info);
+      expect(output["10:3"].inputs.seed).toBe(seed);
+    }
+    expect(
+      linkSeedWorkflow.nodes.find((node) => node.id === 10)!.widgets_values,
+    ).toEqual([1]);
+  });
+
+  it("preserves supplied workflow metadata without adding a frontend version", async () => {
+    const value = {
+      nodes: [{ id: 1, type: "Text", widgets_values: ["saved"] }],
+      links: [],
+      extra: { custom: "kept" },
+    };
+    const graph = new WorkflowGraph(value, {
+      Text: { input: { required: { text: ["STRING"] } } },
+    });
+    try {
+      const { workflow } = await graphToPrompt(graph);
+      expect(workflow.extra).toEqual({ custom: "kept" });
+      expect(value.extra).toEqual({ custom: "kept" });
     } finally {
       graph.dispose();
     }

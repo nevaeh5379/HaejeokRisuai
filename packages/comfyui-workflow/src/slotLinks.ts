@@ -1,4 +1,5 @@
-import type { NodeId, WorkflowGraph } from "../../../../../graph";
+import type { NodeId } from "./types";
+import type { WorkflowGraph } from "./graph";
 /** Persisted slot topology in place of ComfyUI's Pinia link store. */
 export function inputLinkId(
   graph: WorkflowGraph,

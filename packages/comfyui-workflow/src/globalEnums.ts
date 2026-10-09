@@ -1,7 +1,9 @@
+// Adapted from Comfy-Org/ComfyUI_frontend, revision 6b0f2bd013fa16c33932085ba519cf8967b03fa7.
+// Upstream source: src/lib/litegraph/src/types/globalEnums.ts
 /** Node slot type - input or output */
 export enum NodeSlotType {
   INPUT = 1,
-  OUTPUT = 2
+  OUTPUT = 2,
 }
 
 /** Shape that an object will render as - used by nodes and slots */
@@ -19,7 +21,7 @@ export enum RenderShape {
   /** Slot shape: Grid */
   GRID = 6,
   /** Slot shape: Hollow circle  */
-  HollowCircle = 7
+  HollowCircle = 7,
 }
 
 /** Bit flags used to indicate what the pointer is currently hovering over. */
@@ -39,7 +41,7 @@ export enum CanvasItem {
   /** A subgraph input or output node */
   SubgraphIoNode = 1 << 6,
   /** A subgraph input or output slot */
-  SubgraphIoSlot = 1 << 7
+  SubgraphIoSlot = 1 << 7,
 }
 
 /** The direction that a link point will flow towards - e.g. horizontal outputs are right by default */
@@ -49,7 +51,7 @@ export enum LinkDirection {
   DOWN = 2,
   LEFT = 3,
   RIGHT = 4,
-  CENTER = 5
+  CENTER = 5,
 }
 
 /** The path calculation that links follow */
@@ -60,7 +62,7 @@ export enum LinkRenderType {
   /** 90° angles, clean and box-like */
   LINEAR_LINK = 1,
   /** Smooth curved links - default */
-  SPLINE_LINK = 2
+  SPLINE_LINK = 2,
 }
 
 /** The marker in the middle of a link */
@@ -70,14 +72,14 @@ export enum LinkMarkerShape {
   /** Circles (default) */
   Circle = 1,
   /** Directional arrows */
-  Arrow = 2
+  Arrow = 2,
 }
 
 export enum TitleMode {
   NORMAL_TITLE = 0,
   NO_TITLE = 1,
   TRANSPARENT_TITLE = 2,
-  AUTOHIDE_TITLE = 3
+  AUTOHIDE_TITLE = 3,
 }
 
 export enum LGraphEventMode {
@@ -85,11 +87,11 @@ export enum LGraphEventMode {
   ON_EVENT = 1,
   NEVER = 2,
   ON_TRIGGER = 3,
-  BYPASS = 4
+  BYPASS = 4,
 }
 
 export enum EaseFunction {
-  EASE_IN_OUT_QUAD = 'easeInOutQuad'
+  EASE_IN_OUT_QUAD = "easeInOutQuad",
 }
 
 /** Bit flags used to indicate what the pointer is currently hovering over. */
@@ -125,7 +127,7 @@ export enum Alignment {
   /** Bottom side, horizontally centred */
   BottomCentre = Bottom | Centre,
   /** Bottom right */
-  BottomRight = Bottom | Right
+  BottomRight = Bottom | Right,
 }
 
 /**
@@ -135,5 +137,5 @@ export enum Alignment {
  * @returns `true` if the flag is set, `false` otherwise.
  */
 export function hasFlag(flagSet: number, flag: number): boolean {
-  return (flagSet & flag) === flag
+  return (flagSet & flag) === flag;
 }

@@ -14,7 +14,6 @@
 
     /* Module Resolution */
     "paths": {
-      "@/*": ["./packages/comfyui-workflow/compat/*"],
       "src/*": ["./src/*"],
       "@risuai/chat-core/*": ["./packages/chat-core/*"],
       "@risuai/protocol/*": ["./packages/protocol/*"],

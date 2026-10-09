@@ -1,93 +1,22 @@
-/**
- * Headless loader for the upstream graphToPrompt/ExecutableNodeDTO runtime.
- * This file restores persisted graph state; prompt serialization and connection
- * resolution are performed by the vendored, unmodified upstream functions.
- */
+/** Headless loader for persisted ComfyUI workflows and subgraph instances. */
 import {
   ExecutableNodeDTO,
   type ExecutableLGraphNode,
   type ExecutionId,
-} from "./upstream/src/lib/litegraph/src/subgraph/ExecutableNodeDTO";
-import { LGraphEventMode } from "./upstream/src/lib/litegraph/src/types/globalEnums";
-import type { ISerialisedGraph } from "./compat/lib/litegraph/src/types/serialisation";
-
-export type NodeId = string | number;
-export type SlotType = string | number;
-export type InputSpec = [
-  string | unknown[],
-  {
-    forceInput?: boolean;
-    default?: unknown;
-    control_after_generate?: boolean | string;
-  }?,
-];
-export type ObjectInfo = Record<
-  string,
-  {
-    input: {
-      required?: Record<string, InputSpec>;
-      optional?: Record<string, InputSpec>;
-    };
-    input_order?: { required?: string[]; optional?: string[] };
-  }
->;
-export interface Slot {
-  name: string;
-  type?: SlotType;
-  link?: NodeId | null;
-  widget?: { name: string };
-  widgetId?: string;
-  label?: string;
-  localized_name?: string;
-}
-export interface SerializedNode {
-  id: NodeId;
-  type: string;
-  title?: string;
-  mode?: number;
-  order?: number;
-  properties?: Record<string, unknown>;
-  inputs?: Slot[];
-  outputs?: Slot[];
-  widgets_values?: unknown[] | Record<string, unknown>;
-  widgets_values_named?: Record<string, unknown>;
-}
-export interface SerializedGraph {
-  id?: string;
-  name?: string;
-  nodes: SerializedNode[];
-  links: (
-    SerializedLink | [NodeId, NodeId, number, NodeId, number, SlotType]
-  )[];
-  inputs?: Slot[];
-  outputs?: Slot[];
-  inputNode?: { id: NodeId };
-  outputNode?: { id: NodeId };
-  definitions?: { subgraphs?: SerializedGraph[] };
-  extra?: Record<string, unknown>;
-}
-export interface SerializedLink {
-  id: NodeId;
-  origin_id: NodeId;
-  origin_slot: number;
-  target_id: NodeId;
-  target_slot: number;
-  type: SlotType;
-}
-export interface Widget {
-  name: string;
-  type: string;
-  value: unknown;
-  options: { serialize?: boolean };
-  serializeValue?: (node: unknown, index: number) => unknown | Promise<unknown>;
-}
-
-// Only promoted subgraph widgets need the upstream store read. Entries are
-// scoped to a conversion and released in finally, including conversion errors.
-const widgetValues = new Map<string, Widget>();
-export const useWidgetValueStore = () => ({
-  getWidget: (id: string) => widgetValues.get(id),
-});
+} from "./executableNodeDTO";
+import { LGraphEventMode } from "./globalEnums";
+import type {
+  NodeId,
+  ObjectInfo,
+  SerializedGraph,
+  SerializedLink,
+  SerializedNode,
+  SerializedWorkflow,
+  Slot,
+  SlotType,
+  Widget,
+} from "./types";
+import { widgetValueStore } from "./widgetValueStore";
 
 export class WorkflowLink implements SerializedLink {
   id: NodeId;
@@ -338,7 +267,7 @@ export class WorkflowNode {
         };
         const id = `${graph.rootGraph.id}:${graph.instanceId}:${name}`;
         slot.widgetId = id;
-        widgetValues.set(id, widget);
+        widgetValueStore.setWidget(id, widget);
         graph.rootGraph.widgetIds.add(id);
       } else {
         const widget = graph
@@ -400,8 +329,8 @@ export class WorkflowGraph {
       (a, b) => (a.source.order ?? 0) - (b.source.order ?? 0),
     );
   }
-  serialize(_options?: { sortNodes?: boolean }): ISerialisedGraph {
-    const snapshot = structuredClone(this.source) as ISerialisedGraph;
+  serialize(_options?: { sortNodes?: boolean }): SerializedWorkflow {
+    const snapshot = structuredClone(this.source) as SerializedWorkflow;
     // The root workflow format uses link tuples, unlike subgraph definitions.
     snapshot.links = [...this.links.values()].map((link) => [
       link.id,
@@ -414,7 +343,7 @@ export class WorkflowGraph {
     return snapshot;
   }
   dispose() {
-    for (const id of this.widgetIds) widgetValues.delete(id);
+    for (const id of this.widgetIds) widgetValueStore.deleteWidget(id);
     this.widgetIds.clear();
   }
 }
