@@ -7,7 +7,7 @@ const rootPackage = JSON.parse(await readFile(new URL('../../package.json', impo
 const runtimePackage = JSON.parse(await readFile(new URL('./runtime-package.json', import.meta.url), 'utf8'));
 const installScript = await readFile(new URL('./install.sh', import.meta.url), 'utf8');
 const managerScript = await readFile(new URL('./haejeok.sh', import.meta.url), 'utf8');
-const serverBundle = await readFile(new URL('../../server/node/dist/server.cjs', import.meta.url), 'utf8');
+const serverSource = await readFile(new URL('../../server/node/storage/postgres/postgresStorage.ts', import.meta.url), 'utf8');
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
 
 const runtimeDependencies = runtimePackage.dependencies;
@@ -42,9 +42,9 @@ test('Termux runtime excludes optional native and cloud backends', () => {
   }
 });
 
-test('Node server bundle keeps resource paths relocatable', () => {
-  assert.equal(serverBundle.includes(projectRoot), false);
-  assert.match(serverBundle, /resolve\(__dirname, ["']\.\.\/storage\/postgres["']\)/);
+test('Node server source keeps resource paths relocatable', () => {
+  assert.equal(serverSource.includes(projectRoot), false);
+  assert.match(serverSource, /import.meta.dirname/);
 });
 
 test('Termux installer is deterministic and localhost-first', () => {

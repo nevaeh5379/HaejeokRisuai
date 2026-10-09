@@ -1,4 +1,4 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import * as sqliteDocument from "./document";
 import * as sqliteNodes from "./nodes";
 import * as sqlitePlugin from "./plugin";

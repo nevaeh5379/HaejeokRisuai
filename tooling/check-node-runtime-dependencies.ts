@@ -1,66 +1,83 @@
 import { readFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, resolve, extname } from "node:path";
+import ts from "typescript";
 
-interface ServerPackage {
-  dependencies?: Record<string, string>;
-}
-
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const serverPackagePath = resolve(root, "server/node/package.json");
-const serverBundlePath = resolve(root, "server/node/dist/server.cjs");
-
-const [serverPackageSource, serverBundle] = await Promise.all([
-  readFile(serverPackagePath, "utf8"),
-  readFile(serverBundlePath, "utf8"),
-]);
-const serverPackage = JSON.parse(serverPackageSource) as ServerPackage;
-const declaredDependencies = new Set(
-  Object.keys(serverPackage.dependencies ?? {}),
+const root = resolve(import.meta.dirname, "..");
+const manifest = JSON.parse(
+  await readFile(resolve(root, "server/node/package.json"), "utf8"),
 );
+const declared = new Set(Object.keys(manifest.dependencies ?? {}));
 const builtins = new Set(
-  builtinModules.flatMap((name) => [name, name.replace(/^node:/, "")]),
+  builtinModules.flatMap((name) => [name, `node:${name}`]),
 );
-
-function packageName(specifier: string): string {
-  if (specifier.startsWith("@")) {
-    return specifier.split("/").slice(0, 2).join("/");
-  }
-  return specifier.split("/", 1)[0];
-}
-
-const runtimeDependencies = new Set<string>();
-for (const match of serverBundle.matchAll(/require\(["']([^"']+)["']\)/g)) {
-  const specifier = match[1];
-  const normalizedBuiltin = specifier.replace(/^node:/, "");
-  if (
-    specifier.startsWith(".") ||
-    specifier.startsWith("/") ||
-    builtins.has(specifier) ||
-    builtins.has(normalizedBuiltin)
-  ) {
-    continue;
-  }
-  runtimeDependencies.add(packageName(specifier));
-}
-
-const missing = [...runtimeDependencies]
-  .filter((name) => !declaredDependencies.has(name))
-  .sort();
-const unused = [...declaredDependencies]
-  .filter((name) => !runtimeDependencies.has(name))
-  .sort();
-
-if (missing.length || unused.length) {
-  const details: string[] = [];
-  if (missing.length) details.push(`missing: ${missing.join(", ")}`);
-  if (unused.length) details.push(`unused: ${unused.join(", ")}`);
-  throw new Error(
-    `server/node/package.json does not match the generated server bundle (${details.join("; ")})`,
+const visited = new Set<string>();
+const dependencies = new Set<string>();
+async function inspect(file: string): Promise<void> {
+  if (visited.has(file)) return;
+  visited.add(file);
+  if (extname(file) === ".json") return;
+  const source = ts.createSourceFile(
+    file,
+    await readFile(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
   );
+  const imports: string[] = [];
+  function visit(node: ts.Node): void {
+    if (
+      ts.isImportDeclaration(node) &&
+      !node.importClause?.isTypeOnly &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      const bindings = node.importClause?.namedBindings;
+      if (
+        !bindings ||
+        !ts.isNamedImports(bindings) ||
+        bindings.elements.some((item) => !item.isTypeOnly)
+      )
+        imports.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isExportDeclaration(node) &&
+      !node.isTypeOnly &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      imports.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      if (!ts.isStringLiteral(node.arguments[0]))
+        throw new Error(`Nonliteral runtime import in ${file}`);
+      imports.push(node.arguments[0].text);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  for (const specifier of imports) {
+    if (builtins.has(specifier)) continue;
+    if (specifier.startsWith(".")) {
+      if (!/\.(ts|json)$/.test(specifier))
+        throw new Error(
+          `Runtime source extension missing: ${file}: ${specifier}`,
+        );
+      await inspect(resolve(dirname(file), specifier));
+    } else
+      dependencies.add(
+        specifier.startsWith("@")
+          ? specifier.split("/").slice(0, 2).join("/")
+          : specifier.split("/")[0],
+      );
+  }
 }
-
+await inspect(resolve(root, "server/node/server.ts"));
+const missing = [...dependencies].filter((name) => !declared.has(name));
+const unused = [...declared].filter((name) => !dependencies.has(name));
+if (missing.length || unused.length)
+  throw new Error(
+    `Node runtime dependency manifest mismatch (missing: ${missing.join(", ")}; unused: ${unused.join(", ")})`,
+  );
 console.log(
-  `Node runtime dependency manifest: OK (${runtimeDependencies.size} packages)`,
+  `Node runtime source dependencies: OK (${visited.size} files, ${dependencies.size} packages)`,
 );

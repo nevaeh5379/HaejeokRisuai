@@ -18,11 +18,11 @@ export type {
   SqlMessageUpsert,
   SqlModuleUpsert,
   SqlCommitResult,
-} from "../../../../packages/protocol/dist/sqlCommit.cjs";
+} from "../../../../packages/protocol/src/sqlCommit.ts";
 import type {
   SqlCommit as ProtocolSqlCommit,
   SqlPresetUpsert as ProtocolSqlPresetUpsert,
-} from "../../../../packages/protocol/dist/sqlCommit.cjs";
+} from "../../../../packages/protocol/src/sqlCommit.ts";
 
 export type SqlPresetUpsert = ProtocolSqlPresetUpsert<botPreset>;
 export type SqlCommit = ProtocolSqlCommit<botPreset>;

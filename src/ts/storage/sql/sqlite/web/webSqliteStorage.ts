@@ -1,6 +1,6 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { v4 as uuidv4 } from "uuid";
-import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
+import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import type {
   CanonicalDatabase,
   Database,

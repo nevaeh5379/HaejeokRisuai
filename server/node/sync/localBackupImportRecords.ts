@@ -1,3 +1,8 @@
+import {
+  encodePostgresJsonValue,
+  decodePostgresJsonValue,
+} from "../storage/postgres/postgresJsonCodec.ts";
+import { loadMssql, loadOracle } from "./../util/runtimeModules.ts";
 type SqlVendor = "postgres" | "oracle" | "azure";
 
 type QueryResult = { rows?: Array<Record<string, unknown>> };
@@ -99,11 +104,18 @@ export class LocalBackupImportRecordStore {
   private schemaStorage: SqlRestoreStorage | null = null;
   private schemaVendor: SqlVendor | null = null;
 
+  private readonly getStorage: () => SqlRestoreStorage;
+  private readonly getVendor: () => SqlVendor;
+  private readonly adapter: RestoreRecordAdapter;
   constructor(
-    private readonly getStorage: () => SqlRestoreStorage,
-    private readonly getVendor: () => SqlVendor,
-    private readonly adapter: RestoreRecordAdapter,
-  ) {}
+    getStorage: () => SqlRestoreStorage,
+    getVendor: () => SqlVendor,
+    adapter: RestoreRecordAdapter,
+  ) {
+    this.getStorage = getStorage;
+    this.getVendor = getVendor;
+    this.adapter = adapter;
+  }
 
   /**
    * Serializes a staged record to JSONB-safe text. PostgreSQL jsonb cannot
@@ -115,18 +127,12 @@ export class LocalBackupImportRecordStore {
    * decode = decodeRecord(pgJson^-1), applied LIFO.
    */
   private encodePayload(record: RestoreRecord): string {
-    const {
-      encodePostgresJsonValue,
-    } = require("../storage/postgres/postgresJsonCodec.cjs");
     return JSON.stringify(
       encodePostgresJsonValue(this.adapter.encodeRecord(record)),
     );
   }
 
   private decodePayload(payload: string): RestoreRecord {
-    const {
-      decodePostgresJsonValue,
-    } = require("../storage/postgres/postgresJsonCodec.cjs");
     return this.adapter.decodeRecord(
       decodePostgresJsonValue(JSON.parse(payload)),
     );
@@ -262,7 +268,7 @@ export class LocalBackupImportRecordStore {
       return sequence + rows.length;
     }
     if (vendor === "azure") {
-      const sql = require("mssql");
+      const sql = await loadMssql();
       const pool = await this.azurePool();
       const request = pool.request();
       request.input("restore_id", sql.NVarChar(128), id);
@@ -298,12 +304,12 @@ export class LocalBackupImportRecordStore {
         {
           bindDefs: {
             restore_id: {
-              type: require("oracledb").DB_TYPE_VARCHAR,
+              type: (await loadOracle()).DB_TYPE_VARCHAR,
               maxSize: 128,
             },
-            sequence_no: { type: require("oracledb").DB_TYPE_NUMBER },
-            tier: { type: require("oracledb").DB_TYPE_NUMBER },
-            payload: { type: require("oracledb").DB_TYPE_CLOB },
+            sequence_no: { type: (await loadOracle()).DB_TYPE_NUMBER },
+            tier: { type: (await loadOracle()).DB_TYPE_NUMBER },
+            payload: { type: (await loadOracle()).DB_TYPE_CLOB },
           },
         },
       );
@@ -341,7 +347,7 @@ export class LocalBackupImportRecordStore {
       }));
     }
     if (vendor === "azure") {
-      const sql = require("mssql");
+      const sql = await loadMssql();
       const request = (client as AzureClient).request();
       request.input("restore_id", sql.NVarChar(128), id);
       request.input("last_tier", sql.Int, lastTier);
@@ -369,7 +375,7 @@ export class LocalBackupImportRecordStore {
         ORDER BY tier, sequence_no
         FETCH FIRST ${PAGE_SIZE} ROWS ONLY`,
       [id, lastTier, lastSequence],
-      { outFormat: require("oracledb").OUT_FORMAT_ARRAY },
+      { outFormat: (await loadOracle()).OUT_FORMAT_ARRAY },
     );
     return (result.rows ?? []).map((row) => ({
       sequence: Number(row[0]),
@@ -436,7 +442,7 @@ export class LocalBackupImportRecordStore {
       return;
     }
     if (vendor === "azure") {
-      const sql = require("mssql");
+      const sql = await loadMssql();
       const pool = await this.azurePool();
       const request = pool.request();
       request.input("restore_id", sql.NVarChar(128), id);

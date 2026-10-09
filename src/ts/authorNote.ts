@@ -5,7 +5,7 @@ import { globalAuthorNoteStore } from "./stores/domain/globalAuthorNoteStore";
 import {
   AuthorNoteError,
   NO_AUTHOR_NOTE,
-} from "@risuai/protocol/dist/authorNotes.cjs";
+} from "@risuai/protocol/src/authorNotes.ts";
 
 export type NoteSelection =
   { mode: "local" } | { mode: "global"; noteId: string };

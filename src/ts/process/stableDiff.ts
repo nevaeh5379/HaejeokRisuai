@@ -7,7 +7,7 @@ import { requestChatData } from "./request/chatRequestOrchestrator";
 import { alertError } from "../alert";
 import { fetchNative, globalFetch, readImage } from "../globalApi.svelte";
 import { CharEmotion } from "../stores.svelte";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import { processZip } from "./processzip";
 import { keiServerURL } from "../kei/kei";
 import random from "lodash/random";

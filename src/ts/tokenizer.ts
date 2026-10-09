@@ -5,12 +5,12 @@ import type { Tiktoken } from "@dqbd/tiktoken";
 import type { Tokenizer } from "@mlc-ai/web-tokenizers";
 import type { groupChat, character, Chat } from "./storage/database/schema";
 
-import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.ts";
 import {
   calculateMultimodalTokenCost,
   countChatTokensDetailed,
   type ChatTokenAccountingOptions,
-} from "@risuai/chat-core/tokenAccounting.cjs";
+} from "@risuai/chat-core/tokenAccounting.ts";
 import { supportsInlayImage } from "./process/files/inlays";
 import { risuChatParser } from "./parser/parser.svelte";
 import { tokenizeGGUFModel } from "./process/models/local";
@@ -21,7 +21,7 @@ import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/files/nodeStorage";
-import type { TokenizerEncoding } from "../../packages/protocol/compute.cjs";
+import type { TokenizerEncoding } from "../../packages/protocol/compute.ts";
 
 const MAX_CACHE_SIZE = 128;
 

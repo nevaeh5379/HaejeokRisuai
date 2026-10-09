@@ -8,13 +8,13 @@ import {
   type StagedBackupContainer,
   type StagedBackupEntry,
   type StreamedBackupEntry,
-} from "./importStagingStore";
-import { buildBackupImportPlan } from "./importPlan";
-import { streamLocalBackupArchive } from "./exportArchive";
+} from "./importStagingStore.ts";
+import { buildBackupImportPlan } from "./importPlan.ts";
+import { streamLocalBackupArchive } from "./exportArchive.ts";
 import {
   PortableDatabaseExportWriter,
   writeBackupContainerEntry,
-} from "./exportStream";
+} from "./exportStream.ts";
 
 const roots: string[] = [];
 

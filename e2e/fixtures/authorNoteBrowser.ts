@@ -1,8 +1,8 @@
 import {
   AuthorNoteError,
   hashAuthorNote,
-} from "@risuai/protocol/dist/authorNotes.cjs";
-import { applyAuthorNotes } from "@risuai/protocol/dist/authorNoteSql.cjs";
+} from "@risuai/protocol/src/authorNotes.ts";
+import { applyAuthorNotes } from "@risuai/protocol/dist/authorNoteSql.ts";
 import { readNote, resolveNote } from "../../src/ts/authorNote";
 import { globalAuthorNoteStore } from "../../src/ts/stores/domain/globalAuthorNoteStore";
 import type { Chat } from "../../src/ts/storage/database/schema";

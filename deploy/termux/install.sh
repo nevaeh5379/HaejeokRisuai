@@ -31,8 +31,8 @@ fi
 
 node -e '
   const [major, minor] = process.versions.node.split(".").map(Number);
-  process.exit((major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22 ? 0 : 1);
-' || fail "Node.js 20.19+ or 22+ is required. Upgrade the Termux Node package first."
+  process.exit((major === 24 && minor >= 12) || major > 24 ? 0 : 1);
+' || fail "Node.js 24.12+ is required. Upgrade the Termux Node package first."
 
 for cmd in node npm postgres initdb pg_ctl psql createdb pg_isready curl tar sha256sum sv service-daemon awk; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Required command is missing after package install: $cmd"
@@ -77,8 +77,7 @@ curl -fL "${ARCHIVE_URL}.sha256" -o "$CHECKSUM" || \
 mkdir -p "$STAGED_APP"
 tar -xzf "$ARCHIVE" -C "$STAGED_APP"
 [ -f "$STAGED_APP/dist/index.html" ] || fail "Runtime bundle is missing dist/index.html."
-[ -f "$STAGED_APP/server/node/dist/server.cjs" ] || fail "Runtime bundle is missing the compiled Node server."
-[ -f "$STAGED_APP/server/node/bootstrap.cjs" ] || fail "Runtime bundle is missing the Node server bootstrap."
+[ -f "$STAGED_APP/server/node/server.ts" ] || fail "Runtime bundle is missing the TypeScript Node server."
 [ -f "$STAGED_APP/package.json" ] || fail "Runtime bundle is missing package.json."
 [ -f "$STAGED_APP/package-lock.json" ] || fail "Runtime bundle is missing package-lock.json."
 
@@ -263,7 +262,7 @@ while ! pg_isready -h 127.0.0.1 -p "\$HAEJEOK_DB_PORT" -U "\$HAEJEOK_DB_USER" -d
   sleep 1
 done
 cd "\$HAEJEOK_APP_DIR"
-NODE_ENV=production exec node server/node/bootstrap.cjs 2>&1
+NODE_ENV=production exec node server/node/server.ts 2>&1
 EOF
 chmod 755 "$RISUAI_SERVICE/run"
 install_service_logger "$RISUAI_SERVICE"

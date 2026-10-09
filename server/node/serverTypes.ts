@@ -1,6 +1,6 @@
-import type { PostgresStorageContract } from "./storage/postgres/postgresStorage.cjs";
-import type { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.js";
-import type { PluginStorageRouteDependencies } from "./api/database/plugins/routes.js";
+import type { PostgresStorageContract } from "./storage/postgres/postgresStorage.ts";
+import type { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.ts";
+import type { PluginStorageRouteDependencies } from "./api/database/plugins/routes.ts";
 import type { Request as ExpressRequest } from "express";
 import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";

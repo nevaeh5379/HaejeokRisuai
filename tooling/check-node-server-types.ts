@@ -14,7 +14,7 @@ const parsed = ts.parseJsonConfigFileContent(
   configPath,
 );
 const program = ts.createProgram(parsed.fileNames, parsed.options);
-const files = ["server/node/server.cts", "server/node/serverTypes.ts"];
+const files = ["server/node/server.ts", "server/node/serverTypes.ts"];
 const diagnostics = [
   ...(config.error ? [config.error] : []),
   ...parsed.errors,

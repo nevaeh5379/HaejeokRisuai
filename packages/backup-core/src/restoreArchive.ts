@@ -1,30 +1,30 @@
 import {
   parseBufferedBackupContainer,
   type BackupContainerEntryInfo,
-} from "./containerStream";
-import type { BackupEntryClassification } from "./entryPolicy";
+} from "./containerStream.ts";
+import type { BackupEntryClassification } from "./entryPolicy.ts";
 import {
   iterateLocalBackupSource,
   type LocalBackupSource,
-} from "./importSource";
-import type { InlayRestoreResult } from "./inlayRestore";
+} from "./importSource.ts";
+import type { InlayRestoreResult } from "./inlayRestore.ts";
 import {
   dispatchBackupRestoreEntry,
   type AccountBackupEncryptionMetadata,
-} from "./restoreEntry";
+} from "./restoreEntry.ts";
 import {
   collectStreamingInventoryRecord,
   createStreamingColdStorageInventory,
   type StreamingColdStorageInventory,
-} from "./streamInventory";
+} from "./streamInventory.ts";
 import type {
   PortableDatabaseStreamFragment,
   PortableDatabaseStreamRecord,
-} from "./streamFormat";
+} from "./streamFormat.ts";
 import {
   PortableDatabaseStreamRestoreCoordinator,
   type PortableDatabaseStreamFragmentSink,
-} from "./streamRestore";
+} from "./streamRestore.ts";
 
 export interface AbortablePortableDatabaseStreamSink extends PortableDatabaseStreamFragmentSink {
   abort(): Promise<void>;

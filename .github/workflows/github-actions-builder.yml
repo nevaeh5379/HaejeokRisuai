@@ -503,7 +503,7 @@ jobs:
         env:
           HAEJEOK_BUILD_NUMBER: ${{ needs.prepare-release.outputs.build_number }}
           VITE_RISU_LEGAL_CONFIGURED: ${{ vars.VITE_RISU_LEGAL_CONFIGURED }}
-        run: pnpm run build:protocol && pnpm run build:server && node tooling/vite-build.mjs
+        run: pnpm run build:protocol && pnpm run check:runtime-dependencies && node tooling/vite-build.mjs
 
       - name: Prepare Termux runtime bundle
         shell: bash

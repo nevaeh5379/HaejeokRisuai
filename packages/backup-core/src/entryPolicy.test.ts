@@ -10,7 +10,7 @@ import {
   LEGACY_DATABASE_ENTRY_NAME,
   normalizeBackupAssetPath,
   normalizeBackupEntryName,
-} from "./entryPolicy";
+} from "./entryPolicy.ts";
 
 describe("backup entry format names", () => {
   it("keeps legacy database and encryption entry names stable", () => {
