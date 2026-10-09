@@ -11,11 +11,11 @@ import { requestChatData } from "../request/chatRequestOrchestrator";
 import type {
   ChatModelResponse,
   ChatStageTimings,
-} from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/types.ts";
 import {
   decideAutoContinuation,
   endsWithCompletionPunctuation,
-} from "@risuai/chat-core/finalization.cjs";
+} from "@risuai/chat-core/finalization.ts";
 import { risuChatParser } from "../scripts";
 import { peerSync } from "../../sync/multiuser";
 import { processPostGenerationEffects } from "./postGeneration.svelte";

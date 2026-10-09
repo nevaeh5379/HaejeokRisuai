@@ -13,8 +13,8 @@ import {
   generationOverride,
   type ChatGenerationOverrides,
 } from "./generationContext";
-import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.cjs";
-export type { PromptSections } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat, PromptSections } from "@risuai/chat-core/types.ts";
+export type { PromptSections } from "@risuai/chat-core/types.ts";
 
 export const PROMPT_ROLE_TO_OPENAI = {
   system: "system",

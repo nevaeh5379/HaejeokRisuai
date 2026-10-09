@@ -8,23 +8,14 @@ import {
   LocalBackupDatabaseStreamStore,
 } from "@risuai/backup-core/node/databaseStreamStore";
 
-const { decodeStorageSyncValue, encodeStorageSyncValue } =
-  require("../../../packages/protocol/storageSyncValueCodec.cjs") as {
-    decodeStorageSyncValue: (value: unknown) => any;
-    encodeStorageSyncValue: (value: unknown) => unknown;
-  };
-const { readStorageSyncSqlRecords, validateStorageSyncSqlRecord } =
-  require(".//storageSyncSqlRecords.cts") as {
-    readStorageSyncSqlRecords: (
-      filePath: string,
-      options?: Record<string, any>,
-    ) => Promise<any>;
-    validateStorageSyncSqlRecord: (
-      record: any,
-      index: number,
-      state: any,
-    ) => void;
-  };
+import {
+  decodeStorageSyncValue,
+  encodeStorageSyncValue,
+} from "../../../packages/protocol/storageSyncValueCodec.ts";
+import {
+  readStorageSyncSqlRecords,
+  validateStorageSyncSqlRecord,
+} from "./storageSyncSqlRecords.ts";
 
 const roots: string[] = [];
 

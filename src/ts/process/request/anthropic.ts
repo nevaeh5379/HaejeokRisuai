@@ -18,14 +18,14 @@ import { v4 } from "uuid";
 import {
   DEFAULT_ANTHROPIC_MESSAGES_URL,
   prepareAnthropicConversation,
-} from "@risuai/chat-core/anthropicProvider.cjs";
+} from "@risuai/chat-core/anthropicProvider.ts";
 import type {
   Claude3Chat,
   Claude3ContentBlock,
   Claude3ExtendedChat,
   Claude3ToolResponseBlock,
   Claude3ToolUseBlock,
-} from "@risuai/chat-core/anthropicProvider.cjs";
+} from "@risuai/chat-core/anthropicProvider.ts";
 import { extractJSON } from "../templates/jsonSchema";
 import { callTool, decodeToolCall, encodeToolCall } from "../mcp/mcp";
 import type {

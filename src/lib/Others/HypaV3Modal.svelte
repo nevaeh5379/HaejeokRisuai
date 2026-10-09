@@ -37,7 +37,7 @@
     isGuidLike,
     parseSelectionInput,
   } from "./HypaV3Modal/utils";
-    import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+    import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
   const hypaV3Data = $derived(
     characterStore.characters[$selectedCharID].chats[

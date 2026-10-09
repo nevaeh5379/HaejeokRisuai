@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNovelListRequestBody } from "@risuai/chat-core/novelListProvider.cjs";
+import { buildNovelListRequestBody } from "@risuai/chat-core/novelListProvider.ts";
 
 const sampler = {
   top_p: 0.9,

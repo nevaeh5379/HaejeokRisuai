@@ -1,9 +1,9 @@
-import type { LocalBackupProgress } from "../api";
+import type { LocalBackupProgress } from "../api.ts";
 import {
   getColdStorageBackupKey,
   getColdStorageBackupName,
-} from "../coldStorage";
-import type { BackupEntrySource } from "./exportStream";
+} from "../coldStorage.ts";
+import type { BackupEntrySource } from "./exportStream.ts";
 
 export interface LoadColdStorageExportValueResult {
   exists: boolean;

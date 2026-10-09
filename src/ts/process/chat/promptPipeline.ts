@@ -17,7 +17,7 @@ import {
 } from "./promptTemplate";
 import { buildChatHistory } from "./historyBuilder";
 import { applyChatMemory } from "./memory";
-import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { ChatStageTimings, OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import {
   generationOverride,
@@ -28,7 +28,7 @@ import {
   applyTriggerPromptPolicy,
   buildPromptBiases,
   insertDepthPrompts,
-} from "@risuai/chat-core/prompt.cjs";
+} from "@risuai/chat-core/prompt.ts";
 
 type LorePrompt = Awaited<
   ReturnType<typeof import("../lorebook.svelte").loadLoreBookV3Prompt>

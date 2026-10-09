@@ -1,8 +1,11 @@
-import { COLD_STORAGE_BACKUP_RE, getColdStorageBackupKey } from "./coldStorage";
+import {
+  COLD_STORAGE_BACKUP_RE,
+  getColdStorageBackupKey,
+} from "./coldStorage.ts";
 import {
   parsePortableDatabaseStreamFragmentName,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-} from "./streamFormat";
+} from "./streamFormat.ts";
 
 export type BackupEntryKind =
   | "database"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mergeDatabaseChanges } from "./nodeRealtimeChangeQueue";
-import { parseRealtimeEvent } from "../../../packages/protocol/dist/realtimeEvents.cjs";
+import { parseRealtimeEvent } from "../../../packages/protocol/src/realtimeEvents.ts";
 
 /**
  * The SSE/WebSocket boundary is untrusted, so the frontend must narrow

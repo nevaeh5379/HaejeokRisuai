@@ -4,7 +4,7 @@ import {
   STORAGE_SYNC_SPECIAL_TAG,
   decodeStorageSyncValue,
   encodeStorageSyncValue,
-} from "@risuai/protocol/storageSyncValueCodec.cjs";
+} from "@risuai/protocol/storageSyncValueCodec.ts";
 
 function roundTrip<T>(value: T): T {
   return decodeStorageSyncValue(
@@ -53,7 +53,9 @@ describe("storage sync value codec", () => {
     });
     const decoded = roundTrip(value);
     expect(Object.getPrototypeOf(decoded)).toBe(Object.prototype);
-    expect(Object.prototype.hasOwnProperty.call(decoded, "__proto__")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(decoded, "__proto__")).toBe(
+      true,
+    );
     expect(decoded.__proto__).toEqual({ polluted: true });
     expect(({} as any).polluted).toBeUndefined();
   });

@@ -6,7 +6,7 @@ import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import { alertError } from "../alert";
 import { CharEmotion } from "../stores.svelte";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 /**
  * Uses the submodel to create tags for the existing character-screen image feature.

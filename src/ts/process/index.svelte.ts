@@ -11,7 +11,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { createLocalChatExecutor } from "./chat/localExecutor";
 import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
-import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
+import type { ChatSendOptions } from "@risuai/chat-core/executor.ts";
 import {
   beginNativeChatRequest,
   boundedNativeCall,
@@ -27,8 +27,8 @@ import {
   reportNodeGenerationFailure,
 } from "./nodeGenerationLifecycle";
 
-export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.ts";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 export interface requestTokenPart {
   name: string;

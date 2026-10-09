@@ -6,8 +6,8 @@ import {
   parseBufferedBackupContainer,
   type BackupContainerEntryInfo,
   type BufferedBackupContainerResult,
-} from "./containerStream";
-import type { BackupEntryClassification } from "./entryPolicy";
+} from "./containerStream.ts";
+import type { BackupEntryClassification } from "./entryPolicy.ts";
 
 function entry(name: string, data: Uint8Array): Uint8Array {
   const header = createBackupContainerEntryHeader(name, data.length);

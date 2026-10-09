@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
+import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.ts";
 
 describe("executeChatRequestFallbacks", () => {
   it("bounds banned-character retries and advances to the next fallback", async () => {

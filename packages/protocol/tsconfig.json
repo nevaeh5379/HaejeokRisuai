@@ -1,15 +1,20 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "Node16",
-    "moduleResolution": "Node16",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
     "declaration": true,
-    "rootDir": "src",
-    "outDir": "dist",
     "noEmitOnError": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "types": ["node"]
   },
-  "files": ["src/authorNoteSql.cts", "src/sqlCommit.cts", "src/realtimeEvents.cts", "src/illustration.cts", "src/illustrationRunner.cts", "src/illustrationStorage.cts", "src/imageGeneration.cts"]
+  "include": ["**/*.ts"],
+  "exclude": ["**/*test.ts", "dist", "scripts"]
 }

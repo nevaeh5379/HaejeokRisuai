@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const { resolveLoreEntries } = require(".//loreResolve.cjs") as {
-  resolveLoreEntries: (
-    messages: unknown[],
-    entries: unknown[],
-    options?: unknown,
-  ) => {
-    activatedIndexes: number[];
-    logs: Array<{ activated: string }>;
-  };
-};
+import { resolveLoreEntries } from "./loreResolve.ts";
 
 const message = { role: "user", data: "The moon is bright" };
 

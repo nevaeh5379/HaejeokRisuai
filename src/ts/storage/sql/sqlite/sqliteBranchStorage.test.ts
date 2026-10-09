@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as sqliteBranch from "@risuai/storage-sqlite/queries/branch";
-import type { LegacyBranchMigrationPlan } from "../../../../../packages/protocol/legacyBranchMigration.cjs";
+import type { LegacyBranchMigrationPlan } from "../../../../../packages/protocol/legacyBranchMigration.ts";
 
 describe("SQLite legacy branch migration archival behavior", () => {
   it("does not rewrite or delete chat extension data after branch migration", () => {

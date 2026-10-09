@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   streamLocalBackupArchive,
   type LocalBackupArchiveExportAdapter,
-} from "./exportArchive";
+} from "./exportArchive.ts";
 
 function manifest() {
   return {

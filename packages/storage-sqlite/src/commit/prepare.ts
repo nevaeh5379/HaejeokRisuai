@@ -1,4 +1,4 @@
-import type { SqlCommit } from "@risuai/protocol/dist/sqlCommit.cjs";
+import type { SqlCommit } from "@risuai/protocol/src/sqlCommit.ts";
 import { mergeLegacyModulesIntoCommit } from "@risuai/storage-core/sqlCommitCompatibility";
 import * as sqliteNodes from "../queries/nodes";
 import type { SqliteSelectRows } from "../types";

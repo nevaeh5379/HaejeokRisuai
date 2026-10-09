@@ -2,7 +2,7 @@
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { requestChatData } from "src/ts/process/request/chatRequestOrchestrator";
-    import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+    import type { OpenAIChat } from "@risuai/chat-core/types.ts";
     import { activeGenerationChatIds } from "../../ts/process/chat/runtimeState";
     import type { character, Message, groupChat } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore } from 'src/ts/stores/domain';

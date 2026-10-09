@@ -21,7 +21,7 @@ import { LLMFlags, LLMFormat, LLMTokenizer } from "../../model/types";
 import type { HypaModel } from "../../process/memory/hypamemory";
 import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { Loadout } from "../../loadout";
 import type {
   Illustration,
@@ -637,7 +637,7 @@ export interface Database
     PresetStoreData,
     LegacyPersonaMirrorData {
   /** Internal serialization boundary; live data belongs to the independent note store. */
-  globalAuthorNotes?: import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow[];
+  globalAuthorNotes?: import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow[];
   globalAuthorNoteSettings?: { allowScriptWrite: boolean };
 }
 

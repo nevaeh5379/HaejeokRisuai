@@ -12,5 +12,9 @@
     "openid-client": "6.8.7",
     "pg": "8.23.0",
     "ws": "8.21.3"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.12.0"
   }
 }

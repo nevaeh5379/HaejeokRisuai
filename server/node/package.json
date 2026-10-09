@@ -2,12 +2,13 @@
   "name": "@risuai/node-server",
   "private": true,
   "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-s3": "^3.1121.0",
     "@aws-sdk/lib-storage": "^3.1121.0",
     "@dqbd/tiktoken": "^1.0.22",
+    "cors": "^2.8.6",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "fflate": "^0.8.3",
@@ -19,6 +20,10 @@
     "pg": "^8.23.0",
     "sharp": "^0.35.4",
     "web-push": "^3.6.7",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "@smithy/node-http-handler": "^4.12.1"
+  },
+  "engines": {
+    "node": ">=24.12.0"
   }
 }

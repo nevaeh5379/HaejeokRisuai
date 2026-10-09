@@ -4,16 +4,16 @@ import { setChatProcessStage } from "./runtimeState";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
-} from "@risuai/chat-core/generation.cjs";
+} from "@risuai/chat-core/generation.ts";
 import type {
   ChatExecutor,
   ChatSendOptions,
-} from "@risuai/chat-core/executor.cjs";
+} from "@risuai/chat-core/executor.ts";
 import type {
   ChatModelResponse,
   ChatStageTimings,
   OpenAIChat,
-} from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/types.ts";
 import { createLocalChatGenerationRuntime } from "./localRuntime";
 import { requireChatTargetFromIndexes } from "../../chatTarget";
 import { tryCreateNodeChatGenerationPlan } from "./nodePlanner";

@@ -1,5 +1,5 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { normalizeOpenAIProviderMessages } from "@risuai/chat-core/openAIProvider.cjs";
+import { normalizeOpenAIProviderMessages } from "@risuai/chat-core/openAIProvider.ts";
 import { prepareOpenAILogitBias } from "./biasPreparation";
 import { prepareOpenAIProviderMessages } from "./messagePreparation";
 import { requestMistral } from "./mistralRequest";

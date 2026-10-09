@@ -4,7 +4,7 @@ import {
   DEFAULT_MISTRAL_API_URL,
   decodeMistralResponse,
   formatMistralMessages,
-} from "@risuai/chat-core/mistralProvider.cjs";
+} from "@risuai/chat-core/mistralProvider.ts";
 import { globalFetch } from "src/ts/globalApi.svelte";
 
 import { LLMFormat } from "src/ts/model/modellist";
