@@ -1,4 +1,6 @@
 import type { Response, NextFunction } from "express";
+import * as illusImages from "./executors/illustrationImages.ts"
+import * as illusExecutor from "./executors/illustrationExecutor.ts"
 import type {
   Request,
   LegacyObject,
@@ -6279,12 +6281,12 @@ nodeChatExecutor.registerRoutes(app, {
   auth: checkAuth,
   limiter: authenticatedRouteLimiter,
 });
-const illustrationImages = createIllustrationImages(
+const illustrationImages =  illusImages.createIllustrationImages(
   () => assetStorageManager.getStorage(),
   upsertAssetCatalogEntries,
   removeAssetCatalogKeys,
 );
-const illustrationExecutor = createNodeIllustrationExecutor({
+const illustrationExecutor = illusExecutor.createNodeIllustrationExecutor({
   onProgress: (target) => {
     realtimeEventHub.broadcast("illustration-progress", target);
   },

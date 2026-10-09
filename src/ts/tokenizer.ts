@@ -22,6 +22,7 @@ import { LRUMap } from "mnemonist";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/files/nodeStorage";
 import type { TokenizerEncoding } from "../../packages/protocol/compute.ts";
+import { createTokenizerQueue } from "./tokenizerQueue.ts";
 
 const MAX_CACHE_SIZE = 128;
 
