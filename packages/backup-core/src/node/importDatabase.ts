@@ -17,7 +17,7 @@ import {
   parsePortableDatabaseStreamManifest,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat.ts";
+} from "../stream/format.ts";
 import type { BackupImportPlan } from "./importPlan.ts";
 
 export interface PreparedLocalBackupDatabase {

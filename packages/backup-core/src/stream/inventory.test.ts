@@ -4,8 +4,8 @@ import {
   createStreamingColdStorageInventory,
   StreamingBackupExportInventory,
   type StreamingColdStorageInventory,
-} from "./streamInventory.ts";
-import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
+} from "./inventory.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 
 const HEADER = "\uEF01COLDSTORAGE\uEF01";
 

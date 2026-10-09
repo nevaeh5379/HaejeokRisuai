@@ -1,7 +1,7 @@
 import {
   parsePortableDatabaseStreamFragmentName,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-} from "../streamFormat.ts";
+} from "../stream/format.ts";
 import type {
   StagedBackupContainer,
   StagedBackupEntry,

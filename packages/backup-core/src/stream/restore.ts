@@ -1,4 +1,4 @@
-import { PortableDatabaseStreamCollector } from "./streamCollector.ts";
+import { PortableDatabaseStreamCollector } from "./collector.ts";
 import {
   parsePortableDatabaseStreamFragment,
   parsePortableDatabaseStreamFragmentName,
@@ -6,7 +6,7 @@ import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "./streamFormat.ts";
+} from "./format.ts";
 
 export interface PortableDatabaseStreamFragmentSink {
   writeFragment(fragment: PortableDatabaseStreamFragment): Promise<void>;

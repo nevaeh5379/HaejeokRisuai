@@ -10,14 +10,14 @@ import {
   PORTABLE_DATABASE_STREAM_VERSION,
   portableDatabaseStreamFragmentName,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat.ts";
+} from "../stream/format.ts";
 
 export {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
-} from "../streamFormat.ts";
-export type { PortableDatabaseStreamManifest } from "../streamFormat.ts";
+} from "../stream/format.ts";
+export type { PortableDatabaseStreamManifest } from "../stream/format.ts";
 export const PORTABLE_DATABASE_STREAM_DEFAULT_FRAGMENT_RECORDS = 128;
 export const databaseFragmentName = portableDatabaseStreamFragmentName;
 

@@ -606,7 +606,7 @@ import {
   type BackupAssetMap,
   type BackupAssetScope,
 } from "@risuai/backup-core/assetScope";
-import { StreamingBackupExportInventory } from "@risuai/backup-core/streamInventory";
+import { StreamingBackupExportInventory } from "@risuai/backup-core/stream/inventory";
 import {
   buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
   normalizePortableBackupSnapshot,

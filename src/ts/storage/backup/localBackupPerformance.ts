@@ -1,4 +1,4 @@
-import { PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS } from "@risuai/backup-core/streamFormat";
+import { PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS } from "@risuai/backup-core/stream/format";
 
 export const LOCAL_BACKUP_PERFORMANCE_LIMITS = {
   databasePageRecords: { min: 1, max: 500 },

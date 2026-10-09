@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LocalBackupImportJobProgress } from "../api.ts";
 import { encodeInlayAssetBackup } from "../inlayCodec.ts";
 import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
-import type { PortableDatabaseStreamManifest } from "../streamFormat.ts";
+import type { PortableDatabaseStreamManifest } from "../stream/format.ts";
 import {
   createLocalBackupEntryHeader,
   encodeLegacyBackupDatabase,

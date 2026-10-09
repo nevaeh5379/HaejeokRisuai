@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { PortableDatabaseStreamCollector } from "./streamCollector.ts";
+import { PortableDatabaseStreamCollector } from "./collector.ts";
 import {
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "./streamFormat.ts";
-import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
+} from "./format.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 
 type StreamRecord = LegacyBackupSqlRecord;
 

@@ -16,15 +16,15 @@ import {
   collectStreamingInventoryRecord,
   createStreamingColdStorageInventory,
   type StreamingColdStorageInventory,
-} from "./streamInventory.ts";
+} from "./stream/inventory.ts";
 import type {
   PortableDatabaseStreamFragment,
   PortableDatabaseStreamRecord,
-} from "./streamFormat.ts";
+} from "./stream/format.ts";
 import {
   PortableDatabaseStreamRestoreCoordinator,
   type PortableDatabaseStreamFragmentSink,
-} from "./streamRestore.ts";
+} from "./stream/restore.ts";
 
 export interface AbortablePortableDatabaseStreamSink extends PortableDatabaseStreamFragmentSink {
   abort(): Promise<void>;

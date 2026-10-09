@@ -23,7 +23,7 @@ import {
   parsePortableDatabaseStreamManifest,
   PORTABLE_DATABASE_STREAM_MANIFEST,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat.ts";
+} from "../stream/format.ts";
 import { decodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   LocalBackupImportJobError,

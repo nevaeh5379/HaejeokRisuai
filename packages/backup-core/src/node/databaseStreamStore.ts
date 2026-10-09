@@ -6,12 +6,12 @@ import {
   parsePortableDatabaseStreamManifest,
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat.ts";
+} from "../stream/format.ts";
 
 export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
 /**
  * Compatibility alias of the canonical streamed-fragment record bound in
- * streamFormat.ts, so Node export/import/session validation always consume
+ * stream/format.ts, so Node export/import/session validation always consume
  * the same value as the frontend and the aggregate collector.
  */
 export const LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =

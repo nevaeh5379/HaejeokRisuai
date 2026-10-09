@@ -5,7 +5,7 @@ import {
 import {
   parsePortableDatabaseStreamFragmentName,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-} from "./streamFormat.ts";
+} from "./stream/format.ts";
 
 export type BackupEntryKind =
   | "database"

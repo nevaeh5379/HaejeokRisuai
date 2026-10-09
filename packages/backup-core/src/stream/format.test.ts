@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
@@ -11,7 +11,7 @@ import {
   portableDatabaseStreamFragmentName,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "./streamFormat.ts";
+} from "./format.ts";
 
 describe("portable database stream format", (): void => {
   it("uses the canonical stream entry names", (): void => {

@@ -7,7 +7,7 @@ import {
 import {
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   PORTABLE_DATABASE_STREAM_VERSION,
-} from "../streamFormat.ts";
+} from "../stream/format.ts";
 
 describe("local backup database stream constants", () => {
   it("shares the canonical streamed-fragment record bound", () => {

@@ -10,16 +10,16 @@ import {
   type PortableDatabaseStreamFragment as CorePortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest as CorePortableDatabaseStreamManifest,
   type PortableDatabaseStreamRecord,
-} from "@risuai/backup-core/streamFormat";
+} from "@risuai/backup-core/stream/format";
 import {
   DEFAULT_LOCAL_BACKUP_PERFORMANCE,
   LOCAL_BACKUP_PERFORMANCE_LIMITS,
 } from "./localBackupPerformance";
-import { PortableDatabaseStreamCollector } from "@risuai/backup-core/streamCollector";
+import { PortableDatabaseStreamCollector } from "@risuai/backup-core/stream/collector";
 import {
   parsePortableDatabaseStreamFragment,
   parsePortableDatabaseStreamManifest,
-} from "@risuai/backup-core/streamFormat";
+} from "@risuai/backup-core/stream/format";
 
 export {
   PORTABLE_DATABASE_STREAM_MANIFEST,

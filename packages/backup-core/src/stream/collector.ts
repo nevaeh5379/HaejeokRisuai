@@ -1,11 +1,11 @@
-import { NATIVE_BRANCH_GRAPHS_KEY } from "./portableBranches.ts";
+import { NATIVE_BRANCH_GRAPHS_KEY } from "../portableBranches.ts";
 import {
   parsePortableDatabaseStreamFragment,
   parsePortableDatabaseStreamManifest,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
   type PortableDatabaseStreamRecord,
-} from "./streamFormat.ts";
+} from "./format.ts";
 
 type PersistedRecord = PortableDatabaseStreamRecord;
 type PersistedRecordType = PersistedRecord["type"];
