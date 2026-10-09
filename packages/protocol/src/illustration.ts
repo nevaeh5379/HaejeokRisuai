@@ -76,15 +76,22 @@ export interface IllustrationErrorDetails {
 
 /** Carries safe transport diagnostics without retaining provider bodies or credentials. */
 export class IllustrationRequestError extends Error {
+  readonly code: IllustrationErrorCode;
+  readonly status?: number;
+  readonly providerDiagnostic?: string;
+
   constructor(
-    readonly code: IllustrationErrorCode,
-    readonly status?: number,
-    readonly providerDiagnostic?: string,
+    code: IllustrationErrorCode,
+    status?: number,
+    providerDiagnostic?: string,
   ) {
     super(
       status ? `Request failed (HTTP ${status})` : `Request failed: ${code}`,
     );
     this.name = "IllustrationRequestError";
+    this.code = code;
+    this.status = status;
+    this.providerDiagnostic = providerDiagnostic;
   }
 }
 

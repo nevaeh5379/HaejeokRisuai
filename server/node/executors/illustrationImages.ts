@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 import sharp from "sharp";
 import { unzip } from "fflate";
-import type { ImageGenerationRuntime } from "../../../packages/protocol/dist/imageGeneration.cjs";
+import type { ImageGenerationRuntime } from "../../../packages/protocol/src/imageGeneration.ts";
 
 /**
  * Defines the asset operations needed by the Node illustration image adapter.
@@ -166,7 +166,7 @@ export function createIllustrationImages(
     const png = await image.resize(width, height).png().toBuffer();
     const id = randomUUID();
     const { encodeInlayAssetBackup } =
-      await import("../../../packages/backup-core/dist/inlayCodec.js");
+      await import("../../../packages/backup-core/src/inlayCodec.ts");
     const asset = await encodeInlayAssetBackup({
       name: id,
       ext: "png",

@@ -20,18 +20,18 @@ import {
   type IllustrationJobResponse,
   type IllustrationTarget,
   IllustrationQueue,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 import { applyIllustrationProgress } from "./illustrationProgress";
 import {
   canUpdateIllustration,
   createIllustrationRunner,
   illustrationJobKey,
   type IllustrationRecord,
-} from "@risuai/protocol/dist/illustrationRunner.mjs";
+} from "@risuai/protocol/src/illustrationRunner.ts";
 import {
   readIllustrationHistory,
   readIllustrationMessage,
-} from "@risuai/protocol/dist/illustrationStorage.mjs";
+} from "@risuai/protocol/src/illustrationStorage.ts";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
@@ -314,7 +314,7 @@ const runner = createIllustrationRunner({
    */
   createImage: async (prompt, negative, target) => {
     const { executeImageGeneration } =
-      await import("@risuai/protocol/dist/imageGeneration.mjs");
+      await import("@risuai/protocol/src/imageGeneration.ts");
     const { browserImageRuntime, getImageGenerationSettings } =
       await import("../imageGenerationBrowser");
     const char = resolveTarget(target)?.char;
@@ -566,6 +566,28 @@ export async function enqueueAnswerIllustrations(
     // )
     // return;
     if (!findIllustrationMarkers(targetMessage.data).length) return;
+    const answerData = targetMessage.data;
+    const branchId = targetChat.activeBranchId;
+    await messageStore.flush();
+    const storedChat = await (
+      await getSqlStorage()
+    ).loadChat(target.chatId, {
+      messageLimit: 1,
+    });
+    targetChat = resolveTarget(target)?.chat;
+    targetMessage = targetChat?.message.find(
+      (message) => message.chatId === target.messageId,
+    );
+    if (
+      !storedChat ||
+      !targetMessage ||
+      targetMessage.data !== answerData ||
+      targetChat.activeBranchId !== branchId
+    )
+      return;
+    // SQL materializes a root branch before a newly created resident chat has its ID.
+    targetChat.activeBranchId ??= storedChat.activeBranchId;
+    if (targetChat.activeBranchId !== storedChat.activeBranchId) return;
     const items = prepareIllustrations(
       targetMessage,
       targetChat.activeBranchId,

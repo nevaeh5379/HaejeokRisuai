@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { describeIllustrationError } from "./illustration.cts";
+import { describeIllustrationError } from "./illustration.ts";
 import {
   executeImageGeneration,
   createComfyUrlBuilder,
   getComfyGenerationConfig,
   type ImageGenerationSettings,
   type ImageGenerationRuntime,
-} from "./imageGeneration.cts";
+} from "./imageGeneration.ts";
 
 describe("ComfyUI workflow library", () => {
   const workflow = JSON.stringify({
@@ -134,13 +134,11 @@ describe("ComfyUI workflow library", () => {
         },
       };
       const runtime = {
-        fetchJson: vi
-          .fn()
-          .mockResolvedValue({
-            ok: false,
-            status: 400,
-            data: textBody ? JSON.stringify(data) : data,
-          }),
+        fetchJson: vi.fn().mockResolvedValue({
+          ok: false,
+          status: 400,
+          data: textBody ? JSON.stringify(data) : data,
+        }),
       } as unknown as ImageGenerationRuntime;
       let caught: unknown;
       try {

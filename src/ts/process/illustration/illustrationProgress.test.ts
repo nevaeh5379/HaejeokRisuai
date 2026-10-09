@@ -3,7 +3,7 @@ import {
   prepareIllustrations,
   type Illustration,
   type IllustrationMessage,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 import {
   applyIllustrationProgress,
   preserveIllustrationProgress,

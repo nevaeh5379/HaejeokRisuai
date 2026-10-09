@@ -27,8 +27,8 @@ import type {
   Illustration,
   IllustrationOverrides,
   IllustrationSettings,
-} from "@risuai/protocol/dist/illustration.mjs";
-import type { ImageProviderId } from "@risuai/protocol/dist/imageGeneration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
+import type { ImageProviderId } from "@risuai/protocol/src/imageGeneration.ts";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -1225,7 +1225,7 @@ interface NAIVibeEncoding {
 
 interface ComfyConfig {
   workflow: string;
-  workflows?: import("@risuai/protocol/dist/imageGeneration.mjs").ComfyWorkflow[];
+  workflows?: import("@risuai/protocol/src/imageGeneration.ts").ComfyWorkflow[];
   selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;

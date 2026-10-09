@@ -2,7 +2,7 @@ import { Buffer } from "buffer";
 import {
   describeIllustrationError,
   IllustrationRequestError,
-} from "./illustration.cjs";
+} from "./illustration.ts";
 
 /**
  * Supplies platform-specific HTTP, reference-image and ZIP processing to the provider core.

@@ -15,7 +15,7 @@ test("loads illustration ES modules directly with HMR cache-busting URLs", async
   const result = await page.evaluate(async () => {
     const load = (name: string) =>
       import(
-        /* @vite-ignore */ `/packages/protocol/dist/${name}.mjs?import&t=${Date.now()}`
+        /* @vite-ignore */ `/packages/protocol/src/${name}.ts?import&t=${Date.now()}`
       );
     const [illustration, runner, storage, images] = await Promise.all([
       load("illustration"),
@@ -58,6 +58,7 @@ test("fills streamed illustration positions in the background, regenerates, and 
       "/src/ts/characters.ts",
     );
     Object.assign(settingsStore.state, {
+      useChatIllustrations: true,
       useStreaming: true,
       usePlainFetch: true,
       openAIKey: "e2e-fake-key",
@@ -83,6 +84,7 @@ test("fills streamed illustration positions in the background, regenerates, and 
       },
     });
     settingsStore.set("illustration", settingsStore.state.illustration);
+    settingsStore.set("useChatIllustrations", true);
     Object.assign(presetStore.state, {
       aiModel: "gpt-4o",
       subModel: "gpt-4o-mini",
@@ -190,7 +192,9 @@ test("fills streamed illustration positions in the background, regenerates, and 
     await page.locator("textarea.text-input-area").fill("Paint two scenes.");
     await page.locator(".button-icon-send").click();
     await expect.poll(() => images).toBe(1);
-    await expect(page.locator("[data-risu-illustration]")).toHaveCount(2);
+    await expect(
+      page.locator('[data-risu-illustration] [role="group"]'),
+    ).toHaveCount(2);
     await expect(
       page.getByText(/Generating image|이미지 생성 중/),
     ).toBeVisible();
@@ -234,7 +238,7 @@ test("fills streamed illustration positions in the background, regenerates, and 
       const { changeChar } = await import(/* @vite-ignore */ path);
       await changeChar(index);
     }, originalIndex);
-    const controls = page.locator("[data-risu-illustration]");
+    const controls = page.locator('[data-risu-illustration] [role="group"]');
     await expect(controls).toHaveCount(2);
     await expect(
       page.getByRole("button", {
@@ -292,7 +296,9 @@ test("fills streamed illustration positions in the background, regenerates, and 
     await page
       .getByRole("button", { name: "I Illustration browser test", exact: true })
       .click();
-    await expect(page.locator("[data-risu-illustration]")).toHaveCount(2);
+    await expect(
+      page.locator('[data-risu-illustration] [role="group"]'),
+    ).toHaveCount(2);
     await expect(
       page.getByRole("button", {
         name: /Regenerate with these tags|같은 태그로 재생성/,

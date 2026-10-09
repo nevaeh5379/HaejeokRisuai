@@ -13,7 +13,7 @@ import isEqual from "lodash/isEqual"
     import { mount, unmount, tick, onDestroy } from "svelte";
     import IllustrationSlot from "./IllustrationSlot.svelte";
     import type { Message } from "src/ts/storage/database/schema";
-    import { resolveIllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
+    import { resolveIllustrationSettings } from "@risuai/protocol/src/illustration.ts";
     import { illustrationDisplayLayout } from "src/ts/process/illustration/illustrationDisplay";
 
     interface Props {

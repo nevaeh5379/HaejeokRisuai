@@ -1,4 +1,4 @@
-import { IMAGE_PROVIDER_IDS } from "@risuai/protocol/dist/imageGeneration.mjs";
+import { IMAGE_PROVIDER_IDS } from "@risuai/protocol/src/imageGeneration.ts";
 import { defaultAutoSuggestPrompt } from "../../presets/defaultPrompts";
 import type { Database } from "../schema";
 import {

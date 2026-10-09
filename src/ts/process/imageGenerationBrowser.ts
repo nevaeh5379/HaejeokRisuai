@@ -1,11 +1,11 @@
 import type {
   ImageGenerationRuntime,
   ImageGenerationSettings,
-} from "@risuai/protocol/dist/imageGeneration.mjs";
+} from "@risuai/protocol/src/imageGeneration.ts";
 import {
   IMAGE_GENERATION_SETTING_KEYS,
   getComfyGenerationConfig,
-} from "@risuai/protocol/dist/imageGeneration.mjs";
+} from "@risuai/protocol/src/imageGeneration.ts";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import { PRESET_STORE_SETTING_KEYS } from "../storage/sql/sqlDeferredSettings";

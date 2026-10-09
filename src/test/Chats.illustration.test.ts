@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import type { character, Message } from "src/ts/storage/database/schema";
-import { prepareIllustrations } from "@risuai/protocol/dist/illustration.mjs";
+import { prepareIllustrations } from "@risuai/protocol/src/illustration.ts";
 import ChatsIllustrationHarness from "./fixtures/ChatsIllustrationHarness.svelte";
 
 const { characterStore, settingsStore, parseMarkdown, cbs } = vi.hoisted(

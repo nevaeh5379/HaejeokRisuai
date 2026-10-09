@@ -1,7 +1,7 @@
 import type {
   Illustration,
   IllustrationErrorDetails,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 
 export const item = $state({
   id: "slot",

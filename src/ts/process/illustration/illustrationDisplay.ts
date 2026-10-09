@@ -1,7 +1,7 @@
 import {
   findIllustrationMarkers,
   type Illustration,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 
 /** Keeps each narrative position stable from an unprepared marker through every generated image. */
 export function illustrationDisplayLayout(

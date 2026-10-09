@@ -298,7 +298,7 @@ it("never reparses or replaces chat DOM during illustration progress, rerolls, n
 
 it("prepares multiple slots independently without replacing neighboring text or remounting existing controls", async () => {
   const { prepareIllustrations } =
-    await import("@risuai/protocol/dist/illustration.mjs");
+    await import("@risuai/protocol/src/illustration.ts");
   const message: Message = {
     chatId: "message",
     role: "char",

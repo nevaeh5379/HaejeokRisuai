@@ -9,7 +9,7 @@ import {
   type IllustrationMessage,
   type IllustrationTarget,
   type IllustrationErrorStage,
-} from "./illustration.cjs";
+} from "./illustration.ts";
 
 /**
  * Groups the latest message, its slot and active branch for a guarded transition.

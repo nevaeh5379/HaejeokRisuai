@@ -17,12 +17,12 @@ import {
   IllustrationQueue,
   type IllustrationMessage,
   type IllustrationTarget,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 import {
   canUpdateIllustration,
   createIllustrationRunner,
   type IllustrationRecord,
-} from "@risuai/protocol/dist/illustrationRunner.mjs";
+} from "@risuai/protocol/src/illustrationRunner.ts";
 
 function answer(data = "A garden.<Illustration>A storm.<Illustration>") {
   const message: IllustrationMessage = { role: "char", data, chatId: "answer" };

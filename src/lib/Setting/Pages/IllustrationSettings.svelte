@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from "src/lang";
   import { characterStore, settingsStore, presetStore } from "src/ts/stores/domain";
-  import { DEFAULT_ILLUSTRATION_SETTINGS, resolveIllustrationSettings, type IllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
+  import { DEFAULT_ILLUSTRATION_SETTINGS, resolveIllustrationSettings, type IllustrationSettings } from "@risuai/protocol/src/illustration.ts";
   import type { character } from "src/ts/storage/database/schema";
   import { prepareBrowserProviderContext } from "src/ts/process/request/providerContextAdapter";
   import { LLMFormat } from "src/ts/model/modellist";

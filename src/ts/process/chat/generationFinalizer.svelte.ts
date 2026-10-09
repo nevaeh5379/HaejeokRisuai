@@ -25,7 +25,7 @@ import { requireChatTargetFromIndexes } from "../../chatTarget";
 import type {
   IllustrationContext,
   IllustrationTarget,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 
 function updateGenerationStageTimings(
   generationInfo: MessageGenerationInfo,

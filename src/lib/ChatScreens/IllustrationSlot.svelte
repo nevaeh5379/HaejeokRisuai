@@ -4,7 +4,7 @@
   import { illustrationViewer } from "src/ts/gui/illustrationViewer";
   import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
   import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-  import { describeIllustrationError, illustrationImageTags, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/dist/illustration.mjs";
+  import { describeIllustrationError, illustrationImageTags, isIllustrationBusy, type IllustrationAction, type IllustrationTarget, type IllustrationErrorDetails } from "@risuai/protocol/src/illustration.ts";
   let { target, width = 100, hideImages = false }: { target: IllustrationTarget; width?: number; hideImages?: boolean } = $props();
   let item = $derived(characterStore.characters.find((c) => c.chaId === target.characterId)?.chats?.find((c) => c.id === target.chatId)?.message?.find((m) => m.chatId === target.messageId)?.illustrations?.find((i) => i.id === target.illustrationId));
   let working = $state(false);
@@ -166,6 +166,7 @@
       <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy || !displayedTags} onclick={() => action("regenerate")}>{language.illustration.regenerate}</button>
     {/if}
     <button class="rounded bg-darkbutton px-2 py-1 disabled:opacity-50" disabled={busy} onclick={() => action("rewrite")}>{language.illustration.rewrite}</button>
-    {#if displayedTags}<details><summary>{language.illustration.tags}</summary><span class="whitespace-pre-wrap">{displayedTags}</span></details>{/if}
+    <!-- Preserve the disclosure state when selection changes temporarily lack saved tags. -->
+    <details hidden={!displayedTags}><summary>{language.illustration.tags}</summary><span class="whitespace-pre-wrap">{displayedTags ?? ""}</span></details>
   </span>
 {/if}

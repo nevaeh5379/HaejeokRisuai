@@ -3,8 +3,8 @@ import type {
   IllustrationContext,
   IllustrationSettings,
   IllustrationTarget,
-} from "@risuai/protocol/dist/illustration.mjs";
-import { readIllustrationHistory } from "@risuai/protocol/dist/illustrationStorage.mjs";
+} from "@risuai/protocol/src/illustration.ts";
+import { readIllustrationHistory } from "@risuai/protocol/src/illustrationStorage.ts";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import type { character, Chat, Message } from "../../storage/database/schema";
 import { getPersonaPrompt } from "../../util";

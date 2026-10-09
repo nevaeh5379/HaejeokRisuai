@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   describeIllustrationError,
   summarizeIllustrationError,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 import {
   executeImageGeneration,
   type ImageGenerationSettings,
   type ImageGenerationRuntime,
-} from "@risuai/protocol/dist/imageGeneration.mjs";
+} from "@risuai/protocol/src/imageGeneration.ts";
 
 describe("illustration diagnostics", () => {
   it.each([

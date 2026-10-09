@@ -13,24 +13,24 @@ import {
   type IllustrationJobResponse,
   type IllustrationTagRequest,
   type IllustrationTarget,
-} from "../../../packages/protocol/dist/illustration.cjs";
+} from "../../../packages/protocol/src/illustration.ts";
 import {
   canUpdateIllustration,
   createIllustrationRunner,
   illustrationJobKey,
   type IllustrationRecord,
-} from "../../../packages/protocol/dist/illustrationRunner.cjs";
+} from "../../../packages/protocol/src/illustrationRunner.ts";
 import {
   readIllustrationMessage,
   type IllustrationStorageReader,
-} from "../../../packages/protocol/dist/illustrationStorage.cjs";
+} from "../../../packages/protocol/src/illustrationStorage.ts";
 import {
   executeImageGeneration,
   getComfyGenerationConfig,
   IMAGE_GENERATION_SETTING_KEYS,
   type ImageGenerationRuntime,
   type ImageGenerationSettings,
-} from "../../../packages/protocol/dist/imageGeneration.cjs";
+} from "../../../packages/protocol/src/imageGeneration.ts";
 
 /**
  * Extends paged message reads with settings, character metadata and SQL revisions.

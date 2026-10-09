@@ -194,6 +194,8 @@ it("updates retained image tags and regenerates the selected image without subst
   });
   flushSync();
   expect(target.querySelector("details span")?.textContent).toBe("new tags");
+  const details = target.querySelector("details")!;
+  details.open = true;
   const buttons = target.querySelectorAll<HTMLButtonElement>(
     "[data-risu-illustration-image] > button",
   );
@@ -223,11 +225,15 @@ it("updates retained image tags and regenerates the selected image without subst
   });
   buttons[0].click();
   flushSync();
-  expect(target.querySelector("details")).toBeNull();
+  expect(target.querySelector("details")).toBe(details);
+  expect(details.hidden).toBe(true);
+  expect(details.querySelector("span")?.textContent).toBe("");
   expect(regenerate.disabled).toBe(true);
   buttons[1].click();
   flushSync();
   expect(target.querySelector("details span")?.textContent).toBe("old tags");
+  expect(details.hidden).toBe(false);
+  expect(details.open).toBe(true);
 });
 
 it("shows partial batch progress and loads only the selected image while generation is active", async () => {

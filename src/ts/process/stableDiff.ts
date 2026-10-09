@@ -93,7 +93,7 @@ export async function generateAIImage(
 ): Promise<string | false> {
   try {
     const { executeImageGeneration } =
-      await import("@risuai/protocol/dist/imageGeneration.mjs");
+      await import("@risuai/protocol/src/imageGeneration.ts");
     const { browserImageRuntime, getImageGenerationSettings } =
       await import("./imageGenerationBrowser");
     const image = await executeImageGeneration(

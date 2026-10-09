@@ -13,7 +13,7 @@ import {
   prepareIllustrations,
   resolveIllustrationSettings,
   type IllustrationJobRequest,
-} from "../../../packages/protocol/dist/illustration.cjs";
+} from "../../../packages/protocol/src/illustration.ts";
 import { decodeInlayAssetBackup } from "../../../packages/backup-core/src/inlayCodec";
 import {
   makeHarness,

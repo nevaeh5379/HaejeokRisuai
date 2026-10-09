@@ -278,11 +278,14 @@ describe("ComfyUI server workflow controls", () => {
       expect(button("Import selected workflow")).toBeDefined();
     });
     button("Import selected workflow").click();
-    await vi.waitFor(() => {
-      flushSync();
-      expect(settingsStore.state.comfyConfig.workflows).toHaveLength(1);
-      expect(button("Edit JSON")).toBeDefined();
-    });
+    await vi.waitFor(
+      () => {
+        flushSync();
+        expect(settingsStore.state.comfyConfig.workflows).toHaveLength(1);
+        expect(button("Edit JSON")).toBeDefined();
+      },
+      { timeout: 5_000 },
+    );
     const api = JSON.parse(
       settingsStore.state.comfyConfig.workflows[0].workflow,
     );

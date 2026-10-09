@@ -1,7 +1,7 @@
 import type {
   IllustrationMessage,
   IllustrationTarget,
-} from "./illustration.cjs";
+} from "./illustration.ts";
 
 /**
  * Provides bounded chat metadata and message pages without loading full conversations.

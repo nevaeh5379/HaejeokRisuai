@@ -6,7 +6,7 @@ import type {
   MessagePresetInfo,
 } from "../../storage/database/schema";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
-import { resolveIllustrationSettings } from "@risuai/protocol/dist/illustration.mjs";
+import { resolveIllustrationSettings } from "@risuai/protocol/src/illustration.ts";
 import { ChatTokenizer } from "../../tokenizer";
 import { setChatProcessStage } from "./runtimeState";
 import { risuChatParser } from "../scripts";

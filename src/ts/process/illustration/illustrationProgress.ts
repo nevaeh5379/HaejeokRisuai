@@ -2,7 +2,7 @@ import {
   illustrationSourceHash,
   type Illustration,
   type IllustrationMessage,
-} from "@risuai/protocol/dist/illustration.mjs";
+} from "@risuai/protocol/src/illustration.ts";
 
 /** Merges one committed slot without fetching/replacing the whole chat or reverting a newer snapshot. */
 export function applyIllustrationProgress(

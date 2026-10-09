@@ -14,7 +14,7 @@
   import {
     createComfyUrlBuilder,
     type ComfyWorkflow,
-  } from "@risuai/protocol/dist/imageGeneration.mjs";
+  } from "@risuai/protocol/src/imageGeneration.ts";
   import TextInput from "src/lib/UI/GUI/TextInput.svelte";
   import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
   import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
