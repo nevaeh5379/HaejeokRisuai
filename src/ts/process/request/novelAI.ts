@@ -8,7 +8,7 @@ import { tokenizeNum } from "../../tokenizer";
 import {
   buildNovelAIRequest,
   resolveNovelAIGenerateUrl,
-} from "@risuai/chat-core/novelAIProvider.cjs";
+} from "@risuai/chat-core/novelAIProvider.ts";
 import { stringlizeNAIChat } from "../models/nai";
 import { unstringlizeChat } from "../stringlize";
 import { resolveRequestCharacter } from "./requestContext";

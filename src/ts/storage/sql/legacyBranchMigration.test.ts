@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const {
   buildLegacyBranchMigrationPlan,
-} = require("../../../../packages/protocol/legacyBranchMigration.cjs");
+} = require("../../../../packages/protocol/legacyBranchMigration.ts");
 
 const msg = (id: string, role: "user" | "char", data: string) => ({
   chatId: id,

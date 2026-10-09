@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createBackupProgressReporter } from "./progress";
+import { createBackupProgressReporter } from "./progress.ts";
 
 type Stage = "read" | "write";
 
@@ -43,12 +43,10 @@ describe("createBackupProgressReporter", (): void => {
     update("write", { percent: 130 });
 
     expect(
-      views.map(
-        (view): { current: number; currentStepRatio: number } => ({
-          current: view.current,
-          currentStepRatio: view.currentStepRatio,
-        }),
-      ),
+      views.map((view): { current: number; currentStepRatio: number } => ({
+        current: view.current,
+        currentStepRatio: view.currentStepRatio,
+      })),
     ).toEqual([
       { current: 2, currentStepRatio: 1 },
       { current: 0, currentStepRatio: 1 },

@@ -6,8 +6,8 @@ import type {
   PluginScript,
   PluginStorageRecord,
   PluginStorageValue,
-} from "../../../../../src/ts/plugins/pluginTypes.js";
-import type { PluginToggleMutation } from "../../../sync/databaseMutations.cjs";
+} from "../../../../../src/ts/plugins/pluginTypes.ts";
+import type { PluginToggleMutation } from "../../../sync/databaseMutations.ts";
 
 type MaybePromise<T> = T | Promise<T>;
 

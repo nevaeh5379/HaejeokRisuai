@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
+import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.ts";
 import { risuEscape, risuUnescape } from "../../parser/parser.svelte";
 import { pluginV2 } from "../../plugins/plugins.svelte";
 import { safeStructuredClone } from "../../polyfill";

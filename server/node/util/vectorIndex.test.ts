@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
-const {
+import {
   configureVectorIndexPersistence,
   flushVectorIndexPersistence,
   getVectorIndexCacheStats,
@@ -13,7 +13,7 @@ const {
   upsertVectorIndex,
   searchVectorIndex,
   clearVectorIndexes,
-} = require(".//vectorIndex.cjs");
+} from "./vectorIndex.ts";
 
 describe("vectorIndex", () => {
   beforeEach(() => {

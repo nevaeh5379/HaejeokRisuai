@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   prepareColdStorageBackup,
   writeColdStorageBackup,
-} from "./coldStorageExport";
+} from "./coldStorageExport.ts";
 
 describe("cold-storage backup export", (): void => {
   it("returns null when incomplete data is rejected", async (): Promise<void> => {

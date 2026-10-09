@@ -1,4 +1,4 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";

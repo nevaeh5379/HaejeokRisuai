@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const {
+import {
   StorageSyncSqlError,
   StorageSyncSqlStagingStore,
-} = require(".//storageSyncSqlStaging.cjs");
+} from "./storageSyncSqlStaging.ts";
 
 const tempRoots: string[] = [];
 function sha256(data: Uint8Array | string): string {

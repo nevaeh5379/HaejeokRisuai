@@ -34,20 +34,20 @@ import {
   type NodeStorageSyncSummary,
   type StorageSyncDirection,
 } from "@risuai/storage-remote/nodeApiClient";
-import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.cjs";
+import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.ts";
 import type {
   NodeChatContinuationDecision,
   NodeChatContinuationRequest,
   NodeChatGenerationPlan,
   NodeChatPlanRequest,
-} from "../../../../packages/protocol/chatExecutor.cjs";
+} from "../../../../packages/protocol/chatExecutor.ts";
 import type {
   NodeProviderCapabilities,
   NodeProviderExecutionRequest,
   NodeProviderExecutionResult,
   NodeProviderTransportRequest,
   NodeProviderTransportResult,
-} from "../../../../packages/protocol/providerExecution.cjs";
+} from "../../../../packages/protocol/providerExecution.ts";
 import type {
   LoreMatchBatchRequest,
   LoreMatchBatchResponse,
@@ -65,7 +65,7 @@ import type {
   VectorIndexStatusResponse,
   VectorIndexUpsertRequest,
   VectorSearchMetric,
-} from "../../../../packages/protocol/compute.cjs";
+} from "../../../../packages/protocol/compute.ts";
 
 export {
   NodeSqlPayloadTooLargeError,

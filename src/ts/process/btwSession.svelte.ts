@@ -25,11 +25,11 @@ import { requireChatTargetFromIndexes } from "../chatTarget";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
-} from "@risuai/chat-core/generation.cjs";
+} from "@risuai/chat-core/generation.ts";
 import type {
   ChatModelResponse,
   ChatStageTimings,
-} from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/types.ts";
 import { createLocalChatGenerationRuntime } from "./chat/localRuntime";
 import { tryCreateNodeChatGenerationPlan } from "./chat/nodePlanner";
 import { runChatOutputListeners } from "./chat/responseShared.svelte";

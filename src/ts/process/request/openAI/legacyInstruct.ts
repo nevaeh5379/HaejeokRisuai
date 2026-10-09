@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { DEFAULT_OPENAI_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
+import { DEFAULT_OPENAI_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.ts";
 import { language } from "src/lang";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { LLMFormat } from "src/ts/model/modellist";

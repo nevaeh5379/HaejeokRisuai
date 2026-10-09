@@ -3,7 +3,7 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   STABLE_HORDE_TEXT_ASYNC_URL,
   buildStableHordeStatusUrl,
-} from "@risuai/chat-core/hordeProvider.cjs";
+} from "@risuai/chat-core/hordeProvider.ts";
 import { LLMFormat } from "../../model/modellist";
 
 import { sleep } from "../../util";

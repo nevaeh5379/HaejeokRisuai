@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
-import type { LocalBackupDatabaseStreamSession } from "../api";
+import type { LocalBackupDatabaseStreamSession } from "../api.ts";
 import {
   parsePortableDatabaseStreamManifest,
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat";
+} from "../streamFormat.ts";
 
 export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
 /**
@@ -85,11 +85,10 @@ interface InternalSession<TState> {
 }
 
 export class LocalBackupDatabaseStreamError extends Error {
-  constructor(
-    message: string,
-    readonly code = "local_backup_database_stream_error",
-  ) {
+  readonly code: any;
+  constructor(message: string, code = "local_backup_database_stream_error") {
     super(message);
+    this.code = code;
     this.name = "LocalBackupDatabaseStreamError";
   }
 }
@@ -126,14 +125,16 @@ export class LocalBackupDatabaseStreamStore<
   private readonly ttlMs: number;
   private readonly sessions = new Map<string, InternalSession<TState>>();
 
+  private readonly adapter: LocalBackupDatabaseStreamRecordAdapter<
+    TRecord,
+    TState
+  >;
   constructor(
     rootPath: string,
-    private readonly adapter: LocalBackupDatabaseStreamRecordAdapter<
-      TRecord,
-      TState
-    >,
+    adapter: LocalBackupDatabaseStreamRecordAdapter<TRecord, TState>,
     options: { ttlMs?: number } = {},
   ) {
+    this.adapter = adapter;
     this.rootPath = resolve(rootPath);
     this.ttlMs =
       Number.isSafeInteger(options.ttlMs) && Number(options.ttlMs) > 0

@@ -4,7 +4,7 @@ import {
   LEGACY_RAW_DATABASE_HEADER_BYTES,
   LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
   RISU_SAVE_BLOCK_HEADER_BYTES,
-} from "./legacyHeaders";
+} from "./legacyHeaders.ts";
 
 describe("legacy RisuSave headers", () => {
   it("keeps the canonical block and database header bytes stable", () => {

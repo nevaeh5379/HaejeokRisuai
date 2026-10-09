@@ -1,8 +1,8 @@
-import { AuthorNoteError } from "@risuai/protocol/dist/authorNotes.cjs";
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
 import type {
   SqlCommit,
   SqlCommitResult,
-} from "@risuai/protocol/dist/sqlCommit.cjs";
+} from "@risuai/protocol/src/sqlCommit.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export class NodeSqlRevisionConflictError extends Error {

@@ -2,7 +2,7 @@
   "name": "@risuai/node-server",
   "private": true,
   "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-s3": "^3.1121.0",
@@ -19,6 +19,10 @@
     "pg": "^8.23.0",
     "sharp": "^0.35.4",
     "web-push": "^3.6.7",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "@smithy/node-http-handler": "^4.12.1"
+  },
+  "engines": {
+    "node": ">=24.12.0"
   }
 }

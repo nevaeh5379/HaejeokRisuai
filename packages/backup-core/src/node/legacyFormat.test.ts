@@ -6,8 +6,8 @@ import {
   encodeLegacyBackupDatabase,
   encodeLegacyCompatibleBackupDatabase,
   makeLegacyCompatibleDatabase,
-} from "./legacyFormat";
-import { collectEssentialBackupAssetKeys } from "../assetScope";
+} from "./legacyFormat.ts";
+import { collectEssentialBackupAssetKeys } from "../assetScope.ts";
 
 describe("local backup format", () => {
   it("round-trips the legacy compressed database payload", async () => {

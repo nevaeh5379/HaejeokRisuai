@@ -8,9 +8,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { createRemoteCorsMiddleware } = require("./remoteCors.cts") as {
-  createRemoteCorsMiddleware: () => RequestHandler;
-};
+import { createRemoteCorsMiddleware } from "./remoteCors.ts";
 
 describe("remote API CORS", () => {
   let server: Server;

@@ -1,13 +1,10 @@
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,28 +12,13 @@ const scriptPath = fileURLToPath(import.meta.url);
 const root = resolve(dirname(scriptPath), "..");
 const protocol = resolve(root, "packages/protocol");
 const output = resolve(protocol, "dist");
-const require = createRequire(import.meta.url);
 
-/** Compile only when needed by development; explicit builds always type-check. */
+/** Generate frontend setting-key types; runtime modules use their TS sources. */
 export function buildProtocol({
   force = false,
 }: { force?: boolean } = {}): void {
-  const sources = readdirSync(resolve(protocol, "src")).filter((name) =>
-    name.endsWith(".cts"),
-  );
-  const inputs = [
-    scriptPath,
-    resolve(protocol, "settings.json"),
-    resolve(protocol, "tsconfig.json"),
-    ...sources.map((name) => resolve(protocol, "src", name)),
-  ];
-  const outputs = [
-    resolve(output, "settingKeys.d.ts"),
-    ...sources.flatMap((name) => [
-      resolve(output, name.replace(/\.cts$/, ".cjs")),
-      resolve(output, name.replace(/\.cts$/, ".d.cts")),
-    ]),
-  ];
+  const inputs = [scriptPath, resolve(protocol, "settings.json")];
+  const outputs = [resolve(output, "settingKeys.d.ts")];
   const latestInput = Math.max(...inputs.map((path) => statSync(path).mtimeMs));
   if (
     !force &&
@@ -45,19 +27,6 @@ export function buildProtocol({
     )
   )
     return;
-
-  const result = spawnSync(
-    process.execPath,
-    [
-      require.resolve("typescript/bin/tsc"),
-      "-p",
-      resolve(protocol, "tsconfig.json"),
-    ],
-    { cwd: root, stdio: "inherit" },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new Error("Protocol TypeScript compilation failed");
 
   const settings = JSON.parse(
     readFileSync(resolve(protocol, "settings.json"), "utf8"),

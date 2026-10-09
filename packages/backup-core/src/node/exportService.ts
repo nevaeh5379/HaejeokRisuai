@@ -3,14 +3,12 @@ import type {
   LocalBackupExportJobProgress,
   LocalBackupMode,
   LocalBackupProgress,
-} from "../api";
-import {
-  LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-} from "./databaseStreamStore";
+} from "../api.ts";
+import { LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS } from "./databaseStreamStore.ts";
 import {
   LocalBackupExportJobStore,
   type LocalBackupExportJob,
-} from "./exportJobStore";
+} from "./exportJobStore.ts";
 
 export const LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE = 128;
 export const LOCAL_BACKUP_EXPORT_DEFAULT_FRAGMENT_RECORDS = 128;
@@ -46,10 +44,15 @@ function normalizeMode(value: unknown): LocalBackupMode {
 }
 
 export class LocalBackupExportService<TContext = unknown> {
+  readonly jobs: LocalBackupExportJobStore;
+  private readonly adapter: LocalBackupExportAdapter<TContext>;
   constructor(
-    readonly jobs: LocalBackupExportJobStore,
-    private readonly adapter: LocalBackupExportAdapter<TContext>,
-  ) {}
+    jobs: LocalBackupExportJobStore,
+    adapter: LocalBackupExportAdapter<TContext>,
+  ) {
+    this.jobs = jobs;
+    this.adapter = adapter;
+  }
 
   createJob(input: LocalBackupExportServiceCreateInput = {}): { id: string } {
     const job = this.jobs.create({

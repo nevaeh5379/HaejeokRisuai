@@ -3,7 +3,7 @@ import { get, writable } from "svelte/store";
 import { language } from "../../lang";
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import {
   fetchNative,
   globalFetch,
