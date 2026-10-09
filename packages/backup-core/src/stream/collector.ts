@@ -1,13 +1,7 @@
 import { NATIVE_BRANCH_GRAPHS_KEY } from "../portableBranches.ts";
-import {
-  parsePortableDatabaseStreamFragment,
-  parsePortableDatabaseStreamManifest,
-  type PortableDatabaseStreamFragment,
-  type PortableDatabaseStreamManifest,
-  type PortableDatabaseStreamRecord,
-} from "./format.ts";
+import { Fragment, Manifest, type BackupRecord } from "./databaseBackup.ts";
 
-type PersistedRecord = PortableDatabaseStreamRecord;
+type PersistedRecord = BackupRecord;
 type PersistedRecordType = PersistedRecord["type"];
 
 const RECORD_TYPES: PersistedRecordType[] = [
@@ -65,7 +59,7 @@ export class PortableDatabaseStreamCollector {
   private readonly presetIds: string[] = [];
   private totalRecords = 0;
   private sourceRevision: number | null = null;
-  private manifest: PortableDatabaseStreamManifest | null = null;
+  private manifest: Manifest | null = null;
 
   private graph(chatId: string): PendingGraph {
     if (!this.chats.has(chatId)) {
@@ -224,9 +218,8 @@ export class PortableDatabaseStreamCollector {
     }
   }
 
-  addFragment(fragment: PortableDatabaseStreamFragment): void {
-    const parsed: PortableDatabaseStreamFragment | null =
-      parsePortableDatabaseStreamFragment(fragment);
+  addFragment(fragment: Fragment): void {
+    const parsed: Fragment | null = Fragment.read(fragment);
     if (!parsed) throw new Error("Invalid streaming database fragment");
     if (this.fragments.has(parsed.index)) {
       throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
@@ -235,10 +228,9 @@ export class PortableDatabaseStreamCollector {
     for (const record of parsed.records) this.addRecord(record);
   }
 
-  setManifest(manifest: PortableDatabaseStreamManifest): void {
+  setManifest(manifest: Manifest): void {
     if (this.manifest) throw new Error("Duplicate streaming database manifest");
-    const parsed: PortableDatabaseStreamManifest | null =
-      parsePortableDatabaseStreamManifest(manifest);
+    const parsed: Manifest | null = Manifest.read(manifest);
     if (!parsed) throw new Error("Unsupported streaming database manifest");
     this.manifest = parsed;
   }

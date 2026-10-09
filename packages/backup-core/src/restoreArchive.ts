@@ -17,10 +17,7 @@ import {
   createStreamingColdStorageInventory,
   type StreamingColdStorageInventory,
 } from "./stream/inventory.ts";
-import type {
-  PortableDatabaseStreamFragment,
-  PortableDatabaseStreamRecord,
-} from "./stream/format.ts";
+import { type Fragment, type BackupRecord } from "./stream/databaseBackup.ts";
 import {
   PortableDatabaseStreamRestoreCoordinator,
   type PortableDatabaseStreamFragmentSink,
@@ -102,12 +99,10 @@ export async function restoreBackupArchive<
   const streamRestore: PortableDatabaseStreamRestoreCoordinator<TSink> =
     new PortableDatabaseStreamRestoreCoordinator<TSink>({
       createSink: options.createStreamSink,
-      onSinkFragment(fragment: PortableDatabaseStreamFragment): void {
-        fragment.records.forEach(
-          (record: PortableDatabaseStreamRecord): void => {
-            collectStreamingInventoryRecord(streamingColdStorage, record);
-          },
-        );
+      onSinkFragment(fragment: Fragment): void {
+        fragment.records.forEach((record: BackupRecord): void => {
+          collectStreamingInventoryRecord(streamingColdStorage, record);
+        });
       },
     });
 

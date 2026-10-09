@@ -22,7 +22,7 @@
     "./node/exportAssets": "./src/node/exportAssets.ts",
     "./node/exportArchive": "./src/node/exportArchive.ts",
     "./containerStream": "./src/containerStream.ts",
-    "./stream/format": "./src/stream/format.ts",
+    "./stream/databaseBackup": "./src/stream/databaseBackup.ts",
     "./stream/restore": "./src/stream/restore.ts",
     "./node/importJobStore": "./src/node/importJobStore.ts",
     "./node/importStagingStore": "./src/node/importStagingStore.ts",

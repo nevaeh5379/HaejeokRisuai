@@ -122,10 +122,10 @@ import {
 import {
   exportPortableDatabaseStream,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-  portableDatabaseStreamFragmentName,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
 } from "../storage/backup/portableDatabaseStream";
+import { Fragment } from "@risuai/backup-core/stream/databaseBackup";
 import {
   hasPortableDatabaseStreamRestore,
   type PortableDatabaseStreamRestoreSession,
@@ -999,7 +999,7 @@ async function saveStreamingLocalBackupWithOptions(
       storage,
       {
         async writeFragment(fragment) {
-          const entryName = portableDatabaseStreamFragmentName(fragment.index);
+          const entryName = Fragment.name(fragment.index);
           const encoded = await encodeStreamingDatabaseValue(
             fragment,
             entryName,

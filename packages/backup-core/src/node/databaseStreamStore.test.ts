@@ -2,25 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   LOCAL_BACKUP_DATABASE_STREAM_MAX_REQUEST_RECORDS,
-  LOCAL_BACKUP_DATABASE_STREAM_VERSION,
 } from "./databaseStreamStore.ts";
-import {
-  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-  PORTABLE_DATABASE_STREAM_VERSION,
-} from "../stream/format.ts";
+import { MAX_FRAGMENT_RECORDS } from "../stream/databaseBackup.ts";
 
 describe("local backup database stream constants", () => {
   it("shares the canonical streamed-fragment record bound", () => {
-    expect(PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS).toBe(256);
+    expect(MAX_FRAGMENT_RECORDS).toBe(256);
     expect(LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS).toBe(
-      PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-    );
-  });
-
-  it("keeps the node stream version aligned with the portable stream format", () => {
-    expect(PORTABLE_DATABASE_STREAM_VERSION).toBe(1);
-    expect(LOCAL_BACKUP_DATABASE_STREAM_VERSION).toBe(
-      PORTABLE_DATABASE_STREAM_VERSION,
+      MAX_FRAGMENT_RECORDS,
     );
   });
 

@@ -4,15 +4,14 @@ import {
   type PortableDatabaseStreamFragmentSink,
 } from "./restore.ts";
 import {
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-  type PortableDatabaseStreamFragment,
-  type PortableDatabaseStreamManifest,
-} from "./format.ts";
+  MANIFEST_NAME,
+  type Fragment,
+  type Manifest,
+} from "./databaseBackup.ts";
 
-function fragment(index: number): PortableDatabaseStreamFragment {
+function fragment(index: number): Fragment {
   return {
     format: "risu-portable-database-fragment",
-    version: 1,
     index,
     records: [
       {
@@ -24,10 +23,9 @@ function fragment(index: number): PortableDatabaseStreamFragment {
   };
 }
 
-function manifest(): PortableDatabaseStreamManifest {
+function manifest(): Manifest {
   return {
     format: "risu-portable-database-stream",
-    version: 1,
     revision: 7,
     totalFragments: 1,
     totalRecords: 1,
@@ -49,10 +47,7 @@ describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
       "database.stream/000000000001.risudat",
       fragment(1),
     );
-    await coordinator.acceptEntry(
-      PORTABLE_DATABASE_STREAM_MANIFEST,
-      manifest(),
-    );
+    await coordinator.acceptEntry(MANIFEST_NAME, manifest());
 
     const database: Record<string, unknown> | null =
       coordinator.finishCollected();
@@ -65,12 +60,10 @@ describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
   });
 
   it("routes validated fragments to the host sink", async (): Promise<void> => {
-    const written: PortableDatabaseStreamFragment[] = [];
-    const observed: PortableDatabaseStreamFragment[] = [];
+    const written: Fragment[] = [];
+    const observed: Fragment[] = [];
     const sink: PortableDatabaseStreamFragmentSink = {
-      async writeFragment(
-        value: PortableDatabaseStreamFragment,
-      ): Promise<void> {
+      async writeFragment(value: Fragment): Promise<void> {
         written.push(value);
       },
     };
@@ -79,20 +72,17 @@ describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
         async createSink(): Promise<PortableDatabaseStreamFragmentSink> {
           return sink;
         },
-        onSinkFragment(value: PortableDatabaseStreamFragment): void {
+        onSinkFragment(value: Fragment): void {
           observed.push(value);
         },
       });
-    const value: PortableDatabaseStreamFragment = fragment(1);
+    const value: Fragment = fragment(1);
 
     await coordinator.acceptEntry(
       "database.stream/000000000001.risudat",
       value,
     );
-    await coordinator.acceptEntry(
-      PORTABLE_DATABASE_STREAM_MANIFEST,
-      manifest(),
-    );
+    await coordinator.acceptEntry(MANIFEST_NAME, manifest());
 
     expect(coordinator.mode).toBe("sink");
     expect(coordinator.sink).toBe(sink);
@@ -124,9 +114,7 @@ describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
 
   it("rejects duplicate sink manifests", async (): Promise<void> => {
     const sink: PortableDatabaseStreamFragmentSink = {
-      async writeFragment(
-        _fragment: PortableDatabaseStreamFragment,
-      ): Promise<void> {},
+      async writeFragment(_fragment: Fragment): Promise<void> {},
     };
     const coordinator: PortableDatabaseStreamRestoreCoordinator<PortableDatabaseStreamFragmentSink> =
       new PortableDatabaseStreamRestoreCoordinator({
@@ -135,20 +123,15 @@ describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
         },
       });
 
-    await coordinator.acceptEntry(
-      PORTABLE_DATABASE_STREAM_MANIFEST,
-      manifest(),
-    );
+    await coordinator.acceptEntry(MANIFEST_NAME, manifest());
     await expect(
-      coordinator.acceptEntry(PORTABLE_DATABASE_STREAM_MANIFEST, manifest()),
+      coordinator.acceptEntry(MANIFEST_NAME, manifest()),
     ).rejects.toThrow("Duplicate streaming database manifest");
   });
 
   it("discards a failed sink before raw-backup fallback", async (): Promise<void> => {
     const sink: PortableDatabaseStreamFragmentSink = {
-      async writeFragment(
-        _fragment: PortableDatabaseStreamFragment,
-      ): Promise<void> {},
+      async writeFragment(_fragment: Fragment): Promise<void> {},
     };
     const coordinator: PortableDatabaseStreamRestoreCoordinator<PortableDatabaseStreamFragmentSink> =
       new PortableDatabaseStreamRestoreCoordinator({
@@ -157,10 +140,7 @@ describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
         },
       });
 
-    await coordinator.acceptEntry(
-      PORTABLE_DATABASE_STREAM_MANIFEST,
-      manifest(),
-    );
+    await coordinator.acceptEntry(MANIFEST_NAME, manifest());
     coordinator.reset();
 
     expect(coordinator.mode).toBe("empty");
