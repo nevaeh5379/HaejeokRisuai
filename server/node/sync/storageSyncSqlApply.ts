@@ -1,4 +1,5 @@
 import { loadMssql, loadOracle } from "./../util/runtimeModules.ts";
+import { randomUUID } from "node:crypto";
 ("use strict");
 
 type SqlVendor = "postgres" | "oracle" | "azure";
@@ -404,6 +405,19 @@ function recordPayload(type, records, context) {
           clear: false,
         },
       };
+    case "plugin":
+      return {
+        ...base,
+        plugins: {
+          upserts: records.map(({ id, position, data }) => ({
+            id,
+            position,
+            data,
+          })),
+          scripts: records.map(({ id, script }) => ({ id, script })),
+          deletes: [],
+        },
+      };
     case "module":
       return {
         ...base,
@@ -481,6 +495,7 @@ async function applyBatch(
       "author-note-settings",
       "setting",
       "plugin-storage",
+      "plugin",
       "module",
       "preset",
       "character",
@@ -578,24 +593,63 @@ async function applyStorageSyncSqlRecords(options) {
       type,
       batch,
     );
-    applied += batch.length;
-    onProgress?.({ applied, type });
+    // Plugin rows expand one legacy setting; progress counts source records.
+    if (type !== "plugin") {
+      applied += batch.length;
+      onProgress?.({ applied, type });
+    }
+  };
+  const enqueue = async (record) => {
+    const recordBytes = Buffer.byteLength(JSON.stringify(record), "utf8");
+    if (
+      pendingType !== record.type ||
+      pending.length >= batchSize ||
+      (pending.length > 0 && pendingBytes + recordBytes > batchBytes)
+    ) {
+      await flush();
+    }
+    pendingType = record.type;
+    pending.push(record);
+    pendingBytes += recordBytes;
   };
 
   const validation = await sqlStaging.validate(session, {
     onRecord: async (record) => {
       if (record.type === "meta") return;
-      const recordBytes = Buffer.byteLength(JSON.stringify(record), "utf8");
-      if (
-        pendingType !== record.type ||
-        pending.length >= batchSize ||
-        (pending.length > 0 && pendingBytes + recordBytes > batchBytes)
-      ) {
+      if (record.type === "setting" && record.key === "plugins") {
         await flush();
+        if (!Array.isArray(record.value)) {
+          throw new StorageSyncSqlApplyError("Backup plugins must be an array");
+        }
+        // Both legacy and portable backups carry the compatibility array.
+        // Split scripts from metadata and reuse bounded batching instead of
+        // submitting the reserved root key or duplicating all plugin scripts.
+        for (const [position, plugin] of record.value.entries()) {
+          if (
+            !plugin ||
+            typeof plugin !== "object" ||
+            Array.isArray(plugin) ||
+            typeof plugin.script !== "string"
+          ) {
+            throw new StorageSyncSqlApplyError(
+              `Invalid backup plugin at position ${position}`,
+            );
+          }
+          const { script, ...data } = plugin;
+          await enqueue({
+            type: "plugin",
+            id: randomUUID(),
+            position,
+            data,
+            script,
+          });
+        }
+        await flush();
+        applied++;
+        onProgress?.({ applied, type: "setting" });
+        return;
       }
-      pendingType = record.type;
-      pending.push(record);
-      pendingBytes += recordBytes;
+      await enqueue(record);
     },
   });
   await flush();
