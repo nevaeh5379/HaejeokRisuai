@@ -8,13 +8,13 @@ export interface NativeSqliteStatement {
 export interface NativeSqlitePlugin {
   open(options: { database: string }): Promise<void>;
   close(): Promise<void>;
-  query(options: {
-    sql: string;
-    bind?: unknown[];
-  }): Promise<{ values: Record<string, unknown>[] }>;
-  queryBatch(options: {
+  queryStreamOpen(options: {
     queries: NativeSqliteStatement[];
-  }): Promise<{ results: Record<string, unknown>[][] }>;
+  }): Promise<{ id: string }>;
+  queryStreamRead(options: {
+    id: string;
+  }): Promise<{ data: string; done: boolean }>;
+  queryStreamClose(options: { id: string }): Promise<void>;
   beginTransaction(options: {
     expectedRevision?: number | null;
   }): Promise<{ id: string }>;
