@@ -7,6 +7,9 @@ buildProtocol();
 
 export default defineConfig({
   plugins: [svelte()],
+  oxc: {
+    include: [/\.(?:[jt]sx?|cts)(?:$|\?)/],
+  },
   resolve: {
     alias: {
       src: "/src",

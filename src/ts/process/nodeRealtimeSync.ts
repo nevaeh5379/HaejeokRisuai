@@ -411,6 +411,17 @@ async function dispatchEvent(
     }
     return;
   }
+  if (frame.event === "illustration-progress") {
+    // A saved image must not wait behind full chat hydration or the polling timer.
+    void import("./illustration/illustrationApp")
+      .then(({ refreshServerIllustration }) =>
+        refreshServerIllustration(frame.data),
+      )
+      .catch((error) =>
+        console.warn("Illustration progress refresh failed", error),
+      );
+    return;
+  }
   if (frame.event === "local-backup-import-progress") {
     publishNodeBackupProgress(frame.data);
     return;

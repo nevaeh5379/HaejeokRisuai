@@ -17,7 +17,19 @@ const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
     readdirSync(resolve(process.cwd(), `packages/${packageName}/${directory}`))
       // Node-only `node --test` files are never imported by the browser app;
       // including them breaks dependency optimization (node:test, node:assert).
-      .filter((file) => file.endsWith(".cjs") && !file.endsWith(".test.cjs"))
+      .filter(
+        (file) =>
+          file.endsWith(".cjs") &&
+          !file.endsWith(".test.cjs") &&
+          // Protocol modules with native browser ESM entry points need no
+          // CommonJS prebundling; Node continues to use their .cjs outputs.
+          !existsSync(
+            resolve(
+              process.cwd(),
+              `packages/${packageName}/${directory}${file.replace(/\.cjs$/, ".mjs")}`,
+            ),
+          ),
+      )
       .map((file) => `@risuai/${packageName}/${directory}${file}`),
   ),
 );
@@ -217,6 +229,13 @@ export default defineConfig(({ command, mode }) => {
                 name: "lucide-icons",
                 test: /node_modules[\\/]@lucide[\\/]svelte[\\/]dist[\\/]icons[\\/]/,
                 priority: 90,
+              },
+              {
+                // The workflow JSON viewer is only needed when its settings open.
+                // Keep it out of the eagerly loaded catch-all vendor chunk.
+                name: "json-view",
+                test: /node_modules[\\/]@humanspeak[\\/]svelte-json-view-lite/,
+                priority: 80,
               },
               {
                 // Remote auth imports these only when signing. Keep the pure-JS

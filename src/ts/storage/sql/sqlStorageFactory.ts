@@ -44,7 +44,7 @@ function wrapWithSerializedCommits(inner: ISqlStorage): ISqlStorage {
       if (prop === "commit") {
         return async (commit: SqlCommit): Promise<SqlCommitResult> => {
           const run = async (): Promise<SqlCommitResult> => {
-            commit.baseRevision = target.getRevision();
+            if (commit.action !== "illustration") commit.baseRevision = target.getRevision();
             return await target.commit(commit);
           };
           commitChain = commitChain.then(run, run);

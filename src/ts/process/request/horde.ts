@@ -17,6 +17,18 @@ import type {
 import { tryExecuteNodeProvider } from "./nodeProviderExecutor";
 import { applyAdditionalParameters, getAdditionalParameters } from "./shared";
 
+/**
+ * Builds a Horde text request and either previews it or executes/polls the generation task.
+ *
+ * 한국어: Horde 텍스트 요청을 구성하고 요청 미리보기 또는 생성 작업 실행·결과 조회를 처리하는 함수.
+ *
+ * @param arg - Provider arguments including chat template and preview selection. / 채팅 템플릿·미리보기 선택을 포함한 제공자 인자.
+ * @remarks
+ * Preview returns the final asynchronous endpoint, body and headers without submitting a task,
+ * allowing the Node illustration executor to own submission and polling after client exit.
+ * 한국어: 미리보기는 작업을 접수하지 않고 최종 비동기 요청 주소·본문·헤더를 반환.
+ * Node 삽화 실행기가 클라이언트 종료 후에도 접수·결과 조회를 소유하도록 연결.
+ */
 export async function requestHorde(
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
@@ -25,15 +37,6 @@ export async function requestHorde(
   const aiModel = arg.aiModel;
   const currentChar = resolveRequestCharacter(arg);
   const abortSignal = arg.abortSignal;
-
-  if (arg.previewBody) {
-    return {
-      type: "success",
-      result: JSON.stringify({
-        error: "Preview body is not supported for Horde",
-      }),
-    };
-  }
 
   const prompt = applyChatTemplate(formated, {
     currentChar,
@@ -79,6 +82,16 @@ export async function requestHorde(
     headers,
     getAdditionalParameters(arg.aiModel),
   );
+
+  if (arg.previewBody)
+    return {
+      type: "success",
+      result: JSON.stringify({
+        url: STABLE_HORDE_TEXT_ASYNC_URL,
+        body: finalBody,
+        headers,
+      }),
+    };
 
   const remote = await tryExecuteNodeProvider(
     LLMFormat.Horde,

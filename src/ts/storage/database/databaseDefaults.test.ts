@@ -8,6 +8,45 @@ import {
 } from "./databaseDefaults";
 
 describe("normalizeDatabaseDefaults", () => {
+  it("migrates the legacy ComfyUI workflow once without keeping duplicate JSON", () => {
+    const settings = normalizeSettingsInput({
+      comfyConfig: { workflow: "old-json", timeout: 60 },
+    });
+    expect(settings.comfyConfig.workflows).toEqual([
+      { id: "legacy", name: "Workflow", workflow: "old-json" },
+    ]);
+    expect(settings.comfyConfig.selectedWorkflowId).toBe("legacy");
+    expect(settings.comfyConfig.workflow).toBe("");
+    expect(settings.comfyConfig.timeout).toBe(60);
+    normalizeSettingsInput(settings);
+    expect(settings.comfyConfig.workflows).toHaveLength(1);
+  });
+
+  it("preserves ComfyUI libraries and restores selection when the selected workflow is missing", () => {
+    const workflows = [
+      { id: "a", name: "A", workflow: "json-a" },
+      { id: "b", name: "B", workflow: "json-b" },
+    ];
+    const settings = normalizeSettingsInput({
+      comfyConfig: { workflows, selectedWorkflowId: "b" },
+    });
+    expect(settings.comfyConfig.workflows).toEqual(workflows);
+    expect(settings.comfyConfig.selectedWorkflowId).toBe("b");
+    settings.comfyConfig.selectedWorkflowId = "missing";
+    normalizeSettingsInput(settings);
+    expect(settings.comfyConfig.selectedWorkflowId).toBe("a");
+  });
+  it("keeps chat illustrations opt-in and preserves existing illustration settings", () => {
+    const illustration = { enabled: true, basePrompt: "quality" };
+    const disabled = normalizeSettingsInput({ illustration });
+    expect(disabled.useChatIllustrations).toBe(false);
+    expect(disabled.illustration).toMatchObject(illustration);
+    expect(
+      normalizeSettingsInput({ useChatIllustrations: true, illustration })
+        .useChatIllustrations,
+    ).toBe(true);
+  });
+
   it("defaults and preserves Android navigation-bar settings", () => {
     const defaults = normalizeSettingsInput({});
     expect(defaults.autoHideAndroidNavigationBar).toBe(false);

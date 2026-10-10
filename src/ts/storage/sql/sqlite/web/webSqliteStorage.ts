@@ -145,19 +145,32 @@ interface WorkerRpc {
   terminate(): void;
 }
 
-let workerSingleton: Worker | null = null;
-let rpcSingleton: WorkerRpc | null = null;
-let workerInitFailed = false;
+interface SqliteWorkerState {
+  worker: Worker | null;
+  rpc: WorkerRpc | null;
+  initFailed: boolean;
+}
+
+// HMR replaces this module while its worker still holds the OPFS handles.
+// Share the live RPC across replacements, including pending writes, rather
+// than creating another worker which competes for the same SAH pool.
+const hotData = import.meta.hot?.data;
+const workerState: SqliteWorkerState = hotData?.sqliteWorkerState ?? {
+  worker: null,
+  rpc: null,
+  initFailed: false,
+};
+if (hotData) hotData.sqliteWorkerState = workerState;
 
 function getWorkerRpc(): WorkerRpc {
-  if (workerInitFailed) {
+  if (workerState.initFailed) {
     throw new Error("SQLite WASM worker is not available");
   }
-  if (rpcSingleton) return rpcSingleton;
+  if (workerState.rpc) return workerState.rpc;
 
   // Vite understands `new Worker(new URL(..., import.meta.url), { type: 'module' })`
   // and bundles the worker module + its WASM dependency correctly.
-  workerSingleton = new Worker(
+  workerState.worker = new Worker(
     new URL("./webSqliteWorker.ts", import.meta.url),
     { type: "module" },
   );
@@ -165,7 +178,7 @@ function getWorkerRpc(): WorkerRpc {
   const pending = new Map<number, (res: ResMsg) => void>();
   let nextId = 1;
 
-  workerSingleton.onmessage = (e: MessageEvent<ResMsg>) => {
+  workerState.worker.onmessage = (e: MessageEvent<ResMsg>) => {
     const res = e.data;
     const resolver = pending.get(res.id);
     if (resolver) {
@@ -174,9 +187,9 @@ function getWorkerRpc(): WorkerRpc {
     }
   };
 
-  workerSingleton.onerror = (e) => {
+  workerState.worker.onerror = (e) => {
     console.error("SQLite WASM worker error:", e.message ?? e);
-    workerInitFailed = true;
+    workerState.initFailed = true;
     // Reject all pending requests.
     for (const resolver of pending.values()) {
       resolver({ id: 0, ok: false, error: "Worker crashed" });
@@ -192,11 +205,11 @@ function getWorkerRpc(): WorkerRpc {
         else reject(new Error(res.error ?? "Unknown worker error"));
       });
       const full: ReqMsg = { ...msg, id } as ReqMsg;
-      workerSingleton!.postMessage(full);
+      workerState.worker!.postMessage(full);
     });
   }
 
-  rpcSingleton = {
+  workerState.rpc = {
     init: () =>
       call<{
         enabled: boolean;
@@ -222,13 +235,13 @@ function getWorkerRpc(): WorkerRpc {
       call<Record<string, unknown> | null>({ type: "selectOne", sql, bind }),
     close: () => call<void>({ type: "close" }),
     terminate: () => {
-      workerSingleton?.terminate();
-      workerSingleton = null;
-      rpcSingleton = null;
+      workerState.worker?.terminate();
+      workerState.worker = null;
+      workerState.rpc = null;
     },
   };
 
-  return rpcSingleton;
+  return workerState.rpc;
 }
 
 // ── Storage implementation ────────────────────────────────────────────

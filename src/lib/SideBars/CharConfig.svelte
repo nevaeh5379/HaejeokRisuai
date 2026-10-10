@@ -1,5 +1,6 @@
 <script lang="ts">
     import AuthorNoteEditor from "./AuthorNoteEditor.svelte";
+    import IllustrationSettings from "../Setting/Pages/IllustrationSettings.svelte";
     import { language } from "../../lang";
     import { saveImage as saveAsset } from "../../ts/storage/files/assetPersistence";
 import type { character, groupChat } from "../../ts/storage/database/schema";
@@ -591,6 +592,9 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                     (characterStore.characters[$selectedCharID] as character) = updateInlayScreen((characterStore.characters[$selectedCharID] as character))
                 }
             }}/>
+        {/if}
+        {#if settingsStore.state.useChatIllustrations}
+            <IllustrationSettings characterId={characterStore.characters[$selectedCharID].chaId} />
         {/if}
     {:else if viewSubMenu === 2}
         <AdditionalAssetsSection />
