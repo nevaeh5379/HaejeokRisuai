@@ -1,0 +1,3 @@
+## 2024-11-20 - List Image Performance
+**Learning:** Found several long lists of characters and bots in components like RealmHubIcon, LiteCardIcon, and BotAnalysisTab that were loading images eagerly without `loading="lazy"`. Since these components render grids or lists, this eager loading can cause significant network/memory contention on older Android phones (the target device with ~4GB RAM), blocking the main thread from initializing the UI promptly.
+**Action:** Always verify `loading="lazy"` and `decoding="async"` are present on images inside components that render in large loops or grids.
