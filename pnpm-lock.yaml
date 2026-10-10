@@ -188,8 +188,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
       '@tauri-apps/api':
-        specifier: 2.11.1
-        version: 2.11.1
+        specifier: 2.12.2
+        version: 2.12.2
       '@tauri-apps/cli-win32-arm64-msvc':
         specifier: 2.11.4
         version: 2.11.4
