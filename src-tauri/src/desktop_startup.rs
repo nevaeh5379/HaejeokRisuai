@@ -198,7 +198,9 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
         let config = app.config().app.windows.first().ok_or_else(|| {
             tauri::Error::Io(io::Error::other("Main window configuration is missing"))
         })?;
-        tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
+        tauri::WebviewWindowBuilder::from_config(app, config)?
+            .title(crate::get_app_display_name())
+            .build()?;
     }
     #[cfg(target_os = "macos")]
     crate::install_haejeok_app_menu(app)?;

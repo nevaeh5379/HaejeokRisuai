@@ -19,6 +19,11 @@ fn display_name(language: u16) -> &'static str {
     }
 }
 
+pub fn current_display_name() -> &'static str {
+    // Share the installer's display-language rule, not the formatting locale.
+    display_name(unsafe { GetUserDefaultUILanguage() })
+}
+
 /// Refresh on launch after Windows language changes, without affecting startup
 /// if a registry entry is absent or not writable (e.g. a machine-wide install).
 pub fn sync_display_name() {
