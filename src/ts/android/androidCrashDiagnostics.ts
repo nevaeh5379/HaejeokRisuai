@@ -1,5 +1,9 @@
-import { registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { isCapacitorAndroid } from "../platform";
+import {
+  installAndroidBridgeDiagnostics,
+  type DiagnosticBridge,
+} from "./androidBridgeDiagnostics";
 
 interface CrashDiagnosticsPlugin {
   checkpoint(options: { stage: string }): Promise<void>;
@@ -24,6 +28,7 @@ export async function androidDiagnosticCheckpoint(
 
 export function initializeAndroidDiagnostics(): void {
   if (!native) return;
+  installAndroidBridgeDiagnostics(Capacitor as unknown as DiagnosticBridge);
   // Record categories only. Error/rejection messages can contain user content.
   window.addEventListener("error", () => {
     void androidDiagnosticCheckpoint("js:uncaught-error");
