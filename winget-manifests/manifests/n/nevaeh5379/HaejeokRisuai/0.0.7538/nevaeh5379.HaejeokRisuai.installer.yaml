@@ -1,0 +1,15 @@
+# Created using wingetcreate 1.12.13.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
+PackageIdentifier: nevaeh5379.HaejeokRisuai
+PackageVersion: 0.0.7538
+InstallerType: nullsoft
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/nevaeh5379/HaejeokRisuai/releases/download/b7538/HaejeokRisuai_0.0.7538_x64-setup.exe
+  InstallerSha256: F523092B8AE45AE57395F9A276F1FE22D627DC3BEB08A794245DA6B200E20747
+ManifestType: installer
+ManifestVersion: 1.12.0
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /P
