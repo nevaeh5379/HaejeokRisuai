@@ -1,4 +1,6 @@
 export const languageEnglish = {
+  androidDiagnosticsShare: "Share Android exit diagnostics",
+  androidDiagnosticsShareFailed: "Could not share Android diagnostics.",
   comfyWorkflows: {
     loadingList: "Loading workflow list…", loadingWorkflow: "Downloading workflow JSON…", loadingNodes: "Loading node definitions…", converting: "Converting workflow JSON…", loadingViewer: "Opening JSON view…",
     requestTimeout: "ComfyUI workflow operation timed out after 30 seconds. Check the server connection and try again.",

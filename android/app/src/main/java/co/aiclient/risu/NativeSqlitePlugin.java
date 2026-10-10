@@ -127,6 +127,7 @@ public class NativeSqlitePlugin extends Plugin {
                 JSArray rows = queryRows(sql, bind);
                 JSObject result = new JSObject();
                 result.put("values", rows);
+                AndroidCrashDiagnostics.checkpoint("sqlite:query-response rows=" + rows.length());
                 call.resolve(result);
             } catch (Exception error) {
                 call.reject("Native SQLite query failed: " + errorMessage(error), error);
@@ -152,6 +153,7 @@ public class NativeSqlitePlugin extends Plugin {
                 }
                 JSObject result = new JSObject();
                 result.put("results", results);
+                AndroidCrashDiagnostics.checkpoint("sqlite:batch-response sets=" + results.length());
                 call.resolve(result);
             } catch (Exception error) {
                 call.reject("Native SQLite query batch failed: " + errorMessage(error), error);
@@ -439,6 +441,7 @@ public class NativeSqlitePlugin extends Plugin {
     }
 
     private JSArray queryRows(String sql, List<Object> bind) {
+        AndroidCrashDiagnostics.checkpoint("sqlite:query-start " + classifyStatement(sql));
         long startedAt = System.nanoTime();
         JSArray result;
         try {
@@ -455,6 +458,7 @@ public class NativeSqlitePlugin extends Plugin {
             result = queryRowsWithLargeRowFallback(sql, bind, requiredPos);
         }
         long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        AndroidCrashDiagnostics.checkpoint("sqlite:query-end rows=" + result.length() + " ms=" + elapsedMs);
         if (elapsedMs >= 100) {
             Log.i(
                 TAG,
@@ -836,6 +840,7 @@ public class NativeSqlitePlugin extends Plugin {
     }
 
     private static JSArray bytesToJsArray(byte[] bytes) {
+        AndroidCrashDiagnostics.checkpoint("sqlite:blob-to-array bytes=" + bytes.length);
         JSArray result = new JSArray();
         for (byte value : bytes) result.put(value & 0xff);
         return result;

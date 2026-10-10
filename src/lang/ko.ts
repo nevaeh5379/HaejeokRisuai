@@ -1,4 +1,6 @@
 export const languageKorean = {
+  androidDiagnosticsShare: "Android 종료 진단 공유",
+  androidDiagnosticsShareFailed: "Android 진단을 공유하지 못했습니다.",
   comfyWorkflows: {
     loadingList: "워크플로 목록 불러오는 중…", loadingWorkflow: "워크플로 JSON 다운로드 중…", loadingNodes: "노드 정보 불러오는 중…", converting: "워크플로 JSON 변환 중…", loadingViewer: "JSON 뷰어 여는 중…",
     requestTimeout: "ComfyUI 워크플로 처리 시간이 30초를 초과했습니다. 서버 연결을 확인한 뒤 다시 시도해 주세요.",
