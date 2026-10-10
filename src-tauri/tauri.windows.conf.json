@@ -3,6 +3,7 @@
   "app": {
     "windows": [
       {
+        "create": false,
         "fullscreen": false,
         "resizable": true,
         "title": "Risuai",
