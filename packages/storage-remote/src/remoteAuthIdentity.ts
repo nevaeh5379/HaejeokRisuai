@@ -1,12 +1,17 @@
 import { getKeypairStore, saveKeypairStore } from "./keypairStore";
 import type { NodeApiClient } from "./nodeApiClient";
 
+export interface RemoteAuthKeyPair {
+  privateKey: Uint8Array;
+  publicKey: JsonWebKey;
+}
+
 export type RemoteKeyPairLoader = (
   name: string,
-) => Promise<CryptoKeyPair | null>;
+) => Promise<RemoteAuthKeyPair | null>;
 export type RemoteKeyPairSaver = (
   name: string,
-  keyPair: CryptoKeyPair,
+  keyPair: RemoteAuthKeyPair,
 ) => Promise<unknown>;
 
 export function base64UrlEncode(source: Uint8Array | ArrayBuffer): string {
@@ -18,7 +23,9 @@ export function base64UrlEncode(source: Uint8Array | ArrayBuffer): string {
 }
 
 export function remoteAuthKeyStoreName(origin: string): string {
-  return `node:${base64UrlEncode(new TextEncoder().encode(origin))}`;
+  // Invalidate the former non-extractable CryptoKey cache. The next login
+  // registers a new key; no conversion of old keys is needed.
+  return `node:noble-p256-v1:${base64UrlEncode(new TextEncoder().encode(origin))}`;
 }
 
 function encodeJson(value: unknown): string {
@@ -26,15 +33,16 @@ function encodeJson(value: unknown): string {
 }
 
 export class RemoteAuthIdentity {
-  private keyPairPromise: Promise<CryptoKeyPair> | null = null;
+  private keyPairPromise: Promise<RemoteAuthKeyPair> | null = null;
 
   constructor(
     private readonly apiClient: NodeApiClient,
-    private readonly loadKeyPair: RemoteKeyPairLoader = getKeypairStore,
+    private readonly loadKeyPair: RemoteKeyPairLoader = (name) =>
+      getKeypairStore<RemoteAuthKeyPair>(name),
     private readonly saveKeyPair: RemoteKeyPairSaver = saveKeypairStore,
   ) {}
 
-  async getKeyPair(): Promise<CryptoKeyPair> {
+  async getKeyPair(): Promise<RemoteAuthKeyPair> {
     if (!this.keyPairPromise) {
       this.keyPairPromise = this.loadOrCreateKeyPair().catch((error) => {
         this.keyPairPromise = null;
@@ -44,16 +52,25 @@ export class RemoteAuthIdentity {
     return await this.keyPairPromise;
   }
 
-  private async loadOrCreateKeyPair(): Promise<CryptoKeyPair> {
+  private async loadOrCreateKeyPair(): Promise<RemoteAuthKeyPair> {
     const name = remoteAuthKeyStoreName(this.apiClient.baseUrl);
     const stored = await this.loadKeyPair(name);
     if (stored) return stored;
 
-    const keyPair = await crypto.subtle.generateKey(
-      { name: "ECDSA", namedCurve: "P-256" },
-      false,
-      ["sign", "verify"],
-    );
+    const { p256 } = await import("./remoteAuthCrypto");
+    const privateKey = p256.utils.randomSecretKey();
+    const publicKeyBytes = p256.getPublicKey(privateKey, false);
+    const keyPair: RemoteAuthKeyPair = {
+      privateKey,
+      publicKey: {
+        key_ops: ["verify"],
+        ext: true,
+        kty: "EC",
+        x: base64UrlEncode(publicKeyBytes.subarray(1, 33)),
+        y: base64UrlEncode(publicKeyBytes.subarray(33, 65)),
+        crv: "P-256",
+      },
+    };
     await this.saveKeyPair(name, keyPair);
     return keyPair;
   }
@@ -66,13 +83,14 @@ export class RemoteAuthIdentity {
     const payload = {
       iat: nowSeconds,
       exp: nowSeconds + 5 * 60,
-      pub: await crypto.subtle.exportKey("jwk", keyPair.publicKey),
+      pub: keyPair.publicKey,
     };
     const unsigned = `${encodeJson(header)}.${encodeJson(payload)}`;
-    const signature = await crypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
-      keyPair.privateKey,
+    const { p256 } = await import("./remoteAuthCrypto");
+    const signature = p256.sign(
       new TextEncoder().encode(unsigned),
+      keyPair.privateKey,
+      { prehash: true, format: "compact" },
     );
     return `${unsigned}.${base64UrlEncode(signature)}`;
   }

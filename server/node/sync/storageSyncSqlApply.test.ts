@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { iterateLegacyBackupSqlRecords } from "../../../packages/backup-core/src/legacyRecords.ts";
+import { createSqlCommitValidator } from "../../../packages/protocol/src/sqlCommit.ts";
 
 import {
   StorageSyncSqlApplyError,
   applyStorageSyncSqlRecords,
 } from "./storageSyncSqlApply.ts";
+import type { NormalizedSqlCommit } from "../../../packages/protocol/src/sqlCommit.ts";
 
 function session() {
   return {
@@ -123,6 +126,110 @@ function payloadBatchLength(payload: any): number | null {
 }
 
 describe("applyStorageSyncSqlRecords", () => {
+  it.each(["postgres", "oracle", "azure"] as const)(
+    "restores legacy plugins through the plugin domain on %s",
+    async (vendor) => {
+      const plugins = [
+        {
+          name: "Enabled plugin",
+          script: "return 'enabled';",
+          enabled: true,
+          arguments: { token: "string" },
+          realArg: { token: "saved value" },
+        },
+        { name: "Disabled plugin", script: "", enabled: false },
+      ];
+      const records = Array.from(
+        iterateLegacyBackupSqlRecords({ language: "ko", plugins }),
+      );
+      const sqlStorage = fakeStorage([]);
+      const validate = createSqlCommitValidator({ PayloadError: Error });
+      const restored: NormalizedSqlCommit[] = [];
+      sqlStorage.sync.mockImplementation(async (payload, options) => {
+        expect(options.externalTransaction.storageSyncImport).toBe(true);
+        restored.push(validate(payload));
+        return { revision: 8 };
+      });
+
+      await applyStorageSyncSqlRecords({
+        vendor,
+        session: session(),
+        sqlStaging: staging(records),
+        sqlStorage,
+        client: {
+          query: vi.fn(),
+          request: () => ({ query: vi.fn(async () => ({})) }),
+        },
+        transactionContext: transactionContext(),
+        batchSize: 1,
+        replaceColdStorage: false,
+      });
+
+      const metadata = restored.flatMap(
+        (payload) => payload.plugins?.upserts ?? [],
+      );
+      const scripts = restored.flatMap(
+        (payload) => payload.plugins?.scripts ?? [],
+      );
+      expect(metadata).toHaveLength(2);
+      expect(new Set(metadata.map((row) => row.id)).size).toBe(2);
+      expect(metadata.map((row) => row.position)).toEqual([0, 1]);
+      for (let index = 0; index < plugins.length; index++) {
+        const { script, ...data } = plugins[index];
+        expect(metadata[index].data).toEqual(data);
+        expect(scripts[index]).toEqual({ id: metadata[index].id, script });
+      }
+      expect(restored.flatMap((payload) => payload.rootUpserts)).toEqual([
+        { key: "language", value: "ko" },
+      ]);
+    },
+  );
+
+  it.each([0, 5])(
+    "restores a portable setting with %i plugins in bounded batches",
+    async (count) => {
+      const plugins = Array.from({ length: count }, (_, index) => ({
+        name: `plugin-${index}`,
+        script: "x".repeat(700),
+        enabled: index % 2 === 0,
+      }));
+      const records = [
+        { type: "meta", formatVersion: 1, revision: 4 },
+        { type: "setting", key: "plugins", value: plugins },
+        { type: "setting", key: "language", value: "ko" },
+      ];
+      const sqlStorage = fakeStorage([]);
+      const validate = createSqlCommitValidator({ PayloadError: Error });
+      sqlStorage.sync.mockImplementation(async (payload) => {
+        validate(payload);
+        return { revision: 8 };
+      });
+
+      const result = await applyStorageSyncSqlRecords({
+        session: session(),
+        sqlStaging: staging(records),
+        sqlStorage,
+        client: { query: vi.fn() },
+        transactionContext: transactionContext(),
+        batchSize: 2,
+        batchBytes: 1024,
+        replaceColdStorage: false,
+      });
+
+      const pluginBatches = sqlStorage.sync.mock.calls
+        .map(([payload]) => payload.plugins)
+        .filter(Boolean);
+      expect(pluginBatches.map((batch) => batch.upserts.length)).toEqual(
+        plugins.map(() => 1),
+      );
+      expect(result.recordCount).toBe(records.length);
+      expect(result.applied).toBe(records.length - 1);
+      expect(sqlStorage.sync.mock.calls.at(-1)[0].root.upserts).toEqual([
+        { key: "language", value: "ko" },
+      ]);
+    },
+  );
+
   it("applies large validated streams in bounded batches", async () => {
     const records = makeRecords();
     const log: string[] = [];
