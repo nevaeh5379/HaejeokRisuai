@@ -804,22 +804,14 @@ export async function saveAsset(
       fileExtension = ext;
     }
   }
-  if (forageStorage.realStorage instanceof TauriAssetStorage) {
-    await writeFile(`assets/${id}.${fileExtension}`, data, {
-      baseDir: BaseDirectory.AppData,
-    });
-    invalidateThumbnailCache(`assets/${id}.${fileExtension}`);
-    return `assets/${id}.${fileExtension}`;
-  } else {
-    let form = `assets/${id}.${fileExtension}`;
-    invalidateThumbnailCache(form);
-    const replacer = await forageStorage.setItem(form, data);
-    if (replacer) {
-      invalidateThumbnailCache(replacer);
-      return replacer;
-    }
-    return form;
+  const form = `assets/${id}.${fileExtension}`;
+  const replacer = await forageStorage.setItem(form, data);
+  invalidateThumbnailCache(form);
+  if (replacer) {
+    invalidateThumbnailCache(replacer);
+    return replacer;
   }
+  return form;
 }
 
 /**
