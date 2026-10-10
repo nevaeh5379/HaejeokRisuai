@@ -1,7 +1,8 @@
 ; Upstream: tauri-apps/tauri, tag tauri-cli-v2.11.4 (MIT; see LICENSE_MIT).
 ; https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi
 ; Local changes: Programs default and update relocation, publisher-independent
-; install lookup, and product-named data removal when explicitly selected.
+; install lookup, localized installed-app name, and product-named data removal
+; when explicitly selected.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -723,7 +724,10 @@ Section Install
   WriteRegStr SHCTX "${UNINSTKEY}" "MainBinaryName" "${MAINBINARYNAME}.exe"
 
   ; Registry information for add/remove programs
-  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "${PRODUCTNAME}"
+  Push $0
+  System::Call 'kernel32::GetUserDefaultUILanguage() i.r0'
+  !insertmacro HaejeokWriteInstalledAppName $0
+  Pop $0
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayIcon" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\""
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "${MANUFACTURER}"

@@ -13,6 +13,8 @@ mod linux_wayland;
 mod macos_vibrancy;
 mod sqlite_transaction;
 #[cfg(target_os = "windows")]
+mod windows_installed_app;
+#[cfg(target_os = "windows")]
 mod windows_titlebar;
 
 #[tauri::command]
@@ -1455,6 +1457,8 @@ fn main() {
             }
         }));
         builder = builder.setup(|app| {
+            #[cfg(target_os = "windows")]
+            windows_installed_app::sync_display_name();
             desktop_startup::start(app.handle());
             Ok(())
         });
