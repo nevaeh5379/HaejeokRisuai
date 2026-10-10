@@ -7,7 +7,10 @@ import com.google.gson.JsonParser;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Test;
 
 public class SqliteQueryStreamTest {
@@ -84,5 +87,60 @@ public class SqliteQueryStreamTest {
         stream.writer();
         assertTrue(stream.expire(System.nanoTime() + TimeUnit.SECONDS.toNanos(61)));
         assertThrows(IOException.class, stream::read);
+    }
+
+    @Test
+    public void pendingReadSurvivesSlowQueryAndRestartsIdleDeadlineOnCompletion() throws Exception {
+        AtomicLong now = new AtomicLong();
+        AtomicBoolean reading = new AtomicBoolean();
+        CountDownLatch readStarted = new CountDownLatch(1);
+        SqliteQueryStream stream = new SqliteQueryStream(() -> {
+            if (reading.get()) readStarted.countDown();
+            return now.get();
+        });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            BufferedWriter writer = stream.writer();
+            reading.set(true);
+            Future<byte[]> read = executor.submit(stream::read);
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS));
+
+            now.set(TimeUnit.SECONDS.toNanos(120));
+            assertFalse("a consumer waiting for query output is not idle", stream.expire(now.get()));
+            writer.write("ready");
+            writer.flush();
+            assertArrayEquals("ready".getBytes(StandardCharsets.UTF_8), read.get(5, TimeUnit.SECONDS));
+
+            now.addAndGet(TimeUnit.SECONDS.toNanos(59));
+            assertFalse("idle time starts after the read completes", stream.expire(now.get()));
+            now.addAndGet(TimeUnit.SECONDS.toNanos(1));
+            assertTrue("an abandoned consumer still expires", stream.expire(now.get()));
+        } finally {
+            stream.cancel();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void explicitCancellationStillUnblocksAnOutstandingRead() throws Exception {
+        AtomicBoolean reading = new AtomicBoolean();
+        CountDownLatch readStarted = new CountDownLatch(1);
+        SqliteQueryStream stream = new SqliteQueryStream(() -> {
+            if (reading.get()) readStarted.countDown();
+            return System.nanoTime();
+        });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            stream.writer();
+            reading.set(true);
+            Future<byte[]> read = executor.submit(stream::read);
+            assertTrue(readStarted.await(5, TimeUnit.SECONDS));
+            stream.cancel();
+            ExecutionException error = assertThrows(ExecutionException.class, () -> read.get(5, TimeUnit.SECONDS));
+            assertTrue(error.getCause() instanceof IOException);
+        } finally {
+            stream.cancel();
+            executor.shutdownNow();
+        }
     }
 }
