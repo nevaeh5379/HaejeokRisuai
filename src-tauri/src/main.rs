@@ -1440,6 +1440,10 @@ fn main() {
         linux_wayland::app_icon::register();
     }
 
+    let mut context = tauri::generate_context!();
+    #[cfg(desktop)]
+    desktop_startup::configure_directories(&mut context);
+
     let mut builder = tauri::Builder::default();
 
     // Reserve the new identifier before starting any migration work.
@@ -1481,7 +1485,6 @@ fn main() {
     builder
         .manage(SidebarMenuWindowState::default())
         .manage(sqlite_transaction::SqliteStreamTransactionState::default())
-        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -1521,7 +1524,7 @@ fn main() {
             hide_sidebar_menu_window,
             close_sidebar_menu_window
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application")
 }
 

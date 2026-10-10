@@ -8,24 +8,42 @@ use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 
+/// Set paths before constructing the app or initializing any plugins.
+/// Keep this out of JSON: the CLI's schema may lag behind the Rust runtime.
+pub fn configure_directories<R: tauri::Runtime>(context: &mut tauri::Context<R>) {
+    use tauri::utils::config::{AppDirectoriesOverride, AppDirectoryOverrides};
+    let local_name = "HaejeokRisuai";
+    context.config_mut().app.app_directories_override =
+        Some(AppDirectoriesOverride::Directories(AppDirectoryOverrides {
+            data: Some("$DATA/HaejeokRisuai".into()),
+            config: Some("$CONFIG/HaejeokRisuai".into()),
+            local_data: Some(format!("$LOCALDATA/{local_name}").into()),
+            cache: Some(format!("$CACHE/{local_name}").into()),
+            ..Default::default()
+        }));
+}
+
 fn migration(app: &AppHandle) -> io::Result<Migration> {
     let path = app.path();
-    let destinations = [
-        path.app_data_dir(),
-        path.app_local_data_dir(),
-        path.app_config_dir(),
+    let local_name = "HaejeokRisuai";
+    let directories = [
+        (path.data_dir(), path.app_data_dir(), "HaejeokRisuai"),
+        (path.local_data_dir(), path.app_local_data_dir(), local_name),
+        (path.config_dir(), path.app_config_dir(), "HaejeokRisuai"),
+        (path.cache_dir(), path.app_cache_dir(), local_name),
     ];
     let mut paths = Vec::new();
-    for destination in destinations {
+    for (base, destination, name) in directories {
+        let base = base.map_err(|e| io::Error::other(e.to_string()))?;
         let destination = destination.map_err(|e| io::Error::other(e.to_string()))?;
-        // Only the standard identifier-based directories belong to this migration.
-        if destination.file_name() != Some(std::ffi::OsStr::new(&app.config().identifier)) {
+        // Sources keep the old identifier; destinations use the product name.
+        if destination != base.join(name) {
             return Err(io::Error::other(
                 "App directory overrides cannot be migrated automatically",
             ));
         }
         paths.push(Move {
-            source: destination.with_file_name(LEGACY_IDENTIFIER),
+            source: base.join(LEGACY_IDENTIFIER),
             destination,
         });
     }
@@ -34,7 +52,8 @@ fn migration(app: &AppHandle) -> io::Result<Migration> {
         let home = path
             .home_dir()
             .map_err(|e| io::Error::other(e.to_string()))?;
-        for base in [home.join("Library/WebKit"), home.join("Library/Caches")] {
+        // AppCache already covers Library/Caches; WebKit uses the bundle ID.
+        for base in [home.join("Library/WebKit")] {
             paths.push(Move {
                 source: base.join(LEGACY_IDENTIFIER),
                 destination: base.join(&app.config().identifier),
@@ -168,6 +187,10 @@ pub fn start(app: &AppHandle) {
 }
 
 fn create_window(app: &AppHandle) -> tauri::Result<()> {
+    // HTTP setup creates AppCache/.cookies (AppLocalData on Windows).
+    // Initialize it after migration, before the WebView can issue requests.
+    app.plugin(tauri_plugin_http::init())?;
+
     #[cfg(target_os = "linux")]
     crate::linux_wayland::create_main_window(app)?;
     #[cfg(not(target_os = "linux"))]
