@@ -1,10 +1,10 @@
-import { isColdStorageBackupData } from "./coldStorage";
+import { isColdStorageBackupData } from "./coldStorage.ts";
 import {
   getColdStorageBackupKey,
   getInlayBackupKey,
   normalizeBackupAssetPath,
   type BackupEntryClassification,
-} from "./entryPolicy";
+} from "./entryPolicy.ts";
 
 export interface AccountBackupEncryptionMetadata {
   type: "account";

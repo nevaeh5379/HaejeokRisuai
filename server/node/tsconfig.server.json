@@ -3,29 +3,19 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": "../..",
-    "outDir": ".tsbuild",
     "types": ["node"],
     "strict": false,
     "useUnknownInCatchVariables": false,
     "skipLibCheck": true,
     "noEmitOnError": true,
     "sourceMap": false,
-    "declaration": false
+    "declaration": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true
   },
-  "include": [
-    "server.cts",
-    "storage/authorNotes.cts",
-    "storage/postgres/postgresStorage.cts",
-    "storage/oracle/oracleStorage.cts",
-    "storage/azure/azureStorage.cts",
-    "sync/storageSyncSqlRecords.cts",
-    "api/database/plugins/routes.ts",
-    "executors/modelJobs.cts",
-    "http/packet.ts",
-    "http/realtimeEvents.cts",
-    "sync/databaseMutations.cts",
-    "sync/localBackupImportRecords.ts",
-    "sync/storageSyncSqlApply.cts"
-  ]
+  "include": ["**/*.ts"],
+  "exclude": ["**/*test.ts", "dist", "scripts"]
 }

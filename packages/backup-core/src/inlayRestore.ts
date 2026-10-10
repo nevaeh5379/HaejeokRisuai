@@ -1,4 +1,4 @@
-import { decodeInlayAssetBackup, type InlayAsset } from "./inlayCodec";
+import { decodeInlayAssetBackup, type InlayAsset } from "./inlayCodec.ts";
 
 export type InlayRestoreResult =
   | { status: "restored" }

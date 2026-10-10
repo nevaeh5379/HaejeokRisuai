@@ -11,6 +11,7 @@
  * loading behavior ("did the shallow load avoid reading loreBook nodes?")
  * without depending on brittle query counts.
  */
+import { Buffer } from "buffer";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { vi } from "vitest";
 import { WebSqliteStorage } from "./web/webSqliteStorage";
@@ -341,26 +342,77 @@ export function makeCapacitorStorage(
   const log = new QueryLog();
   const db = new NodeSqliteDatabase(database, log);
   let transactionId: string | null = null;
-  const bridgeStats = { queryCalls: 0, queryBatchCalls: 0 };
+  const statementStreams = new Map<
+    string,
+    { transactionId: string; chunks: Buffer[] }
+  >();
+  const bridgeStats = { queryStreamCalls: 0 };
+  const streams = new Map<
+    string,
+    { records: Generator<string>; pending: Uint8Array; offset: number }
+  >();
+  let nextStreamId = 0;
+  function* records(queries: Array<{ sql: string; bind?: unknown[] }>) {
+    for (let queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+      const query = queries[queryIndex];
+      for (const row of db.selectRows(query.sql, query.bind ?? [])) {
+        yield JSON.stringify({ type: "row", queryIndex, row }) + "\n";
+      }
+      yield JSON.stringify({ type: "end", queryIndex }) + "\n";
+    }
+  }
 
   const bridge = {
     open: async () => {},
-    close: async () => {},
-    query: async ({ sql, bind = [] }: { sql: string; bind?: unknown[] }) => {
-      bridgeStats.queryCalls++;
-      return { values: db.selectRows(sql, bind) };
+    close: async () => {
+      streams.clear();
     },
-    queryBatch: async ({
+    queryStreamOpen: async ({
       queries,
     }: {
       queries: Array<{ sql: string; bind?: unknown[] }>;
     }) => {
-      bridgeStats.queryBatchCalls++;
-      return {
-        results: queries.map((query) =>
-          db.selectRows(query.sql, query.bind ?? []),
-        ),
-      };
+      bridgeStats.queryStreamCalls++;
+      const id = `query-${++nextStreamId}`;
+      streams.set(id, {
+        records: records(queries),
+        pending: new Uint8Array(),
+        offset: 0,
+      });
+      return { id };
+    },
+    queryStreamRead: async ({ id }: { id: string }) => {
+      const stream = streams.get(id);
+      if (!stream) throw new Error("Unknown query stream");
+      const buffer = Buffer.alloc(192 * 1024);
+      let size = 0;
+      let done = false;
+      while (size < buffer.length) {
+        if (stream.offset >= stream.pending.length) {
+          const next = stream.records.next();
+          if (next.done) {
+            done = true;
+            break;
+          }
+          stream.pending = Buffer.from(next.value, "utf8");
+          stream.offset = 0;
+        }
+        const count = Math.min(
+          buffer.length - size,
+          stream.pending.length - stream.offset,
+        );
+        buffer.set(
+          stream.pending.subarray(stream.offset, stream.offset + count),
+          size,
+        );
+        stream.offset += count;
+        size += count;
+      }
+      return { data: buffer.subarray(0, size).toString("base64"), done };
+    },
+    queryStreamClose: async ({ id }: { id: string }) => {
+      streams.get(id)?.records.return(undefined);
+      streams.delete(id);
     },
     beginTransaction: async ({
       expectedRevision,
@@ -396,6 +448,46 @@ export function makeCapacitorStorage(
         db.run(statement.sql, statement.bind ?? []);
       }
       return { statements: statements.length };
+    },
+    restoreOpen: async ({ transactionId: id }: { transactionId: string }) => {
+      if (id !== transactionId) throw new Error("Inactive transaction");
+      const streamId = `statements-${++nextStreamId}`;
+      statementStreams.set(streamId, { transactionId: id, chunks: [] });
+      return { id: streamId };
+    },
+    restoreAppend: async ({ id, data }: { id: string; data: string }) => {
+      const stream = statementStreams.get(id);
+      if (!stream) throw new Error("Unknown statement stream");
+      stream.chunks.push(Buffer.from(data, "base64"));
+    },
+    restoreFinish: async ({ id }: { id: string }) => {
+      const stream = statementStreams.get(id);
+      if (!stream || stream.transactionId !== transactionId)
+        throw new Error("Inactive transaction");
+      try {
+        // Test-only decoder. The Android parser consumes the pipe statement
+        // by statement; this mock checks the real SQL and transaction contract.
+        const statements = JSON.parse(
+          Buffer.concat(stream.chunks).toString("utf8"),
+        );
+        for (const statement of statements)
+          db.run(statement.sql, statement.bind);
+        return { statements: statements.length };
+      } catch (error) {
+        db.run("ROLLBACK");
+        transactionId = null;
+        throw error;
+      } finally {
+        statementStreams.delete(id);
+      }
+    },
+    restoreAbort: async ({ id }: { id: string }) => {
+      const stream = statementStreams.get(id);
+      statementStreams.delete(id);
+      if (stream && stream.transactionId === transactionId) {
+        db.run("ROLLBACK");
+        transactionId = null;
+      }
     },
     commitTransaction: async ({ id }: { id: string }) => {
       if (id !== transactionId) throw new Error("Inactive transaction");

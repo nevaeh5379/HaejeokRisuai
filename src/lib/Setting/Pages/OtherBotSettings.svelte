@@ -1,6 +1,8 @@
 <script lang="ts">
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
+  import IllustrationSettings from "./IllustrationSettings.svelte";
+  import ComfyWorkflowSettings from "./ComfyWorkflowSettings.svelte";
 import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
@@ -265,6 +267,9 @@ import Check from "src/lib/UI/GUI/CheckInput.svelte";
 {/if}
 
 {#if submenu === 3 || submenu === -1}
+    {#if settingsStore.state.useChatIllustrations}
+        <IllustrationSettings />
+    {/if}
     <Accordion name={language.imageGeneration} styled disabled={submenu !== -1}>
         <span class="text-textcolor mt-2">{language.imageGeneration} {language.provider} <Help key="sdProvider"/></span>
         <SelectInput className="mt-2 mb-4" bind:value={settingsStore.state.sdProvider}>
@@ -706,8 +711,7 @@ import Check from "src/lib/UI/GUI/CheckInput.svelte";
             <span class="text-textcolor mt-2">ComfyUI {language.providerURL}</span>
             <TextInput size="sm" marginBottom placeholder="http://127.0.0.1:8188" bind:value={settingsStore.state.comfyUiUrl}/>
 
-            <span class="text-textcolor">Workflow <Help key="comfyWorkflow" /></span>
-            <TextInput size="sm" marginBottom bind:value={settingsStore.state.comfyConfig.workflow}/>
+            <ComfyWorkflowSettings />
 
             <span class="text-textcolor">Timeout (sec)</span>
             <NumberInput size="sm" marginBottom bind:value={settingsStore.state.comfyConfig.timeout} min={1} max={120} />
@@ -720,8 +724,7 @@ import Check from "src/lib/UI/GUI/CheckInput.svelte";
             {/if}
             <span class="text-textcolor mt-2">ComfyUI {language.providerURL}</span>
             <TextInput size="sm" marginBottom placeholder="http://127.0.0.1:8188" bind:value={settingsStore.state.comfyUiUrl}/>
-            <span class="text-textcolor">Workflow</span>
-            <TextInput size="sm" marginBottom placeholder="valid ComfyUI API json (Enable Dev mode Options in ComfyUI)" bind:value={settingsStore.state.comfyConfig.workflow}/>
+            <ComfyWorkflowSettings />
 
             <span class="text-textcolor">Positive Text Node: ID</span>
             <TextInput size="sm" marginBottom placeholder="eg. 1, 3, etc" bind:value={settingsStore.state.comfyConfig.posNodeID}/>

@@ -6,72 +6,10 @@ import { deflateSync, unzipSync } from "node:zlib";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { PostgresRevisionConflictError, PostgresStorage } =
-  require(".//postgresStorage.cts") as {
-    PostgresRevisionConflictError: new (revision: number) => Error;
-    PostgresStorage: new (options?: { connectionString?: string }) => {
-      enabled: boolean;
-      initialize: () => Promise<void>;
-      reconfigure: (options: {
-        connectionString: string;
-        poolMax?: number;
-      }) => Promise<void>;
-      exportDatabaseSnapshot: () => Promise<{
-        initialized: boolean;
-        revision: number;
-        database: Record<string, any> | null;
-      }>;
-      sync: (payload: Record<string, any>) => Promise<{ revision: number }>;
-      listRevisions: (limit?: number) => Promise<Record<string, any>[]>;
-      restoreRevision: (
-        revisionId: number,
-      ) => Promise<{ revision: number; changed: number }>;
-      loadColdStorage: (key: string) => Promise<Record<string, any> | null>;
-      listColdStorage: () => Promise<Record<string, any>[]>;
-      upsertColdStorage: (
-        key: string,
-        value: unknown,
-      ) => Promise<Record<string, any>>;
-      deleteColdStorage: (keys: string[]) => Promise<{ deleted: number }>;
-      pruneColdStorage: (keys: string[]) => Promise<{ deleted: number }>;
-      migrateLegacyColdStorage: (
-        savePath: string,
-      ) => Promise<{ migrated: number; skipped: number }>;
-      exportColdStorageToLegacy: (
-        savePath: string,
-      ) => Promise<{ exported: number; archived: number }>;
-      searchMessages: (
-        query: string,
-        scope?: string,
-        limit?: number,
-      ) => Promise<Record<string, any>[]>;
-      getTokenUsage: () => Promise<Record<string, any>[]>;
-      getBotChatStats: () => Promise<Record<string, any>[]>;
-      searchCharactersByTag: (
-        tag: string,
-        limit?: number,
-      ) => Promise<Record<string, any>[]>;
-      searchCharactersByName: (
-        name: string,
-        limit?: number,
-      ) => Promise<Record<string, any>[]>;
-      isAssetCatalogInitialized: (sourceId: string) => Promise<boolean>;
-      listAssetCatalog: (prefix?: string) => Promise<string[]>;
-      upsertAssetCatalog: (
-        entries: { key: string; size?: number | null; etag?: string | null }[],
-      ) => Promise<number>;
-      removeAssetCatalog: (keys: string[]) => Promise<number>;
-      replaceAssetCatalog: (
-        prefix: string,
-        entries: { key: string; size?: number | null; etag?: string | null }[],
-        sourceId: string,
-      ) => Promise<number>;
-      pool: {
-        query: (sql: string, params?: unknown[]) => Promise<any>;
-        end: () => Promise<void>;
-      };
-    };
-  };
+import {
+  PostgresRevisionConflictError,
+  PostgresStorage,
+} from "./postgresStorage.ts";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const describePostgres = connectionString ? describe : describe.skip;

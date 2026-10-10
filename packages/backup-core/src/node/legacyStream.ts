@@ -8,13 +8,13 @@ import {
 import { join } from "node:path";
 import { createUnzip } from "node:zlib";
 import { Unpackr } from "msgpackr";
-import settings from "../../../protocol/settings.json";
-import type { LegacyBackupSqlRecord } from "../legacyRecords";
+import settings from "../../../protocol/settings.json" with { type: "json" };
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 import {
   LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
   LEGACY_RAW_DATABASE_HEADER_BYTES,
   LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
-} from "../legacyHeaders";
+} from "../legacyHeaders.ts";
 
 const RAW_HEADER = Buffer.from(LEGACY_RAW_DATABASE_HEADER_BYTES);
 const COMPRESSED_HEADER = Buffer.from(LEGACY_COMPRESSED_DATABASE_HEADER_BYTES);
@@ -28,13 +28,15 @@ const LEGACY_PERSONA_MIRROR_KEYS = new Set<string>(
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });
 
 export class LegacyBackupStreamingUnsupportedError extends Error {
+  readonly code: "unsupported_legacy_format" | "portable_branch_graphs_present";
   constructor(
     message: string,
-    readonly code:
+    code:
       | "unsupported_legacy_format"
       | "portable_branch_graphs_present" = "unsupported_legacy_format",
   ) {
     super(message);
+    this.code = code;
     this.name = "LegacyBackupStreamingUnsupportedError";
   }
 }
@@ -79,7 +81,9 @@ class AsyncByteReader {
       }
       const value = next.value;
       this.current =
-        value instanceof Uint8Array ? value : new Uint8Array(value as ArrayBuffer);
+        value instanceof Uint8Array
+          ? value
+          : new Uint8Array(value as ArrayBuffer);
       this.offset = 0;
       if (this.current.length > 0) return true;
     }
@@ -123,10 +127,7 @@ class AsyncByteReader {
       if (!(await this.ensureChunk())) {
         throw new Error("Unexpected end of MessagePack stream");
       }
-      const available = Math.min(
-        remaining,
-        this.current.length - this.offset,
-      );
+      const available = Math.min(remaining, this.current.length - this.offset);
       await sink(this.current.subarray(this.offset, this.offset + available));
       this.offset += available;
       remaining -= available;
@@ -143,12 +144,7 @@ function uint16(bytes: Uint8Array): number {
 }
 
 function uint32(bytes: Uint8Array): number {
-  return (
-    bytes[0] * 0x1000000 +
-    (bytes[1] << 16) +
-    (bytes[2] << 8) +
-    bytes[3]
-  );
+  return bytes[0] * 0x1000000 + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
 }
 
 async function writeToStream(
@@ -165,8 +161,13 @@ async function consumeValue(
   const prefix = await reader.readByte();
   await sink(Uint8Array.of(prefix));
 
-  if (prefix <= 0x7f || prefix >= 0xe0 || prefix === 0xc0 ||
-      prefix === 0xc2 || prefix === 0xc3) {
+  if (
+    prefix <= 0x7f ||
+    prefix >= 0xe0 ||
+    prefix === 0xc0 ||
+    prefix === 0xc2 ||
+    prefix === 0xc3
+  ) {
     return;
   }
   if (prefix >= 0xa0 && prefix <= 0xbf) {
@@ -351,9 +352,7 @@ async function readContainerCount(
     if (prefix === 0xde) return uint16(await reader.readExact(2));
     if (prefix === 0xdf) return uint32(await reader.readExact(4));
   }
-  throw new Error(
-    `Expected MessagePack ${kind}, got 0x${prefix.toString(16)}`,
-  );
+  throw new Error(`Expected MessagePack ${kind}, got 0x${prefix.toString(16)}`);
 }
 
 async function readString(reader: AsyncByteReader): Promise<string> {
@@ -407,11 +406,17 @@ class RecordTierWriter {
   private readonly done: Promise<void>[];
   recordCount = 0;
 
+  private readonly directory: string;
+  private readonly outputPath: string;
+  private readonly encodeRecord: (record: LegacyBackupSqlRecord) => unknown;
   constructor(
-    private readonly directory: string,
-    private readonly outputPath: string,
-    private readonly encodeRecord: (record: LegacyBackupSqlRecord) => unknown,
+    directory: string,
+    outputPath: string,
+    encodeRecord: (record: LegacyBackupSqlRecord) => unknown,
   ) {
+    this.directory = directory;
+    this.outputPath = outputPath;
+    this.encodeRecord = encodeRecord;
     this.rootPath = join(directory, "legacy-root.ndjson");
     this.characterPath = join(directory, "legacy-characters.ndjson");
     this.chatPath = join(directory, "legacy-chats.ndjson");
@@ -436,7 +441,9 @@ class RecordTierWriter {
     );
   }
 
-  private streamFor(tier: "root" | "character" | "chat" | "message"): WriteStream {
+  private streamFor(
+    tier: "root" | "character" | "chat" | "message",
+  ): WriteStream {
     switch (tier) {
       case "root":
         return this.root;
@@ -504,17 +511,19 @@ class RecordTierWriter {
   }
 
   async cleanup(): Promise<void> {
-    for (const stream of [this.root, this.characters, this.chats, this.messages]) {
+    for (const stream of [
+      this.root,
+      this.characters,
+      this.chats,
+      this.messages,
+    ]) {
       if (!stream.destroyed) stream.destroy();
     }
     await Promise.allSettled(this.done);
     await Promise.all(
-      [
-        this.rootPath,
-        this.characterPath,
-        this.chatPath,
-        this.messagePath,
-      ].map((path) => fs.rm(path, { force: true }).catch(() => {})),
+      [this.rootPath, this.characterPath, this.chatPath, this.messagePath].map(
+        (path) => fs.rm(path, { force: true }).catch(() => {}),
+      ),
     );
   }
 }
@@ -525,12 +534,7 @@ async function createMessagePackSource(
   const handle = await fs.open(filePath, "r");
   const header = Buffer.alloc(COMPRESSED_HEADER.length);
   try {
-    const { bytesRead } = await handle.read(
-      header,
-      0,
-      header.length,
-      0,
-    );
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
     if (bytesRead < header.length) {
       throw new LegacyBackupStreamingUnsupportedError(
         "Legacy backup database is too short",
@@ -540,7 +544,10 @@ async function createMessagePackSource(
     await handle.close();
   }
 
-  if (header.equals(COMPRESSED_HEADER) || header.equals(STREAM_COMPRESSED_HEADER)) {
+  if (
+    header.equals(COMPRESSED_HEADER) ||
+    header.equals(STREAM_COMPRESSED_HEADER)
+  ) {
     return createReadStream(filePath, {
       start: COMPRESSED_HEADER.length,
       highWaterMark: 256 * 1024,
@@ -973,7 +980,9 @@ export async function streamLegacyBackupDatabaseToSqlNdjson(
   );
   const directory = await fs.mkdtemp(
     join(
-      filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/") + 1) : "",
+      filePath.includes("/")
+        ? filePath.slice(0, filePath.lastIndexOf("/") + 1)
+        : "",
       ".legacy-risu-stream-",
     ),
   );
@@ -998,7 +1007,9 @@ export async function streamLegacyBackupDatabaseToSqlNdjson(
     options.onProgress?.({ records: 0, phase: "reading" });
     await parseLegacyRoot(reader, context, sourceRevision);
     if (await reader.hasMore()) {
-      throw new Error("Legacy backup database contains trailing MessagePack data");
+      throw new Error(
+        "Legacy backup database contains trailing MessagePack data",
+      );
     }
     options.onProgress?.({
       records: tiers.recordCount,

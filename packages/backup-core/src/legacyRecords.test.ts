@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { iterateLegacyBackupSqlRecords } from "./legacyRecords";
+import { iterateLegacyBackupSqlRecords } from "./legacyRecords.ts";
 
 function ids() {
   let index = 0;

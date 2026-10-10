@@ -174,7 +174,7 @@ pub fn create_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let requested = read_decoration_preference(app);
 
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("Risuai")
+        .title(crate::get_app_display_name())
         .inner_size(1024.0, 768.0)
         .min_inner_size(300.0, 500.0)
         .resizable(true)

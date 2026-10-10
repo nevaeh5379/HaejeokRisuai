@@ -5,7 +5,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const { setTimeout: sleep } = require("node:timers/promises");
-const { parseAllowedOrigins } = require("../server/node/http/remoteCors.cjs");
 
 const root = path.resolve(__dirname, "..");
 const stateDir = path.join(root, ".risuai");
@@ -56,7 +55,7 @@ function defaultAllowedOrigins(host) {
 }
 
 function normalizeAllowedOrigins(value) {
-  return Array.from(parseAllowedOrigins(value || "")).join(",");
+  return String(value || "").trim();
 }
 
 function parseInstallArgs(args, env = process.env) {
@@ -352,8 +351,10 @@ function runBuild(config = null) {
 }
 
 async function testDatabase(config) {
-  const { testConnection } = require(
-    path.join(root, "server/node/storage/storageDriver.cjs"),
+  const { testConnection } = await import(
+    require("node:url").pathToFileURL(
+      path.join(root, "server/node/storage/storageDriver.ts"),
+    ).href
   );
   console.log(`==> Testing ${config.db.vendor} connection`);
   const result = await testConnection(config.db.vendor, config.db.params);
@@ -393,7 +394,7 @@ async function startNative(config = readConfig()) {
   const logFd = fs.openSync(logPath, "a");
   const child = spawn(
     process.execPath,
-    [path.join(root, "server/node/bootstrap.cjs")],
+    [path.join(root, "server/node/server.ts")],
     {
       cwd: root,
       env: runtimeEnv(config),

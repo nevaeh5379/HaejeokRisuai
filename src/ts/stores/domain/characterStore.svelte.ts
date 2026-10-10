@@ -1544,6 +1544,11 @@ class CharacterStore
     );
     if (!refreshed) return false;
 
+    if (chat.message.some((message) => message.illustrations?.some((item) => item.executor === "server" && item.progress))) {
+      const { preserveIllustrationProgress } = await import("../../process/illustration/illustrationProgress");
+      preserveIllustrationProgress(chat.message, refreshed.message, refreshed.activeBranchId);
+    }
+
     Object.assign(chat, refreshed, transient);
     if (this.characters[this.selectedId] === char) this.observeActive();
     return true;

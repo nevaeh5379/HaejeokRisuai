@@ -2,6 +2,50 @@ import { describe, expect, it, vi } from "vitest";
 import { createDeferredTokenCalculator } from "./deferredTokenCalculator";
 
 describe("createDeferredTokenCalculator", () => {
+  it("skips missing fields and calculates them when their text becomes available", async () => {
+    const calculate = vi.fn(async (text: string) => text.length);
+    const apply = vi.fn();
+    let timer!: () => void;
+    const calculator = createDeferredTokenCalculator({
+      calculate,
+      apply,
+      requestFrame: (callback) => {
+        callback();
+        return 1;
+      },
+      requestIdle: (callback) => {
+        callback();
+        return 2;
+      },
+      setTimer: (callback) => {
+        timer = callback;
+        return 3 as unknown as ReturnType<typeof setTimeout>;
+      },
+    });
+
+    calculator.update({ desc: undefined, firstMsg: "hello", localNote: null });
+    await vi.waitFor(() =>
+      expect(apply).toHaveBeenCalledWith({
+        desc: null,
+        firstMsg: 5,
+        localNote: null,
+      }),
+    );
+    expect(calculate.mock.calls).toEqual([["hello"]]);
+
+    calculator.update({ desc: "loaded", firstMsg: "hello", localNote: "" });
+    timer();
+    await vi.waitFor(() =>
+      expect(apply).toHaveBeenLastCalledWith({
+        desc: 6,
+        firstMsg: 5,
+        localNote: 0,
+      }),
+    );
+    expect(calculate.mock.calls).toEqual([["hello"], ["loaded"], [""]]);
+    calculator.dispose();
+  });
+
   it("waits for a paint and idle callback before the initial calculation", async () => {
     let frame!: () => void;
     let idle!: () => void;

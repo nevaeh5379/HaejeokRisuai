@@ -7,6 +7,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "nevaeh5379",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -49,7 +50,7 @@
   "productName": "HaejeokRisuai",
   "mainBinaryName": "RisuAI",
   "version": "0.0.0",
-  "identifier": "co.aiclient.risu",
+  "identifier": "com.github.nevaeh5379.haejeokrisuai",
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxMDRCMTM1RTU4RDlGNDIKUldSQ240M2xOYkVFc1ZrbTFYWVRLVVpzbWFpL2p6alE2N1RUWGJUWE9iRUR2V2lVdWN6SWhTYlAK",
@@ -72,9 +73,10 @@
     "enableGTKAppId": true,
     "windows": [
       {
+        "create": false,
         "fullscreen": false,
         "resizable": true,
-        "title": "Risuai",
+        "title": "HaejeokRisuai",
         "width": 1024,
         "height": 768,
         "minWidth": 300,

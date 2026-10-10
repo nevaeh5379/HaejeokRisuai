@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { encodeInlayAssetBackup, type InlayAsset } from "./inlayCodec";
+import { encodeInlayAssetBackup, type InlayAsset } from "./inlayCodec.ts";
 import {
   restoreInlayBackupEntry,
   type InlayRestoreDependencies,
   type InlayRestoreResult,
   type InlayRestoreWrite,
-} from "./inlayRestore";
+} from "./inlayRestore.ts";
 
 interface TrackingWriteState {
   write: InlayRestoreDependencies["write"];

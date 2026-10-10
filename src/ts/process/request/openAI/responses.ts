@@ -4,7 +4,7 @@ import { language } from "src/lang";
 import { alertError } from "src/ts/alert";
 
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
-import { DEFAULT_OPENAI_RESPONSES_URL } from "@risuai/chat-core/openAIProvider.cjs";
+import { DEFAULT_OPENAI_RESPONSES_URL } from "@risuai/chat-core/openAIProvider.ts";
 import {
   addFetchLog,
   fetchNative,
@@ -12,7 +12,8 @@ import {
   textifyReadableStream,
 } from "src/ts/globalApi.svelte";
 import { simplifySchema } from "src/ts/util";
-import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
+import { safeStructuredClone } from "src/ts/polyfill";
+import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.ts";
 
 import { extractJSON, getOpenAIJSONSchema } from "../../templates/jsonSchema";
 import { callTool, decodeToolCall, encodeToolCall } from "../../mcp/mcp";

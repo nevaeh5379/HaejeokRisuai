@@ -1,4 +1,4 @@
-import { COLD_STORAGE_HEADER } from "./coldStorage";
+import { COLD_STORAGE_HEADER } from "./coldStorage.ts";
 
 export type CloneValue = <T>(value: T) => T;
 export type IdFactory = () => string;

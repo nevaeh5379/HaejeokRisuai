@@ -2,12 +2,11 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { encodePostgresScript, decodePostgresScript } =
-  require("./postgresJsonCodec.cjs") as {
-    encodePostgresScript: (script: string) => string;
-    decodePostgresScript: (script: string) => string;
-  };
-const {
+import {
+  encodePostgresScript,
+  decodePostgresScript,
+} from "./postgresJsonCodec.ts";
+import {
   DEFERRED_SETTING_KEYS,
   buildUpsertClause,
   decodePostgresJsonValue,
@@ -18,40 +17,8 @@ const {
   validateColdStorageKeys,
   validateColdStorageValue,
   validateSyncPayload,
-} = require(".//postgresStorage.cts") as {
-  DEFERRED_SETTING_KEYS: string[];
-  buildUpsertClause: (
-    table: string,
-    pkColumns: string[],
-    valueColumns: string[],
-    updateTimestamp?: boolean,
-  ) => string;
-  decodePostgresJsonValue: (value: unknown) => unknown;
-  encodePostgresJsonValue: (value: unknown) => unknown;
-  PostgresStorage: any;
-  PostgresPayloadError: new (message: string) => Error;
-  normalizeColdStorageKey: (key: unknown) => string;
-  validateColdStorageKeys: (keys: unknown) => string[];
-  validateColdStorageValue: (value: unknown) => unknown;
-  validateSyncPayload: (payload: unknown) => {
-    baseRevision: number;
-    messages: unknown[];
-  };
-};
-const { rebuildSettings, splitSetting } =
-  require(".//postgresSettingsCodec.cjs") as {
-    rebuildSettings: (
-      settings: { key: string }[],
-      values: Record<string, any>[],
-    ) => Record<string, any>;
-    splitSetting: (
-      key: string,
-      value: unknown,
-    ) => {
-      setting: { key: string };
-      values: Record<string, any>[];
-    };
-  };
+} from "./postgresStorage.ts";
+import { rebuildSettings, splitSetting } from "./postgresSettingsCodec.ts";
 
 describe("PostgreSQL storage sync finalize concurrency", () => {
   it("round trips plugin scripts containing NUL or unpaired surrogates", () => {

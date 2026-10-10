@@ -6,7 +6,7 @@ import os from "node:os";
 import { Readable } from "node:stream";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   isHex,
   hexToKey,
   keyToHex,
@@ -17,7 +17,7 @@ const {
   S3AssetStorage,
   AzureSqlAssetStorage,
   AssetStorageManager,
-} = require(".//assetStorage.cjs");
+} from "./assetStorage.ts";
 
 describe("AssetStorage utilities", () => {
   it("validates hex strings correctly", () => {
@@ -66,11 +66,11 @@ describe("AssetStorage utilities", () => {
 describe("asset read route streams", () => {
   it("uses node:fs streams instead of fs/promises for file-backed responses", () => {
     const source = fs.readFileSync(
-      path.join(process.cwd(), "server/node/server.cts"),
+      path.join(process.cwd(), "server/node/server.ts"),
       "utf8",
     );
-    const start = source.indexOf('app.get("/api/read"');
-    const end = source.indexOf('app.get("/api/remove"', start);
+    const start = source.indexOf('"/api/read"');
+    const end = source.indexOf('"/api/remove"', start);
     const route = source.slice(start, end);
 
     expect(route).toContain("fsSync.createReadStream(result.filePath");
@@ -81,7 +81,7 @@ describe("asset read route streams", () => {
 describe("bulk asset read route", () => {
   it("uses bounded prefetching before writing ordered asset packets", () => {
     const source = fs.readFileSync(
-      path.join(process.cwd(), "server/node/server.cts"),
+      path.join(process.cwd(), "server/node/server.ts"),
       "utf8",
     );
     const start = source.indexOf('"/api/read-bulk"');
@@ -783,6 +783,7 @@ describe("createWriteStream streaming support", () => {
       secretAccessKey: "test",
     });
 
+    s3Storage.client = await S3AssetStorage.createClient(s3Storage.config);
     s3Storage.client.send = (async (command: any) => {
       const cmdName = command.constructor.name;
       const cmdKey = command.input?.Key;
@@ -851,6 +852,7 @@ describe("createWriteStream streaming support", () => {
       },
       tmpDir,
     );
+    s3Storage.client = await S3AssetStorage.createClient(s3Storage.config);
     s3Storage.client.send = vi.fn(async () => ({})) as any;
     const eagerThumbnail = vi.spyOn(s3Storage, "eagerGenerateThumbnail");
 

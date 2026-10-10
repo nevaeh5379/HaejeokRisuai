@@ -1,24 +1,24 @@
 import { once } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
-import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore";
-import { decodeLegacyBackupDatabase } from "./legacyFormat";
+import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore.ts";
+import { decodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   LegacyBackupStreamingUnsupportedError,
   streamLegacyBackupDatabaseToSqlNdjson,
   type StreamLegacyBackupOptions,
-} from "./legacyStream";
+} from "./legacyStream.ts";
 import {
   iterateLegacyBackupSqlRecords,
   type LegacyBackupSqlRecord,
-} from "../legacyRecords";
-import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy";
+} from "../legacyRecords.ts";
+import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy.ts";
 import {
   parsePortableDatabaseStreamFragment,
   parsePortableDatabaseStreamManifest,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat";
-import type { BackupImportPlan } from "./importPlan";
+} from "../streamFormat.ts";
+import type { BackupImportPlan } from "./importPlan.ts";
 
 export interface PreparedLocalBackupDatabase {
   sourceRevision: number;

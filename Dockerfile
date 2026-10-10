@@ -44,13 +44,12 @@ FROM node:24-slim AS runtime
 WORKDIR /app
 
 COPY --from=prod-deps /runtime/node_modules /app/node_modules
-COPY --from=builder /app/server/node/package.json ./server/node/package.json
-COPY --from=builder /app/server/node/bootstrap.cjs ./server/node/bootstrap.cjs
-COPY --from=builder /app/server/node/dist ./server/node/dist
-COPY --from=builder /app/server/node/storage/postgres/*.sql ./server/node/storage/postgres/
-COPY --from=builder /app/server/node/storage/oracle/*.sql ./server/node/storage/oracle/
-COPY --from=builder /app/server/node/storage/azure/*.sql ./server/node/storage/azure/
-COPY --from=builder /app/packages/backup-core/dist ./packages/backup-core/dist
+COPY --from=builder /app/server/node ./server/node
+COPY --from=builder /app/packages/backup-core/src ./packages/backup-core/src
+COPY --from=builder /app/packages/backup-core/package.json ./packages/backup-core/package.json
+COPY --from=builder /app/packages/protocol/src ./packages/protocol/src
+COPY --from=builder /app/packages/protocol/*.ts /app/packages/protocol/package.json /app/packages/protocol/settings.json ./packages/protocol/
+COPY --from=builder /app/packages/chat-core ./packages/chat-core
 COPY --from=builder /app/dist ./dist
 
 # Fail the image build if any native or vendor-specific runtime package is absent.
@@ -59,6 +58,6 @@ RUN node -e "for (const id of Object.keys(require('./server/node/package.json').
 ENV NODE_ENV=production
 EXPOSE 6001
 
-CMD ["node", "server/node/bootstrap.cjs"]
+CMD ["node", "server/node/server.ts"]
 
 # ------------------------------------------------------------------------------------------

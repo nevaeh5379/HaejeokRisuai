@@ -8,13 +8,13 @@ export interface NativeSqliteStatement {
 export interface NativeSqlitePlugin {
   open(options: { database: string }): Promise<void>;
   close(): Promise<void>;
-  query(options: {
-    sql: string;
-    bind?: unknown[];
-  }): Promise<{ values: Record<string, unknown>[] }>;
-  queryBatch(options: {
+  queryStreamOpen(options: {
     queries: NativeSqliteStatement[];
-  }): Promise<{ results: Record<string, unknown>[][] }>;
+  }): Promise<{ id: string }>;
+  queryStreamRead(options: {
+    id: string;
+  }): Promise<{ data: string; done: boolean }>;
+  queryStreamClose(options: { id: string }): Promise<void>;
   beginTransaction(options: {
     expectedRevision?: number | null;
   }): Promise<{ id: string }>;
@@ -24,7 +24,9 @@ export interface NativeSqlitePlugin {
   }): Promise<{ statements: number }>;
   commitTransaction(options: { id: string }): Promise<void>;
   rollbackTransaction(options: { id: string }): Promise<void>;
-  restoreOpen(options: { expectedRevision: number }): Promise<{ id: string }>;
+  restoreOpen(
+    options: { expectedRevision: number } | { transactionId: string },
+  ): Promise<{ id: string }>;
   restoreAppend(options: { id: string; data: string }): Promise<void>;
   restoreFinish(options: { id: string }): Promise<{ statements: number }>;
   restoreAbort(options: { id: string }): Promise<void>;

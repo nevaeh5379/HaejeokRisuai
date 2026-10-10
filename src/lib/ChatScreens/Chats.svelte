@@ -8,6 +8,8 @@
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { get } from 'svelte/store';
     import { getAbsoluteChatMessageIndex } from 'src/ts/chatLoadPages';
+    import { illustrationDisplayLayout } from 'src/ts/process/illustration/illustrationDisplay';
+    import isEqual from 'lodash/isEqual';
     
     const getCurrentChatRoomId = () => {
         if (targetCharacterIndex < 0 || targetChatIndex < 0) return null;
@@ -74,6 +76,7 @@
         signature: RenderSignature
         instance: ChatInstance
         element: HTMLDivElement
+        messageState: { value: Message }
     }
     const renderEntries = new Map<string, RenderEntry>();
 
@@ -94,7 +97,7 @@
         left.isComment === right.isComment &&
         left.activeStreaming === right.activeStreaming &&
         left.rerollIcon === right.rerollIcon &&
-        left.generationInfo === right.generationInfo;
+        isEqual(left.generationInfo, right.generationInfo);
 
     const clearChatBody = () => {
         renderEntries.forEach(({ instance }) => {
@@ -149,7 +152,8 @@
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const rerollIcon = message.role === 'char' || message.role === 'user';
             const signature: RenderSignature = {
-                data: activeStreamingMessage ? '' : message.data,
+                // Image tokens change on completion/reroll without changing narrative text.
+                data: activeStreamingMessage ? '' : illustrationDisplayLayout(message.data, message.illustrations).display,
                 idx: i,
                 scriptIdx,
                 role: message.role,
@@ -181,10 +185,12 @@
                         chatBody.prepend(element);
                     }
                 }
+                let messageState = $state({ value: message });
                 const instance = mount(Chat, {
                     target: element,
                     props: {
-                        message: message.data,
+                        get message() { return messageState.value.data; },
+                        get sourceMessage() { return messageState.value; },
                         isLastMemory: false,
                         idx: i,
                         scriptIdx,
@@ -195,7 +201,7 @@
                         rerollIcon,
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
-                        messageGenerationInfo: message.generationInfo,
+                        get messageGenerationInfo() { return messageState.value.generationInfo; },
                         role: message.role,
                         name: signature.name,
                         isComment: signature.isComment,
@@ -208,10 +214,13 @@
                         targetChatIndex,
                     },
                 })
-                entry = { signature, instance, element };
+                entry = { signature, instance, element, messageState };
                 renderEntries.set(key, entry);
             } else {
-                entry.instance.updateStreamingDisplay?.({
+                // Preserve Chat/ChatBody while SQL hydration replaces the resident message.
+                entry.messageState.value = message;
+                // Finished messages must not receive streaming-state writes on every hydration.
+                if (activeStreamingMessage) entry.instance.updateStreamingDisplay?.({
                     isOptimizedStreamingMessage: activeStreamingMessage,
                     streamingOptimizationMode: performanceMode,
                     rawStreamingText: message.data,
