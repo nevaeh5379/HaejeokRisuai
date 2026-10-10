@@ -13,6 +13,8 @@ mod linux_wayland;
 mod macos_vibrancy;
 mod sqlite_transaction;
 #[cfg(target_os = "windows")]
+mod windows_installed_app;
+#[cfg(target_os = "windows")]
 mod windows_titlebar;
 
 #[tauri::command]
@@ -23,6 +25,18 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn get_safe_mode() -> bool {
     std::env::var("HAEJEOK_SAFE_MODE").as_deref() == Ok("1")
+}
+
+#[tauri::command]
+fn get_app_display_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        windows_installed_app::current_display_name()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "HaejeokRisuai"
+    }
 }
 
 use base64::{engine::general_purpose, Engine as _};
@@ -1455,6 +1469,8 @@ fn main() {
             }
         }));
         builder = builder.setup(|app| {
+            #[cfg(target_os = "windows")]
+            windows_installed_app::sync_display_name();
             desktop_startup::start(app.handle());
             Ok(())
         });
@@ -1496,6 +1512,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_safe_mode,
+            get_app_display_name,
             native_request,
             check_auth,
             check_requirements_local,

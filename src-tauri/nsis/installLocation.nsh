@@ -1,3 +1,6 @@
+!include "${__FILEDIR__}\installedAppName.nsh"
+!include "${__FILEDIR__}\shortcuts.nsh"
+
 ; Resolve a previous install only when its recorded uninstaller still exists.
 ; Keep the reinstall page's $R0-$R9 and working registers intact.
 !macro HaejeokInstallLocationFunctions

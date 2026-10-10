@@ -1,7 +1,8 @@
 ; Upstream: tauri-apps/tauri, tag tauri-cli-v2.11.4 (MIT; see LICENSE_MIT).
 ; https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi
 ; Local changes: Programs default and update relocation, publisher-independent
-; install lookup, and product-named data removal when explicitly selected.
+; install lookup, localized installed-app name, and product-named data removal
+; when explicitly selected.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -81,6 +82,7 @@ Var WixMode
 Var OldMainBinaryName
 Var PreviousInstallDir
 Var PreviousMainBinaryName
+Var ShortcutName
 
 !insertmacro HaejeokInstallLocationFunctions
 
@@ -481,6 +483,13 @@ FunctionEnd
 {{/each}}
 
 Function .onInit
+  ; Use the Windows UI language only when creating new shortcuts. Existing
+  ; shortcut names are preserved during updates, even if the language changed.
+  Push $0
+  System::Call 'kernel32::GetUserDefaultUILanguage() i.r0'
+  !insertmacro HaejeokGetAppDisplayName $ShortcutName $0
+  Pop $0
+
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
@@ -723,7 +732,10 @@ Section Install
   WriteRegStr SHCTX "${UNINSTKEY}" "MainBinaryName" "${MAINBINARYNAME}.exe"
 
   ; Registry information for add/remove programs
-  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "${PRODUCTNAME}"
+  Push $0
+  System::Call 'kernel32::GetUserDefaultUILanguage() i.r0'
+  !insertmacro HaejeokWriteInstalledAppName $0
+  Pop $0
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayIcon" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\""
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "${MANUFACTURER}"
@@ -851,27 +863,14 @@ Section Uninstall
 
     ; Remove start menu shortcut
     !insertmacro MUI_STARTMENU_GETFOLDER Application $AppStartMenuFolder
-    !insertmacro IsShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    Pop $0
-    ${If} $0 = 1
-      !insertmacro UnpinShortcut "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk"
-      Delete "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk"
+    ${If} $AppStartMenuFolder != ""
+      !insertmacro HaejeokRemoveShortcuts "$SMPROGRAMS\$AppStartMenuFolder"
       RMDir "$SMPROGRAMS\$AppStartMenuFolder"
     ${EndIf}
-    !insertmacro IsShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    Pop $0
-    ${If} $0 = 1
-      !insertmacro UnpinShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk"
-      Delete "$SMPROGRAMS\${PRODUCTNAME}.lnk"
-    ${EndIf}
+    !insertmacro HaejeokRemoveShortcuts "$SMPROGRAMS"
 
     ; Remove desktop shortcuts
-    !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    Pop $0
-    ${If} $0 = 1
-      !insertmacro UnpinShortcut "$DESKTOP\${PRODUCTNAME}.lnk"
-      Delete "$DESKTOP\${PRODUCTNAME}.lnk"
-    ${EndIf}
+    !insertmacro HaejeokRemoveShortcuts "$DESKTOP"
   ${EndIf}
 
   ; Remove registry information for add/remove programs
@@ -945,26 +944,16 @@ Function un.SkipIfPassive
 FunctionEnd
 
 Function CreateOrUpdateStartMenuShortcut
-  ; We used to use product name as MAINBINARYNAME
-  ; migrate old shortcuts to target the new MAINBINARYNAME
+  ; Update either language's existing links without changing their names.
   StrCpy $R0 0
 
   ${If} $PreviousInstallDir == ""
     StrCpy $PreviousInstallDir $INSTDIR
   ${EndIf}
-  !insertmacro IsShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$PreviousInstallDir\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro HaejeokSetShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    StrCpy $R0 1
+  ${If} $AppStartMenuFolder != ""
+    !insertmacro HaejeokUpdateShortcuts "$SMPROGRAMS\$AppStartMenuFolder"
   ${EndIf}
-
-  !insertmacro IsShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$PreviousInstallDir\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro HaejeokSetShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    StrCpy $R0 1
-  ${EndIf}
+  !insertmacro HaejeokUpdateShortcuts "$SMPROGRAMS"
 
   ${If} $R0 = 1
     Return
@@ -981,24 +970,20 @@ Function CreateOrUpdateStartMenuShortcut
 
   !if "${STARTMENUFOLDER}" != ""
     CreateDirectory "$SMPROGRAMS\$AppStartMenuFolder"
-    CreateShortcut "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk"
+    !insertmacro HaejeokCreateShortcut "$SMPROGRAMS\$AppStartMenuFolder\$ShortcutName.lnk"
   !else
-    CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+    !insertmacro HaejeokCreateShortcut "$SMPROGRAMS\$ShortcutName.lnk"
   !endif
 FunctionEnd
 
 Function CreateOrUpdateDesktopShortcut
-  ; We used to use product name as MAINBINARYNAME
-  ; migrate old shortcuts to target the new MAINBINARYNAME
+  ; Update either language's existing links without changing their names.
+  StrCpy $R0 0
   ${If} $PreviousInstallDir == ""
     StrCpy $PreviousInstallDir $INSTDIR
   ${EndIf}
-  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$PreviousInstallDir\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro HaejeokSetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  !insertmacro HaejeokUpdateShortcuts "$DESKTOP"
+  ${If} $R0 = 1
     Return
   ${EndIf}
 
@@ -1011,6 +996,5 @@ Function CreateOrUpdateDesktopShortcut
     ${EndIf}
   ${EndIf}
 
-  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-  !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
+  !insertmacro HaejeokCreateShortcut "$DESKTOP\$ShortcutName.lnk"
 FunctionEnd
