@@ -104,7 +104,7 @@ function locationOf(sourceFile: ts.SourceFile, node: ts.Node) {
   return `${sourceFile.fileName}:${line + 1}:${character + 1}`;
 }
 export function checkServerStorageMutations(
-  filePath = resolve("server/node/server.cts"),
+  filePath = resolve("server/node/server.ts"),
 ) {
   const source = readFileSync(filePath, "utf8");
   const sourceFile = ts.createSourceFile(

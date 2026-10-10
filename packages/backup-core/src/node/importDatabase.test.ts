@@ -2,14 +2,10 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { LegacyBackupSqlRecord } from "../legacyRecords";
-import {
-  prepareLocalBackupDatabaseImport,
-} from "./importDatabase";
-import {
-  encodeLegacyBackupDatabase,
-} from "./legacyFormat";
-import type { BackupImportPlan } from "./importPlan";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
+import { prepareLocalBackupDatabaseImport } from "./importDatabase.ts";
+import { encodeLegacyBackupDatabase } from "./legacyFormat.ts";
+import type { BackupImportPlan } from "./importPlan.ts";
 
 const roots: string[] = [];
 
@@ -68,9 +64,9 @@ function streamPlan(
 
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) =>
-      fs.rm(root, { recursive: true, force: true }),
-    ),
+    roots
+      .splice(0)
+      .map((root) => fs.rm(root, { recursive: true, force: true })),
   );
 });
 
@@ -270,7 +266,9 @@ describe("prepareLocalBackupDatabaseImport", () => {
       .split("\n")
       .map((line) => JSON.parse(line));
 
-    expect(records.filter((record) => record.type === "branch")).toHaveLength(2);
+    expect(records.filter((record) => record.type === "branch")).toHaveLength(
+      2,
+    );
     expect(
       records.find((record) => record.type === "active-branch"),
     ).toMatchObject({ chatId: "chat-1", branchId: "reroll" });

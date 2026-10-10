@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mergeDatabaseChanges } from "./nodeRealtimeChangeQueue";
-import { parseRealtimeEvent } from "../../../packages/protocol/dist/realtimeEvents.cjs";
+import { parseRealtimeEvent } from "../../../packages/protocol/src/realtimeEvents.ts";
 
 /**
  * The SSE/WebSocket boundary is untrusted, so the frontend must narrow
@@ -9,6 +9,26 @@ import { parseRealtimeEvent } from "../../../packages/protocol/dist/realtimeEven
  * 큐에 넣기 전 공유 프로토콜 파서로 좁혀야 합니다.
  */
 describe("realtime event boundary parsing", () => {
+  it("accepts bounded illustration progress targets and rejects malformed notifications", () => {
+    const target = {
+      characterId: "char",
+      chatId: "chat",
+      messageId: "message",
+      illustrationId: "slot",
+    };
+    expect(parseRealtimeEvent("illustration-progress", target)).toEqual({
+      event: "illustration-progress",
+      data: target,
+    });
+    for (const bad of [
+      { ...target, messageId: "" },
+      { ...target, chatId: "x".repeat(257) },
+      { ...target, illustrationId: "bad\n" },
+      { ...target, characterId: 42 },
+    ]) {
+      expect(parseRealtimeEvent("illustration-progress", bad)).toBeNull();
+    }
+  });
   it("parses a database-change broadcast into a queueable change", () => {
     const frame = parseRealtimeEvent("database-change", {
       eventId: 12,

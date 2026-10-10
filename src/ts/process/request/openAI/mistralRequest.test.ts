@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MISTRAL_API_URL } from "@risuai/chat-core/mistralProvider.cjs";
+import { DEFAULT_MISTRAL_API_URL } from "@risuai/chat-core/mistralProvider.ts";
 import {
   resolveMistralRequestUrl,
   shouldUseNodeMistralTransport,

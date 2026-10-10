@@ -5,11 +5,11 @@ import path from "node:path";
 import os from "node:os";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   keyToHex,
   AzureSqlAssetStorage,
   AssetStorageManager,
-} = require("../assetStorage.cjs");
+} from "../assetStorage.ts";
 
 // In-memory mssql mock. The AzureSqlAssetStorage talks to a tiny store backed
 // by Map<string, Buffer> and exposes the subset of the mssql API surface that

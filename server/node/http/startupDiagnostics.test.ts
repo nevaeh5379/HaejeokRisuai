@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   StartupTimeoutError,
   describeOracleTarget,
   describePostgresTarget,
@@ -10,26 +10,7 @@ const {
   runStartupStage,
   sanitizeSensitiveText,
   startupErrorHint,
-} = require(".//startupDiagnostics.cjs") as {
-  StartupTimeoutError: new (
-    scope: string,
-    operation: string,
-    timeoutMs: number,
-  ) => Error;
-  describeOracleTarget: (tnsAlias: string, walletPath?: string) => string;
-  describePostgresTarget: (connectionString: string) => string;
-  readStorageStartupSettings: (env: Record<string, string>) => {
-    startupTimeoutMs: number;
-    connectTimeoutMs: number;
-    heartbeatMs: number;
-  };
-  runStartupStage: <T>(
-    options: Record<string, unknown>,
-    task: () => Promise<T>,
-  ) => Promise<T>;
-  sanitizeSensitiveText: (value: unknown) => string;
-  startupErrorHint: (error: { code?: string; message?: string }) => string;
-};
+} from "./startupDiagnostics.ts";
 
 describe("server startup diagnostics", () => {
   it("describes PostgreSQL targets without credentials or unrelated query parameters", () => {

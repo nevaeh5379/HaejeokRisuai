@@ -177,11 +177,20 @@ export async function readCachedInlay(id: string): Promise<InlayAsset | null> {
   return cached;
 }
 
-export async function writeCachedInlay(id: string, asset: InlayAsset) {
-  rememberInCache(id, asset);
+/**
+ * Writes an inlay to persistent browser cache before adding it to the bounded memory cache.
+ *
+ * 한국어: 브라우저 영구 캐시에 인레이를 저장한 뒤 제한된 메모리 캐시에 추가하는 함수.
+ *
+ * @param id - Inlay cache key. / 인레이 캐시 키.
+ * @param asset - Media content and metadata. / 미디어 내용·메타데이터.
+ * @param durable - Propagates persistent-storage failure instead of keeping a memory-only result. / 메모리에만 보관하지 않고 영구 저장 실패를 전달할지 여부.
+ */
+export async function writeCachedInlay(id: string, asset: InlayAsset, durable = false) {
   try {
     await cacheStorage.setItem(id, asset);
-  } catch {}
+  } catch (error) { if (durable) throw error; }
+  rememberInCache(id, asset);
 }
 
 export async function removeCachedInlay(id: string) {

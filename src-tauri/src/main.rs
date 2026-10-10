@@ -1,11 +1,19 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(desktop)]
+mod app_data_migration;
+#[cfg(desktop)]
+mod desktop_startup;
+#[cfg(desktop)]
+mod legacy_instance;
 #[cfg(target_os = "linux")]
 mod linux_wayland;
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
 mod sqlite_transaction;
+#[cfg(target_os = "windows")]
+mod windows_installed_app;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
 
@@ -17,6 +25,18 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn get_safe_mode() -> bool {
     std::env::var("HAEJEOK_SAFE_MODE").as_deref() == Ok("1")
+}
+
+#[tauri::command]
+fn get_app_display_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        windows_installed_app::current_display_name()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "HaejeokRisuai"
+    }
 }
 
 use base64::{engine::general_purpose, Engine as _};
@@ -824,7 +844,7 @@ fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> 
 }
 
 #[cfg(target_os = "macos")]
-fn install_haejeok_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
+fn install_haejeok_app_menu(app: &AppHandle) -> tauri::Result<()> {
     let korean = app_menu_uses_korean();
     let label = |english, korean_text| app_menu_label(korean, english, korean_text);
     let package = app.package_info();
@@ -1434,7 +1454,27 @@ fn main() {
         linux_wayland::app_icon::register();
     }
 
+    let mut context = tauri::generate_context!();
+    #[cfg(desktop)]
+    desktop_startup::configure_directories(&mut context);
+
     let mut builder = tauri::Builder::default();
+
+    // Reserve the new identifier before starting any migration work.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }));
+        builder = builder.setup(|app| {
+            #[cfg(target_os = "windows")]
+            windows_installed_app::sync_display_name();
+            desktop_startup::start(app.handle());
+            Ok(())
+        });
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -1448,37 +1488,19 @@ fn main() {
 
     #[cfg(target_os = "linux")]
     {
-        builder = builder.plugin(linux_wayland::init()).setup(|app| {
-            linux_wayland::create_main_window(app.handle())?;
-            Ok(())
-        });
+        builder = builder.plugin(linux_wayland::init());
     }
 
     #[cfg(target_os = "macos")]
     {
-        builder = builder
-            .setup(|app| {
-                install_haejeok_app_menu(app)?;
-                Ok(())
-            })
-            .on_menu_event(|app, event| {
-                handle_haejeok_app_menu(app, event.id().as_ref());
-            });
-    }
-
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
-        }));
+        builder = builder.on_menu_event(|app, event| {
+            handle_haejeok_app_menu(app, event.id().as_ref());
+        });
     }
 
     builder
         .manage(SidebarMenuWindowState::default())
         .manage(sqlite_transaction::SqliteStreamTransactionState::default())
-        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -1490,6 +1512,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_safe_mode,
+            get_app_display_name,
             native_request,
             check_auth,
             check_requirements_local,
@@ -1518,7 +1541,7 @@ fn main() {
             hide_sidebar_menu_window,
             close_sidebar_menu_window
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application")
 }
 

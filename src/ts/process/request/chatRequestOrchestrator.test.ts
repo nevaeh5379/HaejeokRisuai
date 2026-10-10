@@ -35,7 +35,7 @@ vi.mock("src/ts/stores/domain/presetStore.svelte", () => ({
   },
 }));
 
-vi.mock("@risuai/chat-core/requestLoop.cjs", () => ({
+vi.mock("@risuai/chat-core/requestLoop.ts", () => ({
   executeChatRequestFallbacks: mocks.executeChatRequestFallbacks,
 }));
 

@@ -118,3 +118,22 @@ export function isLocalNetworkUrl(url: string): boolean {
     return false;
   }
 }
+
+/** A locally opened web app can use a CORS-enabled local model directly. */
+export function canUseBrowserLocalNetwork(
+  url: string,
+  appUrl: string,
+): boolean {
+  try {
+    const app = new URL(appUrl);
+    const target = new URL(url);
+    return (
+      ["http:", "https:"].includes(app.protocol) &&
+      ["http:", "https:"].includes(target.protocol) &&
+      ["localhost", "127.0.0.1", "::1"].includes(normalizeHost(app.hostname)) &&
+      isLocalNetworkHost(target.hostname)
+    );
+  } catch {
+    return false;
+  }
+}

@@ -1,14 +1,24 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
-import type { LocalBackupImportUploadState } from "../api";
+import type { LocalBackupImportUploadState } from "../api.ts";
 
 export const DEFAULT_BACKUP_IMPORT_REQUEST_BYTES = 8 * 1024 * 1024;
 
 export class BackupImportUploadError extends Error {
+  readonly code:
+    | "invalid_job_id"
+    | "invalid_offset"
+    | "invalid_total_bytes"
+    | "upload_request_too_large"
+    | "upload_offset_mismatch"
+    | "upload_incomplete"
+    | "upload_finalized"
+    | "upload_error";
+  readonly expectedOffset?: number;
   constructor(
     message: string,
-    readonly code:
+    code:
       | "invalid_job_id"
       | "invalid_offset"
       | "invalid_total_bytes"
@@ -17,9 +27,11 @@ export class BackupImportUploadError extends Error {
       | "upload_incomplete"
       | "upload_finalized"
       | "upload_error" = "upload_error",
-    readonly expectedOffset?: number,
+    expectedOffset?: number,
   ) {
     super(message);
+    this.code = code;
+    this.expectedOffset = expectedOffset;
     this.name = "BackupImportUploadError";
   }
 }
@@ -56,10 +68,12 @@ export class BackupImportUploadStore {
   private readonly sealed = new Set<string>();
   private readonly locks = new Map<string, Promise<void>>();
 
+  private readonly maxRequestBytes: any;
   constructor(
     rootPath: string,
-    private readonly maxRequestBytes = DEFAULT_BACKUP_IMPORT_REQUEST_BYTES,
+    maxRequestBytes = DEFAULT_BACKUP_IMPORT_REQUEST_BYTES,
   ) {
+    this.maxRequestBytes = maxRequestBytes;
     this.rootPath = resolve(rootPath);
     if (!Number.isSafeInteger(maxRequestBytes) || maxRequestBytes <= 0) {
       throw new TypeError(

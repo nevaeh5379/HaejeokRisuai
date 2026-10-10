@@ -3,7 +3,7 @@ import {
   filterEssentialBackupAssetKeys,
   findBackupAssetInfo,
   isEssentialBackupAsset,
-} from "./assetScope";
+} from "./assetScope.ts";
 
 function sampleMap() {
   return new Map([

@@ -1,4 +1,4 @@
-export type TokenSource = Record<string, string | null>;
+export type TokenSource = Record<string, string | null | undefined>;
 
 interface DeferredTokenCalculatorOptions<T extends TokenSource> {
   calculate: (text: string) => Promise<number>;
@@ -69,7 +69,7 @@ export function createDeferredTokenCalculator<T extends TokenSource>({
       if (appliedSource?.[key] === text && appliedTokens) {
         result[key] = appliedTokens[key];
       } else {
-        result[key] = text === null ? null : await calculate(text);
+        result[key] = text == null ? null : await calculate(text);
       }
     }
 

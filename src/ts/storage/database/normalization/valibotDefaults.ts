@@ -44,6 +44,10 @@ export function defaultLooseObject<const TEntries extends ObjectEntries>(
   return fallback(nullish(schema, createDefault), createDefault);
 }
 
+/**
+ * @deprecated Use `fallback(picklist(options), value)` directly or prefer standard Valibot composition.
+ * 한국어: `fallback(picklist(options), value)`를 직접 사용하거나 표준 Valibot 합성을 권장.
+ */
 export function defaultPicklist<
   const TOptions extends readonly [
     string | number | bigint,

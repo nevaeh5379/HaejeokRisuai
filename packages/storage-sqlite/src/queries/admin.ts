@@ -6,7 +6,7 @@ import type {
   NodePostgresTableData,
   NodePostgresTableInfo,
   NodePostgresTokenUsage,
-} from "@risuai/protocol/databaseApi.cjs";
+} from "@risuai/protocol/databaseApi.ts";
 import type { SqliteSelectRowSets, SqliteSelectRows } from "../types";
 import { normalizeLimit } from "../util";
 

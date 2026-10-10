@@ -1,9 +1,9 @@
 import type {
   ChatFailureResponse,
   ChatSuccessResponse,
-} from "@risuai/chat-core/types.cjs";
-import { resolveProviderRoute } from "@risuai/chat-core/providerRouting.cjs";
-import type { NodeProviderTransportResult } from "../../../../packages/protocol/providerExecution.cjs";
+} from "@risuai/chat-core/types.ts";
+import { resolveProviderRoute } from "@risuai/chat-core/providerRouting.ts";
+import type { NodeProviderTransportResult } from "../../../../packages/protocol/providerExecution.ts";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
 import { NodeStorage } from "../../storage/files/nodeStorage";

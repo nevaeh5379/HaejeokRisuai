@@ -1,4 +1,4 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import type {
   botPreset,
   character,
@@ -14,7 +14,7 @@ import type {
 } from "../../database/schema";
 import type { RisuModule } from "../../../process/modules";
 import { v4 as uuidv4 } from "uuid";
-import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
+import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import type {
   ISqlStorage,
   BotPresetSummary,

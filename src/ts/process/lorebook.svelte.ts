@@ -93,6 +93,12 @@ export async function loadLoreBookV3Prompt(
     chat?: Chat;
     moduleIds?: string[];
     chatVariables?: Record<string, string>;
+    /**
+     * Evaluates historical illustration lore without writing persistent activation chat variables.
+     *
+     * 한국어: 활성화 관련 영구 채팅 변수를 기록하지 않고 과거 삽화 장면의 로어를 평가하는 옵션.
+     */
+    readOnly?: boolean;
   },
 ) {
   const resolved = target
@@ -863,7 +869,7 @@ export async function loadLoreBookV3Prompt(
         });
         activatedIndexes.push(i);
 
-        if (keepActivateAfterMatch) {
+        if (keepActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_ka_" +
               (fullLore[i].id ??
@@ -872,7 +878,7 @@ export async function loadLoreBookV3Prompt(
             chatVarTarget,
           );
         }
-        if (dontActivateAfterMatch) {
+        if (dontActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_da_" +
               (fullLore[i].id ??

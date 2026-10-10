@@ -3,14 +3,14 @@ import type {
   NodeChatContinuationRequest,
   NodeChatGenerationPlan,
   NodeChatPlanRequest,
-} from "@risuai/protocol/chatExecutor.cjs";
+} from "@risuai/protocol/chatExecutor.ts";
 import type {
   NodeProviderCapabilities,
   NodeProviderExecutionRequest,
   NodeProviderExecutionResult,
   NodeProviderTransportRequest,
   NodeProviderTransportResult,
-} from "@risuai/protocol/providerExecution.cjs";
+} from "@risuai/protocol/providerExecution.ts";
 import type {
   LoreMatchBatchRequest,
   LoreMatchBatchResponse,
@@ -28,7 +28,7 @@ import type {
   VectorIndexStatusResponse,
   VectorIndexUpsertRequest,
   VectorSearchMetric,
-} from "@risuai/protocol/compute.cjs";
+} from "@risuai/protocol/compute.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export type NodeVectorCacheStats = {

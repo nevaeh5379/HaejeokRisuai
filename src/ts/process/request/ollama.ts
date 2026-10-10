@@ -7,7 +7,7 @@ import { LLMFormat } from "../../model/modellist";
 import {
   DEFAULT_OLLAMA_CLOUD_CHAT_URL,
   resolveOllamaCloudTransportUrl,
-} from "@risuai/chat-core/ollamaProvider.cjs";
+} from "@risuai/chat-core/ollamaProvider.ts";
 import { unstringlizeChat } from "../stringlize";
 import { requestClaude } from "./anthropic";
 import type {

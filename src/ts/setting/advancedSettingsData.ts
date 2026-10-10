@@ -31,6 +31,13 @@ export const advancedSettingsItems: SettingItem[] = [
     options: { level: "warning" },
   },
 
+  {
+    id: "adv.chatIllustrations",
+    type: "check",
+    labelKey: "useChatIllustrations",
+    bindKey: "useChatIllustrations",
+  },
+
   // LoreBook Settings
   {
     id: "adv.lbDepth",

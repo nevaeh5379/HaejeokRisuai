@@ -1,5 +1,5 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import { endsWithCompletionPunctuation } from "@risuai/chat-core/finalization.cjs";
+import { endsWithCompletionPunctuation } from "@risuai/chat-core/finalization.ts";
 import { get, writable, type Writable } from "svelte/store";
 import {
   resolveChatTarget,

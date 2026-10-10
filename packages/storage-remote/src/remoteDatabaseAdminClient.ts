@@ -2,7 +2,7 @@ import type {
   DbVendor,
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
-} from "@risuai/protocol/storageConfig.cjs";
+} from "@risuai/protocol/storageConfig.ts";
 import type {
   NodePostgresRevision,
   NodePostgresRevisionDetails,
@@ -14,7 +14,7 @@ import type {
   NodePostgresCharacterSearchResult,
   NodePostgresTableInfo,
   NodePostgresTableData,
-} from "@risuai/protocol/databaseApi.cjs";
+} from "@risuai/protocol/databaseApi.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export type RemoteDatabaseConfig = NodePostgresServerConfig & {
