@@ -91,10 +91,24 @@ function decodeUtf16(value: string): string {
 }
 
 function isSqlTextSafe(value: string): boolean {
-  if (value.includes("\0")) return false;
-  // TextEncoder replaces unpaired surrogates. A round trip therefore also
-  // acts as the portability check shared by SQLite, PostgreSQL, and Oracle.
-  return new TextDecoder().decode(new TextEncoder().encode(value)) === value;
+  // Match TextEncoder's surrogate handling without allocating another copy
+  // of a potentially large prompt just to check its portability.
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0) return false;
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+
+/** Character count of the actual text bind, including the UTF-16 fallback. */
+export function sqlTextBindLength(value: string): number {
+  return isSqlTextSafe(value)
+    ? value.length
+    : 4 * Math.ceil((value.length * 2) / 3);
 }
 
 function encodedText(value: string): {

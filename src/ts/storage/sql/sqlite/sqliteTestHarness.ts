@@ -342,6 +342,10 @@ export function makeCapacitorStorage(
   const log = new QueryLog();
   const db = new NodeSqliteDatabase(database, log);
   let transactionId: string | null = null;
+  const statementStreams = new Map<
+    string,
+    { transactionId: string; chunks: Buffer[] }
+  >();
   const bridgeStats = { queryStreamCalls: 0 };
   const streams = new Map<
     string,
@@ -444,6 +448,46 @@ export function makeCapacitorStorage(
         db.run(statement.sql, statement.bind ?? []);
       }
       return { statements: statements.length };
+    },
+    restoreOpen: async ({ transactionId: id }: { transactionId: string }) => {
+      if (id !== transactionId) throw new Error("Inactive transaction");
+      const streamId = `statements-${++nextStreamId}`;
+      statementStreams.set(streamId, { transactionId: id, chunks: [] });
+      return { id: streamId };
+    },
+    restoreAppend: async ({ id, data }: { id: string; data: string }) => {
+      const stream = statementStreams.get(id);
+      if (!stream) throw new Error("Unknown statement stream");
+      stream.chunks.push(Buffer.from(data, "base64"));
+    },
+    restoreFinish: async ({ id }: { id: string }) => {
+      const stream = statementStreams.get(id);
+      if (!stream || stream.transactionId !== transactionId)
+        throw new Error("Inactive transaction");
+      try {
+        // Test-only decoder. The Android parser consumes the pipe statement
+        // by statement; this mock checks the real SQL and transaction contract.
+        const statements = JSON.parse(
+          Buffer.concat(stream.chunks).toString("utf8"),
+        );
+        for (const statement of statements)
+          db.run(statement.sql, statement.bind);
+        return { statements: statements.length };
+      } catch (error) {
+        db.run("ROLLBACK");
+        transactionId = null;
+        throw error;
+      } finally {
+        statementStreams.delete(id);
+      }
+    },
+    restoreAbort: async ({ id }: { id: string }) => {
+      const stream = statementStreams.get(id);
+      statementStreams.delete(id);
+      if (stream && stream.transactionId === transactionId) {
+        db.run("ROLLBACK");
+        transactionId = null;
+      }
     },
     commitTransaction: async ({ id }: { id: string }) => {
       if (id !== transactionId) throw new Error("Inactive transaction");

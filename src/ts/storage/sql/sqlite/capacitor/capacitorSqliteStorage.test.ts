@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { makeCapacitorStorage } from "../sqliteTestHarness";
 import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
@@ -7,8 +7,163 @@ import { presetTemplate } from "../../../presets/presetDefaults";
 import { installStartupData } from "../../../database/databaseLifecycle";
 import { settingsStore } from "../../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../../stores/domain/deferredSettingsLoader";
+import { createEmptySqlCommit } from "../../sqlCommit";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 
 describe("CapacitorSqliteStorage", () => {
+  it("flushes small statements before JSON escapes would overflow the batch", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec("CREATE TABLE probe (id INTEGER PRIMARY KEY, value TEXT)");
+    const storage = makeCapacitorStorage(database);
+    const plugin = (storage as any).sqlitePlugin;
+    const batchSizes: number[] = [];
+    const executeBatch = plugin.executeBatch.bind(plugin);
+    plugin.executeBatch = async (options: any) => {
+      batchSizes.push(JSON.stringify(options).length);
+      return executeBatch(options);
+    };
+    const value = '\u0001\\"\b\t\n\f\r한😀'.repeat(1_024);
+    await (storage as any).runNativeTransaction(null, async (execute: any) => {
+      for (let id = 0; id < 50; id++)
+        await execute("INSERT INTO probe VALUES (?, ?)", [id, value]);
+    });
+    const rows = database.prepare("SELECT value FROM probe").all();
+    expect(rows).toHaveLength(50);
+    expect(rows.every((row) => row.value === value)).toBe(true);
+    expect(batchSizes.length).toBeGreaterThan(1);
+    expect(Math.max(...batchSizes)).toBeLessThanOrEqual(256 * 1024);
+    database.close();
+  });
+
+  it("bounds escaped bridge requests and streams oversized individual binds without changing their values", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const storage = makeCapacitorStorage(database);
+    const plugin = (storage as any).sqlitePlugin;
+    const batchSizes: number[] = [];
+    const chunkSizes: number[] = [];
+    const executeBatch = plugin.executeBatch.bind(plugin);
+    const append = plugin.restoreAppend.bind(plugin);
+    plugin.executeBatch = async (options: any) => {
+      batchSizes.push(JSON.stringify(options).length);
+      return executeBatch(options);
+    };
+    plugin.restoreAppend = async (options: any) => {
+      chunkSizes.push(options.data.length);
+      return append(options);
+    };
+    const large = '한\n"'.repeat(174_762);
+    const values = [
+      "before",
+      ...Array(12).fill(large),
+      "after",
+      ...Array(40).fill("\0".repeat(4_096)),
+      "\ud800😀",
+    ];
+    const commit = createEmptySqlCommit(0, "bounded-bridge");
+    commit.modules = {
+      upserts: [
+        {
+          id: "bridge-probe",
+          position: 0,
+          data: {
+            id: "bridge-probe",
+            name: "probe",
+            lorebook: [],
+            values,
+          } as any,
+        },
+      ],
+      deletes: [],
+    };
+    await storage.commit(commit);
+    const rows = database
+      .prepare(
+        "SELECT * FROM module_extension_nodes WHERE module_id = ? ORDER BY node_id",
+      )
+      .all("bridge-probe");
+    expect((nodeCodec.rebuild(rows) as any).values).toEqual(values);
+    expect(batchSizes.length).toBeGreaterThan(1);
+    expect(Math.max(...batchSizes)).toBeLessThanOrEqual(256 * 1024);
+    expect(chunkSizes.length).toBeGreaterThan(12);
+    expect(Math.max(...chunkSizes)).toBeLessThan(256 * 1024);
+    expect(
+      database.prepare("SELECT revision FROM system_storage_meta").get()!
+        .revision,
+    ).toBe(1);
+    database.close();
+  });
+
+  it.each(["batch", "stream"])(
+    "rolls back normal and streamed writes when a later %s fails",
+    async (failurePath) => {
+      const database = new DatabaseSync(":memory:");
+      database.exec("CREATE TABLE probe (id INTEGER PRIMARY KEY, value TEXT)");
+      const storage = makeCapacitorStorage(database);
+      const run = (task: any) =>
+        (storage as any).runNativeTransaction(null, task);
+      const plugin = (storage as any).sqlitePlugin;
+      const streamed = vi.spyOn(plugin, "restoreOpen");
+      await expect(
+        run(async (execute: any) => {
+          await execute("INSERT INTO probe VALUES (?, ?)", [1, "before"]);
+          await execute("INSERT INTO probe VALUES (?, ?)", [
+            2,
+            "한".repeat(512 * 1024),
+          ]);
+          await execute("INSERT INTO missing_table VALUES (?)", [
+            failurePath === "stream" ? "x".repeat(512 * 1024) : 3,
+          ]);
+        }),
+      ).rejects.toThrow(/missing_table/);
+      expect(streamed).toHaveBeenCalled();
+      expect(
+        database.prepare("SELECT COUNT(*) AS count FROM probe").get()!.count,
+      ).toBe(0);
+      // Failure must release both the pipe and transaction so the next write works.
+      await run(async (execute: any) =>
+        execute("INSERT INTO probe VALUES (?, ?)", [4, "next"]),
+      );
+      expect(
+        database.prepare("SELECT value FROM probe WHERE id = 4").get()!.value,
+      ).toBe("next");
+      database.close();
+    },
+  );
+
+  it("counts size-limited node statements exactly, including encoded keys and sparse arrays", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(sqliteSchemaSql);
+    const values: unknown[] = new Array(300);
+    values[0] = "x".repeat(512 * 1024);
+    values[120] = "\0".repeat(64 * 1024);
+    values[299] = {
+      ["\ud800".repeat(60 * 1024)]: "end",
+      nan: NaN,
+      infinity: -Infinity,
+    };
+    const commit = createEmptySqlCommit(0, "node-budgets");
+    commit.root.upserts = [{ key: "probe", value: values }];
+    let executed = 0;
+    await sqliteCommit.apply(commit, (sql, bind) => {
+      database.prepare(sql).run(...(bind! as any[]));
+      executed++;
+    });
+    expect(executed).toBe(sqliteCommit.countStatements(commit));
+    const rows = database
+      .prepare(
+        "SELECT * FROM setting_extension_nodes WHERE setting_key = ? ORDER BY node_id",
+      )
+      .all("probe");
+    expect(nodeCodec.rebuild(rows)).toEqual([
+      values[0],
+      values[120],
+      values[299],
+    ]);
+    database.close();
+  });
+
   it("loads shallow startup data in one native query stream", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);
