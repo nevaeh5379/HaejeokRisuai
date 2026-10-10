@@ -9,24 +9,22 @@ import { settingsStore } from "../../../../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../../../../stores/domain/deferredSettingsLoader";
 
 describe("CapacitorSqliteStorage", () => {
-  it("loads shallow startup data in one native query batch", async () => {
+  it("loads shallow startup data in one native query stream", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);
     const storage = makeCapacitorStorage(database);
     await storage.replaceDatabase(buildFullDatabase() as any);
 
     const stats = (storage as any).__bridgeStats;
-    stats.queryCalls = 0;
-    stats.queryBatchCalls = 0;
+    stats.queryStreamCalls = 0;
     const loaded = await storage.loadStartupData();
 
     expect(loaded?.status).toBe("ready");
-    expect(stats.queryBatchCalls).toBe(1);
-    expect(stats.queryCalls).toBe(0);
+    expect(stats.queryStreamCalls).toBe(1);
     database.close();
   });
 
-  it("hydrates a selected character through one native query batch", async () => {
+  it("hydrates a selected character through one native query stream", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);
     const storage = makeCapacitorStorage(database);
@@ -34,8 +32,7 @@ describe("CapacitorSqliteStorage", () => {
     await storage.replaceDatabase(source);
 
     const stats = (storage as any).__bridgeStats;
-    stats.queryCalls = 0;
-    stats.queryBatchCalls = 0;
+    stats.queryStreamCalls = 0;
     const selected = await storage.loadCharacterForSelection(
       source.characters[0].chaId,
     );
@@ -43,12 +40,11 @@ describe("CapacitorSqliteStorage", () => {
     expect(selected?.chaId).toBe(source.characters[0].chaId);
     expect(selected?.detailsLoaded).toBe(true);
     expect(selected?.chats?.length).toBe(source.characters[0].chats.length);
-    expect(stats.queryBatchCalls).toBe(1);
-    expect(stats.queryCalls).toBe(0);
+    expect(stats.queryStreamCalls).toBe(1);
     database.close();
   });
 
-  it("hydrates the active chat and recent messages through one native query batch", async () => {
+  it("hydrates the active chat and recent messages through one native query stream", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(sqliteSchemaSql);
     const storage = makeCapacitorStorage(database);
@@ -57,14 +53,12 @@ describe("CapacitorSqliteStorage", () => {
 
     const chatId = source.characters[0].chats[0].id;
     const stats = (storage as any).__bridgeStats;
-    stats.queryCalls = 0;
-    stats.queryBatchCalls = 0;
+    stats.queryStreamCalls = 0;
     const chat = await storage.loadChat(chatId, { messageLimit: 24 });
 
     expect(chat?.id).toBe(chatId);
     expect(chat?.messagesLoaded).toBe(true);
-    expect(stats.queryBatchCalls).toBe(1);
-    expect(stats.queryCalls).toBe(0);
+    expect(stats.queryStreamCalls).toBe(1);
     database.close();
   });
 

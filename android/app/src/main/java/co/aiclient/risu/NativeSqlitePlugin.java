@@ -4,7 +4,6 @@ import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteCursor;
 import android.database.sqlite.SQLiteDatabase;
-import android.database.sqlite.SQLiteQuery;
 import android.util.Base64;
 import android.util.Log;
 import com.getcapacitor.JSArray;
@@ -13,7 +12,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.ByteArrayOutputStream;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -28,6 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,11 +52,23 @@ public class NativeSqlitePlugin extends Plugin {
     private final ExecutorService dbExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService ioExecutor = Executors.newCachedThreadPool();
     private final ConcurrentHashMap<String, RestoreSession> restoreSessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SqliteQueryStream> queryStreams = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService queryWatchdog = Executors.newSingleThreadScheduledExecutor();
     private final List<Runnable> deferredReads = new ArrayList<>();
 
     private SQLiteDatabase db;
     private String databaseName;
     private String activeTransactionId;
+
+    @Override
+    public void load() {
+        queryWatchdog.scheduleWithFixedDelay(() -> {
+            long now = System.nanoTime();
+            queryStreams.forEach((id, stream) -> {
+                if (stream.expire(now)) queryStreams.remove(id, stream);
+            });
+        }, 1, 1, TimeUnit.SECONDS);
+    }
 
     @PluginMethod
     public void open(PluginCall call) {
@@ -96,6 +109,7 @@ public class NativeSqlitePlugin extends Plugin {
 
     @PluginMethod
     public void close(PluginCall call) {
+        cancelQueryStreams();
         dbExecutor.execute(() -> {
             try {
                 if (activeTransactionId != null) rollbackActiveTransaction();
@@ -108,57 +122,81 @@ public class NativeSqlitePlugin extends Plugin {
     }
 
     @PluginMethod
-    public void query(PluginCall call) {
-        String sql = call.getString("sql");
-        if (sql == null) {
-            call.reject("sql is required");
-            return;
-        }
-        final List<Object> bind;
+    public void queryStreamOpen(PluginCall call) {
+        SqliteQueryStream stream = null;
+        String id = UUID.randomUUID().toString();
         try {
-            bind = readBindArray(call.getArray("bind"));
+            List<SqlStatement> queries = readStatements(call.getArray("queries"));
+            stream = new SqliteQueryStream();
+            queryStreams.put(id, stream);
+            SqliteQueryStream pending = stream;
+            runWhenTransactionIdle(() -> runQueryStream(pending, queries));
+            JSObject result = new JSObject();
+            result.put("id", id);
+            call.resolve(result);
         } catch (Exception error) {
-            call.reject("Invalid SQLite query bind values", error);
+            queryStreams.remove(id);
+            if (stream != null) stream.cancel();
+            call.reject("Failed to open SQLite query stream: " + errorMessage(error), error);
+        }
+    }
+
+    @PluginMethod
+    public void queryStreamRead(PluginCall call) {
+        String id = call.getString("id");
+        SqliteQueryStream stream = id == null ? null : queryStreams.get(id);
+        if (stream == null) {
+            call.reject("Unknown SQLite query stream");
             return;
         }
-        runWhenTransactionIdle(() -> {
+        ioExecutor.execute(() -> {
             try {
-                ensureOpen();
-                JSArray rows = queryRows(sql, bind);
+                byte[] chunk = stream.read();
                 JSObject result = new JSObject();
-                result.put("values", rows);
-                AndroidCrashDiagnostics.checkpoint("sqlite:query-response rows=" + rows.length());
+                result.put("data", chunk == null ? "" : Base64.encodeToString(chunk, Base64.NO_WRAP));
+                result.put("done", chunk == null);
                 call.resolve(result);
             } catch (Exception error) {
-                call.reject("Native SQLite query failed: " + errorMessage(error), error);
+                queryStreams.remove(id, stream);
+                stream.cancel();
+                call.reject("Failed to read SQLite query stream: " + errorMessage(error), error);
             }
         });
     }
 
     @PluginMethod
-    public void queryBatch(PluginCall call) {
-        final List<SqlStatement> queries;
+    public void queryStreamClose(PluginCall call) {
+        String id = call.getString("id");
+        SqliteQueryStream stream = id == null ? null : queryStreams.remove(id);
+        if (stream != null) stream.cancel();
+        call.resolve();
+    }
+
+    private void runQueryStream(SqliteQueryStream stream, List<SqlStatement> queries) {
+        Exception failure = null;
         try {
-            queries = readStatements(call.getArray("queries"));
-        } catch (Exception error) {
-            call.reject("Invalid native SQLite query batch", error);
-            return;
-        }
-        runWhenTransactionIdle(() -> {
-            try {
-                ensureOpen();
-                JSArray results = new JSArray();
-                for (SqlStatement query : queries) {
-                    results.put(queryRows(query.sql, query.bind));
-                }
-                JSObject result = new JSObject();
-                result.put("results", results);
-                AndroidCrashDiagnostics.checkpoint("sqlite:batch-response sets=" + results.length());
-                call.resolve(result);
-            } catch (Exception error) {
-                call.reject("Native SQLite query batch failed: " + errorMessage(error), error);
+            stream.checkCancelled();
+            ensureOpen();
+            BufferedWriter output = stream.writer();
+            SqliteQueryJsonWriter writer = new SqliteQueryJsonWriter(output);
+            for (int index = 0; index < queries.size(); index++) {
+                stream.checkCancelled();
+                SqlStatement query = queries.get(index);
+                writeQuery(writer, index, query.sql, query.bind);
+                writer.endQuery(index);
             }
-        });
+            output.flush();
+        } catch (Exception error) {
+            failure = error;
+        } finally {
+            // Publish failure before closing the pipe, so EOF cannot look successful.
+            stream.finish(failure);
+        }
+    }
+
+    private void cancelQueryStreams() {
+        queryStreams.values().forEach(SqliteQueryStream::cancel);
+        queryStreams.clear();
     }
 
     @PluginMethod
@@ -440,161 +478,111 @@ public class NativeSqlitePlugin extends Plugin {
         }
     }
 
-    private JSArray queryRows(String sql, List<Object> bind) {
+    private void writeQuery(SqliteQueryJsonWriter writer, int index, String sql, List<Object> bind)
+        throws IOException {
         AndroidCrashDiagnostics.checkpoint("sqlite:query-start " + classifyStatement(sql));
         long startedAt = System.nanoTime();
-        JSArray result;
+        long[] emitted = { 0 };
         try {
-            result = queryRowsDirect(sql, bind);
+            writeCursorRows(writer, index, sql, bind, emitted);
         } catch (RuntimeException error) {
             if (!isCursorWindowRowTooLarge(error)) throw error;
-            Long requiredPos = cursorWindowRequiredPos(error);
-            Log.w(
-                TAG,
-                requiredPos == null
-                    ? "CursorWindow row overflow; retrying query with chunked row fallback"
-                    : "CursorWindow row overflow at row " + requiredPos + "; using direct oversized-row fallback"
-            );
-            result = queryRowsWithLargeRowFallback(sql, bind, requiredPos);
+            String innerSql = normalizeSubquerySql(sql);
+            String[] columns = queryColumnNames(innerSql, bind);
+            long total = queryCount(innerSql, bind);
+            Long badRow = cursorWindowRequiredPos(error);
+            if (badRow != null && badRow >= emitted[0] && badRow < total) {
+                try {
+                    // Retain the direct jump optimization for a late oversized node:
+                    // do not replay thousands of prefix rows in LIMIT/OFFSET pages.
+                    if (badRow > emitted[0]) {
+                        writeCursorRows(writer, index,
+                            wrapQueryRange(innerSql, emitted[0], badRow - emitted[0]), bind, emitted);
+                    }
+                    SqlStatement direct = directRelationalNodeQuery(innerSql, bind, badRow);
+                    writeOversizedRow(writer, index, direct == null ? innerSql : direct.sql,
+                        direct == null ? bind : direct.bind, columns, direct == null ? badRow : 0);
+                    emitted[0]++;
+                } catch (RuntimeException retryError) {
+                    if (!isCursorWindowRowTooLarge(retryError)) throw retryError;
+                }
+            }
+            // Previously emitted rows remain valid. Resume after them, never replay them.
+            writeQueryRange(writer, index, innerSql, bind, columns, emitted[0], total - emitted[0], emitted);
         }
         long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
-        AndroidCrashDiagnostics.checkpoint("sqlite:query-end rows=" + result.length() + " ms=" + elapsedMs);
+        AndroidCrashDiagnostics.checkpoint("sqlite:query-end rows=" + emitted[0] + " ms=" + elapsedMs);
         if (elapsedMs >= 100) {
-            Log.i(
-                TAG,
-                "Slow " + classifyStatement(sql) + " query" + queryDiagnosticSuffix(sql, bind) +
-                    ": " + elapsedMs + " ms, " + result.length() + " rows"
-            );
+            Log.i(TAG, "Slow " + classifyStatement(sql) + " query" + queryDiagnosticSuffix(sql, bind) +
+                ": " + elapsedMs + " ms, " + emitted[0] + " rows");
         }
-        return result;
     }
 
-    private JSArray queryRowsDirect(String sql, List<Object> bind) {
-        JSArray rows = new JSArray();
+    private void writeCursorRows(
+        SqliteQueryJsonWriter writer, int queryIndex, String sql, List<Object> bind, long[] emitted
+    ) throws IOException {
         try (Cursor cursor = queryCursor(sql, bind)) {
-            while (cursor.moveToNext()) rows.put(readCursorRow(cursor));
+            while (cursor.moveToNext()) {
+                writer.beginRow(queryIndex);
+                for (int column = 0; column < cursor.getColumnCount(); column++) {
+                    writer.column(cursor.getColumnName(column));
+                    if (cursor.getType(column) == Cursor.FIELD_TYPE_BLOB) {
+                        writer.beginBlob();
+                        writer.blobChunk(cursor.getBlob(column));
+                        writer.endBlob();
+                    } else writer.scalar(readCursorValue(cursor, column));
+                }
+                writer.endRow();
+                emitted[0]++;
+            }
         }
-        return rows;
-    }
-
-    private JSObject readCursorRow(Cursor cursor) {
-        JSObject row = new JSObject();
-        for (int index = 0; index < cursor.getColumnCount(); index++) {
-            row.put(cursor.getColumnName(index), readCursorValue(cursor, index));
-        }
-        return row;
     }
 
     private Object readCursorValue(Cursor cursor, int index) {
         switch (cursor.getType(index)) {
-            case Cursor.FIELD_TYPE_NULL:
-                return JSONObject.NULL;
-            case Cursor.FIELD_TYPE_INTEGER:
-                return cursor.getLong(index);
-            case Cursor.FIELD_TYPE_FLOAT:
-                return cursor.getDouble(index);
-            case Cursor.FIELD_TYPE_STRING:
-                return cursor.getString(index);
-            case Cursor.FIELD_TYPE_BLOB:
-                return bytesToJsArray(cursor.getBlob(index));
-            default:
-                return JSONObject.NULL;
+            case Cursor.FIELD_TYPE_INTEGER: return cursor.getLong(index);
+            case Cursor.FIELD_TYPE_FLOAT: return cursor.getDouble(index);
+            case Cursor.FIELD_TYPE_STRING: return cursor.getString(index);
+            default: return null;
         }
     }
 
-    private JSArray queryRowsWithLargeRowFallback(String sql, List<Object> bind, Long requiredPos) {
-        String innerSql = normalizeSubquerySql(sql);
-        String[] columns = queryColumnNames(innerSql, bind);
-        long total = queryCount(innerSql, bind);
-        JSArray rows = new JSArray();
-
-        // SQLiteCursor reports the first row it could not place in CursorWindow.
-        // Jump directly to that row instead of replaying the whole ordered query
-        // in 128-row LIMIT/OFFSET pages. On a 6k-row startup query this avoids
-        // dozens of repeated sorts/scans and turns the fallback into roughly
-        // one prefix read + one chunked row reconstruction.
-        if (requiredPos != null && requiredPos >= 0 && requiredPos < total) {
-            long badRow = requiredPos;
-            try {
-                if (badRow > 0) {
-                    JSArray prefix = queryRowsDirect(wrapQueryRange(innerSql, 0, badRow), bind);
-                    for (int index = 0; index < prefix.length(); index++) rows.put(prefix.opt(index));
-                }
-                rows.put(queryOversizedRowAtOffset(innerSql, bind, columns, badRow));
-                long suffixCount = total - badRow - 1;
-                if (suffixCount > 0) {
-                    appendQueryRange(rows, innerSql, bind, columns, badRow + 1, suffixCount);
-                }
-                return rows;
-            } catch (RuntimeException retryError) {
-                if (!isCursorWindowRowTooLarge(retryError)) throw retryError;
-                rows = new JSArray();
-            }
-        }
-
-        appendQueryRange(rows, innerSql, bind, columns, 0, total);
-        return rows;
-    }
-
-    private void appendQueryRange(
-        JSArray output,
-        String innerSql,
-        List<Object> bind,
-        String[] columns,
-        long offset,
-        long count
-    ) {
-        // Iterate over pages: recursing into the remaining query kept one
-        // stack frame (and page wrapper) per 128 rows until the entire result
-        // finished. Large restored node tables could exhaust the Java stack.
+    private void writeQueryRange(
+        SqliteQueryJsonWriter writer, int queryIndex, String innerSql, List<Object> bind,
+        String[] columns, long offset, long count, long[] emitted
+    ) throws IOException {
         while (count > 0) {
             long pageCount = Math.min(count, QUERY_FALLBACK_PAGE_ROWS);
-            appendQueryPage(output, innerSql, bind, columns, offset, pageCount);
+            writeQueryPage(writer, queryIndex, innerSql, bind, columns, offset, pageCount, emitted);
             offset += pageCount;
             count -= pageCount;
         }
     }
 
-    private void appendQueryPage(
-        JSArray output,
-        String innerSql,
-        List<Object> bind,
-        String[] columns,
-        long offset,
-        long pageCount
-    ) {
-        String pageSql = wrapQueryRange(innerSql, offset, pageCount);
+    private void writeQueryPage(
+        SqliteQueryJsonWriter writer, int queryIndex, String innerSql, List<Object> bind,
+        String[] columns, long offset, long count, long[] emitted
+    ) throws IOException {
+        long before = emitted[0];
         try {
-            JSArray page = queryRowsDirect(pageSql, bind);
-            for (int index = 0; index < page.length(); index++) output.put(page.opt(index));
+            writeCursorRows(writer, queryIndex, wrapQueryRange(innerSql, offset, count), bind, emitted);
             return;
         } catch (RuntimeException error) {
             if (!isCursorWindowRowTooLarge(error)) throw error;
         }
-
-        if (pageCount == 1) {
-            output.put(queryOversizedRowAtOffset(innerSql, bind, columns, offset));
-            return;
+        long completed = emitted[0] - before;
+        offset += completed;
+        count -= completed;
+        if (count == 1) {
+            SqlStatement direct = directRelationalNodeQuery(innerSql, bind, offset);
+            writeOversizedRow(writer, queryIndex, direct == null ? innerSql : direct.sql,
+                direct == null ? bind : direct.bind, columns, direct == null ? offset : 0);
+            emitted[0]++;
+        } else if (count > 1) {
+            long left = count / 2;
+            writeQueryPage(writer, queryIndex, innerSql, bind, columns, offset, left, emitted);
+            writeQueryPage(writer, queryIndex, innerSql, bind, columns, offset + left, count - left, emitted);
         }
-
-        long left = pageCount / 2;
-        // Only split a single overflowing page. Recursion is bounded by
-        // log2(QUERY_FALLBACK_PAGE_ROWS), independent of the result row count.
-        appendQueryPage(output, innerSql, bind, columns, offset, left);
-        appendQueryPage(output, innerSql, bind, columns, offset + left, pageCount - left);
-    }
-
-    private JSObject queryOversizedRowAtOffset(
-        String innerSql,
-        List<Object> bind,
-        String[] columns,
-        long rowOffset
-    ) {
-        SqlStatement direct = directRelationalNodeQuery(innerSql, bind, rowOffset);
-        if (direct != null) {
-            return queryOversizedRow(direct.sql, direct.bind, columns, 0);
-        }
-        return queryOversizedRow(innerSql, bind, columns, rowOffset);
     }
 
     /**
@@ -644,12 +632,10 @@ public class NativeSqlitePlugin extends Plugin {
         return new SqlStatement(directSql, directBind);
     }
 
-    private JSObject queryOversizedRow(
-        String innerSql,
-        List<Object> bind,
-        String[] columns,
-        long rowOffset
-    ) {
+    private void writeOversizedRow(
+        SqliteQueryJsonWriter writer, int queryIndex, String innerSql,
+        List<Object> bind, String[] columns, long rowOffset
+    ) throws IOException {
         StringBuilder metadataSql = new StringBuilder("SELECT ");
         for (int index = 0; index < columns.length; index++) {
             if (index > 0) metadataSql.append(", ");
@@ -658,64 +644,52 @@ public class NativeSqlitePlugin extends Plugin {
             metadataSql.append(", length(").append(quoted).append(") AS ").append(quoteIdentifier("l" + index));
         }
         metadataSql.append(" FROM (").append(innerSql).append(") AS risu_large_row LIMIT 1 OFFSET ").append(rowOffset);
-        JSArray metadataRows = queryRowsDirect(metadataSql.toString(), bind);
-        if (metadataRows.length() == 0) return new JSObject();
-        JSONObject metadata = metadataRows.optJSONObject(0);
-        JSObject row = new JSObject();
-        for (int index = 0; index < columns.length; index++) {
-            String type = metadata == null ? "null" : metadata.optString("t" + index, "null");
-            long length = metadata == null ? 0 : metadata.optLong("l" + index, 0);
-            row.put(columns[index], readOversizedColumn(innerSql, bind, columns[index], rowOffset, type, length));
+        try (Cursor metadata = queryCursor(metadataSql.toString(), bind)) {
+            if (!metadata.moveToFirst()) throw new IOException("Oversized SQLite row disappeared");
+            writer.beginRow(queryIndex);
+            for (int index = 0; index < columns.length; index++) {
+                writer.column(columns[index]);
+                writeOversizedColumn(writer, innerSql, bind, columns[index], rowOffset,
+                    metadata.getString(index * 2), metadata.getLong(index * 2 + 1));
+            }
+            writer.endRow();
         }
-        return row;
     }
 
-    private Object readOversizedColumn(
-        String innerSql,
-        List<Object> bind,
-        String column,
-        long rowOffset,
-        String type,
-        long length
-    ) {
-        if ("null".equals(type)) return JSONObject.NULL;
+    private void writeOversizedColumn(
+        SqliteQueryJsonWriter writer, String innerSql, List<Object> bind,
+        String column, long rowOffset, String type, long length
+    ) throws IOException {
         String quoted = quoteIdentifier(column);
         if ("text".equals(type)) {
-            StringBuilder value = new StringBuilder((int) Math.min(length, 1024L * 1024L));
-            for (long start = 1; start <= Math.max(1, length); start += LARGE_TEXT_CHUNK_CHARS) {
+            writer.beginString();
+            for (long start = 1; start <= length; start += LARGE_TEXT_CHUNK_CHARS) {
                 Object chunk = querySingleValue(
                     "SELECT substr(" + quoted + ", " + start + ", " + LARGE_TEXT_CHUNK_CHARS + ") AS v FROM (" +
-                        innerSql + ") AS risu_large_value LIMIT 1 OFFSET " + rowOffset,
-                    bind
-                );
-                if (chunk == null || chunk == JSONObject.NULL) break;
-                value.append(String.valueOf(chunk));
+                        innerSql + ") AS risu_large_value LIMIT 1 OFFSET " + rowOffset, bind);
+                if (chunk == null) throw new IOException("Oversized SQLite text disappeared");
+                writer.stringChunk(chunk.toString());
             }
-            return value.toString();
-        }
-        if ("blob".equals(type)) {
-            ByteArrayOutputStream value = new ByteArrayOutputStream((int) Math.min(length, 1024L * 1024L));
-            for (long start = 1; start <= Math.max(1, length); start += LARGE_BLOB_CHUNK_BYTES) {
+            writer.endString();
+        } else if ("blob".equals(type)) {
+            writer.beginBlob();
+            for (long start = 1; start <= length; start += LARGE_BLOB_CHUNK_BYTES) {
                 byte[] chunk = querySingleBlob(
                     "SELECT substr(" + quoted + ", " + start + ", " + LARGE_BLOB_CHUNK_BYTES + ") AS v FROM (" +
-                        innerSql + ") AS risu_large_value LIMIT 1 OFFSET " + rowOffset,
-                    bind
-                );
-                if (chunk == null || chunk.length == 0) break;
-                value.write(chunk, 0, chunk.length);
+                        innerSql + ") AS risu_large_value LIMIT 1 OFFSET " + rowOffset, bind);
+                if (chunk == null || chunk.length == 0) throw new IOException("Oversized SQLite blob disappeared");
+                writer.blobChunk(chunk);
             }
-            return bytesToJsArray(value.toByteArray());
+            writer.endBlob();
+        } else {
+            writer.scalar(querySingleValue(
+                "SELECT " + quoted + " AS v FROM (" + innerSql + ") AS risu_large_value LIMIT 1 OFFSET " + rowOffset, bind));
         }
-        Object scalar = querySingleValue(
-            "SELECT " + quoted + " AS v FROM (" + innerSql + ") AS risu_large_value LIMIT 1 OFFSET " + rowOffset,
-            bind
-        );
-        return scalar == null ? JSONObject.NULL : scalar;
     }
 
     private Object querySingleValue(String sql, List<Object> bind) {
         try (Cursor cursor = queryCursor(sql, bind)) {
-            if (!cursor.moveToFirst()) return JSONObject.NULL;
+            if (!cursor.moveToFirst()) return null;
             return readCursorValue(cursor, 0);
         }
     }
@@ -752,23 +726,6 @@ public class NativeSqlitePlugin extends Plugin {
         return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
-    private static Long cursorWindowRequiredPos(Throwable error) {
-        Throwable current = error;
-        while (current != null) {
-            String message = current.getMessage();
-            if (message != null) {
-                Matcher matcher = CURSOR_REQUIRED_POS.matcher(message);
-                if (matcher.find()) {
-                    try {
-                        return Long.parseLong(matcher.group(1));
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-            current = current.getCause();
-        }
-        return null;
-    }
-
     private static boolean isCursorWindowRowTooLarge(Throwable error) {
         Throwable current = error;
         while (current != null) {
@@ -781,6 +738,21 @@ public class NativeSqlitePlugin extends Plugin {
             current = current.getCause();
         }
         return false;
+    }
+
+    private static Long cursorWindowRequiredPos(Throwable error) {
+        while (error != null) {
+            String message = error.getMessage();
+            if (message != null) {
+                Matcher matcher = CURSOR_REQUIRED_POS.matcher(message);
+                if (matcher.find()) {
+                    try { return Long.parseLong(matcher.group(1)); }
+                    catch (NumberFormatException ignored) {}
+                }
+            }
+            error = error.getCause();
+        }
+        return null;
     }
 
     private Cursor queryCursor(String sql, List<Object> bind) {
@@ -839,13 +811,6 @@ public class NativeSqlitePlugin extends Plugin {
         return values;
     }
 
-    private static JSArray bytesToJsArray(byte[] bytes) {
-        AndroidCrashDiagnostics.checkpoint("sqlite:blob-to-array bytes=" + bytes.length);
-        JSArray result = new JSArray();
-        for (byte value : bytes) result.put(value & 0xff);
-        return result;
-    }
-
     private static Long nullableLong(Object value) {
         return value instanceof Number ? ((Number) value).longValue() : null;
     }
@@ -875,6 +840,8 @@ public class NativeSqlitePlugin extends Plugin {
         if (sql.contains("INSERT INTO chats") || sql.contains("DELETE FROM chats")) return "chats";
         if (sql.contains("character_extension_nodes")) return "character metadata";
         if (sql.contains("INSERT INTO characters") || sql.contains("DELETE FROM characters")) return "characters";
+        if (sql.contains("module_extension_nodes") || sql.contains("module_records")) return "modules";
+        if (sql.contains("plugin_extension_nodes") || sql.contains("plugin_records")) return "plugin metadata";
         if (sql.contains("bot_presets")) return "presets";
         if (sql.contains("plugin_custom_storage")) return "plugin storage";
         if (sql.contains("system_settings") || sql.contains("setting_extension_nodes")) return "settings";
@@ -902,6 +869,7 @@ public class NativeSqlitePlugin extends Plugin {
     }
 
     private void closeDatabaseQuietly() {
+        cancelQueryStreams();
         SQLiteDatabase current = db;
         db = null;
         databaseName = null;
@@ -930,6 +898,8 @@ public class NativeSqlitePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        cancelQueryStreams();
+        queryWatchdog.shutdownNow();
         for (RestoreSession session : restoreSessions.values()) {
             session.cancelled.set(true);
             closeOutput(session);

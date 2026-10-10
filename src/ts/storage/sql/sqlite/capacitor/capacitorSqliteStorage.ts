@@ -16,6 +16,7 @@ import {
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
+import { readSqliteQueryStream } from "./capacitorSqliteQueryStream";
 import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
 import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 
@@ -86,16 +87,17 @@ export class CapacitorSqliteStorage
     bind: unknown[] = [],
   ): Promise<T[]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.sqlitePlugin.query({ sql, bind });
-    return (result.values ?? []) as T[];
+    const [rows] = await readSqliteQueryStream(this.sqlitePlugin, [
+      { sql, bind },
+    ]);
+    return rows as T[];
   }
 
   protected override async selectRowSets(
     queries: SqliteStatement[],
   ): Promise<Record<string, unknown>[][]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.sqlitePlugin.queryBatch({ queries });
-    return result.results ?? [];
+    return await readSqliteQueryStream(this.sqlitePlugin, queries);
   }
 
   protected async executeNativeTransaction(
