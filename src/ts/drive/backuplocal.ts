@@ -75,8 +75,6 @@ import {
 import { registerPlugin } from "@capacitor/core";
 import { Buffer } from "buffer";
 import {
-  getInlayBackupKey,
-  INLAY_BACKUP_PREFIX,
   LEGACY_DATABASE_ENTRY_NAME,
   ACCOUNT_ENCRYPTION_ENTRY_NAME,
   normalizeBackupAssetPath,
@@ -122,10 +120,10 @@ import {
 import {
   exportPortableDatabaseStream,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-  portableDatabaseStreamFragmentName,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
 } from "../storage/backup/portableDatabaseStream";
+import { Fragment } from "@risuai/backup-core/stream/databaseBackup";
 import {
   hasPortableDatabaseStreamRestore,
   type PortableDatabaseStreamRestoreSession,
@@ -322,40 +320,6 @@ async function writeLocalBackupInlays(writer: LocalWriter): Promise<void> {
   });
 }
 
-async function clearNodeBackupInlayStage(storage: NodeStorage): Promise<void> {
-  const keys: string[] = (await storage.keys(INLAY_BACKUP_PREFIX)).filter(
-    (key: string): boolean => getInlayBackupKey(key) !== null,
-  );
-  if (keys.length > 0) await storage.removeItem(keys);
-}
-
-async function stageNodeInlaysForBackup(storage: NodeStorage): Promise<void> {
-  // Inlays are persisted on the server permanently since the remote inlay
-  // storage landed; this restage only re-exports what listInlayAssets still
-  // reports (local cache misses are resolved from the server by the inlay
-  // layer itself), so existing server keys are simply rewritten with the
-  // same payload.
-  await clearNodeBackupInlayStage(storage);
-  const inlays: LocalBackupInlayEntries = await listInlayAssets();
-  const batchWriter: BoundedAssetBatchWriter = new BoundedAssetBatchWriter(
-    32,
-    32 * 1024 * 1024,
-    async (entries: RestoredAssetBatch): Promise<void> => {
-      await storage.setItems(entries);
-    },
-  );
-  await streamBackupInlays({
-    entries: inlays,
-    async encode(asset: LocalBackupInlayAsset): Promise<Uint8Array> {
-      return await encodeInlayAssetBackup(asset);
-    },
-    async write(name: string, data: Uint8Array): Promise<void> {
-      await batchWriter.add(name, data);
-    },
-  });
-  await batchWriter.flush();
-}
-
 type NodeServerBackupMode = LocalBackupMode | "partial";
 
 export function usesRemoteBackupApi(storage: unknown): storage is NodeStorage {
@@ -417,11 +381,7 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     logger.info("node-stream.writer-opened", { elapsedMs: elapsed() });
   }
   try {
-    if (mode === "native") {
-      reportLocalBackupProgress("preparing", { percent: 3 });
-      logger.info("node-stream.staging-inlays", { elapsedMs: elapsed() });
-      await stageNodeInlaysForBackup(nodeStorage);
-    }
+    // The server streams persisted inlays directly; exporting must not mutate them.
     reportLocalBackupProgress("preparing", { percent: 4 });
     logger.info("node-stream.creating-export-job", {
       elapsedMs: elapsed(),
@@ -529,20 +489,6 @@ async function saveNodeLocalBackupStream(mode: NodeServerBackupMode) {
     if (nativeWriter) {
       await nativeWriter.close().catch(() => {});
     }
-    if (mode === "native") {
-      try {
-        await clearNodeBackupInlayStage(nodeStorage);
-        logger.info("node-stream.inlay-stage-cleared", {
-          elapsedMs: elapsed(),
-        });
-      } catch (error) {
-        console.warn("Failed to clean staged backup inlays:", error);
-        logger.warn("node-stream.inlay-stage-clear-failed", {
-          error: error instanceof Error ? error.message : String(error),
-          elapsedMs: elapsed(),
-        });
-      }
-    }
   }
 }
 
@@ -606,7 +552,7 @@ import {
   type BackupAssetMap,
   type BackupAssetScope,
 } from "@risuai/backup-core/assetScope";
-import { StreamingBackupExportInventory } from "@risuai/backup-core/streamInventory";
+import { StreamingBackupExportInventory } from "@risuai/backup-core/stream/inventory";
 import {
   buildPortableLocalBackupDatabase as buildPortableLocalBackupDatabaseCore,
   normalizePortableBackupSnapshot,
@@ -620,7 +566,6 @@ import {
 import { streamBackupInlays } from "@risuai/backup-core/inlayExport";
 import {
   BoundedAssetBatchWriter,
-  type RestoredAssetBatch,
 } from "@risuai/backup-core/restoreBatch";
 import {
   restoreBackupArchive,
@@ -999,7 +944,7 @@ async function saveStreamingLocalBackupWithOptions(
       storage,
       {
         async writeFragment(fragment) {
-          const entryName = portableDatabaseStreamFragmentName(fragment.index);
+          const entryName = Fragment.name(fragment.index);
           const encoded = await encodeStreamingDatabaseValue(
             fragment,
             entryName,

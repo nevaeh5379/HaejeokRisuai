@@ -68,7 +68,13 @@ describe("NodeSqlStorage browser client", () => {
           protocolVersion: 1,
           revision: 7,
           initialized: true,
-          records: { settings: 4, characters: 2, chats: 3, messages: 9, total: 18 },
+          records: {
+            settings: 4,
+            characters: 2,
+            chats: 3,
+            messages: 9,
+            total: 18,
+          },
           assets: { count: 5, sizeBytes: 1234 },
         }),
       );
@@ -124,9 +130,11 @@ describe("NodeSqlStorage browser client", () => {
   });
 
   it("lists persisted setting keys through the lightweight endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({ keys: ["alpha-setting", "beta-setting"] }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ keys: ["alpha-setting", "beta-setting"] }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
@@ -574,7 +582,9 @@ describe("NodeSqlStorage browser client", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ plugin }), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ plugin }), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const storage = new NodeSqlStorage(async () => "test-auth");
@@ -605,14 +615,16 @@ describe("NodeSqlStorage browser client", () => {
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       method: "POST",
     });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
-      baseRevision: 11,
-      plugins: {
-        upserts: [],
-        deletes: [],
-        enabled: [{ id: "plugin-id", enabled: true }],
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+      {
+        baseRevision: 11,
+        plugins: {
+          upserts: [],
+          deletes: [],
+          enabled: [{ id: "plugin-id", enabled: true }],
+        },
       },
-    });
+    );
     expect(storage.getRevision()).toBe(12);
   });
 
@@ -946,9 +958,11 @@ describe("NodeSqlStorage browser client", () => {
       total: 600,
       hasMore: true,
     };
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ page }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ page }), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
@@ -1248,7 +1262,6 @@ describe("NodeSqlStorage concurrent commit handling", () => {
   });
 });
 
-
 describe("NodeSqlStorage portable database stream restore", () => {
   it("uploads bounded record batches and finalizes without collecting the database", async () => {
     let stagedRecords = 0;
@@ -1329,7 +1342,6 @@ describe("NodeSqlStorage portable database stream restore", () => {
     const restore = await storage.beginPortableDatabaseStreamRestore();
     await restore.writeFragment({
       format: "risu-portable-database-fragment",
-      version: 1,
       index: 1,
       records,
     });
@@ -1344,7 +1356,6 @@ describe("NodeSqlStorage portable database stream restore", () => {
 
     await restore.finish({
       format: "risu-portable-database-stream",
-      version: 1,
       revision: 4,
       complete: true,
       totalFragments: 1,

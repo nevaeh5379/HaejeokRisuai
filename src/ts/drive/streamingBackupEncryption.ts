@@ -5,5 +5,5 @@ export {
   encodeStreamingBackupValue,
   encryptStreamingBackupEntry,
   isStreamingBackupEncryptedEntry,
-} from "@risuai/backup-core/streamingEncryption";
-export type { StreamingBackupValueDecodeOptions } from "@risuai/backup-core/streamingEncryption";
+} from "@risuai/backup-core/stream/encryption";
+export type { StreamingBackupValueDecodeOptions } from "@risuai/backup-core/stream/encryption";

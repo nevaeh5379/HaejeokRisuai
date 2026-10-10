@@ -5,21 +5,18 @@ import {
 import { createLocalBackupEntryHeader } from "./legacyFormat.ts";
 import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 import {
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-  PORTABLE_DATABASE_STREAM_PREFIX,
-  PORTABLE_DATABASE_STREAM_VERSION,
-  portableDatabaseStreamFragmentName,
-  type PortableDatabaseStreamManifest,
-} from "../streamFormat.ts";
+  Fragment,
+  Manifest,
+  MANIFEST_NAME,
+  PREFIX,
+} from "../stream/databaseBackup.ts";
 
 export {
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-  PORTABLE_DATABASE_STREAM_PREFIX,
-  PORTABLE_DATABASE_STREAM_VERSION,
-} from "../streamFormat.ts";
-export type { PortableDatabaseStreamManifest } from "../streamFormat.ts";
+  MANIFEST_NAME as PORTABLE_DATABASE_STREAM_MANIFEST,
+  PREFIX as PORTABLE_DATABASE_STREAM_PREFIX,
+} from "../stream/databaseBackup.ts";
+export { type Manifest as PortableDatabaseStreamManifest } from "../stream/databaseBackup.ts";
 export const PORTABLE_DATABASE_STREAM_DEFAULT_FRAGMENT_RECORDS = 128;
-export const databaseFragmentName = portableDatabaseStreamFragmentName;
 
 export type BackupEntrySource = Uint8Array | AsyncIterable<Uint8Array>;
 
@@ -104,16 +101,14 @@ export class PortableDatabaseExportWriter {
 
   private async flush(): Promise<void> {
     if (this.fragmentRecords.length === 0) return;
-    const fragment = {
-      format: "risu-portable-database-fragment",
-      version: PORTABLE_DATABASE_STREAM_VERSION,
-      index: ++this.fragmentIndex,
-      records: this.fragmentRecords,
-    };
+    const fragment = Fragment.create(
+      ++this.fragmentIndex,
+      this.fragmentRecords,
+    );
     this.fragmentRecords = [];
     const encoded = await this.options.encodeDatabase(fragment);
     await this.options.writeEntry(
-      portableDatabaseStreamFragmentName(fragment.index),
+      Fragment.name(fragment.index),
       encoded,
       encoded.byteLength,
     );
@@ -141,16 +136,13 @@ export class PortableDatabaseExportWriter {
     }
   }
 
-  async finalize(): Promise<PortableDatabaseStreamManifest> {
+  async finalize(): Promise<Manifest> {
     await this.flush();
-    return {
-      format: "risu-portable-database-stream",
-      version: PORTABLE_DATABASE_STREAM_VERSION,
+    return Manifest.create({
       revision: this.options.revision,
       totalFragments: this.fragmentIndex,
       totalRecords: this.totalRecords,
       counts: { ...this.counts },
-      complete: true,
-    };
+    });
   }
 }

@@ -1,24 +1,15 @@
-import { PortableDatabaseStreamCollector } from "./streamCollector.ts";
-import {
-  parsePortableDatabaseStreamFragment,
-  parsePortableDatabaseStreamFragmentName,
-  parsePortableDatabaseStreamManifest,
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-  type PortableDatabaseStreamFragment,
-  type PortableDatabaseStreamManifest,
-} from "./streamFormat.ts";
+import { PortableDatabaseStreamCollector } from "./collector.ts";
+import { MANIFEST_NAME, Fragment, Manifest } from "./databaseBackup.ts";
 
 export interface PortableDatabaseStreamFragmentSink {
-  writeFragment(fragment: PortableDatabaseStreamFragment): Promise<void>;
+  writeFragment(fragment: Fragment): Promise<void>;
 }
 
 export interface PortableDatabaseStreamRestoreCoordinatorOptions<
   TSink extends PortableDatabaseStreamFragmentSink,
 > {
   createSink(): Promise<TSink | null>;
-  onSinkFragment?(
-    fragment: PortableDatabaseStreamFragment,
-  ): Promise<void> | void;
+  onSinkFragment?(fragment: Fragment): Promise<void> | void;
 }
 
 export type PortableDatabaseStreamRestoreMode = "empty" | "sink" | "collector";
@@ -36,7 +27,7 @@ export class PortableDatabaseStreamRestoreCoordinator<
   #mode: PortableDatabaseStreamRestoreMode = "empty";
   #sink: TSink | null = null;
   #collector: PortableDatabaseStreamCollector | null = null;
-  #manifest: PortableDatabaseStreamManifest | null = null;
+  #manifest: Manifest | null = null;
 
   constructor(options: PortableDatabaseStreamRestoreCoordinatorOptions<TSink>) {
     this.#options = options;
@@ -50,14 +41,13 @@ export class PortableDatabaseStreamRestoreCoordinator<
     return this.#sink;
   }
 
-  get manifest(): PortableDatabaseStreamManifest | null {
+  get manifest(): Manifest | null {
     return this.#manifest;
   }
 
   async acceptEntry(name: string, value: unknown): Promise<void> {
-    if (name === PORTABLE_DATABASE_STREAM_MANIFEST) {
-      const manifest: PortableDatabaseStreamManifest | null =
-        parsePortableDatabaseStreamManifest(value);
+    if (name === MANIFEST_NAME) {
+      const manifest: Manifest | null = Manifest.read(value);
       if (!manifest) {
         throw new Error("Unsupported streaming database manifest");
       }
@@ -73,13 +63,11 @@ export class PortableDatabaseStreamRestoreCoordinator<
       return;
     }
 
-    const expectedIndex: number | null =
-      parsePortableDatabaseStreamFragmentName(name);
+    const expectedIndex: number | null = Fragment.parseName(name);
     if (expectedIndex === null) {
       throw new Error(`Invalid streaming database entry name: ${name}`);
     }
-    const fragment: PortableDatabaseStreamFragment | null =
-      parsePortableDatabaseStreamFragment(value, { expectedIndex });
+    const fragment: Fragment | null = Fragment.read(value, { expectedIndex });
     if (!fragment) {
       throw new Error(`Invalid streaming database fragment: ${name}`);
     }

@@ -3,9 +3,9 @@ import { encodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PortableDatabaseExportWriter,
-  databaseFragmentName,
   writeBackupContainerEntry,
 } from "./exportStream.ts";
+import { Fragment } from "../stream/databaseBackup.ts";
 import { BackupContainerParser } from "../containerStream.ts";
 
 describe("PortableDatabaseExportWriter", () => {
@@ -56,9 +56,7 @@ describe("PortableDatabaseExportWriter", () => {
   });
 
   it("uses canonical fragment and manifest names", () => {
-    expect(databaseFragmentName(7)).toBe(
-      "database.stream/000000000007.risudat",
-    );
+    expect(Fragment.name(7)).toBe("database.stream/000000000007.risudat");
     expect(PORTABLE_DATABASE_STREAM_MANIFEST).toBe(
       "database.stream/manifest.risudat",
     );
