@@ -39,19 +39,43 @@ function nodeBind(ownerValues: unknown[], row: nodeCodec.NodeRow): unknown[] {
 }
 
 const RELATIONAL_NODE_BATCH_SIZE = 128;
+// Bound aggregate text as well as row count. An individually oversized row
+// stays intact; Android transports that statement through its chunked stream.
+const RELATIONAL_NODE_BATCH_CHARS = 128 * 1024;
 const CHARACTER_TAG_BATCH_SIZE = 256;
 
-function countRelationalValueNodes(value: unknown): number {
-  let count = 0;
+function countRelationalValueBatches(value: unknown): number {
+  let batches = 0;
+  let rows = 0;
+  let chars = 0;
   const ancestors = new Set<object>();
 
-  const visit = (current: unknown, depth: number): void => {
+  const visit = (current: unknown, depth: number, key?: string): void => {
     if (depth > nodeCodec.MAX_NODE_DEPTH) {
       throw new Error(
         `Relational value exceeds maximum depth ${nodeCodec.MAX_NODE_DEPTH}`,
       );
     }
-    count++;
+    const text =
+      typeof current === "string"
+        ? current
+        : typeof current === "number" && !Number.isFinite(current)
+          ? String(current)
+          : "";
+    const rowChars =
+      nodeCodec.sqlTextBindLength(text) +
+      (key === undefined ? 0 : nodeCodec.sqlTextBindLength(key));
+    if (
+      rows === 0 ||
+      rows === RELATIONAL_NODE_BATCH_SIZE ||
+      chars + rowChars > RELATIONAL_NODE_BATCH_CHARS
+    ) {
+      batches++;
+      rows = 0;
+      chars = 0;
+    }
+    rows++;
+    chars += rowChars;
     if (
       current === null ||
       current === undefined ||
@@ -73,24 +97,21 @@ function countRelationalValueNodes(value: unknown): number {
       current.forEach((item) => visit(item, depth + 1));
     } else {
       for (const key of Object.keys(current)) {
-        visit((current as Record<string, unknown>)[key], depth + 1);
+        visit((current as Record<string, unknown>)[key], depth + 1, key);
       }
     }
     ancestors.delete(current);
   };
 
   visit(value, 0);
-  return count;
+  return batches;
 }
 
 function countReplaceNodeStatements(
   value: unknown,
   skipDelete = false,
 ): number {
-  return (
-    (skipDelete ? 0 : 1) +
-    Math.ceil(countRelationalValueNodes(value) / RELATIONAL_NODE_BATCH_SIZE)
-  );
+  return (skipDelete ? 0 : 1) + countRelationalValueBatches(value);
 }
 
 function countCharacterTagStatements(value: unknown): number {
@@ -175,12 +196,21 @@ async function replaceNodes(
     .map((column) => `${table}.${column} IS NOT excluded.${column}`)
     .join(" OR ");
 
-  for (
-    let offset = 0;
-    offset < rows.length;
-    offset += RELATIONAL_NODE_BATCH_SIZE
-  ) {
-    const batch = rows.slice(offset, offset + RELATIONAL_NODE_BATCH_SIZE);
+  for (let offset = 0; offset < rows.length;) {
+    let end = offset;
+    let chars = 0;
+    while (end < rows.length && end - offset < RELATIONAL_NODE_BATCH_SIZE) {
+      const row = rows[end];
+      const rowChars =
+        (row.object_key?.length ?? 0) +
+        (row.object_key_encoded?.length ?? 0) +
+        (row.text_value?.length ?? 0) +
+        (row.encoded_text_value?.length ?? 0);
+      if (end > offset && chars + rowChars > RELATIONAL_NODE_BATCH_CHARS) break;
+      chars += rowChars;
+      end++;
+    }
+    const batch = rows.slice(offset, end);
     await execute(
       `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${batch
         .map(() => rowPlaceholders)
@@ -189,6 +219,7 @@ async function replaceNodes(
        WHERE ${changedClause}`,
       batch.flatMap((row) => nodeBind(ownerValues, row)),
     );
+    offset = end;
   }
 }
 

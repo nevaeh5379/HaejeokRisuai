@@ -24,7 +24,9 @@ export interface NativeSqlitePlugin {
   }): Promise<{ statements: number }>;
   commitTransaction(options: { id: string }): Promise<void>;
   rollbackTransaction(options: { id: string }): Promise<void>;
-  restoreOpen(options: { expectedRevision: number }): Promise<{ id: string }>;
+  restoreOpen(
+    options: { expectedRevision: number } | { transactionId: string },
+  ): Promise<{ id: string }>;
   restoreAppend(options: { id: string; data: string }): Promise<void>;
   restoreFinish(options: { id: string }): Promise<{ statements: number }>;
   restoreAbort(options: { id: string }): Promise<void>;

@@ -288,15 +288,20 @@ public class NativeSqlitePlugin extends Plugin {
     @PluginMethod
     public void restoreOpen(PluginCall call) {
         Long expectedRevision = nullableLong(call.getData().opt("expectedRevision"));
-        if (expectedRevision == null) {
-            call.reject("expectedRevision is required");
+        String transactionId = call.getString("transactionId");
+        if ((expectedRevision == null) == (transactionId == null)) {
+            call.reject("Provide either expectedRevision or transactionId");
             return;
         }
         try {
             String id = UUID.randomUUID().toString();
             RestoreSession session = new RestoreSession(id);
             restoreSessions.put(id, session);
-            runWhenTransactionIdle(() -> runRestore(session, expectedRevision));
+            if (transactionId == null) {
+                runWhenTransactionIdle(() -> runRestore(session, expectedRevision));
+            } else {
+                dbExecutor.execute(() -> runTransactionStream(session, transactionId));
+            }
             ioExecutor.execute(() -> {
                 try {
                     session.started.get();
@@ -322,6 +327,10 @@ public class NativeSqlitePlugin extends Plugin {
         RestoreSession session = id == null ? null : restoreSessions.get(id);
         if (session == null || encoded == null) {
             call.reject("Unknown restore session or missing data");
+            return;
+        }
+        if (encoded.length() > 256 * 1024) {
+            call.reject("Native SQLite stream chunk exceeds transport limit");
             return;
         }
         ioExecutor.execute(() -> {
@@ -386,29 +395,7 @@ public class NativeSqlitePlugin extends Plugin {
             try {
                 verifyRevision(expectedRevision);
                 session.started.complete(null);
-                int[] executing = new int[] { 0 };
-                statements = SqliteRestoreStreamParser.parse(
-                    new InputStreamReader(session.input, StandardCharsets.UTF_8),
-                    (sql, bind) -> {
-                        String stage = classifyStatement(sql);
-                        session.currentStage = stage;
-                        long started = android.os.SystemClock.elapsedRealtime();
-                        executeStatement(sql, bind);
-                        executing[0]++;
-                        long elapsed = android.os.SystemClock.elapsedRealtime() - started;
-                        if (elapsed >= 1000L) {
-                            Log.w(TAG, "Slow restore statement: stage=" + stage +
-                                " elapsedMs=" + elapsed + " binds=" + bind.size() +
-                                " sqlChars=" + sql.length());
-                        }
-                    },
-                    completed -> reportProgress(
-                        session.id,
-                        completed,
-                        session.currentStage,
-                        false
-                    )
-                );
+                statements = applyStreamStatements(session);
                 if (session.cancelled.get()) {
                     throw new IOException("Restore session was cancelled");
                 }
@@ -424,6 +411,45 @@ public class NativeSqlitePlugin extends Plugin {
         } finally {
             closeInput(session);
         }
+    }
+
+    // Runs on the same thread that began the caller's transaction. EOF ends
+    // only this statement stream: the caller still owns commit/rollback.
+    private void runTransactionStream(RestoreSession session, String transactionId) {
+        try {
+            ensureTransaction(transactionId);
+            session.started.complete(null);
+            int statements = applyStreamStatements(session);
+            if (session.cancelled.get()) throw new IOException("SQLite statement stream was cancelled");
+            session.result.complete(statements);
+        } catch (Exception error) {
+            if (transactionId.equals(activeTransactionId)) {
+                try { rollbackActiveTransaction(); } catch (Exception ignored) {}
+            }
+            session.started.completeExceptionally(error);
+            session.result.completeExceptionally(error);
+        } finally {
+            closeInput(session);
+        }
+    }
+
+    private int applyStreamStatements(RestoreSession session) throws Exception {
+        return SqliteRestoreStreamParser.parse(
+            new InputStreamReader(session.input, StandardCharsets.UTF_8),
+            (sql, bind) -> {
+                String stage = classifyStatement(sql);
+                session.currentStage = stage;
+                long started = android.os.SystemClock.elapsedRealtime();
+                executeStatement(sql, bind);
+                long elapsed = android.os.SystemClock.elapsedRealtime() - started;
+                if (elapsed >= 1000L) {
+                    Log.w(TAG, "Slow stream statement: stage=" + stage +
+                        " elapsedMs=" + elapsed + " binds=" + bind.size() +
+                        " sqlChars=" + sql.length());
+                }
+            },
+            completed -> reportProgress(session.id, completed, session.currentStage, false)
+        );
     }
 
     private void runWhenTransactionIdle(Runnable task) {
