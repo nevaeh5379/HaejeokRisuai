@@ -403,7 +403,7 @@
                             <!-- Folder Items -->
                             {#if !collapsedFolders[folder.id]}
                                 <div class="divide-y divide-darkborderc/30 border-t border-darkborderc/40">
-                                    {#each folderChats as { chat, index }}
+                                    {#each folderChats as { chat, index } (chat.id ?? index)}
                                         <div
                                             role="button"
                                             tabindex="0"
@@ -446,7 +446,7 @@
                 {#if selectedFolderFilter === "all" && folders.length > 0}
                     <span class="text-[11px] font-semibold text-textcolor2 px-1">Other Chats</span>
                 {/if}
-                {#each (selectedFolderFilter === "all" && folders.length > 0 ? unassignedChats : filteredChats) as { chat, index }}
+                {#each (selectedFolderFilter === "all" && folders.length > 0 ? unassignedChats : filteredChats) as { chat, index } (chat.id ?? index)}
                     <div
                         role="button"
                         tabindex="0"
