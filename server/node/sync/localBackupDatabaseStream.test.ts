@@ -8,27 +8,14 @@ import {
   LocalBackupDatabaseStreamStore,
 } from "@risuai/backup-core/node/databaseStreamStore";
 
-const {
+import {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
-} = require("../../../packages/protocol/storageSyncValueCodec.cjs") as {
-  decodeStorageSyncValue: (value: unknown) => any;
-  encodeStorageSyncValue: (value: unknown) => unknown;
-};
-const {
+} from "../../../packages/protocol/storageSyncValueCodec.ts";
+import {
   readStorageSyncSqlRecords,
   validateStorageSyncSqlRecord,
-} = require(".//storageSyncSqlRecords.cjs") as {
-  readStorageSyncSqlRecords: (
-    filePath: string,
-    options?: Record<string, any>,
-  ) => Promise<any>;
-  validateStorageSyncSqlRecord: (
-    record: any,
-    index: number,
-    state: any,
-  ) => void;
-};
+} from "./storageSyncSqlRecords.ts";
 
 const roots: string[] = [];
 
@@ -114,9 +101,9 @@ function manifest(input: any[]) {
 
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) =>
-      fs.promises.rm(root, { recursive: true, force: true }),
-    ),
+    roots
+      .splice(0)
+      .map((root) => fs.promises.rm(root, { recursive: true, force: true })),
   );
 });
 describe("LocalBackupDatabaseStreamStore", () => {

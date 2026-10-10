@@ -11,15 +11,22 @@ export type ResizeDirection =
   | "SouthWest"
   | "West";
 
-export function windowDragRegion(node: HTMLElement) {
-  if (isTauriMacOS) node.setAttribute("data-tauri-drag-region", "true");
+export function windowDragRegion(
+  node: HTMLElement,
+  options: { windowsOnly?: boolean; selfOnly?: boolean } = {},
+) {
+  if (isTauriMacOS && !options.windowsOnly)
+    node.setAttribute("data-tauri-drag-region", "true");
 
   const onPointerDown = (event: PointerEvent) => {
     if (!isTauriWindows || event.button !== 0 || !event.isPrimary) return;
+    if (options.selfOnly && event.target !== node) return;
     event.preventDefault();
-    void getCurrentWindow().startDragging().catch((error) => {
-      console.warn("[nativeWindowChrome] Failed to start window drag", error);
-    });
+    void getCurrentWindow()
+      .startDragging()
+      .catch((error) => {
+        console.warn("[nativeWindowChrome] Failed to start window drag", error);
+      });
   };
 
   if (isTauriWindows) node.addEventListener("pointerdown", onPointerDown);
@@ -37,7 +44,9 @@ export function startWindowResize(
 ) {
   if (!isTauriWindows || event.button !== 0 || !event.isPrimary) return;
   event.preventDefault();
-  void getCurrentWindow().startResizeDragging(direction).catch((error) => {
-    console.warn(`[nativeWindowChrome] Failed to resize ${direction}`, error);
-  });
+  void getCurrentWindow()
+    .startResizeDragging(direction)
+    .catch((error) => {
+      console.warn(`[nativeWindowChrome] Failed to resize ${direction}`, error);
+    });
 }

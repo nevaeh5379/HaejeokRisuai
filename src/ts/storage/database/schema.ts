@@ -1,4 +1,4 @@
-import type { RisuPlugin } from "../../plugins/plugins.svelte";
+import type { PluginMetadata } from "../../plugins/pluginTypes";
 import type { triggerscript as triggerscriptMain } from "../../process/triggers";
 import type { NAISettings } from "../../process/models/nai";
 import type { ColorScheme } from "../../gui/colorscheme";
@@ -21,13 +21,21 @@ import { LLMFlags, LLMFormat, LLMTokenizer } from "../../model/types";
 import type { HypaModel } from "../../process/memory/hypamemory";
 import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { Loadout } from "../../loadout";
+import type {
+  Illustration,
+  IllustrationOverrides,
+  IllustrationSettings,
+} from "@risuai/protocol/src/illustration.ts";
+import type { ImageProviderId } from "@risuai/protocol/src/imageGeneration.ts";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
 export type GenerationStatsPosition =
   "bottom-right" | "bottom-left" | "top-right" | "top-left" | "off";
+
+export type ChatEdgeFadeCurve = "cosine" | "linear" | "ease-out" | "buffered";
 
 export interface ProviderModelOverride {
   ollamaModel?: string;
@@ -63,6 +71,8 @@ export interface RisuPersona {
 }
 
 export interface DatabaseSettings {
+  useChatIllustrations: boolean;
+  illustration?: IllustrationSettings;
   apiType: string;
   openAIKey: string;
   proxyKey: string;
@@ -92,7 +102,7 @@ export interface DatabaseSettings {
   forceReplaceUrl: string;
   language: string;
   translator: string;
-  plugins: RisuPlugin[];
+  plugins: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>;
   currentPluginProvider: string;
   zoomsize: number;
   customBackground: string;
@@ -113,7 +123,7 @@ export interface DatabaseSettings {
   formatversion: number;
   waifuWidth: number;
   waifuWidth2: number;
-  sdProvider: string;
+  sdProvider: ImageProviderId | "";
   webUiUrl: string;
   sdSteps: number;
   sdCFG: number;
@@ -401,9 +411,14 @@ export interface DatabaseSettings {
   assetMaxDifference: number;
   auxModelUnderModelSettings: boolean;
   menuSideBar: boolean;
-  pluginV2: RisuPlugin[];
+  pluginV2: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>;
   showSavingIcon: boolean;
   showChatTabs: boolean;
+  chatEdgeFade?: boolean;
+  chatEdgeFadeSize?: number;
+  chatEdgeFadeCurve?: ChatEdgeFadeCurve;
+  chatEdgeFadeFromBottom?: boolean;
+  fixedChatTextareaBottomCover?: boolean;
   presetRegex: customscript[];
   banCharacterset: string[];
   showPromptComparison: boolean;
@@ -529,6 +544,7 @@ export interface DatabaseSettings {
   hideAllImages?: boolean;
   lowSpecMode?: boolean;
   waitingMinigame?: boolean;
+  useLiquidLoadingSpinner?: boolean;
   preloadRecentSessionThumbnails?: boolean;
   assetCacheEntries?: number;
   assetCacheSizeMB?: number;
@@ -619,7 +635,11 @@ export interface Database
     PersonaStoreData,
     ModuleStoreData,
     PresetStoreData,
-    LegacyPersonaMirrorData {}
+    LegacyPersonaMirrorData {
+  /** Internal serialization boundary; live data belongs to the independent note store. */
+  globalAuthorNotes?: import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow[];
+  globalAuthorNoteSettings?: { allowScriptWrite: boolean };
+}
 
 export type LegacyPersonaMirrorKey = keyof LegacyPersonaMirrorData;
 
@@ -631,6 +651,8 @@ export type CanonicalDatabase = Omit<Database, LegacyPersonaMirrorKey> & {
 
 /** Fields owned by dedicated domain stores rather than SettingsStore. */
 export type DomainStoreSettingKey =
+  | "globalAuthorNotes"
+  | "globalAuthorNoteSettings"
   | keyof PersonaStoreData
   | keyof ModuleStoreData
   | keyof PresetStoreData
@@ -705,6 +727,7 @@ export interface loreBook {
 }
 
 export interface character {
+  illustration?: IllustrationOverrides;
   type?: "character";
   name: string;
   image?: string;
@@ -1202,6 +1225,8 @@ interface NAIVibeEncoding {
 
 interface ComfyConfig {
   workflow: string;
+  workflows?: import("@risuai/protocol/src/imageGeneration.ts").ComfyWorkflow[];
+  selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;
   negNodeID: string;
@@ -1282,6 +1307,7 @@ export interface BtwSession {
 export interface Chat {
   message: Message[];
   note: string;
+  globalAuthorNoteId?: string;
   name: string;
   localLore: loreBook[];
   sdData?: string;
@@ -1330,6 +1356,7 @@ export interface ChatFolder {
 }
 
 export interface Message {
+  illustrations?: Illustration[];
   role: "user" | "char";
   data: string;
   saying?: string;

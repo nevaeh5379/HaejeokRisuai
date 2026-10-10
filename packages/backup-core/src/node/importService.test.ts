@@ -2,23 +2,23 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LocalBackupImportJobProgress } from "../api";
-import { encodeInlayAssetBackup } from "../inlayCodec";
-import type { LegacyBackupSqlRecord } from "../legacyRecords";
-import type { PortableDatabaseStreamManifest } from "../streamFormat";
+import type { LocalBackupImportJobProgress } from "../api.ts";
+import { encodeInlayAssetBackup } from "../inlayCodec.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
+import type { PortableDatabaseStreamManifest } from "../streamFormat.ts";
 import {
   createLocalBackupEntryHeader,
   encodeLegacyBackupDatabase,
-} from "./legacyFormat";
-import { LocalBackupImportJobStore } from "./importJobStore";
-import { BackupImportStagingStore } from "./importStagingStore";
-import { BackupImportUploadStore } from "./importUploadStore";
+} from "./legacyFormat.ts";
+import { LocalBackupImportJobStore } from "./importJobStore.ts";
+import { BackupImportStagingStore } from "./importStagingStore.ts";
+import { BackupImportUploadStore } from "./importUploadStore.ts";
 import {
   LocalBackupImportService,
   type LocalBackupImportAdapter,
   type LocalBackupImportPreparedState,
   type LocalBackupImportRestoreSession,
-} from "./importService";
+} from "./importService.ts";
 
 const roots: string[] = [];
 
@@ -334,7 +334,7 @@ describe("LocalBackupImportService streaming restore", () => {
         job.id,
         chunked([framed("database.risudat", legacy)]),
       ),
-    ).resolves.toMatchObject({ status: "complete", recordCount: 2 });
+    ).resolves.toMatchObject({ status: "complete", recordCount: 3 });
     expect(state.activeRecords).toContainEqual({
       type: "setting",
       key: "language",

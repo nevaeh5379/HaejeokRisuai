@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { decodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { decodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import {
   StorageSyncSourceRevisionChangedError,
@@ -36,19 +36,30 @@ function makeStorage() {
       records: { settings: 2, characters: 1, chats: 1, messages: 3, total: 7 },
     })),
     listSettingKeys: vi.fn(async () => ["zeta", "exotic"]),
-    loadSettingKeys: vi.fn(async (keys: string[]) =>
-      new Map(
-        keys.map((key) => [
-          key,
-          key === "exotic" ? { missing: undefined, nan: Number.NaN } : "last",
-        ]),
-      ),
+    loadSettingKeys: vi.fn(
+      async (keys: string[]) =>
+        new Map(
+          keys.map((key) => [
+            key,
+            key === "exotic" ? { missing: undefined, nan: Number.NaN } : "last",
+          ]),
+        ),
     ),
+    listGlobalAuthorNotes: async () => [],
+    getGlobalAuthorNoteScriptWrite: async () => false,
     listPluginCustomStorageKeys: vi.fn(async () => ["plugin-key"]),
     loadPluginCustomStorageKey: vi.fn(async () => ({ enabled: true })),
     loadModules: vi.fn(async () => [{ id: "module-1", name: "Module" }]),
     listBotPresets: vi.fn(async () => [
-      { id: "preset-1", position: 0, name: "Preset", image: "", apiType: "", aiModel: "", hash: "h" },
+      {
+        id: "preset-1",
+        position: 0,
+        name: "Preset",
+        image: "",
+        apiType: "",
+        aiModel: "",
+        hash: "h",
+      },
     ]),
     loadBotPreset: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
     listColdStorageItems: vi.fn(async () => ({ items: ["cold-1"] })),
@@ -57,31 +68,59 @@ function makeStorage() {
       status: "ready" as const,
       revision,
       settings: {},
-      characters: [{ chaId: "char-1", name: "Char", type: "character", chats: [] } as any],
+      characters: [
+        { chaId: "char-1", name: "Char", type: "character", chats: [] } as any,
+      ],
     })),
-    loadCharacter: vi.fn(async () => ({
-      chaId: "char-1",
-      name: "Char",
-      type: "character",
-      detailsLoaded: true,
-      chats: [{ id: "chat-1", name: "Chat", message: [] }],
-    } as any)),
-    loadChat: vi.fn(async () => ({
-      id: "chat-1",
-      name: "Chat",
-      detailsLoaded: true,
-      messagesLoaded: true,
-      messagesFullyLoaded: false,
-      message: [{ chatId: "ignored-active-message", role: "user", data: "not exported here" }],
-    } as any)),
+    loadCharacter: vi.fn(
+      async () =>
+        ({
+          chaId: "char-1",
+          name: "Char",
+          type: "character",
+          detailsLoaded: true,
+          chats: [{ id: "chat-1", name: "Chat", message: [] }],
+        }) as any,
+    ),
+    loadChat: vi.fn(
+      async () =>
+        ({
+          id: "chat-1",
+          name: "Chat",
+          detailsLoaded: true,
+          messagesLoaded: true,
+          messagesFullyLoaded: false,
+          message: [
+            {
+              chatId: "ignored-active-message",
+              role: "user",
+              data: "not exported here",
+            },
+          ],
+        }) as any,
+    ),
     loadChatBranchGraph: vi.fn(async () => {
       throw new Error("whole graph loader must not be used");
     }),
     loadChatBranchGraphPage: vi.fn(async (_chatId: string, offset: number) => {
       pageCalls.push(offset);
       const branches = [
-        { id: "root", chatId: "chat-1", reason: "root", createdAt: 0, headMessageId: "m2" },
-        { id: "reroll", chatId: "chat-1", parentBranchId: "root", forkMessageId: "m1", reason: "reroll", createdAt: 1, headMessageId: "m-alt" },
+        {
+          id: "root",
+          chatId: "chat-1",
+          reason: "root",
+          createdAt: 0,
+          headMessageId: "m2",
+        },
+        {
+          id: "reroll",
+          chatId: "chat-1",
+          parentBranchId: "root",
+          forkMessageId: "m1",
+          reason: "reroll",
+          createdAt: 1,
+          headMessageId: "m-alt",
+        },
       ] as any[];
       if (offset === 0) {
         return {
@@ -93,7 +132,12 @@ function makeStorage() {
           ],
           links: [
             { messageId: "m1", position: 0, originBranchId: "root" },
-            { messageId: "m2", position: 1, parentMessageId: "m1", originBranchId: "root" },
+            {
+              messageId: "m2",
+              position: 1,
+              parentMessageId: "m1",
+              originBranchId: "root",
+            },
           ],
           offset: 0,
           total: 3,
@@ -106,7 +150,12 @@ function makeStorage() {
           activeBranchId: "reroll",
           messages: [{ chatId: "m-alt", role: "char", data: "alternate" }],
           links: [
-            { messageId: "m-alt", position: 1, parentMessageId: "m1", originBranchId: "reroll" },
+            {
+              messageId: "m-alt",
+              position: 1,
+              parentMessageId: "m1",
+              originBranchId: "reroll",
+            },
           ],
           offset: 2,
           total: 3,
@@ -129,42 +178,60 @@ describe("storage sync SQL source", () => {
   it("streams every SQL domain and pages branch messages", async () => {
     const { storage, pageCalls } = makeStorage();
     const records = await collect(
-      iterateStorageSyncSqlRecords(storage, { expectedRevision: 7, pageSize: 2 }),
+      iterateStorageSyncSqlRecords(storage, {
+        expectedRevision: 7,
+        pageSize: 2,
+      }),
     );
     expect(pageCalls).toEqual([0, 2]);
-    expect((storage.loadChatBranchGraph as any)).not.toHaveBeenCalled();
+    expect(storage.loadChatBranchGraph as any).not.toHaveBeenCalled();
     expect(records.map((record) => record.type)).toEqual([
       "meta",
-      "setting", "setting",
+      "setting",
+      "setting",
+      "author-note-settings",
       "plugin-storage",
       "module",
       "preset",
       "cold-storage",
       "character",
       "chat",
-      "branch", "branch", "active-branch",
-      "message", "message", "message",
+      "branch",
+      "branch",
+      "active-branch",
+      "message",
+      "message",
+      "message",
     ]);
     const messages = records.filter((record) => record.type === "message");
     expect(messages.map((record) => record.position)).toEqual([0, 1, 1]);
     expect(messages.map((record) => record.id)).toEqual(["m1", "m2", "m-alt"]);
     const chat = records.find((record) => record.type === "chat");
-    expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
+    expect(
+      chat && "data" in chat ? (chat.data as any).message : undefined,
+    ).toBeUndefined();
   });
 
   it("preserves module positions and root module order independently", async () => {
     const { storage } = makeStorage();
     storage.listSettingKeys = vi.fn(async () => ["moduleOrder"]);
-    storage.loadSettingKeys = vi.fn(async () =>
-      new Map([["moduleOrder", ["folder:f1", "module-b", "module-a"]]]),
+    storage.loadSettingKeys = vi.fn(
+      async () =>
+        new Map([["moduleOrder", ["folder:f1", "module-b", "module-a"]]]),
     );
-    storage.loadModules = vi.fn(async () => [
-      { id: "module-b", name: "B", folderId: "f1" },
-      { id: "module-a", name: "A" },
-    ] as any);
+    storage.loadModules = vi.fn(
+      async () =>
+        [
+          { id: "module-b", name: "B", folderId: "f1" },
+          { id: "module-a", name: "A" },
+        ] as any,
+    );
 
     const records = await collect(
-      iterateStorageSyncSqlRecords(storage, { expectedRevision: 7, pageSize: 2 }),
+      iterateStorageSyncSqlRecords(storage, {
+        expectedRevision: 7,
+        pageSize: 2,
+      }),
     );
     const rootOrder = records.find(
       (record) => record.type === "setting" && record.key === "moduleOrder",
@@ -172,10 +239,13 @@ describe("storage sync SQL source", () => {
     const modules = records.filter((record) => record.type === "module");
 
     expect(rootOrder && "value" in rootOrder ? rootOrder.value : null).toEqual([
-      "folder:f1", "module-b", "module-a",
+      "folder:f1",
+      "module-b",
+      "module-a",
     ]);
     expect(modules.map((record) => [record.id, record.position])).toEqual([
-      ["module-b", 0], ["module-a", 1],
+      ["module-b", 0],
+      ["module-a", 1],
     ]);
   });
 
@@ -196,8 +266,10 @@ describe("storage sync SQL source", () => {
     expect(chunks.every((chunk) => chunk.byteLength <= 17)).toBe(true);
     const bytes = concat(chunks);
     expect(bytes.byteLength).toBe(plan.size);
-    expect(crypto.createHash("sha256").update(bytes).digest("hex")).toBe(plan.sha256);
-    expect(plan.recordCount).toBe(15);
+    expect(crypto.createHash("sha256").update(bytes).digest("hex")).toBe(
+      plan.sha256,
+    );
+    expect(plan.recordCount).toBe(16);
 
     const records = new TextDecoder()
       .decode(bytes)
@@ -207,7 +279,9 @@ describe("storage sync SQL source", () => {
     const exotic = records.find(
       (record) => record.type === "setting" && record.key === "exotic",
     );
-    expect(Object.prototype.hasOwnProperty.call(exotic.value, "missing")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(exotic.value, "missing")).toBe(
+      true,
+    );
     expect(exotic.value.missing).toBeUndefined();
     expect(Number.isNaN(exotic.value.nan)).toBe(true);
   });
@@ -220,7 +294,10 @@ describe("storage sync SQL source", () => {
       return page;
     });
     await expect(
-      measureStorageSyncSqlSource(storage, { expectedRevision: 7, pageSize: 2 }),
+      measureStorageSyncSqlSource(storage, {
+        expectedRevision: 7,
+        pageSize: 2,
+      }),
     ).rejects.toThrow(/positions required for lossless sync/);
   });
 
@@ -233,7 +310,10 @@ describe("storage sync SQL source", () => {
       return value;
     });
     await expect(
-      measureStorageSyncSqlSource(storage, { expectedRevision: 7, pageSize: 2 }),
+      measureStorageSyncSqlSource(storage, {
+        expectedRevision: 7,
+        pageSize: 2,
+      }),
     ).rejects.toBeInstanceOf(StorageSyncSourceRevisionChangedError);
   });
 });

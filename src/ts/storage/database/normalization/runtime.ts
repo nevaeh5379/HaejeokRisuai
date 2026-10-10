@@ -32,6 +32,7 @@ const runtimeScalarDefaults = {
   hideAllImages: defaultBoolean(false),
   lowSpecMode: defaultBoolean(false),
   waitingMinigame: defaultBoolean(true),
+  useLiquidLoadingSpinner: defaultBoolean(false),
   preloadRecentSessionThumbnails: defaultBoolean(false),
   blurHiddenCharacters: defaultBoolean(true),
   ImagenModel: defaultString("imagen-4.0-generate-001"),
@@ -127,7 +128,10 @@ function applyPlatformRuntimePolicy(data: Database): void {
   }
 }
 
-export function normalizeRuntimeDatabaseSettings(data: Database): void {
+export function normalizeRuntimeDatabaseSettings(
+  data: Database,
+  context: { hasPlugins?: boolean } = {},
+): void {
   Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
   applyLocalBackupPerformanceDefaults(data);
   normalizeImageCacheSettings(data, isCapacitor);
@@ -144,8 +148,9 @@ export function normalizeRuntimeDatabaseSettings(data: Database): void {
   normalizeChatLoadSettings(data);
   migrateStreamingDisplayMode(data);
   applyPlatformRuntimePolicy(data);
-  data.enableRisuaiProTools ??= data.plugins.length > 0;
+  const hasPlugins = context.hasPlugins === true;
+  data.enableRisuaiProTools ??= hasPlugins;
   data.loadouts ??= [];
   data.customSidebarItems ??= [];
-  data.coldstorage ??= data?.plugins?.length === 0;
+  data.coldstorage ??= !hasPlugins;
 }

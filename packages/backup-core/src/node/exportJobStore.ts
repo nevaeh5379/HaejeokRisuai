@@ -5,7 +5,7 @@ import type {
   LocalBackupExportJobStatus,
   LocalBackupMode,
   LocalBackupProgress,
-} from "../api";
+} from "../api.ts";
 
 export interface LocalBackupExportStreamOptions {
   pageSize: number;
@@ -28,14 +28,16 @@ interface InternalLocalBackupExportJob extends LocalBackupExportJob {
 }
 
 export class LocalBackupExportJobError extends Error {
+  readonly code: "job_not_found" | "job_already_started" | "invalid_job_state";
   constructor(
     message: string,
-    readonly code:
+    code:
       | "job_not_found"
       | "job_already_started"
       | "invalid_job_state" = "invalid_job_state",
   ) {
     super(message);
+    this.code = code;
     this.name = "LocalBackupExportJobError";
   }
 }
@@ -52,10 +54,14 @@ function publicJob(job: InternalLocalBackupExportJob): LocalBackupExportJob {
 export class LocalBackupExportJobStore {
   private readonly jobs = new Map<string, InternalLocalBackupExportJob>();
 
+  private readonly ttlMs: any;
+  private readonly idFactory: any;
   constructor(
-    private readonly ttlMs = 60 * 1000,
-    private readonly idFactory = () => randomBytes(24).toString("base64url"),
+    ttlMs = 60 * 1000,
+    idFactory = () => randomBytes(24).toString("base64url"),
   ) {
+    this.ttlMs = ttlMs;
+    this.idFactory = idFactory;
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
       throw new TypeError("Local backup export job TTL must be positive");
     }

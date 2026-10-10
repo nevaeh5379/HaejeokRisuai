@@ -62,7 +62,7 @@ describe("service worker protocol", () => {
       "utf8",
     );
 
-    expect(source).toContain(
+    expect(source.replaceAll("\r\n", "\n")).toContain(
       `case "init": {\n          event.respondWith(new Response("${SERVICE_WORKER_PROTOCOL_VERSION}"));`,
     );
   });

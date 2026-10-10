@@ -6,7 +6,7 @@ import { LLMFormat } from "../../model/modellist";
 import {
   DEFAULT_NOVELLIST_API_URL,
   buildNovelListRequestBody,
-} from "@risuai/chat-core/novelListProvider.cjs";
+} from "@risuai/chat-core/novelListProvider.ts";
 import { stringlizeAINChat, unstringlizeAIN } from "../stringlize";
 import { resolveRequestCharacter } from "./requestContext";
 import type {

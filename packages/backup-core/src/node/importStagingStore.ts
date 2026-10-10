@@ -5,8 +5,8 @@ import { join, resolve } from "node:path";
 import {
   BackupContainerParser,
   type BackupContainerEntryInfo,
-} from "../containerStream";
-import { classifyBackupEntry, type BackupEntryKind } from "../entryPolicy";
+} from "../containerStream.ts";
+import { classifyBackupEntry, type BackupEntryKind } from "../entryPolicy.ts";
 
 type SupportedEntryKind = Exclude<
   BackupEntryKind,
@@ -63,9 +63,17 @@ export interface StreamedBackupContainer {
 }
 
 export class BackupImportStagingError extends Error {
+  readonly code:
+    | "invalid_job_id"
+    | "invalid_entry"
+    | "duplicate_entry"
+    | "entry_limit_exceeded"
+    | "buffered_entry_too_large"
+    | "encrypted_backup_unsupported"
+    | "staging_error";
   constructor(
     message: string,
-    readonly code:
+    code:
       | "invalid_job_id"
       | "invalid_entry"
       | "duplicate_entry"
@@ -75,6 +83,7 @@ export class BackupImportStagingError extends Error {
       | "staging_error" = "staging_error",
   ) {
     super(message);
+    this.code = code;
     this.name = "BackupImportStagingError";
   }
 }
@@ -98,12 +107,20 @@ export class BackupImportStreamSession {
   private entryIndex = 0;
   private finished = false;
 
+  private readonly directory: string;
+  private readonly handlers: BackupImportStreamHandlers;
+  private readonly totalBytes: number;
+  private readonly onDisposed: () => void;
   constructor(
-    private readonly directory: string,
-    private readonly handlers: BackupImportStreamHandlers,
-    private readonly totalBytes: number,
-    private readonly onDisposed: () => void,
+    directory: string,
+    handlers: BackupImportStreamHandlers,
+    totalBytes: number,
+    onDisposed: () => void,
   ) {
+    this.directory = directory;
+    this.handlers = handlers;
+    this.totalBytes = totalBytes;
+    this.onDisposed = onDisposed;
     this.parser = new BackupContainerParser(
       {
         onEntryStart: async (info: BackupContainerEntryInfo): Promise<void> =>

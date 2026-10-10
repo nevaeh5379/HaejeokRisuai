@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import { makeMessage } from "./sqliteTestFixtures";
 
 /**
@@ -19,7 +19,7 @@ describe("message metadata storage layout", () => {
         promptText: [{ role: "system", content: "big prompt body" }],
       },
     });
-    const rows = flattenRelationalValue(message);
+    const rows = nodeCodec.flatten(message);
     const rootChildren = rows.filter(
       (row) => row.node_id > 0 && row.parent_node_id === 0,
     );

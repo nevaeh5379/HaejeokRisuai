@@ -51,9 +51,7 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
-import {
-  createBackupContainerEntryHeader,
-} from "@risuai/backup-core/containerStream";
+import { createBackupContainerEntryHeader } from "@risuai/backup-core/containerStream";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -66,7 +64,11 @@ import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { isCapacitor, isTauri, isNodeServer } from "./platform";
-import { isLocalNetworkUrl } from "./network/localNetwork";
+import { fetchProxy } from "./network/proxyFetch";
+import {
+  canUseBrowserLocalNetwork,
+  isLocalNetworkUrl,
+} from "./network/localNetwork";
 import {
   decodeProxyJobWsChunk,
   formatProxyStreamErrorMessage,
@@ -802,22 +804,14 @@ export async function saveAsset(
       fileExtension = ext;
     }
   }
-  if (forageStorage.realStorage instanceof TauriAssetStorage) {
-    await writeFile(`assets/${id}.${fileExtension}`, data, {
-      baseDir: BaseDirectory.AppData,
-    });
-    invalidateThumbnailCache(`assets/${id}.${fileExtension}`);
-    return `assets/${id}.${fileExtension}`;
-  } else {
-    let form = `assets/${id}.${fileExtension}`;
-    invalidateThumbnailCache(form);
-    const replacer = await forageStorage.setItem(form, data);
-    if (replacer) {
-      invalidateThumbnailCache(replacer);
-      return replacer;
-    }
-    return form;
+  const form = `assets/${id}.${fileExtension}`;
+  const replacer = await forageStorage.setItem(form, data);
+  invalidateThumbnailCache(form);
+  if (replacer) {
+    invalidateThumbnailCache(replacer);
+    return replacer;
   }
+  return form;
 }
 
 /**
@@ -1021,6 +1015,11 @@ export async function globalFetch(
     const urlHost = new URL(url).hostname;
     const useLocalNetworkRoute =
       arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
+    const browserLocalNetwork =
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer &&
+      canUseBrowserLocalNetwork(url, window.location.href);
     const forcePlainFetch =
       ((knownHostes.includes(urlHost) && !isTauri) ||
         db.usePlainFetch ||
@@ -1028,7 +1027,13 @@ export async function globalFetch(
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute;
 
-    if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
+    if (
+      useLocalNetworkRoute &&
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer &&
+      !browserLocalNetwork
+    ) {
       return {
         ok: false,
         headers: {},
@@ -1041,7 +1046,8 @@ export async function globalFetch(
       knownHostes.includes(urlHost) &&
       !isTauri &&
       !isCapacitor &&
-      !isNodeServer
+      !isNodeServer &&
+      !browserLocalNetwork
     ) {
       return {
         ok: false,
@@ -1140,6 +1146,9 @@ export async function globalFetch(
 
     try {
       if (useLocalNetworkRoute) {
+        if (browserLocalNetwork) {
+          return await fetchWithPlainFetch(url, requestArg);
+        }
         if (isTauri) {
           return await fetchWithTauri(url, requestArg);
         }
@@ -1364,7 +1373,7 @@ async function fetchWithProxy(
         ? arg.body.toString()
         : JSON.stringify(arg.body);
 
-    const response = await fetch(furl, {
+    const response = await fetchProxy(furl, {
       body,
       headers,
       method: arg.method ?? "POST",
@@ -2495,7 +2504,13 @@ export async function fetchNative(
 
   const useLocalNetworkRoute =
     arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
-  if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
+  if (
+    useLocalNetworkRoute &&
+    !isTauri &&
+    !isCapacitor &&
+    !isNodeServer &&
+    !canUseBrowserLocalNetwork(url, window.location.href)
+  ) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
   const throughProxy = isNodeServer && useLocalNetworkRoute;
@@ -2758,7 +2773,7 @@ export async function fetchNative(
         }
       }
 
-      const r = await fetch(nodeProxy2Url, {
+      const r = await fetchProxy(nodeProxy2Url, {
         body: realBody as any,
         headers: arg.useRisuTk
           ? {
@@ -2940,7 +2955,7 @@ export async function loadInternalBackup() {
       "SQL storage returned no startup data after backup restore",
     );
   }
-  installStartupData(startup, storage);
+  await installStartupData(startup, storage);
   alertNormal("Loaded backup");
 }
 

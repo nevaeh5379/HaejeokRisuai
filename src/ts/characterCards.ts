@@ -1,3 +1,4 @@
+import { materializeChatNote } from "./authorNote";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { createDatabaseSnapshot } from "src/ts/storage/database/databaseSnapshot";
 import { showRealmInfoStore } from "./realmStore";
@@ -1550,6 +1551,10 @@ export async function exportCharacterCard(
       Object.assign(char, safeStructuredClone(loaded));
     }
   }
+  const exportedChats = [];
+  for (const chat of char.chats ?? [])
+    exportedChats.push(await materializeChatNote(chat));
+  char = { ...char, chats: exportedChats };
   const requestedSpec = arg.spec ?? "v2";
   if (
     (type === "charx" || type === "charxJpeg") &&

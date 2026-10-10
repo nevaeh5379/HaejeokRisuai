@@ -5,12 +5,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { buildFullBackupPayload } = require("../../../packages/backup-core/dist/node/fullPayload.js") as {
-  buildFullBackupPayload: (
-    database: Record<string, unknown>,
-  ) => Record<string, any>;
-};
-const {
+import { buildFullBackupPayload } from "../../../packages/backup-core/src/node/fullPayload.ts";
+import {
   normalizeBackupConfigSection,
   instantiateVendorStorage,
   applyBackupConfig,
@@ -20,36 +16,10 @@ const {
   getDbConfigPath,
   MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
   DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES,
-} = require(".//storageDriver.cjs") as {
-  normalizeBackupConfigSection: (raw: unknown) => Record<string, any> | null;
-  instantiateVendorStorage: (
-    vendor: string,
-    params: Record<string, any>,
-    options: Record<string, any>,
-  ) => Record<string, any>;
-  applyBackupConfig: (
-    savePath: string,
-    args: Record<string, any>,
-  ) => {
-    backup: Record<string, any> | null;
-    storage: Record<string, any> | null;
-  };
-  removeBackupConfig: (savePath: string) => void;
-  readStoredDbConfig: (savePath: string) => Record<string, any>;
-  writeStoredDbConfig: (savePath: string, config: Record<string, any>) => void;
-  getDbConfigPath: (savePath: string) => string;
-  MIN_BACKUP_SNAPSHOT_INTERVAL_MINUTES: number;
-  DEFAULT_BACKUP_SNAPSHOT_INTERVAL_MINUTES: number;
-};
-const { PostgresStorage } = require("./postgres/postgresStorage.cjs") as {
-  PostgresStorage: new (options: Record<string, any>) => Record<string, any>;
-};
-const { OracleStorage } = require("./oracle/oracleStorage.cjs") as {
-  OracleStorage: new (options: Record<string, any>) => Record<string, any>;
-};
-const { AzureStorage } = require("./azure/azureStorage.cjs") as {
-  AzureStorage: new (options: Record<string, any>) => Record<string, any>;
-};
+} from "./storageDriver.ts";
+import { PostgresStorage } from "./postgres/postgresStorage.ts";
+import { OracleStorage } from "./oracle/oracleStorage.ts";
+import { AzureStorage } from "./azure/azureStorage.ts";
 
 let tmpDir: string;
 
@@ -61,8 +31,8 @@ afterAll(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("buildFullBackupPayload", () => {
-  it("builds a replaceAll payload with the sync wire format", () => {
+describe("buildFullBackupPayload", async () => {
+  it("builds a replaceAll payload with the sync wire format", async () => {
     const database = {
       username: "Legacy User",
       userIcon: "legacy-user.png",
@@ -143,7 +113,7 @@ describe("buildFullBackupPayload", () => {
     ]);
   });
 
-  it("assigns missing hierarchy ids", () => {
+  it("assigns missing hierarchy ids", async () => {
     const database = {
       characters: [
         {
@@ -171,8 +141,8 @@ describe("buildFullBackupPayload", () => {
   });
 });
 
-describe("backup config section normalization", () => {
-  it("returns null for missing or invalid sections", () => {
+describe("backup config section normalization", async () => {
+  it("returns null for missing or invalid sections", async () => {
     expect(normalizeBackupConfigSection(null)).toBeNull();
     expect(normalizeBackupConfigSection(undefined)).toBeNull();
     expect(normalizeBackupConfigSection({})).toBeNull();
@@ -181,7 +151,7 @@ describe("backup config section normalization", () => {
     ).toBeNull();
   });
 
-  it("fills defaults and clamps the snapshot interval", () => {
+  it("fills defaults and clamps the snapshot interval", async () => {
     const backup = normalizeBackupConfigSection({
       vendor: "postgres",
       enabled: true,
@@ -212,8 +182,8 @@ describe("backup config section normalization", () => {
   });
 });
 
-describe("stored config backup roundtrip", () => {
-  it("persists and removes the backup section alongside primary config", () => {
+describe("stored config backup roundtrip", async () => {
+  it("persists and removes the backup section alongside primary config", async () => {
     const savePath = path.join(tmpDir, "save1");
     fs.mkdirSync(savePath, { recursive: true });
     writeStoredDbConfig(savePath, {
@@ -225,7 +195,7 @@ describe("stored config backup roundtrip", () => {
     let stored = readStoredDbConfig(savePath);
     expect(stored.backup).toBeNull();
 
-    const { backup, storage } = applyBackupConfig(savePath, {
+    const { backup, storage } = await applyBackupConfig(savePath, {
       vendor: "postgres",
       params: { connectionString: "postgresql://backup-db" },
       mirroring: { enabled: true },
@@ -254,7 +224,7 @@ describe("stored config backup roundtrip", () => {
     expect(stored.vendor).toBe("postgres");
   });
 
-  it("refuses to enable a backup with incomplete parameters", () => {
+  it("refuses to enable a backup with incomplete parameters", async () => {
     const savePath = path.join(tmpDir, "save2");
     fs.mkdirSync(savePath, { recursive: true });
     writeStoredDbConfig(savePath, {
@@ -263,7 +233,7 @@ describe("stored config backup roundtrip", () => {
       poolMax: 10,
       params: { connectionString: "postgresql://main" },
     });
-    const { backup, storage } = applyBackupConfig(savePath, {
+    const { backup, storage } = await applyBackupConfig(savePath, {
       vendor: "postgres",
       params: { connectionString: "" },
       mirroring: { enabled: true },
@@ -275,9 +245,9 @@ describe("stored config backup roundtrip", () => {
   });
 });
 
-describe("instantiateVendorStorage", () => {
-  it("creates the matching driver for each vendor", () => {
-    const pg = instantiateVendorStorage(
+describe("instantiateVendorStorage", async () => {
+  it("creates the matching driver for each vendor", async () => {
+    const pg = await instantiateVendorStorage(
       "postgres",
       { connectionString: "postgresql://x" },
       {},
@@ -285,14 +255,14 @@ describe("instantiateVendorStorage", () => {
     expect(pg).toBeInstanceOf(PostgresStorage);
     expect(pg.enabled).toBe(true);
 
-    const disabledPg = instantiateVendorStorage(
+    const disabledPg = await instantiateVendorStorage(
       "postgres",
       { connectionString: "" },
       {},
     );
     expect(disabledPg.enabled).toBe(false);
 
-    const ora = instantiateVendorStorage(
+    const ora = await instantiateVendorStorage(
       "oracle",
       {
         user: "u",
@@ -305,7 +275,7 @@ describe("instantiateVendorStorage", () => {
     expect(ora.enabled).toBe(true);
     expect(ora.poolMax).toBe(7);
 
-    const azure = instantiateVendorStorage(
+    const azure = await instantiateVendorStorage(
       "azure",
       {
         server: "host",
@@ -320,7 +290,7 @@ describe("instantiateVendorStorage", () => {
     expect(azure.enabled).toBe(true);
   });
 
-  it("keeps config file mode restrictive", () => {
+  it("keeps config file mode restrictive", async () => {
     const savePath = path.join(tmpDir, "save3");
     fs.mkdirSync(savePath, { recursive: true });
     writeStoredDbConfig(savePath, {
@@ -345,7 +315,7 @@ describe("instantiateVendorStorage", () => {
   });
 });
 
-describe("isSecurePostgresConfigRequest logic", () => {
+describe("isSecurePostgresConfigRequest logic", async () => {
   function testIsSecureRequest(req: {
     secure?: boolean;
     headers?: Record<string, string>;
@@ -386,7 +356,7 @@ describe("isSecurePostgresConfigRequest logic", () => {
     );
   }
 
-  it("allows native secure connections and localhost", () => {
+  it("allows native secure connections and localhost", async () => {
     expect(testIsSecureRequest({ secure: true })).toBe(true);
     expect(
       testIsSecureRequest({ socket: { remoteAddress: "127.0.0.1" } }),
@@ -399,7 +369,7 @@ describe("isSecurePostgresConfigRequest logic", () => {
     ).toBe(true);
   });
 
-  it("allows requests behind HTTPS reverse proxies with headers", () => {
+  it("allows requests behind HTTPS reverse proxies with headers", async () => {
     // Nginx / Caddy / Traefik
     expect(
       testIsSecureRequest({
@@ -430,7 +400,7 @@ describe("isSecurePostgresConfigRequest logic", () => {
     ).toBe(true);
   });
 
-  it("rejects unencrypted remote requests without proxy https headers", () => {
+  it("rejects unencrypted remote requests without proxy https headers", async () => {
     expect(
       testIsSecureRequest({
         socket: { remoteAddress: "192.168.1.100" },

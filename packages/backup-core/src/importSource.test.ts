@@ -8,7 +8,7 @@ import {
   type EncodedBackupChunkReader,
   type LocalBackupSource,
   type SequentialBackupFileHandle,
-} from "./importSource";
+} from "./importSource.ts";
 
 function decodeHex(data: string): Uint8Array {
   const bytes: number[] = [];

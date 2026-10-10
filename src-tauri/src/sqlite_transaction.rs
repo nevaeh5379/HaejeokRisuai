@@ -298,7 +298,7 @@ mod tests {
         let path = test_path();
         let options = connect_options(&path);
         let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
-        sqlx::query(include_str!("../../src/ts/storage/sqlite-schema.sql"))
+        sqlx::query(include_str!("../../packages/storage-sqlite/src/schema/schema.sql"))
             .execute(&mut connection)
             .await
             .unwrap();

@@ -1,6 +1,5 @@
 {
   "DEFERRED_SETTING_KEYS": [
-    "plugins",
     "pluginCustomStorage",
     "personas",
     "botPresets",
@@ -46,7 +45,6 @@
     "customPromptTemplateToggle"
   ],
   "DEFERRED_STARTUP_SETTING_KEYS": [
-    "plugins",
     "loadouts",
     "loreBook",
     "globalscript",
@@ -81,11 +79,14 @@
     "userNote",
     "personaPrompt",
     "modules",
+    "plugins",
     "enabledModules",
     "moduleFolders",
     "moduleOrder",
     "moduleSandboxGroups",
-    "activeBotPresetId"
+    "activeBotPresetId",
+    "globalAuthorNotes",
+    "globalAuthorNoteSettings"
   ],
   "PRESET_STORE_SETTING_KEYS": [
     "apiType",
@@ -176,7 +177,6 @@
     "botPresetsId"
   ],
   "BOOTSTRAP_SETTING_KEYS": [
-    "plugins",
     "pluginCustomStorage",
     "loreBook",
     "globalscript",

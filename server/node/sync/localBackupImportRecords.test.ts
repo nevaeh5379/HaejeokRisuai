@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LocalBackupImportRecordStore } from "./localBackupImportRecords.js";
+import { LocalBackupImportRecordStore } from "./localBackupImportRecords.ts";
 
 interface StoredRow {
   restoreId: string;
@@ -320,9 +320,9 @@ describe.each(["postgres", "azure", "oracle"] as const)(
       expect((decoded[1].data as Record<string, unknown>).data).toBe(
         "before\0binary",
       );
-      expect(
-        (decoded[1].data as Record<string, unknown>)["key\0suffix"],
-      ).toBe("v\0v");
+      expect((decoded[1].data as Record<string, unknown>)["key\0suffix"]).toBe(
+        "v\0v",
+      );
 
       await store.cleanup(id);
       expect(rows).toEqual([]);

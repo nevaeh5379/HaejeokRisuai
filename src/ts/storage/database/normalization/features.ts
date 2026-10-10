@@ -4,8 +4,10 @@ import { safeStructuredClone } from "../../../polyfill";
 import { defaultHotkeys } from "../../../defaulthotkeys";
 import { LLMFormat } from "../../../model/types";
 import type { Database } from "../schema";
+import { object } from "valibot";
 import {
   defaultBoolean,
+  defaultArray,
   defaultLooseObject,
   defaultNumber,
   defaultPicklist,
@@ -23,6 +25,7 @@ const llmFormatOptions = Object.values(LLMFormat) as [
 ];
 
 const featureScalarDefaults = {
+  useChatIllustrations: defaultBoolean(false),
   useInstructPrompt: defaultBoolean(false),
   hanuraiEnable: defaultBoolean(false),
   hanuraiSplit: defaultBoolean(false),
@@ -72,6 +75,14 @@ const featureScalarDefaults = {
   showSavingIcon: defaultBoolean(false),
   showPromptComparison: defaultBoolean(false),
   showChatTabs: defaultBoolean(true),
+  chatEdgeFade: defaultBoolean(false),
+  chatEdgeFadeSize: defaultNumber(48),
+  chatEdgeFadeCurve: defaultPicklist(
+    ["cosine", "linear", "ease-out", "buffered"] as const,
+    "cosine",
+  ),
+  chatEdgeFadeFromBottom: defaultBoolean(false),
+  fixedChatTextareaBottomCover: defaultBoolean(false),
   reasoningEffort: defaultNumber(0),
   verbosity: defaultNumber(1),
   hypaV3PresetId: defaultNumber(0),
@@ -140,6 +151,14 @@ const fallbackModelDefaults = {
 
 const comfyConfigDefaults = {
   workflow: defaultString(),
+  workflows: defaultArray(
+    object({
+      id: defaultString(),
+      name: defaultString("Workflow"),
+      workflow: defaultString(),
+    }),
+  ),
+  selectedWorkflowId: defaultString(),
   posNodeID: defaultString(),
   posInputName: defaultString("text"),
   negNodeID: defaultString(),
@@ -246,7 +265,27 @@ function normalizeFallbackModels(data: Database): void {
 export function normalizeFeatureDatabaseSettings(data: Database): void {
   Object.assign(data, parseDefaults(featureScalarDefaults, data));
   data.globalChatVariables ??= {};
-  data.comfyConfig = mergeDefaults(comfyConfigDefaults, data.comfyConfig);
+  const parsedComfy = mergeDefaults(comfyConfigDefaults, data.comfyConfig);
+  const comfy = {
+    ...parsedComfy,
+    workflows: parsedComfy.workflows.map((item, index) => ({
+      id: item.id || `workflow-${index}`,
+      name: item.name ?? "Workflow",
+      workflow: item.workflow ?? "",
+    })),
+  };
+  data.comfyConfig = comfy;
+  if (!comfy.workflows.length && comfy.workflow) {
+    comfy.workflows.push({
+      id: "legacy",
+      name: "Workflow",
+      workflow: comfy.workflow,
+    });
+    comfy.workflow = "";
+  }
+  if (!comfy.workflows.some((item) => item.id === comfy.selectedWorkflowId)) {
+    comfy.selectedWorkflowId = comfy.workflows[0]?.id ?? "";
+  }
   data.statics = mergeDefaults(staticsDefaults, data.statics);
   data.customQuotesData ??= ["“", "”", "‘", "’"];
   data.seperateParameters ??= {

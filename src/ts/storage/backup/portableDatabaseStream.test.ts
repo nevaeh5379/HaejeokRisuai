@@ -64,6 +64,8 @@ function createStorage(overrides: Record<string, unknown> = {}) {
       },
     ]),
     loadBotPreset: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
+    listGlobalAuthorNotes: async () => [],
+    getGlobalAuthorNoteScriptWrite: async () => false,
     listPluginCustomStorageKeys: vi.fn(async () => ["plugin-1"]),
     loadPluginCustomStorageKey: vi.fn(async () => ({ retained: true })),
     listColdStorageItems: vi.fn(async () => ({ items: [] })),
@@ -265,11 +267,11 @@ describe("portable database streaming backup", () => {
       { fragmentRecords: 64 },
     );
 
-    expect(manifest.totalRecords).toBe(301);
+    expect(manifest.totalRecords).toBe(302);
     expect(fragments.length).toBeGreaterThan(3);
-    expect(
-      fragments.every((fragment) => fragment.records.length <= 64),
-    ).toBe(true);
+    expect(fragments.every((fragment) => fragment.records.length <= 64)).toBe(
+      true,
+    );
     expect(PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS).toBe(128);
     expect(PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS).toBe(256);
     expect(storage.exportDatabaseSnapshot).not.toHaveBeenCalled();

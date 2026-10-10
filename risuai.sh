@@ -939,6 +939,7 @@ compose_with_env() (
     selected_http_port=$(env_value_or "$selected_env" RISUAI_HTTP_PORT 80)
     selected_https_port=$(env_value_or "$selected_env" RISUAI_HTTPS_PORT 443)
     selected_installation_id=$(env_value_or "$selected_env" RISUAI_INSTALLATION_ID legacy)
+    selected_allowed_origins=$(read_env_value_from "$selected_env" RISUAI_ALLOWED_ORIGINS)
 
     unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_ENV_FILES
     COMPOSE_PROJECT_NAME=$project_name
@@ -969,8 +970,10 @@ compose_with_env() (
     CLOUDFLARE_TOKEN_FILE=$selected_cloudflare_path
     CLOUDFLARE_UPDATE_INTERVAL=$selected_interval
     RISUAI_MIGRATE_CONCURRENCY=4
+    RISUAI_ALLOWED_ORIGINS=$selected_allowed_origins
     export COMPOSE_PROJECT_NAME RISUAI_RUNTIME RISUAI_CONTAINER_ENGINE RISUAI_MODE RISUAI_DNS_PROVIDER RISUAI_PROXY_TYPE RISUAI_PROXY_NETWORK
     export RISUAI_INSTALLATION_ID RISUAI_PORT RISUAI_HTTP_PORT RISUAI_HTTPS_PORT RISUAI_MIGRATE_CONCURRENCY
+    export RISUAI_ALLOWED_ORIGINS
     export POSTGRES_PASSWORD POSTGRES_PORT RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY RUSTFS_BIND_ADDRESS RUSTFS_API_PORT RUSTFS_CONSOLE_PORT
     export RISUAI_DOMAIN DYNV6_ZONE DYNV6_IPV6 DYNV6_TOKEN_FILE DYNV6_UPDATE_INTERVAL
     export CLOUDFLARE_ZONE_ID CLOUDFLARE_IPV6 CLOUDFLARE_TOKEN_FILE CLOUDFLARE_UPDATE_INTERVAL
@@ -1293,6 +1296,8 @@ show_deployment_from() {
             ;;
     esac
     if [ "$current_runtime" = node ]; then
+        current_allowed_origins=$(read_env_value_from "$show_env" RISUAI_ALLOWED_ORIGINS)
+        printf '  Allowed origins:   %s\n' "${current_allowed_origins:-none}"
         if [ -n "$current_postgres_port" ]; then
             printf '  PostgreSQL:        127.0.0.1:%s/tcp\n' "$current_postgres_port"
         else
@@ -2074,10 +2079,10 @@ EOF
             cd "$script_dir"
             if [ "$dev_action" = server ]; then
                 info "Starting PostgreSQL-backed Node development server on port $PORT"
-                exec node server/node/bootstrap.cjs
+                exec node server/node/server.ts
             fi
             info "Starting Node backend and Vite development server"
-            node server/node/bootstrap.cjs &
+            node server/node/server.ts &
             dev_backend_pid=$!
             trap 'dev_cleanup_backend; exit 129' 1
             trap 'dev_cleanup_backend; exit 130' 2

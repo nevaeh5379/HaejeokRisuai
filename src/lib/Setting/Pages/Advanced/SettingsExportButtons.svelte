@@ -1,14 +1,30 @@
 <script lang="ts">
     import { createDatabaseSnapshot } from "src/ts/storage/database/databaseSnapshot";
-import { language } from "src/lang";
+    import { language } from "src/lang";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-    import { alertMd, alertNormal } from "src/ts/alert";
+    import { alertError, alertMd, alertNormal } from "src/ts/alert";
     import { downloadFile, getRequestLog } from "src/ts/globalApi.svelte";
     
-    import { isNodeServer, isTauri } from "src/ts/platform";
+    import { isCapacitorAndroid, isNodeServer, isTauri } from "src/ts/platform";
+    import { shareAndroidDiagnostics } from "src/ts/android/androidCrashDiagnostics";
 
 </script>
+
+{#if isCapacitorAndroid}
+    <Button
+        className="mt-4"
+        onclick={async () => {
+            try {
+                await shareAndroidDiagnostics();
+            } catch {
+                alertError(language.androidDiagnosticsShareFailed);
+            }
+        }}
+    >
+        {language.androidDiagnosticsShare}
+    </Button>
+{/if}
 
 <Button
     className="mt-4"

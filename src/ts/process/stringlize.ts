@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 
 import { getUserName } from "../util";

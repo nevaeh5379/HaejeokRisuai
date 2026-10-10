@@ -1,9 +1,11 @@
 {
   "name": "@risuai/protocol",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=24.12.0"
   }
 }

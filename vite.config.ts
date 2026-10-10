@@ -6,16 +6,32 @@ import wasm from "vite-plugin-wasm";
 import strip from "@rollup/plugin-strip";
 import tailwindcss from "@tailwindcss/vite";
 import { resolveBuildVersion } from "./tooling/build-version.mjs";
-import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.mjs";
+import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.ts";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { resolveLegalConfigured } from "./tooling/legal-config.js";
+import { buildProtocol } from "./tooling/build-protocol.ts";
+buildProtocol();
 const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
-  readdirSync(resolve(process.cwd(), `packages/${packageName}`))
-    // Node-only `node --test` files are never imported by the browser app;
-    // including them breaks dependency optimization (node:test, node:assert).
-    .filter((file) => file.endsWith(".cjs") && !file.endsWith(".test.cjs"))
-    .map((file) => `@risuai/${packageName}/${file}`),
+  ["", ...(packageName === "protocol" ? ["dist/"] : [])].flatMap((directory) =>
+    readdirSync(resolve(process.cwd(), `packages/${packageName}/${directory}`))
+      // Node-only `node --test` files are never imported by the browser app;
+      // including them breaks dependency optimization (node:test, node:assert).
+      .filter(
+        (file) =>
+          file.endsWith(".cjs") &&
+          !file.endsWith(".test.cjs") &&
+          // Protocol modules with native browser ESM entry points need no
+          // CommonJS prebundling; Node continues to use their .cjs outputs.
+          !existsSync(
+            resolve(
+              process.cwd(),
+              `packages/${packageName}/${directory}${file.replace(/\.cjs$/, ".mjs")}`,
+            ),
+          ),
+      )
+      .map((file) => `@risuai/${packageName}/${directory}${file}`),
+  ),
 );
 
 // https://vitejs.dev/config/
@@ -108,9 +124,9 @@ export default defineConfig(({ command, mode }) => {
       host: "0.0.0.0", // listen on all addresses
       port: 5174,
       strictPort: true,
-       watch: {
-      ignored: ['**/src-tauri/**'],
-    },
+      watch: {
+        ignored: ["**/src-tauri/**"],
+      },
       fs: {
         allow: [
           searchForWorkspaceRoot(process.cwd()),
@@ -213,6 +229,20 @@ export default defineConfig(({ command, mode }) => {
                 name: "lucide-icons",
                 test: /node_modules[\\/]@lucide[\\/]svelte[\\/]dist[\\/]icons[\\/]/,
                 priority: 90,
+              },
+              {
+                // The workflow JSON viewer is only needed when its settings open.
+                // Keep it out of the eagerly loaded catch-all vendor chunk.
+                name: "json-view",
+                test: /node_modules[\\/]@humanspeak[\\/]svelte-json-view-lite/,
+                priority: 80,
+              },
+              {
+                // Remote auth imports these only when signing. Keep the pure-JS
+                // crypto implementation out of the eagerly preloaded vendor chunk.
+                name: "remote-auth-crypto",
+                test: /node_modules[\\/]@noble[\\/](?:curves|hashes)(?=[\\/]|$)/,
+                priority: 80,
               },
               {
                 // Monaco editor is large and only needed for code/script editing.

@@ -5,11 +5,11 @@ import path from "node:path";
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
-const {
+import {
   StorageSyncAssetError,
   StorageSyncStagingStore,
   normalizeManifest,
-} = require(".//storageSyncStaging.cjs");
+} from "./storageSyncStaging.ts";
 
 function sha256(data: Uint8Array | string): string {
   return crypto.createHash("sha256").update(data).digest("hex");
@@ -220,7 +220,9 @@ describe("storage sync asset staging", () => {
     await expect(
       fs.promises.stat(store.planPath(session.id)),
     ).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await fs.promises.stat(store.sessionDirectory(session.id))).toBeTruthy();
+    expect(
+      await fs.promises.stat(store.sessionDirectory(session.id)),
+    ).toBeTruthy();
 
     const plan = await store.planAssets(
       session,
@@ -238,14 +240,30 @@ describe("storage sync asset staging", () => {
       [{ key: "assets/restart.bin", size: body.length, sha256: sha256(body) }],
       { openReadStream: async () => ({ exists: false }) },
     );
-    await store.writeAssetChunk(session, plan.assets[0].id, 0, body.subarray(0, 4));
+    await store.writeAssetChunk(
+      session,
+      plan.assets[0].id,
+      0,
+      body.subarray(0, 4),
+    );
 
     const restored = targetSession(session.id);
     await expect(store.hydrateSession(restored)).resolves.toBe(true);
     expect(Object.getPrototypeOf(restored.assets)).toBeNull();
-    expect(store.getPlan(restored).assets[0]).toMatchObject({ offset: 4, state: "receiving" });
-    await store.writeAssetChunk(restored, plan.assets[0].id, 4, body.subarray(4));
-    expect(store.getPlan(restored)).toMatchObject({ status: "assets-ready", remainingBytes: 0 });
+    expect(store.getPlan(restored).assets[0]).toMatchObject({
+      offset: 4,
+      state: "receiving",
+    });
+    await store.writeAssetChunk(
+      restored,
+      plan.assets[0].id,
+      4,
+      body.subarray(4),
+    );
+    expect(store.getPlan(restored)).toMatchObject({
+      status: "assets-ready",
+      remainingBytes: 0,
+    });
   });
 
   it("revalidates completed asset files while hydrating", async () => {
@@ -258,17 +276,27 @@ describe("storage sync asset staging", () => {
       { openReadStream: async () => ({ exists: false }) },
     );
     await store.writeAssetChunk(session, plan.assets[0].id, 0, body);
-    await fs.promises.writeFile(store.assetPath(session.id, plan.assets[0].id), Buffer.from("evil"));
+    await fs.promises.writeFile(
+      store.assetPath(session.id, plan.assets[0].id),
+      Buffer.from("evil"),
+    );
 
     const restored = targetSession(session.id);
     await store.hydrateSession(restored);
-    expect(store.getPlan(restored).assets[0]).toMatchObject({ offset: 0, state: "pending" });
+    expect(store.getPlan(restored).assets[0]).toMatchObject({
+      offset: 0,
+      state: "pending",
+    });
   });
 
   it("streams ready assets to the target without consuming staging files", async () => {
     const store = await tempStore();
     const session = targetSession("finalize-assets");
-    const bodies = [Buffer.from("alpha"), Buffer.from("bravo"), Buffer.from("charlie")];
+    const bodies = [
+      Buffer.from("alpha"),
+      Buffer.from("bravo"),
+      Buffer.from("charlie"),
+    ];
     const manifest = bodies.map((body, index) => ({
       key: `assets/${index}.bin`,
       size: body.length,
@@ -278,7 +306,12 @@ describe("storage sync asset staging", () => {
       openReadStream: async () => ({ exists: false }),
     });
     for (let index = 0; index < plan.assets.length; index++) {
-      await store.writeAssetChunk(session, plan.assets[index].id, 0, bodies[index]);
+      await store.writeAssetChunk(
+        session,
+        plan.assets[index].id,
+        0,
+        bodies[index],
+      );
     }
 
     const written = new Map<string, Buffer>();
@@ -290,23 +323,40 @@ describe("storage sync asset staging", () => {
         maxActive = Math.max(maxActive, active);
         const chunks: Buffer[] = [];
         const stream = new Writable({
-          write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
+          write(chunk, _encoding, callback) {
+            chunks.push(Buffer.from(chunk));
+            callback();
+          },
           final(callback) {
-            written.set(Buffer.from(hex, "hex").toString("utf8"), Buffer.concat(chunks));
+            written.set(
+              Buffer.from(hex, "hex").toString("utf8"),
+              Buffer.concat(chunks),
+            );
             active--;
             callback();
           },
         });
-        return { stream, done: async () => ({ success: true }), abort: async () => {} };
+        return {
+          stream,
+          done: async () => ({ success: true }),
+          abort: async () => {},
+        };
       },
     };
-    await expect(store.applyReadyAssets(session, activeStorage)).resolves.toEqual({ applied: 3 });
+    await expect(
+      store.applyReadyAssets(session, activeStorage),
+    ).resolves.toEqual({ applied: 3 });
     expect(maxActive).toBeLessThanOrEqual(2);
-    expect([...written.keys()].sort()).toEqual(manifest.map((item) => item.key).sort());
+    expect([...written.keys()].sort()).toEqual(
+      manifest.map((item) => item.key).sort(),
+    );
     for (let index = 0; index < plan.assets.length; index++) {
-      expect(written.get(manifest[index].key)?.equals(bodies[index])).toBe(true);
-      await expect(fs.promises.stat(store.assetPath(session.id, plan.assets[index].id))).resolves.toBeTruthy();
+      expect(written.get(manifest[index].key)?.equals(bodies[index])).toBe(
+        true,
+      );
+      await expect(
+        fs.promises.stat(store.assetPath(session.id, plan.assets[index].id)),
+      ).resolves.toBeTruthy();
     }
   });
-
 });

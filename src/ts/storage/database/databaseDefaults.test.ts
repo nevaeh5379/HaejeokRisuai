@@ -8,6 +8,45 @@ import {
 } from "./databaseDefaults";
 
 describe("normalizeDatabaseDefaults", () => {
+  it("migrates the legacy ComfyUI workflow once without keeping duplicate JSON", () => {
+    const settings = normalizeSettingsInput({
+      comfyConfig: { workflow: "old-json", timeout: 60 },
+    });
+    expect(settings.comfyConfig.workflows).toEqual([
+      { id: "legacy", name: "Workflow", workflow: "old-json" },
+    ]);
+    expect(settings.comfyConfig.selectedWorkflowId).toBe("legacy");
+    expect(settings.comfyConfig.workflow).toBe("");
+    expect(settings.comfyConfig.timeout).toBe(60);
+    normalizeSettingsInput(settings);
+    expect(settings.comfyConfig.workflows).toHaveLength(1);
+  });
+
+  it("preserves ComfyUI libraries and restores selection when the selected workflow is missing", () => {
+    const workflows = [
+      { id: "a", name: "A", workflow: "json-a" },
+      { id: "b", name: "B", workflow: "json-b" },
+    ];
+    const settings = normalizeSettingsInput({
+      comfyConfig: { workflows, selectedWorkflowId: "b" },
+    });
+    expect(settings.comfyConfig.workflows).toEqual(workflows);
+    expect(settings.comfyConfig.selectedWorkflowId).toBe("b");
+    settings.comfyConfig.selectedWorkflowId = "missing";
+    normalizeSettingsInput(settings);
+    expect(settings.comfyConfig.selectedWorkflowId).toBe("a");
+  });
+  it("keeps chat illustrations opt-in and preserves existing illustration settings", () => {
+    const illustration = { enabled: true, basePrompt: "quality" };
+    const disabled = normalizeSettingsInput({ illustration });
+    expect(disabled.useChatIllustrations).toBe(false);
+    expect(disabled.illustration).toMatchObject(illustration);
+    expect(
+      normalizeSettingsInput({ useChatIllustrations: true, illustration })
+        .useChatIllustrations,
+    ).toBe(true);
+  });
+
   it("defaults and preserves Android navigation-bar settings", () => {
     const defaults = normalizeSettingsInput({});
     expect(defaults.autoHideAndroidNavigationBar).toBe(false);
@@ -26,6 +65,14 @@ describe("normalizeDatabaseDefaults", () => {
         autoHideAndroidNavigationBarInSidebar: false,
       }).autoHideAndroidNavigationBarInSidebar,
     ).toBe(false);
+  });
+
+  it("defaults useLiquidLoadingSpinner to false", () => {
+    expect(normalizeSettingsInput({}).useLiquidLoadingSpinner).toBe(false);
+    expect(
+      normalizeSettingsInput({ useLiquidLoadingSpinner: true })
+        .useLiquidLoadingSpinner,
+    ).toBe(true);
   });
 
   it("defaults and preserves image cache settings across normalization", () => {
@@ -62,7 +109,8 @@ describe("normalizeDatabaseDefaults", () => {
     });
     expect(normalizeSettingsInput({}).androidWidgetBotCount).toBe(12);
     expect(
-      normalizeSettingsInput({ androidWidgetBotCount: 6 }).androidWidgetBotCount,
+      normalizeSettingsInput({ androidWidgetBotCount: 6 })
+        .androidWidgetBotCount,
     ).toBe(6);
     expect(custom.assetCacheEntries).toBe(80);
     expect(custom.assetCacheSizeMB).toBe(32);
@@ -161,6 +209,28 @@ describe("normalizeDatabaseDefaults", () => {
       showChatTabs: true,
     });
     expect(dbEnabled.showChatTabs).toBe(true);
+  });
+
+  it("preserves explicit chatEdgeFade, chatEdgeFadeSize, and chatEdgeFadeCurve settings", () => {
+    const dbDefault = normalizeDatabaseInput({});
+    expect(dbDefault.chatEdgeFade).toBe(false);
+    expect(dbDefault.chatEdgeFadeSize).toBe(48);
+    expect(dbDefault.chatEdgeFadeCurve).toBe("cosine");
+    expect(dbDefault.chatEdgeFadeFromBottom).toBe(false);
+    expect(dbDefault.fixedChatTextareaBottomCover).toBe(false);
+
+    const dbEnabled = normalizeDatabaseInput({
+      chatEdgeFade: true,
+      chatEdgeFadeSize: 64,
+      chatEdgeFadeCurve: "ease-out",
+      chatEdgeFadeFromBottom: true,
+      fixedChatTextareaBottomCover: true,
+    });
+    expect(dbEnabled.chatEdgeFade).toBe(true);
+    expect(dbEnabled.chatEdgeFadeSize).toBe(64);
+    expect(dbEnabled.chatEdgeFadeCurve).toBe("ease-out");
+    expect(dbEnabled.chatEdgeFadeFromBottom).toBe(true);
+    expect(dbEnabled.fixedChatTextareaBottomCover).toBe(true);
   });
 
   it("keeps relational character data outside schema normalization", () => {

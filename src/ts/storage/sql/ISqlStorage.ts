@@ -12,7 +12,14 @@ import type {
   customscript,
 } from "../database/schema";
 import type { RisuModule } from "../../process/modules";
+import type { IPluginStorage } from "./pluginStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+
+export type {
+  IPluginScriptStorage,
+  IPluginStorage,
+  PluginLoadOptions,
+} from "./pluginStorage";
 import type {
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
@@ -173,6 +180,7 @@ export interface BotPresetSummary {
  */
 export interface ISqlStorage {
   readonly backendKind: SqlBackendKind;
+  readonly plugin: IPluginStorage;
 
   isEnabled(): boolean;
   getRevision(): number;
@@ -259,6 +267,23 @@ export interface ISqlStorage {
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 
+  listGlobalAuthorNotes(): Promise<
+    import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
+  >;
+  getGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
+    | null
+  >;
+  readGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
+    | null
+  >;
+  getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
+
   loadPersonas(): Promise<RisuPersona[]>;
   listBotPresets(): Promise<BotPresetSummary[]>;
   loadBotPreset(id: string): Promise<StoredBotPreset | null>;
@@ -267,10 +292,8 @@ export interface ISqlStorage {
   loadPrompts(): Promise<Record<string, any>>;
   loadScripts(): Promise<customscript[]>;
 
-  // ── Plugins ──────────────────────────────────────────────────────────
+  // ── Plugin custom storage ────────────────────────────────────────────
 
-  loadPlugins(options?: { enabledOnly?: boolean }): Promise<any[] | null>;
-  setPluginEnabled?(pluginName: string, enabled: boolean): Promise<void>;
   loadPluginCustomStorage(): Promise<Record<string, any> | null>;
   listPluginCustomStorageKeys(): Promise<string[]>;
   loadPluginCustomStorageKey(key: string): Promise<any>;

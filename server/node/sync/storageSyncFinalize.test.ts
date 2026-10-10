@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-const {
+import {
   StorageSyncFinalizeGate,
   finalizeStorageSyncReplacement,
   preflightStorageSyncFinalize,
-} = require(".//storageSyncFinalize.cjs");
+} from "./storageSyncFinalize.ts";
 
 function summary() {
   return {

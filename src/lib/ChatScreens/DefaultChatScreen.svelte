@@ -15,6 +15,7 @@
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
+    import LiquidMergeSpinner from "../UI/LiquidMergeSpinner.svelte";
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
@@ -82,6 +83,59 @@
     let showNewMessageButton = $state(false)
     let chatsInstance: any = $state()
     let chatScrollContainer: HTMLDivElement | undefined = $state()
+    const getEdgeFadeGradient = (direction: 'to bottom' | 'to top', curve: string) => {
+        if (curve === 'linear') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 80%, transparent) 20%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 60%, transparent) 40%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 40%, transparent) 60%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 20%, transparent) 80%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        if (curve === 'ease-out') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 95%, transparent) 15%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 85%, transparent) 30%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 70%, transparent) 48%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 50%, transparent) 65%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 30%, transparent) 80%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 12%, transparent) 92%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        if (curve === 'buffered') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `var(--color-bgcolor) 12%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 96%, transparent) 22%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 85%, transparent) 35%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 68%, transparent) 50%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 48%, transparent) 65%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 28%, transparent) 78%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 12%, transparent) 89%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        return `linear-gradient(${direction}, ` +
+            `var(--color-bgcolor) 0%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 98%, transparent) 8%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 93%, transparent) 17%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 82%, transparent) 28%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 65%, transparent) 40%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 45%, transparent) 53%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 25%, transparent) 67%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 9%, transparent) 81%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 2%, transparent) 92%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+    }
+    let edgeFadeSize = $derived(settingsStore.state.chatEdgeFadeSize ?? 48)
+    let edgeFadeCurve = $derived(settingsStore.state.chatEdgeFadeCurve ?? 'cosine')
+    let topFadeStyle = $derived(
+        `height: ${edgeFadeSize}px; background: ${getEdgeFadeGradient('to bottom', edgeFadeCurve)};`
+    )
+    let bottomFadeStyle = $derived(
+        `height: ${edgeFadeSize}px; background: ${getEdgeFadeGradient('to top', edgeFadeCurve)};`
+    )
     let isScrollingToMessage = $state(false)
     let loadingOlderMessages = $state(false)
     let readingFromBeginning = $state(false)
@@ -690,6 +744,12 @@
     })
 
     let inputHeight = $state("44px")
+    // Numeric button height for sizing the liquid spinner (inputHeight is a
+    // "44px"-style string that grows with the textarea content). The drops
+    // travel ±53px (+blur) within the 140px box during the split phase, so
+    // drawing at only 80% of the button height keeps them clear of the
+    // button's top/bottom borders.
+    let spinnerSize = $derived(Math.floor((parseInt(inputHeight) || 44) * 0.8))
     let inputEle:HTMLTextAreaElement = $state()
     let inputTranslateHeight = $state("44px")
     let inputTranslateEle:HTMLTextAreaElement = $state()
@@ -929,7 +989,26 @@
             {#if showTabBar}
                 <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
             {/if}
-            <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
+            {#if settingsStore.state.chatEdgeFade}
+                <div
+                    class="pointer-events-none absolute left-0 right-0 z-20 rs-chat-edge-fade-top"
+                    class:top-0={!showTabBar || settingsStore.state.showChatTabs === false}
+                    class:top-10={showTabBar && (settingsStore.state.showChatTabs ?? true)}
+                    style={topFadeStyle}
+                    aria-hidden="true"
+                ></div>
+                {#if !settingsStore.state.fixedChatTextarea || settingsStore.state.chatEdgeFadeFromBottom}
+                    <div
+                        class="pointer-events-none absolute bottom-0 left-0 right-0 z-20 rs-chat-edge-fade-bottom"
+                        style={bottomFadeStyle}
+                        aria-hidden="true"
+                    ></div>
+                {/if}
+            {/if}
+            <div
+                bind:this={chatScrollContainer}
+                class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
+                onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
             const reachedPaginationEdge = readingFromBeginning
@@ -965,9 +1044,23 @@
             }
         }}>
             <div
-                    class="{settingsStore.state.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
+                    class="{settingsStore.state.fixedChatTextarea ? 'sticky relative pt-2 pb-2 right-0 bottom-0' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
                     style="{settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
+                {#if settingsStore.state.fixedChatTextarea && settingsStore.state.fixedChatTextareaBottomCover}
+                    <div
+                        class="pointer-events-none absolute left-0 right-0 bottom-0 bg-bgcolor"
+                        style="height: max(0.5rem, var(--risu-safe-area-inset-bottom, 0.5rem));"
+                        aria-hidden="true"
+                    ></div>
+                {/if}
+                {#if settingsStore.state.chatEdgeFade && settingsStore.state.fixedChatTextarea && !settingsStore.state.chatEdgeFadeFromBottom}
+                    <div
+                        class="pointer-events-none absolute left-0 right-0"
+                        style="bottom: calc(100% - 0.5rem); {bottomFadeStyle}"
+                        aria-hidden="true"
+                    ></div>
+                {/if}
                 <div class="flex items-stretch w-full rs-chat-input-row">
                     {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
                         <div onclick={()=>{toggleStickers = !toggleStickers}}
@@ -976,7 +1069,7 @@
                         </div>
                     {/if}
 
-                    <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
+                    <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-bgcolor rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
                               bind:value={messageInput}
                               bind:this={inputEle}
                               onkeydown={(e) => {
@@ -1042,10 +1135,14 @@
                     {#if currentChatGenerating || doingChatInputTranslate}
                         <button
                                 aria-labelledby="cancel"
-                                class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
+                                class="peer-focus:border-textcolor bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
                                 style:height={inputHeight}
                         >
-                            <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {#if settingsStore.state.useLiquidLoadingSpinner}
+                                <LiquidMergeSpinner size={spinnerSize} stage={currentChatProcessStage} autoMode={autoMode} />
+                            {:else}
+                                <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {/if}
                         </button>
                     {:else if $startupPhase !== 'chat-ready'}
                         <button
@@ -1057,7 +1154,7 @@
                             }}
                             disabled={presetStore.activeStatus !== 'error'}
                             title={presetStore.error ?? 'Chat runtime is loading'}
-                            class="flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs rs-chat-loading-btn"
+                            class="bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs rs-chat-loading-btn"
                             style:height={inputHeight}
                         >
                             {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
@@ -1065,7 +1162,7 @@
                     {:else}
                         <button
                                 onclick={send}
-                                class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send rs-chat-send-btn"
+                                class="bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send rs-chat-send-btn"
                                 style:height={inputHeight}
                         >
                             <Send />
@@ -1077,7 +1174,7 @@
                                 openMenu = !openMenu
                                 e.stopPropagation()
                             }}
-                                class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                                class="peer-focus:border-textcolor bg-bgcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
                                 style:height={inputHeight}
                         >
                             <MenuIcon />
@@ -1093,7 +1190,7 @@
                                 })
                             }
                         }}
-                             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                             class="peer-focus:border-textcolor bg-bgcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
                              style:height={inputHeight}
                         >
                             <Plus />
@@ -1122,7 +1219,7 @@
                     <label for='messageInputTranslate' class="text-textcolor ml-4">
                         <LanguagesIcon />
                     </label>
-                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
+                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-bgcolor input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
                               bind:value={messageInputTranslate}
                               bind:this={inputTranslateEle}
                               onkeydown={(e) => {
@@ -1145,7 +1242,7 @@
             {/if}
 
             {#if fileInput.length > 0}
-                <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
+                <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md bg-bgcolor">
                     {#each fileInput as file, i}
                         {#await getInlayAsset(file) then inlayAsset}
                             <div class="relative">

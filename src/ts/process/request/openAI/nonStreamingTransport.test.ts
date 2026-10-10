@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
-import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
-import { resolveOllamaCloudTransportUrl } from "@risuai/chat-core/ollamaProvider.cjs";
+import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.ts";
+import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.ts";
+import { resolveOllamaCloudTransportUrl } from "@risuai/chat-core/ollamaProvider.ts";
 import { LLMFormat } from "src/ts/model/modellist";
 import { shouldUseNodeOpenAINonStreamingTransport } from "./nonStreamingTransport";
 

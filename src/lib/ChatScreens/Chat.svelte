@@ -24,6 +24,7 @@
     import { preLoadChat } from "../../ts/process/coldstorage.svelte"
     import { openLogExporterFrom, openLogExporterSingle } from "src/ts/logexporter/index"
     import { getSqlBranchStorage } from "src/ts/storage/sql/sqlStorageFactory"
+    import { illustrationDisplayLayout } from "src/ts/process/illustration/illustrationDisplay"
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -94,9 +95,11 @@
         chatTarget,
     }: Props = $props();
 
-    let effectiveChatTarget = $derived(
+    let rawChatTarget = $derived(
         chatTarget ?? chatTargetFromIndexes(targetCharacterIndex, targetChatIndex) ?? undefined
     )
+    let chatTargetKey = $derived(JSON.stringify(rawChatTarget ?? null))
+    let effectiveChatTarget: ChatExecutionTarget | undefined = $derived(JSON.parse(chatTargetKey) ?? undefined)
 
     let msgDisplay = $state('')
     let translated = $state(false)
@@ -303,8 +306,13 @@
 
 
     let blankMessage = $derived((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1 || isComment)
-    let displayMessage = $derived(isOptimizedStreamingMessage ? rawStreamingText : message)
+    // Keep CBS/display scripts and translation independent of generated image tokens.
+    let displayMessage = $derived(isOptimizedStreamingMessage ? rawStreamingText
+        : illustrationDisplayLayout(message, renderedSourceMessage?.illustrations).display)
     let renderRawStreaming = $derived(isOptimizedStreamingMessage && streamingOptimizationMode === 'strong')
+    let displayContextKey = $derived(JSON.stringify([
+        name, scriptIdx, firstMessage, chatTargetKey,
+    ]))
 
     function updateDisplayedMessage(){
         if(renderRawStreaming){
@@ -314,7 +322,15 @@
     }
 
     $effect.pre(() => {
-        updateDisplayedMessage()
+        if (renderRawStreaming) return;
+        // Read only stable display inputs here, while preserving the parser's
+        // own reactive dependencies on script variables and settings.
+        const [author, index, first, targetKey] = JSON.parse(displayContextKey);
+        msgDisplay = risuChatParser(displayMessage, {
+            chara: author, chatID: index, rmVar: true, visualize: true,
+            cbsConditions: { firstmsg: first, chatRole: null },
+            chatTarget: JSON.parse(targetKey) ?? undefined,
+        })
     });
 
     const unsubscribers:Unsubscriber[] = []
@@ -606,6 +622,7 @@
                     bind:retranslate={retranslate}
                     {renderRawStreaming}
                     {rawStreamingText}
+                    sourceMessage={renderedSourceMessage}
                     chatTarget={effectiveChatTarget} />
             {/key}
             {#if !hideButtons && idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (settingsStore.state.enableBlockPartialEdit || settingsStore.state.enableDragPartialEdit)}

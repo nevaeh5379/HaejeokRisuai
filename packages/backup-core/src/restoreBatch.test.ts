@@ -4,7 +4,7 @@ import {
   BoundedAssetBatchWriter,
   writeItemsConcurrently,
   type RestoredAssetBatch,
-} from "./restoreBatch";
+} from "./restoreBatch.ts";
 
 function payload(length: number, fill = 1): Uint8Array {
   return new Uint8Array(length).fill(fill);

@@ -1,4 +1,4 @@
-import type { LegacyBackupSqlRecord } from "./legacyRecords";
+import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
 
 export const PORTABLE_DATABASE_STREAM_VERSION = 1 as const;
 export const PORTABLE_DATABASE_STREAM_PREFIX = "database.stream/";

@@ -20,7 +20,7 @@ import { presetTemplate } from "./presetDefaults";
 import { LLMFormat } from "../../model/types";
 
 export function createActivePresetSnapshot(
-  db: DatabaseSettings,
+  db: Omit<DatabaseSettings, "plugins">,
   current: Pick<StoredBotPreset, "id" | "name" | "image">,
 ): StoredBotPreset {
   const savedPreset: botPreset = {
@@ -142,7 +142,7 @@ export async function changeToPreset(id = 0, savecurrent = true) {
 }
 
 export function createPresetSettingsState(
-  base: DatabaseSettings,
+  base: Omit<DatabaseSettings, "plugins">,
   preset: botPreset,
 ): PresetState {
   const combined = safeStructuredClone(base);
@@ -165,7 +165,10 @@ export function applyPresetToCurrentState(preset: botPreset): void {
   presetStore.replaceActivePresetState(nextState);
 }
 
-export function setPreset(db: DatabaseSettings, newPres: botPreset) {
+export function setPreset(
+  db: Omit<DatabaseSettings, "plugins">,
+  newPres: botPreset,
+) {
   db.apiType = newPres.apiType ?? db.apiType;
   db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode;
   db.localNetworkTimeoutSec =

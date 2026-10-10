@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { classifyBackupEntry } from "./entryPolicy";
+import { classifyBackupEntry } from "./entryPolicy.ts";
 import {
   dispatchBackupRestoreEntry,
   type AccountBackupEncryptionMetadata,
   type BackupRestoreEntryHandlers,
-} from "./restoreEntry";
+} from "./restoreEntry.ts";
 
 function bytes(value: string): Uint8Array {
   return new TextEncoder().encode(value);

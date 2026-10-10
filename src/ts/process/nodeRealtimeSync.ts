@@ -15,6 +15,7 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import {
   PRESET_STORE_SETTING_KEYS,
@@ -48,7 +49,7 @@ import {
   type RealtimeGenerationState,
   type RealtimeModelJobEvent,
   type RealtimeReadyEvent,
-} from "@risuai/protocol/realtimeEvents.cjs";
+} from "@risuai/protocol/src/realtimeEvents.ts";
 
 let started = false;
 let streamController: AbortController | null = null;
@@ -101,7 +102,7 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
     deferredSettingsLoader.isLoaded(key),
   );
 
-  installStartupData(startup, storage);
+  await installStartupData(startup, storage);
   pruneInvalidChatTabs();
   await initPresetDomain(storage);
   await changeLanguage(settingsStore.state.language);
@@ -255,6 +256,7 @@ async function applyDatabaseChange(
     change.action === "plugin-toggle" ||
     rootKeys.includes("plugins")
   ) {
+    await pluginStore.refreshFromStorage();
     const { loadPlugins } = await import("../plugins/plugins.svelte");
     await loadPlugins();
   }
@@ -407,6 +409,17 @@ async function dispatchEvent(
     if (change.sourceClientId !== storage.getClientId()) {
       databaseChangeQueue?.enqueue(change);
     }
+    return;
+  }
+  if (frame.event === "illustration-progress") {
+    // A saved image must not wait behind full chat hydration or the polling timer.
+    void import("./illustration/illustrationApp")
+      .then(({ refreshServerIllustration }) =>
+        refreshServerIllustration(frame.data),
+      )
+      .catch((error) =>
+        console.warn("Illustration progress refresh failed", error),
+      );
     return;
   }
   if (frame.event === "local-backup-import-progress") {

@@ -3,6 +3,7 @@
   "app": {
     "windows": [
       {
+        "create": false,
         "fullscreen": false,
         "resizable": true,
         "title": "Risuai",
@@ -14,5 +15,13 @@
         "transparent": true
       }
     ]
+  },
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "template": "nsis/installer.nsi",
+        "installerHooks": "nsis/installLocation.nsh"
+      }
+    }
   }
 }

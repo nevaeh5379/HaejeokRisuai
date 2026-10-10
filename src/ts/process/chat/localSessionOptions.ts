@@ -1,7 +1,7 @@
 import type {
   ChatExecutor,
   ChatSendOptions,
-} from "@risuai/chat-core/executor.cjs";
+} from "@risuai/chat-core/executor.ts";
 import type { ChatErrorContext } from "./error.svelte";
 import type {
   GroupGenerationRequest,

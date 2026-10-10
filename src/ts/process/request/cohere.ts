@@ -6,7 +6,7 @@ import {
   DEFAULT_COHERE_CHAT_URL,
   decodeCohereResponse,
   prepareCohereConversation,
-} from "@risuai/chat-core/cohereProvider.cjs";
+} from "@risuai/chat-core/cohereProvider.ts";
 import type {
   RequestDataArgumentExtended,
   requestDataResponse,

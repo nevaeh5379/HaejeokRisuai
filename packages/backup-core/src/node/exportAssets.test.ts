@@ -5,7 +5,7 @@ import {
   type NodeBackupAssetStorage,
   type NodeBackupAssetStreamHandlers,
   type NodeBackupAssetWriter,
-} from "./exportAssets";
+} from "./exportAssets.ts";
 
 describe("node backup asset export", (): void => {
   it("lets the remote storage list all assets for all-scope exports", async (): Promise<void> => {

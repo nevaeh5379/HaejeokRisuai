@@ -18,6 +18,12 @@ import {
   initializeWindowsTransparency,
 } from "./ts/windowsTransparency";
 import { initializeLinuxWindowIntegration } from "./ts/linuxWindowIntegration";
+import {
+  androidDiagnosticCheckpoint,
+  initializeAndroidDiagnostics,
+} from "./ts/android/androidCrashDiagnostics";
+
+initializeAndroidDiagnostics();
 
 if (typeof window !== "undefined") {
   window.Buffer = Buffer;
@@ -37,6 +43,7 @@ window.addEventListener("vite:preloadError", (event) => {
 });
 
 async function start() {
+  await androidDiagnosticCheckpoint("js:entry");
   if (isTauri && !(await waitForTauriRuntimeReady())) {
     throw new Error("Tauri runtime initialization timed out");
   }
@@ -69,6 +76,7 @@ async function start() {
   }
 
   const { default: App } = await import("./App.svelte");
+  await androidDiagnosticCheckpoint("js:mount");
   preLoadCheck();
   const app = mount(App, {
     target: document.getElementById("app"),

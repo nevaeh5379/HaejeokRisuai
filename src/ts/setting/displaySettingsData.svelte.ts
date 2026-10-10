@@ -26,10 +26,24 @@ export const displayThemeSettingsItems: SettingItem[] = [
     },
     options: {
       selectOptions: [
-        { value: "default", labelKey: "uiThemeDefault", label: "Default Theme" },
-        { value: "windows", labelKey: "uiThemeWindows", label: "Windows 11 Fluent Theme" },
+        {
+          value: "default",
+          labelKey: "uiThemeDefault",
+          label: "Default Theme",
+        },
+        {
+          value: "windows",
+          labelKey: "uiThemeWindows",
+          label: "Windows 11 Fluent Theme",
+        },
         ...(isCapacitorAndroid
-          ? [{ value: "android", labelKey: "uiThemeAndroid", label: "Android Material Theme" }]
+          ? [
+              {
+                value: "android",
+                labelKey: "uiThemeAndroid",
+                label: "Android Material Theme",
+              },
+            ]
           : []),
       ],
     },
@@ -337,6 +351,13 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ["minigame", "dino", "waiting", "게임"],
   },
   {
+    id: "display.useLiquidLoadingSpinner",
+    type: "check",
+    labelKey: "useLiquidLoadingSpinner",
+    bindKey: "useLiquidLoadingSpinner",
+    keywords: ["spinner", "loading", "liquid", "스피너", "로딩"],
+  },
+  {
     id: "display.fullScreen",
     type: "check",
     labelKey: "fullscreen",
@@ -380,6 +401,111 @@ export const displayOtherSettingsItems: SettingItem[] = [
     labelKey: "showChatTabs",
     bindKey: "showChatTabs",
     keywords: ["chat", "tabs", "tab", "ui", "탭"],
+  },
+  {
+    id: "display.chatEdgeFade",
+    type: "check",
+    labelKey: "chatEdgeFade",
+    helpKey: "chatEdgeFadeDesc",
+    bindKey: "chatEdgeFade",
+    keywords: [
+      "chat",
+      "edge",
+      "fade",
+      "blur",
+      "mask",
+      "페이드",
+      "경계",
+      "흐림",
+    ],
+  },
+  {
+    id: "display.chatEdgeFadeCurve",
+    type: "select",
+    labelKey: "chatEdgeFadeCurve",
+    bindKey: "chatEdgeFadeCurve",
+    condition: (ctx) => !!ctx.db.chatEdgeFade,
+    options: {
+      selectOptions: [
+        {
+          value: "cosine",
+          labelKey: "chatEdgeFadeCurveCosine",
+          label: "Cosine",
+        },
+        {
+          value: "ease-out",
+          labelKey: "chatEdgeFadeCurveEaseOut",
+          label: "Ease-out",
+        },
+        {
+          value: "linear",
+          labelKey: "chatEdgeFadeCurveLinear",
+          label: "Linear",
+        },
+        {
+          value: "buffered",
+          labelKey: "chatEdgeFadeCurveBuffered",
+          label: "Buffered",
+        },
+      ],
+    },
+    keywords: ["chat", "edge", "fade", "curve", "페이드", "곡선", "코사인"],
+  },
+  {
+    id: "display.chatEdgeFadeSize",
+    type: "slider",
+    labelKey: "chatEdgeFadeSize",
+    bindKey: "chatEdgeFadeSize",
+    condition: (ctx) => !!ctx.db.chatEdgeFade,
+    options: {
+      min: 24,
+      max: 96,
+      step: 4,
+      customText: (value) => `${value}px`,
+    },
+    keywords: ["chat", "edge", "fade", "size", "페이드", "크기"],
+  },
+  {
+    id: "display.chatEdgeFadeFromBottom",
+    type: "check",
+    labelKey: "chatEdgeFadeFromBottom",
+    helpKey: "chatEdgeFadeFromBottomDesc",
+    bindKey: "chatEdgeFadeFromBottom",
+    condition: (ctx) => !!ctx.db.chatEdgeFade,
+    keywords: [
+      "chat",
+      "edge",
+      "fade",
+      "bottom",
+      "input",
+      "페이드",
+      "경계",
+      "하단",
+      "바닥",
+      "입력칸",
+    ],
+  },
+  {
+    id: "display.fixedChatTextareaBottomCover",
+    type: "check",
+    labelKey: "fixedChatTextareaBottomCover",
+    helpKey: "fixedChatTextareaBottomCoverDesc",
+    bindKey: "fixedChatTextareaBottomCover",
+    condition: (ctx) => !!ctx.db.fixedChatTextarea,
+    keywords: [
+      "chat",
+      "bottom",
+      "cover",
+      "input",
+      "fixed",
+      "textarea",
+      "차단막",
+      "하단",
+      "가림",
+      "바닥",
+      "입력칸",
+      "고정",
+    ],
   },
   {
     id: "display.hideRealm",

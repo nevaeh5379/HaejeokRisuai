@@ -8,8 +8,8 @@ import {
   pluginV2,
   type PluginV2ProviderArgument,
   type PluginV2ProviderOptions,
-  type RisuPlugin,
 } from "../plugins.svelte";
+import type { PluginMetadata } from "../pluginTypes";
 import { SandboxHost } from "./factory";
 
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
@@ -25,7 +25,7 @@ import {
   type MenuDef,
 } from "src/ts/stores.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { deferredSettingsLoader } from "src/ts/stores/domain/deferredSettingsLoader";
+import { pluginStore } from "src/ts/stores/domain/pluginStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { messageStore } from "src/ts/stores/domain/messageStore.svelte";
 import { v4 } from "uuid";
@@ -676,10 +676,12 @@ const getPluginPermission = async (
     requiresReconfirm = true;
   }
 
+  const runtimePlugin = getRuntimePlugin(pluginName);
+  const script = runtimePlugin
+    ? (await pluginStore.loadScript(runtimePlugin.id)).script
+    : "";
   pluginHash =
-    (await hasher(
-      new TextEncoder().encode(getRuntimePlugin(pluginName)?.script),
-    )) + `_${permissionDesc}`;
+    (await hasher(new TextEncoder().encode(script))) + `_${permissionDesc}`;
 
   if (!requiresReconfirm && (await permissionForage.getItem(pluginHash))) {
     permissionGivenPlugins.add(pluginName);
@@ -729,7 +731,7 @@ const authorizationHeaders = [
   "proxy-authorization",
 ];
 
-const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
+const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
   const oldApis = getV2PluginAPIs();
   return {
     //Old APIs from v2.1
@@ -902,7 +904,12 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
         if (includeOnly !== "all" && !includeOnly.includes(key)) {
           continue;
         }
-        (liteDB as any)[key] = $state.snapshot(db[key]);
+        (liteDB as any)[key] =
+          key === "plugins"
+            ? $state.snapshot(await pluginStore.loadCompatibilityPlugins())
+            : key === "characters"
+              ? await characterStore.snapshot.loadAll()
+              : $state.snapshot(db[key]);
       }
       return liteDB;
     },
@@ -996,48 +1003,15 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin) => {
       return getRuntimePlugin(plugin.name)?.realArg[key];
     },
     setArgument: async (key: string, value: string) => {
-      await deferredSettingsLoader.ensureKey("plugins");
-      const storedPlugin = settingsStore.state.plugins?.find(
-        (candidate) => candidate.name === plugin.name,
-      );
+      const storedPlugin = pluginStore.getByName(plugin.name);
       if (storedPlugin) storedPlugin.realArg[key] = value;
       const runtimePlugin = getRuntimePlugin(plugin.name);
       if (runtimePlugin) runtimePlugin.realArg[key] = value;
     },
-    getCharacterFromIndex: (index: number) => {
-      const char = characterStore.characters[index];
-      if (char) {
-        return $state.snapshot(char);
-      }
-      return null;
-    },
-    setCharacterToIndex: (index: number, char: any) => {
-      if (characterStore.characters[index]) {
-        characterStore.characters[index] = char;
-        if (char?.chaId) characterStore.markCharacterDirty(char.chaId);
-      }
-    },
-    getChatFromIndex: (characterIndex: number, chatIndex: number) => {
-      const char = characterStore.characters[characterIndex];
-      if (char) {
-        const chats = char.chats;
-        if (chats && chats[chatIndex]) {
-          return $state.snapshot(chats[chatIndex]);
-        }
-      }
-      return null;
-    },
-    setChatToIndex: (characterIndex: number, chatIndex: number, chat: any) => {
-      const char = characterStore.characters[characterIndex];
-      if (char) {
-        const chats = char.chats;
-        if (chats && chats[chatIndex]) {
-          char.chats[chatIndex] = chat;
-          if (chat?.id) characterStore.markChatDirty(chat.id);
-          characterStore.markChatManifestDirty(char.chaId);
-        }
-      }
-    },
+    getCharacterFromIndex: characterStore.snapshot.load,
+    setCharacterToIndex: characterStore.snapshot.save,
+    getChatFromIndex: characterStore.snapshot.chat.load,
+    setChatToIndex: characterStore.snapshot.chat.save,
     getCurrentCharacterIndex: () => {
       return get(selectedCharID);
     },
@@ -1559,7 +1533,22 @@ type V3PluginInstance = {
 
 const v3PluginInstances: V3PluginInstance[] = [];
 
-export async function loadV3Plugins(plugins: RisuPlugin[]) {
+/**
+ * CrashGuard: how long the "loading plugin X" ledger entry survives after
+ * the last sandbox finished loading. A renderer death inside this window
+ * blames the last-loaded plugin; after it, idle crashes restart without
+ * blaming anyone.
+ */
+const CRASH_GUARD_LEDGER_GRACE_MS = 10_000;
+
+/**
+ * CrashGuard: pending grace-clear timer for the most recent loadPlugins()
+ * run. Kept so a newer run can cancel the previous one's timer before it
+ * clears a ledger it no longer owns.
+ */
+let crashGuardLedgerClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+export async function loadV3Plugins(plugins: PluginMetadata[]) {
   await Promise.all(
     v3PluginInstances.map(async (instance) => {
       await unloadV3Plugin(instance.name);
@@ -1575,12 +1564,30 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
   // iframe in the same task causes a large transient memory/CPU spike on
   // older mobile browsers, so let one document finish loading before the
   // next sandbox is created.
+  const { PluginCrashGuard } = await import("../pluginCrashGuard");
+  const crashGuard = PluginCrashGuard.getInstance();
   for (const plugin of plugins) {
+    // CrashGuard: record which plugin is about to load so a renderer
+    // death mid-load can blame it (Android only; no-op elsewhere).
+    await crashGuard?.setLoading(plugin.name);
     await executePluginV3(plugin);
   }
+  // Boot finished loading plugin sandboxes. Keep the last ledger entry
+  // for a grace window so an init-path runaway is still attributable,
+  // then clear it — later idle crashes restart without blaming anyone.
+  // Cancel any timer from a previous loadPlugins() run (settings toggle,
+  // plugin import, realtime sync): it would clear the ledger written by
+  // this newer load and leave a later crash without a culprit to blame.
+  if (crashGuardLedgerClearTimer !== null) {
+    clearTimeout(crashGuardLedgerClearTimer);
+  }
+  crashGuardLedgerClearTimer = setTimeout(() => {
+    crashGuardLedgerClearTimer = null;
+    void crashGuard?.clearLoading();
+  }, CRASH_GUARD_LEDGER_GRACE_MS);
 }
 
-export async function executePluginV3(plugin: RisuPlugin) {
+export async function executePluginV3(plugin: PluginMetadata) {
   const alreadyRunning = v3PluginInstances.find((p) => p.name === plugin.name);
   if (alreadyRunning) {
     console.log(
@@ -1589,6 +1596,7 @@ export async function executePluginV3(plugin: RisuPlugin) {
     return;
   }
 
+  const script = (await pluginStore.loadScript(plugin.id)).script;
   const iframe = document.createElement("iframe");
   iframe.style.display = "none";
   const loaded = new Promise<void>((resolve) => {
@@ -1607,7 +1615,7 @@ export async function executePluginV3(plugin: RisuPlugin) {
     name: plugin.name,
     host,
   });
-  host.run(iframe, plugin.script);
+  host.run(iframe, script);
   document.body.appendChild(iframe);
   await loaded;
   console.log(`[RisuAI Plugin: ${plugin.name}] Loaded API V3 plugin.`);

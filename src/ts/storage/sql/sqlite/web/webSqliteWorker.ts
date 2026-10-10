@@ -26,22 +26,10 @@
  */
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  isSqlitePragmaStatement,
-  splitSqliteStatements,
-} from "@risuai/storage-sqlite/sqliteSchemaStatements";
-import {
-  SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL,
-  SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME,
-} from "@risuai/storage-sqlite/sqliteLastMessageTime";
-import {
-  rebuildRelationalValue,
-  decodedText,
-  SQLITE_SCHEMA_VERSION,
-  RELATIONAL_SCHEMA_LAYOUT,
-  SqlSchemaResetRequiredError,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
+import * as lastMessageTime from "@risuai/storage-sqlite/schema/lastMessageTime";
+import * as sqliteStatements from "@risuai/storage-sqlite/schema/statements";
 
 interface SqliteStmt {
   bind: (params: unknown[]) => void;
@@ -306,7 +294,7 @@ function rebuildMessagesFromRows(
   return orderedIds.map((id) => {
     const core = coreRows.get(id)!;
     const nodes = nodeGroups.get(id);
-    const rebuilt = nodes?.length ? rebuildRelationalValue(nodes) : {};
+    const rebuilt = nodes?.length ? nodeCodec.rebuild(nodes) : {};
     const message =
       rebuilt && typeof rebuilt === "object"
         ? (rebuilt as Record<string, any>)
@@ -314,7 +302,7 @@ function rebuildMessagesFromRows(
 
     message.role = String(core.message_role ?? "char");
     if (!Object.prototype.hasOwnProperty.call(message, "data")) {
-      message.data = decodedText(
+      message.data = nodeCodec.decodeText(
         core.message_content_text as string | null,
         core.message_content_encoded as string | null,
       );
@@ -386,10 +374,10 @@ async function handleInit(): Promise<{
         "SELECT schema_version, schema_layout FROM system_storage_meta WHERE singleton = 1",
       );
       if (
-        Number(meta?.schema_version) !== SQLITE_SCHEMA_VERSION ||
-        meta?.schema_layout !== RELATIONAL_SCHEMA_LAYOUT
+        Number(meta?.schema_version) !== nodeCodec.SCHEMA_VERSION ||
+        meta?.schema_layout !== nodeCodec.SCHEMA_LAYOUT
       ) {
-        throw new SqlSchemaResetRequiredError(
+        throw new nodeCodec.SchemaResetRequiredError(
           meta?.schema_version,
           meta?.schema_layout,
         );
@@ -398,7 +386,7 @@ async function handleInit(): Promise<{
     const hadLastMessageTimeTrigger = Boolean(
       selectOneInternal(
         "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
-        [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
+        [lastMessageTime.TRIGGER_NAME],
       ),
     );
     // Apply schema — use multiple exec calls instead of one big exec to avoid
@@ -419,26 +407,26 @@ async function handleInit(): Promise<{
     db.exec("PRAGMA cache_size = -16384;");
     db.exec("PRAGMA foreign_keys = ON;");
     // Execute the rest of the schema one complete SQLite statement at a time.
-    const schemaStatements = splitSqliteStatements(sqliteSchemaSql)
+    const schemaStatements = sqliteStatements
+      .split(sqliteSchemaSql)
       .map((statement) => statement.trim())
       .filter(
         (statement) =>
-          statement.length > 0 && !isSqlitePragmaStatement(statement),
+          statement.length > 0 && !sqliteStatements.isPragma(statement),
       );
     for (const stmt of schemaStatements) {
       db.exec(stmt);
     }
     const lastMessageTrigger = selectOneInternal(
       "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?",
-      [SQLITE_LAST_MESSAGE_TIME_TRIGGER_NAME],
+      [lastMessageTime.TRIGGER_NAME],
     );
     if (!lastMessageTrigger) {
       throw new Error(
         "SQLite last_message_time trigger was not installed by the schema",
       );
     }
-    if (!hadLastMessageTimeTrigger)
-      db.exec(SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL);
+    if (!hadLastMessageTimeTrigger) db.exec(lastMessageTime.BACKFILL_SQL);
     const rows = selectRowsInternal(
       "SELECT initialized, revision FROM system_storage_meta WHERE singleton = 1",
     ).rows;
@@ -454,7 +442,7 @@ async function handleInit(): Promise<{
     db = null;
     enabled = false;
     activeVfs = null;
-    if (error instanceof SqlSchemaResetRequiredError) throw error;
+    if (error instanceof nodeCodec.SchemaResetRequiredError) throw error;
     throw error;
   }
 }
@@ -511,7 +499,7 @@ self.onmessage = async (e: MessageEvent<ReqMsg>) => {
           if (statement.transform === "relational") {
             return {
               value: selected.rows.length
-                ? rebuildRelationalValue(selected.rows)
+                ? nodeCodec.rebuild(selected.rows)
                 : undefined,
             };
           }

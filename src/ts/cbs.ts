@@ -14,6 +14,7 @@ import type { LLMModel } from "./model/modellist";
 import { get } from "svelte/store";
 import { CurrentTriggerIdStore } from "./stores.svelte";
 import type { ChatExecutionTarget } from "./chatTarget";
+import { safeStructuredClone } from "./polyfill";
 
 export const defaultCBSRegisterArg: CBSRegisterArg = {
   registerFunction: () => {
@@ -30,7 +31,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
   getPersonaPrompt: () => "placeholder_persona",
   risuChatParser: (text: string) => text,
   makeArray: (arr: string[]) => JSON.stringify(arr),
-  safeStructuredClone: <T>(obj: T) => JSON.parse(JSON.stringify(obj)),
+  safeStructuredClone: <T>(obj: T) => safeStructuredClone(obj),
   parseArray: (str: string) => {
     try {
       return JSON.parse(str);
@@ -77,6 +78,7 @@ export const defaultCBSRegisterArg: CBSRegisterArg = {
 };
 
 export type matcherArg = {
+  authorNoteContent?: string;
   chatID: number;
   db: SettingsState;
   chara: character | string;
@@ -478,8 +480,11 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getPresetSettings();
       const { chat } = resolveRoom(matcherArg);
-      if (chat?.note) {
-        return risuChatParser(chat.note, matcherArg);
+      const raw =
+        matcherArg.authorNoteContent ??
+        (chat?.globalAuthorNoteId === undefined ? chat?.note : "");
+      if (raw) {
+        return risuChatParser(raw, matcherArg);
       }
       const template = db.promptTemplate;
       if (template) {

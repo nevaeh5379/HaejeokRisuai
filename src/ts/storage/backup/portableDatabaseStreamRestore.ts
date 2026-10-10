@@ -35,6 +35,8 @@ export function hasPortableDatabaseStreamRestore(
 }
 const RECORD_TYPES: PortableDatabaseStreamPersistedRecord["type"][] = [
   "meta",
+  "author-note",
+  "author-note-settings",
   "setting",
   "plugin-storage",
   "module",

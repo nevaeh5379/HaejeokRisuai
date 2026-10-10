@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { iterateLegacyBackupSqlRecords } from "../../../packages/backup-core/src/legacyRecords.ts";
+import { createSqlCommitValidator } from "../../../packages/protocol/src/sqlCommit.ts";
 
-const {
+import {
   StorageSyncSqlApplyError,
   applyStorageSyncSqlRecords,
-} = require("./storageSyncSqlApply.cts") as {
-  StorageSyncSqlApplyError: new (...args: any[]) => Error;
-  applyStorageSyncSqlRecords: (options: Record<string, any>) => Promise<any>;
-};
+} from "./storageSyncSqlApply.ts";
+import type { NormalizedSqlCommit } from "../../../packages/protocol/src/sqlCommit.ts";
 
 function session() {
   return {
@@ -68,10 +68,13 @@ function staging(records: any[]) {
       return {
         recordCount: records.length,
         sourceRevision: 4,
-        counts: records.reduce((counts, record) => {
-          counts[record.type] = (counts[record.type] || 0) + 1;
-          return counts;
-        }, {} as Record<string, number>),
+        counts: records.reduce(
+          (counts, record) => {
+            counts[record.type] = (counts[record.type] || 0) + 1;
+            return counts;
+          },
+          {} as Record<string, number>,
+        ),
       };
     }),
   };
@@ -84,8 +87,10 @@ function fakeStorage(log: string[]) {
       storageSyncImport: true,
     });
     if (payload.replaceAll) log.push("sync:clear");
-    else if (payload.root) log.push(`sync:setting:${payload.root.upserts.length}`);
-    else if (payload.messages) log.push(`sync:message:${payload.messages.length}`);
+    else if (payload.root)
+      log.push(`sync:setting:${payload.root.upserts.length}`);
+    else if (payload.messages)
+      log.push(`sync:message:${payload.messages.length}`);
     else log.push("sync:other");
     return { revision: 8 };
   });
@@ -121,6 +126,110 @@ function payloadBatchLength(payload: any): number | null {
 }
 
 describe("applyStorageSyncSqlRecords", () => {
+  it.each(["postgres", "oracle", "azure"] as const)(
+    "restores legacy plugins through the plugin domain on %s",
+    async (vendor) => {
+      const plugins = [
+        {
+          name: "Enabled plugin",
+          script: "return 'enabled';",
+          enabled: true,
+          arguments: { token: "string" },
+          realArg: { token: "saved value" },
+        },
+        { name: "Disabled plugin", script: "", enabled: false },
+      ];
+      const records = Array.from(
+        iterateLegacyBackupSqlRecords({ language: "ko", plugins }),
+      );
+      const sqlStorage = fakeStorage([]);
+      const validate = createSqlCommitValidator({ PayloadError: Error });
+      const restored: NormalizedSqlCommit[] = [];
+      sqlStorage.sync.mockImplementation(async (payload, options) => {
+        expect(options.externalTransaction.storageSyncImport).toBe(true);
+        restored.push(validate(payload));
+        return { revision: 8 };
+      });
+
+      await applyStorageSyncSqlRecords({
+        vendor,
+        session: session(),
+        sqlStaging: staging(records),
+        sqlStorage,
+        client: {
+          query: vi.fn(),
+          request: () => ({ query: vi.fn(async () => ({})) }),
+        },
+        transactionContext: transactionContext(),
+        batchSize: 1,
+        replaceColdStorage: false,
+      });
+
+      const metadata = restored.flatMap(
+        (payload) => payload.plugins?.upserts ?? [],
+      );
+      const scripts = restored.flatMap(
+        (payload) => payload.plugins?.scripts ?? [],
+      );
+      expect(metadata).toHaveLength(2);
+      expect(new Set(metadata.map((row) => row.id)).size).toBe(2);
+      expect(metadata.map((row) => row.position)).toEqual([0, 1]);
+      for (let index = 0; index < plugins.length; index++) {
+        const { script, ...data } = plugins[index];
+        expect(metadata[index].data).toEqual(data);
+        expect(scripts[index]).toEqual({ id: metadata[index].id, script });
+      }
+      expect(restored.flatMap((payload) => payload.rootUpserts)).toEqual([
+        { key: "language", value: "ko" },
+      ]);
+    },
+  );
+
+  it.each([0, 5])(
+    "restores a portable setting with %i plugins in bounded batches",
+    async (count) => {
+      const plugins = Array.from({ length: count }, (_, index) => ({
+        name: `plugin-${index}`,
+        script: "x".repeat(700),
+        enabled: index % 2 === 0,
+      }));
+      const records = [
+        { type: "meta", formatVersion: 1, revision: 4 },
+        { type: "setting", key: "plugins", value: plugins },
+        { type: "setting", key: "language", value: "ko" },
+      ];
+      const sqlStorage = fakeStorage([]);
+      const validate = createSqlCommitValidator({ PayloadError: Error });
+      sqlStorage.sync.mockImplementation(async (payload) => {
+        validate(payload);
+        return { revision: 8 };
+      });
+
+      const result = await applyStorageSyncSqlRecords({
+        session: session(),
+        sqlStaging: staging(records),
+        sqlStorage,
+        client: { query: vi.fn() },
+        transactionContext: transactionContext(),
+        batchSize: 2,
+        batchBytes: 1024,
+        replaceColdStorage: false,
+      });
+
+      const pluginBatches = sqlStorage.sync.mock.calls
+        .map(([payload]) => payload.plugins)
+        .filter(Boolean);
+      expect(pluginBatches.map((batch) => batch.upserts.length)).toEqual(
+        plugins.map(() => 1),
+      );
+      expect(result.recordCount).toBe(records.length);
+      expect(result.applied).toBe(records.length - 1);
+      expect(sqlStorage.sync.mock.calls.at(-1)[0].root.upserts).toEqual([
+        { key: "language", value: "ko" },
+      ]);
+    },
+  );
+
   it("applies large validated streams in bounded batches", async () => {
     const records = makeRecords();
     const log: string[] = [];
@@ -148,21 +257,25 @@ describe("applyStorageSyncSqlRecords", () => {
     });
     const streamedCalls = sqlStorage.sync.mock.calls.slice(1);
     const settingSizes = streamedCalls
-      .map(([payload]: [any]) => (payload.root ? payloadBatchLength(payload) : null))
+      .map(([payload]: [any]) =>
+        payload.root ? payloadBatchLength(payload) : null,
+      )
       .filter((value: number | null) => value !== null);
     const messageSizes = streamedCalls
-      .map(([payload]: [any]) => (payload.messages ? payloadBatchLength(payload) : null))
+      .map(([payload]: [any]) =>
+        payload.messages ? payloadBatchLength(payload) : null,
+      )
       .filter((value: number | null) => value !== null);
 
     expect(settingSizes).toEqual([128, 128, 44]);
     expect(messageSizes).toEqual([128, 128, 44]);
     expect(sqlStorage.clearStorageSyncColdStorage).toHaveBeenCalledOnce();
     expect(sqlStorage.applyStorageSyncColdStorageRecord).toHaveBeenCalledOnce();
-    expect(sqlStorage.applyStorageSyncMessageLinks.mock.calls.map((call: any[]) => call[1].length)).toEqual([
-      128,
-      128,
-      44,
-    ]);
+    expect(
+      sqlStorage.applyStorageSyncMessageLinks.mock.calls.map(
+        (call: any[]) => call[1].length,
+      ),
+    ).toEqual([128, 128, 44]);
     expect(log.indexOf("sync:clear")).toBeLessThan(log.indexOf("clear-cold"));
   });
   it("can preserve cold storage while applying a local backup database stream", async () => {
@@ -221,7 +334,11 @@ describe("applyStorageSyncSqlRecords", () => {
     const log: string[] = [];
     const sqlStorage = fakeStorage(log);
     const client = { query: vi.fn() };
-    const stale = { ...transactionContext(), currentRevision: 8, nextRevision: 9 };
+    const stale = {
+      ...transactionContext(),
+      currentRevision: 8,
+      nextRevision: 9,
+    };
 
     await expect(
       applyStorageSyncSqlRecords({
@@ -247,7 +364,12 @@ describe("applyStorageSyncSqlRecords vendor adapters", () => {
     const storage = {
       sync,
       _bulkInsertRows: vi.fn(
-        async (_client: unknown, table: string, _columns: string[], rows: any[]) => {
+        async (
+          _client: unknown,
+          table: string,
+          _columns: string[],
+          rows: any[],
+        ) => {
           bulkTables.push(`${table}:${rows.length}`);
         },
       ),
@@ -283,8 +405,7 @@ describe("applyStorageSyncSqlRecords vendor adapters", () => {
 
   it("applies Azure cold-storage replacement inside the caller transaction", async () => {
     const records = makeRecords().filter(
-      (record) =>
-        record.type === "meta" || record.type === "cold-storage",
+      (record) => record.type === "meta" || record.type === "cold-storage",
     );
     const sync = vi.fn(async () => ({ revision: 8 }));
     const queries: string[] = [];
@@ -357,9 +478,7 @@ describe("applyStorageSyncSqlRecords vendor adapters", () => {
 
     expect(result.applied).toBe(records.length - 1);
     expect(
-      queries.some((sql) =>
-        sql.includes("#risu_storage_sync_branch_refs"),
-      ),
+      queries.some((sql) => sql.includes("#risu_storage_sync_branch_refs")),
     ).toBe(true);
     expect(
       queries.some(

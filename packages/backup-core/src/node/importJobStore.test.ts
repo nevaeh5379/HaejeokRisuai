@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   LocalBackupImportJobError,
   LocalBackupImportJobStore,
-} from "./importJobStore";
+} from "./importJobStore.ts";
 
 describe("LocalBackupImportJobStore", () => {
   it("tracks upload, restore, and completion", async () => {

@@ -1,5 +1,8 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import type { character, MessagePresetInfo } from "../../storage/database/schema";
+import type {
+  character,
+  MessagePresetInfo,
+} from "../../storage/database/schema";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { safeStructuredClone } from "../../polyfill";
@@ -24,7 +27,7 @@ import {
   PROMPT_ROLE_TO_OPENAI,
   type PromptSections,
 } from "./promptSections";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 interface RenderContext {
   currentChar: character;
