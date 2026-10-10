@@ -58,6 +58,23 @@ after a failed migration: retain both directory trees and inspect the recorded
 pairs first. Normal recovery restores destination-only pairs, leaves
 source-only pairs intact, and refuses ambiguous pairs where both/neither exist.
 
+## Windows installation relocation
+
+New current-user installs default to `%LOCALAPPDATA%/Programs/HaejeokRisuai`.
+Updates and reinstalls also relocate the old default
+`%LOCALAPPDATA%/HaejeokRisuai` to Programs; custom install locations are retained.
+Already-relocated installations update in place.
+
+For a relocating `/UPDATE`, the installer remembers the old executable path,
+runs the existing uninstaller with `/UPDATE` to preserve app data and shortcuts,
+then installs into Programs and refreshes the Windows installation registration.
+The old in-place uninstaller is removed after it exits. Only an empty old
+installation directory is removed; there is no recursive cleanup of that path.
+Existing desktop and start-menu shortcuts are retargeted, including their
+working directory and icon, without creating shortcuts that the user removed.
+The NSIS bundle compiles locally; a real upgrade still requires verification
+in a disposable Windows account or VM.
+
 ## Automated verification on Windows
 
 - `cargo test --offline`: 23 tests passed, including directory preservation,

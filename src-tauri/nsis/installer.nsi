@@ -1,7 +1,7 @@
 ; Upstream: tauri-apps/tauri, tag tauri-cli-v2.11.4 (MIT; see LICENSE_MIT).
 ; https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi
-; Local changes: Programs default, publisher-independent install lookup,
-; and product-named data removal when explicitly selected.
+; Local changes: Programs default and update relocation, publisher-independent
+; install lookup, and product-named data removal when explicitly selected.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -79,6 +79,8 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var PreviousInstallDir
+Var PreviousMainBinaryName
 
 !insertmacro HaejeokInstallLocationFunctions
 
@@ -358,28 +360,18 @@ Function PageLeaveReinstall
       ReadRegStr $R1 HKLM "$R6" "UninstallString"
       ExecWait '$R1' $0
     ${Else}
-      Call GetPreviousInstallLocation
-      ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
-      ${If} $4 == ""
-      ${OrIf} $R1 == ""
-        BringToFront
-        MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
-        Abort
-      ${EndIf}
-      ClearErrors
-      ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
-      ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P
-      StrCpy $R1 "$R1 _?=$4" ; append uninstall directory
-      ClearErrors
-      ExecWait '$R1' $0
+      Call UninstallPreviousNsisInstallation
     ${EndIf}
 
     BringToFront
 
     ${IfThen} ${Errors} ${|} StrCpy $0 2 ${|} ; ExecWait failed, set fake exit code
 
+    ${If} $WixMode = 1
+    ${AndIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+      StrCpy $0 2
+    ${EndIf}
     ${If} $0 <> 0
-    ${OrIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
       ; User cancelled wix uninstaller? return to select un/reinstall page
       ${If} $WixMode = 1
       ${AndIf} $0 = 1602
@@ -510,6 +502,8 @@ Function .onInit
 
   !insertmacro SetContext
 
+  Call RememberPreviousInstallation
+
   ${If} $INSTDIR == "${PLACEHOLDER_INSTALL_DIR}"
     ; Set default install location
     !if "${INSTALLMODE}" == "perMachine"
@@ -554,6 +548,20 @@ Section EarlyChecks
     ${EndIf}
   ${EndIf}
   !endif
+
+  ; The reinstall page skips uninstalling during updates. Relocating updates
+  ; must remove the old binaries before copying to the new directory.
+  ${If} $UpdateMode = 1
+    Call RememberPreviousInstallation
+    ${If} $PreviousInstallDir != ""
+    ${AndIf} $PreviousInstallDir != $INSTDIR
+      Call UninstallPreviousNsisInstallation
+      ${If} $0 <> 0
+        MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
+        Abort
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
 
 SectionEnd
 
@@ -703,6 +711,9 @@ Section Install
 
   ; Remove old main binary if it doesn't match new main binary name
   ReadRegStr $OldMainBinaryName SHCTX "${UNINSTKEY}" "MainBinaryName"
+  ${If} $OldMainBinaryName == ""
+    StrCpy $OldMainBinaryName $PreviousMainBinaryName
+  ${EndIf}
   ${If} $OldMainBinaryName != ""
   ${AndIf} $OldMainBinaryName != "${MAINBINARYNAME}.exe"
     Delete "$INSTDIR\$OldMainBinaryName"
@@ -741,6 +752,7 @@ Section Install
   ; because finish page will be skipped
   ${If} $PassiveMode = 1
   ${OrIf} ${Silent}
+  ${OrIf} $UpdateMode = 1
     Call CreateOrUpdateDesktopShortcut
   ${EndIf}
 
@@ -909,9 +921,9 @@ Section Uninstall
 SectionEnd
 
 Function RestorePreviousInstallLocation
-  Call GetPreviousInstallLocation
+  Call RememberPreviousInstallation
   ${If} $4 != ""
-    ; Move the old per-user default to Programs, keeping custom locations.
+    ; Both updates and reinstalls move the old default to Programs.
     !if "${INSTALLMODE}" == "currentUser"
       ${If} $4 == "$LOCALAPPDATA\${PRODUCTNAME}"
         Return
@@ -937,17 +949,20 @@ Function CreateOrUpdateStartMenuShortcut
   ; migrate old shortcuts to target the new MAINBINARYNAME
   StrCpy $R0 0
 
-  !insertmacro IsShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
+  ${If} $PreviousInstallDir == ""
+    StrCpy $PreviousInstallDir $INSTDIR
+  ${EndIf}
+  !insertmacro IsShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$PreviousInstallDir\$OldMainBinaryName"
   Pop $0
   ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    !insertmacro HaejeokSetShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
     StrCpy $R0 1
   ${EndIf}
 
-  !insertmacro IsShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
+  !insertmacro IsShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$PreviousInstallDir\$OldMainBinaryName"
   Pop $0
   ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    !insertmacro HaejeokSetShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
     StrCpy $R0 1
   ${EndIf}
 
@@ -977,10 +992,13 @@ FunctionEnd
 Function CreateOrUpdateDesktopShortcut
   ; We used to use product name as MAINBINARYNAME
   ; migrate old shortcuts to target the new MAINBINARYNAME
-  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
+  ${If} $PreviousInstallDir == ""
+    StrCpy $PreviousInstallDir $INSTDIR
+  ${EndIf}
+  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$PreviousInstallDir\$OldMainBinaryName"
   Pop $0
   ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    !insertmacro HaejeokSetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
     Return
   ${EndIf}
 
