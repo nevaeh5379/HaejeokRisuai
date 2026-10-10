@@ -320,9 +320,9 @@ export class NodeStorage {
     await this.computeClient.cancelHypaMemorySession(sessionId);
   }
 
-  async getKeyPair(): Promise<RemoteAuthKeyPair> {
-    return await this.authIdentity.getKeyPair();
-  }
+  // async getKeyPair(): Promise<RemoteAuthKeyPair> {
+  //   return await this.authIdentity.getKeyPair();
+  // }
 
   async setItem(key: string, value: Uint8Array) {
     await this.assetClient.setItem(key, value);

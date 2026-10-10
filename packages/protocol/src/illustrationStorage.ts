@@ -37,6 +37,7 @@ export interface IllustrationStorageReader {
   }>;
 }
 
+// TODO: Refactor readIllustrationMessage to Illustration.readMessage.
 /**
  * Locates a message by stable ID using SQL pages of at most 50 messages.
  *

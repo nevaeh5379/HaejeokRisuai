@@ -94,7 +94,7 @@ export class IllustrationRequestError extends Error {
     this.providerDiagnostic = providerDiagnostic;
   }
 }
-
+//TODO need Refactoring.
 /** Classifies errors into bounded diagnostics; arbitrary response text is never persisted. */
 export function describeIllustrationError(
   error: unknown,
