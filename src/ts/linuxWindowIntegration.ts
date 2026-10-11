@@ -108,6 +108,10 @@ function applyCsdHeaderLayout(layout: LinuxCsdHeaderLayout | null): void {
     "--risu-linux-csd-titlebar-height",
     `${layout?.height ?? 40}px`,
   );
+  document.documentElement.style.setProperty(
+    "--risu-linux-csd-sidebar-top-inset",
+    `${layout && layout.left > 0 ? layout.height : 0}px`,
+  );
   window.dispatchEvent(new Event(CSD_LAYOUT_EVENT));
 }
 

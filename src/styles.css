@@ -485,13 +485,13 @@ html.tauri-linux-csd {
 }
 
 html.tauri-linux-csd .rs-sidebar.rs-sidebar-titlebar-inset {
-  padding-top: var(--risu-linux-csd-titlebar-height);
+  padding-top: var(--risu-linux-csd-sidebar-top-inset, 0px);
 }
 
 html.tauri-linux-csd
   .rs-sidebar:not(.rs-sidebar-titlebar-inset)
   .rs-sidebar-scroll {
-  padding-top: var(--risu-linux-csd-titlebar-height);
+  padding-top: var(--risu-linux-csd-sidebar-top-inset, 0px);
 }
 
 html.tauri-linux-csd .rs-chat-tab-strip-shell {
