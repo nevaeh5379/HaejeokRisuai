@@ -1237,12 +1237,24 @@ async function fetchWithPlainFetch(
 ): Promise<GlobalFetchResult> {
   try {
     const headers = { "Content-Type": "application/json", ...arg.headers };
-    const response = await fetch(new URL(url), {
-      body: JSON.stringify(arg.body),
-      headers,
-      method: arg.method ?? "POST",
-      signal: arg.abortSignal,
-    });
+    // Capacitor's patched fetch reads non-JSON POST responses as text, which
+    // corrupts binary payloads such as NovelAI's ZIP before arrayBuffer() runs.
+    const response =
+      isCapacitor && arg.rawResponse
+        ? await fetchNative(url, {
+            body: JSON.stringify(arg.body) ?? "",
+            headers,
+            method: arg.method ?? "POST",
+            signal: arg.abortSignal,
+            requestTimeoutMs: arg.requestTimeoutMs,
+            logFetch: false,
+          })
+        : await fetch(new URL(url), {
+            body: JSON.stringify(arg.body),
+            headers,
+            method: arg.method ?? "POST",
+            signal: arg.abortSignal,
+          });
     const data = arg.rawResponse
       ? new Uint8Array(await response.arrayBuffer())
       : await response.json();
@@ -2060,6 +2072,8 @@ interface StreamedFetchHeaderData {
 interface StreamedFetchEndData {
   type: "end";
   id: string;
+  success?: boolean;
+  error?: string;
 }
 
 /**
@@ -2091,6 +2105,7 @@ interface StreamedFetchPlugin {
     method: string;
     timeoutMs?: number;
   }): Promise<{ error: string; success: boolean }>;
+  cancelStreamedFetch(options: { id: string }): Promise<void>;
 
   /**
    * Adds a listener for the specified event.
@@ -2562,6 +2577,7 @@ export async function fetchNative(
 
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs);
   const requestSignal = timeoutSignal.signal;
+  let cleanupTimeoutOnReturn = true;
   try {
     if (window.userScriptFetch && !throughProxy) {
       return await window.userScriptFetch(url, {
@@ -2594,12 +2610,55 @@ export async function fetchNative(
       nativeFetchNotify[fetchId] = notify;
 
       let error = "";
+      let aborted = false;
+      let abortReason: unknown;
+      let streamClosed = false;
+      let dispatched = false;
+      let streamController: ReadableStreamDefaultController<Uint8Array>;
+      let nativeResult: Promise<void>;
+      const cleanup = () => {
+        // A suspended reader may still hold this array while awaiting the
+        // native result. Clear its chunks before removing the request entry.
+        if (nativeFetchData[fetchId]) nativeFetchData[fetchId].length = 0;
+        delete nativeFetchData[fetchId];
+        delete nativeFetchNotify[fetchId];
+        requestSignal?.removeEventListener("abort", onAbort);
+        if (isCapacitor) timeoutSignal.cleanup();
+        notify();
+      };
+      const cancelNative = () => {
+        if (isCapacitor && dispatched) {
+          void capStreamedFetch
+            .cancelStreamedFetch({ id: fetchId })
+            .catch((cause) =>
+              console.error("Native fetch cancellation failed:", cause),
+            );
+        }
+      };
+      const onAbort = () => {
+        aborted = true;
+        abortReason =
+          requestSignal.reason ??
+          new DOMException("Request aborted", "AbortError");
+        resolved = true;
+        streamClosed = true;
+        streamController?.error(abortReason);
+        cancelNative();
+        cleanup();
+      };
       if (isCapacitor && !capStreamedFetch) {
         throw new Error("Capacitor streamed fetch plugin is unavailable");
       }
+      if (isCapacitor) {
+        cleanupTimeoutOnReturn = false;
+        requestSignal?.addEventListener("abort", onAbort, { once: true });
+        if (requestSignal?.aborted) onAbort();
+      }
       while (!streamedFetchListening) {
+        if (aborted) throw abortReason;
         await sleep(100);
       }
+      if (aborted) throw abortReason;
       if (isTauri) {
         invoke("streamed_fetch", {
           id: fetchId,
@@ -2628,7 +2687,8 @@ export async function fetchNative(
           }
         });
       } else if (capStreamedFetch) {
-        capStreamedFetch
+        dispatched = true;
+        nativeResult = capStreamedFetch
           .streamedFetch({
             id: fetchId,
             url: url,
@@ -2639,9 +2699,17 @@ export async function fetchNative(
           })
           .then((res) => {
             if (!res.success) {
-              error = res.error;
+              error = res.error || "Native fetch failed";
               resolved = true;
             }
+            notify();
+          })
+          .catch((cause) => {
+            error =
+              (cause instanceof Error ? cause.message : String(cause)) ||
+              "Native fetch failed";
+            resolved = true;
+            notify();
           });
       }
 
@@ -2650,11 +2718,14 @@ export async function fetchNative(
 
       const tauriReadableStream = new ReadableStream<Uint8Array>({
         async start(controller) {
+          streamController = controller;
           try {
             while (
-              !resolved ||
-              nativeFetchHead < (nativeFetchData[fetchId]?.length ?? 0)
+              !streamClosed &&
+              (!resolved ||
+                nativeFetchHead < (nativeFetchData[fetchId]?.length ?? 0))
             ) {
+              if (error) throw new Error(error);
               const queue = nativeFetchData[fetchId];
               if (queue && nativeFetchHead < queue.length) {
                 const data = queue[nativeFetchHead++];
@@ -2667,6 +2738,13 @@ export async function fetchNative(
                   status = data.status;
                 }
                 if (data.type === "end") {
+                  if (data.success === false) {
+                    throw new Error(data.error || "Native fetch failed");
+                  }
+                  // Older native plugins emit a bare end event before their
+                  // result arrives. EOF is successful only after that result.
+                  if (isCapacitor) await nativeResult;
+                  if (error) throw new Error(error);
                   resolved = true;
                 }
 
@@ -2689,14 +2767,32 @@ export async function fetchNative(
                 setTimeout(resolve, 100);
               });
             }
-            controller.close();
+            if (error) throw new Error(error);
+            if (!streamClosed) {
+              streamClosed = true;
+              controller.close();
+            }
+          } catch (cause) {
+            if (!streamClosed) {
+              streamClosed = true;
+              controller.error(cause);
+            }
+            error = cause instanceof Error ? cause.message : String(cause);
+            resolved = true;
           } finally {
             // Completed request queues previously stayed in this process-wide
             // object forever, leaking one array per native fetch.
-            delete nativeFetchData[fetchId];
-            delete nativeFetchNotify[fetchId];
+            cleanup();
           }
         },
+        cancel: isCapacitor
+          ? () => {
+              streamClosed = true;
+              resolved = true;
+              cancelNative();
+              cleanup();
+            }
+          : undefined,
       });
 
       let readableStream = tauriReadableStream;
@@ -2721,6 +2817,8 @@ export async function fetchNative(
         resHeaders = {};
       }
 
+      if (aborted) throw abortReason;
+
       if (error !== "") {
         throw new Error(error);
       }
@@ -2735,6 +2833,8 @@ export async function fetchNative(
             setTimeout(resolve, 100);
           });
         }
+        if (aborted) throw abortReason;
+        if (error) throw new Error(error);
         delete nativeFetchData[fetchId];
         delete nativeFetchNotify[fetchId];
         return new Response(null, {
@@ -2824,7 +2924,7 @@ export async function fetchNative(
       });
     }
   } finally {
-    timeoutSignal.cleanup();
+    if (cleanupTimeoutOnReturn) timeoutSignal.cleanup();
   }
 }
 
