@@ -287,9 +287,9 @@ html[data-theme-type="light"] select {
     var(--tw-shadow) !important;
 }
 
-html[data-theme-type="light"]
-  select:not([multiple]):not([size]):not(.appearance-none) {
-  /* Draw the select surface ourselves so macOS shows the CSS shadow. */
+html select:not([multiple]):not([size]):not(.appearance-none) {
+  /* Native macOS selects ignore control padding. Draw the same surface and
+   * arrow in every theme so sizing and CSS shadows apply consistently. */
   appearance: none;
   -webkit-appearance: none;
   background-image:
