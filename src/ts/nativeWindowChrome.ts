@@ -15,6 +15,58 @@ export type ResizeDirection =
   | "SouthWest"
   | "West";
 
+export function installMacOSHeaderDrag() {
+  if (!isTauriMacOS) return;
+  const onMouseDown = (event: MouseEvent) => {
+    if (event.button !== 0 || event.defaultPrevented) return;
+    const headerHeight =
+      parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--risu-macos-titlebar-height",
+        ),
+      ) || 28;
+    // Native traffic lights occupy the leading 80px of the titlebar.
+    if (
+      event.clientY < 0 ||
+      event.clientY >= headerHeight ||
+      event.clientX < 80 ||
+      event.clientX >= window.innerWidth
+    )
+      return;
+
+    // Tauri handles explicitly marked targets itself. Its attribute handler
+    // does not handle unmarked children, so only exclude the actual target.
+    if (
+      event.target instanceof Element &&
+      event.target.hasAttribute("data-tauri-drag-region")
+    )
+      return;
+    const interactive =
+      'button, a, input, textarea, select, label, summary, [contenteditable], [draggable="true"], [role="button"], [role="tab"], [role="slider"], [role="menuitem"], [role="separator"], [role="checkbox"], [role="switch"], [tabindex]:not([tabindex="-1"])';
+    if (
+      event
+        .composedPath()
+        .some((node) => node instanceof Element && node.matches(interactive))
+    )
+      return;
+
+    event.preventDefault();
+    const currentWindow = getCurrentWindow();
+    void (
+      event.detail === 2
+        ? currentWindow.toggleMaximize()
+        : currentWindow.startDragging()
+    ).catch((error) => {
+      console.warn(
+        "[nativeWindowChrome] Failed to handle macOS header drag",
+        error,
+      );
+    });
+  };
+  document.addEventListener("mousedown", onMouseDown);
+  return () => document.removeEventListener("mousedown", onMouseDown);
+}
+
 export function installLinuxCsdHeaderDrag() {
   if (!isTauriLinux) return;
   const onMouseDown = (event: MouseEvent) => {
