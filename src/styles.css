@@ -119,6 +119,36 @@
   --default-ring-color: rgb(59 130 246 / 0.5);
 }
 
+html[data-theme-type="light"] {
+  --color-darkborderc: transparent;
+  --risu-theme-boundary-shadow:
+    0 1px 3px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+}
+
+html[data-theme-type="light"]
+  :where(
+    .border-darkborderc,
+    [class^="border-darkborderc/"],
+    [class*=" border-darkborderc/"],
+    .border-t-darkborderc,
+    .border-b-darkborderc,
+    .border-l-darkborderc,
+    .border-r-darkborderc,
+    .border-x-darkborderc,
+    .border-y-darkborderc,
+    .x-risu-button-default,
+    .x-risu-risu-comment,
+    .x-risu-tool-call
+  ),
+html.tauri-linux-csd[data-theme-type="light"] .rs-chat-tab-strip-shell {
+  --tw-shadow: var(--risu-theme-boundary-shadow);
+  /* Keep Tailwind focus rings alongside the shared boundary shadow. */
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow);
+}
+
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still

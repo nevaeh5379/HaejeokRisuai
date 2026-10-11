@@ -99,7 +99,7 @@ const colorShemes = {
     draculared: "#ff5555",
     textcolor: "#0f172a",
     textcolor2: "#64748b",
-    darkBorderc: "#d1d5db",
+    darkBorderc: "transparent",
     darkbutton: "#e5e7eb",
     type: "light",
   },
@@ -387,6 +387,7 @@ export function updateColorScheme() {
       colorScheme.darkbutton,
     );
     document.documentElement.style.colorScheme = colorScheme.type;
+    document.documentElement.dataset.themeType = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
     if (isCapacitorAndroid) {
       void syncAndroidSystemBars(colorScheme.type === "dark");
