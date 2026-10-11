@@ -14,7 +14,7 @@
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
-    import { windowDragRegion } from './ts/nativeWindowChrome';
+    import { installLinuxCsdHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
@@ -35,6 +35,8 @@
     let keepingSessionAlive = $state(false)
     let RealmPopUp = $state<typeof RealmPopUpType | null>(null)
     let exitConfirmationOpen = false
+
+    onMount(installLinuxCsdHeaderDrag)
 
     $effect(() => {
         if (!isCapacitorAndroid) return

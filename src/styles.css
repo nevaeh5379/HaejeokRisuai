@@ -408,8 +408,8 @@ html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
   background-color: var(--risu-theme-darkbg) !important;
 }
 
-/* GTK CSD is overlaid on top of the WebView. Keep the visual material at y=0,
- * but move interactive web chrome below the native 40px HeaderBar. */
+/* Native GTK buttons share the top row with web tabs. GTK reports their actual
+ * height and edge widths; empty header space passes pointer input to the web. */
 html.tauri-linux-csd {
   --risu-linux-csd-titlebar-height: 40px;
 }
@@ -425,7 +425,25 @@ html.tauri-linux-csd
 }
 
 html.tauri-linux-csd .rs-chat-tab-strip-shell {
-  margin-top: var(--risu-linux-csd-titlebar-height);
+  @apply bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm;
+  padding-left: var(--risu-linux-csd-left-inset, 0px);
+  padding-right: var(--risu-linux-csd-right-inset, 0px);
+}
+
+html.tauri-linux-csd .rs-chat-tab-list {
+  height: calc(max(40px, var(--risu-linux-csd-titlebar-height)) - 1px);
+  background-color: transparent;
+  border-bottom-width: 0;
+  backdrop-filter: none;
+}
+
+.rs-linux-csd-header-spacer {
+  display: none;
+}
+
+html.tauri-linux-csd .default-chat-pane:not(.has-chat-tabs) > .rs-linux-csd-header-spacer {
+  display: block;
+  height: var(--risu-linux-csd-titlebar-height);
 }
 
 html.tauri-linux-csd .rs-setting-backdrop {

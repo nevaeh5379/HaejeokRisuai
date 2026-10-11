@@ -986,6 +986,7 @@
                 }
             }}
         >
+            <div class="rs-linux-csd-header-spacer shrink-0" aria-hidden="true"></div>
             {#if showTabBar}
                 <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
             {/if}
