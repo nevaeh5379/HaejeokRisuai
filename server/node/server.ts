@@ -178,6 +178,7 @@ import {
   LocalBackupExportJobStore,
 } from "../../packages/backup-core/src/node/exportJobStore.ts";
 import { streamLocalBackupArchive } from "../../packages/backup-core/src/node/exportArchive.ts";
+import { iterateServerBackupPlugins } from "./sync/portableServerPluginExport.ts";
 import {
   LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE,
   LocalBackupExportService,
@@ -4358,6 +4359,10 @@ async function streamPortableServerDatabase(
       id: summary.id,
       data: value,
     });
+  }
+
+  for await (const plugin of iterateServerBackupPlugins(postgresStorage)) {
+    await writer.emit(plugin);
   }
 
   const pluginKeys = await postgresStorage.listPluginCustomStorageKeys();

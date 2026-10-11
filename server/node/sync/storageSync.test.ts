@@ -36,6 +36,7 @@ describe("storage sync summary", () => {
       createStorageSyncSummary(sqlStorage, assetStorage),
     ).resolves.toEqual({
       protocolVersion: STORAGE_SYNC_PROTOCOL_VERSION,
+      supportsPluginRecords: true,
       revision: 17,
       initialized: true,
       records: {

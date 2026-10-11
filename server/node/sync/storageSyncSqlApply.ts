@@ -577,14 +577,17 @@ async function applyStorageSyncSqlRecords(options) {
   let pendingType = null;
   let pending = [];
   let pendingBytes = 0;
+  let pendingSourceRecords = 0;
   let applied = 0;
   const flush = async () => {
     if (!pendingType || pending.length === 0) return;
     const batch = pending;
     const type = pendingType;
+    const sourceRecords = pendingSourceRecords;
     pending = [];
     pendingType = null;
     pendingBytes = 0;
+    pendingSourceRecords = 0;
     await applyBatch(
       vendor,
       sqlStorage,
@@ -593,13 +596,12 @@ async function applyStorageSyncSqlRecords(options) {
       type,
       batch,
     );
-    // Plugin rows expand one legacy setting; progress counts source records.
-    if (type !== "plugin") {
-      applied += batch.length;
+    if (sourceRecords > 0) {
+      applied += sourceRecords;
       onProgress?.({ applied, type });
     }
   };
-  const enqueue = async (record) => {
+  const enqueue = async (record, countSourceRecord = true) => {
     const recordBytes = Buffer.byteLength(JSON.stringify(record), "utf8");
     if (
       pendingType !== record.type ||
@@ -610,6 +612,7 @@ async function applyStorageSyncSqlRecords(options) {
     }
     pendingType = record.type;
     pending.push(record);
+    if (countSourceRecord) pendingSourceRecords++;
     pendingBytes += recordBytes;
   };
 
@@ -636,13 +639,16 @@ async function applyStorageSyncSqlRecords(options) {
             );
           }
           const { script, ...data } = plugin;
-          await enqueue({
-            type: "plugin",
-            id: randomUUID(),
-            position,
-            data,
-            script,
-          });
+          await enqueue(
+            {
+              type: "plugin",
+              id: randomUUID(),
+              position,
+              data,
+              script,
+            },
+            false,
+          );
         }
         await flush();
         applied++;

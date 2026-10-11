@@ -127,6 +127,7 @@ function supportedDatabaseRecord(
     "author-note-settings",
     "setting",
     "plugin-storage",
+    "plugin",
     "module",
     "preset",
     "character",

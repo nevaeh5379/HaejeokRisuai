@@ -23,6 +23,7 @@ export const LOCAL_BACKUP_DATABASE_RECORD_TYPES = [
   "meta",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",
