@@ -1,6 +1,9 @@
 package co.aiclient.risu;
 
 import static org.junit.Assert.*;
+import static androidx.test.espresso.Espresso.onView;
+import static androidx.test.espresso.action.ViewActions.click;
+import static androidx.test.espresso.matcher.ViewMatchers.withText;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.SharedPreferences;
@@ -119,5 +122,34 @@ public class AndroidCrashDiagnosticsTest {
             activity.onActivity(main -> assertNull(main.getBridge()));
         }
         assertTrue(AndroidCrashDiagnostics.hasPendingReport());
+    }
+
+    @Test
+    public void continueAfterPendingReportRecreatesActivityAndLoadsBridge() {
+        assertReportRecovery(R.string.crash_report_continue, false);
+    }
+
+    @Test
+    public void safeModeAfterPendingReportRecreatesActivityAndLoadsBridge() {
+        assertReportRecovery(R.string.safe_mode_shortcut, true);
+    }
+
+    private void assertReportRecovery(int buttonText, boolean expectedSafeMode) {
+        AndroidCrashDiagnostics.rendererGone(true, 2);
+        MainActivity[] original = new MainActivity[1];
+        try (ActivityScenario<MainActivity> activity = ActivityScenario.launch(MainActivity.class)) {
+            activity.onActivity(main -> {
+                original[0] = main;
+                assertNull(main.getBridge());
+            });
+            onView(withText(buttonText)).perform(click());
+            activity.onActivity(main -> {
+                assertNotSame(original[0], main);
+                assertNotNull(main.getBridge());
+                assertNotNull(main.getBridge().getWebView());
+                assertEquals(expectedSafeMode, main.isSafeMode());
+            });
+        }
+        assertFalse(AndroidCrashDiagnostics.hasPendingReport());
     }
 }
