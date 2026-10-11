@@ -1577,6 +1577,15 @@ export const languageSpanish = {
   noWebGPU:
     "Tu navegador o SO no soporta WebGPU. Esto ralentizará el rendimiento significativamente.",
   menuSideBar: "Barra Lateral del Menú",
+  sidebarRight: "Colocar la barra lateral a la derecha",
+  sidebarRightDesc:
+    "Coloca la barra lateral (lista de chats y panel de configuración de personajes) en el lado derecho de la pantalla.",
+  botListRight: "Colocar la lista de bots a la derecha",
+  botListRightDesc:
+    "Coloca la lista de bots (barra de avatares de personajes) en el lado derecho de la pantalla.",
+  invertSidebarBotListOrder: "Invertir orden de lista de bots y barra lateral",
+  invertSidebarBotListOrderDesc:
+    "Invierte el orden interior y exterior cuando la lista de bots y la barra lateral están en el mismo lado.",
   home: "Inicio",
   showSavingIcon: "Mostrar Icono de Guardado",
   showChatTabs: "Mostrar pestañas de chat",

@@ -2395,6 +2395,15 @@ export const languageEnglish = {
   noWebGPU:
     "Your Browser or OS doesn't support WebGPU. This will slow down the performance significantly.",
   menuSideBar: "Menu Side Bar",
+  sidebarRight: "Place Sidebar on Right",
+  sidebarRightDesc:
+    "Places the sidebar (chat list and character config panel) on the right side of the screen.",
+  botListRight: "Place Bot List on Right",
+  botListRightDesc:
+    "Places the bot list (character avatar rail) on the right side of the screen.",
+  invertSidebarBotListOrder: "Invert Bot List and Sidebar Order",
+  invertSidebarBotListOrderDesc:
+    "Swaps the inner and outer order when the bot list and sidebar are on the same side.",
   home: "Home",
   showSavingIcon: "Show Saving Icon",
   showChatTabs: "Show Chat Tabs",

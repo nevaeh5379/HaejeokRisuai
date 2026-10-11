@@ -1574,6 +1574,15 @@ export const languageGerman = {
   noWebGPU:
     "Ihr Browser oder Betriebssystem unterstützt WebGPU nicht. Dies wird die Leistung erheblich verlangsamen.",
   menuSideBar: "Menü-Seitenleiste",
+  sidebarRight: "Seitenleiste rechts platzieren",
+  sidebarRightDesc:
+    "Platziert die Seitenleiste (Chat-Liste und Charakter-Konfigurationspanel) auf der rechten Seite des Bildschirms.",
+  botListRight: "Bot-Liste rechts platzieren",
+  botListRightDesc:
+    "Platziert die Bot-Liste (Charakter-Avatarleiste) auf der rechten Seite des Bildschirms.",
+  invertSidebarBotListOrder: "Reihenfolge von Bot-Liste und Seitenleiste umkehren",
+  invertSidebarBotListOrderDesc:
+    "Tauscht die innere und äußere Reihenfolge, wenn sich Bot-Liste und Seitenleiste auf derselben Seite befinden.",
   home: "Startseite",
   showSavingIcon: "Speichersymbol anzeigen",
   showChatTabs: "Chat-Tabs anzeigen",

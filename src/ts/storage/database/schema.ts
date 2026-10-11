@@ -411,6 +411,9 @@ export interface DatabaseSettings {
   assetMaxDifference: number;
   auxModelUnderModelSettings: boolean;
   menuSideBar: boolean;
+  sidebarRight?: boolean;
+  botListRight?: boolean;
+  invertSidebarBotListOrder?: boolean;
   pluginV2: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>;
   showSavingIcon: boolean;
   showChatTabs: boolean;

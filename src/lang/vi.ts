@@ -1556,6 +1556,15 @@ export const languageVietnamese = {
   noWebGPU:
     "Trình duyệt hoặc hệ điều hành của bạn không hỗ trợ WebGPU. Điều này sẽ làm chậm hiệu suất đáng kể.",
   menuSideBar: "Thanh bên menu",
+  sidebarRight: "Đặt thanh bên ở bên phải",
+  sidebarRightDesc:
+    "Đặt thanh bên (danh sách trò chuyện và bảng cấu hình nhân vật) ở phía bên phải màn hình.",
+  botListRight: "Đặt danh sách bot ở bên phải",
+  botListRightDesc:
+    "Đặt danh sách bot (thanh hình đại diện nhân vật) ở phía bên phải màn hình.",
+  invertSidebarBotListOrder: "Đảo ngược thứ tự danh sách bot và thanh bên",
+  invertSidebarBotListOrderDesc:
+    "Hoán đổi thứ tự trong và ngoài khi danh sách bot và thanh bên ở cùng một phía.",
   home: "Trang chủ",
   showSavingIcon: "Hiển thị biểu tượng đang lưu",
   showChatTabs: "Hiển thị tab trò chuyện",

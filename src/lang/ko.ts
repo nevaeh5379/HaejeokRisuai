@@ -2295,6 +2295,15 @@ export const languageKorean = {
   noWebGPU:
     "브라우저 또는 OS가 WebGPU를 지원하지 않습니다. 이로 인해 성능이 크게 저하될 수 있습니다.",
   menuSideBar: "메뉴 사이드바",
+  sidebarRight: "사이드바를 오른쪽에 배치",
+  sidebarRightDesc:
+    "사이드바(채팅 목록 및 캐릭터 설정 패널)를 화면 오른쪽에 배치합니다.",
+  botListRight: "봇 리스트를 오른쪽에 배치",
+  botListRightDesc:
+    "봇 리스트(캐릭터 목록 레일)를 화면 오른쪽에 배치합니다.",
+  invertSidebarBotListOrder: "봇 리스트와 사이드바 순서 반전",
+  invertSidebarBotListOrderDesc:
+    "봇 리스트와 사이드바가 같은 쪽에 위치할 때, 안쪽과 바깥쪽 순서를 맞바꿉니다.",
   home: "홈",
   showSavingIcon: "저장 아이콘 표시",
   showChatTabs: "채팅 탭 표시",

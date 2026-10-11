@@ -22,13 +22,18 @@
     import { shouldHideAndroidNavigationBar } from './ts/android/androidNavigationBar';
     import { routeAndroidNativeEntry } from './ts/android/androidNativeEntryRouter';
     import { refreshAndroidNativeSurfaces } from './ts/android/androidNativeSurfaces';
+    import { computeSidebarLayoutOrder } from './ts/gui/sidebarPosition';
 
-
-  
     const auxiliaryChatLaunch = isTauri ? parseTauriChatWorkspaceLaunch(location.search) : null
     const detachedChatWindow = auxiliaryChatLaunch !== null
     const detachedChatPresentation = auxiliaryChatLaunch?.presentation ?? {}
     let didFirstSetup: boolean  = $derived(settingsStore.state.didFirstSetup)
+    let isExperimental = $derived(!!settingsStore.state.useExperimental)
+    let sidebarRight = $derived(isExperimental && !!settingsStore.state.sidebarRight)
+    let botListRight = $derived(isExperimental && !!settingsStore.state.botListRight)
+    let invertOrder = $derived(isExperimental && !!settingsStore.state.invertSidebarBotListOrder)
+    let layoutOrder = $derived(computeSidebarLayoutOrder(sidebarRight, botListRight, invertOrder))
+    let mainContentOrder = $derived(layoutOrder.mainContentOrder)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
@@ -418,12 +423,17 @@
             {#if (!$DynamicGUI)}
                 <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: !$sideBarStore }} />
             {:else}
-                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-50 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
+                <div class="risu-dynamic-sidebar-layer top-0 w-full h-full left-0 z-50 flex flex-row items-center"
+                    class:fixed={$sideBarStore}
+                    class:hidden={!$sideBarStore}
+                    class:justify-end={sidebarRight && botListRight}
+                    class:justify-between={sidebarRight !== botListRight}
+                >
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
                 </div>
             {/if}
-            <div class="rs-main-content grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0" style:order={mainContentOrder}>
                 {#if $selectedCharID < 0 && $PlaygroundStore === 0}
                     <LazyComponent loader={mainMenuLoader} />
                 {:else}
