@@ -255,8 +255,8 @@
         }
     })
 </script>
-<div bind:this={parentContainerEl} class="rs-sidechat-container flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 overflow-hidden">
-    <Button className="rs-sidechat-new-btn relative bottom-2 shrink-0 flex items-center justify-center gap-1.5" onclick={async () => {
+<div bind:this={parentContainerEl} class="rs-sidechat-container flex flex-1 flex-col w-full min-h-0 overflow-hidden">
+    <Button className="rs-sidechat-new-btn relative shrink-0 flex items-center justify-center gap-1.5" onclick={async () => {
         const cha = chara
         const len = chara.chats.length
         const newChat = {

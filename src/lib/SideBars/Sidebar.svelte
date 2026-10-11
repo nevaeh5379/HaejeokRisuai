@@ -1190,7 +1190,7 @@
         </div>
       </div>
     {:else}
-      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative -mt-6 rounded-b-md flex">
         <button onclick={() => {
           void loadSideChatList()
           devTool = false

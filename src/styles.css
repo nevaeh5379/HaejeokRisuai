@@ -475,8 +475,7 @@ html[data-theme-type="light"] .rs-sidechat-item.bg-selected {
   );
 }
 
-html[data-theme-type="light"] .rs-sidechat-new-btn {
-  bottom: auto;
+.rs-sidechat-new-btn {
   margin: 0.5rem 0.5rem 0;
 }
 
