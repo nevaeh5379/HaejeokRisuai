@@ -181,7 +181,8 @@ html[data-theme-type="light"]
 
 html[data-theme-type="light"]
   .rs-sidebar-panel:has(
-    + .rs-main-content .rs-sidebar-toggle.macos-sidebar-toggle.border-transparent
+    + .rs-main-content
+      .rs-sidebar-toggle.macos-sidebar-toggle.border-transparent
   ) {
   --risu-sidebar-shadow-gap-top: 60px;
 }
@@ -204,6 +205,48 @@ html[data-theme-type="light"] .rs-sidebar-toggle.rounded-r-md::before {
   mask-image: linear-gradient(to right, transparent, black 12px);
 }
 
+html[data-theme-type="light"]
+  :is(
+    .rs-segmented-control,
+    .rs-textinput,
+    .rs-numberinput,
+    .rs-textareainput,
+    .rs-charconfig-card,
+    .rs-charconfig-avatar,
+    .avatar[data-char-id] .sidebar-avatar,
+    .rs-chat-avatar
+  ) {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+.rs-avatar-placeholder > span {
+  display: none;
+}
+
+html[data-theme-type="light"] .rs-avatar-placeholder {
+  background-color: var(--risu-theme-bgcolor);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--risu-theme-textcolor2);
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+html[data-theme-type="light"] .rs-avatar-placeholder > img {
+  display: none;
+}
+
+html[data-theme-type="light"] .rs-avatar-placeholder > span {
+  display: block;
+}
+
+html[data-theme-type="light"] .rs-charconfig-avatar,
+html[data-theme-type="light"] .rs-chat-avatar {
+  /* Image styles use a background shorthand; retain the theme behind them. */
+  background-color: var(--risu-theme-bgcolor) !important;
+}
+
 html[data-theme-type="light"] .rs-segmented-control,
 html[data-theme-type="light"] .rs-segmented-control > button {
   border-width: 0;
@@ -211,7 +254,12 @@ html[data-theme-type="light"] .rs-segmented-control > button {
 }
 
 html[data-theme-type="light"] .rs-segmented-control > button.bg-selected,
-html[data-theme-type="light"] .rs-segmented-control > button[aria-pressed="true"],
+html[data-theme-type="light"]
+  .rs-segmented-control
+  > button[aria-pressed="true"],
+html[data-theme-type="light"]
+  .rs-sidebar-mode-tabs
+  > button[aria-pressed="true"],
 html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"] {
   /* Keep the surface unchanged and show selection as a pressed surface. */
   background-color: transparent !important;
@@ -230,11 +278,11 @@ html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"] {
 }
 
 html[data-theme-type="light"] select {
-  background-color: transparent !important;
+  background-color: var(--risu-theme-bgcolor) !important;
   --tw-shadow: var(--risu-theme-boundary-shadow);
   box-shadow:
-    var(--tw-ring-offset-shadow, 0 0 #0000),
-    var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow) !important;
 }
 
 html[data-theme-type="light"]
@@ -256,14 +304,18 @@ html[data-theme-type="light"]
 html[data-theme-type="light"] .rs-segmented-control > button {
   background-color: transparent !important;
   box-shadow:
-    var(--tw-ring-offset-shadow, 0 0 #0000),
-    var(--tw-ring-shadow, 0 0 #0000) !important;
-  transition: box-shadow 150ms ease, color 150ms ease;
+    var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000) !important;
+  transition:
+    box-shadow 150ms ease,
+    color 150ms ease;
 }
 
 html[data-theme-type="light"]
   .rs-segmented-control
-  > button:hover:not(.bg-selected, [aria-pressed="true"]) {
+  > button:hover:not(.bg-selected, [aria-pressed="true"]),
+html[data-theme-type="light"]
+  .rs-sidebar-mode-tabs
+  > button:hover:not([aria-pressed="true"]) {
   --tw-inset-shadow:
     inset 0 2px 5px
       color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent),
@@ -275,7 +327,7 @@ html[data-theme-type="light"]
 }
 
 html[data-theme-type="light"] .rs-checkbox {
-  background-color: transparent !important;
+  background-color: var(--risu-theme-bgcolor) !important;
   --tw-shadow:
     0 3px 8px color-mix(in srgb, var(--risu-theme-textcolor) 16%, transparent),
     0 1px 3px color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent);
@@ -310,9 +362,20 @@ html[data-theme-type="light"] .rs-checkbox svg {
   stroke: var(--risu-theme-textcolor);
 }
 
-html[data-theme-type="light"] .rs-sidebar-panel .rs-sidebar-mode-tabs,
-html[data-theme-type="light"] .rs-sidebar-panel .rs-sidebar-mode-tabs > button {
+html[data-theme-type="light"] .rs-sidebar-mode-tabs,
+html[data-theme-type="light"] .rs-sidebar-mode-tabs > button {
+  border-width: 0;
   border-color: transparent !important;
+}
+
+html[data-theme-type="light"] .rs-sidebar-mode-tabs {
+  background-color: var(--risu-theme-bgcolor);
+}
+
+html[data-theme-type="light"] .rs-sidebar-mode-tabs > button {
+  transition:
+    box-shadow 150ms ease,
+    color 150ms ease;
 }
 
 html[data-theme-type="light"]
@@ -375,6 +438,19 @@ html[data-theme-type="light"] .rs-sidechat-item {
   box-shadow: none;
 }
 
+html[data-theme-type="light"] .rs-sidechat-item.bg-selected {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 8%,
+    transparent
+  );
+}
+
+html[data-theme-type="light"] .rs-sidechat-new-btn {
+  bottom: auto;
+  margin: 0.5rem 0.5rem 0;
+}
+
 html[data-theme-type="light"] .rs-sidechat-toolbar {
   box-shadow: none;
 }
@@ -395,9 +471,13 @@ html[data-theme-type="light"] .rs-sidechat-separator-line {
 html[data-theme-type="light"] .rs-sidechat-resize-handle {
   padding: 0.25rem 0.75rem;
   background-color: var(--risu-theme-bgcolor);
-  border-color: color-mix(in srgb, var(--risu-theme-textcolor) 20%, transparent);
-  box-shadow:
-    0 1px 4px color-mix(in srgb, var(--risu-theme-textcolor) 12%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 20%,
+    transparent
+  );
+  box-shadow: 0 1px 4px
+    color-mix(in srgb, var(--risu-theme-textcolor) 12%, transparent);
 }
 
 html[data-theme-type="light"] .rs-sidechat-resize-grip {
@@ -409,7 +489,11 @@ html[data-theme-type="light"] .rs-sidechat-resize-grip {
 html[data-theme-type="light"]
   .rs-sidechat-separator:is(:hover, .bg-selected)
   .rs-sidechat-resize-handle {
-  border-color: color-mix(in srgb, var(--risu-theme-textcolor) 35%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 35%,
+    transparent
+  );
 }
 
 html[data-theme-type="light"]
@@ -428,7 +512,9 @@ html[data-theme-type="light"] .rs-settings-menu > button {
   border-radius: 0.5rem;
   text-align: left;
   transition:
-    background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
 }
 
 html[data-theme-type="light"] .rs-settings-menu > button.text-textcolor {
@@ -451,7 +537,10 @@ html[data-theme-type="light"] .rs-chat-composer > .border-darkborderc {
   box-shadow: none;
 }
 
-html[data-theme-type="light"]:not(.theme-windows-fluent, .theme-android-material)
+html[data-theme-type="light"]:not(
+    .theme-windows-fluent,
+    .theme-android-material
+  )
   .rs-chat-composer {
   display: flex;
   flex: 1;
@@ -466,13 +555,21 @@ html[data-theme-type="light"]:not(.theme-windows-fluent, .theme-android-material
     0 8px 20px rgb(0 0 0 / 8%);
 }
 
-html[data-theme-type="light"]:not(.theme-windows-fluent, .theme-android-material)
-  .rs-chat-composer > .rs-chat-textarea {
+html[data-theme-type="light"]:not(
+    .theme-windows-fluent,
+    .theme-android-material
+  )
+  .rs-chat-composer
+  > .rs-chat-textarea {
   margin-left: 0;
 }
 
-html[data-theme-type="light"]:not(.theme-windows-fluent, .theme-android-material)
-  .rs-chat-composer > .rs-chat-menu-btn {
+html[data-theme-type="light"]:not(
+    .theme-windows-fluent,
+    .theme-android-material
+  )
+  .rs-chat-composer
+  > .rs-chat-menu-btn {
   margin-right: 0;
 }
 
@@ -563,8 +660,7 @@ html.tauri-windows-vibrancy .rs-main-content {
 
 /* Keep the window drag strip fully transparent while the chat body keeps its
  * own readable surface. */
-html.tauri-windows-vibrancy
-  .rs-main-content:has(.default-chat-pane) {
+html.tauri-windows-vibrancy .rs-main-content:has(.default-chat-pane) {
   background-color: var(--risu-windows-sidebar-tint);
 }
 
@@ -761,7 +857,9 @@ html.tauri-linux-background-blur .rs-main-content {
  * Its tint then has the same alpha as the adjacent sidebar, without moving
  * the tab strip or changing the reading surface. */
 html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
-  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle) {
+  .rs-main-content:has(
+    :is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle
+  ) {
   --risu-sidebar-toggle-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='white' d='M0 0h42a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H0Z'/%3E%3C/svg%3E");
   position: relative;
   isolation: isolate;
@@ -769,7 +867,9 @@ html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
 }
 
 html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
-  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before {
+  .rs-main-content:has(
+    :is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle
+  )::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -779,18 +879,22 @@ html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
 }
 
 html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
-  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before,
+  .rs-main-content:has(
+    :is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle
+  )::before,
 html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
   :is(.rs-classic-chat-workspace, .rs-home-workspace):has(> .rs-sidebar-toggle)
   > :is(.rs-classic-chat-layers, .rs-home-layers) {
-  mask: linear-gradient(white 0 0),
+  mask:
+    linear-gradient(white 0 0),
     var(--risu-sidebar-toggle-mask) left 0 top
       var(--risu-sidebar-toggle-top, 0.75rem) / 3rem 3rem no-repeat;
   mask-composite: exclude;
 }
 
 html.tauri-linux-background-blur.tauri-linux-csd
-  :is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle {
+  :is(.rs-classic-chat-workspace, .rs-home-workspace)
+  > .rs-sidebar-toggle {
   background-color: var(--risu-linux-sidebar-tint);
   border-color: transparent;
   opacity: 1;
@@ -807,8 +911,7 @@ html.tauri-linux-background-blur .rs-sidebar-panel {
   box-shadow: none;
 }
 
-html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-sidebar-menu-popover {
+html.tauri-linux-background-blur.tauri-linux-csd .rs-sidebar-menu-popover {
   background-color: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
@@ -819,16 +922,20 @@ html.tauri-linux-background-blur.tauri-linux-csd
 html.tauri-linux-background-blur.tauri-linux-csd
   .rs-sidebar-menu-button:not(:hover):not(:active),
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-sidebar-menu-popover .ico:not(:hover):not(:active) {
+  .rs-sidebar-menu-popover
+  .ico:not(:hover):not(:active) {
   background-color: transparent !important;
   box-shadow: none !important;
 }
 
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-sidebar:has(.rs-sidebar-menu-popover) .rs-sidebar-scroll {
-  mask: linear-gradient(white 0 0),
-    linear-gradient(white 0 0) left 0 top var(--risu-sidebar-menu-cutout-top, 0px) /
-      100% var(--risu-sidebar-menu-cutout-height, 0px) no-repeat;
+  .rs-sidebar:has(.rs-sidebar-menu-popover)
+  .rs-sidebar-scroll {
+  mask:
+    linear-gradient(white 0 0),
+    linear-gradient(white 0 0) left 0 top
+      var(--risu-sidebar-menu-cutout-top, 0px) / 100%
+      var(--risu-sidebar-menu-cutout-height, 0px) no-repeat;
   mask-composite: exclude;
 }
 
@@ -870,7 +977,9 @@ html.tauri-linux-csd .rs-chat-tab-list {
   display: none;
 }
 
-html.tauri-linux-csd .default-chat-pane:not(.has-chat-tabs) > .rs-linux-csd-header-spacer {
+html.tauri-linux-csd
+  .default-chat-pane:not(.has-chat-tabs)
+  > .rs-linux-csd-header-spacer {
   display: block;
   height: var(--risu-linux-csd-titlebar-height);
 }
@@ -2046,7 +2155,9 @@ annotation {
    ========================================================================== */
 
 :root {
-  --fluent-font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Segoe UI Emoji", system-ui, sans-serif;
+  --fluent-font-family:
+    "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Segoe UI Emoji", system-ui, sans-serif;
   --fluent-icon-font: "Segoe Fluent Icons", "Segoe MDL2 Assets";
 }
 
@@ -2177,7 +2288,10 @@ annotation {
   border-radius: 1.5px !important;
   background-color: var(--risu-theme-borderc) !important;
   transform-origin: center;
-  transition: height 160ms cubic-bezier(0, 0, 0, 1), opacity 160ms ease, transform 160ms ease !important;
+  transition:
+    height 160ms cubic-bezier(0, 0, 0, 1),
+    opacity 160ms ease,
+    transform 160ms ease !important;
 }
 
 .theme-windows-fluent .rs-sidebar .rs-sidebar-indicator-active {
@@ -2186,7 +2300,10 @@ annotation {
   transform: scaleY(1) !important;
 }
 
-.theme-windows-fluent .rs-sidebar [role="listitem"]:hover .rs-sidebar-indicator:not(.rs-sidebar-indicator-active) {
+.theme-windows-fluent
+  .rs-sidebar
+  [role="listitem"]:hover
+  .rs-sidebar-indicator:not(.rs-sidebar-indicator-active) {
   height: 12px !important;
   opacity: 0.6 !important;
   transform: scaleY(1) !important;
@@ -2228,7 +2345,9 @@ annotation {
   height: 36px !important;
   min-width: 44px !important;
   min-height: 36px !important;
-  transition: background-color 120ms ease, transform 100ms ease;
+  transition:
+    background-color 120ms ease,
+    transform 100ms ease;
 }
 
 .theme-windows-fluent .rs-sidebar .rs-sidebar-menu-button:hover {
@@ -2247,7 +2366,9 @@ annotation {
   backdrop-filter: blur(30px) saturate(125%) !important;
   -webkit-backdrop-filter: blur(30px) saturate(125%) !important;
   background-color: var(--risu-theme-darkbg) !important;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.08) !important;
   padding: 6px 0 !important;
   z-index: 50 !important;
 }
@@ -2261,7 +2382,9 @@ annotation {
   height: 40px !important;
   min-height: 40px !important;
   box-shadow: none !important;
-  transition: background-color 120ms ease, transform 100ms ease;
+  transition:
+    background-color 120ms ease,
+    transform 100ms ease;
 }
 
 .theme-windows-fluent .rs-sidebar .rs-sidebar-menu-popover .ico:hover {
@@ -2339,7 +2462,10 @@ annotation {
   white-space: normal !important;
   word-break: keep-all !important;
   box-shadow: none !important;
-  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease !important;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease !important;
 }
 
 .theme-windows-fluent .rs-segmented-control button:focus,
@@ -2348,15 +2474,24 @@ annotation {
 .theme-windows-fluent .rs-sidebar-mode-tabs button:focus-visible,
 .theme-windows-fluent .rs-charconfig-tabs button:focus,
 .theme-windows-fluent .rs-charconfig-tabs button:focus-visible,
-.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:focus,
-.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:focus-visible {
+.theme-windows-fluent
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button:focus,
+.theme-windows-fluent
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button:focus-visible {
   outline: none !important;
 }
 
 /* Inactive tabs */
 .theme-windows-fluent .rs-segmented-control button:not(.bg-selected),
 .theme-windows-fluent .rs-charconfig-tabs button:not(.bg-selected),
-.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:not(.bg-selected),
+.theme-windows-fluent
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button:not(.bg-selected),
 .theme-windows-fluent .rs-sidebar-mode-tabs button.text-textcolor2 {
   background-color: transparent !important;
   color: var(--risu-theme-textcolor2) !important;
@@ -2364,33 +2499,65 @@ annotation {
 
 .theme-windows-fluent .rs-segmented-control button:not(.bg-selected):hover,
 .theme-windows-fluent .rs-charconfig-tabs button:not(.bg-selected):hover,
-.theme-windows-fluent .rs-sidebar-panel .flex:has(> button.flex-1) > button:not(.bg-selected):hover,
+.theme-windows-fluent
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button:not(.bg-selected):hover,
 .theme-windows-fluent .rs-sidebar-mode-tabs button.text-textcolor2:hover {
   background-color: var(--fluent-subtle-fill-secondary) !important;
   color: var(--risu-theme-textcolor) !important;
 }
 
 /* Active tabs - Light mode: clean white card with subtle drop shadow */
-.theme-windows-fluent.theme-windows-fluent-light .rs-segmented-control button.bg-selected,
-.theme-windows-fluent.theme-windows-fluent-light .rs-charconfig-tabs button.bg-selected,
-.theme-windows-fluent.theme-windows-fluent-light .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
-.theme-windows-fluent.theme-windows-fluent-light .rs-sidebar-mode-tabs button:not(.text-textcolor2) {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-segmented-control
+  button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-charconfig-tabs
+  button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-sidebar-mode-tabs
+  button:not(.text-textcolor2) {
   background-color: #ffffff !important;
   color: #1f1f1f !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    0 0 1px rgba(0, 0, 0, 0.08) !important;
   font-weight: 600 !important;
 }
 
 /* Active tabs - Dark mode: translucent elevated card */
-.theme-windows-fluent.theme-windows-fluent-dark .rs-segmented-control button.bg-selected,
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-segmented-control button.bg-selected,
-.theme-windows-fluent.theme-windows-fluent-dark .rs-charconfig-tabs button.bg-selected,
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-charconfig-tabs button.bg-selected,
-.theme-windows-fluent.theme-windows-fluent-dark .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidebar-panel .flex:has(> button.flex-1) > button.bg-selected,
-.theme-windows-fluent.theme-windows-fluent-dark .rs-sidebar-mode-tabs button:not(.text-textcolor2),
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidebar-mode-tabs button:not(.text-textcolor2) {
-  background-color: rgba(255, 255, 255, 0.10) !important;
+.theme-windows-fluent.theme-windows-fluent-dark
+  .rs-segmented-control
+  button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-segmented-control
+  button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark
+  .rs-charconfig-tabs
+  button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-charconfig-tabs
+  button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button.bg-selected,
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-sidebar-panel
+  .flex:has(> button.flex-1)
+  > button.bg-selected,
+.theme-windows-fluent.theme-windows-fluent-dark
+  .rs-sidebar-mode-tabs
+  button:not(.text-textcolor2),
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-sidebar-mode-tabs
+  button:not(.text-textcolor2) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
   color: #ffffff !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
   font-weight: 600 !important;
@@ -2433,14 +2600,20 @@ annotation {
   color: var(--risu-theme-textcolor) !important;
 }
 
-.theme-windows-fluent.theme-windows-fluent-light .rs-charconfig-subnav button.text-textcolor {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-charconfig-subnav
+  button.text-textcolor {
   background-color: #ffffff !important;
   color: var(--risu-theme-borderc) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    0 0 1px rgba(0, 0, 0, 0.08) !important;
 }
 
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-charconfig-subnav button.text-textcolor {
-  background-color: rgba(255, 255, 255, 0.10) !important;
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-charconfig-subnav
+  button.text-textcolor {
+  background-color: rgba(255, 255, 255, 0.1) !important;
   color: var(--risu-theme-borderc) !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
 }
@@ -2504,7 +2677,11 @@ annotation {
 
 /* Action column in table header (w-8 or header containing button) */
 .theme-windows-fluent .rs-sidebar-panel table tr:first-child th.w-8,
-.theme-windows-fluent .rs-sidebar-panel table tr:first-child th:last-child:has(button) {
+.theme-windows-fluent
+  .rs-sidebar-panel
+  table
+  tr:first-child
+  th:last-child:has(button) {
   width: 44px !important;
   min-width: 44px !important;
   max-width: 44px !important;
@@ -2570,7 +2747,10 @@ annotation {
   align-items: center !important;
   justify-content: center !important;
   color: var(--risu-theme-textcolor) !important;
-  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-sidebar-panel table button:hover,
@@ -2613,7 +2793,11 @@ annotation {
   transition: all 120ms ease !important;
 }
 
-.theme-windows-fluent .rs-sidebar-panel table td .rs-textareainput:focus-within {
+.theme-windows-fluent
+  .rs-sidebar-panel
+  table
+  td
+  .rs-textareainput:focus-within {
   border-color: var(--fluent-control-border) !important;
   border-bottom: 2px solid var(--risu-theme-borderc) !important;
   box-shadow: 0 0 0 1px var(--risu-theme-borderc) !important;
@@ -2680,7 +2864,10 @@ annotation {
   gap: 6px !important;
   font-size: 13px !important;
   font-weight: 500 !important;
-  transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-sidechat-new-btn:hover {
@@ -2727,12 +2914,15 @@ annotation {
   background-color: transparent !important;
 }
 
-.theme-windows-fluent.theme-windows-fluent-light .rs-sidechat-item:not(.bg-selected):hover {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-sidechat-item:not(.bg-selected):hover {
   background-color: rgba(0, 0, 0, 0.035) !important;
 }
 
-.theme-windows-fluent.theme-windows-fluent-dark .rs-sidechat-item:not(.bg-selected):hover,
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidechat-item:not(.bg-selected):hover {
+.theme-windows-fluent.theme-windows-fluent-dark
+  .rs-sidechat-item:not(.bg-selected):hover,
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-sidechat-item:not(.bg-selected):hover {
   background-color: rgba(255, 255, 255, 0.045) !important;
 }
 
@@ -2742,7 +2932,8 @@ annotation {
 }
 
 .theme-windows-fluent.theme-windows-fluent-dark .rs-sidechat-item.bg-selected,
-.theme-windows-fluent:not(.theme-windows-fluent-light) .rs-sidechat-item.bg-selected {
+.theme-windows-fluent:not(.theme-windows-fluent-light)
+  .rs-sidechat-item.bg-selected {
   background-color: rgba(255, 255, 255, 0.075) !important;
   font-weight: 500 !important;
 }
@@ -2782,7 +2973,9 @@ annotation {
   justify-content: center !important;
   color: var(--risu-theme-textcolor2) !important;
   margin: 0 1px !important;
-  transition: background-color 100ms ease, color 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-sidechat-actions [role="button"]:hover {
@@ -2895,7 +3088,9 @@ annotation {
   border-bottom: none;
   font-size: 13px;
   font-weight: 400;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .theme-windows-fluent .rs-chat-tab:not([data-active="true"]) {
@@ -2943,7 +3138,9 @@ annotation {
 .theme-windows-fluent .rs-setting-cont-2 {
   border-radius: 8px;
   border: 1px solid var(--fluent-card-stroke);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.32),
+    0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .theme-windows-fluent .rs-setting-cont-3 {
@@ -2957,7 +3154,9 @@ annotation {
   margin: 1px 0;
   font-size: 13.5px;
   font-weight: 400;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
   border: 1px solid transparent;
 }
 
@@ -3011,7 +3210,9 @@ annotation {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
   box-sizing: border-box !important;
   width: 100% !important;
-  transition: border-color 120ms ease, box-shadow 120ms ease !important;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row:focus-within {
@@ -3062,7 +3263,10 @@ annotation {
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row .rs-chat-menu-btn:hover {
@@ -3095,7 +3299,10 @@ annotation {
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row .rs-chat-sticker-btn:hover {
@@ -3129,18 +3336,29 @@ annotation {
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row .button-icon-send:hover,
 .theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn:hover {
-  background-color: color-mix(in srgb, var(--risu-theme-borderc) 12%, transparent) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-borderc) 12%,
+    transparent
+  ) !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row .button-icon-send:active,
 .theme-windows-fluent .rs-chat-input-row .rs-chat-send-btn:active {
   transform: scale(0.92) !important;
-  background-color: color-mix(in srgb, var(--risu-theme-borderc) 20%, transparent) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-borderc) 20%,
+    transparent
+  ) !important;
 }
 
 /* Abort / Cancel Button */
@@ -3164,11 +3382,17 @@ annotation {
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  transition: background-color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn:hover {
-  background-color: color-mix(in srgb, var(--risu-theme-draculared) 12%, transparent) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-draculared) 12%,
+    transparent
+  ) !important;
 }
 
 .theme-windows-fluent .rs-chat-input-row .rs-chat-cancel-btn:active {
@@ -3218,7 +3442,9 @@ annotation {
 .theme-windows-fluent .rs-chat-menu-popover > div {
   padding: 6px 10px !important;
   border-radius: 4px !important;
-  transition: background-color 100ms ease, color 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-chat-menu-popover > div:hover {
@@ -3230,7 +3456,9 @@ annotation {
 .theme-windows-fluent textarea#messageInput,
 .theme-windows-fluent textarea#messageInputTranslate {
   border-radius: 6px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .theme-windows-fluent textarea#messageInputTranslate {
@@ -3258,7 +3486,10 @@ annotation {
   background-color: var(--fluent-card-bg) !important;
   color: var(--risu-theme-textcolor) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-  transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    transform 100ms ease !important;
 }
 
 .theme-windows-fluent .rs-button:hover:not(:disabled),
@@ -3292,7 +3523,9 @@ annotation {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
   --tw-ring-shadow: 0 0 #0000 !important;
   --tw-ring-offset-shadow: 0 0 #0000 !important;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .theme-windows-fluent input[type="text"]:focus,
@@ -3338,7 +3571,9 @@ annotation {
   border: 1px solid var(--fluent-checkbox-border) !important;
   background-color: var(--fluent-card-bg) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
-  transition: background-color 100ms ease, border-color 100ms ease !important;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease !important;
 }
 
 .theme-windows-fluent label:hover input[type="checkbox"]:not(:checked) + span {
@@ -3382,7 +3617,9 @@ annotation {
   border: 1px solid var(--fluent-card-stroke);
   backdrop-filter: blur(30px) saturate(125%);
   -webkit-backdrop-filter: blur(30px) saturate(125%);
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.22),
+    0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 /* Fluent Focus Visual & Click Outline Suppression */
@@ -3470,17 +3707,31 @@ annotation {
    ========================================================================== */
 
 .theme-windows-fluent {
-  --fluent-surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
-  --fluent-surface-shadow-hover: 0 2px 10px rgba(0, 0, 0, 0.26), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --fluent-surface-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
+  --fluent-surface-shadow-hover:
+    0 2px 10px rgba(0, 0, 0, 0.26), 0 1px 2px rgba(0, 0, 0, 0.16);
 }
 
 .theme-windows-fluent.theme-windows-fluent-light {
-  --fluent-main-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
-  --fluent-main-control-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --fluent-main-control-stroke: color-mix(in srgb, var(--risu-theme-textcolor) 14%, transparent);
-  --fluent-main-control-stroke-hover: color-mix(in srgb, var(--risu-theme-borderc) 50%, var(--fluent-main-control-stroke));
-  --fluent-surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
-  --fluent-surface-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --fluent-main-control-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --fluent-main-control-shadow-hover:
+    0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --fluent-main-control-stroke: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 14%,
+    transparent
+  );
+  --fluent-main-control-stroke-hover: color-mix(
+    in srgb,
+    var(--risu-theme-borderc) 50%,
+    var(--fluent-main-control-stroke)
+  );
+  --fluent-surface-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --fluent-surface-shadow-hover:
+    0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* Main menu search field, filter chips and sort selector */
@@ -3489,24 +3740,41 @@ annotation {
 .theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort {
   border: 1px solid var(--fluent-main-control-stroke) !important;
   box-shadow: var(--fluent-main-control-shadow) !important;
-  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease !important;
 }
 
-.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-chip:hover,
-.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort:hover {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-main-menu
+  .rs-main-chip:hover,
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-main-menu
+  .rs-main-sort:hover {
   border-color: var(--fluent-main-control-stroke-hover) !important;
   box-shadow: var(--fluent-main-control-shadow-hover) !important;
 }
 
-.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search:focus-within {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-main-menu
+  .rs-main-search:focus-within {
   border-color: var(--risu-theme-borderc) !important;
-  box-shadow: var(--fluent-main-control-shadow-hover), 0 0 0 1px var(--risu-theme-borderc) !important;
+  box-shadow:
+    var(--fluent-main-control-shadow-hover),
+    0 0 0 1px var(--risu-theme-borderc) !important;
 }
 
 /* Keep the field flush with its chip instead of nesting a second WinUI
    textbox (white background + own border) inside the search container. */
-.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-search input[type="text"],
-.theme-windows-fluent.theme-windows-fluent-light .rs-main-menu .rs-main-sort select {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-main-menu
+  .rs-main-search
+  input[type="text"],
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-main-menu
+  .rs-main-sort
+  select {
   background-color: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
@@ -3518,8 +3786,10 @@ annotation {
   box-shadow: var(--fluent-main-control-shadow) !important;
 }
 
-.theme-windows-fluent.theme-windows-fluent-light .rs-button:hover:not(:disabled),
-.theme-windows-fluent.theme-windows-fluent-light button.bg-darkbutton:hover:not(:disabled) {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-button:hover:not(:disabled),
+.theme-windows-fluent.theme-windows-fluent-light
+  button.bg-darkbutton:hover:not(:disabled) {
   box-shadow: var(--fluent-main-control-shadow-hover) !important;
 }
 
@@ -3536,20 +3806,32 @@ annotation {
 .theme-windows-fluent .rs-recent-sessions .rs-recent-session-card {
   border-color: var(--fluent-card-stroke) !important;
   box-shadow: var(--fluent-surface-shadow) !important;
-  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease !important;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease !important;
 }
 
 .theme-windows-fluent .rs-recent-sessions .rs-recent-session-card:hover {
-  border-color: color-mix(in srgb, var(--risu-theme-borderc) 45%, var(--fluent-card-stroke)) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--risu-theme-borderc) 45%,
+    var(--fluent-card-stroke)
+  ) !important;
   box-shadow: var(--fluent-surface-shadow-hover) !important;
 }
 
-.theme-windows-fluent .rs-recent-sessions .rs-recent-session-card:hover .rs-recent-session-title {
+.theme-windows-fluent
+  .rs-recent-sessions
+  .rs-recent-session-card:hover
+  .rs-recent-session-title {
   color: var(--risu-theme-borderc) !important;
 }
 
 /* `bg-selected text-white` group badge is unreadable on the light canvas */
-.theme-windows-fluent.theme-windows-fluent-light .rs-recent-sessions .rs-recent-group-badge {
+.theme-windows-fluent.theme-windows-fluent-light
+  .rs-recent-sessions
+  .rs-recent-group-badge {
   background-color: var(--risu-theme-borderc) !important;
   color: #ffffff !important;
 }

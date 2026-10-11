@@ -1195,16 +1195,16 @@
           void loadSideChatList()
           devTool = false
           botMakerMode.set(false)
-        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
+        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool} aria-pressed={!$botMakerMode && !devTool}>{language.Chat}</button>
         <button onclick={() => {
           void loadCharConfig()
           devTool = false
           botMakerMode.set(true)
-        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
+        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool} aria-pressed={$botMakerMode && !devTool}>{language.character}</button>
         {#if settingsStore.state.enableDevTools}
           <button onclick={() => {
             devTool = true
-          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool}>
+          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool} aria-pressed={devTool}>
             <WrenchIcon size={18} />
           </button>
         {/if}

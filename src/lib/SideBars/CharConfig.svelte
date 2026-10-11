@@ -392,9 +392,9 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         {#if characterStore.characters[$selectedCharID].type === 'group'}
             <button onclick={async () => {await selectCharImg($selectedCharID)}}>
                 {#await getCharImage(characterStore.characters[$selectedCharID].image, 'css')}
-                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3"></div>
+                    <div class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3"></div>
                 {:then im}
-                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3" style={im}></div>     
+                    <div class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3" style={im}></div>
                 {/await}
             </button>
         {:else}
@@ -416,12 +416,12 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                     }}>
                         {#await getCharImage(characterStore.characters[$selectedCharID].image, (characterStore.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
                             <div
-                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
+                                class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
                                 class:ring-red-500={iconRemoveMode}
     ></div>
                         {:then im}
                             <div
-                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
+                                class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
                                 class:ring-red-500={iconRemoveMode}
                                 style={im}
     ></div>     
@@ -441,12 +441,12 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                         }}>
                             {#await getCharImage(assets.uri, (characterStore.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
                                 <div
-                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                                    class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                                     class:ring-red-500={iconRemoveMode} class:ring-3={iconRemoveMode}
     ></div>
                             {:then im}
                                 <div
-                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                                    class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                                     style={im} class:ring-red-500={iconRemoveMode} class:ring-3={iconRemoveMode}
     ></div>     
                             {/await}
@@ -455,7 +455,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                 {/if}
                 <button onclick={async () => {await selectCharImg($selectedCharID);}}>
                     <div
-                        class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
+                        class="rs-charconfig-avatar rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
                         style={(characterStore.characters[$selectedCharID] as character).largePortrait ? 'height: 10.66rem;' : ''}
                     >
                         <PlusIcon />

@@ -54,7 +54,11 @@
     function getTopReservedHeight(): number {
         if (!parentContainerEl) return 150
         const btn = parentContainerEl.firstElementChild as HTMLElement | null
-        const btnHeight = btn ? btn.offsetHeight : 42
+        let btnHeight = btn ? btn.offsetHeight : 42
+        if (btn) {
+            const style = window.getComputedStyle(btn)
+            btnHeight += (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0)
+        }
         let sepHeight = 20
         const sep = separatorEl ?? (parentContainerEl.querySelector('[role="separator"]') as HTMLElement | null)
         if (sep) {
