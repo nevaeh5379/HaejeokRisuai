@@ -219,8 +219,9 @@
     <!-- Filter Buttons & Provider Select Dropdown (All on Top) -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
       <!-- Left Category & Tag Chips (Horizontal scroll on mobile, flex-wrap on desktop) -->
-      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap pb-1 sm:pb-0">
+      <div class="rs-model-filters flex min-w-0 items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap -mx-4 -my-4 px-4 pt-4 pb-5 sm:m-0 sm:p-0 sm:overflow-visible">
         <button 
+          aria-pressed={activeCategory === 'all' && selectedProvider === 'all'}
           class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'all' && selectedProvider === 'all' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = 'all'; selectedProvider = 'all'; }}
         >
@@ -228,6 +229,7 @@
         </button>
 
         <button 
+          aria-pressed={activeCategory === 'recommended'}
           class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'recommended' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = activeCategory === 'recommended' ? 'all' : 'recommended'; }}
         >
@@ -235,6 +237,7 @@
         </button>
 
         <button 
+          aria-pressed={activeCategory === 'favorites'}
           class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'favorites' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = activeCategory === 'favorites' ? 'all' : 'favorites'; }}
         >
@@ -246,6 +249,7 @@
         </button>
 
         <button 
+          aria-pressed={activeCategory === 'recent'}
           class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-medium shrink-0 whitespace-nowrap {activeCategory === 'recent' ? 'bg-darkbutton text-textcolor font-bold border border-darkborderc shadow-xs' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeCategory = activeCategory === 'recent' ? 'all' : 'recent'; }}
         >
@@ -256,6 +260,7 @@
         <div class="relative inline-flex items-center shrink-0">
           <select 
             bind:value={selectedProvider}
+            data-selected={selectedProvider !== 'all'}
             class="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg border border-darkborderc bg-darkbutton/70 text-textcolor text-xs font-medium focus:outline-none cursor-pointer"
           >
             <option value="all">{language.providerNames || "All Providers"}</option>
@@ -276,12 +281,14 @@
 
         <!-- Capability Tags -->
         <button 
+          aria-pressed={activeTag === 'vision'}
           class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeTag === 'vision' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeTag = activeTag === 'vision' ? 'all' : 'vision'; }}
         >
           <EyeIcon size={11} /> Vision
         </button>
         <button 
+          aria-pressed={activeTag === 'thinking'}
           class="px-2 py-1 rounded-md transition-colors flex items-center gap-1 text-[11px] shrink-0 whitespace-nowrap {activeTag === 'thinking' ? 'bg-selected text-textcolor font-bold' : 'text-textcolor2 hover:bg-darkbutton/50 hover:text-textcolor'}"
           onclick={() => { activeTag = activeTag === 'thinking' ? 'all' : 'thinking'; }}
         >

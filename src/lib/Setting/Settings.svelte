@@ -138,7 +138,7 @@
             <span>{language.chatBot}</span>
         </button>
 
-        <div class="flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
+        <div class="rs-settings-bot-submenu flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
             <button
                 title={language.mainModelCardDesc}
                 class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {$SettingsMenuIndex === 1 && desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'main' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"

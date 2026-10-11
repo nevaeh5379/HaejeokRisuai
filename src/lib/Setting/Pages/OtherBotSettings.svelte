@@ -242,25 +242,25 @@ import Check from "src/lib/UI/GUI/CheckInput.svelte";
 
 
 {#if submenu !== -1}
-    <div class="flex w-full rounded-md border border-darkborderc mb-4">
+    <div class="rs-segmented-control flex w-full rounded-md border border-darkborderc mb-4">
         <button onclick={() => {
             submenu = 0
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 0}>
+        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 0} aria-pressed={submenu === 0}>
             <span>{language.longTermMemory}</span>
         </button>
         <button onclick={() => {
             submenu = 1
-        }} class="p2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 1}>
+        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 1} aria-pressed={submenu === 1}>
             <span>TTS</span>
         </button>
         <button onclick={() => {
             submenu = 2
-        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 2}>
+        }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 2} aria-pressed={submenu === 2}>
             <span>{language.emotionImage}</span>
         </button>
         <button onclick={() => {
             submenu = 3
-        }} class="p-2 flex-1" class:bg-darkbutton={submenu === 3}>
+        }} class="p-2 flex-1" class:bg-darkbutton={submenu === 3} aria-pressed={submenu === 3}>
             <span>{language.imageGeneration}</span>
         </button>
     </div>

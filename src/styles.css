@@ -121,6 +121,8 @@
 
 html[data-theme-type="light"] {
   --color-darkborderc: transparent;
+  /* Neutral controls share the page surface; shadows define their edges. */
+  --color-darkbutton: var(--risu-theme-bgcolor);
   --risu-theme-boundary-shadow:
     0 3px 6px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
 }
@@ -208,8 +210,11 @@ html[data-theme-type="light"] .rs-segmented-control > button {
   border-color: transparent;
 }
 
-html[data-theme-type="light"] .rs-segmented-control > button.bg-selected {
-  /* Keep the tab surface unchanged and show selection as a pressed surface. */
+html[data-theme-type="light"] .rs-segmented-control > button.bg-selected,
+html[data-theme-type="light"] .rs-segmented-control > button[aria-pressed="true"],
+html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"],
+html[data-theme-type="light"] select {
+  /* Keep the surface unchanged and show selection as a pressed surface. */
   background-color: transparent !important;
   --tw-inset-shadow:
     inset 0 2px 5px
@@ -219,6 +224,57 @@ html[data-theme-type="light"] .rs-segmented-control > button.bg-selected {
   box-shadow:
     var(--tw-inset-shadow), var(--tw-ring-offset-shadow, 0 0 #0000),
     var(--tw-ring-shadow, 0 0 #0000) !important;
+}
+
+html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"] {
+  color: var(--risu-theme-textcolor2) !important;
+}
+
+html[data-theme-type="light"]
+  select:not([multiple]):not([size]):not(.appearance-none) {
+  /* Native macOS select painting hides inset shadows. */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 1rem - 5px) center,
+    calc(100% - 1rem) center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+html[data-theme-type="light"] .rs-segmented-control > button {
+  background-color: transparent !important;
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000) !important;
+  transition: box-shadow 150ms ease, color 150ms ease;
+}
+
+html[data-theme-type="light"]
+  .rs-segmented-control
+  > button:hover:not(.bg-selected, [aria-pressed="true"]) {
+  --tw-inset-shadow:
+    inset 0 2px 5px
+      color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent),
+    inset 0 -1px 3px
+      color-mix(in srgb, var(--risu-theme-textcolor) 4%, transparent);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000) !important;
+}
+
+html[data-theme-type="light"] .rs-checkbox {
+  background-color: transparent !important;
+  --tw-shadow:
+    0 3px 8px color-mix(in srgb, var(--risu-theme-textcolor) 16%, transparent),
+    0 1px 3px color-mix(in srgb, var(--risu-theme-textcolor) 10%, transparent);
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 #0000), var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
 html[data-theme-type="light"] .rs-segmented-control > button:first-child {
@@ -232,8 +288,7 @@ html[data-theme-type="light"] .rs-segmented-control > button:last-child {
 }
 
 html[data-theme-type="light"] input:checked + .rs-checkbox {
-  /* Transparent light-theme borders cannot provide a checked surface. */
-  background-color: var(--risu-theme-darkbutton);
+  /* Use a pressed surface without changing the checkbox background. */
   --tw-inset-shadow:
     inset 0 2px 4px
       color-mix(in srgb, var(--risu-theme-textcolor) 18%, transparent),
@@ -241,7 +296,7 @@ html[data-theme-type="light"] input:checked + .rs-checkbox {
       color-mix(in srgb, var(--risu-theme-textcolor) 8%, transparent);
   box-shadow:
     var(--tw-inset-shadow), var(--tw-ring-offset-shadow, 0 0 #0000),
-    var(--tw-ring-shadow, 0 0 #0000);
+    var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
 html[data-theme-type="light"] .rs-checkbox svg {
@@ -310,6 +365,10 @@ html.tauri-linux-csd[data-theme-type="light"] .rs-chat-tab-strip-shell {
 }
 
 html[data-theme-type="light"] .rs-sidechat-item {
+  box-shadow: none;
+}
+
+html[data-theme-type="light"] .rs-settings-bot-submenu {
   box-shadow: none;
 }
 
