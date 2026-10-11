@@ -474,8 +474,8 @@ html.tauri-linux-background-blur.tauri-linux-csd
   mask-composite: exclude;
 }
 
-html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar.dynamic-sidebar,
-html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar-panel.dynamic-sidebar {
+html.tauri-linux-background-blur .rs-sidebar.dynamic-sidebar,
+html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
   background-color: var(--risu-theme-darkbg) !important;
 }
 
