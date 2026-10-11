@@ -400,11 +400,11 @@ html.tauri-linux-background-blur .rs-main-content {
   background-color: var(--risu-theme-bgcolor);
 }
 
-/* Cut out only the toggle button's footprint from the opaque chat layers.
+/* Cut out only the toggle button's footprint from the opaque content layers.
  * Its tint then has the same alpha as the adjacent sidebar, without moving
  * the tab strip or changing the reading surface. */
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-main-content:has(.rs-classic-chat-workspace > .rs-sidebar-toggle) {
+  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle) {
   --risu-sidebar-toggle-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='white' d='M0 0h42a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H0Z'/%3E%3C/svg%3E");
   position: relative;
   isolation: isolate;
@@ -412,7 +412,7 @@ html.tauri-linux-background-blur.tauri-linux-csd
 }
 
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-main-content:has(.rs-classic-chat-workspace > .rs-sidebar-toggle)::before {
+  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -422,16 +422,17 @@ html.tauri-linux-background-blur.tauri-linux-csd
 }
 
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-main-content:has(.rs-classic-chat-workspace > .rs-sidebar-toggle)::before,
+  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before,
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-classic-chat-workspace:has(> .rs-sidebar-toggle) > .rs-classic-chat-layers {
+  :is(.rs-classic-chat-workspace, .rs-home-workspace):has(> .rs-sidebar-toggle)
+  > :is(.rs-classic-chat-layers, .rs-home-layers) {
   mask: linear-gradient(white 0 0),
     var(--risu-sidebar-toggle-mask) left 0 top 0.75rem / 3rem 3rem no-repeat;
   mask-composite: exclude;
 }
 
 html.tauri-linux-background-blur.tauri-linux-csd
-  .rs-classic-chat-workspace > .rs-sidebar-toggle {
+  :is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle {
   background-color: var(--risu-linux-sidebar-tint);
   border-color: transparent;
   opacity: 1;
