@@ -384,12 +384,58 @@ html.tauri-linux-background-blur {
   );
 }
 
+html.tauri-linux-background-blur.tauri-linux-csd {
+  --risu-linux-sidebar-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) var(--risu-linux-csd-sidebar-opacity, 94%),
+    transparent
+  );
+}
+
 html.tauri-linux-background-blur main.tauri-native {
   background-color: transparent;
 }
 
 html.tauri-linux-background-blur .rs-main-content {
   background-color: var(--risu-theme-bgcolor);
+}
+
+/* Cut out only the toggle button's footprint from the opaque content layers.
+ * Its tint then has the same alpha as the adjacent sidebar, without moving
+ * the tab strip or changing the reading surface. */
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle) {
+  --risu-sidebar-toggle-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='white' d='M0 0h42a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H0Z'/%3E%3C/svg%3E");
+  position: relative;
+  isolation: isolate;
+  background-color: transparent;
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--risu-theme-bgcolor);
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before,
+html.tauri-linux-background-blur.tauri-linux-csd
+  :is(.rs-classic-chat-workspace, .rs-home-workspace):has(> .rs-sidebar-toggle)
+  > :is(.rs-classic-chat-layers, .rs-home-layers) {
+  mask: linear-gradient(white 0 0),
+    var(--risu-sidebar-toggle-mask) left 0 top 0.75rem / 3rem 3rem no-repeat;
+  mask-composite: exclude;
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  :is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle {
+  background-color: var(--risu-linux-sidebar-tint);
+  border-color: transparent;
+  opacity: 1;
 }
 
 html.tauri-linux-background-blur .rs-sidebar,
@@ -403,29 +449,72 @@ html.tauri-linux-background-blur .rs-sidebar-panel {
   box-shadow: none;
 }
 
-html.tauri-linux-background-blur .rs-sidebar.dynamic-sidebar,
-html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar-menu-popover {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar-menu-button:not(:hover):not(:active),
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar-menu-popover .ico:not(:hover):not(:active) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar:has(.rs-sidebar-menu-popover) .rs-sidebar-scroll {
+  mask: linear-gradient(white 0 0),
+    linear-gradient(white 0 0) left 0 top var(--risu-sidebar-menu-cutout-top, 0px) /
+      100% var(--risu-sidebar-menu-cutout-height, 0px) no-repeat;
+  mask-composite: exclude;
+}
+
+html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar.dynamic-sidebar,
+html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar-panel.dynamic-sidebar {
   background-color: var(--risu-theme-darkbg) !important;
 }
 
-/* GTK CSD is overlaid on top of the WebView. Keep the visual material at y=0,
- * but move interactive web chrome below the native 40px HeaderBar. */
+/* Native GTK buttons share the top row with web tabs. GTK reports their actual
+ * height and edge widths; empty header space passes pointer input to the web. */
 html.tauri-linux-csd {
   --risu-linux-csd-titlebar-height: 40px;
 }
 
 html.tauri-linux-csd .rs-sidebar.rs-sidebar-titlebar-inset {
-  padding-top: var(--risu-linux-csd-titlebar-height);
+  padding-top: var(--risu-linux-csd-sidebar-top-inset, 0px);
 }
 
 html.tauri-linux-csd
   .rs-sidebar:not(.rs-sidebar-titlebar-inset)
   .rs-sidebar-scroll {
-  padding-top: var(--risu-linux-csd-titlebar-height);
+  padding-top: var(--risu-linux-csd-sidebar-top-inset, 0px);
 }
 
 html.tauri-linux-csd .rs-chat-tab-strip-shell {
-  margin-top: var(--risu-linux-csd-titlebar-height);
+  @apply bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm;
+  padding-left: var(--risu-linux-csd-left-inset, 0px);
+  padding-right: var(--risu-linux-csd-right-inset, 0px);
+}
+
+html.tauri-linux-csd .rs-chat-tab-list {
+  height: calc(max(40px, var(--risu-linux-csd-titlebar-height)) - 1px);
+  background-color: transparent;
+  border-bottom-width: 0;
+  backdrop-filter: none;
+}
+
+.rs-linux-csd-header-spacer {
+  display: none;
+}
+
+html.tauri-linux-csd .default-chat-pane:not(.has-chat-tabs) > .rs-linux-csd-header-spacer {
+  display: block;
+  height: var(--risu-linux-csd-titlebar-height);
 }
 
 html.tauri-linux-csd .rs-setting-backdrop {

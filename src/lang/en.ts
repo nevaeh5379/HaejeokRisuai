@@ -1713,6 +1713,7 @@ export const languageEnglish = {
   windowsBackdropMica: "Mica (Windows 11)",
   windowsBackdropTabbed: "Tabbed Mica (Windows 11)",
   windowsMaterialOpacity: "Background opacity",
+  linuxCsdSidebarOpacity: "CSD sidebar opacity",
   windowsBackdropCompatibility:
     "Mica effects require Windows 11. Acrylic is recommended for wider compatibility.",
   useCustomBackground: "Custom Background",

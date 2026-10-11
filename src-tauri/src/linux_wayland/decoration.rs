@@ -303,6 +303,7 @@ pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool 
 }
 
 fn configure_integrated_header(header: &gtk::HeaderBar) {
+    header.set_show_close_button(true);
     header.set_decoration_layout(None);
     header.set_decoration_layout_set(false);
     header.set_title(None);
@@ -415,61 +416,37 @@ fn install_rounded_overlay_draw(
     });
 }
 
-fn install_header_drag_behavior(window: &gtk::ApplicationWindow, event_box: &gtk::EventBox) {
-    event_box.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+fn measure_csd_header(header: &gtk::HeaderBar) -> super::CsdHeaderLayout {
+    let width = header.allocated_width();
+    let mut layout = super::CsdHeaderLayout {
+        height: header.allocated_height(),
+        left: 0,
+        right: 0,
+    };
 
-    let window = window.clone();
-    event_box.connect_button_press_event(move |event_box, event| {
-        if event.button() != 1 {
-            return gtk::glib::Propagation::Proceed;
+    fn visit(widget: &gtk::Widget, header: &gtk::HeaderBar, layout: &mut super::CsdHeaderLayout) {
+        if !widget.is_visible() {
+            return;
         }
-
-        let (x, y) = event.position();
-        let allocation = event_box.allocation();
-        if y <= 6.0 && !window.is_maximized() && window.is_resizable() {
-            let edge = if x <= 6.0 {
-                gtk::gdk::WindowEdge::NorthWest
-            } else if x >= f64::from(allocation.width()) - 6.0 {
-                gtk::gdk::WindowEdge::NorthEast
-            } else {
-                gtk::gdk::WindowEdge::North
-            };
-
-            if let Some(gdk_window) = window.window() {
-                let (root_x, root_y) = event.root();
-                gdk_window.begin_resize_drag(
-                    edge,
-                    event.button() as i32,
-                    root_x as i32,
-                    root_y as i32,
-                    event.time(),
-                );
-                return gtk::glib::Propagation::Stop;
-            }
-        }
-
-        match event.event_type() {
-            gtk::gdk::EventType::DoubleButtonPress => {
-                if window.is_maximized() {
-                    window.unmaximize();
-                } else if window.is_resizable() {
-                    window.maximize();
+        if widget.is::<gtk::Button>() {
+            if let Some((x, _)) = widget.translate_coordinates(header, 0, 0) {
+                let width = header.allocated_width();
+                if x + widget.allocated_width() / 2 < width / 2 {
+                    layout.left = layout.left.max(x + widget.allocated_width());
+                } else {
+                    layout.right = layout.right.max(width - x);
                 }
-                gtk::glib::Propagation::Stop
             }
-            gtk::gdk::EventType::ButtonPress => {
-                let (root_x, root_y) = event.root();
-                window.begin_move_drag(
-                    event.button() as i32,
-                    root_x as i32,
-                    root_y as i32,
-                    event.time(),
-                );
-                gtk::glib::Propagation::Stop
-            }
-            _ => gtk::glib::Propagation::Proceed,
+        } else if let Some(container) = widget.downcast_ref::<gtk::Container>() {
+            // HeaderBar's decoration buttons are internal children.
+            container.forall(|child| visit(child, header, layout));
         }
-    });
+    }
+
+    if width > 0 {
+        header.forall(|child| visit(child, header, &mut layout));
+    }
+    layout
 }
 
 pub fn prepare_client_side_decoration<R: Runtime>(
@@ -488,11 +465,18 @@ pub fn prepare_client_side_decoration<R: Runtime>(
         .clone()
         .downcast::<gtk::EventBox>()
         .map_err(|_| "Tao GTK titlebar is not an EventBox".to_string())?;
-    let header = event_box
-        .child()
-        .ok_or_else(|| "Tao GTK titlebar EventBox has no child".to_string())?
-        .downcast::<gtk::HeaderBar>()
-        .map_err(|_| "Tao GTK titlebar child is not a HeaderBar".to_string())?;
+    // Tao 0.37 leaves the Wayland titlebar EventBox empty. Supply GTK's native
+    // HeaderBar while retaining the one provided by earlier Tao versions.
+    let header = match event_box.child() {
+        Some(child) => child
+            .downcast::<gtk::HeaderBar>()
+            .map_err(|_| "Tao GTK titlebar child is not a HeaderBar".to_string())?,
+        None => {
+            let header = gtk::HeaderBar::new();
+            event_box.add(&header);
+            header
+        }
+    };
     let default_vbox = tauri_window
         .default_vbox()
         .map_err(|error| error.to_string())?;
@@ -564,10 +548,18 @@ window.risu-rounded-csd-window.tiled decoration {
         }
     });
 
-    // Tao's HeaderBar is a no-window widget. Its surrounding EventBox owns the
-    // GDK input surface, so window dragging and top-edge resizing must be
-    // handled there while native title buttons keep receiving their own input.
-    install_header_drag_behavior(window, &event_box);
+    // Pass empty header space through both GDK overlay surfaces. GTK's native
+    // buttons own input windows below them and still receive pointer events.
+    // Web tabs and sidebar controls underneath must receive their own clicks.
+    event_box.connect_realize(|event_box| {
+        if let Some(input_window) = event_box.window() {
+            input_window.set_pass_through(true);
+        }
+    });
+    let tauri_window = tauri_window.clone();
+    header.connect_size_allocate(move |header, _| {
+        super::update_csd_header(&tauri_window, measure_csd_header(header));
+    });
 
     // Keep the WebView exactly two GTK parents below the window. Tauri's Linux
     // resize handler assumes `WebView -> container -> Window`; retaining the
@@ -600,7 +592,7 @@ window.risu-rounded-csd-window.tiled decoration {
     titlebar.set_hexpand(true);
     titlebar.set_vexpand(false);
     overlay.add_overlay(&titlebar);
-    overlay.set_overlay_pass_through(&titlebar, false);
+    overlay.set_overlay_pass_through(&titlebar, true);
     install_rounded_overlay_draw(window, &overlay, &content, &titlebar);
 
     window.add(&overlay);

@@ -117,6 +117,7 @@ export interface DatabaseSettings {
   autoHideAndroidNavigationBar: boolean;
   autoHideAndroidNavigationBarInSidebar: boolean;
   linuxWindowDecoration: "ssd" | "csd";
+  linuxCsdSidebarOpacity: number;
   androidWidgetBotCount?: number;
   subModel: string;
   emotionPrompt: string;

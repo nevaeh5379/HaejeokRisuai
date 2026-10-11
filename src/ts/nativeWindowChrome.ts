@@ -1,5 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isTauriMacOS, isTauriWindows } from "./platform";
+import { isTauriLinux, isTauriMacOS, isTauriWindows } from "./platform";
+import {
+  getActiveLinuxWindowCapabilities,
+  isLinuxCsdActive,
+} from "./linuxWindowIntegration";
 
 export type ResizeDirection =
   | "East"
@@ -11,12 +15,62 @@ export type ResizeDirection =
   | "SouthWest"
   | "West";
 
+export function installLinuxCsdHeaderDrag() {
+  if (!isTauriLinux) return;
+  const onMouseDown = (event: MouseEvent) => {
+    if (!isLinuxCsdActive() || event.button !== 0 || event.defaultPrevented)
+      return;
+    const height = getActiveLinuxWindowCapabilities().csdHeader?.height ?? 40;
+    // Leave the native resize gutter and every interactive web control alone.
+    if (
+      event.clientY < 6 ||
+      event.clientY >= height ||
+      event.clientX < 6 ||
+      event.clientX >= window.innerWidth - 6
+    )
+      return;
+    const interactive =
+      'button, a, input, textarea, select, label, summary, [contenteditable], [draggable="true"], [role="button"], [role="tab"], [role="slider"], [role="menuitem"], [data-tauri-drag-region]';
+    if (
+      event
+        .composedPath()
+        .some(
+          (node) => node instanceof HTMLElement && node.matches(interactive),
+        )
+    )
+      return;
+    event.preventDefault();
+    const currentWindow = getCurrentWindow();
+    void (
+      event.detail === 2
+        ? currentWindow.toggleMaximize()
+        : currentWindow.startDragging()
+    ).catch((error) => {
+      console.warn(
+        "[nativeWindowChrome] Failed to handle CSD header drag",
+        error,
+      );
+    });
+  };
+  document.addEventListener("mousedown", onMouseDown);
+  return () => document.removeEventListener("mousedown", onMouseDown);
+}
+
 export function windowDragRegion(
   node: HTMLElement,
   options: { windowsOnly?: boolean; selfOnly?: boolean } = {},
 ) {
-  if (isTauriMacOS && !options.windowsOnly)
-    node.setAttribute("data-tauri-drag-region", "true");
+  const updateDragRegion = () => {
+    if (
+      !options.windowsOnly &&
+      (isTauriMacOS || (isTauriLinux && isLinuxCsdActive()))
+    )
+      node.setAttribute("data-tauri-drag-region", "true");
+    else node.removeAttribute("data-tauri-drag-region");
+  };
+  updateDragRegion();
+  if (isTauriLinux)
+    window.addEventListener("risu-linux-csd-header-layout", updateDragRegion);
 
   const onPointerDown = (event: PointerEvent) => {
     if (!isTauriWindows || event.button !== 0 || !event.isPrimary) return;
@@ -32,6 +86,10 @@ export function windowDragRegion(
   if (isTauriWindows) node.addEventListener("pointerdown", onPointerDown);
   return {
     destroy() {
+      window.removeEventListener(
+        "risu-linux-csd-header-layout",
+        updateDragRegion,
+      );
       node.removeAttribute("data-tauri-drag-region");
       node.removeEventListener("pointerdown", onPointerDown);
     },

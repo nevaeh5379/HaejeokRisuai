@@ -535,6 +535,7 @@ pub fn install<R: Runtime>(
         background_blur,
         decoration: requested_decoration,
         decoration_alpha: None,
+        csd_header: None,
     })
 }
 

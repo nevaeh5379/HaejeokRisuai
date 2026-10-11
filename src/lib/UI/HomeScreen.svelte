@@ -3,9 +3,9 @@
     import SideBarArrow from './GUI/SideBarArrow.svelte'
 </script>
 
-<div class="grow h-full min-w-0 relative justify-center flex">
+<div class="rs-home-workspace grow h-full min-w-0 relative justify-center flex">
     <SideBarArrow />
-    <div class="h-full w-full">
+    <div class="rs-home-layers h-full w-full">
         <MainMenu />
     </div>
 </div>
