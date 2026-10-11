@@ -607,9 +607,9 @@
         class:bg-selected={isResizing}
         onpointerdown={startResize}
     >
-        <div class="w-full h-px bg-selected/40 group-hover:bg-selected transition-colors"></div>
-        <div class="absolute px-3 py-0.5 rounded-full bg-darkbg border border-selected/40 group-hover:border-selected flex items-center justify-center shadow-xs transition-colors pointer-events-none">
-            <div class="w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-selected"></div>
+        <div class="rs-sidechat-separator-line w-full h-px bg-selected/40 group-hover:bg-selected transition-colors"></div>
+        <div class="rs-sidechat-resize-handle absolute px-3 py-0.5 rounded-full bg-darkbg border border-selected/40 group-hover:border-selected flex items-center justify-center shadow-xs transition-colors pointer-events-none">
+            <div class="rs-sidechat-resize-grip w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-selected"></div>
         </div>
     </div>
 

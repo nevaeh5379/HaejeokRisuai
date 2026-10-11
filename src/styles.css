@@ -212,8 +212,7 @@ html[data-theme-type="light"] .rs-segmented-control > button {
 
 html[data-theme-type="light"] .rs-segmented-control > button.bg-selected,
 html[data-theme-type="light"] .rs-segmented-control > button[aria-pressed="true"],
-html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"],
-html[data-theme-type="light"] select {
+html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"] {
   /* Keep the surface unchanged and show selection as a pressed surface. */
   background-color: transparent !important;
   --tw-inset-shadow:
@@ -230,9 +229,17 @@ html[data-theme-type="light"] .rs-model-filters > button[aria-pressed="true"] {
   color: var(--risu-theme-textcolor2) !important;
 }
 
+html[data-theme-type="light"] select {
+  background-color: transparent !important;
+  --tw-shadow: var(--risu-theme-boundary-shadow);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+}
+
 html[data-theme-type="light"]
   select:not([multiple]):not([size]):not(.appearance-none) {
-  /* Native macOS select painting hides inset shadows. */
+  /* Draw the select surface ourselves so macOS shows the CSS shadow. */
   appearance: none;
   -webkit-appearance: none;
   background-image:
@@ -368,8 +375,76 @@ html[data-theme-type="light"] .rs-sidechat-item {
   box-shadow: none;
 }
 
-html[data-theme-type="light"] .rs-settings-bot-submenu {
+html[data-theme-type="light"] .rs-sidechat-toolbar {
   box-shadow: none;
+}
+
+html[data-theme-type="light"] .rs-sidechat-separator {
+  height: 1.5rem;
+  background-color: transparent;
+}
+
+html[data-theme-type="light"] .rs-sidechat-separator-line {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-textcolor) 14%,
+    transparent
+  );
+}
+
+html[data-theme-type="light"] .rs-sidechat-resize-handle {
+  padding: 0.25rem 0.75rem;
+  background-color: var(--risu-theme-bgcolor);
+  border-color: color-mix(in srgb, var(--risu-theme-textcolor) 20%, transparent);
+  box-shadow:
+    0 1px 4px color-mix(in srgb, var(--risu-theme-textcolor) 12%, transparent);
+}
+
+html[data-theme-type="light"] .rs-sidechat-resize-grip {
+  width: 2rem;
+  height: 0.1875rem;
+  background-color: var(--risu-theme-textcolor2);
+}
+
+html[data-theme-type="light"]
+  .rs-sidechat-separator:is(:hover, .bg-selected)
+  .rs-sidechat-resize-handle {
+  border-color: color-mix(in srgb, var(--risu-theme-textcolor) 35%, transparent);
+}
+
+html[data-theme-type="light"]
+  .rs-sidechat-separator:is(:hover, .bg-selected)
+  .rs-sidechat-resize-grip {
+  background-color: var(--risu-theme-textcolor);
+}
+
+html[data-theme-type="light"] .rs-settings-bot-submenu,
+html[data-theme-type="light"] .rs-model-browser-controls {
+  box-shadow: none;
+}
+
+html[data-theme-type="light"] .rs-settings-menu > button {
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.5rem;
+  text-align: left;
+  transition:
+    background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+}
+
+html[data-theme-type="light"] .rs-settings-menu > button.text-textcolor {
+  background-color: var(--risu-theme-bgcolor);
+  box-shadow: var(--risu-theme-boundary-shadow);
+  font-weight: 700;
+}
+
+html[data-theme-type="light"]
+  .rs-settings-menu
+  > button:hover:not(.text-textcolor) {
+  background-color: color-mix(
+    in srgb,
+    var(--risu-theme-bgcolor) 60%,
+    transparent
+  );
 }
 
 html[data-theme-type="light"] .rs-chat-composer > .border-darkborderc {

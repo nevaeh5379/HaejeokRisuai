@@ -193,7 +193,7 @@
 
 <div class="w-full flex flex-col gap-3">
   <!-- Controls & Smart Filters Bar (Top Bar Integration) -->
-  <div class="flex flex-col gap-2.5 pb-2.5 border-b border-darkborderc/60">
+  <div class="rs-model-browser-controls flex flex-col gap-2.5 pb-2.5 border-b border-darkborderc/60">
     <!-- Search Bar -->
     <div class="relative w-full">
       <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none text-textcolor2">
