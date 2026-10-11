@@ -71,6 +71,13 @@ export function applyLinuxDecorationAlpha(alpha: number | null): void {
   );
 }
 
+export function applyLinuxCsdSidebarOpacity(opacity: number): void {
+  document.documentElement.style.setProperty(
+    "--risu-linux-csd-sidebar-opacity",
+    `${Math.min(100, Math.max(0, opacity))}%`,
+  );
+}
+
 function applyCapabilities(capabilities: LinuxWindowCapabilities): void {
   activeCapabilities = capabilities;
   if (typeof document === "undefined") return;

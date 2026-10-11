@@ -384,6 +384,14 @@ html.tauri-linux-background-blur {
   );
 }
 
+html.tauri-linux-background-blur.tauri-linux-csd {
+  --risu-linux-sidebar-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) var(--risu-linux-csd-sidebar-opacity, 94%),
+    transparent
+  );
+}
+
 html.tauri-linux-background-blur main.tauri-native {
   background-color: transparent;
 }
@@ -403,8 +411,8 @@ html.tauri-linux-background-blur .rs-sidebar-panel {
   box-shadow: none;
 }
 
-html.tauri-linux-background-blur .rs-sidebar.dynamic-sidebar,
-html.tauri-linux-background-blur .rs-sidebar-panel.dynamic-sidebar {
+html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar.dynamic-sidebar,
+html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar-panel.dynamic-sidebar {
   background-color: var(--risu-theme-darkbg) !important;
 }
 

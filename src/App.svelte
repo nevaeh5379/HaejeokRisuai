@@ -4,7 +4,7 @@
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
+    import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriLinux, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
     import { nativeAppControl } from './ts/android/nativeAppControl';
     import { onMount } from 'svelte';
@@ -15,6 +15,7 @@
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
     import { installLinuxCsdHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
+    import { applyLinuxCsdSidebarOpacity } from './ts/linuxWindowIntegration';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
@@ -37,6 +38,11 @@
     let exitConfirmationOpen = false
 
     onMount(installLinuxCsdHeaderDrag)
+
+    $effect(() => {
+        if (!isTauriLinux) return
+        applyLinuxCsdSidebarOpacity(settingsStore.state.linuxCsdSidebarOpacity ?? 94)
+    })
 
     $effect(() => {
         if (!isCapacitorAndroid) return

@@ -1619,6 +1619,7 @@ export const languageKorean = {
   windowsBackdropMica: "미카 (Windows 11)",
   windowsBackdropTabbed: "탭 미카 (Windows 11)",
   windowsMaterialOpacity: "배경 불투명도",
+  linuxCsdSidebarOpacity: "CSD 사이드바 불투명도",
   windowsBackdropCompatibility:
     "미카 효과는 Windows 11이 필요합니다. 폭넓은 호환성에는 아크릴을 권장합니다.",
   useCustomBackground: "커스텀 배경",
