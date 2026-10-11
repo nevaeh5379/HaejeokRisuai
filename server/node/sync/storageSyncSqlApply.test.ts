@@ -127,6 +127,46 @@ function payloadBatchLength(payload: any): number | null {
 
 describe("applyStorageSyncSqlRecords", () => {
   it.each(["postgres", "oracle", "azure"] as const)(
+    "restores plugin records and counts source progress on %s",
+    async (vendor) => {
+      const record = {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Backup plugin", enabled: false },
+        script: "// source\u0000한글",
+      };
+      const records = [{ type: "meta", formatVersion: 1, revision: 4 }, record];
+      const sqlStorage = fakeStorage([]);
+      const validate = createSqlCommitValidator({ PayloadError: Error });
+      sqlStorage.sync.mockImplementation(async (payload) => {
+        validate(payload);
+        return { revision: 8 };
+      });
+      const result = await applyStorageSyncSqlRecords({
+        vendor,
+        session: session(),
+        sqlStaging: staging(records),
+        sqlStorage,
+        client: {
+          query: vi.fn(),
+          request: () => ({ query: vi.fn(async () => ({})) }),
+        },
+        transactionContext: transactionContext(),
+        replaceColdStorage: false,
+      });
+      expect(result.applied).toBe(1);
+      expect(sqlStorage.sync.mock.calls[1][0].plugins).toEqual({
+        upserts: [
+          { id: record.id, position: record.position, data: record.data },
+        ],
+        scripts: [{ id: record.id, script: record.script }],
+        deletes: [],
+      });
+    },
+  );
+
+  it.each(["postgres", "oracle", "azure"] as const)(
     "restores legacy plugins through the plugin domain on %s",
     async (vendor) => {
       const plugins = [

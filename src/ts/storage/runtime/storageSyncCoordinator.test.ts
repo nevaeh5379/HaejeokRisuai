@@ -26,6 +26,7 @@ function sourceSql(revision = 7): ISqlStorage {
   return {
     listGlobalAuthorNotes: async () => [],
     getGlobalAuthorNoteScriptWrite: async () => false,
+    plugin: { loadAll: async () => [], script: { load: async () => null } },
     getRevision: () => revision,
     getStorageSyncSummary: async () => ({
       revision,

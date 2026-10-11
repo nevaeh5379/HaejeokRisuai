@@ -94,6 +94,20 @@ async function* iteratePluginStorage(
     };
   }
 }
+
+async function* iteratePlugins(
+  storage: ISqlStorage,
+  expectedRevision: number,
+): AsyncGenerator<StorageSyncSqlRecord> {
+  const plugins = await storage.plugin.loadAll();
+  for (const { id, position, ...data } of plugins) {
+    assertCachedRevision(storage, expectedRevision);
+    const script = await storage.plugin.script.load(id);
+    if (!script)
+      throw new Error(`Plugin script disappeared during backup: ${id}`);
+    yield { type: "plugin", id, position, data, script: script.script };
+  }
+}
 async function* iterateModules(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
@@ -292,6 +306,8 @@ export async function* iterateStorageSyncSqlRecords(
   };
   assertCachedRevision(storage, options.expectedRevision);
   yield* iteratePluginStorage(storage);
+  assertCachedRevision(storage, options.expectedRevision);
+  yield* iteratePlugins(storage, options.expectedRevision);
   assertCachedRevision(storage, options.expectedRevision);
   yield* iterateModules(storage);
   assertCachedRevision(storage, options.expectedRevision);
