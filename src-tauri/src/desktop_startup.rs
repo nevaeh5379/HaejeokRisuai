@@ -191,6 +191,8 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
     // Initialize it after migration, before the WebView can issue requests.
     app.plugin(tauri_plugin_http::init())?;
 
+    let files = app.try_state::<crate::TauriOpenedFiles>().map(|state| state.0.clone()).unwrap_or_else(|| "[]".to_string());
+
     #[cfg(target_os = "linux")]
     crate::linux_wayland::create_main_window(app)?;
     #[cfg(not(target_os = "linux"))]
@@ -200,6 +202,9 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
         })?;
         tauri::WebviewWindowBuilder::from_config(app, config)?
             .title(crate::get_app_display_name())
+            .initialization_script(format!(
+                "window.tauriOpenedFiles = {files};"
+            ))
             .build()?;
     }
     #[cfg(target_os = "macos")]

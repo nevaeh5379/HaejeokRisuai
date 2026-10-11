@@ -42,8 +42,10 @@
     "fileAssociations": [
       {
         "ext": [
-          "risum", "risup", "charx"
-        ]
+           "charx"
+        ],
+        "name": "Risuai Character Card",
+        "role":"Editor"
       }
     ]
   },

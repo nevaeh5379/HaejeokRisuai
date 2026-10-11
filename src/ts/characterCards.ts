@@ -394,6 +394,41 @@ export const getRealmInfo = async (realmPath: string) => {
 
 export { showRealmInfoStore };
 
+async function importFiles(paths: string[]) {
+  const { convertFileSrc } = await import("@tauri-apps/api/core");
+   console.log(paths)
+  for (const path of paths) {
+    console.log(path)
+    const name = path.split(/[\\/]/).pop() ?? "";
+    const controller = new AbortController();
+    if (name.toLowerCase().endsWith(".charx")) {
+      try {
+        const response = await fetch(convertFileSrc(path), {
+          signal: controller.signal
+        });
+
+        if (!response.ok || !response.body)
+          throw new Error(`Failed to read file: ${response.status}`);
+
+        await importCharacterProcess({
+          name: name.toLowerCase(),
+          data: response.body,
+        });
+      }
+      catch (error) {
+      alertError(String(error));
+    }
+    } 
+  }
+}
+
+let importQueue = Promise.resolve();
+
+export async function enqueueFiles(paths: string[]) {
+  return importQueue.then(() => importFiles(paths)).catch((error) => {
+    alertError(String(error))
+  })
+}
 export async function characterURLImport() {
   const realmPath = new URLSearchParams(location.search).get("realm");
   try {

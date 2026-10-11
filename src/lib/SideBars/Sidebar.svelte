@@ -34,6 +34,7 @@
     WrenchIcon,
     User2Icon,
     SearchIcon,
+    PanelLeft,
   } from "@lucide/svelte";
     import { getCharImage, preloadCharacterImage } from '../../ts/characterImage';
     import { language } from "../../lang";
@@ -550,6 +551,8 @@
     e.stopPropagation()
     return false
   }
+
+  let isSidebarOpen = $derived($sideBarStore && !$DynamicGUI);
 </script>
 {#if settingsStore.state.menuSideBar}
 <div
@@ -1185,6 +1188,7 @@
         <LazyComponent loader={loadSideChatList} />
       {/if}
     {/if}
+ 
   {/if}
 </div>
 

@@ -62,6 +62,8 @@ import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { getCurrentStorageProfilePlatform } from "../storage/runtime/storageProfileConnection";
 import { NodeStorage } from "../storage/files/nodeStorage";
 import { androidDiagnosticCheckpoint } from "../android/androidCrashDiagnostics";
+import { listen } from "@tauri-apps/api/event";
+import { enqueueFiles } from "../characterCards";
 
 async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> {
   await androidDiagnosticCheckpoint("startup:storage-profile");
@@ -283,6 +285,7 @@ export async function loadData() {
         if (urlParams.has("realm") || urlParams.has("charahub")) {
           const { characterURLImport } = await import("../characterCards");
           void characterURLImport();
+         
         }
       }
 
@@ -328,6 +331,9 @@ export async function loadData() {
           await getCurrentWebviewWindow().close();
           return;
         }
+         await listen<string[]>("tauri-opened-files", async (event) => {
+            await enqueueFiles(event.payload)
+          })
         await initializeTauriChatWorkspaceRuntime();
         const { initializeTauriAppMenu } = await import("../tauriAppMenu");
         await initializeTauriAppMenu();
