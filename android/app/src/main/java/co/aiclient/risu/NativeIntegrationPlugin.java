@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Base64;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 
@@ -23,6 +24,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -59,6 +62,45 @@ public class NativeIntegrationPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("entries", entries);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void readSharedFile(PluginCall call) {
+        String fileUri = call.getString("fileUri");
+        if (fileUri == null || fileUri.trim().isEmpty()) {
+            call.reject("fileUri is required");
+            return;
+        }
+        Uri uri;
+        try {
+            uri = Uri.parse(fileUri);
+        } catch (Exception e) {
+            call.reject("Invalid fileUri: " + e.getMessage());
+            return;
+        }
+        String scheme = uri.getScheme();
+        if (!"content".equalsIgnoreCase(scheme) && !"file".equalsIgnoreCase(scheme)) {
+            call.reject("Unsupported fileUri scheme: " + scheme);
+            return;
+        }
+        android.content.ContentResolver resolver = getContext().getContentResolver();
+        try (InputStream input = resolver.openInputStream(uri)) {
+            if (input == null) {
+                call.reject("Failed to open shared file");
+                return;
+            }
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(chunk)) != -1) {
+                buffer.write(chunk, 0, read);
+            }
+            JSObject result = new JSObject();
+            result.put("data", Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP));
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Failed to read shared file: " + e.getMessage());
+        }
     }
 
     @PluginMethod
@@ -298,7 +340,64 @@ public class NativeIntegrationPlugin extends Plugin {
             return sharedTextEntry(context, intent, "process-text", Intent.EXTRA_PROCESS_TEXT);
         }
         if (Intent.ACTION_VIEW.equals(action)) {
-            return deepLinkEntry(intent.getData());
+            Uri data = intent.getData();
+            if (data != null && isSupportedFileUri(context, data)) {
+                return sharedFileEntry(context, intent, data);
+            }
+            return deepLinkEntry(data);
+        }
+        return null;
+    }
+
+    private static boolean isSupportedFileUri(Context context, Uri uri) {
+        String scheme = uri.getScheme();
+        if (!"content".equalsIgnoreCase(scheme) && !"file".equalsIgnoreCase(scheme)) {
+            return false;
+        }
+        String name = queryFileName(context, null, uri);
+        if (name == null) return false;
+        String lower = name.toLowerCase();
+        return lower.endsWith(".risup");
+    }
+
+    private static JSObject sharedFileEntry(Context context, Intent intent, Uri uri) {
+        JSObject entry = targetEntry("open-file", intent);
+        entry.put("fileUri", uri.toString());
+        String displayName = queryFileName(context, intent, uri);
+        putIfPresent(entry, "fileName", displayName);
+        putIfPresent(entry, "mimeType", intent.getType());
+        return entry;
+    }
+
+    private static String queryFileName(Context context, Intent intent, Uri uri) {
+        if (intent != null && Intent.ACTION_SEND.equals(intent.getAction())) {
+            String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+            if (subject != null && !subject.trim().isEmpty()) {
+                return subject;
+            }
+        }
+        if ("file".equalsIgnoreCase(uri.getScheme())) {
+            String path = uri.getPath();
+            if (path == null) return null;
+            int slash = path.lastIndexOf('/');
+            return slash >= 0 ? path.substring(slash + 1) : path;
+        }
+        if ("content".equalsIgnoreCase(uri.getScheme()) && context != null) {
+            try (android.database.Cursor cursor = context
+                .getContentResolver()
+                .query(uri, null, null, null, null)) {
+                if (cursor == null || !cursor.moveToFirst()) return null;
+                int nameIndex = cursor.getColumnIndex(
+                    android.provider.OpenableColumns.DISPLAY_NAME
+                );
+                if (nameIndex < 0) return null;
+                String name = cursor.getString(nameIndex);
+                if (name == null || name.trim().isEmpty()) return null;
+                int slash = name.lastIndexOf('/');
+                return slash >= 0 ? name.substring(slash + 1) : name;
+            } catch (Exception ignored) {
+                return null;
+            }
         }
         return null;
     }
