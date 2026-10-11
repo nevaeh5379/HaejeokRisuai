@@ -1237,12 +1237,24 @@ async function fetchWithPlainFetch(
 ): Promise<GlobalFetchResult> {
   try {
     const headers = { "Content-Type": "application/json", ...arg.headers };
-    const response = await fetch(new URL(url), {
-      body: JSON.stringify(arg.body),
-      headers,
-      method: arg.method ?? "POST",
-      signal: arg.abortSignal,
-    });
+    // Capacitor's patched fetch reads non-JSON POST responses as text, which
+    // corrupts binary payloads such as NovelAI's ZIP before arrayBuffer() runs.
+    const response =
+      isCapacitor && arg.rawResponse
+        ? await fetchNative(url, {
+            body: JSON.stringify(arg.body) ?? "",
+            headers,
+            method: arg.method ?? "POST",
+            signal: arg.abortSignal,
+            requestTimeoutMs: arg.requestTimeoutMs,
+            logFetch: false,
+          })
+        : await fetch(new URL(url), {
+            body: JSON.stringify(arg.body),
+            headers,
+            method: arg.method ?? "POST",
+            signal: arg.abortSignal,
+          });
     const data = arg.rawResponse
       ? new Uint8Array(await response.arrayBuffer())
       : await response.json();
