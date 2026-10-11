@@ -1,32 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { PortableDatabaseStreamCollector } from "./streamCollector.ts";
+import { PortableDatabaseStreamCollector } from "./collector.ts";
 import {
-  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-  type PortableDatabaseStreamFragment,
-  type PortableDatabaseStreamManifest,
-} from "./streamFormat.ts";
-import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
+  MAX_FRAGMENT_RECORDS,
+  type Fragment,
+  type Manifest,
+} from "./databaseBackup.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 
 type StreamRecord = LegacyBackupSqlRecord;
 
-function fragment(
-  index: number,
-  records: StreamRecord[],
-): PortableDatabaseStreamFragment {
+function fragment(index: number, records: StreamRecord[]): Fragment {
   return {
     format: "risu-portable-database-fragment",
-    version: 1,
     index,
     records,
   };
 }
 
-function manifest(
-  overrides: Partial<PortableDatabaseStreamManifest> = {},
-): PortableDatabaseStreamManifest {
+function manifest(overrides: Partial<Manifest> = {}): Manifest {
   return {
     format: "risu-portable-database-stream",
-    version: 1,
     revision: 7,
     totalFragments: 1,
     totalRecords: 0,
@@ -53,7 +46,7 @@ function feed(
     ...manifest(),
     revision,
     totalRecords: records.length,
-    counts: counts as PortableDatabaseStreamManifest["counts"],
+    counts: counts as Manifest["counts"],
   });
 }
 
@@ -281,14 +274,14 @@ describe("PortableDatabaseStreamCollector validation", () => {
   it("rejects fragments exceeding the shared max record bound", () => {
     const collector = new PortableDatabaseStreamCollector();
     const tooMany = Array.from(
-      { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS + 1 },
+      { length: MAX_FRAGMENT_RECORDS + 1 },
       () => validRecord,
     );
     expect(() => collector.addFragment(fragment(1, tooMany))).toThrow(
       "Invalid streaming database fragment",
     );
     const atBound = Array.from(
-      { length: PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS },
+      { length: MAX_FRAGMENT_RECORDS },
       () => validRecord,
     );
     expect(() => collector.addFragment(fragment(1, atBound))).not.toThrow();

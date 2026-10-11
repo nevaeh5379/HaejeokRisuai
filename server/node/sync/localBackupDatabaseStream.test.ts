@@ -90,7 +90,6 @@ function manifest(input: any[]) {
   );
   return {
     format: "risu-portable-database-stream",
-    version: 1,
     revision: 11,
     complete: true,
     totalFragments: 1,

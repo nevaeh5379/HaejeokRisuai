@@ -7,7 +7,6 @@ import {
 function manifest() {
   return {
     format: "risu-portable-database-stream" as const,
-    version: 1 as const,
     revision: 7,
     totalFragments: 1,
     totalRecords: 1,
