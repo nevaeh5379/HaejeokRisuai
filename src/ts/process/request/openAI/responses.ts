@@ -41,7 +41,6 @@ import {
   getAdditionalParameters,
   isReasoningCapabilityParameter,
 } from "../shared";
-import { safeStructuredClone } from "../../../polyfill";
 
 import type {
   OpenAIChatExtra,
