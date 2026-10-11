@@ -303,6 +303,7 @@ pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool 
 }
 
 fn configure_integrated_header(header: &gtk::HeaderBar) {
+    header.set_show_close_button(true);
     header.set_decoration_layout(None);
     header.set_decoration_layout_set(false);
     header.set_title(None);
@@ -488,11 +489,18 @@ pub fn prepare_client_side_decoration<R: Runtime>(
         .clone()
         .downcast::<gtk::EventBox>()
         .map_err(|_| "Tao GTK titlebar is not an EventBox".to_string())?;
-    let header = event_box
-        .child()
-        .ok_or_else(|| "Tao GTK titlebar EventBox has no child".to_string())?
-        .downcast::<gtk::HeaderBar>()
-        .map_err(|_| "Tao GTK titlebar child is not a HeaderBar".to_string())?;
+    // Tao 0.37 leaves the Wayland titlebar EventBox empty. Supply GTK's native
+    // HeaderBar while retaining the one provided by earlier Tao versions.
+    let header = match event_box.child() {
+        Some(child) => child
+            .downcast::<gtk::HeaderBar>()
+            .map_err(|_| "Tao GTK titlebar child is not a HeaderBar".to_string())?,
+        None => {
+            let header = gtk::HeaderBar::new();
+            event_box.add(&header);
+            header
+        }
+    };
     let default_vbox = tauri_window
         .default_vbox()
         .map_err(|error| error.to_string())?;
