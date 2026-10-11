@@ -1,5 +1,5 @@
 import { Sha256 } from "@aws-crypto/sha256-js";
-import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import type { LegacyBackupSqlRecord } from "@risuai/backup-core/legacyRecords";
 import type {
   ISqlStorage,

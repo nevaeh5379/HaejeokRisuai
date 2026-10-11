@@ -16,7 +16,7 @@ import {
   hashAuthorNote,
   AuthorNoteError,
   NO_AUTHOR_NOTE,
-} from "@risuai/protocol/dist/authorNotes.cjs";
+} from "@risuai/protocol/src/authorNotes.ts";
 import { buildFullDatabase } from "../../storage/sql/sqlite/sqliteTestFixtures";
 import {
   AuthorNoteEditor,

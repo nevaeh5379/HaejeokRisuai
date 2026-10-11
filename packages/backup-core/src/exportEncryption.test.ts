@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prepareAccountBackupEncryption } from "./exportEncryption";
+import { prepareAccountBackupEncryption } from "./exportEncryption.ts";
 
 describe("prepareAccountBackupEncryption", (): void => {
   it("does nothing when encryption is disabled", async (): Promise<void> => {

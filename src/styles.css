@@ -208,7 +208,7 @@ html.tauri-windows-vibrancy .rs-main-content {
  * own readable surface. */
 html.tauri-windows-vibrancy
   .rs-main-content:has(.default-chat-pane) {
-  background-color: transparent;
+  background-color: var(--risu-windows-sidebar-tint);
 }
 
 /* Match the rounded content viewport used by Edge and other Windows 11 apps. */
@@ -267,7 +267,7 @@ html.tauri-windows-vibrancy
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell {
   position: relative;
   z-index: 3;
-  background-color: transparent;
+  /* background-color: var(--risu-windows-sidebar-tint); */
 }
 
 html.tauri-windows-vibrancy .rs-chat-tab-strip-shell > .rs-chat-tab-list {
@@ -1475,6 +1475,21 @@ html.tauri-macos-vibrancy .rs-sidebar-scroll::-webkit-scrollbar-thumb:active {
 
 .x-risu-risu-inlay-image {
   @apply w-full flex justify-center;
+}
+
+[data-risu-illustration-image] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50%;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+[data-risu-illustration-image] img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
 }
 
 .x-risu-risu-inlay-image img {

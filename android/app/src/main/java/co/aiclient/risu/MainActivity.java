@@ -5,9 +5,14 @@ import android.content.pm.ApplicationInfo;
 import android.content.res.Configuration;
 import android.os.Bundle;
 import android.webkit.WebView;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.splashscreen.SplashScreen;
+import androidx.lifecycle.Lifecycle;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -18,6 +23,7 @@ public class MainActivity extends BridgeActivity {
     private static final String STATE_SAFE_MODE = "haejeok_safe_mode";
     private boolean safeMode;
     private final AndroidSafeArea safeArea = new AndroidSafeArea();
+    private AlertDialog crashReportDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,16 +49,6 @@ public class MainActivity extends BridgeActivity {
                         CrashGuardPlugin.class
                 ));
         super.onCreate(savedInstanceState);
-        if (getBridge() != null && getBridge().getWebView() != null) {
-            WebView webView = getBridge().getWebView();
-            safeArea.install(webView);
-            getBridge().setWebViewClient(new RisuWebViewClient(
-                getBridge(),
-                getApplicationContext(),
-                safeArea::onPageFinished
-            ));
-        }
-        handleNativeIntent(getIntent());
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -69,9 +65,96 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    protected void load() {
+        // Do not create/load the bridge until the report is reviewed. A boot
+        // crash loop must still allow sharing a report without running JS/SQL.
+        if (AndroidCrashDiagnostics.hasPendingReport()) {
+            showCrashReport(this::loadRisuBridge);
+        } else {
+            loadRisuBridge();
+        }
+    }
+
+    private void loadRisuBridge() {
+        AndroidCrashDiagnostics.checkpoint("native:bridge-loading");
+        super.load();
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            safeArea.install(webView);
+            getBridge().setWebViewClient(new RisuWebViewClient(
+                getBridge(), getApplicationContext(), safeArea::onPageFinished
+            ));
+            // Deferred creation happens after the Activity lifecycle callbacks.
+            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                getBridge().onStart();
+            }
+            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) {
+                getBridge().getApp().fireStatusChange(true);
+                getBridge().onResume();
+            }
+        }
+        handleNativeIntent(getIntent());
+    }
+
+    void showRendererRecovery() {
+        showCrashReport(this::recreate);
+    }
+
+    private void showCrashReport(Runnable continueLoading) {
+        if (isFinishing() || isDestroyed() || crashReportDialog != null) return;
+        TextView text = new TextView(this);
+        int padding = Math.round(20 * getResources().getDisplayMetrics().density);
+        text.setPadding(padding, padding, padding, padding);
+        text.setText(getString(R.string.crash_report_message) + "\n\n" + AndroidCrashDiagnostics.reportPreview());
+        text.setTextIsSelectable(true);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(text);
+        crashReportDialog = new AlertDialog.Builder(this)
+            .setTitle(R.string.crash_report_title)
+            .setView(scroll)
+            .setCancelable(false)
+            .setPositiveButton(R.string.crash_report_continue, (dialog, which) -> {
+                AndroidCrashDiagnostics.acknowledgeReport();
+                crashReportDialog = null;
+                continueLoading.run();
+            })
+            .setNegativeButton(R.string.safe_mode_shortcut, (dialog, which) -> {
+                AndroidCrashDiagnostics.acknowledgeReport();
+                safeMode = true;
+                getIntent().setAction(ACTION_SAFE_MODE);
+                crashReportDialog = null;
+                continueLoading.run();
+            })
+            .setNeutralButton(R.string.crash_report_share, null)
+            .create();
+        crashReportDialog.show();
+        // Sharing/cancelling the chooser must not dismiss/acknowledge the report.
+        crashReportDialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view -> {
+            try {
+                AndroidCrashDiagnostics.share(this);
+            } catch (Exception error) {
+                Toast.makeText(this, R.string.crash_report_share_failed, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    @Override
+    public void onDestroy() {
+        if (crashReportDialog != null) crashReportDialog.dismiss();
+        super.onDestroy();
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
+        AndroidCrashDiagnostics.checkpoint("native:activity-resumed");
         NativeIntegrationPlugin.applySavedSystemBarAppearance(this);
+    }
+
+    @Override
+    public void onPause() {
+        AndroidCrashDiagnostics.checkpoint("native:activity-paused");
+        super.onPause();
     }
 
     @Override

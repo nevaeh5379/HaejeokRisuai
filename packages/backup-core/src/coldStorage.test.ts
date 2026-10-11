@@ -4,7 +4,7 @@ import {
   getColdStorageBackupKey,
   getColdStorageBackupName,
   isColdStorageBackupData,
-} from "./coldStorage";
+} from "./coldStorage.ts";
 
 describe("cold storage backup format", () => {
   it("shares the canonical header and backup filename", () => {

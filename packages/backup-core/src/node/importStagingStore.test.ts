@@ -2,14 +2,14 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createLocalBackupEntryHeader } from "./legacyFormat";
+import { createLocalBackupEntryHeader } from "./legacyFormat.ts";
 import {
   BACKUP_IMPORT_MAX_NATIVE_DATABASE_ENTRY_BYTES,
   BackupImportStagingError,
   BackupImportStagingStore,
   type BackupImportEntryWriter,
   type BufferedBackupEntry,
-} from "./importStagingStore";
+} from "./importStagingStore.ts";
 
 const roots: string[] = [];
 

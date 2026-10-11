@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { encodeLegacyBackupDatabase } from "./legacyFormat";
+import { encodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PortableDatabaseExportWriter,
   databaseFragmentName,
   writeBackupContainerEntry,
-} from "./exportStream";
-import { BackupContainerParser } from "../containerStream";
+} from "./exportStream.ts";
+import { BackupContainerParser } from "../containerStream.ts";
 
 describe("PortableDatabaseExportWriter", () => {
   it("fragments records, counts types, and builds a manifest", async () => {

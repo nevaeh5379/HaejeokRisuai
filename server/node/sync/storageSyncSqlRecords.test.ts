@@ -3,13 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const {
+import {
   StorageSyncSqlRecordError,
   readStorageSyncSqlRecords,
-} = require(".//storageSyncSqlRecords.cts");
-const {
-  encodeStorageSyncValue,
-} = require("../../../packages/protocol/storageSyncValueCodec.cjs");
+} from "./storageSyncSqlRecords.ts";
+import { encodeStorageSyncValue } from "../../../packages/protocol/storageSyncValueCodec.ts";
 
 const tempRoots: string[] = [];
 

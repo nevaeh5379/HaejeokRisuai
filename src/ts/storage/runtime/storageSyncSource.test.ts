@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { decodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { decodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import {
   StorageSyncSourceRevisionChangedError,

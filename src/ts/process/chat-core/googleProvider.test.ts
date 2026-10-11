@@ -9,7 +9,7 @@ import {
   prepareGoogleConversation,
   selectGoogleGenerationParameters,
   selectGoogleVertexRegion,
-} from "@risuai/chat-core/googleProvider.cjs";
+} from "@risuai/chat-core/googleProvider.ts";
 
 describe("Google provider core", () => {
   it("extracts one leading system prompt and maps normal chat roles", () => {

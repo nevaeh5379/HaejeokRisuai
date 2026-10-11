@@ -8,7 +8,7 @@ import { hanuraiMemory } from "../memory/hanuraiMemory";
 import { hypaMemoryV2 } from "../memory/hypav2";
 import { hypaMemoryV3 } from "../memory/hypav3";
 import { supaMemory } from "../memory/supaMemory";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import { requireChatTargetFromIndexes } from "../../chatTarget";
 
 interface MemoryState {

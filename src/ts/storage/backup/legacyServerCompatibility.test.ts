@@ -9,12 +9,10 @@ import { encodeRisuSaveLegacyAsync } from "./risuSave";
 import {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
-} from "../../../../packages/protocol/storageSyncValueCodec.cjs";
+} from "../../../../packages/protocol/storageSyncValueCodec.ts";
 
 const require = createRequire(import.meta.url);
-const {
-  readStorageSyncSqlRecords,
-} = require("../../../../server/node/sync/storageSyncSqlRecords.cts");
+import { readStorageSyncSqlRecords } from "../../../../server/node/sync/storageSyncSqlRecords.ts";
 
 describe("server legacy backup compatibility", () => {
   it("decodes the same compressed legacy payload produced by the client", async () => {

@@ -3,11 +3,11 @@ import {
   LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   LOCAL_BACKUP_DATABASE_STREAM_MAX_REQUEST_RECORDS,
   LOCAL_BACKUP_DATABASE_STREAM_VERSION,
-} from "./databaseStreamStore";
+} from "./databaseStreamStore.ts";
 import {
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   PORTABLE_DATABASE_STREAM_VERSION,
-} from "../streamFormat";
+} from "../streamFormat.ts";
 
 describe("local backup database stream constants", () => {
   it("shares the canonical streamed-fragment record bound", () => {

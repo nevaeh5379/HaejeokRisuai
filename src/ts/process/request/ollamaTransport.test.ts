@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveOllamaCloudTransportUrl } from "@risuai/chat-core/ollamaProvider.cjs";
+import { resolveOllamaCloudTransportUrl } from "@risuai/chat-core/ollamaProvider.ts";
 import { LLMFormat } from "../../model/modellist";
 import {
   matchesNodeOllamaCloudEndpoint,

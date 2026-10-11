@@ -11,7 +11,7 @@ import {
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
   shouldUseOpenAIFlexProcessing,
-} from "@risuai/chat-core/openAIProvider.cjs";
+} from "@risuai/chat-core/openAIProvider.ts";
 
 describe("OpenAI provider core", () => {
   it("collects tool calls from every response choice in order", () => {

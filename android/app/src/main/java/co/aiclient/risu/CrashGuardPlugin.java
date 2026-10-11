@@ -27,6 +27,24 @@ public class CrashGuardPlugin extends Plugin {
     private static final String KEY_LOADING = "loading_plugin";
     private static final String KEY_BLOCKED = "blocked_plugins";
 
+    @PluginMethod
+    public void checkpoint(PluginCall call) {
+        AndroidCrashDiagnostics.checkpoint(call.getString("stage"));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void shareDiagnostics(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                AndroidCrashDiagnostics.share(getActivity());
+                call.resolve();
+            } catch (Exception error) {
+                call.reject("Could not share Android diagnostics", error);
+            }
+        });
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
@@ -40,6 +58,7 @@ public class CrashGuardPlugin extends Plugin {
             return;
         }
         prefs(getContext()).edit().putString(KEY_LOADING, name).apply();
+        AndroidCrashDiagnostics.checkpoint("runtime:plugin-sandbox-loading");
         call.resolve();
     }
 

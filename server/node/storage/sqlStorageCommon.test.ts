@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   BOOTSTRAP_SETTING_KEYS,
   DEFERRED_SETTING_KEYS,
   SqlStorageBase,
@@ -11,27 +11,7 @@ const {
   groupRows,
   groupMessageRows,
   rebuildDatabaseGraph,
-} = require(".//sqlStorageCommon.cjs") as {
-  BOOTSTRAP_SETTING_KEYS: string[];
-  DEFERRED_SETTING_KEYS: string[];
-  SqlStorageBase: new () => Record<string, (...args: any[]) => any>;
-  createSqlStorageHelpers: (
-    options: Record<string, unknown>,
-  ) => Record<string, (...args: any[]) => any>;
-  createMessageRelations: (
-    rows: Record<string, Record<string, unknown>[]>,
-  ) => Record<string, Map<string, unknown>>;
-  groupRows: (
-    rows: Record<string, unknown>[],
-    key: string,
-  ) => Map<unknown, Record<string, unknown>[]>;
-  groupMessageRows: (
-    rows: Record<string, unknown>[],
-  ) => Map<string, Record<string, unknown>[]>;
-  rebuildDatabaseGraph: (
-    options: Record<string, unknown>,
-  ) => Record<string, unknown>;
-};
+} from "./sqlStorageCommon.ts";
 
 class TestPayloadError extends Error {}
 

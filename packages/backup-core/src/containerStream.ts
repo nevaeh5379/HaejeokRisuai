@@ -2,17 +2,16 @@ import {
   classifyBackupEntry,
   normalizeBackupEntryName,
   type BackupEntryClassification,
-} from "./entryPolicy";
+} from "./entryPolicy.ts";
 
 export const BACKUP_CONTAINER_MAX_NAME_BYTES = 1024 * 1024;
 export const BACKUP_CONTAINER_MAX_ENTRY_BYTES = 0xffffffff;
 
 export class BackupContainerEntryHeaderError extends Error {
-  constructor(
-    message: string,
-    readonly code: "invalid_name" | "invalid_size",
-  ) {
+  readonly code: "invalid_name" | "invalid_size";
+  constructor(message: string, code: "invalid_name" | "invalid_size") {
     super(message);
+    this.code = code;
     this.name = "BackupContainerEntryHeaderError";
   }
 }
@@ -61,7 +60,11 @@ export function createBackupContainerEntryHeader(
   }
 
   const header = new Uint8Array(8 + encodedName.byteLength);
-  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  const view = new DataView(
+    header.buffer,
+    header.byteOffset,
+    header.byteLength,
+  );
   view.setUint32(0, encodedName.byteLength, true);
   header.set(encodedName, 4);
   view.setUint32(4 + encodedName.byteLength, Number(normalizedSize), true);
@@ -104,12 +107,13 @@ export class BackupContainerParser {
   private entryOffset = 0;
   private currentEntry: BackupContainerEntryInfo | null = null;
 
+  private readonly handlers: BackupContainerParserHandlers;
   constructor(
-    private readonly handlers: BackupContainerParserHandlers,
+    handlers: BackupContainerParserHandlers,
     options: BackupContainerParserOptions = {},
   ) {
-    this.maxNameBytes =
-      options.maxNameBytes ?? BACKUP_CONTAINER_MAX_NAME_BYTES;
+    this.handlers = handlers;
+    this.maxNameBytes = options.maxNameBytes ?? BACKUP_CONTAINER_MAX_NAME_BYTES;
     this.maxEntryBytes =
       options.maxEntryBytes ?? BACKUP_CONTAINER_MAX_ENTRY_BYTES;
   }
@@ -186,15 +190,8 @@ export class BackupContainerParser {
         this.entrySize - this.entryOffset,
         chunk.length - chunkOffset,
       );
-      const entryChunk = chunk.subarray(
-        chunkOffset,
-        chunkOffset + copyLength,
-      );
-      await this.handlers.onEntryChunk?.(
-        entry,
-        entryChunk,
-        this.entryOffset,
-      );
+      const entryChunk = chunk.subarray(chunkOffset, chunkOffset + copyLength);
+      await this.handlers.onEntryChunk?.(entry, entryChunk, this.entryOffset);
       this.entryOffset += copyLength;
       chunkOffset += copyLength;
 

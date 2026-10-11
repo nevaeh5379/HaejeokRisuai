@@ -1,4 +1,4 @@
-import type { AssetStorageTarget } from "@risuai/protocol/storageConfig.cjs";
+import type { AssetStorageTarget } from "@risuai/protocol/storageConfig.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export interface RemoteAssetReadOptions {

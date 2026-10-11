@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { beforeAll, expect, test, vi } from "vitest";
 import { globalAuthorNoteStore } from "../stores/domain/globalAuthorNoteStore";
-import { AuthorNoteError } from "@risuai/protocol/dist/authorNotes.cjs";
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
 
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));

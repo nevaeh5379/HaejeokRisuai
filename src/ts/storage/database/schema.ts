@@ -21,8 +21,14 @@ import { LLMFlags, LLMFormat, LLMTokenizer } from "../../model/types";
 import type { HypaModel } from "../../process/memory/hypamemory";
 import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { Loadout } from "../../loadout";
+import type {
+  Illustration,
+  IllustrationOverrides,
+  IllustrationSettings,
+} from "@risuai/protocol/src/illustration.ts";
+import type { ImageProviderId } from "@risuai/protocol/src/imageGeneration.ts";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -65,6 +71,8 @@ export interface RisuPersona {
 }
 
 export interface DatabaseSettings {
+  useChatIllustrations: boolean;
+  illustration?: IllustrationSettings;
   apiType: string;
   openAIKey: string;
   proxyKey: string;
@@ -115,7 +123,7 @@ export interface DatabaseSettings {
   formatversion: number;
   waifuWidth: number;
   waifuWidth2: number;
-  sdProvider: string;
+  sdProvider: ImageProviderId | "";
   webUiUrl: string;
   sdSteps: number;
   sdCFG: number;
@@ -629,7 +637,7 @@ export interface Database
     PresetStoreData,
     LegacyPersonaMirrorData {
   /** Internal serialization boundary; live data belongs to the independent note store. */
-  globalAuthorNotes?: import("../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow[];
+  globalAuthorNotes?: import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow[];
   globalAuthorNoteSettings?: { allowScriptWrite: boolean };
 }
 
@@ -719,6 +727,7 @@ export interface loreBook {
 }
 
 export interface character {
+  illustration?: IllustrationOverrides;
   type?: "character";
   name: string;
   image?: string;
@@ -1216,6 +1225,8 @@ interface NAIVibeEncoding {
 
 interface ComfyConfig {
   workflow: string;
+  workflows?: import("@risuai/protocol/src/imageGeneration.ts").ComfyWorkflow[];
+  selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;
   negNodeID: string;
@@ -1345,6 +1356,7 @@ export interface ChatFolder {
 }
 
 export interface Message {
+  illustrations?: Illustration[];
   role: "user" | "char";
   data: string;
   saying?: string;

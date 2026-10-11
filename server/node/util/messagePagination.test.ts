@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const { paginateMessages } = require(".//messagePagination.cjs");
+import { paginateMessages } from "./messagePagination.ts";
 
 describe("paginateMessages", () => {
   const messages = Array.from({ length: 100 }, (_, index) => ({ index }));

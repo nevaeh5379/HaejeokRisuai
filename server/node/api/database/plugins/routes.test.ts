@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   registerPluginStorageRoutes,
   type PluginStorageRouteDependencies,
-} from "./routes.js";
+} from "./routes.ts";
 
 type RouteApp = PluginStorageRouteDependencies["app"];
 type RouteHandler = Parameters<RouteApp["get"]>[1];

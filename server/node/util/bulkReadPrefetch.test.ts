@@ -2,10 +2,10 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   normalizePrefetchConcurrency,
   prefetchInOrder,
-} = require(".//bulkReadPrefetch.cjs");
+} from "./bulkReadPrefetch.ts";
 
 describe("bulk read prefetch", () => {
   it("opens several assets ahead while yielding them in request order", async () => {

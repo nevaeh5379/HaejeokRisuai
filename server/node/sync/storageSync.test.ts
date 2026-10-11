@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-const {
+import {
   STORAGE_SYNC_PROTOCOL_VERSION,
   STORAGE_SYNC_CHUNK_SIZE_BYTES,
   STORAGE_SYNC_MAX_CONCURRENCY,
   StorageSyncRevisionConflictError,
   StorageSyncSessionManager,
   createStorageSyncSummary,
-} = require(".//storageSync.cjs");
+} from "./storageSync.ts";
 
 describe("storage sync summary", () => {
   it("combines database revision, record counts, and asset stats", async () => {
@@ -167,5 +167,4 @@ describe("storage sync summary", () => {
     expect(manager.get("restored")).toBeNull();
     expect(expired).toContain("restored");
   });
-
 });

@@ -1,4 +1,4 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
@@ -16,6 +16,7 @@ import {
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
+import { readSqliteQueryStream } from "./capacitorSqliteQueryStream";
 import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
 import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 
@@ -29,6 +30,54 @@ const capacitorSchemaStatements = sqliteStatements
     (statement) =>
       statement.length > 0 && !sqliteStatements.isPragma(statement),
   );
+
+// Measure JSON escaping without creating a second, potentially huge string.
+// Once over budget, an exact count is unnecessary: this statement is streamed.
+function jsonStringChars(value: string, budget: number): number {
+  if (value.length > budget) return budget + 1;
+  let chars = 2;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (
+      code === 34 ||
+      code === 92 ||
+      code === 8 ||
+      code === 9 ||
+      code === 10 ||
+      code === 12 ||
+      code === 13
+    )
+      chars += 2;
+    else if (code < 32) chars += 6;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        chars += 2;
+        index++;
+      } else chars += 6;
+    } else if (code >= 0xdc00 && code <= 0xdfff) chars += 6;
+    else chars++;
+    if (chars > budget) return budget + 1;
+  }
+  return chars;
+}
+
+function statementJsonChars(
+  sql: string,
+  bind: unknown[],
+  budget: number,
+): number {
+  let chars = 18 + jsonStringChars(sql, budget); // {"sql":...,"bind":[...]}
+  for (let index = 0; index < bind.length && chars <= budget; index++) {
+    const value = bind[index];
+    chars +=
+      (index > 0 ? 1 : 0) +
+      (typeof value === "string"
+        ? jsonStringChars(value, budget - chars)
+        : (JSON.stringify(value) ?? "null").length);
+  }
+  return chars;
+}
 
 /**
  * Capacitor native SQLite storage backend for Android/iOS builds.
@@ -86,16 +135,17 @@ export class CapacitorSqliteStorage
     bind: unknown[] = [],
   ): Promise<T[]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.sqlitePlugin.query({ sql, bind });
-    return (result.values ?? []) as T[];
+    const [rows] = await readSqliteQueryStream(this.sqlitePlugin, [
+      { sql, bind },
+    ]);
+    return rows as T[];
   }
 
   protected override async selectRowSets(
     queries: SqliteStatement[],
   ): Promise<Record<string, unknown>[][]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.sqlitePlugin.queryBatch({ queries });
-    return result.results ?? [];
+    return await readSqliteQueryStream(this.sqlitePlugin, queries);
   }
 
   protected async executeNativeTransaction(
@@ -122,7 +172,8 @@ export class CapacitorSqliteStorage
    * Each db.run() call is a full JS↔native bridge round trip, so large
    * commits (e.g. a 100-message save) previously cost 100+ sequential
    * round trips. Buffers statements and flushes them in chunks through
-   * executeSet(), which executes the whole chunk inside one bridge call.
+   * executeBatch(), which executes the whole chunk inside one bridge call.
+   * Oversized statements use bounded restore chunks in the same transaction.
    * All statements still run inside the caller's single SQLite
    * transaction, so atomicity and ordering are unchanged.
    */
@@ -140,12 +191,16 @@ export class CapacitorSqliteStorage
       expectedRevision,
     });
     let pendingBatch: SqliteStatement[] = [];
-    let batchPayloadChars = 0;
+    const emptyBatchChars = JSON.stringify({
+      id: transaction.id,
+      statements: [],
+    }).length;
+    let batchPayloadChars = emptyBatchChars;
     const flushBatch = async () => {
       if (pendingBatch.length === 0) return;
       const chunk = pendingBatch;
       pendingBatch = [];
-      batchPayloadChars = 0;
+      batchPayloadChars = emptyBatchChars;
       await this.sqlitePlugin.executeBatch({
         id: transaction.id,
         statements: chunk,
@@ -153,12 +208,29 @@ export class CapacitorSqliteStorage
     };
     try {
       const execute = async (sql: string, bind: unknown[] = []) => {
-        let bindChars = 0;
-        for (const value of bind) {
-          if (typeof value === "string") bindChars += value.length;
+        const budget = CapacitorSqliteStorage.BATCH_MAX_PAYLOAD_CHARS;
+        const chars = statementJsonChars(sql, bind, budget);
+        if (emptyBatchChars + chars > budget) {
+          await flushBatch();
+          const stream = new CapacitorSqliteRestoreStream(this.sqlitePlugin);
+          try {
+            await stream.openTransaction(transaction.id);
+            await stream.writeStatement(sql, bind);
+            await stream.finish();
+          } catch (error) {
+            await stream.abort().catch(() => {});
+            throw error;
+          }
+          return;
         }
+        if (
+          batchPayloadChars + chars + (pendingBatch.length > 0 ? 1 : 0) >
+          budget
+        ) {
+          await flushBatch();
+        }
+        batchPayloadChars += chars + (pendingBatch.length > 0 ? 1 : 0);
         pendingBatch.push({ sql, bind });
-        batchPayloadChars += sql.length + bindChars;
         if (
           pendingBatch.length >= CapacitorSqliteStorage.BATCH_MAX_STATEMENTS ||
           batchPayloadChars >= CapacitorSqliteStorage.BATCH_MAX_PAYLOAD_CHARS

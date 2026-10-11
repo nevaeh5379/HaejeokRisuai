@@ -111,16 +111,37 @@ export class CapacitorSqliteRestoreStream {
     expectedRevision: number,
     onProgress?: (completed: number, stage?: string) => void,
   ) {
-    const opened = await this.plugin.restoreOpen({ expectedRevision });
+    await this.openSession({ expectedRevision }, onProgress);
+  }
+
+  /** Stream statements into an existing transaction without committing it. */
+  async openTransaction(transactionId: string) {
+    await this.openSession({ transactionId });
+  }
+
+  private async openSession(
+    options: Parameters<NativeSqlitePlugin["restoreOpen"]>[0],
+    onProgress?: (completed: number, stage?: string) => void,
+  ) {
+    if (this.id)
+      throw new Error("Native SQLite restore stream is already open");
+    const opened = await this.plugin.restoreOpen(options);
     this.id = opened.id;
     this.sink = new ChunkSink(opened.id, this.plugin);
-    this.progressListener = await this.plugin.addListener(
-      "restoreProgress",
-      (event) => {
-        if (event.id === opened.id) onProgress?.(event.completed, event.stage);
-      },
-    );
-    await this.sink.write("[");
+    try {
+      if (onProgress)
+        this.progressListener = await this.plugin.addListener(
+          "restoreProgress",
+          (event) => {
+            if (event.id === opened.id)
+              onProgress(event.completed, event.stage);
+          },
+        );
+      await this.sink.write("[");
+    } catch (error) {
+      await this.abort().catch(() => {});
+      throw error;
+    }
   }
 
   async writeStatement(
@@ -164,12 +185,17 @@ export class CapacitorSqliteRestoreStream {
     if (!this.sink || !this.id)
       throw new Error("Native SQLite restore stream is not open");
     const id = this.id;
+    let finished = false;
     try {
       await this.sink.write("]");
       await this.sink.flush();
       const result = await this.plugin.restoreFinish({ id });
+      finished = true;
       return result.statements;
     } finally {
+      // A failed final flush must close the pipe before the caller queues its
+      // rollback on the database thread that is still waiting for stream data.
+      if (!finished) await this.plugin.restoreAbort({ id }).catch(() => {});
       await this.cleanupListener();
       this.id = null;
       this.sink = null;

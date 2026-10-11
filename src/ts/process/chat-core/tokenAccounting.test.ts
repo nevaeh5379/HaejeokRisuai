@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   calculateMultimodalTokenCost,
   countChatTokensDetailed,
-} from "@risuai/chat-core/tokenAccounting.cjs";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/tokenAccounting.ts";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 const baseOptions = {
   chatAdditionalTokens: 3,

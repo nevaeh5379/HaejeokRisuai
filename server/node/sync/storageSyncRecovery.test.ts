@@ -4,9 +4,7 @@ import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { StorageSyncRecoveryStore } = require(".//storageSyncRecovery.cjs") as {
-  StorageSyncRecoveryStore: new (root: string) => any;
-};
+import { StorageSyncRecoveryStore } from "./storageSyncRecovery.ts";
 
 const roots: string[] = [];
 async function makeStore() {

@@ -274,7 +274,7 @@
         try {
             await openChatInNewTauriWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
         } catch (error) {
@@ -416,7 +416,7 @@
         try {
             await openChatInNewTauriWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
             const result = chatTabsStore.detach(tab.id);
@@ -614,7 +614,7 @@
             const label = getTabLabel(tab);
             const created = await moveTabToNewTauriWorkspaceWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
             if (created) {

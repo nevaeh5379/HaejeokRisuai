@@ -1,10 +1,10 @@
 import type {
   CompatibilityOptions,
   ColdStorageValueMap,
-} from "./compatibility";
-import { makeLegacyCompatibleDatabase } from "./compatibility";
-import { expandPortableDatabaseBranchGraphsForCompatibility } from "./portableBranches";
-import type { LocalBackupMode } from "./api";
+} from "./compatibility.ts";
+import { makeLegacyCompatibleDatabase } from "./compatibility.ts";
+import { expandPortableDatabaseBranchGraphsForCompatibility } from "./portableBranches.ts";
+import type { LocalBackupMode } from "./api.ts";
 
 /** Backup modes that produce a full portable database (never "partial"). */
 export type PortableBackupMode = Exclude<LocalBackupMode, "partial">;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANTHROPIC_NO_INPUT_ERROR,
   prepareAnthropicConversation,
-} from "@risuai/chat-core/anthropicProvider.cjs";
+} from "@risuai/chat-core/anthropicProvider.ts";
 
 describe("Anthropic provider core", () => {
   it("separates leading system prompts and converts later system messages", () => {

@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   COLUMN_NAME_MAP,
   ORACLE_EMPTY_STRING_SENTINEL,
   OracleStorage,
@@ -11,37 +11,8 @@ const {
   restoreEmptyStringInRow,
   toOracleColumn,
   wrapConnectionForEmptyStrings,
-} = require(".//oracleStorage.cts") as {
-  COLUMN_NAME_MAP: Record<string, string>;
-  ORACLE_EMPTY_STRING_SENTINEL: string;
-  OracleStorage: new (options: Record<string, unknown>) => {
-    _bulkInsertRows: (
-      connection: object,
-      table: string,
-      columns: string[],
-      rows: Record<string, any>[],
-    ) => Promise<void>;
-    ensurePluginSchema: (connection: object) => Promise<void>;
-  };
-  normalizeEmptyStringBinds: (binds: unknown) => unknown;
-  remapRowColumns: (
-    row: Record<string, unknown> | null | undefined,
-  ) => Record<string, unknown> | null | undefined;
-  restoreEmptyStringInRow: (
-    row: Record<string, unknown> | null | undefined,
-  ) => Record<string, unknown> | null | undefined;
-  toOracleColumn: (name: string) => string;
-  wrapConnectionForEmptyStrings: (connection: object) => object;
-};
-const { splitSetting } = require("../postgres/postgresSettingsCodec.cjs") as {
-  splitSetting: (
-    key: string,
-    value: unknown,
-  ) => {
-    setting: { key: string };
-    values: Record<string, any>[];
-  };
-};
+} from "./oracleStorage.ts";
+import { splitSetting } from "../postgres/postgresSettingsCodec.ts";
 
 describe("Oracle empty-string bind normalization", () => {
   it("replaces empty strings with the sentinel in flat bind arrays", () => {
@@ -189,7 +160,7 @@ describe("Oracle connection wrapper", () => {
 });
 
 describe("sync round-trip with empty string setting values", () => {
-  // oracleStorage.cts sync()와 동일한 바인드 구성 방식 재현
+  // oracleStorage.ts sync()와 동일한 바인드 구성 방식 재현
   function buildSettingBinds(values: Record<string, any>[]) {
     return values.map((row) => [
       row.setting_key,

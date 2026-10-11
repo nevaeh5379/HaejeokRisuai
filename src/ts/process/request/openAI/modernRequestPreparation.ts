@@ -7,7 +7,7 @@ import {
   resolveOpenAIRequestEndpoint,
   resolveOpenAIRequestModel,
   shouldUseOpenAIFlexProcessing,
-} from "@risuai/chat-core/openAIProvider.cjs";
+} from "@risuai/chat-core/openAIProvider.ts";
 
 import { LLMFlags, LLMProvider } from "src/ts/model/modellist";
 import { getFreeOpenRouterModels } from "src/ts/model/openrouter";

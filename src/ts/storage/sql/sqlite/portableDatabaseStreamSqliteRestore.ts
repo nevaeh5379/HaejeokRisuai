@@ -1,4 +1,4 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
 import type { SqliteExecute } from "@risuai/storage-sqlite/types";
 import { createEmptySqlCommit, type SqlCommit } from "../sqlCommit";

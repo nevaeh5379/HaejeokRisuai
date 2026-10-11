@@ -581,6 +581,12 @@ async function openAuxiliaryWindow(
   bounds?: ChatWorkspaceBounds,
 ): Promise<boolean> {
   if (!isTauri) return false;
+  // Window titles use the Windows display language, independently of chat UI.
+  const appName = isTauriWindows
+    ? await (
+        await import("@tauri-apps/api/core")
+      ).invoke<string>("get_app_display_name")
+    : "HaejeokRisuai";
   writeStorage(`${LAUNCH_STORAGE_PREFIX}${windowId}`, cloneTabsSnapshot(tabs));
   writeStorage(`${WINDOW_STORAGE_PREFIX}${windowId}`, cloneTabsSnapshot(tabs));
 
@@ -600,7 +606,7 @@ async function openAuxiliaryWindow(
       location.pathname,
       presentation,
     ),
-    title,
+    title: title ? `${title} - ${appName}` : appName,
     x: placement?.x,
     y: placement?.y,
     width,
@@ -636,7 +642,7 @@ async function openAuxiliaryWindow(
 
 export async function moveTabToNewTauriWorkspaceWindow(
   tab: ChatTab,
-  title = "RisuAI",
+  title = "",
   presentation: TauriChatWindowPresentation = {},
 ): Promise<boolean> {
   if (!isTauri) return false;
@@ -658,7 +664,7 @@ export async function moveTabToNewTauriWorkspaceWindow(
 
 export async function openChatInNewTauriWindow(
   tab: ChatTab,
-  title = "RisuAI",
+  title = "",
   presentation: TauriChatWindowPresentation = {},
 ): Promise<boolean> {
   const duplicate = cloneTab(tab);
