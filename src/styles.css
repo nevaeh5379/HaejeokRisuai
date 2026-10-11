@@ -448,6 +448,31 @@ html.tauri-linux-background-blur .rs-sidebar-panel {
   box-shadow: none;
 }
 
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar-menu-popover {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar-menu-button:not(:hover):not(:active),
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar-menu-popover .ico:not(:hover):not(:active) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.tauri-linux-background-blur.tauri-linux-csd
+  .rs-sidebar:has(.rs-sidebar-menu-popover) .rs-sidebar-scroll {
+  mask: linear-gradient(white 0 0),
+    linear-gradient(white 0 0) left 0 top var(--risu-sidebar-menu-cutout-top, 0px) /
+      100% var(--risu-sidebar-menu-cutout-height, 0px) no-repeat;
+  mask-composite: exclude;
+}
+
 html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar.dynamic-sidebar,
 html.tauri-linux-background-blur:not(.tauri-linux-csd) .rs-sidebar-panel.dynamic-sidebar {
   background-color: var(--risu-theme-darkbg) !important;

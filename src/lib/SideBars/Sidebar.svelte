@@ -52,6 +52,7 @@
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
     import { windowDragRegion } from "src/ts/nativeWindowChrome";
+    import { isLinuxCsdActive } from "src/ts/linuxWindowIntegration";
     import {
       closeTauriSidebarMenuPopup,
       listenTauriSidebarMenuActions,
@@ -67,6 +68,36 @@
   let editMode = $state(false);
   let menuMode = $state(0);
   let devTool = $state(false)
+
+  function sidebarMenuCutout(menu: HTMLElement) {
+    if (!isLinuxCsdActive()) return
+    const scroll = menu.closest('.rs-sidebar')
+      ?.querySelector<HTMLElement>('.rs-sidebar-scroll')
+    if (!scroll) return
+    const update = () => {
+      const menuBounds = menu.getBoundingClientRect()
+      const scrollBounds = scroll.getBoundingClientRect()
+      scroll.style.setProperty(
+        '--risu-sidebar-menu-cutout-top',
+        `${menuBounds.top - scrollBounds.top}px`,
+      )
+      scroll.style.setProperty(
+        '--risu-sidebar-menu-cutout-height',
+        `${menuBounds.height}px`,
+      )
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(menu)
+    observer.observe(scroll)
+    update()
+    return {
+      destroy() {
+        observer.disconnect()
+        scroll.style.removeProperty('--risu-sidebar-menu-cutout-top')
+        scroll.style.removeProperty('--risu-sidebar-menu-cutout-height')
+      },
+    }
+  }
 
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
@@ -667,7 +698,7 @@
   </button>
   <div class="mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
+      <div use:sidebarMenuCutout class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
@@ -1023,7 +1054,7 @@
   {#if settingsStore.state.hamburgerButtonBottom}
   <div class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
+      <div use:sidebarMenuCutout class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
