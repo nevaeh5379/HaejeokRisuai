@@ -51,6 +51,7 @@ use serde_json::json;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{path::Path, time::Duration};
 #[cfg(target_os = "macos")]
@@ -1439,6 +1440,24 @@ fn configure_linux_gstreamer_paths() {
     }
 }
 
+struct TauriOpenedFiles(String);
+fn handle_file_associations(app: AppHandle, files: Vec<PathBuf>) {
+    let asset_protocol_scope = app.asset_protocol_scope();
+
+    for file in &files {
+        asset_protocol_scope.allow_file(file);
+    }
+
+    app.emit_to("main", "tauri-opened-files", &files);
+
+    let files = serde_json::to_string(&files)
+    .expect("failed to serialize file paths");
+
+    app.manage(TauriOpenedFiles(files));
+
+
+}
+
 fn main() {
     #[cfg(target_os = "linux")]
     {
@@ -1463,15 +1482,45 @@ fn main() {
     // Reserve the new identifier before starting any migration work.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
             }
+
+            let base_dir = PathBuf::from(cwd);
+            let file_path = args.into_iter().skip(1).map(|arg| {
+                let path = PathBuf::from(arg);
+
+                let full_path = if path.is_relative() {
+                    base_dir.join(path)
+                } else {
+                    path
+                };
+
+                std::fs::canonicalize(full_path)
+            }).collect::<Result<Vec<PathBuf>, _>>().unwrap_or_default();
+            handle_file_associations(app.clone(), file_path);
         }));
         builder = builder.setup(|app| {
             #[cfg(target_os = "windows")]
             windows_installed_app::sync_display_name();
             desktop_startup::start(app.handle());
+            let mut files = Vec::new();
+
+            for maybe_file in std::env::args().skip(1) {
+                if maybe_file.starts_with('-') {
+                    continue;
+                }
+
+                if let Ok(url) = url::Url::parse(&maybe_file) {
+                    if let Ok(path) = url.to_file_path() {
+                        files.push(path);
+                    } 
+                } else {
+                    files.push(PathBuf::from(maybe_file));
+                }
+            }
+            handle_file_associations(app.handle().clone(), files);
             Ok(())
         });
     }
