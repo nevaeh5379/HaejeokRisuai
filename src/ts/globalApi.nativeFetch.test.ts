@@ -10,6 +10,7 @@ const native = vi.hoisted(() => ({
   isCapacitor: true,
   listener: null as ((event: unknown) => void) | null,
   streamedFetch: vi.fn(),
+  cancelStreamedFetch: vi.fn(async () => {}),
 }));
 
 vi.mock("./platform", async (importOriginal) => ({
@@ -34,12 +35,13 @@ vi.mock("@capacitor/core", async (importOriginal) => {
               return { remove: async () => {} };
             },
             streamedFetch: native.streamedFetch,
+            cancelStreamedFetch: native.cancelStreamedFetch,
           }
         : actual.registerPlugin(name),
   };
 });
 
-import { globalFetch } from "./globalApi.svelte";
+import { fetchNative, globalFetch } from "./globalApi.svelte";
 import { processZip } from "./process/processzip";
 
 const url = "https://image.novelai.net/ai/generate-image";
@@ -73,10 +75,44 @@ function respond(
   });
 }
 
+function pendingResponse(options: { headers?: boolean; end?: boolean } = {}) {
+  let complete: (result: { success: boolean; error: string }) => void;
+  let reject: (error: Error) => void;
+  let started: (id: string) => void;
+  const id = new Promise<string>((resolve) => {
+    started = resolve;
+  });
+  const result = new Promise<{ success: boolean; error: string }>(
+    (resolve, fail) => {
+      complete = resolve;
+      reject = fail;
+    },
+  );
+  native.streamedFetch.mockImplementationOnce(({ id }) => {
+    if (options.headers !== false) {
+      native.listener?.({ type: "headers", id, status: 200, body: {} });
+      native.listener?.({
+        type: "chunk",
+        id,
+        body: Buffer.from(image).toString("base64"),
+      });
+    }
+    if (options.end) native.listener?.({ type: "end", id });
+    started(id);
+    return result;
+  });
+  return {
+    id,
+    complete: (success: boolean, error = "") => complete({ success, error }),
+    reject: (error: Error) => reject(error),
+  };
+}
+
 describe("globalFetch binary responses on Android", () => {
   beforeEach(() => {
     native.isCapacitor = true;
     native.streamedFetch.mockReset();
+    native.cancelStreamedFetch.mockClear();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -86,7 +122,163 @@ describe("globalFetch binary responses on Android", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("aborts a binary download after chunks arrive and cancels the native request", async () => {
+    const pending = pendingResponse();
+    const abort = new AbortController();
+    const result = globalFetch("https://example.test/audio.wav", {
+      method: "GET",
+      rawResponse: true,
+      abortSignal: abort.signal,
+    });
+    const id = await pending.id;
+    abort.abort();
+    await expect(result).resolves.toMatchObject({ ok: false, status: 400 });
+    expect(native.cancelStreamedFetch).toHaveBeenCalledExactlyOnceWith({ id });
+    // Late native events must be ignored after the request's queue is removed.
+    native.listener?.({
+      type: "chunk",
+      id,
+      body: Buffer.from(archive).toString("base64"),
+    });
+    native.listener?.({ type: "end", id });
+    pending.complete(true);
+  });
+
+  it("aborts a native request that is still waiting for headers", async () => {
+    const pending = pendingResponse({ headers: false });
+    const abort = new AbortController();
+    const response = fetchNative(url, {
+      method: "GET",
+      signal: abort.signal,
+      logFetch: false,
+    });
+    const rejected = expect(response).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    const id = await pending.id;
+    abort.abort();
+    await rejected;
+    expect(native.cancelStreamedFetch).toHaveBeenCalledExactlyOnceWith({ id });
+    pending.complete(false, "Request aborted");
+  });
+
+  it("keeps timeout cancellation effective after returning response headers", async () => {
+    vi.useFakeTimers();
+    const pending = pendingResponse();
+    const response = await fetchNative(url, {
+      method: "GET",
+      requestTimeoutMs: 25,
+      logFetch: false,
+    });
+    const rejected = expect(response.arrayBuffer()).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await vi.advanceTimersByTimeAsync(25);
+    await rejected;
+    expect(native.cancelStreamedFetch).toHaveBeenCalledExactlyOnceWith({
+      id: await pending.id,
+    });
+    pending.complete(false, "Request aborted");
+  });
+
+  it("cancels the native connection when the response body is cancelled", async () => {
+    const pending = pendingResponse();
+    const response = await fetchNative(url, { method: "GET", logFetch: false });
+    await response.body.cancel();
+    expect(native.cancelStreamedFetch).toHaveBeenCalledExactlyOnceWith({
+      id: await pending.id,
+    });
+    pending.complete(false, "Request aborted");
+  });
+
+  it("propagates a failed terminal event instead of returning partial image bytes", async () => {
+    const pending = pendingResponse();
+    const result = globalFetch("https://example.test/image.png", {
+      method: "GET",
+      rawResponse: true,
+    });
+    const id = await pending.id;
+    native.listener?.({
+      type: "end",
+      id,
+      success: false,
+      error: "Connection reset",
+    });
+    await expect(result).resolves.toMatchObject({
+      ok: false,
+      data: expect.stringContaining("Connection reset"),
+    });
+    pending.complete(false, "Connection reset");
+  });
+
+  it("waits for a delayed native failure after a bare end event", async () => {
+    const pending = pendingResponse({ end: true });
+    const result = globalFetch(url, { body: {}, rawResponse: true });
+    await pending.id;
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    pending.complete(false, "Connection reset");
+    await expect(result).resolves.toMatchObject({
+      ok: false,
+      data: expect.stringContaining("Connection reset"),
+    });
+  });
+
+  it("waits for native success before completing a bare end event", async () => {
+    const pending = pendingResponse({ end: true });
+    const response = await fetchNative(url, { method: "GET", logFetch: false });
+    const bytes = response.arrayBuffer();
+    let settled = false;
+    void bytes.then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    pending.complete(true);
+    expect(new Uint8Array(await bytes)).toEqual(image);
+  });
+
+  it("propagates a rejected native call after partial chunks without an end event", async () => {
+    const pending = pendingResponse();
+    const result = globalFetch(url, { body: {}, rawResponse: true });
+    await pending.id;
+    pending.reject(new Error("Native transport failed"));
+    await expect(result).resolves.toMatchObject({
+      ok: false,
+      data: expect.stringContaining("Native transport failed"),
+    });
+  });
+
+  it("reports a native failure before headers instead of waiting indefinitely", async () => {
+    const pending = pendingResponse({ headers: false });
+    const result = globalFetch(url, { body: {}, rawResponse: true });
+    await pending.id;
+    pending.complete(false, "Connection refused");
+    await expect(result).resolves.toMatchObject({
+      ok: false,
+      data: expect.stringContaining("Connection refused"),
+    });
+  });
+
+  it("releases the abort listener after a completed download", async () => {
+    respond(image);
+    const abort = new AbortController();
+    const response = await fetchNative(url, {
+      method: "GET",
+      signal: abort.signal,
+      logFetch: false,
+    });
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(image);
+    abort.abort();
+    expect(native.cancelStreamedFetch).not.toHaveBeenCalled();
   });
 
   it("preserves a NovelAI ZIP through native chunks instead of patched text fetch", async () => {
