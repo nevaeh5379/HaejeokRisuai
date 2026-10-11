@@ -609,7 +609,7 @@ html.tauri-linux-background-blur .rs-main-content {
 /* Cut out only the toggle button's footprint from the opaque content layers.
  * Its tint then has the same alpha as the adjacent sidebar, without moving
  * the tab strip or changing the reading surface. */
-html.tauri-linux-background-blur.tauri-linux-csd
+html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
   .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle) {
   --risu-sidebar-toggle-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='white' d='M0 0h42a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H0Z'/%3E%3C/svg%3E");
   position: relative;
@@ -617,7 +617,7 @@ html.tauri-linux-background-blur.tauri-linux-csd
   background-color: transparent;
 }
 
-html.tauri-linux-background-blur.tauri-linux-csd
+html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
   .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before {
   content: "";
   position: absolute;
@@ -627,13 +627,14 @@ html.tauri-linux-background-blur.tauri-linux-csd
   background-color: var(--risu-theme-bgcolor);
 }
 
-html.tauri-linux-background-blur.tauri-linux-csd
+html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
   .rs-main-content:has(:is(.rs-classic-chat-workspace, .rs-home-workspace) > .rs-sidebar-toggle)::before,
-html.tauri-linux-background-blur.tauri-linux-csd
+html:is(.tauri-linux-background-blur.tauri-linux-csd, .tauri-macos-vibrancy)
   :is(.rs-classic-chat-workspace, .rs-home-workspace):has(> .rs-sidebar-toggle)
   > :is(.rs-classic-chat-layers, .rs-home-layers) {
   mask: linear-gradient(white 0 0),
-    var(--risu-sidebar-toggle-mask) left 0 top 0.75rem / 3rem 3rem no-repeat;
+    var(--risu-sidebar-toggle-mask) left 0 top
+      var(--risu-sidebar-toggle-top, 0.75rem) / 3rem 3rem no-repeat;
   mask-composite: exclude;
 }
 
@@ -729,6 +730,7 @@ html.tauri-linux-csd .rs-setting-backdrop {
 
 html.tauri-macos-vibrancy {
   --risu-macos-titlebar-height: 28px;
+  --risu-sidebar-toggle-top: 60px;
   --risu-macos-traffic-lights-width: 5rem;
   --risu-macos-settings-titlebar-clearance: 44px;
   --risu-macos-sidebar-menu-radius: 1rem;
@@ -1140,14 +1142,23 @@ html.tauri-macos-vibrancy .rs-sidebar.risu-sub-sidebar-close.dynamic-sidebar {
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-toggle.macos-sidebar-toggle {
-  top: 60px !important;
+  top: var(--risu-sidebar-toggle-top) !important;
   left: 0 !important;
   width: 3rem !important;
   height: 3rem !important;
+  background-color: var(--risu-macos-chrome-tint);
+  border-color: transparent;
+  opacity: 1;
   transition:
     opacity 150ms ease,
     border-color 150ms ease,
     background-color 150ms ease;
+}
+
+html.tauri-macos-vibrancy
+  main:has(.rs-sidebar-panel.dynamic-sidebar)
+  .rs-sidebar-toggle.macos-sidebar-toggle {
+  background-color: var(--risu-theme-darkbg);
 }
 
 html.tauri-macos-vibrancy .rs-chat-tab {
