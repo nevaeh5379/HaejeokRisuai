@@ -93,8 +93,6 @@ if (
     process.env.GDK_BACKEND === "wayland")
 ) {
   ensureLinuxDevDesktopEntry();
-  // WebKitGTK's DMABUF renderer can terminate the web process on Wayland.
-  tauriEnvironment.WEBKIT_DISABLE_DMABUF_RENDERER ??= "1";
 }
 
 if (needsVersionConfig) {

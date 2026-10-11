@@ -9,6 +9,8 @@ mod desktop_startup;
 mod legacy_instance;
 #[cfg(target_os = "linux")]
 mod linux_wayland;
+#[cfg(target_os = "linux")]
+mod linux_renderer;
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
 mod sqlite_transaction;
@@ -1461,9 +1463,7 @@ fn handle_file_associations(app: AppHandle, files: Vec<PathBuf>) {
 fn main() {
     #[cfg(target_os = "linux")]
     {
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
+        linux_renderer::configure();
         std::env::set_var("GDK_BACKEND", "wayland");
         configure_linux_gstreamer_paths();
         // KWin resolves the titlebar icon through the Wayland app-id, which
