@@ -1113,7 +1113,7 @@
 {#snippet senderIcon(options:{rounded?:boolean,styleFix?:string} = {})}
     {#if !blankMessage && !$HideIconStore}
         {#if characterStore.characters[targetCharacterIndex]?.chaId === "§playground"}
-        <div class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
+        <div class="rs-chat-avatar shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
             class:rounded-md={options?.rounded} class:rounded-full={options?.rounded}>
                 {#if name === 'assistant'}
                     <BotIcon />
@@ -1123,14 +1123,14 @@
             </div>
         {:else}
             {#await img}
-                <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
+                <div class="rs-chat-avatar shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`}
                 class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
             {:then m}
                 {#if largePortrait && (!options?.rounded)}
-                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100 / 0.75}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`)}
+                    <div class="rs-chat-avatar shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100 / 0.75}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`)}
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {:else}
-                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`)}
+                    <div class="rs-chat-avatar shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${settingsStore.state.iconsize * 3.5 / 100}rem;width:${settingsStore.state.iconsize * 3.5 / 100}rem;min-width:${settingsStore.state.iconsize * 3.5 / 100}rem`)}
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {/if}
             {/await}
