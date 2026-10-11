@@ -1024,11 +1024,8 @@ html.tauri-macos-vibrancy {
   --risu-macos-settings-titlebar-clearance: 44px;
   --risu-macos-sidebar-menu-radius: 1rem;
   --risu-macos-sidebar-menu-control-radius: 0.74rem;
-  --risu-macos-chrome-tint: color-mix(
-    in srgb,
-    var(--risu-theme-darkbg) 72%,
-    transparent
-  );
+  /* The native background supplies the system's wallpaper-derived tint. */
+  --risu-macos-chrome-tint: transparent;
   --risu-macos-content-tint: color-mix(
     in srgb,
     var(--risu-theme-bgcolor) 90%,
@@ -1503,11 +1500,6 @@ html.tauri-macos-vibrancy .default-chat-screen {
  * DOM overlays still retain a lighter local blur because native window glass
  * cannot blur sibling WebView content underneath a tab bar or popover. */
 html.tauri-macos-vibrancy.tauri-macos-liquid-glass {
-  --risu-macos-chrome-tint: color-mix(
-    in srgb,
-    var(--risu-theme-darkbg) 84%,
-    transparent
-  );
   --risu-macos-content-tint: var(--risu-theme-bgcolor);
 }
 
