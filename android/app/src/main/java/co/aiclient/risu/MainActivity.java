@@ -12,7 +12,6 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.splashscreen.SplashScreen;
-import androidx.lifecycle.Lifecycle;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -69,7 +68,10 @@ public class MainActivity extends BridgeActivity {
         // Do not create/load the bridge until the report is reviewed. A boot
         // crash loop must still allow sharing a report without running JS/SQL.
         if (AndroidCrashDiagnostics.hasPendingReport()) {
-            showCrashReport(this::loadRisuBridge);
+            // Capacitor registers activity results while creating the bridge.
+            // Recreate after acknowledgement so that registration runs in onCreate,
+            // before the Activity reaches STARTED.
+            showCrashReport(this::recreate);
         } else {
             loadRisuBridge();
         }
@@ -84,14 +86,6 @@ public class MainActivity extends BridgeActivity {
             getBridge().setWebViewClient(new RisuWebViewClient(
                 getBridge(), getApplicationContext(), safeArea::onPageFinished
             ));
-            // Deferred creation happens after the Activity lifecycle callbacks.
-            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
-                getBridge().onStart();
-            }
-            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) {
-                getBridge().getApp().fireStatusChange(true);
-                getBridge().onResume();
-            }
         }
         handleNativeIntent(getIntent());
     }
