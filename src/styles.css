@@ -208,6 +208,19 @@ html[data-theme-type="light"] .rs-segmented-control > button {
   border-color: transparent;
 }
 
+html[data-theme-type="light"] .rs-segmented-control > button.bg-selected {
+  /* Keep the tab surface unchanged and show selection as a pressed surface. */
+  background-color: transparent !important;
+  --tw-inset-shadow:
+    inset 0 2px 5px
+      color-mix(in srgb, var(--risu-theme-textcolor) 18%, transparent),
+    inset 0 -1px 3px
+      color-mix(in srgb, var(--risu-theme-textcolor) 8%, transparent);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000) !important;
+}
+
 html[data-theme-type="light"] .rs-segmented-control > button:first-child {
   border-top-left-radius: inherit;
   border-bottom-left-radius: inherit;
