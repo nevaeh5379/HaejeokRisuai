@@ -26,6 +26,7 @@ async function createStorageSyncSummary(
   const records: any = database?.records || {};
   return {
     protocolVersion: STORAGE_SYNC_PROTOCOL_VERSION,
+    supportsPluginRecords: true,
     revision: normalizeNonNegativeInteger(database?.revision),
     initialized: Boolean(database?.initialized),
     records: {

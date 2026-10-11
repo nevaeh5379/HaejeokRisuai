@@ -23,6 +23,7 @@ export interface StorageSyncSqlSourcePlan {
   recordCount: number;
   sha256: string;
   sourceRevision: number;
+  requiresPluginRecords: boolean;
 }
 export type StorageSyncSqlRecord =
   LegacyBackupSqlRecord | { type: "cold-storage"; key: string; value: unknown };
@@ -341,7 +342,9 @@ export async function measureStorageSyncSqlSource(
   const hash = new Sha256();
   let size = 0;
   let recordCount = 0;
+  let requiresPluginRecords = false;
   for await (const record of iterateStorageSyncSqlRecords(storage, options)) {
+    if (record.type === "plugin") requiresPluginRecords = true;
     const bytes = encodeStorageSyncSqlRecord(record);
     hash.update(bytes);
     size += bytes.byteLength;
@@ -353,6 +356,7 @@ export async function measureStorageSyncSqlSource(
     recordCount,
     sha256: bytesToHex(await hash.digest()),
     sourceRevision: options.expectedRevision,
+    requiresPluginRecords,
   };
 }
 
