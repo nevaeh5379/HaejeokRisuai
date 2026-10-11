@@ -122,7 +122,28 @@
 html[data-theme-type="light"] {
   --color-darkborderc: transparent;
   --risu-theme-boundary-shadow:
-    0 1px 3px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+    0 3px 6px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+}
+
+html[data-theme-type="light"] .rs-segmented-control,
+html[data-theme-type="light"] .rs-segmented-control > button {
+  border-color: transparent;
+}
+
+html[data-theme-type="light"] .rs-sidebar-panel .rs-sidebar-mode-tabs,
+html[data-theme-type="light"] .rs-sidebar-panel .rs-sidebar-mode-tabs > button {
+  border-color: transparent !important;
+}
+
+html[data-theme-type="light"]
+  .rs-sidebar-mode-tabs
+  > button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+html[data-theme-type="light"] .rs-sidebar-scroll > [role="listitem"] {
+  /* Let avatar shadows extend beyond rows using content-visibility: auto. */
+  overflow-clip-margin: 16px;
 }
 
 html[data-theme-type="light"]
@@ -136,6 +157,9 @@ html[data-theme-type="light"]
     .border-r-darkborderc,
     .border-x-darkborderc,
     .border-y-darkborderc,
+    .rs-segmented-control,
+    .rs-sidebar-mode-tabs,
+    .rs-sidebar .avatar[data-char-id] .sidebar-avatar,
     .x-risu-button-default,
     .x-risu-risu-comment,
     .x-risu-tool-call
