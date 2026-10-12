@@ -20,6 +20,7 @@ use window_vibrancy::{
 };
 
 const LIQUID_GLASS_CLASS: &str = "tauri-macos-liquid-glass";
+const SIDEBAR_MENU_RADIUS: f64 = 18.0;
 static RISU_DARK_APPEARANCE: AtomicBool = AtomicBool::new(true);
 
 fn supports_vibrancy(label: &str) -> bool {
@@ -61,7 +62,7 @@ fn apply_risu_appearance(ns_window: &NSWindow, dark: bool) {
 fn apply_desktop_tint_background<R: Runtime>(
     window: &Window<R>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let radius = is_sidebar_menu(window.label()).then_some(18.0);
+    let radius = is_sidebar_menu(window.label()).then_some(SIDEBAR_MENU_RADIUS);
     apply_vibrancy(
         window,
         NSVisualEffectMaterial::WindowBackground,
@@ -83,6 +84,23 @@ fn apply_desktop_tint_background<R: Runtime>(
         .downcast_ref::<NSVisualEffectView>()
         .ok_or("invalid desktop tint material")?
         .setBlendingMode(NSVisualEffectBlendingMode::WithinWindow);
+    Ok(())
+}
+
+fn clip_sidebar_menu_window<R: Runtime>(
+    window: &Window<R>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // SAFETY: The window-ready callback runs on the main thread, and Tauri
+    // returns the native NSWindow pointer on macOS.
+    let native: &NSWindow = unsafe { &*window.ns_window()?.cast() };
+    let content = native.contentView().ok_or("missing popup content view")?;
+    content.setWantsLayer(true);
+    let layer = content.layer().ok_or("missing popup content layer")?;
+    // Clip the whole popup, including its opaque Desktop Tinting background
+    // and WebView, rather than rounding only the glass view underneath.
+    layer.setCornerRadius(SIDEBAR_MENU_RADIUS);
+    layer.setMasksToBounds(true);
+    native.invalidateShadow();
     Ok(())
 }
 
@@ -158,7 +176,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let mut liquid_glass =
                 LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(true);
             if is_sidebar_menu(window.label()) {
-                liquid_glass = liquid_glass.radius(18.0);
+                liquid_glass = liquid_glass.radius(SIDEBAR_MENU_RADIUS);
             }
 
             match apply_liquid_glass(&window, liquid_glass) {
@@ -187,6 +205,15 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                             window.label()
                         );
                     }
+                }
+            }
+
+            if is_sidebar_menu(window.label()) {
+                if let Err(error) = clip_sidebar_menu_window(&window) {
+                    eprintln!(
+                        "[macOS vibrancy] Failed to clip sidebar menu {}: {error}",
+                        window.label()
+                    );
                 }
             }
         })

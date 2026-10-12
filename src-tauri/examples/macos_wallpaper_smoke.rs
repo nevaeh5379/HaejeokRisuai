@@ -56,6 +56,11 @@ fn main() {
             assert_eq!(glass.style(), NSGlassEffectViewStyle::Regular);
             let popup = window.label().starts_with("sidebar-menu-");
             assert_eq!(glass.cornerRadius(), if popup { 18.0 } else { 0.0 });
+            if popup {
+                let layer = content.layer().expect("popup must clip its native content");
+                assert_eq!(layer.cornerRadius(), 18.0);
+                assert!(layer.masksToBounds());
+            }
             let background_index = views
                 .iter()
                 .position(|view| view.downcast_ref::<NSBox>().is_some())
