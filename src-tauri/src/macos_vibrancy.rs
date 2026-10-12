@@ -8,16 +8,19 @@ use std::{
 
 use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
-    NSColor, NSTitlebarSeparatorStyle, NSWindow,
+    NSColor, NSTitlebarSeparatorStyle, NSVisualEffectBlendingMode, NSVisualEffectView, NSWindow,
 };
 use tauri::{
     plugin::{Builder, TauriPlugin},
-    window::{Effect, EffectState, EffectsBuilder},
     Manager, Runtime, Window,
 };
-use window_vibrancy::{apply_liquid_glass, LiquidGlassOptions, NSGlassEffectViewStyle};
+use window_vibrancy::{
+    apply_liquid_glass, apply_vibrancy, LiquidGlassOptions, NSGlassEffectViewStyle,
+    NSVisualEffectMaterial, NSVisualEffectState,
+};
 
 const LIQUID_GLASS_CLASS: &str = "tauri-macos-liquid-glass";
+const SIDEBAR_MENU_RADIUS: f64 = 18.0;
 static RISU_DARK_APPEARANCE: AtomicBool = AtomicBool::new(true);
 
 fn supports_vibrancy(label: &str) -> bool {
@@ -54,6 +57,51 @@ fn apply_risu_appearance(ns_window: &NSWindow, dark: bool) {
     if let Some(appearance) = NSAppearance::appearanceNamed(appearance_name) {
         ns_window.setAppearance(Some(&appearance));
     }
+}
+
+fn apply_desktop_tint_background<R: Runtime>(
+    window: &Window<R>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let radius = is_sidebar_menu(window.label()).then_some(SIDEBAR_MENU_RADIUS);
+    apply_vibrancy(
+        window,
+        NSVisualEffectMaterial::WindowBackground,
+        Some(NSVisualEffectState::FollowsWindowActiveState),
+        radius,
+    )?;
+
+    // SAFETY: This callback runs on the main thread; Tauri returns an NSWindow.
+    let native: &NSWindow = unsafe { &*window.ns_window()?.cast() };
+    let content = native.contentView().ok_or("missing window content view")?;
+    let effect = content
+        .subviews()
+        .iter()
+        .find(|view| view.downcast_ref::<NSVisualEffectView>().is_some())
+        .ok_or("missing desktop tint material")?;
+    // WindowBackground supports wallpaper-derived Desktop Tinting. Prevent
+    // sampling other apps behind this window, as apply_vibrancy does by default.
+    effect
+        .downcast_ref::<NSVisualEffectView>()
+        .ok_or("invalid desktop tint material")?
+        .setBlendingMode(NSVisualEffectBlendingMode::WithinWindow);
+    Ok(())
+}
+
+fn clip_sidebar_menu_window<R: Runtime>(
+    window: &Window<R>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // SAFETY: The window-ready callback runs on the main thread, and Tauri
+    // returns the native NSWindow pointer on macOS.
+    let native: &NSWindow = unsafe { &*window.ns_window()?.cast() };
+    let content = native.contentView().ok_or("missing popup content view")?;
+    content.setWantsLayer(true);
+    let layer = content.layer().ok_or("missing popup content layer")?;
+    // Clip the whole popup, including its opaque Desktop Tinting background
+    // and WebView, rather than rounding only the glass view underneath.
+    layer.setCornerRadius(SIDEBAR_MENU_RADIUS);
+    layer.setMasksToBounds(true);
+    native.invalidateShadow();
+    Ok(())
 }
 
 pub fn set_risu_native_appearance<R: Runtime>(
@@ -122,10 +170,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 );
             }
 
+            // An opaque NSBox filled with windowBackgroundColor provides native
+            // Desktop Tinting in dark appearance without showing other apps.
+            // Keep Regular glass above that background in both appearances.
             let mut liquid_glass =
-                LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(false);
+                LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(true);
             if is_sidebar_menu(window.label()) {
-                liquid_glass = liquid_glass.radius(18.0);
+                liquid_glass = liquid_glass.radius(SIDEBAR_MENU_RADIUS);
             }
 
             match apply_liquid_glass(&window, liquid_glass) {
@@ -145,24 +196,24 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                     }
                     sync_liquid_glass_dom_state(&window, false);
                     eprintln!(
-                        "[macOS vibrancy] Liquid Glass unavailable for {}; using fallback vibrancy: {liquid_glass_error}",
+                        "[macOS vibrancy] Liquid Glass unavailable for {}; using Desktop Tinting material: {liquid_glass_error}",
                         window.label()
                     );
-                    let fallback_effect = if is_sidebar_menu(window.label()) {
-                        Effect::Popover
-                    } else {
-                        Effect::Sidebar
-                    };
-                    let effects = EffectsBuilder::new()
-                        .effect(fallback_effect)
-                        .state(EffectState::FollowsWindowActiveState)
-                        .build();
-                    if let Err(vibrancy_error) = window.set_effects(effects) {
+                    if let Err(vibrancy_error) = apply_desktop_tint_background(&window) {
                         eprintln!(
                             "[macOS vibrancy] Liquid Glass unavailable for {} ({liquid_glass_error}); fallback vibrancy also failed: {vibrancy_error}",
                             window.label()
                         );
                     }
+                }
+            }
+
+            if is_sidebar_menu(window.label()) {
+                if let Err(error) = clip_sidebar_menu_window(&window) {
+                    eprintln!(
+                        "[macOS vibrancy] Failed to clip sidebar menu {}: {error}",
+                        window.label()
+                    );
                 }
             }
         })

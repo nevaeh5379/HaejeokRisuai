@@ -14,7 +14,7 @@
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
-    import { installLinuxCsdHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
+    import { installLinuxCsdHeaderDrag, installMacOSHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
     import { applyLinuxCsdSidebarOpacity } from './ts/linuxWindowIntegration';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
@@ -38,6 +38,7 @@
     let exitConfirmationOpen = false
 
     onMount(installLinuxCsdHeaderDrag)
+    onMount(installMacOSHeaderDrag)
 
     $effect(() => {
         if (!isTauriLinux) return

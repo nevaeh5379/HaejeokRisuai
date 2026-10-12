@@ -1070,6 +1070,7 @@
                         </div>
                     {/if}
 
+                    <div class="contents rs-chat-composer">
                     <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-bgcolor rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
                               bind:value={messageInput}
                               bind:this={inputEle}
@@ -1197,6 +1198,7 @@
                             <Plus />
                         </div>
                     {/if}
+                    </div>
                 </div>
             </div>
             {#if minigameActive && settingsStore.state.waitingMinigame !== false && !minigameDismissed}

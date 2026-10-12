@@ -54,7 +54,11 @@
     function getTopReservedHeight(): number {
         if (!parentContainerEl) return 150
         const btn = parentContainerEl.firstElementChild as HTMLElement | null
-        const btnHeight = btn ? btn.offsetHeight : 42
+        let btnHeight = btn ? btn.offsetHeight : 42
+        if (btn) {
+            const style = window.getComputedStyle(btn)
+            btnHeight += (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0)
+        }
         let sepHeight = 20
         const sep = separatorEl ?? (parentContainerEl.querySelector('[role="separator"]') as HTMLElement | null)
         if (sep) {
@@ -251,8 +255,8 @@
         }
     })
 </script>
-<div bind:this={parentContainerEl} class="rs-sidechat-container flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 overflow-hidden">
-    <Button className="rs-sidechat-new-btn relative bottom-2 shrink-0 flex items-center justify-center gap-1.5" onclick={async () => {
+<div bind:this={parentContainerEl} class="rs-sidechat-container flex flex-1 flex-col w-full min-h-0 overflow-hidden">
+    <Button className="rs-sidechat-new-btn relative shrink-0 flex items-center justify-center gap-1.5" onclick={async () => {
         const cha = chara
         const len = chara.chats.length
         const newChat = {
@@ -607,9 +611,9 @@
         class:bg-selected={isResizing}
         onpointerdown={startResize}
     >
-        <div class="w-full h-px bg-selected/40 group-hover:bg-selected transition-colors"></div>
-        <div class="absolute px-3 py-0.5 rounded-full bg-darkbg border border-selected/40 group-hover:border-selected flex items-center justify-center shadow-xs transition-colors pointer-events-none">
-            <div class="w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-selected"></div>
+        <div class="rs-sidechat-separator-line w-full h-px bg-selected/40 group-hover:bg-selected transition-colors"></div>
+        <div class="rs-sidechat-resize-handle absolute px-3 py-0.5 rounded-full bg-darkbg border border-selected/40 group-hover:border-selected flex items-center justify-center shadow-xs transition-colors pointer-events-none">
+            <div class="rs-sidechat-resize-grip w-6 h-0.5 rounded-full bg-textcolor2/50 group-hover:bg-selected"></div>
         </div>
     </div>
 
