@@ -696,7 +696,7 @@
     class="rs-sidebar-menu-button rs-sidebar-toggle-button relative z-30 flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={toggleHamburgerMenu}><ListIcon />
   </button>
-  <div class="mt-2 border-b border-b-selected w-full relative text-white ">
+  <div class="rs-sidebar-top-menu-anchor mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
       <div use:sidebarMenuCutout class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
         <BarIcon
@@ -1190,7 +1190,8 @@
         </div>
       </div>
     {:else}
-      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative -mt-6 rounded-b-md flex">
+      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative -mt-6 rounded-b-md flex"
+        class:mb-6={QuickSettings.open || devTool || $botMakerMode}>
         <button onclick={() => {
           void loadSideChatList()
           devTool = false
