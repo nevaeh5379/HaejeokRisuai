@@ -257,7 +257,7 @@
         <!-- Right Pane: Active Persona Editor -->
         <div class="lg:col-span-7 xl:col-span-7 flex flex-col gap-2.5 h-full min-h-0">
             <!-- Top Section: Avatar (Left) + Name & Note (Right) Integrated -->
-            <div class="flex flex-col sm:flex-row items-start gap-3 pb-2.5 border-b border-darkborderc/40 shrink-0">
+            <div class="rs-persona-editor-header flex flex-col sm:flex-row items-start gap-3 pb-2.5 border-b border-darkborderc/40 shrink-0">
                 <!-- Avatar with Action Buttons (Supports Large Portrait Aspect Ratio) -->
                 <div class="flex flex-col items-center gap-1 shrink-0">
                     <button
@@ -332,8 +332,8 @@
                 </div>
             </div>
 
-            <!-- Description (Prompt) Field (Fills remaining vertical space with full height) -->
-            <div class="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden">
+            <!-- Matching padding and margins keep the description shadow inside the clip without moving the field. -->
+            <div class="flex flex-col min-w-0 flex-1 min-h-0 overflow-hidden p-4 -m-4">
                 <span class="block text-[11px] font-semibold text-textcolor2 mb-0.5 shrink-0">{language.description}</span>
                 <div class="flex-1 w-full min-h-0">
                     <TextAreaInput 
@@ -348,7 +348,7 @@
             </div>
 
             <!-- Bottom Action Toolbar -->
-            <div class="flex items-center justify-between pt-2 border-t border-darkborderc/40 flex-wrap gap-1.5 shrink-0">
+            <div class="rs-persona-editor-toolbar flex items-center justify-between pt-2 border-t border-darkborderc/40 flex-wrap gap-1.5 shrink-0">
                 <div class="flex items-center gap-1.5 flex-wrap">
                     <Button onclick={exportUserPersona} size="sm">{language.export}</Button>
                     <Button onclick={importUserPersona} size="sm">{language.import}</Button>

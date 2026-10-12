@@ -531,7 +531,9 @@ html[data-theme-type="light"]
 }
 
 html[data-theme-type="light"] .rs-settings-bot-submenu,
-html[data-theme-type="light"] .rs-model-browser-controls {
+html[data-theme-type="light"] .rs-model-browser-controls,
+html[data-theme-type="light"] .rs-persona-editor-header,
+html[data-theme-type="light"] .rs-persona-editor-toolbar {
   box-shadow: none;
 }
 
