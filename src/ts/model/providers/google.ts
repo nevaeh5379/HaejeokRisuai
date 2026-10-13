@@ -9,7 +9,7 @@ import {
 export const GoogleModels: LLMModel[] = [
   {
     name: "Gemini Arcon 4",
-    id: "gemini-4-arcon",
+    id: "gemini-4-argon",
     provider: LLMProvider.GoogleCloud,
     format: LLMFormat.GoogleCloud,
     flags: [
