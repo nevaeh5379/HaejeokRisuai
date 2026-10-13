@@ -617,6 +617,7 @@ function needSuperChunkedTranslate() {
   return settingsStore.state.translatorType === "deeplX";
 }
 
+//TODO arg.to 와 arg.from는 언어 이름인데 따로 타입으로 정의해야할 듯
 async function translateLLM(
   text: string,
   arg: {
@@ -627,11 +628,13 @@ async function translateLLM(
   },
 ): Promise<string> {
   if (!arg.regenerate) {
-    const cacheMatch = await LLMCacheStorage.getItem(text);
+    const cacheMatch = await LLMCacheStorage.getItem<string>(text);
     if (cacheMatch) {
-      return cacheMatch as string;
+      return cacheMatch;
     }
   }
+
+  //TODO 문법 정의하는 곳에 넣기
   const styleDecodeRegex = /\<risu-style\>(.+?)\<\/risu-style\>/gms;
   let styleDecodes: string[] = [];
   text = text.replace(styleDecodeRegex, (match, p1) => {
@@ -639,7 +642,7 @@ async function translateLLM(
     return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`;
   });
 
-  const db = settingsStore.state;
+  // const db = settingsStore.state;
   const charIndex = get(selectedCharID);
   const currentChar = characterStore.characters[charIndex];
   let translatorNote = "";

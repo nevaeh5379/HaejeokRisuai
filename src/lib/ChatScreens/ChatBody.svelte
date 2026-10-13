@@ -85,6 +85,7 @@ import isEqual from "lodash/isEqual"
         // track 'translated' and 'retranslate' state
         translated;
         retranslate;
+        //TODO rafactory
         let mode = 'notrim' as const
         try {
             if((!isEqual(lastCharArg, charArg)) || (chatID !== lastChatId)){
