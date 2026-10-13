@@ -19,12 +19,10 @@
 
   } from "../../ts/stores.svelte";
     import {
-      findSidebarFolder,
-      groupSidebarItem,
-      moveSidebarItem,
-      type SidebarDragItem,
-      type SidebarDropPosition,
-    } from "../../ts/sidebarOrder";
+      Order,
+      type DragItem,
+      type DropPosition,
+    } from "../../ts/sidebar/order";
 
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "./BarIcon.svelte";
@@ -233,7 +231,8 @@
   let charImages: sortType[] = $state([]);
   let IconRounded = $state(false)
   let openFolders:string[] = $state([])
-  let currentDrag: SidebarDragItem | null = $state(null)
+  let currentDrag: DragItem | null = $state(null)
+  const order = $derived(new Order(settingsStore.state.characterOrder))
   interface Props {
     openGrid?: any;
     hidden?: boolean;
@@ -325,14 +324,10 @@
   })
 
 
-  const inserter = (source:SidebarDragItem, target:SidebarDropPosition) => {
-    if(moveSidebarItem(settingsStore.state.characterOrder, source, target)){
+  const inserter = (source:DragItem, target:DropPosition) => {
+    if(order.move(source, target)){
       checkCharOrder()
     }
-  }
-
-  function getFolder(id:string){
-    return findSidebarFolder(settingsStore.state.characterOrder, id)
   }
 
   function scrollToActiveCharacter() {
@@ -387,8 +382,8 @@
   })
 
 
-  const createFolder = (source:SidebarDragItem, target:SidebarDragItem) => {
-    if(groupSidebarItem(settingsStore.state.characterOrder, source, target)){
+  const createFolder = (source:DragItem, target:DragItem) => {
+    if(order.group(source, target)){
       checkCharOrder()
     }
   }
@@ -396,7 +391,7 @@
   type DragEv = DragEvent & {
     currentTarget: EventTarget & HTMLDivElement;
   }
-  const avatarDragStart = (ind:SidebarDragItem, e:DragEv) => {
+  const avatarDragStart = (ind:DragItem, e:DragEv) => {
     e.dataTransfer.setData('text/plain', '');
     e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true');
     currentDrag = ind
@@ -440,7 +435,7 @@
     e.dataTransfer.dropEffect = 'move'
   }
 
-  const avatarDrop = (ind:SidebarDragItem, e:DragEv) => {
+  const avatarDrop = (ind:DragItem, e:DragEv) => {
     const drag = getCurrentSidebarDrag(e)
     if(!drag){
       return
@@ -713,7 +708,7 @@
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
                 if(sel === 0){
                   const v = await alertInput(language.changeFolderName, [], folderName)
-                  const folder = getFolder(folderId)
+                  const folder = order.findFolder(folderId)
                   if(v && folder){
                     folder.name = v
                   }
@@ -721,7 +716,7 @@
                 else if(sel === 1){
                   const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
                   const sel = parseInt(await alertSelect(colors))
-                  const folder = getFolder(folderId)
+                  const folder = order.findFolder(folderId)
                   if(folder && colors[sel]){
                     folder.color = colors[sel].toLocaleLowerCase()
                   }
@@ -729,7 +724,7 @@
                 else if(sel === 2) {
                   const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
                   if(sel === 0){
-                    const folder = getFolder(folderId)
+                    const folder = order.findFolder(folderId)
                     if(folder){
                       folder.imgFile = null
                       folder.img = ''
@@ -740,7 +735,7 @@
                     if(!folderImage){ return }
                     const folderImageData = await saveAsset(folderImage.data)
                     const folderImageSrc = await getFileSrc(folderImageData)
-                    const folder = getFolder(folderId)
+                    const folder = order.findFolder(folderId)
                     if(folder){
                       folder.imgFile = folderImageData
                       folder.img = folderImageSrc
