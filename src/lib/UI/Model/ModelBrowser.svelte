@@ -19,6 +19,7 @@
     RotateCcwIcon,
     ChevronDownIcon
   } from "@lucide/svelte";
+  import { ColorSchemeTypeStore, getCurrentlyColorScheme } from 'src/ts/gui/colorscheme';
 
   interface Props {
     value?: string;
@@ -424,6 +425,7 @@
                   {@const isFav = modelFavoritesStore.isFavorite(model.id)}
                   <div
                     class="group w-full min-h-11 rounded-lg border px-2.5 py-2 transition-all cursor-pointer flex items-center justify-between gap-2 {isSelected ? 'border-selected bg-selected/20 ring-1 ring-selected/60' : 'border-darkborderc/50 bg-darkbg/20 hover:bg-darkbutton/80 hover:border-textcolor/25'}"
+                    class:border-gray-300={getCurrentlyColorScheme}
                     role="button"
                     tabindex="0"
                     title={model.id}
