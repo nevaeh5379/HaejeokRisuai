@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="crash_report_title">앱의 비정상 종료 기록이 있습니다</string>
+    <string name="crash_report_message">이전 실행의 진단 보고서를 기기에 저장했습니다. 개발자에게 공유하면 원인 조사에 도움이 됩니다. 이 화면을 닫기 전에는 앱 데이터를 불러오지 않습니다. 안전모드는 사용자 플러그인을 건너뛰며, 다른 원인의 종료까지 해결하지는 않습니다. 보고서에는 기기·메모리 정보와 작업 단계가 포함되며, 대화 내용과 API 키는 수집하지 않습니다.</string>
+    <string name="crash_report_share">보고서 공유</string>
+    <string name="crash_report_continue">계속 실행</string>
+    <string name="crash_report_share_failed">보고서를 공유하지 못했습니다. 다시 시도해 주세요.</string>
     <string name="safe_mode_shortcut">안전모드로 실행</string>
     <string name="app_name">해적리스</string>
     <string name="title_activity_main">해적리스</string>

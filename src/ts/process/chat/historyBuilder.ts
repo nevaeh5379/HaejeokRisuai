@@ -19,7 +19,7 @@ import { characterStore } from "../../stores/domain/characterStore.svelte";
 import { getInlayAsset } from "../files/inlays";
 import { runImageEmbedding } from "../transformers";
 import { getModuleAssets } from "../modules";
-import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.ts";
 import {
   generationOverride,
   type ChatGenerationOverrides,

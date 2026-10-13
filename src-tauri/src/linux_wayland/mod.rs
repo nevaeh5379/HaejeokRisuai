@@ -11,7 +11,7 @@ use std::{
 };
 use tauri::{
     plugin::{Builder, TauriPlugin},
-    AppHandle, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder, Window,
 };
 
 pub mod app_icon;
@@ -55,6 +55,26 @@ pub struct LinuxWindowCapabilities {
     pub background_blur: BackgroundBlurSupport,
     pub decoration: LinuxWindowDecoration,
     pub decoration_alpha: Option<u8>,
+    pub csd_header: Option<CsdHeaderLayout>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsdHeaderLayout {
+    pub height: i32,
+    pub left: i32,
+    pub right: i32,
+}
+
+fn update_csd_header<R: Runtime>(window: &Window<R>, layout: CsdHeaderLayout) {
+    if let Ok(mut values) = capability_store().lock() {
+        let capabilities = values.entry(window.label().to_string()).or_default();
+        if capabilities.csd_header == Some(layout) {
+            return;
+        }
+        capabilities.csd_header = Some(layout);
+    }
+    let _ = window.emit("linux-csd-header-layout", layout);
 }
 
 static WINDOW_CAPABILITIES: OnceLock<Mutex<HashMap<String, LinuxWindowCapabilities>>> =
@@ -174,7 +194,7 @@ pub fn create_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let requested = read_decoration_preference(app);
 
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("Risuai")
+        .title(crate::get_app_display_name())
         .inner_size(1024.0, 768.0)
         .min_inner_size(300.0, 500.0)
         .resizable(true)
@@ -282,6 +302,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                         None
                     };
                     if let Ok(mut values) = capability_store().lock() {
+                        capabilities.csd_header = values
+                            .get(window.label())
+                            .and_then(|value| value.csd_header);
                         values.insert(window.label().to_string(), capabilities.clone());
                     }
                     eprintln!(
@@ -320,6 +343,7 @@ mod tests {
                 background_blur: BackgroundBlurSupport::None,
                 decoration: LinuxWindowDecoration::Ssd,
                 decoration_alpha: None,
+                csd_header: None,
             }
         );
     }

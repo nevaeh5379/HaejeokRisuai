@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   canExecuteProviderRoute,
   executeProviderRoute,
-} from "@risuai/chat-core/providerExecutor.cjs";
-import { LLM_FORMATS } from "../../../../packages/protocol/modelFormat.cjs";
+} from "@risuai/chat-core/providerExecutor.ts";
+import { LLM_FORMATS } from "../../../../packages/protocol/modelFormat.ts";
 
 describe("provider executor", () => {
   it("reports whether a runtime implements the resolved route", () => {

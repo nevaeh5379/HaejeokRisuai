@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveProviderRoute } from "@risuai/chat-core/providerRouting.cjs";
-import { LLM_FORMATS } from "../../../../packages/protocol/modelFormat.cjs";
+import { resolveProviderRoute } from "@risuai/chat-core/providerRouting.ts";
+import { LLM_FORMATS } from "../../../../packages/protocol/modelFormat.ts";
 
 describe("provider routing", () => {
   it("groups compatible formats behind stable runtime-neutral routes", () => {

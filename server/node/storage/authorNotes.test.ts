@@ -3,18 +3,11 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { AuthorNoteSql } from "../../../packages/protocol/dist/authorNoteSql.cjs";
+import type { AuthorNoteSql } from "../../../packages/protocol/src/authorNoteSql.ts";
 
 const require = createRequire(import.meta.url);
-const { authorNoteDatabase, notes } = require("./authorNotes.cts") as {
-  authorNoteDatabase: (
-    vendor: AuthorNoteSql["dialect"],
-    client: unknown,
-  ) => AuthorNoteSql;
-  notes: typeof import("../../../packages/protocol/dist/authorNoteSql.cjs");
-};
-const { hashAuthorNote } =
-  require("../../../packages/protocol/dist/authorNotes.cjs") as typeof import("../../../packages/protocol/dist/authorNotes.cjs");
+import { authorNoteDatabase, notes } from "./authorNotes.ts";
+import { hashAuthorNote } from "../../../packages/protocol/src/authorNotes.ts";
 
 describe.each(["postgres", "oracle", "azure"] as const)(
   "author note SQL adapter: %s",

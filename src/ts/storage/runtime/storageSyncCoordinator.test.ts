@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { NodeApiCompatibilityError } from "./nodeApiClient";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import type {
   NodeStorageSyncAssetManifestEntry,
@@ -26,6 +27,7 @@ function sourceSql(revision = 7): ISqlStorage {
   return {
     listGlobalAuthorNotes: async () => [],
     getGlobalAuthorNoteScriptWrite: async () => false,
+    plugin: { loadAll: async () => [], script: { load: async () => null } },
     getRevision: () => revision,
     getStorageSyncSummary: async () => ({
       revision,
@@ -85,6 +87,8 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
   readonly skipKeys = new Set<string>();
   readonly resumeAssetOffsets = new Map<string, number>();
   resumeSqlOffset = 0;
+  supportsPluginRecords?: boolean;
+  readonly sqlBytes: number[] = [];
   private finalizedResult: NodeStorageSyncFinalizeResult | null = null;
   private assetPlan: NodeStorageSyncAssetPlan | null = null;
   private sqlPlan: NodeStorageSyncSqlPlan | null = null;
@@ -131,7 +135,10 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
 
   async getStorageSyncSummary() {
     this.log.push("summary");
-    return structuredClone(TARGET_SUMMARY);
+    return {
+      ...structuredClone(TARGET_SUMMARY),
+      supportsPluginRecords: this.supportsPluginRecords,
+    };
   }
 
   async createStorageSyncSession(options: {
@@ -275,6 +282,7 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
     if (!this.sqlPlan) throw new Error("sql plan missing");
     expect(offset).toBe(this.sqlPlan.offset);
     this.log.push(`sql:${offset}:${data.byteLength}`);
+    this.sqlBytes.push(...data);
     this.sqlPlan.offset += data.byteLength;
     this.sqlPlan.state =
       this.sqlPlan.offset === this.sqlPlan.size ? "ready" : "receiving";
@@ -324,6 +332,96 @@ class FakeRemoteTarget implements StorageSyncRemoteTarget {
 }
 
 describe("stageLocalStorageToRemote", () => {
+  function sourceWithPlugins() {
+    const sql = sourceSql();
+    sql.plugin.loadAll = async () =>
+      [
+        {
+          id: "plugin-disabled",
+          position: 0,
+          name: "Disabled",
+          enabled: false,
+        },
+      ] as any;
+    sql.plugin.script.load = async (pluginId) => ({
+      pluginId,
+      script: "// source",
+    });
+    return sql;
+  }
+
+  it.each([undefined, false])(
+    "rejects plugin records before staging anything when server support is %s",
+    async (supportsPluginRecords) => {
+      const target = new FakeRemoteTarget();
+      target.supportsPluginRecords = supportsPluginRecords;
+      const reader = assetReader({ "assets/a.bin": new Uint8Array([1, 2, 3]) });
+      const listKeys = vi.spyOn(reader, "listKeys");
+      const resumeStorage = memoryResumeStorage();
+      await expect(
+        stageLocalStorageToRemote({
+          sourceSql: sourceWithPlugins(),
+          sourceAssets: reader,
+          target,
+          resumeStorage,
+          flushPendingWrites: async () => {},
+        }),
+      ).rejects.toThrow(/Upgrade the server.*No data has been uploaded/);
+      expect(target.log).toEqual(["summary"]);
+      expect(listKeys).not.toHaveBeenCalled();
+      expect(loadStorageSyncResumeState(resumeStorage)).toBeNull();
+    },
+  );
+
+  it("checks current support before resuming a saved session", async () => {
+    const target = new FakeRemoteTarget("saved-session");
+    const resumeStorage = memoryResumeStorage();
+    const saved = {
+      version: 1 as const,
+      serverOrigin: target.getStorageSyncServerOrigin(),
+      sessionId: "saved-session",
+      direction: "local-to-remote" as const,
+      sourceRevision: 7,
+      createdAt: 1,
+    };
+    saveStorageSyncResumeState(saved, resumeStorage);
+    await expect(
+      stageLocalStorageToRemote({
+        sourceSql: sourceWithPlugins(),
+        sourceAssets: assetReader({ "assets/a.bin": new Uint8Array([1]) }),
+        target,
+        resumeStorage,
+        flushPendingWrites: async () => {},
+      }),
+    ).rejects.toBeInstanceOf(NodeApiCompatibilityError);
+    expect(target.log).toEqual(["summary"]);
+    expect(loadStorageSyncResumeState(resumeStorage)).toEqual(saved);
+  });
+
+  it("uploads plugin records when the server explicitly advertises support", async () => {
+    const target = new FakeRemoteTarget();
+    target.supportsPluginRecords = true;
+    const result = await stageLocalStorageToRemote({
+      sourceSql: sourceWithPlugins(),
+      sourceAssets: assetReader({ "assets/a.bin": new Uint8Array([1]) }),
+      target,
+      resumeStorage: memoryResumeStorage(),
+      flushPendingWrites: async () => {},
+    });
+    expect(result.sqlSourcePlan.requiresPluginRecords).toBe(true);
+    expect(result.session.status).toBe("sql-ready");
+    const records = new TextDecoder()
+      .decode(new Uint8Array(target.sqlBytes))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(records.find((record) => record.type === "plugin")).toMatchObject({
+      id: "plugin-disabled",
+      data: { enabled: false },
+      script: "// source",
+    });
+  });
+
   it("stages assets before SQL and respects checksum dedupe", async () => {
     const target = new FakeRemoteTarget();
     target.skipKeys.add("assets/b.bin");
@@ -346,6 +444,7 @@ describe("stageLocalStorageToRemote", () => {
     });
 
     expect(result.session.status).toBe("sql-ready");
+    expect(result.sqlSourcePlan.requiresPluginRecords).toBe(false);
     expect(result.assetPlan.remainingBytes).toBe(0);
     expect(
       target.log.some((entry) => entry.startsWith("asset:assets/b.bin")),

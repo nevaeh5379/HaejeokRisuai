@@ -3,12 +3,19 @@ import { isTauriLinux } from "./platform";
 export type LinuxWindowDecoration = "ssd" | "csd";
 export type LinuxBackgroundBlurSupport = "standard" | "kwinLegacy" | "none";
 
+export interface LinuxCsdHeaderLayout {
+  height: number;
+  left: number;
+  right: number;
+}
+
 export interface LinuxWindowCapabilities {
   wayland: boolean;
   serverSideDecoration: boolean;
   backgroundBlur: LinuxBackgroundBlurSupport;
   decoration: LinuxWindowDecoration;
   decorationAlpha: number | null;
+  csdHeader: LinuxCsdHeaderLayout | null;
 }
 
 const EMPTY_CAPABILITIES: LinuxWindowCapabilities = {
@@ -17,9 +24,11 @@ const EMPTY_CAPABILITIES: LinuxWindowCapabilities = {
   backgroundBlur: "none",
   decoration: "ssd",
   decorationAlpha: null,
+  csdHeader: null,
 };
 
 let activeCapabilities: LinuxWindowCapabilities = { ...EMPTY_CAPABILITIES };
+const CSD_LAYOUT_EVENT = "risu-linux-csd-header-layout";
 
 export function getActiveLinuxWindowCapabilities(): LinuxWindowCapabilities {
   return { ...activeCapabilities };
@@ -62,6 +71,13 @@ export function applyLinuxDecorationAlpha(alpha: number | null): void {
   );
 }
 
+export function applyLinuxCsdSidebarOpacity(opacity: number): void {
+  document.documentElement.style.setProperty(
+    "--risu-linux-csd-sidebar-opacity",
+    `${Math.min(100, Math.max(0, opacity))}%`,
+  );
+}
+
 function applyCapabilities(capabilities: LinuxWindowCapabilities): void {
   activeCapabilities = capabilities;
   if (typeof document === "undefined") return;
@@ -83,6 +99,49 @@ function applyCapabilities(capabilities: LinuxWindowCapabilities): void {
   root.dataset.risuLinuxServerDecoration = String(
     capabilities.serverSideDecoration,
   );
+  applyCsdHeaderLayout(capabilities.csdHeader);
+}
+
+function applyCsdHeaderLayout(layout: LinuxCsdHeaderLayout | null): void {
+  activeCapabilities.csdHeader = layout;
+  document.documentElement.style.setProperty(
+    "--risu-linux-csd-titlebar-height",
+    `${layout?.height ?? 40}px`,
+  );
+  document.documentElement.style.setProperty(
+    "--risu-linux-csd-sidebar-top-inset",
+    `${layout && layout.left > 0 ? layout.height : 0}px`,
+  );
+  window.dispatchEvent(new Event(CSD_LAYOUT_EVENT));
+}
+
+// Reserve native controls only where this tab strip actually meets a window
+// edge. Split panes and an open sidebar can move it away from those controls.
+export function linuxCsdTabInsets(node: HTMLElement) {
+  if (!isTauriLinux) return;
+  const update = () => {
+    const layout = activeCapabilities.csdHeader;
+    const bounds = node.getBoundingClientRect();
+    const atTop = isLinuxCsdActive() && bounds.top < (layout?.height ?? 40);
+    const left = atTop ? Math.max(0, (layout?.left ?? 0) - bounds.left) : 0;
+    const right = atTop
+      ? Math.max(0, bounds.right - (window.innerWidth - (layout?.right ?? 0)))
+      : 0;
+    node.style.setProperty("--risu-linux-csd-left-inset", `${left}px`);
+    node.style.setProperty("--risu-linux-csd-right-inset", `${right}px`);
+  };
+  const observer = new ResizeObserver(update);
+  observer.observe(node);
+  window.addEventListener(CSD_LAYOUT_EVENT, update);
+  window.addEventListener("resize", update);
+  update();
+  return {
+    destroy() {
+      observer.disconnect();
+      window.removeEventListener(CSD_LAYOUT_EVENT, update);
+      window.removeEventListener("resize", update);
+    },
+  };
 }
 
 export async function initializeLinuxWindowIntegration(): Promise<LinuxWindowCapabilities> {
@@ -95,7 +154,12 @@ export async function initializeLinuxWindowIntegration(): Promise<LinuxWindowCap
       import("@tauri-apps/api/core"),
       import("@tauri-apps/api/webviewWindow"),
     ]);
-    const label = getCurrentWebviewWindow().label;
+    const currentWindow = getCurrentWebviewWindow();
+    const label = currentWindow.label;
+    await currentWindow.listen<LinuxCsdHeaderLayout>(
+      "linux-csd-header-layout",
+      ({ payload }) => applyCsdHeaderLayout(payload),
+    );
     const capabilities = await invoke<LinuxWindowCapabilities>(
       "get_linux_window_capabilities",
       { label },

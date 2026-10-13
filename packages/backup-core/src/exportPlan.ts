@@ -1,5 +1,5 @@
-import type { LocalBackupMode } from "./api";
-import { getInlayBackupKey } from "./entryPolicy";
+import type { LocalBackupMode } from "./api.ts";
+import { getInlayBackupKey } from "./entryPolicy.ts";
 
 export interface LocalBackupExportMetadata {
   baseName: string;

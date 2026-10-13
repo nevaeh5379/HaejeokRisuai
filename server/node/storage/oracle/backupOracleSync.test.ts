@@ -6,19 +6,19 @@ import * as fflate from "fflate";
 import { Packr, Unpackr } from "msgpackr/index-no-eval";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   OracleStorage,
   normalizeEmptyStringBinds,
   toOracleColumn,
   COLUMN_NAME_MAP,
-} = require(".//oracleStorage.cts");
-const {
+} from "./oracleStorage.ts";
+import {
   splitCharacter,
   splitChat,
   splitMessage,
-} = require("../postgres/postgresRelationalCodec.cjs");
-const { splitSetting } = require("../postgres/postgresSettingsCodec.cjs");
-const { projectSettings } = require("../postgres/postgresSettingRelations.cjs");
+} from "../postgres/postgresRelationalCodec.ts";
+import { splitSetting } from "../postgres/postgresSettingsCodec.ts";
+import { projectSettings } from "../postgres/postgresSettingRelations.ts";
 
 const packr = new Packr({ int64AsType: "number", useRecords: false });
 const unpackr = new Unpackr({ int64AsType: "number", useRecords: false });

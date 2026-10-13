@@ -4,7 +4,7 @@ import { language } from "src/lang";
 import {
   collectOpenAIToolCalls,
   formatOpenAIReasoningText,
-} from "@risuai/chat-core/openAIProvider.cjs";
+} from "@risuai/chat-core/openAIProvider.ts";
 import { alertError } from "src/ts/alert";
 import { LLMFlags } from "src/ts/model/modellist";
 

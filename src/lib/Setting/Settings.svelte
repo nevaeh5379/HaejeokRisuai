@@ -138,7 +138,7 @@
             <span>{language.chatBot}</span>
         </button>
 
-        <div class="flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
+        <div class="rs-settings-bot-submenu flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
             <button
                 title={language.mainModelCardDesc}
                 class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {$SettingsMenuIndex === 1 && desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'main' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
@@ -845,7 +845,7 @@
     >
         <div class="relative w-[90vw] h-[90vh] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
             <!-- Sidebar -->
-            <div class="flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
+            <div class="rs-settings-menu flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
                 {@render desktopMenuButtons()}
             </div>
 

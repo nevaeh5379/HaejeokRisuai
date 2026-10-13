@@ -6,7 +6,7 @@ import type {
   MessagePresetInfo,
 } from "../../storage/database/schema";
 import { characterStore } from "../../stores/domain/characterStore.svelte";
-import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
+import type { ChatModelResponse } from "@risuai/chat-core/types.ts";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { processScriptFull } from "../scripts";
 import { addRerolls } from "../prereroll";

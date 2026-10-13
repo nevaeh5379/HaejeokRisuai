@@ -1,4 +1,5 @@
-import * as authorNoteSql from "@risuai/protocol/dist/authorNoteSql.cjs";
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
+import { v4 as uuidv4 } from "uuid";
 import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
 import type { SqliteExecute } from "@risuai/storage-sqlite/types";
 import { createEmptySqlCommit, type SqlCommit } from "../sqlCommit";
@@ -56,9 +57,42 @@ function buildCommit(
       }));
       break;
     case "setting":
-      commit.root.upserts.push(
-        ...asRecords(records, type).map(({ key, value }) => ({ key, value })),
-      );
+      for (const { key, value } of asRecords(records, type)) {
+        if (key !== "plugins") {
+          commit.root.upserts.push({ key, value });
+          continue;
+        }
+        if (!Array.isArray(value))
+          throw new Error("Backup plugins must be an array");
+        const plugins: Extract<PersistedRecord, { type: "plugin" }>[] =
+          value.map((plugin, position) => {
+            if (
+              !plugin ||
+              typeof plugin !== "object" ||
+              Array.isArray(plugin) ||
+              typeof plugin.script !== "string"
+            ) {
+              throw new Error(`Invalid backup plugin at position ${position}`);
+            }
+            const { script, ...data } = plugin;
+            return { type: "plugin", id: uuidv4(), position, data, script };
+          });
+        commit.plugins = buildCommit(baseRevision, "plugin", plugins).plugins;
+      }
+      break;
+    case "plugin":
+      commit.plugins = {
+        upserts: asRecords(records, type).map(({ id, position, data }) => ({
+          id,
+          position,
+          data: data as any,
+        })),
+        scripts: asRecords(records, type).map(({ id, script }) => ({
+          id,
+          script,
+        })),
+        deletes: [],
+      };
       break;
     case "plugin-storage":
       commit.pluginStorage = {
@@ -148,6 +182,7 @@ export class PortableDatabaseStreamSqliteApplier {
     });
     await this.execute("DELETE FROM system_settings");
     await this.execute("DELETE FROM plugin_custom_storage");
+    await this.execute("DELETE FROM plugin_records");
     await this.execute("DELETE FROM characters");
     await this.execute("DELETE FROM bot_presets");
     await this.execute("DELETE FROM module_records");

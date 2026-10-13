@@ -3,8 +3,8 @@ import {
   createChatGenerationPlan,
   executeChatModelRequest,
   type ChatGenerationRuntime,
-} from "@risuai/chat-core/generation.cjs";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/generation.ts";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 type Response = { type: "success"; result: string; model?: string };
 type Character = { id: string };

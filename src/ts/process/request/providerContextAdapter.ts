@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.cjs";
+import { prepareProviderExecutionContext } from "@risuai/chat-core/providerContext.ts";
 import { getModelInfo } from "../../model/modellist";
 
 import type { requestDataArgument } from "./requestContracts";

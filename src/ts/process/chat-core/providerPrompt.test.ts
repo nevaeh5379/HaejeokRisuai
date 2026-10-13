@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.cjs";
-import { LLM_FLAGS } from "../../../../packages/protocol/modelFlags.cjs";
+import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.ts";
+import { LLM_FLAGS } from "../../../../packages/protocol/modelFlags.ts";
 
 describe("provider prompt formatting", () => {
   it("merges leading system prompts without crashing on system-only input", () => {

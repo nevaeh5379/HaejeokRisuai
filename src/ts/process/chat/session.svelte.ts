@@ -16,7 +16,7 @@ import { language } from "../../../lang";
 import { ChatTokenizer } from "../../tokenizer";
 import { findCharacterbyId, parseToggleSyntax } from "../../util";
 import { v4 } from "uuid";
-import { selectGroupGenerationOrder } from "@risuai/chat-core/group.cjs";
+import { selectGroupGenerationOrder } from "@risuai/chat-core/group.ts";
 import { risuChatParser } from "../scripts";
 import { getModuleToggles } from "../modules";
 import { pluginV2 } from "../../plugins/plugins.svelte";

@@ -9,10 +9,10 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { messageStore } from "../stores/domain/messageStore.svelte";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
 import type { Message } from "../storage/database/schema";
-import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
+import type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.ts";
 import { setRemoteChatGeneration } from "./chat/runtimeState";
 
-export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.cjs";
+export type { DurableModelJobRecord } from "../../../packages/protocol/modelJobs.ts";
 
 async function authHeaders(): Promise<Record<string, string>> {
   return { "risu-auth": await getNodeServerProxyAuth() };

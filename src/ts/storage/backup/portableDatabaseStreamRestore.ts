@@ -39,6 +39,7 @@ const RECORD_TYPES: PortableDatabaseStreamPersistedRecord["type"][] = [
   "author-note-settings",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",

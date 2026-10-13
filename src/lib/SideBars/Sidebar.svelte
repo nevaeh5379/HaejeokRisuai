@@ -18,7 +18,11 @@
     pendingCharID,
 
   } from "../../ts/stores.svelte";
-    import type { folder } from "../../ts/storage/database/schema";
+    import {
+      Order,
+      type DragItem,
+      type DropPosition,
+    } from "../../ts/sidebar/order";
 
     import { characterStore, settingsStore } from 'src/ts/stores/domain';
     import BarIcon from "./BarIcon.svelte";
@@ -34,6 +38,7 @@
     WrenchIcon,
     User2Icon,
     SearchIcon,
+    PanelLeft,
   } from "@lucide/svelte";
     import { getCharImage, preloadCharacterImage } from '../../ts/characterImage';
     import { language } from "../../lang";
@@ -41,7 +46,6 @@
     import SidebarAvatar from "./SidebarAvatar.svelte";
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
-    import { v4 } from "uuid";
     import { checkCharOrder, getFileSrc, getPreparedNativeThumbnailSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from 'src/ts/sync/multiuserState';
@@ -51,6 +55,7 @@
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
     import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
     import { windowDragRegion } from "src/ts/nativeWindowChrome";
+    import { isLinuxCsdActive } from "src/ts/linuxWindowIntegration";
     import {
       closeTauriSidebarMenuPopup,
       listenTauriSidebarMenuActions,
@@ -66,6 +71,36 @@
   let editMode = $state(false);
   let menuMode = $state(0);
   let devTool = $state(false)
+
+  function sidebarMenuCutout(menu: HTMLElement) {
+    if (!isLinuxCsdActive()) return
+    const scroll = menu.closest('.rs-sidebar')
+      ?.querySelector<HTMLElement>('.rs-sidebar-scroll')
+    if (!scroll) return
+    const update = () => {
+      const menuBounds = menu.getBoundingClientRect()
+      const scrollBounds = scroll.getBoundingClientRect()
+      scroll.style.setProperty(
+        '--risu-sidebar-menu-cutout-top',
+        `${menuBounds.top - scrollBounds.top}px`,
+      )
+      scroll.style.setProperty(
+        '--risu-sidebar-menu-cutout-height',
+        `${menuBounds.height}px`,
+      )
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(menu)
+    observer.observe(scroll)
+    update()
+    return {
+      destroy() {
+        observer.disconnect()
+        scroll.style.removeProperty('--risu-sidebar-menu-cutout-top')
+        scroll.style.removeProperty('--risu-sidebar-menu-cutout-height')
+      },
+    }
+  }
 
   const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
   const devToolLoader = () => import('./DevTool.svelte')
@@ -191,12 +226,13 @@
     }
   })
 
-  type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
+  type sortTypeNormal = { type:'normal',img: string, index: number, id:string, name:string }
   type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   let charImages: sortType[] = $state([]);
   let IconRounded = $state(false)
   let openFolders:string[] = $state([])
-  let currentDrag: DragData | null = $state(null)
+  let currentDrag: DragItem | null = $state(null)
+  const order = $derived(new Order(settingsStore.state.characterOrder))
   interface Props {
     openGrid?: any;
     hidden?: boolean;
@@ -247,6 +283,7 @@
           newCharImages.push({
             img:cha.image ?? "",
             index:index,
+            id: id,
             type: "normal",
             name: cha.name
           });
@@ -262,6 +299,7 @@
             folderCharImages.push({
               img:cha.image ?? "",
               index:index,
+              id: id,
               type: "normal",
               name: cha.name
             });
@@ -286,95 +324,10 @@
   })
 
 
-  const inserter = (mainIndex:DragData, targetIndex:DragData) => {
-    if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
-      return
+  const inserter = (source:DragItem, target:DropPosition) => {
+    if(order.move(source, target)){
+      checkCharOrder()
     }
-    let db = settingsStore.state
-    let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-    let targetFolderIndex = targetIndex.folder ? getFolderIndex(targetIndex.folder) : null
-    let mainFolderId = mainIndex.folder ? (db.characterOrder[mainFolderIndex] as folder).id : ''
-    let movingFolder:folder|false = false
-    let mainId = ''
-    if(mainIndex.folder){
-      mainId = (db.characterOrder[mainFolderIndex] as folder).data[mainIndex.index]
-    }
-    else{
-      const da = db.characterOrder[mainIndex.index]
-      if(typeof(da) !== 'string'){
-        mainId = da.id
-        movingFolder = $state.snapshot(da)
-        if(targetIndex.folder){
-          return
-        }
-      }
-      else{
-        mainId = da
-      }
-    }
-    if(targetIndex.folder){
-        const folder = db.characterOrder[targetFolderIndex] as folder
-        folder.data.splice(targetIndex.index,0,mainId)
-        db.characterOrder[targetFolderIndex] = folder
-    }
-    else if(movingFolder){
-        db.characterOrder.splice(targetIndex.index,0,movingFolder)
-    }
-    else{
-        db.characterOrder.splice(targetIndex.index,0,mainId)
-    }
-    if(mainIndex.folder){
-      mainFolderIndex = -1
-      for(let i=0;i<db.characterOrder.length;i++){
-        const a =db.characterOrder[i]
-        if(typeof(a) !== 'string'){
-          if(a.id === mainFolderId){
-            mainFolderIndex = i
-            break
-          }
-        }
-      }
-      if(mainFolderIndex !== -1){
-        const folder:folder = db.characterOrder[mainFolderIndex] as folder
-        const ind = mainIndex.index > targetIndex.index ? folder.data.lastIndexOf(mainId) : folder.data.indexOf(mainId) 
-        if(ind !== -1){
-          folder.data.splice(ind, 1)
-        }
-        db.characterOrder[mainFolderIndex] = folder
-      }
-      else{
-        console.log('folder not found')
-      }
-    }
-    else if(movingFolder){
-      let idList:string[] = []
-      for(const ord of db.characterOrder){
-        idList.push(typeof(ord) === 'string' ? ord : ord.id)
-      }
-      const ind = mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId) 
-      if(ind !== -1){
-        db.characterOrder.splice(ind, 1)
-      }
-    }
-    else{
-      const ind = mainIndex.index > targetIndex.index ? db.characterOrder.lastIndexOf(mainId) : db.characterOrder.indexOf(mainId) 
-      if(ind !== -1){
-        db.characterOrder.splice(ind, 1)
-      }
-    }
-
-    settingsStore.state.characterOrder = db.characterOrder
-    checkCharOrder()
-  }
-
-  function getFolderIndex(id:string){
-    for(let i=0;i<settingsStore.state.characterOrder.length;i++){
-      const data = settingsStore.state.characterOrder[i]
-      if(typeof(data) !== 'string' && data.id === id){
-        return i
-      }
-    }
-    return -1
   }
 
   function scrollToActiveCharacter() {
@@ -429,60 +382,16 @@
   })
 
 
-  const createFolder = (mainIndex:DragData, targetIndex:DragData) => {
-    if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
-      return
+  const createFolder = (source:DragItem, target:DragItem) => {
+    if(order.group(source, target)){
+      checkCharOrder()
     }
-    let db = settingsStore.state
-    let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-    let mainFolder = db.characterOrder[mainFolderIndex] as folder
-    if(targetIndex.folder){
-      return
-    }
-    const main = mainIndex.folder ? mainFolder.data[mainIndex.index] : db.characterOrder[mainIndex.index]
-    const target = db.characterOrder[targetIndex.index]
-    if(typeof(main) !== 'string'){
-      return
-    }
-    if(typeof (target) === 'string'){
-      const newFolder:folder = {
-        name: "New Folder",
-        data: [main, target],
-        color: "",
-        id: v4()
-      }
-      db.characterOrder[targetIndex.index] = newFolder
-      if(mainIndex.folder){
-        mainFolder.data.splice(mainIndex.index, 1)
-        db.characterOrder[mainFolderIndex] = mainFolder
-      }
-      else{
-        db.characterOrder.splice(mainIndex.index, 1)
-      }
-    }
-    else{
-      target.data.push(main)
-      if(mainIndex.folder){
-        mainFolder.data.splice(mainIndex.index, 1)
-        db.characterOrder[mainFolderIndex] = mainFolder
-      }
-      else{
-        db.characterOrder.splice(mainIndex.index, 1)
-      }
-    }
-
-    settingsStore.state.characterOrder = db.characterOrder
-    checkCharOrder()
   }
 
   type DragEv = DragEvent & {
     currentTarget: EventTarget & HTMLDivElement;
   }
-  type DragData = {
-    index:number,
-    folder?:string
-  }
-  const avatarDragStart = (ind:DragData, e:DragEv) => {
+  const avatarDragStart = (ind:DragItem, e:DragEv) => {
     e.dataTransfer.setData('text/plain', '');
     e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true');
     currentDrag = ind
@@ -526,7 +435,7 @@
     e.dataTransfer.dropEffect = 'move'
   }
 
-  const avatarDrop = (ind:DragData, e:DragEv) => {
+  const avatarDrop = (ind:DragItem, e:DragEv) => {
     const drag = getCurrentSidebarDrag(e)
     if(!drag){
       return
@@ -550,6 +459,8 @@
     e.stopPropagation()
     return false
   }
+
+  let isSidebarOpen = $derived($sideBarStore && !$DynamicGUI);
 </script>
 {#if settingsStore.state.menuSideBar}
 <div
@@ -662,9 +573,9 @@
     class="rs-sidebar-menu-button rs-sidebar-toggle-button relative z-30 flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
     onclick={toggleHamburgerMenu}><ListIcon />
   </button>
-  <div class="mt-2 border-b border-b-selected w-full relative text-white ">
+  <div class="rs-sidebar-top-menu-anchor mt-2 border-b border-b-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
+      <div use:sidebarMenuCutout class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
@@ -742,19 +653,19 @@
       e.stopPropagation()
       e.currentTarget.classList.remove('bg-green-500')
       try {
-        inserter(drag,{index:0})
+        inserter(drag,{})
       } finally {
         clearCurrentDrag()
       }
     }} ondragenter={preventAll}></div>
-    {#each charImages as char, ind}
+    {#each charImages as char}
       <div class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
         role="listitem"
         draggable="true"
-        ondragstart={(e) => {avatarDragStart({index:ind}, e)}}
+        ondragstart={(e) => {avatarDragStart({id:char.id}, e)}}
         ondragend={clearCurrentDrag}
         ondragover={avatarDragOver}
-        ondrop={(e) => {avatarDrop({index:ind}, e)}}
+        ondrop={(e) => {avatarDrop({id:char.id}, e)}}
         ondragenter={preventAll}
       >
         <SidebarIndicator
@@ -792,61 +703,43 @@
               <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => sidebarThumbnail(char.img) : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
+                const folderId = char.id
+                const folderName = char.name
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
                 if(sel === 0){
-                  const v = await alertInput(language.changeFolderName, [], char.name)
-                  const db = settingsStore.state
-                  if(v){
-                    const oder = db.characterOrder[ind]
-                    if(typeof(oder) === 'string'){
-                      return
-                    }
-                    oder.name = v
-                    db.characterOrder[ind] = oder
+                  const v = await alertInput(language.changeFolderName, [], folderName)
+                  const folder = order.findFolder(folderId)
+                  if(v && folder){
+                    folder.name = v
                   }
                 }
                 else if(sel === 1){
                   const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
                   const sel = parseInt(await alertSelect(colors))
-                  const db = settingsStore.state
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
+                  const folder = order.findFolder(folderId)
+                  if(folder && colors[sel]){
+                    folder.color = colors[sel].toLocaleLowerCase()
                   }
-                  oder.color = colors[sel].toLocaleLowerCase()
-                  db.characterOrder[ind] = oder
                 }
                 else if(sel === 2) {
                   const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                  const db = settingsStore.state
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
+                  if(sel === 0){
+                    const folder = order.findFolder(folderId)
+                    if(folder){
+                      folder.imgFile = null
+                      folder.img = ''
+                    }
                   }
-
-                  switch (sel) {
-                    case 0:
-                      oder.imgFile = null
-                      oder.img = ''
-                      break;
-                  
-                    case 1:
-                      const folderImage = await selectSingleFile([
-                        'png',
-                        'jpg',
-                        'webp',
-                      ])
-
-                      if(!folderImage) {
-                        return
-                      }
-
-                      const folderImageData = await saveAsset(folderImage.data)
-
-                      oder.imgFile = folderImageData
-                      oder.img = await getFileSrc(folderImageData)
-                      db.characterOrder[ind] = oder
-                      break;
+                  else if(sel === 1){
+                    const folderImage = await selectSingleFile(['png', 'jpg', 'webp'])
+                    if(!folderImage){ return }
+                    const folderImageData = await saveAsset(folderImage.data)
+                    const folderImageSrc = await getFileSrc(folderImageData)
+                    const folder = order.findFolder(folderId)
+                    if(folder){
+                      folder.imgFile = folderImageData
+                      folder.img = folderImageSrc
+                    }
                   }
                 }
               }}
@@ -906,20 +799,20 @@
             e.currentTarget.classList.remove('bg-green-500')
             try {
               if(char.type === 'folder'){
-                inserter(drag,{index:0,folder:char.id})
+                inserter(drag,{folder:char.id})
               }
             } finally {
               clearCurrentDrag()
             }
           }} ondragenter={preventAll}></div>
-          {#each char.folder as char2, ind}
+          {#each char.folder as char2}
               <div class="group relative flex items-center px-2 z-10"
               role="listitem"
               draggable="true"
-              ondragstart={(e) => {if(char.type === 'folder'){avatarDragStart({index: ind, folder:char.id}, e)}}}
+              ondragstart={(e) => {if(char.type === 'folder'){avatarDragStart({id:char2.id, folder:char.id}, e)}}}
               ondragend={clearCurrentDrag}
               ondragover={avatarDragOver}
-              ondrop={(e) => {if(char.type === 'folder'){avatarDrop({index: ind, folder:char.id}, e)}}}
+              ondrop={(e) => {if(char.type === 'folder'){avatarDrop({id:char2.id, folder:char.id}, e)}}}
               ondragenter={preventAll}
             >
               <SidebarIndicator
@@ -968,7 +861,7 @@
               e.currentTarget.classList.remove('bg-green-500')
               try {
                 if(char.type === 'folder'){
-                  inserter(drag,{index:ind+1,folder:char.id})
+                  inserter(drag,{id:char2.id,after:true,folder:char.id})
                 }
               } finally {
                 clearCurrentDrag()
@@ -993,7 +886,7 @@
         e.stopPropagation()
         e.currentTarget.classList.remove('bg-green-500')
         try {
-          inserter(drag,{index:ind+1})
+          inserter(drag,{id:char.id,after:true})
         } finally {
           clearCurrentDrag()
         }
@@ -1020,7 +913,7 @@
   {#if settingsStore.state.hamburgerButtonBottom}
   <div class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white ">
     {#if menuMode === 1}
-      <div class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
+      <div use:sidebarMenuCutout class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
@@ -1156,21 +1049,22 @@
         </div>
       </div>
     {:else}
-      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative -mt-6 rounded-b-md flex"
+        class:mb-6={QuickSettings.open || devTool || $botMakerMode}>
         <button onclick={() => {
           void loadSideChatList()
           devTool = false
           botMakerMode.set(false)
-        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
+        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool} aria-pressed={!$botMakerMode && !devTool}>{language.Chat}</button>
         <button onclick={() => {
           void loadCharConfig()
           devTool = false
           botMakerMode.set(true)
-        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
+        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool} aria-pressed={$botMakerMode && !devTool}>{language.character}</button>
         {#if settingsStore.state.enableDevTools}
           <button onclick={() => {
             devTool = true
-          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool}>
+          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool} aria-pressed={devTool}>
             <WrenchIcon size={18} />
           </button>
         {/if}
@@ -1185,6 +1079,7 @@
         <LazyComponent loader={loadSideChatList} />
       {/if}
     {/if}
+ 
   {/if}
 </div>
 

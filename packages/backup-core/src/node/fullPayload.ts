@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import settings from "../../../protocol/settings.json";
+import settings from "../../../protocol/settings.json" with { type: "json" };
 
 const LEGACY_PERSONA_MIRROR_KEY_SET = new Set<string>(
   settings.LEGACY_PERSONA_MIRROR_KEYS,

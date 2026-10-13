@@ -50,6 +50,7 @@ const coreScalarDefaults = {
   autoHideAndroidNavigationBar: defaultBoolean(false),
   autoHideAndroidNavigationBarInSidebar: defaultBoolean(false),
   linuxWindowDecoration: defaultPicklist(["ssd", "csd"], "ssd"),
+  linuxCsdSidebarOpacity: defaultNumber(94),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
   waifuWidth2: defaultNumber(100),

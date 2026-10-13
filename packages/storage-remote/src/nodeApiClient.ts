@@ -100,6 +100,8 @@ export interface NodeClientCapabilities {
  */
 export interface NodeStorageSyncSummary {
   protocolVersion: number;
+  /** Optional v1 extension; only true authorizes per-plugin SQL records. */
+  supportsPluginRecords?: boolean;
   /**
    * Server-side revision counter, bumped on every data write.
    *
@@ -685,6 +687,8 @@ function validateStorageSyncSummary(value: unknown): NodeStorageSyncSummary {
   if (
     !summary ||
     summary.protocolVersion !== 1 ||
+    (summary.supportsPluginRecords !== undefined &&
+      typeof summary.supportsPluginRecords !== "boolean") ||
     !validCounter(summary.revision) ||
     typeof summary.initialized !== "boolean" ||
     !counters ||

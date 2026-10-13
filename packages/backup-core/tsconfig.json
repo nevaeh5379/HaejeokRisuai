@@ -3,7 +3,9 @@
   "compilerOptions": {
     "noEmit": true,
     "composite": false,
-    "types": ["node"]
+    "types": ["node"],
+    "erasableSyntaxOnly": true,
+    "module": "ESNext"
   },
   "include": ["src/**/*.ts"],
   "references": []

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPortableLocalBackupDatabase,
   normalizePortableBackupSnapshot,
-} from "./databasePreparation";
+} from "./databasePreparation.ts";
 
 const HEADER = "\uEF01COLDSTORAGE\uEF01";
 

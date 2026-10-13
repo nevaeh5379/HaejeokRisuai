@@ -8,23 +8,14 @@ import {
   LocalBackupDatabaseStreamStore,
 } from "@risuai/backup-core/node/databaseStreamStore";
 
-const { decodeStorageSyncValue, encodeStorageSyncValue } =
-  require("../../../packages/protocol/storageSyncValueCodec.cjs") as {
-    decodeStorageSyncValue: (value: unknown) => any;
-    encodeStorageSyncValue: (value: unknown) => unknown;
-  };
-const { readStorageSyncSqlRecords, validateStorageSyncSqlRecord } =
-  require(".//storageSyncSqlRecords.cts") as {
-    readStorageSyncSqlRecords: (
-      filePath: string,
-      options?: Record<string, any>,
-    ) => Promise<any>;
-    validateStorageSyncSqlRecord: (
-      record: any,
-      index: number,
-      state: any,
-    ) => void;
-  };
+import {
+  decodeStorageSyncValue,
+  encodeStorageSyncValue,
+} from "../../../packages/protocol/storageSyncValueCodec.ts";
+import {
+  readStorageSyncSqlRecords,
+  validateStorageSyncSqlRecord,
+} from "./storageSyncSqlRecords.ts";
 
 const roots: string[] = [];
 
@@ -116,6 +107,37 @@ afterEach(async () => {
   );
 });
 describe("LocalBackupDatabaseStreamStore", () => {
+  it("stages plugin records without dropping scripts or disabled state", async () => {
+    const store = await makeStore();
+    const session = await store.create();
+    const input = [
+      { type: "meta", formatVersion: 1, revision: 11 },
+      {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Backup plugin", enabled: false },
+        script: "// source\u0000한글",
+      },
+    ];
+    await store.appendRecords(session.id, {
+      fragmentIndex: 1,
+      records: input.map(encodeStorageSyncValue),
+      fragmentComplete: true,
+    });
+    const prepared = store.prepareFinalize(session.id, manifest(input));
+    const replayed: unknown[] = [];
+    const completed = await readStorageSyncSqlRecords(prepared.filePath, {
+      expectedRecordCount: prepared.recordCount,
+      onRecord: (record) => {
+        replayed.push(record);
+      },
+    });
+    expect(completed.recordCount).toBe(2);
+    expect(completed.counts.plugin).toBe(1);
+    expect(replayed).toEqual(input);
+  });
+
   it("stages split request batches and validates the final manifest", async () => {
     const store = await makeStore();
     const session = await store.create();

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { PortableDatabaseStreamCollector } from "./streamCollector";
+import { PortableDatabaseStreamCollector } from "./streamCollector.ts";
 import {
   PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "./streamFormat";
-import type { LegacyBackupSqlRecord } from "./legacyRecords";
+} from "./streamFormat.ts";
+import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
 
 type StreamRecord = LegacyBackupSqlRecord;
 
@@ -101,6 +101,20 @@ describe("PortableDatabaseStreamCollector reconstruction", () => {
       { type: "setting", key: "activeBotPresetId", value: "preset-2" },
       { type: "plugin-storage", key: "plugin-1", value: { retained: true } },
       {
+        type: "plugin",
+        id: "plugin-2",
+        position: 1,
+        data: { name: "Disabled", enabled: false },
+        script: "// disabled",
+      },
+      {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Enabled", realArg: { key: "value" } },
+        script: "// source",
+      },
+      {
         type: "module",
         position: 2,
         id: "module-2",
@@ -130,6 +144,10 @@ describe("PortableDatabaseStreamCollector reconstruction", () => {
     expect(restored.pluginCustomStorage).toEqual({
       "plugin-1": { retained: true },
     });
+    expect(restored.plugins).toEqual([
+      { name: "Enabled", realArg: { key: "value" }, script: "// source" },
+      { name: "Disabled", enabled: false, script: "// disabled" },
+    ]);
     expect(restored.modules.map((m: any) => m.name)).toEqual([
       "First",
       "Second",

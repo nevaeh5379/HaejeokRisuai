@@ -4,6 +4,7 @@ const fsMocks = vi.hoisted(() => ({
   exists: vi.fn(),
   readDir: vi.fn(),
   readFile: vi.fn(),
+  mkdir: vi.fn(),
   remove: vi.fn(),
   writeFile: vi.fn(),
   open: vi.fn(),
@@ -17,6 +18,83 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 }));
 
 import { TauriAssetStorage } from "./tauriAssetStorage";
+
+describe("TauriAssetStorage.setItem", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    fsMocks.mkdir.mockResolvedValue(undefined);
+    fsMocks.writeFile.mockResolvedValue(undefined);
+  });
+
+  it("saves fifty assets on a fresh install after their directory is ready", async () => {
+    const files = new Map<string, Uint8Array>();
+    let directoryReady = false;
+    let finishMkdir!: () => void;
+    const mkdirFinished = new Promise<void>((resolve) => {
+      finishMkdir = resolve;
+    });
+    fsMocks.mkdir.mockImplementation(async () => {
+      await mkdirFinished;
+      directoryReady = true;
+    });
+    fsMocks.writeFile.mockImplementation(
+      async (key: string, data: Uint8Array) => {
+        if (!directoryReady)
+          throw new Error("ENOENT: assets directory missing");
+        files.set(key, data);
+      },
+    );
+    const storage = new TauriAssetStorage();
+    const assets = Array.from({ length: 50 }, (_, index) => ({
+      key: `assets/hash-${index}.png`,
+      data: new Uint8Array([index]),
+    }));
+    const saves = assets.map(({ key, data }) => storage.setItem(key, data));
+
+    expect(files.size).toBe(0);
+    finishMkdir();
+    await Promise.all(saves);
+
+    expect(files).toEqual(new Map(assets.map(({ key, data }) => [key, data])));
+    expect(fsMocks.mkdir).toHaveBeenCalledWith("assets", {
+      baseDir: 16,
+      recursive: true,
+    });
+  });
+
+  it("creates nested directories for restored assets", async () => {
+    await new TauriAssetStorage().setItem(
+      "assets/nested/avatar.png",
+      new Uint8Array([1]),
+    );
+
+    expect(fsMocks.mkdir).toHaveBeenCalledWith("assets/nested", {
+      baseDir: 16,
+      recursive: true,
+    });
+    expect(fsMocks.writeFile).toHaveBeenCalledWith(
+      "assets/nested/avatar.png",
+      new Uint8Array([1]),
+      { baseDir: 16 },
+    );
+  });
+
+  it("propagates directory errors and permits a later retry", async () => {
+    const error = new Error("Access denied");
+    fsMocks.mkdir.mockRejectedValueOnce(error);
+    const storage = new TauriAssetStorage();
+    const data = new Uint8Array([1]);
+
+    await expect(storage.setItem("assets/avatar.png", data)).rejects.toBe(
+      error,
+    );
+    expect(fsMocks.writeFile).not.toHaveBeenCalled();
+    await expect(
+      storage.setItem("assets/avatar.png", data),
+    ).resolves.toBeUndefined();
+    expect(fsMocks.writeFile).toHaveBeenCalledOnce();
+  });
+});
 
 describe("TauriAssetStorage.hasStoredData", () => {
   beforeEach(() => {

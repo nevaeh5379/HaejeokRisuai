@@ -1,6 +1,6 @@
-import { COLD_STORAGE_HEADER } from "./coldStorage";
-import type { LegacyBackupSqlRecord } from "./legacyRecords";
-import type { BackupAssetMap, BackupAssetScope } from "./assetScope";
+import { COLD_STORAGE_HEADER } from "./coldStorage.ts";
+import type { LegacyBackupSqlRecord } from "./legacyRecords.ts";
+import type { BackupAssetMap, BackupAssetScope } from "./assetScope.ts";
 
 /**
  * Character bookkeeping reconstructed from a streamed database, used to

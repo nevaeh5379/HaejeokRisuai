@@ -2,11 +2,11 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   hostnameFromHostHeader,
   isLoopbackHostname,
   isSecurePostgresConfigRequest,
-} = require(".//requestSecurity.cjs");
+} from "./requestSecurity.ts";
 
 function request({
   secure = false,

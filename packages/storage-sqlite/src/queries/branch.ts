@@ -1,4 +1,4 @@
-import type { LegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
+import type { LegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import * as sqliteCommit from "../commit/apply";
 import * as nodeCodec from "../schema/codec";
 import type { SqliteSelectRows, SqliteStatement } from "../types";

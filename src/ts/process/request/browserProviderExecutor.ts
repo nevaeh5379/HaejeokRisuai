@@ -2,8 +2,8 @@ import {
   executeProviderRoute,
   type ProviderExecutor,
   type ProviderHandlers,
-} from "@risuai/chat-core/providerExecutor.cjs";
-import type { ChatModelResponse } from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/providerExecutor.ts";
+import type { ChatModelResponse } from "@risuai/chat-core/types.ts";
 
 export class BrowserProviderExecutor<
   TRequest,
