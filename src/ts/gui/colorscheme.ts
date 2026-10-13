@@ -309,6 +309,9 @@ export const colorSchemeList = Object.keys(
   colorShemes,
 ) as (keyof typeof colorShemes)[];
 
+export function getCurrentlyColorScheme() {
+  return settingsStore.state.colorScheme.type
+}
 export function changeColorScheme(colorScheme: string) {
   try {
     if (colorScheme === "custom") {
