@@ -94,7 +94,7 @@ export async function runTranslator(
     translatorNote: exarg?.translatorNote,
   };
   const texts = text.split("\n");
-  let chunks: [string, boolean][] = [["", true]];
+  let chunks: [string, boolean][] = [];
 
   for (let i = 0; i < texts.length; i++) {
     if (
@@ -105,9 +105,13 @@ export async function runTranslator(
       texts[i].length === 0
     ) {
       chunks.push([texts[i], false]);
-      chunks.push(["", true]);
     } else {
-      chunks[chunks.length - 1][0] += texts[i];
+      const previousChunk = chunks[chunks.length - 1];
+      if (previousChunk?.[1]) {
+        previousChunk[0] += "\n" + texts[i];
+      } else {
+        chunks.push([texts[i], true]);
+      }
     }
   }
 
@@ -422,6 +426,7 @@ export async function translateHTML(
           await translate(currentChunk.chunks[i], reverse),
         );
       }
+      return;
     }
 
     for (let i = 0; i < split.length; i++) {
