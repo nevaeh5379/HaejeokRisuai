@@ -33,10 +33,16 @@ import { processScriptFull } from "../process/scripts";
 import localforage from "localforage";
 import sendSound from "../../etc/send.mp3";
 
-let cache = {
-  origin: [""],
-  trans: [""],
-};
+const cache = new Map<string, string>();
+const maxTranslationCacheEntries = 128;
+
+function cacheTranslation(key: string, value: string) {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > maxTranslationCacheEntries) {
+    cache.delete(cache.keys().next().value);
+  }
+}
 
 let bergamotTranslate: (
   text: string,
@@ -56,43 +62,42 @@ export function getCurrentTranslatorPreset(): TranslatorPreset {
 }
 
 export async function translate(text: string, reverse: boolean) {
-  let db = settingsStore.state;
-  if (!reverse) {
-    const ind = cache.origin.indexOf(text);
-    if (ind !== -1) {
-      return cache.trans[ind];
-    }
-  } else {
-    const ind = cache.trans.indexOf(text);
-    if (ind !== -1) {
-      return cache.origin[ind];
-    }
+  const db = settingsStore.state;
+  const modelLanguage = presetStore.state.aiModel.startsWith("novellist")
+    ? "ja"
+    : "en";
+  const sourceLanguage =
+    db.translatorType === "deepl"
+      ? "auto"
+      : db.translatorType === "google"
+        ? db.translatorInputLanguage || "auto"
+        : modelLanguage;
+  const from = reverse ? db.translator : sourceLanguage;
+  const to = reverse ? modelLanguage : db.translator;
+  const cacheKey = JSON.stringify([db.translatorType, from, to, text]);
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) {
+    cacheTranslation(cacheKey, cached);
+    return cached;
   }
-
-  return runTranslator(
-    text,
-    reverse,
-    db.translator,
-    presetStore.state.aiModel.startsWith("novellist") ? "ja" : "en",
-  );
+  return runTranslator(text, from, to);
 }
 
 export async function runTranslator(
   text: string,
-  reverse: boolean,
   from: string,
-  target: string,
+  to: string,
   exarg?: { translatorNote?: string },
 ) {
   const arg = {
-    from: reverse ? from : target,
-
-    to: reverse ? target : from,
+    from,
+    to,
 
     host: "translate.googleapis.com",
 
     translatorNote: exarg?.translatorNote,
   };
+  const engine = settingsStore.state.translatorType;
   const texts = text.split("\n");
   let chunks: [string, boolean][] = [];
 
@@ -139,9 +144,12 @@ export async function runTranslator(
 
   const result = fullResult.join("\n").trim();
 
-  cache.origin.push(reverse ? result : text);
-
-  cache.trans.push(reverse ? text : result);
+  if (!arg.translatorNote) {
+    cacheTranslation(JSON.stringify([engine, from, to, text]), result);
+    if (from !== "auto") {
+      cacheTranslation(JSON.stringify([engine, to, from, result]), text);
+    }
+  }
 
   return result;
 }
@@ -163,6 +171,9 @@ async function translateMain(
     const body = {
       text: [text],
       target_lang: arg.to.toLocaleUpperCase(),
+      ...(arg.from === "auto"
+        ? {}
+        : { source_lang: arg.from.toLocaleUpperCase() }),
     };
     let url = db.deeplOptions.freeApi
       ? "https://api-free.deepl.com/v2/translate"
@@ -262,7 +273,7 @@ async function translateMain(
   }
 
   const url =
-    `https://${arg.host}/translate_a/single?client=gtx&dt=t&sl=${db.translatorInputLanguage}&tl=${arg.to}&q=` +
+    `https://${arg.host}/translate_a/single?client=gtx&dt=t&sl=${arg.from}&tl=${arg.to}&q=` +
     encodeURIComponent(text);
 
   const f = await fetch(url, {
@@ -295,7 +306,7 @@ export async function translateVox(text: string) {
 }
 
 async function jaTrans(text: string) {
-  return await runTranslator(text, true, "en", "ja");
+  return await runTranslator(text, "en", "ja");
 }
 
 export function isExpTranslator() {
@@ -606,6 +617,7 @@ function needSuperChunkedTranslate() {
   return settingsStore.state.translatorType === "deeplX";
 }
 
+//TODO arg.to 와 arg.from는 언어 이름인데 따로 타입으로 정의해야할 듯
 async function translateLLM(
   text: string,
   arg: {
@@ -616,11 +628,13 @@ async function translateLLM(
   },
 ): Promise<string> {
   if (!arg.regenerate) {
-    const cacheMatch = await LLMCacheStorage.getItem(text);
+    const cacheMatch = await LLMCacheStorage.getItem<string>(text);
     if (cacheMatch) {
-      return cacheMatch as string;
+      return cacheMatch;
     }
   }
+
+  //TODO 문법 정의하는 곳에 넣기
   const styleDecodeRegex = /\<risu-style\>(.+?)\<\/risu-style\>/gms;
   let styleDecodes: string[] = [];
   text = text.replace(styleDecodeRegex, (match, p1) => {
@@ -628,7 +642,7 @@ async function translateLLM(
     return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`;
   });
 
-  const db = settingsStore.state;
+  // const db = settingsStore.state;
   const charIndex = get(selectedCharID);
   const currentChar = characterStore.characters[charIndex];
   let translatorNote = "";
