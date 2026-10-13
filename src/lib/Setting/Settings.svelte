@@ -28,7 +28,8 @@
     import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
     import PluginStorageExplorerSettings from "./Pages/PluginStorageExplorerSettings.svelte";
     import StorageSettings from "./Pages/StorageSettings.svelte";
-    import { isNodeServer } from "src/ts/platform";
+    import { isNodeServer, isTauri, isTauriWindows } from "src/ts/platform";
+    import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
         scrollToSettingAnchor,
@@ -785,7 +786,8 @@
             <div class="relative w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20 rs-setting-mobile-header">
                 <div
                     class="absolute inset-0 rs-setting-mobile-drag-region"
-                    data-tauri-drag-region="true"
+                    class:right-36={isTauriWindows}
+                    use:windowDragRegion
                     aria-hidden="true"
                 ></div>
                 <div class="z-10 flex items-center gap-2 min-w-0 rs-setting-mobile-heading-group">
@@ -843,7 +845,25 @@
             }
         }}
     >
+        {#if isTauri}
+            <div
+                class="fixed top-0 left-0 h-8 z-[75]"
+                class:right-1={!isTauriWindows}
+                class:right-36={isTauriWindows}
+                use:windowDragRegion
+                aria-hidden="true"
+            ></div>
+        {/if}
+
         <div class="relative w-[90vw] h-[90vh] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
+            {#if isTauri}
+                <div
+                    class="absolute top-0 left-0 right-14 h-6 z-10"
+                    use:windowDragRegion
+                    aria-hidden="true"
+                ></div>
+            {/if}
+
             <!-- Sidebar -->
             <div class="rs-settings-menu flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
                 {@render desktopMenuButtons()}
@@ -858,7 +878,7 @@
 
             <!-- Close Button -->
             <button
-                class="absolute top-3 right-3 hover:text-green-500 text-textcolor p-1.5 transition-colors z-10 cursor-pointer"
+                class="absolute top-3 right-3 hover:text-green-500 text-textcolor p-1.5 transition-colors z-20 cursor-pointer"
                 onclick={() => {
                     settingsOpen.set(false);
                 }}

@@ -7,6 +7,26 @@ import {
 } from "../types";
 
 export const GoogleModels: LLMModel[] = [
+  {
+    name: "Gemini Arcon 4",
+    id: "gemini-4-arcon",
+    provider: LLMProvider.GoogleCloud,
+    format: LLMFormat.GoogleCloud,
+    flags: [
+      LLMFlags.hasImageInput,
+      LLMFlags.poolSupported,
+      LLMFlags.hasAudioInput,
+      LLMFlags.hasVideoInput,
+      LLMFlags.hasStreaming,
+      LLMFlags.requiresAlternateRole,
+      LLMFlags.geminiThinking,
+      LLMFlags.geminiThinkingNoMinimal,
+      LLMFlags.hasFirstSystemPrompt,
+    ],
+    parameters: ["reasoning_effort"],
+    tokenizer: LLMTokenizer.GoogleCloud,
+    recommended: true,
+  },
   // ===== Gemini 3.5/3.6/3.7 Series (2026) =====
   {
     name: "Gemini Flash 3.8",
