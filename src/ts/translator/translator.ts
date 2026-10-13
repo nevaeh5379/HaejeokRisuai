@@ -67,12 +67,14 @@ export async function translate(text: string, reverse: boolean) {
     ? "ja"
     : "en";
   const sourceLanguage =
-    db.translatorType === "google" || db.translatorType === "deepl"
-      ? db.translatorInputLanguage || "auto"
-      : modelLanguage;
+    db.translatorType === "deepl"
+      ? "auto"
+      : db.translatorType === "google"
+        ? db.translatorInputLanguage || "auto"
+        : modelLanguage;
   const from = reverse ? db.translator : sourceLanguage;
   const to = reverse ? modelLanguage : db.translator;
-  const cacheKey = JSON.stringify([db.translatorType, from, to, "", text]);
+  const cacheKey = JSON.stringify([db.translatorType, from, to, text]);
   const cached = cache.get(cacheKey);
   if (cached !== undefined) {
     cacheTranslation(cacheKey, cached);
@@ -96,13 +98,6 @@ export async function runTranslator(
     translatorNote: exarg?.translatorNote,
   };
   const engine = settingsStore.state.translatorType;
-  const cacheKey = JSON.stringify([
-    engine,
-    from,
-    to,
-    arg.translatorNote ?? "",
-    text,
-  ]);
   const texts = text.split("\n");
   let chunks: [string, boolean][] = [];
 
@@ -149,12 +144,11 @@ export async function runTranslator(
 
   const result = fullResult.join("\n").trim();
 
-  cacheTranslation(cacheKey, result);
-  if (from !== "auto") {
-    cacheTranslation(
-      JSON.stringify([engine, to, from, arg.translatorNote ?? "", result]),
-      text,
-    );
+  if (!arg.translatorNote) {
+    cacheTranslation(JSON.stringify([engine, from, to, text]), result);
+    if (from !== "auto") {
+      cacheTranslation(JSON.stringify([engine, to, from, result]), text);
+    }
   }
 
   return result;

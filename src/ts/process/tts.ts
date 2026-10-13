@@ -292,10 +292,10 @@ export async function sayTTS(character: character, text: string) {
         break;
       }
       case "huggingface": {
+        if (character.hfTTS.language !== "en") {
+          text = await runTranslator(text, "en", character.hfTTS.language);
+        }
         while (true) {
-          if (character.hfTTS.language !== "en") {
-            text = await runTranslator(text, "en", character.hfTTS.language);
-          }
           const response = await fetch(
             `https://api-inference.huggingface.co/models/${character.hfTTS.model}`,
             {

@@ -247,6 +247,44 @@ describe("translation direction and cache context", () => {
     ]);
   });
 
+  it("does not send the Google source setting after switching chat translation to DeepL", async () => {
+    const { translate } = await import("./translator");
+    mocks.settings.translatorType = "google";
+    mocks.settings.translatorInputLanguage = "es";
+    mocks.googleFetch.mockResolvedValue({ json: async () => "Google result" });
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      data: { translations: [{ text: "DeepL result" }] },
+    });
+
+    await translate("same text", false);
+    mocks.settings.translatorType = "deepl";
+    await expect(translate("same text", false)).resolves.toBe("DeepL result");
+    expect(mocks.fetch.mock.calls[0][1].body).toEqual({
+      text: ["same text"],
+      target_lang: "KO",
+    });
+  });
+
+  it("keeps useful chat entries when contextual bulk translations exceed the LRU capacity", async () => {
+    const { runTranslator, translate } = await import("./translator");
+    mocks.fetch.mockImplementation(async (_url, options) => ({
+      ok: true,
+      data: { data: `${options.body.text}-translated` },
+    }));
+
+    await translate("chat text", false);
+    for (let i = 0; i < 70; i++) {
+      await runTranslator(`bulk-${i}`, "en", "ko", {
+        translatorNote: `previous context ${i}`,
+      });
+    }
+    await expect(translate("chat text", false)).resolves.toBe(
+      "chat text-translated",
+    );
+    expect(mocks.fetch).toHaveBeenCalledTimes(71);
+  });
+
   it("evicts the least recently used entries instead of growing without a bound", async () => {
     const { translate } = await import("./translator");
     mocks.fetch.mockImplementation(async (_url, options) => ({
