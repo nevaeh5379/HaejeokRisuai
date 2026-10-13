@@ -1105,7 +1105,7 @@ html.tauri-macos-vibrancy .rs-sidebar-scroll.rs-sidebar-scroll-floating-menu {
   padding-bottom: 5rem;
 }
 
-html.tauri-macos-vibrancy .rs-sidebar-top-menu-anchor {
+.rs-sidebar-top-menu-anchor {
   border-bottom: 0 !important;
 }
 
