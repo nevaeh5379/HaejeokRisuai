@@ -177,6 +177,8 @@
       } catch {}
       if (typeof localStorage !== "undefined") {
         localStorage.setItem(STORAGE_KEY, bottomHeight.toString());
+      } else {
+        console.error("localStorage is undefined!!!");
       }
     }
 
@@ -355,9 +357,7 @@
       const folders = chara.chatFolders;
       folders.splice(folderIdx, 1);
       chara.chats.forEach((chat) => {
-        if (chat.folderId == folder.id) {
-          chat.folderId = null;
-        }
+        if (chat.folderId == folder.id) chat.folderId = null;
       });
       chara.chatFolders = folders;
     }
@@ -375,24 +375,23 @@
           const confirm = await alertConfirm(
             language.doYouWantToUnbindCurrentPersona,
           );
-          if (confirm) {
-            chat.bindedPersona = "";
-            alertNormal(language.personaUnbindedSuccess);
-          }
+          if (confirm) return;
+          chat.bindedPersona = "";
+          alertNormal(language.personaUnbindedSuccess);
         } else {
           const confirm = await alertConfirm(
             language.doYouWantToBindCurrentPersona,
           );
-          if (confirm) {
-            const currentPersona = personaStore.activePersona;
-            if (currentPersona) {
-              if (!currentPersona.id) {
-                currentPersona.id = v4();
-              }
-              chat.bindedPersona = currentPersona.id;
-              alertNormal(language.personaBindedSuccess);
-            }
+          if (!confirm) return;
+          const currentPersona = personaStore.activePersona;
+          if (!currentPersona) {
+            console.warn("activePersona is null");
+            return;
           }
+          if (!currentPersona.id) currentPersona.id = v4();
+
+          chat.bindedPersona = currentPersona.id;
+          alertNormal(language.personaBindedSuccess);
         }
         break;
       }
@@ -724,9 +723,8 @@
       <button
         class="ml-auto text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
         onclick={() => {
-          if (!chara.chatFolders) {
-            chara.chatFolders = [];
-          }
+          if (!chara.chatFolders) chara.chatFolders = [];
+
           const folders = chara.chatFolders;
           const length = chara.chatFolders.length;
           folders.unshift({
