@@ -5,16 +5,14 @@
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PlusIcon } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character, groupChat } from "../../ts/storage/database/schema";
-    import { ReloadGUIPointer } from 'src/ts/stores.svelte';
-    import { characterStore, settingsStore, personaStore, messageStore } from 'src/ts/stores/domain';
-    import { selectedCharID } from "src/ts/stores.svelte";
+    import { ReloadGUIPointer, selectedCharID, bookmarkListOpen } from 'src/ts/stores.svelte';
+    import { characterStore, personaStore, messageStore } from 'src/ts/stores/domain';
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
 
     import { alertChatOptions, alertConfirm, alertError, alertNormal, alertSelect, alertStore } from "src/ts/alert";
-    import { bookmarkListOpen } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import Toggles from "./Toggles.svelte";
     import { releaseInactiveChatMessages } from "src/ts/stores/domain/messageStore.svelte";
@@ -43,8 +41,9 @@
 
     const MIN_CHAT_LIST_HEIGHT = 80
     const MIN_BOTTOM_HEIGHT = 80
-
     const STORAGE_KEY = 'risu_sidechat_bottom_height'
+    const FOLDER_COLORS = ["red", "green", "blue", "yellow", "indigo", "purple", "pink", "default"] as const
+
     let bottomHeight = $state(
         typeof localStorage !== 'undefined'
             ? Math.max(MIN_BOTTOM_HEIGHT, parseInt(localStorage.getItem(STORAGE_KEY) || '220', 10) || 220)
@@ -69,13 +68,16 @@
         return btnHeight + listMarginTop + MIN_CHAT_LIST_HEIGHT + sepHeight
     }
 
+    function getMaxBottomHeight(containerHeight: number): number {
+        return Math.max(MIN_BOTTOM_HEIGHT, containerHeight - getTopReservedHeight())
+    }
+
     $effect(() => {
         if (!parentContainerEl) return
         const clampHeight = () => {
             const containerHeight = parentContainerEl.clientHeight
             if (containerHeight <= 0) return
-            const reservedTop = getTopReservedHeight()
-            const maxHeight = Math.max(MIN_BOTTOM_HEIGHT, containerHeight - reservedTop)
+            const maxHeight = getMaxBottomHeight(containerHeight)
             if (bottomHeight > maxHeight) {
                 bottomHeight = maxHeight
             }
@@ -102,10 +104,8 @@
         function onPointerMove(e: PointerEvent) {
             const deltaY = startY - e.clientY
             const containerHeight = parentContainerEl ? parentContainerEl.clientHeight : window.innerHeight
-            const reservedTop = getTopReservedHeight()
-            const maxHeight = Math.max(MIN_BOTTOM_HEIGHT, containerHeight - reservedTop)
-            const newHeight = Math.min(Math.max(startHeight + deltaY, MIN_BOTTOM_HEIGHT), maxHeight)
-            bottomHeight = newHeight
+            const maxHeight = getMaxBottomHeight(containerHeight)
+            bottomHeight = Math.min(Math.max(startHeight + deltaY, MIN_BOTTOM_HEIGHT), maxHeight)
         }
 
         function onPointerUp(e: PointerEvent) {
@@ -157,6 +157,38 @@
         releaseInactiveChatMessages(() => getProtectedChatIds([chara.chats[index]?.id]))
     }
 
+    const syncSortedChats = (folders: Iterable<Element>, assignFolderId: boolean) => {
+        const currentChat = chara.chats[chara.chatPage]
+        const newChats: Chat[] = []
+
+        for (const folder of folders) {
+            const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
+            const folderId = chara.chatFolders[folderIdx]?.id
+            folder.querySelectorAll('[data-risu-chat-idx]').forEach(chatInFolder => {
+                const chatIdx = parseInt(chatInFolder.getAttribute('data-risu-chat-idx'))
+                const newChat = chara.chats[chatIdx]
+                if (assignFolderId) {
+                    newChat.folderId = folderId
+                }
+                newChats.push(newChat)
+            })
+        }
+
+        listEle.querySelectorAll('[data-risu-chat-idx]').forEach(chatEle => {
+            const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
+            const newChat = chara.chats[idx]
+            if (!newChats.includes(newChat)) {
+                if (assignFolderId && newChat.folderId != null) {
+                    newChat.folderId = null
+                }
+                newChats.push(newChat)
+            }
+        })
+
+        changeChatTo(newChats.indexOf(currentChat))
+        chara.chats = newChats
+    }
+
     const createStb = async () => {
         const loadId = ++sortableLoadId
         destroySortable()
@@ -169,36 +201,8 @@
         for (let chat of listEle.querySelectorAll('.risu-chat')) {
             chatsStb.push(new Sortable(chat, {
                 group: 'chats',
-                onEnd: async (event) => {
-                    const currentChatPage = chara.chatPage
-                    const newChats: Chat[] = []
-
-                    // const chats: HTMLElement = event.to
-                    // chats.querySelectorAll()
-                    
-                    listEle.querySelectorAll('[data-risu-chat-folder-idx]').forEach(folder => {
-                        const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
-                        folder.querySelectorAll('[data-risu-chat-idx]').forEach(chatInFolder => {
-                            const chatIdx = parseInt(chatInFolder.getAttribute('data-risu-chat-idx'))
-                            const newChat = chara.chats[chatIdx]
-                            newChat.folderId = chara.chatFolders[folderIdx].id
-                            newChats.push(newChat)
-                        })
-                    })
-
-                    listEle.querySelectorAll('[data-risu-chat-idx]').forEach(chatEle => {
-                        const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-                        const newChat = chara.chats[idx]
-                        if (newChats.includes(newChat) == false) {
-                            if (newChat.folderId != null)
-                                newChat.folderId = null
-                            newChats.push(newChat)
-                        }
-                    })
-
-                    changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
-                    chara.chats = newChats
-
+                onEnd: async () => {
+                    syncSortedChats(listEle.querySelectorAll('[data-risu-chat-folder-idx]'), true)
                     try {
                         this.destroy()
                     } catch (e) {}
@@ -210,32 +214,14 @@
         folderStb = Sortable.create(folderEles, {
             group: 'folders',
             onEnd: async (event) => {
-                const newFolders: ChatFolder[] = []
-                const newChats: Chat[] = []
                 const folders: HTMLElement[] = Array.from<HTMLElement>(event.to.children)
-
-                const currentChatPage = chara.chatPage
-
-                folders.forEach(folder => {
+                const newFolders: ChatFolder[] = folders.map(folder => {
                     const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
-                    newFolders.push(chara.chatFolders[folderIdx])
-
-                    folder.querySelectorAll('[data-risu-chat-idx]').forEach(chatEle => {
-                        const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-                        newChats.push(chara.chats[idx])
-                    })
+                    return chara.chatFolders[folderIdx]
                 })
 
-                listEle.querySelectorAll('[data-risu-chat-idx]').forEach(chatEle => {
-                    const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-                    if (newChats.includes(chara.chats[idx]) == false) {
-                        newChats.push(chara.chats[idx])
-                    }
-                })
-                
+                syncSortedChats(folders, false)
                 chara.chatFolders = newFolders
-                changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
-                chara.chats = newChats
                 try {
                     folderStb.destroy()
                 } catch (e) {}
@@ -254,7 +240,149 @@
             destroySortable()
         }
     })
+
+    const handleKeyActivate = (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            (e.currentTarget as HTMLElement).click()
+        }
+    }
+
+    const toggleEditMode = () => {
+        editMode = !editMode
+    }
+
+    const handleFolderMenu = async (e: MouseEvent, folder: ChatFolder) => {
+        e.stopPropagation()
+        const sel = parseInt(await alertSelect([language.changeFolderColor, language.cancel]))
+        if (sel === 0) {
+            const colorSel = parseInt(await alertSelect([...FOLDER_COLORS]))
+            folder.color = FOLDER_COLORS[colorSel]
+        }
+    }
+
+    const handleDeleteFolder = async (e: MouseEvent, folder: ChatFolder, folderIdx: number) => {
+        e.stopPropagation()
+        const d = await alertConfirm(`${language.removeConfirm}${folder.name}`)
+        if (d) {
+            $ReloadGUIPointer += 1
+            const folders = chara.chatFolders
+            folders.splice(folderIdx, 1)
+            chara.chats.forEach(chat => {
+                if (chat.folderId == folder.id) {
+                    chat.folderId = null
+                }
+            })
+            chara.chatFolders = folders
+        }
+    }
+
+    const handleChatMenu = async (chat: Chat, chatIdx: number) => {
+        const option = await alertChatOptions()
+        switch (option) {
+            case 0: {
+                await duplicateChat($selectedCharID, chatIdx, { selectNew: true })
+                break
+            }
+            case 1: {
+                if (chat.bindedPersona) {
+                    const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
+                    if (confirm) {
+                        chat.bindedPersona = ''
+                        alertNormal(language.personaUnbindedSuccess)
+                    }
+                } else {
+                    const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
+                    if (confirm) {
+                        const currentPersona = personaStore.activePersona
+                        if (currentPersona) {
+                            if (!currentPersona.id) {
+                                currentPersona.id = v4()
+                            }
+                            chat.bindedPersona = currentPersona.id
+                            alertNormal(language.personaBindedSuccess)
+                        }
+                    }
+                }
+                break
+            }
+            case 2: {
+                changeChatTo(chatIdx)
+                const { createMultiuserRoom } = await import('src/ts/sync/multiuser')
+                void createMultiuserRoom()
+                break
+            }
+        }
+    }
+
+    const handleExportChat = async (e: MouseEvent, chatIdx: number) => {
+        e.stopPropagation()
+        const { exportChat } = await import('src/ts/characters')
+        await exportChat(chatIdx)
+    }
+
+    const handleDeleteChat = async (e: MouseEvent, chat: Chat, chatIdx: number) => {
+        e.stopPropagation()
+        if (chara.chats.length === 1) {
+            alertError(language.errors.onlyOneChat)
+            return
+        }
+        const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
+        if (d) {
+            changeChatTo(0)
+            $ReloadGUIPointer += 1
+            let chats = chara.chats
+            chats.splice(chatIdx, 1)
+            chara.chats = chats
+            // Keep chat tabs consistent with the store: a tab that
+            // still referenced the deleted chat would deadlock the
+            // chat screen on its loading gate once activated.
+            if (chat.id) {
+                pruneChatTargets(chat.id)
+            }
+        }
+    }
 </script>
+
+{#snippet actionButton(onclick: (e: MouseEvent) => void, Icon: typeof MenuIcon, mr = true)}
+    <div
+        role="button"
+        tabindex="0"
+        onkeydown={handleKeyActivate}
+        class="text-textcolor2 hover:text-green-500 {mr ? 'mr-1' : ''} cursor-pointer"
+        {onclick}
+    >
+        <Icon size={18}/>
+    </div>
+{/snippet}
+
+{#snippet chatItem(chat: Chat, chatIdx: number, inFolder = false)}
+    <button
+        data-risu-chat-idx={chatIdx}
+        onclick={() => {
+            if (!editMode) {
+                changeChatTo(chatIdx)
+                $ReloadGUIPointer += 1
+            }
+        }}
+        class="{inFolder ? 'risu-chats ' : ''}rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"
+        class:bg-selected={chatIdx === chara.chatPage}
+    >
+        {#if editMode}
+            <TextInput bind:value={chara.chats[chatIdx].name} className="grow min-w-0" padding={false}/>
+        {:else}
+            <span class="flex items-center min-w-0 gap-1.5">
+                <span class="truncate">{chat.name}</span>
+            </span>
+        {/if}
+        <div class="rs-sidechat-actions grow flex justify-end">
+            {@render actionButton(() => handleChatMenu(chat, chatIdx), MenuIcon)}
+            {@render actionButton(toggleEditMode, PencilIcon)}
+            {@render actionButton((e) => handleExportChat(e, chatIdx), DownloadIcon)}
+            {@render actionButton((e) => handleDeleteChat(e, chat, chatIdx), TrashIcon, false)}
+        </div>
+    </button>
+{/snippet}
+
 <div bind:this={parentContainerEl} class="rs-sidechat-container flex flex-1 flex-col w-full min-h-0 overflow-hidden">
     <Button className="rs-sidechat-new-btn relative shrink-0 flex items-center justify-center gap-1.5" onclick={async () => {
         const cha = chara
@@ -290,6 +418,7 @@
         <div class="flex flex-col" bind:this={folderEles}>
             <!-- chat folder -->
             {#each chara.chatFolders as folder, i}
+            {@const folderChats = chara.chats.map((chat, idx) => ({ chat, idx })).filter(({ chat }) => chat.folderId == folder.id)}
             <div data-risu-chat-folder-idx={i}
                 class="rs-sidechat-folder flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
                 <!-- folder header -->
@@ -315,169 +444,19 @@
                         <span>{folder.name}</span>
                     {/if}
                     <div class="grow flex justify-end">
-                        <div role="button" tabindex="0" onkeydown={(e) => {
-                            if(e.key === 'Enter'){
-                                e.currentTarget.click()
-                            }
-                        }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async (e) => {
-                            e.stopPropagation()
-                            const sel = parseInt(await alertSelect([language.changeFolderColor, language.cancel]))
-                            switch (sel) {
-                                case 0:
-                                    const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-                                    const sel = parseInt(await alertSelect(colors))
-                                    folder.color = colors[sel]
-                                    break
-                            }
-                        }}>
-                            <MenuIcon size={18}/>
-                        </div>
-                        <div role="button" tabindex="0" onkeydown={(e) => {
-                            if(e.key === 'Enter'){
-                                e.currentTarget.click()
-                            }
-                        }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
-                            editMode = !editMode
-                        }}>
-                            <PencilIcon size={18}/>
-                        </div>
-                        <div role="button" tabindex="0" onkeydown={(e) => {
-                            if(e.key === 'Enter'){
-                                e.currentTarget.click()
-                            }
-                        }} class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={async (e) => {
-                            e.stopPropagation()
-                            const d = await alertConfirm(`${language.removeConfirm}${folder.name}`)
-                            if (d) {
-                                $ReloadGUIPointer += 1
-                                const folders = chara.chatFolders
-                                folders.splice(i, 1)
-                                chara.chats.forEach(chat => {
-                                    if (chat.folderId == folder.id) {
-                                        chat.folderId = null
-                                    }
-                                })
-                                chara.chatFolders = folders
-                            }
-                        }}>
-                            <TrashIcon size={18}/>
-                        </div>
+                        {@render actionButton((e) => handleFolderMenu(e, folder), MenuIcon)}
+                        {@render actionButton(toggleEditMode, PencilIcon)}
+                        {@render actionButton((e) => handleDeleteFolder(e, folder, i), TrashIcon, false)}
                     </div>
                 </button>
                 <!-- chats in folder -->
                 <div class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded ? 'hidden' : ''}">
-                    {#if chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id).length == 0}
+                    {#if folderChats.length === 0}
                     <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                     <div></div>
                     {:else}
-                    {#each chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id) as chat}
-                    <button data-risu-chat-idx={chara.chats.indexOf(chat)} onclick={() => {
-                        if(!editMode){
-                            changeChatTo(chara.chats.indexOf(chat))
-                            $ReloadGUIPointer += 1
-                        }
-                    }} class="risu-chats rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]" class:bg-selected={chara.chats.indexOf(chat) === chara.chatPage}>
-                        {#if editMode}
-                            <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
-                        {:else}
-                            <span class="flex items-center min-w-0 gap-1.5">
-                                <span class="truncate">{chat.name}</span>
-                            </span>
-                        {/if}
-                        <div class="rs-sidechat-actions grow flex justify-end">
-                            <div role="button" tabindex="0" onkeydown={(e) => {
-                                if(e.key === 'Enter'){
-                                    e.currentTarget.click()
-                                }
-                            }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
-                                const option = await alertChatOptions()
-                                switch(option){
-                                    case 0:{
-                                        const chatIdx = chara.chats.indexOf(chat)
-                                        await duplicateChat($selectedCharID, chatIdx, { selectNew: true })
-                                        break
-                                    }
-                                    case 1:{
-                                        if(chat.bindedPersona){
-                                            const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
-                                            if(confirm){
-                                                chat.bindedPersona = ''
-                                                alertNormal(language.personaUnbindedSuccess)
-                                            }
-                                        }
-                                        else{
-                                            const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
-                                            if(confirm){
-                                                const currentPersona = personaStore.activePersona
-                                                if(currentPersona){
-                                                    if(!currentPersona.id){
-                                                        currentPersona.id = v4()
-                                                    }
-                                                    chat.bindedPersona = currentPersona.id
-                                                    alertNormal(language.personaBindedSuccess)
-                                                }
-                                            }
-                                        }
-                                        break
-                                    }
-                                    case 2:{
-                                        changeChatTo(chara.chats.indexOf(chat))
-                                        const { createMultiuserRoom } = await import('src/ts/sync/multiuser')
-                                        void createMultiuserRoom()
-                                    }
-                                }
-                            }}>
-                                <MenuIcon size={18}/>
-                            </div>
-                            <div role="button" tabindex="0" onkeydown={(e) => {
-                                if(e.key === 'Enter'){
-                                    e.currentTarget.click()
-                                }
-                            }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
-                                editMode = !editMode
-                            }}>
-                                <PencilIcon size={18}/>
-                            </div>
-                            <div role="button" tabindex="0" onkeydown={(e) => {
-                                if(e.key === 'Enter'){
-                                    e.currentTarget.click()
-                                }
-                            }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async (e) => {
-                                e.stopPropagation()
-                                const { exportChat } = await import('src/ts/characters')
-                                await exportChat(chara.chats.indexOf(chat))
-                            }}>
-                                <DownloadIcon size={18}/>
-                            </div>
-                            <div role="button" tabindex="0" onkeydown={(e) => {
-                                if(e.key === 'Enter'){
-                                    e.currentTarget.click()
-                                }
-                            }} class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={async (e) => {
-                                e.stopPropagation()
-                                if(chara.chats.length === 1){
-                                    alertError(language.errors.onlyOneChat)
-                                    return
-                                }
-                                const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                                if(d){
-                                    changeChatTo(0)
-                                    $ReloadGUIPointer += 1
-                                    let chats = chara.chats
-                                    chats.splice(chara.chats.indexOf(chat), 1)
-                                    chara.chats = chats
-                                    // Keep chat tabs consistent with the store: a tab that
-                                    // still referenced the deleted chat would deadlock the
-                                    // chat screen on its loading gate once activated.
-                                    if (chat.id) {
-                                        pruneChatTargets(chat.id)
-                                    }
-                                }
-                            }}>
-                                <TrashIcon size={18}/>
-                            </div>
-                        </div>
-                    </button>
+                    {#each folderChats as { chat, idx }}
+                        {@render chatItem(chat, idx, true)}
                     {/each}
                     {/if}
                 </div>
@@ -488,114 +467,7 @@
         <div class="risu-chat flex flex-col">
             {#each chara.chats as chat, i}
             {#if chat.folderId == null}
-            <button data-risu-chat-idx={i} onclick={() => {
-                if(!editMode){
-                    changeChatTo(i)
-                    $ReloadGUIPointer += 1
-                }
-            }}
-            class="rs-sidechat-item flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md [content-visibility:auto] [contain-intrinsic-size:40px]"
-            class:bg-selected={i === chara.chatPage}>
-                {#if editMode}
-                    <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
-                {:else}
-                    <span class="flex items-center min-w-0 gap-1.5">
-                        <span class="truncate">{chat.name}</span>
-                    </span>
-                {/if}
-                <div class="rs-sidechat-actions grow flex justify-end">
-                    <div role="button" tabindex="0" onkeydown={(e) => {
-                        if(e.key === 'Enter'){
-                            e.currentTarget.click()
-                        }
-                    }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async () => {
-                        const option = await alertChatOptions()
-                        switch(option){
-                            case 0:{
-                                await duplicateChat($selectedCharID, i, { selectNew: true })
-                                break
-                            }
-                            case 1:{
-                                const chat = chara.chats[i]
-                                if(chat.bindedPersona){
-                                    const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
-                                    if(confirm){
-                                        chat.bindedPersona = ''
-                                        alertNormal(language.personaUnbindedSuccess)
-                                    }
-                                }
-                                else{
-                                    const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
-                                    if(confirm){
-                                        const currentPersona = personaStore.activePersona
-                                        if(currentPersona){
-                                            if(!currentPersona.id){
-                                                currentPersona.id = v4()
-                                            }
-                                            chat.bindedPersona = currentPersona.id
-                                            alertNormal(language.personaBindedSuccess)
-                                        }
-                                    }
-                                }
-                                break
-                            }
-                            case 2:{
-                                changeChatTo(i)
-                                const { createMultiuserRoom } = await import('src/ts/sync/multiuser')
-                                void createMultiuserRoom()
-                            }
-                        }
-                    }}>
-                        <MenuIcon size={18}/>
-                    </div>
-                    <div role="button" tabindex="0" onkeydown={(e) => {
-                        if(e.key === 'Enter'){
-                            e.currentTarget.click()
-                        }
-                    }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
-                        editMode = !editMode
-                    }}>
-                        <PencilIcon size={18}/>
-                    </div>
-                    <div role="button" tabindex="0" onkeydown={(e) => {
-                        if(e.key === 'Enter'){
-                            e.currentTarget.click()
-                        }
-                    }} class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={async (e) => {
-                        e.stopPropagation()
-                        const { exportChat } = await import('src/ts/characters')
-                        await exportChat(i)
-                    }}>
-                        <DownloadIcon size={18}/>
-                    </div>
-                    <div role="button" tabindex="0" onkeydown={(e) => {
-                        if(e.key === 'Enter'){
-                            e.currentTarget.click()
-                        }
-                    }} class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={async (e) => {
-                        e.stopPropagation()
-                        if(chara.chats.length === 1){
-                            alertError(language.errors.onlyOneChat)
-                            return
-                        }
-                        const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                        if(d){
-                            changeChatTo(0)
-                            $ReloadGUIPointer += 1
-                            let chats = chara.chats
-                            chats.splice(i, 1)
-                            chara.chats = chats
-                            // Keep chat tabs consistent with the store (see the
-                            // folder chat deletion above).
-                            if (chat.id) {
-                                pruneChatTargets(chat.id)
-                            }
-                        }
-                    }}>
-                        <TrashIcon size={18}/>
-                    </div>
-                </div>
-            </button>
+                {@render chatItem(chat, i, false)}
             {/if}
             {/each}
         </div>
@@ -635,9 +507,7 @@
             }}>
                 <HardDriveUploadIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={() => {
-                editMode = !editMode
-            }}>
+            <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" onclick={toggleEditMode}>
                 <PencilIcon size={18}/>
             </button>
             <button class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer" title={language.branchGraphTitle} onclick={async () => {
