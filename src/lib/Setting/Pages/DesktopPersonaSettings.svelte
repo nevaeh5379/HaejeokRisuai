@@ -26,7 +26,7 @@
     XIcon,
     ImageOffIcon,
   } from "@lucide/svelte";
-  import { getCurrentlyColorScheme } from "src/ts/gui/colorscheme";
+  import { getCurrentlyColorScheme, isLight } from "src/ts/gui/colorscheme";
 
   let stb: Sortable = null;
   let ele: HTMLDivElement = $state();
@@ -229,7 +229,7 @@
                   ? 'border-selected bg-selected/20 ring-1 ring-selected/70 shadow-xs'
                   : 'border-darkborderc/60 bg-darkbg/30 hover:bg-darkbutton hover:border-textcolor/30'}"
                 role="button"
-                class:border-gray-300={getCurrentlyColorScheme}
+                class:border-gray-300={isLight()}
                 tabindex="0"
                 onclick={() => changeUserPersona(originalIndex)}
                 onkeydown={(e) => {
