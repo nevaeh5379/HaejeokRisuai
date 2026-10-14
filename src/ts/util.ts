@@ -190,6 +190,12 @@ export function selectFileByDom(
       settingsStore.state.allowAllExtentionFiles ||
       isIOS() ||
       allowedExtensions[0] === "*";
+    // Android file pickers may return a display name without the original
+    // extension (especially for content-provider backed files). When the
+    // accept filter had to be dropped for custom formats we cannot rely on
+    // the name either, so keep the user's selection instead of silently
+    // resolving no files.
+    let acceptFilterRemoved = false;
     if (!acceptAll) {
       if (allowedExtensions && allowedExtensions.length) {
         // Custom formats (e.g. .risum, .charx, .risupreset) have no system
@@ -203,6 +209,7 @@ export function selectFileByDom(
           allowedExtensions.every((ext) => hasKnownMimeType(ext));
         if (!allKnown) {
           fileInput.removeAttribute("accept");
+          acceptFilterRemoved = true;
         } else {
           fileInput.accept = allowedExtensions
             .map((ext) => `.${ext}`)
@@ -214,6 +221,7 @@ export function selectFileByDom(
       // valid HTML accept token and Android WebView may pass it through as an
       // unusable MIME filter to the system document picker.
       fileInput.removeAttribute("accept");
+      acceptFilterRemoved = true;
     }
 
     fileInput.addEventListener("change", (event) => {
@@ -222,14 +230,18 @@ export function selectFileByDom(
         return;
       }
 
-      const files = acceptAll
-        ? Array.from(fileInput.files)
-        : Array.from(fileInput.files).filter((file) => {
-            const fileExtension = file.name.split(".").pop().toLowerCase();
-            return (
-              !allowedExtensions || allowedExtensions.includes(fileExtension)
-            );
-          });
+      const selected = Array.from(fileInput.files);
+      let files = selected;
+      if (!acceptAll) {
+        const filtered = selected.filter((file) => {
+          const fileExtension = file.name.split(".").pop().toLowerCase();
+          return (
+            !allowedExtensions || allowedExtensions.includes(fileExtension)
+          );
+        });
+        files =
+          acceptFilterRemoved && filtered.length === 0 ? selected : filtered;
+      }
 
       fileInput.remove();
       resolve(files);
@@ -241,7 +253,22 @@ export function selectFileByDom(
   });
 }
 
-function readFileAsUint8Array(file: File) {
+async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
+  // Android WebView can hand back content-provider backed Files whose
+  // FileReader/blob stream path is unreliable, while slice().arrayBuffer()
+  // remains stable. Prefer it and only fall back to FileReader when the
+  // Blob API is unavailable or fails.
+  if (
+    typeof file.slice === "function" &&
+    typeof file.arrayBuffer === "function"
+  ) {
+    try {
+      return new Uint8Array(await file.slice(0, file.size).arrayBuffer());
+    } catch (error) {
+      console.warn("Falling back to FileReader for file input", error);
+    }
+  }
+
   return new Promise<Uint8Array>((resolve, reject) => {
     const reader = new FileReader();
 
