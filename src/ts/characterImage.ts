@@ -72,9 +72,12 @@ class CharacterImageCache extends Map<string, string> {
   }
 
   override clear(): void {
-    const urls = new Set(
-      [...super.values()].filter((value) => value.startsWith("blob:")),
-    );
+    const urls = new Set<string>();
+    for (const value of super.values()) {
+      if (value.startsWith("blob:")) {
+        urls.add(value);
+      }
+    }
     super.clear();
     this.pinnedKeys.clear();
     if (
