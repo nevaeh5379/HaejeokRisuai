@@ -135,7 +135,11 @@ export class ChatWindowManager {
   }
 
   listWindows(): ChatWorkspaceWindowState[] {
-    return [...this.windows.values()].map((window) => this.cloneWindow(window));
+    const list: ChatWorkspaceWindowState[] = [];
+    for (const window of this.windows.values()) {
+      list.push(this.cloneWindow(window));
+    }
+    return list;
   }
 
   snapshot(): ChatWorkspaceSnapshot {
