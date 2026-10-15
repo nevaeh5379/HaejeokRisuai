@@ -93,6 +93,15 @@ test("keeps the narrow macOS sidebar above the chat tab strip", async ({
 test("keeps settings above the dynamic sidebar and clear of macOS traffic lights", async ({
   page,
 }) => {
+  await page.route(/\/src\/ts\/platform\.ts(?:\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(
+      'export const isTauriMacOS = tauriOsType === "macos";',
+      "export const isTauriMacOS = true;",
+    );
+    await route.fulfill({ response, body });
+  });
+
   await waitForAppReady(page);
 
   await page.evaluate(async () => {
@@ -162,6 +171,15 @@ test("keeps settings above the dynamic sidebar and clear of macOS traffic lights
 test("centers and enables dragging on the narrow macOS settings header", async ({
   page,
 }) => {
+  await page.route(/\/src\/ts\/platform\.ts(?:\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(
+      'export const isTauriMacOS = tauriOsType === "macos";',
+      "export const isTauriMacOS = true;",
+    );
+    await route.fulfill({ response, body });
+  });
+
   await page.setViewportSize({ width: 700, height: 600 });
   await waitForAppReady(page);
 
