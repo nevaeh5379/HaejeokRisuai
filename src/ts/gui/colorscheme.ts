@@ -310,7 +310,7 @@ export const colorSchemeList = Object.keys(
 ) as (keyof typeof colorShemes)[];
 
 export function getCurrentlyColorScheme() {
-  return settingsStore.state.colorScheme.type
+  return settingsStore.state.colorScheme?.type ?? "dark";
 }
 
 export function isLight() {
