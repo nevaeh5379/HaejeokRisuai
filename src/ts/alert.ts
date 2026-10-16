@@ -61,6 +61,32 @@ export const alertStore = {
   },
 };
 
+/** Show an alert without waiting for it to be dismissed. */
+function show(d: alertData) {
+  alertStoreImported.set(d);
+}
+
+/** Show an alert, wait until it is dismissed, then read the raw response. */
+async function ask(d: alertData): Promise<string> {
+  show(d);
+  await alert.waitUntilClosed();
+  return get(alertStoreImported).msg;
+}
+
+/** Show a TOS dialog once per acceptance key and remember the answer. */
+async function askTos(type: "tos" | "risu-tos", acceptanceKey: string) {
+  if (localStorage.getItem(acceptanceKey) === "true") {
+    return true;
+  }
+
+  const accepted = (await ask({ type, msg: type })) === "yes";
+  if (accepted) {
+    localStorage.setItem(acceptanceKey, "true");
+  }
+
+  return accepted;
+}
+
 /**
  * Namespaced alert API. This object holds the real implementations; the flat
  * `alertXxx` exports at the bottom of this file are deprecated references kept
@@ -81,14 +107,88 @@ export const alert = {
 
   /** True while a blocking (user interaction required) alert is shown. */
   isActive() {
+    const type = get(alertStoreImported).type;
     return (
-      get(alertStoreImported).type !== "none" &&
-      get(alertStoreImported).type !== "toast" &&
-      get(alertStoreImported).type !== "wait" &&
-      get(alertStoreImported).type !== "progress"
+      type !== "none" &&
+      type !== "toast" &&
+      type !== "wait" &&
+      type !== "progress"
     );
   },
 
+  /** Show a plain (non error) alert message. */
+  normal(msg: string) {
+    show({ type: "normal", msg });
+  },
+
+  /** Show a plain alert message and wait until it is dismissed. */
+  async normalWait(msg: string) {
+    await ask({ type: "normal", msg });
+  },
+
+  /** Show a blocking "please wait" alert and wait until it is dismissed. */
+  async errorWait(msg: string) {
+    await ask({ type: "wait2", msg });
+  },
+
+  /** Show a transient toast message. */
+  toast(msg: string) {
+    show({ type: "toast", msg });
+  },
+
+  /** Show a non blocking "wait" message. */
+  wait(msg: string) {
+    show({ type: "wait", msg });
+  },
+
+  /** Close the currently shown alert. */
+  clear() {
+    show({ type: "none", msg: "" });
+  },
+
+  /** Show the HypaMemory V2 dialog. */
+  hypaV2() {
+    show({ type: "hypaV2", msg: "" });
+  },
+
+  /** Show the request logs dialog. */
+  requestLogs() {
+    show({ type: "requestlogs", msg: "" });
+  },
+
+  /** Ask a yes/no question. */
+  async confirm(msg: string) {
+    return (await ask({ type: "ask", msg })) === "yes";
+  },
+
+  /** Ask a plugin permission question. */
+  async pluginConfirm(msg: string) {
+    return (await ask({ type: "pluginconfirm", msg })) === "yes";
+  },
+
+  /** Ask the user to pick a character and return its id. */
+  selectChar() {
+    return ask({ type: "selectChar", msg: "" });
+  },
+
+  /** Show the module select dialog and return the selected module id. */
+  moduleSelect() {
+    return ask({ type: "selectModule", msg: "" });
+  },
+
+  /** Ask for a new character name and return it. */
+  addCharacter() {
+    return ask({ type: "addchar", msg: language.addCharacter });
+  },
+
+  /** Show the chat options dialog and return the selected option index. */
+  async chatOptions() {
+    return parseInt(
+      await ask({ type: "chatOptions", msg: language.chatOptions }),
+    );
+  },
+
+  /** Show an error alert. Accepts an Error and keeps its stack trace. */
   error(msg: string | Error) {
     console.error(msg);
     const db = settingsStore.state;
@@ -131,97 +231,11 @@ export const alert = {
             : language.errors.networkFetch;
     }
 
-    alertStoreImported.set({
+    show({
       type: "error",
       msg: msg,
       submsg: submsg,
       stackTrace: stackTrace,
-    });
-  },
-
-  /** Show a plain (non error) alert message. */
-  normal(msg: string) {
-    alertStoreImported.set({
-      type: "normal",
-      msg: msg,
-    });
-  },
-
-  /** Show a plain alert message and wait until it is dismissed. */
-  async normalWait(msg: string) {
-    alert.normal(msg);
-    await alert.waitUntilClosed();
-  },
-
-  /** Show a blocking "please wait" alert and wait until it is dismissed. */
-  async errorWait(msg: string) {
-    alertStoreImported.set({
-      type: "wait2",
-      msg: msg,
-    });
-    await alert.waitUntilClosed();
-  },
-
-  /** Ask for a new character name and return it. */
-  async addCharacter() {
-    alertStoreImported.set({
-      type: "addchar",
-      msg: language.addCharacter,
-    });
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg;
-  },
-
-  /** Show the chat options dialog and return the selected option index. */
-  async chatOptions() {
-    alertStoreImported.set({
-      type: "chatOptions",
-      msg: language.chatOptions,
-    });
-    await alert.waitUntilClosed();
-
-    return parseInt(get(alertStoreImported).msg);
-  },
-
-  /** Show a select list and return the selected value. */
-  async select(msg: string[], display?: string) {
-    const message =
-      display !== undefined
-        ? `__DISPLAY__${display}||${msg.join("||")}`
-        : msg.join("||");
-    alertStoreImported.set({
-      type: "select",
-      msg: message,
-    });
-
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg;
-  },
-
-  /** Show a markdown alert. */
-  md(msg: string, mascot?: "help") {
-    alertStoreImported.set({
-      type: "markdown",
-      msg: msg,
-      mascot,
-    });
-  },
-
-  /** Show a transient toast message. */
-  toast(msg: string) {
-    alertStoreImported.set({
-      type: "toast",
-      msg: msg,
-    });
-  },
-
-  /** Show a non blocking "wait" message. */
-  wait(msg: string) {
-    alertStoreImported.set({
-      type: "wait",
-      msg: msg,
     });
   },
 
@@ -245,7 +259,7 @@ export const alert = {
       typeof progress === "number"
         ? Math.min(100, Math.max(0, progress)).toFixed(1)
         : progress;
-    alertStoreImported.set({
+    show({
       type: "progress",
       msg: msg,
       submsg: percentStr,
@@ -261,164 +275,52 @@ export const alert = {
     });
   },
 
-  /** Close the currently shown alert. */
-  clear() {
-    alertStoreImported.set({
-      type: "none",
-      msg: "",
-    });
-  },
-
-  /** Ask the user to pick a character and return its id. */
-  async selectChar() {
-    alertStoreImported.set({
-      type: "selectChar",
-      msg: "",
-    });
-
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg;
-  },
-
-  /** Ask a yes/no question. */
-  async confirm(msg: string) {
-    alertStoreImported.set({
-      type: "ask",
-      msg: msg,
-    });
-
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg === "yes";
-  },
-
-  /** Ask a plugin permission question. */
-  async pluginConfirm(msg: string) {
-    alertStoreImported.set({
-      type: "pluginconfirm",
-      msg: msg,
-    });
-
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg === "yes";
-  },
-
-  /** Show the card export dialog and return the chosen export options. */
-  async cardExport(type: string = "") {
-    alertStoreImported.set({
-      type: "cardexport",
-      msg: "",
-      submsg: type,
-    });
-
-    await alert.waitUntilClosed();
-
-    return JSON.parse(get(alertStoreImported).msg) as {
-      type: string;
-      type2: string;
-    };
-  },
-
-  /** Show the Haejeok TOS dialog and return whether it was accepted. */
-  async tos() {
-    const acceptanceKey = "haejeok_tos_2026_08_23";
-    if (localStorage.getItem(acceptanceKey) === "true") {
-      return true;
-    }
-
-    alertStoreImported.set({
-      type: "tos",
-      msg: "tos",
-    });
-
-    await alert.waitUntilClosed();
-
-    if (get(alertStoreImported).msg === "yes") {
-      localStorage.setItem(acceptanceKey, "true");
-      return true;
-    }
-
-    return false;
-  },
-
-  /** Show the Risu service TOS dialog and return whether it was accepted. */
-  async risuServiceTos() {
-    const acceptanceKey = "risu_service_tos_2026_08_23";
-    if (localStorage.getItem(acceptanceKey) === "true") {
-      return true;
-    }
-
-    alertStoreImported.set({
-      type: "risu-tos",
-      msg: "risu-tos",
-    });
-
-    await alert.waitUntilClosed();
-
-    if (get(alertStoreImported).msg === "yes") {
-      localStorage.setItem(acceptanceKey, "true");
-      return true;
-    }
-
-    return false;
-  },
-
-  /** Ask for a text input and return it. */
-  async input(
-    msg: string,
-    datalist?: [string, string][],
-    defaultValue?: string,
-  ) {
-    alertStoreImported.set({
-      type: "input",
-      msg: msg,
-      datalist: datalist ?? [],
-      defaultValue: defaultValue ?? "",
-    });
-
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg;
-  },
-
-  /** Show the module select dialog and return the selected module id. */
-  async moduleSelect() {
-    alertStoreImported.set({
-      type: "selectModule",
-      msg: "",
-    });
-
-    await alert.waitUntilClosed();
-
-    return get(alertStoreImported).msg;
-  },
-
   /** Show the request data dialog for a generation. */
   requestData(info: AlertGenerationInfoStoreData) {
     alertGenerationInfoStore.set(info);
-    alertStoreImported.set({
+    show({
       type: "requestdata",
       msg: info.genInfo.generationId ?? "none",
     });
   },
 
-  /** Show the HypaMemory V2 dialog. */
-  hypaV2() {
-    alertStoreImported.set({
-      type: "hypaV2",
-      msg: "",
+  /** Show a markdown alert. */
+  md(msg: string, mascot?: "help") {
+    show({ type: "markdown", msg, mascot });
+  },
+
+  /** Show a select list and return the selected value. */
+  select(msgs: string[], display?: string) {
+    return ask({
+      type: "select",
+      msg:
+        display !== undefined
+          ? `__DISPLAY__${display}||${msgs.join("||")}`
+          : msgs.join("||"),
     });
   },
 
-  /** Show the request logs dialog. */
-  requestLogs() {
-    alertStoreImported.set({
-      type: "requestlogs",
-      msg: "",
+  /** Ask for a text input and return it. */
+  input(msg: string, datalist?: [string, string][], defaultValue?: string) {
+    return ask({
+      type: "input",
+      msg,
+      datalist: datalist ?? [],
+      defaultValue: defaultValue ?? "",
     });
   },
+
+  /** Show the card export dialog and return the chosen export options. */
+  async cardExport(type: string = "") {
+    const response = await ask({ type: "cardexport", msg: "", submsg: type });
+    return JSON.parse(response) as { type: string; type2: string };
+  },
+
+  /** Show the Haejeok TOS dialog and return whether it was accepted. */
+  tos: () => askTos("tos", "haejeok_tos_2026_08_23"),
+
+  /** Show the Risu service TOS dialog and return whether it was accepted. */
+  risuServiceTos: () => askTos("risu-tos", "risu_service_tos_2026_08_23"),
 };
 
 /**
@@ -445,7 +347,7 @@ export const alertErrorWait = alert.errorWait;
 export const alertAddCharacter = alert.addCharacter;
 /** @deprecated Use `alert.chatOptions()` instead. */
 export const alertChatOptions = alert.chatOptions;
-/** @deprecated Use `alert.select(msg, display)` instead. */
+/** @deprecated Use `alert.select(msgs, display)` instead. */
 export const alertSelect = alert.select;
 /** @deprecated Use `alert.md(msg, mascot)` instead. */
 export const alertMd = alert.md;
