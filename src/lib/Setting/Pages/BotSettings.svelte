@@ -1337,36 +1337,36 @@
     {:else if modelInfo.format === LLMFormat.NovelAI}
         <div class="flex flex-col p-3 bg-darkbg mt-4">
             <span class="text-textcolor">Starter</span>
-            <TextInput bind:value={presetStore.state.NAIsettings.starter} placeholder={'⁂'} />
+            <TextInput bind:value={presetStore.state.NAISettings.starter} placeholder={'⁂'} />
             <span class="text-textcolor">Seperator</span>
-            <TextInput bind:value={presetStore.state.NAIsettings.seperator} placeholder={"\\n"}/>
+            <TextInput bind:value={presetStore.state.NAISettings.seperator} placeholder={"\\n"}/>
         </div>
         <span class="text-textcolor">Top P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.topP}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.topP}/>
         <span class="text-textcolor">Top K</span>
-        <SliderInput min={0} max={100} step={1} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.topK}/>
+        <SliderInput min={0} max={100} step={1} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.topK}/>
         <span class="text-textcolor">Top A</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.topA}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.topA}/>
         <span class="text-textcolor">Tailfree Sampling</span>
-        <SliderInput min={0} max={1} step={0.001} marginBottom fixed={3} bind:value={presetStore.state.NAIsettings.tailFreeSampling}/>
+        <SliderInput min={0} max={1} step={0.001} marginBottom fixed={3} bind:value={presetStore.state.NAISettings.tailFreeSampling}/>
         <span class="text-textcolor">Typical P</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.typicalp}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.typicalp}/>
         <span class="text-textcolor">Repetition Penalty</span>
-        <SliderInput min={0} max={3} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.repetitionPenalty}/>
+        <SliderInput min={0} max={3} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.repetitionPenalty}/>
         <span class="text-textcolor">Repetition Penalty Range</span>
-        <SliderInput min={0} max={8192} step={1} marginBottom fixed={0} bind:value={presetStore.state.NAIsettings.repetitionPenaltyRange}/>
+        <SliderInput min={0} max={8192} step={1} marginBottom fixed={0} bind:value={presetStore.state.NAISettings.repetitionPenaltyRange}/>
         <span class="text-textcolor">Repetition Penalty Slope</span>
-        <SliderInput min={0} max={10} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.repetitionPenaltySlope}/>
+        <SliderInput min={0} max={10} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.repetitionPenaltySlope}/>
         <span class="text-textcolor">Frequency Penalty</span>
-        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.frequencyPenalty}/>
+        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.frequencyPenalty}/>
         <span class="text-textcolor">Presence Penalty</span>
-        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.presencePenalty}/>
+        <SliderInput min={-2} max={2} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.presencePenalty}/>
         <span class="text-textcolor">Mirostat LR</span>
-        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.mirostat_lr}/>
+        <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.mirostat_lr}/>
         <span class="text-textcolor">Mirostat Tau</span>
-        <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.mirostat_tau}/>
+        <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.mirostat_tau}/>
         <span class="text-textcolor">Cfg Scale</span>
-        <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAIsettings.cfg_scale}/>
+        <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={presetStore.state.NAISettings.cfg_scale}/>
 
     {:else if modelInfo.format === LLMFormat.NovelList}
         <span class="text-textcolor">Top P</span>
@@ -1566,7 +1566,7 @@
     </Accordion>
 
     <Accordion styled name={language.regexScript}>
-        <RegexList bind:value={presetStore.state.presetRegex} buttons />
+        <RegexList bind:value={presetStore.state.regex} buttons />
     </Accordion>
 
     <Accordion styled name={language.icon}>

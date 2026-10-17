@@ -1,12 +1,13 @@
 import { prebuiltNAIpresets } from "../../../process/templates/templates";
-import { defaultColorScheme } from "../../../gui/colorscheme";
-import { safeStructuredClone } from "../../../polyfill";
+import { defaultColorScheme } from "../../../gui/colorSchemeDefaults";
+import { fallback, object, picklist, type InferOutput } from "valibot";
 import { LLMFormat } from "../../../model/types";
 import type { botPreset, Database } from "../schema";
 import { defaultAIN, defaultOoba } from "../../presets/presetDefaults";
-import { normalizePromptTemplate } from "../../presets/presetService";
+import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
+  defaultLooseObject,
   defaultNumber,
   defaultPicklist,
   defaultString,
@@ -29,7 +30,16 @@ const providerScalarDefaults = {
   chatLimitSize: defaultNumber(-1),
   animationSpeed: defaultNumber(0.4),
   colorSchemeName: defaultString("default"),
-  hypaModel: defaultString("openai3small"),
+  hypaModel: fallback(
+    picklist([
+      "custom",
+      "ada",
+      "openai3small",
+      "openai3large",
+      "voyageContext3",
+    ]),
+    "openai3small",
+  ),
   mancerHeader: defaultString(),
   emotionProcesser: defaultPicklist(["submodel", "embedding"], "submodel"),
   translatorType: defaultPicklist(
@@ -113,27 +123,114 @@ const promptSettingsDefaults = {
   maxThoughtTagDepth: defaultNumber(-1),
 };
 
-export type ProviderValidatedDefaults = Required<
-  Pick<
-    Database,
-    | keyof typeof providerScalarDefaults
-    | "localNetworkMode"
-    | "localNetworkTimeoutSec"
-    | "deeplOptions"
-    | "deeplXOptions"
-    | "google"
-    | "promptSettings"
-    | "openrouterProvider"
-  >
->;
+const colorSchemeDefaults = {
+  bgcolor: defaultString(defaultColorScheme.bgcolor),
+  darkbg: defaultString(defaultColorScheme.darkbg),
+  borderc: defaultString(defaultColorScheme.borderc),
+  selected: defaultString(defaultColorScheme.selected),
+  draculared: defaultString(defaultColorScheme.draculared),
+  textcolor: defaultString(defaultColorScheme.textcolor),
+  textcolor2: defaultString(defaultColorScheme.textcolor2),
+  darkBorderc: defaultString(defaultColorScheme.darkBorderc),
+  darkbutton: defaultString(defaultColorScheme.darkbutton),
+  type: fallback(picklist(["light", "dark"]), defaultColorScheme.type),
+};
 
-const supportedHypaModels = new Set([
-  "custom",
-  "ada",
-  "openai3small",
-  "openai3large",
-  "voyageContext3",
-]);
+const oobaDefaults = {
+  max_new_tokens: defaultNumber(defaultOoba.max_new_tokens),
+  do_sample: defaultBoolean(defaultOoba.do_sample),
+  temperature: defaultNumber(defaultOoba.temperature),
+  top_p: defaultNumber(defaultOoba.top_p),
+  typical_p: defaultNumber(defaultOoba.typical_p),
+  repetition_penalty: defaultNumber(defaultOoba.repetition_penalty),
+  encoder_repetition_penalty: defaultNumber(
+    defaultOoba.encoder_repetition_penalty,
+  ),
+  top_k: defaultNumber(defaultOoba.top_k),
+  min_length: defaultNumber(defaultOoba.min_length),
+  no_repeat_ngram_size: defaultNumber(defaultOoba.no_repeat_ngram_size),
+  num_beams: defaultNumber(defaultOoba.num_beams),
+  penalty_alpha: defaultNumber(defaultOoba.penalty_alpha),
+  length_penalty: defaultNumber(defaultOoba.length_penalty),
+  early_stopping: defaultBoolean(defaultOoba.early_stopping),
+  seed: defaultNumber(defaultOoba.seed),
+  add_bos_token: defaultBoolean(defaultOoba.add_bos_token),
+  truncation_length: defaultNumber(defaultOoba.truncation_length),
+  ban_eos_token: defaultBoolean(defaultOoba.ban_eos_token),
+  skip_special_tokens: defaultBoolean(defaultOoba.skip_special_tokens),
+  top_a: defaultNumber(defaultOoba.top_a),
+  tfs: defaultNumber(defaultOoba.tfs),
+  epsilon_cutoff: defaultNumber(defaultOoba.epsilon_cutoff),
+  eta_cutoff: defaultNumber(defaultOoba.eta_cutoff),
+  formating: defaultLooseObject({
+    header: defaultString(defaultOoba.formating.header),
+    systemPrefix: defaultString(defaultOoba.formating.systemPrefix),
+    userPrefix: defaultString(defaultOoba.formating.userPrefix),
+    assistantPrefix: defaultString(defaultOoba.formating.assistantPrefix),
+    seperator: defaultString(defaultOoba.formating.seperator),
+    useName: defaultBoolean(defaultOoba.formating.useName),
+  }),
+};
+
+const ainDefaults = {
+  top_p: defaultNumber(defaultAIN.top_p),
+  rep_pen: defaultNumber(defaultAIN.rep_pen),
+  top_a: defaultNumber(defaultAIN.top_a),
+  rep_pen_slope: defaultNumber(defaultAIN.rep_pen_slope),
+  rep_pen_range: defaultNumber(defaultAIN.rep_pen_range),
+  typical_p: defaultNumber(defaultAIN.typical_p),
+  badwords: defaultString(defaultAIN.badwords),
+  stoptokens: defaultString(defaultAIN.stoptokens),
+  top_k: defaultNumber(defaultAIN.top_k),
+};
+
+const naiDefaults = {
+  topK: defaultNumber(prebuiltNAIpresets.topK),
+  topP: defaultNumber(prebuiltNAIpresets.topP),
+  topA: defaultNumber(prebuiltNAIpresets.topA),
+  tailFreeSampling: defaultNumber(prebuiltNAIpresets.tailFreeSampling),
+  repetitionPenalty: defaultNumber(prebuiltNAIpresets.repetitionPenalty),
+  repetitionPenaltyRange: defaultNumber(
+    prebuiltNAIpresets.repetitionPenaltyRange,
+  ),
+  repetitionPenaltySlope: defaultNumber(
+    prebuiltNAIpresets.repetitionPenaltySlope,
+  ),
+  repostitionPenaltyPresence: defaultNumber(
+    prebuiltNAIpresets.repostitionPenaltyPresence,
+  ),
+  seperator: defaultString(prebuiltNAIpresets.seperator),
+  frequencyPenalty: defaultNumber(prebuiltNAIpresets.frequencyPenalty),
+  presencePenalty: defaultNumber(prebuiltNAIpresets.presencePenalty),
+  typicalp: defaultNumber(prebuiltNAIpresets.typicalp),
+  starter: defaultString(prebuiltNAIpresets.starter),
+  cfg_scale: defaultNumber(1),
+  mirostat_tau: defaultNumber(0),
+  mirostat_lr: defaultNumber(1),
+};
+
+const providerNestedDefaults = {
+  ooba: defaultLooseObject(oobaDefaults),
+  ainconfig: defaultLooseObject(ainDefaults),
+  NAISettings: defaultLooseObject(naiDefaults),
+  colorScheme: defaultLooseObject(colorSchemeDefaults),
+  deeplOptions: defaultLooseObject(deeplOptionsDefaults),
+  deeplXOptions: defaultLooseObject(deeplXOptionsDefaults),
+  google: defaultLooseObject(googleDefaults),
+  promptSettings: defaultLooseObject(promptSettingsDefaults),
+  openrouterProvider: defaultLooseObject(openRouterProviderDefaults),
+};
+
+const providerDefaultsSchema = object({
+  ...providerScalarDefaults,
+  ...localNetworkDefaults,
+  ...providerNestedDefaults,
+  customColorScheme: defaultLooseObject(colorSchemeDefaults),
+});
+
+export type ProviderValidatedDefaults = InferOutput<
+  typeof providerDefaultsSchema
+>;
 
 type LocalNetworkSettings = Pick<
   botPreset,
@@ -193,48 +290,34 @@ function normalizeOllamaSettings(data: Database): void {
 }
 
 export function normalizeProviderDatabaseSettings(data: Database): void {
+  const migratedProvider = migrateOpenRouterProvider(data.openrouterProvider);
   Object.assign(data, parseDefaults(providerScalarDefaults, data));
-  data.ooba ??= safeStructuredClone(defaultOoba);
-  data.ainconfig ??= safeStructuredClone(defaultAIN);
+  Object.assign(
+    data,
+    parseDefaults(providerNestedDefaults, {
+      ...data,
+      openrouterProvider: migratedProvider,
+    }),
+  );
+  data.customColorScheme = mergeDefaults(
+    colorSchemeDefaults,
+    data.customColorScheme ??
+      (data.colorSchemeName === "custom"
+        ? data.colorScheme
+        : defaultColorScheme),
+  );
   data.openrouterSubRequestModel ??= data.openrouterRequestModel;
   data.nanogptSubRequestModel ??= data.nanogptRequestModel;
   data.nanogptSubRequestModelName ??= data.nanogptRequestModelName;
   data.nanogptSubProvider ??= data.nanogptProvider;
   data.nanogptSubUseSubscriptionEndpoint ??=
     data.nanogptUseSubscriptionEndpoint;
-  data.NAIsettings ??= safeStructuredClone(prebuiltNAIpresets);
-  data.colorScheme ??= safeStructuredClone(defaultColorScheme);
-  data.customColorScheme ??= safeStructuredClone(
-    data.colorSchemeName === "custom" ? data.colorScheme : defaultColorScheme,
-  );
-  data.NAIsettings.starter ??= "";
-  if (!supportedHypaModels.has(data.hypaModel as string)) {
-    data.hypaModel = "openai3small";
-  }
-  data.deeplOptions = mergeDefaults(deeplOptionsDefaults, data.deeplOptions);
-  data.deeplXOptions = mergeDefaults(deeplXOptionsDefaults, data.deeplXOptions);
-  data.NAIsettings.cfg_scale ??= 1;
-  data.NAIsettings.mirostat_tau ??= 0;
-  data.NAIsettings.mirostat_lr ??= 1;
   data.customProxySubRequestModel ??= data.customProxyRequestModel;
   normalizeLocalNetworkSettings(data);
-  data.presetRegex ??= [];
+  data.regex ??= [];
   data.reverseProxyOobaArgs ??= {
     mode: "instruct",
   };
-  data.google = mergeDefaults(googleDefaults, data.google);
-  data.promptSettings = mergeDefaults(
-    promptSettingsDefaults,
-    data.promptSettings,
-  );
   data.additionalParams ??= [];
   normalizeOllamaSettings(data);
-  const migratedProvider = migrateOpenRouterProvider(data.openrouterProvider);
-  if (migratedProvider) {
-    data.openrouterProvider = migratedProvider;
-  }
-  data.openrouterProvider = parseDefaults(
-    openRouterProviderDefaults,
-    data.openrouterProvider ?? {},
-  );
 }
