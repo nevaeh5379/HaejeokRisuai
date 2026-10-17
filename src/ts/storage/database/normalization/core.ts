@@ -3,7 +3,7 @@ import {
   defaultMainPrompt,
 } from "../../presets/defaultPrompts";
 import type { Database } from "../schema";
-import { normalizePromptTemplate } from "../../presets/presetService";
+import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
   defaultNumber,

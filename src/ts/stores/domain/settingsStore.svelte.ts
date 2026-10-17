@@ -1,4 +1,9 @@
 import type { DatabaseSettings } from "../../storage/database/schema";
+import {
+  normalizeSettingsDefaults,
+  type NormalizedSettingsState,
+} from "../../storage/database/databaseDefaults";
+
 import type { SettingsKey, SettingsState } from "./stateOwnership";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
@@ -15,7 +20,7 @@ import {
   type PluginStorageRecord,
 } from "./pluginCustomStorage.svelte";
 
-const FORBIDDEN_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
+const FORBIDDEN_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 const PRESET_OWNED_KEYS = new Set<string>(PRESET_STORE_SETTING_KEYS);
 
 function assertSettingsKey(key: string): void {
@@ -72,7 +77,9 @@ class SettingsStore
   private keySetDispose: (() => void) | null = null;
   private presetStateReleased = false;
 
-  private stateData = $state<DatabaseSettings>({} as DatabaseSettings);
+  private stateData = $state<NormalizedSettingsState>(
+    normalizeSettingsDefaults({}),
+  );
   readonly state = new Proxy({} as SettingsState, {
     get: (_target, prop) => {
       assertTrapKey(prop);
@@ -135,13 +142,13 @@ class SettingsStore
     this.dirtyKeys.clear();
     this.pendingDeletes.clear();
     for (const key of Object.keys(initialSettings)) assertSettingsKey(key);
-    const settingsCopy = { ...initialSettings } as DatabaseSettings;
+    const settingsCopy = normalizeSettingsDefaults({ ...initialSettings });
     settingsCopy.pluginCustomStorage ??= {};
     this.pluginStorage.reset(storage, [
       ...Object.keys(settingsCopy.pluginCustomStorage),
     ]);
 
-    this.stateData = settingsCopy as DatabaseSettings;
+    this.stateData = settingsCopy;
     this.observe();
   }
 
@@ -283,7 +290,7 @@ class SettingsStore
   }
 
   /** @internal Startup migration only; may contain legacy preset values until release. */
-  getBootstrapState(): DatabaseSettings {
+  getBootstrapState(): NormalizedSettingsState {
     return this.stateData;
   }
 

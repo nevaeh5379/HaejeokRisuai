@@ -127,7 +127,7 @@ fn set_linux_window_decoration_preference(
 }
 
 #[tauri::command]
-fn set_linux_kde_decoration_colors(
+fn set_linux_decoration_colors(
     app: AppHandle,
     background: String,
     foreground: String,
@@ -137,7 +137,7 @@ fn set_linux_kde_decoration_colors(
 ) -> Result<Option<u8>, String> {
     #[cfg(target_os = "linux")]
     {
-        linux_wayland::set_kde_decoration_colors(
+        linux_wayland::set_linux_decoration_colors(
             &app,
             &background,
             &foreground,
@@ -1580,7 +1580,7 @@ fn main() {
             set_risu_native_appearance,
             set_risu_windows_backdrop,
             set_linux_window_decoration_preference,
-            set_linux_kde_decoration_colors,
+            set_linux_decoration_colors,
             get_linux_window_capabilities,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,

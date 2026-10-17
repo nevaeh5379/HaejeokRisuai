@@ -83,7 +83,7 @@ const featureScalarDefaults = {
   ),
   chatEdgeFadeFromBottom: defaultBoolean(false),
   fixedChatTextareaBottomCover: defaultBoolean(false),
-  reasoningEffort: defaultNumber(0),
+  reasonEffort: defaultNumber(0),
   verbosity: defaultNumber(1),
   hypaV3PresetId: defaultNumber(0),
   showDeprecatedTriggerV2: defaultBoolean(false),

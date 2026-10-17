@@ -1,4 +1,4 @@
-import protocolSettings from "@risuai/protocol/settings.json";
+import protocolSettings from "@risuai/protocol/settings.ts";
 import * as sqliteNodes from "./nodes";
 import type { SqliteSelectRows } from "../types";
 
