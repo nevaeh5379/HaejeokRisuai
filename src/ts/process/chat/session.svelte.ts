@@ -123,7 +123,7 @@ async function applyPresetChain(chatProcessIndex: number) {
   if (presetIndex === -1) {
     alertToast(`Cannot find preset: ${name}`);
   } else {
-    await changeToPreset(presetIndex, true);
+    await changeToPreset(presetIndex);
   }
 }
 

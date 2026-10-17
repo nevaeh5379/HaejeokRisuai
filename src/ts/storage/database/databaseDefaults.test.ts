@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type { Database } from "./schema";
+import { defaultColorScheme } from "../../gui/colorSchemeDefaults";
+import { defaultOoba, defaultAIN } from "../presets/presetDefaults";
 import {
   normalizeDatabaseDefaults,
   normalizeDatabaseInput,
@@ -8,6 +10,85 @@ import {
 } from "./databaseDefaults";
 
 describe("normalizeDatabaseDefaults", () => {
+  it.each([undefined, null, {}, [], "invalid"])(
+    "normalizes missing or malformed color schemes: %j",
+    (colorScheme) => {
+      const settings = normalizeSettingsInput({ colorScheme });
+      expect(settings.colorScheme).toEqual(defaultColorScheme);
+      expectTypeOf(settings.colorScheme.type).toEqualTypeOf<"light" | "dark">();
+    },
+  );
+
+  it.each([undefined, null, "invalid"])(
+    "repairs the appearance type without losing custom colors: %j",
+    (type) => {
+      const settings = normalizeSettingsInput({
+        colorScheme: { bgcolor: "#123456", type, extension: true },
+        customColorScheme: { textcolor: "#abcdef", type },
+      });
+      expect(settings.colorScheme).toMatchObject({
+        bgcolor: "#123456",
+        type: "dark",
+        extension: true,
+      });
+      expect(settings.customColorScheme).toMatchObject({
+        textcolor: "#abcdef",
+        type: "dark",
+      });
+    },
+  );
+
+  it("copies the normalized active custom scheme without sharing objects", () => {
+    const settings = normalizeSettingsInput({
+      colorSchemeName: "custom",
+      colorScheme: { bgcolor: "#123456", type: "light" },
+    });
+    expect(settings.customColorScheme).toEqual(settings.colorScheme);
+    expect(settings.customColorScheme).not.toBe(settings.colorScheme);
+    settings.customColorScheme.bgcolor = "#ffffff";
+    expect(settings.colorScheme.bgcolor).toBe("#123456");
+  });
+
+  it("normalizes nested provider fields while preserving valid values and extensions", () => {
+    const settings = normalizeSettingsInput({
+      ooba: {
+        temperature: 0.25,
+        top_p: null,
+        formating: { useName: true },
+        extension: 1,
+      },
+      ainconfig: { top_k: 42, rep_pen: "invalid", extension: 2 },
+      NAISettings: {
+        topP: 0.5,
+        starter: null,
+        cfg_scale: "invalid",
+        extension: 3,
+      },
+    });
+    expect(settings.ooba).toMatchObject({
+      ...defaultOoba,
+      temperature: 0.25,
+      extension: 1,
+      formating: { ...defaultOoba.formating, useName: true },
+    });
+    expect(settings.ainconfig).toMatchObject({
+      ...defaultAIN,
+      top_k: 42,
+      extension: 2,
+    });
+    expect(settings.NAISettings).toMatchObject({
+      topP: 0.5,
+      starter: "",
+      cfg_scale: 1,
+      mirostat_tau: 0,
+      mirostat_lr: 1,
+      extension: 3,
+    });
+    const snapshot = structuredClone(settings);
+    normalizeSettingsInput(settings);
+    expect(settings).toEqual(snapshot);
+  });
+
   it("migrates the legacy ComfyUI workflow once without keeping duplicate JSON", () => {
     const settings = normalizeSettingsInput({
       comfyConfig: { workflow: "old-json", timeout: 60 },

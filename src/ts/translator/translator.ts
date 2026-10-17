@@ -783,7 +783,7 @@ export function applyEdittransRegex(
     resolvedTarget?.character ??
     (alwaysExistChar.type === "simple" ? undefined : alwaysExistChar);
   let scripts: customscript[] = [];
-  scripts = (presetStore.state.presetRegex ?? [])
+  scripts = (presetStore.state.regex ?? [])
     .concat(
       getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat) ??
         [],
