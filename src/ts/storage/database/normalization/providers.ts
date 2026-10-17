@@ -1,9 +1,13 @@
-import { prebuiltNAIpresets } from "../../../process/templates/templates";
 import { defaultColorScheme } from "../../../gui/colorSchemeDefaults";
 import { fallback, object, picklist, type InferOutput } from "valibot";
 import { LLMFormat } from "../../../model/types";
 import type { botPreset, Database } from "../schema";
-import { defaultAIN, defaultOoba } from "../../presets/presetDefaults";
+import {
+  oobaDefaults,
+  ainDefaults,
+  naiDefaults,
+  promptSettingsDefaults,
+} from "../../presets/presetSchema";
 import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
@@ -113,16 +117,6 @@ const googleDefaults = {
   projectId: defaultString(),
 };
 
-const promptSettingsDefaults = {
-  assistantPrefill: defaultString(),
-  postEndInnerFormat: defaultString(),
-  sendChatAsSystem: defaultBoolean(false),
-  sendName: defaultBoolean(false),
-  utilOverride: defaultBoolean(false),
-  customChainOfThought: defaultBoolean(false),
-  maxThoughtTagDepth: defaultNumber(-1),
-};
-
 const colorSchemeDefaults = {
   bgcolor: defaultString(defaultColorScheme.bgcolor),
   darkbg: defaultString(defaultColorScheme.darkbg),
@@ -134,79 +128,6 @@ const colorSchemeDefaults = {
   darkBorderc: defaultString(defaultColorScheme.darkBorderc),
   darkbutton: defaultString(defaultColorScheme.darkbutton),
   type: fallback(picklist(["light", "dark"]), defaultColorScheme.type),
-};
-
-const oobaDefaults = {
-  max_new_tokens: defaultNumber(defaultOoba.max_new_tokens),
-  do_sample: defaultBoolean(defaultOoba.do_sample),
-  temperature: defaultNumber(defaultOoba.temperature),
-  top_p: defaultNumber(defaultOoba.top_p),
-  typical_p: defaultNumber(defaultOoba.typical_p),
-  repetition_penalty: defaultNumber(defaultOoba.repetition_penalty),
-  encoder_repetition_penalty: defaultNumber(
-    defaultOoba.encoder_repetition_penalty,
-  ),
-  top_k: defaultNumber(defaultOoba.top_k),
-  min_length: defaultNumber(defaultOoba.min_length),
-  no_repeat_ngram_size: defaultNumber(defaultOoba.no_repeat_ngram_size),
-  num_beams: defaultNumber(defaultOoba.num_beams),
-  penalty_alpha: defaultNumber(defaultOoba.penalty_alpha),
-  length_penalty: defaultNumber(defaultOoba.length_penalty),
-  early_stopping: defaultBoolean(defaultOoba.early_stopping),
-  seed: defaultNumber(defaultOoba.seed),
-  add_bos_token: defaultBoolean(defaultOoba.add_bos_token),
-  truncation_length: defaultNumber(defaultOoba.truncation_length),
-  ban_eos_token: defaultBoolean(defaultOoba.ban_eos_token),
-  skip_special_tokens: defaultBoolean(defaultOoba.skip_special_tokens),
-  top_a: defaultNumber(defaultOoba.top_a),
-  tfs: defaultNumber(defaultOoba.tfs),
-  epsilon_cutoff: defaultNumber(defaultOoba.epsilon_cutoff),
-  eta_cutoff: defaultNumber(defaultOoba.eta_cutoff),
-  formating: defaultLooseObject({
-    header: defaultString(defaultOoba.formating.header),
-    systemPrefix: defaultString(defaultOoba.formating.systemPrefix),
-    userPrefix: defaultString(defaultOoba.formating.userPrefix),
-    assistantPrefix: defaultString(defaultOoba.formating.assistantPrefix),
-    seperator: defaultString(defaultOoba.formating.seperator),
-    useName: defaultBoolean(defaultOoba.formating.useName),
-  }),
-};
-
-const ainDefaults = {
-  top_p: defaultNumber(defaultAIN.top_p),
-  rep_pen: defaultNumber(defaultAIN.rep_pen),
-  top_a: defaultNumber(defaultAIN.top_a),
-  rep_pen_slope: defaultNumber(defaultAIN.rep_pen_slope),
-  rep_pen_range: defaultNumber(defaultAIN.rep_pen_range),
-  typical_p: defaultNumber(defaultAIN.typical_p),
-  badwords: defaultString(defaultAIN.badwords),
-  stoptokens: defaultString(defaultAIN.stoptokens),
-  top_k: defaultNumber(defaultAIN.top_k),
-};
-
-const naiDefaults = {
-  topK: defaultNumber(prebuiltNAIpresets.topK),
-  topP: defaultNumber(prebuiltNAIpresets.topP),
-  topA: defaultNumber(prebuiltNAIpresets.topA),
-  tailFreeSampling: defaultNumber(prebuiltNAIpresets.tailFreeSampling),
-  repetitionPenalty: defaultNumber(prebuiltNAIpresets.repetitionPenalty),
-  repetitionPenaltyRange: defaultNumber(
-    prebuiltNAIpresets.repetitionPenaltyRange,
-  ),
-  repetitionPenaltySlope: defaultNumber(
-    prebuiltNAIpresets.repetitionPenaltySlope,
-  ),
-  repostitionPenaltyPresence: defaultNumber(
-    prebuiltNAIpresets.repostitionPenaltyPresence,
-  ),
-  seperator: defaultString(prebuiltNAIpresets.seperator),
-  frequencyPenalty: defaultNumber(prebuiltNAIpresets.frequencyPenalty),
-  presencePenalty: defaultNumber(prebuiltNAIpresets.presencePenalty),
-  typicalp: defaultNumber(prebuiltNAIpresets.typicalp),
-  starter: defaultString(prebuiltNAIpresets.starter),
-  cfg_scale: defaultNumber(1),
-  mirostat_tau: defaultNumber(0),
-  mirostat_lr: defaultNumber(1),
 };
 
 const providerNestedDefaults = {

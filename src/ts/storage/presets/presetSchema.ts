@@ -15,8 +15,7 @@ import {
   defaultJailbreak,
   defaultAutoSuggestPrompt,
 } from "./defaultPrompts";
-import { prebuiltNAIpresets as defaultNAI } from "../../process/templates/templates";
-import { defaultAIN, defaultOoba } from "./providerDefaults";
+import { defaultAIN, defaultOoba, defaultNAI } from "./providerDefaults";
 import {
   defaultLooseObject,
   defaultString,
@@ -44,7 +43,7 @@ function defaultObject<T extends object>(value: T) {
     () => clone(value),
   );
 }
-const promptSettingsDefaults = {
+export const promptSettingsDefaults = {
   assistantPrefill: defaultString(),
   postEndInnerFormat: defaultString(),
   sendChatAsSystem: defaultBoolean(false),
@@ -52,10 +51,9 @@ const promptSettingsDefaults = {
   utilOverride: defaultBoolean(false),
   customChainOfThought: defaultBoolean(false),
   maxThoughtTagDepth: defaultNumber(-1),
-  trimStartNewChat: v.fallback(v.optional(v.boolean()), undefined),
 };
 
-const oobaDefaults = {
+export const oobaDefaults = {
   max_new_tokens: defaultNumber(defaultOoba.max_new_tokens),
   do_sample: defaultBoolean(defaultOoba.do_sample),
   temperature: defaultNumber(defaultOoba.temperature),
@@ -91,7 +89,7 @@ const oobaDefaults = {
   }),
 };
 
-const ainDefaults = {
+export const ainDefaults = {
   top_p: defaultNumber(defaultAIN.top_p),
   rep_pen: defaultNumber(defaultAIN.rep_pen),
   top_a: defaultNumber(defaultAIN.top_a),
@@ -103,7 +101,7 @@ const ainDefaults = {
   top_k: defaultNumber(defaultAIN.top_k),
 };
 
-const naiDefaults = {
+export const naiDefaults = {
   topK: defaultNumber(defaultNAI.topK),
   topP: defaultNumber(defaultNAI.topP),
   topA: defaultNumber(defaultNAI.topA),
@@ -206,7 +204,10 @@ export const presetSchema = v.object({
     mode: "instruct",
   }),
   top_p: defaultNumber(1),
-  promptSettings: defaultLooseObject(promptSettingsDefaults),
+  promptSettings: defaultLooseObject({
+    ...promptSettingsDefaults,
+    trimStartNewChat: v.fallback(v.optional(v.boolean()), undefined),
+  }),
   repetition_penalty: v.fallback(v.optional(v.number()), undefined),
   min_p: v.fallback(v.optional(v.number()), undefined),
   top_a: v.fallback(v.optional(v.number()), undefined),

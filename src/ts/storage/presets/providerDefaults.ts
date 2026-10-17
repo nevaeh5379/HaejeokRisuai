@@ -1,3 +1,4 @@
+import type { NAISettings } from "../../process/models/nai";
 import type { AINsettings, OobaSettings } from "../database/schema";
 export const defaultAIN: AINsettings = {
   top_p: 0.7,
@@ -44,4 +45,20 @@ export const defaultOoba: OobaSettings = {
     seperator: "",
     useName: false,
   },
+};
+
+export const defaultNAI: NAISettings = {
+  topK: 12,
+  topP: 0.85,
+  topA: 0.1,
+  tailFreeSampling: 0.915,
+  repetitionPenalty: 2.8,
+  repetitionPenaltyRange: 2048,
+  repetitionPenaltySlope: 0.02,
+  repostitionPenaltyPresence: 0,
+  seperator: "",
+  frequencyPenalty: 0.03,
+  presencePenalty: 0,
+  typicalp: 1,
+  starter: "",
 };
