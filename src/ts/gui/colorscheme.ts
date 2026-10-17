@@ -294,7 +294,7 @@ export const colorSchemeList = Object.keys(
 
 export function getCurrentlyColorScheme(): ColorScheme["type"] {
   return settingsStore.state.colorScheme?.type ?? "dark";
-
+}
 
 export function isLight() {
   if (getCurrentlyColorScheme() === "light")
