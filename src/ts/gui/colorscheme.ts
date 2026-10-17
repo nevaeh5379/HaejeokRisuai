@@ -44,7 +44,7 @@ async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
     if (isTauriLinux) {
       const [, decorationAlpha] = await Promise.all([
         nativeAppearance,
-        invoke<number | null>("set_linux_kde_decoration_colors", {
+        invoke<number | null>("set_linux_decoration_colors", {
           background: colorScheme.darkbg,
           foreground: colorScheme.textcolor,
           inactiveForeground: colorScheme.textcolor2,

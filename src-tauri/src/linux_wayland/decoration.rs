@@ -13,9 +13,15 @@ const ROUNDED_CSD_WINDOW_CLASS: &str = "risu-rounded-csd-window";
 pub const CSD_CORNER_RADIUS: i32 = 12;
 const NATIVE_THEME_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 1;
 const INTEGRATED_CSD_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 2;
+// A compositor that does not implement the KWin decoration-palette protocol paints the
+// SSD titlebar with GTK's own HeaderBar. That HeaderBar is still a GTK widget, so the
+// Risu theme is applied to it through a screen-wide style provider instead.
+const RISU_TITLEBAR_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 3;
 
 thread_local! {
     static NATIVE_THEME_PROVIDER: RefCell<Option<(gtk::gdk::Screen, gtk::CssProvider)>> =
+        const { RefCell::new(None) };
+    static RISU_TITLEBAR_PROVIDER: RefCell<Option<(gtk::gdk::Screen, gtk::CssProvider)>> =
         const { RefCell::new(None) };
 }
 
@@ -25,6 +31,10 @@ struct Rgb(u8, u8, u8);
 impl Rgb {
     fn as_kde(self) -> String {
         format!("{},{},{}", self.0, self.1, self.2)
+    }
+
+    fn as_css(self) -> String {
+        format!("#{:02x}{:02x}{:02x}", self.0, self.1, self.2)
     }
 
     fn as_kde_background(self, alpha: Option<u8>) -> String {
@@ -51,6 +61,64 @@ fn parse_hex_color(value: &str) -> Result<Rgb, String> {
             .map_err(|_| format!("Invalid #RRGGBB color: {value}"))
     };
     Ok(Rgb(channel(0)?, channel(2)?, channel(4)?))
+}
+
+/// The subset of the Risu theme needed to repaint a toolkit-drawn titlebar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RisuTitlebarColors {
+    background: Rgb,
+    foreground: Rgb,
+    inactive_foreground: Rgb,
+}
+
+impl RisuTitlebarColors {
+    pub fn from_hex(
+        background: &str,
+        foreground: &str,
+        inactive_foreground: &str,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            background: parse_hex_color(background)?,
+            foreground: parse_hex_color(foreground)?,
+            inactive_foreground: parse_hex_color(inactive_foreground)?,
+        })
+    }
+}
+
+fn titlebar_css(colors: &RisuTitlebarColors) -> String {
+    let background = colors.background.as_css();
+    let foreground = colors.foreground.as_css();
+    let inactive = colors.inactive_foreground.as_css();
+
+    // Only the bar surface and its glyph colour are replaced. The native title buttons
+    // keep their own hover / pressed artwork so minimize, maximize and restore still
+    // look like the selected GTK theme.
+    format!(
+        r#"
+headerbar,
+.titlebar,
+headerbar:backdrop,
+.titlebar:backdrop {{
+  background-image: none;
+  background-color: {background};
+  color: {foreground};
+}}
+
+headerbar .title,
+headerbar .subtitle,
+headerbar button image,
+headerbar button label {{
+  color: {foreground};
+}}
+
+headerbar:backdrop .title,
+headerbar:backdrop .subtitle,
+headerbar:backdrop button image,
+headerbar:backdrop button label {{
+  color: {inactive};
+}}
+"#
+    )
 }
 
 fn ini_value<'a>(contents: &'a str, section: &str, key: &str) -> Option<&'a str> {
@@ -257,9 +325,9 @@ pub fn write_kwin_decoration_palette(
         .ok_or_else(|| "KWin decoration palette path has no parent directory".to_string())?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
 
-    // KWin reads Colors:Header for modern decorations and WM for legacy ones.
-    // Keep the palette file stable instead of atomically replacing it: KWin's
-    // KConfigWatcher watches this exact path and should see live theme changes.
+    // KWin reads Colors:Header for modern decorations and WM for legacy ones. The file is
+    // written in place; publishing a live theme change is done by handing KWin a new
+    // palette path, which is the only request that makes it reload a decoration.
     let palette = format!(
         "[Colors:Header]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={foreground}\n\n[Colors:Header][Inactive]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={inactive_foreground}\n\n[Colors:Window]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={foreground}\n\n[WM]\nactiveBackground={background}\nactiveForeground={foreground}\nframe={background}\ninactiveBackground={background}\ninactiveForeground={inactive_foreground}\ninactiveFrame={background}\n\n[General]\nColorScheme=RisuAI\nName=RisuAI\n"
     );
@@ -355,6 +423,45 @@ pub fn apply_native_theme_variant(
     replace_native_theme_provider(&screen, Some(provider));
     gtk::StyleContext::reset_widgets(&screen);
     Ok(())
+}
+
+fn replace_risu_titlebar_provider(provider: Option<(gtk::gdk::Screen, gtk::CssProvider)>) {
+    RISU_TITLEBAR_PROVIDER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let previous = std::mem::replace(
+            &mut *slot,
+            provider
+                .as_ref()
+                .map(|(screen, provider)| (screen.clone(), provider.clone())),
+        );
+        if let Some((previous_screen, previous_provider)) = previous {
+            gtk::StyleContext::remove_provider_for_screen(&previous_screen, &previous_provider);
+        }
+        if let Some((screen, provider)) = provider {
+            gtk::StyleContext::add_provider_for_screen(&screen, &provider, RISU_TITLEBAR_PRIORITY);
+        }
+    });
+}
+
+/// Paint a toolkit-drawn (non KWin) SSD titlebar with the current Risu theme.
+pub fn apply_risu_titlebar_colors(
+    window: &gtk::ApplicationWindow,
+    colors: &RisuTitlebarColors,
+) -> Result<(), String> {
+    let provider = gtk::CssProvider::new();
+    provider
+        .load_from_data(titlebar_css(colors).as_bytes())
+        .map_err(|error| format!("Failed to style the Risu titlebar: {error}"))?;
+    let screen = gtk::prelude::WidgetExt::screen(window)
+        .ok_or_else(|| "GTK screen is unavailable".to_string())?;
+
+    replace_risu_titlebar_provider(Some((screen.clone(), provider)));
+    gtk::StyleContext::reset_widgets(&screen);
+    Ok(())
+}
+
+pub fn clear_risu_titlebar_colors() {
+    replace_risu_titlebar_provider(None);
 }
 
 fn uses_square_csd_corners(window: &gtk::ApplicationWindow) -> bool {
@@ -672,5 +779,23 @@ BackgroundNormal=33,34,44,192
     fn only_ssd_bootstraps_with_server_decorations_enabled() {
         assert!(bootstrap_decorations_enabled(LinuxWindowDecoration::Ssd));
         assert!(!bootstrap_decorations_enabled(LinuxWindowDecoration::Csd));
+    }
+
+    #[test]
+    fn builds_titlebar_css_from_risu_theme_colors() {
+        let colors = RisuTitlebarColors::from_hex("#7f1d1d", "#f8f8f2", "#fca5a5").unwrap();
+        let css = titlebar_css(&colors);
+
+        assert!(css.contains("background-color: #7f1d1d"));
+        assert!(css.contains("color: #f8f8f2"));
+        assert!(css.contains("headerbar:backdrop"));
+        assert!(css.contains("color: #fca5a5"));
+        // The native button artwork must stay untouched.
+        assert!(!css.contains("headerbar button {"));
+    }
+
+    #[test]
+    fn rejects_non_hex_titlebar_colors() {
+        assert!(RisuTitlebarColors::from_hex("transparent", "#f8f8f2", "#fca5a5").is_err());
     }
 }
