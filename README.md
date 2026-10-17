@@ -1,4 +1,4 @@
-> This document was translated using Google Translate. Please refer to the original document [here](./README.md).
+> This document was translated using Google Translate. Please refer to the original document [here](./README.ko.md).
 
 # HaejeokRisuai
 
