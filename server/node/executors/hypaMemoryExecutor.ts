@@ -177,12 +177,20 @@ function cleanSessions(): any {
   for (const [id, session] of sessions) {
     if (now - session.lastAccess > SESSION_TTL_MS) sessions.delete(id);
   }
+  // 💡 What: Replaced array spread and sorting (`[...sessions.entries()].sort()`) with a single pass loop.
+  // 🎯 Why: Avoid O(N log N) sorting and array allocation per eviction inside a while loop.
+  // 📊 Impact: Lowers complexity of cache eviction to O(N) from O(K * N log N). Reduces GC pressure.
   while (sessions.size >= MAX_SESSIONS) {
-    const oldest: any = [...sessions.entries()].sort(
-      (a?: any, b?: any) => a[1].lastAccess - b[1].lastAccess,
-    )[0];
-    if (!oldest) break;
-    sessions.delete(oldest[0]);
+    let oldestId: any = undefined;
+    let oldestAccess: any = Infinity;
+    for (const [id, session] of sessions.entries()) {
+      if (session.lastAccess < oldestAccess) {
+        oldestAccess = session.lastAccess;
+        oldestId = id;
+      }
+    }
+    if (oldestId === undefined) break;
+    sessions.delete(oldestId);
   }
 }
 
