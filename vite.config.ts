@@ -9,29 +9,22 @@ import { resolveBuildVersion } from "./tooling/build-version.mjs";
 import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.ts";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { resolveLegalConfigured } from "./tooling/legal-config.js";
-import { buildProtocol } from "./tooling/build-protocol.ts";
-buildProtocol();
 const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
-  ["", ...(packageName === "protocol" ? ["dist/"] : [])].flatMap((directory) =>
-    readdirSync(resolve(process.cwd(), `packages/${packageName}/${directory}`))
-      // Node-only `node --test` files are never imported by the browser app;
-      // including them breaks dependency optimization (node:test, node:assert).
-      .filter(
-        (file) =>
-          file.endsWith(".cjs") &&
-          !file.endsWith(".test.cjs") &&
-          // Protocol modules with native browser ESM entry points need no
-          // CommonJS prebundling; Node continues to use their .cjs outputs.
-          !existsSync(
-            resolve(
-              process.cwd(),
-              `packages/${packageName}/${directory}${file.replace(/\.cjs$/, ".mjs")}`,
-            ),
+  readdirSync(resolve(process.cwd(), `packages/${packageName}`))
+    // Node-only test files must not enter browser dependency optimization.
+    .filter(
+      (file) =>
+        file.endsWith(".cjs") &&
+        !file.endsWith(".test.cjs") &&
+        !existsSync(
+          resolve(
+            process.cwd(),
+            `packages/${packageName}/${file.replace(/\.cjs$/, ".mjs")}`,
           ),
-      )
-      .map((file) => `@risuai/${packageName}/${directory}${file}`),
-  ),
+        ),
+    )
+    .map((file) => `@risuai/${packageName}/${file}`),
 );
 
 // https://vitejs.dev/config/

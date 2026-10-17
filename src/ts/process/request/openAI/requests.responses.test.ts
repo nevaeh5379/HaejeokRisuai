@@ -40,7 +40,7 @@ const mocks = vi.hoisted(() => ({
     openrouterSubRequestModel: "openrouter-sub-model",
     proxyKey: "proxy-key",
     requestRetrys: 0,
-    reasoningEffort: 2,
+    reasonEffort: 2,
     seperateParametersEnabled: false,
     simplifiedToolUse: false,
     strictJsonSchema: true,
@@ -246,7 +246,7 @@ describe("OpenAI Responses API helpers", () => {
     };
     mocks.db.openrouterRequestModel = "openrouter-main-model";
     mocks.db.openrouterSubRequestModel = "openrouter-sub-model";
-    mocks.db.reasoningEffort = 2;
+    mocks.db.reasonEffort = 2;
     mocks.db.simplifiedToolUse = false;
     mocks.db.autofillRequestUrl = false;
   });
@@ -368,7 +368,7 @@ describe("OpenAI Responses API helpers", () => {
   });
 
   it("maps Responses reasoning effort none when the model supports it", async () => {
-    mocks.db.reasoningEffort = -1;
+    mocks.db.reasonEffort = -1;
 
     const body = await __testResponsesAPI.buildResponsesBody(
       baseArg({
@@ -383,7 +383,7 @@ describe("OpenAI Responses API helpers", () => {
   });
 
   it("maps Responses reasoning low to medium for min-medium models", async () => {
-    mocks.db.reasoningEffort = 0;
+    mocks.db.reasonEffort = 0;
 
     const body = await __testResponsesAPI.buildResponsesBody(
       baseArg({
@@ -398,7 +398,7 @@ describe("OpenAI Responses API helpers", () => {
   });
 
   it("maps Responses reasoning effort xhigh when the model supports it", async () => {
-    mocks.db.reasoningEffort = 3;
+    mocks.db.reasonEffort = 3;
 
     const body = await __testResponsesAPI.buildResponsesBody(
       baseArg({

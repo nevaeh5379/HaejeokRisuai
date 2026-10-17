@@ -1,4 +1,5 @@
 import { get, writable } from "svelte/store";
+import { safeParse } from "valibot";
 
 import { downloadFile } from "../globalApi.svelte";
 import { BufferToText, selectSingleFile } from "../util";
@@ -17,18 +18,12 @@ import { applyLinuxDecorationAlpha } from "../linuxWindowIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
-export interface ColorScheme {
-  bgcolor: string;
-  darkbg: string;
-  borderc: string;
-  selected: string;
-  draculared: string;
-  textcolor: string;
-  textcolor2: string;
-  darkBorderc: string;
-  darkbutton: string;
-  type: "light" | "dark";
-}
+import {
+  colorSchemeSchema,
+  defaultColorScheme,
+  type ColorScheme,
+} from "./colorSchemeDefaults";
+export { defaultColorScheme, type ColorScheme } from "./colorSchemeDefaults";
 
 async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
   if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
@@ -44,7 +39,7 @@ async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
     if (isTauriLinux) {
       const [, decorationAlpha] = await Promise.all([
         nativeAppearance,
-        invoke<number | null>("set_linux_kde_decoration_colors", {
+        invoke<number | null>("set_linux_decoration_colors", {
           background: colorScheme.darkbg,
           foreground: colorScheme.textcolor,
           inactiveForeground: colorScheme.textcolor2,
@@ -63,19 +58,6 @@ async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
     );
   }
 }
-
-export const defaultColorScheme: ColorScheme = {
-  bgcolor: "#282a36",
-  darkbg: "#21222c",
-  borderc: "#6272a4",
-  selected: "#44475a",
-  draculared: "#ff5555",
-  textcolor: "#f8f8f2",
-  textcolor2: "#64748b",
-  darkBorderc: "#4b5563",
-  darkbutton: "#374151",
-  type: "dark",
-};
 
 const colorShemes = {
   default: defaultColorScheme,
@@ -309,9 +291,10 @@ export const colorSchemeList = Object.keys(
   colorShemes,
 ) as (keyof typeof colorShemes)[];
 
-export function getCurrentlyColorScheme() {
+
+export function getCurrentlyColorScheme(): ColorScheme["type"] {
   return settingsStore.state.colorScheme?.type ?? "dark";
-}
+
 
 export function isLight() {
   if (getCurrentlyColorScheme() === "light")
@@ -432,25 +415,13 @@ export async function importColorScheme() {
     return;
   }
   const string = BufferToText(uarray.data);
-  let colorScheme: ColorScheme;
   try {
-    colorScheme = JSON.parse(string);
-    if (
-      typeof colorScheme.bgcolor !== "string" ||
-      typeof colorScheme.darkbg !== "string" ||
-      typeof colorScheme.borderc !== "string" ||
-      typeof colorScheme.selected !== "string" ||
-      typeof colorScheme.draculared !== "string" ||
-      typeof colorScheme.textcolor !== "string" ||
-      typeof colorScheme.textcolor2 !== "string" ||
-      typeof colorScheme.darkBorderc !== "string" ||
-      typeof colorScheme.darkbutton !== "string" ||
-      typeof colorScheme.type !== "string"
-    ) {
+    const result = safeParse(colorSchemeSchema, JSON.parse(string));
+    if (!result.success) {
       alertError("Invalid color scheme");
       return;
     }
-    settingsStore.state.customColorScheme = colorScheme;
+    settingsStore.state.customColorScheme = result.output;
     updateCustomColorScheme();
   } catch (e) {
     alertError("Invalid color scheme");

@@ -30,12 +30,13 @@ node server/node/server.ts
 
 The server runs ESM TypeScript through Node's built-in type stripping. Starting
 it requires no server build, tsx, TypeScript compiler, or esbuild. The frontend
-still needs its own build (`pnpm build`); `build:protocol` only generates frontend
-setting-key types. Server type checks use NodeNext and erasable TypeScript syntax.
+still needs its own build (`pnpm build`). Shared setting keys and their types come
+directly from `packages/protocol/settings.ts`. Server type checks use NodeNext
+and erasable TypeScript syntax.
 
 Ship `server/node` sources, its SQL schemas and optional `ssl/certificate` files,
 plus the source directories and package manifests for `packages/backup-core`,
-`packages/protocol` (including `settings.json`), and `packages/chat-core`. Install
+`packages/protocol` (including `settings.ts`), and `packages/chat-core`. Install
 the production dependencies declared in `server/node/package.json` and include
 the frontend `dist` directory. No server or shared-package `dist` is needed.
 Schemas, vendor environment files, and certificates resolve relative to the

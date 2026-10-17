@@ -1457,8 +1457,20 @@ export function getBasename(data: string) {
   return lasts;
 }
 
+type ResourceSettings = Partial<
+  Pick<
+    Database,
+    | "customBackground"
+    | "userIcon"
+    | "characters"
+    | "modules"
+    | "personas"
+    | "characterOrder"
+  >
+>;
+
 export async function getUncleanables(
-  db: Database,
+  db: ResourceSettings,
   uptype: "basename" | "pure" = "basename",
   options?: { chars: (character | groupChat)[] },
 ) {
@@ -1489,7 +1501,7 @@ export async function getUncleanables(
  * @returns {Promise<string[]>} - An array of uncleanable resources.
  */
 export function getUncleanablesSync(
-  db: Database,
+  db: ResourceSettings,
   uptype: "basename" | "pure" = "basename",
   options?: {
     chars: (character | groupChat)[];
@@ -1515,7 +1527,7 @@ export function getUncleanablesSync(
 
   addUncleanable(db.customBackground);
   addUncleanable(db.userIcon);
-  const chars = options?.chars ?? db.characters;
+  const chars = options?.chars ?? db.characters ?? [];
 
   for (let cha of chars) {
     if (cha.image) {

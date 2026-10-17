@@ -15,7 +15,7 @@ const UUID_PATTERN: any =
 const COMPAT_UUID_PATTERN: any =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{6,12}$/i;
 
-import jsonSettings from "../../../packages/protocol/settings.json" with { type: "json" };
+import protocolSettings from "../../../packages/protocol/settings.ts";
 const {
   DEFERRED_SETTING_KEYS,
   DEFERRED_STARTUP_SETTING_KEYS,
@@ -24,7 +24,7 @@ const {
   DOMAIN_STORE_SETTING_KEYS,
   NON_SETTINGS_ROOT_KEYS,
   BOOTSTRAP_SETTING_KEYS,
-} = jsonSettings;
+} = protocolSettings;
 const LEGACY_PERSONA_MIRROR_KEY_SET: any = new Set(LEGACY_PERSONA_MIRROR_KEYS);
 const SETTINGS_STORE_EXCLUDED_KEYS: any = [
   ...new Set([...NON_SETTINGS_ROOT_KEYS, ...DOMAIN_STORE_SETTING_KEYS]),
