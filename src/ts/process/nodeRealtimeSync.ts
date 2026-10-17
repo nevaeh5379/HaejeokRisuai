@@ -22,7 +22,6 @@ import {
   SETTINGS_STORE_EXCLUDED_KEYS,
   getSqlDeferredDomain,
 } from "../storage/sql/sqlDeferredSettings";
-import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { localGenerationController } from "./chat/generationCancellation";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
@@ -237,18 +236,7 @@ async function applyDatabaseChange(
   if (personaChanged) await personaStore.refreshFromStorage();
   if (modulesChanged) await moduleStore.refreshFromStorage();
   if (presetsChanged) {
-    const activePreset = await presetStore.refreshFromStorage();
-    if (activePreset) {
-      presetStore.replaceActivePresetState(
-        createPresetSettingsState(
-          {
-            ...settingsStore.getStateRecord(),
-            ...presetStore.getStateRecord(),
-          },
-          activePreset,
-        ),
-      );
-    }
+    await presetStore.refreshFromStorage();
   }
 
   if (

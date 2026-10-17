@@ -7,114 +7,19 @@ import { prebuiltPresets } from "../../process/templates/templates";
 import { safeStructuredClone } from "../../polyfill";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
-import type { PresetState } from "../../stores/domain/stateOwnership";
 import {
   encode as encodeMsgpack,
   decode as decodeMsgpack,
 } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { decodeRPack, encodeRPack } from "../../rpack/rpack_js";
-import type { DatabaseSettings, botPreset } from "../database/schema";
-import type { StoredBotPreset } from "../sql/ISqlStorage";
-import { PRESET_STORE_SETTING_KEYS } from "../sql/sqlDeferredSettings";
+import type { botPreset } from "../database/schema";
 import { presetTemplate } from "./presetDefaults";
-import { LLMFormat } from "../../model/types";
-
-export function createActivePresetSnapshot(
-  db: PresetState & Pick<DatabaseSettings, "doNotChangeSeperateModels">,
-  current: Pick<StoredBotPreset, "id" | "name" | "image">,
-): StoredBotPreset {
-  const savedPreset: botPreset = {
-    name: current.name,
-    apiType: db.apiType,
-    localNetworkMode: db.localNetworkMode,
-    localNetworkTimeoutSec: db.localNetworkTimeoutSec,
-    mainPrompt: db.mainPrompt,
-    jailbreak: db.jailbreak,
-    globalNote: db.globalNote,
-    temperature: db.temperature,
-    maxContext: db.maxContext,
-    maxResponse: db.maxResponse,
-    frequencyPenalty: db.frequencyPenalty,
-    PresensePenalty: db.PresensePenalty,
-    formatingOrder: db.formatingOrder,
-    aiModel: db.aiModel,
-    subModel: db.subModel,
-    currentPluginProvider: db.currentPluginProvider,
-    textgenWebUIStreamURL: db.textgenWebUIStreamURL,
-    textgenWebUIBlockingURL: db.textgenWebUIBlockingURL,
-    forceReplaceUrl: db.forceReplaceUrl,
-    promptPreprocess: db.promptPreprocess,
-    bias: db.bias,
-    koboldURL: db.koboldURL,
-    proxyKey: db.proxyKey,
-    ooba: safeStructuredClone(db.ooba),
-    ainconfig: safeStructuredClone(db.ainconfig),
-    proxyRequestModel: db.proxyRequestModel,
-    openrouterRequestModel: db.openrouterRequestModel,
-    openrouterSubRequestModel: db.openrouterSubRequestModel,
-    NAISettings: safeStructuredClone(db.NAIsettings),
-    promptTemplate: normalizePromptTemplate(db.promptTemplate) ?? null,
-    NAIadventure: db.NAIadventure ?? false,
-    NAIappendName: db.NAIappendName ?? false,
-    localStopStrings: db.localStopStrings,
-    autoSuggestPrompt: db.autoSuggestPrompt,
-    customProxyRequestModel: db.customProxyRequestModel,
-    customProxySubRequestModel: db.customProxySubRequestModel,
-    reverseProxyOobaArgs: safeStructuredClone(db.reverseProxyOobaArgs) ?? null,
-    top_p: db.top_p ?? 1,
-    promptSettings: safeStructuredClone(db.promptSettings) ?? null,
-    repetition_penalty: db.repetition_penalty,
-    min_p: db.min_p,
-    top_a: db.top_a,
-    openrouterProvider: db.openrouterProvider,
-    useInstructPrompt: db.useInstructPrompt,
-    customPromptTemplateToggle: db.customPromptTemplateToggle ?? "",
-    templateDefaultVariables: db.templateDefaultVariables ?? "",
-    moduleIntergration: db.moduleIntergration ?? "",
-    top_k: db.top_k,
-    instructChatTemplate: db.instructChatTemplate,
-    JinjaTemplate: db.JinjaTemplate ?? "",
-    jsonSchemaEnabled: db.jsonSchemaEnabled ?? false,
-    jsonSchema: db.jsonSchema ?? "",
-    strictJsonSchema: db.strictJsonSchema ?? true,
-    extractJson: db.extractJson ?? "",
-    groupOtherBotRole: db.groupOtherBotRole ?? "user",
-    groupTemplate: db.groupTemplate ?? "",
-    seperateParametersEnabled: db.seperateParametersEnabled ?? false,
-    seperateParameters: safeStructuredClone(db.seperateParameters),
-    customAPIFormat: safeStructuredClone(db.customAPIFormat),
-    systemContentReplacement: db.systemContentReplacement,
-    systemRoleReplacement: db.systemRoleReplacement,
-    customFlags: safeStructuredClone(db.customFlags),
-    enableCustomFlags: db.enableCustomFlags,
-    regex: db.presetRegex,
-    image: current.image ?? "",
-    reasonEffort: db.reasoningEffort ?? 0,
-    thinkingTokens: db.thinkingTokens ?? null,
-    thinkingType: db.thinkingType ?? "budget",
-    deepseekThinkingType: db.deepseekThinkingType ?? "off",
-    adaptiveThinkingEffort: db.adaptiveThinkingEffort ?? "high",
-    deepseekReasoningEffort: db.deepseekReasoningEffort ?? "high",
-    outputImageModal: db.outputImageModal ?? false,
-    seperateModelsForAxModels: db.doNotChangeSeperateModels
-      ? false
-      : (db.seperateModelsForAxModels ?? false),
-    seperateModels: db.doNotChangeSeperateModels
-      ? null
-      : safeStructuredClone(db.seperateModels),
-    modelTools: safeStructuredClone(db.modelTools),
-    fallbackModels: safeStructuredClone(db.fallbackModels),
-    fallbackWhenBlankResponse: db.fallbackWhenBlankResponse ?? false,
-    verbosity: db.verbosity ?? 1,
-    dynamicOutput: db.dynamicOutput ?? null,
-    providerModelOverrides: db.doNotChangeSeperateModels
-      ? null
-      : safeStructuredClone(db.providerModelOverrides),
-  };
-
-  return { ...savedPreset, id: current.id } as StoredBotPreset;
-}
+import type { PresetApplyPolicy } from "./presetState";
+export {
+  createActivePresetSnapshot,
+  createPresetSettingsState,
+} from "./presetState";
 
 export async function copyPreset(id: number) {
   await presetStore.flush();
@@ -125,191 +30,23 @@ export async function copyPreset(id: number) {
   await presetStore.savePreset(newPres, presetStore.summaries.length);
 }
 
-export async function changeToPreset(id = 0, savecurrent = true) {
-  if (savecurrent) {
-    await presetStore.flush();
-  }
-  const summary = presetStore.summaries[id];
-  if (!summary) return;
-  const newPres = await presetStore.load(summary.id);
-  const nextState = createPresetSettingsState(
-    {
-      ...settingsStore.getStateRecord(),
-      ...presetStore.getStateRecord(),
-    },
-    newPres,
-  );
-  await presetStore.activate(summary.id, nextState);
+export function getPresetApplyPolicy(): PresetApplyPolicy {
+  const settings = settingsStore.state;
+  return {
+    doNotChangeSeperateModels: settings.doNotChangeSeperateModels ?? false,
+    doNotChangeFallbackModels: settings.doNotChangeFallbackModels ?? false,
+    disableSeperateParameterChangeOnPresetChange:
+      settings.disableSeperateParameterChangeOnPresetChange ?? false,
+  };
 }
 
-export function createPresetSettingsState(
-  base: Partial<DatabaseSettings>,
-  preset: botPreset,
-): PresetState {
-  const combined = safeStructuredClone(base);
-  setPreset(combined, preset);
-  const state: Record<string, unknown> = {};
-  for (const key of PRESET_STORE_SETTING_KEYS) {
-    state[key] = combined[key as keyof DatabaseSettings];
-  }
-  return state as PresetState;
+export async function changeToPreset(id = 0) {
+  const summary = presetStore.summaries[id];
+  if (summary) await presetStore.activate(summary.id, getPresetApplyPolicy());
 }
 
 export function applyPresetToCurrentState(preset: botPreset): void {
-  const nextState = createPresetSettingsState(
-    {
-      ...settingsStore.getStateRecord(),
-      ...presetStore.getStateRecord(),
-    },
-    preset,
-  );
-  presetStore.replaceActivePresetState(nextState);
-}
-
-export function setPreset(db: Partial<DatabaseSettings>, newPres: botPreset) {
-  db.apiType = newPres.apiType ?? db.apiType;
-  db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode;
-  db.localNetworkTimeoutSec =
-    newPres.localNetworkTimeoutSec ?? db.localNetworkTimeoutSec;
-  db.mainPrompt = newPres.mainPrompt ?? db.mainPrompt;
-  db.jailbreak = newPres.jailbreak ?? db.jailbreak;
-  db.globalNote = newPres.globalNote ?? db.globalNote;
-  db.temperature = newPres.temperature ?? db.temperature;
-  db.maxContext = newPres.maxContext ?? db.maxContext;
-  db.maxResponse = newPres.maxResponse ?? db.maxResponse;
-  db.frequencyPenalty = newPres.frequencyPenalty ?? db.frequencyPenalty;
-  db.PresensePenalty = newPres.PresensePenalty ?? db.PresensePenalty;
-  db.formatingOrder = newPres.formatingOrder ?? db.formatingOrder;
-  db.aiModel = newPres.aiModel ?? db.aiModel;
-  db.subModel = newPres.subModel ?? db.subModel;
-  db.currentPluginProvider =
-    newPres.currentPluginProvider ?? db.currentPluginProvider;
-  db.textgenWebUIStreamURL =
-    newPres.textgenWebUIStreamURL ?? db.textgenWebUIStreamURL;
-  db.textgenWebUIBlockingURL =
-    newPres.textgenWebUIBlockingURL ?? db.textgenWebUIBlockingURL;
-  db.forceReplaceUrl = newPres.forceReplaceUrl ?? db.forceReplaceUrl;
-  db.promptPreprocess = newPres.promptPreprocess ?? db.promptPreprocess;
-  db.bias = newPres.bias ?? db.bias;
-  db.koboldURL = newPres.koboldURL ?? db.koboldURL;
-  db.proxyKey = newPres.proxyKey ?? db.proxyKey;
-  db.ooba = safeStructuredClone(newPres.ooba ?? db.ooba);
-  db.ainconfig = safeStructuredClone(newPres.ainconfig ?? db.ainconfig);
-  db.openrouterRequestModel =
-    newPres.openrouterRequestModel ?? db.openrouterRequestModel;
-  db.openrouterSubRequestModel =
-    newPres.openrouterSubRequestModel ??
-    newPres.openrouterRequestModel ??
-    db.openrouterSubRequestModel;
-  db.proxyRequestModel = newPres.proxyRequestModel ?? db.proxyRequestModel;
-  db.NAIsettings = newPres.NAISettings ?? db.NAIsettings;
-  db.autoSuggestPrompt = newPres.autoSuggestPrompt ?? db.autoSuggestPrompt;
-  db.autoSuggestPrefix = newPres.autoSuggestPrefix ?? db.autoSuggestPrefix;
-  db.autoSuggestClean = newPres.autoSuggestClean ?? db.autoSuggestClean;
-  db.promptTemplate = normalizePromptTemplate(newPres.promptTemplate);
-  db.NAIadventure = newPres.NAIadventure;
-  db.NAIappendName = newPres.NAIappendName;
-  db.NAIsettings.cfg_scale ??= 1;
-  db.NAIsettings.mirostat_tau ??= 0;
-  db.NAIsettings.mirostat_lr ??= 1;
-  db.localStopStrings = newPres.localStopStrings;
-  db.customProxyRequestModel = newPres.customProxyRequestModel ?? "";
-  db.customProxySubRequestModel =
-    newPres.customProxySubRequestModel ??
-    newPres.customProxyRequestModel ??
-    db.customProxyRequestModel;
-  db.reverseProxyOobaArgs = safeStructuredClone(
-    newPres.reverseProxyOobaArgs,
-  ) ?? {
-    mode: "instruct",
-  };
-  db.top_p = newPres.top_p ?? 1;
-  db.promptSettings = safeStructuredClone(newPres.promptSettings) ?? {
-    assistantPrefill: "",
-    postEndInnerFormat: "",
-    sendChatAsSystem: false,
-    sendName: false,
-    utilOverride: false,
-  };
-  db.promptSettings.maxThoughtTagDepth ??= -1;
-  db.repetition_penalty = newPres.repetition_penalty;
-  db.min_p = newPres.min_p;
-  db.top_a = newPres.top_a;
-  db.openrouterProvider = newPres.openrouterProvider;
-  db.useInstructPrompt = newPres.useInstructPrompt ?? false;
-  db.customPromptTemplateToggle = newPres.customPromptTemplateToggle ?? "";
-  db.templateDefaultVariables = newPres.templateDefaultVariables ?? "";
-  db.moduleIntergration = newPres.moduleIntergration ?? "";
-  db.top_k = newPres.top_k ?? db.top_k;
-  db.instructChatTemplate =
-    newPres.instructChatTemplate ?? db.instructChatTemplate;
-  db.JinjaTemplate = newPres.JinjaTemplate ?? db.JinjaTemplate;
-  db.jsonSchemaEnabled = newPres.jsonSchemaEnabled ?? false;
-  db.jsonSchema = newPres.jsonSchema ?? "";
-  db.strictJsonSchema = newPres.strictJsonSchema ?? true;
-  db.extractJson = newPres.extractJson ?? "";
-  db.groupOtherBotRole = newPres.groupOtherBotRole ?? "user";
-  db.groupTemplate = newPres.groupTemplate ?? "";
-  db.seperateParametersEnabled = newPres.seperateParametersEnabled ?? false;
-  db.customAPIFormat =
-    safeStructuredClone(newPres.customAPIFormat) ?? LLMFormat.OpenAICompatible;
-  db.systemContentReplacement = newPres.systemContentReplacement ?? "";
-  db.systemRoleReplacement = newPres.systemRoleReplacement ?? "user";
-  db.customFlags = safeStructuredClone(newPres.customFlags) ?? [];
-  db.enableCustomFlags = newPres.enableCustomFlags ?? false;
-  db.presetRegex = newPres.regex ?? [];
-  db.reasoningEffort = newPres.reasonEffort ?? 0;
-  db.thinkingTokens = newPres.thinkingTokens ?? null;
-  db.thinkingType = newPres.thinkingType ?? "budget";
-  db.deepseekThinkingType = newPres.deepseekThinkingType ?? "off";
-  db.adaptiveThinkingEffort = newPres.adaptiveThinkingEffort ?? "high";
-  db.deepseekReasoningEffort = newPres.deepseekReasoningEffort ?? "high";
-  db.outputImageModal = newPres.outputImageModal ?? false;
-  if (!db.doNotChangeSeperateModels) {
-    db.seperateModelsForAxModels = newPres.seperateModelsForAxModels ?? false;
-    db.seperateModels = safeStructuredClone(newPres.seperateModels) ?? {
-      memory: "",
-      emotion: "",
-      translate: "",
-      otherAx: "",
-    };
-    db.providerModelOverrides = safeStructuredClone(
-      newPres.providerModelOverrides,
-    ) ?? {
-      memory: {},
-      emotion: {},
-      translate: {},
-      otherAx: {},
-    };
-  }
-  if (!db.doNotChangeFallbackModels) {
-    db.fallbackModels = safeStructuredClone(newPres.fallbackModels) ?? {
-      memory: [],
-      emotion: [],
-      translate: [],
-      otherAx: [],
-      model: [],
-    };
-    db.fallbackWhenBlankResponse = newPres.fallbackWhenBlankResponse ?? false;
-  }
-  if (db.disableSeperateParameterChangeOnPresetChange) {
-    db.seperateParameters = safeStructuredClone(db.seperateParameters);
-  } else {
-    db.seperateParameters = newPres.seperateParameters
-      ? safeStructuredClone(newPres.seperateParameters)
-      : {
-          memory: {},
-          emotion: {},
-          translate: {},
-          otherAx: {},
-          overrides: {},
-        };
-  }
-  db.modelTools = safeStructuredClone(newPres.modelTools ?? []);
-  db.verbosity = newPres.verbosity ?? 1;
-  db.dynamicOutput = newPres.dynamicOutput;
-
-  return db;
+  presetStore.applyPreset(preset, getPresetApplyPolicy());
 }
 
 export async function downloadPreset(
@@ -321,7 +58,6 @@ export async function downloadPreset(
     await presetStore.load(presetStore.summaries[id].id),
   );
   delete (pres as any).id;
-  console.log(pres);
   pres.openAIKey = "";
   pres.forceReplaceUrl = "";
   pres.forceReplaceUrl2 = "";
@@ -384,7 +120,6 @@ export async function importPreset(
       data = await decodeRPack(data);
     }
     const decoded = await decodeMsgpack(fflate.decompressSync(data));
-    console.log(decoded);
     if (
       (decoded.presetVersion === 0 || decoded.presetVersion === 2) &&
       decoded.type === "preset"
@@ -403,7 +138,6 @@ export async function importPreset(
       ...presetTemplate,
       ...JSON.parse(Buffer.from(f.data).toString("utf-8")),
     };
-    console.log(pre);
   }
   if (pre?.promptTemplate !== undefined) {
     pre.promptTemplate = normalizePromptTemplate(pre.promptTemplate);

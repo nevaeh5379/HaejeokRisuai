@@ -1,3 +1,4 @@
+import { readLegacyPresetFields } from "../presets/legacyPresetCompatibility";
 import type {
   botPreset,
   Database,
@@ -189,6 +190,7 @@ export function normalizeDatabaseDefaults(
   input: Database | DatabaseInput,
 ): Database | NormalizedDatabaseInput {
   const data = input as Database;
+  readLegacyPresetFields(input as Record<string, unknown>);
   normalizeCoreDatabaseSettings(data);
   normalizeContentDatabaseSettings(data);
   normalizeProviderDatabaseSettings(data);

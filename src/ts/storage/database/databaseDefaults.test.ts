@@ -58,7 +58,7 @@ describe("normalizeDatabaseDefaults", () => {
         extension: 1,
       },
       ainconfig: { top_k: 42, rep_pen: "invalid", extension: 2 },
-      NAIsettings: {
+      NAISettings: {
         topP: 0.5,
         starter: null,
         cfg_scale: "invalid",
@@ -76,7 +76,7 @@ describe("normalizeDatabaseDefaults", () => {
       top_k: 42,
       extension: 2,
     });
-    expect(settings.NAIsettings).toMatchObject({
+    expect(settings.NAISettings).toMatchObject({
       topP: 0.5,
       starter: "",
       cfg_scale: 1,

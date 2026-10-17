@@ -212,7 +212,7 @@ const naiDefaults = {
 const providerNestedDefaults = {
   ooba: defaultLooseObject(oobaDefaults),
   ainconfig: defaultLooseObject(ainDefaults),
-  NAIsettings: defaultLooseObject(naiDefaults),
+  NAISettings: defaultLooseObject(naiDefaults),
   colorScheme: defaultLooseObject(colorSchemeDefaults),
   deeplOptions: defaultLooseObject(deeplOptionsDefaults),
   deeplXOptions: defaultLooseObject(deeplXOptionsDefaults),
@@ -314,7 +314,7 @@ export function normalizeProviderDatabaseSettings(data: Database): void {
     data.nanogptUseSubscriptionEndpoint;
   data.customProxySubRequestModel ??= data.customProxyRequestModel;
   normalizeLocalNetworkSettings(data);
-  data.presetRegex ??= [];
+  data.regex ??= [];
   data.reverseProxyOobaArgs ??= {
     mode: "instruct",
   };
