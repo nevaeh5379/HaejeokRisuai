@@ -14,7 +14,7 @@ After each saved image or terminal state is committed, Node emits a compact `ill
 
 `packages/protocol/src/illustration*.ts` owns the portable settings, marker/context logic, SQL paging and queue runner. `imageGeneration.ts` owns the shared image provider behavior; `imageGenerationBrowser.ts` and `server/node/executors/illustrationImages.ts` supply browser and Node image transports/codecs. Execution modules and browser image processing load on demand. Messages retain only metadata and inlay IDs; request context and credentials are held for the duration of a task and released afterward.
 
-`build:protocol` emits both Node `.cjs` and browser `.mjs` entry points from those same TypeScript sources. Browser imports use native ES modules so development and HMR do not depend on Vite's CommonJS optimization cache.
+Node and browser consumers import the shared TypeScript sources directly. No protocol build or generated entry points are required.
 
 Node exposes authenticated `POST /api/illustrations/jobs`, `GET /api/illustrations/jobs` and `POST /api/illustrations/jobs/retry`, using `IllustrationJobRequest` and `IllustrationJobResponse`. GET supplies the four target IDs as query parameters. POST supplies those IDs, the expected `version`, an optional `action` (`retry`, `regenerate`, `rewrite`) and, when new tags are needed, a prepared auxiliary HTTP request. The server performs the auxiliary request, generates/stores the image and commits through the existing SQL revision/event service after HTTP acceptance, without a connected client. Duplicate accepted requests do not generate another image. Echo uses a local `risu:echo` prepared request. Plugin and WebLLM auxiliary models use the app executor on Node and show an app-lifetime notice.
 

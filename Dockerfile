@@ -48,7 +48,7 @@ COPY --from=builder /app/server/node ./server/node
 COPY --from=builder /app/packages/backup-core/src ./packages/backup-core/src
 COPY --from=builder /app/packages/backup-core/package.json ./packages/backup-core/package.json
 COPY --from=builder /app/packages/protocol/src ./packages/protocol/src
-COPY --from=builder /app/packages/protocol/*.ts /app/packages/protocol/package.json /app/packages/protocol/settings.json ./packages/protocol/
+COPY --from=builder /app/packages/protocol/*.ts /app/packages/protocol/package.json ./packages/protocol/
 COPY --from=builder /app/packages/chat-core ./packages/chat-core
 COPY --from=builder /app/dist ./dist
 

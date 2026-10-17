@@ -1,8 +1,9 @@
+import { normalizePromptTemplate } from "./promptTemplateNormalization";
+export { normalizePromptTemplate } from "./promptTemplateNormalization";
 import { decryptBuffer, encryptBuffer, selectSingleFile } from "../../util";
 import { language } from "../../../lang";
 import { alertNormal } from "../../alert";
 import { prebuiltPresets } from "../../process/templates/templates";
-import type { PromptItem } from "../../process/prompt";
 import { safeStructuredClone } from "../../polyfill";
 import { settingsStore } from "../../stores/domain/settingsStore.svelte";
 import { presetStore } from "../../stores/domain/presetStore.svelte";
@@ -20,7 +21,7 @@ import { presetTemplate } from "./presetDefaults";
 import { LLMFormat } from "../../model/types";
 
 export function createActivePresetSnapshot(
-  db: Omit<DatabaseSettings, "plugins">,
+  db: PresetState & Pick<DatabaseSettings, "doNotChangeSeperateModels">,
   current: Pick<StoredBotPreset, "id" | "name" | "image">,
 ): StoredBotPreset {
   const savedPreset: botPreset = {
@@ -135,14 +136,14 @@ export async function changeToPreset(id = 0, savecurrent = true) {
     {
       ...settingsStore.getStateRecord(),
       ...presetStore.getStateRecord(),
-    } as DatabaseSettings,
+    },
     newPres,
   );
   await presetStore.activate(summary.id, nextState);
 }
 
 export function createPresetSettingsState(
-  base: Omit<DatabaseSettings, "plugins">,
+  base: Partial<DatabaseSettings>,
   preset: botPreset,
 ): PresetState {
   const combined = safeStructuredClone(base);
@@ -159,16 +160,13 @@ export function applyPresetToCurrentState(preset: botPreset): void {
     {
       ...settingsStore.getStateRecord(),
       ...presetStore.getStateRecord(),
-    } as DatabaseSettings,
+    },
     preset,
   );
   presetStore.replaceActivePresetState(nextState);
 }
 
-export function setPreset(
-  db: Omit<DatabaseSettings, "plugins">,
-  newPres: botPreset,
-) {
+export function setPreset(db: Partial<DatabaseSettings>, newPres: botPreset) {
   db.apiType = newPres.apiType ?? db.apiType;
   db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode;
   db.localNetworkTimeoutSec =
@@ -546,67 +544,4 @@ export async function importPreset(
   }
   pre.name ??= "Imported";
   await presetStore.savePreset(pre, presetStore.summaries.length);
-}
-
-function normalizePromptRole(role: unknown): "user" | "bot" | "system" | null {
-  if (role === "user" || role === "bot" || role === "system") {
-    return role;
-  }
-  if (role === "assistant" || role === "char") {
-    return "bot";
-  }
-  return null;
-}
-
-function normalizeCacheRole(
-  role: unknown,
-): "user" | "assistant" | "system" | "all" {
-  if (
-    role === "user" ||
-    role === "assistant" ||
-    role === "system" ||
-    role === "all"
-  ) {
-    return role;
-  }
-  if (role === "bot" || role === "char") {
-    return "assistant";
-  }
-  return "all";
-}
-
-export function normalizePromptTemplate(
-  template: PromptItem[] | null | undefined,
-): PromptItem[] | null {
-  if (!Array.isArray(template)) {
-    return null;
-  }
-  const normalized = safeStructuredClone(template) as any[];
-  for (const item of normalized) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    switch (item.type) {
-      case "plain":
-      case "jailbreak":
-      case "cot": {
-        item.role = normalizePromptRole(item.role) ?? "system";
-        break;
-      }
-      case "persona":
-      case "description":
-      case "authornote":
-      case "memory": {
-        if (item.role2 !== undefined && item.role2 !== null) {
-          item.role2 = normalizePromptRole(item.role2) ?? "system";
-        }
-        break;
-      }
-      case "cache": {
-        item.role = normalizeCacheRole(item.role);
-        break;
-      }
-    }
-  }
-  return normalized as PromptItem[];
 }

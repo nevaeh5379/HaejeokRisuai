@@ -1,4 +1,5 @@
-import type { ProtocolSettingKeys } from "../../../../packages/protocol/dist/settingKeys";
+import type { ProtocolSettingKeys } from "@risuai/protocol/settings.ts";
+import type { NormalizedSettingsState } from "../../storage/database/databaseDefaults";
 import type { DatabaseSettings } from "../../storage/database/schema";
 
 export type PresetSettingKey = ProtocolSettingKeys["PRESET_STORE_SETTING_KEYS"];
@@ -9,7 +10,7 @@ type OtherDomainKey =
 /** Public live state, distinct from the combined import/backup schema. */
 export type PresetState = Pick<DatabaseSettings, PresetSettingKey>;
 export type SettingsState = Omit<
-  DatabaseSettings,
+  NormalizedSettingsState,
   PresetSettingKey | OtherDomainKey
 >;
 export type SettingsKey = keyof SettingsState;

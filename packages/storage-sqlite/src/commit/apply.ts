@@ -1,7 +1,7 @@
 import type { SqlCommit } from "@risuai/protocol/src/sqlCommit.ts";
 
 type StorageSqlCommit = SqlCommit<object>;
-import protocolSettings from "@risuai/protocol/settings.json";
+import protocolSettings from "@risuai/protocol/settings.ts";
 import * as nodeCodec from "../schema/codec";
 import type { SqliteExecute } from "../types";
 

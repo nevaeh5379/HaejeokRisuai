@@ -1,5 +1,6 @@
-{
-  "DEFERRED_SETTING_KEYS": [
+/** Shared setting ownership and loading keys for browser and Node consumers. */
+const protocolSettings = {
+  DEFERRED_SETTING_KEYS: [
     "pluginCustomStorage",
     "personas",
     "botPresets",
@@ -25,9 +26,9 @@
     "customModels",
     "translatorPresets",
     "loadouts",
-    "customBackground"
+    "customBackground",
   ],
-  "PROMPT_SETTING_KEYS": [
+  PROMPT_SETTING_KEYS: [
     "mainPrompt",
     "jailbreak",
     "globalNote",
@@ -42,9 +43,9 @@
     "customTokenizer",
     "promptTemplate",
     "promptSettings",
-    "customPromptTemplateToggle"
+    "customPromptTemplateToggle",
   ],
-  "DEFERRED_STARTUP_SETTING_KEYS": [
+  DEFERRED_STARTUP_SETTING_KEYS: [
     "loadouts",
     "loreBook",
     "globalscript",
@@ -63,15 +64,15 @@
     "customTokenizer",
     "promptTemplate",
     "promptSettings",
-    "customPromptTemplateToggle"
+    "customPromptTemplateToggle",
   ],
-  "LEGACY_PERSONA_MIRROR_KEYS": [
+  LEGACY_PERSONA_MIRROR_KEYS: [
     "username",
     "userIcon",
     "userNote",
-    "personaPrompt"
+    "personaPrompt",
   ],
-  "DOMAIN_STORE_SETTING_KEYS": [
+  DOMAIN_STORE_SETTING_KEYS: [
     "personas",
     "selectedPersona",
     "username",
@@ -86,9 +87,9 @@
     "moduleSandboxGroups",
     "activeBotPresetId",
     "globalAuthorNotes",
-    "globalAuthorNoteSettings"
+    "globalAuthorNoteSettings",
   ],
-  "PRESET_STORE_SETTING_KEYS": [
+  PRESET_STORE_SETTING_KEYS: [
     "apiType",
     "localNetworkMode",
     "localNetworkTimeoutSec",
@@ -168,15 +169,10 @@
     "seperateParameters",
     "modelTools",
     "verbosity",
-    "dynamicOutput"
+    "dynamicOutput",
   ],
-  "NON_SETTINGS_ROOT_KEYS": [
-    "characters",
-    "isSql",
-    "botPresets",
-    "botPresetsId"
-  ],
-  "BOOTSTRAP_SETTING_KEYS": [
+  NON_SETTINGS_ROOT_KEYS: ["characters", "isSql", "botPresets", "botPresetsId"],
+  BOOTSTRAP_SETTING_KEYS: [
     "pluginCustomStorage",
     "loreBook",
     "globalscript",
@@ -198,6 +194,12 @@
     "customTokenizer",
     "promptTemplate",
     "promptSettings",
-    "customPromptTemplateToggle"
-  ]
-}
+    "customPromptTemplateToggle",
+  ],
+} as const satisfies Record<string, readonly string[]>;
+
+export type ProtocolSettingKeys = {
+  [K in keyof typeof protocolSettings]: (typeof protocolSettings)[K][number];
+};
+
+export default protocolSettings;

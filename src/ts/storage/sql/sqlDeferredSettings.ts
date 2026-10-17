@@ -1,4 +1,4 @@
-import protocolSettings from "../../../../packages/protocol/settings.json";
+import protocolSettings from "../../../../packages/protocol/settings.ts";
 import type { PresetSettingKey } from "../../stores/domain/stateOwnership";
 
 export const PROMPT_SETTING_KEYS = protocolSettings.PROMPT_SETTING_KEYS;

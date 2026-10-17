@@ -34,14 +34,19 @@ export type SettingsInput = {
   [K in keyof DatabaseSettings]?: unknown;
 } & Record<string, unknown>;
 
-export type NormalizedSettingsInput = SettingsInput &
-  CoreValidatedDefaults &
+export type ValidatedSettingsDefaults = CoreValidatedDefaults &
   ContentValidatedDefaults &
   ProviderValidatedDefaults &
   FeatureValidatedDefaults &
   RuntimeValidatedDefaults;
 
-const NON_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
+export type NormalizedSettingsInput = SettingsInput & ValidatedSettingsDefaults;
+
+/** Known settings remain optional unless the normalizer supplies their defaults. */
+export type NormalizedSettingsState = Partial<DatabaseSettings> &
+  Required<Pick<DatabaseSettings, keyof ValidatedSettingsDefaults>>;
+
+const NON_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
 function requireObject(input: unknown, label: string): Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -60,7 +65,7 @@ function assertSettingsOwnership(input: Record<string, unknown>): void {
 
 export function normalizeSettingsDefaults<T extends SettingsInput>(
   input: T,
-): T & NormalizedSettingsInput {
+): T & ValidatedSettingsDefaults {
   assertSettingsOwnership(input);
   const data = input as unknown as Database;
   normalizeCoreDatabaseSettings(data);
@@ -68,7 +73,7 @@ export function normalizeSettingsDefaults<T extends SettingsInput>(
   normalizeProviderDatabaseSettings(data);
   normalizeFeatureDatabaseSettings(data);
   normalizeRuntimeDatabaseSettings(data);
-  return input as T & NormalizedSettingsInput;
+  return input as T & ValidatedSettingsDefaults;
 }
 
 export function normalizeSettingsInput(
