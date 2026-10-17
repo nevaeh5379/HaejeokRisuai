@@ -6,6 +6,8 @@ import { createPresetSettings } from "../../storage/presets/presetSchema";
 import {
   createActivePresetSnapshot,
   createPresetSettingsState,
+  applyPresetSettings,
+  getSeparateModelSettings,
   defaultPresetApplyPolicy,
   type PresetApplyPolicy,
 } from "../../storage/presets/presetState";
@@ -16,6 +18,7 @@ import type {
   StoredBotPreset,
 } from "../../storage/sql/ISqlStorage";
 import { safeStructuredClone } from "../../polyfill";
+import type { SqlSettingUpsert } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { BoundedCache } from "../../memory/boundedCache";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
@@ -143,12 +146,11 @@ class PresetStore
     this.stateData = state;
     this.cache.delete(preset.id);
     this.activeDirty = false;
-    this.persistedActiveFingerprint = snapshotFingerprint(this.activePreset);
+    this.persistedActiveFingerprint = this.activeFingerprint();
     this.activeObserverDispose = $effect.root(() => {
       $effect(() => {
-        const active = this.activePreset;
-        trackDeep(active);
-        const fingerprint = snapshotFingerprint($state.snapshot(active));
+        trackDeep(this.stateData);
+        const fingerprint = this.activeFingerprint();
         if (fingerprint === this.persistedActiveFingerprint) return;
         this.activeDirty = true;
         this.commitQueue.schedule(() => this.flush(), 300);
@@ -159,7 +161,7 @@ class PresetStore
   applyPreset(preset: botPreset, policy: PresetApplyPolicy): void {
     if (!this.activeMetadata)
       throw new Error("Active preset state is not initialized");
-    this.stateData = createPresetSettingsState(preset, this.stateData, policy);
+    this.stateData = applyPresetSettings(preset, this.stateData, policy);
   }
 
   getStateRecord(): PresetState {
@@ -171,6 +173,44 @@ class PresetStore
     this.stateData[key] = value;
   }
 
+  private activeFingerprint(
+    state = this.stateData,
+    metadata = this.activeMetadata,
+    policy = this.policyProvider(),
+  ): string {
+    return metadata
+      ? snapshotFingerprint({
+          state,
+          metadata,
+          doNotChangeSeperateModels: policy.doNotChangeSeperateModels,
+        })
+      : "";
+  }
+
+  private separateModelUpserts(
+    state: PresetState,
+    policy: PresetApplyPolicy,
+  ): SqlSettingUpsert[] {
+    return policy.doNotChangeSeperateModels
+      ? Object.entries(getSeparateModelSettings(state)).map(([key, value]) => ({
+          key,
+          value: safeStructuredClone(value),
+        }))
+      : [];
+  }
+
+  /** Restore SQL's split document/root representation; no transition policy. */
+  private async restorePresetState(preset: botPreset): Promise<PresetState> {
+    const input = { ...preset };
+    if (this.policyProvider().doNotChangeSeperateModels) {
+      for (const key of Object.keys(getSeparateModelSettings(preset))) {
+        const value = await this.storage!.loadSettingKey(key);
+        if (value !== undefined) Object.assign(input, { [key]: value });
+      }
+    }
+    return createPresetSettingsState(input);
+  }
+
   /** Persist the canonical live active preset, including immediate mutations. */
   async flush(): Promise<void> {
     this.commitQueue.cancel();
@@ -180,14 +220,18 @@ class PresetStore
       return;
     }
     const snapshot = active;
-    const fingerprint = snapshotFingerprint(snapshot);
+    const fingerprint = this.activeFingerprint();
+    const rootUpserts = this.separateModelUpserts(
+      this.stateData,
+      this.policyProvider(),
+    );
     if (!this.activeDirty && fingerprint === this.persistedActiveFingerprint)
       return;
 
     this.activeDirty = false;
     try {
       await this.commitQueue.enqueue(() =>
-        this.persistPreset(snapshot, undefined, false),
+        this.persistPreset(snapshot, undefined, false, rootUpserts),
       );
       this.persistedActiveFingerprint = fingerprint;
     } catch (error) {
@@ -195,7 +239,7 @@ class PresetStore
       throw error;
     }
 
-    const latestFingerprint = snapshotFingerprint(this.activePreset);
+    const latestFingerprint = this.activeFingerprint();
     this.activeDirty = latestFingerprint !== this.persistedActiveFingerprint;
     if (this.activeDirty) {
       this.commitQueue.schedule(() => this.flush(), 300);
@@ -204,10 +248,9 @@ class PresetStore
 
   hasPendingWrites(): boolean {
     if (this.activeDirty) return true;
-    const active = this.activePreset;
     return (
-      !!active &&
-      snapshotFingerprint(active) !== this.persistedActiveFingerprint
+      !!this.activeMetadata &&
+      this.activeFingerprint() !== this.persistedActiveFingerprint
     );
   }
 
@@ -286,14 +329,7 @@ class PresetStore
     try {
       await this.flush();
       const preset = await this.load(this.activeId, true);
-      this.installActivePreset(
-        preset,
-        createPresetSettingsState(
-          preset,
-          this.stateData,
-          this.policyProvider(),
-        ),
-      );
+      this.installActivePreset(preset, await this.restorePresetState(preset));
       this.activeStatus = "ready";
     } catch (error) {
       this.activeStatus = "error";
@@ -334,11 +370,7 @@ class PresetStore
       this.summaries = summaries;
       this.installActivePreset(
         activePreset,
-        createPresetSettingsState(
-          activePreset,
-          this.stateData,
-          this.policyProvider(),
-        ),
+        await this.restorePresetState(activePreset),
       );
       this.listStatus = "ready";
       this.activeStatus = "ready";
@@ -359,6 +391,7 @@ class PresetStore
     preset: botPreset,
     position: number | undefined,
     updateActive: boolean,
+    rootUpserts?: SqlSettingUpsert[],
   ): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
     const id =
@@ -369,28 +402,34 @@ class PresetStore
       position ?? this.summaries.findIndex((summary) => summary.id === id);
     const policy =
       id === this.activeId ? this.policyProvider() : defaultPresetApplyPolicy;
+    // The live store owns active settings. Document saves update metadata;
+    // applying another configuration goes through applyPreset/activate.
     const nextState = updateActive
-      ? createPresetSettingsState(
-          preset,
-          id === this.activeId ? this.stateData : undefined,
-          policy,
-        )
+      ? id === this.activeId
+        ? safeStructuredClone(this.stateData)
+        : createPresetSettingsState(preset)
       : undefined;
+    const metadata = { id, name: preset.name, image: preset.image };
+    const savedFingerprint =
+      nextState && id === this.activeId
+        ? this.activeFingerprint(nextState, metadata, policy)
+        : "";
+    const upserts =
+      rootUpserts ??
+      (nextState && id === this.activeId
+        ? this.separateModelUpserts(nextState, policy)
+        : []);
     const data = {
       ...safeStructuredClone(preset),
       ...(nextState
-        ? createActivePresetSnapshot(
-            nextState,
-            { id, name: preset.name, image: preset.image },
-            policy,
-          )
+        ? createActivePresetSnapshot(nextState, metadata, policy)
         : {}),
     } as StoredBotPreset;
     delete (data as any).id;
     await commitSqlChanges(this.storage, {
       baseRevision: this.storage.getRevision(),
       action: "preset:save",
-      root: { upserts: [], deletes: [] },
+      root: { upserts, deletes: [] },
       presets: {
         upserts: [
           {
@@ -409,7 +448,13 @@ class PresetStore
       messageManifests: [],
     });
     if (id === this.activeId && this.activeMetadata) {
-      if (updateActive) this.installActivePreset({ ...data, id }, nextState);
+      if (updateActive) {
+        this.activeMetadata = metadata;
+        this.persistedActiveFingerprint = savedFingerprint;
+        this.activeDirty = this.activeFingerprint() !== savedFingerprint;
+        if (this.activeDirty)
+          this.commitQueue.schedule(() => this.flush(), 300);
+      }
       this.cache.delete(id);
     } else {
       this.cache.set(id, { ...data, id });
@@ -419,7 +464,7 @@ class PresetStore
   private async setActiveId(
     id: string,
     persist = true,
-    policy?: PresetApplyPolicy,
+    nextState?: PresetState,
   ): Promise<void> {
     if (!this.storage || !this.summaries.some((preset) => preset.id === id))
       throw new Error("Active bot preset does not exist");
@@ -427,11 +472,7 @@ class PresetStore
     this.error = null;
     try {
       const preset = await this.load(id);
-      const state = createPresetSettingsState(
-        preset,
-        this.activeMetadata ? this.stateData : undefined,
-        policy,
-      );
+      const state = nextState ?? (await this.restorePresetState(preset));
       if (persist)
         await commitSqlChanges(this.storage, {
           baseRevision: this.storage.getRevision(),
@@ -457,7 +498,18 @@ class PresetStore
     policy: PresetApplyPolicy = this.policyProvider(),
   ): Promise<void> {
     await this.flush();
-    await this.setActiveId(id, id !== this.activeId, policy);
+    if (id === this.activeId) return;
+    this.activeStatus = "loading";
+    this.error = null;
+    try {
+      const preset = await this.load(id);
+      const state = applyPresetSettings(preset, this.stateData, policy);
+      await this.setActiveId(id, true, state);
+    } catch (error) {
+      this.activeStatus = "error";
+      this.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
   }
   async reorder(ids: string[]): Promise<void> {
     if (!this.storage) throw new Error("Preset store is not initialized");
@@ -488,11 +540,7 @@ class PresetStore
     const nextPreset =
       id === this.activeId ? await this.load(nextActive) : undefined;
     const nextState = nextPreset
-      ? createPresetSettingsState(
-          nextPreset,
-          this.stateData,
-          this.policyProvider(),
-        )
+      ? applyPresetSettings(nextPreset, this.stateData, this.policyProvider())
       : undefined;
     const order = this.summaries
       .filter((preset) => preset.id !== id)
@@ -540,7 +588,13 @@ class PresetStore
     });
     this.cache.clear();
     this.summaries = await this.storage.listBotPresets();
-    await this.setActiveId(selected, false);
+    const preset = await this.load(selected);
+    const state = applyPresetSettings(
+      preset,
+      this.stateData,
+      this.policyProvider(),
+    );
+    await this.setActiveId(selected, false, state);
   }
   async loadAll(): Promise<StoredBotPreset[]> {
     const result: StoredBotPreset[] = [];

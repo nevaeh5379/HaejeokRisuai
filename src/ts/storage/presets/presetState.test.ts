@@ -3,6 +3,7 @@ import { createPresetSettings, PRESET_SETTING_KEYS } from "./presetSchema";
 import {
   createActivePresetSnapshot,
   createPresetSettingsState,
+  applyPresetSettings,
   defaultPresetApplyPolicy,
 } from "./presetState";
 import {
@@ -52,10 +53,16 @@ describe("independent preset model", () => {
       moduleIntergration: "old",
       customProxyRequestModel: "old-model",
     });
-    const next = createPresetSettingsState(
+    const next = applyPresetSettings(
       { openrouterRequestModel: "new-model" },
       previous,
+      defaultPresetApplyPolicy,
     );
+    const normalized = createPresetSettingsState({
+      openrouterRequestModel: "new-model",
+    });
+    expect(normalized.mainPrompt).toBe(createPresetSettings().mainPrompt);
+    expect(normalized.temperature).toBe(80);
     expect(next.mainPrompt).toBe("previous");
     expect(next.temperature).toBe(17);
     expect(next.top_p).toBe(1);
@@ -102,11 +109,10 @@ describe("independent preset model", () => {
           overrides: {},
         },
       });
-      const next = createPresetSettingsState(
-        { mainPrompt: "incoming" },
-        previous,
-        { ...defaultPresetApplyPolicy, [key]: true },
-      );
+      const next = applyPresetSettings({ mainPrompt: "incoming" }, previous, {
+        ...defaultPresetApplyPolicy,
+        [key]: true,
+      });
       expect(next.mainPrompt).toBe("incoming");
       expect(next.seperateModels.memory).toBe(
         key === "doNotChangeSeperateModels" ? "memory" : "",

@@ -27,9 +27,11 @@ describe("PresetStore independent active ownership", () => {
   let storage: ISqlStorage;
   let documents: Map<string, StoredBotPreset>;
   let activeId: string;
+  let root: Map<string, unknown>;
   beforeEach(() => {
     presetStore.resetForTesting();
     activeId = "one";
+    root = new Map();
     documents = new Map([
       ["one", preset("one")],
       ["two", preset("two")],
@@ -47,9 +49,13 @@ describe("PresetStore independent active ownership", () => {
           }),
         ),
       ),
-      loadSettingKey: vi.fn(async () => activeId),
+      loadSettingKey: vi.fn(async (key: string) =>
+        key === "activeBotPresetId" ? activeId : structuredClone(root.get(key)),
+      ),
       loadBotPreset: vi.fn(async (id) => structuredClone(documents.get(id))),
       commit: vi.fn(async (commit: SqlCommit) => {
+        for (const entry of commit.root.upserts)
+          root.set(entry.key, structuredClone(entry.value));
         for (const entry of commit.presets?.upserts ?? [])
           documents.set(entry.id, {
             ...structuredClone(entry.data),
@@ -210,6 +216,113 @@ describe("PresetStore independent active ownership", () => {
     expect(presetStore.activePreset.name).toBe("Renamed");
     expect(presetStore.state.seperateModels.memory).toBe("keep-memory");
     expect(documents.get("one").seperateModels).toBeNull();
+    expect(presetStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("restores globally stored model selections and persists later edits across restarts", async () => {
+    const preserve = {
+      ...defaultPresetApplyPolicy,
+      doNotChangeSeperateModels: true,
+    };
+    presetStore.setPolicyProvider(() => preserve);
+    documents.set("one", {
+      ...preset("one"),
+      seperateModelsForAxModels: false,
+      seperateModels: null,
+      providerModelOverrides: null,
+    });
+    root.set("seperateModelsForAxModels", true);
+    root.set("seperateModels", {
+      memory: "memory-before",
+      emotion: "",
+      translate: "translate-before",
+      otherAx: "",
+    });
+    root.set("providerModelOverrides", {
+      memory: { ollamaModel: "actual-before" },
+      emotion: {},
+      translate: {},
+      otherAx: {},
+    });
+    await presetStore.init(storage);
+    flushSync();
+    expect(presetStore.state.seperateModelsForAxModels).toBe(true);
+    expect(presetStore.state.seperateModels.memory).toBe("memory-before");
+    expect(presetStore.state.providerModelOverrides.memory.ollamaModel).toBe(
+      "actual-before",
+    );
+    expect(presetStore.hasPendingWrites()).toBe(false);
+    await presetStore.flush();
+    expect(storage.commit).not.toHaveBeenCalled();
+
+    presetStore.state.seperateModels.memory = "memory-after";
+    presetStore.state.providerModelOverrides.memory.ollamaModel =
+      "actual-after";
+    expect(presetStore.hasPendingWrites()).toBe(true);
+    await presetStore.flush();
+    expect(documents.get("one").seperateModels).toBeNull();
+    expect(documents.get("one").providerModelOverrides).toBeNull();
+    expect(root.get("seperateModels")).toMatchObject({
+      memory: "memory-after",
+    });
+
+    presetStore.resetForTesting();
+    presetStore.setPolicyProvider(() => preserve);
+    await presetStore.init(storage);
+    expect(presetStore.state.seperateModels.memory).toBe("memory-after");
+    expect(presetStore.state.providerModelOverrides.memory.ollamaModel).toBe(
+      "actual-after",
+    );
+  });
+
+  it("preserves all three policy groups on a transition", async () => {
+    const preserve = {
+      doNotChangeSeperateModels: true,
+      doNotChangeFallbackModels: true,
+      disableSeperateParameterChangeOnPresetChange: true,
+    };
+    presetStore.setPolicyProvider(() => preserve);
+    await presetStore.init(storage);
+    presetStore.state.seperateModelsForAxModels = true;
+    presetStore.state.seperateModels.memory = "keep-model";
+    presetStore.state.fallbackModels.model = ["keep-fallback"];
+    presetStore.state.seperateParameters.memory = { temperature: 0.3 };
+    await presetStore.activate("two");
+    expect(presetStore.state.mainPrompt).toBe("two");
+    expect(presetStore.state.seperateModels.memory).toBe("keep-model");
+    expect(presetStore.state.fallbackModels.model).toEqual(["keep-fallback"]);
+    expect(presetStore.state.seperateParameters.memory.temperature).toBe(0.3);
+  });
+
+  it("hydrates remote changes without applying local transition policies", async () => {
+    presetStore.setPolicyProvider(() => ({
+      ...defaultPresetApplyPolicy,
+      doNotChangeFallbackModels: true,
+      disableSeperateParameterChangeOnPresetChange: true,
+    }));
+    await presetStore.init(storage);
+    presetStore.state.fallbackModels.model = ["old-fallback"];
+    await presetStore.flush();
+    documents.set("one", {
+      ...preset("one"),
+      fallbackModels: {
+        memory: [],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        model: ["remote-fallback"],
+      },
+      seperateParameters: {
+        memory: { temperature: 0.9 },
+        emotion: {},
+        translate: {},
+        otherAx: {},
+        overrides: {},
+      },
+    });
+    await presetStore.refreshFromStorage();
+    expect(presetStore.state.fallbackModels.model).toEqual(["remote-fallback"]);
+    expect(presetStore.state.seperateParameters.memory.temperature).toBe(0.9);
     expect(presetStore.hasPendingWrites()).toBe(false);
   });
 

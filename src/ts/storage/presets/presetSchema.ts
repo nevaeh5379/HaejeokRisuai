@@ -25,8 +25,8 @@ import {
 } from "../database/normalization/valibotDefaults";
 
 const clone = rfdc();
-// Legacy presets retain these fields when absent. Keep this rule beside each
-// field, so ownership, defaults and application all follow the same schema.
+// Legacy transition hints, read only by applyPresetSettings. Valibot parsing
+// always uses the declared defaults, independent of the active preset.
 const retainedFields = new WeakSet<object>();
 function retain<T extends v.GenericSchema>(schema: T): T {
   retainedFields.add(schema);

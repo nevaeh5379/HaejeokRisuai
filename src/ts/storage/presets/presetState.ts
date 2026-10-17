@@ -21,37 +21,14 @@ export const defaultPresetApplyPolicy: PresetApplyPolicy = {
   disableSeperateParameterChangeOnPresetChange: false,
 };
 
-/** Normalizes documents without consulting aggregate database/settings state. */
+/** Normalizes one document using its own values and schema defaults. */
 export function createPresetSettingsState(
   preset: Partial<PresetSettings>,
-  previous?: PresetSettings,
-  policy: PresetApplyPolicy = defaultPresetApplyPolicy,
 ): PresetSettings {
   const input = { ...preset };
-  input.openrouterSubRequestModel ??= preset.openrouterRequestModel;
-  if (previous) {
-    for (const key of PRESET_SETTING_KEYS) {
-      if (input[key] == null && retainsMissingPresetField(key)) {
-        Object.assign(input, { [key]: previous[key] });
-      }
-    }
-    if (policy.doNotChangeSeperateModels) {
-      input.seperateModelsForAxModels = previous.seperateModelsForAxModels;
-      input.seperateModels = previous.seperateModels;
-      input.providerModelOverrides = previous.providerModelOverrides;
-    }
-    if (policy.doNotChangeFallbackModels) {
-      input.fallbackModels = previous.fallbackModels;
-      input.fallbackWhenBlankResponse = previous.fallbackWhenBlankResponse;
-    }
-    if (policy.disableSeperateParameterChangeOnPresetChange) {
-      input.seperateParameters = previous.seperateParameters;
-    }
-  }
-  input.openrouterSubRequestModel ??=
-    preset.openrouterRequestModel ?? input.openrouterRequestModel;
-  input.customProxySubRequestModel ??= preset.customProxyRequestModel ?? "";
-  // Old portable presets sometimes stored the provider as a single name.
+  input.openrouterSubRequestModel ??= input.openrouterRequestModel;
+  input.customProxySubRequestModel ??= input.customProxyRequestModel;
+  // Compatibility with old portable presets, independent of the active state.
   if (typeof input.openrouterProvider === "string") {
     input.openrouterProvider = {
       order: input.openrouterProvider ? [input.openrouterProvider] : [],
@@ -61,6 +38,42 @@ export function createPresetSettingsState(
   }
   const state = createPresetSettings(input);
   state.promptTemplate = normalizePromptTemplate(state.promptTemplate);
+  return state;
+}
+
+/** Values stored globally when excluded from the active preset document. */
+export function getSeparateModelSettings(state: Partial<PresetSettings>) {
+  return {
+    seperateModelsForAxModels: state.seperateModelsForAxModels,
+    seperateModels: state.seperateModels,
+    providerModelOverrides: state.providerModelOverrides,
+  };
+}
+
+/** Applies a different preset to a running state, including legacy keep rules. */
+export function applyPresetSettings(
+  preset: Partial<PresetSettings>,
+  previous: PresetSettings,
+  policy: PresetApplyPolicy,
+): PresetSettings {
+  const incoming = { ...preset };
+  incoming.openrouterSubRequestModel ??= preset.openrouterRequestModel;
+  const state = createPresetSettingsState(incoming);
+  for (const key of PRESET_SETTING_KEYS) {
+    if (incoming[key] == null && retainsMissingPresetField(key)) {
+      Object.assign(state, { [key]: clone(previous[key]) });
+    }
+  }
+  if (policy.doNotChangeSeperateModels) {
+    Object.assign(state, clone(getSeparateModelSettings(previous)));
+  }
+  if (policy.doNotChangeFallbackModels) {
+    state.fallbackModels = clone(previous.fallbackModels);
+    state.fallbackWhenBlankResponse = previous.fallbackWhenBlankResponse;
+  }
+  if (policy.disableSeperateParameterChangeOnPresetChange) {
+    state.seperateParameters = clone(previous.seperateParameters);
+  }
   return state;
 }
 
