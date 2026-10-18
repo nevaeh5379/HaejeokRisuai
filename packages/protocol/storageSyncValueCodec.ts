@@ -2,6 +2,7 @@
 
 const SPECIAL_TAG: any = "__risu_storage_sync_special_v1_4bd9821f__";
 const OBJECT_TAG: any = "__risu_storage_sync_object_v1_4bd9821f__";
+//TODO remove any and change it to a struct Type.
 
 function defineValue(target?: any, key?: any, value?: any): any {
   Object.defineProperty(target, key, {

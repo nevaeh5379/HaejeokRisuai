@@ -311,6 +311,7 @@ export class LocalChatExecutor implements ChatExecutor {
     }
 
     currentChat = response.currentChat;
+    const illustrationMessageId = currentChat.message.at(-1)?.chatId;
     return finalizeChatGeneration({
       req,
       result: response.result,
@@ -354,6 +355,15 @@ export class LocalChatExecutor implements ChatExecutor {
           targetCharacterId: arg.targetCharacterId,
           targetChatId: arg.targetChatId,
         }),
+      illustrationContext: prompt.illustrationContext,
+      illustrationTarget:
+        prompt.illustrationContext && currentChat.id && illustrationMessageId
+          ? {
+              characterId: currentChar.chaId,
+              chatId: currentChat.id,
+              messageId: illustrationMessageId,
+            }
+          : undefined,
     });
   }
 }

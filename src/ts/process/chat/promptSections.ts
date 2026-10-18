@@ -474,6 +474,20 @@ function createDescriptionPromptGetter(
   };
 }
 
+/**
+ * Prepares description, persona, lore and control sections for a chat generation request.
+ *
+ * 한국어: 채팅 생성 요청에 사용할 설명·페르소나·로어·제어 프롬프트 구간을 준비하는 함수.
+ *
+ * @param currentChar - Character being generated. / 답변을 생성할 캐릭터.
+ * @param currentChat - Chat snapshot supplying notes and history metadata. / 메모·이력 메타데이터를 제공하는 채팅 사본.
+ * @param nowChatroom - Current one-to-one or group room. / 현재 1:1 또는 그룹 채팅방.
+ * @param target - Stable variable/script target. / 안정적인 변수·스크립트 대상.
+ * @param generation - Optional isolated generation overrides. / 선택적 독립 생성 변경값.
+ * @remarks
+ * Returns the isolated description content separately for illustrations, before lore is merged into it.
+ * 한국어: 삽화에 사용할 설명 내용은 로어가 설명 구간에 합쳐지기 전의 독립 값으로 별도 반환.
+ */
 export async function preparePromptSections(
   currentChar: character,
   currentChat: Chat,
@@ -511,7 +525,7 @@ export async function preparePromptSections(
     generation,
   );
 
-  await buildDescriptionPrompt(
+  const descriptionPrompt = await buildDescriptionPrompt(
     sections,
     currentChar,
     currentChat,
@@ -542,6 +556,7 @@ export async function preparePromptSections(
   );
 
   return {
+    illustrationDescription: descriptionPrompt.content,
     authorNoteContent,
     unformated: sections,
     promptTemplate,

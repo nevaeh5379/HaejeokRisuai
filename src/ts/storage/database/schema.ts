@@ -1,3 +1,4 @@
+import type { PresetSettings } from "../presets/presetSchema";
 import type { PluginMetadata } from "../../plugins/pluginTypes";
 import type { triggerscript as triggerscriptMain } from "../../process/triggers";
 import type { NAISettings } from "../../process/models/nai";
@@ -23,6 +24,12 @@ import type { SerializableHypaV3Data } from "../../process/memory/hypav3";
 import type { Hotkey } from "../../defaulthotkeys";
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { Loadout } from "../../loadout";
+import type {
+  Illustration,
+  IllustrationOverrides,
+  IllustrationSettings,
+} from "@risuai/protocol/src/illustration.ts";
+import type { ImageProviderId } from "@risuai/protocol/src/imageGeneration.ts";
 
 export type StreamingDisplayOptimizationMode = "off" | "balanced" | "strong";
 
@@ -64,21 +71,11 @@ export interface RisuPersona {
   embeddedModule?: RisuModule;
 }
 
-export interface DatabaseSettings {
-  apiType: string;
+export interface DatabaseSettings extends PresetSettings {
+  useChatIllustrations: boolean;
+  illustration?: IllustrationSettings;
   openAIKey: string;
-  proxyKey: string;
-  mainPrompt: string;
-  jailbreak: string;
-  globalNote: string;
-  temperature: number;
   askRemoval: boolean;
-  maxContext: number;
-  maxResponse: number;
-  frequencyPenalty: number;
-  PresensePenalty: number;
-  formatingOrder: FormatingOrderItem[];
-  aiModel: string;
   jailbreakToggle: boolean;
   loreBookDepth: number;
   loreBookToken: number;
@@ -91,15 +88,11 @@ export interface DatabaseSettings {
   supaMemoryPrompt: string;
   additionalPrompt: string;
   descriptionPrefix: string;
-  forceReplaceUrl: string;
   language: string;
   translator: string;
   plugins: Array<Omit<PluginMetadata, "id" | "position"> & { script: string }>;
-  currentPluginProvider: string;
   zoomsize: number;
   customBackground: string;
-  textgenWebUIStreamURL: string;
-  textgenWebUIBlockingURL: string;
   autoTranslate: boolean;
   fullScreen: boolean;
   playMessage: boolean;
@@ -109,13 +102,16 @@ export interface DatabaseSettings {
   autoHideAndroidNavigationBar: boolean;
   autoHideAndroidNavigationBarInSidebar: boolean;
   linuxWindowDecoration: "ssd" | "csd";
+  linuxCsdSidebarOpacity: number;
+  macosSidebarTransparency: boolean;
+  macosNativeSidebarBlur: boolean;
+  macosSidebarOpacity: number;
   androidWidgetBotCount?: number;
-  subModel: string;
   emotionPrompt: string;
   formatversion: number;
   waifuWidth: number;
   waifuWidth2: number;
-  sdProvider: string;
+  sdProvider: ImageProviderId | "";
   webUiUrl: string;
   sdSteps: number;
   sdCFG: number;
@@ -127,8 +123,6 @@ export interface DatabaseSettings {
   NAIREF: boolean;
   NAIImgConfig: NAIImgConfig;
   ttsAutoSpeech?: boolean;
-  promptPreprocess: boolean;
-  bias: [string, number][];
   swipe: boolean;
   instantRemove: boolean;
   textTheme: string;
@@ -143,8 +137,6 @@ export interface DatabaseSettings {
   autoColorAdapt?: boolean;
   colorAdaptEngine?: "oklch" | "colord" | "leonardo" | "darkreader";
   requestRetrys: number;
-  localNetworkMode: boolean;
-  localNetworkTimeoutSec: number;
   emotionPrompt2: string;
   useSayNothing: boolean;
   didFirstSetup: boolean;
@@ -176,11 +168,7 @@ export interface DatabaseSettings {
   clickToEdit: boolean;
   enableBlockPartialEdit: boolean;
   enableDragPartialEdit: boolean;
-  koboldURL: string;
   useAutoSuggestions: boolean;
-  autoSuggestPrompt: string;
-  autoSuggestPrefix: string;
-  autoSuggestClean: boolean;
   claudeAPIKey: string;
   useChatCopy: boolean;
   novellistAPI: string;
@@ -203,12 +191,7 @@ export interface DatabaseSettings {
   usePlainFetch: boolean;
   hypaMemory: boolean;
   hypav2: boolean;
-  memoryAlgorithmType: string; // To enable new memory module/algorithms
-  proxyRequestModel: string;
-  ooba: OobaSettings;
-  ainconfig: AINsettings;
-  openrouterRequestModel: string;
-  openrouterSubRequestModel: string;
+  memoryAlgorithmType: string;
   openrouterKey: string;
   openrouterMiddleOut: boolean;
   nanogptKey: string;
@@ -227,12 +210,10 @@ export interface DatabaseSettings {
   chatLimitSize: number;
   animationSpeed: number;
   botSettingAtStart: false;
-  NAIsettings: NAISettings;
   hideRealm: boolean;
   colorScheme: ColorScheme;
   colorSchemeName: string;
   customColorScheme: ColorScheme;
-  promptTemplate?: PromptItem[];
   forceProxyAsOpenAI?: boolean;
   hypaModel: HypaModel;
   saveTime?: number;
@@ -242,8 +223,6 @@ export interface DatabaseSettings {
   translatorType: "google" | "deepl" | "none" | "llm" | "deeplX" | "bergamot";
   translatorInputLanguage?: string;
   htmlTranslation?: boolean;
-  NAIadventure?: boolean;
-  NAIappendName?: boolean;
   deeplOptions: {
     key: string;
     freeApi: boolean;
@@ -252,15 +231,11 @@ export interface DatabaseSettings {
     url: string;
     token: string;
   };
-  localStopStrings?: string[];
   autofillRequestUrl: boolean;
-  customProxyRequestModel: string;
-  customProxySubRequestModel: string;
   generationSeed: number;
   newOAIHandle: boolean;
   gptVisionQuality: string;
   reverseProxyOobaMode: boolean;
-  reverseProxyOobaArgs: OobaChatCompletionRequestParams;
   huggingfaceKey: string;
   fishSpeechKey: string;
   allowAllExtentionFiles?: boolean;
@@ -268,7 +243,6 @@ export interface DatabaseSettings {
   translatorMaxResponse: number;
   translatorPresets: TranslatorPreset[];
   translatorPresetId: number;
-  top_p: number;
   google: {
     accessToken: string;
     projectId: string;
@@ -276,12 +250,7 @@ export interface DatabaseSettings {
   mistralKey?: string;
   chainOfThought?: boolean;
   genTime: number;
-  promptSettings: PromptSettings;
   keiServerURL: string;
-  top_k: number;
-  repetition_penalty: number;
-  min_p: number;
-  top_a: number;
   claudeAws: boolean;
   lastPatchNoteCheckVersion?: string;
   removePunctuationHypa?: boolean;
@@ -312,14 +281,6 @@ export interface DatabaseSettings {
   autoContinueMinTokens: number;
   removeIncompleteResponse: boolean;
   customTokenizer: string;
-  instructChatTemplate: string;
-  JinjaTemplate: string;
-  openrouterProvider: {
-    order: string[];
-    only: string[];
-    ignore: string[];
-  };
-  useInstructPrompt: boolean;
   hanuraiTokens: number;
   hanuraiSplit: boolean;
   hanuraiEnable: boolean;
@@ -329,9 +290,7 @@ export interface DatabaseSettings {
   combineTranslation: boolean;
   dynamicAssets: boolean;
   dynamicAssetsEditDisplay: boolean;
-  customPromptTemplateToggle: string;
   globalChatVariables: { [key: string]: string };
-  templateDefaultVariables: string;
   hypaAllocatedTokens: number;
   hypaChunkSize: number;
   cohereAPIKey: string;
@@ -356,46 +315,26 @@ export interface DatabaseSettings {
   falLora: string;
   falLoraName: string;
   falLoraScale: number;
-  moduleIntergration: string;
   customCSS: string;
   betaMobileGUI: boolean;
-  jsonSchemaEnabled: boolean;
-  jsonSchema: string;
-  strictJsonSchema: boolean;
-  extractJson: string;
   statics: {
     messages: number;
     imports: number;
   };
   customQuotes: boolean;
   customQuotesData?: [string, string, string, string];
-  groupTemplate?: string;
-  groupOtherBotRole?: string;
   customGUI: string;
   guiHTML: string;
   OAIPrediction: string;
-  customAPIFormat: LLMFormat;
-  systemContentReplacement: string;
-  systemRoleReplacement: "user" | "assistant";
   vertexPrivateKey: string;
   vertexClientEmail: string;
   vertexAccessToken: string;
   vertexAccessTokenExpires: number;
   vertexRegion: string;
-  seperateParametersEnabled: boolean;
-  seperateParameters: {
-    memory: SeparateParameters;
-    emotion: SeparateParameters;
-    translate: SeparateParameters;
-    otherAx: SeparateParameters;
-    overrides: Record<string, SeparateParameters>;
-  };
   translateBeforeHTMLFormatting: boolean;
   autoTranslateCachedOnly: boolean;
   lightningRealmImport: boolean;
   notification: boolean;
-  customFlags: LLMFlags[];
-  enableCustomFlags: boolean;
   googleClaudeTokenizing: boolean;
   presetChain: string;
   legacyMediaFindings?: boolean;
@@ -411,7 +350,6 @@ export interface DatabaseSettings {
   chatEdgeFadeCurve?: ChatEdgeFadeCurve;
   chatEdgeFadeFromBottom?: boolean;
   fixedChatTextareaBottomCover?: boolean;
-  presetRegex: customscript[];
   banCharacterset: string[];
   showPromptComparison: boolean;
   hypaV3: boolean;
@@ -421,7 +359,6 @@ export interface DatabaseSettings {
   realmDirectOpen: boolean;
   OaiCompAPIKeys: { [key: string]: string };
   inlayErrorResponse: boolean;
-  reasoningEffort: number;
   bulkEnabling: boolean;
   showTranslationLoading: boolean;
   showDeprecatedTriggerV1: boolean;
@@ -430,11 +367,6 @@ export interface DatabaseSettings {
   checkCorruption?: boolean;
   toggleConfirmRecommendedPreset?: boolean;
   useExperimentalGoogleTranslator: boolean;
-  thinkingTokens: number;
-  thinkingType: "off" | "budget" | "adaptive";
-  deepseekThinkingType: "off" | "enabled";
-  adaptiveThinkingEffort: "low" | "medium" | "high" | "xhigh" | "max";
-  deepseekReasoningEffort: "high" | "max";
   antiServerOverloads: boolean;
   hypaCustomSettings: {
     url: string;
@@ -446,33 +378,10 @@ export interface DatabaseSettings {
   automaticCachePoint: boolean;
   coldstorage: boolean;
   claudeRetrivalCaching: boolean;
-  outputImageModal: boolean;
   playMessageOnTranslateEnd: boolean;
-  seperateModelsForAxModels: boolean;
-  seperateModels: {
-    memory: string;
-    emotion: string;
-    translate: string;
-    otherAx: string;
-  };
   doNotChangeSeperateModels: boolean;
-  providerModelOverrides: {
-    memory: ProviderModelOverride;
-    emotion: ProviderModelOverride;
-    translate: ProviderModelOverride;
-    otherAx: ProviderModelOverride;
-  };
-  modelTools: string[];
   hotkeys: Hotkey[];
-  fallbackModels: {
-    memory: string[];
-    emotion: string[];
-    translate: string[];
-    otherAx: string[];
-    model: string[];
-  };
   doNotChangeFallbackModels: boolean;
-  fallbackWhenBlankResponse: boolean;
   customModels: {
     id: string;
     internalId: string;
@@ -506,8 +415,6 @@ export interface DatabaseSettings {
   enableModuleSubModel?: boolean;
   showFirstMessagePages: boolean;
   streamGeminiThoughts: boolean;
-  verbosity: number;
-  dynamicOutput?: DynamicOutput;
   hubServerType?: string;
   pluginCustomStorage: { [key: string]: any };
   ImagenModel: string;
@@ -719,6 +626,7 @@ export interface loreBook {
 }
 
 export interface character {
+  illustration?: IllustrationOverrides;
   type?: "character";
   name: string;
   image?: string;
@@ -985,118 +893,13 @@ export interface groupChat {
   coldStoragedChats?: string[];
 }
 
-export interface botPreset {
+/** Portable preset document; metadata and legacy export-only credentials. */
+export type botPreset = Partial<PresetSettings> & {
   name?: string;
-  apiType?: string;
-  openAIKey?: string;
-  localNetworkMode?: boolean;
-  localNetworkTimeoutSec?: number;
-  mainPrompt: string;
-  jailbreak: string;
-  globalNote: string;
-  temperature: number;
-  maxContext: number;
-  maxResponse: number;
-  frequencyPenalty: number;
-  PresensePenalty: number;
-  formatingOrder: FormatingOrderItem[];
-  aiModel?: string;
-  subModel?: string;
-  currentPluginProvider?: string;
-  textgenWebUIStreamURL?: string;
-  textgenWebUIBlockingURL?: string;
-  forceReplaceUrl?: string;
-  forceReplaceUrl2?: string;
-  promptPreprocess: boolean;
-  bias: [string, number][];
-  proxyRequestModel?: string;
-  openrouterRequestModel?: string;
-  openrouterSubRequestModel?: string;
-  proxyKey?: string;
-  ooba: OobaSettings;
-  ainconfig: AINsettings;
-  koboldURL?: string;
-  NAISettings?: NAISettings;
-  autoSuggestPrompt?: string;
-  autoSuggestPrefix?: string;
-  autoSuggestClean?: boolean;
-  promptTemplate?: PromptItem[];
-  NAIadventure?: boolean;
-  NAIappendName?: boolean;
-  localStopStrings?: string[];
-  customProxyRequestModel?: string;
-  customProxySubRequestModel?: string;
-  reverseProxyOobaArgs?: OobaChatCompletionRequestParams;
-  top_p?: number;
-  promptSettings?: PromptSettings;
-  repetition_penalty?: number;
-  min_p?: number;
-  top_a?: number;
-  openrouterProvider?: {
-    order: string[];
-    only: string[];
-    ignore: string[];
-  };
-  useInstructPrompt?: boolean;
-  customPromptTemplateToggle?: string;
-  templateDefaultVariables?: string;
-  moduleIntergration?: string;
-  top_k?: number;
-  instructChatTemplate?: string;
-  JinjaTemplate?: string;
-  jsonSchemaEnabled?: boolean;
-  jsonSchema?: string;
-  strictJsonSchema?: boolean;
-  extractJson?: string;
-  groupTemplate?: string;
-  groupOtherBotRole?: string;
-  seperateParametersEnabled?: boolean;
-  seperateParameters?: {
-    memory: SeparateParameters;
-    emotion: SeparateParameters;
-    translate: SeparateParameters;
-    otherAx: SeparateParameters;
-    overrides: Record<string, SeparateParameters>;
-  };
-  customAPIFormat?: LLMFormat;
-  systemContentReplacement?: string;
-  systemRoleReplacement?: "user" | "assistant";
-  enableCustomFlags?: boolean;
-  customFlags?: LLMFlags[];
   image?: string;
-  regex?: customscript[];
-  reasonEffort?: number;
-  thinkingTokens?: number;
-  thinkingType?: "off" | "budget" | "adaptive";
-  deepseekThinkingType?: "off" | "enabled";
-  adaptiveThinkingEffort?: "low" | "medium" | "high" | "xhigh" | "max";
-  deepseekReasoningEffort?: "high" | "max";
-  outputImageModal?: boolean;
-  seperateModelsForAxModels?: boolean;
-  seperateModels?: {
-    memory: string;
-    emotion: string;
-    translate: string;
-    otherAx: string;
-  };
-  providerModelOverrides?: {
-    memory: ProviderModelOverride;
-    emotion: ProviderModelOverride;
-    translate: ProviderModelOverride;
-    otherAx: ProviderModelOverride;
-  };
-  modelTools?: string[];
-  fallbackModels?: {
-    memory: string[];
-    emotion: string[];
-    translate: string[];
-    otherAx: string[];
-    model: string[];
-  };
-  fallbackWhenBlankResponse?: boolean;
-  verbosity?: number;
-  dynamicOutput?: DynamicOutput;
-}
+  openAIKey?: string;
+  forceReplaceUrl2?: string;
+};
 
 interface hordeConfig {
   apiKey: string;
@@ -1216,6 +1019,8 @@ interface NAIVibeEncoding {
 
 interface ComfyConfig {
   workflow: string;
+  workflows?: import("@risuai/protocol/src/imageGeneration.ts").ComfyWorkflow[];
+  selectedWorkflowId?: string;
   posNodeID: string;
   posInputName: string;
   negNodeID: string;
@@ -1345,6 +1150,7 @@ export interface ChatFolder {
 }
 
 export interface Message {
+  illustrations?: Illustration[];
   role: "user" | "char";
   data: string;
   saying?: string;

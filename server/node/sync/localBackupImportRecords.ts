@@ -89,6 +89,7 @@ function recordTier(record: RestoreRecord): number {
       "author-note-settings",
       "setting",
       "plugin-storage",
+      "plugin",
       "module",
       "preset",
       "cold-storage",

@@ -19,6 +19,7 @@
     import { activeGenerationChatIds } from 'src/ts/process/chat/runtimeState';
     import { isTauri, isTauriMacOS, isTauriWindows } from 'src/ts/platform';
     import { windowDragRegion } from 'src/ts/nativeWindowChrome';
+    import { linuxCsdTabInsets } from 'src/ts/linuxWindowIntegration';
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
@@ -274,7 +275,7 @@
         try {
             await openChatInNewTauriWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
         } catch (error) {
@@ -416,7 +417,7 @@
         try {
             await openChatInNewTauriWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
             const result = chatTabsStore.detach(tab.id);
@@ -614,7 +615,7 @@
             const label = getTabLabel(tab);
             const created = await moveTabToNewTauriWorkspaceWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
             if (created) {
@@ -700,6 +701,7 @@
 {#if showTabs}
     <div
         class="rs-chat-tab-strip-shell shrink-0 w-full"
+        use:linuxCsdTabInsets
         class:macos-traffic-light-clearance={reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
     >
         <div

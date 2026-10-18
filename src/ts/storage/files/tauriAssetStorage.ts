@@ -3,6 +3,7 @@ import {
   exists,
   readDir,
   readFile,
+  mkdir,
   remove,
   writeFile,
   open,
@@ -30,6 +31,15 @@ export class TauriAssetStorage {
   }
 
   async setItem(key: string, value: Uint8Array): Promise<void> {
+    const separator = key.lastIndexOf("/");
+    if (separator > 0) {
+      // SQL startup skips the legacy cleanup that used to create assets/.
+      // Recursive mkdir also handles concurrent imports and nested sync keys.
+      await mkdir(key.slice(0, separator), {
+        baseDir: BaseDirectory.AppData,
+        recursive: true,
+      });
+    }
     await writeFile(key, value, { baseDir: BaseDirectory.AppData });
   }
 

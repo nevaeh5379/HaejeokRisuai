@@ -6,6 +6,7 @@ export type AssetStorageType = (typeof ASSET_STORAGE_TYPES)[number];
 
 export type AssetStorageTarget = "active" | AssetStorageType;
 
+//TODO Rmove prefix Node.
 export interface NodeSqlStorageRuntimeError {
   code: string;
   message: string;

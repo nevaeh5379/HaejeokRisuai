@@ -131,6 +131,13 @@ export type RealtimeDatabaseChangeEvent = Partial<SqlCommitImpact> & {
  * 모든 허브 전파와 클라이언트 파싱이 이 이벤트 이름으로 구분됩니다.
  */
 export interface RealtimeEventMap {
+  /** Compact notification emitted after an illustration image or terminal state is committed. */
+  "illustration-progress": {
+    readonly characterId: string;
+    readonly chatId: string;
+    readonly messageId: string;
+    readonly illustrationId: string;
+  };
   "database-change": RealtimeDatabaseChangeEvent;
   "model-job": RealtimeModelJobEvent;
   "generation-state": RealtimeGenerationStateEvent;
@@ -607,6 +614,28 @@ export function parseRealtimeEvent(
   eventName: string,
   data: unknown,
 ): RealtimeEventFrame | null {
+  if (eventName === "illustration-progress") {
+    if (!isRecord(data)) return null;
+    const characterId = readString(data.characterId, 256);
+    const chatId = readString(data.chatId, 256);
+    const messageId = readString(data.messageId, 256);
+    const illustrationId = readString(data.illustrationId, 256);
+    if (
+      ![characterId, chatId, messageId, illustrationId].every(
+        (id) => id && !/[\x00-\x1f]/.test(id),
+      )
+    )
+      return null;
+    return {
+      event: "illustration-progress",
+      data: {
+        characterId: characterId!,
+        chatId: chatId!,
+        messageId: messageId!,
+        illustrationId: illustrationId!,
+      },
+    };
+  }
   if (eventName === "database-change") {
     const payload: RealtimeDatabaseChangeEvent | null =
       parseDatabaseChangeEvent(data);

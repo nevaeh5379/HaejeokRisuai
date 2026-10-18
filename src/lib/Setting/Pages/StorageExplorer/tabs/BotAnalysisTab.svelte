@@ -2,6 +2,7 @@
     import { AlertTriangleIcon, SearchIcon, UserIcon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import StorageTargetSelector from '../components/StorageTargetSelector.svelte'
+    import { createLazyThumbnailAction } from '../thumbnailVisibility'
     import { formatBytes } from '../utils'
     import type { BotSortType, BotStorageInfo, NodeS3ServerConfig, NodeStorageSummary, ViewTarget } from '../types'
 
@@ -28,6 +29,8 @@
         onSelectBot,
         onSwitchTarget
     }: Props = $props()
+
+    const lazyThumbnail = createLazyThumbnailAction((key) => onLoadThumbnail(key))
 
     let botSearch = $state('')
     let botSort = $state<BotSortType>('size_desc')
@@ -141,11 +144,13 @@
                 >
                     <div class="flex items-start gap-3 w-full">
                         <!-- Bot Avatar Thumbnail -->
-                        <div class="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-darkborderc bg-darkbutton">
+                        <div
+                            class="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-darkborderc bg-darkbutton"
+                            use:lazyThumbnail={{ key: bot.avatarKey, target: viewTarget }}
+                        >
                             {#if bot.avatarKey}
-                                {@const _ = onLoadThumbnail(bot.avatarKey)}
                                 {#if thumbnailUrls.has(bot.avatarKey)}
-                                    <img src={thumbnailUrls.get(bot.avatarKey)} alt={bot.name} class="h-full w-full object-cover" />
+                                    <img src={thumbnailUrls.get(bot.avatarKey)} alt={bot.name} class="h-full w-full object-cover" loading="lazy" decoding="async" />
                                 {:else}
                                     <div class="flex h-full w-full items-center justify-center text-xs text-textcolor2">...</div>
                                 {/if}

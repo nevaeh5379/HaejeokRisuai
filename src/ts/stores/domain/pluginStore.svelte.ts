@@ -335,9 +335,12 @@ class PluginStore
       (plugin) =>
         this.committed.get(plugin.id) !== snapshotFingerprint(plugin),
     );
-    const deletes = [...this.committed.keys()].filter(
-      (id) => !currentIdSet.has(id),
-    );
+    const deletes: string[] = [];
+    for (const id of this.committed.keys()) {
+      if (!currentIdSet.has(id)) {
+        deletes.push(id);
+      }
+    }
     const orderChanged =
       currentIds.length !== this.committedOrder.length ||
       currentIds.some((id, index) => id !== this.committedOrder[index]);

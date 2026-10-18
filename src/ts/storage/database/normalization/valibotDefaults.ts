@@ -3,7 +3,6 @@ import {
   boolean,
   fallback,
   looseObject,
-  nullish,
   number,
   object,
   optional,
@@ -17,15 +16,15 @@ import {
 } from "valibot";
 
 export function defaultString(value = "") {
-  return fallback(nullish(string(), value), value);
+  return fallback(string(), value);
 }
 
 export function defaultNumber(value: number) {
-  return fallback(nullish(number(), value), value);
+  return fallback(number(), value);
 }
 
 export function defaultBoolean(value: boolean) {
-  return fallback(nullish(boolean(), value), value);
+  return fallback(boolean(), value);
 }
 
 export function optionalString() {
@@ -40,24 +39,28 @@ export function defaultLooseObject<const TEntries extends ObjectEntries>(
   entries: TEntries,
 ) {
   const schema = looseObject(entries);
-  const createDefault = () => ({}) as InferOutput<typeof schema>;
-  return fallback(nullish(schema, createDefault), createDefault);
+  const createDefault = () => parse(schema, {});
+  return fallback(schema, createDefault);
 }
 
+/**
+ * @deprecated Use `fallback(picklist(options), value)` directly or prefer standard Valibot composition.
+ * 한국어: `fallback(picklist(options), value)`를 직접 사용하거나 표준 Valibot 합성을 권장.
+ */
 export function defaultPicklist<
   const TOptions extends readonly [
     string | number | bigint,
     ...(string | number | bigint)[],
   ],
 >(options: TOptions, value: TOptions[number]) {
-  return fallback(nullish(picklist(options), value), value);
+  return fallback(picklist(options), value);
 }
 
 export function defaultArray<
   TItem extends BaseSchema<unknown, unknown, BaseIssue<unknown>>,
 >(item: TItem) {
   const createDefault = (): InferOutput<TItem>[] => [];
-  return fallback(nullish(array(item), createDefault), createDefault);
+  return fallback(array(item), createDefault);
 }
 
 export function defaultStringArray() {

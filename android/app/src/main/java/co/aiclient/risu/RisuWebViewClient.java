@@ -68,6 +68,7 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
             return false; // API 26- only; default behavior below min
         }
         Log.e(TAG, "Renderer gone (crashed=" + detail.didCrash() + ")");
+        AndroidCrashDiagnostics.rendererGone(detail.didCrash(), detail.rendererPriorityAtExit());
         boolean blamedNewCulprit = CrashGuardPlugin.blameLoadingPlugin(context);
         restartActivity(blamedNewCulprit);
         return true; // true = the app handled the crash
@@ -85,6 +86,9 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
         long now = SystemClock.elapsedRealtime();
         if (!bypassLoopGuard && now - lastRendererRestartAt < RESTART_LOOP_GUARD_MS) {
             Log.e(TAG, "Renderer died again within the restart guard window; not restarting.");
+            if (risuBridge.getActivity() instanceof MainActivity) {
+                ((MainActivity) risuBridge.getActivity()).showRendererRecovery();
+            }
             return;
         }
         lastRendererRestartAt = now;

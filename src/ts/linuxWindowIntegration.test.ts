@@ -7,7 +7,10 @@ const { invoke } = vi.hoisted(() => ({
 vi.mock("./platform", () => ({ isTauriLinux: true }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "main" }),
+  getCurrentWebviewWindow: () => ({
+    label: "main",
+    listen: vi.fn(),
+  }),
 }));
 
 import {

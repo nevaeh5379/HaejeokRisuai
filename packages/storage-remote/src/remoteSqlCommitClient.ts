@@ -76,7 +76,10 @@ export class RemoteSqlCommitClient {
   ): Promise<SqlCommitResult> {
     let pending: SqlCommit<TPreset> = {
       ...commit,
-      baseRevision: Math.max(commit.baseRevision, currentRevision),
+      baseRevision:
+        commit.action === "illustration"
+          ? commit.baseRevision
+          : Math.max(commit.baseRevision, currentRevision),
     };
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -99,6 +102,9 @@ export class RemoteSqlCommitClient {
           throw new AuthorNoteError("conflict", conflict.noteId);
         const revision =
           conflict?.revision === undefined ? NaN : Number(conflict.revision);
+        // Illustration bodies are conditional on a fresh read; never replay one at a newer revision.
+        if (commit.action === "illustration")
+          throw new NodeSqlRevisionConflictError(conflict?.revision);
         if (Number.isSafeInteger(revision) && attempt < 2) {
           pending = { ...pending, baseRevision: revision };
           continue;

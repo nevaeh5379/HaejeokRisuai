@@ -22,6 +22,7 @@ const ROOT_RECORD_TYPES = new Set<string>([
   "author-note-settings",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "cold-storage",
@@ -172,6 +173,18 @@ function validateRecord(
     case "character":
       requirePosition(record.position, `${record.type}.position`, index);
       requireString(record.id, `${record.type}.id`, index);
+      break;
+    case "plugin":
+      requirePosition(record.position, "plugin.position", index);
+      requireString(record.id, "plugin.id", index);
+      requireObject(record.data, index);
+      if (typeof record.script !== "string") {
+        throw new StorageSyncSqlRecordError(
+          "plugin.script must be a string",
+          "invalid_sql_record",
+          index,
+        );
+      }
       break;
     case "chat":
       requireString(record.characterId, "chat.characterId", index);

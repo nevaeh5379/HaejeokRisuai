@@ -30,12 +30,13 @@ node server/node/server.ts
 
 The server runs ESM TypeScript through Node's built-in type stripping. Starting
 it requires no server build, tsx, TypeScript compiler, or esbuild. The frontend
-still needs its own build (`pnpm build`); `build:protocol` only generates frontend
-setting-key types. Server type checks use NodeNext and erasable TypeScript syntax.
+still needs its own build (`pnpm build`). Shared setting keys and their types come
+directly from `packages/protocol/settings.ts`. Server type checks use NodeNext
+and erasable TypeScript syntax.
 
 Ship `server/node` sources, its SQL schemas and optional `ssl/certificate` files,
 plus the source directories and package manifests for `packages/backup-core`,
-`packages/protocol` (including `settings.json`), and `packages/chat-core`. Install
+`packages/protocol` (including `settings.ts`), and `packages/chat-core`. Install
 the production dependencies declared in `server/node/package.json` and include
 the frontend `dist` directory. No server or shared-package `dist` is needed.
 Schemas, vendor environment files, and certificates resolve relative to the
@@ -44,6 +45,18 @@ source files; persistent saves and frontend files resolve from the application r
 SQL vendor modules, tokenizers, S3, image processing, and OIDC load on demand.
 Concurrent first requests share their loading Promise. Storage factories and
 token counting return Promises; storage constructors remain synchronous.
+
+## Browser authentication
+
+Remote authentication uses a lazily loaded JavaScript P-256 signer, so it also
+works when accessing the app over HTTP at a LAN or Tailscale IP without browser
+security overrides. The server still verifies the existing ES256 token format.
+
+After upgrading from the Web Crypto signer, enter the server password once to
+register a new device key. Old authentication keys are not converted. New keys
+persist in browser IndexedDB as private-key bytes and a public JWK, rather than
+non-extractable `CryptoKey` objects. Other browser features that require a secure
+context still need HTTPS.
 
 ## PostgreSQL storage
 

@@ -1,4 +1,6 @@
 import type { Response, NextFunction } from "express";
+import * as illusImages from "./executors/illustrationImages.ts"
+import * as illusExecutor from "./executors/illustrationExecutor.ts"
 import type {
   Request,
   LegacyObject,
@@ -176,6 +178,7 @@ import {
   LocalBackupExportJobStore,
 } from "../../packages/backup-core/src/node/exportJobStore.ts";
 import { streamLocalBackupArchive } from "../../packages/backup-core/src/node/exportArchive.ts";
+import { iterateServerBackupPlugins } from "./sync/portableServerPluginExport.ts";
 import {
   LOCAL_BACKUP_EXPORT_DEFAULT_PAGE_SIZE,
   LocalBackupExportService,
@@ -2300,7 +2303,7 @@ async function forwardUpstreamResponse(
   const contentType = (head.get("content-type") || "").toLowerCase();
   const isSSE = contentType.includes("text/event-stream");
   if (isSSE) {
-    head.set("Cache-Control", "no-cache, no-transform");
+    head.set("Cache-Control", "no-store, no-transform");
     head.set("Connection", "keep-alive");
     head.set("X-Accel-Buffering", "no");
     head.delete("content-length");
@@ -2647,11 +2650,7 @@ const reverseProxyFunc = async (
     });
     return;
   }
-  const proxyTarget = normalizeAuthenticatedProxyTarget(String(urlParam));
-  if (!proxyTarget) {
-    res.status(400).send({ error: "Invalid proxy URL" });
-    return;
-  }
+  const proxyTarget = String(urlParam);
   const header = normalizeForwardHeaders(
     req.headers["risu-header"]
       ? JSON.parse(
@@ -2746,11 +2745,7 @@ const reverseProxyFunc_get = async (
     });
     return;
   }
-  const proxyTarget = normalizeAuthenticatedProxyTarget(String(urlParam));
-  if (!proxyTarget) {
-    res.status(400).send({ error: "Invalid proxy URL" });
-    return;
-  }
+  const proxyTarget = String(urlParam);
   const header = normalizeForwardHeaders(
     req.headers["risu-header"]
       ? JSON.parse(
@@ -4364,6 +4359,10 @@ async function streamPortableServerDatabase(
       id: summary.id,
       data: value,
     });
+  }
+
+  for await (const plugin of iterateServerBackupPlugins(postgresStorage)) {
+    await writer.emit(plugin);
   }
 
   const pluginKeys = await postgresStorage.listPluginCustomStorageKeys();
@@ -6286,6 +6285,26 @@ app.delete(
 nodeChatExecutor.registerRoutes(app, {
   auth: checkAuth,
   limiter: authenticatedRouteLimiter,
+});
+const illustrationImages =  illusImages.createIllustrationImages(
+  () => assetStorageManager.getStorage(),
+  upsertAssetCatalogEntries,
+  removeAssetCatalogKeys,
+);
+const illustrationExecutor = illusExecutor.createNodeIllustrationExecutor({
+  onProgress: (target) => {
+    realtimeEventHub.broadcast("illustration-progress", target);
+  },
+  getStorage: () => postgresStorage,
+  commit: (payload) => databaseMutations.commit(payload, undefined),
+  imageRuntime: illustrationImages.runtime,
+  storeImage: illustrationImages.storeImage,
+  removeImage: illustrationImages.removeImage,
+});
+illustrationExecutor.registerRoutes(app, {
+  auth: checkAuth,
+  limiter: authenticatedRouteLimiter,
+  jsonParser: express.json({ limit: "16mb" }),
 });
 nodeProviderExecutor.registerRoutes(app, {
   auth: checkAuth,
