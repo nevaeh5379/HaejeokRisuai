@@ -221,11 +221,31 @@ export const displayThemeSettingsItems: SettingItem[] = [
     ],
   },
   {
+    id: "display.macosNativeSidebarBlur",
+    type: "check",
+    labelKey: "macosNativeSidebarBlur",
+    helpKey: "macosNativeSidebarBlurHelp",
+    bindKey: "macosNativeSidebarBlur",
+    condition: (ctx) =>
+      isTauriMacOS && (ctx.db.macosSidebarTransparency ?? true),
+    classes: "mt-2",
+    keywords: [
+      "macos",
+      "sidebar",
+      "blur",
+      "vibrancy",
+      "liquid glass",
+      "사이드바",
+      "블러",
+    ],
+  },
+  {
     id: "display.macosSidebarOpacity",
     type: "slider",
     labelKey: "macosSidebarOpacity",
     bindKey: "macosSidebarOpacity",
-    condition: (ctx) => isTauriMacOS && (ctx.db.macosSidebarTransparency ?? true),
+    condition: (ctx) =>
+      isTauriMacOS && (ctx.db.macosSidebarTransparency ?? true),
     classes: "mt-2 block text-sm",
     options: {
       min: 0,

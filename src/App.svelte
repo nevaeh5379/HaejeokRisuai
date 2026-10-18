@@ -14,7 +14,7 @@
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
-    import { applyMacOSSidebarTransparency, installLinuxCsdHeaderDrag, installMacOSHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
+    import { applyMacOSNativeSidebarBlur, applyMacOSSidebarTransparency, installLinuxCsdHeaderDrag, installMacOSHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
     import { applyLinuxCsdSidebarOpacity } from './ts/linuxWindowIntegration';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
@@ -39,6 +39,14 @@
 
     onMount(installLinuxCsdHeaderDrag)
     onMount(installMacOSHeaderDrag)
+
+    $effect(() => {
+        // A newly opened window must not broadcast its unhydrated default to
+        // windows that already use the saved material preference.
+        if (!isTauriMacOS || !$loadedStore) return
+        void applyMacOSNativeSidebarBlur(settingsStore.state.macosNativeSidebarBlur ?? false)
+            .catch((error) => console.error('[macOS sidebar] Failed to change blur effect', error))
+    })
 
     $effect(() => {
         if (!isTauriLinux) return

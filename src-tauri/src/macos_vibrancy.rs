@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Mutex,
     },
 };
 
@@ -15,13 +15,22 @@ use tauri::{
     Manager, Runtime, Window,
 };
 use window_vibrancy::{
-    apply_liquid_glass, apply_vibrancy, LiquidGlassOptions, NSGlassEffectViewStyle,
-    NSVisualEffectMaterial, NSVisualEffectState,
+    apply_liquid_glass, apply_vibrancy, clear_liquid_glass, clear_vibrancy, LiquidGlassOptions,
+    NSGlassEffectViewStyle, NSVisualEffectMaterial, NSVisualEffectState,
 };
 
 const LIQUID_GLASS_CLASS: &str = "tauri-macos-liquid-glass";
 const SIDEBAR_MENU_RADIUS: f64 = 18.0;
 static RISU_DARK_APPEARANCE: AtomicBool = AtomicBool::new(true);
+
+#[derive(Default)]
+struct WindowMaterials {
+    native_sidebar_blur: bool,
+    liquid_glass_windows: HashSet<String>,
+}
+
+#[derive(Default)]
+struct MacosVibrancyState(Mutex<WindowMaterials>);
 
 fn supports_vibrancy(label: &str) -> bool {
     label == "main" || label.starts_with("chat-window-") || label.starts_with("sidebar-menu-")
@@ -65,9 +74,7 @@ fn apply_risu_appearance(ns_window: &NSWindow, dark: bool) {
     }
 }
 
-fn apply_fallback_vibrancy<R: Runtime>(
-    window: &Window<R>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_native_vibrancy<R: Runtime>(window: &Window<R>) -> Result<(), Box<dyn std::error::Error>> {
     let popup = is_sidebar_menu(window.label());
     let material = if popup {
         NSVisualEffectMaterial::Popover
@@ -82,6 +89,85 @@ fn apply_fallback_vibrancy<R: Runtime>(
         radius,
     )?;
     Ok(())
+}
+
+fn apply_window_material<R: Runtime>(
+    window: &Window<R>,
+    state: &mut WindowMaterials,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Both APIs insert their own view. Remove the previous material before
+    // switching so repeated toggles cannot stack glass and vibrancy layers.
+    clear_liquid_glass(window)?;
+    clear_vibrancy(window)?;
+    state.liquid_glass_windows.remove(window.label());
+    sync_liquid_glass_dom_state(window, false);
+
+    let liquid_glass_active = if state.native_sidebar_blur {
+        apply_native_vibrancy(window)?;
+        eprintln!(
+            "[macOS vibrancy] Applied native sidebar blur to {}",
+            window.label()
+        );
+        false
+    } else {
+        let mut options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(false);
+        if is_sidebar_menu(window.label()) {
+            options = options.radius(SIDEBAR_MENU_RADIUS);
+        }
+        match apply_liquid_glass(window, options) {
+            Ok(()) => {
+                eprintln!(
+                    "[macOS vibrancy] Applied Liquid Glass to {}",
+                    window.label()
+                );
+                true
+            }
+            Err(error) => {
+                // Preserve the existing compatibility path on older macOS.
+                eprintln!("[macOS vibrancy] Liquid Glass unavailable for {}; using native vibrancy: {error}", window.label());
+                apply_native_vibrancy(window)?;
+                false
+            }
+        }
+    };
+    if liquid_glass_active {
+        state.liquid_glass_windows.insert(window.label().to_owned());
+    }
+    sync_liquid_glass_dom_state(window, liquid_glass_active);
+    let native: &NSWindow = unsafe { &*window.ns_window()?.cast() };
+    apply_risu_appearance(native, RISU_DARK_APPEARANCE.load(Ordering::Relaxed));
+    if is_sidebar_menu(window.label()) {
+        clip_sidebar_menu_window(window)?;
+    }
+    Ok(())
+}
+
+pub async fn set_native_sidebar_blur<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    let app_for_main = app.clone();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            let materials = app_for_main.state::<MacosVibrancyState>();
+            let mut state = materials.0.lock().map_err(|error| error.to_string())?;
+            if state.native_sidebar_blur == enabled {
+                return Ok(());
+            }
+            state.native_sidebar_blur = enabled;
+            for window in app_for_main.webview_windows().into_values() {
+                if supports_vibrancy(window.label()) {
+                    apply_window_material(&window.as_ref().window(), &mut state)
+                        .map_err(|error| format!("{}: {error}", window.label()))?;
+                }
+            }
+            Ok(())
+        })();
+        let _ = sender.send(result);
+    })
+    .map_err(|error| error.to_string())?;
+    receiver.await.map_err(|error| error.to_string())?
 }
 
 fn clip_sidebar_menu_window<R: Runtime>(
@@ -150,12 +236,12 @@ fn configure_native_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> 
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
-    let liquid_glass_windows = Arc::new(Mutex::new(HashSet::<String>::new()));
-    let ready_windows = Arc::clone(&liquid_glass_windows);
-    let page_windows = Arc::clone(&liquid_glass_windows);
-
     Builder::new("macos-vibrancy")
-        .on_window_ready(move |window| {
+        .setup(|app, _| {
+            app.manage(MacosVibrancyState::default());
+            Ok(())
+        })
+        .on_window_ready(|window| {
             if !supports_vibrancy(window.label()) {
                 return;
             }
@@ -167,70 +253,48 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 );
             }
 
-            let mut liquid_glass =
-                LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular).opaque(false);
-            if is_sidebar_menu(window.label()) {
-                liquid_glass = liquid_glass.radius(SIDEBAR_MENU_RADIUS);
-            }
-
-            match apply_liquid_glass(&window, liquid_glass) {
-                Ok(()) => {
-                    if let Ok(mut windows) = ready_windows.lock() {
-                        windows.insert(window.label().to_string());
-                    }
-                    sync_liquid_glass_dom_state(&window, true);
-                    eprintln!(
-                        "[macOS vibrancy] Applied Liquid Glass to {}",
-                        window.label()
-                    );
-                }
-                Err(liquid_glass_error) => {
-                    if let Ok(mut windows) = ready_windows.lock() {
-                        windows.remove(window.label());
-                    }
-                    sync_liquid_glass_dom_state(&window, false);
-                    eprintln!(
-                        "[macOS vibrancy] Liquid Glass unavailable for {}; using fallback vibrancy: {liquid_glass_error}",
-                        window.label()
-                    );
-                    if let Err(vibrancy_error) = apply_fallback_vibrancy(&window) {
-                        eprintln!(
-                            "[macOS vibrancy] Liquid Glass unavailable for {} ({liquid_glass_error}); fallback vibrancy also failed: {vibrancy_error}",
-                            window.label()
-                        );
-                    }
-                }
-            }
-
-            if let Ok(ns_window) = window.ns_window() {
-                // SAFETY: Tauri's `ns_window` is an NSWindow pointer on macOS.
-                let ns_window: &NSWindow = unsafe { &*ns_window.cast() };
-                apply_risu_appearance(ns_window, RISU_DARK_APPEARANCE.load(Ordering::Relaxed));
-            }
-
-            if is_sidebar_menu(window.label()) {
-                if let Err(error) = clip_sidebar_menu_window(&window) {
-                    eprintln!(
-                        "[macOS vibrancy] Failed to clip sidebar menu {}: {error}",
-                        window.label()
-                    );
-                }
+            let materials = window.app_handle().state::<MacosVibrancyState>();
+            let result = materials
+                .0
+                .lock()
+                .map_err(|error| error.to_string())
+                .and_then(|mut state| {
+                    apply_window_material(&window, &mut state).map_err(|error| error.to_string())
+                });
+            if let Err(error) = result {
+                eprintln!(
+                    "[macOS vibrancy] Failed to apply material to {}: {error}",
+                    window.label()
+                );
             }
         })
-        .on_page_load(move |webview, _| {
-            let liquid_glass_active = page_windows
+        .on_page_load(|webview, _| {
+            let materials = webview.app_handle().state::<MacosVibrancyState>();
+            let liquid_glass_active = materials
+                .0
                 .lock()
-                .map(|windows| windows.contains(webview.label()))
+                .map(|state| state.liquid_glass_windows.contains(webview.label()))
                 .unwrap_or(false);
             let action = if liquid_glass_active { "add" } else { "remove" };
-            let script = format!(
-                "document.documentElement.classList.{action}('{LIQUID_GLASS_CLASS}')"
-            );
+            let script =
+                format!("document.documentElement.classList.{action}('{LIQUID_GLASS_CLASS}')");
             if let Err(error) = webview.eval(script) {
                 eprintln!(
                     "[macOS vibrancy] Failed to sync Liquid Glass DOM state for {}: {error}",
                     webview.label()
                 );
+            }
+        })
+        .on_event(|app, event| {
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = event
+            {
+                if let Ok(mut state) = app.state::<MacosVibrancyState>().0.lock() {
+                    state.liquid_glass_windows.remove(label);
+                }
             }
         })
         .build()

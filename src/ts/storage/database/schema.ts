@@ -104,6 +104,7 @@ export interface DatabaseSettings extends PresetSettings {
   linuxWindowDecoration: "ssd" | "csd";
   linuxCsdSidebarOpacity: number;
   macosSidebarTransparency: boolean;
+  macosNativeSidebarBlur: boolean;
   macosSidebarOpacity: number;
   androidWidgetBotCount?: number;
   emotionPrompt: string;

@@ -8,7 +8,8 @@ mod macos_vibrancy;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBox,
-    NSGlassEffectView, NSGlassEffectViewStyle, NSVisualEffectView, NSWindow,
+    NSGlassEffectView, NSGlassEffectViewStyle, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+    NSVisualEffectState, NSVisualEffectView, NSWindow,
 };
 #[cfg(target_os = "macos")]
 use std::sync::{
@@ -19,11 +20,90 @@ use std::sync::{
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
+async fn verify_materials(app: &tauri::AppHandle, native_blur: bool, dark: bool) {
+    let app_for_main = app.clone();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        for window in app_for_main.webview_windows().into_values() {
+            let native: &NSWindow = unsafe { &*window.ns_window().unwrap().cast() };
+            let content = native.contentView().unwrap();
+            let views = content.subviews();
+            let glass_count = views
+                .iter()
+                .filter(|view| view.downcast_ref::<NSGlassEffectView>().is_some())
+                .count();
+            let vibrancy_count = views
+                .iter()
+                .filter(|view| view.downcast_ref::<NSVisualEffectView>().is_some())
+                .count();
+            assert_eq!(
+                glass_count,
+                usize::from(!native_blur),
+                "{} glass count",
+                window.label()
+            );
+            assert_eq!(
+                vibrancy_count,
+                usize::from(native_blur),
+                "{} vibrancy count",
+                window.label()
+            );
+            if native_blur {
+                let view = views
+                    .iter()
+                    .find(|view| view.downcast_ref::<NSVisualEffectView>().is_some())
+                    .unwrap();
+                let view = view.downcast_ref::<NSVisualEffectView>().unwrap();
+                assert_eq!(
+                    view.material(),
+                    if window.label().starts_with("sidebar-menu-") {
+                        NSVisualEffectMaterial::Popover
+                    } else {
+                        NSVisualEffectMaterial::Sidebar
+                    }
+                );
+                assert_eq!(
+                    view.blendingMode(),
+                    NSVisualEffectBlendingMode::BehindWindow
+                );
+                assert_eq!(view.state(), NSVisualEffectState::FollowsWindowActiveState);
+                let expected = unsafe {
+                    if dark {
+                        NSAppearanceNameDarkAqua
+                    } else {
+                        NSAppearanceNameAqua
+                    }
+                };
+                assert_eq!(
+                    view.appearance().unwrap().name().to_string(),
+                    expected.to_string()
+                );
+            }
+            if window.label().starts_with("sidebar-menu-") {
+                let layer = content.layer().unwrap();
+                assert_eq!(layer.cornerRadius(), 18.0);
+                assert!(layer.masksToBounds());
+            }
+            println!(
+                "PASS {}: native_blur={native_blur}, exactly one material, dark={dark}",
+                window.label()
+            );
+        }
+        let _ = sender.send(());
+    })
+    .unwrap();
+    receiver.await.unwrap();
+}
+
+#[cfg(target_os = "macos")]
 fn main() {
     let dark = std::env::args().any(|arg| arg == "dark");
     let verified = Arc::new(AtomicUsize::new(0));
     let observer = tauri::plugin::Builder::<tauri::Wry, ()>::new("wallpaper-material-smoke")
         .on_window_ready(move |window| {
+            if verified.load(Ordering::SeqCst) >= 3 {
+                return;
+            }
             // Inspect the actual background installed by the production plugin.
             let pointer = window.ns_window().unwrap();
             let native: &NSWindow = unsafe { &*pointer.cast() };
@@ -78,7 +158,38 @@ fn main() {
                 window.label()
             );
             if verified.fetch_add(1, Ordering::SeqCst) == 2 {
-                window.app_handle().exit(0);
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    for enabled in [true, false, true, true] {
+                        macos_vibrancy::set_native_sidebar_blur(&app, enabled)
+                            .await
+                            .unwrap();
+                        verify_materials(&app, enabled, dark).await;
+                    }
+                    // Windows created after selecting native blur inherit it.
+                    let app_for_new = app.clone();
+                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                    app.run_on_main_thread(move || {
+                        WebviewWindowBuilder::new(
+                            &app_for_new,
+                            "chat-window-created-after-toggle",
+                            WebviewUrl::External("about:blank".parse().unwrap()),
+                        )
+                        .transparent(true)
+                        .visible(false)
+                        .build()
+                        .unwrap();
+                        let _ = sender.send(());
+                    })
+                    .unwrap();
+                    receiver.await.unwrap();
+                    verify_materials(&app, true, dark).await;
+                    macos_vibrancy::set_native_sidebar_blur(&app, false)
+                        .await
+                        .unwrap();
+                    verify_materials(&app, false, dark).await;
+                    app.exit(0);
+                });
             }
         })
         .build();
@@ -86,6 +197,12 @@ fn main() {
         .plugin(macos_vibrancy::init())
         .plugin(observer)
         .setup(move |app| {
+            let watchdog = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                eprintln!("native material smoke timed out");
+                watchdog.exit(1);
+            });
             macos_vibrancy::set_risu_native_appearance(app.handle(), dark)?;
             for label in [
                 "main",

@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { isTauriLinux, isTauriMacOS, isTauriWindows } from "./platform";
 import {
   getActiveLinuxWindowCapabilities,
@@ -14,6 +15,18 @@ export type ResizeDirection =
   | "SouthEast"
   | "SouthWest"
   | "West";
+
+let macosSidebarBlurUpdate = Promise.resolve();
+
+export function applyMacOSNativeSidebarBlur(enabled: boolean): Promise<void> {
+  if (!isTauriMacOS) return Promise.resolve();
+  // Preserve toggle order even if an earlier native update is still pending.
+  // Its caller reports errors; a failed update must not block future choices.
+  macosSidebarBlurUpdate = macosSidebarBlurUpdate
+    .catch(() => {})
+    .then(() => invoke<void>("set_macos_native_sidebar_blur", { enabled }));
+  return macosSidebarBlurUpdate;
+}
 
 export function applyMacOSSidebarTransparency(
   enabled: boolean,

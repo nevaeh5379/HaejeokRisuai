@@ -66,6 +66,19 @@ use tauri::{AppHandle, Emitter};
 use tauri::{Listener, Manager};
 
 #[tauri::command]
+async fn set_macos_native_sidebar_blur(app: AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_vibrancy::set_native_sidebar_blur(&app, enabled).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, enabled);
+        Ok(())
+    }
+}
+
+#[tauri::command]
 fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), String> {
     let dark = match appearance.as_str() {
         "dark" => true,
@@ -1578,6 +1591,7 @@ fn main() {
             sqlite_transaction::sqlite_commit_stream_transaction,
             sqlite_transaction::sqlite_rollback_stream_transaction,
             set_risu_native_appearance,
+            set_macos_native_sidebar_blur,
             set_risu_windows_backdrop,
             set_linux_window_decoration_preference,
             set_linux_decoration_colors,

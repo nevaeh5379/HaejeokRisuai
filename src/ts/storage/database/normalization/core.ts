@@ -52,6 +52,7 @@ const coreScalarDefaults = {
   linuxWindowDecoration: defaultPicklist(["ssd", "csd"], "ssd"),
   linuxCsdSidebarOpacity: defaultNumber(94),
   macosSidebarTransparency: defaultBoolean(true),
+  macosNativeSidebarBlur: defaultBoolean(false),
   macosSidebarOpacity: defaultNumber(0),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
