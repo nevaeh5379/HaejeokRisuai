@@ -10,7 +10,7 @@ import { updateAnimationSpeed } from "../gui/animation";
 import { guiSizeText, updateGuisize } from "../gui/guisize";
 import { updateColorScheme, updateTextThemeAndCSS } from "../gui/colorscheme";
 import { applyUITheme } from "../gui/uiTheme";
-import { isCapacitorAndroid } from "../platform";
+import { isCapacitorAndroid, isTauriMacOS } from "../platform";
 import { CustomGUISettingMenuStore, syncMobileGUI } from "../stores.svelte";
 
 export const displayThemeSettingsItems: SettingItem[] = [
@@ -201,6 +201,47 @@ export const displayThemeSettingsItems: SettingItem[] = [
       ],
     },
     keywords: ["color", "engine", "adapt"],
+  },
+  {
+    id: "display.macosSidebarTransparency",
+    type: "check",
+    labelKey: "useMacosSidebarTransparency",
+    bindKey: "macosSidebarTransparency",
+    condition: () => isTauriMacOS,
+    classes: "mt-4",
+    keywords: [
+      "macos",
+      "sidebar",
+      "transparency",
+      "vibrancy",
+      "opacity",
+      "사이드바",
+      "투명도",
+      "반투명",
+    ],
+  },
+  {
+    id: "display.macosSidebarOpacity",
+    type: "slider",
+    labelKey: "macosSidebarOpacity",
+    bindKey: "macosSidebarOpacity",
+    condition: (ctx) => isTauriMacOS && (ctx.db.macosSidebarTransparency ?? true),
+    classes: "mt-2 block text-sm",
+    options: {
+      min: 0,
+      max: 100,
+      step: 1,
+      customText: (value) => `${value ?? 0}%`,
+    },
+    keywords: [
+      "macos",
+      "sidebar",
+      "transparency",
+      "opacity",
+      "사이드바",
+      "투명도",
+      "불투명도",
+    ],
   },
 ];
 

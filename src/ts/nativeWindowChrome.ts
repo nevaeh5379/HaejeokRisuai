@@ -15,6 +15,24 @@ export type ResizeDirection =
   | "SouthWest"
   | "West";
 
+export function applyMacOSSidebarTransparency(
+  enabled: boolean,
+  opacity: number,
+): void {
+  if (!isTauriMacOS || typeof document === "undefined") return;
+
+  const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
+  const effectiveOpacity = enabled ? clamped : 100;
+  document.documentElement.classList.toggle(
+    "tauri-macos-sidebar-opaque",
+    !enabled || clamped >= 100,
+  );
+  document.documentElement.style.setProperty(
+    "--risu-macos-sidebar-opacity",
+    `${effectiveOpacity}%`,
+  );
+}
+
 export function installMacOSHeaderDrag() {
   if (!isTauriMacOS) return;
   const onMouseDown = (event: MouseEvent) => {

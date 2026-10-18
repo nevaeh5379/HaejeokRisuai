@@ -1026,7 +1026,11 @@ html.tauri-macos-vibrancy {
   --risu-macos-sidebar-menu-radius: 1rem;
   --risu-macos-sidebar-menu-control-radius: 0.74rem;
   /* The native background supplies the system's wallpaper-derived tint. */
-  --risu-macos-chrome-tint: transparent;
+  --risu-macos-chrome-tint: color-mix(
+    in srgb,
+    var(--risu-theme-darkbg) var(--risu-macos-sidebar-opacity, 0%),
+    transparent
+  );
   --risu-macos-content-tint: color-mix(
     in srgb,
     var(--risu-theme-bgcolor) 90%,

@@ -103,6 +103,8 @@ export interface DatabaseSettings extends PresetSettings {
   autoHideAndroidNavigationBarInSidebar: boolean;
   linuxWindowDecoration: "ssd" | "csd";
   linuxCsdSidebarOpacity: number;
+  macosSidebarTransparency: boolean;
+  macosSidebarOpacity: number;
   androidWidgetBotCount?: number;
   emotionPrompt: string;
   formatversion: number;
