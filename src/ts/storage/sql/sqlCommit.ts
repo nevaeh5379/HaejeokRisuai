@@ -18,11 +18,11 @@ export type {
   SqlMessageUpsert,
   SqlModuleUpsert,
   SqlCommitResult,
-} from "../../../../packages/protocol/sqlCommit.cjs";
+} from "../../../../packages/protocol/src/sqlCommit.ts";
 import type {
   SqlCommit as ProtocolSqlCommit,
   SqlPresetUpsert as ProtocolSqlPresetUpsert,
-} from "../../../../packages/protocol/sqlCommit.cjs";
+} from "../../../../packages/protocol/src/sqlCommit.ts";
 
 export type SqlPresetUpsert = ProtocolSqlPresetUpsert<botPreset>;
 export type SqlCommit = ProtocolSqlCommit<botPreset>;
@@ -62,6 +62,7 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
       commit.pluginStorage.clear),
   );
   return (
+    (commit.authorNotes?.length ?? 0) > 0 ||
     commit.root.upserts.length > 0 ||
     commit.root.deletes.length > 0 ||
     hasPluginChanges ||
@@ -77,6 +78,14 @@ export function hasSqlCommitChanges(commit: SqlCommit): boolean {
       (commit.modules.upserts.length > 0 ||
         commit.modules.deletes.length > 0 ||
         commit.modules.order !== undefined),
+    ) ||
+    Boolean(
+      commit.plugins &&
+      (commit.plugins.upserts.length > 0 ||
+        commit.plugins.deletes.length > 0 ||
+        commit.plugins.order !== undefined ||
+        (commit.plugins.scripts?.length ?? 0) > 0 ||
+        (commit.plugins.enabled?.length ?? 0) > 0),
     ) ||
     commit.characters.length > 0 ||
     (commit.characterTouches !== undefined &&
@@ -177,6 +186,14 @@ export function buildSqlReplaceCommit(
   }
   const commit = createEmptySqlCommit(baseRevision, "replace-all");
   commit.replaceAll = true;
+  commit.authorNotes = [
+    {
+      type: "restore",
+      rows: database.globalAuthorNotes ?? [],
+      allowScriptWrite:
+        database.globalAuthorNoteSettings?.allowScriptWrite ?? false,
+    },
+  ];
   commit.characterIds = [];
 
   database.pluginCustomStorage ??= {};
@@ -236,8 +253,26 @@ export function buildSqlReplaceCommit(
     deletes: [],
     order: modules.map((module) => module.id),
   };
+
+  const plugins = Array.isArray(database.plugins) ? database.plugins : [];
+  const pluginIds = plugins.map(() => uuidv4());
+  commit.plugins = {
+    upserts: plugins.map((plugin, position) => {
+      const { script: _script, ...data } = plugin;
+      return { id: pluginIds[position], position, data };
+    }),
+    deletes: [],
+    order: pluginIds,
+    scripts: plugins.map((plugin, position) => ({
+      id: pluginIds[position],
+      script: plugin.script,
+    })),
+  };
+
   for (const [key, value] of Object.entries(database)) {
     if (
+      key !== "globalAuthorNotes" &&
+      key !== "globalAuthorNoteSettings" &&
       key !== "characters" &&
       value !== undefined &&
       typeof value !== "function" &&
@@ -245,6 +280,7 @@ export function buildSqlReplaceCommit(
       key !== "botPresets" &&
       key !== "botPresetsId" &&
       key !== "modules" &&
+      key !== "plugins" &&
       // Preset activation is owned by the presets section: the server derives
       // `activeBotPresetId` from presets.activeId and pushes it into the root
       // upserts itself. Emitting it here as well would duplicate the key in a

@@ -8,6 +8,7 @@
 
 <div
   class="
+      rs-sidebar-indicator
       group-hover:bg-white
       absolute
       left-[-4px]
@@ -16,6 +17,6 @@
       rounded-full
       transition-all
       duration-300
-      {isActive ? 'bg-white h-[20px]!' : 'group-hover:h-[10px]'}
+      {isActive ? 'bg-white h-[20px]! rs-sidebar-indicator-active' : 'group-hover:h-[10px]'}
     "
 ></div>

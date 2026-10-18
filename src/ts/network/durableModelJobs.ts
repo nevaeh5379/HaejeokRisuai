@@ -4,7 +4,7 @@ import type {
   CreateModelJobRequest,
   CreateModelJobResponse,
   DurableModelJobRecord,
-} from "../../../packages/protocol/modelJobs.cjs";
+} from "../../../packages/protocol/modelJobs.ts";
 
 export interface DurableGenerationContext {
   realChatId: string;

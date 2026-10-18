@@ -3,7 +3,7 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import {
   appendOpenAIStreamingFragment,
   mergeOpenAIStreamingToolCallDeltas,
-} from "@risuai/chat-core/openAIProvider.cjs";
+} from "@risuai/chat-core/openAIProvider.ts";
 import { alertError } from "src/ts/alert";
 import { addFetchLog, fetchNative } from "src/ts/globalApi.svelte";
 import { LLMFlags } from "src/ts/model/modellist";

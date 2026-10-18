@@ -68,7 +68,13 @@ describe("NodeSqlStorage browser client", () => {
           protocolVersion: 1,
           revision: 7,
           initialized: true,
-          records: { settings: 4, characters: 2, chats: 3, messages: 9, total: 18 },
+          records: {
+            settings: 4,
+            characters: 2,
+            chats: 3,
+            messages: 9,
+            total: 18,
+          },
           assets: { count: 5, sizeBytes: 1234 },
         }),
       );
@@ -124,9 +130,11 @@ describe("NodeSqlStorage browser client", () => {
   });
 
   it("lists persisted setting keys through the lightweight endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({ keys: ["alpha-setting", "beta-setting"] }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ keys: ["alpha-setting", "beta-setting"] }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
@@ -547,22 +555,49 @@ describe("NodeSqlStorage browser client", () => {
 
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
-    (storage as any).pluginsCacheForage = {
+    (storage.plugin as any).pluginsCache = {
       getItem: vi.fn(async () => null),
       setItem: vi.fn(async () => undefined),
-      removeItem: vi.fn(async () => undefined),
     };
 
-    expect(await storage.loadPlugins({ enabledOnly: true })).toHaveLength(1);
+    expect(await storage.plugin.loadAll({ enabledOnly: true })).toHaveLength(1);
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/database-v2/plugins?enabledOnly=1",
     );
 
-    expect(await storage.loadPlugins()).toHaveLength(2);
+    expect(await storage.plugin.loadAll()).toHaveLength(2);
     expect(fetchMock.mock.calls[1][0]).toBe("/api/database-v2/plugins");
   });
 
-  it("toggles one plugin with a tiny revision-guarded request", async () => {
+  it("loads one plugin through the plugin storage single-record endpoint", async () => {
+    const plugin = {
+      id: "plugin-id",
+      position: 0,
+      name: "single",
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+      enabled: true,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ plugin }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new NodeSqlStorage(async () => "test-auth");
+    (storage as any).status = "enabled";
+
+    expect(await storage.plugin.load("plugin-id")).toEqual(plugin);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/database-v2/plugins/plugin-id",
+    );
+  });
+
+  it("toggles one plugin through the plugin storage commit", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ success: true, revision: 12 }), {
         status: 200,
@@ -573,22 +608,23 @@ describe("NodeSqlStorage browser client", () => {
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
     (storage as any).revision = 11;
-    (storage as any).pluginsCacheForage = {
-      getItem: vi.fn(async () => null),
-      setItem: vi.fn(async () => undefined),
-      removeItem: vi.fn(async () => undefined),
-    };
-
-    await storage.setPluginEnabled("large-plugin", true);
+    await storage.plugin.setEnabled("plugin-id", true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "/api/database-v2/plugins/large-plugin/enabled",
-    );
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/database-v2/commit");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      method: "PATCH",
-      body: JSON.stringify({ enabled: true, baseRevision: 11 }),
+      method: "POST",
     });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+      {
+        baseRevision: 11,
+        plugins: {
+          upserts: [],
+          deletes: [],
+          enabled: [{ id: "plugin-id", enabled: true }],
+        },
+      },
+    );
     expect(storage.getRevision()).toBe(12);
   });
 
@@ -922,9 +958,11 @@ describe("NodeSqlStorage browser client", () => {
       total: 600,
       hasMore: true,
     };
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ page }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ page }), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const storage = new NodeSqlStorage(async () => "test-auth");
     (storage as any).status = "enabled";
@@ -1221,5 +1259,111 @@ describe("NodeSqlStorage concurrent commit handling", () => {
     expect(retryHeaders["x-risu-client-id"]).toBe(
       firstHeaders["x-risu-client-id"],
     );
+  });
+});
+
+describe("NodeSqlStorage portable database stream restore", () => {
+  it("uploads bounded record batches and finalizes without collecting the database", async () => {
+    let stagedRecords = 0;
+    const appendRecords = vi.fn(
+      async (
+        _id: string,
+        input: {
+          fragmentIndex: number;
+          records: unknown[];
+          fragmentComplete: boolean;
+        },
+      ) => {
+        stagedRecords += input.records.length;
+        return {
+          id: "restore-session",
+          nextFragmentIndex: input.fragmentComplete ? 2 : 1,
+          recordCount: stagedRecords,
+          createdAt: 1,
+          expiresAt: Date.now() + 60_000,
+        };
+      },
+    );
+    const finalize = vi.fn(async () => ({
+      status: "completed" as const,
+      revision: 9,
+      revisionId: 77,
+      sourceRevision: 4,
+      recordCount: stagedRecords,
+    }));
+    const apiClient = {
+      request: vi.fn(async (path: string, init?: RequestInit) => {
+        if (path === "/api/local-backup/database-stream/sessions") {
+          return new Response(
+            JSON.stringify({
+              id: "restore-session",
+              nextFragmentIndex: 1,
+              recordCount: 0,
+              createdAt: 1,
+              expiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (path.endsWith("/records")) {
+          const input = JSON.parse(String(init?.body ?? "{}"));
+          const state = await appendRecords("restore-session", input);
+          return new Response(JSON.stringify(state), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (path.endsWith("/finalize")) {
+          const result = await finalize();
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`Unexpected backup API request: ${path}`);
+      }),
+      resolve: (path: string) => `http://localhost${path}`,
+    } as any;
+
+    const storage = new NodeSqlStorage(async () => "test-auth", apiClient);
+    (storage as any).status = "enabled";
+
+    const records = [
+      { type: "meta" as const, formatVersion: 1 as const, revision: 4 },
+      ...Array.from({ length: 130 }, (_, index) => ({
+        type: "setting" as const,
+        key: `setting-${index}`,
+        value: index,
+      })),
+    ];
+    const restore = await storage.beginPortableDatabaseStreamRestore();
+    await restore.writeFragment({
+      format: "haejeok-stream-fragment",
+      index: 1,
+      records,
+    });
+
+    expect(appendRecords).toHaveBeenCalledTimes(3);
+    expect(
+      appendRecords.mock.calls.map((call) => call[1].records.length),
+    ).toEqual([64, 64, 3]);
+    expect(
+      appendRecords.mock.calls.map((call) => call[1].fragmentComplete),
+    ).toEqual([false, false, true]);
+
+    await restore.finish({
+      format: "haejeok-stream-manifest",
+      revision: 4,
+      version: "1.1",
+      totalFragments: 1,
+      totalRecords: records.length,
+      counts: { meta: 1, setting: 130 },
+    });
+
+    expect(finalize).toHaveBeenCalledOnce();
+    expect(storage.getRevision()).toBe(9);
   });
 });

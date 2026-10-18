@@ -3,10 +3,13 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { beforeAll, expect, test, vi } from "vitest";
+import { globalAuthorNoteStore } from "../stores/domain/globalAuthorNoteStore";
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
 
 const commitMessages = vi.hoisted(() => vi.fn(async () => undefined));
 const moduleTriggers = vi.hoisted(() => vi.fn(() => []));
 const moduleLorebooks = vi.hoisted(() => vi.fn(() => []));
+const moduleList = vi.hoisted(() => vi.fn(() => []));
 const databaseState = vi.hoisted(() => ({
   value: {
     characters: [
@@ -48,6 +51,7 @@ vi.mock("../parser/parser.svelte", () => ({
 }));
 
 vi.mock("../alert", () => ({
+  alertToast: vi.fn(),
   alertConfirm: vi.fn(),
   alertError: vi.fn(),
   alertInput: vi.fn(),
@@ -61,6 +65,8 @@ vi.mock("../globalApi.svelte", () => ({
 }));
 vi.mock("../tokenizer", () => ({ tokenize: vi.fn() }));
 vi.mock("../util", () => ({
+  parseKeyValue: vi.fn(() => []),
+  sleep: vi.fn(),
   asBuffer: vi.fn(),
   getPersonaPrompt: vi.fn(),
   getUserIcon: vi.fn(),
@@ -92,22 +98,34 @@ vi.mock("../stores/domain/settingsStore.svelte", () => ({
     },
   },
 }));
+vi.mock("../stores/domain/presetStore.svelte", () => ({
+  presetStore: { state: {} },
+}));
 
 vi.mock("../stores/domain/messageStore.svelte", () => ({
   messageStore: { commitMessages },
 }));
 
 vi.mock("../stores.svelte", () => ({
-  ReloadChatPointer: { update: vi.fn() },
-  ReloadGUIPointer: { update: vi.fn() },
+  ReloadChatPointer: {
+    update: vi.fn(),
+    set: vi.fn(),
+    subscribe: (run: (value: number) => void) => (run(0), () => undefined),
+  },
+  ReloadGUIPointer: {
+    update: vi.fn(),
+    set: vi.fn(),
+    subscribe: (run: (value: number) => void) => (run(0), () => undefined),
+  },
   selectedCharID: {
     subscribe: (run: (value: number) => void) => (run(0), () => undefined),
   },
 }));
 
 vi.mock("./modules", () => ({
-  getModuleLorebooks: moduleLorebooks,
+  getModuleLorebooksWithSource: moduleLorebooks,
   getModuleTriggers: moduleTriggers,
+  getModules: moduleList,
 }));
 
 vi.mock("./files/inlays", () => ({
@@ -120,6 +138,7 @@ vi.mock("./request/chatRequestOrchestrator", () => ({
   requestChatData: requestChatDataMock,
 }));
 vi.mock("./stableDiff", () => ({ generateAIImage: vi.fn() }));
+vi.mock("./command", () => ({ processMultiCommand: vi.fn() }));
 
 let runScripted: typeof import("./scriptings").runScripted;
 let runLuaEditTrigger: typeof import("./scriptings").runLuaEditTrigger;
@@ -192,6 +211,174 @@ test("module button auxiliary calls carry their execution module", async () => {
     );
   } finally {
     moduleTriggers.mockReset();
+  }
+});
+
+test("isolates Lua globals between backend-owner sandboxes", async () => {
+  const code = `
+    counter = counter or 0
+    function onStart()
+      counter = counter + 1
+      return counter
+    end
+  `;
+  const runFor = (owner: string) =>
+    runScripted(code, {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxOwnerModuleId: owner,
+    });
+
+  expect((await runFor("owner-a")).res).toBe(1);
+  expect((await runFor("owner-a")).res).toBe(2);
+  expect((await runFor("owner-b")).res).toBe(1);
+});
+
+test("shares Lua globals inside a group and isolates them between groups", async () => {
+  requestChatDataMock.mockClear();
+  const code = `
+    counter = counter or 0
+    onStart = async(function(id)
+      counter = counter + 1
+      axLLM(id, {{role = "user", content = "sandbox request"}})
+      return counter
+    end)
+  `;
+  const runFor = (groupId: string, instanceId: string, subModel: string) =>
+    runScripted(code, {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      lowLevelAccess: true,
+      sourceModuleId: "lightboard",
+      sandboxGroupId: groupId,
+      sandboxInstanceId: instanceId,
+      sandboxModuleIds: ["lightboard", `${groupId}-module`],
+      subModel,
+    });
+
+  expect(
+    (await runFor("illustration", "lightboard-a", "image-model")).res,
+  ).toBe(1);
+  expect(
+    (await runFor("illustration", "illustration-helper", "image-model")).res,
+  ).toBe(2);
+  expect((await runFor("weather", "lightboard-b", "weather-model")).res).toBe(
+    1,
+  );
+  expect(requestChatDataMock).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      staticModel: "weather-model",
+      sourceModuleId: "lightboard",
+      moduleSandboxGroupId: "weather",
+    }),
+    "otherAx",
+  );
+});
+
+test("scopes Lua lorebooks to first-class sandbox members", async () => {
+  moduleLorebooks.mockClear();
+  moduleLorebooks.mockReturnValue([]);
+  const char = { type: "character", globalLore: [] } as never;
+  const chat = { message: [], localLore: [] } as never;
+  await runScripted(
+    `function onStart(id) return #getLoreBooks(id, "missing") end`,
+    {
+      char,
+      chat,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxGroupId: "illustration",
+      sandboxInstanceId: "lightboard-a",
+      sandboxModuleIds: ["lightboard", "illustration-module"],
+    },
+  );
+  expect(moduleLorebooks).toHaveBeenLastCalledWith(
+    char,
+    ["lightboard", "illustration-module"],
+    chat,
+  );
+});
+
+test("scopes Lua module lorebooks to the backend-owner sandbox", async () => {
+  moduleLorebooks.mockClear();
+  moduleLorebooks.mockReturnValue([]);
+  const char = { type: "character", globalLore: [] } as never;
+  const chat = { message: [], localLore: [] } as never;
+  await runScripted(
+    `function onStart(id) return #getLoreBooks(id, "missing") end`,
+    {
+      char,
+      chat,
+      mode: "start",
+      sourceModuleId: "lightboard",
+      sandboxOwnerModuleId: "owner-a",
+    },
+  );
+  expect(moduleLorebooks).toHaveBeenLastCalledWith(
+    char,
+    ["lightboard", "owner-a"],
+    chat,
+  );
+});
+
+test("uses the sandbox owner's auxiliary model without request-rule rerouting", async () => {
+  requestChatDataMock.mockClear();
+  moduleList.mockReturnValue([
+    { id: "owner-a", subModel: "owner-model" },
+  ] as never);
+  try {
+    await runScripted(
+      `onStart = async(function(id)
+        return axLLM(id, {{role = "user", content = "sandbox request"}})
+      end)`,
+      {
+        char: { type: "character" } as never,
+        chat: { message: [] } as never,
+        mode: "start",
+        lowLevelAccess: true,
+        sourceModuleId: "lightboard",
+        subModel: "backend-model",
+        sandboxOwnerModuleId: "owner-a",
+      },
+    );
+    expect(requestChatDataMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        staticModel: "owner-model",
+        sourceModuleId: "lightboard",
+        moduleSandboxOwnerId: "owner-a",
+      }),
+      "otherAx",
+    );
+  } finally {
+    moduleList.mockReset();
+  }
+});
+
+test("Lua lorebook results preserve their source module", async () => {
+  moduleLorebooks.mockReturnValue([
+    {
+      sourceModuleId: "owner-a",
+      lorebook: { comment: "owner.code", content: "return 1" },
+    },
+  ] as never);
+  try {
+    const result = await runScripted(
+      `function onStart(id)
+        local books = getLoreBooks(id, "owner.code")
+        return books[1].sourceModuleId
+      end`,
+      {
+        char: { type: "character", globalLore: [] } as never,
+        chat: { message: [], localLore: [] } as never,
+        mode: "start",
+      },
+    );
+    expect(result.res).toBe("owner-a");
+  } finally {
+    moduleLorebooks.mockReset();
   }
 });
 
@@ -546,7 +733,10 @@ test("runs module button actions that read lorebooks before character details hy
   } as any;
   currentChatState.value = { id: "chat-1", message: [] } as any;
   moduleLorebooks.mockReturnValue([
-    { comment: "ChoiceModule.actions", content: "module action" },
+    {
+      sourceModuleId: "choice-module",
+      lorebook: { comment: "ChoiceModule.actions", content: "module action" },
+    },
   ] as never);
   moduleTriggers.mockReturnValue([
     {
@@ -616,5 +806,147 @@ test("evicts least recently used idle scripting engines", async () => {
   } finally {
     lowSpecModeState.value = false;
     logSpy.mockRestore();
+  }
+});
+
+test("Lua author notes read the shared source and respect permission, conflicts and previews", async () => {
+  const note = {
+    id: "shared",
+    name: "Shared",
+    updatedAt: 0,
+    contentHash: "read-hash",
+    getContent: vi.fn(async () => "shared raw"),
+    setContent: vi.fn(),
+  };
+  const lookup = vi.spyOn(globalAuthorNoteStore, "get").mockResolvedValue(note);
+  const permission = vi
+    .spyOn(globalAuthorNoteStore, "getAllowScriptWrite")
+    .mockResolvedValue(false);
+  const write = vi
+    .spyOn(globalAuthorNoteStore, "setScriptContent")
+    .mockResolvedValue(undefined);
+  const chat = {
+    message: [],
+    note: "local retained",
+    globalAuthorNoteId: "shared",
+  } as never;
+  const code = `onStart = async(function(id)
+    local raw = getAuthorsNote(id)
+    local written = setAuthorsNote(id, "changed")
+    return raw .. ":" .. tostring(written)
+  end)
+  listenEdit("editDisplay", async(function(id, text)
+    setAuthorsNote(id, "preview")
+    return text
+  end))`;
+  try {
+    expect(
+      (await runScripted(code, { char: {} as never, chat, mode: "start" })).res,
+    ).toBe("shared raw:false");
+    expect(write).not.toHaveBeenCalled();
+    permission.mockResolvedValue(true);
+    expect(
+      (await runScripted(code, { char: {} as never, chat, mode: "start" })).res,
+    ).toBe("shared raw:true");
+    expect(write).toHaveBeenLastCalledWith(note, "changed");
+    write.mockRejectedValueOnce(new AuthorNoteError("conflict"));
+    expect(
+      (await runScripted(code, { char: {} as never, chat, mode: "start" })).res,
+    ).toBe("shared raw:false");
+    write.mockClear();
+    await runScripted(code, {
+      char: {} as never,
+      chat,
+      mode: "editDisplay",
+      data: "preview",
+    });
+    expect(write).not.toHaveBeenCalled();
+    expect((chat as any).note).toBe("local retained");
+    lookup.mockResolvedValue(null);
+    expect(
+      (await runScripted(code, { char: {} as never, chat, mode: "start" })).res,
+    ).toBe(":false");
+  } finally {
+    lookup.mockRestore();
+    permission.mockRestore();
+    write.mockRestore();
+  }
+});
+
+test("author note triggers read raw text and gate shared writes, including previews", async () => {
+  const { runTrigger } = await import("./triggers");
+  const note = {
+    id: "shared",
+    name: "Shared",
+    updatedAt: 0,
+    contentHash: "read-hash",
+    getContent: vi.fn(async () => "shared raw"),
+    setContent: vi.fn(),
+  };
+  const lookup = vi.spyOn(globalAuthorNoteStore, "get").mockResolvedValue(note);
+  const permission = vi
+    .spyOn(globalAuthorNoteStore, "getAllowScriptWrite")
+    .mockResolvedValue(false);
+  const write = vi
+    .spyOn(globalAuthorNoteStore, "setScriptContent")
+    .mockResolvedValue(undefined);
+  const character = {
+    type: "character",
+    chats: [],
+    triggerscript: [
+      {
+        comment: "shared note",
+        type: "start",
+        conditions: [],
+        effect: [
+          { type: "v2GetAuthorNote", outputVar: "read", indent: 0 },
+          {
+            type: "v2SetAuthorNote",
+            value: "changed",
+            valueType: "value",
+            indent: 0,
+          },
+        ],
+      },
+    ],
+  } as unknown as import("../storage/database/schema").character;
+  const makeChat = () =>
+    ({
+      message: [],
+      note: "local retained",
+      globalAuthorNoteId: "shared",
+    }) as unknown as import("../storage/database/schema").Chat;
+  try {
+    const blocked = await runTrigger(character, "start", { chat: makeChat() });
+    expect(blocked?.chat.scriptstate?.$read).toBe("shared raw");
+    expect(blocked?.chat.note).toBe("local retained");
+    expect(write).not.toHaveBeenCalled();
+    permission.mockResolvedValue(true);
+    await runTrigger(character, "start", { chat: makeChat() });
+    expect(write).toHaveBeenLastCalledWith(note, "changed");
+    write.mockRejectedValueOnce(new AuthorNoteError("conflict"));
+    await expect(
+      runTrigger(character, "start", { chat: makeChat() }),
+    ).resolves.toBeTruthy();
+    write.mockClear();
+    const preview = await runTrigger(character, "start", {
+      chat: makeChat(),
+      displayMode: true,
+      tempVars: {},
+    });
+    expect(preview?.tempVars.read).toBe("shared raw");
+    expect(write).not.toHaveBeenCalled();
+    character.triggerscript![0].type = "display";
+    const display = await runTrigger(character, "display", {
+      chat: makeChat(),
+      displayMode: true,
+      tempVars: {},
+    });
+    expect(display?.tempVars.read).toBe("shared raw");
+    expect(write).not.toHaveBeenCalled();
+  } finally {
+    lookup.mockRestore();
+    permission.mockRestore();
+    write.mockRestore();
   }
 });

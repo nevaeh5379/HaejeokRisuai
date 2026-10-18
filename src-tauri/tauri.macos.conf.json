@@ -1,8 +1,10 @@
 {
+  "mainBinaryName": "haejeok-risuai",
   "app": {
     "macOSPrivateApi": true,
     "windows": [
       {
+        "create": false,
         "fullscreen": false,
         "resizable": true,
         "title": "Risuai",

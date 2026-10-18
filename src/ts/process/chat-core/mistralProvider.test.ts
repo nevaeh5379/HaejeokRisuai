@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeMistralResponse,
   formatMistralMessages,
-} from "@risuai/chat-core/mistralProvider.cjs";
+} from "@risuai/chat-core/mistralProvider.ts";
 
 describe("Mistral provider core", () => {
   it("merges adjacent roles and folds later system messages", () => {

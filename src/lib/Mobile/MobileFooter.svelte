@@ -27,7 +27,7 @@
 
 <!-- ================= 1. HOME SCREEN BOTTOM NAVIGATION (3 TABS) ================= -->
 {#if $selectedCharID === -1}
-  <nav class="w-full px-4 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] border-t border-t-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-around text-textcolor2 shrink-0 z-30 select-none shadow-xs">
+  <nav class="w-full px-4 pt-2 pb-[max(var(--risu-safe-area-inset-bottom),0.5rem)] border-t border-t-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-around text-textcolor2 shrink-0 z-30 select-none shadow-xs">
     <!-- Tab 0: RisuRealm -->
     <button
       class="flex-1 flex justify-center items-center flex-col gap-1 py-1.5 px-3 rounded-2xl transition-all cursor-pointer {$MobileGUIStack === 0 ? 'text-selected font-bold bg-selected/10' : 'text-textcolor2 hover:text-textcolor'}"
@@ -62,7 +62,7 @@
 
 <!-- ================= 2. CHARACTER CONFIGURATION BOTTOM BAR ($MobileSideBar === 2) ================= -->
 {#if $selectedCharID !== -1 && $MobileSideBar === 2}
-  <nav class="w-full px-2 py-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] border-t border-t-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-around text-textcolor2 shrink-0 z-30 select-none">
+  <nav class="w-full px-2 py-2 pb-[max(var(--risu-safe-area-inset-bottom),0.5rem)] border-t border-t-darkborderc bg-darkbg/95 backdrop-blur-md flex items-center justify-around text-textcolor2 shrink-0 z-30 select-none">
     <!-- Submenu 0: Basic Info -->
     <button
       class="flex justify-center items-center p-2.5 rounded-2xl transition-all cursor-pointer {$CharConfigSubMenu === 0 ? 'text-selected bg-selected/20 font-bold scale-105' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton'}"

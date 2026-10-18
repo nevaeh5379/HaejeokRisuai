@@ -18,6 +18,7 @@ import {
   getTauriChatWindowManager,
 } from "./tauriChatWindows";
 import { characterStore } from "./stores/domain/characterStore.svelte";
+import { resolveRecentChatActiveTarget } from "./recentChatActivity";
 import { getSqlRuntime } from "./storage/sql/sqlRuntime";
 
 export const TAURI_APP_MENU_EVENT = "risu://app-menu";
@@ -311,7 +312,10 @@ async function loadRecentChats(
 ): Promise<TauriRecentChatMenuSource[]> {
   const storage = getSqlRuntime().storage;
   if (!storage?.listRecentChats) return localRecentChats(limit);
-  const activeChatId = characterStore.currentChat?.id;
+  const activeChatId = resolveRecentChatActiveTarget(
+    characterStore.characters,
+    characterStore.selectedId,
+  )?.chatId;
   try {
     const rows = await storage.listRecentChats(limit, activeChatId);
     return rows.map((row) => ({

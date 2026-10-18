@@ -12,7 +12,7 @@ import type {
 } from "../../setting/types";
 
 type Assert<T extends true> = T;
-/** Every protocol preset key must be absent from SettingsStore and present in PresetStore. */
+/** Every schema-derived preset key must be absent from SettingsStore and present in PresetStore. */
 export type OwnershipContract = [
   Assert<
     Extract<keyof SettingsState, PresetSettingKey> extends never ? true : false

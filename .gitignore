@@ -53,14 +53,20 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+android-e2e/artifacts/
 
-# Due to Cargo.lock makes the project build fail, we ignore it
-Cargo.lock
 /.worktree/
 *.logcat
 /.codegraph/
 
 # Generated Node server JavaScript
-/server/node/server.cjs
-/server/node/databaseMutations.cjs
+/server/node/dist/
 /server/node/.tsbuild/
+/packages/backup-core/dist/
+/packages/protocol/dist/
+
+
+.envrc
+
+# Launchpad PPA build artifacts
+/dist-ppa/

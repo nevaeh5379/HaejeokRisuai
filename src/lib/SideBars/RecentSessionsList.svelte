@@ -6,6 +6,8 @@
     import { getPreparedNativeThumbnailSrc, preloadThumbnails, preloadThumbnailsDecoded } from 'src/ts/globalApi.svelte';
     import { isCapacitor } from 'src/ts/platform';
     import { shouldEagerLoadRecentSessionThumbnails } from 'src/ts/gui/recentSessionThumbnails';
+    import { resolveRecentChatActiveTarget } from 'src/ts/recentChatActivity';
+    import { getSafeNavigatorLanguages } from 'src/ts/locale';
     import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -32,7 +34,7 @@
     let searchInput = $state('');
 
     const agoFormatter = new Intl.RelativeTimeFormat(
-        typeof navigator !== 'undefined' ? navigator.languages : 'en',
+        getSafeNavigatorLanguages(),
         { style: 'short' }
     );
 
@@ -149,11 +151,18 @@
             allSessions = buildLocalSessionSnapshot();
             return;
         }
-        // Let the backend boost only the chat that is actually open; the UI
-        // no longer needs to patch timestamps afterwards (which could only
-        // fix rows that survived LIMIT).
-        const activeChar = characterStore.currentCharacter;
-        const activeChatId = activeChar?.chats?.[activeChar.chatPage ?? 0]?.id;
+        // Let the backend pin only the chat that was actually opened so it
+        // survives LIMIT. The UI then overlays newer in-memory activity while
+        // the lightweight character touch is still waiting to be persisted.
+        // RecentSessionsList is normally remounted only after Home has already
+        // cleared selectedCharID. Recover the last active chat from the
+        // in-memory interaction timestamps so the delayed touch commit cannot
+        // leave the just-opened session outside the bounded SQL result.
+        const activeTarget = resolveRecentChatActiveTarget(
+            characterStore.characters ?? [],
+            characterStore.selectedId,
+        );
+        const activeChatId = activeTarget?.chatId;
         try {
             const rows = await storage.listRecentChats(50, activeChatId);
             if (token !== refreshToken) return;
@@ -166,8 +175,23 @@
                 const folderName = row.folderId
                     ? char?.chatFolders?.find((folder) => folder.id === row.folderId)?.name
                     : undefined;
-                const lastMessageSnippet = cleanSnippet(row.lastMessage ?? '');
-                const timestamp = row.lastDate ?? char?.lastInteraction ?? 0;
+                const localChat = char?.chats?.find((chat) => chat.id === row.chatId);
+                const localLastMessage = localChat?.messagesLoaded === false
+                    ? undefined
+                    : localChat?.message?.at(-1);
+                const ownTimestamp = Math.max(
+                    row.lastDate ?? 0,
+                    localChat?.lastDate ?? 0,
+                    localLastMessage?.time ?? 0,
+                );
+                const timestamp = row.chatId === activeChatId
+                    ? Math.max(ownTimestamp, activeTarget?.timestamp ?? 0)
+                    : ownTimestamp;
+                const lastMessageSnippet = cleanSnippet(
+                    typeof localLastMessage?.data === 'string'
+                        ? localLastMessage.data
+                        : (row.lastMessage ?? ''),
+                );
                 return [{
                     charIndex: charIndex ?? -1,
                     chatIndex: row.chatPosition,
@@ -369,7 +393,7 @@
                         />
                         {#if session.isGroup}
                             <div
-                                class="absolute -bottom-1 -right-1 bg-selected text-white rounded-full p-0.5 shadow"
+                                class="rs-recent-group-badge absolute -bottom-1 -right-1 bg-selected text-white rounded-full p-0.5 shadow"
                                 title="Group Chat"
                             >
                                 <UsersIcon size={10} />
@@ -382,7 +406,7 @@
                         <!-- Top Line: Character Name & Ago Text -->
                         <div class="flex items-center justify-between gap-1 w-full">
                             <span
-                                class="font-semibold text-xs text-textcolor truncate group-hover:text-selected transition-colors"
+                                class="rs-recent-session-title font-semibold text-xs text-textcolor truncate group-hover:text-selected transition-colors"
                             >
                                 {session.characterName}
                             </span>

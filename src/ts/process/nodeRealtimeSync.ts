@@ -1,6 +1,12 @@
 import { alertError } from "../alert";
+import { chatTabsStore } from "../chatTabs.svelte";
+import { changeLanguage } from "../../lang";
 import { notifyChatResponse } from "../chatNotifications";
+import { applyStartupAppearance } from "../bootstrap/appAppearance";
+import { initPresetDomain } from "../bootstrap/presetStartup";
+import { initRuntimeSettings } from "../bootstrap/runtimeSettings";
 import { isCapacitor, isNodeServer, isTauri } from "../platform";
+import { installStartupData } from "../storage/database/databaseLifecycle";
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { NodeSqlStorage } from "../storage/sql/postgres/nodeSqlStorage";
 import { getNodeServerProxyAuth } from "../storage/files/nodeStorage";
@@ -9,58 +15,46 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 import {
   PRESET_STORE_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
   getSqlDeferredDomain,
 } from "../storage/sql/sqlDeferredSettings";
-import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
+import { localGenerationController } from "./chat/generationCancellation";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
 import type { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { getActiveStorageRuntime } from "../storage/runtime/activeStorageRuntime";
 import {
+  clearRemoteChatGeneration,
   isLocalChatGenerationActive,
   setRemoteChatGeneration,
-} from "./chatRuntimeState";
+} from "./chat/runtimeState";
 import {
   NodeRealtimeChangeQueue,
   type DatabaseChangeEvent,
 } from "./nodeRealtimeChangeQueue";
 import { consumeNodeRealtimeWebSocket } from "./nodeRealtimeWebSocket";
-
-type ModelJobEvent = {
-  phase?: "created" | "terminal";
-  sourceClientId?: string | null;
-  job?: {
-    id?: string;
-    chatId?: string;
-    generationId?: string | null;
-    recoverable?: boolean;
-    status?: string;
-  };
-};
-
-type GenerationStateEvent = {
-  chatId?: string;
-  lifecycleId?: string;
-  state?: "started" | "finished" | "failed" | "aborted";
-  sourceClientId?: string | null;
-  error?: string;
-};
-
-type ReadyEvent = {
-  activeGenerations?: GenerationStateEvent[];
-};
+import {
+  publishNodeBackupProgress,
+  setNodeRealtimeConnected,
+} from "./nodeRealtimeBackupProgress";
+import {
+  parseRealtimeEvent,
+  type GenerationLifecycleState,
+  type RealtimeDatabaseChangeEvent,
+  type RealtimeGenerationState,
+  type RealtimeModelJobEvent,
+  type RealtimeReadyEvent,
+} from "@risuai/protocol/src/realtimeEvents.ts";
 
 let started = false;
 let streamController: AbortController | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastEventId: number | null = null;
-let resyncReloadScheduled = false;
 let databaseChangeQueue: NodeRealtimeChangeQueue | null = null;
-const activeModelJobsByChat = new Map<string, string>();
 
 const PERSONA_ROOT_KEYS = new Set([
   "personas",
@@ -75,6 +69,7 @@ const MODULE_ROOT_KEYS = new Set([
   "enabledModules",
   "moduleFolders",
   "moduleOrder",
+  "moduleSandboxGroups",
 ]);
 const PRESET_ROOT_KEYS = new Set<string>([
   "activeBotPresetId",
@@ -82,10 +77,50 @@ const PRESET_ROOT_KEYS = new Set<string>([
 ]);
 const EXCLUDED_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
-function scheduleFullResync(): void {
-  if (resyncReloadScheduled) return;
-  resyncReloadScheduled = true;
-  queueMicrotask(() => window.location.reload());
+function pruneInvalidChatTabs(): void {
+  const validTargets = new Set<string>();
+  for (const character of characterStore.characters) {
+    if (!character.chaId) continue;
+    for (const chat of character.chats ?? []) {
+      if (chat?.id) validTargets.add(`${character.chaId}\0${chat.id}`);
+    }
+  }
+  chatTabsStore.pruneInvalidTargets((characterId, chatId) =>
+    validTargets.has(`${characterId}\0${chatId}`),
+  );
+}
+
+async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
+  const selectedCharacterId = characterStore.currentCharacter?.chaId;
+  const startup = await storage.loadStartupData();
+  if (!startup || startup.status !== "ready") {
+    throw new Error("Cannot resync from an empty remote database");
+  }
+
+  const loadedDeferredKeys = (startup.deferredSettingKeys ?? []).filter((key) =>
+    deferredSettingsLoader.isLoaded(key),
+  );
+
+  await installStartupData(startup, storage);
+  pruneInvalidChatTabs();
+  await initPresetDomain(storage);
+  await changeLanguage(settingsStore.state.language);
+  await initRuntimeSettings(storage);
+  for (const key of loadedDeferredKeys) {
+    await deferredSettingsLoader.ensureKey(key);
+  }
+  applyStartupAppearance();
+
+  const { selectedCharID } = await import("../stores.svelte");
+  const selectedIndex = selectedCharacterId
+    ? characterStore.characters.findIndex(
+        (character) => character.chaId === selectedCharacterId,
+      )
+    : -1;
+  selectedCharID.set(selectedIndex);
+  if (selectedIndex >= 0 && selectedCharacterId) {
+    await characterStore.ensureCharacterDetails(selectedCharacterId);
+  }
 }
 
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
@@ -116,7 +151,7 @@ async function applyDatabaseChange(
   change: DatabaseChangeEvent,
 ): Promise<void> {
   if (change.replaceAll) {
-    scheduleFullResync();
+    await applyFullResync(storage);
     return;
   }
 
@@ -162,7 +197,7 @@ async function applyDatabaseChange(
     !modulesChanged &&
     !presetsChanged
   ) {
-    scheduleFullResync();
+    await applyFullResync(storage);
     return;
   }
 
@@ -201,18 +236,7 @@ async function applyDatabaseChange(
   if (personaChanged) await personaStore.refreshFromStorage();
   if (modulesChanged) await moduleStore.refreshFromStorage();
   if (presetsChanged) {
-    const activePreset = await presetStore.refreshFromStorage();
-    if (activePreset) {
-      presetStore.replaceActivePresetState(
-        createPresetSettingsState(
-          {
-            ...settingsStore.getStateRecord(),
-            ...presetStore.getStateRecord(),
-          },
-          activePreset,
-        ),
-      );
-    }
+    await presetStore.refreshFromStorage();
   }
 
   if (
@@ -220,6 +244,7 @@ async function applyDatabaseChange(
     change.action === "plugin-toggle" ||
     rootKeys.includes("plugins")
   ) {
+    await pluginStore.refreshFromStorage();
     const { loadPlugins } = await import("../plugins/plugins.svelte");
     await loadPlugins();
   }
@@ -228,6 +253,10 @@ async function applyDatabaseChange(
     change.charactersChanged ?? characterIds.length > 0;
   if (characterIndexChanged) {
     await characterStore.refreshRemoteCharacters(characterIds);
+    // Remote deletions can remove characters/chats that local chat tabs are
+    // still referencing; prune those tabs so activating one can never
+    // deadlock the chat screen on its loading gate.
+    pruneInvalidChatTabs();
   }
 
   await characterStore.flush();
@@ -246,17 +275,9 @@ async function applyDatabaseChange(
   }
 }
 
-async function applyModelJob(event: ModelJobEvent): Promise<void> {
+async function applyModelJob(event: RealtimeModelJobEvent): Promise<void> {
   const job = event.job;
   if (!job?.chatId || job.recoverable === false) return;
-  if (event.phase === "created" && job.id) {
-    activeModelJobsByChat.set(job.chatId, job.id);
-  } else if (
-    event.phase === "terminal" &&
-    (!job.id || activeModelJobsByChat.get(job.chatId) === job.id)
-  ) {
-    activeModelJobsByChat.delete(job.chatId);
-  }
   const ownClient = event.sourceClientId === getNodeClientSessionId();
   if (ownClient) {
     // The local stream pipeline usually delivers the result itself, but on
@@ -282,9 +303,12 @@ async function applyModelJob(event: ModelJobEvent): Promise<void> {
   void recoverDurableModelJobs();
 }
 
-function applyGenerationState(event: GenerationStateEvent): void {
-  if (!event.chatId || !event.lifecycleId || !event.state) return;
+function applyGenerationState(event: RealtimeGenerationState): void {
+  if (!event.chatId || !event.lifecycleId) return;
   if (event.sourceClientId === getNodeClientSessionId()) return;
+  if (event.state === "aborted") {
+    localGenerationController.cancel(event.chatId, event.lifecycleId);
+  }
   setRemoteChatGeneration(
     event.chatId,
     event.state === "started",
@@ -306,32 +330,13 @@ function applyGenerationState(event: GenerationStateEvent): void {
   }
 }
 
-function applyReadyEvent(event: ReadyEvent): void {
-  for (const generation of event.activeGenerations ?? []) {
-    applyGenerationState({ ...generation, state: "started" });
-  }
-}
-
-async function findActiveModelJobId(chatId: string): Promise<string | null> {
-  const cached = activeModelJobsByChat.get(chatId);
-  if (cached) return cached;
-  try {
-    const response = await fetch("/api/model-jobs?active=1", {
-      headers: { "risu-auth": await getNodeServerProxyAuth() },
-      cache: "no-store",
-    });
-    if (!response.ok) return null;
-    const body = (await response.json()) as {
-      jobs?: Array<{ id?: string; chatId?: string; recoverable?: boolean }>;
+function applyReadyEvent(event: RealtimeReadyEvent): void {
+  for (const generation of event.activeGenerations) {
+    const started: RealtimeGenerationState = {
+      ...generation,
+      state: "started" satisfies GenerationLifecycleState,
     };
-    const job = body.jobs?.find(
-      (item) => item.chatId === chatId && item.recoverable !== false && item.id,
-    );
-    if (!job?.id) return null;
-    activeModelJobsByChat.set(chatId, job.id);
-    return job.id;
-  } catch {
-    return null;
+    applyGenerationState(started);
   }
 }
 
@@ -339,31 +344,18 @@ export async function cancelNodeChatGeneration(
   chatId: string,
 ): Promise<boolean> {
   if (!isNodeServer || !chatId) return false;
-  let jobId = await findActiveModelJobId(chatId);
-  if (!jobId) return false;
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch(
-      `/api/model-jobs/${encodeURIComponent(jobId)}`,
-      {
-        method: "DELETE",
-        headers: { "risu-auth": await getNodeServerProxyAuth() },
-      },
-    );
-    if (response.ok) {
-      if (activeModelJobsByChat.get(chatId) === jobId) {
-        activeModelJobsByChat.delete(chatId);
-      }
-      const remoteSource = "model-job:" + jobId;
-      setRemoteChatGeneration(chatId, false, remoteSource);
-      return true;
-    }
-    if (response.status !== 404 || attempt > 0) return false;
-    activeModelJobsByChat.delete(chatId);
-    jobId = (await findActiveModelJobId(chatId)) ?? "";
-    if (!jobId) return false;
-  }
-  return false;
+  const response = await fetch("/api/realtime/generation-cancel", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "risu-auth": await getNodeServerProxyAuth(),
+      "x-risu-client-id": getNodeClientSessionId(),
+    },
+    body: JSON.stringify({ chatId }),
+  });
+  if (!response.ok) return false;
+  clearRemoteChatGeneration(chatId);
+  return true;
 }
 
 async function dispatchEvent(
@@ -372,30 +364,69 @@ async function dispatchEvent(
   rawData: string,
   allowNodeFeatures: boolean,
 ): Promise<void> {
-  let data: unknown;
+  let parsedJson: unknown;
   try {
-    data = JSON.parse(rawData);
+    parsedJson = JSON.parse(rawData);
   } catch {
     return;
   }
-  if (eventName === "database-change") {
-    const change = data as DatabaseChangeEvent;
-    if (Number.isSafeInteger(change.revision)) {
-      storage.applyRemoteRevision(change.revision!);
+  // The SSE/WebSocket boundary is untrusted: JSON.parse results are narrowed
+  // against the shared event map instead of being cast blindly.
+  // SSE/WebSocket 경계는 신뢰할 수 없으므로, JSON.parse 결과를 무분별하게
+  // 캐스팅하지 않고 공유 이벤트 맵으로 좁힙니다.
+  const frame = parseRealtimeEvent(eventName, parsedJson);
+  if (frame === null) {
+    // A malformed database delta has no deletion authority. Request a full
+    // refresh instead of silently leaving the local client stale.
+    // 잘못된 DB 델타는 삭제 권한이 없으므로, 무시해 로컬 상태를
+    // 낡은 채로 두지 않고 전체 동기화를 요청합니다.
+    if (eventName === "database-change") {
+      databaseChangeQueue?.enqueue({
+        action: "realtime-invalid-database-change",
+        replaceAll: true,
+        sourceClientId: null,
+      });
+    }
+    return;
+  }
+  if (frame.event === "database-change") {
+    const change: RealtimeDatabaseChangeEvent = frame.data;
+    if (change.revision !== undefined) {
+      storage.applyRemoteRevision(change.revision);
     }
     if (change.sourceClientId !== storage.getClientId()) {
       databaseChangeQueue?.enqueue(change);
     }
     return;
   }
-  if (eventName === "model-job") {
-    if (allowNodeFeatures) await applyModelJob(data as ModelJobEvent);
-  } else if (eventName === "generation-state") {
-    applyGenerationState(data as GenerationStateEvent);
-  } else if (eventName === "ready") {
-    applyReadyEvent(data as ReadyEvent);
-  } else if (eventName === "resync-required") {
-    scheduleFullResync();
+  if (frame.event === "illustration-progress") {
+    // A saved image must not wait behind full chat hydration or the polling timer.
+    void import("./illustration/illustrationApp")
+      .then(({ refreshServerIllustration }) =>
+        refreshServerIllustration(frame.data),
+      )
+      .catch((error) =>
+        console.warn("Illustration progress refresh failed", error),
+      );
+    return;
+  }
+  if (frame.event === "local-backup-import-progress") {
+    publishNodeBackupProgress(frame.data);
+    return;
+  }
+  if (frame.event === "model-job") {
+    if (allowNodeFeatures) await applyModelJob(frame.data);
+  } else if (frame.event === "generation-state") {
+    applyGenerationState(frame.data);
+  } else if (frame.event === "ready") {
+    setNodeRealtimeConnected(true);
+    applyReadyEvent(frame.data);
+  } else if (frame.event === "resync-required") {
+    lastEventId = frame.data.latestEventId;
+    databaseChangeQueue?.enqueue({
+      action: "realtime-resync",
+      replaceAll: true,
+    });
   }
 }
 
@@ -476,7 +507,7 @@ async function connect(
         onFrame: async (frame) => {
           await dispatchEvent(
             storage,
-            frame.event!,
+            frame.event,
             JSON.stringify(frame.data ?? null),
             allowNodeFeatures,
           );
@@ -506,6 +537,7 @@ async function connect(
       console.warn("[NodeRealtimeSync] connection lost", error);
     }
   } finally {
+    setNodeRealtimeConnected(false);
     if (streamController === controller) streamController = null;
     if (!controller.signal.aborted)
       scheduleReconnect(storage, apiClient, allowNodeFeatures);

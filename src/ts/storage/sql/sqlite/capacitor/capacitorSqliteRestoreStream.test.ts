@@ -1,8 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Buffer } from "buffer";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 
 describe("CapacitorSqliteRestoreStream", () => {
+  it("attaches to an existing transaction and aborts if the final chunk fails", async () => {
+    const plugin = {
+      restoreOpen: vi.fn(async () => ({ id: "stream-1" })),
+      restoreAppend: vi.fn(async () => {
+        throw new Error("append failed");
+      }),
+      restoreFinish: vi.fn(),
+      restoreAbort: vi.fn(async () => {}),
+      addListener: vi.fn(),
+    };
+    const stream = new CapacitorSqliteRestoreStream(plugin as any);
+    await stream.openTransaction("tx-1");
+    await stream.writeStatement("INSERT INTO t VALUES (?)", ["small"]);
+    await expect(stream.finish()).rejects.toThrow("append failed");
+    expect(plugin.restoreOpen).toHaveBeenCalledWith({ transactionId: "tx-1" });
+    expect(plugin.restoreAbort).toHaveBeenCalledWith({ id: "stream-1" });
+    expect(plugin.restoreFinish).not.toHaveBeenCalled();
+    expect(plugin.addListener).not.toHaveBeenCalled();
+  });
+
   it("streams large string binds through bounded bridge chunks", async () => {
     const chunks: string[] = [];
     let parsed: Array<{ sql: string; bind: unknown[] }> = [];

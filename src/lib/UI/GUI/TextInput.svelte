@@ -4,7 +4,7 @@
 {#if hideText}
      <!-- new-password disables autofill -->
     <input 
-        class={"border border-darkborderc peer focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')} 
+        class={"rs-textinput border border-darkborderc peer focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')} 
         class:text-sm={size === 'sm'}
         class:text-md={size === 'md'}
         class:text-lg={size === 'lg'}
@@ -22,7 +22,7 @@
         class:w-full={fullwidth}
         class:h-full={fullh}
         class:text-textcolor2={disabled}
-
+        class:border-gray-300={isLight()}
         autocomplete="new-password"
         {placeholder}
         id={id}
@@ -36,7 +36,7 @@
 {:else}
 
     <input 
-        class={"border border-darkborderc peer focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')} 
+        class={"rs-textinput border border-darkborderc peer focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')} 
         list={list}
         class:text-sm={size === 'sm'}
         class:text-md={size === 'md'}
@@ -55,6 +55,7 @@
         class:w-full={fullwidth}
         class:h-full={fullh}
         class:text-textcolor2={disabled}
+        class:border-gray-300={isLight()}
 
         {autocomplete}
         {placeholder}
@@ -68,6 +69,8 @@
 {/if}
 
 <script lang="ts">
+  import { getCurrentlyColorScheme, isLight } from "src/ts/gui/colorscheme";
+
     type FormEventHandler<T extends EventTarget> = (event: Event & {
         currentTarget: EventTarget & T;
     }) => any

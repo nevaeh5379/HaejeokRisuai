@@ -1,17 +1,29 @@
 import { existsSync, realpathSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { defineConfig, loadEnv, searchForWorkspaceRoot } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from "@rollup/plugin-strip";
 import tailwindcss from "@tailwindcss/vite";
 import { resolveBuildVersion } from "./tooling/build-version.mjs";
-import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.mjs";
+import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.ts";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
-const localCommonJsPackages = ["chat-core", "protocol", "backup-core"] as const;
+import { resolveLegalConfigured } from "./tooling/legal-config.js";
+const localCommonJsPackages = ["chat-core", "protocol"] as const;
 const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
   readdirSync(resolve(process.cwd(), `packages/${packageName}`))
-    .filter((file) => file.endsWith(".cjs"))
+    // Node-only test files must not enter browser dependency optimization.
+    .filter(
+      (file) =>
+        file.endsWith(".cjs") &&
+        !file.endsWith(".test.cjs") &&
+        !existsSync(
+          resolve(
+            process.cwd(),
+            `packages/${packageName}/${file.replace(/\.cjs$/, ".mjs")}`,
+          ),
+        ),
+    )
     .map((file) => `@risuai/${packageName}/${file}`),
 );
 
@@ -19,6 +31,8 @@ const localCommonJsDependencies = localCommonJsPackages.flatMap((packageName) =>
 export default defineConfig(({ command, mode }) => {
   if (command === "build") checkServerStorageMutations();
 
+  const viteEnv = loadEnv(mode, process.cwd(), "VITE_");
+  const legalConfigured = resolveLegalConfigured({ viteEnv });
   const buildVersion = resolveBuildVersion();
   console.log(
     `[HaejeokRisuAI] Build version: ${buildVersion.buildTag} (${buildVersion.source})`,
@@ -26,6 +40,9 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     define: {
+      "import.meta.env.VITE_RISU_LEGAL_CONFIGURED": JSON.stringify(
+        legalConfigured ? "TRUE" : "",
+      ),
       "import.meta.env.VITE_HAEJEOK_BUILD_TAG": JSON.stringify(
         buildVersion.buildTag,
       ),
@@ -100,6 +117,9 @@ export default defineConfig(({ command, mode }) => {
       host: "0.0.0.0", // listen on all addresses
       port: 5174,
       strictPort: true,
+      watch: {
+        ignored: ["**/src-tauri/**"],
+      },
       fs: {
         allow: [
           searchForWorkspaceRoot(process.cwd()),
@@ -204,6 +224,20 @@ export default defineConfig(({ command, mode }) => {
                 priority: 90,
               },
               {
+                // The workflow JSON viewer is only needed when its settings open.
+                // Keep it out of the eagerly loaded catch-all vendor chunk.
+                name: "json-view",
+                test: /node_modules[\\/]@humanspeak[\\/]svelte-json-view-lite/,
+                priority: 80,
+              },
+              {
+                // Remote auth imports these only when signing. Keep the pure-JS
+                // crypto implementation out of the eagerly preloaded vendor chunk.
+                name: "remote-auth-crypto",
+                test: /node_modules[\\/]@noble[\\/](?:curves|hashes)(?=[\\/]|$)/,
+                priority: 80,
+              },
+              {
                 // Monaco editor is large and only needed for code/script editing.
                 // Group all monaco modules into a single chunk to avoid ~80
                 // per-language worker requests on initial load.
@@ -284,7 +318,10 @@ export default defineConfig(({ command, mode }) => {
         src: "/src",
         "@risuai/chat-core": resolve(process.cwd(), "packages/chat-core"),
         "@risuai/protocol": resolve(process.cwd(), "packages/protocol"),
-        "@risuai/backup-core": resolve(process.cwd(), "packages/backup-core"),
+        "@risuai/backup-core": resolve(
+          process.cwd(),
+          "packages/backup-core/src",
+        ),
         "@risuai/storage-core": resolve(
           process.cwd(),
           "packages/storage-core/src",

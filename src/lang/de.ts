@@ -937,6 +937,8 @@ export const languageGerman = {
   successExport:
     "Erfolgreich exportiert und in Ihrem Download-Verzeichnis gespeichert",
   successImport: "Erfolgreich importiert",
+  pluginsAutoDisabled:
+    "Deaktiviertes Plugin(s), das einen Absturz verursacht hat: {0}. Du kannst es in den Einstellungen wieder aktivieren.",
   importedCharacter: "Importierter Charakter",
   alwaysActive: "Immer aktiv",
   additionalPrompt: "Zusätzliche Anweisung",
@@ -965,6 +967,10 @@ export const languageGerman = {
   translateInput: "Eingabe übersetzen",
   autoTranslation: "Automatische Übersetzung",
   fullscreen: "Vollbild",
+  autoHideAndroidNavigationBar:
+    "Navigationsleiste in Chats automatisch ausblenden",
+  autoHideAndroidNavigationBarInSidebar:
+    "Navigationsleiste in Seitenleisten automatisch ausblenden",
   playMessage: "Nachrichten-Ton abspielen",
   iconSize: "Icon-Größe",
   createGroup: "Gruppenchat erstellen",
@@ -995,7 +1001,6 @@ export const languageGerman = {
   waifuWidth: "Breite des Waifu Chat-Bereichs",
   savebackup: "Erstellen und laden Sie ein Backup auf Google hoch",
   loadbackup: "Laden Sie Ihr Backup von Google herunter",
-  files: "Daten",
   backupConfirm: "Möchten Sie wirklich die Sicherung speichern?",
   backupLoadConfirm:
     "Möchten Sie wirklich das Backup laden? Alle Daten gehen verloren!",
@@ -1134,7 +1139,6 @@ export const languageGerman = {
   officialDiscordDesc: "Offizieller Discord zum Austausch über Risuai",
   persona: "Mein Profil",
   icon: "Symbol",
-  account: "Konto",
   remove: "Entfernen",
   able: "Aktiv",
   assetWidth: "Maximale Breite der Asset-Bilder",
@@ -1473,6 +1477,7 @@ export const languageGerman = {
   parameters: "Parameter",
   sizeAndSpeed: "Größe und Geschwindigkeit",
   useLegacyGUI: "Alte GUI verwenden",
+  useLiquidLoadingSpinner: "Neuen Lade-Spinner verwenden (Liquid)",
   claudeCachingExperimental: "Claude-Caching",
   openClose: "Öffnen/Schließen",
   hideApiKeys: "API-Schlüssel ausblenden",
@@ -1572,6 +1577,21 @@ export const languageGerman = {
   home: "Startseite",
   showSavingIcon: "Speichersymbol anzeigen",
   showChatTabs: "Chat-Tabs anzeigen",
+  chatEdgeFade: "Chat-Rand-Ausblendeffekt",
+  chatEdgeFadeDesc:
+    "Wendet einen sanften Ausblendeffekt auf Nachrichten in der Nähe der oberen und unteren Kanten des Chatfensters an.",
+  chatEdgeFadeSize: "Chat-Rand-Ausblendgröße",
+  chatEdgeFadeCurve: "Chat-Rand-Ausblendungskurve",
+  chatEdgeFadeCurveCosine: "Kosinus",
+  chatEdgeFadeCurveLinear: "Linear",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Gepuffert",
+  chatEdgeFadeFromBottom: "Unten ausblenden ab Bildschirmrand",
+  chatEdgeFadeFromBottomDesc:
+    "Startet das Ausblenden am unteren Bildschirmrand statt über dem fixierten Eingabefeld.",
+  fixedChatTextareaBottomCover: "Untere Abdeckung für fixiertes Eingabefeld",
+  fixedChatTextareaBottomCoverDesc:
+    "Füllt den unteren Abstand unter dem fixierten Eingabefeld mit der Hintergrundfarbe aus, damit gescrollter Text nicht durchscheint.",
   pluginVersionWarn:
     "Dies ist Version {{plugin_version}} des Plugins, die nicht mit dieser Version von Risuai kompatibel ist. Bitte aktualisieren Sie das Plugin auf Version {{required_version}}.",
   imageTranslation: "Bildübersetzung",

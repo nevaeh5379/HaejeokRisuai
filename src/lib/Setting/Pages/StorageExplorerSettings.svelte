@@ -114,6 +114,7 @@
     const pendingThumbnails = new Set<string>()
     let thumbnailBatchTimer: any = null
     const pendingBatchUpdates = new Map<string, string>()
+    let thumbnailGeneration = 0
 
     function flushThumbnailBatch() {
         if (pendingBatchUpdates.size === 0) return
@@ -133,6 +134,7 @@
     }
 
     function clearThumbnailCache() {
+        thumbnailGeneration++
         if (thumbnailBatchTimer) {
             clearTimeout(thumbnailBatchTimer)
             thumbnailBatchTimer = null
@@ -248,14 +250,6 @@
             orphanAssets = result.orphanAssets
             orphanSizeBytes = result.orphanSizeBytes
             assetUsageMap = result.assetUsageMap
-
-            // Preload avatars
-            for (const bot of result.bots) {
-                if (bot.avatarKey) loadThumbnail(bot.avatarKey).catch(() => {})
-            }
-            for (const mod of result.modules) {
-                if (mod.iconKey) loadThumbnail(mod.iconKey).catch(() => {})
-            }
         } catch (err: any) {
             console.warn('Failed to load asset details for target:', viewTarget, err)
             assetDetails = {
@@ -288,11 +282,14 @@
     async function loadThumbnail(key: string) {
         if (!key || thumbnailUrls.has(key) || pendingBatchUpdates.has(key) || pendingThumbnails.has(key)) return
         pendingThumbnails.add(key)
+        const generation = thumbnailGeneration
+        const target = viewTarget
         try {
             const candidates = generateKeyCandidates(key)
             for (const candidate of candidates) {
                 try {
-                    const data = await readImageFromTarget(candidate, viewTarget)
+                    const data = await readImageFromTarget(candidate, target)
+                    if (generation !== thumbnailGeneration) return
                     if (data && data.length > 0) {
                         const blob = new Blob([data as unknown as BlobPart], { type: getMimeType(candidate) })
                         const url = URL.createObjectURL(blob)
@@ -300,11 +297,12 @@
                         return
                     }
                 } catch {
+                    if (generation !== thumbnailGeneration) return
                     // Next candidate
                 }
             }
         } finally {
-            pendingThumbnails.delete(key)
+            if (generation === thumbnailGeneration) pendingThumbnails.delete(key)
         }
     }
 

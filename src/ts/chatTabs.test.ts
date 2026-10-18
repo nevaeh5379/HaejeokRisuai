@@ -7,6 +7,7 @@ vi.mock("./stores/domain/characterStore.svelte", () => ({
 }));
 
 import { ChatTabsStore, type ChatTab } from "./chatTabs.svelte";
+import { characterStore } from "./stores/domain/characterStore.svelte";
 
 function tab(id: string, groupId: string): ChatTab {
   return {
@@ -121,6 +122,108 @@ describe("ChatTabsStore.openTargetDuplicate", () => {
 });
 
 
+describe("ChatTabsStore.pruneChat", () => {
+  it("removes the tab of a deleted chat and promotes the next tab", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    store.tabs = [tab("a", groupId), tab("b", groupId)];
+    store.groups[0].activeTabId = "a";
+    store.focusedGroupId = groupId;
+
+    const result = store.pruneChat("chat-a");
+
+    expect(result.activeChanged).toBe(true);
+    expect(result.activeTab?.id).toBe("b");
+    expect(store.tabs.map((item) => item.id)).toEqual(["b"]);
+    expect(store.getGroup(groupId)?.activeTabId).toBe("b");
+  });
+
+  it("keeps the active tab when pruning an unrelated chat", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    store.tabs = [tab("a", groupId), tab("b", groupId)];
+    store.groups[0].activeTabId = "a";
+    store.focusedGroupId = groupId;
+
+    const result = store.pruneChat("chat-b");
+
+    expect(result.activeChanged).toBe(false);
+    expect(result.activeTab?.id).toBe("a");
+    expect(store.tabs.map((item) => item.id)).toEqual(["a"]);
+    expect(store.getGroup(groupId)?.activeTabId).toBe("a");
+  });
+
+  it("collapses a split that lost its last tab and moves focus", () => {
+    const store = new ChatTabsStore();
+    store.groups = [
+      { id: "left", activeTabId: "a" },
+      { id: "right", activeTabId: "c" },
+    ];
+    store.focusedGroupId = "left";
+    store.tabs = [tab("a", "left"), tab("c", "right")];
+
+    const result = store.pruneChat("chat-a");
+
+    expect(store.groups.map((group) => group.id)).toEqual(["right"]);
+    expect(store.focusedGroupId).toBe("right");
+    expect(result.activeChanged).toBe(true);
+    expect(result.activeTab?.id).toBe("c");
+  });
+
+  it("nulls the active tab when the last group loses its only tab", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    store.tabs = [tab("only", groupId)];
+    store.groups[0].activeTabId = "only";
+    store.focusedGroupId = groupId;
+
+    const result = store.pruneChat("chat-only");
+
+    expect(store.tabs).toEqual([]);
+    expect(store.groups).toHaveLength(1);
+    expect(store.groups[0].activeTabId).toBeNull();
+    expect(result.activeChanged).toBe(true);
+    expect(result.activeTab).toBeNull();
+  });
+});
+
+describe("ChatTabsStore.pruneCharacter", () => {
+  it("removes every tab of a deleted character across groups", () => {
+    const store = new ChatTabsStore();
+    store.groups = [
+      { id: "left", activeTabId: "a" },
+      { id: "right", activeTabId: "c" },
+    ];
+    store.focusedGroupId = "left";
+    store.tabs = [tab("a", "left"), tab("b", "left"), tab("c", "right")];
+
+    const result = store.pruneCharacter("character-a");
+
+    expect(store.tabs.map((item) => item.id)).toEqual(["b", "c"]);
+    expect(store.getGroup("left")?.activeTabId).toBe("b");
+    expect(result.activeTab?.id).toBe("b");
+  });
+});
+
+describe("ChatTabsStore.pruneInvalidTargets", () => {
+  it("drops every tab whose character/chat no longer exists", () => {
+    const store = new ChatTabsStore();
+    const groupId = store.groups[0].id;
+    store.tabs = [tab("a", groupId), tab("b", groupId), tab("c", groupId)];
+    store.groups[0].activeTabId = "a";
+    store.focusedGroupId = groupId;
+
+    const result = store.pruneInvalidTargets(
+      (characterId, chatId) => chatId !== "chat-a" && chatId !== "chat-c",
+    );
+
+    expect(store.tabs.map((item) => item.id)).toEqual(["b"]);
+    expect(store.getGroup(groupId)?.activeTabId).toBe("b");
+    expect(result.activeChanged).toBe(true);
+  });
+});
+
+
 describe("ChatTabsStore workspace snapshots", () => {
   it("restores tab identity, drafts, and split layout", () => {
     const source = new ChatTabsStore();
@@ -155,5 +258,74 @@ describe("ChatTabsStore workspace snapshots", () => {
       first.id,
       "transferred",
     ]);
+  });
+});
+
+describe("navigateToChatTab stale target validation", () => {
+  it("does not activate a stale tab and prunes it instead", async () => {
+    const { chatTabsStore, navigateToChatTab } = await import(
+      "./chatTabs.svelte"
+    );
+    const groupId = chatTabsStore.groups[0].id;
+    const valid = tab("valid", groupId);
+    const stale = tab("stale", groupId);
+    chatTabsStore.tabs = [valid, stale];
+    chatTabsStore.groups[0].activeTabId = "valid";
+    chatTabsStore.focusedGroupId = groupId;
+
+    // character-a does not exist in the mocked (empty) store.
+    const result = await navigateToChatTab("stale");
+
+    expect(result).toBe(false);
+    expect(chatTabsStore.tabs.map((item) => item.id)).toEqual(["valid"]);
+    expect(chatTabsStore.activeTabId).toBe("valid");
+  });
+
+  it("does not activate a tab whose chat was deleted", async () => {
+    const { chatTabsStore, navigateToChatTab } = await import(
+      "./chatTabs.svelte"
+    );
+    const groupId = chatTabsStore.groups[0].id;
+    const valid = tab("valid", groupId);
+    const stale = tab("stale", groupId);
+    chatTabsStore.tabs = [valid, stale];
+    chatTabsStore.groups[0].activeTabId = "valid";
+    chatTabsStore.focusedGroupId = groupId;
+    characterStore.characters = [
+      {
+        chaId: "character-valid",
+        chats: [{ id: "chat-valid" }],
+        chatPage: 0,
+      },
+    ] as any;
+
+    const result = await navigateToChatTab("stale");
+
+    expect(result).toBe(false);
+    expect(chatTabsStore.tabs.map((item) => item.id)).toEqual(["valid"]);
+    expect(chatTabsStore.activeTabId).toBe("valid");
+  });
+
+  it("activates a valid tab of the already selected character", async () => {
+    const { chatTabsStore, navigateToChatTab } = await import(
+      "./chatTabs.svelte"
+    );
+    const groupId = chatTabsStore.groups[0].id;
+    const target = tab("target", groupId);
+    chatTabsStore.tabs = [target];
+    chatTabsStore.groups[0].activeTabId = null;
+    chatTabsStore.focusedGroupId = groupId;
+    characterStore.characters = [
+      {
+        chaId: "character-target",
+        chats: [{ id: "chat-target" }],
+        chatPage: 0,
+      },
+    ] as any;
+
+    const result = await navigateToChatTab("target");
+
+    expect(result).toBe(true);
+    expect(chatTabsStore.activeTabId).toBe("target");
   });
 });

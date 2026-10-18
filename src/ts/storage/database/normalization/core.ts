@@ -3,10 +3,11 @@ import {
   defaultMainPrompt,
 } from "../../presets/defaultPrompts";
 import type { Database } from "../schema";
-import { normalizePromptTemplate } from "../../presets/presetService";
+import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
   defaultNumber,
+  defaultPicklist,
   defaultString,
   parseDefaults,
 } from "./valibotDefaults";
@@ -45,6 +46,14 @@ const coreScalarDefaults = {
   playMessage: defaultBoolean(false),
   iconsize: defaultNumber(100),
   theme: defaultString(),
+  uiTheme: defaultString("default"),
+  autoHideAndroidNavigationBar: defaultBoolean(false),
+  autoHideAndroidNavigationBarInSidebar: defaultBoolean(false),
+  linuxWindowDecoration: defaultPicklist(["ssd", "csd"], "ssd"),
+  linuxCsdSidebarOpacity: defaultNumber(94),
+  macosSidebarTransparency: defaultBoolean(true),
+  macosNativeSidebarBlur: defaultBoolean(false),
+  macosSidebarOpacity: defaultNumber(0),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
   waifuWidth2: defaultNumber(100),
@@ -57,7 +66,13 @@ export type CoreValidatedDefaults = Required<
 >;
 
 export function normalizeCoreDatabaseSettings(data: Database): void {
+  const hadSidebarNavigationBarSetting =
+    typeof data.autoHideAndroidNavigationBarInSidebar === "boolean";
+  const legacyNavigationBarSetting = data.autoHideAndroidNavigationBar;
   Object.assign(data, parseDefaults(coreScalarDefaults, data));
+  if (!hadSidebarNavigationBarSetting && legacyNavigationBarSetting === true) {
+    data.autoHideAndroidNavigationBarInSidebar = true;
+  }
   data.formatingOrder ??= [
     "main",
     "description",
@@ -69,7 +84,6 @@ export function normalizeCoreDatabaseSettings(data: Database): void {
     "globalNote",
     "authorNote",
   ];
-  data.plugins ??= [];
   data.pluginCustomStorage ??= {};
   if (Array.isArray(data.promptTemplate)) {
     data.promptTemplate = normalizePromptTemplate(data.promptTemplate);

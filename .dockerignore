@@ -14,6 +14,7 @@ node_modules
 
 # Mobile / Android
 android
+android-e2e
 
 # Desktop / Rust builds (Tauri)
 src-tauri
@@ -22,6 +23,11 @@ src-tauri
 dist
 dist-*
 build
+# The patterns above only match the context root. Nested generated output has to
+# be listed explicitly, otherwise it leaks into the image.
+server/node/dist
+server/node/.tsbuild
+packages/*/dist
 .wrangler
 .tauri
 __pycache__
@@ -29,6 +35,20 @@ playwright-report
 test-results
 coverage
 backup
+e2e
+docs
+resources
+
+# Node server documentation and development-only helper scripts
+server/node/scripts
+server/node/*.md
+
+# Test sources and runner configuration are not used by production builds
+**/*.test.*
+**/*.node-test.*
+playwright.config.*
+vitest.config.*
+vitest.setup.*
 
 # Local data & environment
 save
@@ -42,9 +62,35 @@ save/**
 
 # Logs, dumps & trace files
 *.log
+*.logcat
 *.har
 *.gz
 *profile.json*
 server/node/ssl/certificate
 
 .worktree
+
+# Repository-only files that no image build ever reads
+.pnpm-store
+.jules
+.envrc
+.gitattributes
+.git-blame-ignore-revs
+.prettierignore
+README.md
+README.ko.md
+AGENTS.md
+plugins.md
+t.py
+install.sh
+server.sh
+risuai.sh
+server.bat
+LICENSE
+debian
+packaging
+scripts
+util
+docker-compose*
+Dockerfile
+Dockerfile.static

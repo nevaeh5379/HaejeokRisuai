@@ -46,6 +46,7 @@ import {
 } from "@risuai/storage-remote/remoteDatabaseAdminClient";
 import { RemoteColdStorageClient } from "@risuai/storage-remote/remoteColdStorageClient";
 import { RemoteDatabaseBackupClient } from "@risuai/storage-remote/remoteDatabaseBackupClient";
+import { RemoteLocalBackupClient } from "@risuai/storage-remote/remoteLocalBackupClient";
 import {
   RemoteSqlCommitClient,
   NodeSqlPayloadTooLargeError,
@@ -53,6 +54,17 @@ import {
 } from "@risuai/storage-remote/remoteSqlCommitClient";
 import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient";
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
+import type { IPluginStorage } from "../pluginStorage";
+import { NodePluginStorage } from "./nodePluginStorage";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
+import {
+  PortableDatabaseStreamValidator,
+  type PortableDatabaseStreamRestoreProgress,
+} from "../../backup/portableDatabaseStreamRestore";
+import type {
+  PortableDatabaseStreamFragment,
+  PortableDatabaseStreamManifest,
+} from "../../backup/portableDatabaseStream";
 
 import type {
   DbVendor,
@@ -60,14 +72,14 @@ import type {
   NodePostgresServerConfigUpdate,
   NodeSqlStorageRuntime,
   NodeSqlStorageRuntimeError,
-} from "../../../../../packages/protocol/storageConfig.cjs";
+} from "../../../../../packages/protocol/storageConfig.ts";
 export type {
   DbVendor,
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
   NodeSqlStorageRuntime,
   NodeSqlStorageRuntimeError,
-} from "../../../../../packages/protocol/storageConfig.cjs";
+} from "../../../../../packages/protocol/storageConfig.ts";
 
 import type {
   NodePostgresRevision,
@@ -89,7 +101,7 @@ import type {
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "../../../../../packages/protocol/databaseApi.cjs";
+} from "../../../../../packages/protocol/databaseApi.ts";
 export type {
   NodePostgresRevision,
   NodePostgresAuditLogItem,
@@ -110,7 +122,7 @@ export type {
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "../../../../../packages/protocol/databaseApi.cjs";
+} from "../../../../../packages/protocol/databaseApi.ts";
 
 export interface SqlVendorFormValues {
   connectionString?: string;
@@ -178,18 +190,17 @@ export {
 
 export class NodeSqlStorage implements INodeSqlStorageAdmin {
   readonly backendKind = "node" as const;
+  readonly plugin: IPluginStorage;
   private status: "unknown" | "enabled" | "disabled" | "degraded" = "unknown";
   private revision = 0;
   private readonly clientId = getNodeClientSessionId();
   private readonly databaseAdmin: RemoteDatabaseAdminClient;
   private readonly coldStorageClient: RemoteColdStorageClient;
   private readonly backupClient: RemoteDatabaseBackupClient;
+  private readonly localBackupClient: RemoteLocalBackupClient;
   private readonly commitClient: RemoteSqlCommitClient;
   private readonly readClient: RemoteSqlReadClient;
   private readonly documentClient: RemoteSqlDocumentClient;
-  private pluginsCacheForage = localforage.createInstance({
-    name: "risuaiPostgresPlugins",
-  });
   private pluginStorageCacheForage = localforage.createInstance({
     name: "risuaiPostgresPluginStorage",
   });
@@ -213,9 +224,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     name: "risuaiPostgresScripts",
   });
 
-  private memoryPluginsCache: { hash: string; plugins: any[] } | null = null;
-  private memoryRuntimePluginsCache: { hash: string; plugins: any[] } | null =
-    null;
   private memoryPluginStorageCache: {
     hash: string;
     pluginCustomStorage: Record<string, any>;
@@ -266,6 +274,11 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.getAuth,
       this.clientId,
     );
+    this.localBackupClient = new RemoteLocalBackupClient(
+      this.apiClient,
+      this.getAuth,
+      this.clientId,
+    );
     this.commitClient = new RemoteSqlCommitClient(
       this.apiClient,
       this.getAuth,
@@ -281,6 +294,7 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       this.getAuth,
       this.clientId,
     );
+    this.plugin = new NodePluginStorage(this, this.documentClient);
   }
 
   isEnabled() {
@@ -411,72 +425,6 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       initialized: summary.initialized,
       records: summary.records,
     };
-  }
-
-  async loadPlugins(options?: {
-    enabledOnly?: boolean;
-  }): Promise<any[] | null> {
-    if (!(await this.ensureEnabled())) return null;
-    const enabledOnly = options?.enabledOnly === true;
-    const cacheKey = enabledOnly ? "runtime-cache" : "cache";
-    let cached: { hash: string; plugins: any[] } | null = enabledOnly
-      ? this.memoryRuntimePluginsCache
-      : this.memoryPluginsCache;
-    if (!cached) {
-      try {
-        cached = await this.pluginsCacheForage.getItem(cacheKey);
-      } catch {
-        cached = null;
-      }
-    }
-    const result = await this.documentClient.loadPlugins(
-      enabledOnly,
-      cached?.hash,
-    );
-    if (result.status === "not-modified" && cached) {
-      if (enabledOnly) this.memoryRuntimePluginsCache = cached;
-      else this.memoryPluginsCache = cached;
-      return cached.plugins ?? [];
-    }
-    if (result.status !== "ok") return null;
-    const entry = {
-      hash: result.body.hash,
-      plugins: (result.body.plugins ?? []) as any[],
-    };
-    if (enabledOnly) this.memoryRuntimePluginsCache = entry;
-    else this.memoryPluginsCache = entry;
-    try {
-      await this.pluginsCacheForage.setItem(cacheKey, entry);
-    } catch {}
-    return entry.plugins;
-  }
-
-  async setPluginEnabled(pluginName: string, enabled: boolean): Promise<void> {
-    if (!(await this.ensureEnabled())) {
-      throw new Error("SQL storage is not enabled");
-    }
-    let body: { revision?: number };
-    try {
-      body = await this.documentClient.setPluginEnabled(
-        pluginName,
-        enabled,
-        this.revision,
-      );
-    } catch (error) {
-      if (error && typeof error === "object" && "revision" in error) {
-        throw new NodeSqlRevisionConflictError((error as any).revision);
-      }
-      throw error;
-    }
-    if (body.revision != null) this.applyRemoteRevision(body.revision);
-    this.memoryPluginsCache = null;
-    this.memoryRuntimePluginsCache = null;
-    try {
-      await Promise.all([
-        this.pluginsCacheForage.removeItem("cache"),
-        this.pluginsCacheForage.removeItem("runtime-cache"),
-      ]);
-    } catch {}
   }
 
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
@@ -652,6 +600,41 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       await this.loreBookCacheForage.setItem("cache", entry);
     } catch {}
     return entry.loreBook;
+  }
+
+  private async requestAuthorNote<T>(path: string): Promise<T> {
+    if (!(await this.ensureEnabled()))
+      throw new Error("SQL storage is not enabled");
+    const response = await this.apiClient.request(
+      `/api/database-v2/author-notes${path}`,
+      { headers: { "risu-auth": await this.getAuth() }, cache: "no-store" },
+    );
+    if (!response.ok)
+      throw new Error(
+        (await response.json().catch(() => null))?.error ||
+          "Author note query failed",
+      );
+    return (await response.json()).value as T;
+  }
+  async listGlobalAuthorNotes() {
+    return this.requestAuthorNote<
+      import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
+    >("");
+  }
+  async getGlobalAuthorNote(id: string) {
+    return this.requestAuthorNote<
+      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
+      | null
+    >(`/${encodeURIComponent(id)}`);
+  }
+  async readGlobalAuthorNote(id: string) {
+    return this.requestAuthorNote<
+      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
+      | null
+    >(`/${encodeURIComponent(id)}/content`);
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return this.requestAuthorNote<boolean>("/script-write");
   }
 
   async loadModules(): Promise<RisuModule[]> {
@@ -991,6 +974,103 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     onProgress?.("Replacing SQL database...");
     await this.commit(buildSqlReplaceCommit(database, this.revision));
     return true;
+  }
+
+  async beginPortableDatabaseStreamRestore(
+    onProgress?: (progress: PortableDatabaseStreamRestoreProgress) => void,
+  ) {
+    if (!(await this.ensureEnabled())) {
+      throw new Error("SQL storage is not enabled");
+    }
+
+    const remoteSession =
+      await this.localBackupClient.createDatabaseStreamSession();
+    const validator = new PortableDatabaseStreamValidator();
+    const textEncoder = new TextEncoder();
+    const maxBatchRecords = 64;
+    const maxBatchBytes = 4 * 1024 * 1024;
+    const maxRecordBytes = 16 * 1024 * 1024;
+    let closed = false;
+
+    const sendRecords = async (
+      fragmentIndex: number,
+      records: unknown[],
+      fragmentComplete: boolean,
+    ) => {
+      if (closed) {
+        throw new Error("Portable database restore session is already closed");
+      }
+      const state = await this.localBackupClient.appendDatabaseStreamRecords(
+        remoteSession.id,
+        { fragmentIndex, records, fragmentComplete },
+      );
+      onProgress?.({ appliedRecords: state.recordCount });
+    };
+
+    return {
+      writeFragment: async (fragment: PortableDatabaseStreamFragment) => {
+        validator.acceptFragment(fragment);
+
+        let batch: unknown[] = [];
+        let batchBytes = 0;
+        const flush = async (fragmentComplete: boolean) => {
+          if (batch.length === 0) return;
+          const records = batch;
+          batch = [];
+          batchBytes = 0;
+          await sendRecords(fragment.index, records, fragmentComplete);
+        };
+
+        for (let index = 0; index < fragment.records.length; index++) {
+          const record = fragment.records[index];
+          const encoded = encodeStorageSyncValue(record);
+          const recordBytes = textEncoder.encode(
+            JSON.stringify(encoded),
+          ).byteLength;
+          if (recordBytes > maxRecordBytes) {
+            throw new Error(
+              `Portable database record exceeds ${maxRecordBytes} bytes`,
+            );
+          }
+          if (
+            batch.length > 0 &&
+            (batch.length >= maxBatchRecords ||
+              batchBytes + recordBytes > maxBatchBytes)
+          ) {
+            await flush(false);
+          }
+          batch.push(encoded);
+          batchBytes += recordBytes;
+          if (batch.length >= maxBatchRecords) {
+            await flush(index === fragment.records.length - 1);
+          }
+        }
+        if (batch.length > 0) {
+          await flush(true);
+        }
+      },
+      finish: async (manifest: PortableDatabaseStreamManifest) => {
+        if (closed) {
+          throw new Error(
+            "Portable database restore session is already closed",
+          );
+        }
+        validator.finish(manifest);
+        const result = await this.localBackupClient.finalizeDatabaseStream(
+          remoteSession.id,
+          manifest,
+        );
+        closed = true;
+        this.revision = result.revision;
+      },
+      abort: async () => {
+        if (closed) return;
+        closed = true;
+        await this.localBackupClient
+          .cancelDatabaseStream(remoteSession.id)
+          .catch(() => {});
+      },
+    };
   }
 
   async searchMessages(

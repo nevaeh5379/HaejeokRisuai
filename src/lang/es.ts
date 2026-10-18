@@ -943,6 +943,8 @@ export const languageSpanish = {
   successExport:
     "Exportado y descargado exitosamente en tu directorio de descargas",
   successImport: "Importado exitosamente",
+  pluginsAutoDisabled:
+    "Se desactivaron los plugins que causaron un fallo: {0}. Puedes volver a activarlos en Ajustes.",
   importedCharacter: "Personaje Importado",
   alwaysActive: "Siempre Activo",
   additionalPrompt: "Prompt Adicional",
@@ -972,6 +974,10 @@ export const languageSpanish = {
   translateInput: "Traducir Entrada",
   autoTranslation: "Traducción Automática",
   fullscreen: "Pantalla Completa",
+  autoHideAndroidNavigationBar:
+    "Ocultar automáticamente la barra de navegación en chats",
+  autoHideAndroidNavigationBarInSidebar:
+    "Ocultar automáticamente la barra de navegación en barras laterales",
   playMessage: "Reproducir Audio del Mensaje",
   iconSize: "Tamaño del Icono",
   createGroup: "Crear Chat de Grupo",
@@ -1001,7 +1007,6 @@ export const languageSpanish = {
   waifuWidth: "Ancho del Chat Waifu",
   savebackup: "Guardar Respaldo en Google",
   loadbackup: "Cargar Respaldo desde Google",
-  files: "Archivos",
   backupConfirm: "¿Realmente deseas guardar el respaldo?",
   backupLoadConfirm:
     "¿Realmente deseas cargar el respaldo? ¡Todos los datos se perderán!",
@@ -1139,7 +1144,6 @@ export const languageSpanish = {
   officialDiscordDesc: "Discord Oficial para hablar sobre Risuai",
   persona: "Persona",
   icon: "Icono",
-  account: "Cuenta",
   remove: "Eliminar",
   able: "Habilitar",
   assetWidth: "Ancho Máximo de Imágenes de Activos",
@@ -1476,6 +1480,7 @@ export const languageSpanish = {
   parameters: "Parámetros",
   sizeAndSpeed: "Tamaño y Velocidad",
   useLegacyGUI: "Usar Interfaz Legacy",
+  useLiquidLoadingSpinner: "Usar nuevo spinner de carga (líquido)",
   claudeCachingExperimental: "Claude Caching",
   openClose: "Abrir/Cerrar",
   hideApiKeys: "Ocultar Claves API",
@@ -1575,6 +1580,21 @@ export const languageSpanish = {
   home: "Inicio",
   showSavingIcon: "Mostrar Icono de Guardado",
   showChatTabs: "Mostrar pestañas de chat",
+  chatEdgeFade: "Efecto de desvanecimiento de bordes del chat",
+  chatEdgeFadeDesc:
+    "Aplica un suave efecto de desvanecimiento a los mensajes cerca de los bordes superior e inferior de la pantalla de chat.",
+  chatEdgeFadeSize: "Tamaño de desvanecimiento de bordes del chat",
+  chatEdgeFadeCurve: "Curva de desvanecimiento de bordes del chat",
+  chatEdgeFadeCurveCosine: "Coseno",
+  chatEdgeFadeCurveLinear: "Lineal",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Con búfer",
+  chatEdgeFadeFromBottom: "Iniciar desvanecimiento inferior desde el fondo",
+  chatEdgeFadeFromBottomDesc:
+    "Cuando el campo de chat está fijado, inicia el desvanecimiento inferior desde el fondo de la pantalla en lugar de encima de la entrada.",
+  fixedChatTextareaBottomCover: "Barrera inferior del cuadro de entrada fijo",
+  fixedChatTextareaBottomCoverDesc:
+    "Cuando el cuadro de chat fijo está activado, cubre el espacio inferior con el color de fondo para evitar que el texto desplazado sea visible.",
   pluginVersionWarn:
     "Esta es la versión {{plugin_version}} del plugin, que no es compatible con esta versión de Risuai. Por favor, actualiza el plugin a la versión {{required_version}}.",
   imageTranslation: "Traducción de Imagen",

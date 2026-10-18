@@ -24,6 +24,31 @@ describe("SettingsStore Reactivity and Persistence", () => {
     } as unknown as ISqlStorage;
   });
 
+  it("provides real defaults before initialization", () => {
+    expect(settingsStore.state.colorScheme.type).toBe("dark");
+    expect(settingsStore.state.customColorScheme.type).toBe("dark");
+    expect(settingsStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("normalizes partial initialization without scheduling a write", async () => {
+    settingsStore.init(
+      {
+        colorSchemeName: "custom",
+        colorScheme: { bgcolor: "#123456", type: null },
+      } as any,
+      mockStorage,
+    );
+    expect(settingsStore.state.colorScheme).toMatchObject({
+      bgcolor: "#123456",
+      type: "dark",
+    });
+    expect(settingsStore.state.customColorScheme).toEqual(
+      settingsStore.state.colorScheme,
+    );
+    await settingsStore.flush();
+    expect(mockStorage.commit).not.toHaveBeenCalled();
+  });
+
   it("initializes without firing an immediate commit", async () => {
     settingsStore.init(
       {
@@ -95,61 +120,13 @@ describe("SettingsStore Reactivity and Persistence", () => {
     expect(mockStorage.commit).not.toHaveBeenCalled();
   });
 
-  it("hydrates standalone deferred plugin settings before backup snapshots", async () => {
-    const plugins = [
-      {
-        name: "restored-plugin",
-        version: "3.0",
-        enabled: true,
-        script: "console.log('restored')",
-      },
-    ];
-    mockStorage.loadSettingKey = vi.fn(async (key: string) =>
-      key === "plugins" ? plugins : undefined,
-    ) as any;
-    settingsStore.init(
-      { plugins: [], pluginCustomStorage: {} } as any,
-      mockStorage,
-    );
-    deferredSettingsLoader.init({
-      storage: mockStorage,
-      unloadedKeys: ["plugins", "pluginCustomStorage"],
-      hydrateSettingKey: (key, value, exists) =>
-        settingsStore.hydrateSettingKey(key, value, exists),
-    });
-
-    await deferredSettingsLoader.ensureAll();
-
-    expect(settingsStore.state.plugins).toEqual(plugins);
-    expect(mockStorage.loadSettingKey).toHaveBeenCalledWith("plugins");
-    expect(mockStorage.loadSettingKey).not.toHaveBeenCalledWith(
-      "pluginCustomStorage",
-    );
-    await settingsStore.flush();
-    expect(mockStorage.commit).not.toHaveBeenCalled();
-  });
-
-  it("blocks backup hydration when deferred plugins cannot be loaded", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockStorage.loadSettingKey = vi.fn(async () => {
-      throw new Error("database read failed");
-    }) as any;
-    settingsStore.init(
-      { plugins: [], pluginCustomStorage: {} } as any,
-      mockStorage,
-    );
-    deferredSettingsLoader.init({
-      storage: mockStorage,
-      unloadedKeys: ["plugins"],
-      hydrateSettingKey: (key, value, exists) =>
-        settingsStore.hydrateSettingKey(key, value, exists),
-    });
-
-    await expect(deferredSettingsLoader.ensureAll()).rejects.toThrow(
-      /deferred settings failed to load: plugins/,
-    );
-    expect(settingsStore.state.plugins).toEqual([]);
-    errorSpy.mockRestore();
+  it("rejects plugin definitions because PluginStore owns them", () => {
+    expect(() =>
+      settingsStore.init(
+        { plugins: [], pluginCustomStorage: {} } as any,
+        mockStorage,
+      ),
+    ).toThrow("[SettingsStore] plugins is owned by another domain store");
   });
 
   it("detects deep mutations on customModels across consecutive edits", async () => {

@@ -26,6 +26,7 @@
     import { alertConfirm, alertInput, alertNormal, alertSelect } from "src/ts/alert";
     import { language } from "src/lang";
     import { changeChatTo } from "src/ts/globalApi.svelte";
+    import { pruneChatTargets } from "src/ts/chatTabs.svelte";
     import { exportChat, importChat, exportAllChats, duplicateChat } from "src/ts/characters";
     import { getCharImage } from "src/ts/characters";
 
@@ -161,6 +162,7 @@
         }
         if (await alertConfirm(`Delete this chat? (${chatName})`)) {
             const isDeletingCurrent = chara.chatPage === chatIndex;
+            const deletedChatId = chara.chats[chatIndex]?.id;
             chara.chats.splice(chatIndex, 1);
             if (isDeletingCurrent) {
                 changeChatTo(Math.max(0, chatIndex - 1));
@@ -169,6 +171,12 @@
             }
             characterStore.markCharacterDirty(chara.chaId);
             $ReloadGUIPointer += 1;
+            // Keep chat tabs consistent with the store: a tab that still
+            // referenced the deleted chat would deadlock the chat screen on
+            // its loading gate once activated.
+            if (deletedChatId) {
+                pruneChatTargets(deletedChatId);
+            }
         }
     }
 
@@ -395,7 +403,7 @@
                             <!-- Folder Items -->
                             {#if !collapsedFolders[folder.id]}
                                 <div class="divide-y divide-darkborderc/30 border-t border-darkborderc/40">
-                                    {#each folderChats as { chat, index }}
+                                    {#each folderChats as { chat, index } (chat.id || chat)}
                                         <div
                                             role="button"
                                             tabindex="0"
@@ -438,7 +446,7 @@
                 {#if selectedFolderFilter === "all" && folders.length > 0}
                     <span class="text-[11px] font-semibold text-textcolor2 px-1">Other Chats</span>
                 {/if}
-                {#each (selectedFolderFilter === "all" && folders.length > 0 ? unassignedChats : filteredChats) as { chat, index }}
+                {#each (selectedFolderFilter === "all" && folders.length > 0 ? unassignedChats : filteredChats) as { chat, index } (chat.id || chat)}
                     <div
                         role="button"
                         tabindex="0"
@@ -542,7 +550,7 @@
             ></button>
 
             <div
-                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(env(safe-area-inset-bottom),20px)]"
+                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(var(--risu-safe-area-inset-bottom),20px)]"
             >
                 <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
                     <div class="flex items-center gap-2.5 min-w-0">
@@ -674,7 +682,7 @@
             ></button>
 
             <div
-                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(env(safe-area-inset-bottom),20px)]"
+                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(var(--risu-safe-area-inset-bottom),20px)]"
             >
                 <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
                     <div class="flex items-center gap-2.5 min-w-0">

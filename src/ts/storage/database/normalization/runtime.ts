@@ -20,6 +20,7 @@ import {
   mergeDefaults,
   parseDefaults,
 } from "./valibotDefaults";
+import { applyLocalBackupPerformanceDefaults } from "../../backup/localBackupPerformance";
 
 const runtimeScalarDefaults = {
   openAIFlexProcessing: defaultBoolean(false),
@@ -31,6 +32,7 @@ const runtimeScalarDefaults = {
   hideAllImages: defaultBoolean(false),
   lowSpecMode: defaultBoolean(false),
   waitingMinigame: defaultBoolean(true),
+  useLiquidLoadingSpinner: defaultBoolean(false),
   preloadRecentSessionThumbnails: defaultBoolean(false),
   blurHiddenCharacters: defaultBoolean(true),
   ImagenModel: defaultString("imagen-4.0-generate-001"),
@@ -39,6 +41,7 @@ const runtimeScalarDefaults = {
   ImagenPersonGeneration: defaultString("allow_all"),
   autoScrollToNewMessage: defaultBoolean(true),
   alwaysScrollToNewMessage: defaultBoolean(false),
+  androidWidgetBotCount: defaultNumber(12),
   newMessageButtonStyle: defaultString("bottom-center"),
   generationStatsPosition: defaultPicklist(
     ["bottom-right", "bottom-left", "top-right", "top-left", "off"],
@@ -89,6 +92,10 @@ export type RuntimeValidatedDefaults = Required<
     | "wavespeedImage"
     | "chatLoadInitialPages"
     | "chatLoadAdditionalPages"
+    | "localBackupDatabasePageRecords"
+    | "localBackupFragmentRecords"
+    | "localBackupWriterBufferKiB"
+    | "localBackupProgressUpdateMs"
     | ImageCacheLimitKey
   >
 >;
@@ -121,8 +128,12 @@ function applyPlatformRuntimePolicy(data: Database): void {
   }
 }
 
-export function normalizeRuntimeDatabaseSettings(data: Database): void {
+export function normalizeRuntimeDatabaseSettings(
+  data: Database,
+  context: { hasPlugins?: boolean } = {},
+): void {
   Object.assign(data, parseDefaults(runtimeScalarDefaults, data));
+  applyLocalBackupPerformanceDefaults(data);
   normalizeImageCacheSettings(data, isCapacitor);
   data.customModels ??= [];
   data.authRefreshes ??= [];
@@ -137,8 +148,9 @@ export function normalizeRuntimeDatabaseSettings(data: Database): void {
   normalizeChatLoadSettings(data);
   migrateStreamingDisplayMode(data);
   applyPlatformRuntimePolicy(data);
-  data.enableRisuaiProTools ??= data.plugins.length > 0;
+  const hasPlugins = context.hasPlugins === true;
+  data.enableRisuaiProTools ??= hasPlugins;
   data.loadouts ??= [];
   data.customSidebarItems ??= [];
-  data.coldstorage ??= data?.plugins?.length === 0;
+  data.coldstorage ??= !hasPlugins;
 }

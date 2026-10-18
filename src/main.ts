@@ -3,16 +3,35 @@ import "katex/dist/katex.min.css";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 import { Buffer } from "node:buffer";
-import { isTauriMacOS } from "./ts/platform";
+import {
+  isTauri,
+  isTauriMacOS,
+  isTauriWindows,
+  waitForTauriRuntimeReady,
+} from "./ts/platform";
 import {
   parseTauriSidebarMenuLaunch,
   readTauriSidebarMenuPopupPayload,
 } from "./ts/tauriSidebarMenu";
+import {
+  applyWindowsTransparencyToDocument,
+  initializeWindowsTransparency,
+} from "./ts/windowsTransparency";
+import { initializeLinuxWindowIntegration } from "./ts/linuxWindowIntegration";
+import {
+  androidDiagnosticCheckpoint,
+  initializeAndroidDiagnostics,
+} from "./ts/android/androidCrashDiagnostics";
+
+initializeAndroidDiagnostics();
 
 if (typeof window !== "undefined") {
   window.Buffer = Buffer;
   if (isTauriMacOS) {
     document.documentElement.classList.add("tauri-macos-vibrancy");
+  }
+  if (isTauriWindows) {
+    applyWindowsTransparencyToDocument();
   }
 }
 
@@ -24,6 +43,15 @@ window.addEventListener("vite:preloadError", (event) => {
 });
 
 async function start() {
+  await androidDiagnosticCheckpoint("js:entry");
+  if (isTauri && !(await waitForTauriRuntimeReady())) {
+    throw new Error("Tauri runtime initialization timed out");
+  }
+  await Promise.all([
+    initializeWindowsTransparency(),
+    initializeLinuxWindowIntegration(),
+  ]);
+
   const sidebarMenuLaunch = isTauriMacOS
     ? parseTauriSidebarMenuLaunch(location.search)
     : null;
@@ -48,6 +76,7 @@ async function start() {
   }
 
   const { default: App } = await import("./App.svelte");
+  await androidDiagnosticCheckpoint("js:mount");
   preLoadCheck();
   const app = mount(App, {
     target: document.getElementById("app"),

@@ -1,5 +1,6 @@
 import { Sha256 } from "@aws-crypto/sha256-js";
-import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
+import type { LegacyBackupSqlRecord } from "@risuai/backup-core/legacyRecords";
 import type {
   ISqlStorage,
   SqlChatBranchGraphLink,
@@ -22,33 +23,10 @@ export interface StorageSyncSqlSourcePlan {
   recordCount: number;
   sha256: string;
   sourceRevision: number;
+  requiresPluginRecords: boolean;
 }
 export type StorageSyncSqlRecord =
-  | { type: "meta"; formatVersion: 1; revision: number }
-  | { type: "setting"; key: string; value: unknown }
-  | { type: "plugin-storage"; key: string; value: unknown }
-  | { type: "module"; position: number; id: string; data: unknown }
-  | { type: "preset"; position: number; id: string; data: unknown }
-  | { type: "cold-storage"; key: string; value: unknown }
-  | { type: "character"; position: number; id: string; data: unknown }
-  | {
-      type: "chat";
-      characterId: string;
-      position: number;
-      id: string;
-      data: unknown;
-    }
-  | { type: "branch"; chatId: string; data: unknown }
-  | { type: "active-branch"; chatId: string; branchId: string }
-  | {
-      type: "message";
-      chatId: string;
-      id: string;
-      position: number;
-      parentMessageId?: string;
-      originBranchId: string;
-      data: unknown;
-    };
+  LegacyBackupSqlRecord | { type: "cold-storage"; key: string; value: unknown };
 export class StorageSyncSourceRevisionChangedError extends Error {
   constructor(
     readonly expectedRevision: number,
@@ -84,7 +62,9 @@ async function* iterateSettings(
   expectedRevision: number,
 ): AsyncGenerator<StorageSyncSqlRecord> {
   if (!storage.listSettingKeys) {
-    throw new Error("This SQL backend cannot enumerate persisted setting keys.");
+    throw new Error(
+      "This SQL backend cannot enumerate persisted setting keys.",
+    );
   }
   const keys = [...new Set(await storage.listSettingKeys())].sort();
   for (let offset = 0; offset < keys.length; offset += SETTING_BATCH_SIZE) {
@@ -108,7 +88,25 @@ async function* iteratePluginStorage(
 ): AsyncGenerator<StorageSyncSqlRecord> {
   const keys = [...new Set(await storage.listPluginCustomStorageKeys())].sort();
   for (const key of keys) {
-    yield { type: "plugin-storage", key, value: await storage.loadPluginCustomStorageKey(key) };
+    yield {
+      type: "plugin-storage",
+      key,
+      value: await storage.loadPluginCustomStorageKey(key),
+    };
+  }
+}
+
+async function* iteratePlugins(
+  storage: ISqlStorage,
+  expectedRevision: number,
+): AsyncGenerator<StorageSyncSqlRecord> {
+  const plugins = await storage.plugin.loadAll();
+  for (const { id, position, ...data } of plugins) {
+    assertCachedRevision(storage, expectedRevision);
+    const script = await storage.plugin.script.load(id);
+    if (!script)
+      throw new Error(`Plugin script disappeared during backup: ${id}`);
+    yield { type: "plugin", id, position, data, script: script.script };
   }
 }
 async function* iterateModules(
@@ -117,7 +115,8 @@ async function* iterateModules(
   const modules = await storage.loadModules();
   for (let position = 0; position < modules.length; position++) {
     const module = modules[position];
-    if (!module?.id) throw new Error("Storage sync encountered a module without an id.");
+    if (!module?.id)
+      throw new Error("Storage sync encountered a module without an id.");
     yield { type: "module", position, id: module.id, data: module };
   }
 }
@@ -126,11 +125,13 @@ async function* iteratePresets(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
   const summaries = [...(await storage.listBotPresets())].sort(
-    (left, right) => left.position - right.position || left.id.localeCompare(right.id),
+    (left, right) =>
+      left.position - right.position || left.id.localeCompare(right.id),
   );
   for (const summary of summaries) {
     const preset = await storage.loadBotPreset(summary.id);
-    if (!preset) throw new Error(`Storage sync preset disappeared: ${summary.id}`);
+    if (!preset)
+      throw new Error(`Storage sync preset disappeared: ${summary.id}`);
     const { id: _id, ...data } = preset;
     yield { type: "preset", position: summary.position, id: summary.id, data };
   }
@@ -142,7 +143,11 @@ async function* iterateColdStorage(
   const { items } = await storage.listColdStorageItems();
   const keys = [...new Set(items)].sort();
   for (const key of keys) {
-    yield { type: "cold-storage", key, value: await storage.getColdStorageItem(key) };
+    yield {
+      type: "cold-storage",
+      key,
+      value: await storage.getColdStorageItem(key),
+    };
   }
 }
 function requireBranchPageLoader(storage: ISqlStorage) {
@@ -179,16 +184,28 @@ async function* iterateChatGraph(
       }
       emittedMetadata = true;
     }
-    if (page.offset !== offset || page.messages.length > pageSize || page.total < offset) {
-      throw new Error(`Storage sync branch page is invalid for chat ${chatId}.`);
+    if (
+      page.offset !== offset ||
+      page.messages.length > pageSize ||
+      page.total < offset
+    ) {
+      throw new Error(
+        `Storage sync branch page is invalid for chat ${chatId}.`,
+      );
     }
     const links = linkByMessageId(page.links);
     for (let index = 0; index < page.messages.length; index++) {
       const message = page.messages[index];
       const id = message.chatId;
-      if (!id) throw new Error(`Storage sync encountered a message without an id in chat ${chatId}.`);
+      if (!id)
+        throw new Error(
+          `Storage sync encountered a message without an id in chat ${chatId}.`,
+        );
       const link = links.get(id);
-      if (!link) throw new Error(`Storage sync branch link is missing for message ${id}.`);
+      if (!link)
+        throw new Error(
+          `Storage sync branch link is missing for message ${id}.`,
+        );
       if (!Number.isSafeInteger(link.position) || Number(link.position) < 0) {
         throw new Error(
           "The storage backend does not expose branch message positions required for lossless sync. Upgrade it before syncing.",
@@ -207,7 +224,9 @@ async function* iterateChatGraph(
     const nextOffset = page.offset + page.messages.length;
     if (!page.hasMore) break;
     if (nextOffset <= offset || nextOffset >= page.total) {
-      throw new Error(`Storage sync branch paging did not advance for chat ${chatId}.`);
+      throw new Error(
+        `Storage sync branch paging did not advance for chat ${chatId}.`,
+      );
     }
     offset = nextOffset;
   }
@@ -223,16 +242,26 @@ async function* iterateEntities(
   for (let position = 0; position < characters.length; position++) {
     assertCachedRevision(storage, expectedRevision);
     const id = characters[position].chaId;
-    if (!id) throw new Error("Storage sync encountered a character without an id.");
+    if (!id)
+      throw new Error("Storage sync encountered a character without an id.");
     const character = await storage.loadCharacter(id);
-    if (!character) throw new Error(`Storage sync character disappeared: ${id}`);
-    yield { type: "character", position, id, data: sqlCharacterData(character) };
+    if (!character)
+      throw new Error(`Storage sync character disappeared: ${id}`);
+    yield {
+      type: "character",
+      position,
+      id,
+      data: sqlCharacterData(character),
+    };
 
     const chats = character.chats ?? [];
     for (let chatPosition = 0; chatPosition < chats.length; chatPosition++) {
       assertCachedRevision(storage, expectedRevision);
       const chatId = chats[chatPosition].id;
-      if (!chatId) throw new Error(`Storage sync encountered a chat without an id for character ${id}.`);
+      if (!chatId)
+        throw new Error(
+          `Storage sync encountered a chat without an id for character ${id}.`,
+        );
       const chat = await storage.loadChat(chatId, { messageLimit: 1 });
       if (!chat) throw new Error(`Storage sync chat disappeared: ${chatId}`);
       yield {
@@ -251,7 +280,13 @@ export async function* iterateStorageSyncSqlRecords(
   storage: ISqlStorage,
   options: { expectedRevision: number; pageSize?: number },
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const pageSize = Math.max(1, Math.min(500, Math.floor(options.pageSize ?? STORAGE_SYNC_SOURCE_PAGE_SIZE)));
+  const pageSize = Math.max(
+    1,
+    Math.min(
+      500,
+      Math.floor(options.pageSize ?? STORAGE_SYNC_SOURCE_PAGE_SIZE),
+    ),
+  );
   await assertAuthoritativeRevision(storage, options.expectedRevision);
   yield {
     type: "meta",
@@ -259,8 +294,21 @@ export async function* iterateStorageSyncSqlRecords(
     revision: options.expectedRevision,
   };
   yield* iterateSettings(storage, options.expectedRevision);
+  for (const note of await storage.listGlobalAuthorNotes()) {
+    assertCachedRevision(storage, options.expectedRevision);
+    const data = await storage.readGlobalAuthorNote(note.id);
+    if (!data)
+      throw new Error(`Author note disappeared during backup: ${note.id}`);
+    yield { type: "author-note", data };
+  }
+  yield {
+    type: "author-note-settings",
+    allowScriptWrite: await storage.getGlobalAuthorNoteScriptWrite(),
+  };
   assertCachedRevision(storage, options.expectedRevision);
   yield* iteratePluginStorage(storage);
+  assertCachedRevision(storage, options.expectedRevision);
+  yield* iteratePlugins(storage, options.expectedRevision);
   assertCachedRevision(storage, options.expectedRevision);
   yield* iterateModules(storage);
   assertCachedRevision(storage, options.expectedRevision);
@@ -274,7 +322,9 @@ export async function* iterateStorageSyncSqlRecords(
 
 const textEncoder = new TextEncoder();
 
-export function encodeStorageSyncSqlRecord(record: StorageSyncSqlRecord): Uint8Array {
+export function encodeStorageSyncSqlRecord(
+  record: StorageSyncSqlRecord,
+): Uint8Array {
   const encoded = encodeStorageSyncValue(record);
   return textEncoder.encode(`${JSON.stringify(encoded)}\n`);
 }
@@ -292,7 +342,9 @@ export async function measureStorageSyncSqlSource(
   const hash = new Sha256();
   let size = 0;
   let recordCount = 0;
+  let requiresPluginRecords = false;
   for await (const record of iterateStorageSyncSqlRecords(storage, options)) {
+    if (record.type === "plugin") requiresPluginRecords = true;
     const bytes = encodeStorageSyncSqlRecord(record);
     hash.update(bytes);
     size += bytes.byteLength;
@@ -304,6 +356,7 @@ export async function measureStorageSyncSqlSource(
     recordCount,
     sha256: bytesToHex(await hash.digest()),
     sourceRevision: options.expectedRevision,
+    requiresPluginRecords,
   };
 }
 
@@ -317,7 +370,10 @@ export async function* iterateStorageSyncSqlChunks(
 ): AsyncGenerator<Uint8Array> {
   const chunkSize = Math.max(
     1,
-    Math.min(STORAGE_SYNC_SOURCE_CHUNK_SIZE, Math.floor(options.chunkSize ?? STORAGE_SYNC_SOURCE_CHUNK_SIZE)),
+    Math.min(
+      STORAGE_SYNC_SOURCE_CHUNK_SIZE,
+      Math.floor(options.chunkSize ?? STORAGE_SYNC_SOURCE_CHUNK_SIZE),
+    ),
   );
   let chunk = new Uint8Array(chunkSize);
   let used = 0;

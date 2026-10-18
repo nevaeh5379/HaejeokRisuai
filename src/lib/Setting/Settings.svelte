@@ -1,12 +1,11 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, UserIcon, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon, LayersIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, ArchiveRestoreIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, DatabaseIcon, HardDriveIcon, LanguagesIcon, MonitorIcon, Sailboat, CircleXIcon, CircleArrowLeft, KeyboardIcon, SparkleIcon, ChevronRight, KeyIcon, SlidersHorizontal, MessageSquareIcon, LayersIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
     import BotSettings from "./Pages/BotSettings.svelte";
     import OtherBotSettings from "./Pages/OtherBotSettings.svelte";
     import PluginSettings from "./Pages/PluginSettings.svelte";
-    import FilesSettings from "./Pages/FilesSettings.svelte";
     import AdvancedSettings from "./Pages/AdvancedSettings.svelte";
     import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex, settingsOpen, mobileBotTargetStore } from "src/ts/stores.svelte";
     import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
@@ -29,7 +28,8 @@
     import BrowserStorageExplorerSettings from "./Pages/BrowserStorageExplorerSettings.svelte";
     import PluginStorageExplorerSettings from "./Pages/PluginStorageExplorerSettings.svelte";
     import StorageSettings from "./Pages/StorageSettings.svelte";
-    import { isNodeServer } from "src/ts/platform";
+    import { isNodeServer, isTauri, isTauriWindows } from "src/ts/platform";
+    import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import SettingsSearch from "./SettingsSearch.svelte";
     import {
         scrollToSettingAnchor,
@@ -63,12 +63,11 @@
             return $mobileBotTargetStore.title;
         }
         switch ($SettingsMenuIndex) {
-            case 0: return `${language.account} & ${language.files}`;
+            case 0: return `${language.data} & ${language.backup}`;
             case 1: return language.chatBot;
             case 2: return language.otherBots;
             case 3: return language.display;
             case 4: return language.plugin;
-            case 5: return language.files;
             case 6: return language.advancedSettings;
             case 7: return language.community;
             case 8: return language.globalLoreBook;
@@ -140,7 +139,7 @@
             <span>{language.chatBot}</span>
         </button>
 
-        <div class="flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
+        <div class="rs-settings-bot-submenu flex flex-col ml-3 pl-3 border-l border-darkborderc/60 gap-1 my-1">
             <button
                 title={language.mainModelCardDesc}
                 class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left {$SettingsMenuIndex === 1 && desktopBotTarget.submenu === 0 && desktopBotTarget.modelTab === 'main' ? 'bg-darkbutton text-textcolor font-bold shadow-xs' : 'text-textcolor2 hover:text-textcolor hover:bg-darkbutton/40'}"
@@ -259,8 +258,8 @@
         onclick={() => {
             $SettingsMenuIndex = 0
     }}>
-        <UserIcon />
-        <span>{language.account} & {language.files}</span>
+        <ArchiveRestoreIcon />
+        <span>{language.data} & {language.backup}</span>
     </button>
     <button class="flex gap-2 items-center hover:text-textcolor"
         class:text-textcolor={$SettingsMenuIndex === 17}
@@ -368,7 +367,7 @@
 {/snippet}
 
 {#snippet mobileMenuList()}
-    <div class="flex flex-col gap-5 p-4 pb-[max(env(safe-area-inset-bottom),32px)]">
+    <div class="flex flex-col gap-5 p-4 pb-[max(var(--risu-safe-area-inset-bottom),32px)]">
         <SettingsSearch onselect={handleSearchSelect} />
 
         {#if !$isLite}
@@ -592,9 +591,9 @@
                 >
                     <div class="flex items-center gap-3.5 min-w-0">
                         <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0">
-                            <UserIcon size={18} />
+                            <ArchiveRestoreIcon size={18} />
                         </div>
-                        <span class="text-base font-medium text-textcolor truncate">{language.account} & {language.files}</span>
+                        <span class="text-base font-medium text-textcolor truncate">{language.data} & {language.backup}</span>
                     </div>
                     <ChevronRight size={18} class="text-textcolor2/60 shrink-0" />
                 </button>
@@ -737,8 +736,6 @@
         <DisplaySettings targetSubmenu={searchNavigation?.menuIndex === 3 ? searchNavigation.subTab : undefined} />
     {:else if $SettingsMenuIndex === 4}
         <PluginSettings />
-    {:else if $SettingsMenuIndex === 5}
-        <FilesSettings />
     {:else if $SettingsMenuIndex === 6}
         <AdvancedSettings />
     {:else if $SettingsMenuIndex === 7}
@@ -776,7 +773,7 @@
                 {@render mobileMenuList()}
             {:else}
                 {#key $SettingsMenuIndex}
-                    <div class="py-4 px-4 pb-[max(env(safe-area-inset-bottom),32px)] flex flex-col min-w-0">
+                    <div class="py-4 px-4 pb-[max(var(--risu-safe-area-inset-bottom),32px)] flex flex-col min-w-0">
                         {@render pageContent()}
                     </div>
                 {/key}
@@ -789,7 +786,8 @@
             <div class="relative w-full px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3 border-b border-b-darkborderc bg-darkbg/95 backdrop-blur-md flex justify-between items-center shrink-0 z-20 rs-setting-mobile-header">
                 <div
                     class="absolute inset-0 rs-setting-mobile-drag-region"
-                    data-tauri-drag-region="true"
+                    class:right-36={isTauriWindows}
+                    use:windowDragRegion
                     aria-hidden="true"
                 ></div>
                 <div class="z-10 flex items-center gap-2 min-w-0 rs-setting-mobile-heading-group">
@@ -826,7 +824,7 @@
                     {@render mobileMenuList()}
                 {:else}
                     {#key $SettingsMenuIndex}
-                        <div class="py-4 px-4 pb-[max(env(safe-area-inset-bottom),32px)] flex flex-col min-w-0">
+                        <div class="py-4 px-4 pb-[max(var(--risu-safe-area-inset-bottom),32px)] flex flex-col min-w-0">
                             {@render pageContent()}
                         </div>
                     {/key}
@@ -847,9 +845,27 @@
             }
         }}
     >
+        {#if isTauri}
+            <div
+                class="fixed top-0 left-0 h-8 z-[75]"
+                class:right-1={!isTauriWindows}
+                class:right-36={isTauriWindows}
+                use:windowDragRegion
+                aria-hidden="true"
+            ></div>
+        {/if}
+
         <div class="relative w-[90vw] h-[90vh] bg-bgcolor rounded-2xl shadow-2xl border border-darkborderc overflow-hidden flex flex-row rs-setting-cont-2">
+            {#if isTauri}
+                <div
+                    class="absolute top-0 left-0 right-14 h-6 z-10"
+                    use:windowDragRegion
+                    aria-hidden="true"
+                ></div>
+            {/if}
+
             <!-- Sidebar -->
-            <div class="flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
+            <div class="rs-settings-menu flex h-full flex-col p-4 pt-6 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0 bg-darkbg border-r border-darkborderc w-64 md:w-72">
                 {@render desktopMenuButtons()}
             </div>
 
@@ -862,7 +878,7 @@
 
             <!-- Close Button -->
             <button
-                class="absolute top-3 right-3 hover:text-green-500 text-textcolor p-1.5 transition-colors z-10 cursor-pointer"
+                class="absolute top-3 right-3 hover:text-green-500 text-textcolor p-1.5 transition-colors z-20 cursor-pointer"
                 onclick={() => {
                     settingsOpen.set(false);
                 }}
@@ -874,25 +890,29 @@
     </div>
 {/if}
 
-{#if openLoreList}
-    <Lorepreset close={() => {openLoreList = false}} />
-{/if}
-{#if dbExplorerOpen}
-    {#if isNodeServer}
-        <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
-    {:else if hasLocalExplorers}
-        <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
-    {/if}
-{/if}
-{#if storageExplorerOpen}
-    {#if isNodeServer}
-        <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
-    {:else if hasLocalExplorers}
-        <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
-    {/if}
-{/if}
-{#if pluginStorageExplorerOpen}
-    <PluginStorageExplorerSettings close={() => {pluginStorageExplorerOpen = false}} />
+{#if openLoreList || dbExplorerOpen || storageExplorerOpen || pluginStorageExplorerOpen}
+    <div class="fixed inset-0 z-[70]">
+        {#if openLoreList}
+            <Lorepreset close={() => {openLoreList = false}} />
+        {/if}
+        {#if dbExplorerOpen}
+            {#if isNodeServer}
+                <PostgresDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+            {:else if hasLocalExplorers}
+                <BrowserDbExplorerSettings close={() => {dbExplorerOpen = false}} />
+            {/if}
+        {/if}
+        {#if storageExplorerOpen}
+            {#if isNodeServer}
+                <StorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+            {:else if hasLocalExplorers}
+                <BrowserStorageExplorerSettings close={() => {storageExplorerOpen = false}} />
+            {/if}
+        {/if}
+        {#if pluginStorageExplorerOpen}
+            <PluginStorageExplorerSettings close={() => {pluginStorageExplorerOpen = false}} />
+        {/if}
+    </div>
 {/if}
 
 <style>

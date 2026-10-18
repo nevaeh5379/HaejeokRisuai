@@ -2,8 +2,8 @@ import type { Message } from "../database/schema";
 import type {
   PortableBranchGraph,
   PortableBranchGraphMap,
-} from "@risuai/backup-core/portableBranches.cjs";
-import { portableBranchPath } from "@risuai/backup-core/portableBranches.cjs";
+} from "@risuai/backup-core/portableBranches";
+import { portableBranchPath } from "@risuai/backup-core/portableBranches";
 import { createEmptySqlCommit, sqlMessageData } from "./sqlCommit";
 import type { SqlBranchStorage } from "./sqlStorageFactory";
 

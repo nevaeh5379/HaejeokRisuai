@@ -33,7 +33,8 @@
         openMobileSettingsPage,
         mobileBotTargetStore
     } from "src/ts/stores.svelte";
-    import { isTauriMacOS } from "src/ts/platform";
+    import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
+    import { windowDragRegion } from "src/ts/nativeWindowChrome";
     import { preloadChatSidebarPanel } from '../SideBars/sidebarPanelLoaders';
     import { getCharImage } from "src/ts/characters";
     import { changeChatTo } from "src/ts/globalApi.svelte";
@@ -60,12 +61,11 @@
             return $mobileBotTargetStore.title;
         }
         switch ($SettingsMenuIndex) {
-            case 0: return `${language.account} & ${language.files}`;
+            case 0: return `${language.data} & ${language.backup}`;
             case 1: return language.chatBot;
             case 2: return language.otherBots;
             case 3: return language.display;
             case 4: return language.plugin;
-            case 5: return language.files;
             case 6: return language.advancedSettings;
             case 7: return language.community;
             case 8: return language.globalLoreBook;
@@ -163,6 +163,7 @@
     class:pt-[max(env(safe-area-inset-top),0.5rem)]={!isTauriMacOS}
     class:pt-9={isTauriMacOS}
     data-tauri-drag-region={isTauriMacOS ? 'true' : undefined}
+    use:windowDragRegion={{ windowsOnly: true, selfOnly: true }}
 >
     <!-- ================= 1. IN CHAT SIDEBAR OPEN ================= -->
     {#if $selectedCharID !== -1 && $MobileSideBar > 0}

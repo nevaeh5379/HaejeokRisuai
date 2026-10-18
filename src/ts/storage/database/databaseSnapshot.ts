@@ -10,7 +10,7 @@ import type { Database } from "./schema";
 export function createDatabaseSnapshot(): Database {
   const settings = settingsStore.getStateRecord();
   const activePersona = personaStore.activePersona;
-  const target = {
+  const target: Partial<Database> = {
     ...settings,
     ...presetStore.getStateRecord(),
     ...(activePersona
@@ -28,6 +28,7 @@ export function createDatabaseSnapshot(): Database {
     enabledModules: moduleStore.enabledModules,
     moduleFolders: moduleStore.moduleFolders,
     moduleOrder: moduleStore.moduleOrder,
+    moduleSandboxGroups: moduleStore.sandboxGroups,
     activeBotPresetId: presetStore.activeId || undefined,
   };
   try {

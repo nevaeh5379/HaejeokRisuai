@@ -927,6 +927,8 @@ export const languageVietnamese = {
   userIcon: "Biểu tượng của bạn",
   successExport: "Đã xuất thành công và tải xuống thư mục tải xuống của bạn",
   successImport: "Đã nhập thành công",
+  pluginsAutoDisabled:
+    "Đã tắt plugin gây sự cố: {0}. Bạn có thể bật lại trong Cài đặt.",
   importedCharacter: "Ký tự đã nhập",
   alwaysActive: "Luôn luôn hoạt động",
   additionalPrompt: "Lời nhắc bổ sung",
@@ -956,6 +958,9 @@ export const languageVietnamese = {
   translateInput: "Dịch đầu vào",
   autoTranslation: "Dịch tự động",
   fullscreen: "Toàn màn hình",
+  autoHideAndroidNavigationBar: "Tự động ẩn thanh điều hướng trong trò chuyện",
+  autoHideAndroidNavigationBarInSidebar:
+    "Tự động ẩn thanh điều hướng trong thanh bên",
   playMessage: "Phát âm thanh tin nhắn",
   iconSize: "Kích cỡ biểu tượng",
   createGroup: "Tạo trò chuyện nhóm",
@@ -985,7 +990,6 @@ export const languageVietnamese = {
   waifuWidth: "Chiều rộng trò chuyện Waifu",
   savebackup: "Lưu Sao lưu vào google",
   loadbackup: "Tải bản sao lưu từ google",
-  files: "Các tập tin",
   backupConfirm: "Bạn có thực sự muốn lưu bản sao lưu?",
   backupLoadConfirm:
     "Bạn có thực sự muốn tải bản sao lưu? Tất cả dữ liệu sẽ bị mất!",
@@ -1120,7 +1124,6 @@ export const languageVietnamese = {
   officialDiscordDesc: "Discord chính thức nói về Risuai",
   persona: "nhân cách",
   icon: "Biểu tượng",
-  account: "Tài khoản",
   remove: "Di dời",
   able: "Có thể",
   assetWidth: "Chiều rộng tối đa của hình ảnh nội dung",
@@ -1456,6 +1459,7 @@ export const languageVietnamese = {
   parameters: "Tham số",
   sizeAndSpeed: "Kích thước và Tốc độ",
   useLegacyGUI: "Sử dụng GUI cũ",
+  useLiquidLoadingSpinner: "Dùng hoạt ảnh tải mới (lỏng)",
   claudeCachingExperimental: "Lưu trữ đệm Claude",
   openClose: "Mở/Đóng",
   hideApiKeys: "Ẩn khóa API",
@@ -1555,6 +1559,21 @@ export const languageVietnamese = {
   home: "Trang chủ",
   showSavingIcon: "Hiển thị biểu tượng đang lưu",
   showChatTabs: "Hiển thị tab trò chuyện",
+  chatEdgeFade: "Hiệu ứng làm mờ viền khung chat",
+  chatEdgeFadeDesc:
+    "Áp dụng hiệu ứng mờ dần mượt mà cho tin nhắn gần cạnh trên và dưới của màn hình trò chuyện.",
+  chatEdgeFadeSize: "Kích thước làm mờ viền khung chat",
+  chatEdgeFadeCurve: "Dạng đường cong làm mờ viền",
+  chatEdgeFadeCurveCosine: "Cosine",
+  chatEdgeFadeCurveLinear: "Tuyến tính",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Có vùng đệm",
+  chatEdgeFadeFromBottom: "Làm mờ cạnh dưới từ đáy màn hình",
+  chatEdgeFadeFromBottomDesc:
+    "Khi cố định khung chat, bắt đầu làm mờ từ đáy màn hình thay vì phía trên ô nhập.",
+  fixedChatTextareaBottomCover: "Màn chắn đáy cho khung nhập cố định",
+  fixedChatTextareaBottomCoverDesc:
+    "Khi cố định khung chat ở dưới, lấp đầy phần đệm phía dưới viền bằng màu nền để tin nhắn cuộn không bị lộ ra.",
   pluginVersionWarn:
     "Đây là phiên bản {{plugin_version}} của plugin, không tương thích với phiên bản Risuai này. Vui lòng cập nhật plugin lên phiên bản {{required_version}}.",
   imageTranslation: "Dịch hình ảnh",

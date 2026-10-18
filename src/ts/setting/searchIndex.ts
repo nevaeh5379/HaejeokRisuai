@@ -1,7 +1,7 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { language } from "src/lang";
 import { languageEnglish } from "src/lang/en";
-import { get } from "svelte/store";
+import { get, writable } from "svelte/store";
 import { getModelInfo } from "../model/modellist";
 import { isLite } from "../lite";
 import { isTauri } from "../platform";
@@ -100,9 +100,9 @@ interface ManualEntry {
 }
 const manualEntries: ManualEntry[] = [
   {
-    id: "page.account",
-    label: () => `${language.account} & ${language.files}`,
-    keywords: ["account", "files", "storage", "계정", "파일"],
+    id: "page.dataBackup",
+    label: () => `${language.data} & ${language.backup}`,
+    keywords: ["data", "backup", "restore", "데이터", "백업", "복원"],
     target: { kind: "menu", menuIndex: 0 },
   },
   {
@@ -313,6 +313,83 @@ manualEntries.push(
     target: { kind: "menu", menuIndex: 15 },
   },
   {
+    id: "backup.saveNative",
+    label: () => language.saveBackupLocalNative,
+    keywords: ["backup", "native", "haejeok", "백업", "해적리스"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.saveNative" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.saveCompatible",
+    label: () => language.saveBackupLocalCompatible,
+    keywords: ["compatible backup", "legacy", "백업", "호환"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.saveCompatible" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.savePartial",
+    label: () => language.savePartialLocalBackup,
+    keywords: ["partial backup", "essential", "부분 백업", "백업"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.savePartial" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.saveDrive",
+    label: () => language.savebackup,
+    keywords: ["google drive", "cloud", "구글", "백업"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.saveDrive" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.performance",
+    label: () => language.localBackupPerformanceTitle,
+    keywords: ["performance", "tuning", "성능", "백업 성능"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.performance" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.loadLocal",
+    label: () => language.loadBackupLocal,
+    keywords: ["restore", "load backup", "복원", "백업 불러오기"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.loadLocal" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.loadInternal",
+    label: () => language.loadInternalBackup,
+    keywords: ["internal backup", "snapshot", "내부 백업", "복원"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.loadInternal" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.loadDrive",
+    label: () => language.loadbackup,
+    keywords: ["google drive", "restore", "구글", "복원"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.loadDrive" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.cleanColdStorage",
+    label: () => language.cleanColdStorage,
+    keywords: ["cold storage", "clean", "콜드 스토리지", "정리"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.cleanColdStorage" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.inlayMigration",
+    label: () => language.inlayMigrationButton,
+    keywords: ["inlay", "upload", "인레이", "업로드"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.inlayMigration" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
+    id: "backup.exportDataset",
+    label: () => language.exportAsDataset,
+    keywords: ["dataset", "export", "fine-tuning", "데이터셋", "내보내기"],
+    target: { kind: "menu", menuIndex: 0, itemId: "backup.exportDataset" },
+    location: () => `${language.data} & ${language.backup}`,
+  },
+  {
     id: "page.dbExplorer",
     label: () => language.postgresDbExplorer,
     keywords: ["postgres", "database", "db explorer", "sql", "데이터베이스"],
@@ -459,8 +536,12 @@ export function searchSettings(rawQuery: string): SettingSearchResult[] {
   return results.slice(0, 30);
 }
 
+/** Set by scrollToSettingAnchor so collapsible sections can open themselves for search navigation. */
+export const requestedSettingAnchor = writable<string | null>(null);
+
 export function scrollToSettingAnchor(itemId: string, attempt = 0): void {
   if (typeof document === "undefined") return;
+  requestedSettingAnchor.set(itemId);
   const wrapper = document.querySelector<HTMLElement>(
     `[data-setting-id="${CSS.escape(itemId)}"]`,
   );

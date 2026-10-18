@@ -1,6 +1,6 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
-import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.cjs";
+import { executeChatRequestFallbacks } from "@risuai/chat-core/requestLoop.ts";
 import { risuEscape, risuUnescape } from "../../parser/parser.svelte";
 import { pluginV2 } from "../../plugins/plugins.svelte";
 import { safeStructuredClone } from "../../polyfill";
@@ -34,7 +34,10 @@ export async function requestChatData(
     ? resolveChatTarget(arg.triggerTarget)?.chat
     : requestCharacter?.chats?.[requestCharacter.chatPage];
   const useModuleRules =
-    db.enableModuleSubModel && (model === "submodel" || model === "otherAx");
+    db.enableModuleSubModel &&
+    !arg.moduleSandboxOwnerId &&
+    !arg.moduleSandboxGroupId &&
+    (model === "submodel" || model === "otherAx");
   // Snapshot configuration before asynchronous hooks or character switches.
   const ruleModules =
     useModuleRules && requestCharacter && (!arg.triggerTarget || requestChat)

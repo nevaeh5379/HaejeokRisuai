@@ -3,13 +3,16 @@ package co.aiclient.risu;
 import java.util.regex.Pattern;
 
 final class BackupEntryPolicy {
-    enum Kind { DATABASE, ENCRYPTION, COLD_STORAGE, INLAY, ASSET, EXTENSION, INVALID }
+    enum Kind { DATABASE, DATABASE_STREAM, ENCRYPTION, COLD_STORAGE, INLAY, ASSET, EXTENSION, INVALID }
 
     private static final Pattern COLD_STORAGE = Pattern.compile(
         "^(?:coldstorage[/_])?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.json$"
     );
     private static final Pattern INLAY = Pattern.compile(
         "^inlay_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.risuinlay$"
+    );
+    private static final Pattern DATABASE_STREAM = Pattern.compile(
+        "^database\\.stream/(?:manifest|[0-9]{12})\\.risudat$"
     );
 
     private BackupEntryPolicy() {}
@@ -23,6 +26,7 @@ final class BackupEntryPolicy {
             if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return Kind.INVALID;
         }
         if ("database.risudat".equals(normalized)) return Kind.DATABASE;
+        if (DATABASE_STREAM.matcher(normalized).matches()) return Kind.DATABASE_STREAM;
         if ("encryption.risudat".equals(normalized)) return Kind.ENCRYPTION;
         if (COLD_STORAGE.matcher(normalized).matches()) return Kind.COLD_STORAGE;
         if (INLAY.matcher(normalized).matches()) return Kind.INLAY;

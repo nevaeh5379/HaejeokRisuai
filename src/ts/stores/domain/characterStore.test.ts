@@ -165,6 +165,27 @@ describe("CharacterStore", () => {
     expect(characterStore.characters[0].detailsLoaded).toBe(true);
   });
 
+  it("restores the persisted active chat when hydrating a startup summary", async () => {
+    const shallow = makeChar("startup-active-chat", 0);
+    shallow.detailsLoaded = false;
+    shallow.chatPage = 0;
+
+    const loaded = makeChar("startup-active-chat", 2);
+    loaded.chaId = shallow.chaId;
+    loaded.detailsLoaded = true;
+    loaded.chatPage = 1;
+    loaded.chats[0].id = "chat-startup-old";
+    loaded.chats[1].id = "chat-startup-active";
+    vi.mocked(mockStorage.loadCharacter).mockResolvedValue(loaded);
+    characterStore.init([shallow], mockStorage);
+
+    await characterStore.ensureCharacterDetails(shallow.chaId!);
+
+    const hydrated = characterStore.characters[0];
+    expect(hydrated.chatPage).toBe(1);
+    expect(hydrated.chats[hydrated.chatPage].id).toBe("chat-startup-active");
+  });
+
   it("preserves the current chat order and selection during async hydration", async () => {
     const shallow = makeChar("stable-chat-selection", 2);
     shallow.detailsLoaded = false;

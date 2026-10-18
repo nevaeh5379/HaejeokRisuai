@@ -1,13 +1,20 @@
 sideEffectsCache: false
 
+packages:
+  - server/node
+
 overrides:
   "@huggingface/transformers>onnxruntime-node": "-"
 
 allowBuilds:
   "@swc/core@1.16.1": true
+  "appium@3.7.0": true
   "core-js@3.50.0": false
+  "edgedriver@6.3.1": true
   "esbuild@0.27.2": true
+  "esbuild@0.28.2": true
+  "geckodriver@6.1.1": true
   "msgpackr-extract@3.0.4": true
   "oracledb@7.0.1": true
   "protobufjs@7.6.6": true
-  "sharp@0.34.5": true
+  "sharp@0.34.5": false

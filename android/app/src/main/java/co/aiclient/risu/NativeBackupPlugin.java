@@ -35,7 +35,7 @@ public class NativeBackupPlugin extends Plugin {
     private static final long PROGRESS_BYTE_INTERVAL = 512 * 1024;
     private static final long PROGRESS_TIME_INTERVAL_MS = 150;
 
-    private final ConcurrentHashMap<String, File> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ImportSession> sessions = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @PluginMethod
@@ -61,9 +61,10 @@ public class NativeBackupPlugin extends Plugin {
             return;
         }
 
+        boolean raw = Boolean.TRUE.equals(call.getBoolean("raw", false));
         executor.execute(() -> {
             try {
-                ImportResult imported = extractImport(uri);
+                ImportResult imported = raw ? stageRawImport(uri) : extractImport(uri);
                 JSObject ret = new JSObject();
                 ret.put("cancelled", false);
                 ret.put("id", imported.id);
@@ -95,11 +96,12 @@ public class NativeBackupPlugin extends Plugin {
         Integer lengthValue = lengthRaw instanceof Number
             ? ((Number) lengthRaw).intValue()
             : null;
-        File specialFile = sessions.get(id);
-        if (specialFile == null || !specialFile.isFile()) {
+        ImportSession session = sessions.get(id);
+        if (session == null || !session.specialFile.isFile()) {
             call.reject("Unknown import session");
             return;
         }
+        File specialFile = session.specialFile;
         int requested = lengthValue == null ? MAX_CHUNK_SIZE : lengthValue;
         int length = Math.max(1, Math.min(requested, MAX_CHUNK_SIZE));
         long offset = Math.max(0L, offsetValue);
@@ -130,15 +132,79 @@ public class NativeBackupPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void commitImport(PluginCall call) {
+        String id = call.getString("id");
+        ImportSession session = id == null ? null : sessions.get(id);
+        if (session == null) {
+            call.reject("Unknown import session");
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                if (needsCommit(session)) {
+                    commitAssets(
+                        session.stagingDir,
+                        new ImportProgressReporter(session.totalBytes),
+                        session.assetsWritten
+                    );
+                }
+                session.committed = true;
+                call.resolve();
+            } catch (Exception error) {
+                String detail = error.getMessage();
+                String message = detail == null || detail.trim().isEmpty()
+                    ? "Failed to commit staged import assets"
+                    : "Failed to commit staged assets: " + detail;
+                call.reject(message, error);
+            }
+        });
+    }
+
+    @PluginMethod
     public void closeImport(PluginCall call) {
         String id = call.getString("id");
-        File file = id == null ? null : sessions.remove(id);
-        if (file != null) {
-            File parent = file.getParentFile();
-            deleteTree(parent);
+        ImportSession session = id == null ? null : sessions.remove(id);
+        if (session != null) {
+            discardImportSession(session);
         }
         call.resolve();
     }
+
+    private ImportResult stageRawImport(Uri uri) throws IOException {
+        String id = UUID.randomUUID().toString();
+        File sessionDir = new File(getContext().getCacheDir(), "risu-backup-import/" + id);
+        File rawFile = new File(sessionDir, "raw.risubackup");
+        if (!sessionDir.mkdirs() && !sessionDir.isDirectory()) {
+            throw new IOException("Failed to create backup staging directory");
+        }
+
+        long totalBytes = contentLength(uri);
+        ImportProgressReporter progress = new ImportProgressReporter(totalBytes);
+        try {
+            ContentResolver resolver = getContext().getContentResolver();
+            try (
+                InputStream input = new ProgressInputStream(
+                    requireInput(resolver.openInputStream(uri)),
+                    progress,
+                    "staging"
+                );
+                OutputStream output = new BufferedOutputStream(new FileOutputStream(rawFile))
+            ) {
+                copyUntilEof(input, output, new byte[COPY_BUFFER_SIZE]);
+            }
+            sessions.put(
+                id,
+                new ImportSession(sessionDir, rawFile, null, totalBytes, 0, true)
+            );
+            progress.report("complete", rawFile.length(), 0, 0, true);
+            return new ImportResult(id, rawFile, 0, 0, true);
+        } catch (Exception error) {
+            deleteTree(sessionDir);
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("Failed to stage local backup", error);
+        }
+    }
+
     private ImportResult extractImport(Uri uri) throws IOException {
         String id = UUID.randomUUID().toString();
         File sessionDir = new File(getContext().getCacheDir(), "risu-backup-import/" + id);
@@ -160,7 +226,17 @@ public class NativeBackupPlugin extends Plugin {
                     );
                 }
                 copyRawImport(uri, specialFile, progress);
-                sessions.put(id, specialFile);
+                sessions.put(
+                    id,
+                    new ImportSession(
+                        sessionDir,
+                        specialFile,
+                        null,
+                        totalBytes,
+                        0,
+                        true
+                    )
+                );
                 progress.report("complete", specialFile.length(), 0, 0, true);
                 return new ImportResult(id, specialFile, 0, 0, true);
             }
@@ -172,8 +248,17 @@ public class NativeBackupPlugin extends Plugin {
                 progress,
                 totalBytes
             );
-            commitAssets(stagingDir, progress, extracted.assetsWritten);
-            sessions.put(id, specialFile);
+            sessions.put(
+                id,
+                new ImportSession(
+                    sessionDir,
+                    specialFile,
+                    stagingDir,
+                    totalBytes,
+                    extracted.assetsWritten,
+                    false
+                )
+            );
             progress.report(
                 "complete",
                 totalBytes,
@@ -240,11 +325,15 @@ public class NativeBackupPlugin extends Plugin {
                 }
                 if (
                     kind == BackupEntryPolicy.Kind.DATABASE ||
+                    kind == BackupEntryPolicy.Kind.DATABASE_STREAM ||
                     kind == BackupEntryPolicy.Kind.ENCRYPTION ||
                     kind == BackupEntryPolicy.Kind.COLD_STORAGE ||
                     kind == BackupEntryPolicy.Kind.INLAY
                 ) {
-                    if (kind == BackupEntryPolicy.Kind.DATABASE) state.hasDatabase = true;
+                    if (
+                        kind == BackupEntryPolicy.Kind.DATABASE ||
+                        "database.stream/manifest.risudat".equals(name.replace('\\', '/'))
+                    ) state.hasDatabase = true;
                     BackupContainerCodec.writeEntry(
                         special,
                         data,
@@ -481,11 +570,51 @@ public class NativeBackupPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
-        for (File file : sessions.values()) {
-            deleteTree(file.getParentFile());
+        for (ImportSession session : sessions.values()) {
+            discardImportSession(session);
         }
         sessions.clear();
         executor.shutdownNow();
+    }
+
+    /**
+     * Whether a session still has staged assets waiting to be committed.
+     * Raw imports never stage assets and already-committed sessions are
+     * idempotent, so neither needs another commit pass.
+     */
+    static boolean needsCommit(ImportSession session) {
+        return !session.raw && !session.committed && session.stagingDir != null;
+    }
+
+    /** Discards every staged file of an import session, committed or not. */
+    static void discardImportSession(ImportSession session) {
+        deleteTree(session.sessionDir);
+    }
+
+    static final class ImportSession {
+        final File sessionDir;
+        final File specialFile;
+        final File stagingDir;
+        final long totalBytes;
+        final int assetsWritten;
+        final boolean raw;
+        boolean committed;
+
+        ImportSession(
+            File sessionDir,
+            File specialFile,
+            File stagingDir,
+            long totalBytes,
+            int assetsWritten,
+            boolean raw
+        ) {
+            this.sessionDir = sessionDir;
+            this.specialFile = specialFile;
+            this.stagingDir = stagingDir;
+            this.totalBytes = totalBytes;
+            this.assetsWritten = assetsWritten;
+            this.raw = raw;
+        }
     }
 
     private static final class ContainerExtractionState {

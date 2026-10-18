@@ -1,4 +1,80 @@
 export const languageEnglish = {
+  androidDiagnosticsShare: "Share Android exit diagnostics",
+  androidDiagnosticsShareFailed: "Could not share Android diagnostics.",
+  comfyWorkflows: {
+    loadingList: "Loading workflow list…", loadingWorkflow: "Downloading workflow JSON…", loadingNodes: "Loading node definitions…", converting: "Converting workflow JSON…", loadingViewer: "Opening JSON view…",
+    requestTimeout: "ComfyUI workflow operation timed out after 30 seconds. Check the server connection and try again.",
+    editJson: "Edit JSON", viewJson: "View JSON", invalidJson: "Enter valid workflow JSON to open the tree view.",
+    working: "Working…",
+    saved: "Saved workflows", name: "Workflow name", add: "Add workflow", remove: "Delete workflow",
+    importFile: "Import JSON", convert: "Convert / validate JSON", load: "Load from ComfyUI", importServer: "Import selected workflow",
+    empty: "No saved workflows. Save the workflow in ComfyUI first, then load again. An unsaved open workflow is not included.",
+    help: "Import workflow JSON or API JSON. Put {{risu_prompt}} and {{risu_neg}} in text inputs for Risu prompts. Subgraphs and custom frontend widgets may require ComfyUI Export (API).",
+    removeConfirm: "Delete this workflow?", converted: "Workflow JSON is ready to use.",
+  },
+  useChatIllustrations: "Enable chat illustrations (Beta)",
+  illustration: {
+    generationCount: "Images per illustration", generationCountHelp: "Generate 1–8 images at each illustration position (default: 1). Each image gets its own auxiliary model request. Images appear as they finish. Retry fills only missing images; completed images stay available. Uses one model and image request per image.",
+    tagRequestMode: "Auxiliary model requests", tagRequestModeHelp: "Sequential: write tags, generate and save one image, then start the next. Parallel: send up to four tag requests at once and pass each result to image generation in arrival order, while other tag requests continue. Image generation and saving run one at a time in both modes.", sequential: "Sequential", parallel: "Parallel",
+    batchProgress: "Images saved",
+    previousImage: "Previous illustration", nextImage: "Next illustration",
+    errorStages: { prepare: "Starting illustration", tags: "Writing image tags", image: "Generating image", save: "Saving image", status: "Checking illustration status" },
+    errorReasons: {
+      connection: "Could not connect. Check your network, provider URL and whether the server is running. Browser access may also be blocked by CORS.",
+      timeout: "The request timed out. Check the provider's status, then retry.",
+      auth: "Authentication or access was denied. Check the API key and permissions for this provider.",
+      rateLimit: "The provider's request or quota limit was reached. Check your quota or retry later.",
+      server: "The server returned an error. Check the provider's status and retry later.",
+      http: "The server rejected the request. Check the endpoint, selected model and generation settings.",
+      configuration: "Required settings are missing or unsupported. Check the submodel, provider URL and API key.",
+      contextLimit: "The instructions and scene exceed the submodel's context limit. Reduce the included context or instructions.",
+      emptyTags: "The submodel returned no image tags. Check the submodel and tag instructions.",
+      noImage: "The provider returned no image. Check the model and generation settings.",
+      invalidResponse: "The response could not be read as the expected JSON or image. Check the endpoint and provider format.",
+      unknown: "The operation failed unexpectedly. Check the settings for this stage and retry.",
+    },
+    saveError: "Could not save the image or its chat record. Check available storage and the database connection, then retry.",
+    displayWidth: "Illustration size (%)", displayWidthHelp: "Width relative to the chat area (10–100%). Default: 50%. The image keeps its aspect ratio.",
+    title: "Chat illustrations", description: "The main model places <Illustration> markers. The auxiliary model writes tags, then your image provider fills each position. Supports one-to-one chats.",
+    characterHelp: "Inherit global settings or override them here. Character instructions and image prompts are appended after the global text.",
+    appFallback: "This auxiliary model runs in the app. Illustration generation stops when the app closes, including on Node.",
+    enabled: "Enable illustrations", includeDescription: "Include character description", includePersona: "Include persona", includeLorebook: "Include active lorebook", includeMemory: "Include used memory",
+    recentMessages: "Previous messages", markerInstructions: "Main model marker instructions", tagInstructions: "Auxiliary model tag instructions", basePrompt: "Base image tags", negativePrompt: "Negative prompt",
+    inherit: "Use global", on: "On", off: "Off", queued: "Illustration queued", tagging: "Writing image tags", generating: "Generating image", complete: "Illustration complete", failed: "Illustration failed", interrupted: "Illustration interrupted",
+    retry: "Retry", regenerate: "Regenerate with these tags", rewrite: "Rewrite tags and regenerate", tags: "Image tags", operationFailed: "Unable to update the illustration. Please retry.",
+  },
+  globalAuthorNote: {
+    discard: "Discard draft",
+    discardDraftConfirm: "Discard this retained draft permanently?",
+    local: "Local note",
+    name: "Note name",
+    create: "New shared note",
+    rename: "Rename",
+    deleteConfirm: "Delete this shared note? Chats that use it will use None.",
+    saveFailed:
+      "This note could not be saved. Your draft is retained. Reload or explicitly overwrite the stored note.",
+    discardConfirm: "Discard this draft and reload the stored note?",
+    overwriteConfirm: "Overwrite this shared note with your draft?",
+    reload: "Reload",
+    overwrite: "Force overwrite",
+    unsaved: "Unsaved author note draft",
+    allowScriptWrite: "Allow scripts to write shared author notes",
+    scriptBlocked: "Writing shared author notes from scripts is disabled.",
+    scriptConflict:
+      "The shared author note changed or was deleted. This script write was skipped.",
+  },
+  moduleSandboxGroups: {
+    tab: "Bundles",
+    new: "New bundle",
+    bundle: "Bundle",
+    modelShort: "Model",
+    defaultShort: "Default",
+    add: "Add",
+    remove: "Remove",
+    title: "Module bundles",
+    missingModule: "Missing module",
+    removeGroupConfirm: "Remove this module bundle?",
+  },
   moduleRequestRules: {
     title: "Auxiliary model request rules",
     description:
@@ -470,6 +546,40 @@ export const languageEnglish = {
       "Separator used to split summaries into chunks for similarity search.",
     coldstorage:
       "Coldstorage is a feature that automatically moves old chats and character data to a seperate storage to reduce the size of the main storage and improve performance. This will reduce the transfer time, transfer traffic and improve the performance when loading chats.",
+    localBackupDatabasePageRecords:
+      "Maximum records fetched by one database page query. Larger values reduce database calls and increase temporary memory use.",
+    localBackupFragmentRecords:
+      "Maximum records serialized and compressed into one database fragment.",
+    localBackupWriterBufferKiB:
+      "Bytes accumulated before writing to the browser, desktop, or Android file writer.",
+    localBackupProgressUpdateMs:
+      "Minimum interval between progress UI updates. This does not delay backup work.",
+    backupSaveSection:
+      "Choose a backup type that fits the situation.\n\n- **HaejeokRisuAI**: Fully preserves rerolls and branches, but restores fully only in HaejeokRisuAI.\n- **Compatible**: Expands every reroll and branch into ordinary chats so older versions and other forks keep the content.\n- **Partial**: Quickly saves only the database and essential assets.\n- **Google**: Uploads the backup to Google Drive.",
+    saveBackupLocalNative:
+      "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
+    saveBackupLocalCompatible:
+      "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",
+    savePartialLocalBackup:
+      "Quickly saves only the database and essential assets such as profile icons. Emotion images, extra character assets, and voice files are not included.",
+    savebackup:
+      "Uploads a full backup of the database, cold storage, and assets to Google Drive. Useful when switching devices.",
+    backupRestoreSection:
+      "Loads a saved backup and replaces the current data with the state from the backup point.",
+    loadBackupLocal:
+      "Selects a local backup file (.risubackup) and replaces the current data with the backup.",
+    loadInternalBackup:
+      "Restores the data from one of the automatic internal snapshots kept on this device.",
+    loadbackup:
+      "Downloads a backup stored in Google Drive and replaces the current data with it.",
+    dataToolsSection:
+      "Tools for inspecting storage or moving data to another format.",
+    cleanColdStorage:
+      "Permanently deletes cold storage data that is not currently in use. This may include data that could be useful in the future, so use with care.",
+    inlayMigration:
+      "Uploads inlay images that are only stored on this device to the server so they can be viewed from other devices. This is safe to run multiple times.",
+    exportAsDataset:
+      "Exports character descriptions, chats, and global lorebooks as a dataset JSON file (dataset.json). Useful for model fine-tuning.",
   },
   setup: {
     chooseProvider: "Choose AI Provider",
@@ -1529,8 +1639,10 @@ export const languageEnglish = {
   loreBookToken: "Lorebook Max Tokens",
   lowSpecMode: "Low-spec Mode",
   waitingMinigame: "Waiting Minigame",
+  useLiquidLoadingSpinner: "Use New Loading Spinner",
   dinoPressStart: "Tap or press Space to start",
-  dinoWaitingDescription: "Chrome Dino — play while waiting for the AI response",
+  dinoWaitingDescription:
+    "Chrome Dino — play while waiting for the AI response",
   dinoResponseArrived: "AI response has arrived!",
   dinoScore: "Score",
   dinoGameOver: "Game Over",
@@ -1555,6 +1667,8 @@ export const languageEnglish = {
   successExport:
     "Successfuly exported and downloaded to your download directory",
   successImport: "Successfuly imported",
+  pluginsAutoDisabled:
+    "Disabled plugin(s) that caused a crash: {0}. You can re-enable them in Settings.",
   importedCharacter: "Imported Character",
   alwaysActive: "Always Active",
   additionalPrompt: "Additional Prompt",
@@ -1580,10 +1694,41 @@ export const languageEnglish = {
   remindLater5Days: "Remind in 5 days",
   remindLater1Week: "Remind in 1 week",
   display: "Display & Audio",
+  windowsTransparency: "Windows transparency",
+  windowsTransparencyDescription:
+    "Stored only on this device and applied immediately to sidebars and chat tabs.",
+  uiTheme: "UI Theme",
+  uiThemeDesc:
+    "Select a platform-aware UI theme. Android builds also offer a Material-style theme for touch controls, chat input, and mobile settings surfaces.",
+  uiThemeDefault: "Default Theme",
+  uiThemeWindows: "Windows 11 Fluent Theme",
+  uiThemeAndroid: "Android Material Theme",
+  chatTheme: "Chat Screen Layout",
+  windowsNativeTheme: "Windows 11 Fluent Theme",
+  windowsNativeThemeDesc:
+    "Native theme adhering to Microsoft Windows 11 WinUI design guidance with Mica and Acrylic integration.",
+  useWindowsTransparency: "Use native transparency",
+  windowsBackdropEffect: "Backdrop effect",
+  windowsBackdropAcrylic: "Acrylic (Windows 10/11)",
+  windowsBackdropMica: "Mica (Windows 11)",
+  windowsBackdropTabbed: "Tabbed Mica (Windows 11)",
+  windowsMaterialOpacity: "Background opacity",
+  linuxCsdSidebarOpacity: "CSD sidebar opacity",
+  useMacosSidebarTransparency: "Use sidebar transparency",
+  macosNativeSidebarBlur: "Use native sidebar blur",
+  macosNativeSidebarBlurHelp:
+    "Use the standard macOS sidebar blur when enabled, or Liquid Glass when disabled. Changes apply immediately.",
+  macosSidebarOpacity: "Sidebar background opacity",
+  windowsBackdropCompatibility:
+    "Mica effects require Windows 11. Acrylic is recommended for wider compatibility.",
   useCustomBackground: "Custom Background",
   translateInput: "Translate Input",
   autoTranslation: "Auto Translation",
   fullscreen: "Fullscreen",
+  autoHideAndroidNavigationBar:
+    "Automatically hide the navigation bar in chats",
+  autoHideAndroidNavigationBarInSidebar:
+    "Automatically hide the navigation bar in sidebars",
   playMessage: "Play Message Audio",
   iconSize: "Icon Size",
   createGroup: "Create Group Chat",
@@ -1613,7 +1758,6 @@ export const languageEnglish = {
   waifuWidth: "Waifu Chat Width",
   savebackup: "Save Backup to google",
   loadbackup: "Load Backup from google",
-  files: "Files",
   backupConfirm: "Do you really want to save backup?",
   backupLoadConfirm:
     "Do you really want to load backup? All datas will be lost!",
@@ -1795,7 +1939,8 @@ export const languageEnglish = {
   officialDiscordDesc: "Official Discord to talk about Risuai",
   persona: "Persona",
   icon: "Icon",
-  account: "Account",
+  data: "Data",
+  backup: "Backup",
   remove: "Remove",
   able: "Able",
   assetWidth: "Asset Images Max Width",
@@ -1915,11 +2060,34 @@ export const languageEnglish = {
     "This option is not recommended for use with web version, as it can cause CORS errors.",
   saveBackupLocal: "Save Backup Locally",
   saveBackupLocalNative: "Save HaejeokRisuAI Backup",
-  saveBackupLocalNativeDescription:
-    "Preserves rerolls and branches as native in-chat timelines for full HaejeokRisuAI restoration.",
+  backupSaveSection: "Save Backups",
+  backupRestoreSection: "Restore Backups",
+  dataToolsSection: "Data Tools",
+  localBackupPerformanceTitle: "Haejeok backup performance",
+  localBackupDatabasePageRecords: "Database page size (records)",
+  localBackupFragmentRecords: "Compressed fragment size (records)",
+  localBackupWriterBufferKiB: "Output buffer (KiB)",
+  localBackupProgressUpdateMs: "Progress update interval (ms)",
+  localBackupPerformanceReset: "Defaults",
+  localBackupProgressSelectingDestination: "Selecting backup destination",
+  localBackupProgressPreparing: "Preparing backup",
+  localBackupProgressDatabase: "Saving database",
+  localBackupProgressColdStorage: "Saving cold storage",
+  localBackupProgressAssets: "Saving assets",
+  localBackupProgressInlays: "Saving inlays",
+  localBackupProgressFinalizing: "Finalizing backup",
+  localBackupRestoreSelectingSource: "Selecting backup file",
+  localBackupRestoreUploading: "Uploading backup",
+  localBackupRestoreProcessing: "Processing restore",
+  localBackupRestoreReading: "Reading backup",
+  localBackupRestoreReadingDatabase: "Database fragments",
+  localBackupRestoreReadingAssets: "Assets",
+  localBackupRestoreReadingInlays: "Inlays",
+  localBackupRestoreReadingColdStorage: "Cold storage",
+  localBackupRestoreDatabase: "Restoring database",
+  localBackupRestoreBranches: "Restoring chat branches",
+  localBackupRestoreFinalizing: "Finalizing restore",
   saveBackupLocalCompatible: "Save Compatible Backup",
-  saveBackupLocalCompatibleDescription:
-    "Exports every reroll and branch as a separate ordinary chat so older RisuAI versions keep all chat content.",
   loadBackupLocal: "Load Backup Locally",
   exportChatJsonCompatible: "Compatibility JSON (Current timeline only)",
   exportChatJsonHaejeok: "HaejeokRisuAI JSON (Preserve branches)",
@@ -1938,7 +2106,7 @@ export const languageEnglish = {
   utilOverride: "Utility Override",
   template: "Template",
   chatAsOriginalOnSystem: "Send as original role",
-  exportAsDataset: "Export Save as Dataset",
+  exportAsDataset: "Export as Dataset",
   editTranslationDisplay: "Edit Translation Display",
   selectModel: "Select Model",
   autoRemoveThoughtTag: "Remove Thought Tag",
@@ -2236,6 +2404,21 @@ export const languageEnglish = {
   home: "Home",
   showSavingIcon: "Show Saving Icon",
   showChatTabs: "Show Chat Tabs",
+  chatEdgeFade: "Chat Edge Fade",
+  chatEdgeFadeDesc:
+    "Applies a smooth fade-out effect to messages near the top and bottom edges of the chat screen.",
+  chatEdgeFadeSize: "Chat Edge Fade Size",
+  chatEdgeFadeCurve: "Chat Edge Fade Curve",
+  chatEdgeFadeCurveCosine: "Cosine",
+  chatEdgeFadeCurveLinear: "Linear",
+  chatEdgeFadeCurveEaseOut: "Ease-out",
+  chatEdgeFadeCurveBuffered: "Buffered",
+  chatEdgeFadeFromBottom: "Start Bottom Fade from Screen Bottom",
+  chatEdgeFadeFromBottomDesc:
+    "When fixed chat input is enabled, starts the bottom fade from the bottom of the screen instead of above the input box.",
+  fixedChatTextareaBottomCover: "Fixed Input Bottom Barrier",
+  fixedChatTextareaBottomCoverDesc:
+    "When fixed chat input is enabled, fills the bottom padding below the input border with the background color to prevent scrolled text from peeking through.",
   pluginVersionWarn:
     "This is {{plugin_version}} version of the plugin. Which is not compatible with this version of Risuai. Please update the plugin to {{required_version}} version.",
   imageTranslation: "Image Translation",
@@ -2681,8 +2864,6 @@ export const languageEnglish = {
   coldStorage: "Cold Storage",
   cleanColdStorage: "Clean Unused Cold Storage",
   inlayMigrationButton: "Upload Inlay Images to Server",
-  inlayMigrationDescription:
-    "Uploads inlay images that are only stored on this device to the server so they can be viewed from other devices. This is safe to run multiple times.",
   inlayMigrationConfirm:
     "Upload all local inlay images to the server? Assets already stored on the server will be skipped.",
   inlayMigrationRunning: "Uploading Inlays...",

@@ -84,11 +84,27 @@ public class ChatForegroundService extends Service {
     }
 
     public static PendingIntent openAppIntent(Context context) {
+        return openChatIntent(context, null, null);
+    }
+
+    public static PendingIntent openChatIntent(
+        Context context,
+        String characterId,
+        String chatId
+    ) {
         Intent intent = new Intent(context, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (chatId != null && !chatId.trim().isEmpty()) {
+            intent.setAction(NativeIntegrationPlugin.ACTION_OPEN_CHAT);
+            intent.putExtra(NativeIntegrationPlugin.EXTRA_CHAT_ID, chatId.trim());
+            if (characterId != null && !characterId.trim().isEmpty()) {
+                intent.putExtra(NativeIntegrationPlugin.EXTRA_CHARACTER_ID, characterId.trim());
+            }
+        }
+        int requestCode = chatId == null ? 0 : chatId.hashCode();
         return PendingIntent.getActivity(
             context,
-            0,
+            requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );

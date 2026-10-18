@@ -51,7 +51,7 @@ import {
   decodeRisuSave,
   encodeRisuSaveLegacy,
 } from "./storage/backup/risuSave";
-import { normalizeBackupEntryName } from "@risuai/backup-core/entryPolicy.cjs";
+import { createBackupContainerEntryHeader } from "@risuai/backup-core/containerStream";
 import { AutoStorage } from "./storage/files/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -64,7 +64,11 @@ import { initMobileGesture } from "./hotkey";
 import { fetch as TauriHTTPFetch } from "@tauri-apps/plugin-http";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { isCapacitor, isTauri, isNodeServer } from "./platform";
-import { isLocalNetworkUrl } from "./network/localNetwork";
+import { fetchProxy } from "./network/proxyFetch";
+import {
+  canUseBrowserLocalNetwork,
+  isLocalNetworkUrl,
+} from "./network/localNetwork";
 import {
   decodeProxyJobWsChunk,
   formatProxyStreamErrorMessage,
@@ -800,22 +804,14 @@ export async function saveAsset(
       fileExtension = ext;
     }
   }
-  if (forageStorage.realStorage instanceof TauriAssetStorage) {
-    await writeFile(`assets/${id}.${fileExtension}`, data, {
-      baseDir: BaseDirectory.AppData,
-    });
-    invalidateThumbnailCache(`assets/${id}.${fileExtension}`);
-    return `assets/${id}.${fileExtension}`;
-  } else {
-    let form = `assets/${id}.${fileExtension}`;
-    invalidateThumbnailCache(form);
-    const replacer = await forageStorage.setItem(form, data);
-    if (replacer) {
-      invalidateThumbnailCache(replacer);
-      return replacer;
-    }
-    return form;
+  const form = `assets/${id}.${fileExtension}`;
+  const replacer = await forageStorage.setItem(form, data);
+  invalidateThumbnailCache(form);
+  if (replacer) {
+    invalidateThumbnailCache(replacer);
+    return replacer;
   }
+  return form;
 }
 
 /**
@@ -1019,6 +1015,11 @@ export async function globalFetch(
     const urlHost = new URL(url).hostname;
     const useLocalNetworkRoute =
       arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
+    const browserLocalNetwork =
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer &&
+      canUseBrowserLocalNetwork(url, window.location.href);
     const forcePlainFetch =
       ((knownHostes.includes(urlHost) && !isTauri) ||
         db.usePlainFetch ||
@@ -1026,7 +1027,13 @@ export async function globalFetch(
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute;
 
-    if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
+    if (
+      useLocalNetworkRoute &&
+      !isTauri &&
+      !isCapacitor &&
+      !isNodeServer &&
+      !browserLocalNetwork
+    ) {
       return {
         ok: false,
         headers: {},
@@ -1039,7 +1046,8 @@ export async function globalFetch(
       knownHostes.includes(urlHost) &&
       !isTauri &&
       !isCapacitor &&
-      !isNodeServer
+      !isNodeServer &&
+      !browserLocalNetwork
     ) {
       return {
         ok: false,
@@ -1138,6 +1146,9 @@ export async function globalFetch(
 
     try {
       if (useLocalNetworkRoute) {
+        if (browserLocalNetwork) {
+          return await fetchWithPlainFetch(url, requestArg);
+        }
         if (isTauri) {
           return await fetchWithTauri(url, requestArg);
         }
@@ -1226,12 +1237,24 @@ async function fetchWithPlainFetch(
 ): Promise<GlobalFetchResult> {
   try {
     const headers = { "Content-Type": "application/json", ...arg.headers };
-    const response = await fetch(new URL(url), {
-      body: JSON.stringify(arg.body),
-      headers,
-      method: arg.method ?? "POST",
-      signal: arg.abortSignal,
-    });
+    // Capacitor's patched fetch reads non-JSON POST responses as text, which
+    // corrupts binary payloads such as NovelAI's ZIP before arrayBuffer() runs.
+    const response =
+      isCapacitor && arg.rawResponse
+        ? await fetchNative(url, {
+            body: JSON.stringify(arg.body) ?? "",
+            headers,
+            method: arg.method ?? "POST",
+            signal: arg.abortSignal,
+            requestTimeoutMs: arg.requestTimeoutMs,
+            logFetch: false,
+          })
+        : await fetch(new URL(url), {
+            body: JSON.stringify(arg.body),
+            headers,
+            method: arg.method ?? "POST",
+            signal: arg.abortSignal,
+          });
     const data = arg.rawResponse
       ? new Uint8Array(await response.arrayBuffer())
       : await response.json();
@@ -1362,7 +1385,7 @@ async function fetchWithProxy(
         ? arg.body.toString()
         : JSON.stringify(arg.body);
 
-    const response = await fetch(furl, {
+    const response = await fetchProxy(furl, {
       body,
       headers,
       method: arg.method ?? "POST",
@@ -1434,8 +1457,20 @@ export function getBasename(data: string) {
   return lasts;
 }
 
+type ResourceSettings = Partial<
+  Pick<
+    Database,
+    | "customBackground"
+    | "userIcon"
+    | "characters"
+    | "modules"
+    | "personas"
+    | "characterOrder"
+  >
+>;
+
 export async function getUncleanables(
-  db: Database,
+  db: ResourceSettings,
   uptype: "basename" | "pure" = "basename",
   options?: { chars: (character | groupChat)[] },
 ) {
@@ -1466,7 +1501,7 @@ export async function getUncleanables(
  * @returns {Promise<string[]>} - An array of uncleanable resources.
  */
 export function getUncleanablesSync(
-  db: Database,
+  db: ResourceSettings,
   uptype: "basename" | "pure" = "basename",
   options?: {
     chars: (character | groupChat)[];
@@ -1492,7 +1527,7 @@ export function getUncleanablesSync(
 
   addUncleanable(db.customBackground);
   addUncleanable(db.userIcon);
-  const chars = options?.chars ?? db.characters;
+  const chars = options?.chars ?? db.characters ?? [];
 
   for (let cha of chars) {
     if (cha.image) {
@@ -1917,21 +1952,7 @@ export class LocalWriter {
    * Writes a backup entry header so its data can be streamed in chunks.
    */
   async startBackup(name: string, dataLength: number | bigint): Promise<void> {
-    const normalizedLength =
-      typeof dataLength === "bigint" ? dataLength : BigInt(dataLength);
-    if (normalizedLength < 0n || normalizedLength > 0xffffffffn) {
-      throw new Error(`Backup entry is too large: ${name}`);
-    }
-    const normalizedName = normalizeBackupEntryName(name);
-    if (!normalizedName) {
-      throw new Error(`Invalid backup entry path: ${name}`);
-    }
-    const encodedName = new TextEncoder().encode(normalizedName);
-    const nameLength = new Uint32Array([encodedName.byteLength]);
-    await this.write(new Uint8Array(nameLength.buffer));
-    await this.write(encodedName);
-    const encodedDataLength = new Uint32Array([Number(normalizedLength)]);
-    await this.write(new Uint8Array(encodedDataLength.buffer));
+    await this.write(createBackupContainerEntryHeader(name, dataLength));
   }
 
   /**
@@ -2063,6 +2084,8 @@ interface StreamedFetchHeaderData {
 interface StreamedFetchEndData {
   type: "end";
   id: string;
+  success?: boolean;
+  error?: string;
 }
 
 /**
@@ -2094,6 +2117,7 @@ interface StreamedFetchPlugin {
     method: string;
     timeoutMs?: number;
   }): Promise<{ error: string; success: boolean }>;
+  cancelStreamedFetch(options: { id: string }): Promise<void>;
 
   /**
    * Adds a listener for the specified event.
@@ -2250,7 +2274,7 @@ async function fetchViaProxyJobWs(
   arg: {
     body: Uint8Array;
     headers?: { [key: string]: string };
-    method: "POST" | "GET" | "PUT" | "DELETE";
+    method: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
     signal?: AbortSignal;
     requestTimeoutMs?: number;
     chatId?: string;
@@ -2459,7 +2483,7 @@ export async function fetchNative(
   arg: {
     body?: string | Uint8Array | ArrayBuffer;
     headers?: { [key: string]: string };
-    method?: "POST" | "GET" | "PUT" | "DELETE";
+    method?: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
     signal?: AbortSignal;
     useRisuTk?: boolean;
     chatId?: string;
@@ -2507,7 +2531,13 @@ export async function fetchNative(
 
   const useLocalNetworkRoute =
     arg.networkRoute === "local_network" && isLocalNetworkUrl(url);
-  if (useLocalNetworkRoute && !isTauri && !isCapacitor && !isNodeServer) {
+  if (
+    useLocalNetworkRoute &&
+    !isTauri &&
+    !isCapacitor &&
+    !isNodeServer &&
+    !canUseBrowserLocalNetwork(url, window.location.href)
+  ) {
     throw new Error(webLocalNetworkBlockedMessage);
   }
   const throughProxy = isNodeServer && useLocalNetworkRoute;
@@ -2559,6 +2589,7 @@ export async function fetchNative(
 
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs);
   const requestSignal = timeoutSignal.signal;
+  let cleanupTimeoutOnReturn = true;
   try {
     if (window.userScriptFetch && !throughProxy) {
       return await window.userScriptFetch(url, {
@@ -2567,7 +2598,7 @@ export async function fetchNative(
         method: arg.method,
         signal: requestSignal,
       });
-    } else if (isTauri) {
+    } else if (isTauri || isCapacitor) {
       fetchIndex++;
       if (requestSignal && requestSignal.aborted) {
         throw new Error("aborted");
@@ -2591,9 +2622,55 @@ export async function fetchNative(
       nativeFetchNotify[fetchId] = notify;
 
       let error = "";
+      let aborted = false;
+      let abortReason: unknown;
+      let streamClosed = false;
+      let dispatched = false;
+      let streamController: ReadableStreamDefaultController<Uint8Array>;
+      let nativeResult: Promise<void>;
+      const cleanup = () => {
+        // A suspended reader may still hold this array while awaiting the
+        // native result. Clear its chunks before removing the request entry.
+        if (nativeFetchData[fetchId]) nativeFetchData[fetchId].length = 0;
+        delete nativeFetchData[fetchId];
+        delete nativeFetchNotify[fetchId];
+        requestSignal?.removeEventListener("abort", onAbort);
+        if (isCapacitor) timeoutSignal.cleanup();
+        notify();
+      };
+      const cancelNative = () => {
+        if (isCapacitor && dispatched) {
+          void capStreamedFetch
+            .cancelStreamedFetch({ id: fetchId })
+            .catch((cause) =>
+              console.error("Native fetch cancellation failed:", cause),
+            );
+        }
+      };
+      const onAbort = () => {
+        aborted = true;
+        abortReason =
+          requestSignal.reason ??
+          new DOMException("Request aborted", "AbortError");
+        resolved = true;
+        streamClosed = true;
+        streamController?.error(abortReason);
+        cancelNative();
+        cleanup();
+      };
+      if (isCapacitor && !capStreamedFetch) {
+        throw new Error("Capacitor streamed fetch plugin is unavailable");
+      }
+      if (isCapacitor) {
+        cleanupTimeoutOnReturn = false;
+        requestSignal?.addEventListener("abort", onAbort, { once: true });
+        if (requestSignal?.aborted) onAbort();
+      }
       while (!streamedFetchListening) {
+        if (aborted) throw abortReason;
         await sleep(100);
       }
+      if (aborted) throw abortReason;
       if (isTauri) {
         invoke("streamed_fetch", {
           id: fetchId,
@@ -2622,7 +2699,8 @@ export async function fetchNative(
           }
         });
       } else if (capStreamedFetch) {
-        capStreamedFetch
+        dispatched = true;
+        nativeResult = capStreamedFetch
           .streamedFetch({
             id: fetchId,
             url: url,
@@ -2633,9 +2711,17 @@ export async function fetchNative(
           })
           .then((res) => {
             if (!res.success) {
-              error = res.error;
+              error = res.error || "Native fetch failed";
               resolved = true;
             }
+            notify();
+          })
+          .catch((cause) => {
+            error =
+              (cause instanceof Error ? cause.message : String(cause)) ||
+              "Native fetch failed";
+            resolved = true;
+            notify();
           });
       }
 
@@ -2644,11 +2730,14 @@ export async function fetchNative(
 
       const tauriReadableStream = new ReadableStream<Uint8Array>({
         async start(controller) {
+          streamController = controller;
           try {
             while (
-              !resolved ||
-              nativeFetchHead < (nativeFetchData[fetchId]?.length ?? 0)
+              !streamClosed &&
+              (!resolved ||
+                nativeFetchHead < (nativeFetchData[fetchId]?.length ?? 0))
             ) {
+              if (error) throw new Error(error);
               const queue = nativeFetchData[fetchId];
               if (queue && nativeFetchHead < queue.length) {
                 const data = queue[nativeFetchHead++];
@@ -2661,6 +2750,13 @@ export async function fetchNative(
                   status = data.status;
                 }
                 if (data.type === "end") {
+                  if (data.success === false) {
+                    throw new Error(data.error || "Native fetch failed");
+                  }
+                  // Older native plugins emit a bare end event before their
+                  // result arrives. EOF is successful only after that result.
+                  if (isCapacitor) await nativeResult;
+                  if (error) throw new Error(error);
                   resolved = true;
                 }
 
@@ -2683,14 +2779,32 @@ export async function fetchNative(
                 setTimeout(resolve, 100);
               });
             }
-            controller.close();
+            if (error) throw new Error(error);
+            if (!streamClosed) {
+              streamClosed = true;
+              controller.close();
+            }
+          } catch (cause) {
+            if (!streamClosed) {
+              streamClosed = true;
+              controller.error(cause);
+            }
+            error = cause instanceof Error ? cause.message : String(cause);
+            resolved = true;
           } finally {
             // Completed request queues previously stayed in this process-wide
             // object forever, leaking one array per native fetch.
-            delete nativeFetchData[fetchId];
-            delete nativeFetchNotify[fetchId];
+            cleanup();
           }
         },
+        cancel: isCapacitor
+          ? () => {
+              streamClosed = true;
+              resolved = true;
+              cancelNative();
+              cleanup();
+            }
+          : undefined,
       });
 
       let readableStream = tauriReadableStream;
@@ -2715,8 +2829,30 @@ export async function fetchNative(
         resHeaders = {};
       }
 
+      if (aborted) throw abortReason;
+
       if (error !== "") {
         throw new Error(error);
+      }
+
+      // Fetch responses with these statuses must not have a body. Drain the
+      // native event queue first so a conditional module request (304) also
+      // releases its per-request buffers.
+      if ([101, 204, 205, 304].includes(status)) {
+        while (!resolved) {
+          await new Promise<void>((resolve) => {
+            notifyWaiters = resolve;
+            setTimeout(resolve, 100);
+          });
+        }
+        if (aborted) throw abortReason;
+        if (error) throw new Error(error);
+        delete nativeFetchData[fetchId];
+        delete nativeFetchNotify[fetchId];
+        return new Response(null, {
+          headers: new Headers(resHeaders),
+          status,
+        });
       }
 
       return new Response(readableStream, {
@@ -2749,7 +2885,7 @@ export async function fetchNative(
         }
       }
 
-      const r = await fetch(nodeProxy2Url, {
+      const r = await fetchProxy(nodeProxy2Url, {
         body: realBody as any,
         headers: arg.useRisuTk
           ? {
@@ -2800,7 +2936,7 @@ export async function fetchNative(
       });
     }
   } finally {
-    timeoutSignal.cleanup();
+    if (cleanupTimeoutOnReturn) timeoutSignal.cleanup();
   }
 }
 
@@ -2931,7 +3067,7 @@ export async function loadInternalBackup() {
       "SQL storage returned no startup data after backup restore",
     );
   }
-  installStartupData(startup, storage);
+  await installStartupData(startup, storage);
   alertNormal("Loaded backup");
 }
 

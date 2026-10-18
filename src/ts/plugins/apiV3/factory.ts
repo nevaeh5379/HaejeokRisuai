@@ -1,9 +1,16 @@
+import { DatabaseSnapshotTransfer } from "./databaseSnapshot.svelte";
+import {
+  createDatabaseSnapshotReceiver,
+  type SnapshotOperation,
+} from "./databaseTransfer";
+
 type MsgType =
   | "CALL_ROOT"
   | "CALL_INSTANCE"
   | "INVOKE_CALLBACK"
   | "CALLBACK_RETURN"
   | "RESPONSE"
+  | "DATABASE_PART"
   | "RELEASE_INSTANCE"
   | "ABORT_SIGNAL";
 
@@ -16,6 +23,8 @@ interface RpcMessage {
   result?: any;
   error?: string;
   abortId?: string;
+  databaseSnapshot?: boolean;
+  databaseOps?: SnapshotOperation[];
 }
 
 interface RemoteRef {
@@ -37,6 +46,7 @@ interface AbortSignalRef {
 const GUEST_BRIDGE_SCRIPT = `
 await (async function() {
     const pendingRequests = new Map();
+    const createDatabaseSnapshotReceiver = (${createDatabaseSnapshotReceiver.toString()});
     const callbackRegistry = new Map();
     const callbackIdByFunction = new WeakMap();
     const proxyRefRegistry = new Map();
@@ -274,14 +284,44 @@ await (async function() {
         if (!data) return;
 
 
-        if (data.type === 'RESPONSE' && data.reqId) {
+        if (data.type === 'DATABASE_PART' && data.reqId) {
+            if (event.source !== window.parent) return;
+            const req = pendingRequests.get(data.reqId);
+            if (!req) {
+                for (const port of event.ports) { port.postMessage({ cancel: true }); port.close(); }
+                return;
+            }
+            try {
+                if (!req.databaseSnapshot) req.databaseSnapshot = createDatabaseSnapshotReceiver();
+                for (const operation of data.databaseOps) {
+                    if (operation[0] === 'stream') {
+                        operation[0] = 'native';
+                        operation[2] = reconstructStreamsFromPorts({ __type: 'STREAM_PORT', portIndex: operation[2] }, event.ports);
+                    }
+                }
+                req.databaseSnapshot.apply(data.databaseOps);
+            } catch (e) {
+                req.databaseSnapshot?.abort();
+                req.reject(e);
+                pendingRequests.delete(data.reqId);
+            }
+        }
+
+        else if (data.type === 'RESPONSE' && data.reqId) {
             const req = pendingRequests.get(data.reqId);
             if (req) {
-                if (data.error) req.reject(new Error(data.error));
+                if (data.error) {
+                    req.databaseSnapshot?.abort();
+                    req.reject(new Error(data.error));
+                }
                 else {
                     try {
-                        req.resolve(deserializeResult(reconstructStreamsFromPorts(data.result, event.ports)));
+                        const result = reconstructStreamsFromPorts(
+                            data.databaseSnapshot ? (req.databaseSnapshot ? req.databaseSnapshot.finish() : {}) : data.result,
+                            event.ports);
+                        req.resolve(deserializeResult(result));
                     } catch (e) {
+                        req.databaseSnapshot?.abort();
                         req.reject(e);
                     }
                 }
@@ -888,15 +928,55 @@ export class SandboxHost {
             result = await instance[data.method!](...args);
           }
 
-          response.result = this.serialize(result);
-          const {
-            result: streamResult,
-            ports: streamPorts,
-            cleanups,
-          } = this.replaceStreamsWithPorts(response.result);
-          response.result = streamResult;
-          streamCleanups = cleanups;
-          transferables = this.collectTransferables(response, streamPorts);
+          if (result instanceof DatabaseSnapshotTransfer) {
+            await result.send((operations) => {
+              const ports: MessagePort[] = [];
+              for (let i = 0; i < operations.length; i++) {
+                const operation = operations[i];
+                if (operation[0] !== "rootNative") continue;
+                if (operation[2] instanceof ReadableStream) {
+                  const stream = this.replaceStreamsWithPorts(operation[2]);
+                  streamCleanups.push(...stream.cleanups);
+                  const portIndex = ports.length;
+                  ports.push(...stream.ports);
+                  operations[i] = ["stream", operation[1], portIndex];
+                } else {
+                  operations[i] = ["native", operation[1], operation[2]];
+                }
+              }
+              const transfers = this.collectTransferables(operations, ports);
+              try {
+                this.iframe.contentWindow?.postMessage(
+                  {
+                    type: "DATABASE_PART",
+                    reqId: data.reqId,
+                    databaseOps: operations,
+                  },
+                  "*",
+                  transfers,
+                );
+              } catch (error: any) {
+                throw new Error(
+                  "Failed to post message to iframe: " +
+                    (error?.message || String(error || "Unknown error")),
+                );
+              } finally {
+                operations.length = 0;
+                transfers.length = 0;
+              }
+            });
+            response.databaseSnapshot = true;
+          } else {
+            response.result = this.serialize(result);
+            const {
+              result: streamResult,
+              ports: streamPorts,
+              cleanups,
+            } = this.replaceStreamsWithPorts(response.result);
+            response.result = streamResult;
+            streamCleanups = cleanups;
+            transferables = this.collectTransferables(response, streamPorts);
+          }
         } catch (err: any) {
           rollbackStreams();
           delete response.result;
@@ -906,8 +986,6 @@ export class SandboxHost {
           for (const id of usedAbortIds) this.abortControllers.delete(id);
         }
 
-        console.log("Original request:", data);
-        console.log("Original response:", response, transferables);
         try {
           this.iframe.contentWindow?.postMessage(response, "*", transferables);
         } catch (error) {
@@ -925,6 +1003,11 @@ export class SandboxHost {
             );
           } catch (_) {}
           console.error("Failed to post message to iframe:", error);
+        } finally {
+          // postMessage has already synchronously cloned the payload. Do not keep
+          // the database on the response envelope (or in console history).
+          delete response.result;
+          transferables.length = 0;
         }
       }
     };

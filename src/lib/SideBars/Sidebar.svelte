@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {
+  import {
     CharEmotion,
     DynamicGUI,
     botMakerMode,
@@ -9,21 +9,21 @@
     sideBarStore,
     OpenRealmStore,
     PlaygroundStore,
-
     QuickSettings,
-
     additionalHamburgerMenu,
-
     messageSearchOpen,
     pendingCharID,
-
   } from "../../ts/stores.svelte";
-    import type { folder } from "../../ts/storage/database/schema";
+  import {
+    Order,
+    type DragItem,
+    type DropPosition,
+  } from "../../ts/sidebar/order";
 
-    import { characterStore, settingsStore } from 'src/ts/stores/domain';
-    import BarIcon from "./BarIcon.svelte";
-    import SidebarIndicator from "./SidebarIndicator.svelte";
-    import {
+  import { characterStore, settingsStore } from "src/ts/stores/domain";
+  import BarIcon from "./BarIcon.svelte";
+  import SidebarIndicator from "./SidebarIndicator.svelte";
+  import {
     ShellIcon,
     Settings,
     ListIcon,
@@ -34,68 +34,117 @@
     WrenchIcon,
     User2Icon,
     SearchIcon,
+    PanelLeft,
   } from "@lucide/svelte";
-    import { getCharImage, preloadCharacterImage } from '../../ts/characterImage';
-    import { language } from "../../lang";
-    import isEqual from "lodash/isEqual";
-    import SidebarAvatar from "./SidebarAvatar.svelte";
-    import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
-    import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
-    import { v4 } from "uuid";
-    import { checkCharOrder, getFileSrc, getPreparedNativeThumbnailSrc, saveAsset } from "src/ts/globalApi.svelte";
-    import { alertInput, alertSelect } from "src/ts/alert";
-    import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from 'src/ts/sync/multiuserState';
+  import { getCharImage, preloadCharacterImage } from "../../ts/characterImage";
+  import { language } from "../../lang";
+  import isEqual from "lodash/isEqual";
+  import SidebarAvatar from "./SidebarAvatar.svelte";
+  import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
+  import { getCharacterIndexObject, selectSingleFile } from "src/ts/util";
+  import {
+    checkCharOrder,
+    getFileSrc,
+    getPreparedNativeThumbnailSrc,
+    saveAsset,
+  } from "src/ts/globalApi.svelte";
+  import { alertInput, alertSelect } from "src/ts/alert";
+  import {
+    ConnectionIsHost,
+    ConnectionOpenStore,
+    RoomIdStore,
+  } from "src/ts/sync/multiuserState";
   import { sideBarSize } from "src/ts/gui/guisize";
-    import LazyComponent from '../Others/LazyComponent.svelte';
-    import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
-    import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
-    import { isTauriMacOS } from "src/ts/platform";
-    import {
-      closeTauriSidebarMenuPopup,
-      listenTauriSidebarMenuActions,
-      toggleTauriSidebarMenuPopup,
-      isTauriMacOSRuntime,
-      type TauriSidebarMenuAction,
-    } from "src/ts/tauriSidebarMenu";
-    import { get } from 'svelte/store';
-    import { onMount } from 'svelte';
-    import { loadCharConfig, loadSideChatList, preloadChatSidebarPanel } from './sidebarPanelLoaders';
-    import { btwRuntime } from 'src/ts/process/btwRuntime.svelte';
+  import LazyComponent from "../Others/LazyComponent.svelte";
+  import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
+  import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+  import { isTauriMacOS, isTauriWindows } from "src/ts/platform";
+  import { windowDragRegion } from "src/ts/nativeWindowChrome";
+  import { isLinuxCsdActive } from "src/ts/linuxWindowIntegration";
+  import {
+    closeTauriSidebarMenuPopup,
+    listenTauriSidebarMenuActions,
+    toggleTauriSidebarMenuPopup,
+    isTauriMacOSRuntime,
+    type TauriSidebarMenuAction,
+  } from "src/ts/tauriSidebarMenu";
+  import { get } from "svelte/store";
+  import { onMount } from "svelte";
+  import {
+    loadCharConfig,
+    loadSideChatList,
+    preloadChatSidebarPanel,
+  } from "./sidebarPanelLoaders";
+  import { btwRuntime } from "src/ts/process/btwRuntime.svelte";
   let sideBarMode = $state(0);
   let editMode = $state(false);
   let menuMode = $state(0);
-  let devTool = $state(false)
+  let devTool = $state(false);
 
-  const recentSessionsLoader = () => import('./RecentSessionsList.svelte')
-  const devToolLoader = () => import('./DevTool.svelte')
-  const quickSettingsLoader = () => import('../Others/QuickSettingsGUI.svelte')
-  const btwPanelLoader = () => import('../ChatScreens/BtwPanel.svelte')
+  function sidebarMenuCutout(menu: HTMLElement) {
+    if (!isLinuxCsdActive()) return;
+    const scroll = menu
+      .closest(".rs-sidebar")
+      ?.querySelector<HTMLElement>(".rs-sidebar-scroll");
+    if (!scroll) return;
+    const update = () => {
+      const menuBounds = menu.getBoundingClientRect();
+      const scrollBounds = scroll.getBoundingClientRect();
+      scroll.style.setProperty(
+        "--risu-sidebar-menu-cutout-top",
+        `${menuBounds.top - scrollBounds.top}px`,
+      );
+      scroll.style.setProperty(
+        "--risu-sidebar-menu-cutout-height",
+        `${menuBounds.height}px`,
+      );
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(menu);
+    observer.observe(scroll);
+    update();
+    return {
+      destroy() {
+        observer.disconnect();
+        scroll.style.removeProperty("--risu-sidebar-menu-cutout-top");
+        scroll.style.removeProperty("--risu-sidebar-menu-cutout-height");
+      },
+    };
+  }
+
+  const recentSessionsLoader = () => import("./RecentSessionsList.svelte");
+  const devToolLoader = () => import("./DevTool.svelte");
+  const quickSettingsLoader = () => import("../Others/QuickSettingsGUI.svelte");
+  const btwPanelLoader = () => import("../ChatScreens/BtwPanel.svelte");
 
   function sidebarThumbnail(loc: string) {
-    return getPreparedNativeThumbnailSrc(loc) ?? getCharImage(loc, "plain", { thumbnail: true })
+    return (
+      getPreparedNativeThumbnailSrc(loc) ??
+      getCharImage(loc, "plain", { thumbnail: true })
+    );
   }
 
   async function changeCharacter(index: number) {
     // Reflect the tap before loading the character module or persisted chat data,
     // without exposing partially loaded character data to the chat components.
-    reseter()
-    pendingCharID.set(index)
-    void preloadChatSidebarPanel()
-    void preloadCharacterImage(characterStore.characters?.[index]?.image)
-    const { changeChar } = await import('../../ts/characters')
+    reseter();
+    pendingCharID.set(index);
+    void preloadChatSidebarPanel();
+    void preloadCharacterImage(characterStore.characters?.[index]?.image);
+    const { changeChar } = await import("../../ts/characters");
     if (get(pendingCharID) !== index) {
-      return
+      return;
     }
-    void changeChar(index)
+    void changeChar(index);
   }
 
   async function addNewCharacter() {
-    const { addCharacter } = await import('../../ts/characters')
-    addCharacter({ reseter })
+    const { addCharacter } = await import("../../ts/characters");
+    addCharacter({ reseter });
   }
 
   function reseter() {
-    pendingCharID.set(-1)
+    pendingCharID.set(-1);
     menuMode = 0;
     sideBarMode = 0;
     editMode = false;
@@ -105,46 +154,46 @@
 
   function runSidebarMenuAction(action: TauriSidebarMenuAction) {
     if (action === "settings") {
-      const wasOpen = get(settingsOpen)
-      reseter()
-      settingsOpen.set(!wasOpen)
-      return
+      const wasOpen = get(settingsOpen);
+      reseter();
+      settingsOpen.set(!wasOpen);
+      return;
     }
     if (action === "home") {
-      reseter()
-      selectedCharID.set(-1)
-      PlaygroundStore.set(0)
-      OpenRealmStore.set(false)
-      return
+      reseter();
+      selectedCharID.set(-1);
+      PlaygroundStore.set(0);
+      OpenRealmStore.set(false);
+      return;
     }
     if (action === "playground") {
-      const selected = get(selectedCharID)
-      const playground = get(PlaygroundStore)
-      reseter()
+      const selected = get(selectedCharID);
+      const playground = get(PlaygroundStore);
+      reseter();
       if (selected === -1 && playground !== 0) {
-        PlaygroundStore.set(0)
-        return
+        PlaygroundStore.set(0);
+        return;
       }
-      selectedCharID.set(-1)
-      PlaygroundStore.set(1)
-      return
+      selectedCharID.set(-1);
+      PlaygroundStore.set(1);
+      return;
     }
     if (action === "search") {
-      reseter()
-      messageSearchOpen.set(true)
-      return
+      reseter();
+      messageSearchOpen.set(true);
+      return;
     }
     if (action === "grid") {
-      reseter()
-      openGrid()
-      return
+      reseter();
+      openGrid();
+      return;
     }
     if (action.startsWith("plugin:")) {
-      const id = action.slice("plugin:".length)
-      const menu = additionalHamburgerMenu.find((item) => item.id === id)
-      if (!menu) return
-      reseter()
-      menu.callback()
+      const id = action.slice("plugin:".length);
+      const menu = additionalHamburgerMenu.find((item) => item.id === id);
+      if (!menu) return;
+      reseter();
+      menu.callback();
     }
   }
 
@@ -152,20 +201,66 @@
     const result = await toggleTauriSidebarMenuPopup(
       event.currentTarget as HTMLElement,
       additionalHamburgerMenu,
-    )
+    );
     if (result !== "unavailable") {
-      menuMode = 0
-      return
+      menuMode = 0;
+      return;
     }
-    menuMode = 1 - menuMode
+    menuMode = 1 - menuMode;
   }
 
-  type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
-  type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
+  // Dismiss the CSS flyout when clicking outside of it. The macOS native popup
+  // closes itself on window blur, but the CSS popover (used elsewhere, including
+  // the Windows theme) needs an explicit outside-click handler.
+  $effect(() => {
+    if (menuMode !== 1) {
+      return;
+    }
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (
+        target?.closest(".rs-sidebar-menu-button") ||
+        target?.closest(".rs-sidebar-menu-popover")
+      ) {
+        return;
+      }
+      menuMode = 0;
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        menuMode = 0;
+      }
+    };
+    window.addEventListener("pointerdown", closeOnPointerDown, true);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnPointerDown, true);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  });
+
+  type sortTypeNormal = {
+    type: "normal";
+    img: string;
+    index: number;
+    id: string;
+    name: string;
+  };
+  type sortType =
+    | sortTypeNormal
+    | {
+        type: "folder";
+        folder: sortTypeNormal[];
+        id: string;
+        name: string;
+        color: string;
+        img?: string;
+      };
   let charImages: sortType[] = $state([]);
-  let IconRounded = $state(false)
-  let openFolders:string[] = $state([])
-  let currentDrag: DragData | null = $state(null)
+  let IconRounded = $state(false);
+  let openFolders: string[] = $state([]);
+  let currentDrag: DragItem | null = $state(null);
+  const order = $derived(new Order(settingsStore.state.characterOrder));
   interface Props {
     openGrid?: any;
     hidden?: boolean;
@@ -173,66 +268,69 @@
 
   let { openGrid = () => {}, hidden = false }: Props = $props();
 
-  sideBarClosing.set(false)
+  sideBarClosing.set(false);
 
   onMount(() => {
     // Warm up the panel chunks while the browser is idle so the first sidebar
     // open on mobile does not pay the network + parse cost mid-animation.
     const warm = () => {
-      void preloadChatSidebarPanel()
-      void import('./RecentSessionsList.svelte')
-    }
-    const ric = (globalThis as any).requestIdleCallback
-    if (typeof ric === 'function') {
-      ric(warm, { timeout: 3000 })
+      void preloadChatSidebarPanel();
+      void import("./RecentSessionsList.svelte");
+    };
+    const ric = (globalThis as any).requestIdleCallback;
+    if (typeof ric === "function") {
+      ric(warm, { timeout: 3000 });
     } else {
-      setTimeout(warm, 800)
+      setTimeout(warm, 800);
     }
 
-    let disposed = false
-    let unlistenSidebarMenu: (() => void) | undefined
+    let disposed = false;
+    let unlistenSidebarMenu: (() => void) | undefined;
     if (isTauriMacOSRuntime()) {
-      void listenTauriSidebarMenuActions(runSidebarMenuAction).then((unlisten) => {
-        if (disposed) unlisten()
-        else unlistenSidebarMenu = unlisten
-      })
+      void listenTauriSidebarMenuActions(runSidebarMenuAction).then(
+        (unlisten) => {
+          if (disposed) unlisten();
+          else unlistenSidebarMenu = unlisten;
+        },
+      );
     }
 
     return () => {
-      disposed = true
-      unlistenSidebarMenu?.()
-      void closeTauriSidebarMenuPopup()
-    }
-  })
+      disposed = true;
+      unlistenSidebarMenu?.();
+      void closeTauriSidebarMenuPopup();
+    };
+  });
 
   $effect(() => {
     let newCharImages: sortType[] = [];
-    const idObject = getCharacterIndexObject()
+    const idObject = getCharacterIndexObject();
     for (const id of settingsStore.state.characterOrder) {
-      if(typeof(id) === 'string'){
-        const index = idObject[id] ?? -1
-        if(index !== -1){
-          const cha = characterStore.characters[index]
+      if (typeof id === "string") {
+        const index = idObject[id] ?? -1;
+        if (index !== -1) {
+          const cha = characterStore.characters[index];
           newCharImages.push({
-            img:cha.image ?? "",
-            index:index,
+            img: cha.image ?? "",
+            index: index,
+            id: id,
             type: "normal",
-            name: cha.name
+            name: cha.name,
           });
         }
-      }
-      else{
-        const folder = id
-        let folderCharImages: sortTypeNormal[] = []
-        for(const id of folder.data){
-          const index = idObject[id] ?? -1
-          if(index !== -1){
-            const cha = characterStore.characters[index]
+      } else {
+        const folder = id;
+        let folderCharImages: sortTypeNormal[] = [];
+        for (const id of folder.data) {
+          const index = idObject[id] ?? -1;
+          if (index !== -1) {
+            const cha = characterStore.characters[index];
             folderCharImages.push({
-              img:cha.image ?? "",
-              index:index,
+              img: cha.image ?? "",
+              index: index,
+              id: id,
               type: "normal",
-              name: cha.name
+              name: cha.name,
             });
           }
         }
@@ -249,813 +347,810 @@
     if (!isEqual(charImages, newCharImages)) {
       charImages = newCharImages;
     }
-    if(IconRounded !== settingsStore.state.roundIcons){
-      IconRounded = settingsStore.state.roundIcons
+    if (IconRounded !== settingsStore.state.roundIcons) {
+      IconRounded = settingsStore.state.roundIcons;
     }
-  })
+  });
 
-
-  const inserter = (mainIndex:DragData, targetIndex:DragData) => {
-    if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
-      return
+  const inserter = (source: DragItem, target: DropPosition) => {
+    if (order.move(source, target)) {
+      checkCharOrder();
     }
-    let db = settingsStore.state
-    let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-    let targetFolderIndex = targetIndex.folder ? getFolderIndex(targetIndex.folder) : null
-    let mainFolderId = mainIndex.folder ? (db.characterOrder[mainFolderIndex] as folder).id : ''
-    let movingFolder:folder|false = false
-    let mainId = ''
-    if(mainIndex.folder){
-      mainId = (db.characterOrder[mainFolderIndex] as folder).data[mainIndex.index]
-    }
-    else{
-      const da = db.characterOrder[mainIndex.index]
-      if(typeof(da) !== 'string'){
-        mainId = da.id
-        movingFolder = $state.snapshot(da)
-        if(targetIndex.folder){
-          return
-        }
-      }
-      else{
-        mainId = da
-      }
-    }
-    if(targetIndex.folder){
-        const folder = db.characterOrder[targetFolderIndex] as folder
-        folder.data.splice(targetIndex.index,0,mainId)
-        db.characterOrder[targetFolderIndex] = folder
-    }
-    else if(movingFolder){
-        db.characterOrder.splice(targetIndex.index,0,movingFolder)
-    }
-    else{
-        db.characterOrder.splice(targetIndex.index,0,mainId)
-    }
-    if(mainIndex.folder){
-      mainFolderIndex = -1
-      for(let i=0;i<db.characterOrder.length;i++){
-        const a =db.characterOrder[i]
-        if(typeof(a) !== 'string'){
-          if(a.id === mainFolderId){
-            mainFolderIndex = i
-            break
-          }
-        }
-      }
-      if(mainFolderIndex !== -1){
-        const folder:folder = db.characterOrder[mainFolderIndex] as folder
-        const ind = mainIndex.index > targetIndex.index ? folder.data.lastIndexOf(mainId) : folder.data.indexOf(mainId) 
-        if(ind !== -1){
-          folder.data.splice(ind, 1)
-        }
-        db.characterOrder[mainFolderIndex] = folder
-      }
-      else{
-        console.log('folder not found')
-      }
-    }
-    else if(movingFolder){
-      let idList:string[] = []
-      for(const ord of db.characterOrder){
-        idList.push(typeof(ord) === 'string' ? ord : ord.id)
-      }
-      const ind = mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId) 
-      if(ind !== -1){
-        db.characterOrder.splice(ind, 1)
-      }
-    }
-    else{
-      const ind = mainIndex.index > targetIndex.index ? db.characterOrder.lastIndexOf(mainId) : db.characterOrder.indexOf(mainId) 
-      if(ind !== -1){
-        db.characterOrder.splice(ind, 1)
-      }
-    }
-
-    settingsStore.state.characterOrder = db.characterOrder
-    checkCharOrder()
-  }
-
-  function getFolderIndex(id:string){
-    for(let i=0;i<settingsStore.state.characterOrder.length;i++){
-      const data = settingsStore.state.characterOrder[i]
-      if(typeof(data) !== 'string' && data.id === id){
-        return i
-      }
-    }
-    return -1
-  }
+  };
 
   function scrollToActiveCharacter() {
-    const selectedId = $selectedCharID
-    if (selectedId === -1) return
-    
-    const characterId = characterStore.characters[selectedId]?.chaId
-    if (!characterId) return
-    
-    let targetFolderId: string | null = null
-    
+    const selectedId = $selectedCharID;
+    if (selectedId === -1) return;
+
+    const characterId = characterStore.characters[selectedId]?.chaId;
+    if (!characterId) return;
+
+    let targetFolderId: string | null = null;
+
     for (const item of charImages) {
-      if (item.type === 'folder') {
-        const foundChar = item.folder.find(c => 
-          characterStore.characters[c.index]?.chaId === characterId
-        )
+      if (item.type === "folder") {
+        const foundChar = item.folder.find(
+          (c) => characterStore.characters[c.index]?.chaId === characterId,
+        );
         if (foundChar) {
-          targetFolderId = item.id
-          break
+          targetFolderId = item.id;
+          break;
         }
       }
     }
-    
+
     if (targetFolderId && !openFolders.includes(targetFolderId)) {
-      openFolders.push(targetFolderId)
-      openFolders = openFolders
+      openFolders.push(targetFolderId);
+      openFolders = openFolders;
     }
-    
+
     setTimeout(() => {
-      const activeElement = document.querySelector(`[data-char-id="${characterId}"]`)
+      const activeElement = document.querySelector(
+        `[data-char-id="${characterId}"]`,
+      );
       if (activeElement) {
-        activeElement.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
-        })
+        activeElement.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       }
-    }, 100)
+    }, 100);
   }
 
   $effect(() => {
-    if (typeof window === 'undefined') return
-    
+    if (typeof window === "undefined") return;
+
     const handler = () => {
-      scrollToActiveCharacter()
-    }
-    
-    window.addEventListener('scrollToActiveCharacter', handler)
-    
+      scrollToActiveCharacter();
+    };
+
+    window.addEventListener("scrollToActiveCharacter", handler);
+
     return () => {
-      window.removeEventListener('scrollToActiveCharacter', handler)
-    }
-  })
+      window.removeEventListener("scrollToActiveCharacter", handler);
+    };
+  });
 
-
-  const createFolder = (mainIndex:DragData, targetIndex:DragData) => {
-    if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
-      return
+  const createFolder = (source: DragItem, target: DragItem) => {
+    if (order.group(source, target)) {
+      checkCharOrder();
     }
-    let db = settingsStore.state
-    let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-    let mainFolder = db.characterOrder[mainFolderIndex] as folder
-    if(targetIndex.folder){
-      return
-    }
-    const main = mainIndex.folder ? mainFolder.data[mainIndex.index] : db.characterOrder[mainIndex.index]
-    const target = db.characterOrder[targetIndex.index]
-    if(typeof(main) !== 'string'){
-      return
-    }
-    if(typeof (target) === 'string'){
-      const newFolder:folder = {
-        name: "New Folder",
-        data: [main, target],
-        color: "",
-        id: v4()
-      }
-      db.characterOrder[targetIndex.index] = newFolder
-      if(mainIndex.folder){
-        mainFolder.data.splice(mainIndex.index, 1)
-        db.characterOrder[mainFolderIndex] = mainFolder
-      }
-      else{
-        db.characterOrder.splice(mainIndex.index, 1)
-      }
-    }
-    else{
-      target.data.push(main)
-      if(mainIndex.folder){
-        mainFolder.data.splice(mainIndex.index, 1)
-        db.characterOrder[mainFolderIndex] = mainFolder
-      }
-      else{
-        db.characterOrder.splice(mainIndex.index, 1)
-      }
-    }
-
-    settingsStore.state.characterOrder = db.characterOrder
-    checkCharOrder()
-  }
+  };
 
   type DragEv = DragEvent & {
     currentTarget: EventTarget & HTMLDivElement;
-  }
-  type DragData = {
-    index:number,
-    folder?:string
-  }
-  const avatarDragStart = (ind:DragData, e:DragEv) => {
-    e.dataTransfer.setData('text/plain', '');
-    e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true');
-    currentDrag = ind
-    const avatar = e.currentTarget.querySelector('.avatar')
-    if(avatar){
+  };
+  const avatarDragStart = (ind: DragItem, e: DragEv) => {
+    e.dataTransfer.setData("text/plain", "");
+    e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, "true");
+    currentDrag = ind;
+    const avatar = e.currentTarget.querySelector(".avatar");
+    if (avatar) {
       e.dataTransfer.setDragImage(avatar, 10, 10);
     }
-  }
+  };
 
   const clearCurrentDrag = () => {
-    currentDrag = null
-  }
+    currentDrag = null;
+  };
 
   $effect(() => {
-    if (typeof window === 'undefined') return
+    if (typeof window === "undefined") return;
 
-    window.addEventListener('dragend', clearCurrentDrag)
-    window.addEventListener('drop', clearCurrentDrag)
-    window.addEventListener('blur', clearCurrentDrag)
+    window.addEventListener("dragend", clearCurrentDrag);
+    window.addEventListener("drop", clearCurrentDrag);
+    window.addEventListener("blur", clearCurrentDrag);
 
     return () => {
-      window.removeEventListener('dragend', clearCurrentDrag)
-      window.removeEventListener('drop', clearCurrentDrag)
-      window.removeEventListener('blur', clearCurrentDrag)
-    }
-  })
+      window.removeEventListener("dragend", clearCurrentDrag);
+      window.removeEventListener("drop", clearCurrentDrag);
+      window.removeEventListener("blur", clearCurrentDrag);
+    };
+  });
 
-  const getCurrentSidebarDrag = (e:DragEvent) => {
-    if(!currentDrag || !e.dataTransfer?.types.includes(RISU_SIDEBAR_DRAG_TYPE)){
-      return null
+  const getCurrentSidebarDrag = (e: DragEvent) => {
+    if (
+      !currentDrag ||
+      !e.dataTransfer?.types.includes(RISU_SIDEBAR_DRAG_TYPE)
+    ) {
+      return null;
     }
-    return currentDrag
-  }
+    return currentDrag;
+  };
 
-  const avatarDragOver = (e:DragEv) => {
-    if(!getCurrentSidebarDrag(e)){
-      return
+  const avatarDragOver = (e: DragEv) => {
+    if (!getCurrentSidebarDrag(e)) {
+      return;
     }
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-  }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+  };
 
-  const avatarDrop = (ind:DragData, e:DragEv) => {
-    const drag = getCurrentSidebarDrag(e)
-    if(!drag){
-      return
+  const avatarDrop = (ind: DragItem, e: DragEv) => {
+    const drag = getCurrentSidebarDrag(e);
+    if (!drag) {
+      return;
     }
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault();
+    e.stopPropagation();
     try {
-      createFolder(drag,ind)
+      createFolder(drag, ind);
     } catch (error) {
-      console.error('avatarDrop error:', error)
+      console.error("avatarDrop error:", error);
     } finally {
-      clearCurrentDrag()
+      clearCurrentDrag();
     }
-  }
+  };
 
-  const preventAll = (e:DragEvent) => {
-    if(!getCurrentSidebarDrag(e)){
-      return
+  const preventAll = (e: DragEvent) => {
+    if (!getCurrentSidebarDrag(e)) {
+      return;
     }
-    e.preventDefault()
-    e.stopPropagation()
-    return false
-  }
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  };
+
+  let isSidebarOpen = $derived($sideBarStore && !$DynamicGUI);
 </script>
-{#if settingsStore.state.menuSideBar}
-<div
-  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar rs-sidebar-titlebar-inset"
-  class:editMode
-  class:dynamic-sidebar={$DynamicGUI}
-  class:risu-sub-sidebar={!$sideBarClosing}
-  class:risu-sub-sidebar-close={$sideBarClosing}
-  class:hidden={hidden}
-  class:flex={!hidden}
->
-{#if isTauriMacOS}
-  <div
-    class="absolute top-0 left-0 right-1 h-7 z-20"
-    data-tauri-drag-region="true"
-    aria-hidden="true"
-  ></div>
-{/if}
-<button
-  class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
-  class:text-textcolor2={!(
-    $selectedCharID < 0 &&
-    $PlaygroundStore === 0 &&
-    !$settingsOpen
-  )}
-  onclick={() => {
-    reseter();
-    selectedCharID.set(-1)
-    PlaygroundStore.set(0)
-    OpenRealmStore.set(false)
-  }}
->
-  <HomeIcon />
-  <span class="text-xs">{language.home}</span>
-</button>
-<button
-  class="flex items-center justify-center py-2 flex-col gap-1 w-full"
-  class:text-textcolor2={!$settingsOpen}
-  onclick={() => {
-    if ($settingsOpen) {
-      reseter();
-      settingsOpen.set(false);
-    } else {
-      reseter();
-      settingsOpen.set(true);
-    }
-  }}
->
-  <Settings />
-  <span class="text-xs">{language.settings}</span>
-</button>
-<button
-  class="flex items-center justify-center py-2 flex-col gap-1 w-full"
-  class:text-textcolor2={!(
-    $selectedCharID >= 0
-  )}
-  onclick={() => {
-    reseter();
-    openGrid();
 
-  }}
->
-  <User2Icon />
-  <span class="text-xs">{language.character}</span>
-</button>
-<button
-  class="flex items-center justify-center py-2 flex-col gap-1 w-full"
-  class:text-textcolor2={!(
-    $selectedCharID < 0 &&
-    $PlaygroundStore !== 0
-  )}
-  onclick={() => {
-    reseter();
-    selectedCharID.set(-1)
-    PlaygroundStore.set(1)
-  }}
->
-  <ShellIcon />
-  <span class="text-xs">{language.playground.playground}</span>
-</button>
-</div>
-{:else}
-<div
-  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
-  class:rs-sidebar-titlebar-inset={!settingsStore.state.hamburgerButtonBottom}
-  class:editMode
-  class:dynamic-sidebar={$DynamicGUI}
-  class:risu-sub-sidebar={!$sideBarClosing}
-  class:risu-sub-sidebar-close={$sideBarClosing}
-  class:hidden={hidden}
-  class:flex={!hidden}
->
-  {#if isTauriMacOS}
-    {#if !settingsStore.state.hamburgerButtonBottom}
+{#if settingsStore.state.menuSideBar}
+  <div
+    class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar rs-sidebar-titlebar-inset"
+    class:editMode
+    class:dynamic-sidebar={$DynamicGUI}
+    class:risu-sub-sidebar={!$sideBarClosing}
+    class:risu-sub-sidebar-close={$sideBarClosing}
+    class:hidden
+    class:flex={!hidden}
+  >
+    {#if isTauriMacOS || isTauriWindows}
       <div
-        class="absolute top-0 left-0 right-1 h-7 z-20"
-        data-tauri-drag-region="true"
-        aria-hidden="true"
-      ></div>
-    {:else}
-      <div
-        class="absolute inset-y-0 left-0 w-1.5 z-20"
-        data-tauri-drag-region="true"
+        class="absolute top-0 left-0 right-1 h-8 z-20"
+        use:windowDragRegion
         aria-hidden="true"
       ></div>
     {/if}
-  {/if}
-  {#if !settingsStore.state.hamburgerButtonBottom}
-  <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={toggleHamburgerMenu}><ListIcon />
-  </button>
-  <div class="mt-2 border-b border-b-selected w-full relative text-white ">
-    {#if menuMode === 1}
-      <div class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
-        <BarIcon
-        onClick={() => {
-          if ($settingsOpen) {
-            reseter();
-            settingsOpen.set(false);
-          } else {
-            reseter();
-            settingsOpen.set(true);
-          }
-        }}><Settings /></BarIcon
-      >
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
+    <button
+      class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
+      class:text-textcolor2={!(
+        $selectedCharID < 0 &&
+        $PlaygroundStore === 0 &&
+        !$settingsOpen
+      )}
+      onclick={() => {
+        reseter();
+        selectedCharID.set(-1);
+        PlaygroundStore.set(0);
+        OpenRealmStore.set(false);
+      }}
+    >
+      <HomeIcon />
+      <span class="text-xs">{language.home}</span>
+    </button>
+    <button
+      class="flex items-center justify-center py-2 flex-col gap-1 w-full"
+      class:text-textcolor2={!$settingsOpen}
+      onclick={() => {
+        if ($settingsOpen) {
           reseter();
-          selectedCharID.set(-1)
-          PlaygroundStore.set(0)
-          OpenRealmStore.set(false)
-        }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          selectedCharID.set(-1)
-          PlaygroundStore.set(1)
-        }}
-      ><ShellIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
+          settingsOpen.set(false);
+        } else {
           reseter();
-          messageSearchOpen.set(true);
-        }}><SearchIcon /></BarIcon
-      >
-      {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
-        <BarIcon
-          onClick={() => {
-            reseter();
-            menu.callback();
-          }}>
-            <PluginDefinedIcon ico={menu} />
-          </BarIcon
-        >
-      {/each}
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          openGrid();
-        }}><LayoutGridIcon /></BarIcon
-      >
-    </div>
-    {/if}
+          settingsOpen.set(true);
+        }
+      }}
+    >
+      <Settings />
+      <span class="text-xs">{language.settings}</span>
+    </button>
+    <button
+      class="flex items-center justify-center py-2 flex-col gap-1 w-full"
+      class:text-textcolor2={!($selectedCharID >= 0)}
+      onclick={() => {
+        reseter();
+        openGrid();
+      }}
+    >
+      <User2Icon />
+      <span class="text-xs">{language.character}</span>
+    </button>
+    <button
+      class="flex items-center justify-center py-2 flex-col gap-1 w-full"
+      class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore !== 0)}
+      onclick={() => {
+        reseter();
+        selectedCharID.set(-1);
+        PlaygroundStore.set(1);
+      }}
+    >
+      <ShellIcon />
+      <span class="text-xs">{language.playground.playground}</span>
+    </button>
   </div>
-  {/if}
-  <div class="rs-sidebar-scroll flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
-    class:rs-sidebar-scroll-floating-menu={settingsStore.state.hamburgerButtonBottom}>
-    <div class="h-4 min-h-4 w-14" role="listitem" ondragover={(e) => {
-      if(!getCurrentSidebarDrag(e)){ return }
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = 'move'
-      e.currentTarget.classList.add('bg-green-500')
-    }} ondragleave={(e) => {
-      e.currentTarget.classList.remove('bg-green-500')
-    }} ondrop={(e) => {
-      const drag = getCurrentSidebarDrag(e)
-      if(!drag){ return }
-      e.preventDefault()
-      e.stopPropagation()
-      e.currentTarget.classList.remove('bg-green-500')
-      try {
-        inserter(drag,{index:0})
-      } finally {
-        clearCurrentDrag()
-      }
-    }} ondragenter={preventAll}></div>
-    {#each charImages as char, ind}
-      <div class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
-        role="listitem"
-        draggable="true"
-        ondragstart={(e) => {avatarDragStart({index:ind}, e)}}
-        ondragend={clearCurrentDrag}
-        ondragover={avatarDragOver}
-        ondrop={(e) => {avatarDrop({index:ind}, e)}}
-        ondragenter={preventAll}
-      >
-        <SidebarIndicator
-          isActive={char.type === 'normal' && ($pendingCharID === char.index || ($pendingCharID < 0 && $selectedCharID === char.index)) && sideBarMode !== 1}
-        />
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+{:else}
+  <div
+    class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+    class:rs-sidebar-titlebar-inset={!settingsStore.state.hamburgerButtonBottom}
+    class:editMode
+    class:dynamic-sidebar={$DynamicGUI}
+    class:risu-sub-sidebar={!$sideBarClosing}
+    class:risu-sub-sidebar-close={$sideBarClosing}
+    class:hidden
+    class:flex={!hidden}
+  >
+    {#if isTauriMacOS || isTauriWindows}
+      {#if !settingsStore.state.hamburgerButtonBottom}
         <div
-            role="button" tabindex="0"
+          class="absolute top-0 left-0 right-1 h-8 z-20"
+          use:windowDragRegion
+          aria-hidden="true"
+        ></div>
+      {:else}
+        <div
+          class="absolute inset-y-0 left-0 w-1.5 z-20"
+          use:windowDragRegion
+          aria-hidden="true"
+        ></div>
+      {/if}
+    {/if}
+    {#if !settingsStore.state.hamburgerButtonBottom}
+      <button
+        class="rs-sidebar-menu-button rs-sidebar-toggle-button relative z-30 flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+        onclick={toggleHamburgerMenu}
+        ><ListIcon />
+      </button>
+      <div
+        class="rs-sidebar-top-menu-anchor mt-2 border-b border-b-selected w-full relative text-white"
+      >
+        {#if menuMode === 1}
+          <div
+            use:sidebarMenuCutout
+            class="rs-sidebar-menu-popover absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2"
+          >
+            <BarIcon
+              onClick={() => {
+                if ($settingsOpen) {
+                  reseter();
+                  settingsOpen.set(false);
+                } else {
+                  reseter();
+                  settingsOpen.set(true);
+                }
+              }}><Settings /></BarIcon
+            >
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                selectedCharID.set(-1);
+                PlaygroundStore.set(0);
+                OpenRealmStore.set(false);
+              }}><HomeIcon /></BarIcon
+            >
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                if ($selectedCharID === -1 && $PlaygroundStore !== 0) {
+                  PlaygroundStore.set(0);
+                  return;
+                }
+                selectedCharID.set(-1);
+                PlaygroundStore.set(1);
+              }}><ShellIcon /></BarIcon
+            >
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                messageSearchOpen.set(true);
+              }}><SearchIcon /></BarIcon
+            >
+            {#each additionalHamburgerMenu as menu}
+              <div class="rs-sidebar-menu-gap mt-2"></div>
+              <BarIcon
+                onClick={() => {
+                  reseter();
+                  menu.callback();
+                }}
+              >
+                <PluginDefinedIcon ico={menu} />
+              </BarIcon>
+            {/each}
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                openGrid();
+              }}><LayoutGridIcon /></BarIcon
+            >
+          </div>
+        {/if}
+      </div>
+    {/if}
+    <div
+      class="rs-sidebar-scroll scrollbar-none flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
+      class:rs-sidebar-scroll-floating-menu={settingsStore.state
+        .hamburgerButtonBottom}
+    >
+      <div
+        class="h-4 min-h-4 w-14"
+        role="listitem"
+        ondragover={(e) => {
+          if (!getCurrentSidebarDrag(e)) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+          e.currentTarget.classList.add("bg-green-500");
+        }}
+        ondragleave={(e) => {
+          e.currentTarget.classList.remove("bg-green-500");
+        }}
+        ondrop={(e) => {
+          const drag = getCurrentSidebarDrag(e);
+          if (!drag) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.classList.remove("bg-green-500");
+          try {
+            inserter(drag, {});
+          } finally {
+            clearCurrentDrag();
+          }
+        }}
+        ondragenter={preventAll}
+      ></div>
+      {#each charImages as char}
+        <div
+          class="group relative flex items-center px-2 [content-visibility:auto] [contain-intrinsic-size:64px]"
+          role="listitem"
+          draggable="true"
+          ondragstart={(e) => {
+            avatarDragStart({ id: char.id }, e);
+          }}
+          ondragend={clearCurrentDrag}
+          ondragover={avatarDragOver}
+          ondrop={(e) => {
+            avatarDrop({ id: char.id }, e);
+          }}
+          ondragenter={preventAll}
+        >
+          <SidebarIndicator
+            isActive={char.type === "normal" &&
+              ($pendingCharID === char.index ||
+                ($pendingCharID < 0 && $selectedCharID === char.index)) &&
+              sideBarMode !== 1}
+          />
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            role="button"
+            tabindex="0"
             onpointerenter={() => void preloadChatSidebarPanel()}
             onfocus={() => void preloadChatSidebarPanel()}
             onclick={() => {
-              if(char.type === "normal"){
+              if (char.type === "normal") {
                 void changeCharacter(char.index);
               }
             }}
             onkeydown={(e) => {
               if (e.key === "Enter") {
-                if(char.type === "normal"){
+                if (char.type === "normal") {
                   void changeCharacter(char.index);
                 }
               }
             }}
           >
-          {#if char.type === 'normal'}
-            <SidebarAvatar 
-              src={char.img ? () => sidebarThumbnail(char.img) : "/none.webp"}
-              size="56" 
-              rounded={IconRounded} 
-              name={char.name}
-              chaId={characterStore.characters[char.index]?.chaId}
-            />
-          {:else if char.type === "folder"}
-            {#key char.color}
-            {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => sidebarThumbnail(char.img) : ""}
-              oncontextmenu={async (e) => {
-                e.preventDefault()
-                const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
-                if(sel === 0){
-                  const v = await alertInput(language.changeFolderName, [], char.name)
-                  const db = settingsStore.state
-                  if(v){
-                    const oder = db.characterOrder[ind]
-                    if(typeof(oder) === 'string'){
-                      return
-                    }
-                    oder.name = v
-                    db.characterOrder[ind] = oder
-                  }
-                }
-                else if(sel === 1){
-                  const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-                  const sel = parseInt(await alertSelect(colors))
-                  const db = settingsStore.state
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-                  oder.color = colors[sel].toLocaleLowerCase()
-                  db.characterOrder[ind] = oder
-                }
-                else if(sel === 2) {
-                  const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                  const db = settingsStore.state
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-
-                  switch (sel) {
-                    case 0:
-                      oder.imgFile = null
-                      oder.img = ''
-                      break;
-                  
-                    case 1:
-                      const folderImage = await selectSingleFile([
-                        'png',
-                        'jpg',
-                        'webp',
-                      ])
-
-                      if(!folderImage) {
-                        return
-                      }
-
-                      const folderImageData = await saveAsset(folderImage.data)
-
-                      oder.imgFile = folderImageData
-                      oder.img = await getFileSrc(folderImageData)
-                      db.characterOrder[ind] = oder
-                      break;
-                  }
-                }
-              }}
-              onClick={() => {
-                if(char.type !== 'folder'){
-                  return
-                }
-                if(openFolders.includes(char.id)){
-                  openFolders.splice(openFolders.indexOf(char.id), 1)
-                }
-                else{
-                  openFolders.push(char.id)
-                }
-                openFolders = openFolders
-              }}>
-                {#if settingsStore.state.showFolderName}
-                  <div class="h-full w-full flex justify-center items-center">
-                    <span class="hyphens-auto truncate font-bold">{char.name}</span>
-                  </div>
-                {:else if openFolders.includes(char.id)}
-                  <FolderOpenIcon />
-                {:else}
-                  <FolderIcon />
-                {/if}
-              </SidebarAvatar>
-            {/key}
-            {/key}
-          {/if}
-        </div>
-      </div>
-      {#if char.type === 'folder' && openFolders.includes(char.id)}
-        {#key char.color}
-        <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
-          <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {
-            char.color === 'red' ? 'bg-red-700/20' :
-            char.color === 'yellow' ? 'bg-yellow-700/20' :
-            char.color === 'green' ? 'bg-green-700/20' :
-            char.color === 'blue' ? 'bg-blue-700/20' :
-            char.color === 'indigo' ? 'bg-indigo-700/20' :
-            char.color === 'purple' ? 'bg-purple-700/20' :
-            char.color === 'pink' ? 'bg-pink-700/20' :
-            'bg-darkbg/20'
-          }"></div>
-          <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" ondragover={(e) => {
-            if(!getCurrentSidebarDrag(e)){ return }
-            e.preventDefault()
-            e.stopPropagation()
-            e.dataTransfer.dropEffect = 'move'
-            e.currentTarget.classList.add('bg-green-500')
-          }} ondragleave={(e) => {
-            e.currentTarget.classList.remove('bg-green-500')
-          }} ondrop={(e) => {
-            const drag = getCurrentSidebarDrag(e)
-            if(!drag){ return }
-            e.preventDefault()
-            e.stopPropagation()
-            e.currentTarget.classList.remove('bg-green-500')
-            try {
-              if(char.type === 'folder'){
-                inserter(drag,{index:0,folder:char.id})
-              }
-            } finally {
-              clearCurrentDrag()
-            }
-          }} ondragenter={preventAll}></div>
-          {#each char.folder as char2, ind}
-              <div class="group relative flex items-center px-2 z-10"
-              role="listitem"
-              draggable="true"
-              ondragstart={(e) => {if(char.type === 'folder'){avatarDragStart({index: ind, folder:char.id}, e)}}}
-              ondragend={clearCurrentDrag}
-              ondragover={avatarDragOver}
-              ondrop={(e) => {if(char.type === 'folder'){avatarDrop({index: ind, folder:char.id}, e)}}}
-              ondragenter={preventAll}
-            >
-              <SidebarIndicator
-                isActive={($pendingCharID === char2.index || ($pendingCharID < 0 && $selectedCharID === char2.index)) && sideBarMode !== 1}
+            {#if char.type === "normal"}
+              <SidebarAvatar
+                src={char.img ? () => sidebarThumbnail(char.img) : "/none.webp"}
+                size="56"
+                rounded={IconRounded}
+                name={char.name}
+                chaId={characterStore.characters[char.index]?.chaId}
               />
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            {:else if char.type === "folder"}
+              {#key char.color}
+                {#key char.name}
+                  <SidebarAvatar
+                    src="slot"
+                    size="56"
+                    rounded={IconRounded}
+                    bordered
+                    name={char.name}
+                    color={char.color}
+                    backgroundimg={char.img
+                      ? () => sidebarThumbnail(char.img)
+                      : ""}
+                    oncontextmenu={async (e) => {
+                      e.preventDefault();
+                      const folderId = char.id;
+                      const folderName = char.name;
+                      const sel = parseInt(
+                        await alertSelect([
+                          language.renameFolder,
+                          language.changeFolderColor,
+                          language.changeFolderImage,
+                          language.cancel,
+                        ]),
+                      );
+                      if (sel === 0) {
+                        const v = await alertInput(
+                          language.changeFolderName,
+                          [],
+                          folderName,
+                        );
+                        const folder = order.findFolder(folderId);
+                        if (v && folder) {
+                          folder.name = v;
+                        }
+                      } else if (sel === 1) {
+                        const colors = [
+                          "red",
+                          "green",
+                          "blue",
+                          "yellow",
+                          "indigo",
+                          "purple",
+                          "pink",
+                          "default",
+                        ];
+                        const sel = parseInt(await alertSelect(colors));
+                        const folder = order.findFolder(folderId);
+                        if (folder && colors[sel]) {
+                          folder.color = colors[sel].toLocaleLowerCase();
+                        }
+                      } else if (sel === 2) {
+                        const sel = parseInt(
+                          await alertSelect([
+                            "Reset to Default Image",
+                            "Select Image File",
+                          ]),
+                        );
+                        if (sel === 0) {
+                          const folder = order.findFolder(folderId);
+                          if (folder) {
+                            folder.imgFile = null;
+                            folder.img = "";
+                          }
+                        } else if (sel === 1) {
+                          const folderImage = await selectSingleFile([
+                            "png",
+                            "jpg",
+                            "webp",
+                          ]);
+                          if (!folderImage) {
+                            return;
+                          }
+                          const folderImageData = await saveAsset(
+                            folderImage.data,
+                          );
+                          const folderImageSrc =
+                            await getFileSrc(folderImageData);
+                          const folder = order.findFolder(folderId);
+                          if (folder) {
+                            folder.imgFile = folderImageData;
+                            folder.img = folderImageSrc;
+                          }
+                        }
+                      }
+                    }}
+                    onClick={() => {
+                      if (char.type !== "folder") {
+                        return;
+                      }
+                      if (openFolders.includes(char.id)) {
+                        openFolders.splice(openFolders.indexOf(char.id), 1);
+                      } else {
+                        openFolders.push(char.id);
+                      }
+                      openFolders = openFolders;
+                    }}
+                  >
+                    {#if settingsStore.state.showFolderName}
+                      <div
+                        class="h-full w-full flex justify-center items-center"
+                      >
+                        <span class="hyphens-auto truncate font-bold"
+                          >{char.name}</span
+                        >
+                      </div>
+                    {:else if openFolders.includes(char.id)}
+                      <FolderOpenIcon />
+                    {:else}
+                      <FolderIcon />
+                    {/if}
+                  </SidebarAvatar>
+                {/key}
+              {/key}
+            {/if}
+          </div>
+        </div>
+        {#if char.type === "folder" && openFolders.includes(char.id)}
+          {#key char.color}
+            <div
+              class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative"
+            >
               <div
-                  role="button" tabindex="0"
-                  onpointerenter={() => void preloadChatSidebarPanel()}
-                  onfocus={() => void preloadChatSidebarPanel()}
-                  onclick={() => {
-                    if(char2.type === "normal"){
-                      void changeCharacter(char2.index);
+                class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {char.color ===
+                'red'
+                  ? 'bg-red-700/20'
+                  : char.color === 'yellow'
+                    ? 'bg-yellow-700/20'
+                    : char.color === 'green'
+                      ? 'bg-green-700/20'
+                      : char.color === 'blue'
+                        ? 'bg-blue-700/20'
+                        : char.color === 'indigo'
+                          ? 'bg-indigo-700/20'
+                          : char.color === 'purple'
+                            ? 'bg-purple-700/20'
+                            : char.color === 'pink'
+                              ? 'bg-pink-700/20'
+                              : 'bg-darkbg/20'}"
+              ></div>
+              <div
+                class="h-4 min-h-4 w-14 relative z-10"
+                role="listitem"
+                ondragover={(e) => {
+                  if (!getCurrentSidebarDrag(e)) {
+                    return;
+                  }
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = "move";
+                  e.currentTarget.classList.add("bg-green-500");
+                }}
+                ondragleave={(e) => {
+                  e.currentTarget.classList.remove("bg-green-500");
+                }}
+                ondrop={(e) => {
+                  const drag = getCurrentSidebarDrag(e);
+                  if (!drag) {
+                    return;
+                  }
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.classList.remove("bg-green-500");
+                  try {
+                    if (char.type === "folder") {
+                      inserter(drag, { folder: char.id });
+                    }
+                  } finally {
+                    clearCurrentDrag();
+                  }
+                }}
+                ondragenter={preventAll}
+              ></div>
+              {#each char.folder as char2}
+                <div
+                  class="group relative flex items-center px-2 z-10"
+                  role="listitem"
+                  draggable="true"
+                  ondragstart={(e) => {
+                    if (char.type === "folder") {
+                      avatarDragStart({ id: char2.id, folder: char.id }, e);
                     }
                   }}
-                  onkeydown={(e) => {
-                    if (e.key === "Enter") {
-                      if(char2.type === "normal"){
+                  ondragend={clearCurrentDrag}
+                  ondragover={avatarDragOver}
+                  ondrop={(e) => {
+                    if (char.type === "folder") {
+                      avatarDrop({ id: char2.id, folder: char.id }, e);
+                    }
+                  }}
+                  ondragenter={preventAll}
+                >
+                  <SidebarIndicator
+                    isActive={($pendingCharID === char2.index ||
+                      ($pendingCharID < 0 &&
+                        $selectedCharID === char2.index)) &&
+                      sideBarMode !== 1}
+                  />
+                  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                  <div
+                    role="button"
+                    tabindex="0"
+                    onpointerenter={() => void preloadChatSidebarPanel()}
+                    onfocus={() => void preloadChatSidebarPanel()}
+                    onclick={() => {
+                      if (char2.type === "normal") {
                         void changeCharacter(char2.index);
                       }
+                    }}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter") {
+                        if (char2.type === "normal") {
+                          void changeCharacter(char2.index);
+                        }
+                      }
+                    }}
+                  >
+                    <SidebarAvatar
+                      src={char2.img
+                        ? () => sidebarThumbnail(char2.img)
+                        : "/none.webp"}
+                      size="56"
+                      rounded={IconRounded}
+                      name={char2.name}
+                      chaId={characterStore.characters[char2.index]?.chaId}
+                    />
+                  </div>
+                </div>
+                <div
+                  class="h-4 min-h-4 w-14 relative z-20"
+                  role="listitem"
+                  ondragover={(e) => {
+                    if (!getCurrentSidebarDrag(e)) {
+                      return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = "move";
+                    e.currentTarget.classList.add("bg-green-500");
+                  }}
+                  ondragleave={(e) => {
+                    e.currentTarget.classList.remove("bg-green-500");
+                  }}
+                  ondrop={(e) => {
+                    const drag = getCurrentSidebarDrag(e);
+                    if (!drag) {
+                      return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.classList.remove("bg-green-500");
+                    try {
+                      if (char.type === "folder") {
+                        inserter(drag, {
+                          id: char2.id,
+                          after: true,
+                          folder: char.id,
+                        });
+                      }
+                    } finally {
+                      clearCurrentDrag();
                     }
                   }}
-                >
-                <SidebarAvatar 
-                  src={char2.img ? () => sidebarThumbnail(char2.img) : "/none.webp"}
-                  size="56" 
-                  rounded={IconRounded} 
-                  name={char2.name}
-                  chaId={characterStore.characters[char2.index]?.chaId}
-                />
-              </div>
+                  ondragenter={preventAll}
+                ></div>
+              {/each}
             </div>
-            <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" ondragover={(e) => {
-              if(!getCurrentSidebarDrag(e)){ return }
-              e.preventDefault()
-              e.stopPropagation()
-              e.dataTransfer.dropEffect = 'move'
-              e.currentTarget.classList.add('bg-green-500')
-            }} ondragleave={(e) => {
-              e.currentTarget.classList.remove('bg-green-500')
-            }} ondrop={(e) => {
-              const drag = getCurrentSidebarDrag(e)
-              if(!drag){ return }
-              e.preventDefault()
-              e.stopPropagation()
-              e.currentTarget.classList.remove('bg-green-500')
-              try {
-                if(char.type === 'folder'){
-                  inserter(drag,{index:ind+1,folder:char.id})
-                }
-              } finally {
-                clearCurrentDrag()
-              }
-            }} ondragenter={preventAll}></div>
-          {/each}
-        </div>
-        {/key}
-      {/if}
-      <div class="h-4 min-h-4 w-14" role="listitem" ondragover={((e) => {
-        if(!getCurrentSidebarDrag(e)){ return }
-        e.preventDefault()
-        e.stopPropagation()
-        e.dataTransfer.dropEffect = 'move'
-        e.currentTarget.classList.add('bg-green-500')
-      })} ondragleave={(e) => {
-        e.currentTarget.classList.remove('bg-green-500')
-      }} ondrop={(e) => {
-        const drag = getCurrentSidebarDrag(e)
-        if(!drag){ return }
-        e.preventDefault()
-        e.stopPropagation()
-        e.currentTarget.classList.remove('bg-green-500')
-        try {
-          inserter(drag,{index:ind+1})
-        } finally {
-          clearCurrentDrag()
-        }
-      }} ondragenter={preventAll}></div>
-    {/each}
-    <div class="flex flex-col items-center gap-2 px-2">
-      <BaseRoundedButton
-        onClick={async () => {
-          void addNewCharacter()
-        }}
-        ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
-          ><path
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-          /></svg
-        ></BaseRoundedButton
-      >
-    </div>
-  </div>
-  {#if settingsStore.state.hamburgerButtonBottom}
-  <div class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white ">
-    {#if menuMode === 1}
-      <div class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
-        <BarIcon
-        onClick={() => {
-          if ($settingsOpen) {
-            reseter();
-            settingsOpen.set(false);
-          } else {
-            reseter();
-            settingsOpen.set(true);
-          }
-        }}><Settings /></BarIcon
-      >
-      <div class="rs-sidebar-menu-gap mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          selectedCharID.set(-1)
-          PlaygroundStore.set(0)
-          OpenRealmStore.set(false)
-        }}><HomeIcon /></BarIcon>
-      <div class="rs-sidebar-menu-gap mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          selectedCharID.set(-1)
-          PlaygroundStore.set(1)
-        }}
-      ><ShellIcon /></BarIcon>
-      <div class="rs-sidebar-menu-gap mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          messageSearchOpen.set(true);
-        }}><SearchIcon /></BarIcon
-      >
-      {#each additionalHamburgerMenu as menu}
-        <div class="rs-sidebar-menu-gap mt-2"></div>
-        <BarIcon
-          onClick={() => {
-            reseter();
-            menu.callback();
-          }}>
-            <PluginDefinedIcon ico={menu} />
-          </BarIcon
-        >
+          {/key}
+        {/if}
+        <div
+          class="h-4 min-h-4 w-14"
+          role="listitem"
+          ondragover={(e) => {
+            if (!getCurrentSidebarDrag(e)) {
+              return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            e.currentTarget.classList.add("bg-green-500");
+          }}
+          ondragleave={(e) => {
+            e.currentTarget.classList.remove("bg-green-500");
+          }}
+          ondrop={(e) => {
+            const drag = getCurrentSidebarDrag(e);
+            if (!drag) {
+              return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.classList.remove("bg-green-500");
+            try {
+              inserter(drag, { id: char.id, after: true });
+            } finally {
+              clearCurrentDrag();
+            }
+          }}
+          ondragenter={preventAll}
+        ></div>
       {/each}
-      <div class="rs-sidebar-menu-gap mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter();
-          openGrid();
-        }}><LayoutGridIcon /></BarIcon
-      >
+      <div class="flex flex-col items-center gap-2 px-2">
+        <BaseRoundedButton
+          onClick={async () => {
+            void addNewCharacter();
+          }}
+          ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
+            ><path
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+            /></svg
+          ></BaseRoundedButton
+        >
+      </div>
     </div>
+    {#if settingsStore.state.hamburgerButtonBottom}
+      <div
+        class="rs-sidebar-menu-anchor border-t border-t-selected w-full relative text-white"
+      >
+        {#if menuMode === 1}
+          <div
+            use:sidebarMenuCutout
+            class="rs-sidebar-menu-popover absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2"
+          >
+            <BarIcon
+              onClick={() => {
+                if ($settingsOpen) {
+                  reseter();
+                  settingsOpen.set(false);
+                } else {
+                  reseter();
+                  settingsOpen.set(true);
+                }
+              }}><Settings /></BarIcon
+            >
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                selectedCharID.set(-1);
+                PlaygroundStore.set(0);
+                OpenRealmStore.set(false);
+              }}><HomeIcon /></BarIcon
+            >
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                if ($selectedCharID === -1 && $PlaygroundStore !== 0) {
+                  PlaygroundStore.set(0);
+                  return;
+                }
+                selectedCharID.set(-1);
+                PlaygroundStore.set(1);
+              }}><ShellIcon /></BarIcon
+            >
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                messageSearchOpen.set(true);
+              }}><SearchIcon /></BarIcon
+            >
+            {#each additionalHamburgerMenu as menu}
+              <div class="rs-sidebar-menu-gap mt-2"></div>
+              <BarIcon
+                onClick={() => {
+                  reseter();
+                  menu.callback();
+                }}
+              >
+                <PluginDefinedIcon ico={menu} />
+              </BarIcon>
+            {/each}
+            <div class="rs-sidebar-menu-gap mt-2"></div>
+            <BarIcon
+              onClick={() => {
+                reseter();
+                openGrid();
+              }}><LayoutGridIcon /></BarIcon
+            >
+          </div>
+        {/if}
+      </div>
+      <button
+        class="rs-sidebar-menu-button flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+        onclick={toggleHamburgerMenu}
+        ><ListIcon />
+      </button>
     {/if}
   </div>
-  <button
-    class="rs-sidebar-menu-button flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
-    onclick={toggleHamburgerMenu}><ListIcon />
-  </button>
-  {/if}
-</div>
 {/if}
+
 <div
   class="setting-area rs-sidebar-panel relative h-full flex-col overflow-x-hidden bg-darkbg text-textcolor max-h-full"
   class:overflow-hidden={btwRuntime.open}
@@ -1076,7 +1171,7 @@
   class:px-2={$DynamicGUI && !btwRuntime.open}
   class:px-4={!$DynamicGUI && !btwRuntime.open}
   class:dynamic-sidebar={$DynamicGUI}
-  class:hidden={hidden}
+  class:hidden
   class:flex={!hidden}
   class:max-w-[calc(100%-8rem)]={$DynamicGUI}
   onanimationend={(event) => {
@@ -1085,16 +1180,16 @@
       // sidebar is removed from layout. Hiding it in the animationend task can
       // skip that final frame and look like a last-moment snap on macOS.
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => sideBarStore.set(false))
-      })
+        requestAnimationFrame(() => sideBarStore.set(false));
+      });
     }
   }}
 >
   <button
     class="flex w-full justify-end text-textcolor"
     onclick={async () => {
-      if($sideBarClosing){
-        return
+      if ($sideBarClosing) {
+        return;
       }
       $sideBarClosing = true;
     }}
@@ -1106,7 +1201,7 @@
       <LazyComponent loader={btwPanelLoader} />
     {:else if $selectedCharID < 0 || $settingsOpen}
       <LazyComponent loader={recentSessionsLoader} props={{ reseter }} />
-    {:else if characterStore.characters[$selectedCharID]?.chaId === '§playground'}
+    {:else if characterStore.characters[$selectedCharID]?.chaId === "§playground"}
       <LazyComponent loader={loadSideChatList} />
     {:else if $ConnectionOpenStore}
       <div class="flex flex-col">
@@ -1125,21 +1220,39 @@
         </div>
       </div>
     {:else}
-      <div class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
-        <button onclick={() => {
-          void loadSideChatList()
-          devTool = false
-          botMakerMode.set(false)
-        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
-        <button onclick={() => {
-          void loadCharConfig()
-          devTool = false
-          botMakerMode.set(true)
-        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
+      <div
+        class="rs-sidebar-mode-tabs w-full h-8 min-h-8 border-l border-b border-r border-selected relative -mt-6 rounded-b-md flex"
+        class:mb-6={QuickSettings.open || devTool || $botMakerMode}
+      >
+        <button
+          onclick={() => {
+            void loadSideChatList();
+            devTool = false;
+            botMakerMode.set(false);
+          }}
+          class="grow border-r border-r-selected rounded-bl-md"
+          class:text-textcolor2={$botMakerMode || devTool}
+          aria-pressed={!$botMakerMode && !devTool}>{language.Chat}</button
+        >
+        <button
+          onclick={() => {
+            void loadCharConfig();
+            devTool = false;
+            botMakerMode.set(true);
+          }}
+          class="grow rounded-br-md"
+          class:text-textcolor2={!$botMakerMode || devTool}
+          aria-pressed={$botMakerMode && !devTool}>{language.character}</button
+        >
         {#if settingsStore.state.enableDevTools}
-          <button onclick={() => {
-            devTool = true
-          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool}>
+          <button
+            onclick={() => {
+              devTool = true;
+            }}
+            class="border-l border-l-selected rounded-br-md px-1"
+            class:text-textcolor2={!devTool}
+            aria-pressed={devTool}
+          >
             <WrenchIcon size={18} />
           </button>
         {/if}
@@ -1158,29 +1271,32 @@
 </div>
 
 {#if $DynamicGUI}
-    <!-- Full-cover scrim BEHIND the sliding bars. With transform-based
+  <!-- Full-cover scrim BEHIND the sliding bars. With transform-based
          animation the backdrop must not sit next to the panel's final layout
          slot (that leaves an undimmed gap where the panel has not arrived
          yet). Covering everything at z-[-1] reproduces the old width
          animation's look - the whole area dims first, the opaque panel and
          avatar bar slide in on top of it, and at rest they cover the scrim
          exactly like before. -->
-    <div role="button" tabindex="0" class="absolute inset-0 z-[-1]" class:hidden={hidden} onclick={() => {
-      if($sideBarClosing){
-        return
+  <div
+    role="button"
+    tabindex="0"
+    class="absolute inset-0 z-[-1]"
+    class:hidden
+    onclick={() => {
+      if ($sideBarClosing) {
+        return;
       }
       $sideBarClosing = true;
     }}
-      onkeydown={(e)=>{
-        if(e.key === 'Enter'){
-            e.currentTarget.click()
-        }
-      }}
-      class:sidebar-dark-animation={!$sideBarClosing}
-      class:sidebar-dark-close-animation={$sideBarClosing}>
-
-    </div>
-
+    onkeydown={(e) => {
+      if (e.key === "Enter") {
+        e.currentTarget.click();
+      }
+    }}
+    class:sidebar-dark-animation={!$sideBarClosing}
+    class:sidebar-dark-close-animation={$sideBarClosing}
+  ></div>
 {/if}
 
 <style>
@@ -1221,12 +1337,12 @@
     from {
       width: var(--sidebar-size);
       min-width: var(--sidebar-size);
-      right:0rem;
+      right: 0rem;
     }
     to {
       width: 0rem;
       min-width: 0rem;
-      right:3rem;
+      right: 3rem;
     }
   }
   /* Avatar bar: fixed 5rem wide. Desktop keeps the width animation (needed
@@ -1263,7 +1379,7 @@
       width: 5rem;
       min-width: 5rem;
       max-width: 5rem;
-      right:0rem;
+      right: 0rem;
     }
     to {
       width: 0rem;
@@ -1272,7 +1388,7 @@
       right: 10rem;
     }
   }
-  @keyframes sidebar-dark-animation{
+  @keyframes sidebar-dark-animation {
     from {
       opacity: 0;
     }
@@ -1280,7 +1396,7 @@
       opacity: 0.5;
     }
   }
-  @keyframes sidebar-dark-closing-animation{
+  @keyframes sidebar-dark-closing-animation {
     from {
       opacity: 0.5;
     }
@@ -1314,7 +1430,6 @@
     will-change: transform;
   }
 
-
   .risu-sub-sidebar:not(.dynamic-sidebar) {
     animation-name: sub-sidebar-transition-width;
     animation-duration: var(--risu-animation-speed);
@@ -1337,16 +1452,16 @@
     position: relative;
     will-change: transform;
   }
-  .sidebar-dark-animation{
+  .sidebar-dark-animation {
     animation-name: sidebar-dark-animation;
     animation-duration: var(--risu-animation-speed);
-    background-color: rgb(0,0,0);
+    background-color: rgb(0, 0, 0);
     opacity: 0.5;
   }
-  .sidebar-dark-close-animation{
+  .sidebar-dark-close-animation {
     animation-name: sidebar-dark-closing-animation;
     animation-duration: var(--risu-animation-speed);
-    background-color: rgb(0,0,0);
+    background-color: rgb(0, 0, 0);
     opacity: 0;
   }
 </style>

@@ -69,7 +69,18 @@ test.describe("partial local backup module persistence", () => {
       },
     ];
 
-    // 1. Create and install multiple arbitrary modules into moduleStore
+    // 1. Create and install multiple arbitrary modules into moduleStore.
+    // The store hydrates asynchronously from SQLite after the app boots;
+    // installing before hydration completes would let init() overwrite the
+    // in-memory modules with the database snapshot, silently dropping the
+    // test fixtures.
+    await page.waitForFunction(async () => {
+      const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
+      const { moduleStore } = (await import(
+        /* @vite-ignore */ moduleStoreUrl
+      )) as { moduleStore: { loaded: boolean } };
+      return moduleStore.loaded;
+    });
     await page.evaluate(async (modulesToInstall) => {
       const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
       const { moduleStore } = (await import(

@@ -4,6 +4,60 @@
 
 This is the Node.js server for Risuai, for self-hosting purposes, who want to run Risuai on their own server remotely, without using official server for privacy or other reasons.
 
+## Directory layout
+
+```
+server/node/
+├── server.ts              # ESM TypeScript entry point, executed directly by Node
+├── http/                  # HTTP middleware and server plumbing (CORS, security, SSE, push)
+├── storage/               # Storage backends and drivers
+│   ├── postgres/          # PostgreSQL storage + codecs + schema SQL
+│   ├── oracle/            # Oracle storage + schema SQL
+│   └── azure/             # Azure SQL storage + schema SQL
+├── executors/             # Chat/provider/hypa-memory/model-job executors
+├── sync/                  # Storage sync protocol and database mutation core
+├── util/                  # Small shared utilities (zip, stream, tokenizer, lore, ...)
+├── scripts/               # One-off verification scripts against real databases
+└── ssl/                   # Local TLS certificate generation helpers
+```
+
+Use Node.js **24.12 or newer** and start the server from the application root:
+
+```bash
+node server/node/server.ts
+# Equivalent: pnpm runserver
+```
+
+The server runs ESM TypeScript through Node's built-in type stripping. Starting
+it requires no server build, tsx, TypeScript compiler, or esbuild. The frontend
+still needs its own build (`pnpm build`). Shared setting keys and their types come
+directly from `packages/protocol/settings.ts`. Server type checks use NodeNext
+and erasable TypeScript syntax.
+
+Ship `server/node` sources, its SQL schemas and optional `ssl/certificate` files,
+plus the source directories and package manifests for `packages/backup-core`,
+`packages/protocol` (including `settings.ts`), and `packages/chat-core`. Install
+the production dependencies declared in `server/node/package.json` and include
+the frontend `dist` directory. No server or shared-package `dist` is needed.
+Schemas, vendor environment files, and certificates resolve relative to the
+source files; persistent saves and frontend files resolve from the application root.
+
+SQL vendor modules, tokenizers, S3, image processing, and OIDC load on demand.
+Concurrent first requests share their loading Promise. Storage factories and
+token counting return Promises; storage constructors remain synchronous.
+
+## Browser authentication
+
+Remote authentication uses a lazily loaded JavaScript P-256 signer, so it also
+works when accessing the app over HTTP at a LAN or Tailscale IP without browser
+security overrides. The server still verifies the existing ES256 token format.
+
+After upgrading from the Web Crypto signer, enter the server password once to
+register a new device key. Old authentication keys are not converted. New keys
+persist in browser IndexedDB as private-key bytes and a public JWK, rather than
+non-extractable `CryptoKey` objects. Other browser features that require a secure
+context still need HTTPS.
+
 ## PostgreSQL storage
 
 PostgreSQL can be configured from **Advanced Settings → PostgreSQL Storage** when using the Node server. Configuration changes are accepted only over HTTPS or a localhost connection. The authenticated settings page stores the connection string only on the server in `save/__postgres_config.json` with owner-only file permissions; it is never written into the Risuai application database.
@@ -210,13 +264,11 @@ When S3 is enabled:
 
 When structured SQL storage and S3 are both active, RisuAI maintains an `asset_catalog` mirroring **every object** in the S3 bucket (assets, thumbnails, database.bin). The first use performs one full bucket listing to initialize it; later uploads and deletes update it incrementally, so subsequent backups and the Storage Explorer query SQL instead of running `ListObjectsV2`. The catalog is scoped to the configured endpoint and bucket. Use `POST /api/asset-catalog/resync` (or the Storage Explorer's Resync button) after modifying the bucket outside RisuAI, or because lazily generated thumbnails are only tracked after a resync.
 
-Remote clients hosted on a different origin must be listed exactly in the
-comma-separated `RISUAI_ALLOWED_ORIGINS` environment variable. For example,
-`RISUAI_ALLOWED_ORIGINS=https://chat.example.com,http://localhost:5174`.
-Wildcards are rejected. Same-origin requests and native requests without an
-`Origin` header continue to work without configuration. Native app origins
-sent by the desktop/mobile shells (`tauri://localhost`, `http://tauri.localhost`,
-`capacitor://localhost`) are trusted automatically.
+The Node API accepts requests from any origin without an origin allowlist.
+The `cors` middleware echoes the requesting origin and handles preflight
+responses with the supported methods and request headers. `RISUAI_ALLOWED_ORIGINS` is no longer used by the
+server; existing deployment configurations can retain it for compatibility.
+API authentication remains required on protected routes.
 
 Migration and rollback use a memory-first bounded concurrency. `RISUAI_MIGRATE_CONCURRENCY` controls the worker count (default `4`; raise it only when more throughput is worth the extra memory). Files larger than 512 KiB stream to/from S3 instead of buffering in memory. Progress updates are time-throttled (~200 ms) to avoid flooding the client.
 

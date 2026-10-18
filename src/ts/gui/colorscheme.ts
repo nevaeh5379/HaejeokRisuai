@@ -1,4 +1,5 @@
 import { get, writable } from "svelte/store";
+import { safeParse } from "valibot";
 
 import { downloadFile } from "../globalApi.svelte";
 import { BufferToText, selectSingleFile } from "../util";
@@ -6,47 +7,57 @@ import { alertError } from "../alert";
 import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { isTauriMacOS } from "../platform";
+import {
+  isCapacitorAndroid,
+  isTauriLinux,
+  isTauriMacOS,
+  isTauriWindows,
+} from "../platform";
+import { syncAndroidSystemBars } from "../android/androidNativeIntegration";
+import { applyLinuxDecorationAlpha } from "../linuxWindowIntegration";
+import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
+import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
-export interface ColorScheme {
-  bgcolor: string;
-  darkbg: string;
-  borderc: string;
-  selected: string;
-  draculared: string;
-  textcolor: string;
-  textcolor2: string;
-  darkBorderc: string;
-  darkbutton: string;
-  type: "light" | "dark";
-}
+import {
+  colorSchemeSchema,
+  defaultColorScheme,
+  type ColorScheme,
+} from "./colorSchemeDefaults";
+export { defaultColorScheme, type ColorScheme } from "./colorSchemeDefaults";
 
-
-async function syncTauriNativeAppearance(type: "light" | "dark") {
-  if (!isTauriMacOS) {
+async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
+  if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
     return;
   }
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("set_risu_native_appearance", { appearance: type });
+    const nativeAppearance = invoke("set_risu_native_appearance", {
+      appearance: colorScheme.type,
+    });
+
+    if (isTauriLinux) {
+      const [, decorationAlpha] = await Promise.all([
+        nativeAppearance,
+        invoke<number | null>("set_linux_decoration_colors", {
+          background: colorScheme.darkbg,
+          foreground: colorScheme.textcolor,
+          inactiveForeground: colorScheme.textcolor2,
+          accent: colorScheme.selected,
+          negative: colorScheme.draculared,
+        }),
+      ]);
+      applyLinuxDecorationAlpha(decorationAlpha);
+    } else {
+      await nativeAppearance;
+    }
   } catch (error) {
-    console.warn("Failed to sync macOS native appearance with Risu theme:", error);
+    console.warn(
+      "Failed to sync native Tauri appearance with Risu theme:",
+      error,
+    );
   }
 }
-
-export const defaultColorScheme: ColorScheme = {
-  bgcolor: "#282a36",
-  darkbg: "#21222c",
-  borderc: "#6272a4",
-  selected: "#44475a",
-  draculared: "#ff5555",
-  textcolor: "#f8f8f2",
-  textcolor2: "#64748b",
-  darkBorderc: "#4b5563",
-  darkbutton: "#374151",
-  type: "dark",
-};
 
 const colorShemes = {
   default: defaultColorScheme,
@@ -63,14 +74,14 @@ const colorShemes = {
     type: "dark",
   },
   light: {
-    bgcolor: "#ffffff",
-    darkbg: "#f0f0f0",
-    borderc: "#0f172a",
+    bgcolor: "#fafafa",
+    darkbg: "#F5F5F5",
+    borderc: "#d4d4d4",
     selected: "#e0e0e0",
     draculared: "#ff5555",
-    textcolor: "#0f172a",
-    textcolor2: "#64748b",
-    darkBorderc: "#d1d5db",
+    textcolor: "#171717",
+    textcolor2: "#737373",
+    darkBorderc: "transparent",
     darkbutton: "#e5e7eb",
     type: "light",
   },
@@ -242,7 +253,35 @@ const colorShemes = {
     darkbutton: "#374151",
     type: "dark",
   },
+  "fluent-dark": {
+    bgcolor: "#2b2b2b",
+    darkbg: "#202020",
+    borderc: "#60cdff",
+    selected: "#383838",
+    draculared: "#ff99a4",
+    textcolor: "#ffffff",
+    textcolor2: "#a0a0a0",
+    darkBorderc: "#3c3c3c",
+    darkbutton: "#323232",
+    type: "dark",
+  },
+  "fluent-light": {
+    bgcolor: "#ffffff",
+    darkbg: "#f3f3f3",
+    borderc: "#0067c0",
+    selected: "#e8e8e8",
+    draculared: "#c42b1c",
+    textcolor: "#1b1b1b",
+    textcolor2: "#5d5d5d",
+    darkBorderc: "#e0e0e0",
+    darkbutton: "#f9f9f9",
+    type: "light",
+  },
 } as const;
+
+export function isFluentColorScheme(name?: string | null): boolean {
+  return name === "fluent-dark" || name === "fluent-light";
+}
 
 export const ColorSchemeTypeStore = writable("dark" as "dark" | "light");
 
@@ -252,6 +291,17 @@ export const colorSchemeList = Object.keys(
   colorShemes,
 ) as (keyof typeof colorShemes)[];
 
+
+export function getCurrentlyColorScheme(): ColorScheme["type"] {
+  return settingsStore.state.colorScheme?.type ?? "dark";
+}
+
+export function isLight() {
+  if (getCurrentlyColorScheme() === "light")
+    return true
+  else
+    return false
+}
 export function changeColorScheme(colorScheme: string) {
   try {
     if (colorScheme === "custom") {
@@ -329,8 +379,19 @@ export function updateColorScheme() {
       "--risu-theme-darkbutton",
       colorScheme.darkbutton,
     );
+    document.documentElement.style.colorScheme = colorScheme.type;
+    document.documentElement.dataset.themeType = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
-    void syncTauriNativeAppearance(colorScheme.type);
+    if (isCapacitorAndroid) {
+      void syncAndroidSystemBars(colorScheme.type === "dark");
+    }
+    applyUITheme();
+    const isFluent =
+      isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
+    if (isFluent && isTauriWindows) {
+      void ensureFluentWindowsBackdrop();
+    }
+    void syncTauriNativeAppearance(colorScheme);
     updateTextThemeAndCSS();
   } catch (error) {}
 }
@@ -354,25 +415,13 @@ export async function importColorScheme() {
     return;
   }
   const string = BufferToText(uarray.data);
-  let colorScheme: ColorScheme;
   try {
-    colorScheme = JSON.parse(string);
-    if (
-      typeof colorScheme.bgcolor !== "string" ||
-      typeof colorScheme.darkbg !== "string" ||
-      typeof colorScheme.borderc !== "string" ||
-      typeof colorScheme.selected !== "string" ||
-      typeof colorScheme.draculared !== "string" ||
-      typeof colorScheme.textcolor !== "string" ||
-      typeof colorScheme.textcolor2 !== "string" ||
-      typeof colorScheme.darkBorderc !== "string" ||
-      typeof colorScheme.darkbutton !== "string" ||
-      typeof colorScheme.type !== "string"
-    ) {
+    const result = safeParse(colorSchemeSchema, JSON.parse(string));
+    if (!result.success) {
       alertError("Invalid color scheme");
       return;
     }
-    settingsStore.state.customColorScheme = colorScheme;
+    settingsStore.state.customColorScheme = result.output;
     updateCustomColorScheme();
   } catch (e) {
     alertError("Invalid color scheme");
@@ -386,11 +435,29 @@ export function updateTextThemeAndCSS() {
   if (!root) {
     return;
   }
+  const isFluent =
+    isWindowsFluentTheme() || isFluentColorScheme(db.colorSchemeName);
   let textTheme = get(isLite) ? "standard" : db.textTheme;
   let colorScheme = get(isLite) ? "dark" : (db.colorScheme?.type ?? "dark");
   switch (textTheme) {
     case "standard": {
-      if (colorScheme === "dark") {
+      if (isFluent) {
+        if (colorScheme === "dark") {
+          root.style.setProperty("--FontColorStandard", "#ffffff");
+          root.style.setProperty("--FontColorItalic", "#c8c8c8");
+          root.style.setProperty("--FontColorBold", "#ffffff");
+          root.style.setProperty("--FontColorItalicBold", "#c8c8c8");
+          root.style.setProperty("--FontColorQuote1", "#60cdff");
+          root.style.setProperty("--FontColorQuote2", "#fce100");
+        } else {
+          root.style.setProperty("--FontColorStandard", "#1b1b1b");
+          root.style.setProperty("--FontColorItalic", "#5d5d5d");
+          root.style.setProperty("--FontColorBold", "#1b1b1b");
+          root.style.setProperty("--FontColorItalicBold", "#5d5d5d");
+          root.style.setProperty("--FontColorQuote1", "#005fb8");
+          root.style.setProperty("--FontColorQuote2", "#c42b1c");
+        }
+      } else if (colorScheme === "dark") {
         root.style.setProperty("--FontColorStandard", "#fafafa");
         root.style.setProperty("--FontColorItalic", "#8C8D93");
         root.style.setProperty("--FontColorBold", "#fafafa");
@@ -456,7 +523,14 @@ export function updateTextThemeAndCSS() {
 
   switch (db.font) {
     case "default": {
-      root.style.setProperty("--risu-font-family", "Arial, sans-serif");
+      if (isFluent) {
+        root.style.setProperty(
+          "--risu-font-family",
+          '"Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Segoe UI Emoji", system-ui, sans-serif',
+        );
+      } else {
+        root.style.setProperty("--risu-font-family", "Arial, sans-serif");
+      }
       break;
     }
     case "timesnewroman": {

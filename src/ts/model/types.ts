@@ -1,6 +1,6 @@
 import type { LLMParameter } from "../process/request/shared";
-import { LLM_FORMATS } from "@risuai/protocol/modelFormat.cjs";
-import { LLM_FLAGS } from "@risuai/protocol/modelFlags.cjs";
+import { LLM_FORMATS } from "@risuai/protocol/modelFormat.ts";
+import { LLM_FLAGS } from "@risuai/protocol/modelFlags.ts";
 
 export const LLMFlags = LLM_FLAGS;
 export type LLMFlags = (typeof LLMFlags)[keyof typeof LLMFlags];

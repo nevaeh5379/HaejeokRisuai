@@ -6,12 +6,13 @@
     import Button from "../UI/GUI/Button.svelte";
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import { getLanguageCodes } from "src/ts/globalApi.svelte";
+    import { getSafeNavigatorLanguage } from "src/ts/locale";
     import OptionInput from "../UI/GUI/OptionInput.svelte";
     import CheckInput from "../UI/GUI/CheckInput.svelte";
     import { tokenize } from "src/ts/tokenizer";
 
 
-    const userPreferedLang = navigator.language.split('-')[0]
+    const userPreferedLang = getSafeNavigatorLanguage().split('-')[0]
 
     let r = $state('')
     let sourceLang = $state('en')
@@ -111,7 +112,7 @@
                     bulkProgressText += ` (previous ${await tokenize(prContext)} tokens)`
                 }
 
-                const translatedChunk = await runTranslator(preChunks[i], false, sourceLang, outputLang, {
+                const translatedChunk = await runTranslator(preChunks[i], sourceLang, outputLang, {
                     translatorNote: prContext ? `<Previous Content>${prContext.trim()}</Previous Content>\n${pvc}` : ""
                 })
                 if(keepContext){
@@ -139,7 +140,7 @@
             return
         }
         loading = true
-        output = await runTranslator(r, false, sourceLang, outputLang)   
+        output = await runTranslator(r, sourceLang, outputLang)
         loading = false
     } catch (error) {
         console.error(error)

@@ -1,3 +1,4 @@
+import { isTauri as detectTauri } from "@tauri-apps/api/core";
 import type { MenuDef } from "./stores.svelte";
 import {
   type as tauriOsType,
@@ -62,10 +63,7 @@ export function supportsTauriLiquidGlassVersion(version: string): boolean {
 }
 
 export function isTauriMacOSRuntime(): boolean {
-  if (
-    typeof window === "undefined" ||
-    !(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
-  ) {
+  if (!detectTauri()) {
     return false;
   }
 
@@ -214,7 +212,7 @@ function createPopupPayload(
 function popupDimensions(itemCount: number) {
   return {
     width: 62,
-    height: Math.min(420, 20 + itemCount * 40 + Math.max(0, itemCount - 1) * 5),
+    height: Math.min(420, 24 + itemCount * 40 + Math.max(0, itemCount - 1) * 5),
   };
 }
 

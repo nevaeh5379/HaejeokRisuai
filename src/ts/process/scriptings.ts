@@ -1,3 +1,8 @@
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
+import { readNote, NoteSource } from "../authorNote";
+import { globalAuthorNoteStore } from "../stores/domain/globalAuthorNoteStore";
+import { alertToast } from "../alert";
+import { language } from "../../lang";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { resolveChatTarget, type ChatExecutionTarget } from "src/ts/chatTarget";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
@@ -37,11 +42,15 @@ import {
   writeInlayImageFromBytes,
   getInlayAsset,
 } from "./files/inlays";
-import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.ts";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { StreamResponseChunk } from "./request/requestContracts";
 import { v4 } from "uuid";
-import { getModuleLorebooks, getModuleTriggers } from "./modules";
+import {
+  getModuleLorebooksWithSource,
+  getModuleTriggers,
+  getModules,
+} from "./modules";
 import { Mutex } from "../mutex";
 import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
@@ -63,6 +72,9 @@ interface BasicScriptingEngineState {
   char?: character | groupChat | simpleCharacterArgument;
   chat?: Chat;
   chatTarget?: ChatExecutionTarget;
+  authorNote?:
+    import("../stores/domain/globalAuthorNoteStore").GlobalAuthorNote | null;
+  authorNoteRaw?: string;
   triggerId?: string;
   setVar?: (key: string, value: string) => boolean | void;
   getVar?: (key: string) => string;
@@ -70,6 +82,10 @@ interface BasicScriptingEngineState {
   stopSending?: boolean;
   subModel?: string;
   sourceModuleId?: string;
+  sandboxOwnerModuleId?: string;
+  sandboxGroupId?: string;
+  sandboxInstanceId?: string;
+  sandboxModuleIds?: string[];
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -104,16 +120,30 @@ export async function runScripted(
     type?: "lua" | "py";
     subModel?: string;
     sourceModuleId?: string;
+    sandboxOwnerModuleId?: string;
+    sandboxGroupId?: string;
+    sandboxInstanceId?: string;
+    sandboxModuleIds?: string[];
   },
 ) {
   const type: "lua" | "py" = arg.type ?? "lua";
   const char = arg.char ?? characterStore.currentCharacter;
   const data = arg.data ?? "";
-  const setVar =
+  const baseSetVar =
     arg.setVar ??
     ((key: string, value: string) => setChatVar(key, value, arg.chatTarget));
-  const getVar =
+  const baseGetVar =
     arg.getVar ?? ((key: string) => getChatVar(key, arg.chatTarget));
+  const sandboxVariablePrefix = arg.sandboxGroupId
+    ? `__module_sandbox:${arg.sandboxGroupId}:`
+    : "";
+  const setVar = sandboxVariablePrefix
+    ? (key: string, value: string) =>
+        baseSetVar(sandboxVariablePrefix + key, value)
+    : baseSetVar;
+  const getVar = sandboxVariablePrefix
+    ? (key: string) => baseGetVar(sandboxVariablePrefix + key)
+    : baseGetVar;
   const meta = arg.meta ?? {};
   const mode = arg.mode ?? "manual";
 
@@ -123,7 +153,13 @@ export async function runScripted(
   if (type === "lua") {
     await ensureLuaFactory();
   }
-  const ScriptingEngineState = acquireScriptingEngineState(mode, type);
+  const ScriptingEngineState = acquireScriptingEngineState(
+    mode,
+    type,
+    arg.sourceModuleId,
+    arg.sandboxOwnerModuleId,
+    arg.sandboxGroupId,
+  );
   const executionToken = Symbol();
   let invocationAccessKey: string | undefined;
 
@@ -134,6 +170,21 @@ export async function runScripted(
       .filter((id): id is string => Boolean(id));
     ScriptingEngineState.char = char;
     ScriptingEngineState.chat = chat;
+    ScriptingEngineState.authorNote = undefined;
+    ScriptingEngineState.authorNoteRaw = undefined;
+    if (chat && NoteSource.get(chat).mode === "global") {
+      const note = await globalAuthorNoteStore.get(chat.globalAuthorNoteId!);
+      ScriptingEngineState.authorNote = note;
+      try {
+        ScriptingEngineState.authorNoteRaw = note
+          ? await note.getContent()
+          : "";
+      } catch (error) {
+        if (error instanceof AuthorNoteError && error.code === "missing")
+          ScriptingEngineState.authorNoteRaw = "";
+        else throw error;
+      }
+    }
     ScriptingEngineState.chatTarget = arg.chatTarget;
     ScriptingEngineState.triggerId = arg.triggerId;
     ScriptingEngineState.setVar = setVar;
@@ -142,6 +193,10 @@ export async function runScripted(
     ScriptingEngineState.stopSending = false;
     ScriptingEngineState.subModel = arg.subModel;
     ScriptingEngineState.sourceModuleId = arg.sourceModuleId;
+    ScriptingEngineState.sandboxOwnerModuleId = arg.sandboxOwnerModuleId;
+    ScriptingEngineState.sandboxGroupId = arg.sandboxGroupId;
+    ScriptingEngineState.sandboxInstanceId = arg.sandboxInstanceId;
+    ScriptingEngineState.sandboxModuleIds = arg.sandboxModuleIds;
     const getScriptingCharacter = () => {
       const scriptingChar = ScriptingEngineState.char;
       if (scriptingChar && scriptingChar.type !== "simple")
@@ -867,8 +922,54 @@ export async function runScripted(
       });
 
       declareAPI("getAuthorsNote", (id: string) => {
-        return ScriptingEngineState.chat?.note ?? "";
+        const chat = ScriptingEngineState.chat;
+        if (!chat) return "";
+        return NoteSource.get(chat).mode === "local"
+          ? (chat.note ?? "")
+          : (ScriptingEngineState.authorNoteRaw ?? "");
       });
+      declareAPI(
+        type === "lua" ? "setAuthorsNoteMain" : "setAuthorsNote",
+        async (id: string, content: string) => {
+          if (!ScriptingSafeIds.has(id) || typeof content !== "string")
+            return false;
+          const chat = ScriptingEngineState.chat;
+          if (!chat) return false;
+          const source = NoteSource.get(chat);
+          if (source.mode === "local") {
+            chat.note = content;
+            const stored = ScriptingEngineState.chatTarget
+              ? resolveChatTarget(ScriptingEngineState.chatTarget)?.chat
+              : null;
+            if (stored) {
+              stored.note = content;
+              if (stored.id) characterStore.markChatDirty(stored.id);
+            }
+            return true;
+          }
+          if (ScriptingEditDisplayIds.has(id)) return false;
+          if (!(await globalAuthorNoteStore.getAllowScriptWrite())) {
+            alertToast(language.globalAuthorNote.scriptBlocked);
+            return false;
+          }
+          let note = ScriptingEngineState.authorNote;
+          if (note === undefined || note?.id !== source.noteId) {
+            note = await globalAuthorNoteStore.get(source.noteId);
+            ScriptingEngineState.authorNote = note;
+            if (note) await note.getContent();
+          }
+          if (!note || note.id === "__none__") return false;
+          try {
+            await globalAuthorNoteStore.setScriptContent(note, content);
+            ScriptingEngineState.authorNoteRaw = content;
+            return true;
+          } catch (error) {
+            if (!(error instanceof AuthorNoteError)) throw error;
+            alertToast(language.globalAuthorNote.scriptConflict);
+            return false;
+          }
+        },
+      );
 
       declareAPI("getBackgroundEmbedding", (id: string) => {
         if (!ScriptingSafeIds.has(id)) return;
@@ -894,27 +995,39 @@ export async function runScripted(
         }
 
         const loreSources = [
-          ScriptingEngineState.chat?.localLore ?? [],
-          selectedChar.globalLore ?? [],
-          getModuleLorebooks(
+          ...(ScriptingEngineState.chat?.localLore ?? []).map((lorebook) => ({
+            lorebook,
+            sourceModuleId: undefined,
+          })),
+          ...(selectedChar.globalLore ?? []).map((lorebook) => ({
+            lorebook,
+            sourceModuleId: undefined,
+          })),
+          ...getModuleLorebooksWithSource(
             selectedChar,
-            undefined,
+            ScriptingEngineState.sandboxModuleIds?.length
+              ? ScriptingEngineState.sandboxModuleIds
+              : ScriptingEngineState.sandboxOwnerModuleId
+                ? [
+                    ScriptingEngineState.sourceModuleId,
+                    ScriptingEngineState.sandboxOwnerModuleId,
+                  ].filter((id): id is string => Boolean(id))
+                : undefined,
             ScriptingEngineState.chat,
-          ) ?? [],
+          ),
         ];
 
         const found = [];
-        for (const source of loreSources) {
-          for (const b of source) {
-            if (b.comment === search) {
-              found.push({
-                ...b,
-                content: risuChatParser(b.content, {
-                  chara: selectedChar,
-                  chatTarget: ScriptingEngineState.chatTarget,
-                }),
-              });
-            }
+        for (const { lorebook, sourceModuleId } of loreSources) {
+          if (lorebook.comment === search) {
+            found.push({
+              ...lorebook,
+              sourceModuleId,
+              content: risuChatParser(lorebook.content, {
+                chara: selectedChar,
+                chatTarget: ScriptingEngineState.chatTarget,
+              }),
+            });
           }
         }
 
@@ -1102,6 +1215,13 @@ export async function runScripted(
           const options = parseLuaOptions(optionsStr) as {
             streaming?: boolean;
           };
+          const sandboxOwner = ScriptingEngineState.sandboxOwnerModuleId
+            ? getModules(
+                getScriptingRequestCharacter(),
+                [ScriptingEngineState.sandboxOwnerModuleId],
+                ScriptingEngineState.chat,
+              )[0]
+            : undefined;
           const result = await requestChatData(
             {
               formated: promptbody,
@@ -1111,8 +1231,11 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
-              staticModel: ScriptingEngineState.subModel,
+              staticModel:
+                sandboxOwner?.subModel ?? ScriptingEngineState.subModel,
               sourceModuleId: ScriptingEngineState.sourceModuleId,
+              moduleSandboxOwnerId: sandboxOwner?.id,
+              moduleSandboxGroupId: ScriptingEngineState.sandboxGroupId,
             },
             "otherAx",
           );
@@ -1436,11 +1559,17 @@ function releaseScriptingExecutionContext(engineState: ScriptingEngineState) {
   engineState.char = undefined;
   engineState.chat = undefined;
   engineState.chatTarget = undefined;
+  engineState.authorNote = undefined;
+  engineState.authorNoteRaw = undefined;
   engineState.triggerId = undefined;
   engineState.setVar = undefined;
   engineState.getVar = undefined;
   engineState.messagesMutated = false;
   engineState.stopSending = false;
+  engineState.sandboxOwnerModuleId = undefined;
+  engineState.sandboxGroupId = undefined;
+  engineState.sandboxInstanceId = undefined;
+  engineState.sandboxModuleIds = undefined;
 }
 
 function disposeScriptingEngineState(engineState: ScriptingEngineState) {
@@ -1475,8 +1604,16 @@ function trimScriptingEngines() {
 function acquireScriptingEngineState(
   mode: string,
   type: "lua" | "py",
+  sourceModuleId?: string,
+  sandboxOwnerModuleId?: string,
+  sandboxGroupId?: string,
 ): ScriptingEngineState {
-  const key = `${type}:${mode}`;
+  const sandboxKey = sandboxGroupId
+    ? `${mode}:group:${sandboxGroupId}`
+    : sandboxOwnerModuleId
+      ? `${mode}:module:${sourceModuleId ?? "unknown"}:${sandboxOwnerModuleId}`
+      : mode;
+  const key = `${type}:${sandboxKey}`;
   let engineState = ScriptingEngines.get(key);
   if (engineState) {
     ScriptingEngines.delete(key);
@@ -1537,6 +1674,10 @@ function axLLM(id, prompt, useMultimodal, options)
     useMultimodal = useMultimodal or false
     options = options or {}
     return json.decode(axLLMMain(id, json.encode(prompt), useMultimodal, json.encode(options)):await())
+end
+
+function setAuthorsNote(id, content)
+    return setAuthorsNoteMain(id, content):await()
 end
 
 function getCharacterImage(id)
@@ -1709,18 +1850,27 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
-        const runResult = await runScripted(trigger.effect[0].code, {
-          char: char,
-          chat: targetChat,
-          chatTarget,
-          lowLevelAccess: false,
-          mode: mode,
-          data,
-          meta,
-          subModel: trigger.subModel,
-          sourceModuleId: trigger.sourceModuleId,
-        });
-        data = runResult.res ?? data;
+        const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
+          ? trigger.sandboxOwnerModuleIds
+          : [undefined];
+        for (const sandboxOwnerModuleId of sandboxOwners) {
+          const runResult = await runScripted(trigger.effect[0].code, {
+            char: char,
+            chat: targetChat,
+            chatTarget,
+            lowLevelAccess: false,
+            mode: mode,
+            data,
+            meta,
+            subModel: trigger.subModel,
+            sourceModuleId: trigger.sourceModuleId,
+            sandboxOwnerModuleId,
+            sandboxGroupId: trigger.sandboxGroupId,
+            sandboxInstanceId: trigger.sandboxInstanceId,
+            sandboxModuleIds: trigger.sandboxModuleIds,
+          });
+          data = runResult.res ?? data;
+        }
       }
     }
 
@@ -1772,16 +1922,25 @@ export async function runLuaButtonTrigger(
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === "triggerlua") {
-        runResult = await runScripted(trigger.effect[0].code, {
-          char: char,
-          chat: targetChat,
-          chatTarget,
-          lowLevelAccess: trigger.lowLevelAccess,
-          mode: "onButtonClick",
-          data: data,
-          subModel: trigger.subModel,
-          sourceModuleId: trigger.sourceModuleId,
-        });
+        const sandboxOwners = trigger.sandboxOwnerModuleIds?.length
+          ? trigger.sandboxOwnerModuleIds
+          : [undefined];
+        for (const sandboxOwnerModuleId of sandboxOwners) {
+          runResult = await runScripted(trigger.effect[0].code, {
+            char: char,
+            chat: targetChat,
+            chatTarget,
+            lowLevelAccess: trigger.lowLevelAccess,
+            mode: "onButtonClick",
+            data: data,
+            subModel: trigger.subModel,
+            sourceModuleId: trigger.sourceModuleId,
+            sandboxOwnerModuleId,
+            sandboxGroupId: trigger.sandboxGroupId,
+            sandboxInstanceId: trigger.sandboxInstanceId,
+            sandboxModuleIds: trigger.sandboxModuleIds,
+          });
+        }
       }
     }
   } catch (error) {

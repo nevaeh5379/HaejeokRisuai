@@ -1,4 +1,80 @@
 export const languageKorean = {
+  androidDiagnosticsShare: "Android 종료 진단 공유",
+  androidDiagnosticsShareFailed: "Android 진단을 공유하지 못했습니다.",
+  comfyWorkflows: {
+    loadingList: "워크플로 목록 불러오는 중…", loadingWorkflow: "워크플로 JSON 다운로드 중…", loadingNodes: "노드 정보 불러오는 중…", converting: "워크플로 JSON 변환 중…", loadingViewer: "JSON 뷰어 여는 중…",
+    requestTimeout: "ComfyUI 워크플로 처리 시간이 30초를 초과했습니다. 서버 연결을 확인한 뒤 다시 시도해 주세요.",
+    editJson: "JSON 편집", viewJson: "JSON 보기", invalidJson: "트리 보기를 열려면 올바른 워크플로 JSON을 입력하세요.",
+    working: "처리 중…",
+    saved: "저장된 워크플로", name: "워크플로 이름", add: "워크플로 추가", remove: "워크플로 삭제",
+    importFile: "JSON 가져오기", convert: "JSON 변환 / 검증", load: "ComfyUI에서 불러오기", importServer: "선택한 워크플로 가져오기",
+    empty: "저장된 워크플로가 없습니다. ComfyUI에서 워크플로를 먼저 저장한 뒤 다시 불러오세요. 저장하지 않고 열어 둔 작업은 포함되지 않습니다.",
+    help: "일반 워크플로 또는 API JSON을 가져올 수 있습니다. Risu 프롬프트를 사용하려면 텍스트 입력에 {{risu_prompt}}와 {{risu_neg}}를 넣으세요. 서브그래프와 특수 프런트엔드 위젯은 ComfyUI의 Export (API)가 필요할 수 있습니다.",
+    removeConfirm: "이 워크플로를 삭제할까요?", converted: "사용할 수 있는 워크플로 JSON입니다.",
+  },
+  useChatIllustrations: "채팅 삽화 기능 사용 (베타)",
+  illustration: {
+    generationCount: "자리당 삽화 생성 장수", generationCountHelp: "각 삽화 자리에서 1~8장을 생성합니다(기본 1장). 장마다 보조 모델에 태그를 요청하며, 완성된 장부터 표시합니다. 재시도는 실패하거나 빠진 장만 채우며 이미 완성된 그림은 유지합니다. 장수만큼 보조 모델·그림 생성 요청이 발생합니다.",
+    tagRequestMode: "보조 모델 요청 방식", tagRequestModeHelp: "순차 요청: 태그 작성·그림 생성·저장을 한 장씩 마친 뒤 다음 장을 시작합니다. 동시 요청: 최대 4개의 태그 요청을 동시에 보내고, 다른 요청이 진행 중이어도 도착한 태그부터 그림 생성에 넘깁니다. 두 방식 모두 그림 생성과 저장은 한 장씩 처리합니다.", sequential: "순차 요청", parallel: "동시 요청",
+    batchProgress: "저장된 삽화",
+    previousImage: "?? ??", nextImage: "?? ??",
+    errorStages: { prepare: "삽화 시작", tags: "그림 태그 작성", image: "이미지 생성", save: "이미지 저장", status: "삽화 상태 확인" },
+    errorReasons: {
+      connection: "서버에 연결하지 못했습니다. 네트워크, 제공자 주소, 서버 실행 여부를 확인하세요. 브라우저에서는 CORS로 연결이 차단될 수도 있습니다.",
+      timeout: "요청 시간이 초과되었습니다. 제공자 상태를 확인한 뒤 다시 시도하세요.",
+      auth: "인증 또는 접근 권한이 거부되었습니다. 해당 제공자의 API 키와 권한을 확인하세요.",
+      rateLimit: "제공자의 요청 횟수 또는 사용 한도에 도달했습니다. 사용 한도를 확인하거나 잠시 후 다시 시도하세요.",
+      server: "서버에서 오류를 반환했습니다. 제공자 상태를 확인하거나 잠시 후 다시 시도하세요.",
+      http: "서버가 요청을 거부했습니다. API 주소, 선택한 모델, 생성 설정을 확인하세요.",
+      configuration: "필수 설정이 없거나 지원하지 않는 설정입니다. 보조 모델, 제공자 주소, API 키를 확인하세요.",
+      contextLimit: "지침과 장면 내용이 보조 모델의 컨텍스트 한도를 초과했습니다. 포함할 문맥이나 지침을 줄이세요.",
+      emptyTags: "보조 모델이 그림 태그를 반환하지 않았습니다. 보조 모델과 태그 작성 지침을 확인하세요.",
+      noImage: "제공자가 이미지를 반환하지 않았습니다. 모델과 이미지 생성 설정을 확인하세요.",
+      invalidResponse: "응답을 예상한 JSON 또는 이미지 형식으로 읽지 못했습니다. API 주소와 제공자 형식을 확인하세요.",
+      unknown: "예상하지 못한 오류로 작업을 완료하지 못했습니다. 해당 단계의 설정을 확인한 뒤 다시 시도하세요.",
+    },
+    saveError: "이미지 또는 채팅 정보를 저장하지 못했습니다. 남은 저장 공간과 데이터베이스 연결을 확인한 뒤 다시 시도하세요.",
+    displayWidth: "삽화 크기 (%)", displayWidthHelp: "채팅 영역 너비를 기준으로 10~100%로 조절합니다. 기본값은 50%이며, 이미지 비율은 유지됩니다.",
+    title: "채팅 삽화", description: "메인 모델이 <Illustration>으로 위치를 표시하고, 보조 모델이 태그를 작성하면 이미지 제공자가 각 자리에 그림을 만듭니다. 일반 1:1 채팅에서 사용할 수 있습니다.",
+    characterHelp: "범용 설정을 상속하거나 개별 변경할 수 있습니다. 캐릭터 지침과 그림 프롬프트는 범용 내용 뒤에 추가됩니다.",
+    appFallback: "이 보조 모델은 앱에서 실행됩니다. Node에서도 앱을 종료하면 삽화 생성이 중단됩니다.",
+    enabled: "삽화 사용", includeDescription: "캐릭터 설명 포함", includePersona: "페르소나 포함", includeLorebook: "활성 로어북 포함", includeMemory: "사용 메모리 포함",
+    recentMessages: "이전 메시지 수", markerInstructions: "메인 모델 표식 사용 지침", tagInstructions: "보조 모델 태그 작성 지침", basePrompt: "기본 그림 태그", negativePrompt: "네거티브 프롬프트",
+    inherit: "범용 설정 사용", on: "켜기", off: "끄기", queued: "삽화 대기 중", tagging: "그림 태그 작성 중", generating: "이미지 생성 중", complete: "삽화 완성", failed: "삽화 생성 실패", interrupted: "삽화 생성 중단",
+    retry: "재시도", regenerate: "같은 태그로 재생성", rewrite: "태그부터 다시 만들기", tags: "그림 태그", operationFailed: "삽화 정보를 변경하지 못했습니다. 다시 시도하세요.",
+  },
+  globalAuthorNote: {
+    discard: "초안 버리기",
+    discardDraftConfirm: "보관한 초안을 영구적으로 버릴까요?",
+    local: "로컬 노트",
+    name: "노트 이름",
+    create: "범용 노트 생성",
+    rename: "이름 변경",
+    deleteConfirm: "범용 노트를 삭제할까요? 참조하는 챗은 없음으로 처리됩니다.",
+    saveFailed:
+      "노트를 저장하지 못했습니다. 초안은 보관됩니다. 다시 불러오거나 명시적으로 덮어쓰세요.",
+    discardConfirm: "초안을 폐기하고 저장된 노트를 다시 불러올까요?",
+    overwriteConfirm: "현재 초안으로 범용 노트를 강제 덮어쓸까요?",
+    reload: "다시 불러오기",
+    overwrite: "강제 덮어쓰기",
+    unsaved: "저장되지 않은 작가의 노트 초안",
+    allowScriptWrite: "스크립트의 범용 작가의 노트 쓰기 허용",
+    scriptBlocked: "스크립트의 범용 작가의 노트 쓰기가 차단되어 있습니다.",
+    scriptConflict:
+      "범용 노트가 변경되었거나 삭제되어 스크립트 쓰기를 생략했습니다.",
+  },
+  moduleSandboxGroups: {
+    tab: "묶음",
+    new: "새 묶음",
+    bundle: "묶음",
+    modelShort: "모델",
+    defaultShort: "기본",
+    add: "추가",
+    remove: "삭제",
+    title: "모듈 묶음",
+    missingModule: "누락된 모듈",
+    removeGroupConfirm: "이 모듈 묶음을 삭제할까요?",
+  },
   moduleRequestRules: {
     title: "보조모델 요청 규칙",
     description:
@@ -391,6 +467,40 @@ export const languageKorean = {
       "유사도 검색 시 분당 최대 임베딩 모델 요청 수입니다.",
     hypaV3EmbeddingMaxConcurrent:
       "유사도 검색 시 최대 동시 임베딩 모델 요청 수입니다.",
+    localBackupDatabasePageRecords:
+      "한 번의 데이터베이스 페이지 조회로 읽는 최대 레코드 수입니다. 값이 크면 조회 횟수와 임시 메모리 사용량이 함께 달라집니다.",
+    localBackupFragmentRecords:
+      "하나의 데이터베이스 조각으로 직렬화하고 압축하는 최대 레코드 수입니다.",
+    localBackupWriterBufferKiB:
+      "브라우저·데스크톱·안드로이드 파일 출력기로 보내기 전에 모으는 바이트 수입니다.",
+    localBackupProgressUpdateMs:
+      "진행 UI를 갱신하는 최소 간격입니다. 백업 작업 자체를 지연시키지는 않습니다.",
+    backupSaveSection:
+      "상황에 맞는 백업을 선택하세요.\n\n- **해적리스 전용**: 리롤과 분기점을 그대로 보존하는 완전한 백업입니다. 해적리스에서만 완전하게 복원됩니다.\n- **호환용**: 모든 리롤과 분기점을 일반 채팅으로 펼쳐 저장해 구버전과 다른 리스에서도 내용을 잃지 않습니다.\n- **부분**: 데이터베이스와 필수 에셋만 빠르게 저장합니다.\n- **구글**: 백업을 구글 드라이브에 업로드합니다.",
+    saveBackupLocalNative:
+      "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
+    saveBackupLocalCompatible:
+      "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
+    savePartialLocalBackup:
+      "데이터베이스와 프로필 아이콘 같은 필수 에셋만 빠르게 저장합니다. 감정 이미지, 추가 캐릭터 에셋, 음성 파일 등은 포함되지 않습니다.",
+    savebackup:
+      "데이터베이스, 콜드 스토리지, 에셋을 포함한 전체 백업을 구글 드라이브에 업로드합니다. 기기 변경 시 유용합니다.",
+    backupRestoreSection:
+      "저장한 백업을 불러와 현재 데이터를 백업 시점의 데이터로 교체합니다.",
+    loadBackupLocal:
+      "로컬 백업 파일(.risubackup)을 선택해 현재 데이터를 백업 시점의 데이터로 교체합니다.",
+    loadInternalBackup:
+      "이 기기에 자동으로 보관된 내부 백업 목록에서 시점을 골라 복원합니다.",
+    loadbackup:
+      "구글 드라이브에 저장된 백업을 내려받아 현재 데이터를 교체합니다.",
+    dataToolsSection:
+      "저장소를 점검하거나 데이터를 다른 형식으로 옮길 때 사용하는 도구입니다.",
+    cleanColdStorage:
+      "현재 사용 중이 아닌 콜드 스토리지 데이터를 영구 삭제합니다. 나중에 필요할 수 있는 데이터가 포함될 수 있으므로 주의하세요.",
+    inlayMigration:
+      "이 기기에만 저장된 인레이 이미지를 서버에 업로드하여 다른 기기에서도 볼 수 있게 합니다. 여러 번 실행해도 안전합니다.",
+    exportAsDataset:
+      "캐릭터 설명과 대화, 글로벌 로어북을 데이터셋 JSON 파일(dataset.json)로 내보냅니다. 모델 파인튜닝 등에 활용할 수 있습니다.",
   },
   setup: {
     chooseProvider: "AI 제공자를 선택해 주세요",
@@ -966,6 +1076,7 @@ export const languageKorean = {
   generationStatsComplete: "완료",
   generationStatsSeconds: "초",
   generationStatsPosition: "응답 대기 플로팅 창",
+  useLiquidLoadingSpinner: "새로운 로딩 스피너 디자인 적용",
   generationStatsPositionBottomRight: "오른쪽 아래 (기본값)",
   generationStatsPositionBottomLeft: "왼쪽 아래",
   generationStatsPositionTopRight: "오른쪽 위",
@@ -1462,6 +1573,8 @@ export const languageKorean = {
   userIcon: "유저 아이콘",
   successExport: "성공적으로 엑스포트하여 다운로드 경로에 다운로드했습니다.",
   successImport: "성공적으로 임포트했습니다.",
+  pluginsAutoDisabled:
+    "문제를 일으킨 플러그인을 비활성화했어요: {0}. 설정에서 다시 켤 수 있어요.",
   importedCharacter: "성공적으로 임포트 됨.",
   alwaysActive: "언제나 활성화",
   additionalPrompt: "추가 프롬프트",
@@ -1487,10 +1600,39 @@ export const languageKorean = {
   remindLater5Days: "5일 뒤에 다시 알림",
   remindLater1Week: "1주일 뒤에 다시 알림",
   display: "소리 및 디스플레이",
+  windowsTransparency: "Windows 반투명",
+  windowsTransparencyDescription:
+    "이 기기에만 저장되며 사이드바와 채팅 탭에 즉시 적용됩니다.",
+  uiTheme: "UI 테마",
+  uiThemeDesc:
+    "플랫폼에 맞춘 UI 테마를 선택합니다. Android 빌드에서는 터치 컨트롤, 채팅 입력창, 모바일 설정 화면에 Material 스타일을 적용할 수 있습니다.",
+  uiThemeDefault: "기본 테마",
+  uiThemeWindows: "Windows 11 Fluent 테마",
+  uiThemeAndroid: "Android Material 테마",
+  chatTheme: "채팅 화면 레이아웃",
+  windowsNativeTheme: "Windows 11 Fluent 테마",
+  windowsNativeThemeDesc:
+    "Microsoft Windows 11 WinUI 가이드라인을 따르는 네이티브 테마입니다. Mica 및 Acrylic 효과와 조화를 이룹니다.",
+  useWindowsTransparency: "네이티브 반투명 사용",
+  windowsBackdropEffect: "배경 효과",
+  windowsBackdropAcrylic: "아크릴 (Windows 10/11)",
+  windowsBackdropMica: "미카 (Windows 11)",
+  windowsBackdropTabbed: "탭 미카 (Windows 11)",
+  windowsMaterialOpacity: "배경 불투명도",
+  linuxCsdSidebarOpacity: "CSD 사이드바 불투명도",
+  useMacosSidebarTransparency: "사이드바 반투명 효과 사용",
+  macosNativeSidebarBlur: "네이티브 사이드바 블러 사용",
+  macosNativeSidebarBlurHelp:
+    "켜면 macOS 기본 사이드바 블러를 사용하고, 끄면 Liquid Glass를 사용합니다. 변경 즉시 적용됩니다.",
+  macosSidebarOpacity: "사이드바 배경 불투명도",
+  windowsBackdropCompatibility:
+    "미카 효과는 Windows 11이 필요합니다. 폭넓은 호환성에는 아크릴을 권장합니다.",
   useCustomBackground: "커스텀 배경",
   translateInput: "입력창 번역하기",
   autoTranslation: "자동 번역",
   fullscreen: "전체 화면",
+  autoHideAndroidNavigationBar: "채팅에서 내비게이션 바 자동 숨김",
+  autoHideAndroidNavigationBarInSidebar: "사이드바에서 내비게이션 바 자동 숨김",
   playMessage: "메시지 소리 출력",
   iconSize: "아이콘 크기",
   createGroup: "그룹 챗 만들기",
@@ -1522,7 +1664,6 @@ export const languageKorean = {
   waifuWidth: "Waifu 채팅창 넓이",
   savebackup: "구글 백업 저장",
   loadbackup: "구글 백업 불러오기",
-  files: "파일",
   backupConfirm: "정말로 백업을 저장하시겠습니까?",
   backupLoadConfirm:
     "정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!",
@@ -1704,7 +1845,8 @@ export const languageKorean = {
   officialDiscordDesc: "리스AI에 대해 자유롭게 대화하세요.",
   persona: "페르소나",
   icon: "아이콘",
-  account: "계정",
+  data: "데이터",
+  backup: "백업",
   remove: "삭제",
   able: "활성화됨",
   assetWidth: "에셋 넓이",
@@ -1823,11 +1965,34 @@ export const languageKorean = {
   webdeeplwarn: "이 옵션은 웹에서는 제대로 작동하지 않을 수 있습니다.",
   saveBackupLocal: "로컬 백업 저장",
   saveBackupLocalNative: "해적리스 전용 백업 저장",
-  saveBackupLocalNativeDescription:
-    "리롤과 분기점을 하나의 채팅 내부 타임라인 구조로 그대로 보존합니다.",
+  backupSaveSection: "백업 저장",
+  backupRestoreSection: "백업 복원",
+  dataToolsSection: "데이터 관리",
+  localBackupPerformanceTitle: "해적리스 백업 성능",
+  localBackupDatabasePageRecords: "데이터베이스 페이지 크기 (레코드)",
+  localBackupFragmentRecords: "압축 조각 크기 (레코드)",
+  localBackupWriterBufferKiB: "출력 버퍼 (KiB)",
+  localBackupProgressUpdateMs: "진행 표시 갱신 간격 (ms)",
+  localBackupPerformanceReset: "기본값",
+  localBackupProgressSelectingDestination: "백업 저장 위치 선택 중",
+  localBackupProgressPreparing: "백업 준비 중",
+  localBackupProgressDatabase: "데이터베이스 저장 중",
+  localBackupProgressColdStorage: "냉동 데이터 저장 중",
+  localBackupProgressAssets: "에셋 저장 중",
+  localBackupProgressInlays: "인레이 저장 중",
+  localBackupProgressFinalizing: "백업 마무리 중",
+  localBackupRestoreSelectingSource: "백업 파일 선택 중",
+  localBackupRestoreUploading: "백업 업로드",
+  localBackupRestoreProcessing: "복원 처리",
+  localBackupRestoreReading: "백업 데이터 읽는 중",
+  localBackupRestoreReadingDatabase: "데이터베이스 조각",
+  localBackupRestoreReadingAssets: "에셋",
+  localBackupRestoreReadingInlays: "인레이",
+  localBackupRestoreReadingColdStorage: "Cold Storage",
+  localBackupRestoreDatabase: "데이터베이스 복원 중",
+  localBackupRestoreBranches: "채팅 분기 복원 중",
+  localBackupRestoreFinalizing: "복원 마무리 중",
   saveBackupLocalCompatible: "호환용 백업 저장",
-  saveBackupLocalCompatibleDescription:
-    "모든 리롤과 분기점을 독립된 일반 채팅으로 펼쳐 구버전 및 다른 리스에서도 채팅 내용을 잃지 않게 저장합니다.",
   loadBackupLocal: "로컬 백업 불러오기",
   exportChatJsonCompatible: "호환용 JSON (현재 타임라인만)",
   exportChatJsonHaejeok: "해적리스용 JSON (분기점 포함)",
@@ -1846,7 +2011,7 @@ export const languageKorean = {
   utilOverride: "유틸리티 덮어쓰기",
   template: "템플릿",
   chatAsOriginalOnSystem: "기존 역할로 보내기",
-  exportAsDataset: "데이터셋으로 세이브 엑스포트",
+  exportAsDataset: "데이터셋으로 내보내기",
   editTranslationDisplay: "번역문 수정",
   selectModel: "모델 선택",
   autoRemoveThoughtTag: "Thought 태그 자동 제거",
@@ -2139,6 +2304,21 @@ export const languageKorean = {
   home: "홈",
   showSavingIcon: "저장 아이콘 표시",
   showChatTabs: "채팅 탭 표시",
+  chatEdgeFade: "채팅창 경계 페이드 효과",
+  chatEdgeFadeDesc:
+    "채팅창 상단과 하단 경계에서 메시지가 부드럽게 흐려지며 사라지는 페이드 효과를 적용합니다.",
+  chatEdgeFadeSize: "채팅창 경계 페이드 크기",
+  chatEdgeFadeCurve: "채팅창 페이드 곡선 방식",
+  chatEdgeFadeCurveCosine: "코사인",
+  chatEdgeFadeCurveLinear: "선형",
+  chatEdgeFadeCurveEaseOut: "완만한 끝단",
+  chatEdgeFadeCurveBuffered: "완충 지대 포함",
+  chatEdgeFadeFromBottom: "하단 페이드 화면 맨 밑에서 시작",
+  chatEdgeFadeFromBottomDesc:
+    "채팅창 하단 고정 사용 시, 하단 페이드 효과를 입력칸 위가 아니라 화면 맨 밑에서부터 시작합니다.",
+  fixedChatTextareaBottomCover: "고정 입력창 하단 차단막",
+  fixedChatTextareaBottomCoverDesc:
+    "채팅창 하단 고정 사용 시, 입력창 테두리 아래 여백을 배경색으로 채워 스크롤된 메시지가 비치지 않도록 가립니다.",
   pluginVersionWarn:
     "이 플러그인은 {{plugin_version}} 버전입니다. 이 버전의 Risuai와 호환되지 않습니다. 플러그인을 {{required_version}} 버전으로 업데이트하세요.",
   imageTranslation: "이미지 번역",
@@ -2708,9 +2888,8 @@ export const languageKorean = {
   activeProviderSettings: "활성 프로바이더 설정",
   providerSettings: "API 및 프로바이더",
   exitAppConfirm: "RisuAI를 종료할까요?",
+  cleanColdStorage: "미사용 콜드 스토리지 정리",
   inlayMigrationButton: "인레이 이미지를 서버에 업로드",
-  inlayMigrationDescription:
-    "이 기기에만 저장된 인레이 이미지를 서버에 업로드하여 다른 기기에서도 볼 수 있게 합니다. 여러 번 실행해도 안전합니다.",
   inlayMigrationConfirm:
     "로컬의 모든 인레이 이미지를 서버에 업로드할까요? 이미 서버에 저장된 항목은 건너뜁니다.",
   inlayMigrationRunning: "인레이 업로드 중...",

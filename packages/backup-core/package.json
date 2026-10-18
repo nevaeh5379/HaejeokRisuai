@@ -1,19 +1,52 @@
 {
   "name": "@risuai/backup-core",
   "private": true,
-  "type": "commonjs",
-  "main": "./compatibility.cjs",
-  "types": "./compatibility.d.cts",
+  "type": "module",
   "exports": {
-    ".": {
-      "types": "./compatibility.d.cts",
-      "require": "./compatibility.cjs",
-      "default": "./compatibility.cjs"
-    },
-    "./*": {
-      "types": "./*.d.cts",
-      "require": "./*.cjs",
-      "default": "./*.cjs"
-    }
+    "./compatibility": "./src/compatibility.ts",
+    "./entryPolicy": "./src/entryPolicy.ts",
+    "./exportPlan": "./src/exportPlan.ts",
+    "./portableBranches": "./src/portableBranches.ts",
+    "./databasePreparation": "./src/databasePreparation.ts",
+    "./stream/collector": "./src/stream/collector.ts",
+    "./restoreBatch": "./src/restoreBatch.ts",
+    "./restoreEntry": "./src/restoreEntry.ts",
+    "./restoreArchive": "./src/restoreArchive.ts",
+    "./api": "./src/api.ts",
+    "./node/databaseStreamStore": "./src/node/databaseStreamStore.ts",
+    "./assetScope": "./src/assetScope.ts",
+    "./stream/inventory": "./src/stream/inventory.ts",
+    "./node/legacyFormat": "./src/node/legacyFormat.ts",
+    "./node/exportJobStore": "./src/node/exportJobStore.ts",
+    "./node/exportEntries": "./src/node/exportEntries.ts",
+    "./node/exportAssets": "./src/node/exportAssets.ts",
+    "./node/exportArchive": "./src/node/exportArchive.ts",
+    "./containerStream": "./src/containerStream.ts",
+    "./stream/databaseBackup": "./src/stream/databaseBackup.ts",
+    "./stream/restore": "./src/stream/restore.ts",
+    "./node/importJobStore": "./src/node/importJobStore.ts",
+    "./node/importStagingStore": "./src/node/importStagingStore.ts",
+    "./node/fullPayload": "./src/node/fullPayload.ts",
+    "./node/importPlan": "./src/node/importPlan.ts",
+    "./legacyRecords": "./src/legacyRecords.ts",
+    "./legacyHeaders": "./src/legacyHeaders.ts",
+    "./stream/encryption": "./src/stream/encryption.ts",
+    "./coldStorage": "./src/coldStorage.ts",
+    "./inlayCodec": "./src/inlayCodec.ts",
+    "./inlayRestore": "./src/inlayRestore.ts",
+    "./inlayExport": "./src/inlayExport.ts",
+    "./progress": "./src/progress.ts",
+    "./assetExport": "./src/assetExport.ts",
+    "./coldStorageExport": "./src/coldStorageExport.ts",
+    "./exportEncryption": "./src/exportEncryption.ts",
+    "./importSource": "./src/importSource.ts",
+    "./node/legacyStream": "./src/node/legacyStream.ts",
+    "./node/importService": "./src/node/importService.ts",
+    "./node/importDatabase": "./src/node/importDatabase.ts",
+    "./node/exportService": "./src/node/exportService.ts",
+    "./node/exportStream": "./src/node/exportStream.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
   }
 }

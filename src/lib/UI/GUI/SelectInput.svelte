@@ -1,6 +1,7 @@
 <select
     id={id}
-    class={"border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200" + ((className) ? (' ' + className) : '')}
+    class={"rs-selectinput border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 [&>option]:bg-darkbg [&>option]:text-textcolor [&>optgroup]:bg-darkbg [&>optgroup]:text-textcolor" + ((className) ? (' ' + className) : '')}
+    class:tauri-linux-select={isTauriLinux}
     class:text-sm={size === 'sm'}
     class:text-md={size === 'md'}
     class:text-lg={size === 'lg'}
@@ -13,10 +14,13 @@
     class:py-3={size === 'lg'}
     bind:value
     onchange={onchange}
+    {disabled}
 >
     {@render children?.()}
 </select>
 <script lang="ts">
+    import { isTauriLinux } from "src/ts/platform";
+
     interface Props {
         id?: string;
         value: string | number;
@@ -26,6 +30,7 @@
         onchange?: (event: Event & {
             currentTarget: EventTarget & HTMLSelectElement;
         }) => any;
+        disabled?: boolean;
     }
 
     let {
@@ -34,7 +39,24 @@
         className = "",
         size = 'md',
         children,
-        onchange
+        onchange,
+        disabled = false
     }: Props = $props();
 
 </script>
+
+<style>
+    select.tauri-linux-select {
+        appearance: none;
+        -webkit-appearance: none;
+        background-image:
+            linear-gradient(45deg, transparent 50%, currentColor 50%),
+            linear-gradient(135deg, currentColor 50%, transparent 50%);
+        background-position:
+            calc(100% - 1rem - 5px) center,
+            calc(100% - 1rem) center;
+        background-size: 5px 5px;
+        background-repeat: no-repeat;
+        padding-right: 2rem;
+    }
+</style>

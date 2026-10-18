@@ -9,12 +9,13 @@
     import type { Chat as ChatSession, Message } from "../../ts/storage/database/schema";
     import { characterStore, settingsStore, personaStore, messageStore, presetStore } from 'src/ts/stores/domain';
     import { getCharImage } from "../../ts/characterImage";
-    import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chatRuntimeState";
+    import { activeGenerationChatIds, chatProcessStages, getChatProcessStage } from "../../ts/process/chat/runtimeState";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { alertError, alertNormal, alertWait, showHypaV2Alert } from "../../ts/alert";
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
+    import LiquidMergeSpinner from "../UI/LiquidMergeSpinner.svelte";
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
@@ -36,6 +37,8 @@
     import { openLogExporter } from 'src/ts/logexporter/index';
     import LogExporterModal from 'src/lib/LogExporter/LogExporterModal.svelte';
     import GenerationStatsFloat from './GenerationStatsFloat.svelte';
+    import { androidComposerPrefill, clearAndroidComposerPrefill } from 'src/ts/android/androidNativeEntryState';
+    import { triggerAndroidHaptic } from 'src/ts/android/androidNativeIntegration';
     import {
         getNextFirstMessageIndex,
         getPreviousFirstMessageIndex,
@@ -80,6 +83,59 @@
     let showNewMessageButton = $state(false)
     let chatsInstance: any = $state()
     let chatScrollContainer: HTMLDivElement | undefined = $state()
+    const getEdgeFadeGradient = (direction: 'to bottom' | 'to top', curve: string) => {
+        if (curve === 'linear') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 80%, transparent) 20%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 60%, transparent) 40%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 40%, transparent) 60%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 20%, transparent) 80%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        if (curve === 'ease-out') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 95%, transparent) 15%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 85%, transparent) 30%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 70%, transparent) 48%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 50%, transparent) 65%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 30%, transparent) 80%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 12%, transparent) 92%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        if (curve === 'buffered') {
+            return `linear-gradient(${direction}, ` +
+                `var(--color-bgcolor) 0%, ` +
+                `var(--color-bgcolor) 12%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 96%, transparent) 22%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 85%, transparent) 35%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 68%, transparent) 50%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 48%, transparent) 65%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 28%, transparent) 78%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 12%, transparent) 89%, ` +
+                `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+        }
+        return `linear-gradient(${direction}, ` +
+            `var(--color-bgcolor) 0%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 98%, transparent) 8%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 93%, transparent) 17%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 82%, transparent) 28%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 65%, transparent) 40%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 45%, transparent) 53%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 25%, transparent) 67%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 9%, transparent) 81%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 2%, transparent) 92%, ` +
+            `color-mix(in srgb, var(--color-bgcolor) 0%, transparent) 100%)`
+    }
+    let edgeFadeSize = $derived(settingsStore.state.chatEdgeFadeSize ?? 48)
+    let edgeFadeCurve = $derived(settingsStore.state.chatEdgeFadeCurve ?? 'cosine')
+    let topFadeStyle = $derived(
+        `height: ${edgeFadeSize}px; background: ${getEdgeFadeGradient('to bottom', edgeFadeCurve)};`
+    )
+    let bottomFadeStyle = $derived(
+        `height: ${edgeFadeSize}px; background: ${getEdgeFadeGradient('to top', edgeFadeCurve)};`
+    )
     let isScrollingToMessage = $state(false)
     let loadingOlderMessages = $state(false)
     let readingFromBeginning = $state(false)
@@ -118,6 +174,39 @@
         getChatProcessStage($chatProcessStages, currentChatSession?.id)
     )
     let isFocusedPane = $derived(chatTabsStore.focusedGroupId === paneGroupId)
+
+    $effect(() => {
+        // The "loading chat data" fallback must only ever be a transient
+        // hydration state. If the selection or the active tab points at a
+        // missing character/chat for more than a grace period, that is an
+        // invariant violation — log it so deadlocks surface in diagnostics
+        // without spamming during navigation frames.
+        if (
+            selectedCharacterIndex < 0 &&
+            !paneTab
+        ) return; // main-menu state, not a gate
+        if (
+            selectedCharacterIndex >= 0 &&
+            currentCharacter &&
+            selectedChatIndex >= 0 &&
+            currentChatSession
+        ) return; // healthy
+        const stalePaneTab = paneTab
+            ? { characterId: paneTab.characterId, chatId: paneTab.chatId }
+            : null;
+        const timer = setTimeout(() => {
+            console.error(
+                "[DefaultChatScreen] chat data gate stuck — invalid selection",
+                {
+                    selectedCharacterIndex,
+                    selectedChatIndex,
+                    hasCharacter: Boolean(currentCharacter),
+                    paneTab: stalePaneTab,
+                },
+            );
+        }, 2000);
+        return () => clearTimeout(timer);
+    })
 
     $effect(() => {
         // new generation session begins → show the minigame again
@@ -381,6 +470,8 @@
             fileInput = []
         }
 
+        void triggerAndroidHaptic('confirm')
+
         if(messageInput === ''){
             if(characterStore.characters[selectedChar].type !== 'group'){
                 if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
@@ -585,14 +676,15 @@
     ) {
         const targetCharacter = characterStore.characters[targetCharacterIndex]
         const targetChat = targetCharacter?.chats?.[targetChatIndex]
-        if(!targetCharacter?.chaId || !targetChat?.id) return
+        if(!targetCharacter?.chaId || !targetChat?.id) return true
         targetChat.preventMessageCompaction = true
         messageInput = ''
         const controller = new AbortController()
         abortControllers.set(targetChat.id, controller)
+        let completed = false
         try {
             const { sendChat } = await import('../../ts/process/index.svelte')
-            await sendChat(-1, {
+            completed = await sendChat(-1, {
                 signal:controller.signal,
                 continue:continued,
                 targetCharacterId:targetCharacter.chaId,
@@ -608,6 +700,7 @@
             targetChat.preventMessageCompaction = false
         }
         compactChatMessages(targetChat.id)
+        return !completed || controller.signal.aborted
     }
 
     async function abortChat(){
@@ -630,8 +723,8 @@
         const selectedChar = selectedCharacterIndex
         autoMode = true
         while(autoMode){
-            await sendChatMain()
-            if(selectedChar !== selectedCharacterIndex){
+            const cancelled = await sendChatMain()
+            if(cancelled || selectedChar !== selectedCharacterIndex){
                 autoMode = false
             }
         }
@@ -651,9 +744,34 @@
     })
 
     let inputHeight = $state("44px")
+    // Numeric button height for sizing the liquid spinner (inputHeight is a
+    // "44px"-style string that grows with the textarea content). The drops
+    // travel ±53px (+blur) within the 140px box during the split phase, so
+    // drawing at only 80% of the button height keeps them clear of the
+    // button's top/bottom borders.
+    let spinnerSize = $derived(Math.floor((parseInt(inputHeight) || 44) * 0.8))
     let inputEle:HTMLTextAreaElement = $state()
     let inputTranslateHeight = $state("44px")
     let inputTranslateEle:HTMLTextAreaElement = $state()
+    let lastNativePrefillId = 0
+
+    $effect(() => {
+        const prefill = $androidComposerPrefill
+        if (!prefill || prefill.id === lastNativePrefillId || !isFocusedPane) return
+        if (!currentCharacter?.chaId || !currentChatSession?.id) return
+        if (prefill.characterId && prefill.characterId !== currentCharacter.chaId) return
+        if (prefill.chatId && prefill.chatId !== currentChatSession.id) return
+
+        const incoming = prefill.text.trim()
+        lastNativePrefillId = prefill.id
+        clearAndroidComposerPrefill(prefill.id)
+        if (!incoming) return
+        messageInput = messageInput.trim() ? `${messageInput}\n${incoming}` : incoming
+        void tick().then(() => {
+            updateInputSizeAll()
+            inputEle?.focus()
+        })
+    })
 
     function updateInputSizeAll() {
         updateInputSize()
@@ -676,6 +794,10 @@
     }
 
     $effect.pre(() => {
+        updateInputSizeAll()
+    });
+
+    $effect(() => {
         updateInputSizeAll()
     });
 
@@ -864,10 +986,30 @@
                 }
             }}
         >
+            <div class="rs-linux-csd-header-spacer shrink-0" aria-hidden="true"></div>
             {#if showTabBar}
                 <ChatTabs groupId={paneGroupId} reserveSidebarSpace={reserveSidebarSpace} allowSplit={allowSplit} />
             {/if}
-            <div bind:this={chatScrollContainer} class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen" onscroll={async (e) => {
+            {#if settingsStore.state.chatEdgeFade}
+                <div
+                    class="pointer-events-none absolute left-0 right-0 z-20 rs-chat-edge-fade-top"
+                    class:top-0={!showTabBar || settingsStore.state.showChatTabs === false}
+                    class:top-10={showTabBar && (settingsStore.state.showChatTabs ?? true)}
+                    style={topFadeStyle}
+                    aria-hidden="true"
+                ></div>
+                {#if !settingsStore.state.fixedChatTextarea || settingsStore.state.chatEdgeFadeFromBottom}
+                    <div
+                        class="pointer-events-none absolute bottom-0 left-0 right-0 z-20 rs-chat-edge-fade-bottom"
+                        style={bottomFadeStyle}
+                        aria-hidden="true"
+                    ></div>
+                {/if}
+            {/if}
+            <div
+                bind:this={chatScrollContainer}
+                class="grow min-h-0 w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
+                onscroll={async (e) => {
             const chatTarget = e.target as HTMLElement;
             const scrolledFromTop = chatTarget.scrollHeight - chatTarget.clientHeight + chatTarget.scrollTop
             const reachedPaginationEdge = readingFromBeginning
@@ -903,139 +1045,161 @@
             }
         }}>
             <div
-                    class="{settingsStore.state.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
+                    class="{settingsStore.state.fixedChatTextarea ? 'sticky relative pt-2 pb-2 right-0 bottom-0' : 'mt-2 mb-2'} flex items-stretch w-full rs-chat-input-area-container"
                     style="{settingsStore.state.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
-                {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
-                    <div onclick={()=>{toggleStickers = !toggleStickers}}
-                         class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
-                        <Laugh/>
-                    </div>
+                {#if settingsStore.state.fixedChatTextarea && settingsStore.state.fixedChatTextareaBottomCover}
+                    <div
+                        class="pointer-events-none absolute left-0 right-0 bottom-0 bg-bgcolor"
+                        style="height: max(0.5rem, var(--risu-safe-area-inset-bottom, 0.5rem));"
+                        aria-hidden="true"
+                    ></div>
                 {/if}
+                {#if settingsStore.state.chatEdgeFade && settingsStore.state.fixedChatTextarea && !settingsStore.state.chatEdgeFadeFromBottom}
+                    <div
+                        class="pointer-events-none absolute left-0 right-0"
+                        style="bottom: calc(100% - 0.5rem); {bottomFadeStyle}"
+                        aria-hidden="true"
+                    ></div>
+                {/if}
+                <div class="flex items-stretch w-full rs-chat-input-row">
+                    {#if settingsStore.state.useChatSticker && currentCharacter.type !== 'group'}
+                        <div onclick={()=>{toggleStickers = !toggleStickers}}
+                             class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors rs-chat-sticker-btn "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
+                            <Laugh/>
+                        </div>
+                    {/if}
 
-                <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
-                          bind:value={messageInput}
-                          bind:this={inputEle}
-                          onkeydown={(e) => {
-                        if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
-                            if(settingsStore.state.sendWithEnter && (!e.shiftKey)){
-                                send()
-                                e.preventDefault()
-                            }else if(!settingsStore.state.sendWithEnter && e.shiftKey){
-                                send()
-                                e.preventDefault()
-                            }
-                        }
-                        if(e.key.toLocaleLowerCase() === "m" && (e.ctrlKey)){
-                            reroll()
-                            e.preventDefault()
-                        }
-                    }}
-                          onpaste={(e) => {
-                        const items = e.clipboardData?.items
-                        if(!items){
-                            return
-                        }
-                        let canceled = false
-
-                        for(const item of items){
-                            if(item.kind === 'file' && item.type.startsWith('image')){
-                                if(!canceled){
+                    <div class="contents rs-chat-composer">
+                    <textarea class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-bgcolor rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm rs-chat-textarea"
+                              bind:value={messageInput}
+                              bind:this={inputEle}
+                              onkeydown={(e) => {
+                            if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
+                                if(settingsStore.state.sendWithEnter && (!e.shiftKey)){
+                                    send()
                                     e.preventDefault()
-                                    canceled = true
+                                }else if(!settingsStore.state.sendWithEnter && e.shiftKey){
+                                    send()
+                                    e.preventDefault()
                                 }
-                                const file = item.getAsFile()
-                                if(file){
-                                    const reader = new FileReader()
-                                    reader.onload = async (e) => {
-                                        const buf = e.target?.result as ArrayBuffer
-                                        const uint8 = new Uint8Array(buf)
-                                        const { postChatFile } = await import('src/ts/process/files/multisend')
-                                        const results = await postChatFile({
-                                            name: file.name,
-                                            data: uint8
-                                        })
-                                        if(!results) return
-                                        for(const res of results){
-                                            if(res?.type === 'asset'){
-                                                fileInput.push(res.data)
-                                            }
-                                            if(res?.type === 'text'){
-                                                messageInput += `{{file::${res.name}::${res.data}}}`
-                                            }
-                                        }
-                                        updateInputSizeAll()
+                            }
+                            if(e.key.toLocaleLowerCase() === "m" && (e.ctrlKey)){
+                                reroll()
+                                e.preventDefault()
+                            }
+                        }}
+                              onpaste={(e) => {
+                            const items = e.clipboardData?.items
+                            if(!items){
+                                return
+                            }
+                            let canceled = false
+
+                            for(const item of items){
+                                if(item.kind === 'file' && item.type.startsWith('image')){
+                                    if(!canceled){
+                                        e.preventDefault()
+                                        canceled = true
                                     }
-                                    reader.readAsArrayBuffer(file)
+                                    const file = item.getAsFile()
+                                    if(file){
+                                        const reader = new FileReader()
+                                        reader.onload = async (e) => {
+                                            const buf = e.target?.result as ArrayBuffer
+                                            const uint8 = new Uint8Array(buf)
+                                            const { postChatFile } = await import('src/ts/process/files/multisend')
+                                            const results = await postChatFile({
+                                                name: file.name,
+                                                data: uint8
+                                            })
+                                            if(!results) return
+                                            for(const res of results){
+                                                if(res?.type === 'asset'){
+                                                    fileInput.push(res.data)
+                                                }
+                                                if(res?.type === 'text'){
+                                                    messageInput += `{{file::${res.name}::${res.data}}}`
+                                                }
+                                            }
+                                            updateInputSizeAll()
+                                        }
+                                        reader.readAsArrayBuffer(file)
+                                    }
                                 }
                             }
-                        }
-                    }}
-                          oninput={()=>{updateInputSizeAll();updateInputTransateMessage(false)}}
-                          style:height={inputHeight}
-                ></textarea>
+                        }}
+                              oninput={()=>{updateInputSizeAll();updateInputTransateMessage(false)}}
+                              style:height={inputHeight}
+                    ></textarea>
 
 
-                {#if currentChatGenerating || doingChatInputTranslate}
-                    <button
-                            aria-labelledby="cancel"
-                            class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors" onclick={abortChat}
+                    {#if currentChatGenerating || doingChatInputTranslate}
+                        <button
+                                aria-labelledby="cancel"
+                                class="peer-focus:border-textcolor bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors rs-chat-cancel-btn" onclick={abortChat}
+                                style:height={inputHeight}
+                        >
+                            {#if settingsStore.state.useLiquidLoadingSpinner}
+                                <LiquidMergeSpinner size={spinnerSize} stage={currentChatProcessStage} autoMode={autoMode} />
+                            {:else}
+                                <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
+                            {/if}
+                        </button>
+                    {:else if $startupPhase !== 'chat-ready'}
+                        <button
+                            onclick={async () => {
+                                if (presetStore.activeStatus === 'error') {
+                                    await presetStore.retryActive()
+                                    if (presetStore.activePreset) $startupPhase = 'chat-ready'
+                                }
+                            }}
+                            disabled={presetStore.activeStatus !== 'error'}
+                            title={presetStore.error ?? 'Chat runtime is loading'}
+                            class="bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs rs-chat-loading-btn"
                             style:height={inputHeight}
-                    >
-                        <div class="loadmove chat-process-stage-{currentChatProcessStage}" class:autoload={autoMode}></div>
-                    </button>
-                {:else if $startupPhase !== 'chat-ready'}
-                    <button
-                        onclick={async () => {
-                            if (presetStore.activeStatus === 'error') {
-                                await presetStore.retryActive()
-                                if (presetStore.activePreset) $startupPhase = 'chat-ready'
+                        >
+                            {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
+                        </button>
+                    {:else}
+                        <button
+                                onclick={send}
+                                class="bg-bgcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send rs-chat-send-btn"
+                                style:height={inputHeight}
+                        >
+                            <Send />
+                        </button>
+                    {/if}
+                    {#if characterStore.characters[selectedCharacterIndex]?.chaId !== '§playground'}
+                        <button
+                                onclick={(e) => {
+                                openMenu = !openMenu
+                                e.stopPropagation()
+                            }}
+                                class="peer-focus:border-textcolor bg-bgcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                                style:height={inputHeight}
+                        >
+                            <MenuIcon />
+                        </button>
+                    {:else}
+                        <div onclick={(e) => {
+                            const currentChat = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]
+                            if (currentChat?.id) {
+                                void messageStore.appendMessage(currentChat.id, {
+                                    role: 'char',
+                                    data: '',
+                                    chatId: v4()
+                                })
                             }
                         }}
-                        disabled={presetStore.activeStatus !== 'error'}
-                        title={presetStore.error ?? 'Chat runtime is loading'}
-                        class="flex justify-center border-y border-darkborderc items-center text-textcolor2 px-3 text-xs"
-                        style:height={inputHeight}
-                    >
-                        {presetStore.activeStatus === 'error' ? 'Retry' : 'Loading…'}
-                    </button>
-                {:else}
-                    <button
-                            onclick={send}
-                            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send"
-                            style:height={inputHeight}
-                    >
-                        <Send />
-                    </button>
-                {/if}
-                {#if characterStore.characters[selectedCharacterIndex]?.chaId !== '§playground'}
-                    <button
-                            onclick={(e) => {
-                            openMenu = !openMenu
-                            e.stopPropagation()
-                        }}
-                            class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-                            style:height={inputHeight}
-                    >
-                        <MenuIcon />
-                    </button>
-                {:else}
-                    <div onclick={(e) => {
-                        const currentChat = characterStore.characters[selectedCharacterIndex]?.chats?.[selectedChatIndex]
-                        if (currentChat?.id) {
-                            void messageStore.appendMessage(currentChat.id, {
-                                role: 'char',
-                                data: '',
-                                chatId: v4()
-                            })
-                        }
-                    }}
-                         class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-                         style:height={inputHeight}
-                    >
-                        <Plus />
+                             class="peer-focus:border-textcolor bg-bgcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors rs-chat-menu-btn"
+                             style:height={inputHeight}
+                        >
+                            <Plus />
+                        </div>
+                    {/if}
                     </div>
-                {/if}
+                </div>
             </div>
             {#if minigameActive && settingsStore.state.waitingMinigame !== false && !minigameDismissed}
                 {#await loadDinoGame() then DinoGame}
@@ -1058,7 +1222,7 @@
                     <label for='messageInputTranslate' class="text-textcolor ml-4">
                         <LanguagesIcon />
                     </label>
-                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
+                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-bgcolor input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
                               bind:value={messageInputTranslate}
                               bind:this={inputTranslateEle}
                               onkeydown={(e) => {
@@ -1081,7 +1245,7 @@
             {/if}
 
             {#if fileInput.length > 0}
-                <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
+                <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md bg-bgcolor">
                     {#each fileInput as file, i}
                         {#await getInlayAsset(file) then inlayAsset}
                             <div class="relative">
@@ -1249,7 +1413,7 @@
             {/if}
 
             {#if openMenu}
-                <div class="{settingsStore.state.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md" onclick={(e) => {
+                <div class="{settingsStore.state.fixedChatTextarea ? 'fixed' : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md rs-chat-menu-popover" onclick={(e) => {
                     e.stopPropagation()
                 }}>
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {

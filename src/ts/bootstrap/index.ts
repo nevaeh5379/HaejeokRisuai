@@ -1,10 +1,12 @@
 import { get } from "svelte/store";
+import { configureSync, getConsoleSink } from "@logtape/logtape";
 import { alertError, alertTOS } from "../alert";
 import { changeLanguage } from "../../lang";
 import { installStartupData } from "../storage/database/databaseLifecycle";
 import { forageStorage } from "../globalApi.svelte";
 import { registerModelDynamic } from "../model/modellist";
-import { isCapacitor, isNodeServer, isTauri } from "../platform";
+import { isCapacitor, isNodeServer, isTauri, isTauriLinux } from "../platform";
+import { setLinuxWindowDecorationPreference } from "../linuxWindowIntegration";
 import { initNodeRealtimeSync } from "../process/nodeRealtimeSync";
 import { initDurableModelJobRecovery } from "../process/modelJobRecovery";
 import { syncChatResponsePush } from "../network/pushSubscriptions";
@@ -58,8 +60,29 @@ import {
 
 import { getSqlStorage } from "../storage/sql/sqlStorageFactory";
 import { getCurrentStorageProfilePlatform } from "../storage/runtime/storageProfileConnection";
+import { NodeStorage } from "../storage/files/nodeStorage";
+import { androidDiagnosticCheckpoint } from "../android/androidCrashDiagnostics";
+import { listen } from "@tauri-apps/api/event";
+import { enqueueFiles } from "../characterCards";
 
 async function resolveBootstrapStorageProfile(): Promise<StorageProfile | null> {
+  await androidDiagnosticCheckpoint("startup:storage-profile");
+  const androidE2eRemoteUrl =
+    import.meta.env.VITE_ANDROID_E2E === "TRUE"
+      ? import.meta.env.VITE_ANDROID_E2E_REMOTE_URL?.trim()
+      : "";
+  if (androidE2eRemoteUrl) {
+    return {
+      version: 1,
+      mode: "remote",
+      baseUrl: normalizeRemoteBaseUrl(androidE2eRemoteUrl, {
+        allowInsecureHttp: true,
+        platform: getCurrentStorageProfilePlatform(),
+        pageProtocol: globalThis.location?.protocol,
+      }),
+      allowInsecureHttp: true,
+    };
+  }
   if (isNodeServer) {
     return {
       version: 1,
@@ -125,6 +148,18 @@ export async function loadData() {
     let storageProfile: StorageProfile | null = null;
     try {
       startupPhase.set("core-loading");
+      // LogTape: console sink only. WebView console output is forwarded to
+      // logcat, so `adb logcat | grep risuai` shows every record.
+      configureSync({
+        sinks: { console: getConsoleSink() },
+        loggers: [
+          {
+            category: ["risuai"],
+            sinks: ["console"],
+            lowestLevel: import.meta.env.DEV ? "debug" : "info",
+          },
+        ],
+      });
       storageProfile = await resolveBootstrapStorageProfile();
       if (!storageProfile) return;
       let nodeApiClient: NodeApiClient | null = null;
@@ -137,9 +172,23 @@ export async function loadData() {
       }
       // ── Step 0: Initialise forageStorage (needed for asset access
       // and Node server's NodeStorage which provides the SQL admin) ──
+      await androidDiagnosticCheckpoint("startup:asset-storage");
       await forageStorage.Init({ profile: storageProfile, nodeApiClient });
+      const androidE2eRemotePassword =
+        import.meta.env.VITE_ANDROID_E2E === "TRUE"
+          ? import.meta.env.VITE_ANDROID_E2E_REMOTE_PASSWORD
+          : undefined;
+      if (
+        androidE2eRemotePassword &&
+        forageStorage.realStorage instanceof NodeStorage
+      ) {
+        await forageStorage.realStorage.connectWithPassword(
+          androidE2eRemotePassword,
+        );
+      }
 
       // ── Step 1: Initialise SQL storage backend ────────────────────
+      await androidDiagnosticCheckpoint("startup:sql-init");
       const storage = await initSqlStorageOrGate();
       if (!storage) {
         return;
@@ -155,6 +204,7 @@ export async function loadData() {
 
       // ── Step 2: Load startup domains ─────────────────────────────
       LoadingStatusState.text = "Loading Database...";
+      await androidDiagnosticCheckpoint("startup:sql-domains");
       let startup = await storage.loadStartupData();
       if (!startup) {
         throw new Error("SQL storage returned no startup data");
@@ -162,6 +212,7 @@ export async function loadData() {
 
       if (startup.status === "empty") {
         // ── Step 3: Check for legacy migration ──────────────────────
+        await androidDiagnosticCheckpoint("startup:legacy-migration");
         await migrateLegacyDataIfNeeded(storage);
         LoadingStatusState.text = "Loading Database...";
         startup = await storage.loadStartupData();
@@ -172,7 +223,19 @@ export async function loadData() {
         }
       }
 
-      installStartupData(startup, storage);
+      await androidDiagnosticCheckpoint("startup:install-domains");
+      await installStartupData(startup, storage);
+      if (isTauriLinux) {
+        await setLinuxWindowDecorationPreference(
+          settingsStore.state.linuxWindowDecoration ?? "ssd",
+        ).catch((error) => {
+          console.warn(
+            "[Linux Wayland] Failed to sync the native decoration preference:",
+            error,
+          );
+        });
+      }
+      await androidDiagnosticCheckpoint("startup:presets");
       await initPresetDomain(storage);
 
       // Non-English dictionaries are separate chunks. Resolve the one
@@ -186,12 +249,14 @@ export async function loadData() {
 
       // ── Step 5: Drive sync check ──────────────────────────────────
       LoadingStatusState.text = "Checking Drive Sync...";
+      await androidDiagnosticCheckpoint("startup:drive-sync");
       const { checkDriverInit } = await import("../drive/drive");
       const isDriverMode = await checkDriverInit();
       if (isDriverMode) {
         return;
       }
 
+      await androidDiagnosticCheckpoint("startup:thumbnails");
       await prepareAndroidCharacterThumbnails();
 
       applyStartupAppearance();
@@ -220,6 +285,7 @@ export async function loadData() {
         if (urlParams.has("realm") || urlParams.has("charahub")) {
           const { characterURLImport } = await import("../characterCards");
           void characterURLImport();
+         
         }
       }
 
@@ -228,8 +294,15 @@ export async function loadData() {
       const runtimeSettingsReady = initRuntimeSettings(storage);
       await Promise.all([runtimeSettingsReady, serviceWorkerReady]);
 
+      if (import.meta.env.VITE_ANDROID_E2E === "TRUE") {
+        const { prepareAndroidE2eFixture } =
+          await import("./androidE2eFixture");
+        if ((await prepareAndroidE2eFixture()) === "reload") return;
+      }
+
       await persistStorageIfStandalone();
       LoadingStatusState.text = "Checking For Format Update...";
+      await androidDiagnosticCheckpoint("startup:format-check");
       await checkNewFormat();
 
       LoadingStatusState.text = "Updating States...";
@@ -258,10 +331,14 @@ export async function loadData() {
           await getCurrentWebviewWindow().close();
           return;
         }
+         await listen<string[]>("tauri-opened-files", async (event) => {
+            await enqueueFiles(event.payload)
+          })
         await initializeTauriChatWorkspaceRuntime();
         const { initializeTauriAppMenu } = await import("../tauriAppMenu");
         await initializeTauriAppMenu();
       }
+      await androidDiagnosticCheckpoint("startup:ready");
       revealShell();
       if (presetStore.activeStatus === "ready") {
         startupPhase.set("chat-ready");
@@ -272,11 +349,15 @@ export async function loadData() {
           location.reload();
           return;
         }
-        if (isTauri || isCapacitor) {
+        if (
+          (isTauri || isCapacitor) &&
+          import.meta.env.VITE_ANDROID_E2E !== "TRUE"
+        ) {
           void checkRisuUpdate();
         }
       });
     } catch (error) {
+      await androidDiagnosticCheckpoint("startup:failed");
       if (storageProfile?.mode === "remote" && !isNodeServer) {
         storageProfileGate.set({
           status: "failure",

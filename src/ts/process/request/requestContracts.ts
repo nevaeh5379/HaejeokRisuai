@@ -5,7 +5,7 @@ import type {
   ChatModelResponse,
   ChatStreamChunk,
   OpenAIChat,
-} from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/types.ts";
 import type { MCPTool } from "../mcp/mcplib";
 import type { ModelModeExtended } from "./shared";
 
@@ -38,6 +38,10 @@ export interface requestDataArgument {
   staticModel?: string;
   /** Host-side execution provenance; never a provider request field. */
   sourceModuleId?: string;
+  /** Authoritative module owner selected by an isolated Lua sandbox. */
+  moduleSandboxOwnerId?: string;
+  /** Authoritative first-class sandbox group selected by the host runtime. */
+  moduleSandboxGroupId?: string;
   escape?: boolean;
   tools?: MCPTool[];
   rememberToolUsage?: boolean;

@@ -82,8 +82,7 @@ test("plugin storage preserves NUL-containing text through Node SQL storage", as
   const result = await page.evaluate(async () => {
     const pluginsUrl = "/src/ts/plugins/plugins.svelte.ts";
     const settingsStoreUrl = "/src/ts/stores/domain/settingsStore.svelte.ts";
-    const nodeStorageUrl =
-      "/src/ts/storage/sql/postgres/nodeSqlStorage.ts";
+    const nodeStorageUrl = "/src/ts/storage/sql/postgres/nodeSqlStorage.ts";
     const { getV2PluginAPIs } = (await import(
       /* @vite-ignore */ pluginsUrl
     )) as {

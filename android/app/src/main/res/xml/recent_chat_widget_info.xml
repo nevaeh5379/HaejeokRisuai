@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_recent_chat_description"
+    android:initialLayout="@layout/widget_recent_chat"
+    android:minWidth="220dp"
+    android:minHeight="122dp"
+    android:minResizeWidth="160dp"
+    android:minResizeHeight="88dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

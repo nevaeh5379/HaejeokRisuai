@@ -3,6 +3,11 @@ const KEYPAIR_DB_VERSION = 2;
 const KEYPAIR_STORE_NAME = "Keypairs";
 const LEGACY_KEYPAIR_STORE_NAME = "DPoPStore";
 
+export interface StoredKeyPair {
+  privateKey: unknown;
+  publicKey: unknown;
+}
+
 function keypairNamespace(name: string): string {
   return name || LEGACY_KEYPAIR_STORE_NAME;
 }
@@ -42,7 +47,7 @@ export function openKeypairStoreDB(_name = ""): Promise<IDBDatabase> {
   });
 }
 
-export async function saveKeypairStore(name: string, keyPair: CryptoKeyPair) {
+export async function saveKeypairStore(name: string, keyPair: StoredKeyPair) {
   const db = await openKeypairStoreDB(name);
   return await new Promise<boolean>((resolve, reject) => {
     const tx = db.transaction(KEYPAIR_STORE_NAME, "readwrite");
@@ -66,15 +71,15 @@ export async function saveKeypairStore(name: string, keyPair: CryptoKeyPair) {
   });
 }
 
-export async function getKeypairStore(
+export async function getKeypairStore<T extends StoredKeyPair = CryptoKeyPair>(
   name: string,
-): Promise<CryptoKeyPair | null> {
+): Promise<T | null> {
   const db = await openKeypairStoreDB(name);
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(KEYPAIR_STORE_NAME, "readonly");
     const store = tx.objectStore(KEYPAIR_STORE_NAME);
     const request = store.get(keypairNamespace(name));
-    let result: CryptoKeyPair | null = null;
+    let result: T | null = null;
 
     request.onsuccess = () => {
       const value = request.result;
@@ -82,7 +87,7 @@ export async function getKeypairStore(
         ? ({
             privateKey: value.privateKey,
             publicKey: value.publicKey,
-          } as CryptoKeyPair)
+          } as T)
         : null;
     };
     tx.oncomplete = () => {

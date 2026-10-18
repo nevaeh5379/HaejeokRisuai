@@ -1,7 +1,8 @@
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
 import type {
   SqlCommit,
   SqlCommitResult,
-} from "@risuai/protocol/sqlCommit.cjs";
+} from "@risuai/protocol/src/sqlCommit.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export class NodeSqlRevisionConflictError extends Error {
@@ -50,6 +51,8 @@ async function responseError(
   fallback: string,
 ): Promise<Error> {
   const body = await response.json().catch(() => null);
+  if (typeof body?.code === "string" && body.code.startsWith("author_note_"))
+    return new AuthorNoteError(body.code.slice(12), body.noteId);
   return new Error(body?.error || `${fallback} (${response.status})`);
 }
 
@@ -73,7 +76,10 @@ export class RemoteSqlCommitClient {
   ): Promise<SqlCommitResult> {
     let pending: SqlCommit<TPreset> = {
       ...commit,
-      baseRevision: Math.max(commit.baseRevision, currentRevision),
+      baseRevision:
+        commit.action === "illustration"
+          ? commit.baseRevision
+          : Math.max(commit.baseRevision, currentRevision),
     };
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -92,7 +98,13 @@ export class RemoteSqlCommitClient {
 
       if (response.status === 409) {
         const conflict = await response.json().catch(() => null);
-        const revision = Number(conflict?.revision);
+        if (conflict?.code === "author_note_conflict")
+          throw new AuthorNoteError("conflict", conflict.noteId);
+        const revision =
+          conflict?.revision === undefined ? NaN : Number(conflict.revision);
+        // Illustration bodies are conditional on a fresh read; never replay one at a newer revision.
+        if (commit.action === "illustration")
+          throw new NodeSqlRevisionConflictError(conflict?.revision);
         if (Number.isSafeInteger(revision) && attempt < 2) {
           pending = { ...pending, baseRevision: revision };
           continue;

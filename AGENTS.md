@@ -12,6 +12,9 @@ The following platforms must be considered:
 
 In particular, lazy loading must be prioritized. This is because lazy loading is a double-edged sword: it is a major cause of bugs, yet it is essential for optimization.
 
+# Guidelines for JavaScript and TypeScript
+Existing JavaScript files (such as those with .mjs or .cjs extensions) are targets for refactoring into TypeScript.
+Please write code in TypeScript rather than JavaScript.
 
 ## Project Overview
 
@@ -101,7 +104,7 @@ risuai-newest/
 
 ### Prerequisites
 
-- Node.js 20.19+ or 22.12+ and pnpm
+- Node.js 24.12+ and pnpm
 - Rust and Cargo (for Tauri builds)
 
 ### Development

@@ -12,7 +12,7 @@ import type {
   NodeStorageAssetDetails,
   NodeStorageAssetItem,
   NodeStorageSummary,
-} from "@risuai/protocol/storageConfig.cjs";
+} from "@risuai/protocol/storageConfig.ts";
 import {
   createSameOriginNodeApiClient,
   type NodeApiClient,
@@ -31,7 +31,7 @@ export type {
   NodeStorageAssetDetails,
   NodeStorageAssetItem,
   NodeStorageSummary,
-} from "@risuai/protocol/storageConfig.cjs";
+} from "@risuai/protocol/storageConfig.ts";
 
 async function responseError(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);

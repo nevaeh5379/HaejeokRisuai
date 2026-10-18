@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const rootPackage = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
 const runtimePackage = JSON.parse(await readFile(new URL('./runtime-package.json', import.meta.url), 'utf8'));
 const installScript = await readFile(new URL('./install.sh', import.meta.url), 'utf8');
 const managerScript = await readFile(new URL('./haejeok.sh', import.meta.url), 'utf8');
+const serverSource = await readFile(new URL('../../server/node/storage/postgres/postgresStorage.ts', import.meta.url), 'utf8');
+const projectRoot = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
 
 const runtimeDependencies = runtimePackage.dependencies;
 const requiredDependencies = [
@@ -37,6 +40,11 @@ test('Termux runtime excludes optional native and cloud backends', () => {
   for (const dependency of ['sharp', 'mssql', 'oracledb', '@aws-sdk/client-s3']) {
     assert.equal(runtimeDependencies[dependency], undefined);
   }
+});
+
+test('Node server source keeps resource paths relocatable', () => {
+  assert.equal(serverSource.includes(projectRoot), false);
+  assert.match(serverSource, /import.meta.dirname/);
 });
 
 test('Termux installer is deterministic and localhost-first', () => {

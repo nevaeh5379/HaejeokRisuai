@@ -3,10 +3,14 @@ import { alertError, alertInput, waitAlert } from "../../alert";
 import { NodeSqlStorage } from "../sql/postgres/nodeSqlStorage";
 import { NodeS3Storage } from "@risuai/storage-remote/nodeS3Storage";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
-import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
+import {
+  RemoteAuthIdentity,
+  type RemoteAuthKeyPair,
+} from "@risuai/storage-remote/remoteAuthIdentity";
 import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
 import { RemoteStorageSyncClient } from "@risuai/storage-remote/remoteStorageSyncClient";
 import { RemoteSyncAssetReader } from "@risuai/storage-remote/remoteSyncAssetReader";
+import { RemoteLocalBackupClient } from "@risuai/storage-remote/remoteLocalBackupClient";
 import {
   RemoteComputeClient,
   type NodeVectorCacheStats,
@@ -33,20 +37,20 @@ import {
   type NodeStorageSyncSummary,
   type StorageSyncDirection,
 } from "@risuai/storage-remote/nodeApiClient";
-import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.cjs";
+import type { AssetStorageTarget } from "../../../../packages/protocol/storageConfig.ts";
 import type {
   NodeChatContinuationDecision,
   NodeChatContinuationRequest,
   NodeChatGenerationPlan,
   NodeChatPlanRequest,
-} from "../../../../packages/protocol/chatExecutor.cjs";
+} from "../../../../packages/protocol/chatExecutor.ts";
 import type {
   NodeProviderCapabilities,
   NodeProviderExecutionRequest,
   NodeProviderExecutionResult,
   NodeProviderTransportRequest,
   NodeProviderTransportResult,
-} from "../../../../packages/protocol/providerExecution.cjs";
+} from "../../../../packages/protocol/providerExecution.ts";
 import type {
   LoreMatchBatchRequest,
   LoreMatchBatchResponse,
@@ -64,7 +68,7 @@ import type {
   VectorIndexStatusResponse,
   VectorIndexUpsertRequest,
   VectorSearchMetric,
-} from "../../../../packages/protocol/compute.cjs";
+} from "../../../../packages/protocol/compute.ts";
 
 export {
   NodeSqlPayloadTooLargeError,
@@ -99,6 +103,7 @@ export type {
 export class NodeStorage {
   readonly sql: NodeSqlStorage;
   readonly s3: NodeS3Storage;
+  readonly backup: RemoteLocalBackupClient;
   private readonly assetClient: RemoteAssetClient;
   private readonly authIdentity: RemoteAuthIdentity;
   private readonly authController: RemoteAuthController;
@@ -131,6 +136,11 @@ export class NodeStorage {
     );
     this.sql = new NodeSqlStorage(getAuth, apiClient);
     this.s3 = new NodeS3Storage(getAuth, apiClient);
+    this.backup = new RemoteLocalBackupClient(
+      apiClient,
+      getAuth,
+      this.sql.getClientId(),
+    );
     this.assetClient = new RemoteAssetClient(apiClient, () =>
       this.getCachedAuth(),
     );
@@ -310,9 +320,9 @@ export class NodeStorage {
     await this.computeClient.cancelHypaMemorySession(sessionId);
   }
 
-  async getKeyPair(): Promise<CryptoKeyPair> {
-    return await this.authIdentity.getKeyPair();
-  }
+  // async getKeyPair(): Promise<RemoteAuthKeyPair> {
+  //   return await this.authIdentity.getKeyPair();
+  // }
 
   async setItem(key: string, value: Uint8Array) {
     await this.assetClient.setItem(key, value);

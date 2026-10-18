@@ -7,6 +7,12 @@ public class BackupEntryPolicyTest {
     @Test
     public void classifiesCoreAndLegacyAssetEntries() {
         assertEquals(BackupEntryPolicy.Kind.DATABASE, BackupEntryPolicy.classify("database.risudat"));
+        assertEquals(BackupEntryPolicy.Kind.DATABASE_STREAM, BackupEntryPolicy.classify(
+            "database.stream/000000000001.risudat"
+        ));
+        assertEquals(BackupEntryPolicy.Kind.DATABASE_STREAM, BackupEntryPolicy.classify(
+            "database.stream/manifest.risudat"
+        ));
         assertEquals(BackupEntryPolicy.Kind.ENCRYPTION, BackupEntryPolicy.classify("encryption.risudat"));
         assertEquals(BackupEntryPolicy.Kind.ASSET, BackupEntryPolicy.classify("avatar.png"));
         assertEquals(BackupEntryPolicy.Kind.ASSET, BackupEntryPolicy.classify("assets/avatar.png"));

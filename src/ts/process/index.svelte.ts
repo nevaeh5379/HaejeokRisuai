@@ -4,27 +4,31 @@ import {
   chatProcessStage,
   doingChat,
   endChatGeneration,
-} from "./chatRuntimeState";
-export { chatProcessStage, doingChat } from "./chatRuntimeState";
+} from "./chat/runtimeState";
+export { chatProcessStage, doingChat } from "./chat/runtimeState";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { selectedCharID } from "../stores.svelte";
-import { createLocalChatExecutor } from "./chatLocalExecutor";
+import { createLocalChatExecutor } from "./chat/localExecutor";
 import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
-import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
+import type { ChatSendOptions } from "@risuai/chat-core/executor.ts";
 import {
   beginNativeChatRequest,
+  boundedNativeCall,
   endNativeChatRequest,
-} from "../androidChatLifecycle";
+  NATIVE_BRIDGE_TIMEOUT_MS,
+} from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
+import { localGenerationController } from "./chat/generationCancellation";
 import {
   beginNodeGenerationLifecycle,
   endNodeGenerationLifecycle,
+  getActiveNodeGenerationLifecycleId,
   reportNodeGenerationFailure,
 } from "./nodeGenerationLifecycle";
 
-export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.ts";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 export interface requestTokenPart {
   name: string;
@@ -67,48 +71,73 @@ export async function sendChat(
     keepAlive && targetChatId ? beginChatGeneration(targetChatId) : false;
   if (keepAlive && targetChatId && !locked) return false;
 
+  const controller = locked ? new AbortController() : null;
+  const forwardAbort = () => controller?.abort();
+  if (arg.signal?.aborted) forwardAbort();
+  else arg.signal?.addEventListener("abort", forwardAbort, { once: true });
+  if (controller && targetChatId) {
+    localGenerationController.register(targetChatId, {
+      controller,
+      lifecycleId: () => getActiveNodeGenerationLifecycleId(targetChatId),
+    });
+  }
+  const signal = controller?.signal ?? arg.signal;
   const previousCompactionGuard = targetChat?.preventMessageCompaction;
   if (keepAlive && targetChat) targetChat.preventMessageCompaction = true;
-  const lifecycleId =
-    locked && targetChatId
-      ? await beginNodeGenerationLifecycle(targetChatId)
-      : null;
-  if (keepAlive) {
-    // Ask while we are still inside the send gesture: browsers drop the
-    // notification permission prompt once the tab is backgrounded, so
-    // requesting at response time never shows the dialog.
-    await ensureChatNotificationPermission();
-    await beginNativeChatRequest();
-  }
+  let lifecycleId: string | null = null;
   const serializeForPresetChain =
     chatProcessIndex === -1 && Boolean(settingsStore.state.presetChain?.trim());
   try {
-    return await runWithPresetChainGenerationGate(
+    if (locked && targetChatId) {
+      lifecycleId = await beginNodeGenerationLifecycle(targetChatId, signal);
+    }
+    if (keepAlive) {
+      // Ask while we are still inside the send gesture: browsers drop the
+      // notification permission prompt once the tab is backgrounded.
+      // Both calls cross the native bridge; the lifecycle helpers bound
+      // their bridge calls internally, so a vendor ROM hang cannot leave
+      // the generation lock held forever.
+      await ensureChatNotificationPermission();
+      await beginNativeChatRequest();
+    }
+    const result = await runWithPresetChainGenerationGate(
       serializeForPresetChain,
       async () => {
-        if (arg.signal?.aborted) return false;
+        if (signal?.aborted) return false;
         return localChatExecutor.execute(chatProcessIndex, {
           ...arg,
+          signal,
           targetCharacterId,
           targetChatId,
         });
       },
     );
+    return signal?.aborted ? false : result;
   } catch (error) {
     reportNodeGenerationFailure(targetChatId, error);
     throw error;
   } finally {
+    arg.signal?.removeEventListener("abort", forwardAbort);
+    if (controller && targetChatId) {
+      localGenerationController.unregister(targetChatId, controller);
+    }
     if (keepAlive && targetChat) {
       targetChat.preventMessageCompaction = previousCompactionGuard;
     }
     if (locked && targetChatId) endChatGeneration(targetChatId);
     if (targetChatId) {
-      await endNodeGenerationLifecycle(
-        targetChatId,
-        lifecycleId,
-        arg.signal?.aborted === true,
+      await boundedNativeCall(
+        endNodeGenerationLifecycle(
+          targetChatId,
+          lifecycleId,
+          signal?.aborted === true,
+        ),
+        NATIVE_BRIDGE_TIMEOUT_MS,
       );
     }
-    if (keepAlive) await endNativeChatRequest();
+    if (keepAlive) {
+      // endNativeChatRequest bounds its bridge call internally.
+      await endNativeChatRequest();
+    }
   }
 }

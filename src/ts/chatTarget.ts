@@ -7,6 +7,8 @@ export interface ChatTarget {
 }
 
 export interface ChatExecutionTarget extends ChatTarget {
+  /** Request-local author note input; never persisted on a chat. */
+  authorNoteContent?: string;
   /** Request-local variable overlay used by isolated generations such as /btw. */
   globalVariables?: Record<string, string>;
 }

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_bot_grid_item_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="88dp">
+
+    <ImageView
+        android:id="@+id/widget_bot_grid_item_image"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/widget_character_icon_description"
+        android:maxHeight="180dp"
+        android:minHeight="88dp"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/widget_bot_grid_item_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/widget_card_label"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:paddingHorizontal="7dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="5dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</FrameLayout>

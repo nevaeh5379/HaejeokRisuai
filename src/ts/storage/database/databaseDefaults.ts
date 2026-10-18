@@ -1,3 +1,4 @@
+import { readLegacyPresetFields } from "../presets/legacyPresetCompatibility";
 import type {
   botPreset,
   Database,
@@ -34,14 +35,19 @@ export type SettingsInput = {
   [K in keyof DatabaseSettings]?: unknown;
 } & Record<string, unknown>;
 
-export type NormalizedSettingsInput = SettingsInput &
-  CoreValidatedDefaults &
+export type ValidatedSettingsDefaults = CoreValidatedDefaults &
   ContentValidatedDefaults &
   ProviderValidatedDefaults &
   FeatureValidatedDefaults &
   RuntimeValidatedDefaults;
 
-const NON_SETTINGS_KEYS = new Set(SETTINGS_STORE_EXCLUDED_KEYS);
+export type NormalizedSettingsInput = SettingsInput & ValidatedSettingsDefaults;
+
+/** Known settings remain optional unless the normalizer supplies their defaults. */
+export type NormalizedSettingsState = Partial<DatabaseSettings> &
+  Required<Pick<DatabaseSettings, keyof ValidatedSettingsDefaults>>;
+
+const NON_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
 function requireObject(input: unknown, label: string): Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -60,7 +66,7 @@ function assertSettingsOwnership(input: Record<string, unknown>): void {
 
 export function normalizeSettingsDefaults<T extends SettingsInput>(
   input: T,
-): T & NormalizedSettingsInput {
+): T & ValidatedSettingsDefaults {
   assertSettingsOwnership(input);
   const data = input as unknown as Database;
   normalizeCoreDatabaseSettings(data);
@@ -68,7 +74,7 @@ export function normalizeSettingsDefaults<T extends SettingsInput>(
   normalizeProviderDatabaseSettings(data);
   normalizeFeatureDatabaseSettings(data);
   normalizeRuntimeDatabaseSettings(data);
-  return input as T & NormalizedSettingsInput;
+  return input as T & ValidatedSettingsDefaults;
 }
 
 export function normalizeSettingsInput(
@@ -114,6 +120,7 @@ export type NormalizedDatabaseInput = DatabaseInput &
       | "modules"
       | "enabledModules"
       | "moduleFolders"
+      | "moduleSandboxGroups"
     >
   >;
 
@@ -127,10 +134,12 @@ function normalizeLegacyPersonaMirrors(data: Database): void {
 function normalizeAggregateDomains(data: Database): void {
   normalizeLegacyPersonaMirrors(data);
   data.characters ??= [];
+  data.plugins ??= [];
   data.modules ??= [];
   data.enabledModules ??= [];
   data.moduleFolders ??= [];
   data.moduleOrder ??= [];
+  data.moduleSandboxGroups ??= [];
 
   if (!Array.isArray(data.personas) || data.personas.length === 0) {
     data.personas = [
@@ -181,11 +190,14 @@ export function normalizeDatabaseDefaults(
   input: Database | DatabaseInput,
 ): Database | NormalizedDatabaseInput {
   const data = input as Database;
+  readLegacyPresetFields(input as Record<string, unknown>);
   normalizeCoreDatabaseSettings(data);
   normalizeContentDatabaseSettings(data);
   normalizeProviderDatabaseSettings(data);
   normalizeFeatureDatabaseSettings(data);
-  normalizeRuntimeDatabaseSettings(data);
+  normalizeRuntimeDatabaseSettings(data, {
+    hasPlugins: Array.isArray(data.plugins) && data.plugins.length > 0,
+  });
   normalizeAggregateDomains(data);
   return input as Database | NormalizedDatabaseInput;
 }

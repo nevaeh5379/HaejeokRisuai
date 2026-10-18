@@ -57,6 +57,8 @@ const speaker = {
   globalLore: [{ comment: "speaker-global" }],
 };
 const callbacks = new Map<string, RegisterCallback>();
+const authorNoteParser = vi.fn((text: string, _arg?: matcherArg) => text);
+const promptTemplate: any[] = [];
 const getModuleLorebooks = vi.fn((room?: any) =>
   room?.chaId === "target-room"
     ? [
@@ -81,10 +83,10 @@ registerCBS({
     callbacks.set(name, callback);
     for (const item of alias) callbacks.set(item, callback);
   },
-  getPresetSettings: () => ({ promptTemplate: [] }) as any,
+  getPresetSettings: () => ({ promptTemplate }) as any,
   getCharacters: () => [selectedRoom, targetRoom] as any,
   getSelectedCharID: () => 0,
-  risuChatParser: (text) => text,
+  risuChatParser: authorNoteParser,
   makeArray: (items) => JSON.stringify(items),
   safeStructuredClone: (value) => structuredClone(value),
   getModuleLorebooks,
@@ -108,6 +110,25 @@ function run(name: string, overrides: Partial<matcherArg> = {}) {
 test("uses the explicit speaker for character variables", () => {
   expect(run("char")).toBe("Speaker Nick");
   expect(run("description")).toBe("speaker-desc");
+});
+
+test("authornote keeps the execution raw input in nested parsing and uses template defaults for None", () => {
+  promptTemplate.push({ type: "authornote", defaultText: "template default" });
+  try {
+    expect(run("authornote", { authorNoteContent: "shared {{char}}" })).toBe(
+      "shared {{char}}",
+    );
+    expect(authorNoteParser).toHaveBeenLastCalledWith(
+      "shared {{char}}",
+      expect.objectContaining({ authorNoteContent: "shared {{char}}" }),
+    );
+    expect(run("authornote", { authorNoteContent: "" })).toBe(
+      "template default",
+    );
+    expect(run("authornote", { authorNoteContent: " " })).toBe(" ");
+  } finally {
+    promptTemplate.length = 0;
+  }
 });
 
 test("uses the explicit room and chat for message context", () => {

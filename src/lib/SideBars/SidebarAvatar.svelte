@@ -169,6 +169,20 @@
             class:rounded-md={!rounded} class:rounded-full={rounded}
           ></div>
         {:then img}
+          {#if img === "/none.webp"}
+            <div
+              class="rs-avatar-placeholder sidebar-avatar rounded-md"
+              role="img"
+              aria-label="avatar"
+              style:width={size + "px"}
+              style:height={size + "px"}
+              style:minWidth={size + "px"}
+              class:rounded-md={!rounded} class:rounded-full={rounded}
+            >
+              <img src={img} alt="avatar" class="w-full h-full rounded-[inherit]" />
+              <span aria-hidden="true">?</span>
+            </div>
+          {:else}
           <img
             src={img}
             loading="eager"
@@ -181,6 +195,7 @@
             class:rounded-md={!rounded} class:rounded-full={rounded}
             alt="avatar"
           />
+          {/if}
         {/await}
       {:else}
         <div

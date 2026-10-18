@@ -1,19 +1,28 @@
 <script lang="ts">
+    import { flushDurableStores } from "./ts/stores/domain/flushDurableStores";
+    import AuthorNoteDraftRecovery from "./lib/Others/AuthorNoteDraftRecovery.svelte";
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS } from './ts/platform';
+    import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriLinux, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
-    import { registerPlugin } from '@capacitor/core';
+    import { nativeAppControl } from './ts/android/nativeAppControl';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
+    import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
+    import { applyMacOSNativeSidebarBlur, applyMacOSSidebarTransparency, installLinuxCsdHeaderDrag, installMacOSHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
+    import { applyLinuxCsdSidebarOpacity } from './ts/linuxWindowIntegration';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
+    import { installAndroidNativeEntryHandler, setAndroidNavigationBarHidden } from './ts/android/androidNativeIntegration';
+    import { shouldHideAndroidNavigationBar } from './ts/android/androidNavigationBar';
+    import { routeAndroidNativeEntry } from './ts/android/androidNativeEntryRouter';
+    import { refreshAndroidNativeSurfaces } from './ts/android/androidNativeSurfaces';
 
 
   
@@ -28,10 +37,58 @@
     let RealmPopUp = $state<typeof RealmPopUpType | null>(null)
     let exitConfirmationOpen = false
 
-    const nativeAppControl = registerPlugin<{ exitApp(): Promise<void> }>('NativeAppControl')
+    onMount(installLinuxCsdHeaderDrag)
+    onMount(installMacOSHeaderDrag)
+
+    $effect(() => {
+        // A newly opened window must not broadcast its unhydrated default to
+        // windows that already use the saved material preference.
+        if (!isTauriMacOS || !$loadedStore) return
+        void applyMacOSNativeSidebarBlur(settingsStore.state.macosNativeSidebarBlur ?? false)
+            .catch((error) => console.error('[macOS sidebar] Failed to change blur effect', error))
+    })
+
+    $effect(() => {
+        if (!isTauriLinux) return
+        applyLinuxCsdSidebarOpacity(settingsStore.state.linuxCsdSidebarOpacity ?? 94)
+    })
+
+    $effect(() => {
+        if (!isTauriMacOS) return
+        applyMacOSSidebarTransparency(
+            settingsStore.state.macosSidebarTransparency ?? true,
+            settingsStore.state.macosSidebarOpacity ?? 0,
+        )
+    })
+
+    $effect(() => {
+        if (!isCapacitorAndroid) return
+        void setAndroidNavigationBarHidden(shouldHideAndroidNavigationBar({
+            chatEnabled: settingsStore.state.autoHideAndroidNavigationBar,
+            sidebarEnabled: settingsStore.state.autoHideAndroidNavigationBarInSidebar,
+            settingsOpen: $settingsOpen,
+            selectedCharacterId: $selectedCharID,
+            sidebarOpen: $sideBarStore,
+            mobileSidebar: $MobileSideBar,
+        }))
+    })
 
     onMount(() => {
         if (!isCapacitor) return
+
+        const removeNativeEntryHandler = installAndroidNativeEntryHandler(async (entry) => {
+            try {
+                await routeAndroidNativeEntry(entry)
+            } catch (error) {
+                console.error('[NativeIntegration] Failed to route Android entry:', error)
+            }
+        })
+        let nativeSurfacesReady = false
+        const unsubscribeNativeSurfaces = loadedStore.subscribe((loaded) => {
+            if (!loaded || nativeSurfacesReady) return
+            nativeSurfacesReady = true
+            void refreshAndroidNativeSurfaces()
+        })
 
         const handleAndroidBack = async () => {
             if ($alertStore.type !== 'none') {
@@ -83,11 +140,7 @@
                     import('./lang'),
                 ])
                 if (await alertConfirm(language.exitAppConfirm)) {
-                    const flushResults = await Promise.allSettled([
-                        settingsStore.flush(),
-                        characterStore.flush(),
-                        messageStore.flush(),
-                    ])
+                    const flushResults = await Promise.allSettled([flushDurableStores()])
                     if (
                         flushResults.some((result) => result.status === 'rejected') ||
                         settingsStore.hasPendingWrites() ||
@@ -105,7 +158,11 @@
         }
 
         window.addEventListener('risu:android-back', handleAndroidBack)
-        return () => window.removeEventListener('risu:android-back', handleAndroidBack)
+        return () => {
+            window.removeEventListener('risu:android-back', handleAndroidBack)
+            unsubscribeNativeSurfaces()
+            removeNativeEntryHandler()
+        }
     })
 
     const legalLoader = () => import('./lib/Others/Legal.svelte')
@@ -249,7 +306,10 @@
     }
 
 }}>
-    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
+    {#if isTauriWindows}
+        <NativeWindowResizeHandles />
+    {/if}
+    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED === 'TRUE' || globalThis.__RISU_LEGAL_CONFIGURED__ === true)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
 
@@ -322,7 +382,7 @@
         </div>
     {:else if detachedChatWindow && !$loadedStore}
         <div class="w-full h-full min-w-0 flex flex-col bg-bgcolor text-textcolor">
-            <div class="h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1">
+            <div class="h-9 shrink-0 border-b border-darkborderc bg-darkbg/90 px-2 pt-1" use:windowDragRegion>
                 <div class="h-8 min-w-32 max-w-72 rounded-t-md border border-b-0 border-darkborderc bg-selected px-3 text-left">
                     <span class="block truncate text-xs font-medium">{detachedChatPresentation.characterName || 'RisuAI'}</span>
                     <span class="block truncate text-[10px] opacity-70">{detachedChatPresentation.chatName || 'Chat'}</span>
@@ -343,10 +403,10 @@
             <LazyComponent loader={sqlQuickSetupLoader} />
         {:else}
             <div class="relative w-full h-full flex justify-center items-center text-textcolor bg-bgcolor flex-col px-6" aria-live="polite">
-                {#if isTauriMacOS}
+                {#if isTauriMacOS || isTauriWindows}
                     <div
                         class="absolute top-0 left-0 right-1 h-10 z-[1]"
-                        data-tauri-drag-region="true"
+                        use:windowDragRegion
                         aria-hidden="true"
                     ></div>
                 {/if}
@@ -376,7 +436,7 @@
         </div>
     {:else}
         {#if gridOpen}
-            <div class="grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0">
                 <LazyComponent loader={gridLoader} props={{ endGrid: () => { gridOpen = false } }} />
             </div>
         {:else}
@@ -388,7 +448,7 @@
                     <LazyComponent loader={sidebarLoader} props={{ openGrid: () => { gridOpen = true }, hidden: false }} />
                 </div>
             {/if}
-            <div class="grow h-full min-w-0">
+            <div class="rs-main-content grow h-full min-w-0">
                 {#if $selectedCharID < 0 && $PlaygroundStore === 0}
                     <LazyComponent loader={mainMenuLoader} />
                 {:else}
@@ -474,3 +534,5 @@
         }
     }
 </style>
+
+<AuthorNoteDraftRecovery />

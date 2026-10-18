@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCapacitorNodeApiFetch,
+  createRemoteNodeApiClient,
   createSameOriginNodeApiClient,
   NodeApiClient,
   NodeApiCompatibilityError,
 } from "./nodeApiClient";
+
+const mocks = vi.hoisted(() => ({
+  fetchNative: vi.fn(),
+}));
+
+vi.mock("../../globalApi.svelte", () => ({
+  fetchNative: mocks.fetchNative,
+}));
 
 const profile = {
   version: 1 as const,
@@ -13,6 +23,80 @@ const profile = {
 };
 
 describe("NodeApiClient", () => {
+  it("uses the chunked native transport for Capacitor remote storage", async () => {
+    const largeModulePayload = {
+      modules: [
+        {
+          id: "large-android-module",
+          name: "Large Android module",
+          description: "x".repeat(2 * 1024 * 1024),
+        },
+      ],
+      hash: "large-module-hash",
+    };
+    mocks.fetchNative.mockResolvedValueOnce(Response.json(largeModulePayload));
+
+    const client = await createRemoteNodeApiClient(profile, "capacitor");
+    const response = await client.request("/api/database-v2/modules", {
+      method: "GET",
+      cache: "no-cache",
+      headers: { "risu-auth": "android-auth" },
+    });
+
+    await expect(response.json()).resolves.toEqual(largeModulePayload);
+    expect(mocks.fetchNative).toHaveBeenCalledWith(
+      "https://storage.example:7443/api/database-v2/modules",
+      {
+        body: undefined,
+        headers: { "risu-auth": "android-auth" },
+        method: "GET",
+        signal: undefined,
+        logFetch: false,
+      },
+    );
+  });
+
+  it("supplies an empty body for payload-free Capacitor mutations", async () => {
+    const streamedFetch = vi.fn(
+      async () => new Response(null, { status: 204 }),
+    );
+    const fetcher = createCapacitorNodeApiFetch(streamedFetch);
+
+    await fetcher("https://storage.example/api/local-backup/import/jobs", {
+      method: "POST",
+      headers: { "risu-auth": "android-auth" },
+    });
+
+    expect(streamedFetch).toHaveBeenCalledWith(
+      "https://storage.example/api/local-backup/import/jobs",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "risu-auth": "android-auth" },
+        body: new Uint8Array(),
+      }),
+    );
+  });
+
+  it("passes remote mutation bodies through the Capacitor adapter", async () => {
+    const streamedFetch = vi.fn(async () => Response.json({ revision: 2 }));
+    const fetcher = createCapacitorNodeApiFetch(streamedFetch);
+
+    await fetcher("https://storage.example/api/database-v2/commit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ baseRevision: 1 }),
+    });
+
+    expect(streamedFetch).toHaveBeenCalledWith(
+      "https://storage.example/api/database-v2/commit",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode('{"baseRevision":1}'),
+      }),
+    );
+  });
+
   it("keeps the Node-hosted web app on explicit same-origin paths", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
     const client = createSameOriginNodeApiClient(
@@ -44,6 +128,37 @@ describe("NodeApiClient", () => {
     );
   });
 
+  it("identifies a missing API route without assuming the server version", async () => {
+    const client = new NodeApiClient(
+      profile,
+      async () => new Response(null, { status: 404 }),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /storage\.example:7443\/api\/client-capabilities.*reverse proxy route/,
+    );
+  });
+
+  it("shows the server's reason for an unavailable capabilities endpoint", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json({ error: "SQL storage is unavailable" }, { status: 503 }),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /HTTP 503.*storage\.example:7443\/api\/client-capabilities.*SQL storage is unavailable/,
+    );
+  });
+
+  it("explains how to allow a Tauri dev origin rejected by the server", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json(
+        { error: "Origin is not allowed", code: "cors_denied" },
+        { status: 403 },
+      ),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /RISUAI_ALLOWED_ORIGINS/,
+    );
+  });
+
   it("requires SQL, asset, and data-change capabilities", async () => {
     const client = new NodeApiClient(profile, async () =>
       Response.json({
@@ -60,42 +175,52 @@ describe("NodeApiClient", () => {
     );
   });
 
-  it("loads a validated storage sync summary from capable servers", async () => {
-    const fetcher = vi.fn(async (url: string) => {
-      if (url.endsWith("/api/client-capabilities")) {
+  it.each([undefined, false, true, "true"])(
+    "validates optional plugin record support in the sync summary: %s",
+    async (supportsPluginRecords) => {
+      const fetcher = vi.fn(async (url: string) => {
+        if (url.endsWith("/api/client-capabilities")) {
+          return Response.json({
+            apiVersion: 1,
+            features: {
+              sqlStorage: true,
+              assetStorage: true,
+              dataChangeEvents: true,
+              storageSync: true,
+            },
+          });
+        }
         return Response.json({
-          apiVersion: 1,
-          features: {
-            sqlStorage: true,
-            assetStorage: true,
-            dataChangeEvents: true,
-            storageSync: true,
+          protocolVersion: 1,
+          supportsPluginRecords,
+          revision: 9,
+          initialized: true,
+          records: {
+            settings: 2,
+            characters: 3,
+            chats: 4,
+            messages: 5,
+            total: 14,
           },
+          assets: { count: 6, sizeBytes: 700 },
         });
+      });
+      const client = new NodeApiClient(profile, fetcher);
+      if (typeof supportsPluginRecords === "string") {
+        await expect(
+          client.getStorageSyncSummary("sync-auth"),
+        ).rejects.toBeInstanceOf(NodeApiCompatibilityError);
+        return;
       }
-      return Response.json({
-        protocolVersion: 1,
+      const summary = await client.getStorageSyncSummary("sync-auth");
+      expect(summary).toMatchObject({
         revision: 9,
-        initialized: true,
-        records: {
-          settings: 2,
-          characters: 3,
-          chats: 4,
-          messages: 5,
-          total: 14,
-        },
+        records: { total: 14 },
         assets: { count: 6, sizeBytes: 700 },
       });
-    });
-    const client = new NodeApiClient(profile, fetcher);
-    await expect(
-      client.getStorageSyncSummary("sync-auth"),
-    ).resolves.toMatchObject({
-      revision: 9,
-      records: { total: 14 },
-      assets: { count: 6, sizeBytes: 700 },
-    });
-  });
+      expect(summary.supportsPluginRecords).toBe(supportsPluginRecords);
+    },
+  );
 
   it("refuses storage sync when the server does not advertise it", async () => {
     const fetcher = vi.fn(async () =>

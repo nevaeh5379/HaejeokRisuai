@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { resolve } from "node:path";
 
 const e2ePort = Number(process.env.E2E_PORT ?? 5174);
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
@@ -79,7 +80,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `./node_modules/.bin/vite --port ${e2ePort} --strictPort`,
+    command: `"${process.execPath}" "${resolve("node_modules/vite/bin/vite.js")}" --port ${e2ePort} --strictPort`,
     url: e2eBaseUrl,
     // Vite cold-start of this app can take a while
     timeout: 300_000,

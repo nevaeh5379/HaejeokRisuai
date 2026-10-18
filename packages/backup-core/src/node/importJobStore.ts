@@ -1,0 +1,209 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import type {
+  LocalBackupImportJobCreated,
+  LocalBackupImportJobCompletion,
+  LocalBackupImportJobProgress,
+  LocalBackupImportJobStatus,
+  LocalBackupImportProgress,
+} from "../api.ts";
+
+interface InternalImportJob {
+  id: string;
+  uploadToken: string | null;
+  status: LocalBackupImportJobStatus;
+  progress: LocalBackupImportProgress;
+  error: string | null;
+  revision?: number;
+  recordCount?: number;
+  expiresAt: number;
+  completion: Promise<void>;
+  resolveCompletion: (() => void) | null;
+}
+
+const DEFAULT_IMPORT_JOB_TTL_MS = 24 * 60 * 60 * 1000;
+
+export class LocalBackupImportJobError extends Error {
+  readonly code: "job_not_found" | "job_already_started" | "invalid_job_state";
+  constructor(
+    message: string,
+    code:
+      | "job_not_found"
+      | "job_already_started"
+      | "invalid_job_state" = "invalid_job_state",
+  ) {
+    super(message);
+    this.code = code;
+    this.name = "LocalBackupImportJobError";
+  }
+}
+
+export class LocalBackupImportJobStore {
+  private readonly jobs = new Map<string, InternalImportJob>();
+
+  private readonly ttlMs: any;
+  private readonly idFactory: any;
+  private readonly uploadTokenFactory: any;
+  constructor(
+    // Pending jobs are disposable capabilities. Keep them long enough for a
+    // browser request to leave its connection queue; active uploads set their
+    // expiry to Infinity and therefore have no duration limit.
+    ttlMs = DEFAULT_IMPORT_JOB_TTL_MS,
+    idFactory = () => randomBytes(24).toString("base64url"),
+    uploadTokenFactory = () => randomBytes(32).toString("base64url"),
+  ) {
+    this.ttlMs = ttlMs;
+    this.idFactory = idFactory;
+    this.uploadTokenFactory = uploadTokenFactory;
+    if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
+      throw new TypeError("Local backup import job TTL must be positive");
+    }
+  }
+
+  prune(): void {
+    const now = Date.now();
+    for (const [id, job] of this.jobs) {
+      if (job.expiresAt <= now) this.jobs.delete(id);
+    }
+  }
+
+  create(): LocalBackupImportJobCreated {
+    this.prune();
+    const id = this.idFactory();
+    const uploadToken = this.uploadTokenFactory();
+    let resolveCompletion!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    this.jobs.set(id, {
+      id,
+      uploadToken,
+      status: "pending",
+      progress: { stage: "uploading", current: 0, total: 0 },
+      error: null,
+      expiresAt: Date.now() + this.ttlMs,
+      completion,
+      resolveCompletion,
+    });
+    return { id, uploadToken };
+  }
+
+  authorizeDirectUpload(id: string, uploadToken: string): boolean {
+    this.prune();
+    const job = this.jobs.get(id);
+    if (!job || job.status !== "pending" || !job.uploadToken || !uploadToken) {
+      return false;
+    }
+    const expected = Buffer.from(job.uploadToken);
+    const actual = Buffer.from(uploadToken);
+    return (
+      expected.length === actual.length && timingSafeEqual(expected, actual)
+    );
+  }
+
+  private require(id: string): InternalImportJob {
+    this.prune();
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new LocalBackupImportJobError(
+        "Local backup import job not found or expired",
+        "job_not_found",
+      );
+    }
+    return job;
+  }
+
+  beginUpload(id: string, totalBytes = 0): void {
+    const job = this.require(id);
+    if (job.status !== "pending") {
+      throw new LocalBackupImportJobError(
+        "Local backup import upload was already started",
+        "job_already_started",
+      );
+    }
+    job.status = "uploading";
+    job.uploadToken = null;
+    job.progress = {
+      stage: "uploading",
+      current: 0,
+      total: Math.max(0, totalBytes),
+    };
+    job.expiresAt = Number.POSITIVE_INFINITY;
+  }
+
+  markRestoring(id: string): void {
+    const job = this.require(id);
+    if (job.status !== "uploading") {
+      throw new LocalBackupImportJobError(
+        "Local backup import is not ready to restore",
+      );
+    }
+    job.status = "restoring";
+    job.progress = { stage: "reading", current: 0, total: 0 };
+  }
+
+  updateProgress(id: string, progress: LocalBackupImportProgress): void {
+    const job = this.require(id);
+    if (job.status === "complete" || job.status === "error") return;
+    job.progress = progress;
+  }
+
+  progress(id: string): LocalBackupImportJobProgress {
+    const job = this.require(id);
+    return {
+      status: job.status,
+      progress: job.progress,
+    };
+  }
+
+  settle(
+    id: string,
+    status: Extract<LocalBackupImportJobStatus, "complete" | "error">,
+    result: {
+      error?: string | null;
+      revision?: number;
+      recordCount?: number;
+    } = {},
+  ): void {
+    const job = this.require(id);
+    job.status = status;
+    job.error = result.error ?? null;
+    job.revision = result.revision;
+    job.recordCount = result.recordCount;
+    job.progress = {
+      stage: "finalizing",
+      current: status === "complete" ? 1 : 0,
+      total: 1,
+    };
+    job.expiresAt = Date.now() + this.ttlMs;
+    job.resolveCompletion?.();
+    job.resolveCompletion = null;
+  }
+
+  async wait(id: string): Promise<LocalBackupImportJobCompletion> {
+    const job = this.require(id);
+    if (
+      job.status === "pending" ||
+      job.status === "uploading" ||
+      job.status === "restoring"
+    ) {
+      await job.completion;
+    }
+    return {
+      status: job.status,
+      error: job.error,
+      revision: job.revision,
+      recordCount: job.recordCount,
+    };
+  }
+
+  remove(id: string): void {
+    const job = this.jobs.get(id);
+    if (job?.resolveCompletion) {
+      job.status = "error";
+      job.error = job.error ?? "Local backup import was cancelled";
+      job.resolveCompletion();
+      job.resolveCompletion = null;
+    }
+    this.jobs.delete(id);
+  }
+}

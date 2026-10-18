@@ -1,9 +1,16 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { getV2PluginAPIs, importPlugin } from "./plugins.svelte";
+import {
+  getRuntimePlugin,
+  getV2PluginAPIs,
+  importPlugin,
+  loadPlugins,
+} from "./plugins.svelte";
+import { PluginCrashGuard } from "./pluginCrashGuard";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import type { ISqlStorage } from "../storage/sql/ISqlStorage";
 import type { SqlCommit } from "../storage/sql/sqlCommit";
 
@@ -201,25 +208,39 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
   });
 
   it("commits an updated plugin to SQL before reloading plugins", async () => {
-    settingsStore.init(
-      {
-        plugins: [
-          {
-            name: "UpdateTest",
-            script: "old script",
-            arguments: {},
-            realArg: {},
-            customLink: [],
-            argMeta: {},
-            version: "3.0",
-            versionOfPlugin: "1.0.0",
-            enabled: false,
-          },
-        ],
-        pluginCustomStorage: {},
-      } as any,
-      mockStorage,
-    );
+    mockStorage.loadSettingKey = vi.fn(async () => undefined);
+    (mockStorage as { plugin: ISqlStorage["plugin"] }).plugin = {
+      load: vi.fn(async () => null),
+      loadAll: vi.fn(async () => [
+        {
+          id: "update-test-id",
+          position: 0,
+          name: "UpdateTest",
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version: "3.0" as const,
+          versionOfPlugin: "1.0.0",
+          enabled: false,
+        },
+      ]),
+      upsert: vi.fn(async () => undefined),
+      upsertMany: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+      deleteMany: vi.fn(async () => undefined),
+      setEnabled: vi.fn(async () => undefined),
+      reorder: vi.fn(async () => undefined),
+      script: {
+        load: vi.fn(async () => ({
+          pluginId: "update-test-id",
+          script: "old script",
+        })),
+        upsert: vi.fn(async () => undefined),
+        upsertMany: vi.fn(async () => undefined),
+      },
+    };
+    await pluginStore.init(mockStorage);
 
     await importPlugin(
       [
@@ -236,18 +257,59 @@ describe("Plugin Storage & SafeDatabase Persistence", () => {
     );
 
     const pluginCommit = committed.find((commit) =>
-      commit.root.upserts.some((upsert) => upsert.key === "plugins"),
+      commit.plugins?.upserts.some((upsert) => upsert.id === "update-test-id"),
     );
     expect(pluginCommit).toBeDefined();
-    expect(pluginCommit?.root.upserts).toContainEqual({
-      key: "plugins",
-      value: [
-        expect.objectContaining({
+    expect(pluginCommit?.plugins?.upserts).toContainEqual(
+      expect.objectContaining({
+        id: "update-test-id",
+        data: expect.objectContaining({
           name: "UpdateTest",
           versionOfPlugin: "1.1.0",
-          script: expect.stringContaining('Risuai.log("updated");'),
         }),
-      ],
+      }),
+    );
+    expect(pluginCommit?.plugins?.scripts).toContainEqual({
+      id: "update-test-id",
+      script: expect.stringContaining('Risuai.log("updated");'),
     });
+  });
+
+  it("skips a crash-blocked plugin and disables it through the plugin store", async () => {
+    pluginStore.plugins = [
+      {
+        id: "blocked-plugin-id",
+        position: 0,
+        name: "BlockedPlugin",
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: 1,
+        enabled: true,
+      },
+    ];
+    const clearBlocked = vi.fn(async () => undefined);
+    const guard = vi.spyOn(PluginCrashGuard, "getInstance").mockReturnValue({
+      getBlocked: vi.fn(async () => ["BlockedPlugin"]),
+      clearBlocked,
+    } as unknown as PluginCrashGuard);
+    const setEnabled = vi
+      .spyOn(pluginStore, "setEnabled")
+      .mockImplementation(async (id, enabled) => {
+        expect(id).toBe("blocked-plugin-id");
+        pluginStore.plugins[0].enabled = enabled;
+      });
+
+    try {
+      await loadPlugins();
+
+      expect(getRuntimePlugin("BlockedPlugin")).toBeUndefined();
+      expect(setEnabled).toHaveBeenCalledWith("blocked-plugin-id", false);
+      expect(clearBlocked).toHaveBeenCalledWith("BlockedPlugin");
+    } finally {
+      setEnabled.mockRestore();
+      guard.mockRestore();
+    }
   });
 });

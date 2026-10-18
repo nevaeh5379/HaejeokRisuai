@@ -381,7 +381,7 @@ interface Persona {
  * Plugins can only access these specific database properties for security.
  */
 interface DatabaseSubset {
-    /** Array of characters and group chats */
+    /** Array of characters and group chats, including currently loaded chat history */
     characters?: any[];
     /** Risuai modules */
     modules?: RisuModule[];
@@ -1447,6 +1447,8 @@ interface RisuaiPluginAPI {
      * customCSS, guiHTML, colorSchemeName, characterOrder, selectedPersona
      *
      * Use includeOnly to limit which keys to retrieve for better performance.
+     * Character chats retain their currently loaded message arrays. The returned
+     * database is detached; edits affect host state only through the existing setters.
      * 
      * @example
      * ```typescript
@@ -1456,7 +1458,7 @@ interface RisuaiPluginAPI {
      * }
      * ```
      */
-    getDatabase(includeOnly:string[]|'all' = 'all'): Promise<DatabaseSubset|null>;
+    getDatabase(includeOnly?:string[]|'all'): Promise<DatabaseSubset|null>;
 
     /**
      * Sets the database (lightweight save)

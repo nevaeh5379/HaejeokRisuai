@@ -3,7 +3,9 @@ import type { ISqlStorage } from "../storage/sql/ISqlStorage";
 import { deferredSettingsLoader } from "../stores/domain/deferredSettingsLoader";
 import { moduleStore } from "../stores/domain/moduleStore.svelte";
 import { personaStore } from "../stores/domain/personaStore.svelte";
+import { pluginStore } from "../stores/domain/pluginStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
+import { androidDiagnosticCheckpoint } from "../android/androidCrashDiagnostics";
 
 /**
  * Hydrates the relational settings that are not part of the shallow startup
@@ -12,20 +14,26 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
  * one limits temporary peak memory on low-RAM devices.
  */
 export async function initRuntimeSettings(storage: ISqlStorage): Promise<void> {
+  await androidDiagnosticCheckpoint("startup:custom-models");
   await deferredSettingsLoader.ensureKey("customModels");
 
   // Domain stores load their own state; SettingsStore never receives it.
   // Persona hydration is correctness-critical because prompts depend on it.
+  await androidDiagnosticCheckpoint("startup:personas");
   await personaStore.init(storage);
 
   // The remaining runtime extras retain their historical best-effort
   // behavior. Persona hydration above deliberately stays outside this catch.
   try {
+    await androidDiagnosticCheckpoint("startup:modules");
     await moduleStore.init(storage);
+    await androidDiagnosticCheckpoint("startup:plugin-records");
+    await pluginStore.init(storage);
 
     settingsStore.hydratePluginCustomStorageKeys(
       await storage.listPluginCustomStorageKeys(),
     );
+    await androidDiagnosticCheckpoint("startup:plugins");
     await loadPlugins();
   } catch (err) {
     console.error("[RUNTIME SETTINGS INIT ERROR]:", err);

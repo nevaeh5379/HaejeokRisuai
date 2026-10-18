@@ -1,3 +1,4 @@
+import { materializeChatNote } from "./authorNote";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/files/assetPersistence";
@@ -54,6 +55,7 @@ import { translateHTML } from "./translator/translator";
 import { importCharacter } from "./characterCards";
 import { PngChunk } from "./pngChunk";
 import { getColdStorageItem, preLoadChat } from "./process/coldstorage.svelte";
+import { chatTabsStore } from "./chatTabs.svelte";
 import {
   cancelInactiveChatMessageRelease,
   releaseInactiveChatMessages,
@@ -71,7 +73,7 @@ import { buildChatJsonExportPayload } from "./chatExport";
 import {
   loadPortableBranchGraphForExport,
   preparePortableChatForBranchRestore,
-} from "@risuai/backup-core/portableBranches.cjs";
+} from "@risuai/backup-core/portableBranches";
 import { restorePortableChatBranchGraph } from "./storage/sql/portableBranchRestore";
 
 export { createBlankChar } from "./characterDefaults";
@@ -414,7 +416,7 @@ export async function exportChat(page: number) {
         );
       }
       const payload = buildChatJsonExportPayload(
-        chat,
+        await materializeChatNote(chat),
         jsonExportMode,
         folders,
         branchGraph,
@@ -580,8 +582,7 @@ export async function exportChat(page: number) {
 
       if (
         !(await downloadFile(
-          `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") +
-            ".txt",
+          `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") + ".txt",
           stringl,
         ))
       )
@@ -901,7 +902,9 @@ export async function exportAllChats() {
       assertChatReadyForExport(finalChat, target.expectedMessageTotal);
     }
     const date = new Date().toISOString().replace(/[:.]/g, "-");
-    const allChats = char.chats;
+    const allChats = [];
+    for (const chat of char.chats)
+      allChats.push(await materializeChatNote(chat));
     const allFolders = char.chatFolders;
     const stringl = JSON.stringify({
       type: "risuAllChats",
@@ -1278,7 +1281,14 @@ export async function removeChar(
     chars[index].trashTime = Date.now();
     characterStore.markCharacterDirty(chars[index].chaId);
   } else {
+    const removedChaId = chars[index].chaId;
     chars.splice(index, 1);
+    // Drop tabs referencing the deleted character so a stale tab can never
+    // become the active one and deadlock the chat screen (removeChar
+    // deselects right after, so no navigation is needed here).
+    if (removedChaId) {
+      chatTabsStore.pruneCharacter(removedChaId);
+    }
   }
   checkCharOrder();
   characterStore.characters = chars;

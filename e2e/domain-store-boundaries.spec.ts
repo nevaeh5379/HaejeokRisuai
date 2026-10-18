@@ -8,6 +8,14 @@ async function waitForDomainStores(page: import("@playwright/test").Page) {
     undefined,
     { timeout: 120_000 },
   );
+  // The module store hydrates asynchronously from SQLite; reading or writing
+  // modules before hydration completes races init() overwriting the in-memory
+  // module list with the database snapshot.
+  await page.waitForFunction(async () => {
+    const path = "/src/ts/stores/domain/moduleStore.svelte.ts";
+    const { moduleStore } = await import(/* @vite-ignore */ path);
+    return moduleStore.loaded === true;
+  });
 }
 
 test.describe("domain store boundaries", () => {
@@ -211,6 +219,7 @@ test.describe("domain store boundaries", () => {
 
     await page.evaluate(async () => {
       const moduleStoreUrl = "/src/ts/stores/domain/moduleStore.svelte.ts";
+      const pluginStoreUrl = "/src/ts/stores/domain/pluginStore.svelte.ts";
       const pluginsUrl = "/src/ts/plugins/plugins.svelte.ts";
       const pluginV3Url = "/src/ts/plugins/apiV3/v3.svelte.ts";
       const { moduleStore } = (await import(
@@ -225,6 +234,16 @@ test.describe("domain store boundaries", () => {
         /* @vite-ignore */ pluginV3Url
       )) as {
         executePluginV3: (plugin: Record<string, unknown>) => Promise<void>;
+      };
+      const { pluginStore } = (await import(
+        /* @vite-ignore */ pluginStoreUrl
+      )) as {
+        pluginStore: {
+          install: (
+            metadata: Record<string, unknown>,
+            script: string,
+          ) => Promise<Record<string, unknown>>;
+        };
       };
       const { getV2PluginAPIs } = (await import(
         /* @vite-ignore */ pluginsUrl
@@ -249,57 +268,62 @@ test.describe("domain store boundaries", () => {
         throw new Error("Compatibility database cannot read the seeded module");
       }
 
-      const existingFrames = new Set(document.querySelectorAll("iframe"));
-      await executePluginV3({
-        name: "Module List E2E",
-        displayName: "Module List E2E",
-        version: "3.0",
-        enabled: true,
-        arguments: {},
-        realArg: {},
-        customLink: [],
-        argMeta: {},
-        script: `
-          document.body.innerHTML = \`
-            <main>
-              <ul data-testid="module-list"></ul>
-              <button data-testid="create-module" type="button">Create module</button>
-              <output data-testid="plugin-status">ready</output>
-            </main>
-          \`;
+      const pluginScript = `
+        document.body.innerHTML = \`
+          <main>
+            <ul data-testid="module-list"></ul>
+            <button data-testid="create-module" type="button">Create module</button>
+            <output data-testid="plugin-status">ready</output>
+          </main>
+        \`;
 
-          const renderModules = async () => {
-            const db = await risuai.getDatabase(["modules"]);
-            if (!Array.isArray(db?.modules)) {
-              throw new Error("Plugin database did not return a modules array");
-            }
-            document.querySelector('[data-testid="module-list"]').textContent =
-              db.modules.map((module) => module.name).join(" | ");
-          };
-
-          document.querySelector('[data-testid="create-module"]').addEventListener("click", async () => {
-            const status = document.querySelector('[data-testid="plugin-status"]');
-            status.textContent = "saving";
-            await risuai.setDatabase({
-              modules: [{
-                id: "visible-created-module",
-                name: "Visible Created Module",
-                description: "Created from the API v3 iframe",
-              }],
-            });
-            await renderModules();
-            status.textContent = "ready";
-          });
-
-          try {
-            await renderModules();
-          } catch (error) {
-            document.querySelector('[data-testid="plugin-status"]').textContent =
-              "error: " + error.message;
+        const renderModules = async () => {
+          const db = await risuai.getDatabase(["modules"]);
+          if (!Array.isArray(db?.modules)) {
+            throw new Error("Plugin database did not return a modules array");
           }
-          await risuai.showContainer("fullscreen");
-        `,
-      });
+          document.querySelector('[data-testid="module-list"]').textContent =
+            db.modules.map((module) => module.name).join(" | ");
+        };
+
+        document.querySelector('[data-testid="create-module"]').addEventListener("click", async () => {
+          const status = document.querySelector('[data-testid="plugin-status"]');
+          status.textContent = "saving";
+          await risuai.setDatabase({
+            modules: [{
+              id: "visible-created-module",
+              name: "Visible Created Module",
+              description: "Created from the API v3 iframe",
+            }],
+          });
+          await renderModules();
+          status.textContent = "ready";
+        });
+
+        try {
+          await renderModules();
+        } catch (error) {
+          document.querySelector('[data-testid="plugin-status"]').textContent =
+            "error: " + error.message;
+        }
+        await risuai.showContainer("fullscreen");
+      `;
+      const storedPlugin = await pluginStore.install(
+        {
+          name: "Module List E2E",
+          displayName: "Module List E2E",
+          version: "3.0",
+          enabled: true,
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+        },
+        pluginScript,
+      );
+
+      const existingFrames = new Set(document.querySelectorAll("iframe"));
+      await executePluginV3(storedPlugin);
 
       const pluginFrame = Array.from(document.querySelectorAll("iframe")).find(
         (frame) => !existingFrames.has(frame),

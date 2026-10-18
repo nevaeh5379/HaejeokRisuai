@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import { SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL } from "@risuai/storage-sqlite/sqliteLastMessageTime";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as lastMessageTime from "@risuai/storage-sqlite/schema/lastMessageTime";
 
 describe("SQLite last-message-time trigger", () => {
   it("backfills existing chats and guards direct message writes", () => {
@@ -19,7 +19,7 @@ describe("SQLite last-message-time trigger", () => {
     db.exec(
       "INSERT INTO messages (chat_id, id, position, role, content_text, sent_time) VALUES ('chat', 'm1', 0, 'user', 'one', 100)",
     );
-    db.exec(SQLITE_LAST_MESSAGE_TIME_BACKFILL_SQL);
+    db.exec(lastMessageTime.BACKFILL_SQL);
     db.exec(sqliteSchemaSql);
     const read = () =>
       (

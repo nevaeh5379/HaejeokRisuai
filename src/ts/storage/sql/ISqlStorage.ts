@@ -12,7 +12,14 @@ import type {
   customscript,
 } from "../database/schema";
 import type { RisuModule } from "../../process/modules";
+import type { IPluginStorage } from "./pluginStorage";
 import type { SqlCommit, SqlCommitResult } from "./sqlCommit";
+
+export type {
+  IPluginScriptStorage,
+  IPluginStorage,
+  PluginLoadOptions,
+} from "./pluginStorage";
 import type {
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
@@ -173,6 +180,7 @@ export interface BotPresetSummary {
  */
 export interface ISqlStorage {
   readonly backendKind: SqlBackendKind;
+  readonly plugin: IPluginStorage;
 
   isEnabled(): boolean;
   getRevision(): number;
@@ -249,15 +257,32 @@ export interface ISqlStorage {
   ): Promise<SqlChatBranchSummary>;
   activateChatBranch?(chatId: string, branchId: string): Promise<void>;
   /** Lightweight recent-chat feed; avoids hydrating character/chat trees.
-   * `activeChatId` marks the currently open chat so backends can rank it by
-   * the character's latest interaction without boosting that character's
-   * other chats (which would pollute the result before LIMIT is applied). */
+   * `activeChatId` pins the most recently opened chat ahead of the LIMIT and
+   * lets it inherit character interaction time without boosting that
+   * character's other chats. */
   listRecentChats?(
     limit?: number,
     activeChatId?: string,
   ): Promise<SqlRecentChatMetadata[]>;
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
+
+  listGlobalAuthorNotes(): Promise<
+    import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
+  >;
+  getGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
+    | null
+  >;
+  readGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
+    | null
+  >;
+  getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
 
   loadPersonas(): Promise<RisuPersona[]>;
   listBotPresets(): Promise<BotPresetSummary[]>;
@@ -267,16 +292,15 @@ export interface ISqlStorage {
   loadPrompts(): Promise<Record<string, any>>;
   loadScripts(): Promise<customscript[]>;
 
-  // ── Plugins ──────────────────────────────────────────────────────────
+  // ── Plugin custom storage ────────────────────────────────────────────
 
-  loadPlugins(options?: { enabledOnly?: boolean }): Promise<any[] | null>;
-  setPluginEnabled?(pluginName: string, enabled: boolean): Promise<void>;
   loadPluginCustomStorage(): Promise<Record<string, any> | null>;
   listPluginCustomStorageKeys(): Promise<string[]>;
   loadPluginCustomStorageKey(key: string): Promise<any>;
 
   // ── Settings ─────────────────────────────────────────────────────────
 
+  //TODO remove any.
   loadSettingKey(key: string): Promise<any>;
   /** Enumerates every persisted root setting key without hydrating values. */
   listSettingKeys?(): Promise<string[]>;

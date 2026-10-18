@@ -1,3 +1,4 @@
+import { selectedCharID } from "./stores/domain/characterSelection";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { writable } from "svelte/store";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
@@ -36,6 +37,14 @@ type AlertData = {
   stackTrace?: string;
   defaultValue?: string;
   mascot?: "help" | "backup";
+  progressSteps?: string[];
+  progressStep?: number;
+  progressStepRatio?: number;
+  progressBars?: Array<{
+    label: string;
+    progress: number;
+    detail?: string;
+  }>;
 };
 
 type PluginSafetyError = {
@@ -98,7 +107,7 @@ export const AccountWarning = writable("");
 export const DynamicGUI = writable(false);
 export const sideBarClosing = writable(false);
 export const sideBarStore = writable(window.innerWidth > 1024);
-export const selectedCharID = writable(-1);
+export { selectedCharID } from "./stores/domain/characterSelection";
 export const pendingCharID = writable(-1);
 export const CurrentTriggerIdStore = writable<string | null>(null);
 export const CharEmotion = writable(
@@ -262,7 +271,7 @@ export const mobileSettingsReturnChar = $state<{
 
 export interface MobileBotTarget {
   submenu: number;
-  modelTab?: 'main' | 'sub' | 'provider';
+  modelTab?: "main" | "sub" | "provider";
   title?: string;
 }
 

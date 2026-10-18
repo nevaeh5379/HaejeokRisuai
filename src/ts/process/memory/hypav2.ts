@@ -3,7 +3,7 @@ import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { parseChatML } from "src/ts/parser/chatML";
 import type { Chat, character, groupChat } from "../../storage/database/schema";
 
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { ChatTokenizer } from "src/ts/tokenizer";
 import { requestChatData } from "../request/chatRequestOrchestrator";
 import { HypaProcesser } from "./hypamemory";

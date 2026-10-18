@@ -456,4 +456,84 @@ describe("messageStore", () => {
     });
     expect(messageStore.hasPendingWrites()).toBe(false);
   });
+
+  it("drops a permanently failing commit instead of blocking the queue forever", async () => {
+    const originalCommit = MockSqlStorage.prototype.commit;
+    const commitSpy = vi
+      .spyOn(mockStorage, "commit")
+      .mockImplementation(async () => {
+        throw new Error("disk I/O error");
+      });
+    const message = {
+      chatId: "msg-poison",
+      role: "char" as const,
+      data: "broken write",
+    };
+
+    await messageStore.appendMessage("chat-1", message);
+    expect(messageStore.hasPendingWrites()).toBe(true);
+
+    // Repeated flushes keep failing; after MAX_COMMIT_ATTEMPTS the poison
+    // commit is stashed instead of sitting at the queue head forever.
+    await messageStore.flush().catch(() => {});
+    await messageStore.flush().catch(() => {});
+    expect(messageStore.hasPendingWrites()).toBe(false);
+    // appendMessage plus two drains = exactly MAX_COMMIT_ATTEMPTS (3)
+    // attempts before the commit was stashed — this pins the retry-limit
+    // behaviour.
+    expect(commitSpy).toHaveBeenCalledTimes(3);
+
+    // A further flush retries the stash once, best-effort; still failing,
+    // the commit goes back to the stash without blocking the queue.
+    await messageStore.flush().catch(() => {});
+    expect(commitSpy).toHaveBeenCalledTimes(4);
+    expect(messageStore.hasPendingWrites()).toBe(false);
+
+    // Later writes must still flush after a poisoned commit was dropped.
+    commitSpy.mockImplementation(originalCommit);
+    const followUp = {
+      chatId: "msg-after",
+      role: "user" as const,
+      data: "still writable",
+    };
+    await messageStore.appendMessage("chat-1", followUp);
+
+    expect(messageStore.hasPendingWrites()).toBe(false);
+    const lastCommit = mockStorage.commits.at(-1)!;
+    expect(lastCommit.messages[0]).toMatchObject({ id: "msg-after" });
+  });
+
+  it("retries a stashed commit on a later flush once storage recovers", async () => {
+    const originalCommit = MockSqlStorage.prototype.commit;
+    vi.spyOn(mockStorage, "commit").mockImplementation(async () => {
+      throw new Error("disk I/O error");
+    });
+    const message = {
+      chatId: "msg-poison",
+      role: "char" as const,
+      data: "must survive",
+    };
+
+    await messageStore.appendMessage("chat-1", message);
+    await messageStore.flush().catch(() => {});
+    await messageStore.flush().catch(() => {});
+    await messageStore.flush().catch(() => {});
+    // The queue is unblocked even though the write never landed...
+    expect(messageStore.hasPendingWrites()).toBe(false);
+
+    // ...but the payload was preserved: once storage recovers, a later
+    // flush retries the stashed commit and the message is actually saved.
+    vi.mocked(mockStorage.commit).mockImplementation(originalCommit);
+    await messageStore.flush();
+
+    const saved = mockStorage.commits.find((commit) =>
+      commit.messages.some((m) => m.id === "msg-poison"),
+    );
+    expect(saved).toBeDefined();
+    expect(saved!.messages[0]).toMatchObject({
+      id: "msg-poison",
+      data: { role: "char", data: "must survive" },
+    });
+    expect(messageStore.hasPendingWrites()).toBe(false);
+  });
 });
