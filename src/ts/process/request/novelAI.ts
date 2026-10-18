@@ -77,7 +77,7 @@ export async function requestNovelAI(
     adventureMode: presetStore.state.NAIadventure,
     temperature,
     maxTokens,
-    settings: presetStore.state.NAIsettings,
+    settings: presetStore.state.NAISettings,
     logitBiasExp: logit_bias_exp,
   });
   let body = requestBody;

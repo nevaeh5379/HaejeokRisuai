@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { character, customscript } from "../storage/database/schema";
 
-const database = vi.hoisted(() => ({ presetRegex: [] as customscript[] }));
+const database = vi.hoisted(() => ({ regex: [] as customscript[] }));
 
 vi.mock("../stores/domain/settingsStore.svelte", () => ({
   settingsStore: { state: database },
@@ -39,12 +39,12 @@ const script = (v: Partial<customscript>): customscript =>
 const alwaysExistChar = { customscript: [] } as unknown as character;
 
 const apply = (text: string, scripts: customscript[], chatID = -1) => {
-  database.presetRegex = scripts;
+  database.regex = scripts;
   return applyEdittransRegex(text, "chatid", alwaysExistChar, chatID);
 };
 
 beforeEach(() => {
-  database.presetRegex = [];
+  database.regex = [];
   parserCalls.length = 0;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -185,7 +185,7 @@ describe("applyEdittransRegex", () => {
   });
 
   it("returns the text untouched for an empty charArg", () => {
-    database.presetRegex = [script({ in: "hello", out: "bye" })];
+    database.regex = [script({ in: "hello", out: "bye" })];
     expect(applyEdittransRegex("hello", "", alwaysExistChar)).toBe("hello");
   });
 });

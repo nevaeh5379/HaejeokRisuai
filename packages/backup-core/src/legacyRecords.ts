@@ -1,4 +1,4 @@
-import settings from "../../protocol/settings.json" with { type: "json" };
+import settings from "../../protocol/settings.ts";
 import {
   preparePortableDatabaseForBranchRestore,
   type PortableBranchGraph,

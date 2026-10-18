@@ -40,6 +40,32 @@ describe("server legacy backup compatibility", () => {
     expect(decodeLegacyBackupDatabase(encoded)).toEqual(database);
   });
 
+  it("keeps aggregate preset aliases in encoded legacy backups", async () => {
+    const state = {
+      NAISettings: { cfg_scale: 2 },
+      regex: [{ in: "a", out: "b" }],
+      reasonEffort: 3,
+      botPresets: [
+        {
+          name: "Preset",
+          NAISettings: { cfg_scale: 2 },
+          regex: [],
+          reasonEffort: 1,
+        },
+      ],
+    };
+    const decoded = decodeLegacyBackupDatabase(
+      await encodeRisuSaveLegacyAsync(state, "compression"),
+    );
+    expect(decoded).toEqual({
+      NAIsettings: state.NAISettings,
+      presetRegex: state.regex,
+      reasoningEffort: state.reasonEffort,
+      botPresets: state.botPresets,
+    });
+    expect(state).toHaveProperty("NAISettings");
+  });
+
   it("streams the current compressed legacy backup into SQL records without whole-database decoding", async () => {
     const directory = await mkdtemp(join(tmpdir(), "risu-legacy-stream-"));
     const input = join(directory, "database.risudat");

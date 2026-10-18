@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import protocolSettings from "@risuai/protocol/settings.json";
+import protocolSettings from "@risuai/protocol/settings.ts";
 import * as sqliteDocument from "@risuai/storage-sqlite/queries/document";
 import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
