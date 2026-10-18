@@ -1,3 +1,4 @@
+import { writeLegacyPresetFields } from "../presets/legacyPresetCompatibility";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
@@ -66,7 +67,7 @@ export function encodeRisuSaveLegacy(
   data: any,
   compression: "noCompression" | "compression" = "noCompression",
 ) {
-  let encoded: Uint8Array = packr.encode(data);
+  let encoded: Uint8Array = packr.encode(writeLegacyPresetFields(data));
   if (compression === "compression") {
     encoded = fflate.compressSync(encoded);
     const result = new Uint8Array(
@@ -87,7 +88,7 @@ export async function encodeRisuSaveLegacyAsync(
   data: any,
   compression: "noCompression" | "compression" = "noCompression",
 ): Promise<Uint8Array> {
-  let encoded: Uint8Array = packr.encode(data);
+  let encoded: Uint8Array = packr.encode(writeLegacyPresetFields(data));
   if (compression === "compression") {
     const compressed = await new Promise<Uint8Array>((resolve, reject) => {
       fflate.compress(encoded, (err, res) => {

@@ -620,7 +620,7 @@
                 }
               }}><Settings /></BarIcon
             >
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -629,7 +629,7 @@
                 OpenRealmStore.set(false);
               }}><HomeIcon /></BarIcon
             >
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -641,7 +641,7 @@
                 PlaygroundStore.set(1);
               }}><ShellIcon /></BarIcon
             >
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -649,7 +649,7 @@
               }}><SearchIcon /></BarIcon
             >
             {#each additionalHamburgerMenu as menu}
-              <div class="mt-2"></div>
+              <div class="rs-sidebar-menu-gap mt-2"></div>
               <BarIcon
                 onClick={() => {
                   reseter();
@@ -659,7 +659,7 @@
                 <PluginDefinedIcon ico={menu} />
               </BarIcon>
             {/each}
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -671,7 +671,7 @@
       </div>
     {/if}
     <div
-      class="scrollbar-none flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
+      class="rs-sidebar-scroll scrollbar-none flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       class:rs-sidebar-scroll-floating-menu={settingsStore.state
         .hamburgerButtonBottom}
     >

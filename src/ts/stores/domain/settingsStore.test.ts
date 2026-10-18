@@ -24,6 +24,31 @@ describe("SettingsStore Reactivity and Persistence", () => {
     } as unknown as ISqlStorage;
   });
 
+  it("provides real defaults before initialization", () => {
+    expect(settingsStore.state.colorScheme.type).toBe("dark");
+    expect(settingsStore.state.customColorScheme.type).toBe("dark");
+    expect(settingsStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("normalizes partial initialization without scheduling a write", async () => {
+    settingsStore.init(
+      {
+        colorSchemeName: "custom",
+        colorScheme: { bgcolor: "#123456", type: null },
+      } as any,
+      mockStorage,
+    );
+    expect(settingsStore.state.colorScheme).toMatchObject({
+      bgcolor: "#123456",
+      type: "dark",
+    });
+    expect(settingsStore.state.customColorScheme).toEqual(
+      settingsStore.state.colorScheme,
+    );
+    await settingsStore.flush();
+    expect(mockStorage.commit).not.toHaveBeenCalled();
+  });
+
   it("initializes without firing an immediate commit", async () => {
     settingsStore.init(
       {

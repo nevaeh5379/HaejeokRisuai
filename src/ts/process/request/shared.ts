@@ -344,7 +344,7 @@ export function applyParameters(
       }
       case "reasoning_effort": {
         value = getEffort(
-          presetStore.state.reasoningEffort,
+          presetStore.state.reasonEffort,
           reasoningDisabledEffort,
           supportsXHighReasoning,
           reasoningMinEffort,

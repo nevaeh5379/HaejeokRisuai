@@ -3,7 +3,7 @@ import {
   defaultMainPrompt,
 } from "../../presets/defaultPrompts";
 import type { Database } from "../schema";
-import { normalizePromptTemplate } from "../../presets/presetService";
+import { normalizePromptTemplate } from "../../presets/promptTemplateNormalization";
 import {
   defaultBoolean,
   defaultNumber,
@@ -51,6 +51,9 @@ const coreScalarDefaults = {
   autoHideAndroidNavigationBarInSidebar: defaultBoolean(false),
   linuxWindowDecoration: defaultPicklist(["ssd", "csd"], "ssd"),
   linuxCsdSidebarOpacity: defaultNumber(94),
+  macosSidebarTransparency: defaultBoolean(true),
+  macosNativeSidebarBlur: defaultBoolean(false),
+  macosSidebarOpacity: defaultNumber(0),
   subModel: defaultString("gemini-3-flash-preview"),
   waifuWidth: defaultNumber(100),
   waifuWidth2: defaultNumber(100),

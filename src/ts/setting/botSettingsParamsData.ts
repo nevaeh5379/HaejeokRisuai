@@ -285,7 +285,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     id: "params.reasoningEffort",
     type: "segmented",
     fallbackLabel: "Reasoning Effort",
-    bindKey: "reasoningEffort",
+    bindKey: "reasonEffort",
     condition: (ctx) =>
       ctx.modelInfo.parameters.includes("reasoning_effort") ||
       ctx.modelInfo.parameters.includes("reasoning_effort_min_medium") ||

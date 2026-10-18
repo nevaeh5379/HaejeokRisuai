@@ -10,7 +10,7 @@ pub enum LockError {
 
 #[cfg(target_os = "linux")]
 pub struct LegacyInstance {
-    _connection: zbus::blocking::Connection,
+    _connection: zbus::Connection,
 }
 
 #[cfg(target_os = "linux")]
@@ -28,15 +28,14 @@ impl LegacyDbus {
 #[cfg(target_os = "linux")]
 impl LegacyInstance {
     pub fn acquire() -> Result<Self, LockError> {
-        let result = zbus::blocking::connection::Builder::session()
-            .and_then(|builder| builder.name("co.aiclient.risu.SingleInstance"))
-            .and_then(|builder| builder.serve_at("/co/aiclient/risu/SingleInstance", LegacyDbus))
-            .and_then(|builder| {
-                builder
-                    .replace_existing_names(false)
-                    .allow_name_replacements(false)
-                    .build()
-            });
+        let result = zbus::block_on(
+            zbus::connection::Builder::session()
+                .name("co.aiclient.risu.SingleInstance")
+                .serve_at("/co/aiclient/risu/SingleInstance", LegacyDbus)
+                .replace_existing_names(false)
+                .allow_name_replacements(false)
+                .build(),
+        );
         match result {
             Ok(connection) => Ok(Self {
                 _connection: connection,

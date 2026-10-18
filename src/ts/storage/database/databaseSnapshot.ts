@@ -10,7 +10,7 @@ import type { Database } from "./schema";
 export function createDatabaseSnapshot(): Database {
   const settings = settingsStore.getStateRecord();
   const activePersona = personaStore.activePersona;
-  const target = {
+  const target: Partial<Database> = {
     ...settings,
     ...presetStore.getStateRecord(),
     ...(activePersona

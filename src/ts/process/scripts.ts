@@ -241,7 +241,7 @@ export async function processScriptFull(
   data = risuChatParser(data, { chatID: chatID, cbsConditions, chatTarget });
   const moduleRoom =
     resolvedTarget?.character ?? (char.type === "simple" ? undefined : char);
-  const scripts = (presetStore.state.presetRegex ?? [])
+  const scripts = (presetStore.state.regex ?? [])
     .concat(char.customscript ?? [])
     .concat(getModuleRegexScripts(moduleRoom, undefined, resolvedTarget?.chat))
     .filter((script): script is customscript => !!script);
