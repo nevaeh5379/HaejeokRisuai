@@ -266,7 +266,8 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       argMeta: {},
     };
     const fragment: PortableDatabaseStreamFragment = {
-      format: "haejeok-stream-fragment",
+      format: "risu-portable-database-fragment",
+      version: 1,
       index: 1,
       records: [
         { type: "meta", formatVersion: 1, revision: 7 },
@@ -276,12 +277,13 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     const session = await (storage as any).beginPortableDatabaseStreamRestore();
     await session.writeFragment(fragment);
     await session.finish({
-      format: "haejeok-stream-manifest",
-      version: "1.1",
+      format: "risu-portable-database-stream",
+      version: 1,
       revision: 7,
       totalFragments: 1,
       totalRecords: 2,
       counts: { meta: 1, setting: 1 },
+      complete: true,
     });
     const installed = await storage.plugin.loadAll();
     expect(installed).toHaveLength(1);
