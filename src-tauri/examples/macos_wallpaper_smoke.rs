@@ -7,7 +7,7 @@ mod macos_vibrancy;
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBox, NSBoxType,
+    NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSBox,
     NSGlassEffectView, NSGlassEffectViewStyle, NSVisualEffectView, NSWindow,
 };
 #[cfg(target_os = "macos")]
@@ -39,19 +39,25 @@ fn main() {
                 expected_appearance.to_string()
             );
             let content = native.contentView().unwrap();
+            assert_eq!(
+                content.appearance().unwrap().name().to_string(),
+                expected_appearance.to_string()
+            );
             let views = content.subviews();
-            let background = views
-                .iter()
-                .find(|view| view.downcast_ref::<NSBox>().is_some())
-                .expect("missing opaque Desktop Tinting background");
-            let background = background.downcast_ref::<NSBox>().unwrap();
-            assert!(!background.isTransparent());
-            assert_eq!(background.boxType(), NSBoxType::Custom);
-            assert_eq!(background.fillColor().alphaComponent(), 1.0);
+            assert!(
+                views
+                    .iter()
+                    .all(|view| view.downcast_ref::<NSBox>().is_none()),
+                "behind-window Liquid Glass must not have an opaque NSBox background"
+            );
             let glass = views
                 .iter()
                 .find(|view| view.downcast_ref::<NSGlassEffectView>().is_some())
                 .expect("missing Liquid Glass");
+            assert_eq!(
+                glass.appearance().unwrap().name().to_string(),
+                expected_appearance.to_string()
+            );
             let glass = glass.downcast_ref::<NSGlassEffectView>().unwrap();
             assert_eq!(glass.style(), NSGlassEffectViewStyle::Regular);
             let popup = window.label().starts_with("sidebar-menu-");
@@ -61,26 +67,14 @@ fn main() {
                 assert_eq!(layer.cornerRadius(), 18.0);
                 assert!(layer.masksToBounds());
             }
-            let background_index = views
-                .iter()
-                .position(|view| view.downcast_ref::<NSBox>().is_some())
-                .unwrap();
-            let glass_index = views
-                .iter()
-                .position(|view| view.downcast_ref::<NSGlassEffectView>().is_some())
-                .unwrap();
-            assert!(
-                background_index < glass_index,
-                "opaque Desktop Tinting background must be below glass"
-            );
             assert!(
                 views
                     .iter()
                     .all(|view| view.downcast_ref::<NSVisualEffectView>().is_none()),
-                "Liquid Glass must not have a behind-window vibrancy layer"
+                "Liquid Glass must not have a fallback vibrancy layer"
             );
             println!(
-                "PASS {}: opaque Desktop Tinting background, Regular glass, dark={dark}",
+                "PASS {}: behind-window Regular glass, dark={dark}",
                 window.label()
             );
             if verified.fetch_add(1, Ordering::SeqCst) == 2 {
