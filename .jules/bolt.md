@@ -13,3 +13,6 @@
 ## 2024-05-25 - Avoid Map Entries Array Spread for Min/Max finding
 **Learning:** Found an instance in `server/node/executors/hypaMemoryExecutor.ts` where `[...sessions.entries()].sort(...)` was used inside a `while` loop to find the oldest session to evict. This creates an `O(N log N)` sort operation and allocates a new array for every single eviction, causing significant GC pressure and performance degradation.
 **Action:** Replace spreading and sorting of maps (like `[...map.entries()].sort()`) to find a single minimum/maximum item with a linear `for...of` loop (`O(N)`).
+## 2026-10-14 - Array Spread Replaced with Iterators
+**Learning:** In `src/ts/gui/branches.ts`, spreading map values into arrays for filtering and counting (e.g. `[...map.values()]`) caused unnecessary memory allocation, especially for large datasets. This is a common performance anti-pattern.
+**Action:** Replaced array spreading and mapping/filtering chains with direct `for...of` iterators over maps to avoid intermediate array creation.
