@@ -21,3 +21,7 @@
 ## 2024-05-19 - Stable Keys in Dynamic Mobile and Sidebar Lists
 **Learning:** Sorting, filtering, and virtual scrolling need row identity tied to the character or chat rather than its current array position. Old records can still lack IDs.
 **Action:** Prefer persistent character/chat IDs as each-block keys and fall back to the record object when an ID is missing. Keep event handlers using the original store index, and verify node identity and Sortable drag synchronization with behavioral tests.
+
+## 2024-05-26 - Map Entries Array.from() Bottleneck
+**Learning:** Found instances where `Array.from(map.entries())` was used within `for...of` loops. Similar to spreading map iterators, `Array.from()` creates a full array copy of the entries, incurring unnecessary memory allocation and garbage collection overhead on every iteration, particularly harmful inside heavily executed parsers like `partialEdit.ts`.
+**Action:** Replace `for (const [k, v] of Array.from(map.entries()))` with direct iterator loops `for (const [k, v] of map.entries())` to avoid memory bloat.

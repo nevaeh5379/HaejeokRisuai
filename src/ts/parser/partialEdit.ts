@@ -484,7 +484,8 @@ export function findAllOriginalRangesFromText(
     }
 
     const refinedPositions = new Set<number>();
-    for (const [candPos, candDist] of Array.from(uniqueCandidates.entries())) {
+    // Iterate directly over entries to avoid unnecessary array allocation
+    for (const [candPos, candDist] of uniqueCandidates.entries()) {
       const refineStart = Math.max(0, candPos - Math.floor(step / 2));
       const refineEnd = Math.min(
         mdN.length - plN.length,
@@ -584,7 +585,8 @@ export function findAllOriginalRangesFromText(
     }
 
     const refinedPositions = new Set<number>();
-    for (const [candPos] of Array.from(uniqueCandidates.entries())) {
+    // Iterate directly over entries to avoid unnecessary array allocation
+    for (const [candPos] of uniqueCandidates.entries()) {
       const refineStart = Math.max(0, candPos - Math.floor(step / 2));
       const refineEnd = Math.min(
         mdN.length - plN.length,
