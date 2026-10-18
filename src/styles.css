@@ -1145,7 +1145,12 @@ html.tauri-macos-vibrancy .rs-sidebar-menu-popover {
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: none;
   transform: translateX(-50%);
+}
+
+html.tauri-macos-vibrancy .rs-sidebar-menu-popover::-webkit-scrollbar {
+  display: none;
 }
 
 html.tauri-macos-vibrancy .rs-sidebar-menu-popover > .rs-sidebar-menu-gap {
@@ -1650,7 +1655,11 @@ html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-popup {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-popup::-webkit-scrollbar {
+  display: none;
 }
 
 html.tauri-sidebar-menu-popup .rs-native-sidebar-menu-item {
@@ -1922,8 +1931,7 @@ html:not(.tauri-macos-vibrancy) .n-scroll:focus::-webkit-scrollbar-thumb {
   opacity: 1;
 }
 
-html.tauri-macos-vibrancy .scrollbar-thin,
-html.tauri-macos-vibrancy .rs-native-sidebar-menu-popup {
+html.tauri-macos-vibrancy .scrollbar-thin {
   /* `scrollbar-width: thin` is wider than our WebKit overlay treatment on
    * current WKWebView builds, so let the pseudo-elements own the geometry. */
   scrollbar-width: auto !important;

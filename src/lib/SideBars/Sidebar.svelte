@@ -620,7 +620,7 @@
                 }
               }}><Settings /></BarIcon
             >
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -629,7 +629,7 @@
                 OpenRealmStore.set(false);
               }}><HomeIcon /></BarIcon
             >
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -641,7 +641,7 @@
                 PlaygroundStore.set(1);
               }}><ShellIcon /></BarIcon
             >
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
@@ -649,7 +649,7 @@
               }}><SearchIcon /></BarIcon
             >
             {#each additionalHamburgerMenu as menu}
-              <div class="mt-2"></div>
+              <div class="rs-sidebar-menu-gap mt-2"></div>
               <BarIcon
                 onClick={() => {
                   reseter();
@@ -659,7 +659,7 @@
                 <PluginDefinedIcon ico={menu} />
               </BarIcon>
             {/each}
-            <div class="mt-2"></div>
+            <div class="rs-sidebar-menu-gap mt-2"></div>
             <BarIcon
               onClick={() => {
                 reseter();
