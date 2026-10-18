@@ -600,7 +600,7 @@
                 >
                 <div></div>
               {:else}
-                {#each folderChats as { chat, idx }}
+                {#each folderChats as { chat, idx } (chat.id || chat)}
                   {@render chatItem(chat, idx, true)}
                 {/each}
               {/if}
@@ -610,7 +610,7 @@
       </div>
       <!-- chat without folder div -->
       <div class="risu-chat flex flex-col">
-        {#each chara.chats as chat, i}
+        {#each chara.chats as chat, i (chat.id || chat)}
           {#if chat.folderId == null}
             {@render chatItem(chat, i, false)}
           {/if}
