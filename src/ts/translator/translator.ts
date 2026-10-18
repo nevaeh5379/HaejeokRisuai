@@ -193,10 +193,11 @@ async function translateMain(
   }
   if (db.translatorType === "deeplX") {
     if (!db.noWaitForTranslate) {
-      if (waitTrans - Date.now() > 0) {
-        const waitTime = waitTrans - Date.now();
-        waitTrans = Date.now() + 3000;
-        await sleep(waitTime);
+      const now = Date.now();
+      const scheduled = Math.max(now, waitTrans);
+      waitTrans = scheduled + 3000;
+      if (scheduled > now) {
+        await sleep(scheduled - now);
       }
     }
 
@@ -390,59 +391,41 @@ export async function translateHTML(
   console.log(html);
 
   let promises: Promise<void>[] = [];
-  let translationChunks: {
-    chunks: string[];
-    resolvers: ((text: string) => void)[];
-  }[] = [
-    {
-      chunks: [],
-      resolvers: [],
-    },
-  ];
+  const superChunked = needSuperChunkedTranslate();
+  let translationChunks: { node: Node; text: string }[] = [];
+  let translationChunkLength = 0;
 
   async function translateTranslationChunks(
     force: boolean = false,
     additionalChunkLength = 0,
   ) {
-    if (translationChunks.length === 0 || !needSuperChunkedTranslate()) {
+    if (translationChunks.length === 0 || !superChunked) {
       return;
     }
 
-    const currentChunk = translationChunks[translationChunks.length - 1];
-    const text: string = currentChunk.chunks.join("\n■\n");
-
-    if (!force && text.length + additionalChunkLength < 5000) {
+    if (!force && translationChunkLength + additionalChunkLength < 5000) {
       return;
     }
 
-    translationChunks.push({
-      chunks: [],
-      resolvers: [],
-    });
-
-    if (!text) {
-      return;
-    }
+    const currentChunk = translationChunks;
+    translationChunks = [];
+    translationChunkLength = 0;
+    const text = currentChunk.map((chunk) => chunk.text).join("\n■\n");
 
     const translated = await translate(text, reverse);
 
     const split = translated.split("■");
 
-    console.log(split.length, currentChunk.chunks.length);
-
-    if (split.length !== currentChunk.chunks.length) {
+    if (split.length !== currentChunk.length) {
       //try translating one by one
-      for (let i = 0; i < currentChunk.chunks.length; i++) {
-        currentChunk.resolvers[i](
-          await translate(currentChunk.chunks[i], reverse),
-        );
+      for (const chunk of currentChunk) {
+        chunk.node.textContent = await translate(chunk.text, reverse);
       }
       return;
     }
 
     for (let i = 0; i < split.length; i++) {
-      console.log(split[i]);
-      currentChunk.resolvers[i](split[i]);
+      currentChunk[i].node.textContent = split[i];
     }
   }
 
@@ -451,18 +434,15 @@ export async function translateHTML(
     reprocessDisplayScript: boolean = false,
   ) {
     if (node.textContent.trim().length !== 0) {
-      if (needSuperChunkedTranslate()) {
-        const prm = new Promise<string>((resolve) => {
-          translateTranslationChunks(false, node.textContent.length);
-          translationChunks[translationChunks.length - 1].resolvers.push(
-            resolve,
-          );
-          translationChunks[translationChunks.length - 1].chunks.push(
-            node.textContent,
-          );
-        });
-
-        node.textContent = await prm;
+      if (superChunked) {
+        const text = node.textContent;
+        await translateTranslationChunks(
+          false,
+          text.length + (translationChunks.length ? 3 : 0),
+        );
+        translationChunkLength +=
+          text.length + (translationChunks.length ? 3 : 0);
+        translationChunks.push({ node, text });
         return;
       }
 
@@ -518,7 +498,11 @@ export async function translateHTML(
           await Promise.all(promises);
           promises = [];
         }
-        promises.push(translateNodeText(node));
+        if (superChunked) {
+          await translateNodeText(node);
+        } else {
+          promises.push(translateNodeText(node));
+        }
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       // Translate child nodes
