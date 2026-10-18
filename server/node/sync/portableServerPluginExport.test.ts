@@ -4,7 +4,7 @@ import {
   decodeLegacyBackupDatabase,
   encodeLegacyBackupDatabase,
 } from "../../../packages/backup-core/src/node/legacyFormat.ts";
-import { PortableDatabaseStreamCollector } from "../../../packages/backup-core/src/streamCollector.ts";
+import { PortableDatabaseStreamCollector } from "../../../packages/backup-core/src/stream/collector.ts";
 import { iterateServerBackupPlugins } from "./portableServerPluginExport.ts";
 
 const plugins = [
