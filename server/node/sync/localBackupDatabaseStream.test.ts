@@ -107,6 +107,35 @@ afterEach(async () => {
   );
 });
 describe("LocalBackupDatabaseStreamStore", () => {
+  it("accepts a validated 1.1 manifest after staging the records", async () => {
+    const store = await makeStore();
+    const session = await store.create();
+    const input = records();
+    await store.appendRecords(session.id, {
+      fragmentIndex: 1,
+      records: input.map(encodeStorageSyncValue),
+      fragmentComplete: true,
+    });
+    const legacy = manifest(input);
+    expect(
+      store.prepareFinalize(session.id, {
+        ...legacy,
+        format: "haejeok-stream-manifest",
+        version: "1.1",
+      }),
+    ).toMatchObject({ sourceRevision: 11, recordCount: input.length });
+    for (const patch of [
+      { format: "haejeok-stream-manifest", version: "9.9" },
+      { format: "haejeok-stream-manifest", version: undefined },
+      { format: "risu-portable-database-stream", version: 2 },
+      { format: "risu-portable-database-stream", version: 1, complete: false },
+    ]) {
+      expect(() =>
+        store.prepareFinalize(session.id, { ...legacy, ...patch }),
+      ).toThrow("manifest is invalid");
+    }
+  });
+
   it("stages plugin records without dropping scripts or disabled state", async () => {
     const store = await makeStore();
     const session = await store.create();
