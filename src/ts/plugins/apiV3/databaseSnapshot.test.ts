@@ -319,6 +319,40 @@ describe("plugin database graph transfer", () => {
     ).rejects.toThrow("Loading failed");
   });
 
+  it("supports asynchronous character loading during database snapshot preparation", async () => {
+    const asyncCharacters = [
+      { name: "Async Bot", chats: [{ message: [{ data: "hello" }] }] },
+    ];
+    const database = { characters: [{ name: "Resident Bot" }], theme: "dark" };
+    const result = await receive(
+      prepareDatabaseSnapshot(
+        database,
+        ["characters", "theme"],
+        async () => [],
+        "all",
+        async () => asyncCharacters,
+      ),
+    );
+    expect(result.characters).toEqual(asyncCharacters);
+    expect(result.theme).toBe("dark");
+  });
+
+  it("skips async character loading when characters key is omitted by includeOnly", async () => {
+    const loadCharacters = vi.fn(async () => []);
+    const database = { characters: [], theme: "dark" };
+    const result = await receive(
+      prepareDatabaseSnapshot(
+        database,
+        ["characters", "theme"],
+        async () => [],
+        ["theme"],
+        loadCharacters,
+      ),
+    );
+    expect(result).toEqual({ theme: "dark" });
+    expect(loadCharacters).not.toHaveBeenCalled();
+  });
+
   it("stages bounded operations without putting character/chat/message copies in any batch", async () => {
     const database = reactiveDatabase({
       characters: [

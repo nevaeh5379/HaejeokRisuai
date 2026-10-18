@@ -123,6 +123,7 @@ export function prepareDatabaseSnapshot(
   allowedKeys: string[],
   loadPlugins: () => Promise<unknown>,
   includeOnly: string[] | "all" = "all",
+  loadCharacters?: () => Promise<unknown>,
 ): DatabaseSnapshotTransfer {
   const keys = allowedKeys.filter(
     (key) => includeOnly === "all" || includeOnly.includes(key),
@@ -131,8 +132,15 @@ export function prepareDatabaseSnapshot(
     for (const key of keys)
       yield {
         key,
-        read: key === "plugins" ? loadPlugins : () => database[key],
-        asynchronous: key === "plugins",
+        read:
+          key === "plugins"
+            ? loadPlugins
+            : key === "characters" && loadCharacters
+              ? loadCharacters
+              : () => database[key],
+        asynchronous:
+          key === "plugins" ||
+          (key === "characters" && Boolean(loadCharacters)),
       };
   });
 }

@@ -904,6 +904,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
         allowedDbKeys,
         () => pluginStore.loadCompatibilityPlugins(),
         includeOnly,
+        () => characterStore.snapshot.loadAll(),
       );
     },
 
