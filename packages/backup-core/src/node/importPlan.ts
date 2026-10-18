@@ -1,4 +1,7 @@
-import { Fragment, MANIFEST_NAME } from "../stream/databaseBackup.ts";
+import {
+  parsePortableDatabaseStreamFragmentName,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+} from "../streamFormat.ts";
 import type {
   StagedBackupContainer,
   StagedBackupEntry,
@@ -67,11 +70,11 @@ export function buildBackupImportPlan(
         legacy.push(entry);
         break;
       case "databaseStream": {
-        if (entry.name === MANIFEST_NAME) {
+        if (entry.name === PORTABLE_DATABASE_STREAM_MANIFEST) {
           manifests.push(entry);
           break;
         }
-        const index = Fragment.parseName(entry.name);
+        const index = parsePortableDatabaseStreamFragmentName(entry.name);
         if (index === null) {
           throw new BackupImportPlanError(
             `Invalid database stream fragment '${entry.name}'`,

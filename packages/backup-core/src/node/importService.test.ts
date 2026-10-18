@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LocalBackupImportJobProgress } from "../api.ts";
 import { encodeInlayAssetBackup } from "../inlayCodec.ts";
 import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
-import { type Manifest } from "../stream/databaseBackup.ts";
+import type { PortableDatabaseStreamManifest } from "../streamFormat.ts";
 import {
   createLocalBackupEntryHeader,
   encodeLegacyBackupDatabase,
@@ -53,17 +53,19 @@ async function nativeDatabaseEntries(
   for (const record of records)
     counts[record.type] = (counts[record.type] ?? 0) + 1;
   const fragment = await encodeLegacyBackupDatabase({
-    format: "haejeok-stream-fragment",
+    format: "risu-portable-database-fragment",
+    version: 1,
     index: 1,
     records,
   });
-  const manifest: Manifest = {
-    format: "haejeok-stream-manifest",
+  const manifest: PortableDatabaseStreamManifest = {
+    format: "risu-portable-database-stream",
+    version: 1,
     revision: 4,
     totalFragments: 1,
     totalRecords: records.length,
     counts,
-    version: "1.1",
+    complete: true,
   };
   return {
     fragment: framed("database.stream/000000000001.risudat", fragment),

@@ -2,15 +2,20 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LocalBackupDatabaseStreamSession } from "../api.ts";
-import { MAX_FRAGMENT_RECORDS, Manifest } from "../stream/databaseBackup.ts";
+import {
+  parsePortableDatabaseStreamManifest,
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  type PortableDatabaseStreamManifest,
+} from "../streamFormat.ts";
 
+export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
 /**
  * Compatibility alias of the canonical streamed-fragment record bound in
- * stream/databaseBackup.ts, so Node export/import/session validation always consume
+ * streamFormat.ts, so Node export/import/session validation always consume
  * the same value as the frontend and the aggregate collector.
  */
 export const LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =
-  MAX_FRAGMENT_RECORDS;
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS;
 export const LOCAL_BACKUP_DATABASE_STREAM_MAX_REQUEST_RECORDS = 64;
 export const LOCAL_BACKUP_DATABASE_STREAM_TTL_MS = 60 * 60 * 1000;
 
@@ -31,7 +36,15 @@ export const LOCAL_BACKUP_DATABASE_RECORD_TYPES = [
 export type LocalBackupDatabaseRecordType =
   (typeof LOCAL_BACKUP_DATABASE_RECORD_TYPES)[number];
 
-export type LocalBackupDatabaseStreamManifest = Manifest;
+export interface LocalBackupDatabaseStreamManifest {
+  format: "risu-portable-database-stream";
+  version: 1;
+  revision: number;
+  complete: true;
+  totalFragments: number;
+  totalRecords: number;
+  counts: Record<string, number | undefined>;
+}
 
 export interface LocalBackupDatabaseStreamRecord {
   type: string;
@@ -310,7 +323,8 @@ export class LocalBackupDatabaseStreamStore<
       );
     }
 
-    const typedManifest = this.validateManifest(manifest, session);
+    this.validateManifest(manifest, session);
+    const typedManifest = manifest as LocalBackupDatabaseStreamManifest;
     return {
       id,
       filePath: session.filePath,
@@ -323,8 +337,10 @@ export class LocalBackupDatabaseStreamStore<
   private validateManifest(
     manifest: unknown,
     session: InternalSession<TState>,
-  ): Manifest {
-    const parsed = Manifest.read(manifest);
+  ): asserts manifest is LocalBackupDatabaseStreamManifest {
+    const value = manifest as Partial<LocalBackupDatabaseStreamManifest> | null;
+    const parsed: PortableDatabaseStreamManifest | null =
+      parsePortableDatabaseStreamManifest(value);
     if (!parsed) {
       throw new LocalBackupDatabaseStreamError(
         "Portable database stream manifest is invalid",
@@ -372,7 +388,6 @@ export class LocalBackupDatabaseStreamStore<
         );
       }
     }
-    return parsed;
   }
 
   async cleanup(id: string): Promise<void> {

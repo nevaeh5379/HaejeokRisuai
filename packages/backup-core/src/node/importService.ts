@@ -17,7 +17,13 @@ import {
   iterateLegacyBackupSqlRecords,
   type LegacyBackupSqlRecord,
 } from "../legacyRecords.ts";
-import { Fragment, Manifest, MANIFEST_NAME } from "../stream/databaseBackup.ts";
+import {
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamFragmentName,
+  parsePortableDatabaseStreamManifest,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  type PortableDatabaseStreamManifest,
+} from "../streamFormat.ts";
 import { decodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   LocalBackupImportJobError,
@@ -88,7 +94,7 @@ interface DatabaseImportState {
   recordCount: number;
   counts: Record<string, number>;
   sourceRevision: number | null;
-  manifest: Manifest | null;
+  manifest: PortableDatabaseStreamManifest | null;
 }
 
 interface ActiveImport {
@@ -486,11 +492,11 @@ export class LocalBackupImportService {
       { maxOutputBytes: BACKUP_IMPORT_MAX_NATIVE_DATABASE_ENTRY_BYTES * 2 },
     );
 
-    if (entry.name === MANIFEST_NAME) {
+    if (entry.name === PORTABLE_DATABASE_STREAM_MANIFEST) {
       if (active.database.manifest) {
         throw new Error("Backup contains more than one streaming manifest");
       }
-      const manifest = Manifest.read(decoded);
+      const manifest = parsePortableDatabaseStreamManifest(decoded);
       if (!manifest) {
         throw new Error("Portable database stream manifest is invalid");
       }
@@ -501,13 +507,13 @@ export class LocalBackupImportService {
     if (active.database.manifest) {
       throw new Error("Database stream fragment appears after the manifest");
     }
-    const nameIndex = Fragment.parseName(entry.name);
+    const nameIndex = parsePortableDatabaseStreamFragmentName(entry.name);
     if (nameIndex !== active.database.expectedFragmentIndex) {
       throw new Error(
         `Streaming backup fragment order is incomplete; expected ${active.database.expectedFragmentIndex}, got ${String(nameIndex)}`,
       );
     }
-    const fragment = Fragment.read(decoded, {
+    const fragment = parsePortableDatabaseStreamFragment(decoded, {
       expectedIndex: active.database.expectedFragmentIndex,
     });
     if (!fragment) {

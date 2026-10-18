@@ -12,7 +12,12 @@ import {
   type LegacyBackupSqlRecord,
 } from "../legacyRecords.ts";
 import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy.ts";
-import { Fragment, Manifest } from "../stream/databaseBackup.ts";
+import {
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
+  type PortableDatabaseStreamFragment,
+  type PortableDatabaseStreamManifest,
+} from "../streamFormat.ts";
 import type { BackupImportPlan } from "./importPlan.ts";
 
 export interface PreparedLocalBackupDatabase {
@@ -40,9 +45,10 @@ function requireObject(value: unknown, label: string): Record<string, any> {
   return value as Record<string, any>;
 }
 
-function decodeManifest(data: unknown): Manifest {
+function decodeManifest(data: unknown): PortableDatabaseStreamManifest {
   const manifest = requireObject(data, "Portable database stream manifest");
-  const parsed: Manifest | null = Manifest.read(manifest);
+  const parsed: PortableDatabaseStreamManifest | null =
+    parsePortableDatabaseStreamManifest(manifest);
   if (!parsed || Array.isArray(parsed.counts)) {
     throw new Error("Portable database stream manifest is invalid");
   }
@@ -53,11 +59,12 @@ function decodeFragment(
   data: unknown,
   expectedIndex: number,
   name: string,
-): Fragment {
+): PortableDatabaseStreamFragment {
   const fragment = requireObject(data, `Portable database fragment ${name}`);
-  const parsed: Fragment | null = Fragment.read(fragment, {
-    expectedIndex,
-  });
+  const parsed: PortableDatabaseStreamFragment | null =
+    parsePortableDatabaseStreamFragment(fragment, {
+      expectedIndex,
+    });
   if (!parsed) {
     throw new Error(`Invalid portable database fragment: ${name}`);
   }

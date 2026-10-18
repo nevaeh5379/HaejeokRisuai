@@ -1,5 +1,6 @@
-import { Fragment, Manifest } from "@risuai/backup-core/stream/databaseBackup";
 import {
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
   type PortableDatabaseStreamPersistedRecord,
@@ -67,7 +68,7 @@ export class PortableDatabaseStreamValidator {
 
   acceptFragment(fragment: PortableDatabaseStreamFragment): void {
     const parsed: PortableDatabaseStreamFragment | null =
-      Fragment.read(fragment);
+      parsePortableDatabaseStreamFragment(fragment);
     if (!parsed) throw new Error("Invalid streaming database fragment");
     if (this.fragments.has(parsed.index)) {
       throw new Error(`Duplicate streaming database fragment ${parsed.index}`);
@@ -102,9 +103,9 @@ export class PortableDatabaseStreamValidator {
     this.sourceRevision = record.revision;
   }
 
-  finish(value: PortableDatabaseStreamManifest): void {
-    const manifest = Manifest.read(value);
-    if (!manifest) throw new Error("Unsupported streaming database manifest");
+  finish(manifest: PortableDatabaseStreamManifest): void {
+    const parsed = parsePortableDatabaseStreamManifest(manifest);
+    if (!parsed) throw new Error("Unsupported streaming database manifest");
     if (
       manifest.totalFragments !== this.fragments.size ||
       manifest.totalRecords !== this.totalRecords

@@ -2,25 +2,33 @@ import type { ISqlStorage } from "../sql/ISqlStorage";
 import { iterateStorageSyncSqlRecords } from "../runtime/storageSyncSource";
 import { stripLegacyBranchFields } from "@risuai/backup-core/portableBranches";
 import {
-  Fragment,
-  Manifest,
-  MAX_FRAGMENT_RECORDS,
-  MANIFEST_NAME,
-  PREFIX,
-  type Fragment as CoreFragment,
-  type Manifest as CoreManifest,
-  type BackupRecord,
-} from "@risuai/backup-core/stream/databaseBackup";
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PORTABLE_DATABASE_STREAM_VERSION,
+  portableDatabaseStreamFragmentName,
+  type PortableDatabaseStreamFragment as CorePortableDatabaseStreamFragment,
+  type PortableDatabaseStreamManifest as CorePortableDatabaseStreamManifest,
+  type PortableDatabaseStreamRecord,
+} from "@risuai/backup-core/streamFormat";
 import {
   DEFAULT_LOCAL_BACKUP_PERFORMANCE,
   LOCAL_BACKUP_PERFORMANCE_LIMITS,
 } from "./localBackupPerformance";
-import { PortableDatabaseStreamCollector } from "@risuai/backup-core/stream/collector";
+import { PortableDatabaseStreamCollector } from "@risuai/backup-core/streamCollector";
+import {
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
+} from "@risuai/backup-core/streamFormat";
 
 export {
-  MANIFEST_NAME as PORTABLE_DATABASE_STREAM_MANIFEST,
-  PREFIX as PORTABLE_DATABASE_STREAM_PREFIX,
-  MAX_FRAGMENT_RECORDS as PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  PORTABLE_DATABASE_STREAM_MANIFEST,
+  PORTABLE_DATABASE_STREAM_PREFIX,
+  PORTABLE_DATABASE_STREAM_VERSION,
+  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
+  parsePortableDatabaseStreamFragment,
+  parsePortableDatabaseStreamManifest,
+  portableDatabaseStreamFragmentName,
   PortableDatabaseStreamCollector,
 };
 export const PORTABLE_DATABASE_STREAM_PAGE_SIZE =
@@ -28,9 +36,10 @@ export const PORTABLE_DATABASE_STREAM_PAGE_SIZE =
 export const PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS =
   DEFAULT_LOCAL_BACKUP_PERFORMANCE.fragmentRecords;
 
-export type PortableDatabaseStreamPersistedRecord = BackupRecord;
-export type PortableDatabaseStreamFragment = CoreFragment;
-export type PortableDatabaseStreamManifest = CoreManifest;
+export type PortableDatabaseStreamPersistedRecord =
+  PortableDatabaseStreamRecord;
+export type PortableDatabaseStreamFragment = CorePortableDatabaseStreamFragment;
+export type PortableDatabaseStreamManifest = CorePortableDatabaseStreamManifest;
 
 type PersistedRecord = PortableDatabaseStreamPersistedRecord;
 type PersistedRecordType = PersistedRecord["type"];
@@ -96,7 +105,7 @@ export async function exportPortableDatabaseStream(
   const fragmentRecordLimit = Math.max(
     1,
     Math.min(
-      MAX_FRAGMENT_RECORDS,
+      PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
       Math.round(
         options.fragmentRecords ?? PORTABLE_DATABASE_STREAM_FRAGMENT_RECORDS,
       ),
@@ -105,10 +114,12 @@ export async function exportPortableDatabaseStream(
   const counts: Partial<Record<PersistedRecordType, number>> = {};
   const flush = async () => {
     if (fragmentRecords.length === 0) return;
-    const fragment: PortableDatabaseStreamFragment = Fragment.create(
-      ++fragmentIndex,
-      fragmentRecords,
-    );
+    const fragment: PortableDatabaseStreamFragment = {
+      format: "risu-portable-database-fragment",
+      version: PORTABLE_DATABASE_STREAM_VERSION,
+      index: ++fragmentIndex,
+      records: fragmentRecords,
+    };
     fragmentRecords = [];
     await hooks.writeFragment(fragment);
   };
@@ -148,10 +159,13 @@ export async function exportPortableDatabaseStream(
   }
   await flush();
 
-  return Manifest.create({
+  return {
+    format: "risu-portable-database-stream",
+    version: PORTABLE_DATABASE_STREAM_VERSION,
     revision: summary.revision,
     totalFragments: fragmentIndex,
     totalRecords,
     counts,
-  });
+    complete: true,
+  };
 }

@@ -3,9 +3,9 @@ import { encodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PortableDatabaseExportWriter,
+  databaseFragmentName,
   writeBackupContainerEntry,
 } from "./exportStream.ts";
-import { Fragment } from "../stream/databaseBackup.ts";
 import { BackupContainerParser } from "../containerStream.ts";
 
 describe("PortableDatabaseExportWriter", () => {
@@ -41,12 +41,12 @@ describe("PortableDatabaseExportWriter", () => {
       "database.stream/000000000002.risudat",
     ]);
     expect(manifest).toMatchObject({
-      format: "haejeok-stream-manifest",
+      format: "risu-portable-database-stream",
       revision: 9,
       totalFragments: 2,
       totalRecords: 3,
       counts: { meta: 1, setting: 1, character: 1 },
-      version: "1.1",
+      complete: true,
     });
     expect(progress).toEqual([
       [1, 3],
@@ -56,7 +56,9 @@ describe("PortableDatabaseExportWriter", () => {
   });
 
   it("uses canonical fragment and manifest names", () => {
-    expect(Fragment.name(7)).toBe("database.stream/000000000007.risudat");
+    expect(databaseFragmentName(7)).toBe(
+      "database.stream/000000000007.risudat",
+    );
     expect(PORTABLE_DATABASE_STREAM_MANIFEST).toBe(
       "database.stream/manifest.risudat",
     );
