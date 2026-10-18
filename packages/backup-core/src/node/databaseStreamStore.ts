@@ -1,21 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
-import type { LocalBackupDatabaseStreamSession } from "../api";
-import {
-  parsePortableDatabaseStreamManifest,
-  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-  type PortableDatabaseStreamManifest,
-} from "../streamFormat";
+import type { LocalBackupDatabaseStreamSession } from "../api.ts";
+import { MAX_FRAGMENT_RECORDS, Manifest } from "../stream/databaseBackup.ts";
 
-export const LOCAL_BACKUP_DATABASE_STREAM_VERSION = 1;
 /**
  * Compatibility alias of the canonical streamed-fragment record bound in
- * streamFormat.ts, so Node export/import/session validation always consume
+ * stream/databaseBackup.ts, so Node export/import/session validation always consume
  * the same value as the frontend and the aggregate collector.
  */
 export const LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS =
-  PORTABLE_DATABASE_STREAM_MAX_FRAGMENT_RECORDS;
+  MAX_FRAGMENT_RECORDS;
 export const LOCAL_BACKUP_DATABASE_STREAM_MAX_REQUEST_RECORDS = 64;
 export const LOCAL_BACKUP_DATABASE_STREAM_TTL_MS = 60 * 60 * 1000;
 
@@ -23,6 +18,7 @@ export const LOCAL_BACKUP_DATABASE_RECORD_TYPES = [
   "meta",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",
@@ -35,15 +31,7 @@ export const LOCAL_BACKUP_DATABASE_RECORD_TYPES = [
 export type LocalBackupDatabaseRecordType =
   (typeof LOCAL_BACKUP_DATABASE_RECORD_TYPES)[number];
 
-export interface LocalBackupDatabaseStreamManifest {
-  format: "risu-portable-database-stream";
-  version: 1;
-  revision: number;
-  complete: true;
-  totalFragments: number;
-  totalRecords: number;
-  counts: Record<string, number | undefined>;
-}
+export type LocalBackupDatabaseStreamManifest = Manifest;
 
 export interface LocalBackupDatabaseStreamRecord {
   type: string;
@@ -85,11 +73,10 @@ interface InternalSession<TState> {
 }
 
 export class LocalBackupDatabaseStreamError extends Error {
-  constructor(
-    message: string,
-    readonly code = "local_backup_database_stream_error",
-  ) {
+  readonly code: any;
+  constructor(message: string, code = "local_backup_database_stream_error") {
     super(message);
+    this.code = code;
     this.name = "LocalBackupDatabaseStreamError";
   }
 }
@@ -126,14 +113,16 @@ export class LocalBackupDatabaseStreamStore<
   private readonly ttlMs: number;
   private readonly sessions = new Map<string, InternalSession<TState>>();
 
+  private readonly adapter: LocalBackupDatabaseStreamRecordAdapter<
+    TRecord,
+    TState
+  >;
   constructor(
     rootPath: string,
-    private readonly adapter: LocalBackupDatabaseStreamRecordAdapter<
-      TRecord,
-      TState
-    >,
+    adapter: LocalBackupDatabaseStreamRecordAdapter<TRecord, TState>,
     options: { ttlMs?: number } = {},
   ) {
+    this.adapter = adapter;
     this.rootPath = resolve(rootPath);
     this.ttlMs =
       Number.isSafeInteger(options.ttlMs) && Number(options.ttlMs) > 0
@@ -321,8 +310,7 @@ export class LocalBackupDatabaseStreamStore<
       );
     }
 
-    this.validateManifest(manifest, session);
-    const typedManifest = manifest as LocalBackupDatabaseStreamManifest;
+    const typedManifest = this.validateManifest(manifest, session);
     return {
       id,
       filePath: session.filePath,
@@ -335,10 +323,8 @@ export class LocalBackupDatabaseStreamStore<
   private validateManifest(
     manifest: unknown,
     session: InternalSession<TState>,
-  ): asserts manifest is LocalBackupDatabaseStreamManifest {
-    const value = manifest as Partial<LocalBackupDatabaseStreamManifest> | null;
-    const parsed: PortableDatabaseStreamManifest | null =
-      parsePortableDatabaseStreamManifest(value);
+  ): Manifest {
+    const parsed = Manifest.read(manifest);
     if (!parsed) {
       throw new LocalBackupDatabaseStreamError(
         "Portable database stream manifest is invalid",
@@ -386,6 +372,7 @@ export class LocalBackupDatabaseStreamStore<
         );
       }
     }
+    return parsed;
   }
 
   async cleanup(id: string): Promise<void> {

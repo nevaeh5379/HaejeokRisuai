@@ -4,7 +4,7 @@ import {
   exportStoredBackupAssets,
   formatMissingBackupAssets,
   selectBackupAssetKeys,
-} from "./assetExport";
+} from "./assetExport.ts";
 
 describe("backup asset export", (): void => {
   it("filters essential keys through the supplied asset inventory", (): void => {

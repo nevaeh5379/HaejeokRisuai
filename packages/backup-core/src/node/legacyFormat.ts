@@ -4,16 +4,16 @@ import { Packr, Unpackr } from "msgpackr";
 import {
   makeLegacyCompatibleDatabase,
   type ColdStorageValueMap,
-} from "../compatibility";
-import { expandPortableDatabaseBranchGraphsForCompatibility } from "../portableBranches";
+} from "../compatibility.ts";
+import { expandPortableDatabaseBranchGraphsForCompatibility } from "../portableBranches.ts";
 import {
   BackupContainerEntryHeaderError,
   createBackupContainerEntryHeader,
-} from "../containerStream";
+} from "../containerStream.ts";
 import {
   LEGACY_COMPRESSED_DATABASE_HEADER_BYTES,
   LEGACY_RAW_DATABASE_HEADER_BYTES,
-} from "../legacyHeaders";
+} from "../legacyHeaders.ts";
 
 const RAW_HEADER = Buffer.from(LEGACY_RAW_DATABASE_HEADER_BYTES);
 const COMPRESSED_HEADER = Buffer.from(LEGACY_COMPRESSED_DATABASE_HEADER_BYTES);

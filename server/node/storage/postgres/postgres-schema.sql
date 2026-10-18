@@ -153,6 +153,49 @@ CREATE TABLE IF NOT EXISTS system.module_values (
 CREATE INDEX IF NOT EXISTS module_values_parent_idx
 ON system.module_values (module_id, parent_node_id, position, node_id);
 
+CREATE TABLE IF NOT EXISTS system.plugin_records (
+    plugin_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    api_version TEXT,
+    plugin_version TEXT,
+    update_url TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS plugin_records_enabled_position_idx
+ON system.plugin_records (enabled, position);
+
+CREATE TABLE IF NOT EXISTS system.plugin_scripts (
+    plugin_id TEXT PRIMARY KEY REFERENCES system.plugin_records(plugin_id) ON DELETE CASCADE,
+    script TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS system.plugin_values (
+    plugin_id TEXT NOT NULL REFERENCES system.plugin_records(plugin_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
+    member_key TEXT,
+    encoded_member_key TEXT,
+    position INTEGER CHECK (position >= 0),
+    value_type TEXT NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+    text_value TEXT,
+    encoded_text_value TEXT,
+    number_value DOUBLE PRECISION,
+    boolean_value BOOLEAN,
+    PRIMARY KEY (plugin_id, node_id),
+    FOREIGN KEY (plugin_id, parent_node_id) REFERENCES system.plugin_values(plugin_id, node_id)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+);
+CREATE INDEX IF NOT EXISTS plugin_values_parent_idx
+ON system.plugin_values (plugin_id, parent_node_id, position, node_id);
+
 CREATE TABLE IF NOT EXISTS system.plugin_custom_storage (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL,
@@ -1355,6 +1398,16 @@ SELECT
     sender_name
 FROM cold.messages;
 
+CREATE TABLE IF NOT EXISTS system.global_author_notes (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+ content_hash TEXT NOT NULL CHECK(content_hash ~ '^[a-f0-9]{64}$'), updated_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS system.global_author_note_settings (
+ singleton INTEGER PRIMARY KEY CHECK(singleton = 1), allow_script_write BOOLEAN NOT NULL DEFAULT FALSE, updated_at BIGINT NOT NULL
+);
+INSERT INTO system.global_author_notes VALUES ('__none__', '', '', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 0) ON CONFLICT DO NOTHING;
+INSERT INTO system.global_author_note_settings VALUES (1, FALSE, 0) ON CONFLICT DO NOTHING;
+
 DO $$
 DECLARE
     audited_target TEXT[];
@@ -1362,6 +1415,8 @@ DECLARE
     tbl_name TEXT;
 BEGIN
     FOREACH audited_target SLICE 1 IN ARRAY ARRAY[
+        ARRAY['system', 'global_author_notes'],
+        ARRAY['system', 'global_author_note_settings'],
         ARRAY['system', 'settings'],
         ARRAY['system', 'setting_values'],
         ARRAY['system', 'plugin_custom_storage'],

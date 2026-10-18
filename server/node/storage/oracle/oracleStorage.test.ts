@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   COLUMN_NAME_MAP,
   ORACLE_EMPTY_STRING_SENTINEL,
   OracleStorage,
@@ -11,36 +11,8 @@ const {
   restoreEmptyStringInRow,
   toOracleColumn,
   wrapConnectionForEmptyStrings,
-} = require(".//oracleStorage.cjs") as {
-  COLUMN_NAME_MAP: Record<string, string>;
-  ORACLE_EMPTY_STRING_SENTINEL: string;
-  OracleStorage: new (options: Record<string, unknown>) => {
-    _bulkInsertRows: (
-      connection: object,
-      table: string,
-      columns: string[],
-      rows: Record<string, any>[],
-    ) => Promise<void>;
-  };
-  normalizeEmptyStringBinds: (binds: unknown) => unknown;
-  remapRowColumns: (
-    row: Record<string, unknown> | null | undefined,
-  ) => Record<string, unknown> | null | undefined;
-  restoreEmptyStringInRow: (
-    row: Record<string, unknown> | null | undefined,
-  ) => Record<string, unknown> | null | undefined;
-  toOracleColumn: (name: string) => string;
-  wrapConnectionForEmptyStrings: (connection: object) => object;
-};
-const { splitSetting } = require("../postgres/postgresSettingsCodec.cjs") as {
-  splitSetting: (
-    key: string,
-    value: unknown,
-  ) => {
-    setting: { key: string };
-    values: Record<string, any>[];
-  };
-};
+} from "./oracleStorage.ts";
+import { splitSetting } from "../postgres/postgresSettingsCodec.ts";
 
 describe("Oracle empty-string bind normalization", () => {
   it("replaces empty strings with the sentinel in flat bind arrays", () => {
@@ -188,7 +160,7 @@ describe("Oracle connection wrapper", () => {
 });
 
 describe("sync round-trip with empty string setting values", () => {
-  // oracleStorage.cjs sync()와 동일한 바인드 구성 방식 재현
+  // oracleStorage.ts sync()와 동일한 바인드 구성 방식 재현
   function buildSettingBinds(values: Record<string, any>[]) {
     return values.map((row) => [
       row.setting_key,
@@ -443,6 +415,51 @@ describe("Oracle reserved-word column mapping", () => {
   });
 });
 
+describe("Oracle plugin schema migration", () => {
+  it("creates missing plugin tables for an existing schema-v4 database", async () => {
+    const storage = new OracleStorage({});
+    const execute = vi.fn(async (statement: string) => {
+      if (statement.includes("plugin_records_enabled_position_idx")) {
+        throw new Error(
+          "ORA-00955: name is already used by an existing object",
+        );
+      }
+      return { rows: [], rowsAffected: 0 };
+    });
+    const commit = vi.fn(async () => undefined);
+
+    await expect(
+      storage.ensurePluginSchema({ execute, commit }),
+    ).resolves.toBeUndefined();
+
+    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute.mock.calls.map(([statement]) => statement)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("CREATE TABLE system_plugin_records"),
+        expect.stringContaining("CREATE TABLE system_plugin_scripts"),
+        expect.stringContaining("CREATE TABLE system_plugin_values"),
+        expect.stringContaining("CREATE TABLE system_plugin_custom_storage"),
+      ]),
+    );
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it("does not hide unexpected plugin-schema creation failures", async () => {
+    const storage = new OracleStorage({});
+    const connection = {
+      execute: vi.fn(async () => {
+        throw new Error("ORA-01031: insufficient privileges");
+      }),
+      commit: vi.fn(async () => undefined),
+    };
+
+    await expect(storage.ensurePluginSchema(connection)).rejects.toThrow(
+      "ORA-01031",
+    );
+    expect(connection.commit).not.toHaveBeenCalled();
+  });
+});
+
 describe("OracleStorage persistent branch API", () => {
   it("exposes persistent branch operations", () => {
     for (const method of [
@@ -564,7 +581,8 @@ describe("Oracle storage sync finalize concurrency", () => {
 
     expect(
       queries.some(
-        (sql) => sql.includes("system_storage_meta") && sql.includes("FOR UPDATE"),
+        (sql) =>
+          sql.includes("system_storage_meta") && sql.includes("FOR UPDATE"),
       ),
     ).toBe(false);
     expect(

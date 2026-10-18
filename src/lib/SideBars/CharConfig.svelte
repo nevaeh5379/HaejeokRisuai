@@ -1,4 +1,6 @@
 <script lang="ts">
+    import AuthorNoteEditor from "./AuthorNoteEditor.svelte";
+    import IllustrationSettings from "../Setting/Pages/IllustrationSettings.svelte";
     import { language } from "../../lang";
     import { saveImage as saveAsset } from "../../ts/storage/files/assetPersistence";
 import type { character, groupChat } from "../../ts/storage/database/schema";
@@ -282,17 +284,14 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
             {:else if charMainTab === 2}
                 <div class="flex items-center justify-between mb-1 shrink-0">
                     <span class="text-textcolor flex items-center gap-1">{language.authorNote} <Help key="chatNote"/></span>
+                  {#if !characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].globalAuthorNoteId}
                     <span class="rs-charconfig-token-badge text-textcolor2 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+                  {/if}
                 </div>
                 <div class="flex-1 min-h-0 flex flex-col mb-1">
-                    <TextAreaInput
-                        height="full"
-                        className="flex-1 h-full min-h-0"
-                        autocomplete="off"
-                        bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
-                        highlight
-                        placeholder={getAuthorNoteDefaultText()}
-                    />
+                    {#key `${characterStore.characters[$selectedCharID].chaId}/${characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id}`}
+                        <AuthorNoteEditor target={{ characterId: characterStore.characters[$selectedCharID].chaId, chatId: characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id! }} />
+                    {/key}
                 </div>
             {/if}
         </div>
@@ -348,14 +347,12 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         </div>
 
         <span class="text-textcolor">{language.authorNote} <Help key="chatNote"/></span>
-        <TextAreaInput
-            margin="both"
-            autocomplete="off"
-            bind:value={characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].note}
-            highlight
-            placeholder={getAuthorNoteDefaultText()}
-        />
+        {#key `${characterStore.characters[$selectedCharID].chaId}/${characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id}`}
+                        <AuthorNoteEditor target={{ characterId: characterStore.characters[$selectedCharID].chaId, chatId: characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].id! }} />
+                    {/key}
+                  {#if !characterStore.characters[$selectedCharID].chats[characterStore.characters[$selectedCharID].chatPage].globalAuthorNoteId}
         <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote ?? '…'} {language.tokens}</span>
+                  {/if}
 
         {#if !$MobileGUI}
             <div class="flex mt-2 items-center">
@@ -395,9 +392,9 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
         {#if characterStore.characters[$selectedCharID].type === 'group'}
             <button onclick={async () => {await selectCharImg($selectedCharID)}}>
                 {#await getCharImage(characterStore.characters[$selectedCharID].image, 'css')}
-                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3"></div>
+                    <div class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3"></div>
                 {:then im}
-                    <div class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3" style={im}></div>     
+                    <div class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3" style={im}></div>
                 {/await}
             </button>
         {:else}
@@ -419,12 +416,12 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                     }}>
                         {#await getCharImage(characterStore.characters[$selectedCharID].image, (characterStore.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
                             <div
-                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
+                                class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
                                 class:ring-red-500={iconRemoveMode}
     ></div>
                         {:then im}
                             <div
-                                class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
+                                class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
                                 class:ring-red-500={iconRemoveMode}
                                 style={im}
     ></div>     
@@ -444,12 +441,12 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                         }}>
                             {#await getCharImage(assets.uri, (characterStore.characters[$selectedCharID] as character).largePortrait ? 'lgcss' : 'css')}
                                 <div
-                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                                    class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                                     class:ring-red-500={iconRemoveMode} class:ring-3={iconRemoveMode}
     ></div>
                             {:then im}
                                 <div
-                                    class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                                    class="rs-charconfig-avatar rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                                     style={im} class:ring-red-500={iconRemoveMode} class:ring-3={iconRemoveMode}
     ></div>     
                             {/await}
@@ -458,7 +455,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                 {/if}
                 <button onclick={async () => {await selectCharImg($selectedCharID);}}>
                     <div
-                        class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
+                        class="rs-charconfig-avatar rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
                         style={(characterStore.characters[$selectedCharID] as character).largePortrait ? 'height: 10.66rem;' : ''}
                     >
                         <PlusIcon />
@@ -595,6 +592,9 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
                     (characterStore.characters[$selectedCharID] as character) = updateInlayScreen((characterStore.characters[$selectedCharID] as character))
                 }
             }}/>
+        {/if}
+        {#if settingsStore.state.useChatIllustrations}
+            <IllustrationSettings characterId={characterStore.characters[$selectedCharID].chaId} />
         {/if}
     {:else if viewSubMenu === 2}
         <AdditionalAssetsSection />

@@ -57,7 +57,9 @@ describe("NodeApiClient", () => {
   });
 
   it("supplies an empty body for payload-free Capacitor mutations", async () => {
-    const streamedFetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const streamedFetch = vi.fn(
+      async () => new Response(null, { status: 204 }),
+    );
     const fetcher = createCapacitorNodeApiFetch(streamedFetch);
 
     await fetcher("https://storage.example/api/local-backup/import/jobs", {
@@ -126,6 +128,37 @@ describe("NodeApiClient", () => {
     );
   });
 
+  it("identifies a missing API route without assuming the server version", async () => {
+    const client = new NodeApiClient(
+      profile,
+      async () => new Response(null, { status: 404 }),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /storage\.example:7443\/api\/client-capabilities.*reverse proxy route/,
+    );
+  });
+
+  it("shows the server's reason for an unavailable capabilities endpoint", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json({ error: "SQL storage is unavailable" }, { status: 503 }),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /HTTP 503.*storage\.example:7443\/api\/client-capabilities.*SQL storage is unavailable/,
+    );
+  });
+
+  it("explains how to allow a Tauri dev origin rejected by the server", async () => {
+    const client = new NodeApiClient(profile, async () =>
+      Response.json(
+        { error: "Origin is not allowed", code: "cors_denied" },
+        { status: 403 },
+      ),
+    );
+    await expect(client.getCapabilities()).rejects.toThrow(
+      /RISUAI_ALLOWED_ORIGINS/,
+    );
+  });
+
   it("requires SQL, asset, and data-change capabilities", async () => {
     const client = new NodeApiClient(profile, async () =>
       Response.json({
@@ -142,42 +175,52 @@ describe("NodeApiClient", () => {
     );
   });
 
-  it("loads a validated storage sync summary from capable servers", async () => {
-    const fetcher = vi.fn(async (url: string) => {
-      if (url.endsWith("/api/client-capabilities")) {
+  it.each([undefined, false, true, "true"])(
+    "validates optional plugin record support in the sync summary: %s",
+    async (supportsPluginRecords) => {
+      const fetcher = vi.fn(async (url: string) => {
+        if (url.endsWith("/api/client-capabilities")) {
+          return Response.json({
+            apiVersion: 1,
+            features: {
+              sqlStorage: true,
+              assetStorage: true,
+              dataChangeEvents: true,
+              storageSync: true,
+            },
+          });
+        }
         return Response.json({
-          apiVersion: 1,
-          features: {
-            sqlStorage: true,
-            assetStorage: true,
-            dataChangeEvents: true,
-            storageSync: true,
+          protocolVersion: 1,
+          supportsPluginRecords,
+          revision: 9,
+          initialized: true,
+          records: {
+            settings: 2,
+            characters: 3,
+            chats: 4,
+            messages: 5,
+            total: 14,
           },
+          assets: { count: 6, sizeBytes: 700 },
         });
+      });
+      const client = new NodeApiClient(profile, fetcher);
+      if (typeof supportsPluginRecords === "string") {
+        await expect(
+          client.getStorageSyncSummary("sync-auth"),
+        ).rejects.toBeInstanceOf(NodeApiCompatibilityError);
+        return;
       }
-      return Response.json({
-        protocolVersion: 1,
+      const summary = await client.getStorageSyncSummary("sync-auth");
+      expect(summary).toMatchObject({
         revision: 9,
-        initialized: true,
-        records: {
-          settings: 2,
-          characters: 3,
-          chats: 4,
-          messages: 5,
-          total: 14,
-        },
+        records: { total: 14 },
         assets: { count: 6, sizeBytes: 700 },
       });
-    });
-    const client = new NodeApiClient(profile, fetcher);
-    await expect(
-      client.getStorageSyncSummary("sync-auth"),
-    ).resolves.toMatchObject({
-      revision: 9,
-      records: { total: 14 },
-      assets: { count: 6, sizeBytes: 700 },
-    });
-  });
+      expect(summary.supportsPluginRecords).toBe(supportsPluginRecords);
+    },
+  );
 
   it("refuses storage sync when the server does not advertise it", async () => {
     const fetcher = vi.fn(async () =>

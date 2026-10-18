@@ -109,7 +109,7 @@ import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIco
     <div class="flex items-center transition-colors w-full p-1">
 
     {#if value.mode !== 'child'}
-        <button class="endflex valuer border-darkborderc flex items-center" onclick={() => {
+        <button class="rs-lorebook-title endflex valuer border-darkborderc flex items-center" aria-expanded={open} onclick={() => {
             value.secondkey = value.secondkey ?? ''
             if(!open){
                 open = true
@@ -177,7 +177,7 @@ import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIco
             <XIcon size={20} />
         </button>
     {:else}
-        <button class="endflex valuer border-darkborderc" onclick={() => alertMd(language.childLoreDesc)}>
+        <button class="rs-lorebook-title endflex valuer border-darkborderc" onclick={() => alertMd(language.childLoreDesc)}>
             <BookCopyIcon size={20} class="mr-1" />
             <span>{getParentLoreName(value)}</span>
         </button>

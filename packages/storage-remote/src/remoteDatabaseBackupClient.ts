@@ -1,10 +1,10 @@
-import type { DbVendor } from "@risuai/protocol/storageConfig.cjs";
+import type { DbVendor } from "@risuai/protocol/storageConfig.ts";
 import type {
   NodeBackupConfig,
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "@risuai/protocol/databaseApi.cjs";
+} from "@risuai/protocol/databaseApi.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
 export class RemoteDatabaseBackupClient {

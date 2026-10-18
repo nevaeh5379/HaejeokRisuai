@@ -1,19 +1,19 @@
-import type { LocalBackupMode, LocalBackupProgress } from "../api";
-import { collectStreamedEssentialAssetKeys } from "../assetScope";
-import { createLocalBackupExportPlan } from "../exportPlan";
-import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy";
-import type { LegacyBackupSqlRecord } from "../legacyRecords";
+import type { LocalBackupMode, LocalBackupProgress } from "../api.ts";
+import { collectStreamedEssentialAssetKeys } from "../assetScope.ts";
+import { createLocalBackupExportPlan } from "../exportPlan.ts";
+import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 import {
   streamBackupStorageEntries,
   streamColdStorageExportEntries,
   type LoadColdStorageExportValueResult,
   type OpenBackupStorageEntryResult,
-} from "./exportEntries";
+} from "./exportEntries.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   type BackupEntrySource,
   type PortableDatabaseStreamManifest,
-} from "./exportStream";
+} from "./exportStream.ts";
 
 export interface LocalBackupArchiveStreamOptions {
   pageSize?: number;

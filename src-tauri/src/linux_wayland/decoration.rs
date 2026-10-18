@@ -13,9 +13,15 @@ const ROUNDED_CSD_WINDOW_CLASS: &str = "risu-rounded-csd-window";
 pub const CSD_CORNER_RADIUS: i32 = 12;
 const NATIVE_THEME_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 1;
 const INTEGRATED_CSD_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 2;
+// A compositor that does not implement the KWin decoration-palette protocol paints the
+// SSD titlebar with GTK's own HeaderBar. That HeaderBar is still a GTK widget, so the
+// Risu theme is applied to it through a screen-wide style provider instead.
+const RISU_TITLEBAR_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_USER + 3;
 
 thread_local! {
     static NATIVE_THEME_PROVIDER: RefCell<Option<(gtk::gdk::Screen, gtk::CssProvider)>> =
+        const { RefCell::new(None) };
+    static RISU_TITLEBAR_PROVIDER: RefCell<Option<(gtk::gdk::Screen, gtk::CssProvider)>> =
         const { RefCell::new(None) };
 }
 
@@ -25,6 +31,10 @@ struct Rgb(u8, u8, u8);
 impl Rgb {
     fn as_kde(self) -> String {
         format!("{},{},{}", self.0, self.1, self.2)
+    }
+
+    fn as_css(self) -> String {
+        format!("#{:02x}{:02x}{:02x}", self.0, self.1, self.2)
     }
 
     fn as_kde_background(self, alpha: Option<u8>) -> String {
@@ -51,6 +61,64 @@ fn parse_hex_color(value: &str) -> Result<Rgb, String> {
             .map_err(|_| format!("Invalid #RRGGBB color: {value}"))
     };
     Ok(Rgb(channel(0)?, channel(2)?, channel(4)?))
+}
+
+/// The subset of the Risu theme needed to repaint a toolkit-drawn titlebar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RisuTitlebarColors {
+    background: Rgb,
+    foreground: Rgb,
+    inactive_foreground: Rgb,
+}
+
+impl RisuTitlebarColors {
+    pub fn from_hex(
+        background: &str,
+        foreground: &str,
+        inactive_foreground: &str,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            background: parse_hex_color(background)?,
+            foreground: parse_hex_color(foreground)?,
+            inactive_foreground: parse_hex_color(inactive_foreground)?,
+        })
+    }
+}
+
+fn titlebar_css(colors: &RisuTitlebarColors) -> String {
+    let background = colors.background.as_css();
+    let foreground = colors.foreground.as_css();
+    let inactive = colors.inactive_foreground.as_css();
+
+    // Only the bar surface and its glyph colour are replaced. The native title buttons
+    // keep their own hover / pressed artwork so minimize, maximize and restore still
+    // look like the selected GTK theme.
+    format!(
+        r#"
+headerbar,
+.titlebar,
+headerbar:backdrop,
+.titlebar:backdrop {{
+  background-image: none;
+  background-color: {background};
+  color: {foreground};
+}}
+
+headerbar .title,
+headerbar .subtitle,
+headerbar button image,
+headerbar button label {{
+  color: {foreground};
+}}
+
+headerbar:backdrop .title,
+headerbar:backdrop .subtitle,
+headerbar:backdrop button image,
+headerbar:backdrop button label {{
+  color: {inactive};
+}}
+"#
+    )
 }
 
 fn ini_value<'a>(contents: &'a str, section: &str, key: &str) -> Option<&'a str> {
@@ -257,9 +325,9 @@ pub fn write_kwin_decoration_palette(
         .ok_or_else(|| "KWin decoration palette path has no parent directory".to_string())?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
 
-    // KWin reads Colors:Header for modern decorations and WM for legacy ones.
-    // Keep the palette file stable instead of atomically replacing it: KWin's
-    // KConfigWatcher watches this exact path and should see live theme changes.
+    // KWin reads Colors:Header for modern decorations and WM for legacy ones. The file is
+    // written in place; publishing a live theme change is done by handing KWin a new
+    // palette path, which is the only request that makes it reload a decoration.
     let palette = format!(
         "[Colors:Header]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={foreground}\n\n[Colors:Header][Inactive]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={inactive_foreground}\n\n[Colors:Window]\nBackgroundAlternate={background}\nBackgroundNormal={background}\nDecorationFocus={accent}\nDecorationHover={accent}\nForegroundActive={foreground}\nForegroundInactive={inactive_foreground}\nForegroundNegative={negative}\nForegroundNormal={foreground}\n\n[WM]\nactiveBackground={background}\nactiveForeground={foreground}\nframe={background}\ninactiveBackground={background}\ninactiveForeground={inactive_foreground}\ninactiveFrame={background}\n\n[General]\nColorScheme=RisuAI\nName=RisuAI\n"
     );
@@ -303,6 +371,7 @@ pub fn bootstrap_decorations_enabled(decoration: LinuxWindowDecoration) -> bool 
 }
 
 fn configure_integrated_header(header: &gtk::HeaderBar) {
+    header.set_show_close_button(true);
     header.set_decoration_layout(None);
     header.set_decoration_layout_set(false);
     header.set_title(None);
@@ -354,6 +423,45 @@ pub fn apply_native_theme_variant(
     replace_native_theme_provider(&screen, Some(provider));
     gtk::StyleContext::reset_widgets(&screen);
     Ok(())
+}
+
+fn replace_risu_titlebar_provider(provider: Option<(gtk::gdk::Screen, gtk::CssProvider)>) {
+    RISU_TITLEBAR_PROVIDER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let previous = std::mem::replace(
+            &mut *slot,
+            provider
+                .as_ref()
+                .map(|(screen, provider)| (screen.clone(), provider.clone())),
+        );
+        if let Some((previous_screen, previous_provider)) = previous {
+            gtk::StyleContext::remove_provider_for_screen(&previous_screen, &previous_provider);
+        }
+        if let Some((screen, provider)) = provider {
+            gtk::StyleContext::add_provider_for_screen(&screen, &provider, RISU_TITLEBAR_PRIORITY);
+        }
+    });
+}
+
+/// Paint a toolkit-drawn (non KWin) SSD titlebar with the current Risu theme.
+pub fn apply_risu_titlebar_colors(
+    window: &gtk::ApplicationWindow,
+    colors: &RisuTitlebarColors,
+) -> Result<(), String> {
+    let provider = gtk::CssProvider::new();
+    provider
+        .load_from_data(titlebar_css(colors).as_bytes())
+        .map_err(|error| format!("Failed to style the Risu titlebar: {error}"))?;
+    let screen = gtk::prelude::WidgetExt::screen(window)
+        .ok_or_else(|| "GTK screen is unavailable".to_string())?;
+
+    replace_risu_titlebar_provider(Some((screen.clone(), provider)));
+    gtk::StyleContext::reset_widgets(&screen);
+    Ok(())
+}
+
+pub fn clear_risu_titlebar_colors() {
+    replace_risu_titlebar_provider(None);
 }
 
 fn uses_square_csd_corners(window: &gtk::ApplicationWindow) -> bool {
@@ -415,61 +523,37 @@ fn install_rounded_overlay_draw(
     });
 }
 
-fn install_header_drag_behavior(window: &gtk::ApplicationWindow, event_box: &gtk::EventBox) {
-    event_box.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+fn measure_csd_header(header: &gtk::HeaderBar) -> super::CsdHeaderLayout {
+    let width = header.allocated_width();
+    let mut layout = super::CsdHeaderLayout {
+        height: header.allocated_height(),
+        left: 0,
+        right: 0,
+    };
 
-    let window = window.clone();
-    event_box.connect_button_press_event(move |event_box, event| {
-        if event.button() != 1 {
-            return gtk::glib::Propagation::Proceed;
+    fn visit(widget: &gtk::Widget, header: &gtk::HeaderBar, layout: &mut super::CsdHeaderLayout) {
+        if !widget.is_visible() {
+            return;
         }
-
-        let (x, y) = event.position();
-        let allocation = event_box.allocation();
-        if y <= 6.0 && !window.is_maximized() && window.is_resizable() {
-            let edge = if x <= 6.0 {
-                gtk::gdk::WindowEdge::NorthWest
-            } else if x >= f64::from(allocation.width()) - 6.0 {
-                gtk::gdk::WindowEdge::NorthEast
-            } else {
-                gtk::gdk::WindowEdge::North
-            };
-
-            if let Some(gdk_window) = window.window() {
-                let (root_x, root_y) = event.root();
-                gdk_window.begin_resize_drag(
-                    edge,
-                    event.button() as i32,
-                    root_x as i32,
-                    root_y as i32,
-                    event.time(),
-                );
-                return gtk::glib::Propagation::Stop;
-            }
-        }
-
-        match event.event_type() {
-            gtk::gdk::EventType::DoubleButtonPress => {
-                if window.is_maximized() {
-                    window.unmaximize();
-                } else if window.is_resizable() {
-                    window.maximize();
+        if widget.is::<gtk::Button>() {
+            if let Some((x, _)) = widget.translate_coordinates(header, 0, 0) {
+                let width = header.allocated_width();
+                if x + widget.allocated_width() / 2 < width / 2 {
+                    layout.left = layout.left.max(x + widget.allocated_width());
+                } else {
+                    layout.right = layout.right.max(width - x);
                 }
-                gtk::glib::Propagation::Stop
             }
-            gtk::gdk::EventType::ButtonPress => {
-                let (root_x, root_y) = event.root();
-                window.begin_move_drag(
-                    event.button() as i32,
-                    root_x as i32,
-                    root_y as i32,
-                    event.time(),
-                );
-                gtk::glib::Propagation::Stop
-            }
-            _ => gtk::glib::Propagation::Proceed,
+        } else if let Some(container) = widget.downcast_ref::<gtk::Container>() {
+            // HeaderBar's decoration buttons are internal children.
+            container.forall(|child| visit(child, header, layout));
         }
-    });
+    }
+
+    if width > 0 {
+        header.forall(|child| visit(child, header, &mut layout));
+    }
+    layout
 }
 
 pub fn prepare_client_side_decoration<R: Runtime>(
@@ -488,11 +572,18 @@ pub fn prepare_client_side_decoration<R: Runtime>(
         .clone()
         .downcast::<gtk::EventBox>()
         .map_err(|_| "Tao GTK titlebar is not an EventBox".to_string())?;
-    let header = event_box
-        .child()
-        .ok_or_else(|| "Tao GTK titlebar EventBox has no child".to_string())?
-        .downcast::<gtk::HeaderBar>()
-        .map_err(|_| "Tao GTK titlebar child is not a HeaderBar".to_string())?;
+    // Tao 0.37 leaves the Wayland titlebar EventBox empty. Supply GTK's native
+    // HeaderBar while retaining the one provided by earlier Tao versions.
+    let header = match event_box.child() {
+        Some(child) => child
+            .downcast::<gtk::HeaderBar>()
+            .map_err(|_| "Tao GTK titlebar child is not a HeaderBar".to_string())?,
+        None => {
+            let header = gtk::HeaderBar::new();
+            event_box.add(&header);
+            header
+        }
+    };
     let default_vbox = tauri_window
         .default_vbox()
         .map_err(|error| error.to_string())?;
@@ -564,10 +655,18 @@ window.risu-rounded-csd-window.tiled decoration {
         }
     });
 
-    // Tao's HeaderBar is a no-window widget. Its surrounding EventBox owns the
-    // GDK input surface, so window dragging and top-edge resizing must be
-    // handled there while native title buttons keep receiving their own input.
-    install_header_drag_behavior(window, &event_box);
+    // Pass empty header space through both GDK overlay surfaces. GTK's native
+    // buttons own input windows below them and still receive pointer events.
+    // Web tabs and sidebar controls underneath must receive their own clicks.
+    event_box.connect_realize(|event_box| {
+        if let Some(input_window) = event_box.window() {
+            input_window.set_pass_through(true);
+        }
+    });
+    let tauri_window = tauri_window.clone();
+    header.connect_size_allocate(move |header, _| {
+        super::update_csd_header(&tauri_window, measure_csd_header(header));
+    });
 
     // Keep the WebView exactly two GTK parents below the window. Tauri's Linux
     // resize handler assumes `WebView -> container -> Window`; retaining the
@@ -600,7 +699,7 @@ window.risu-rounded-csd-window.tiled decoration {
     titlebar.set_hexpand(true);
     titlebar.set_vexpand(false);
     overlay.add_overlay(&titlebar);
-    overlay.set_overlay_pass_through(&titlebar, false);
+    overlay.set_overlay_pass_through(&titlebar, true);
     install_rounded_overlay_draw(window, &overlay, &content, &titlebar);
 
     window.add(&overlay);
@@ -680,5 +779,23 @@ BackgroundNormal=33,34,44,192
     fn only_ssd_bootstraps_with_server_decorations_enabled() {
         assert!(bootstrap_decorations_enabled(LinuxWindowDecoration::Ssd));
         assert!(!bootstrap_decorations_enabled(LinuxWindowDecoration::Csd));
+    }
+
+    #[test]
+    fn builds_titlebar_css_from_risu_theme_colors() {
+        let colors = RisuTitlebarColors::from_hex("#7f1d1d", "#f8f8f2", "#fca5a5").unwrap();
+        let css = titlebar_css(&colors);
+
+        assert!(css.contains("background-color: #7f1d1d"));
+        assert!(css.contains("color: #f8f8f2"));
+        assert!(css.contains("headerbar:backdrop"));
+        assert!(css.contains("color: #fca5a5"));
+        // The native button artwork must stay untouched.
+        assert!(!css.contains("headerbar button {"));
+    }
+
+    #[test]
+    fn rejects_non_hex_titlebar_colors() {
+        assert!(RisuTitlebarColors::from_hex("transparent", "#f8f8f2", "#fca5a5").is_err());
     }
 }

@@ -1,17 +1,44 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(desktop)]
+mod app_data_migration;
+#[cfg(desktop)]
+mod desktop_startup;
+#[cfg(desktop)]
+mod legacy_instance;
 #[cfg(target_os = "linux")]
 mod linux_wayland;
+#[cfg(target_os = "linux")]
+mod linux_renderer;
 #[cfg(target_os = "macos")]
 mod macos_vibrancy;
 mod sqlite_transaction;
+#[cfg(target_os = "windows")]
+mod windows_installed_app;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn get_safe_mode() -> bool {
+    std::env::var("HAEJEOK_SAFE_MODE").as_deref() == Ok("1")
+}
+
+#[tauri::command]
+fn get_app_display_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        windows_installed_app::current_display_name()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "HaejeokRisuai"
+    }
 }
 
 use base64::{engine::general_purpose, Engine as _};
@@ -26,6 +53,7 @@ use serde_json::json;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{path::Path, time::Duration};
 #[cfg(target_os = "macos")]
@@ -36,6 +64,19 @@ use tauri::menu::{
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter};
 use tauri::{Listener, Manager};
+
+#[tauri::command]
+async fn set_macos_native_sidebar_blur(app: AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_vibrancy::set_native_sidebar_blur(&app, enabled).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, enabled);
+        Ok(())
+    }
+}
 
 #[tauri::command]
 fn set_risu_native_appearance(app: AppHandle, appearance: String) -> Result<(), String> {
@@ -99,7 +140,7 @@ fn set_linux_window_decoration_preference(
 }
 
 #[tauri::command]
-fn set_linux_kde_decoration_colors(
+fn set_linux_decoration_colors(
     app: AppHandle,
     background: String,
     foreground: String,
@@ -109,7 +150,7 @@ fn set_linux_kde_decoration_colors(
 ) -> Result<Option<u8>, String> {
     #[cfg(target_os = "linux")]
     {
-        linux_wayland::set_kde_decoration_colors(
+        linux_wayland::set_linux_decoration_colors(
             &app,
             &background,
             &foreground,
@@ -819,7 +860,7 @@ fn update_app_navigation_menu(app: AppHandle, model: AppNavigationMenuModel) -> 
 }
 
 #[cfg(target_os = "macos")]
-fn install_haejeok_app_menu(app: &mut tauri::App) -> tauri::Result<()> {
+fn install_haejeok_app_menu(app: &AppHandle) -> tauri::Result<()> {
     let korean = app_menu_uses_korean();
     let label = |english, korean_text| app_menu_label(korean, english, korean_text);
     let package = app.package_info();
@@ -1414,12 +1455,28 @@ fn configure_linux_gstreamer_paths() {
     }
 }
 
+struct TauriOpenedFiles(String);
+fn handle_file_associations(app: AppHandle, files: Vec<PathBuf>) {
+    let asset_protocol_scope = app.asset_protocol_scope();
+
+    for file in &files {
+        asset_protocol_scope.allow_file(file);
+    }
+
+    app.emit_to("main", "tauri-opened-files", &files);
+
+    let files = serde_json::to_string(&files)
+    .expect("failed to serialize file paths");
+
+    app.manage(TauriOpenedFiles(files));
+
+
+}
+
 fn main() {
     #[cfg(target_os = "linux")]
     {
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
+        linux_renderer::configure();
         std::env::set_var("GDK_BACKEND", "wayland");
         configure_linux_gstreamer_paths();
         // KWin resolves the titlebar icon through the Wayland app-id, which
@@ -1429,7 +1486,57 @@ fn main() {
         linux_wayland::app_icon::register();
     }
 
+    let mut context = tauri::generate_context!();
+    #[cfg(desktop)]
+    desktop_startup::configure_directories(&mut context);
+
     let mut builder = tauri::Builder::default();
+
+    // Reserve the new identifier before starting any migration work.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+
+            let base_dir = PathBuf::from(cwd);
+            let file_path = args.into_iter().skip(1).map(|arg| {
+                let path = PathBuf::from(arg);
+
+                let full_path = if path.is_relative() {
+                    base_dir.join(path)
+                } else {
+                    path
+                };
+
+                std::fs::canonicalize(full_path)
+            }).collect::<Result<Vec<PathBuf>, _>>().unwrap_or_default();
+            handle_file_associations(app.clone(), file_path);
+        }));
+        builder = builder.setup(|app| {
+            #[cfg(target_os = "windows")]
+            windows_installed_app::sync_display_name();
+            desktop_startup::start(app.handle());
+            let mut files = Vec::new();
+
+            for maybe_file in std::env::args().skip(1) {
+                if maybe_file.starts_with('-') {
+                    continue;
+                }
+
+                if let Ok(url) = url::Url::parse(&maybe_file) {
+                    if let Ok(path) = url.to_file_path() {
+                        files.push(path);
+                    } 
+                } else {
+                    files.push(PathBuf::from(maybe_file));
+                }
+            }
+            handle_file_associations(app.handle().clone(), files);
+            Ok(())
+        });
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -1443,37 +1550,19 @@ fn main() {
 
     #[cfg(target_os = "linux")]
     {
-        builder = builder.plugin(linux_wayland::init()).setup(|app| {
-            linux_wayland::create_main_window(app.handle())?;
-            Ok(())
-        });
+        builder = builder.plugin(linux_wayland::init());
     }
 
     #[cfg(target_os = "macos")]
     {
-        builder = builder
-            .setup(|app| {
-                install_haejeok_app_menu(app)?;
-                Ok(())
-            })
-            .on_menu_event(|app, event| {
-                handle_haejeok_app_menu(app, event.id().as_ref());
-            });
-    }
-
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
-        }));
+        builder = builder.on_menu_event(|app, event| {
+            handle_haejeok_app_menu(app, event.id().as_ref());
+        });
     }
 
     builder
         .manage(SidebarMenuWindowState::default())
         .manage(sqlite_transaction::SqliteStreamTransactionState::default())
-        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -1484,6 +1573,8 @@ fn main() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
+            get_safe_mode,
+            get_app_display_name,
             native_request,
             check_auth,
             check_requirements_local,
@@ -1500,9 +1591,10 @@ fn main() {
             sqlite_transaction::sqlite_commit_stream_transaction,
             sqlite_transaction::sqlite_rollback_stream_transaction,
             set_risu_native_appearance,
+            set_macos_native_sidebar_blur,
             set_risu_windows_backdrop,
             set_linux_window_decoration_preference,
-            set_linux_kde_decoration_colors,
+            set_linux_decoration_colors,
             get_linux_window_capabilities,
             update_app_navigation_menu,
             prepare_sidebar_menu_window,
@@ -1512,7 +1604,7 @@ fn main() {
             hide_sidebar_menu_window,
             close_sidebar_menu_window
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application")
 }
 

@@ -2,7 +2,7 @@ import {
   filterEssentialBackupAssetKeys,
   type BackupAssetMap,
   type BackupAssetScope,
-} from "../assetScope";
+} from "../assetScope.ts";
 
 export interface NodeBackupAssetStreamOptions {
   thumbnail?: boolean;

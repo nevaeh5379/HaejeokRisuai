@@ -991,7 +991,9 @@ unsafe extern "system" fn custom_frame_proc(
 }
 
 fn install_custom_frame<R: Runtime>(window: &Window<R>) -> Result<(), String> {
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    // Tauri and this module may use different versions of the windows crate.
+    // Convert the raw handle at the boundary before calling this module's Win32 APIs.
+    let hwnd = HWND(window.hwnd().map_err(|error| error.to_string())?.0);
 
     unsafe {
         // The bootstrap screen uses the app's default dark palette. The

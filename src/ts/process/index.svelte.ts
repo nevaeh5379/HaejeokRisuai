@@ -11,10 +11,12 @@ import { settingsStore } from "../stores/domain/settingsStore.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { createLocalChatExecutor } from "./chat/localExecutor";
 import { runWithPresetChainGenerationGate } from "./presetChainGenerationGate";
-import type { ChatSendOptions } from "@risuai/chat-core/executor.cjs";
+import type { ChatSendOptions } from "@risuai/chat-core/executor.ts";
 import {
   beginNativeChatRequest,
+  boundedNativeCall,
   endNativeChatRequest,
+  NATIVE_BRIDGE_TIMEOUT_MS,
 } from "../android/androidChatLifecycle";
 import { ensureChatNotificationPermission } from "../chatNotifications";
 import { localGenerationController } from "./chat/generationCancellation";
@@ -25,8 +27,8 @@ import {
   reportNodeGenerationFailure,
 } from "./nodeGenerationLifecycle";
 
-export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.cjs";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+export type { MultiModal, OpenAIChat } from "@risuai/chat-core/types.ts";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 export interface requestTokenPart {
   name: string;
@@ -92,6 +94,9 @@ export async function sendChat(
     if (keepAlive) {
       // Ask while we are still inside the send gesture: browsers drop the
       // notification permission prompt once the tab is backgrounded.
+      // Both calls cross the native bridge; the lifecycle helpers bound
+      // their bridge calls internally, so a vendor ROM hang cannot leave
+      // the generation lock held forever.
       await ensureChatNotificationPermission();
       await beginNativeChatRequest();
     }
@@ -121,12 +126,18 @@ export async function sendChat(
     }
     if (locked && targetChatId) endChatGeneration(targetChatId);
     if (targetChatId) {
-      await endNodeGenerationLifecycle(
-        targetChatId,
-        lifecycleId,
-        signal?.aborted === true,
+      await boundedNativeCall(
+        endNodeGenerationLifecycle(
+          targetChatId,
+          lifecycleId,
+          signal?.aborted === true,
+        ),
+        NATIVE_BRIDGE_TIMEOUT_MS,
       );
     }
-    if (keepAlive) await endNativeChatRequest();
+    if (keepAlive) {
+      // endNativeChatRequest bounds its bridge call internally.
+      await endNativeChatRequest();
+    }
   }
 }

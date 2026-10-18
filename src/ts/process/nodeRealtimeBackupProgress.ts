@@ -1,4 +1,4 @@
-import type { RealtimeLocalBackupImportProgressEvent } from "@risuai/protocol/realtimeEvents.cjs";
+import type { RealtimeLocalBackupImportProgressEvent } from "@risuai/protocol/src/realtimeEvents.ts";
 
 type Listener = (event: RealtimeLocalBackupImportProgressEvent) => void;
 

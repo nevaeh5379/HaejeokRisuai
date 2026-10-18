@@ -11,12 +11,12 @@ import {
   prepareGoogleConversation,
   selectGoogleGenerationParameters,
   selectGoogleVertexRegion,
-} from "@risuai/chat-core/googleProvider.cjs";
+} from "@risuai/chat-core/googleProvider.ts";
 import type {
   GeminiChat,
   GeminiFunctionCall,
   GeminiPart,
-} from "@risuai/chat-core/googleProvider.cjs";
+} from "@risuai/chat-core/googleProvider.ts";
 import { fetchNative, textifyReadableStream } from "src/ts/globalApi.svelte";
 import { LLMFlags, LLMFormat, type LLMModel } from "src/ts/model/modellist";
 import { base64url, simplifySchema } from "src/ts/util";

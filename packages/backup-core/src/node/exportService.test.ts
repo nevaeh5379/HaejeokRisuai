@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   LocalBackupExportJobError,
   LocalBackupExportJobStore,
-} from "./exportJobStore";
+} from "./exportJobStore.ts";
 import {
   LocalBackupExportService,
   type LocalBackupExportAdapter,
-} from "./exportService";
+} from "./exportService.ts";
 
 describe("LocalBackupExportService", () => {
   it("normalizes job creation options", () => {

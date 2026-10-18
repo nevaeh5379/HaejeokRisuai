@@ -4,74 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync, unzipSync } from "node:zlib";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  decodePluginStorageValue,
+  encodePluginStorageValue,
+} from "../../../../src/ts/storage/sql/pluginStorageValueCodec";
 
 const require = createRequire(import.meta.url);
-const { PostgresRevisionConflictError, PostgresStorage } =
-  require(".//postgresStorage.cjs") as {
-    PostgresRevisionConflictError: new (revision: number) => Error;
-    PostgresStorage: new (options?: { connectionString?: string }) => {
-      enabled: boolean;
-      initialize: () => Promise<void>;
-      reconfigure: (options: {
-        connectionString: string;
-        poolMax?: number;
-      }) => Promise<void>;
-      exportDatabaseSnapshot: () => Promise<{
-        initialized: boolean;
-        revision: number;
-        database: Record<string, any> | null;
-      }>;
-      sync: (payload: Record<string, any>) => Promise<{ revision: number }>;
-      listRevisions: (limit?: number) => Promise<Record<string, any>[]>;
-      restoreRevision: (
-        revisionId: number,
-      ) => Promise<{ revision: number; changed: number }>;
-      loadColdStorage: (key: string) => Promise<Record<string, any> | null>;
-      listColdStorage: () => Promise<Record<string, any>[]>;
-      upsertColdStorage: (
-        key: string,
-        value: unknown,
-      ) => Promise<Record<string, any>>;
-      deleteColdStorage: (keys: string[]) => Promise<{ deleted: number }>;
-      pruneColdStorage: (keys: string[]) => Promise<{ deleted: number }>;
-      migrateLegacyColdStorage: (
-        savePath: string,
-      ) => Promise<{ migrated: number; skipped: number }>;
-      exportColdStorageToLegacy: (
-        savePath: string,
-      ) => Promise<{ exported: number; archived: number }>;
-      searchMessages: (
-        query: string,
-        scope?: string,
-        limit?: number,
-      ) => Promise<Record<string, any>[]>;
-      getTokenUsage: () => Promise<Record<string, any>[]>;
-      getBotChatStats: () => Promise<Record<string, any>[]>;
-      searchCharactersByTag: (
-        tag: string,
-        limit?: number,
-      ) => Promise<Record<string, any>[]>;
-      searchCharactersByName: (
-        name: string,
-        limit?: number,
-      ) => Promise<Record<string, any>[]>;
-      isAssetCatalogInitialized: (sourceId: string) => Promise<boolean>;
-      listAssetCatalog: (prefix?: string) => Promise<string[]>;
-      upsertAssetCatalog: (
-        entries: { key: string; size?: number | null; etag?: string | null }[],
-      ) => Promise<number>;
-      removeAssetCatalog: (keys: string[]) => Promise<number>;
-      replaceAssetCatalog: (
-        prefix: string,
-        entries: { key: string; size?: number | null; etag?: string | null }[],
-        sourceId: string,
-      ) => Promise<number>;
-      pool: {
-        query: (sql: string, params?: unknown[]) => Promise<any>;
-        end: () => Promise<void>;
-      };
-    };
-  };
+import {
+  PostgresRevisionConflictError,
+  PostgresStorage,
+} from "./postgresStorage.ts";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const describePostgres = connectionString ? describe : describe.skip;
@@ -723,6 +665,40 @@ describePostgres("PostgreSQL structured storage integration", () => {
     expect((await storage.exportDatabaseSnapshot()).database?.theme).toBe(
       "first",
     );
+  });
+
+  it("round-trips SQL-unsupported Unicode in plugin storage", async () => {
+    const value = {
+      summary: "memory before\0memory after",
+      nested: ["ordinary", "another\0NUL"],
+      highSurrogate: "before\ud800after",
+      lowSurrogate: "before\udcffafter",
+    };
+
+    await storage.sync({
+      baseRevision: 0,
+      replaceAll: true,
+      root: { upserts: [], deletes: [] },
+      pluginStorage: {
+        upserts: [
+          { key: "wiglore-memory", value: encodePluginStorageValue(value) },
+        ],
+        deletes: [],
+      },
+      characterIds: [],
+      characters: [],
+      chats: [],
+      chatManifests: [],
+      messages: [],
+      messageManifests: [],
+    });
+
+    const snapshot = await storage.exportDatabaseSnapshot();
+    expect(
+      decodePluginStorageValue(
+        snapshot.database?.pluginCustomStorage?.["wiglore-memory"],
+      ),
+    ).toEqual(value);
   });
 
   it("stores cold data in relational chat and message tables and prunes it with one set operation", async () => {

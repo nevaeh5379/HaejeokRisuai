@@ -1,5 +1,6 @@
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { v4 as uuidv4 } from "uuid";
-import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.cjs";
+import { buildLegacyBranchMigrationPlan } from "@risuai/protocol/legacyBranchMigration.ts";
 import type {
   CanonicalDatabase,
   Database,
@@ -43,116 +44,46 @@ import {
   LEGACY_PERSONA_MIRROR_KEYS,
   PROMPT_SETTING_KEYS,
 } from "../../sqlDeferredSettings";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
 import {
   buildSqlReplaceCommit,
   SqlRevisionConflictError,
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import {
-  applySqliteCommit,
-  writeSqliteColdStorage,
-} from "@risuai/storage-sqlite/sqliteCommit";
-import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
-import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
-import {
-  rebuildRelationalValue,
-  decodedText,
-  RELATIONAL_SCHEMA_LAYOUT,
-  SQLITE_SCHEMA_VERSION,
-  SqlSchemaResetRequiredError,
-  type RelationalNodeRow,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import type { IPluginStorage } from "../../pluginStorage";
+import { SqlitePluginStorage } from "../sqlitePluginStorage";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
+import * as sqliteCommitPrep from "@risuai/storage-sqlite/commit/prepare";
+import * as sqliteAdmin from "@risuai/storage-sqlite/queries/admin";
+import * as sqliteBranch from "@risuai/storage-sqlite/queries/branch";
+import * as sqliteChat from "@risuai/storage-sqlite/queries/chat";
+import * as sqliteColdStorage from "@risuai/storage-sqlite/queries/coldStorage";
+import * as sqliteDocument from "@risuai/storage-sqlite/queries/document";
+import * as sqliteEntity from "@risuai/storage-sqlite/queries/entity";
+import * as sqliteMessages from "@risuai/storage-sqlite/queries/messages";
+import * as sqliteNodes from "@risuai/storage-sqlite/queries/nodes";
+import * as sqlitePlugin from "@risuai/storage-sqlite/queries/plugin";
+import * as sqliteRevisions from "@risuai/storage-sqlite/queries/revisions";
+import * as sqliteSettings from "@risuai/storage-sqlite/queries/settings";
+import * as sqliteSnapshot from "@risuai/storage-sqlite/queries/snapshot";
+import * as sqliteStartup from "@risuai/storage-sqlite/queries/startup";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
+import type {
+  SqliteSelectRowSets,
+  SqliteSelectRows,
+} from "@risuai/storage-sqlite/types";
 import {
   AsyncSerialQueue,
-  normalizeSqliteLimit,
-  normalizeSqlitePageEnd,
-  buildDeferredSettingsQuery,
-  groupSettingNodeRows,
-  buildBranchGraphRowsQuery,
-  buildBranchGraphMessageCountQuery,
-  buildBranchGraphMessageRowsPageQuery,
-  buildBranchMessageCountQuery,
-  buildBranchMessageRowsQuery,
-  buildMessageRowsQuery,
-  buildCharacterAssetFieldsQuery,
-  rebuildBranchGraphLinks,
-  type MessageLoadMode,
-  type SettingNodeRow,
-} from "@risuai/storage-sqlite/sqliteQueries";
-import {
-  getSqliteBotChatStats,
-  getSqliteDbTableData,
-  getSqliteTokenUsage,
-  listSqliteDbTables,
-  searchSqliteCharacters,
-  searchSqliteMessages,
-  type SqliteSelectRowSets,
-  type SqliteSelectRows,
-} from "@risuai/storage-sqlite/sqliteAdminQueries";
-import {
-  buildSqliteColdStorageDelete,
-  findSqliteColdStoragePruneKeys,
-  getSqliteColdStorageItem,
-  getSqliteRevisionDetails,
-  getSqliteRevisionDiff,
-  listSqliteColdStorageItems,
-  listSqlitePluginCustomStorageKeys,
-  listSqliteRevisions,
-  loadSqlitePluginCustomStorage,
-  loadSqlitePluginCustomStorageKey,
-  previewSqliteRevisionRestore,
-} from "@risuai/storage-sqlite/sqlitePersistenceQueries";
-import {
-  groupSqliteNodeValues,
-  loadSqliteNodeValue,
-  loadSqliteSettingValue,
-} from "@risuai/storage-sqlite/sqliteNodeValues";
-import {
-  listSqliteBotPresets,
-  listSqliteSettingKeys,
-  loadSqliteBotPreset,
-  loadSqliteModules,
-  loadSqlitePrompts,
-  loadSqliteSettingValues,
-} from "@risuai/storage-sqlite/sqliteDocumentQueries";
-import {
-  getSqliteStorageSyncSummary,
-  loadSqliteStartupProjection,
-} from "@risuai/storage-sqlite/sqliteStartupQueries";
-import { exportSqliteDatabaseSnapshot } from "@risuai/storage-sqlite/sqliteSnapshotQueries";
-import {
-  prepareSqliteModuleCommit,
-  validateSqlitePresetCommit,
-} from "@risuai/storage-sqlite/sqliteCommitPreparation";
-import {
-  listSqliteRecentChats,
-  loadSqliteCharacterDocument,
-} from "@risuai/storage-sqlite/sqliteEntityQueries";
-import {
-  buildSqliteChatLoadPlan,
-  buildSqliteMessagePagePlan,
-  hydrateSqliteChatDocument,
-  sqliteChatLoadStatements,
-  type SqliteChatRow,
-} from "@risuai/storage-sqlite/sqliteChatQueries";
+  normalizeLimit,
+  normalizePageEnd,
+} from "@risuai/storage-sqlite/util";
+import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
+import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 import {
   rebuildBranchGraphMessages,
   rebuildMessageRows,
 } from "../sqliteStorageUtils";
-import {
-  buildSqliteActivateChatBranchStatement,
-  buildSqliteCreateChatBranchStatements,
-  buildSqliteLegacyBranchMigrationStatements,
-  ensureSqliteBranchGraphStatements,
-  getSqliteActiveBranchId,
-  getSqliteChatBranchCount,
-  listSqliteChatBranches,
-  loadSqliteChatBranch,
-  loadSqliteChatBranchMetadata,
-  sqliteChatBranchExists,
-} from "@risuai/storage-sqlite/sqliteBranchStorage";
 
 // ── Worker RPC plumbing ──────────────────────────────────────────────
 
@@ -214,19 +145,32 @@ interface WorkerRpc {
   terminate(): void;
 }
 
-let workerSingleton: Worker | null = null;
-let rpcSingleton: WorkerRpc | null = null;
-let workerInitFailed = false;
+interface SqliteWorkerState {
+  worker: Worker | null;
+  rpc: WorkerRpc | null;
+  initFailed: boolean;
+}
+
+// HMR replaces this module while its worker still holds the OPFS handles.
+// Share the live RPC across replacements, including pending writes, rather
+// than creating another worker which competes for the same SAH pool.
+const hotData = import.meta.hot?.data;
+const workerState: SqliteWorkerState = hotData?.sqliteWorkerState ?? {
+  worker: null,
+  rpc: null,
+  initFailed: false,
+};
+if (hotData) hotData.sqliteWorkerState = workerState;
 
 function getWorkerRpc(): WorkerRpc {
-  if (workerInitFailed) {
+  if (workerState.initFailed) {
     throw new Error("SQLite WASM worker is not available");
   }
-  if (rpcSingleton) return rpcSingleton;
+  if (workerState.rpc) return workerState.rpc;
 
   // Vite understands `new Worker(new URL(..., import.meta.url), { type: 'module' })`
   // and bundles the worker module + its WASM dependency correctly.
-  workerSingleton = new Worker(
+  workerState.worker = new Worker(
     new URL("./webSqliteWorker.ts", import.meta.url),
     { type: "module" },
   );
@@ -234,7 +178,7 @@ function getWorkerRpc(): WorkerRpc {
   const pending = new Map<number, (res: ResMsg) => void>();
   let nextId = 1;
 
-  workerSingleton.onmessage = (e: MessageEvent<ResMsg>) => {
+  workerState.worker.onmessage = (e: MessageEvent<ResMsg>) => {
     const res = e.data;
     const resolver = pending.get(res.id);
     if (resolver) {
@@ -243,9 +187,9 @@ function getWorkerRpc(): WorkerRpc {
     }
   };
 
-  workerSingleton.onerror = (e) => {
+  workerState.worker.onerror = (e) => {
     console.error("SQLite WASM worker error:", e.message ?? e);
-    workerInitFailed = true;
+    workerState.initFailed = true;
     // Reject all pending requests.
     for (const resolver of pending.values()) {
       resolver({ id: 0, ok: false, error: "Worker crashed" });
@@ -261,11 +205,11 @@ function getWorkerRpc(): WorkerRpc {
         else reject(new Error(res.error ?? "Unknown worker error"));
       });
       const full: ReqMsg = { ...msg, id } as ReqMsg;
-      workerSingleton!.postMessage(full);
+      workerState.worker!.postMessage(full);
     });
   }
 
-  rpcSingleton = {
+  workerState.rpc = {
     init: () =>
       call<{
         enabled: boolean;
@@ -291,13 +235,13 @@ function getWorkerRpc(): WorkerRpc {
       call<Record<string, unknown> | null>({ type: "selectOne", sql, bind }),
     close: () => call<void>({ type: "close" }),
     terminate: () => {
-      workerSingleton?.terminate();
-      workerSingleton = null;
-      rpcSingleton = null;
+      workerState.worker?.terminate();
+      workerState.worker = null;
+      workerState.rpc = null;
     },
   };
 
-  return rpcSingleton;
+  return workerState.rpc;
 }
 
 // ── Storage implementation ────────────────────────────────────────────
@@ -305,6 +249,10 @@ function getWorkerRpc(): WorkerRpc {
 const DB_FILE = "/risuai-local.sqlite3";
 export class WebSqliteStorage implements ISqlStorage {
   readonly backendKind = "web-sqlite" as const;
+  readonly plugin: IPluginStorage = new SqlitePluginStorage(
+    this,
+    this.selectRows.bind(this) as SqliteSelectRows,
+  );
 
   private revision = 0;
   private initialized = false;
@@ -326,7 +274,7 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    return await getSqliteStorageSyncSummary(
+    return await sqliteStartup.getSyncSummary(
       this.selectRows.bind(this) as SqliteSelectRows,
       this.revision,
     );
@@ -363,6 +311,13 @@ export class WebSqliteStorage implements ISqlStorage {
       const result = await rpc.init();
       this._enabled = result.enabled;
       this.revision = result.revision;
+      if (result.enabled)
+        await authorNoteSql.ensureAuthorNoteReceipts({
+          ...this.authorNoteDatabase(),
+          execute: async (sql, bind = []) => {
+            await this.run(sql, bind);
+          },
+        });
       console.info(`[WebSqliteStorage] SQLite VFS: ${result.vfs ?? "unknown"}`);
       this.initialized = true;
       return result.enabled;
@@ -370,7 +325,7 @@ export class WebSqliteStorage implements ISqlStorage {
       console.error("WebSqliteStorage init failed:", error);
       this.initialized = true;
       this._enabled = false;
-      if (error instanceof SqlSchemaResetRequiredError) throw error;
+      if (error instanceof nodeCodec.SchemaResetRequiredError) throw error;
       if (
         error instanceof Error &&
         error.message.includes("Failed to acquire SQLite SAH pool")
@@ -421,7 +376,7 @@ export class WebSqliteStorage implements ISqlStorage {
     ownerWhere: string,
     bind: unknown[],
   ): Promise<unknown> {
-    return loadSqliteNodeValue(
+    return sqliteNodes.loadValue(
       this.selectRows.bind(this) as SqliteSelectRows,
       table,
       ownerWhere,
@@ -430,7 +385,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   private loadSettingValue(key: string): Promise<unknown> {
-    return loadSqliteSettingValue(
+    return sqliteNodes.loadSettingValue(
       this.selectRows.bind(this) as SqliteSelectRows,
       key,
     );
@@ -440,7 +395,7 @@ export class WebSqliteStorage implements ISqlStorage {
     rows: Record<string, unknown>[],
     ownerKey: string,
   ): Map<string, unknown> {
-    return groupSqliteNodeValues(rows, ownerKey);
+    return sqliteNodes.groupValues(rows, ownerKey);
   }
 
   private messageRowsStatement(
@@ -448,13 +403,13 @@ export class WebSqliteStorage implements ISqlStorage {
     limit?: number,
     offset = 0,
     newest = false,
-    mode: MessageLoadMode = "full",
+    mode: sqliteMessages.LoadMode = "full",
   ): SqliteBatchStatement {
-    return buildMessageRowsQuery(chatId, limit, offset, newest, mode);
+    return sqliteMessages.buildRowsQuery(chatId, limit, offset, newest, mode);
   }
 
   private async validatePresetCommit(commit: SqlCommit): Promise<void> {
-    await validateSqlitePresetCommit(
+    await sqliteCommitPrep.validatePresets(
       this.selectRows.bind(this) as SqliteSelectRows,
       commit,
     );
@@ -465,7 +420,7 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    const projection = await loadSqliteStartupProjection(
+    const projection = await sqliteStartup.loadProjection(
       ((queries) => this.selectBatch(queries)) as SqliteSelectRowSets,
       this.revision,
       DEFERRED_STARTUP_SETTING_KEYS,
@@ -502,7 +457,7 @@ export class WebSqliteStorage implements ISqlStorage {
       const ok = await this.init();
       if (!ok) return null;
     }
-    return (await exportSqliteDatabaseSnapshot({
+    return (await sqliteSnapshot.exportDatabase({
       selectRows: this.selectRows.bind(this) as SqliteSelectRows,
       selectRowSets: ((queries) =>
         this.selectBatch(queries)) as SqliteSelectRowSets,
@@ -524,9 +479,17 @@ export class WebSqliteStorage implements ISqlStorage {
         "SELECT revision FROM system_storage_meta WHERE singleton = 1",
       );
       const currentRevision = Number(meta?.revision) || 0;
+      const receipt = await authorNoteSql.readAuthorNoteReceipt(
+        this.authorNoteDatabase(),
+        commit,
+      );
+      if (receipt) {
+        await this.run("COMMIT");
+        return receipt;
+      }
       if (commit.baseRevision !== currentRevision)
         throw new SqlRevisionConflictError(currentRevision);
-      await prepareSqliteModuleCommit(
+      await sqliteCommitPrep.prepareModules(
         this.selectRows.bind(this) as SqliteSelectRows,
         commit,
       );
@@ -540,7 +503,11 @@ export class WebSqliteStorage implements ISqlStorage {
         await append("DELETE FROM plugin_custom_storage");
         await append("DELETE FROM characters");
       }
-      await applySqliteCommit(commit, append);
+      const authorNotes = await authorNoteSql.applyAuthorNotes(
+        { ...this.authorNoteDatabase(), execute: append },
+        commit.authorNotes,
+      );
+      await sqliteCommit.apply(commit, append);
       const revision = currentRevision + 1;
       await append(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
@@ -557,11 +524,36 @@ export class WebSqliteStorage implements ISqlStorage {
           [revision, action],
         );
       }
+      await authorNoteSql.writeAuthorNoteReceipt(
+        { ...this.authorNoteDatabase(), execute: append },
+        commit,
+        {
+          revision,
+          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+            id,
+            contentHash,
+            updatedAt,
+          })),
+        },
+      );
       if (!this.rpc) throw new Error("Database not opened");
       await this.rpc.execBatch(statements);
       await this.run("COMMIT");
       this.revision = revision;
-      return { revision };
+      return {
+        revision,
+        ...(authorNotes.length
+          ? {
+              authorNotes: authorNotes.map(
+                ({ id, contentHash, updatedAt }) => ({
+                  id,
+                  contentHash,
+                  updatedAt,
+                }),
+              ),
+            }
+          : {}),
+      };
     } catch (error) {
       try {
         await this.run("ROLLBACK");
@@ -632,7 +624,7 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadCharacter(
     characterId: string,
   ): Promise<character | groupChat | null> {
-    return (await loadSqliteCharacterDocument(
+    return (await sqliteEntity.loadCharacterDocument(
       this.selectRows.bind(this) as SqliteSelectRows,
       characterId,
     )) as unknown as character | groupChat | null;
@@ -690,7 +682,7 @@ export class WebSqliteStorage implements ISqlStorage {
       characterId,
     ]);
     if (!row) return null;
-    const query = buildCharacterAssetFieldsQuery(characterId);
+    const query = sqliteEntity.buildCharacterAssetFieldsQuery(characterId);
     const [nodeResult] = await this.selectBatchResults([
       { sql: query.sql, bind: query.bind, transform: "relational" },
     ]);
@@ -701,7 +693,7 @@ export class WebSqliteStorage implements ISqlStorage {
     chatId: string,
     options?: { messageLimit?: number },
   ): Promise<Chat | null> {
-    const plan = buildSqliteChatLoadPlan(chatId, options?.messageLimit);
+    const plan = sqliteChat.buildLoadPlan(chatId, options?.messageLimit);
     const [
       chatResult,
       nodeResult,
@@ -717,7 +709,7 @@ export class WebSqliteStorage implements ISqlStorage {
       plan.activeBranch,
       plan.branchCount,
     ]);
-    const chatRow = chatResult.rows?.[0] as SqliteChatRow | undefined;
+    const chatRow = chatResult.rows?.[0] as sqliteChat.Row | undefined;
     if (!chatRow) return null;
     const activeBranch = activeBranchResult.rows?.[0] as
       { branch_id: string } | undefined;
@@ -737,7 +729,7 @@ export class WebSqliteStorage implements ISqlStorage {
       return this.loadChat(chatId, options);
     }
     const total = Number(totalResult.rows?.[0]?.total ?? 0);
-    return hydrateSqliteChatDocument(
+    return sqliteChat.hydrateDocument(
       chatRow,
       extension,
       (messageResult.value ?? []) as Message[],
@@ -748,10 +740,10 @@ export class WebSqliteStorage implements ISqlStorage {
 
   async loadChatMessages(
     chatId: string,
-    options?: { mode?: MessageLoadMode },
+    options?: { mode?: sqliteMessages.LoadMode },
   ): Promise<Message[]> {
     await this.ensureBranchGraph(chatId);
-    const query = buildBranchMessageRowsQuery(
+    const query = sqliteMessages.buildBranchRowsQuery(
       chatId,
       undefined,
       undefined,
@@ -769,12 +761,12 @@ export class WebSqliteStorage implements ISqlStorage {
     limit: number,
   ) {
     await this.ensureBranchGraph(chatId);
-    const totalStatement = buildBranchMessageCountQuery(chatId);
+    const totalStatement = sqliteMessages.buildBranchCountQuery(chatId);
     const totalRow = await this.selectOne(
       totalStatement.sql,
       totalStatement.bind,
     );
-    const page = buildSqliteMessagePagePlan(
+    const page = sqliteChat.buildMessagePagePlan(
       chatId,
       before,
       Number(totalRow?.total ?? 0),
@@ -808,7 +800,13 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   private async loadLinearMessages(chatId: string): Promise<Message[]> {
-    const query = buildMessageRowsQuery(chatId, undefined, 0, false, "full");
+    const query = sqliteMessages.buildRowsQuery(
+      chatId,
+      undefined,
+      0,
+      false,
+      "full",
+    );
     const [result] = await this.selectBatchResults([
       { ...query, transform: "messages" },
     ]);
@@ -838,7 +836,7 @@ export class WebSqliteStorage implements ISqlStorage {
   ): Promise<boolean> {
     const branchCount =
       knownBranchCount ??
-      (await getSqliteChatBranchCount(
+      (await sqliteBranch.count(
         this.selectRows.bind(this) as SqliteSelectRows,
         chatId,
       ));
@@ -851,7 +849,7 @@ export class WebSqliteStorage implements ISqlStorage {
     ) {
       return false;
     }
-    const currentCount = await getSqliteChatBranchCount(
+    const currentCount = await sqliteBranch.count(
       this.selectRows.bind(this) as SqliteSelectRows,
       chatId,
     );
@@ -866,19 +864,19 @@ export class WebSqliteStorage implements ISqlStorage {
     );
     if (!plan) return false;
     await this.runBranchTransaction(
-      buildSqliteLegacyBranchMigrationStatements(chatId, chatData, plan),
+      sqliteBranch.buildLegacyMigrationStatements(chatId, chatData, plan),
     );
     return true;
   }
 
   private async ensureBranchGraph(chatId: string): Promise<void> {
     if (await this.migrateLegacyBranchGraphIfNeeded(chatId)) return;
-    await this.runBranchTransaction(ensureSqliteBranchGraphStatements(chatId));
+    await this.runBranchTransaction(sqliteBranch.ensureGraphStatements(chatId));
   }
 
   async listChatBranches(chatId: string): Promise<SqlChatBranchSummary[]> {
     await this.ensureBranchGraph(chatId);
-    return (await listSqliteChatBranches(
+    return (await sqliteBranch.list(
       this.selectRows.bind(this) as SqliteSelectRows,
       chatId,
     )) as SqlChatBranchSummary[];
@@ -886,11 +884,11 @@ export class WebSqliteStorage implements ISqlStorage {
 
   async loadChatBranchGraph(chatId: string) {
     await this.ensureBranchGraph(chatId);
-    const metadata = await loadSqliteChatBranchMetadata(
+    const metadata = await sqliteBranch.loadMetadata(
       this.selectRows.bind(this) as SqliteSelectRows,
       chatId,
     );
-    const graphQuery = buildBranchGraphRowsQuery(chatId);
+    const graphQuery = sqliteMessages.buildGraphRowsQuery(chatId);
     const graphRows = await this.selectRows<Record<string, unknown>>(
       graphQuery.sql,
       graphQuery.bind,
@@ -913,18 +911,18 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadChatBranchGraphPage(chatId: string, offset: number, limit: number) {
     await this.ensureBranchGraph(chatId);
     const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
-    const normalizedLimit = normalizeSqliteLimit(limit);
-    const metadata = await loadSqliteChatBranchMetadata(
+    const normalizedLimit = normalizeLimit(limit);
+    const metadata = await sqliteBranch.loadMetadata(
       this.selectRows.bind(this) as SqliteSelectRows,
       chatId,
     );
-    const countQuery = buildBranchGraphMessageCountQuery(chatId);
+    const countQuery = sqliteMessages.buildGraphCountQuery(chatId);
     const countRow = (await this.selectOne(
       countQuery.sql,
       countQuery.bind,
     )) as { total?: number } | null;
     const total = Number(countRow?.total ?? 0);
-    const pageQuery = buildBranchGraphMessageRowsPageQuery(
+    const pageQuery = sqliteMessages.buildGraphPageQuery(
       chatId,
       normalizedOffset,
       normalizedLimit,
@@ -937,7 +935,7 @@ export class WebSqliteStorage implements ISqlStorage {
       branches: metadata.branches as SqlChatBranchSummary[],
       activeBranchId: metadata.activeBranchId,
       messages: rebuildMessageRows(rows),
-      links: rebuildBranchGraphLinks(rows),
+      links: sqliteMessages.rebuildGraphLinks(rows),
       offset: normalizedOffset,
       total,
       hasMore: normalizedOffset + normalizedLimit < total,
@@ -947,14 +945,14 @@ export class WebSqliteStorage implements ISqlStorage {
   async loadBranchMessages(
     chatId: string,
     branchId: string,
-    options?: { messageLimit?: number; mode?: MessageLoadMode },
+    options?: { messageLimit?: number; mode?: sqliteMessages.LoadMode },
   ): Promise<Message[]> {
     await this.ensureBranchGraph(chatId);
     const limit =
       options?.messageLimit === undefined
         ? undefined
-        : normalizeSqliteLimit(options.messageLimit);
-    const query = buildBranchMessageRowsQuery(
+        : normalizeLimit(options.messageLimit);
+    const query = sqliteMessages.buildBranchRowsQuery(
       chatId,
       branchId,
       limit,
@@ -976,15 +974,15 @@ export class WebSqliteStorage implements ISqlStorage {
     await this.ensureBranchGraph(input.chatId);
     const parentBranchId =
       input.parentBranchId ??
-      (await getSqliteActiveBranchId(
+      (await sqliteBranch.getActiveId(
         this.selectRows.bind(this) as SqliteSelectRows,
         input.chatId,
       ));
     if (!parentBranchId) throw new Error("Chat branch root does not exist");
     await this.runBranchTransaction(
-      buildSqliteCreateChatBranchStatements(input, parentBranchId),
+      sqliteBranch.buildCreateStatements(input, parentBranchId),
     );
-    const branch = await loadSqliteChatBranch(
+    const branch = await sqliteBranch.load(
       this.selectRows.bind(this) as SqliteSelectRows,
       input.chatId,
       input.id,
@@ -996,7 +994,7 @@ export class WebSqliteStorage implements ISqlStorage {
   async activateChatBranch(chatId: string, branchId: string): Promise<void> {
     await this.ensureBranchGraph(chatId);
     if (
-      !(await sqliteChatBranchExists(
+      !(await sqliteBranch.exists(
         this.selectRows.bind(this) as SqliteSelectRows,
         chatId,
         branchId,
@@ -1005,7 +1003,7 @@ export class WebSqliteStorage implements ISqlStorage {
       throw new Error("Chat branch does not exist");
     }
     await this.runBranchTransaction([
-      buildSqliteActivateChatBranchStatement(chatId, branchId),
+      sqliteBranch.buildActivateStatement(chatId, branchId),
     ]);
   }
 
@@ -1013,7 +1011,7 @@ export class WebSqliteStorage implements ISqlStorage {
     limit = 50,
     activeChatId?: string,
   ): Promise<SqlRecentChatMetadata[]> {
-    return (await listSqliteRecentChats(
+    return (await sqliteEntity.listRecentChats(
       this.selectRows.bind(this) as SqliteSelectRows,
       limit,
       activeChatId,
@@ -1027,13 +1025,13 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
   async listBotPresets(): Promise<BotPresetSummary[]> {
-    return await listSqliteBotPresets(
+    return await sqliteDocument.listBotPresets(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
 
   async loadBotPreset(id: string): Promise<StoredBotPreset | null> {
-    return await loadSqliteBotPreset<botPreset>(
+    return await sqliteDocument.loadBotPreset<botPreset>(
       this.selectRows.bind(this) as SqliteSelectRows,
       id,
     );
@@ -1045,14 +1043,36 @@ export class WebSqliteStorage implements ISqlStorage {
         { name: string; data: loreBook[] }[] | undefined) ?? []
     );
   }
+  private authorNoteDatabase(): authorNoteSql.AuthorNoteSql {
+    return {
+      dialect: "sqlite",
+      query: this.selectRows.bind(this),
+      execute: async () => {
+        throw new Error("Read-only note connection");
+      },
+    };
+  }
+  async listGlobalAuthorNotes() {
+    return authorNoteSql.listAuthorNotes(this.authorNoteDatabase());
+  }
+  async getGlobalAuthorNote(id: string) {
+    return authorNoteSql.getAuthorNote(this.authorNoteDatabase(), id);
+  }
+  async readGlobalAuthorNote(id: string) {
+    return authorNoteSql.readAuthorNote(this.authorNoteDatabase(), id);
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return authorNoteSql.allowAuthorNoteScriptWrite(this.authorNoteDatabase());
+  }
+
   async loadModules(): Promise<RisuModule[]> {
-    return await loadSqliteModules<RisuModule>(
+    return await sqliteDocument.loadModules<RisuModule>(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
 
   async loadPrompts(): Promise<Record<string, any>> {
-    return await loadSqlitePrompts(
+    return await sqliteDocument.loadPrompts(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
@@ -1064,36 +1084,27 @@ export class WebSqliteStorage implements ISqlStorage {
     );
   }
 
-  async loadPlugins(options?: {
-    enabledOnly?: boolean;
-  }): Promise<any[] | null> {
-    const plugins =
-      ((await this.loadSettingValue("plugins")) as any[] | undefined) ?? null;
-    return options?.enabledOnly && plugins
-      ? plugins.filter((plugin) => plugin?.enabled)
-      : plugins;
-  }
   async loadPluginCustomStorage(): Promise<Record<string, any> | null> {
-    return (await loadSqlitePluginCustomStorage(
+    return (await sqlitePlugin.loadCustomStorage(
       this.selectRows.bind(this) as SqliteSelectRows,
     )) as Record<string, any> | null;
   }
 
   async listPluginCustomStorageKeys(): Promise<string[]> {
-    return await listSqlitePluginCustomStorageKeys(
+    return await sqlitePlugin.listCustomStorageKeys(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
 
   async loadPluginCustomStorageKey(key: string): Promise<any> {
-    return await loadSqlitePluginCustomStorageKey(
+    return await sqlitePlugin.loadCustomStorageKey(
       this.selectRows.bind(this) as SqliteSelectRows,
       key,
     );
   }
 
   async listSettingKeys(): Promise<string[]> {
-    return await listSqliteSettingKeys(
+    return await sqliteDocument.listSettingKeys(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
@@ -1103,7 +1114,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async getColdStorageItem(key: string): Promise<unknown | null> {
-    return await getSqliteColdStorageItem(
+    return await sqliteColdStorage.getItem(
       this.selectRows.bind(this) as SqliteSelectRows,
       this.loadNodeValue.bind(this),
       key,
@@ -1111,7 +1122,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async listColdStorageItems(): Promise<{ items: string[] }> {
-    return await listSqliteColdStorageItems(
+    return await sqliteColdStorage.listItems(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
@@ -1120,7 +1131,7 @@ export class WebSqliteStorage implements ISqlStorage {
     return this.writeQueue.run(async () => {
       await this.run("BEGIN IMMEDIATE");
       try {
-        await writeSqliteColdStorage(
+        await sqliteCommit.writeColdStorage(
           (sql, bind = []) => this.run(sql, bind),
           key,
           value,
@@ -1139,7 +1150,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async removeColdStorageItems(keys: string[]): Promise<number> {
-    const statement = buildSqliteColdStorageDelete(keys);
+    const statement = sqliteColdStorage.buildDelete(keys);
     if (!statement) return 0;
     return this.writeQueue.run(async () => {
       await this.run(statement.sql, statement.bind ?? []);
@@ -1149,11 +1160,11 @@ export class WebSqliteStorage implements ISqlStorage {
 
   async pruneColdStorage(retainedKeys: string[]): Promise<number> {
     return this.writeQueue.run(async () => {
-      const toDelete = await findSqliteColdStoragePruneKeys(
+      const toDelete = await sqliteColdStorage.findPruneKeys(
         this.selectRows.bind(this) as SqliteSelectRows,
         retainedKeys,
       );
-      const statement = buildSqliteColdStorageDelete(toDelete);
+      const statement = sqliteColdStorage.buildDelete(toDelete);
       if (!statement) return 0;
       await this.run(statement.sql, statement.bind ?? []);
       return toDelete.length;
@@ -1161,7 +1172,7 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async listRevisions(limit?: number): Promise<NodePostgresRevision[]> {
-    return await listSqliteRevisions(
+    return await sqliteRevisions.list(
       this.selectRows.bind(this) as SqliteSelectRows,
       limit,
     );
@@ -1170,7 +1181,7 @@ export class WebSqliteStorage implements ISqlStorage {
   async getRevisionDetails(
     revisionId: number,
   ): Promise<NodePostgresRevisionDetails | null> {
-    return await getSqliteRevisionDetails(
+    return await sqliteRevisions.getDetails(
       this.selectRows.bind(this) as SqliteSelectRows,
       revisionId,
     );
@@ -1180,13 +1191,13 @@ export class WebSqliteStorage implements ISqlStorage {
     baseId: number,
     targetId: number,
   ): Promise<NodePostgresRevisionDiff | null> {
-    return getSqliteRevisionDiff(baseId, targetId);
+    return sqliteRevisions.getDiff(baseId, targetId);
   }
 
   async previewRestoreRevision(
     revisionId: number,
   ): Promise<NodePostgresRestorePreview | null> {
-    return previewSqliteRevisionRestore(this.revision, revisionId);
+    return sqliteRevisions.previewRestore(this.revision, revisionId);
   }
 
   async restoreRevision(
@@ -1201,7 +1212,7 @@ export class WebSqliteStorage implements ISqlStorage {
     limit: number = 50,
   ): Promise<NodePostgresMessageSearchResult[]> {
     void scope;
-    return await searchSqliteMessages(
+    return await sqliteAdmin.searchMessages(
       this.selectRows.bind(this) as SqliteSelectRows,
       query,
       limit,
@@ -1209,13 +1220,13 @@ export class WebSqliteStorage implements ISqlStorage {
   }
 
   async getTokenUsage(): Promise<NodePostgresTokenUsage[]> {
-    return await getSqliteTokenUsage(
+    return await sqliteAdmin.getTokenUsage(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
 
   async getBotChatStats(): Promise<NodePostgresBotChatStats[]> {
-    return await getSqliteBotChatStats(
+    return await sqliteAdmin.getBotChatStats(
       this.selectRows.bind(this) as SqliteSelectRows,
     );
   }
@@ -1226,7 +1237,7 @@ export class WebSqliteStorage implements ISqlStorage {
       (await this.selectBatchResults(queries)).map(
         (result) => result.rows ?? [],
       );
-    return await listSqliteDbTables(
+    return await sqliteAdmin.listTables(
       this.selectRows.bind(this) as SqliteSelectRows,
       selectRowSets,
     );
@@ -1250,7 +1261,7 @@ export class WebSqliteStorage implements ISqlStorage {
       (await this.selectBatchResults(queries)).map(
         (result) => result.rows ?? [],
       );
-    return await getSqliteDbTableData(
+    return await sqliteAdmin.getTableData(
       this.selectRows.bind(this) as SqliteSelectRows,
       selectRowSets,
       table,
@@ -1262,7 +1273,7 @@ export class WebSqliteStorage implements ISqlStorage {
     tag: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    return await searchSqliteCharacters(
+    return await sqliteAdmin.searchCharacters(
       this.selectRows.bind(this) as SqliteSelectRows,
       "tag",
       tag,
@@ -1274,7 +1285,7 @@ export class WebSqliteStorage implements ISqlStorage {
     name: string,
     limit: number = 100,
   ): Promise<NodePostgresCharacterSearchResult[]> {
-    return await searchSqliteCharacters(
+    return await sqliteAdmin.searchCharacters(
       this.selectRows.bind(this) as SqliteSelectRows,
       "name",
       name,

@@ -1,3 +1,8 @@
+import { alertToast } from "../alert";
+import { language } from "../../lang";
+import { NoteSource } from "../authorNote";
+import { globalAuthorNoteStore } from "../stores/domain/globalAuthorNoteStore";
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { parseChatML } from "../parser/chatML";
 import { risuChatParser } from "../parser/parser.svelte";
@@ -17,7 +22,7 @@ import { characterStore } from "../stores/domain/characterStore.svelte";
 import { processMultiCommand } from "./command";
 import { parseKeyValue, sleep } from "../util";
 import { alertError, alertInput, alertNormal, alertSelect } from "../alert";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import { HypaProcesser } from "./memory/hypamemory";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import { generateAIImage } from "./stableDiff";
@@ -1107,6 +1112,7 @@ export type triggerV2DeclareLocalVar = {
 };
 
 const safeSubset = [
+  "v2GetAuthorNote",
   "v2SetVar",
   "v2If",
   "v2IfAdvanced",
@@ -1276,6 +1282,22 @@ export async function runTrigger(
     return null;
   }
 
+  const noteSource = NoteSource.get(chat);
+  const sharedNote =
+    noteSource.mode === "global"
+      ? await globalAuthorNoteStore.get(noteSource.noteId)
+      : null;
+  let authorNoteContent = chat.note ?? "";
+  if (noteSource.mode === "global") {
+    try {
+      authorNoteContent = sharedNote ? await sharedNote.getContent() : "";
+    } catch (error) {
+      if (error instanceof AuthorNoteError && error.code === "missing")
+        authorNoteContent = "";
+      else throw error;
+    }
+  }
+
   let tempVars: Record<string, string> = arg.tempVars ?? {};
 
   let localVarScopes: Record<number, Record<string, string>>[] = [{}];
@@ -1383,6 +1405,7 @@ export async function runTrigger(
     risuChatParser(text, {
       ...parserArg,
       chatTarget: target,
+      authorNoteContent,
       triggerId: arg.triggerId,
     });
 
@@ -3310,7 +3333,7 @@ export async function runTrigger(
         case "v2GetAuthorNote": {
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
-            chat.note ?? "",
+            authorNoteContent,
           );
           break;
         }
@@ -3319,9 +3342,23 @@ export async function runTrigger(
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          chat.note = value;
-
-          if (!arg.displayMode) persistTargetAuthorNote(value);
+          if (noteSource.mode === "local") {
+            chat.note = authorNoteContent = value;
+            if (!arg.displayMode) persistTargetAuthorNote(value);
+          } else if (!arg.displayMode) {
+            if (!(await globalAuthorNoteStore.getAllowScriptWrite())) {
+              alertToast(language.globalAuthorNote.scriptBlocked);
+              break;
+            }
+            if (!sharedNote || sharedNote.id === "__none__") break;
+            try {
+              await globalAuthorNoteStore.setScriptContent(sharedNote, value);
+              authorNoteContent = value;
+            } catch (error) {
+              if (!(error instanceof AuthorNoteError)) throw error;
+              alertToast(language.globalAuthorNote.scriptConflict);
+            }
+          }
           break;
         }
         case "v2MakeDictVar": {

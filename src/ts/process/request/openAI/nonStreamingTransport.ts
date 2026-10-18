@@ -1,5 +1,5 @@
-import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.cjs";
-import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.cjs";
+import { DEFAULT_OPENAI_CHAT_COMPLETIONS_URL } from "@risuai/chat-core/openAIProvider.ts";
+import { resolveNanoGPTTransportUrl } from "@risuai/chat-core/nanoGPTProvider.ts";
 import { globalFetch } from "src/ts/globalApi.svelte";
 import { LLMFormat } from "src/ts/model/modellist";
 import type {

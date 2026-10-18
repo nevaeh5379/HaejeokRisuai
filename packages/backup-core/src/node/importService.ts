@@ -6,29 +6,23 @@ import type {
   LocalBackupImportJobProgress,
   LocalBackupImportProgress,
   LocalBackupImportUploadState,
-} from "../api";
+} from "../api.ts";
 import {
   getColdStorageBackupKey,
   isColdStorageBackupData,
-} from "../coldStorage";
-import { normalizeBackupAssetPath } from "../entryPolicy";
-import { decodeInlayAssetBackup } from "../inlayCodec";
+} from "../coldStorage.ts";
+import { normalizeBackupAssetPath } from "../entryPolicy.ts";
+import { decodeInlayAssetBackup } from "../inlayCodec.ts";
 import {
   iterateLegacyBackupSqlRecords,
   type LegacyBackupSqlRecord,
-} from "../legacyRecords";
-import {
-  parsePortableDatabaseStreamFragment,
-  parsePortableDatabaseStreamFragmentName,
-  parsePortableDatabaseStreamManifest,
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-  type PortableDatabaseStreamManifest,
-} from "../streamFormat";
-import { decodeLegacyBackupDatabase } from "./legacyFormat";
+} from "../legacyRecords.ts";
+import { Fragment, Manifest, MANIFEST_NAME } from "../stream/databaseBackup.ts";
+import { decodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   LocalBackupImportJobError,
   LocalBackupImportJobStore,
-} from "./importJobStore";
+} from "./importJobStore.ts";
 import {
   BACKUP_IMPORT_MAX_LEGACY_DATABASE_ENTRY_BYTES,
   BACKUP_IMPORT_MAX_NATIVE_DATABASE_ENTRY_BYTES,
@@ -37,11 +31,11 @@ import {
   type BackupImportStreamSession,
   type BufferedBackupEntry,
   type StreamedBackupEntry,
-} from "./importStagingStore";
+} from "./importStagingStore.ts";
 import {
   BackupImportUploadError,
   BackupImportUploadStore,
-} from "./importUploadStore";
+} from "./importUploadStore.ts";
 
 const DATABASE_STAGE_BATCH_RECORDS = 64;
 const MAX_INLAY_METADATA_BYTES = 1024 * 1024;
@@ -94,7 +88,7 @@ interface DatabaseImportState {
   recordCount: number;
   counts: Record<string, number>;
   sourceRevision: number | null;
-  manifest: PortableDatabaseStreamManifest | null;
+  manifest: Manifest | null;
 }
 
 interface ActiveImport {
@@ -123,8 +117,11 @@ function supportedDatabaseRecord(
   }
   return [
     "meta",
+    "author-note",
+    "author-note-settings",
     "setting",
     "plugin-storage",
+    "plugin",
     "module",
     "preset",
     "character",
@@ -244,17 +241,25 @@ export class LocalBackupImportService {
     state: LocalBackupImportJobProgress,
   ) => void;
 
+  readonly jobs: LocalBackupImportJobStore;
+  readonly staging: BackupImportStagingStore;
+  private readonly adapter: LocalBackupImportAdapter;
+  readonly uploads?: BackupImportUploadStore;
   constructor(
-    readonly jobs: LocalBackupImportJobStore,
-    readonly staging: BackupImportStagingStore,
-    private readonly adapter: LocalBackupImportAdapter,
-    readonly uploads?: BackupImportUploadStore,
+    jobs: LocalBackupImportJobStore,
+    staging: BackupImportStagingStore,
+    adapter: LocalBackupImportAdapter,
+    uploads?: BackupImportUploadStore,
     options: {
       idleTimeoutMs?: number;
       maxActiveImports?: number;
       onProgress?: (id: string, state: LocalBackupImportJobProgress) => void;
     } = {},
   ) {
+    this.jobs = jobs;
+    this.staging = staging;
+    this.adapter = adapter;
+    this.uploads = uploads;
     this.onProgress = options.onProgress;
     this.idleTimeoutMs =
       options.idleTimeoutMs ?? DEFAULT_IMPORT_IDLE_TIMEOUT_MS;
@@ -481,11 +486,11 @@ export class LocalBackupImportService {
       { maxOutputBytes: BACKUP_IMPORT_MAX_NATIVE_DATABASE_ENTRY_BYTES * 2 },
     );
 
-    if (entry.name === PORTABLE_DATABASE_STREAM_MANIFEST) {
+    if (entry.name === MANIFEST_NAME) {
       if (active.database.manifest) {
         throw new Error("Backup contains more than one streaming manifest");
       }
-      const manifest = parsePortableDatabaseStreamManifest(decoded);
+      const manifest = Manifest.read(decoded);
       if (!manifest) {
         throw new Error("Portable database stream manifest is invalid");
       }
@@ -496,13 +501,13 @@ export class LocalBackupImportService {
     if (active.database.manifest) {
       throw new Error("Database stream fragment appears after the manifest");
     }
-    const nameIndex = parsePortableDatabaseStreamFragmentName(entry.name);
+    const nameIndex = Fragment.parseName(entry.name);
     if (nameIndex !== active.database.expectedFragmentIndex) {
       throw new Error(
         `Streaming backup fragment order is incomplete; expected ${active.database.expectedFragmentIndex}, got ${String(nameIndex)}`,
       );
     }
-    const fragment = parsePortableDatabaseStreamFragment(decoded, {
+    const fragment = Fragment.read(decoded, {
       expectedIndex: active.database.expectedFragmentIndex,
     });
     if (!fragment) {

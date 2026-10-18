@@ -4,7 +4,7 @@ import {
   LOCAL_BACKUP_PROGRESS_STAGES,
   validateLocalBackupExportJobProgress,
   validateLocalBackupImportJobProgress,
-} from "./api";
+} from "./api.ts";
 
 describe("local backup progress contract", () => {
   it("shares the canonical export stage order", () => {

@@ -143,6 +143,47 @@ BEGIN
     CREATE INDEX module_values_parent_idx ON [system].[module_values] (module_id, parent_node_id, position, node_id);
 END;
 
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[plugin_records]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [system].[plugin_records] (
+        plugin_id NVARCHAR(450) NOT NULL PRIMARY KEY,
+        position INT NOT NULL UNIQUE CHECK (position >= 0),
+        name NVARCHAR(450) NOT NULL UNIQUE,
+        display_name NVARCHAR(MAX),
+        api_version NVARCHAR(64),
+        plugin_version NVARCHAR(64),
+        update_url NVARCHAR(MAX),
+        enabled BIT NOT NULL DEFAULT 1,
+        updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET()
+    );
+    CREATE INDEX plugin_records_enabled_position_idx ON [system].[plugin_records] (enabled, position);
+
+    CREATE TABLE [system].[plugin_scripts] (
+        plugin_id NVARCHAR(450) NOT NULL PRIMARY KEY,
+        script NVARCHAR(MAX) NOT NULL,
+        updated_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
+        FOREIGN KEY (plugin_id) REFERENCES [system].[plugin_records](plugin_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE [system].[plugin_values] (
+        plugin_id NVARCHAR(450) NOT NULL,
+        node_id INT NOT NULL,
+        parent_node_id INT,
+        member_key NVARCHAR(MAX), encoded_member_key NVARCHAR(MAX),
+        position INT CHECK (position >= 0),
+        value_type NVARCHAR(32) NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+        text_value NVARCHAR(MAX), encoded_text_value NVARCHAR(MAX),
+        number_value FLOAT, boolean_value BIT,
+        PRIMARY KEY (plugin_id, node_id),
+        FOREIGN KEY (plugin_id) REFERENCES [system].[plugin_records](plugin_id) ON DELETE CASCADE,
+        FOREIGN KEY (plugin_id, parent_node_id) REFERENCES [system].[plugin_values](plugin_id, node_id),
+        CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+        CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+        CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+    );
+    CREATE INDEX plugin_values_parent_idx ON [system].[plugin_values] (plugin_id, parent_node_id, position, node_id);
+END;
+
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[system].[bot_presets]') AND type in (N'U'))
 BEGIN
     CREATE TABLE [system].[bot_presets] (
@@ -1525,3 +1566,17 @@ SELECT
     sender_name
 FROM [cold].[messages];
 ');
+
+IF OBJECT_ID(N'[system].[global_author_notes]', N'U') IS NULL
+ CREATE TABLE [system].[global_author_notes] (
+ id NVARCHAR(128) PRIMARY KEY, name NVARCHAR(MAX) NOT NULL, content NVARCHAR(MAX) NOT NULL DEFAULT '',
+ content_hash VARCHAR(64) COLLATE Latin1_General_100_BIN2 NOT NULL CHECK(LEN(content_hash)=64 AND content_hash NOT LIKE '%[^a-f0-9]%'), updated_at BIGINT NOT NULL
+ );
+IF OBJECT_ID(N'[system].[global_author_note_settings]', N'U') IS NULL
+ CREATE TABLE [system].[global_author_note_settings] (
+ singleton INT PRIMARY KEY CHECK(singleton=1), allow_script_write BIT NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL
+ );
+IF NOT EXISTS (SELECT 1 FROM [system].[global_author_notes] WHERE id='__none__')
+ INSERT INTO [system].[global_author_notes] VALUES ('__none__', '', '', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 0);
+IF NOT EXISTS (SELECT 1 FROM [system].[global_author_note_settings] WHERE singleton=1)
+ INSERT INTO [system].[global_author_note_settings] VALUES (1, 0, 0);

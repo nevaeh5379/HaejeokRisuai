@@ -1,9 +1,9 @@
 import type {
   ChatGenerationPlan,
   ChatGenerationSettings,
-} from "@risuai/chat-core/generation.cjs";
-import type { AutoContinuationDecision } from "@risuai/chat-core/finalization.cjs";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/generation.ts";
+import type { AutoContinuationDecision } from "@risuai/chat-core/finalization.ts";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import { forageStorage } from "../../globalApi.svelte";
 import { isNodeServer } from "../../platform";
 import { NodeStorage } from "../../storage/files/nodeStorage";

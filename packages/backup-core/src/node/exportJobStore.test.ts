@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LocalBackupExportJobError,
   LocalBackupExportJobStore,
-} from "./exportJobStore";
+} from "./exportJobStore.ts";
 
 describe("LocalBackupExportJobStore", () => {
   it("owns the export job lifecycle without exposing completion internals", async () => {

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  flattenRelationalValue,
-  MAX_RELATIONAL_NODE_DEPTH,
-  rebuildRelationalValue,
-  RELATIONAL_SCHEMA_LAYOUT,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 
 describe("typed relational node codec", () => {
   it("round trips nested values without JSON serialization", () => {
@@ -26,8 +21,8 @@ describe("typed relational node codec", () => {
       enumerable: true,
     });
 
-    const rows = flattenRelationalValue(value);
-    const rebuilt = rebuildRelationalValue(rows) as Record<string, any>;
+    const rows = nodeCodec.flatten(value);
+    const rebuilt = nodeCodec.rebuild(rows) as Record<string, any>;
 
     expect(rebuilt).toEqual(value);
     expect(Object.prototype.hasOwnProperty.call(rebuilt, "__proto__")).toBe(
@@ -68,23 +63,21 @@ describe("typed relational node codec", () => {
       ],
     };
 
-    expect(rebuildRelationalValue(flattenRelationalValue(value))).toEqual(
-      value,
-    );
+    expect(nodeCodec.rebuild(nodeCodec.flatten(value))).toEqual(value);
   });
 
   it("enforces depth and row limits before persistence", () => {
     let value: unknown = null;
-    for (let index = 0; index <= MAX_RELATIONAL_NODE_DEPTH; index++)
+    for (let index = 0; index <= nodeCodec.MAX_NODE_DEPTH; index++)
       value = [value];
-    expect(() => flattenRelationalValue(value)).toThrow(/maximum depth/);
-    expect(() => flattenRelationalValue([1, 2, 3], { maxRows: 3 })).toThrow(
+    expect(() => nodeCodec.flatten(value)).toThrow(/maximum depth/);
+    expect(() => nodeCodec.flatten([1, 2, 3], { maxRows: 3 })).toThrow(
       /maximum row count/,
     );
   });
 
   it("declares the v3 local schema with presets as the bounded document exception", () => {
-    expect(sqliteSchemaSql).toContain(`'${RELATIONAL_SCHEMA_LAYOUT}'`);
+    expect(sqliteSchemaSql).toContain(`'${nodeCodec.SCHEMA_LAYOUT}'`);
     expect(sqliteSchemaSql).toContain(
       "schema_version INTEGER NOT NULL DEFAULT 3",
     );

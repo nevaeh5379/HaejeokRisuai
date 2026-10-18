@@ -7,7 +7,10 @@ import { afterEach, test } from "node:test";
 import { remote } from "webdriverio";
 import { NodeApiClient } from "@risuai/storage-remote/nodeApiClient";
 import { RemoteAuthController } from "@risuai/storage-remote/remoteAuthController";
-import { RemoteAuthIdentity } from "@risuai/storage-remote/remoteAuthIdentity";
+import {
+  RemoteAuthIdentity,
+  type RemoteAuthKeyPair,
+} from "@risuai/storage-remote/remoteAuthIdentity";
 import { RemoteAssetClient } from "@risuai/storage-remote/remoteAssetClient";
 import { LOCAL_BACKUP_IMPORT_UPLOAD_CHUNK_SIZE } from "@risuai/storage-remote/remoteLocalBackupClient";
 import { buildTestLocalBackup } from "../tooling/backup-fixture";
@@ -188,7 +191,7 @@ async function createRemoteVerifier() {
     baseUrl,
     allowInsecureHttp: baseUrl.startsWith("http://"),
   });
-  let keyPair: CryptoKeyPair | null = null;
+  let keyPair: RemoteAuthKeyPair | null = null;
   const identity = new RemoteAuthIdentity(
     api,
     async () => keyPair,
