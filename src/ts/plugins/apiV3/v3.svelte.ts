@@ -11,6 +11,7 @@ import {
 } from "../plugins.svelte";
 import type { PluginMetadata } from "../pluginTypes";
 import { SandboxHost } from "./factory";
+import { prepareDatabaseSnapshot } from "./databaseSnapshot.svelte";
 
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import DOMPurify from "dompurify";
@@ -898,20 +899,13 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: PluginMetadata) => {
       if (!conf) {
         return null;
       }
-      const db = oldApis.getDatabase();
-      const liteDB = {};
-      for (const key of allowedDbKeys) {
-        if (includeOnly !== "all" && !includeOnly.includes(key)) {
-          continue;
-        }
-        (liteDB as any)[key] =
-          key === "plugins"
-            ? $state.snapshot(await pluginStore.loadCompatibilityPlugins())
-            : key === "characters"
-              ? await characterStore.snapshot.loadAll()
-              : $state.snapshot(db[key]);
-      }
-      return liteDB;
+      return prepareDatabaseSnapshot(
+        oldApis.getDatabase(),
+        allowedDbKeys,
+        () => pluginStore.loadCompatibilityPlugins(),
+        includeOnly,
+        () => characterStore.snapshot.loadAll(),
+      );
     },
 
     installPlugin: handlePluginInstallViaPlugin,
