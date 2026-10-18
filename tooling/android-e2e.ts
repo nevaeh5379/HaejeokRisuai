@@ -329,6 +329,9 @@ async function main(): Promise<void> {
       env: {
         ...toolEnv,
         VITE_ANDROID_E2E: "TRUE",
+        // The E2E harness exercises a fork build intended for testing and
+        // development, so the legal notice gate must not block the app UI.
+        VITE_RISU_LEGAL_CONFIGURED: "TRUE",
         VITE_ANDROID_E2E_REMOTE_URL: process.env.ANDROID_E2E_REMOTE_URL ?? "",
         VITE_ANDROID_E2E_REMOTE_PASSWORD:
           process.env.ANDROID_E2E_REMOTE_PASSWORD ?? "",

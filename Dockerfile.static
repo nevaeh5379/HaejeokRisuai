@@ -12,9 +12,10 @@ RUN --mount=type=cache,id=pnpm-static,target=/pnpm/store pnpm install --frozen-l
 
 COPY . .
 ARG HAEJEOK_BUILD_NUMBER
+ARG VITE_RISU_LEGAL_CONFIGURED
 ENV HAEJEOK_BUILD_NUMBER=${HAEJEOK_BUILD_NUMBER}
 RUN --mount=type=cache,id=pnpm-static,target=/pnpm/store \
-    VITE_RISU_LEGAL_CONFIGURED=TRUE pnpm buildsite
+    VITE_RISU_LEGAL_CONFIGURED="${VITE_RISU_LEGAL_CONFIGURED}" pnpm buildsite
 
 FROM caddy:2-alpine
 

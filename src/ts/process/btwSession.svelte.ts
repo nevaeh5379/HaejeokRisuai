@@ -19,20 +19,20 @@ import { getModules, getModuleToggles } from "./modules";
 import { getGlobalChatVar } from "../parser/chatVar.svelte";
 import { findCharacterbyId, parseToggleSyntax } from "../util";
 import { ChatTokenizer } from "../tokenizer";
-import { buildGenerationPrompt } from "./chatPromptPipeline";
-import type { ChatGenerationOverrides } from "./chatGenerationContext";
+import { buildGenerationPrompt } from "./chat/promptPipeline";
+import type { ChatGenerationOverrides } from "./chat/generationContext";
 import { requireChatTargetFromIndexes } from "../chatTarget";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
-} from "@risuai/chat-core/generation.cjs";
+} from "@risuai/chat-core/generation.ts";
 import type {
   ChatModelResponse,
   ChatStageTimings,
-} from "@risuai/chat-core/types.cjs";
-import { createLocalChatGenerationRuntime } from "./chatLocalRuntime";
-import { tryCreateNodeChatGenerationPlan } from "./chatNodePlanner";
-import { runChatOutputListeners } from "./chatResponseShared.svelte";
+} from "@risuai/chat-core/types.ts";
+import { createLocalChatGenerationRuntime } from "./chat/localRuntime";
+import { tryCreateNodeChatGenerationPlan } from "./chat/nodePlanner";
+import { runChatOutputListeners } from "./chat/responseShared.svelte";
 import {
   btwRuntime,
   closeBtwSidebar,

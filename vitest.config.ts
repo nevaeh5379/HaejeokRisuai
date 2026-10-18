@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [svelte()],
+  oxc: {
+    include: [/\.(?:[jt]sx?|cts)(?:$|\?)/],
+  },
   resolve: {
     alias: {
       src: "/src",
@@ -21,15 +24,16 @@ export default defineConfig({
         process.cwd(),
         "packages/storage-sqlite/src",
       ),
-      "@risuai/backup-core": resolve(
-        process.cwd(),
-        "packages/backup-core/src",
-      ),
+      "@risuai/backup-core": resolve(process.cwd(), "packages/backup-core/src"),
     },
     conditions: ["browser"],
   },
   test: {
-    include: ["src/**/*.test.ts", "server/**/*.test.ts", "packages/**/*.test.ts"],
+    include: [
+      "src/**/*.test.ts",
+      "server/**/*.test.ts",
+      "packages/**/*.test.ts",
+    ],
     environment: "happy-dom",
     setupFiles: ["vitest.setup.ts"],
   },

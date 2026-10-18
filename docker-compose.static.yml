@@ -6,6 +6,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.static
+      args:
+        VITE_RISU_LEGAL_CONFIGURED: "${VITE_RISU_LEGAL_CONFIGURED:-}"
     image: risuai-static:local
     restart: unless-stopped
     labels:

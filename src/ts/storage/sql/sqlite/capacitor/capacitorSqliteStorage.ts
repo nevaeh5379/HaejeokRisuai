@@ -1,11 +1,11 @@
+import * as authorNoteSql from "@risuai/protocol/src/authorNoteSql.ts";
 import { NativeSqliteStorageBase } from "../nativeSqliteStorageBase";
 import type { ISqlStorage } from "../../ISqlStorage";
 import { isCapacitor } from "../../../../platform";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  isSqlitePragmaStatement,
-  splitSqliteStatements,
-} from "@risuai/storage-sqlite/sqliteSchemaStatements";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
+import * as sqliteStatements from "@risuai/storage-sqlite/schema/statements";
+import type { SqliteStatement } from "@risuai/storage-sqlite/types";
 import {
   buildSqlReplaceRootCommit,
   iterateSqlReplaceEntityCommits,
@@ -13,25 +13,71 @@ import {
   type SqlCommit,
   type SqlCommitResult,
 } from "../../sqlCommit";
-import {
-  applySqliteCommit,
-  countSqliteCommitStatements,
-} from "@risuai/storage-sqlite/sqliteCommit";
-import type { SqliteTransactionStatement } from "@risuai/storage-sqlite/sqliteQueries";
 import type { Database as DatabaseType } from "../../../database/schema";
 import { CapacitorSqliteRestoreStream } from "./capacitorSqliteRestoreStream";
 import { nativeSqlite, type NativeSqlitePlugin } from "./capacitorNativeSqlite";
+import { readSqliteQueryStream } from "./capacitorSqliteQueryStream";
 import { createPortableDatabaseStreamSqliteSession } from "../portableDatabaseStreamSqliteRestore";
 import type { PortableDatabaseStreamRestoreProgress } from "../../../backup/portableDatabaseStreamRestore";
 
 // The Android native backend applies connection-local PRAGMAs itself. Keep
 // those out of the shared DDL script and send the remaining statements through
 // the same native transaction API used by normal commits.
-const capacitorSchemaStatements = splitSqliteStatements(sqliteSchemaSql)
+const capacitorSchemaStatements = sqliteStatements
+  .split(sqliteSchemaSql)
   .map((statement) => statement.trim())
   .filter(
-    (statement) => statement.length > 0 && !isSqlitePragmaStatement(statement),
+    (statement) =>
+      statement.length > 0 && !sqliteStatements.isPragma(statement),
   );
+
+// Measure JSON escaping without creating a second, potentially huge string.
+// Once over budget, an exact count is unnecessary: this statement is streamed.
+function jsonStringChars(value: string, budget: number): number {
+  if (value.length > budget) return budget + 1;
+  let chars = 2;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (
+      code === 34 ||
+      code === 92 ||
+      code === 8 ||
+      code === 9 ||
+      code === 10 ||
+      code === 12 ||
+      code === 13
+    )
+      chars += 2;
+    else if (code < 32) chars += 6;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        chars += 2;
+        index++;
+      } else chars += 6;
+    } else if (code >= 0xdc00 && code <= 0xdfff) chars += 6;
+    else chars++;
+    if (chars > budget) return budget + 1;
+  }
+  return chars;
+}
+
+function statementJsonChars(
+  sql: string,
+  bind: unknown[],
+  budget: number,
+): number {
+  let chars = 18 + jsonStringChars(sql, budget); // {"sql":...,"bind":[...]}
+  for (let index = 0; index < bind.length && chars <= budget; index++) {
+    const value = bind[index];
+    chars +=
+      (index > 0 ? 1 : 0) +
+      (typeof value === "string"
+        ? jsonStringChars(value, budget - chars)
+        : (JSON.stringify(value) ?? "null").length);
+  }
+  return chars;
+}
 
 /**
  * Capacitor native SQLite storage backend for Android/iOS builds.
@@ -47,7 +93,9 @@ export class CapacitorSqliteStorage
 
   private dbOpen = false;
 
-  constructor(private readonly plugin: NativeSqlitePlugin = nativeSqlite) {
+  constructor(
+    private readonly sqlitePlugin: NativeSqlitePlugin = nativeSqlite,
+  ) {
     super();
   }
   protected readonly backendName = "CapacitorSqliteStorage";
@@ -57,7 +105,7 @@ export class CapacitorSqliteStorage
   }
 
   protected async openBackend(): Promise<void> {
-    await this.plugin.open({ database: "risuai-local" });
+    await this.sqlitePlugin.open({ database: "risuai-local" });
     this.dbOpen = true;
   }
 
@@ -70,7 +118,7 @@ export class CapacitorSqliteStorage
 
   protected async cleanupBackend(): Promise<void> {
     try {
-      if (this.dbOpen) await this.plugin.close();
+      if (this.dbOpen) await this.sqlitePlugin.close();
     } finally {
       this.dbOpen = false;
     }
@@ -87,21 +135,22 @@ export class CapacitorSqliteStorage
     bind: unknown[] = [],
   ): Promise<T[]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.plugin.query({ sql, bind });
-    return (result.values ?? []) as T[];
+    const [rows] = await readSqliteQueryStream(this.sqlitePlugin, [
+      { sql, bind },
+    ]);
+    return rows as T[];
   }
 
   protected override async selectRowSets(
-    queries: SqliteTransactionStatement[],
+    queries: SqliteStatement[],
   ): Promise<Record<string, unknown>[][]> {
     if (!this.dbOpen) throw new Error("Database not opened");
-    const result = await this.plugin.queryBatch({ queries });
-    return result.results ?? [];
+    return await readSqliteQueryStream(this.sqlitePlugin, queries);
   }
 
   protected async executeNativeTransaction(
     expectedRevision: number | null,
-    statements: SqliteTransactionStatement[],
+    statements: SqliteStatement[],
     onProgress?: (completed: number, total: number) => void,
   ): Promise<void> {
     const total = statements.length;
@@ -123,7 +172,8 @@ export class CapacitorSqliteStorage
    * Each db.run() call is a full JS↔native bridge round trip, so large
    * commits (e.g. a 100-message save) previously cost 100+ sequential
    * round trips. Buffers statements and flushes them in chunks through
-   * executeSet(), which executes the whole chunk inside one bridge call.
+   * executeBatch(), which executes the whole chunk inside one bridge call.
+   * Oversized statements use bounded restore chunks in the same transaction.
    * All statements still run inside the caller's single SQLite
    * transaction, so atomicity and ordering are unchanged.
    */
@@ -137,29 +187,50 @@ export class CapacitorSqliteStorage
     ) => Promise<T>,
   ): Promise<T> {
     if (!this.dbOpen) throw new Error("SQLite storage is not enabled");
-    const transaction = await this.plugin.beginTransaction({
+    const transaction = await this.sqlitePlugin.beginTransaction({
       expectedRevision,
     });
-    let pendingBatch: SqliteTransactionStatement[] = [];
-    let batchPayloadChars = 0;
+    let pendingBatch: SqliteStatement[] = [];
+    const emptyBatchChars = JSON.stringify({
+      id: transaction.id,
+      statements: [],
+    }).length;
+    let batchPayloadChars = emptyBatchChars;
     const flushBatch = async () => {
       if (pendingBatch.length === 0) return;
       const chunk = pendingBatch;
       pendingBatch = [];
-      batchPayloadChars = 0;
-      await this.plugin.executeBatch({
+      batchPayloadChars = emptyBatchChars;
+      await this.sqlitePlugin.executeBatch({
         id: transaction.id,
         statements: chunk,
       });
     };
     try {
       const execute = async (sql: string, bind: unknown[] = []) => {
-        let bindChars = 0;
-        for (const value of bind) {
-          if (typeof value === "string") bindChars += value.length;
+        const budget = CapacitorSqliteStorage.BATCH_MAX_PAYLOAD_CHARS;
+        const chars = statementJsonChars(sql, bind, budget);
+        if (emptyBatchChars + chars > budget) {
+          await flushBatch();
+          const stream = new CapacitorSqliteRestoreStream(this.sqlitePlugin);
+          try {
+            await stream.openTransaction(transaction.id);
+            await stream.writeStatement(sql, bind);
+            await stream.finish();
+          } catch (error) {
+            await stream.abort().catch(() => {});
+            throw error;
+          }
+          return;
         }
+        if (
+          batchPayloadChars + chars + (pendingBatch.length > 0 ? 1 : 0) >
+          budget
+        ) {
+          await flushBatch();
+        }
+        batchPayloadChars += chars + (pendingBatch.length > 0 ? 1 : 0);
         pendingBatch.push({ sql, bind });
-        batchPayloadChars += sql.length + bindChars;
         if (
           pendingBatch.length >= CapacitorSqliteStorage.BATCH_MAX_STATEMENTS ||
           batchPayloadChars >= CapacitorSqliteStorage.BATCH_MAX_PAYLOAD_CHARS
@@ -169,13 +240,13 @@ export class CapacitorSqliteStorage
       };
       const result = await task(execute);
       await flushBatch();
-      await this.plugin.commitTransaction({ id: transaction.id });
+      await this.sqlitePlugin.commitTransaction({ id: transaction.id });
       return result;
     } catch (error) {
       pendingBatch = [];
       batchPayloadChars = 0;
       try {
-        await this.plugin.rollbackTransaction({ id: transaction.id });
+        await this.sqlitePlugin.rollbackTransaction({ id: transaction.id });
       } catch {
         // Preserve the original transaction error.
       }
@@ -184,7 +255,7 @@ export class CapacitorSqliteStorage
   }
 
   protected createRestoreStream() {
-    return new CapacitorSqliteRestoreStream(this.plugin);
+    return new CapacitorSqliteRestoreStream(this.sqlitePlugin);
   }
 
   async beginPortableDatabaseStreamRestore(
@@ -232,14 +303,17 @@ export class CapacitorSqliteStorage
       onProgress?.("Counting SQL operations...", 0.025);
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       let totalStatements =
-        countSqliteCommitStatements(rootCommit) +
+        sqliteCommit.countStatements(rootCommit) +
+        5 +
+        (database.globalAuthorNotes?.filter((note) => note.id !== "__none__")
+          .length ?? 0) +
         (rootCommit.replaceAll ? 3 : 0) +
         2;
       for (const batch of iterateSqlReplaceEntityCommits(
         database,
         currentRevision,
       )) {
-        totalStatements += countSqliteCommitStatements(batch);
+        totalStatements += sqliteCommit.countStatements(batch);
       }
       onProgress?.(
         `SQL restore plan ready (${totalStatements} statements)`,
@@ -328,12 +402,16 @@ export class CapacitorSqliteStorage
         await write("DELETE FROM plugin_custom_storage");
         await write("DELETE FROM characters");
       }
-      await applySqliteCommit(rootCommit, write);
+      await authorNoteSql.applyAuthorNotes(
+        { ...this.authorNoteDatabase(), execute: write },
+        rootCommit.authorNotes,
+      );
+      await sqliteCommit.apply(rootCommit, write);
       for (const batch of iterateSqlReplaceEntityCommits(
         database,
         currentRevision,
       )) {
-        await applySqliteCommit(batch, write);
+        await sqliteCommit.apply(batch, write);
       }
       await write(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
@@ -373,6 +451,11 @@ export class CapacitorSqliteStorage
       "SELECT revision FROM system_storage_meta WHERE singleton = 1",
     );
     const currentRevision = Number(meta?.revision) || 0;
+    const receipt = await authorNoteSql.readAuthorNoteReceipt(
+      this.authorNoteDatabase(),
+      commit,
+    );
+    if (receipt) return receipt;
     if (commit.baseRevision !== currentRevision) {
       throw new SqlRevisionConflictError(currentRevision);
     }
@@ -382,13 +465,20 @@ export class CapacitorSqliteStorage
     const revision = currentRevision + 1;
     const action =
       commit.action || (commit.replaceAll ? "replace-all" : "sync");
+    let authorNotes: Awaited<
+      ReturnType<typeof authorNoteSql.applyAuthorNotes>
+    > = [];
     await this.runNativeTransaction(currentRevision, async (execute) => {
       if (commit.replaceAll) {
         await execute("DELETE FROM system_settings");
         await execute("DELETE FROM plugin_custom_storage");
         await execute("DELETE FROM characters");
       }
-      await applySqliteCommit(commit, execute);
+      authorNotes = await authorNoteSql.applyAuthorNotes(
+        { ...this.authorNoteDatabase(), execute },
+        commit.authorNotes,
+      );
+      await sqliteCommit.apply(commit, execute);
       await execute(
         "UPDATE system_storage_meta SET revision = ?, initialized = 1, updated_at = datetime('now') WHERE singleton = 1",
         [revision],
@@ -397,8 +487,31 @@ export class CapacitorSqliteStorage
         "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
         [revision, action],
       );
+      await authorNoteSql.writeAuthorNoteReceipt(
+        { ...this.authorNoteDatabase(), execute },
+        commit,
+        {
+          revision,
+          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+            id,
+            contentHash,
+            updatedAt,
+          })),
+        },
+      );
     });
     this.revision = revision;
-    return { revision };
+    return {
+      revision,
+      ...(authorNotes.length
+        ? {
+            authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
+              id,
+              contentHash,
+              updatedAt,
+            })),
+          }
+        : {}),
+    };
   }
 }

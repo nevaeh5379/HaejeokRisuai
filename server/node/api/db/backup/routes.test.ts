@@ -11,13 +11,17 @@ import {
   type BackupRouteDependencies,
   type BackupStorage,
   type MaskedBackupParams,
-} from "./routes.js";
+} from "./routes.ts";
 
 async function withBackupApi(
   run: (
     baseUrl: string,
-    controls: { setSecure: (secure: boolean) => void },
+    controls: {
+      setSecure: (secure: boolean) => void;
+      deps: BackupRouteDependencies;
+    },
   ) => Promise<void>,
+  configure?: (deps: BackupRouteDependencies) => void,
 ): Promise<void> {
   const app: Express = express();
   app.use(express.json());
@@ -84,7 +88,9 @@ async function withBackupApi(
     normalizeVendorParams: (): BackupConfig["params"] => config.params,
     isVendorConfigComplete: (): boolean => true,
     applyBackupConfig: () => ({ backup: config, storage: activeStorage }),
-    activateBackupStorage: async (): Promise<void> => {},
+    activateBackupStorage: async (nextStorage): Promise<void> => {
+      storage = nextStorage;
+    },
     syncBackupSnapshotTimer: (): void => {},
     enqueueBackupWrite: async <T>(task: () => Promise<T>): Promise<T> => task(),
     mirrorFullBackupToBackup: async (
@@ -107,6 +113,7 @@ async function withBackupApi(
     },
     StoragePayloadError: Error,
   };
+  configure?.(deps);
   registerBackupRoutes(app, deps);
 
   const server: Server = app.listen(0, "127.0.0.1");
@@ -116,6 +123,7 @@ async function withBackupApi(
     if (!address || typeof address === "string")
       throw new Error("No TCP address");
     await run(`http://127.0.0.1:${address.port}`, {
+      deps,
       setSecure: (nextSecure: boolean): void => {
         secure = nextSecure;
       },
@@ -198,6 +206,50 @@ test("설정 변경에는 안전한 연결을 요구한다 / configuration requi
       code: "secure_transport_required",
     });
   });
+});
+
+test("비동기 설정 저장 후 백업 저장소를 활성화한다 / awaits async configuration before activating storage", async (): Promise<void> => {
+  let appliedConfig: BackupConfig;
+  let activatedStorage: BackupStorage | undefined;
+  const nextStorage: BackupStorage = {
+    enabled: true,
+    getState: async () => ({ revision: 10, initialized: true }),
+  };
+  await withBackupApi(
+    async (baseUrl, { deps }): Promise<void> => {
+      const response = await fetch(`${baseUrl}/api/db-backup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendor: "postgres", params: {} }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(activatedStorage).toBe(nextStorage);
+      expect(deps.getBackupConfig()).toBe(appliedConfig);
+      expect(await response.json()).toMatchObject({
+        success: true,
+        enabled: true,
+        backupRevision: 10,
+        lag: 0,
+        snapshot: { enabled: true, intervalMinutes: 120 },
+      });
+    },
+    (deps) => {
+      appliedConfig = {
+        ...deps.getBackupConfig(),
+        snapshot: { enabled: true, intervalMinutes: 120 },
+      };
+      const activateBackupStorage = deps.activateBackupStorage;
+      deps.applyBackupConfig = async () => ({
+        backup: appliedConfig,
+        storage: nextStorage,
+      });
+      deps.activateBackupStorage = async (storage) => {
+        activatedStorage = storage;
+        await activateBackupStorage(storage);
+      };
+    },
+  );
 });
 
 test("전체 백업은 진행과 완료 NDJSON을 보낸다 / resync streams progress and completion", async (): Promise<void> => {

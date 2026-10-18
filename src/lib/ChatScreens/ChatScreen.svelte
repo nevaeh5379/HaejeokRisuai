@@ -135,43 +135,45 @@
         {/if}
     </div>
 {:else}
-    <div class="grow h-full min-w-0 relative justify-center flex">
+    <div class="rs-classic-chat-workspace grow h-full min-w-0 relative justify-center flex">
         <SideBarArrow />
-        <BackgroundDom />
-        <div style={bgImg} class="h-full w-full min-w-0" class:max-w-6xl={settingsStore.state.classicMaxWidth}>
-            {#if $selectedCharID >= 0}
-                {#if characterStore.characters[$selectedCharID].viewScreen !== 'none' && (characterStore.characters[$selectedCharID].type === 'group' || (!characterStore.characters[$selectedCharID].inlayViewScreen))}
-                    <ResizeBox />
-                {/if}
-            {/if}
-            <div
-                bind:this={splitContainer}
-                class="h-full w-full min-w-0 grid"
-                style:grid-template-columns={splitColumns}
-                class:select-none={draggingSplit}
-            >
-                {#each chatTabsStore.groups as group, index (group.id)}
-                    {#if index > 0}
-                        <div
-                            role="separator"
-                            aria-orientation="vertical"
-                            aria-label="Resize chat split"
-                            class="h-full cursor-col-resize bg-darkborderc hover:bg-textcolor2 transition-colors z-20"
-                            class:bg-textcolor2={draggingSplit}
-                            onpointerdown={startSplitDrag}
-                        ></div>
+        <div class="rs-classic-chat-layers h-full w-full min-w-0 flex justify-center">
+            <BackgroundDom />
+            <div style={bgImg} class="h-full w-full min-w-0" class:max-w-6xl={settingsStore.state.classicMaxWidth}>
+                {#if $selectedCharID >= 0}
+                    {#if characterStore.characters[$selectedCharID].viewScreen !== 'none' && (characterStore.characters[$selectedCharID].type === 'group' || (!characterStore.characters[$selectedCharID].inlayViewScreen))}
+                        <ResizeBox />
                     {/if}
-                    <div class="h-full min-w-0 overflow-hidden">
-                        <DefaultChatScreen
-                            customStyle={bgImg.length > 2 ? `${externalStyles}`: ''}
-                            groupId={group.id}
-                            reserveSidebarSpace={index === 0}
-                            allowSplit={!$MobileGUI}
-                            bind:openChatList
-                            bind:openModuleList
-                        />
-                    </div>
-                {/each}
+                {/if}
+                <div
+                    bind:this={splitContainer}
+                    class="h-full w-full min-w-0 grid"
+                    style:grid-template-columns={splitColumns}
+                    class:select-none={draggingSplit}
+                >
+                    {#each chatTabsStore.groups as group, index (group.id)}
+                        {#if index > 0}
+                            <div
+                                role="separator"
+                                aria-orientation="vertical"
+                                aria-label="Resize chat split"
+                                class="h-full cursor-col-resize bg-darkborderc hover:bg-textcolor2 transition-colors z-20"
+                                class:bg-textcolor2={draggingSplit}
+                                onpointerdown={startSplitDrag}
+                            ></div>
+                        {/if}
+                        <div class="h-full min-w-0 overflow-hidden">
+                            <DefaultChatScreen
+                                customStyle={bgImg.length > 2 ? `${externalStyles}`: ''}
+                                groupId={group.id}
+                                reserveSidebarSpace={index === 0}
+                                allowSplit={!$MobileGUI}
+                                bind:openChatList
+                                bind:openModuleList
+                            />
+                        </div>
+                    {/each}
+                </div>
             </div>
         </div>
     </div>

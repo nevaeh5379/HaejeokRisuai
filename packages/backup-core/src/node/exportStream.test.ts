@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { encodeLegacyBackupDatabase } from "./legacyFormat";
+import { encodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PortableDatabaseExportWriter,
-  databaseFragmentName,
   writeBackupContainerEntry,
-} from "./exportStream";
-import { BackupContainerParser } from "../containerStream";
+} from "./exportStream.ts";
+import { Fragment } from "../stream/databaseBackup.ts";
+import { BackupContainerParser } from "../containerStream.ts";
 
 describe("PortableDatabaseExportWriter", () => {
   it("fragments records, counts types, and builds a manifest", async () => {
@@ -41,12 +41,12 @@ describe("PortableDatabaseExportWriter", () => {
       "database.stream/000000000002.risudat",
     ]);
     expect(manifest).toMatchObject({
-      format: "risu-portable-database-stream",
+      format: "haejeok-stream-manifest",
       revision: 9,
       totalFragments: 2,
       totalRecords: 3,
       counts: { meta: 1, setting: 1, character: 1 },
-      complete: true,
+      version: "1.1",
     });
     expect(progress).toEqual([
       [1, 3],
@@ -56,9 +56,7 @@ describe("PortableDatabaseExportWriter", () => {
   });
 
   it("uses canonical fragment and manifest names", () => {
-    expect(databaseFragmentName(7)).toBe(
-      "database.stream/000000000007.risudat",
-    );
+    expect(Fragment.name(7)).toBe("database.stream/000000000007.risudat");
     expect(PORTABLE_DATABASE_STREAM_MANIFEST).toBe(
       "database.stream/manifest.risudat",
     );

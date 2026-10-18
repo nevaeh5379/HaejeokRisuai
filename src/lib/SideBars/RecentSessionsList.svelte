@@ -7,6 +7,7 @@
     import { isCapacitor } from 'src/ts/platform';
     import { shouldEagerLoadRecentSessionThumbnails } from 'src/ts/gui/recentSessionThumbnails';
     import { resolveRecentChatActiveTarget } from 'src/ts/recentChatActivity';
+    import { getSafeNavigatorLanguages } from 'src/ts/locale';
     import { sideBarStore, selectedCharID, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { getSqlRuntime } from 'src/ts/storage/sql/sqlRuntime';
     import SidebarAvatar from './SidebarAvatar.svelte';
@@ -33,7 +34,7 @@
     let searchInput = $state('');
 
     const agoFormatter = new Intl.RelativeTimeFormat(
-        typeof navigator !== 'undefined' ? navigator.languages : 'en',
+        getSafeNavigatorLanguages(),
         { style: 'short' }
     );
 

@@ -1,10 +1,12 @@
 <script lang="ts">
+    import { flushDurableStores } from "./ts/stores/domain/flushDurableStores";
+    import AuthorNoteDraftRecovery from "./lib/Others/AuthorNoteDraftRecovery.svelte";
     import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
-    import { isCapacitor, isNodeServer, isTauri, isTauriMacOS, isTauriWindows } from './ts/platform';
+    import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriLinux, isTauriMacOS, isTauriWindows } from './ts/platform';
     import { parseTauriChatWorkspaceLaunch } from './ts/tauriChatWindows';
-    import { registerPlugin } from '@capacitor/core';
+    import { nativeAppControl } from './ts/android/nativeAppControl';
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
@@ -12,11 +14,13 @@
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
-    import { windowDragRegion } from './ts/nativeWindowChrome';
+    import { applyMacOSNativeSidebarBlur, applyMacOSSidebarTransparency, installLinuxCsdHeaderDrag, installMacOSHeaderDrag, windowDragRegion } from './ts/nativeWindowChrome';
+    import { applyLinuxCsdSidebarOpacity } from './ts/linuxWindowIntegration';
     import LazyComponent, { preloadLazy } from './lib/Others/LazyComponent.svelte';
     import type RealmPopUpType from './lib/UI/Realm/RealmPopUp.svelte';
     import { storageProfileGate } from './ts/storage/runtime/storageProfileGate';
-    import { installAndroidNativeEntryHandler } from './ts/android/androidNativeIntegration';
+    import { installAndroidNativeEntryHandler, setAndroidNavigationBarHidden } from './ts/android/androidNativeIntegration';
+    import { shouldHideAndroidNavigationBar } from './ts/android/androidNavigationBar';
     import { routeAndroidNativeEntry } from './ts/android/androidNativeEntryRouter';
     import { refreshAndroidNativeSurfaces } from './ts/android/androidNativeSurfaces';
 
@@ -33,7 +37,41 @@
     let RealmPopUp = $state<typeof RealmPopUpType | null>(null)
     let exitConfirmationOpen = false
 
-    const nativeAppControl = registerPlugin<{ exitApp(): Promise<void> }>('NativeAppControl')
+    onMount(installLinuxCsdHeaderDrag)
+    onMount(installMacOSHeaderDrag)
+
+    $effect(() => {
+        // A newly opened window must not broadcast its unhydrated default to
+        // windows that already use the saved material preference.
+        if (!isTauriMacOS || !$loadedStore) return
+        void applyMacOSNativeSidebarBlur(settingsStore.state.macosNativeSidebarBlur ?? false)
+            .catch((error) => console.error('[macOS sidebar] Failed to change blur effect', error))
+    })
+
+    $effect(() => {
+        if (!isTauriLinux) return
+        applyLinuxCsdSidebarOpacity(settingsStore.state.linuxCsdSidebarOpacity ?? 94)
+    })
+
+    $effect(() => {
+        if (!isTauriMacOS) return
+        applyMacOSSidebarTransparency(
+            settingsStore.state.macosSidebarTransparency ?? true,
+            settingsStore.state.macosSidebarOpacity ?? 0,
+        )
+    })
+
+    $effect(() => {
+        if (!isCapacitorAndroid) return
+        void setAndroidNavigationBarHidden(shouldHideAndroidNavigationBar({
+            chatEnabled: settingsStore.state.autoHideAndroidNavigationBar,
+            sidebarEnabled: settingsStore.state.autoHideAndroidNavigationBarInSidebar,
+            settingsOpen: $settingsOpen,
+            selectedCharacterId: $selectedCharID,
+            sidebarOpen: $sideBarStore,
+            mobileSidebar: $MobileSideBar,
+        }))
+    })
 
     onMount(() => {
         if (!isCapacitor) return
@@ -102,11 +140,7 @@
                     import('./lang'),
                 ])
                 if (await alertConfirm(language.exitAppConfirm)) {
-                    const flushResults = await Promise.allSettled([
-                        settingsStore.flush(),
-                        characterStore.flush(),
-                        messageStore.flush(),
-                    ])
+                    const flushResults = await Promise.allSettled([flushDurableStores()])
                     if (
                         flushResults.some((result) => result.status === 'rejected') ||
                         settingsStore.hasPendingWrites() ||
@@ -275,7 +309,7 @@
     {#if isTauriWindows}
         <NativeWindowResizeHandles />
     {/if}
-    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED || globalThis.__RISU_LEGAL_CONFIGURED__)}
+    {#if !(import.meta.env.VITE_RISU_LEGAL_CONFIGURED === 'TRUE' || globalThis.__RISU_LEGAL_CONFIGURED__ === true)}
         <LazyComponent loader={legalLoader} />
     {:else if aprilFools}
 
@@ -500,3 +534,5 @@
         }
     }
 </style>
+
+<AuthorNoteDraftRecovery />

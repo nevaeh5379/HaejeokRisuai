@@ -1,24 +1,19 @@
 import { once } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
-import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore";
-import { decodeLegacyBackupDatabase } from "./legacyFormat";
+import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore.ts";
+import { decodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   LegacyBackupStreamingUnsupportedError,
   streamLegacyBackupDatabaseToSqlNdjson,
   type StreamLegacyBackupOptions,
-} from "./legacyStream";
+} from "./legacyStream.ts";
 import {
   iterateLegacyBackupSqlRecords,
   type LegacyBackupSqlRecord,
-} from "../legacyRecords";
-import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy";
-import {
-  parsePortableDatabaseStreamFragment,
-  parsePortableDatabaseStreamManifest,
-  type PortableDatabaseStreamFragment,
-  type PortableDatabaseStreamManifest,
-} from "../streamFormat";
-import type { BackupImportPlan } from "./importPlan";
+} from "../legacyRecords.ts";
+import { LEGACY_DATABASE_ENTRY_NAME } from "../entryPolicy.ts";
+import { Fragment, Manifest } from "../stream/databaseBackup.ts";
+import type { BackupImportPlan } from "./importPlan.ts";
 
 export interface PreparedLocalBackupDatabase {
   sourceRevision: number;
@@ -45,10 +40,9 @@ function requireObject(value: unknown, label: string): Record<string, any> {
   return value as Record<string, any>;
 }
 
-function decodeManifest(data: unknown): PortableDatabaseStreamManifest {
+function decodeManifest(data: unknown): Manifest {
   const manifest = requireObject(data, "Portable database stream manifest");
-  const parsed: PortableDatabaseStreamManifest | null =
-    parsePortableDatabaseStreamManifest(manifest);
+  const parsed: Manifest | null = Manifest.read(manifest);
   if (!parsed || Array.isArray(parsed.counts)) {
     throw new Error("Portable database stream manifest is invalid");
   }
@@ -59,12 +53,11 @@ function decodeFragment(
   data: unknown,
   expectedIndex: number,
   name: string,
-): PortableDatabaseStreamFragment {
+): Fragment {
   const fragment = requireObject(data, `Portable database fragment ${name}`);
-  const parsed: PortableDatabaseStreamFragment | null =
-    parsePortableDatabaseStreamFragment(fragment, {
-      expectedIndex,
-    });
+  const parsed: Fragment | null = Fragment.read(fragment, {
+    expectedIndex,
+  });
   if (!parsed) {
     throw new Error(`Invalid portable database fragment: ${name}`);
   }

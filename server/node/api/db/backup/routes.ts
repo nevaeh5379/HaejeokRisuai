@@ -3,7 +3,7 @@ import type {
   BackupParams,
   BackupVendor,
   MaskedBackupParams,
-} from "./params.js";
+} from "./params.ts";
 
 export type { BackupParams, BackupVendor, MaskedBackupParams };
 
@@ -124,7 +124,7 @@ export type BackupRouteDependencies = {
   applyBackupConfig: (
     savePath: string,
     config: BackupConfigurationInput,
-  ) => AppliedBackupConfig;
+  ) => AppliedBackupConfig | Promise<AppliedBackupConfig>;
   activateBackupStorage: (storage: BackupStorage) => Promise<void>;
   syncBackupSnapshotTimer: () => void;
   enqueueBackupWrite: <T>(
@@ -266,8 +266,8 @@ export function registerBackupRoutes(
   ): MaskedBackupParams.Azure;
   function maskBackupParams(
     vendor: BackupVendor,
-    parmas?: BackupParams
-  ): MaskedBackupParams
+    params?: BackupParams,
+  ): MaskedBackupParams;
   function maskBackupParams(
     vendor: BackupVendor,
     params: BackupParams = {},
@@ -465,7 +465,7 @@ export function registerBackupRoutes(
         backupRuntime.initialized = false;
 
         // 설정 저장 + 신규 인스턴스
-        const applied: AppliedBackupConfig = applyBackupConfig(savePath, {
+        const applied: AppliedBackupConfig = await applyBackupConfig(savePath, {
           vendor,
           params: normalized,
           mirroring,
@@ -538,7 +538,8 @@ export function registerBackupRoutes(
 
     try {
       const result = await enqueueBackupWrite(
-        () => operation((event) => stream.sendLine({ type: "progress", ...event })),
+        () =>
+          operation((event) => stream.sendLine({ type: "progress", ...event })),
         "full",
       );
       stream.sendLine({ type: "done", success: true, ...result });

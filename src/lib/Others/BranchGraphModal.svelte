@@ -693,7 +693,7 @@
             {/each}
         </div>
 
-        <div class="pointer-events-none absolute bottom-[max(env(safe-area-inset-bottom),1.25rem)] left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
+        <div class="pointer-events-none absolute bottom-[max(var(--risu-safe-area-inset-bottom),1.25rem)] left-1/2 z-30 -translate-x-1/2 sm:bottom-6">
             <div class="pointer-events-auto flex items-center gap-1 rounded-2xl border border-darkborderc/80 bg-darkbg/90 p-1.5 text-textcolor2 shadow-2xl backdrop-blur-sm">
                 <button class="graph-tool" onclick={() => zoomFromCenter(1 / 1.16)} title={language.branchGraphZoomOut} aria-label={language.branchGraphZoomOut}>
                     <ZoomOut size={17} />
@@ -714,7 +714,7 @@
             </div>
         </div>
 
-        <div class="pointer-events-none absolute bottom-[max(env(safe-area-inset-bottom),1.25rem)] right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 sm:block">
+        <div class="pointer-events-none absolute bottom-[max(var(--risu-safe-area-inset-bottom),1.25rem)] right-5 hidden rounded-full border border-darkborderc/60 bg-darkbg/70 px-3 py-1.5 text-[11px] text-textcolor2 sm:block">
             {language.branchGraphHint}
         </div>
     </div>

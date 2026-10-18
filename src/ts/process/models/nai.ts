@@ -2,7 +2,7 @@ import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 
 import { getUserName } from "src/ts/util";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 
 export function stringlizeNAIChat(
   formated: OpenAIChat[],
@@ -11,9 +11,9 @@ export function stringlizeNAIChat(
 ) {
   const db = settingsStore.state;
   let seperator =
-    presetStore.state.NAIsettings.seperator.replaceAll("\\n", "\n") || "\n";
+    presetStore.state.NAISettings.seperator.replaceAll("\\n", "\n") || "\n";
   let starter =
-    presetStore.state.NAIsettings.starter.replaceAll("\\n", "\n") || "⁂";
+    presetStore.state.NAISettings.starter.replaceAll("\\n", "\n") || "⁂";
   let resultString: string[] = [];
 
   for (const form of formated) {
@@ -76,4 +76,4 @@ export interface NAISettings {
   cfg_scale?: number;
 }
 
-export { NOVELAI_BAD_WORD_IDS as NovelAIBadWordIds } from "@risuai/chat-core/novelAIProvider.cjs";
+export { NOVELAI_BAD_WORD_IDS as NovelAIBadWordIds } from "@risuai/chat-core/novelAIProvider.ts";

@@ -3,7 +3,6 @@ import {
   encode as encodeMsgpack,
 } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
-import { decryptBuffer, encryptBuffer } from "src/ts/util";
 import { decodeRPack, encodeRPack } from "src/ts/rpack/rpack_js.js";
 
 export interface TranslatorPreset {
@@ -218,6 +217,7 @@ async function decodeEncryptedTranslatorPresetFile(
   let decryptedPreset: ArrayBuffer;
 
   try {
+    const { decryptBuffer } = await import("src/ts/util");
     decryptedPreset = await decryptBuffer(
       encryptedPreset,
       translatorPresetEncryptionKey,
@@ -245,6 +245,7 @@ export async function encodeTranslatorPresetFile(
     preset.name.trim().length > 0 ? preset.name : "Preset",
     preset,
   );
+  const { encryptBuffer } = await import("src/ts/util");
   const encryptedPreset = new Uint8Array(
     await encryptBuffer(
       encodeMsgpack(normalizedPreset),

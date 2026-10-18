@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmptySqlCommit } from "../sqlCommit";
-import { applySqliteCommit } from "@risuai/storage-sqlite/sqliteCommit";
-import { flattenRelationalValue } from "@risuai/storage-sqlite/relationalNodeCodec";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import { rebuildMessageRows } from "./sqliteStorageUtils";
 
 describe("message SQL core/extension split", () => {
@@ -27,7 +27,7 @@ describe("message SQL core/extension split", () => {
       },
     });
     const statements: { sql: string; bind: unknown[] }[] = [];
-    await applySqliteCommit(commit, async (sql, bind = []) => {
+    await sqliteCommit.apply(commit, async (sql, bind = []) => {
       statements.push({ sql, bind });
     });
     const messageInsert = statements.find(({ sql }) =>
@@ -51,7 +51,7 @@ describe("message SQL core/extension split", () => {
       generationInfo: { generationId: "gen-1", maxContext: 12345 },
       disabled: true,
     };
-    const rows = flattenRelationalValue(extension).map((node) => ({
+    const rows = nodeCodec.flatten(extension).map((node) => ({
       ...node,
       message_id: "message-1",
       message_role: "char",
@@ -90,7 +90,7 @@ describe("message SQL core/extension split", () => {
       data: { role: "user", data: "plain body" },
     });
     const statements: { sql: string; bind: unknown[] }[] = [];
-    await applySqliteCommit(commit, async (sql, bind = []) => {
+    await sqliteCommit.apply(commit, async (sql, bind = []) => {
       statements.push({ sql, bind });
     });
     expect(

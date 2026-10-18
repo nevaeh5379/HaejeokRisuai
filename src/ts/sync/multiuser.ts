@@ -14,7 +14,7 @@ import { selectedCharID } from "../stores.svelte";
 import { findCharacterIndexbyId, sleep } from "../util";
 import type { DataConnection, Peer } from "peerjs";
 import { readImage } from "../globalApi.svelte";
-import { doingChat } from "../process/chatRuntimeState";
+import { doingChat } from "../process/chat/runtimeState";
 import {
   ConnectionIsHost,
   ConnectionOpenStore,

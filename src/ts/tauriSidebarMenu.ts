@@ -212,7 +212,7 @@ function createPopupPayload(
 function popupDimensions(itemCount: number) {
   return {
     width: 62,
-    height: Math.min(420, 20 + itemCount * 40 + Math.max(0, itemCount - 1) * 5),
+    height: Math.min(420, 24 + itemCount * 40 + Math.max(0, itemCount - 1) * 5),
   };
 }
 

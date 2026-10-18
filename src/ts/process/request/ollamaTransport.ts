@@ -1,7 +1,7 @@
 import {
   resolveOllamaCloudTransportUrl,
   type OllamaCloudTransportApi,
-} from "@risuai/chat-core/ollamaProvider.cjs";
+} from "@risuai/chat-core/ollamaProvider.ts";
 import { LLMFormat } from "../../model/modellist";
 
 export function shouldUseNodeOllamaCloudTransport(options: {

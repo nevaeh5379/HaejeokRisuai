@@ -4,16 +4,15 @@ platform: linux
 version: ${NFPM_VERSION}
 version_schema: none
 release: "1"
-maintainer: Haejeok RisuAI
-vendor: Haejeok RisuAI
-description: Haejeok RisuAI desktop client
+maintainer: nevaeh5379
+vendor: HaejeokRisuai
+description: HaejeokRisuai desktop client
 homepage: https://github.com/nevaeh5379/HaejeokRisuAI
 license: GPL-3.0-only
 
 contents:
-  - src: .linux-package-root/
-    dst: /
-    type: tree
+  - src: .linux-package-root/usr/
+    dst: /usr
   - src: LICENSE
     dst: /usr/share/licenses/haejeok-risuai/LICENSE
 
@@ -29,10 +28,10 @@ depends:
   - glib2
   - gtk3
   - hicolor-icon-theme
-  - libsoup
+  - libsoup3
   - pango
   - webkit2gtk-4.1
 
 archlinux:
-  pkgbase: risuai
-  packager: Haejeok RisuAI
+  pkgbase: haejeok-risuai
+  packager: nevaeh5379

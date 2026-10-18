@@ -9,12 +9,10 @@ import { encodeRisuSaveLegacyAsync } from "./risuSave";
 import {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
-} from "../../../../packages/protocol/storageSyncValueCodec.cjs";
+} from "../../../../packages/protocol/storageSyncValueCodec.ts";
 
 const require = createRequire(import.meta.url);
-const { readStorageSyncSqlRecords } = require(
-  "../../../../server/node/sync/storageSyncSqlRecords.cjs",
-);
+import { readStorageSyncSqlRecords } from "../../../../server/node/sync/storageSyncSqlRecords.ts";
 
 describe("server legacy backup compatibility", () => {
   it("decodes the same compressed legacy payload produced by the client", async () => {
@@ -40,6 +38,32 @@ describe("server legacy backup compatibility", () => {
       "compression",
     );
     expect(decodeLegacyBackupDatabase(encoded)).toEqual(database);
+  });
+
+  it("keeps aggregate preset aliases in encoded legacy backups", async () => {
+    const state = {
+      NAISettings: { cfg_scale: 2 },
+      regex: [{ in: "a", out: "b" }],
+      reasonEffort: 3,
+      botPresets: [
+        {
+          name: "Preset",
+          NAISettings: { cfg_scale: 2 },
+          regex: [],
+          reasonEffort: 1,
+        },
+      ],
+    };
+    const decoded = decodeLegacyBackupDatabase(
+      await encodeRisuSaveLegacyAsync(state, "compression"),
+    );
+    expect(decoded).toEqual({
+      NAIsettings: state.NAISettings,
+      presetRegex: state.regex,
+      reasoningEffort: state.reasonEffort,
+      botPresets: state.botPresets,
+    });
+    expect(state).toHaveProperty("NAISettings");
   });
 
   it("streams the current compressed legacy backup into SQL records without whole-database decoding", async () => {
@@ -140,8 +164,7 @@ describe("server legacy backup compatibility", () => {
       });
 
       const branchIndex = records.findIndex(
-        (record: any) =>
-          record.type === "branch" && record.chatId === "chat-1",
+        (record: any) => record.type === "branch" && record.chatId === "chat-1",
       );
       const firstMessageIndex = records.findIndex(
         (record: any) =>

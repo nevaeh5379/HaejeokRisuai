@@ -1893,6 +1893,7 @@ function blockEndMatcher(
 export function risuChatParser(
   da: string,
   arg: {
+    authorNoteContent?: string;
     chatID?: number;
     db?: SettingsState;
     chara?: string | character | groupChat;
@@ -1973,6 +1974,8 @@ export function risuChatParser(
   }
 
   const matcherObj = {
+    authorNoteContent:
+      arg.authorNoteContent ?? arg.chatTarget?.authorNoteContent,
     chatID: chatID,
     chara: chara,
     rmVar: arg.rmVar ?? false,

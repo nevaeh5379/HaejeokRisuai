@@ -1,11 +1,8 @@
-import {
-  parsePortableDatabaseStreamFragmentName,
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-} from "../streamFormat";
+import { Fragment, MANIFEST_NAME } from "../stream/databaseBackup.ts";
 import type {
   StagedBackupContainer,
   StagedBackupEntry,
-} from "./importStagingStore";
+} from "./importStagingStore.ts";
 
 export type BackupImportDatabaseMode = "legacy" | "stream";
 
@@ -22,9 +19,16 @@ export interface BackupImportPlan {
 }
 
 export class BackupImportPlanError extends Error {
+  readonly code:
+    | "missing_database"
+    | "mixed_database_formats"
+    | "duplicate_entry"
+    | "missing_stream_manifest"
+    | "duplicate_stream_manifest"
+    | "invalid_stream_fragment_order";
   constructor(
     message: string,
-    readonly code:
+    code:
       | "missing_database"
       | "mixed_database_formats"
       | "duplicate_entry"
@@ -33,6 +37,7 @@ export class BackupImportPlanError extends Error {
       | "invalid_stream_fragment_order" = "missing_database",
   ) {
     super(message);
+    this.code = code;
     this.name = "BackupImportPlanError";
   }
 }
@@ -62,11 +67,11 @@ export function buildBackupImportPlan(
         legacy.push(entry);
         break;
       case "databaseStream": {
-        if (entry.name === PORTABLE_DATABASE_STREAM_MANIFEST) {
+        if (entry.name === MANIFEST_NAME) {
           manifests.push(entry);
           break;
         }
-        const index = parsePortableDatabaseStreamFragmentName(entry.name);
+        const index = Fragment.parseName(entry.name);
         if (index === null) {
           throw new BackupImportPlanError(
             `Invalid database stream fragment '${entry.name}'`,

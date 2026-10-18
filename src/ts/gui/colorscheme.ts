@@ -1,4 +1,5 @@
 import { get, writable } from "svelte/store";
+import { safeParse } from "valibot";
 
 import { downloadFile } from "../globalApi.svelte";
 import { BufferToText, selectSingleFile } from "../util";
@@ -6,32 +7,50 @@ import { alertError } from "../alert";
 import { isLite } from "../lite";
 import { CustomCSSStore, SafeModeStore } from "../stores.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
-import { isCapacitorAndroid, isTauriMacOS, isTauriWindows } from "../platform";
+import {
+  isCapacitorAndroid,
+  isTauriLinux,
+  isTauriMacOS,
+  isTauriWindows,
+} from "../platform";
 import { syncAndroidSystemBars } from "../android/androidNativeIntegration";
+import { applyLinuxDecorationAlpha } from "../linuxWindowIntegration";
 import { ensureFluentWindowsBackdrop } from "../windowsTransparency";
 import { applyUITheme, isWindowsFluentTheme } from "./uiTheme";
 
-export interface ColorScheme {
-  bgcolor: string;
-  darkbg: string;
-  borderc: string;
-  selected: string;
-  draculared: string;
-  textcolor: string;
-  textcolor2: string;
-  darkBorderc: string;
-  darkbutton: string;
-  type: "light" | "dark";
-}
+import {
+  colorSchemeSchema,
+  defaultColorScheme,
+  type ColorScheme,
+} from "./colorSchemeDefaults";
+export { defaultColorScheme, type ColorScheme } from "./colorSchemeDefaults";
 
-async function syncTauriNativeAppearance(type: "light" | "dark") {
-  if (!isTauriMacOS && !isTauriWindows) {
+async function syncTauriNativeAppearance(colorScheme: ColorScheme) {
+  if (!isTauriLinux && !isTauriMacOS && !isTauriWindows) {
     return;
   }
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("set_risu_native_appearance", { appearance: type });
+    const nativeAppearance = invoke("set_risu_native_appearance", {
+      appearance: colorScheme.type,
+    });
+
+    if (isTauriLinux) {
+      const [, decorationAlpha] = await Promise.all([
+        nativeAppearance,
+        invoke<number | null>("set_linux_decoration_colors", {
+          background: colorScheme.darkbg,
+          foreground: colorScheme.textcolor,
+          inactiveForeground: colorScheme.textcolor2,
+          accent: colorScheme.selected,
+          negative: colorScheme.draculared,
+        }),
+      ]);
+      applyLinuxDecorationAlpha(decorationAlpha);
+    } else {
+      await nativeAppearance;
+    }
   } catch (error) {
     console.warn(
       "Failed to sync native Tauri appearance with Risu theme:",
@@ -39,19 +58,6 @@ async function syncTauriNativeAppearance(type: "light" | "dark") {
     );
   }
 }
-
-export const defaultColorScheme: ColorScheme = {
-  bgcolor: "#282a36",
-  darkbg: "#21222c",
-  borderc: "#6272a4",
-  selected: "#44475a",
-  draculared: "#ff5555",
-  textcolor: "#f8f8f2",
-  textcolor2: "#64748b",
-  darkBorderc: "#4b5563",
-  darkbutton: "#374151",
-  type: "dark",
-};
 
 const colorShemes = {
   default: defaultColorScheme,
@@ -68,14 +74,14 @@ const colorShemes = {
     type: "dark",
   },
   light: {
-    bgcolor: "#ffffff",
-    darkbg: "#f0f0f0",
-    borderc: "#0f172a",
+    bgcolor: "#fafafa",
+    darkbg: "#F5F5F5",
+    borderc: "#d4d4d4",
     selected: "#e0e0e0",
     draculared: "#ff5555",
-    textcolor: "#0f172a",
-    textcolor2: "#64748b",
-    darkBorderc: "#d1d5db",
+    textcolor: "#171717",
+    textcolor2: "#737373",
+    darkBorderc: "transparent",
     darkbutton: "#e5e7eb",
     type: "light",
   },
@@ -285,6 +291,17 @@ export const colorSchemeList = Object.keys(
   colorShemes,
 ) as (keyof typeof colorShemes)[];
 
+
+export function getCurrentlyColorScheme(): ColorScheme["type"] {
+  return settingsStore.state.colorScheme?.type ?? "dark";
+}
+
+export function isLight() {
+  if (getCurrentlyColorScheme() === "light")
+    return true
+  else
+    return false
+}
 export function changeColorScheme(colorScheme: string) {
   try {
     if (colorScheme === "custom") {
@@ -363,6 +380,7 @@ export function updateColorScheme() {
       colorScheme.darkbutton,
     );
     document.documentElement.style.colorScheme = colorScheme.type;
+    document.documentElement.dataset.themeType = colorScheme.type;
     ColorSchemeTypeStore.set(colorScheme.type);
     if (isCapacitorAndroid) {
       void syncAndroidSystemBars(colorScheme.type === "dark");
@@ -373,7 +391,7 @@ export function updateColorScheme() {
     if (isFluent && isTauriWindows) {
       void ensureFluentWindowsBackdrop();
     }
-    void syncTauriNativeAppearance(colorScheme.type);
+    void syncTauriNativeAppearance(colorScheme);
     updateTextThemeAndCSS();
   } catch (error) {}
 }
@@ -397,25 +415,13 @@ export async function importColorScheme() {
     return;
   }
   const string = BufferToText(uarray.data);
-  let colorScheme: ColorScheme;
   try {
-    colorScheme = JSON.parse(string);
-    if (
-      typeof colorScheme.bgcolor !== "string" ||
-      typeof colorScheme.darkbg !== "string" ||
-      typeof colorScheme.borderc !== "string" ||
-      typeof colorScheme.selected !== "string" ||
-      typeof colorScheme.draculared !== "string" ||
-      typeof colorScheme.textcolor !== "string" ||
-      typeof colorScheme.textcolor2 !== "string" ||
-      typeof colorScheme.darkBorderc !== "string" ||
-      typeof colorScheme.darkbutton !== "string" ||
-      typeof colorScheme.type !== "string"
-    ) {
+    const result = safeParse(colorSchemeSchema, JSON.parse(string));
+    if (!result.success) {
       alertError("Invalid color scheme");
       return;
     }
-    settingsStore.state.customColorScheme = colorScheme;
+    settingsStore.state.customColorScheme = result.output;
     updateCustomColorScheme();
   } catch (e) {
     alertError("Invalid color scheme");

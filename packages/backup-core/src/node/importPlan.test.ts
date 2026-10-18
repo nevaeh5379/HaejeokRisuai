@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  BackupImportPlanError,
-  buildBackupImportPlan,
-} from "./importPlan";
-import type { StagedBackupContainer } from "./importStagingStore";
+import { BackupImportPlanError, buildBackupImportPlan } from "./importPlan.ts";
+import type { StagedBackupContainer } from "./importStagingStore.ts";
 
 function staged(
   entries: StagedBackupContainer["entries"],

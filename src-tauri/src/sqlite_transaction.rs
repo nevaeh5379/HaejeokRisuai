@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{Connection, SqliteConnection};
+use sqlx::{AssertSqlSafe, Connection, SqliteConnection};
 use std::{collections::HashMap, path::Path};
 use tauri::{Emitter, Manager, State};
 use tokio::sync::Mutex;
@@ -42,7 +42,9 @@ async fn execute_statement(
     connection: &mut SqliteConnection,
     statement: &SqliteTransactionStatement,
 ) -> Result<(), String> {
-    let mut query = sqlx::query(&statement.sql);
+    // This is the storage layer's raw SQL boundary. Values are supplied separately
+    // and bound below, rather than interpolated into the SQL here.
+    let mut query = sqlx::query(AssertSqlSafe(statement.sql.as_str()));
     for value in statement.bind.iter().cloned() {
         if value.is_null() {
             query = query.bind(None::<JsonValue>);
@@ -236,6 +238,33 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
     #[tokio::test]
+    async fn binds_sql_looking_text_as_data() {
+        let path = test_path();
+        drop(setup(&path).await);
+        let value = "'); DROP TABLE data; --";
+        execute_transaction_at_path(
+            &path,
+            Some(0),
+            vec![statement(
+                "INSERT INTO data VALUES (?, ?)",
+                vec![1.into(), value.into()],
+            )],
+        )
+        .await
+        .unwrap();
+        let mut connection = SqliteConnection::connect_with(&connect_options(&path))
+            .await
+            .unwrap();
+        let stored: String = sqlx::query_scalar("SELECT value FROM data WHERE id = 1")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(stored, value);
+        drop(connection);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
     async fn rejects_stale_revision_before_writing() {
         let path = test_path();
         let mut connection = setup(&path).await;
@@ -298,10 +327,12 @@ mod tests {
         let path = test_path();
         let options = connect_options(&path);
         let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
-        sqlx::query(include_str!("../../src/ts/storage/sqlite-schema.sql"))
-            .execute(&mut connection)
-            .await
-            .unwrap();
+        sqlx::query(include_str!(
+            "../../packages/storage-sqlite/src/schema/schema.sql"
+        ))
+        .execute(&mut connection)
+        .await
+        .unwrap();
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('system_storage_meta', 'messages', 'cold_archives')",
         )

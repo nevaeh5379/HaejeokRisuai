@@ -1,0 +1,6 @@
+haejeok-risuai (0.0.7376-1~ppa1~noble1) noble; urgency=medium
+
+  * Initial Launchpad PPA package.
+  * Repackage the official GitHub release payload for Ubuntu.
+
+ -- nevaeh5379 <230626330+nevaeh5379@users.noreply.github.com>  Fri, 25 Sep 2026 17:38:39 +0900

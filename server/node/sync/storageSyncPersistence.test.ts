@@ -3,12 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const {
-  StorageSyncSessionPersistence,
-} = require(".//storageSyncPersistence.cjs");
-const { StorageSyncSessionManager } = require(".//storageSync.cjs");
-const { StorageSyncStagingStore } = require(".//storageSyncStaging.cjs");
-const { StorageSyncSqlStagingStore } = require(".//storageSyncSqlStaging.cjs");
+import { StorageSyncSessionPersistence } from "./storageSyncPersistence.ts";
+import { StorageSyncSessionManager } from "./storageSync.ts";
+import { StorageSyncStagingStore } from "./storageSyncStaging.ts";
+import { StorageSyncSqlStagingStore } from "./storageSyncSqlStaging.ts";
 import crypto from "node:crypto";
 
 const roots: string[] = [];
@@ -110,7 +108,13 @@ describe("StorageSyncSessionPersistence", () => {
       crypto.createHash("sha256").update(data).digest("hex");
     const assetPlan = await assets.planAssets(
       current,
-      [{ key: "assets/a.bin", size: assetBody.length, sha256: digest(assetBody) }],
+      [
+        {
+          key: "assets/a.bin",
+          size: assetBody.length,
+          sha256: digest(assetBody),
+        },
+      ],
       { openReadStream: async () => ({ exists: false }) },
     );
     await assets.writeAssetChunk(current, assetPlan.assets[0].id, 0, assetBody);
@@ -118,7 +122,10 @@ describe("StorageSyncSessionPersistence", () => {
     const sql = new StorageSyncSqlStagingStore(persistence.rootPath);
     const sqlBody = Buffer.from('{"type":"root"}\n{"type":"message"}\n');
     await sql.plan(current, {
-      formatVersion: 1, size: sqlBody.length, recordCount: 2, sha256: digest(sqlBody),
+      formatVersion: 1,
+      size: sqlBody.length,
+      recordCount: 2,
+      sha256: digest(sqlBody),
     });
     const sqlPrefix = sqlBody.subarray(0, 10);
     await sql.writeChunk(current, 0, sqlPrefix);
@@ -131,8 +138,14 @@ describe("StorageSyncSessionPersistence", () => {
     expect(restored).toMatchObject({ id: current.id, needsHydration: true });
     await assets.hydrateSession(restored);
     await sql.hydrateSession(restored);
-    expect(assets.getPlan(restored).assets[0]).toMatchObject({ state: "ready", offset: assetBody.length });
-    expect(sql.getPlan(restored)).toMatchObject({ state: "receiving", offset: sqlPrefix.length });
+    expect(assets.getPlan(restored).assets[0]).toMatchObject({
+      state: "ready",
+      offset: assetBody.length,
+    });
+    expect(sql.getPlan(restored)).toMatchObject({
+      state: "receiving",
+      offset: sqlPrefix.length,
+    });
   });
 
   it("restores finalized results without hydrating removed staging payloads", () => {
@@ -161,5 +174,4 @@ describe("StorageSyncSessionPersistence", () => {
     ]);
     expect(restored[0].needsHydration).toBeUndefined();
   });
-
 });

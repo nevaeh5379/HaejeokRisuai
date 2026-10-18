@@ -1,8 +1,8 @@
-import { COLD_STORAGE_BACKUP_RE, getColdStorageBackupKey } from "./coldStorage";
 import {
-  parsePortableDatabaseStreamFragmentName,
-  PORTABLE_DATABASE_STREAM_MANIFEST,
-} from "./streamFormat";
+  COLD_STORAGE_BACKUP_RE,
+  getColdStorageBackupKey,
+} from "./coldStorage.ts";
+import { Fragment, MANIFEST_NAME } from "./stream/databaseBackup.ts";
 
 export type BackupEntryKind =
   | "database"
@@ -47,7 +47,7 @@ function classifyExactBackupEntry(normalized: string): BackupEntryKind | null {
   switch (normalized) {
     case LEGACY_DATABASE_ENTRY_NAME:
       return "database";
-    case PORTABLE_DATABASE_STREAM_MANIFEST:
+    case MANIFEST_NAME:
       return "databaseStream";
     case ACCOUNT_ENCRYPTION_ENTRY_NAME:
       return "encryption";
@@ -57,8 +57,7 @@ function classifyExactBackupEntry(normalized: string): BackupEntryKind | null {
 }
 
 function classifyPatternBackupEntry(normalized: string): BackupEntryKind {
-  if (parsePortableDatabaseStreamFragmentName(normalized) !== null)
-    return "databaseStream";
+  if (Fragment.parseName(normalized) !== null) return "databaseStream";
   if (COLD_STORAGE_RE.test(normalized)) return "coldStorage";
   if (INLAY_RE.test(normalized)) return "inlay";
   if (normalized.startsWith("assets/") || !normalized.includes("/"))

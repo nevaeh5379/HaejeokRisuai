@@ -8,27 +8,14 @@ import {
   LocalBackupDatabaseStreamStore,
 } from "@risuai/backup-core/node/databaseStreamStore";
 
-const {
+import {
   decodeStorageSyncValue,
   encodeStorageSyncValue,
-} = require("../../../packages/protocol/storageSyncValueCodec.cjs") as {
-  decodeStorageSyncValue: (value: unknown) => any;
-  encodeStorageSyncValue: (value: unknown) => unknown;
-};
-const {
+} from "../../../packages/protocol/storageSyncValueCodec.ts";
+import {
   readStorageSyncSqlRecords,
   validateStorageSyncSqlRecord,
-} = require(".//storageSyncSqlRecords.cjs") as {
-  readStorageSyncSqlRecords: (
-    filePath: string,
-    options?: Record<string, any>,
-  ) => Promise<any>;
-  validateStorageSyncSqlRecord: (
-    record: any,
-    index: number,
-    state: any,
-  ) => void;
-};
+} from "./storageSyncSqlRecords.ts";
 
 const roots: string[] = [];
 
@@ -114,12 +101,72 @@ function manifest(input: any[]) {
 
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) =>
-      fs.promises.rm(root, { recursive: true, force: true }),
-    ),
+    roots
+      .splice(0)
+      .map((root) => fs.promises.rm(root, { recursive: true, force: true })),
   );
 });
 describe("LocalBackupDatabaseStreamStore", () => {
+  it("accepts a validated 1.1 manifest after staging the records", async () => {
+    const store = await makeStore();
+    const session = await store.create();
+    const input = records();
+    await store.appendRecords(session.id, {
+      fragmentIndex: 1,
+      records: input.map(encodeStorageSyncValue),
+      fragmentComplete: true,
+    });
+    const legacy = manifest(input);
+    expect(
+      store.prepareFinalize(session.id, {
+        ...legacy,
+        format: "haejeok-stream-manifest",
+        version: "1.1",
+      }),
+    ).toMatchObject({ sourceRevision: 11, recordCount: input.length });
+    for (const patch of [
+      { format: "haejeok-stream-manifest", version: "9.9" },
+      { format: "haejeok-stream-manifest", version: undefined },
+      { format: "risu-portable-database-stream", version: 2 },
+      { format: "risu-portable-database-stream", version: 1, complete: false },
+    ]) {
+      expect(() =>
+        store.prepareFinalize(session.id, { ...legacy, ...patch }),
+      ).toThrow("manifest is invalid");
+    }
+  });
+
+  it("stages plugin records without dropping scripts or disabled state", async () => {
+    const store = await makeStore();
+    const session = await store.create();
+    const input = [
+      { type: "meta", formatVersion: 1, revision: 11 },
+      {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Backup plugin", enabled: false },
+        script: "// source\u0000한글",
+      },
+    ];
+    await store.appendRecords(session.id, {
+      fragmentIndex: 1,
+      records: input.map(encodeStorageSyncValue),
+      fragmentComplete: true,
+    });
+    const prepared = store.prepareFinalize(session.id, manifest(input));
+    const replayed: unknown[] = [];
+    const completed = await readStorageSyncSqlRecords(prepared.filePath, {
+      expectedRecordCount: prepared.recordCount,
+      onRecord: (record) => {
+        replayed.push(record);
+      },
+    });
+    expect(completed.recordCount).toBe(2);
+    expect(completed.counts.plugin).toBe(1);
+    expect(replayed).toEqual(input);
+  });
+
   it("stages split request batches and validates the final manifest", async () => {
     const store = await makeStore();
     const session = await store.create();

@@ -149,7 +149,8 @@ export async function bergamotTranslate(
 
   // Wait for previous tasks...
   async function translate() {
-    await translateTask;
+    // A failed request must not block later requests in the queue.
+    await translateTask?.catch(() => {});
     return translator.translate({
       from: from,
       to: to,

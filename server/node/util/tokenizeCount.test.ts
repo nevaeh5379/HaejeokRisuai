@@ -1,28 +1,21 @@
 import { afterAll, describe, expect, it } from "vitest";
 
-const { countTokensBatch, disposeEncoders } =
-  require(".//tokenizeCount.cjs") as {
-    countTokensBatch: (
-      texts: string[],
-      encoding: "cl100k_base" | "o200k_base",
-    ) => number[];
-    disposeEncoders: () => void;
-  };
+import { countTokensBatch, disposeEncoders } from "./tokenizeCount.ts";
 
 afterAll(() => disposeEncoders());
 
-describe("server token counting", () => {
-  it("counts batches with both supported tiktoken encodings", () => {
+describe("server token counting", async () => {
+  it("counts batches with both supported tiktoken encodings", async () => {
     expect(
-      countTokensBatch(["hello world", "안녕하세요"], "cl100k_base"),
+      await countTokensBatch(["hello world", "안녕하세요"], "cl100k_base"),
     ).toEqual([2, 5]);
     expect(
-      countTokensBatch(["hello world", "안녕하세요"], "o200k_base"),
+      await countTokensBatch(["hello world", "안녕하세요"], "o200k_base"),
     ).toEqual([2, 2]);
   });
 
-  it("rejects unsupported encodings", () => {
-    expect(() => countTokensBatch(["hello"], "bad" as any)).toThrow(
+  it("rejects unsupported encodings", async () => {
+    await expect(countTokensBatch(["hello"], "bad" as any)).rejects.toThrow(
       "Unsupported tokenizer encoding",
     );
   });

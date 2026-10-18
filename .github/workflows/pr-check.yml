@@ -295,6 +295,50 @@ jobs:
           path: android-e2e/artifacts/
           retention-days: 14
 
+  tauri-build-check:
+    name: Linux / Tauri Build
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.tauri == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: install pnpm
+        shell: bash
+        run: |
+          npm install --global pnpm@12.3.4
+          pnpm --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v5
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Mirrors src-tauri/tauri.conf.json beforeBuildCommand on a clean
+      # checkout, so Publish-time tauribuild failures surface at PR time.
+      - name: Tauri beforeBuildCommand (pnpm tauribuild)
+        run: pnpm tauribuild
+
   tauri-check:
     name: Linux / Tauri Rust Check
     needs: changes
@@ -358,6 +402,43 @@ jobs:
       - name: Cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
+  tauri-windows-check:
+    name: Windows / Tauri Rust Check
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: install pnpm
+        shell: bash
+        run: npm install --global pnpm@12.3.4
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: windows-x86_64-pc-windows-msvc
+
+      - name: install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+
   e2e-test:
     name: Linux / Playwright E2E
     needs: changes
@@ -417,13 +498,13 @@ jobs:
     name: PR Check Status
     runs-on: ubuntu-latest
     permissions: {}
-    needs: [changes, web-test, android-test, android-e2e-test, tauri-check, e2e-test]
+    needs: [changes, web-test, android-test, android-e2e-test, tauri-check, tauri-windows-check, e2e-test]
     if: always()
     steps:
       - name: Verify all checks succeeded or were skipped
         shell: bash
         run: |
-          results="${{ needs.web-test.result }} ${{ needs.android-test.result }} ${{ needs.android-e2e-test.result }} ${{ needs.tauri-check.result }} ${{ needs.e2e-test.result }}"
+          results="${{ needs.web-test.result }} ${{ needs.android-test.result }} ${{ needs.android-e2e-test.result }} ${{ needs.tauri-check.result }} ${{ needs.tauri-windows-check.result }} ${{ needs.e2e-test.result }}"
           echo "Job results: $results"
           if echo "$results" | grep -qE "failure|cancelled"; then
             echo "One or more PR checks failed or were cancelled."

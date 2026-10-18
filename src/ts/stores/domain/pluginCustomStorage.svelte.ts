@@ -1,10 +1,13 @@
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { getSqlStorage } from "../../storage/sql/sqlStorageFactory";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
+import type {
+  PluginStorageRecord,
+  PluginStorageValue,
+} from "../../plugins/pluginTypes";
 
 /** Lazily loaded per-key values written by plugins. Unknown JSON by design. */
-export type PluginStorageValue = unknown;
-export type PluginStorageRecord = Record<string, PluginStorageValue>;
+export type { PluginStorageRecord, PluginStorageValue };
 
 /**
  * Read/write access to the live `pluginCustomStorage` record owned by

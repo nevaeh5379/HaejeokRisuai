@@ -165,6 +165,44 @@ CREATE TABLE system_module_values (
 );
 CREATE INDEX module_values_parent_idx ON system_module_values (module_id, parent_node_id, position, node_id);
 
+CREATE TABLE system_plugin_records (
+    plugin_id VARCHAR2(4000) PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE CHECK (position >= 0),
+    name VARCHAR2(4000) NOT NULL UNIQUE,
+    display_name VARCHAR2(4000),
+    api_version VARCHAR2(64),
+    plugin_version VARCHAR2(64),
+    update_url VARCHAR2(4000),
+    enabled NUMBER(1) DEFAULT 1 NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+);
+
+CREATE INDEX plugin_records_enabled_position_idx ON system_plugin_records (enabled, position);
+
+CREATE TABLE system_plugin_scripts (
+    plugin_id VARCHAR2(4000) PRIMARY KEY REFERENCES system_plugin_records(plugin_id) ON DELETE CASCADE,
+    script CLOB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+);
+
+CREATE TABLE system_plugin_values (
+    plugin_id VARCHAR2(4000) NOT NULL REFERENCES system_plugin_records(plugin_id) ON DELETE CASCADE,
+    node_id INTEGER NOT NULL,
+    parent_node_id INTEGER,
+    member_key CLOB, encoded_member_key CLOB,
+    position INTEGER CHECK (position >= 0),
+    value_type VARCHAR2(32) NOT NULL CHECK (value_type IN ('null','text','encoded-text','number','boolean','array','object')),
+    text_value CLOB, encoded_text_value CLOB,
+    number_value BINARY_DOUBLE, boolean_value NUMBER(1),
+    PRIMARY KEY (plugin_id, node_id),
+    FOREIGN KEY (plugin_id, parent_node_id) REFERENCES system_plugin_values(plugin_id, node_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    CHECK (node_id = 0 OR parent_node_id IS NOT NULL),
+    CHECK (member_key IS NULL OR encoded_member_key IS NULL),
+    CHECK (text_value IS NULL OR encoded_text_value IS NULL)
+);
+
+CREATE INDEX plugin_values_parent_idx ON system_plugin_values (plugin_id, parent_node_id, position, node_id);
+
 CREATE TABLE system_plugin_custom_storage (
     key VARCHAR2(4000) PRIMARY KEY,
     value JSON NOT NULL,
@@ -1366,4 +1404,16 @@ END risu_create_audit_trigger;
 -- 감사 대상 테이블 목록
 -- PostgreSQL AUDITED_TABLES와 동일. 트리거는 애플리케이션 시작 시
 -- 동적으로 생성하여 테이블별 컬럼을 정확히 직렬화.
--- 구현체(oracleStorage.cjs)에서 initialize 시 생성.
+-- 구현체(oracleStorage.cts)에서 initialize 시 생성.
+
+CREATE TABLE global_author_notes (
+ id VARCHAR2(128) PRIMARY KEY, name CLOB DEFAULT EMPTY_CLOB() NOT NULL, content CLOB DEFAULT EMPTY_CLOB() NOT NULL,
+ content_hash VARCHAR2(64) NOT NULL CHECK(REGEXP_LIKE(content_hash, '^[a-f0-9]{64}$')), updated_at NUMBER(19) NOT NULL
+);
+CREATE TABLE global_author_note_settings (
+ singleton NUMBER(1) PRIMARY KEY CHECK(singleton = 1), allow_script_write NUMBER(1) DEFAULT 0 NOT NULL CHECK(allow_script_write IN (0, 1)), updated_at NUMBER(19) NOT NULL
+);
+MERGE INTO global_author_notes t USING (SELECT '__none__' AS id FROM dual) s ON (t.id = s.id)
+ WHEN NOT MATCHED THEN INSERT (id, name, content, content_hash, updated_at) VALUES ('__none__', EMPTY_CLOB(), EMPTY_CLOB(), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 0);
+MERGE INTO global_author_note_settings t USING (SELECT 1 AS singleton FROM dual) s ON (t.singleton = s.singleton)
+ WHEN NOT MATCHED THEN INSERT (singleton, allow_script_write, updated_at) VALUES (1, 0, 0);

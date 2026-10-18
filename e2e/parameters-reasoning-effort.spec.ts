@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures";
 
 /**
  * E2E test reproducing and verifying fix for:
- * [SettingsStore] reasoningEffort is owned by PresetStore
+ * [SettingsStore] reasonEffort is owned by PresetStore
  * when navigating to Parameters settings with a model that supports reasoning effort (e.g. o3-mini).
  */
 
@@ -81,19 +81,21 @@ test.describe("Parameters settings - Reasoning Effort", () => {
     await expect(highButton).toBeVisible();
     await highButton.click();
 
-    // Verify presetStore.state.reasoningEffort was updated to 2
+    // Verify presetStore.state.reasonEffort was updated to 2
     const updatedEffort = await page.evaluate(async () => {
       const presetStoreUrl = "/src/ts/stores/domain/presetStore.svelte.ts";
       const { presetStore } = (await import(
         /* @vite-ignore */ presetStoreUrl
       )) as { presetStore: any };
-      return presetStore.state.reasoningEffort;
+      return presetStore.state.reasonEffort;
     });
     expect(updatedEffort).toBe(2);
 
     // Check that no SettingsStore errors were thrown
     const settingsStoreError = pageErrors.find((e) =>
-      e.message.includes("[SettingsStore] reasoningEffort is owned by PresetStore"),
+      e.message.includes(
+        "[SettingsStore] reasonEffort is owned by PresetStore",
+      ),
     );
     expect(settingsStoreError).toBeUndefined();
     expect(pageErrors).toHaveLength(0);

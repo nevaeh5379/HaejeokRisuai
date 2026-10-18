@@ -16,9 +16,10 @@
     import { MobileGUI, sideBarClosing, sideBarStore, selectedCharID } from 'src/ts/stores.svelte';
     import { characterStore } from 'src/ts/stores/domain/characterStore.svelte';
     import { settingsStore } from 'src/ts/stores/domain/settingsStore.svelte';
-    import { activeGenerationChatIds } from 'src/ts/process/chatRuntimeState';
+    import { activeGenerationChatIds } from 'src/ts/process/chat/runtimeState';
     import { isTauri, isTauriMacOS, isTauriWindows } from 'src/ts/platform';
     import { windowDragRegion } from 'src/ts/nativeWindowChrome';
+    import { linuxCsdTabInsets } from 'src/ts/linuxWindowIntegration';
     import { alertError } from 'src/ts/alert';
     import { RISU_CHAT_TAB_DRAG_TYPE } from 'src/ts/dragTypes';
     import {
@@ -274,7 +275,7 @@
         try {
             await openChatInNewTauriWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
         } catch (error) {
@@ -416,7 +417,7 @@
         try {
             await openChatInNewTauriWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
             const result = chatTabsStore.detach(tab.id);
@@ -614,7 +615,7 @@
             const label = getTabLabel(tab);
             const created = await moveTabToNewTauriWorkspaceWindow(
                 tab,
-                `${label.characterName} · ${label.chatName} - RisuAI`,
+                `${label.characterName} · ${label.chatName}`,
                 label,
             );
             if (created) {
@@ -700,6 +701,7 @@
 {#if showTabs}
     <div
         class="rs-chat-tab-strip-shell shrink-0 w-full"
+        use:linuxCsdTabInsets
         class:macos-traffic-light-clearance={reserveMainMacOSTrafficLights || reserveMacOSTrafficLights}
     >
         <div
@@ -715,6 +717,7 @@
         ondragover={dragTabListOver}
         ondragleave={leaveTabListDrag}
         ondrop={(event) => void dropTabList(event)}
+        use:windowDragRegion={{ windowsOnly: true, selfOnly: true }}
         class="rs-chat-tab-list shrink-0 h-10 flex items-end gap-1 pr-2 pt-1 overflow-x-auto bg-darkbg/70 border-b border-darkborderc backdrop-blur-sm"
         class:ring-2={detachedDropActive}
         class:ring-blue-500={detachedDropActive}
@@ -803,6 +806,12 @@
             <path data-chat-pane-shape class="rs-chat-pane-surface-shape" />
         </svg>
     {/if}
+{:else if isTauriWindows}
+    <div
+        class="absolute inset-x-0 top-0 z-10 h-10 bg-transparent"
+        use:windowDragRegion
+        aria-hidden="true"
+    ></div>
 {/if}
 
 {#if contextMenu && showTabs}

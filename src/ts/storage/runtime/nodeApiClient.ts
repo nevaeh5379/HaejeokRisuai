@@ -15,6 +15,7 @@ type StreamedNativeFetch = (
     method?: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
     signal?: AbortSignal;
     logFetch?: boolean;
+    requestTimeoutMs?: number;
   },
 ) => Promise<Response>;
 
@@ -48,6 +49,9 @@ export function createCapacitorNodeApiFetch(
       headers,
       method,
       signal: init?.signal ?? undefined,
+      // Native transports have no per-request fetch timeout; forward the
+      // hint so the plugin applies its own connect/read timeout.
+      requestTimeoutMs: init?.requestTimeoutMs,
       logFetch: false,
     });
   };

@@ -100,6 +100,8 @@ export interface NodeClientCapabilities {
  */
 export interface NodeStorageSyncSummary {
   protocolVersion: number;
+  /** Optional v1 extension; only true authorizes per-plugin SQL records. */
+  supportsPluginRecords?: boolean;
   /**
    * Server-side revision counter, bumped on every data write.
    *
@@ -584,9 +586,27 @@ export class NodeStorageSyncFinalizeError extends Error {
  *                {@link NodeApiClient.resolve}가 만든 절대 URL.
  * @param init  - Standard fetch options. 표준 fetch 옵션.
  */
+export interface NodeApiRequestInit extends RequestInit {
+  /**
+   * Per-request transport timeout in milliseconds.
+   *
+   * (KO) 요청 단위 전송 타임아웃(밀리초).
+   *
+   * @remarks
+   * (EN) Optional for the browser `fetch` (which has no per-request timeout),
+   * but native transports honor it: the Tauri and Capacitor HTTP plugins
+   * apply it as their connect/read timeout.
+   *
+   * (KO) 브라우저 `fetch`에는 선택 사항이지만(요청 단위 타임아웃이
+   * 없음), 네이티브 전송은 이를 적용한다: Tauri와 Capacitor HTTP 플러그인이
+   * 연결/읽기 타임아웃으로 사용한다.
+   */
+  requestTimeoutMs?: number;
+}
+
 export type NodeApiFetch = (
   input: string,
-  init?: RequestInit,
+  init?: NodeApiRequestInit,
 ) => Promise<Response>;
 
 /**
@@ -667,6 +687,8 @@ function validateStorageSyncSummary(value: unknown): NodeStorageSyncSummary {
   if (
     !summary ||
     summary.protocolVersion !== 1 ||
+    (summary.supportsPluginRecords !== undefined &&
+      typeof summary.supportsPluginRecords !== "boolean") ||
     !validCounter(summary.revision) ||
     typeof summary.initialized !== "boolean" ||
     !counters ||
@@ -1042,7 +1064,7 @@ export class NodeApiClient {
    * @returns The raw fetch {@link Response}.
    *          fetch의 원시 {@link Response}.
    */
-  request(path: string, init?: RequestInit): Promise<Response> {
+  request(path: string, init?: NodeApiRequestInit): Promise<Response> {
     return this.fetcher(this.resolve(path), init);
   }
 
@@ -1076,13 +1098,25 @@ export class NodeApiClient {
       signal,
     });
     if (!response.ok) {
+      const endpoint = this.resolve("/api/client-capabilities");
       if (response.status === 404) {
         throw new NodeApiCompatibilityError(
-          "This server is too old for remote storage. Upgrade the server before connecting.",
+          `The storage API endpoint was not found (HTTP 404): ${endpoint}. Check the server URL and reverse proxy route, or upgrade the server.`,
         );
       }
+      const body = await response.json().catch(() => null);
+      if (response.status === 403 && body?.code === "cors_denied") {
+        const origin = globalThis.location?.origin;
+        throw new Error(
+          `The storage server rejected this app origin (${origin || "unknown"}). Add it to RISUAI_ALLOWED_ORIGINS on the Node server. For changing localhost dev ports, use http://localhost:*.`,
+        );
+      }
+      const detail =
+        body && typeof body.error === "string" && body.error.trim()
+          ? ` ${body.error.trim()}`
+          : "";
       throw new Error(
-        `Could not read storage server capabilities (HTTP ${response.status}).`,
+        `Could not read storage server capabilities (HTTP ${response.status}) from ${endpoint}.${detail}`,
       );
     }
     return validateCapabilities(await response.json());

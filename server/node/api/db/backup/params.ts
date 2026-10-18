@@ -67,4 +67,3 @@ export namespace MaskedBackupParams {
     hasPassword: boolean;
   };
 }
-

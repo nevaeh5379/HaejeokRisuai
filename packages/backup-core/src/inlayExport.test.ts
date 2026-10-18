@@ -3,7 +3,7 @@ import {
   streamBackupInlays,
   type BackupInlayEntry,
   type StreamBackupInlaysResult,
-} from "./inlayExport";
+} from "./inlayExport.ts";
 
 describe("streamBackupInlays", (): void => {
   it("validates names and streams encoded entries in order", async (): Promise<void> => {

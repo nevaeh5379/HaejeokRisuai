@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   prepareProviderExecutionContext,
   resolveRequestModel,
-} from "@risuai/chat-core/providerContext.cjs";
+} from "@risuai/chat-core/providerContext.ts";
 
 const settings = {
   primaryModel: "gpt-main",

@@ -1,30 +1,27 @@
 import {
   parseBufferedBackupContainer,
   type BackupContainerEntryInfo,
-} from "./containerStream";
-import type { BackupEntryClassification } from "./entryPolicy";
+} from "./containerStream.ts";
+import type { BackupEntryClassification } from "./entryPolicy.ts";
 import {
   iterateLocalBackupSource,
   type LocalBackupSource,
-} from "./importSource";
-import type { InlayRestoreResult } from "./inlayRestore";
+} from "./importSource.ts";
+import type { InlayRestoreResult } from "./inlayRestore.ts";
 import {
   dispatchBackupRestoreEntry,
   type AccountBackupEncryptionMetadata,
-} from "./restoreEntry";
+} from "./restoreEntry.ts";
 import {
   collectStreamingInventoryRecord,
   createStreamingColdStorageInventory,
   type StreamingColdStorageInventory,
-} from "./streamInventory";
-import type {
-  PortableDatabaseStreamFragment,
-  PortableDatabaseStreamRecord,
-} from "./streamFormat";
+} from "./stream/inventory.ts";
+import { type Fragment, type BackupRecord } from "./stream/databaseBackup.ts";
 import {
   PortableDatabaseStreamRestoreCoordinator,
   type PortableDatabaseStreamFragmentSink,
-} from "./streamRestore";
+} from "./stream/restore.ts";
 
 export interface AbortablePortableDatabaseStreamSink extends PortableDatabaseStreamFragmentSink {
   abort(): Promise<void>;
@@ -102,12 +99,10 @@ export async function restoreBackupArchive<
   const streamRestore: PortableDatabaseStreamRestoreCoordinator<TSink> =
     new PortableDatabaseStreamRestoreCoordinator<TSink>({
       createSink: options.createStreamSink,
-      onSinkFragment(fragment: PortableDatabaseStreamFragment): void {
-        fragment.records.forEach(
-          (record: PortableDatabaseStreamRecord): void => {
-            collectStreamingInventoryRecord(streamingColdStorage, record);
-          },
-        );
+      onSinkFragment(fragment: Fragment): void {
+        fragment.records.forEach((record: BackupRecord): void => {
+          collectStreamingInventoryRecord(streamingColdStorage, record);
+        });
       },
     });
 

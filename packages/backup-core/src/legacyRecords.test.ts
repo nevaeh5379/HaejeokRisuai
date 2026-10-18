@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { iterateLegacyBackupSqlRecords } from "./legacyRecords";
+import { iterateLegacyBackupSqlRecords } from "./legacyRecords.ts";
 
 function ids() {
   let index = 0;
@@ -41,6 +41,7 @@ describe("iterateLegacyBackupSqlRecords", () => {
       "meta",
       "setting",
       "setting",
+      "author-note-settings",
       "plugin-storage",
       "module",
       "preset",
@@ -54,8 +55,7 @@ describe("iterateLegacyBackupSqlRecords", () => {
     expect(
       records.find(
         (record) =>
-          record.type === "setting" &&
-          record.key === "activeBotPresetId",
+          record.type === "setting" && record.key === "activeBotPresetId",
       ),
     ).toMatchObject({ value: "generated-1" });
     const branch = records.find((record) => record.type === "branch");
@@ -154,11 +154,12 @@ describe("iterateLegacyBackupSqlRecords", () => {
       records.find((record) => record.type === "active-branch"),
     ).toMatchObject({ branchId: "reroll" });
     expect(
-      records.filter((record) => record.type === "message").map((record) => ({
-        id: "id" in record ? record.id : "",
-        origin:
-          "originBranchId" in record ? record.originBranchId : "",
-      })),
+      records
+        .filter((record) => record.type === "message")
+        .map((record) => ({
+          id: "id" in record ? record.id : "",
+          origin: "originBranchId" in record ? record.originBranchId : "",
+        })),
     ).toEqual([
       { id: "m1", origin: "root" },
       { id: "m2", origin: "root" },

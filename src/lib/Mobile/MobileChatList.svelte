@@ -403,7 +403,7 @@
                             <!-- Folder Items -->
                             {#if !collapsedFolders[folder.id]}
                                 <div class="divide-y divide-darkborderc/30 border-t border-darkborderc/40">
-                                    {#each folderChats as { chat, index }}
+                                    {#each folderChats as { chat, index } (chat.id || chat)}
                                         <div
                                             role="button"
                                             tabindex="0"
@@ -446,7 +446,7 @@
                 {#if selectedFolderFilter === "all" && folders.length > 0}
                     <span class="text-[11px] font-semibold text-textcolor2 px-1">Other Chats</span>
                 {/if}
-                {#each (selectedFolderFilter === "all" && folders.length > 0 ? unassignedChats : filteredChats) as { chat, index }}
+                {#each (selectedFolderFilter === "all" && folders.length > 0 ? unassignedChats : filteredChats) as { chat, index } (chat.id || chat)}
                     <div
                         role="button"
                         tabindex="0"
@@ -550,7 +550,7 @@
             ></button>
 
             <div
-                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(env(safe-area-inset-bottom),20px)]"
+                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(var(--risu-safe-area-inset-bottom),20px)]"
             >
                 <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
                     <div class="flex items-center gap-2.5 min-w-0">
@@ -682,7 +682,7 @@
             ></button>
 
             <div
-                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(env(safe-area-inset-bottom),20px)]"
+                class="relative z-10 w-full max-w-md bg-darkbg border border-darkborderc rounded-t-3xl sm:rounded-3xl p-4 flex flex-col gap-3 shadow-2xl pb-[max(var(--risu-safe-area-inset-bottom),20px)]"
             >
                 <div class="flex items-center justify-between border-b border-darkborderc/60 pb-3">
                     <div class="flex items-center gap-2.5 min-w-0">

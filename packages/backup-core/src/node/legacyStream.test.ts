@@ -7,10 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   encodeLegacyBackupDatabase,
   LEGACY_COMPRESSED_DATABASE_HEADER,
-} from "./legacyFormat";
-import {
-  streamLegacyBackupDatabaseToSqlNdjson,
-} from "./legacyStream";
+} from "./legacyFormat.ts";
+import { streamLegacyBackupDatabaseToSqlNdjson } from "./legacyStream.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -34,9 +32,9 @@ async function readRecords(path: string) {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -95,25 +93,24 @@ describe("streamLegacyBackupSqlRecords", () => {
     expect(
       records.find(
         (record) =>
-          record.type === "setting" &&
-          record.key === "activeBotPresetId",
+          record.type === "setting" && record.key === "activeBotPresetId",
       ),
     ).toMatchObject({ value: "generated-1" });
-    expect(
-      records.filter((record) => record.type === "message"),
-    ).toMatchObject([
-      {
-        id: "m1",
-        position: 0,
-        originBranchId: "root",
-      },
-      {
-        id: "m2",
-        position: 1,
-        parentMessageId: "m1",
-        originBranchId: "root",
-      },
-    ]);
+    expect(records.filter((record) => record.type === "message")).toMatchObject(
+      [
+        {
+          id: "m1",
+          position: 0,
+          originBranchId: "root",
+        },
+        {
+          id: "m2",
+          position: 1,
+          parentMessageId: "m1",
+          originBranchId: "root",
+        },
+      ],
+    );
   });
 
   it("accepts zlib-wrapped backups from transitional server builds", async () => {

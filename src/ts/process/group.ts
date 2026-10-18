@@ -5,7 +5,7 @@ import { get } from "svelte/store";
 
 import { selectedCharID } from "../stores.svelte";
 import { characterStore } from "../stores/domain/characterStore.svelte";
-import { orderGroupSpeakers } from "@risuai/chat-core/group.cjs";
+import { orderGroupSpeakers } from "@risuai/chat-core/group.ts";
 
 export async function addGroupChar() {
   let selectedId = get(selectedCharID);
