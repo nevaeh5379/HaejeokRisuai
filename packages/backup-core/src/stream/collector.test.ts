@@ -11,7 +11,7 @@ type StreamRecord = LegacyBackupSqlRecord;
 
 function fragment(index: number, records: StreamRecord[]): Fragment {
   return {
-    format: "risu-portable-database-fragment",
+    format: "haejeok-stream-fragment",
     index,
     records,
   };
@@ -19,12 +19,12 @@ function fragment(index: number, records: StreamRecord[]): Fragment {
 
 function manifest(overrides: Partial<Manifest> = {}): Manifest {
   return {
-    format: "risu-portable-database-stream",
+    format: "haejeok-stream-manifest",
     revision: 7,
     totalFragments: 1,
     totalRecords: 0,
     counts: {},
-    complete: true,
+    version: "1.1",
     ...overrides,
   };
 }
@@ -94,6 +94,20 @@ describe("PortableDatabaseStreamCollector reconstruction", () => {
       { type: "setting", key: "activeBotPresetId", value: "preset-2" },
       { type: "plugin-storage", key: "plugin-1", value: { retained: true } },
       {
+        type: "plugin",
+        id: "plugin-2",
+        position: 1,
+        data: { name: "Disabled", enabled: false },
+        script: "// disabled",
+      },
+      {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Enabled", realArg: { key: "value" } },
+        script: "// source",
+      },
+      {
         type: "module",
         position: 2,
         id: "module-2",
@@ -123,6 +137,10 @@ describe("PortableDatabaseStreamCollector reconstruction", () => {
     expect(restored.pluginCustomStorage).toEqual({
       "plugin-1": { retained: true },
     });
+    expect(restored.plugins).toEqual([
+      { name: "Enabled", realArg: { key: "value" }, script: "// source" },
+      { name: "Disabled", enabled: false, script: "// disabled" },
+    ]);
     expect(restored.modules.map((m: any) => m.name)).toEqual([
       "First",
       "Second",

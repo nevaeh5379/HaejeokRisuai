@@ -94,6 +94,7 @@ describe("prepareLocalBackupDatabaseImport", () => {
       fragment1Path,
       await encodeLegacyBackupDatabase({
         format: "risu-portable-database-fragment",
+        version: 1,
         index: 1,
         records: first,
       }),
@@ -102,6 +103,7 @@ describe("prepareLocalBackupDatabaseImport", () => {
       fragment2Path,
       await encodeLegacyBackupDatabase({
         format: "risu-portable-database-fragment",
+        version: 1,
         index: 2,
         records: second,
       }),
@@ -110,6 +112,7 @@ describe("prepareLocalBackupDatabaseImport", () => {
       manifestPath,
       await encodeLegacyBackupDatabase({
         format: "risu-portable-database-stream",
+        version: 1,
         revision: 5,
         totalFragments: 2,
         totalRecords: 3,
@@ -153,6 +156,7 @@ describe("prepareLocalBackupDatabaseImport", () => {
       fragmentPath,
       await encodeLegacyBackupDatabase({
         format: "risu-portable-database-fragment",
+        version: 1,
         index: 1,
         records: [{ type: "meta", formatVersion: 1, revision: 2 }],
       }),
@@ -161,6 +165,7 @@ describe("prepareLocalBackupDatabaseImport", () => {
       manifestPath,
       await encodeLegacyBackupDatabase({
         format: "risu-portable-database-stream",
+        version: 1,
         revision: 2,
         totalFragments: 1,
         totalRecords: 2,

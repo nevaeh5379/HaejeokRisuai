@@ -1341,7 +1341,7 @@ describe("NodeSqlStorage portable database stream restore", () => {
     ];
     const restore = await storage.beginPortableDatabaseStreamRestore();
     await restore.writeFragment({
-      format: "risu-portable-database-fragment",
+      format: "haejeok-stream-fragment",
       index: 1,
       records,
     });
@@ -1355,9 +1355,9 @@ describe("NodeSqlStorage portable database stream restore", () => {
     ).toEqual([false, false, true]);
 
     await restore.finish({
-      format: "risu-portable-database-stream",
+      format: "haejeok-stream-manifest",
       revision: 4,
-      complete: true,
+      version: "1.1",
       totalFragments: 1,
       totalRecords: records.length,
       counts: { meta: 1, setting: 130 },

@@ -6,12 +6,12 @@ import {
 
 function manifest() {
   return {
-    format: "risu-portable-database-stream" as const,
+    format: "haejeok-stream-manifest" as const,
     revision: 7,
     totalFragments: 1,
     totalRecords: 1,
     counts: { character: 1 },
-    complete: true as const,
+    version: "1.1" as const,
   };
 }
 

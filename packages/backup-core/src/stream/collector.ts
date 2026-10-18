@@ -10,6 +10,7 @@ const RECORD_TYPES: PersistedRecordType[] = [
   "author-note-settings",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",
@@ -123,6 +124,23 @@ export class PortableDatabaseStreamCollector {
             value: unknown;
           }>
         ).push({ position: record.position, value: record.data });
+        break;
+      case "plugin":
+        if (!Number.isSafeInteger(record.position) || record.position < 0) {
+          throw new Error("Invalid streamed plugin position");
+        }
+        (
+          (this.database.plugins ??= []) as Array<{
+            position: number;
+            value: unknown;
+          }>
+        ).push({
+          position: record.position,
+          value: {
+            ...(record.data as Record<string, unknown>),
+            script: record.script,
+          },
+        });
         break;
       case "preset":
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
@@ -282,6 +300,13 @@ export class PortableDatabaseStreamCollector {
     )
       .sort((left, right) => left.position - right.position)
       .map((entry) => entry.value);
+    if (this.counts.plugin) {
+      this.database.plugins = (
+        this.database.plugins as Array<{ position: number; value: unknown }>
+      )
+        .sort((left, right) => left.position - right.position)
+        .map((entry) => entry.value);
+    }
     this.database.botPresets = (
       (this.database.botPresets as Array<{
         position: number;

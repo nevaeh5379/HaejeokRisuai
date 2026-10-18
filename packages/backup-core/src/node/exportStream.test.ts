@@ -41,12 +41,12 @@ describe("PortableDatabaseExportWriter", () => {
       "database.stream/000000000002.risudat",
     ]);
     expect(manifest).toMatchObject({
-      format: "risu-portable-database-stream",
+      format: "haejeok-stream-manifest",
       revision: 9,
       totalFragments: 2,
       totalRecords: 3,
       counts: { meta: 1, setting: 1, character: 1 },
-      complete: true,
+      version: "1.1",
     });
     expect(progress).toEqual([
       [1, 3],

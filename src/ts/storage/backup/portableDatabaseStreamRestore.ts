@@ -38,6 +38,7 @@ const RECORD_TYPES: PortableDatabaseStreamPersistedRecord["type"][] = [
   "author-note-settings",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",
@@ -101,9 +102,9 @@ export class PortableDatabaseStreamValidator {
     this.sourceRevision = record.revision;
   }
 
-  finish(manifest: PortableDatabaseStreamManifest): void {
-    const parsed = Manifest.read(manifest);
-    if (!parsed) throw new Error("Unsupported streaming database manifest");
+  finish(value: PortableDatabaseStreamManifest): void {
+    const manifest = Manifest.read(value);
+    if (!manifest) throw new Error("Unsupported streaming database manifest");
     if (
       manifest.totalFragments !== this.fragments.size ||
       manifest.totalRecords !== this.totalRecords

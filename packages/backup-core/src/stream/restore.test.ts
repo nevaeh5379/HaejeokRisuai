@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PortableDatabaseStreamRestoreCoordinator,
   type PortableDatabaseStreamFragmentSink,
@@ -11,7 +11,7 @@ import {
 
 function fragment(index: number): Fragment {
   return {
-    format: "risu-portable-database-fragment",
+    format: "haejeok-stream-fragment",
     index,
     records: [
       {
@@ -25,16 +25,62 @@ function fragment(index: number): Fragment {
 
 function manifest(): Manifest {
   return {
-    format: "risu-portable-database-stream",
+    format: "haejeok-stream-manifest",
     revision: 7,
     totalFragments: 1,
     totalRecords: 1,
     counts: { meta: 1 },
-    complete: true,
+    version: "1.1",
   };
 }
 
 describe("PortableDatabaseStreamRestoreCoordinator", (): void => {
+  it("normalizes validated v1 input before handing it to a restore sink", async () => {
+    const writeFragment = vi.fn(async (_value: Fragment) => {});
+    const coordinator = new PortableDatabaseStreamRestoreCoordinator({
+      async createSink() {
+        return { writeFragment };
+      },
+    });
+    const records = fragment(1).records;
+    await coordinator.acceptEntry("database.stream/000000000001.risudat", {
+      format: "risu-portable-database-fragment",
+      version: 1,
+      index: 1,
+      records,
+    });
+    await coordinator.acceptEntry(MANIFEST_NAME, {
+      ...manifest(),
+      format: "risu-portable-database-stream",
+      version: 1,
+      complete: true,
+    });
+    expect(writeFragment).toHaveBeenCalledWith(fragment(1));
+    expect(writeFragment.mock.calls[0][0].records).toBe(records);
+    expect(coordinator.manifest).toEqual(manifest());
+  });
+
+  it.each([
+    { format: "haejeok-stream-manifest", version: "9.9" },
+    { format: "haejeok-stream-manifest", version: undefined },
+    { format: "risu-portable-database-stream", version: 2, complete: true },
+    { format: "risu-portable-database-stream", version: 1, complete: false },
+  ])(
+    "rejects an unsupported manifest before creating a restore sink: %j",
+    async (patch) => {
+      const createSink = vi.fn(async () => ({
+        async writeFragment(_value: Fragment) {},
+      }));
+      const coordinator = new PortableDatabaseStreamRestoreCoordinator({
+        createSink,
+      });
+      await expect(
+        coordinator.acceptEntry(MANIFEST_NAME, { ...manifest(), ...patch }),
+      ).rejects.toThrow("Unsupported streaming database manifest");
+      expect(createSink).not.toHaveBeenCalled();
+    },
+  );
+
   it("uses the compatibility collector when no sink is available", async (): Promise<void> => {
     const coordinator: PortableDatabaseStreamRestoreCoordinator<PortableDatabaseStreamFragmentSink> =
       new PortableDatabaseStreamRestoreCoordinator({

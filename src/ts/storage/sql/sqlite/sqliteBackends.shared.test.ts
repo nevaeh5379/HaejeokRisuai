@@ -182,6 +182,118 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     targetHarness.database.close();
   });
 
+  it("preserves installed plugins separately from custom storage when restoring to web", async () => {
+    const sourceHarness = makeFreshHarness(make);
+    const source = {
+      ...buildFullDatabase(),
+      plugins: [
+        {
+          name: "backup-plugin",
+          script: "// plugin source\nconst value = '한글\\0';",
+          version: "3.0",
+          enabled: true,
+          arguments: { key: "string" },
+          realArg: { key: "saved value" },
+          customLink: [],
+          argMeta: {},
+        },
+        {
+          name: "disabled-plugin",
+          script: "// disabled source",
+          version: "3.0",
+          enabled: false,
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+        },
+      ],
+      pluginCustomStorage: { "backup-plugin": { retained: true } },
+    } satisfies Database;
+    await seed(sourceHarness.storage, source);
+    const fragments: PortableDatabaseStreamFragment[] = [];
+    const manifest = await exportPortableDatabaseStream(
+      sourceHarness.storage,
+      {
+        writeFragment: async (fragment) => {
+          fragments.push(fragment);
+        },
+        writeColdStorage: async () => {},
+      },
+      { fragmentRecords: 1 },
+    );
+    expect(manifest.counts.plugin).toBe(2);
+
+    const targetHarness = makeFreshHarness(makeWebStorage as MakeStorage);
+    await seed(targetHarness.storage, {
+      ...buildFullDatabase(),
+      plugins: [{ ...source.plugins[0], name: "old-plugin" }],
+    });
+    const session = await (
+      targetHarness.storage as any
+    ).beginPortableDatabaseStreamRestore();
+    for (const fragment of fragments) await session.writeFragment(fragment);
+    await session.finish(manifest);
+
+    const restoredPlugins = await targetHarness.storage.plugin.loadAll();
+    expect(restoredPlugins.map((plugin) => plugin.name)).toEqual(
+      source.plugins.map((plugin) => plugin.name),
+    );
+    for (const [position, plugin] of restoredPlugins.entries()) {
+      const { script, ...metadata } = source.plugins[position];
+      expect(plugin).toMatchObject({ ...metadata, position });
+      expect(await targetHarness.storage.plugin.script.load(plugin.id)).toEqual(
+        { pluginId: plugin.id, script },
+      );
+    }
+    expect(await targetHarness.storage.loadPluginCustomStorage()).toEqual(
+      source.pluginCustomStorage,
+    );
+    sourceHarness.database.close();
+    targetHarness.database.close();
+  });
+
+  it("restores legacy plugins setting records into the plugin domain", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    const plugin = {
+      name: "legacy-plugin",
+      script: "// legacy plugin",
+      version: "3.0",
+      enabled: false,
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+    };
+    const fragment: PortableDatabaseStreamFragment = {
+      format: "haejeok-stream-fragment",
+      index: 1,
+      records: [
+        { type: "meta", formatVersion: 1, revision: 7 },
+        { type: "setting", key: "plugins", value: [plugin] },
+      ],
+    };
+    const session = await (storage as any).beginPortableDatabaseStreamRestore();
+    await session.writeFragment(fragment);
+    await session.finish({
+      format: "haejeok-stream-manifest",
+      version: "1.1",
+      revision: 7,
+      totalFragments: 1,
+      totalRecords: 2,
+      counts: { meta: 1, setting: 1 },
+    });
+    const installed = await storage.plugin.loadAll();
+    expect(installed).toHaveLength(1);
+    expect(installed[0]).toMatchObject({ name: plugin.name, enabled: false });
+    expect(await storage.plugin.script.load(installed[0].id)).toEqual({
+      pluginId: installed[0].id,
+      script: plugin.script,
+    });
+    expect(await storage.loadSettingKey("plugins")).toBeUndefined();
+    database.close();
+  });
+
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
     const { storage, database } = makeFreshHarness(make);
     const source = await seed(storage);

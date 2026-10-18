@@ -18,6 +18,7 @@ export const LOCAL_BACKUP_DATABASE_RECORD_TYPES = [
   "meta",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",
@@ -30,14 +31,7 @@ export const LOCAL_BACKUP_DATABASE_RECORD_TYPES = [
 export type LocalBackupDatabaseRecordType =
   (typeof LOCAL_BACKUP_DATABASE_RECORD_TYPES)[number];
 
-export interface LocalBackupDatabaseStreamManifest {
-  format: "risu-portable-database-stream";
-  revision: number;
-  complete: true;
-  totalFragments: number;
-  totalRecords: number;
-  counts: Record<string, number | undefined>;
-}
+export type LocalBackupDatabaseStreamManifest = Manifest;
 
 export interface LocalBackupDatabaseStreamRecord {
   type: string;
@@ -316,8 +310,7 @@ export class LocalBackupDatabaseStreamStore<
       );
     }
 
-    this.validateManifest(manifest, session);
-    const typedManifest = manifest as LocalBackupDatabaseStreamManifest;
+    const typedManifest = this.validateManifest(manifest, session);
     return {
       id,
       filePath: session.filePath,
@@ -330,9 +323,8 @@ export class LocalBackupDatabaseStreamStore<
   private validateManifest(
     manifest: unknown,
     session: InternalSession<TState>,
-  ): asserts manifest is LocalBackupDatabaseStreamManifest {
-    const value = manifest as Partial<LocalBackupDatabaseStreamManifest> | null;
-    const parsed: Manifest | null = Manifest.read(value);
+  ): Manifest {
+    const parsed = Manifest.read(manifest);
     if (!parsed) {
       throw new LocalBackupDatabaseStreamError(
         "Portable database stream manifest is invalid",
@@ -380,6 +372,7 @@ export class LocalBackupDatabaseStreamStore<
         );
       }
     }
+    return parsed;
   }
 
   async cleanup(id: string): Promise<void> {

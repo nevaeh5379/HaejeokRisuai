@@ -53,17 +53,17 @@ async function nativeDatabaseEntries(
   for (const record of records)
     counts[record.type] = (counts[record.type] ?? 0) + 1;
   const fragment = await encodeLegacyBackupDatabase({
-    format: "risu-portable-database-fragment",
+    format: "haejeok-stream-fragment",
     index: 1,
     records,
   });
   const manifest: Manifest = {
-    format: "risu-portable-database-stream",
+    format: "haejeok-stream-manifest",
     revision: 4,
     totalFragments: 1,
     totalRecords: records.length,
     counts,
-    complete: true,
+    version: "1.1",
   };
   return {
     fragment: framed("database.stream/000000000001.risudat", fragment),
@@ -197,6 +197,38 @@ afterEach(async () => {
 });
 
 describe("LocalBackupImportService streaming restore", () => {
+  it("preserves plugin definitions and custom storage as separate records", async () => {
+    const state = restoreState();
+    const { service } = await makeService(
+      "import_plugins",
+      transactionalAdapter(state),
+    );
+    const job = service.createJob();
+    const records: LegacyBackupSqlRecord[] = [
+      { type: "meta", formatVersion: 1, revision: 4 },
+      {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Backup plugin", enabled: false },
+        script: "// source\u0000한글",
+      },
+      {
+        type: "plugin-storage",
+        key: "Backup plugin",
+        value: { retained: true },
+      },
+    ];
+    const database = await nativeDatabaseEntries(records);
+    await expect(
+      service.importStream(
+        job.id,
+        chunked([database.fragment, database.manifest]),
+      ),
+    ).resolves.toMatchObject({ status: "complete", recordCount: 3 });
+    expect(state.activeRecords).toEqual(records);
+  });
+
   it("streams asset bytes through the restore adapter and completes the database", async () => {
     const state = restoreState();
     const onProgress = vi.fn();
