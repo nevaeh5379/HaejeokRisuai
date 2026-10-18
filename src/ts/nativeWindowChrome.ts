@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { isTauriLinux, isTauriMacOS, isTauriWindows } from "./platform";
 import {
   getActiveLinuxWindowCapabilities,
@@ -14,6 +15,36 @@ export type ResizeDirection =
   | "SouthEast"
   | "SouthWest"
   | "West";
+
+let macosSidebarBlurUpdate = Promise.resolve();
+
+export function applyMacOSNativeSidebarBlur(enabled: boolean): Promise<void> {
+  if (!isTauriMacOS) return Promise.resolve();
+  // Preserve toggle order even if an earlier native update is still pending.
+  // Its caller reports errors; a failed update must not block future choices.
+  macosSidebarBlurUpdate = macosSidebarBlurUpdate
+    .catch(() => {})
+    .then(() => invoke<void>("set_macos_native_sidebar_blur", { enabled }));
+  return macosSidebarBlurUpdate;
+}
+
+export function applyMacOSSidebarTransparency(
+  enabled: boolean,
+  opacity: number,
+): void {
+  if (!isTauriMacOS || typeof document === "undefined") return;
+
+  const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
+  const effectiveOpacity = enabled ? clamped : 100;
+  document.documentElement.classList.toggle(
+    "tauri-macos-sidebar-opaque",
+    !enabled || clamped >= 100,
+  );
+  document.documentElement.style.setProperty(
+    "--risu-macos-sidebar-opacity",
+    `${effectiveOpacity}%`,
+  );
+}
 
 export function installMacOSHeaderDrag() {
   if (!isTauriMacOS) return;
