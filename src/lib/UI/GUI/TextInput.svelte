@@ -22,7 +22,7 @@
         class:w-full={fullwidth}
         class:h-full={fullh}
         class:text-textcolor2={disabled}
-
+        class:border-gray-300={isLight()}
         autocomplete="new-password"
         {placeholder}
         id={id}
@@ -55,6 +55,7 @@
         class:w-full={fullwidth}
         class:h-full={fullh}
         class:text-textcolor2={disabled}
+        class:border-gray-300={isLight()}
 
         {autocomplete}
         {placeholder}
@@ -68,6 +69,8 @@
 {/if}
 
 <script lang="ts">
+  import { getCurrentlyColorScheme, isLight } from "src/ts/gui/colorscheme";
+
     type FormEventHandler<T extends EventTarget> = (event: Event & {
         currentTarget: EventTarget & T;
     }) => any

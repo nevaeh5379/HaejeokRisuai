@@ -26,11 +26,8 @@ import {
   PROMPT_SETTING_KEYS,
   SETTINGS_STORE_EXCLUDED_KEYS,
 } from "../sqlDeferredSettings";
-import sqliteSchemaSql from "@risuai/storage-sqlite/sqlite-schema.sql?raw";
-import {
-  flattenRelationalValue,
-  type RelationalNodeRow,
-} from "@risuai/storage-sqlite/relationalNodeCodec";
+import sqliteSchemaSql from "@risuai/storage-sqlite/schema/schema.sql?raw";
+import * as nodeCodec from "@risuai/storage-sqlite/schema/codec";
 import {
   makeWebStorage,
   makeTauriStorage,
@@ -110,13 +107,24 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     })) {
       records.push(record);
     }
-    expect(records[0]).toMatchObject({ type: "meta", revision: storage.getRevision() });
-    expect(records.filter((record) => record.type === "character")).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      type: "meta",
+      revision: storage.getRevision(),
+    });
+    expect(
+      records.filter((record) => record.type === "character"),
+    ).toHaveLength(2);
     expect(records.filter((record) => record.type === "chat")).toHaveLength(2);
-    expect(records.filter((record) => record.type === "message")).toHaveLength(3);
+    expect(records.filter((record) => record.type === "message")).toHaveLength(
+      3,
+    );
     expect(records.some((record) => record.type === "module")).toBe(true);
-    const chat = records.find((record) => record.type === "chat" && record.id === "chat-1");
-    expect(chat && "data" in chat ? (chat.data as any).message : undefined).toBeUndefined();
+    const chat = records.find(
+      (record) => record.type === "chat" && record.id === "chat-1",
+    );
+    expect(
+      chat && "data" in chat ? (chat.data as any).message : undefined,
+    ).toBeUndefined();
     database.close();
   });
 
@@ -165,13 +173,127 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(restoredGraph.branches).toEqual(sourceGraph.branches);
     expect(restoredGraph.activeBranchId).toBe(sourceGraph.activeBranchId);
     expect(restoredGraph.links).toEqual(sourceGraph.links);
-    expect(
-      restoredGraph.messages.map((message) => message.chatId),
-    ).toEqual(sourceGraph.messages.map((message) => message.chatId));
+    expect(restoredGraph.messages.map((message) => message.chatId)).toEqual(
+      sourceGraph.messages.map((message) => message.chatId),
+    );
     expect(targetHarness.storage.getRevision()).toBe(1);
 
     sourceHarness.database.close();
     targetHarness.database.close();
+  });
+
+  it("preserves installed plugins separately from custom storage when restoring to web", async () => {
+    const sourceHarness = makeFreshHarness(make);
+    const source = {
+      ...buildFullDatabase(),
+      plugins: [
+        {
+          name: "backup-plugin",
+          script: "// plugin source\nconst value = '한글\\0';",
+          version: "3.0",
+          enabled: true,
+          arguments: { key: "string" },
+          realArg: { key: "saved value" },
+          customLink: [],
+          argMeta: {},
+        },
+        {
+          name: "disabled-plugin",
+          script: "// disabled source",
+          version: "3.0",
+          enabled: false,
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+        },
+      ],
+      pluginCustomStorage: { "backup-plugin": { retained: true } },
+    } satisfies Database;
+    await seed(sourceHarness.storage, source);
+    const fragments: PortableDatabaseStreamFragment[] = [];
+    const manifest = await exportPortableDatabaseStream(
+      sourceHarness.storage,
+      {
+        writeFragment: async (fragment) => {
+          fragments.push(fragment);
+        },
+        writeColdStorage: async () => {},
+      },
+      { fragmentRecords: 1 },
+    );
+    expect(manifest.counts.plugin).toBe(2);
+
+    const targetHarness = makeFreshHarness(makeWebStorage as MakeStorage);
+    await seed(targetHarness.storage, {
+      ...buildFullDatabase(),
+      plugins: [{ ...source.plugins[0], name: "old-plugin" }],
+    });
+    const session = await (
+      targetHarness.storage as any
+    ).beginPortableDatabaseStreamRestore();
+    for (const fragment of fragments) await session.writeFragment(fragment);
+    await session.finish(manifest);
+
+    const restoredPlugins = await targetHarness.storage.plugin.loadAll();
+    expect(restoredPlugins.map((plugin) => plugin.name)).toEqual(
+      source.plugins.map((plugin) => plugin.name),
+    );
+    for (const [position, plugin] of restoredPlugins.entries()) {
+      const { script, ...metadata } = source.plugins[position];
+      expect(plugin).toMatchObject({ ...metadata, position });
+      expect(await targetHarness.storage.plugin.script.load(plugin.id)).toEqual(
+        { pluginId: plugin.id, script },
+      );
+    }
+    expect(await targetHarness.storage.loadPluginCustomStorage()).toEqual(
+      source.pluginCustomStorage,
+    );
+    sourceHarness.database.close();
+    targetHarness.database.close();
+  });
+
+  it("restores legacy plugins setting records into the plugin domain", async () => {
+    const { storage, database } = makeFreshHarness(make);
+    const plugin = {
+      name: "legacy-plugin",
+      script: "// legacy plugin",
+      version: "3.0",
+      enabled: false,
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+    };
+    const fragment: PortableDatabaseStreamFragment = {
+      format: "risu-portable-database-fragment",
+      version: 1,
+      index: 1,
+      records: [
+        { type: "meta", formatVersion: 1, revision: 7 },
+        { type: "setting", key: "plugins", value: [plugin] },
+      ],
+    };
+    const session = await (storage as any).beginPortableDatabaseStreamRestore();
+    await session.writeFragment(fragment);
+    await session.finish({
+      format: "risu-portable-database-stream",
+      version: 1,
+      revision: 7,
+      totalFragments: 1,
+      totalRecords: 2,
+      counts: { meta: 1, setting: 1 },
+      complete: true,
+    });
+    const installed = await storage.plugin.loadAll();
+    expect(installed).toHaveLength(1);
+    expect(installed[0]).toMatchObject({ name: plugin.name, enabled: false });
+    expect(await storage.plugin.script.load(installed[0].id)).toEqual({
+      pluginId: installed[0].id,
+      script: plugin.script,
+    });
+    expect(await storage.loadSettingKey("plugins")).toBeUndefined();
+    database.close();
   });
 
   it("round-trips a full database through replaceDatabase + exportDatabaseSnapshot", async () => {
@@ -258,7 +380,9 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     await storage.commit(commit);
     queryLog.clear();
     const keys = await storage.listSettingKeys?.();
-    expect(keys).toEqual(expect.arrayContaining(["alpha-setting", "beta-setting"]));
+    expect(keys).toEqual(
+      expect.arrayContaining(["alpha-setting", "beta-setting"]),
+    );
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
     database.close();
   });
@@ -329,7 +453,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
 
     // The deferred loader owns hydration: defaults are immediately usable,
     // then the targeted storage value replaces them without becoming a write.
-    installStartupData(startup!, storage);
+    await installStartupData(startup!, storage);
     queryLog.clear();
     const live = settingsStore.state;
     expect(queryLog.touching("setting_extension_nodes")).toBe(0);
@@ -379,7 +503,7 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       ).toBe(false);
     }
 
-    installStartupData(startup!, storage);
+    await installStartupData(startup!, storage);
     expect(settingsStore.getBootstrapState().mainPrompt).not.toBe(
       "leaky-mainPrompt",
     );
@@ -850,7 +974,10 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
       reason: "reroll",
       createdAt: 201,
     });
-    const append = createEmptySqlCommit(storage.getRevision(), "graph-page-message");
+    const append = createEmptySqlCommit(
+      storage.getRevision(),
+      "graph-page-message",
+    );
     append.messages.push({
       id: "m-alt-page",
       chatId: "chat-1",
@@ -874,12 +1001,16 @@ describe.each(backendFactories)("$name contracts", ({ make }) => {
     expect(links).toHaveLength(3);
     expect(links.find((link) => link.messageId === "m1")?.position).toBe(0);
     expect(links.find((link) => link.messageId === "m2")?.position).toBe(1);
-    expect(links.find((link) => link.messageId === "m-alt-page")?.position).toBe(1);
-    expect(messages.find((message) => message.chatId === "m1")?.promptInfo?.promptName).toBe(
-      "preset",
-    );
     expect(
-      messages.find((message) => message.chatId === "m-alt-page")?.promptInfo?.promptName,
+      links.find((link) => link.messageId === "m-alt-page")?.position,
+    ).toBe(1);
+    expect(
+      messages.find((message) => message.chatId === "m1")?.promptInfo
+        ?.promptName,
+    ).toBe("preset");
+    expect(
+      messages.find((message) => message.chatId === "m-alt-page")?.promptInfo
+        ?.promptName,
     ).toBe("alt");
     expect(first.branches).toHaveLength(2);
     expect(first.activeBranchId).toBe("reroll-page");

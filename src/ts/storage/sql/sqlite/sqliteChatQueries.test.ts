@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildSqliteChatLoadPlan,
-  buildSqliteMessagePagePlan,
-  hydrateSqliteChatDocument,
-  sqliteChatLoadStatements,
-} from "@risuai/storage-sqlite/sqliteChatQueries";
+import * as sqliteChat from "@risuai/storage-sqlite/queries/chat";
 
 describe("sqliteChatQueries", () => {
   it("builds the canonical six-query chat load plan", () => {
-    const plan = buildSqliteChatLoadPlan("chat-1", 0);
-    const statements = sqliteChatLoadStatements(plan);
+    const plan = sqliteChat.buildLoadPlan("chat-1", 0);
+    const statements = sqliteChat.loadStatements(plan);
     expect(statements).toHaveLength(6);
     expect(plan.chat.bind).toEqual(["chat-1"]);
     expect(plan.messages.bind).toContain(1);
@@ -17,13 +12,13 @@ describe("sqliteChatQueries", () => {
   });
 
   it("normalizes message pages against the current total", () => {
-    const page = buildSqliteMessagePagePlan("chat-1", 5, 7, 3);
+    const page = sqliteChat.buildMessagePagePlan("chat-1", 5, 7, 3);
     expect(page).toMatchObject({ offset: 2, total: 7, hasMore: true });
     expect(page.statement.bind).toContain(2);
   });
 
   it("hydrates chat metadata without app domain types", () => {
-    const chat = hydrateSqliteChatDocument(
+    const chat = sqliteChat.hydrateDocument(
       {
         id: "chat-1",
         name: "A",

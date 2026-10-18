@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { restoreBackupArchive } from "./restoreArchive";
-import { LEGACY_DATABASE_ENTRY_NAME } from "./entryPolicy";
-import { createBackupContainerEntryHeader } from "./containerStream";
+import { restoreBackupArchive } from "./restoreArchive.ts";
+import { LEGACY_DATABASE_ENTRY_NAME } from "./entryPolicy.ts";
+import { createBackupContainerEntryHeader } from "./containerStream.ts";
 
 function containerEntry(name: string, data: Uint8Array): Uint8Array {
   const header: Uint8Array = createBackupContainerEntryHeader(

@@ -93,6 +93,12 @@ export async function loadLoreBookV3Prompt(
     chat?: Chat;
     moduleIds?: string[];
     chatVariables?: Record<string, string>;
+    /**
+     * Evaluates historical illustration lore without writing persistent activation chat variables.
+     *
+     * 한국어: 활성화 관련 영구 채팅 변수를 기록하지 않고 과거 삽화 장면의 로어를 평가하는 옵션.
+     */
+    readOnly?: boolean;
   },
 ) {
   const resolved = target
@@ -357,11 +363,14 @@ export async function loadLoreBookV3Prompt(
     }
 
     if (requests.size === 0) return;
-    const requestEntries = [...requests.entries()];
-    const maxDepth = Math.max(
-      ...requestEntries.map(([, request]) => request.searchDepth),
-      0,
-    );
+    let maxDepth = 0;
+    const requestKeys: string[] = [];
+    const requestValues: LoreMatchRequest[] = [];
+    for (const [key, request] of requests.entries()) {
+      requestKeys.push(key);
+      requestValues.push(request);
+      if (request.searchDepth > maxDepth) maxDepth = request.searchDepth;
+    }
     const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map(
       (msg) => ({
         role: msg.role,
@@ -376,13 +385,13 @@ export async function loadLoreBookV3Prompt(
     try {
       const results = await forageStorage.realStorage.loreMatchBatch({
         messages,
-        requests: requestEntries.map(([, request]) => request),
+        requests: requestValues,
         username: userName,
         charName: char.name,
       });
-      if (results.length !== requestEntries.length) return;
+      if (results.length !== requestKeys.length) return;
       precomputedMatchResults = new Map(
-        requestEntries.map(([key], index) => [key, results[index]]),
+        requestKeys.map((key, index) => [key, results[index]]),
       );
     } catch (error) {
       console.warn("Server lore matching failed; using browser matcher", error);
@@ -863,7 +872,7 @@ export async function loadLoreBookV3Prompt(
         });
         activatedIndexes.push(i);
 
-        if (keepActivateAfterMatch) {
+        if (keepActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_ka_" +
               (fullLore[i].id ??
@@ -872,7 +881,7 @@ export async function loadLoreBookV3Prompt(
             chatVarTarget,
           );
         }
-        if (dontActivateAfterMatch) {
+        if (dontActivateAfterMatch && !generation?.readOnly) {
           setChatVar(
             "__internal_da_" +
               (fullLore[i].id ??

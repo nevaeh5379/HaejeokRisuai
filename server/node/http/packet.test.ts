@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { expect, test } from "vitest";
-import { Packet } from "./packet.js";
+import { Packet } from "./packet.ts";
 
 // 이 테스트들은 패킷을 읽는 쪽과 약속한 바이트 형식이 바뀌지 않았는지 확인한다.
 // These tests protect the wire format agreed upon with packet readers.

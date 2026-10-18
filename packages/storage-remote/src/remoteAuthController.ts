@@ -85,7 +85,7 @@ export class RemoteAuthController {
 
   async authorizeKey(passwordDigest: string): Promise<void> {
     const keyPair = await this.identity.getKeyPair();
-    const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    const publicKey = keyPair.publicKey;
     const response = await this.apiClient.request("/api/login", {
       method: "POST",
       body: JSON.stringify({ password: passwordDigest, publicKey }),

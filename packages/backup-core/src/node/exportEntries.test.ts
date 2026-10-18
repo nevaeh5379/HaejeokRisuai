@@ -3,7 +3,7 @@ import {
   coldStorageExportEntryName,
   streamBackupStorageEntries,
   streamColdStorageExportEntries,
-} from "./exportEntries";
+} from "./exportEntries.ts";
 
 describe("streamColdStorageExportEntries", () => {
   it("encodes canonical entries and reports progress", async () => {

@@ -3,7 +3,7 @@ import {
   COHERE_USER_MESSAGE_ERROR,
   decodeCohereResponse,
   prepareCohereConversation,
-} from "@risuai/chat-core/cohereProvider.cjs";
+} from "@risuai/chat-core/cohereProvider.ts";
 
 describe("Cohere provider core", () => {
   it("builds Cohere chat history and extracts the final user message", () => {

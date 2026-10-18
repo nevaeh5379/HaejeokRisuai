@@ -3,7 +3,7 @@ import {
   NOVELAI_BAD_WORD_IDS,
   NOVELAI_REPETITION_PENALTY_WHITELIST,
   buildNovelAIRequest,
-} from "@risuai/chat-core/novelAIProvider.cjs";
+} from "@risuai/chat-core/novelAIProvider.ts";
 
 const settings = {
   topK: 10,

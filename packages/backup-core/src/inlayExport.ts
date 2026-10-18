@@ -1,4 +1,4 @@
-import { getInlayBackupKey, getInlayBackupName } from "./entryPolicy";
+import { getInlayBackupKey, getInlayBackupName } from "./entryPolicy.ts";
 
 export type BackupInlayEntry<TAsset> = readonly [id: string, asset: TAsset];
 

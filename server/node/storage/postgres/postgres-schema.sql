@@ -1398,6 +1398,16 @@ SELECT
     sender_name
 FROM cold.messages;
 
+CREATE TABLE IF NOT EXISTS system.global_author_notes (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+ content_hash TEXT NOT NULL CHECK(content_hash ~ '^[a-f0-9]{64}$'), updated_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS system.global_author_note_settings (
+ singleton INTEGER PRIMARY KEY CHECK(singleton = 1), allow_script_write BOOLEAN NOT NULL DEFAULT FALSE, updated_at BIGINT NOT NULL
+);
+INSERT INTO system.global_author_notes VALUES ('__none__', '', '', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 0) ON CONFLICT DO NOTHING;
+INSERT INTO system.global_author_note_settings VALUES (1, FALSE, 0) ON CONFLICT DO NOTHING;
+
 DO $$
 DECLARE
     audited_target TEXT[];
@@ -1405,6 +1415,8 @@ DECLARE
     tbl_name TEXT;
 BEGIN
     FOREACH audited_target SLICE 1 IN ARRAY ARRAY[
+        ARRAY['system', 'global_author_notes'],
+        ARRAY['system', 'global_author_note_settings'],
         ARRAY['system', 'settings'],
         ARRAY['system', 'setting_values'],
         ARRAY['system', 'plugin_custom_storage'],

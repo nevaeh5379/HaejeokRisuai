@@ -1566,3 +1566,17 @@ SELECT
     sender_name
 FROM [cold].[messages];
 ');
+
+IF OBJECT_ID(N'[system].[global_author_notes]', N'U') IS NULL
+ CREATE TABLE [system].[global_author_notes] (
+ id NVARCHAR(128) PRIMARY KEY, name NVARCHAR(MAX) NOT NULL, content NVARCHAR(MAX) NOT NULL DEFAULT '',
+ content_hash VARCHAR(64) COLLATE Latin1_General_100_BIN2 NOT NULL CHECK(LEN(content_hash)=64 AND content_hash NOT LIKE '%[^a-f0-9]%'), updated_at BIGINT NOT NULL
+ );
+IF OBJECT_ID(N'[system].[global_author_note_settings]', N'U') IS NULL
+ CREATE TABLE [system].[global_author_note_settings] (
+ singleton INT PRIMARY KEY CHECK(singleton=1), allow_script_write BIT NOT NULL DEFAULT 0, updated_at BIGINT NOT NULL
+ );
+IF NOT EXISTS (SELECT 1 FROM [system].[global_author_notes] WHERE id='__none__')
+ INSERT INTO [system].[global_author_notes] VALUES ('__none__', '', '', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 0);
+IF NOT EXISTS (SELECT 1 FROM [system].[global_author_note_settings] WHERE singleton=1)
+ INSERT INTO [system].[global_author_note_settings] VALUES (1, 0, 0);

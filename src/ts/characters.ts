@@ -1,3 +1,4 @@
+import { materializeChatNote } from "./authorNote";
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { get, writable } from "svelte/store";
 import { saveImage } from "./storage/files/assetPersistence";
@@ -415,7 +416,7 @@ export async function exportChat(page: number) {
         );
       }
       const payload = buildChatJsonExportPayload(
-        chat,
+        await materializeChatNote(chat),
         jsonExportMode,
         folders,
         branchGraph,
@@ -581,8 +582,7 @@ export async function exportChat(page: number) {
 
       if (
         !(await downloadFile(
-          `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") +
-            ".txt",
+          `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, "") + ".txt",
           stringl,
         ))
       )
@@ -902,7 +902,9 @@ export async function exportAllChats() {
       assertChatReadyForExport(finalChat, target.expectedMessageTotal);
     }
     const date = new Date().toISOString().replace(/[:.]/g, "-");
-    const allChats = char.chats;
+    const allChats = [];
+    for (const chat of char.chats)
+      allChats.push(await materializeChatNote(chat));
     const allFolders = char.chatFolders;
     const stringl = JSON.stringify({
       type: "risuAllChats",

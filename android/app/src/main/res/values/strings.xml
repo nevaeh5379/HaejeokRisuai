@@ -1,5 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="crash_report_title">Unexpected app exit recorded</string>
+    <string name="crash_report_message">A diagnostic report from the previous run is saved on this device. Share it with the developer to investigate. App loading is paused while this screen is open. Safe mode skips user plugins; it may not fix other causes. The report includes device and memory information and operation checkpoints, without chat content or API keys.</string>
+    <string name="crash_report_share">Share report</string>
+    <string name="crash_report_continue">Continue</string>
+    <string name="crash_report_share_failed">Could not share the report. Please try again.</string>
+    <string name="safe_mode_shortcut">Start in safe mode</string>
     <string name="app_name">Risuai</string>
     <string name="chat_generation_channel">Chat generation</string>
     <string name="chat_generation_active">Generating a reply…</string>

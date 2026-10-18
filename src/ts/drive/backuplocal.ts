@@ -1,3 +1,4 @@
+import type { ColdStorageCharacterReference } from "../process/coldstorageData";
 import {
   BaseDirectory,
   mkdir,
@@ -835,9 +836,13 @@ async function writeStreamingColdStorage(
   reportLocalBackupProgress("coldStorage", { percent: 67 });
   const unavailableKeys: ReadonlySet<string> =
     inventory.finalizeUnavailableColdStorageKeys();
+  const characters: ColdStorageCharacterReference[] = [];
+  for (const char of inventory.coldStorageCharacters.values()) {
+    characters.push(char as unknown as ColdStorageCharacterReference);
+  }
   return await confirmIncompleteColdStorageOperation(
     {
-      characters: [...inventory.coldStorageCharacters.values()],
+      characters,
     },
     unavailableKeys,
     "backup",

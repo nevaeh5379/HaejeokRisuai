@@ -322,7 +322,7 @@ import { onMount } from 'svelte';
         if (!reloaded) {
           throw new Error('SQL storage returned no startup data after migration');
         }
-        installStartupData(reloaded, storage);
+        await installStartupData(reloaded, storage);
         migrationDone = true;
         isMigrating = false;
       } else {

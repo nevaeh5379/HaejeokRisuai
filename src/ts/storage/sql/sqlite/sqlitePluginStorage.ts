@@ -1,4 +1,7 @@
-import type { PluginMetadata, PluginScript } from "../../../plugins/pluginTypes";
+import type {
+  PluginMetadata,
+  PluginScript,
+} from "../../../plugins/pluginTypes";
 import type { ISqlStorage } from "../ISqlStorage";
 import type {
   IPluginScriptStorage,
@@ -7,12 +10,8 @@ import type {
 } from "../pluginStorage";
 import { createEmptySqlCommit } from "../sqlCommit";
 import { commitSqlChanges } from "../sqlCommitCoordinator";
-import {
-  loadSqlitePlugin,
-  loadSqlitePlugins,
-  loadSqlitePluginScript,
-} from "@risuai/storage-sqlite/sqlitePluginQueries";
-import type { SqliteSelectRows } from "@risuai/storage-sqlite/sqliteAdminQueries";
+import * as sqlitePlugin from "@risuai/storage-sqlite/queries/plugin";
+import type { SqliteSelectRows } from "@risuai/storage-sqlite/types";
 
 export class SqlitePluginStorage implements IPluginStorage {
   readonly script: IPluginScriptStorage = {
@@ -27,11 +26,11 @@ export class SqlitePluginStorage implements IPluginStorage {
   ) {}
 
   load(pluginId: string): Promise<PluginMetadata | null> {
-    return loadSqlitePlugin(this.selectRows, pluginId);
+    return sqlitePlugin.load(this.selectRows, pluginId);
   }
 
   loadAll(options?: PluginLoadOptions): Promise<PluginMetadata[]> {
-    return loadSqlitePlugins(this.selectRows, options);
+    return sqlitePlugin.loadAll(this.selectRows, options);
   }
 
   async upsert(plugin: PluginMetadata): Promise<void> {
@@ -100,13 +99,11 @@ export class SqlitePluginStorage implements IPluginStorage {
   }
 
   private async loadScript(pluginId: string): Promise<PluginScript | null> {
-    const script = await loadSqlitePluginScript(this.selectRows, pluginId);
+    const script = await sqlitePlugin.loadScript(this.selectRows, pluginId);
     return script === null ? null : { pluginId, script };
   }
 
-  private async upsertScripts(
-    scripts: readonly PluginScript[],
-  ): Promise<void> {
+  private async upsertScripts(scripts: readonly PluginScript[]): Promise<void> {
     if (scripts.length === 0) return;
 
     const commit = createEmptySqlCommit(

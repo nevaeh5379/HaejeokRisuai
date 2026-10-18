@@ -51,7 +51,7 @@ import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient"
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
 import type { IPluginStorage } from "../pluginStorage";
 import { NodePluginStorage } from "./nodePluginStorage";
-import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import {
   PortableDatabaseStreamValidator,
   type PortableDatabaseStreamRestoreProgress,
@@ -67,14 +67,14 @@ import type {
   NodePostgresServerConfigUpdate,
   NodeSqlStorageRuntime,
   NodeSqlStorageRuntimeError,
-} from "../../../../../packages/protocol/storageConfig.cjs";
+} from "../../../../../packages/protocol/storageConfig.ts";
 export type {
   DbVendor,
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
   NodeSqlStorageRuntime,
   NodeSqlStorageRuntimeError,
-} from "../../../../../packages/protocol/storageConfig.cjs";
+} from "../../../../../packages/protocol/storageConfig.ts";
 
 import type {
   NodePostgresRevision,
@@ -96,7 +96,7 @@ import type {
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "../../../../../packages/protocol/databaseApi.cjs";
+} from "../../../../../packages/protocol/databaseApi.ts";
 export type {
   NodePostgresRevision,
   NodePostgresAuditLogItem,
@@ -117,7 +117,7 @@ export type {
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "../../../../../packages/protocol/databaseApi.cjs";
+} from "../../../../../packages/protocol/databaseApi.ts";
 
 export interface SqlVendorFormValues {
   connectionString?: string;
@@ -591,6 +591,41 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
     return entry.loreBook;
   }
 
+  private async requestAuthorNote<T>(path: string): Promise<T> {
+    if (!(await this.ensureEnabled()))
+      throw new Error("SQL storage is not enabled");
+    const response = await this.apiClient.request(
+      `/api/database-v2/author-notes${path}`,
+      { headers: { "risu-auth": await this.getAuth() }, cache: "no-store" },
+    );
+    if (!response.ok)
+      throw new Error(
+        (await response.json().catch(() => null))?.error ||
+          "Author note query failed",
+      );
+    return (await response.json()).value as T;
+  }
+  async listGlobalAuthorNotes() {
+    return this.requestAuthorNote<
+      import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
+    >("");
+  }
+  async getGlobalAuthorNote(id: string) {
+    return this.requestAuthorNote<
+      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
+      | null
+    >(`/${encodeURIComponent(id)}`);
+  }
+  async readGlobalAuthorNote(id: string) {
+    return this.requestAuthorNote<
+      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
+      | null
+    >(`/${encodeURIComponent(id)}/content`);
+  }
+  async getGlobalAuthorNoteScriptWrite() {
+    return this.requestAuthorNote<boolean>("/script-write");
+  }
+
   async loadModules(): Promise<RisuModule[]> {
     if (!(await this.ensureEnabled())) return [];
     let cached = this.memoryModulesCache;
@@ -937,11 +972,10 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       if (closed) {
         throw new Error("Portable database restore session is already closed");
       }
-      const state =
-        await this.localBackupClient.appendDatabaseStreamRecords(
-          remoteSession.id,
-          { fragmentIndex, records, fragmentComplete },
-        );
+      const state = await this.localBackupClient.appendDatabaseStreamRecords(
+        remoteSession.id,
+        { fragmentIndex, records, fragmentComplete },
+      );
       onProgress?.({ appliedRecords: state.recordCount });
     };
 
@@ -962,7 +996,9 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
         for (let index = 0; index < fragment.records.length; index++) {
           const record = fragment.records[index];
           const encoded = encodeStorageSyncValue(record);
-          const recordBytes = textEncoder.encode(JSON.stringify(encoded)).byteLength;
+          const recordBytes = textEncoder.encode(
+            JSON.stringify(encoded),
+          ).byteLength;
           if (recordBytes > maxRecordBytes) {
             throw new Error(
               `Portable database record exceeds ${maxRecordBytes} bytes`,
@@ -987,14 +1023,15 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
       },
       finish: async (manifest: PortableDatabaseStreamManifest) => {
         if (closed) {
-          throw new Error("Portable database restore session is already closed");
+          throw new Error(
+            "Portable database restore session is already closed",
+          );
         }
         validator.finish(manifest);
-        const result =
-          await this.localBackupClient.finalizeDatabaseStream(
-            remoteSession.id,
-            manifest,
-          );
+        const result = await this.localBackupClient.finalizeDatabaseStream(
+          remoteSession.id,
+          manifest,
+        );
         closed = true;
         this.revision = result.revision;
       },

@@ -1,23 +1,23 @@
 import {
   LOCAL_BACKUP_DATABASE_RECORD_TYPES,
   LOCAL_BACKUP_DATABASE_STREAM_MAX_FRAGMENT_RECORDS,
-} from "./databaseStreamStore";
-import { createLocalBackupEntryHeader } from "./legacyFormat";
-import type { LegacyBackupSqlRecord } from "../legacyRecords";
+} from "./databaseStreamStore.ts";
+import { createLocalBackupEntryHeader } from "./legacyFormat.ts";
+import type { LegacyBackupSqlRecord } from "../legacyRecords.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
   portableDatabaseStreamFragmentName,
   type PortableDatabaseStreamManifest,
-} from "../streamFormat";
+} from "../streamFormat.ts";
 
 export {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   PORTABLE_DATABASE_STREAM_PREFIX,
   PORTABLE_DATABASE_STREAM_VERSION,
-} from "../streamFormat";
-export type { PortableDatabaseStreamManifest } from "../streamFormat";
+} from "../streamFormat.ts";
+export type { PortableDatabaseStreamManifest } from "../streamFormat.ts";
 export const PORTABLE_DATABASE_STREAM_DEFAULT_FRAGMENT_RECORDS = 128;
 export const databaseFragmentName = portableDatabaseStreamFragmentName;
 
@@ -85,7 +85,9 @@ export class PortableDatabaseExportWriter {
   private totalRecords = 0;
   private fragmentRecords: LegacyBackupSqlRecord[] = [];
 
-  constructor(private readonly options: PortableDatabaseExportWriterOptions) {
+  private readonly options: PortableDatabaseExportWriterOptions;
+  constructor(options: PortableDatabaseExportWriterOptions) {
+    this.options = options;
     if (!Number.isSafeInteger(options.revision) || options.revision < 0) {
       throw new TypeError("Portable database revision must be non-negative");
     }

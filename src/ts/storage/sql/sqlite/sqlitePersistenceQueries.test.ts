@@ -1,18 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildSqliteColdStorageDelete,
-  findSqliteColdStoragePruneKeys,
-  getSqliteColdStorageItem,
-  getSqliteRevisionDetails,
-  getSqliteRevisionDiff,
-  listSqlitePluginCustomStorageKeys,
-  listSqliteRevisions,
-  loadSqlitePluginCustomStorage,
-  loadSqlitePluginCustomStorageKey,
-  previewSqliteRevisionRestore,
-  type SqliteLoadNodeValue,
-} from "@risuai/storage-sqlite/sqlitePersistenceQueries";
-import type { SqliteSelectRows } from "@risuai/storage-sqlite/sqliteAdminQueries";
+import * as sqliteColdStorage from "@risuai/storage-sqlite/queries/coldStorage";
+import * as sqlitePlugin from "@risuai/storage-sqlite/queries/plugin";
+import * as sqliteRevisions from "@risuai/storage-sqlite/queries/revisions";
+import type {
+  SqliteLoadNodeValue,
+  SqliteSelectRows,
+} from "@risuai/storage-sqlite/types";
 
 describe("SQLite persistence queries", () => {
   it("decodes plugin custom storage while preserving legacy text", async () => {
@@ -20,17 +13,19 @@ describe("SQLite persistence queries", () => {
       { key: "json", value: '{"enabled":true}' },
       { key: "text", value: "legacy" },
     ]) as unknown as SqliteSelectRows;
-    expect(await loadSqlitePluginCustomStorage(selectRows)).toEqual({
+    expect(await sqlitePlugin.loadCustomStorage(selectRows)).toEqual({
       json: { enabled: true },
       text: "legacy",
     });
-    expect(await listSqlitePluginCustomStorageKeys(selectRows)).toEqual([
+    expect(await sqlitePlugin.listCustomStorageKeys(selectRows)).toEqual([
       "json",
       "text",
     ]);
-    expect(await loadSqlitePluginCustomStorageKey(selectRows, "json")).toEqual({
-      enabled: true,
-    });
+    expect(await sqlitePlugin.loadCustomStorageKey(selectRows, "json")).toEqual(
+      {
+        enabled: true,
+      },
+    );
   });
 
   it("loads cold storage lazily and builds bounded deletion statements", async () => {
@@ -41,18 +36,18 @@ describe("SQLite persistence queries", () => {
       archived: true,
     })) as SqliteLoadNodeValue;
     await expect(
-      getSqliteColdStorageItem(selectRows, loadNodeValue, "cold-a"),
+      sqliteColdStorage.getItem(selectRows, loadNodeValue, "cold-a"),
     ).resolves.toEqual({ archived: true });
     expect(loadNodeValue).toHaveBeenCalledWith(
       "cold_extension_nodes",
       "archive_id = ?",
       ["cold-a"],
     );
-    expect(buildSqliteColdStorageDelete(["a", "b"])).toEqual({
+    expect(sqliteColdStorage.buildDelete(["a", "b"])).toEqual({
       sql: "DELETE FROM cold_archives WHERE archive_id IN (?,?)",
       bind: ["a", "b"],
     });
-    expect(buildSqliteColdStorageDelete([])).toBeNull();
+    expect(sqliteColdStorage.buildDelete([])).toBeNull();
   });
 
   it("prunes only unretained cold storage keys", async () => {
@@ -62,7 +57,7 @@ describe("SQLite persistence queries", () => {
       { archive_id: "drop-b" },
     ]) as unknown as SqliteSelectRows;
     await expect(
-      findSqliteColdStoragePruneKeys(selectRows, ["keep"]),
+      sqliteColdStorage.findPruneKeys(selectRows, ["keep"]),
     ).resolves.toEqual(["drop-a", "drop-b"]);
   });
 
@@ -77,7 +72,7 @@ describe("SQLite persistence queries", () => {
       created_at: "2026-09-10T00:00:00.000Z",
     };
     const selectRows = vi.fn(async () => [row]) as unknown as SqliteSelectRows;
-    const revisions = await listSqliteRevisions(selectRows, 5);
+    const revisions = await sqliteRevisions.list(selectRows, 5);
     expect(revisions[0]).toMatchObject({
       id: 7,
       storage_revision: 11,
@@ -90,7 +85,7 @@ describe("SQLite persistence queries", () => {
       [5],
     );
     await expect(
-      getSqliteRevisionDetails(selectRows, 7),
+      sqliteRevisions.getDetails(selectRows, 7),
     ).resolves.toMatchObject({
       id: 7,
       tableSummaries: [],
@@ -99,13 +94,13 @@ describe("SQLite persistence queries", () => {
   });
 
   it("builds local revision diff and restore previews without backend I/O", () => {
-    expect(getSqliteRevisionDiff(3, 8)).toEqual({
+    expect(sqliteRevisions.getDiff(3, 8)).toEqual({
       baseRevisionId: 3,
       targetRevisionId: 8,
       totalChanges: 0,
       tables: [],
     });
-    expect(previewSqliteRevisionRestore(12, 9)).toMatchObject({
+    expect(sqliteRevisions.previewRestore(12, 9)).toMatchObject({
       targetRevisionId: 9,
       currentRevisionId: 12,
       revisionsToRevert: 3,

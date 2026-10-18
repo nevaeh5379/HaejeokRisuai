@@ -228,7 +228,9 @@
         }
         pinnedImageKeys = nextPinnedImageKeys
 
-        for (const chaId of [...imageUrlCache.keys()]) {
+        // Iterating over the map iterator directly avoids creating a full array copy of keys
+        // which reduces memory allocation and garbage collection overhead.
+        for (const chaId of imageUrlCache.keys()) {
             if (!visibleCharacterIds.has(chaId)) {
                 imageUrlCache.delete(chaId)
                 cacheUpdated = true

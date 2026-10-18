@@ -35,11 +35,13 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
     private final File thumbnailRoot;
     private final Context context;
     private final Runnable pageFinishedCallback;
+    private final Bridge risuBridge;
 
     public RisuWebViewClient(
         Bridge bridge, Context context, Runnable pageFinishedCallback
     ) {
         super(bridge);
+        risuBridge = bridge;
         assetRoot = new File(context.getFilesDir(), "risuai-assets");
         thumbnailRoot = new File(context.getCacheDir(), "risu-image-thumbnails");
         this.context = context;
@@ -66,6 +68,7 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
             return false; // API 26- only; default behavior below min
         }
         Log.e(TAG, "Renderer gone (crashed=" + detail.didCrash() + ")");
+        AndroidCrashDiagnostics.rendererGone(detail.didCrash(), detail.rendererPriorityAtExit());
         boolean blamedNewCulprit = CrashGuardPlugin.blameLoadingPlugin(context);
         restartActivity(blamedNewCulprit);
         return true; // true = the app handled the crash
@@ -83,6 +86,9 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
         long now = SystemClock.elapsedRealtime();
         if (!bypassLoopGuard && now - lastRendererRestartAt < RESTART_LOOP_GUARD_MS) {
             Log.e(TAG, "Renderer died again within the restart guard window; not restarting.");
+            if (risuBridge.getActivity() instanceof MainActivity) {
+                ((MainActivity) risuBridge.getActivity()).showRendererRecovery();
+            }
             return;
         }
         lastRendererRestartAt = now;
@@ -90,6 +96,10 @@ public final class RisuWebViewClient extends BridgeWebViewClient {
         Intent intent = context.getPackageManager()
             .getLaunchIntentForPackage(context.getPackageName());
         if (intent != null) {
+            if (risuBridge.getActivity() instanceof MainActivity
+                && ((MainActivity) risuBridge.getActivity()).isSafeMode()) {
+                intent.setAction(MainActivity.ACTION_SAFE_MODE);
+            }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             context.startActivity(intent);
         }

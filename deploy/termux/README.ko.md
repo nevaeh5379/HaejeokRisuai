@@ -5,7 +5,7 @@
 Haejeok RisuAI는 Docker 없이 Termux를 통해 안드로이드 기기에서 직접 실행할 수 있습니다.
 Termux 런타임은 다음을 사용합니다:
 
-- Termux 저장소의 Node.js LTS
+- Termux 저장소의 Node.js 24.12 이상
 - `127.0.0.1`에 바인딩된 비공개 PostgreSQL 클러스터
 - Haejeok 데이터 디렉터리 하위의 로컬 파일 시스템 에셋 스토리지
 - PostgreSQL 및 Node 서버를 위한 `termux-services`/runit

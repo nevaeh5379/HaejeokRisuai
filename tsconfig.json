@@ -2,11 +2,12 @@
   "compilerOptions": {
     /* Language & Environment */
     "target": "es2023",
-    "module": "es2022",
+    "module": "esnext",
     "useDefineForClassFields": true,
 
     /* Bundler Mode - Vite handles the actual build */
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "verbatimModuleSyntax": true,

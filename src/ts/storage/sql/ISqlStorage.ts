@@ -267,6 +267,23 @@ export interface ISqlStorage {
 
   // ── Domain loaders (deferred by the adapter) ─────────────────────────
 
+  listGlobalAuthorNotes(): Promise<
+    import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
+  >;
+  getGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
+    | null
+  >;
+  readGlobalAuthorNote(
+    id: string,
+  ): Promise<
+    | import("../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
+    | null
+  >;
+  getGlobalAuthorNoteScriptWrite(): Promise<boolean>;
+
   loadPersonas(): Promise<RisuPersona[]>;
   listBotPresets(): Promise<BotPresetSummary[]>;
   loadBotPreset(id: string): Promise<StoredBotPreset | null>;
@@ -283,6 +300,7 @@ export interface ISqlStorage {
 
   // ── Settings ─────────────────────────────────────────────────────────
 
+  //TODO remove any.
   loadSettingKey(key: string): Promise<any>;
   /** Enumerates every persisted root setting key without hydrating values. */
   listSettingKeys?(): Promise<string[]>;

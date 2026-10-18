@@ -4,7 +4,7 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { streamZip } = require(".//zipStream.cjs");
+import { streamZip } from "./zipStream.ts";
 
 class CollectingWriter extends Writable {
   chunks: Buffer[] = [];

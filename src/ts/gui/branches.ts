@@ -478,9 +478,10 @@ export function buildChatMessageGraph(
     }
   }
 
-  const messageCount = [...mutableNodes.values()].filter(
-    (node) => !node.synthetic,
-  ).length;
+  let messageCount = 0;
+  for (const node of mutableNodes.values()) {
+    if (!node.synthetic) messageCount++;
+  }
   const density = options.density ?? "smart";
   const keepIds = new Set<string>();
   if (
@@ -489,14 +490,16 @@ export function buildChatMessageGraph(
   ) {
     for (const nodeId of mutableNodes.keys()) keepIds.add(nodeId);
   } else {
-    const anchors = [...mutableNodes.values()]
-      .filter(
-        (node) =>
-          rootIds.includes(node.id) ||
-          node.children.length !== 1 ||
-          node.terminals.length > 0,
-      )
-      .map((node) => node.id);
+    const anchors: string[] = [];
+    for (const node of mutableNodes.values()) {
+      if (
+        rootIds.includes(node.id) ||
+        node.children.length !== 1 ||
+        node.terminals.length > 0
+      ) {
+        anchors.push(node.id);
+      }
+    }
     const nearestAnchor = new Map<string, number>();
     const queue = anchors.map((id) => ({ id, distance: 0 }));
     for (let index = 0; index < queue.length; index++) {
@@ -903,12 +906,15 @@ export function buildChatMessageGraph(
     }
   }
 
-  const nodes = [...displayNodes.values()]
-    .map(({ node }) => ({
+  const nodes = [];
+  for (const { node } of displayNodes.values()) {
+    nodes.push({
       ...node,
       ...(positions.get(node.id) ?? { x: 0, y: 0 }),
-    }))
-    .sort((a, b) => a.y - b.y || a.x - b.x);
+    });
+  }
+  nodes.sort((a, b) => a.y - b.y || a.x - b.x);
+
   const columns = Math.max(
     1,
     Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,

@@ -1,7 +1,7 @@
 import { prebuiltPresets } from "../../process/templates/templates";
 
-export const defaultMainPrompt = prebuiltPresets.OAI.mainPrompt;
-export const defaultJailbreak = prebuiltPresets.OAI.jailbreak;
+export const defaultMainPrompt: string = prebuiltPresets.OAI.mainPrompt;
+export const defaultJailbreak: string = prebuiltPresets.OAI.jailbreak;
 export const oldMainPrompt =
   "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}. Write 1 reply only in internet RP style, avoid quotation marks. Be proactive, creative, and drive the plot and conversation forward.\nuser is {{user}}. assitant is {{char}}. MUST NOT impersonate {{user}} or write dialogue for {{user}} under ANY circumstances. Perform ALL character roles except {{user}}, and ALWAYS precede dialogue with character names. Focus on character dialogues and maximize conversations. Use italics and Markdown for actions/emotions. Make the plot active and imaginative while reflecting the original features of {{char}} and {{user}}. write emotions and expression too. emotions and expression should be inside asterisks";
 export const oldJailbreak =

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySqliteCommit } from "@risuai/storage-sqlite/sqliteCommit";
+import * as sqliteCommit from "@risuai/storage-sqlite/commit/apply";
 import {
   buildSqlReplaceCommit,
   createEmptySqlCommit,
@@ -155,7 +155,7 @@ describe("SQL row commits", () => {
     });
     const statements: { sql: string; bind: unknown[] }[] = [];
 
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -203,7 +203,7 @@ describe("SQL row commits", () => {
     expect(hasSqlCommitChanges(commit)).toBe(true);
 
     const statements: { sql: string; bind: unknown[] }[] = [];
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -228,7 +228,7 @@ describe("SQL row commits", () => {
     };
     const statements: { sql: string; bind: unknown[] }[] = [];
 
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -250,7 +250,7 @@ describe("SQL row commits", () => {
     };
     const statements: { sql: string; bind: unknown[] }[] = [];
 
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -270,7 +270,7 @@ describe("SQL row commits", () => {
     };
     const statements: { sql: string; bind: unknown[] }[] = [];
 
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -291,7 +291,7 @@ describe("SQL row commits", () => {
     expect(hasSqlCommitChanges(commit)).toBe(true);
 
     const statements: { sql: string; bind: unknown[] }[] = [];
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -331,7 +331,7 @@ describe("SQL row commits", () => {
     commit.characterDeletes = ["character-removed"];
     const statements: { sql: string; bind: unknown[] }[] = [];
 
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 
@@ -352,7 +352,7 @@ describe("SQL row commits", () => {
     commit.messageDeletes = [{ chatId: "chat-1", ids: ["message-removed"] }];
     const statements: { sql: string; bind: unknown[] }[] = [];
 
-    await applySqliteCommit(commit, (sql, bind = []) => {
+    await sqliteCommit.apply(commit, (sql, bind = []) => {
       statements.push({ sql, bind });
     });
 

@@ -94,6 +94,7 @@ afterEvaluate {
         filter {
             excludeTestsMatching 'co.aiclient.risu.BackupContainerLowMemoryTest'
             excludeTestsMatching 'co.aiclient.risu.SqliteRestoreStreamParserLowMemoryTest'
+            excludeTestsMatching 'co.aiclient.risu.SqliteQueryStreamLowMemoryTest'
         }
     }
     tasks.register('testLowMemoryBackup', org.gradle.api.tasks.testing.Test) {
@@ -106,6 +107,17 @@ afterEvaluate {
         filter {
             includeTestsMatching 'co.aiclient.risu.BackupContainerLowMemoryTest'
             includeTestsMatching 'co.aiclient.risu.SqliteRestoreStreamParserLowMemoryTest'
+        }
+    }
+    tasks.register('testLowMemorySqliteQuery', org.gradle.api.tasks.testing.Test) {
+        group = 'verification'
+        description = 'Streams large SQLite query responses with a 32 MiB JVM heap.'
+        testClassesDirs = debugUnitTest.get().testClassesDirs
+        classpath = debugUnitTest.get().classpath
+        minHeapSize = '16m'
+        maxHeapSize = '32m'
+        filter {
+            includeTestsMatching 'co.aiclient.risu.SqliteQueryStreamLowMemoryTest'
         }
     }
 }

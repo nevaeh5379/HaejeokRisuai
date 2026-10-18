@@ -3,13 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const {
+import {
   StorageSyncSqlRecordError,
   readStorageSyncSqlRecords,
-} = require(".//storageSyncSqlRecords.cjs");
-const {
-  encodeStorageSyncValue,
-} = require("../../../packages/protocol/storageSyncValueCodec.cjs");
+} from "./storageSyncSqlRecords.ts";
+import { encodeStorageSyncValue } from "../../../packages/protocol/storageSyncValueCodec.ts";
 
 const tempRoots: string[] = [];
 
@@ -42,6 +40,13 @@ describe("readStorageSyncSqlRecords", () => {
         key: "edge",
         value: { missing: undefined, nan: Number.NaN },
       },
+      {
+        type: "plugin",
+        id: "plugin-1",
+        position: 0,
+        data: { name: "Backup plugin", enabled: false },
+        script: "// source\u0000한글",
+      },
       { type: "character", position: 0, id: "char-1", data: { name: "Alpha" } },
       {
         type: "chat",
@@ -54,20 +59,22 @@ describe("readStorageSyncSqlRecords", () => {
     const seen: any[] = [];
 
     const result = await readStorageSyncSqlRecords(file, {
-      expectedRecordCount: 4,
+      expectedRecordCount: 5,
       expectedSourceRevision: 7,
       onRecord: async (record: unknown) => seen.push(record),
     });
 
-    expect(result).toMatchObject({ recordCount: 4, sourceRevision: 7 });
+    expect(result).toMatchObject({ recordCount: 5, sourceRevision: 7 });
     expect(result.counts).toMatchObject({
       meta: 1,
       setting: 1,
+      plugin: 1,
       character: 1,
       chat: 1,
     });
     expect(seen[1].value.missing).toBeUndefined();
     expect(Number.isNaN(seen[1].value.nan)).toBe(true);
+    expect(seen[2].script).toBe("// source\u0000한글");
   });
   it("rejects root records that appear after entity records", async () => {
     const file = await tempFile([

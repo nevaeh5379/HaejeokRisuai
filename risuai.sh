@@ -2079,10 +2079,10 @@ EOF
             cd "$script_dir"
             if [ "$dev_action" = server ]; then
                 info "Starting PostgreSQL-backed Node development server on port $PORT"
-                exec node server/node/bootstrap.cjs
+                exec node server/node/server.ts
             fi
             info "Starting Node backend and Vite development server"
-            node server/node/bootstrap.cjs &
+            node server/node/server.ts &
             dev_backend_pid=$!
             trap 'dev_cleanup_backend; exit 129' 1
             trap 'dev_cleanup_backend; exit 130' 2

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLocalBackupExportMetadata,
   createLocalBackupExportPlan,
-} from "./exportPlan";
+} from "./exportPlan.ts";
 
 describe("createLocalBackupExportMetadata", () => {
   const date = new Date("2026-09-19T12:34:56.000Z");

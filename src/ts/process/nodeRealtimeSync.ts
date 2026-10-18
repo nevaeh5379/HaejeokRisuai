@@ -22,7 +22,6 @@ import {
   SETTINGS_STORE_EXCLUDED_KEYS,
   getSqlDeferredDomain,
 } from "../storage/sql/sqlDeferredSettings";
-import { createPresetSettingsState } from "../storage/presets/presetService";
 import { recoverDurableModelJobs } from "./modelJobRecovery";
 import { localGenerationController } from "./chat/generationCancellation";
 import { getNodeClientSessionId } from "../network/nodeClientSession";
@@ -49,7 +48,7 @@ import {
   type RealtimeGenerationState,
   type RealtimeModelJobEvent,
   type RealtimeReadyEvent,
-} from "@risuai/protocol/realtimeEvents.cjs";
+} from "@risuai/protocol/src/realtimeEvents.ts";
 
 let started = false;
 let streamController: AbortController | null = null;
@@ -102,7 +101,7 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
     deferredSettingsLoader.isLoaded(key),
   );
 
-  installStartupData(startup, storage);
+  await installStartupData(startup, storage);
   pruneInvalidChatTabs();
   await initPresetDomain(storage);
   await changeLanguage(settingsStore.state.language);
@@ -237,18 +236,7 @@ async function applyDatabaseChange(
   if (personaChanged) await personaStore.refreshFromStorage();
   if (modulesChanged) await moduleStore.refreshFromStorage();
   if (presetsChanged) {
-    const activePreset = await presetStore.refreshFromStorage();
-    if (activePreset) {
-      presetStore.replaceActivePresetState(
-        createPresetSettingsState(
-          {
-            ...settingsStore.getStateRecord(),
-            ...presetStore.getStateRecord(),
-          },
-          activePreset,
-        ),
-      );
-    }
+    await presetStore.refreshFromStorage();
   }
 
   if (
@@ -409,6 +397,17 @@ async function dispatchEvent(
     if (change.sourceClientId !== storage.getClientId()) {
       databaseChangeQueue?.enqueue(change);
     }
+    return;
+  }
+  if (frame.event === "illustration-progress") {
+    // A saved image must not wait behind full chat hydration or the polling timer.
+    void import("./illustration/illustrationApp")
+      .then(({ refreshServerIllustration }) =>
+        refreshServerIllustration(frame.data),
+      )
+      .catch((error) =>
+        console.warn("Illustration progress refresh failed", error),
+      );
     return;
   }
   if (frame.event === "local-backup-import-progress") {

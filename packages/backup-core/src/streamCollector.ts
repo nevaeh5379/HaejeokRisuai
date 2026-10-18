@@ -1,19 +1,22 @@
-import { NATIVE_BRANCH_GRAPHS_KEY } from "./portableBranches";
+import { NATIVE_BRANCH_GRAPHS_KEY } from "./portableBranches.ts";
 import {
   parsePortableDatabaseStreamFragment,
   parsePortableDatabaseStreamManifest,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
   type PortableDatabaseStreamRecord,
-} from "./streamFormat";
+} from "./streamFormat.ts";
 
 type PersistedRecord = PortableDatabaseStreamRecord;
 type PersistedRecordType = PersistedRecord["type"];
 
 const RECORD_TYPES: PersistedRecordType[] = [
   "meta",
+  "author-note",
+  "author-note-settings",
   "setting",
   "plugin-storage",
+  "plugin",
   "module",
   "preset",
   "character",
@@ -101,6 +104,14 @@ export class PortableDatabaseStreamCollector {
         }
         this.sourceRevision = record.revision;
         break;
+      case "author-note":
+        (this.database.globalAuthorNotes ??= []).push(record.data);
+        break;
+      case "author-note-settings":
+        this.database.globalAuthorNoteSettings = {
+          allowScriptWrite: record.allowScriptWrite,
+        };
+        break;
       case "setting":
         this.database[record.key] = record.value;
         break;
@@ -119,6 +130,23 @@ export class PortableDatabaseStreamCollector {
             value: unknown;
           }>
         ).push({ position: record.position, value: record.data });
+        break;
+      case "plugin":
+        if (!Number.isSafeInteger(record.position) || record.position < 0) {
+          throw new Error("Invalid streamed plugin position");
+        }
+        (
+          (this.database.plugins ??= []) as Array<{
+            position: number;
+            value: unknown;
+          }>
+        ).push({
+          position: record.position,
+          value: {
+            ...(record.data as Record<string, unknown>),
+            script: record.script,
+          },
+        });
         break;
       case "preset":
         if (!Number.isSafeInteger(record.position) || record.position < 0) {
@@ -280,6 +308,13 @@ export class PortableDatabaseStreamCollector {
     )
       .sort((left, right) => left.position - right.position)
       .map((entry) => entry.value);
+    if (this.counts.plugin) {
+      this.database.plugins = (
+        this.database.plugins as Array<{ position: number; value: unknown }>
+      )
+        .sort((left, right) => left.position - right.position)
+        .map((entry) => entry.value);
+    }
     this.database.botPresets = (
       (this.database.botPresets as Array<{
         position: number;
