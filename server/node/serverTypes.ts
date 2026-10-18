@@ -38,24 +38,7 @@ export interface PrimaryStorageRuntime {
   attemptStartedAt: string | null;
   readyAt: string | null;
 }
-export interface BackupConfig {
-  vendor: SqlVendor | null;
-  enabled: boolean;
-  poolMax: number;
-  params: LegacyObject;
-  mirroring: { enabled: boolean };
-  snapshot: { enabled: boolean; intervalMinutes: number };
-}
-export interface BackupRuntime {
-  initialized: boolean;
-  lastMirrorAt: string | null;
-  lastMirrorError: string | null;
-  lastSnapshotAt: string | null;
-  lastSnapshotError: string | null;
-  lastFullSyncAt: string | null;
-  lastFullSyncError: string | null;
-  inFlight: boolean;
-}
+export type { BackupConfig, BackupRuntime } from "./api/db/backup/routes.ts";
 export interface AssetEntry {
   key: string;
   size?: number | null;
