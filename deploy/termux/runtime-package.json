@@ -6,11 +6,15 @@
   "dependencies": {
     "@dqbd/tiktoken": "1.0.22",
     "express": "5.2.1",
-    "express-rate-limit": "8.7.0",
+    "express-rate-limit": "8.7.1",
     "msgpackr": "2.1.0",
-    "node-html-parser": "9.0.2",
-    "openid-client": "6.8.7",
-    "pg": "8.23.0",
-    "ws": "8.21.3"
+    "node-html-parser": "9.0.4",
+    "openid-client": "6.8.8",
+    "pg": "8.23.1",
+    "ws": "8.22.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.12.0"
   }
 }

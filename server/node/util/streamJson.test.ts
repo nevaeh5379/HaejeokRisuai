@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { createJsonStream, stringifyJsonChunks } = require(".//streamJson.cjs");
+import { createJsonStream, stringifyJsonChunks } from "./streamJson.ts";
 
 async function readStream(value: unknown, chunkBytes = 16): Promise<string> {
   const stream = createJsonStream(value, { chunkBytes });

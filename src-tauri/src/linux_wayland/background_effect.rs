@@ -1,4 +1,10 @@
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::Path,
+    rc::Rc,
+    sync::{Mutex, OnceLock},
+};
 
 use gtk::prelude::*;
 use tauri::{Runtime, Window};
@@ -126,6 +132,63 @@ struct KwinDecorationPalette {
     _manager:
         org_kde_kwin_server_decoration_palette_manager::OrgKdeKwinServerDecorationPaletteManager,
     palette: org_kde_kwin_server_decoration_palette::OrgKdeKwinServerDecorationPalette,
+}
+
+/// KWin keeps the palette object per window but ignores a `set_palette` request that
+/// repeats the path it already stored, and it never re-reads that file on its own.
+/// Keeping the proxy alive is the only way to publish a theme change to a running
+/// decoration.
+#[derive(Clone)]
+struct DecorationPaletteHandle {
+    palette: org_kde_kwin_server_decoration_palette::OrgKdeKwinServerDecorationPalette,
+    connection: Connection,
+}
+
+static DECORATION_PALETTES: OnceLock<Mutex<HashMap<String, DecorationPaletteHandle>>> =
+    OnceLock::new();
+
+fn decoration_palette_store() -> &'static Mutex<HashMap<String, DecorationPaletteHandle>> {
+    DECORATION_PALETTES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_decoration_palette(
+    label: &str,
+    palette: &KwinDecorationPalette,
+    connection: &Connection,
+) {
+    if let Ok(mut values) = decoration_palette_store().lock() {
+        values.insert(
+            label.to_string(),
+            DecorationPaletteHandle {
+                palette: palette.palette.clone(),
+                connection: connection.clone(),
+            },
+        );
+    }
+}
+
+pub fn forget_decoration_palette(label: &str) {
+    if let Ok(mut values) = decoration_palette_store().lock() {
+        values.remove(label);
+    }
+}
+
+pub fn set_decoration_palette_path(label: &str, path: &Path) -> Result<(), String> {
+    let handle = match decoration_palette_store().lock() {
+        Ok(mut values) => values.get(label).cloned(),
+        Err(_) => return Ok(()),
+    };
+    let Some(handle) = handle else {
+        return Ok(());
+    };
+
+    handle
+        .palette
+        .set_palette(path.to_string_lossy().into_owned());
+    handle
+        .connection
+        .flush()
+        .map_err(|error| format!("Failed to send the decoration palette: {error}"))
 }
 
 struct WaylandEffectSession {
@@ -480,6 +543,11 @@ pub fn install<R: Runtime>(
     };
 
     if decoration_palette.is_some() {
+        // The palette proxy is kept so a later theme change can publish a new palette
+        // path; KWin reloads the decoration only when that path actually changes.
+        if let Some(palette) = &decoration_palette {
+            register_decoration_palette(window.label(), palette, &connection);
+        }
         connection
             .flush()
             .map_err(|error| format!("Failed to set KWin decoration palette: {error}"))?;
@@ -524,8 +592,10 @@ pub fn install<R: Runtime>(
         gtk_window.queue_draw();
     }
 
+    let destroy_label = window.label().to_string();
     let destroy_session = Rc::clone(&session);
     gtk_window.connect_destroy(move |_| {
+        forget_decoration_palette(&destroy_label);
         destroy_session.borrow_mut().cleanup();
     });
 
@@ -535,6 +605,7 @@ pub fn install<R: Runtime>(
         background_blur,
         decoration: requested_decoration,
         decoration_alpha: None,
+        csd_header: None,
     })
 }
 

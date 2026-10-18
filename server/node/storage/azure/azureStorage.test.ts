@@ -2,32 +2,32 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
+import {
   AzureStorage,
   assertSqlIdentifier,
   normalizeColdStorageKey,
-} = require(".//azureStorage.cts");
-const {
+} from "./azureStorage.ts";
+import {
   resolveVendor,
   createStorageDriver,
   loadAzureEnvFile,
   readAzureConfigFromEnv,
-} = require("../storageDriver.cjs");
-const {
+} from "../storageDriver.ts";
+import {
   splitCharacter,
   splitChat,
   splitMessage,
   rebuildCharacter,
   rebuildChat,
   rebuildMessage,
-} = require("../postgres/postgresRelationalCodec.cjs");
-const {
+} from "../postgres/postgresRelationalCodec.ts";
+import {
   splitSetting,
   rebuildSettings,
-} = require("../postgres/postgresSettingsCodec.cjs");
+} from "../postgres/postgresSettingsCodec.ts";
 
-describe("AzureStorage Driver & StorageDriver Integration", () => {
-  it("resolves azure vendor properly from options and environment", () => {
+describe("AzureStorage Driver & StorageDriver Integration", async () => {
+  it("resolves azure vendor properly from options and environment", async () => {
     expect(resolveVendor({ vendor: "azure" })).toBe("azure");
 
     const prevHost = process.env.AZURE_HOST;
@@ -43,8 +43,8 @@ describe("AzureStorage Driver & StorageDriver Integration", () => {
     }
   });
 
-  it("creates AzureStorage instance via createStorageDriver factory", () => {
-    const storage = createStorageDriver({
+  it("creates AzureStorage instance via createStorageDriver factory", async () => {
+    const storage = await createStorageDriver({
       vendor: "azure",
       server: "dummy.database.windows.net",
     });
@@ -52,7 +52,7 @@ describe("AzureStorage Driver & StorageDriver Integration", () => {
     expect(storage.server).toBe("dummy.database.windows.net");
   });
 
-  it("validates SQL identifier safety", () => {
+  it("validates SQL identifier safety", async () => {
     expect(assertSqlIdentifier("character.characters")).toBe(
       "[character].[characters]",
     );
@@ -62,15 +62,15 @@ describe("AzureStorage Driver & StorageDriver Integration", () => {
     ).toThrow();
   });
 
-  it("normalizes cold storage UUID keys", () => {
+  it("normalizes cold storage UUID keys", async () => {
     const uuid = "12345678-1234-1234-1234-123456789abc";
     expect(normalizeColdStorageKey(uuid)).toBe(uuid);
     expect(() => normalizeColdStorageKey("invalid-uuid")).toThrow();
   });
 });
 
-describe("Azure SQL Codec & Relational Mapping Consistency", () => {
-  it("correctly decomposes and rebuilds character records", () => {
+describe("Azure SQL Codec & Relational Mapping Consistency", async () => {
+  it("correctly decomposes and rebuilds character records", async () => {
     const charData = {
       name: "Azure Test Character",
       chaId: "char-azure-1",
@@ -109,7 +109,7 @@ describe("Azure SQL Codec & Relational Mapping Consistency", () => {
     expect(reconstructed.bias).toEqual([["test", 1.5]]);
   });
 
-  it("correctly decomposes and rebuilds chat and message records", () => {
+  it("correctly decomposes and rebuilds chat and message records", async () => {
     const chatData = {
       id: "chat-1",
       name: "First Azure Chat",
@@ -166,7 +166,7 @@ describe("Azure SQL Codec & Relational Mapping Consistency", () => {
     expect(reconstructedChat.message[0].role).toBe("user");
   });
 
-  it("correctly decomposes and rebuilds settings hierarchy", () => {
+  it("correctly decomposes and rebuilds settings hierarchy", async () => {
     const originalSettings = {
       theme: "dark",
       fontSize: 16,
@@ -252,7 +252,7 @@ function makeRecordingMssqlMock() {
   return { sql, queries };
 }
 
-describe("AzureStorage.sync() entity deletion", () => {
+describe("AzureStorage.sync() entity deletion", async () => {
   it("deletes only explicitly named characters, chats, and messages", async () => {
     const { sql, queries } = makeRecordingMssqlMock();
 
@@ -344,8 +344,8 @@ describe("AzureStorage.sync() entity deletion", () => {
   });
 });
 
-describe("AzureStorage Server Interface Compatibility", () => {
-  it("implements all methods required by server.cjs and storageDriver", () => {
+describe("AzureStorage Server Interface Compatibility", async () => {
+  it("implements all methods required by server.cjs and storageDriver", async () => {
     const storage = new AzureStorage({ server: "dummy.database.windows.net" });
 
     // Lifecycle & Settings
@@ -400,7 +400,7 @@ describe("AzureStorage Server Interface Compatibility", () => {
   });
 });
 
-describe("AzureStorage recent chats", () => {
+describe("AzureStorage recent chats", async () => {
   it("uses per-session activity while keeping the active chat pinned", async () => {
     const inputs: Record<string, unknown> = {};
     let query = "";
@@ -469,8 +469,8 @@ describe("AzureStorage recent chats", () => {
   });
 });
 
-describe("AzureStorage persistent branch API", () => {
-  it("exposes persistent branch operations", () => {
+describe("AzureStorage persistent branch API", async () => {
+  it("exposes persistent branch operations", async () => {
     for (const method of [
       "listChatBranches",
       "loadBranchMessages",
@@ -482,7 +482,7 @@ describe("AzureStorage persistent branch API", () => {
   });
 });
 
-describe("Azure storage sync finalize concurrency", () => {
+describe("Azure storage sync finalize concurrency", async () => {
   function storageAtRevision(revision: number) {
     const queries: string[] = [];
     const makeRequest = () => ({

@@ -17,7 +17,6 @@ import {
   getRemoteSaveCleanupAction,
   getRemoteSavePayloadName,
 } from "../storage/backup/remoteSaveCleanup";
-import type { Database } from "../storage/database/schema";
 import { getSqlRuntime } from "../storage/sql/sqlRuntime";
 import { characterStore } from "../stores/domain/characterStore.svelte";
 import { settingsStore } from "../stores/domain/settingsStore.svelte";
@@ -180,7 +179,7 @@ export async function cleanChunks(): Promise<void> {
   }
 
   const uncleanable = new Set(
-    await getUncleanables(db as Database, "basename", {
+    await getUncleanables(db, "basename", {
       chars: characterStore.characters,
     }),
   );

@@ -1,4 +1,4 @@
-import { AuthorNoteError } from "@risuai/protocol/dist/authorNotes.cjs";
+import { AuthorNoteError } from "@risuai/protocol/src/authorNotes.ts";
 import { readNote, NoteSource } from "../authorNote";
 import { globalAuthorNoteStore } from "../stores/domain/globalAuthorNoteStore";
 import { alertToast } from "../alert";
@@ -42,7 +42,7 @@ import {
   writeInlayImageFromBytes,
   getInlayAsset,
 } from "./files/inlays";
-import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat, MultiModal } from "@risuai/chat-core/types.ts";
 import { requestChatData } from "./request/chatRequestOrchestrator";
 import type { StreamResponseChunk } from "./request/requestContracts";
 import { v4 } from "uuid";

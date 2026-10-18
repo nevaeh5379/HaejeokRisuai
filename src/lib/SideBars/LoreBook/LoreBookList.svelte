@@ -352,7 +352,7 @@
 </script>
 
 {#key sorted}
-    <div class="border-solid border-selected p-2 flex flex-col border-1 rounded-md" 
+    <div class="rs-lorebook-list border-solid border-selected p-2 flex flex-col border-1 rounded-md"
          bind:this={ele} 
          data-show-folder={showFolder || ''}>
         {#if globalMode}

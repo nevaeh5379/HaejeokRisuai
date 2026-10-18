@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const { matchLoreBatch, matchLoreRequest } = require(".//loreMatch.cjs") as {
-  matchLoreRequest: (
-    messages: Array<{ role: string; data: string; displayName?: string }>,
-    request: Record<string, unknown>,
-    options?: Record<string, string>,
-  ) => { matched: boolean; logs: Array<{ activated: string }> };
-  matchLoreBatch: (
-    messages: Array<{ role: string; data: string; displayName?: string }>,
-    requests: Array<Record<string, unknown>>,
-    options?: Record<string, string>,
-  ) => Array<{ matched: boolean }>;
-};
+import { matchLoreBatch, matchLoreRequest } from "./loreMatch.ts";
 
 const baseRequest = {
   searchDepth: 10,

@@ -1,5 +1,5 @@
 import { Sha256 } from "@aws-crypto/sha256-js";
-import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import type { LegacyBackupSqlRecord } from "@risuai/backup-core/legacyRecords";
 import type {
   ISqlStorage,
@@ -23,6 +23,7 @@ export interface StorageSyncSqlSourcePlan {
   recordCount: number;
   sha256: string;
   sourceRevision: number;
+  requiresPluginRecords: boolean;
 }
 export type StorageSyncSqlRecord =
   LegacyBackupSqlRecord | { type: "cold-storage"; key: string; value: unknown };
@@ -92,6 +93,20 @@ async function* iteratePluginStorage(
       key,
       value: await storage.loadPluginCustomStorageKey(key),
     };
+  }
+}
+
+async function* iteratePlugins(
+  storage: ISqlStorage,
+  expectedRevision: number,
+): AsyncGenerator<StorageSyncSqlRecord> {
+  const plugins = await storage.plugin.loadAll();
+  for (const { id, position, ...data } of plugins) {
+    assertCachedRevision(storage, expectedRevision);
+    const script = await storage.plugin.script.load(id);
+    if (!script)
+      throw new Error(`Plugin script disappeared during backup: ${id}`);
+    yield { type: "plugin", id, position, data, script: script.script };
   }
 }
 async function* iterateModules(
@@ -293,6 +308,8 @@ export async function* iterateStorageSyncSqlRecords(
   assertCachedRevision(storage, options.expectedRevision);
   yield* iteratePluginStorage(storage);
   assertCachedRevision(storage, options.expectedRevision);
+  yield* iteratePlugins(storage, options.expectedRevision);
+  assertCachedRevision(storage, options.expectedRevision);
   yield* iterateModules(storage);
   assertCachedRevision(storage, options.expectedRevision);
   yield* iteratePresets(storage);
@@ -325,7 +342,9 @@ export async function measureStorageSyncSqlSource(
   const hash = new Sha256();
   let size = 0;
   let recordCount = 0;
+  let requiresPluginRecords = false;
   for await (const record of iterateStorageSyncSqlRecords(storage, options)) {
+    if (record.type === "plugin") requiresPluginRecords = true;
     const bytes = encodeStorageSyncSqlRecord(record);
     hash.update(bytes);
     size += bytes.byteLength;
@@ -337,6 +356,7 @@ export async function measureStorageSyncSqlSource(
     recordCount,
     sha256: bytesToHex(await hash.digest()),
     sourceRevision: options.expectedRevision,
+    requiresPluginRecords,
   };
 }
 

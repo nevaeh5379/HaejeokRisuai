@@ -5,7 +5,7 @@ import type {
   ChatModelResponse,
   ChatStreamChunk,
   OpenAIChat,
-} from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/types.ts";
 import type { MCPTool } from "../mcp/mcplib";
 import type { ModelModeExtended } from "./shared";
 

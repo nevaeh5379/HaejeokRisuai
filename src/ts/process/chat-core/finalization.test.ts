@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decideAutoContinuation,
   endsWithCompletionPunctuation,
-} from "@risuai/chat-core/finalization.cjs";
+} from "@risuai/chat-core/finalization.ts";
 
 describe("decideAutoContinuation", () => {
   it("continues when the generated token count is below the configured minimum", () => {

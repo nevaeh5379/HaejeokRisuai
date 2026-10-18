@@ -1,4 +1,5 @@
 import { flushDurableStores } from "../../stores/domain/flushDurableStores";
+import { NodeApiCompatibilityError } from "@risuai/storage-remote/nodeApiClient";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import type {
   NodeStorageSyncAssetChunkResult,
@@ -498,10 +499,18 @@ export async function stageLocalStorageToRemote(
   const sourceSummary = await requireSourceSummary(sourceSql);
   const sourceRevision = sourceSummary.revision;
   const targetSummary = await target.getStorageSyncSummary(signal);
-  const assetManifest = await buildStorageSyncAssetManifest(sourceAssets);
   const sqlSourcePlan = await measureStorageSyncSqlSource(sourceSql, {
     expectedRevision: sourceRevision,
   });
+  if (
+    sqlSourcePlan.requiresPluginRecords &&
+    targetSummary.supportsPluginRecords !== true
+  ) {
+    throw new NodeApiCompatibilityError(
+      "This server does not support syncing installed plugin definitions. Upgrade the server before syncing this database. No data has been uploaded by this attempt.",
+    );
+  }
+  const assetManifest = await buildStorageSyncAssetManifest(sourceAssets);
   const session = await resolveSession(
     target,
     sourceRevision,

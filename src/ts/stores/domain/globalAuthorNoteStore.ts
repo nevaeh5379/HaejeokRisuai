@@ -6,7 +6,7 @@ import {
   AuthorNoteError,
   type AuthorNoteMetadata,
   type AuthorNoteOperation,
-} from "@risuai/protocol/dist/authorNotes.cjs";
+} from "@risuai/protocol/src/authorNotes.ts";
 
 export interface GlobalAuthorNote {
   readonly id: string;

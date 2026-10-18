@@ -1,6 +1,6 @@
 import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { alertError } from "src/ts/alert";
-import type { OpenAIChat } from "@risuai/chat-core/types.cjs";
+import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import { HypaProcesser } from "./hypamemory";
 import { language } from "src/lang";
 import type { ChatTokenizer } from "src/ts/tokenizer";

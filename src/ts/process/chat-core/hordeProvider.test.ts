@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   STABLE_HORDE_TEXT_ASYNC_URL,
   buildStableHordeStatusUrl,
-} from "@risuai/chat-core/hordeProvider.cjs";
+} from "@risuai/chat-core/hordeProvider.ts";
 
 describe("Stable Horde provider", () => {
   it("pins submit and status endpoints", () => {

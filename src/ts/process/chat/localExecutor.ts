@@ -4,16 +4,16 @@ import { setChatProcessStage } from "./runtimeState";
 import {
   createChatGenerationPlan,
   executeChatModelRequest,
-} from "@risuai/chat-core/generation.cjs";
+} from "@risuai/chat-core/generation.ts";
 import type {
   ChatExecutor,
   ChatSendOptions,
-} from "@risuai/chat-core/executor.cjs";
+} from "@risuai/chat-core/executor.ts";
 import type {
   ChatModelResponse,
   ChatStageTimings,
   OpenAIChat,
-} from "@risuai/chat-core/types.cjs";
+} from "@risuai/chat-core/types.ts";
 import { createLocalChatGenerationRuntime } from "./localRuntime";
 import { requireChatTargetFromIndexes } from "../../chatTarget";
 import { tryCreateNodeChatGenerationPlan } from "./nodePlanner";
@@ -311,6 +311,7 @@ export class LocalChatExecutor implements ChatExecutor {
     }
 
     currentChat = response.currentChat;
+    const illustrationMessageId = currentChat.message.at(-1)?.chatId;
     return finalizeChatGeneration({
       req,
       result: response.result,
@@ -354,6 +355,15 @@ export class LocalChatExecutor implements ChatExecutor {
           targetCharacterId: arg.targetCharacterId,
           targetChatId: arg.targetChatId,
         }),
+      illustrationContext: prompt.illustrationContext,
+      illustrationTarget:
+        prompt.illustrationContext && currentChat.id && illustrationMessageId
+          ? {
+              characterId: currentChar.chaId,
+              chatId: currentChat.id,
+              messageId: illustrationMessageId,
+            }
+          : undefined,
     });
   }
 }

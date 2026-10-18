@@ -1,4 +1,4 @@
-import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.cjs";
+import { formatProviderMessages } from "@risuai/chat-core/providerPrompt.ts";
 import { executeBrowserProvider } from "./browserProviderRegistry";
 import { prepareBrowserProviderContext } from "./providerContextAdapter";
 import type { ModelModeExtended } from "./shared";

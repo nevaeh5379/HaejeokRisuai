@@ -6,7 +6,7 @@ import {
   encodeStreamingBackupValue,
   encryptStreamingBackupEntry,
   isStreamingBackupEncryptedEntry,
-} from "./streamingEncryption";
+} from "./streamingEncryption.ts";
 
 describe("streaming backup encryption", () => {
   it("keeps the envelope format identifier stable", () => {

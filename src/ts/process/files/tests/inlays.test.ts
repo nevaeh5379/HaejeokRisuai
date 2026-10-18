@@ -857,6 +857,14 @@ describe("remote inlay storage", () => {
     expect(cached!.name).toBe("fail.png");
   });
 
+  test("rejects a durable illustration write before caching when server storage fails", async () => {
+    await enableNodeServerMode();
+    remoteFailureCount.value = 1;
+    await expect(writeInlayImage(makeImage(120, 80), { id: "durable-failure", durable: true })).rejects.toThrow("server unavailable");
+    expect(remoteStore.has(getInlayServerKey("durable-failure"))).toBe(false);
+    expect(store.has("durable-failure")).toBe(false);
+  });
+
   test("fetches an asset from the server on local cache miss", async () => {
     await enableNodeServerMode();
     const asset = makeAsset("remote-only.png");

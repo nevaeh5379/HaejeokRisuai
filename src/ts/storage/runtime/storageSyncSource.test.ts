@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { decodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { decodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import {
   StorageSyncSourceRevisionChangedError,
@@ -47,6 +47,10 @@ function makeStorage() {
     ),
     listGlobalAuthorNotes: async () => [],
     getGlobalAuthorNoteScriptWrite: async () => false,
+    plugin: {
+      loadAll: vi.fn(async () => []),
+      script: { load: vi.fn(async () => null) },
+    },
     listPluginCustomStorageKeys: vi.fn(async () => ["plugin-key"]),
     loadPluginCustomStorageKey: vi.fn(async () => ({ enabled: true })),
     loadModules: vi.fn(async () => [{ id: "module-1", name: "Module" }]),
@@ -210,6 +214,40 @@ describe("storage sync SQL source", () => {
     expect(
       chat && "data" in chat ? (chat.data as any).message : undefined,
     ).toBeUndefined();
+  });
+
+  it("loads plugin scripts one at a time, including disabled plugins", async () => {
+    const { storage } = makeStorage();
+    vi.spyOn(storage.plugin, "loadAll").mockResolvedValue([
+      { id: "plugin-1", position: 0, name: "Enabled", enabled: true },
+      { id: "plugin-2", position: 1, name: "Disabled", enabled: false },
+    ] as any);
+    const loadScript = vi
+      .spyOn(storage.plugin.script, "load")
+      .mockImplementation(async (pluginId) => ({
+        pluginId,
+        script: `// ${pluginId}`,
+      }));
+    const iterator = iterateStorageSyncSqlRecords(storage, {
+      expectedRevision: 7,
+    });
+    let current = await iterator.next();
+    while (!current.done && current.value.type !== "plugin")
+      current = await iterator.next();
+    expect(current.value).toMatchObject({
+      type: "plugin",
+      id: "plugin-1",
+      script: "// plugin-1",
+    });
+    expect(loadScript).toHaveBeenCalledTimes(1);
+    expect((await iterator.next()).value).toMatchObject({
+      type: "plugin",
+      id: "plugin-2",
+      data: { enabled: false },
+      script: "// plugin-2",
+    });
+    expect(loadScript).toHaveBeenCalledTimes(2);
+    await iterator.return(undefined);
   });
 
   it("preserves module positions and root module order independently", async () => {

@@ -3,7 +3,7 @@ import type {
   NodePostgresRevision,
   NodePostgresRevisionDetails,
   NodePostgresRevisionDiff,
-} from "@risuai/protocol/databaseApi.cjs";
+} from "@risuai/protocol/databaseApi.ts";
 import type { SqliteSelectRows } from "../types";
 import { normalizeLimit } from "../util";
 

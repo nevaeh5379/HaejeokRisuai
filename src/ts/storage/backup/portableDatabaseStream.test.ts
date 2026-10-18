@@ -66,6 +66,10 @@ function createStorage(overrides: Record<string, unknown> = {}) {
     loadBotPreset: vi.fn(async () => ({ id: "preset-1", name: "Preset" })),
     listGlobalAuthorNotes: async () => [],
     getGlobalAuthorNoteScriptWrite: async () => false,
+    plugin: {
+      loadAll: vi.fn(async () => []),
+      script: { load: vi.fn(async () => null) },
+    },
     listPluginCustomStorageKeys: vi.fn(async () => ["plugin-1"]),
     loadPluginCustomStorageKey: vi.fn(async () => ({ retained: true })),
     listColdStorageItems: vi.fn(async () => ({ items: [] })),

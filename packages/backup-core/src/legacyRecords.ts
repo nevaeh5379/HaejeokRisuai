@@ -1,9 +1,9 @@
-import settings from "../../protocol/settings.json";
+import settings from "../../protocol/settings.ts";
 import {
   preparePortableDatabaseForBranchRestore,
   type PortableBranchGraph,
   type PortableBranchGraphMap,
-} from "./portableBranches";
+} from "./portableBranches.ts";
 
 const LEGACY_PERSONA_MIRROR_KEYS = new Set<string>(
   settings.LEGACY_PERSONA_MIRROR_KEYS,
@@ -24,6 +24,13 @@ export type LegacyBackupSqlRecord =
   | { type: "meta"; formatVersion: 1; revision: number }
   | { type: "setting"; key: string; value: unknown }
   | { type: "plugin-storage"; key: string; value: unknown }
+  | {
+      type: "plugin";
+      position: number;
+      id: string;
+      data: unknown;
+      script: string;
+    }
   | { type: "module"; position: number; id: string; data: unknown }
   | { type: "preset"; position: number; id: string; data: unknown }
   | { type: "character"; position: number; id: string; data: unknown }

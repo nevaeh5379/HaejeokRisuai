@@ -1,11 +1,11 @@
 import {
   parsePortableDatabaseStreamFragmentName,
   PORTABLE_DATABASE_STREAM_MANIFEST,
-} from "../streamFormat";
+} from "../streamFormat.ts";
 import type {
   StagedBackupContainer,
   StagedBackupEntry,
-} from "./importStagingStore";
+} from "./importStagingStore.ts";
 
 export type BackupImportDatabaseMode = "legacy" | "stream";
 
@@ -22,9 +22,16 @@ export interface BackupImportPlan {
 }
 
 export class BackupImportPlanError extends Error {
+  readonly code:
+    | "missing_database"
+    | "mixed_database_formats"
+    | "duplicate_entry"
+    | "missing_stream_manifest"
+    | "duplicate_stream_manifest"
+    | "invalid_stream_fragment_order";
   constructor(
     message: string,
-    readonly code:
+    code:
       | "missing_database"
       | "mixed_database_formats"
       | "duplicate_entry"
@@ -33,6 +40,7 @@ export class BackupImportPlanError extends Error {
       | "invalid_stream_fragment_order" = "missing_database",
   ) {
     super(message);
+    this.code = code;
     this.name = "BackupImportPlanError";
   }
 }

@@ -5,7 +5,7 @@ import type {
   LocalBackupImportJobProgress,
   LocalBackupImportJobStatus,
   LocalBackupImportProgress,
-} from "../api";
+} from "../api.ts";
 
 interface InternalImportJob {
   id: string;
@@ -23,14 +23,16 @@ interface InternalImportJob {
 const DEFAULT_IMPORT_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class LocalBackupImportJobError extends Error {
+  readonly code: "job_not_found" | "job_already_started" | "invalid_job_state";
   constructor(
     message: string,
-    readonly code:
+    code:
       | "job_not_found"
       | "job_already_started"
       | "invalid_job_state" = "invalid_job_state",
   ) {
     super(message);
+    this.code = code;
     this.name = "LocalBackupImportJobError";
   }
 }
@@ -38,15 +40,20 @@ export class LocalBackupImportJobError extends Error {
 export class LocalBackupImportJobStore {
   private readonly jobs = new Map<string, InternalImportJob>();
 
+  private readonly ttlMs: any;
+  private readonly idFactory: any;
+  private readonly uploadTokenFactory: any;
   constructor(
     // Pending jobs are disposable capabilities. Keep them long enough for a
     // browser request to leave its connection queue; active uploads set their
     // expiry to Infinity and therefore have no duration limit.
-    private readonly ttlMs = DEFAULT_IMPORT_JOB_TTL_MS,
-    private readonly idFactory = () => randomBytes(24).toString("base64url"),
-    private readonly uploadTokenFactory = () =>
-      randomBytes(32).toString("base64url"),
+    ttlMs = DEFAULT_IMPORT_JOB_TTL_MS,
+    idFactory = () => randomBytes(24).toString("base64url"),
+    uploadTokenFactory = () => randomBytes(32).toString("base64url"),
   ) {
+    this.ttlMs = ttlMs;
+    this.idFactory = idFactory;
+    this.uploadTokenFactory = uploadTokenFactory;
     if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
       throw new TypeError("Local backup import job TTL must be positive");
     }

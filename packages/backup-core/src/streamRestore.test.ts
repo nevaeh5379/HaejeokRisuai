@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   PortableDatabaseStreamRestoreCoordinator,
   type PortableDatabaseStreamFragmentSink,
-} from "./streamRestore";
+} from "./streamRestore.ts";
 import {
   PORTABLE_DATABASE_STREAM_MANIFEST,
   type PortableDatabaseStreamFragment,
   type PortableDatabaseStreamManifest,
-} from "./streamFormat";
+} from "./streamFormat.ts";
 
 function fragment(index: number): PortableDatabaseStreamFragment {
   return {

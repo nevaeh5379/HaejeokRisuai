@@ -51,7 +51,7 @@ import { RemoteSqlReadClient } from "@risuai/storage-remote/remoteSqlReadClient"
 import { RemoteSqlDocumentClient } from "@risuai/storage-remote/remoteSqlDocumentClient";
 import type { IPluginStorage } from "../pluginStorage";
 import { NodePluginStorage } from "./nodePluginStorage";
-import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.cjs";
+import { encodeStorageSyncValue } from "@risuai/protocol/storageSyncValueCodec.ts";
 import {
   PortableDatabaseStreamValidator,
   type PortableDatabaseStreamRestoreProgress,
@@ -67,14 +67,14 @@ import type {
   NodePostgresServerConfigUpdate,
   NodeSqlStorageRuntime,
   NodeSqlStorageRuntimeError,
-} from "../../../../../packages/protocol/storageConfig.cjs";
+} from "../../../../../packages/protocol/storageConfig.ts";
 export type {
   DbVendor,
   NodePostgresServerConfig,
   NodePostgresServerConfigUpdate,
   NodeSqlStorageRuntime,
   NodeSqlStorageRuntimeError,
-} from "../../../../../packages/protocol/storageConfig.cjs";
+} from "../../../../../packages/protocol/storageConfig.ts";
 
 import type {
   NodePostgresRevision,
@@ -96,7 +96,7 @@ import type {
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "../../../../../packages/protocol/databaseApi.cjs";
+} from "../../../../../packages/protocol/databaseApi.ts";
 export type {
   NodePostgresRevision,
   NodePostgresAuditLogItem,
@@ -117,7 +117,7 @@ export type {
   NodeBackupConfigUpdate,
   NodeBackupProgressEvent,
   NodeBackupFullSyncResult,
-} from "../../../../../packages/protocol/databaseApi.cjs";
+} from "../../../../../packages/protocol/databaseApi.ts";
 
 export interface SqlVendorFormValues {
   connectionString?: string;
@@ -607,18 +607,18 @@ export class NodeSqlStorage implements INodeSqlStorageAdmin {
   }
   async listGlobalAuthorNotes() {
     return this.requestAuthorNote<
-      import("../../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteMetadata[]
+      import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata[]
     >("");
   }
   async getGlobalAuthorNote(id: string) {
     return this.requestAuthorNote<
-      | import("../../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteMetadata
+      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteMetadata
       | null
     >(`/${encodeURIComponent(id)}`);
   }
   async readGlobalAuthorNote(id: string) {
     return this.requestAuthorNote<
-      | import("../../../../../packages/protocol/dist/authorNotes.cjs").AuthorNoteRow
+      | import("../../../../../packages/protocol/src/authorNotes.ts").AuthorNoteRow
       | null
     >(`/${encodeURIComponent(id)}/content`);
   }

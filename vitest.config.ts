@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vitest/config";
-import { buildProtocol } from "./tooling/build-protocol.ts";
-
-buildProtocol();
 
 export default defineConfig({
   plugins: [svelte()],
+  oxc: {
+    include: [/\.(?:[jt]sx?|cts)(?:$|\?)/],
+  },
   resolve: {
     alias: {
       src: "/src",
