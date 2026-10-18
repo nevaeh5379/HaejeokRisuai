@@ -150,7 +150,10 @@ export function resolveModuleRequestRules(
     }
   }
 
-  const allMatches = [...matched.values()];
+  const allMatches: { module: RuleModule; score: number }[] = [];
+  for (const match of matched.values()) {
+    allMatches.push(match);
+  }
   if (allMatches.length === 0) {
     return { status: "unmatched", modules: [] };
   }

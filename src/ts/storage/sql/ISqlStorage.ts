@@ -300,6 +300,7 @@ export interface ISqlStorage {
 
   // ── Settings ─────────────────────────────────────────────────────────
 
+  //TODO remove any.
   loadSettingKey(key: string): Promise<any>;
   /** Enumerates every persisted root setting key without hydrating values. */
   listSettingKeys?(): Promise<string[]>;

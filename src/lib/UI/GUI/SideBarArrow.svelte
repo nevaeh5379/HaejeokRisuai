@@ -33,7 +33,7 @@
     <button onclick={() => {
         sideBarClosing.set(isSidebarOpen);
         if (!isSidebarOpen) sideBarStore.set(true);
-    }} class="group rs-sidebar-toggle absolute left-1.25 top-1.25 h-8 w-8 items-center flex justify-center z-20">
+    }} class="group rs-sidebar-toggle absolute left-1.25 top-1.25 h-8 w-8 items-center flex justify-center z-30">
     <PanelLeft class="text-zinc-500 group-hover:hidden group-hover:text-white transition-colors" />
     {#if isSidebarOpen}
     <PanelLeftClose class="hidden group-hover:block" />

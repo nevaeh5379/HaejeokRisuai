@@ -53,9 +53,121 @@ beforeEach(() => {
   mocks.settings.translatorType = "deeplX";
   mocks.settings.translator = "ko";
   mocks.settings.translatorInputLanguage = "en";
+  mocks.settings.noWaitForTranslate = true;
+  mocks.settings.combineTranslation = false;
   mocks.preset.aiModel = "gpt";
   vi.stubGlobal("fetch", mocks.googleFetch);
   vi.spyOn(console, "log").mockImplementation(() => {});
+});
+
+describe("DeepLX request scheduling", () => {
+  it("reserves distinct three-second slots for concurrent requests", async () => {
+    const { runTranslator } = await import("./translator");
+    const { sleep } = await import("../util");
+    vi.mocked(sleep).mockClear();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    mocks.settings.noWaitForTranslate = false;
+    mocks.fetch.mockResolvedValue({ ok: true, data: { data: "translated" } });
+    try {
+      await Promise.all([
+        runTranslator("first", "en", "ko"),
+        runTranslator("second", "en", "ko"),
+        runTranslator("third", "en", "ko"),
+      ]);
+      expect(vi.mocked(sleep).mock.calls).toEqual([[3000], [6000]]);
+      expect(mocks.fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("does not wait when the user disables throttling", async () => {
+    const { runTranslator } = await import("./translator");
+    const { sleep } = await import("../util");
+    vi.mocked(sleep).mockClear();
+    mocks.fetch.mockResolvedValue({ ok: true, data: { data: "translated" } });
+    await Promise.all([
+      runTranslator("first", "en", "ko"),
+      runTranslator("second", "en", "ko"),
+    ]);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+describe("DeepLX HTML batching", () => {
+  it("finishes more than eleven text nodes and preserves their order", async () => {
+    const { translateHTML } = await import("./translator");
+    mocks.fetch.mockImplementation(async (_url, options) => ({
+      ok: true,
+      data: { data: options.body.text.toUpperCase() },
+    }));
+    const result = await translateHTML(
+      Array.from({ length: 12 }, (_, i) => `<p>paragraph ${i}</p>`).join(""),
+      false,
+      "",
+      -1,
+    );
+    const container = document.createElement("div");
+    container.innerHTML = result;
+    expect(
+      Array.from(container.querySelectorAll("p"), (node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(Array.from({ length: 12 }, (_, i) => `PARAGRAPH ${i}`));
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("finishes combined paragraphs without waiting for traversal to finish", async () => {
+    const { translateHTML } = await import("./translator");
+    const { getNodetextToSentence } = await import("../util");
+    vi.mocked(getNodetextToSentence).mockImplementation(
+      (node) => node.textContent ?? "",
+    );
+    mocks.settings.combineTranslation = true;
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      data: { data: "Translated paragraph" },
+    });
+    const result = await translateHTML(
+      "<p>Original paragraph</p>",
+      false,
+      "",
+      -1,
+    );
+    expect(result).toContain("Translated paragraph");
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes full batches sequentially without losing or repeating nodes", async () => {
+    const { translateHTML } = await import("./translator");
+    mocks.fetch.mockImplementation(async (_url, options) => ({
+      ok: true,
+      data: { data: options.body.text.toUpperCase() },
+    }));
+    const texts = ["a".repeat(2600), "b".repeat(2600), "c".repeat(2600)];
+    const result = await translateHTML(
+      texts.map((text) => `<p>${text}</p>`).join(""),
+      false,
+      "",
+      -1,
+    );
+    const container = document.createElement("div");
+    container.innerHTML = result;
+    expect(
+      Array.from(container.querySelectorAll("p"), (node) => node.textContent),
+    ).toEqual(texts.map((text) => text.toUpperCase()));
+    expect(
+      mocks.fetch.mock.calls.map(([, options]) => options.body.text),
+    ).toEqual(texts);
+  });
+
+  it("rejects a failed batch instead of leaving resolver promises pending", async () => {
+    const { translateHTML } = await import("./translator");
+    mocks.fetch.mockRejectedValue(new Error("network failed"));
+    await expect(
+      translateHTML("<p>paragraph</p>", false, "", -1),
+    ).rejects.toThrow("network failed");
+  });
 });
 
 describe("translation direction and cache context", () => {

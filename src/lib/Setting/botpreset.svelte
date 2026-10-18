@@ -247,7 +247,6 @@
                         const d = await alertConfirm(`${language.removeConfirm}${preset.name}`)
                         if(d){
                             await presetStore.delete(preset.id)
-                            await changeToPreset(presetStore.activeIndex, false)
                         }
                     }} onkeydown={(e) => {
                         if(e.key === 'Enter' && e.currentTarget instanceof HTMLElement){

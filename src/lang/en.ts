@@ -1714,6 +1714,11 @@ export const languageEnglish = {
   windowsBackdropTabbed: "Tabbed Mica (Windows 11)",
   windowsMaterialOpacity: "Background opacity",
   linuxCsdSidebarOpacity: "CSD sidebar opacity",
+  useMacosSidebarTransparency: "Use sidebar transparency",
+  macosNativeSidebarBlur: "Use native sidebar blur",
+  macosNativeSidebarBlurHelp:
+    "Use the standard macOS sidebar blur when enabled, or Liquid Glass when disabled. Changes apply immediately.",
+  macosSidebarOpacity: "Sidebar background opacity",
   windowsBackdropCompatibility:
     "Mica effects require Windows 11. Acrylic is recommended for wider compatibility.",
   useCustomBackground: "Custom Background",
