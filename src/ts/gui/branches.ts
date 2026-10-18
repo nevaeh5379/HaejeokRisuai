@@ -482,7 +482,6 @@ export function buildChatMessageGraph(
   for (const node of mutableNodes.values()) {
     if (!node.synthetic) messageCount++;
   }
-
   const density = options.density ?? "smart";
   const keepIds = new Set<string>();
   if (
@@ -907,7 +906,7 @@ export function buildChatMessageGraph(
     }
   }
 
-  const nodes: (RenderedChatNode & { x: number; y: number })[] = [];
+  const nodes = [];
   for (const { node } of displayNodes.values()) {
     nodes.push({
       ...node,
@@ -915,6 +914,7 @@ export function buildChatMessageGraph(
     });
   }
   nodes.sort((a, b) => a.y - b.y || a.x - b.x);
+
   const columns = Math.max(
     1,
     Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,
