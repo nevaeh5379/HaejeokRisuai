@@ -906,12 +906,15 @@ export function buildChatMessageGraph(
     }
   }
 
-  const nodes: RenderedChatNode[] = [];
+  const nodes = [];
   for (const { node } of displayNodes.values()) {
-    const pos = positions.get(node.id) ?? { x: 0, y: 0 };
-    nodes.push({ ...node, x: pos.x, y: pos.y });
+    nodes.push({
+      ...node,
+      ...(positions.get(node.id) ?? { x: 0, y: 0 }),
+    });
   }
   nodes.sort((a, b) => a.y - b.y || a.x - b.x);
+
   const columns = Math.max(
     1,
     Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,
