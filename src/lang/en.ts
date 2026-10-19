@@ -3061,6 +3061,8 @@ export const languageEnglish = {
   activeProviderSettings: "Active Provider Settings",
   providerSettings: "API & Providers",
   exitAppConfirm: "Exit RisuAI?",
+  createDesktopShortcut: "Create Shortcut",
+  desktopShortcutCreated: "Created a shortcut on the desktop.",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

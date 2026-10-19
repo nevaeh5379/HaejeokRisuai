@@ -30,7 +30,7 @@
     import { getSqlBranchStorage } from "src/ts/storage/sql/sqlStorageFactory";
     import type { Chat } from "src/ts/storage/database/schema";
     import type { SqlChatBranchGraphData } from "src/ts/storage/sql/ISqlStorage";
-    import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
+    import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel, isTauriWindows } from "src/ts/platform";
     import {
         HAEJEOK_PRIVACY_URL,
         HAEJEOK_TERMS_URL,
@@ -929,6 +929,21 @@
                         }}>
                             <div class="flex flex-col justify-start items-start">
                                 <span>{language.createMultiuserRoom} <Help key="experimental"/></span>
+                            </div>
+                            <div class="ml-9 float-right flex-1 flex justify-end">
+                                <ChevronRightIcon />
+                            </div>
+                        </button>
+                    {/if}
+                    {#if isTauriWindows}
+                        <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
+                            alertStore.set({
+                                type: 'none',
+                                msg: '3'
+                            })
+                        }}>
+                            <div class="flex flex-col justify-start items-start">
+                                <span>{language.createDesktopShortcut}</span>
                             </div>
                             <div class="ml-9 float-right flex-1 flex justify-end">
                                 <ChevronRightIcon />

@@ -1,7 +1,8 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, DatabaseIcon, DicesIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
+    import { CameraIcon, DatabaseIcon, DicesIcon, ExternalLinkIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
+    import { isTauriWindows } from "src/ts/platform";
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
     import { tick, untrack } from 'svelte';
     import { get } from 'svelte/store';
@@ -1541,6 +1542,17 @@
                         <FileText />
                         <span class="ml-2">로그 내보내기</span>
                     </div>
+
+                    {#if isTauriWindows}
+                        <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={async () => {
+                            openMenu = false
+                            const { createWindowsChatShortcut } = await import('src/ts/windowsShortcut')
+                            await createWindowsChatShortcut(selectedCharacterIndex, selectedChatIndex)
+                        }}>
+                            <ExternalLinkIcon />
+                            <span class="ml-2">{language.createDesktopShortcut}</span>
+                        </div>
+                    {/if}
 
                     <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={async () => {
                         const { postChatFile } = await import('src/ts/process/files/multisend')
