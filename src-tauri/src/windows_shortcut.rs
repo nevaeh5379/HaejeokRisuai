@@ -196,6 +196,7 @@ fn write_character_ico_file(
     icons_dir: &Path,
     character_id: &str,
     ico_bytes: &[u8],
+    referenced_icon_names: Option<&std::collections::HashSet<String>>,
 ) -> Result<PathBuf, String> {
     if ico_bytes.len() < 22 || &ico_bytes[0..4] != &[0, 0, 1, 0] {
         return Err("Invalid ICO file payload".to_string());
@@ -208,16 +209,22 @@ fn write_character_ico_file(
     let file_name = format!("{safe_id}_{hash:016x}.ico");
     let target_path = icons_dir.join(&file_name);
 
-    let prefix = format!("{safe_id}_");
-    if let Ok(entries) = std::fs::read_dir(icons_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with(&prefix)
-                && name_str.ends_with(".ico")
-                && name_str != file_name
-            {
-                let _ = std::fs::remove_file(entry.path());
+    if let Some(referenced_set) = referenced_icon_names {
+        let prefix = format!("{safe_id}_");
+        if let Ok(entries) = std::fs::read_dir(icons_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                let lower_name = name_str.to_ascii_lowercase();
+                if name_str.starts_with(&prefix)
+                    && lower_name.ends_with(".ico")
+                    && name_str != file_name
+                {
+                    // Preserve icon files that are still referenced by existing shortcuts!
+                    if !referenced_set.contains(&lower_name) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
             }
         }
     }
@@ -228,6 +235,139 @@ fn write_character_ico_file(
     }
 
     Ok(target_path)
+}
+
+#[cfg(target_os = "windows")]
+fn find_lnk_files_in_dir(dir: &Path, max_depth: usize, out: &mut Vec<PathBuf>) {
+    if max_depth == 0 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+        if name_str.starts_with('.') || name_str.starts_with('$') {
+            continue;
+        }
+
+        if path.is_file() {
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("lnk"))
+                == Some(true)
+            {
+                out.push(path);
+            }
+        } else if path.is_dir() && max_depth > 1 {
+            find_lnk_files_in_dir(&path, max_depth - 1, out);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_shortcut_icon_location(lnk_path: &Path) -> Option<PathBuf> {
+    use windows::{
+        core::{Interface, PCWSTR},
+        Win32::{
+            System::Com::{
+                CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ,
+            },
+            UI::Shell::{IShellLinkW, ShellLink},
+        },
+    };
+
+    unsafe {
+        let shell_link: IShellLinkW =
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let persist_file: IPersistFile = shell_link.cast().ok()?;
+        let lnk_wide = wide_null(&lnk_path.to_string_lossy());
+        persist_file
+            .Load(PCWSTR(lnk_wide.as_ptr()), STGM_READ)
+            .ok()?;
+
+        let mut icon_path_buf = [0u16; 512];
+        let mut icon_index = 0i32;
+        shell_link
+            .GetIconLocation(&mut icon_path_buf, &mut icon_index)
+            .ok()?;
+
+        let len = icon_path_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(icon_path_buf.len());
+        if len == 0 {
+            return None;
+        }
+
+        let raw_str = String::from_utf16_lossy(&icon_path_buf[..len]);
+        let trimmed = raw_str.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(trimmed))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn collect_referenced_shortcut_icons(
+    desktop_dirs: &[PathBuf],
+) -> Result<std::collections::HashSet<String>, String> {
+    use std::collections::HashSet;
+    use windows::Win32::{
+        Foundation::RPC_E_CHANGED_MODE,
+        System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
+    };
+
+    let mut lnk_files = Vec::new();
+    for dir in desktop_dirs {
+        find_lnk_files_in_dir(dir, 2, &mut lnk_files);
+    }
+
+    if lnk_files.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    struct ComGuard {
+        should_uninit: bool,
+    }
+    impl Drop for ComGuard {
+        fn drop(&mut self) {
+            if self.should_uninit {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+        }
+    }
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let should_uninit = if hr.is_ok() {
+            true
+        } else if hr == RPC_E_CHANGED_MODE {
+            false
+        } else {
+            return Err(format!("Failed to initialize COM for reading shortcuts: {hr:?}"));
+        };
+        let _guard = ComGuard { should_uninit };
+
+        let mut referenced_names = HashSet::new();
+        for lnk_path in &lnk_files {
+            if let Some(icon_path) = get_shortcut_icon_location(lnk_path) {
+                if let Some(file_name) = icon_path.file_name() {
+                    referenced_names.insert(file_name.to_string_lossy().to_ascii_lowercase());
+                }
+            }
+        }
+
+        Ok(referenced_names)
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -439,7 +579,23 @@ pub async fn create_windows_chat_shortcut(
                 .or_else(|_| app.path().app_data_dir())
                 .map_err(|e| format!("Could not resolve app data folder: {e}"))?;
             let icons_dir = app_local_data.join("shortcut_icons");
-            match write_character_ico_file(&icons_dir, &character_id, ico_bytes) {
+
+            let mut scan_dirs = vec![desktop_dir.clone()];
+            if let Some(public) = std::env::var_os("PUBLIC") {
+                let public_desktop = PathBuf::from(public).join("Desktop");
+                if public_desktop.is_dir() {
+                    scan_dirs.push(public_desktop);
+                }
+            }
+
+            let referenced_icons = collect_referenced_shortcut_icons(&scan_dirs).ok();
+
+            match write_character_ico_file(
+                &icons_dir,
+                &character_id,
+                ico_bytes,
+                referenced_icons.as_ref(),
+            ) {
                 Ok(path) => Some(path),
                 Err(err) => {
                     eprintln!("[WindowsShortcut] Falling back to default executable icon: {err}");
@@ -545,5 +701,110 @@ mod tests {
         assert!(lnk_path.is_file());
         let metadata = std::fs::metadata(&lnk_path).unwrap();
         assert!(metadata.len() > 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn reads_shortcut_icon_location_from_lnk_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let lnk_path = temp.path().join("아이콘테스트.lnk");
+        let exe_path = std::env::current_exe().unwrap();
+        let dummy_icon_path = temp.path().join("custom_icon.ico");
+        std::fs::write(&dummy_icon_path, [0u8; 32]).unwrap();
+
+        create_lnk_file(
+            &lnk_path,
+            &exe_path,
+            "--open-chat \"c1\" \"c2\"",
+            "desc",
+            Some(&dummy_icon_path),
+            None,
+        )
+        .unwrap();
+
+        let icon_loc = get_shortcut_icon_location(&lnk_path);
+        assert_eq!(icon_loc, Some(dummy_icon_path));
+    }
+
+    #[test]
+    fn preserves_referenced_icon_files_during_cleanup() {
+        use std::collections::HashSet;
+
+        let temp = tempfile::tempdir().unwrap();
+        let icons_dir = temp.path().join("shortcut_icons");
+
+        // Valid minimal 26-byte ICO payloads
+        let dummy_ico1 = &[
+            0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0, 4, 0, 0, 0, 22, 0, 0, 0, 1, 2, 3, 4,
+        ];
+        let dummy_ico2 = &[
+            0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0, 4, 0, 0, 0, 22, 0, 0, 0, 5, 6, 7, 8,
+        ];
+        let dummy_ico3 = &[
+            0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0, 4, 0, 0, 0, 22, 0, 0, 0, 9, 10, 11, 12,
+        ];
+
+        // 1. Write first icon without referenced set (initial icon for Chat 1)
+        let path1 = write_character_ico_file(&icons_dir, "char-123", dummy_ico1, None).unwrap();
+        assert!(path1.is_file());
+
+        let name1 = path1
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_ascii_lowercase();
+
+        // 2. Chat 1 shortcut references name1. Avatar is changed, and Chat 2 shortcut is created.
+        let mut referenced = HashSet::new();
+        referenced.insert(name1.clone());
+
+        let path2 = write_character_ico_file(
+            &icons_dir,
+            "char-123",
+            dummy_ico2,
+            Some(&referenced),
+        )
+        .unwrap();
+        assert!(path2.is_file());
+        // Crucial requirement: path1 must be preserved because Chat 1 still references it!
+        assert!(
+            path1.is_file(),
+            "Referenced icon file should NOT be deleted during cleanup"
+        );
+
+        let name2 = path2
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_ascii_lowercase();
+
+        // 3. User later removed Chat 1 shortcut. Now only Chat 2 (name2) is referenced.
+        // A new shortcut with avatar 3 is created.
+        let mut referenced_after_removal = HashSet::new();
+        referenced_after_removal.insert(name2.clone());
+
+        let path3 = write_character_ico_file(
+            &icons_dir,
+            "char-123",
+            dummy_ico3,
+            Some(&referenced_after_removal),
+        )
+        .unwrap();
+        assert!(path3.is_file());
+        assert!(path2.is_file(), "Still-referenced icon path2 should be preserved");
+        // Unreferenced path1 should now be cleaned up
+        assert!(
+            !path1.is_file(),
+            "Unreferenced icon path1 should be cleaned up"
+        );
+
+        // 4. If referenced_set is None (e.g. scanning failed), do not delete any icons
+        let dummy_ico4 = &[
+            0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0, 4, 0, 0, 0, 22, 0, 0, 0, 13, 14, 15, 16,
+        ];
+        let path4 = write_character_ico_file(&icons_dir, "char-123", dummy_ico4, None).unwrap();
+        assert!(path4.is_file());
+        assert!(path2.is_file(), "Fail-safe: path2 must remain when referenced_set is None");
+        assert!(path3.is_file(), "Fail-safe: path3 must remain when referenced_set is None");
     }
 }
