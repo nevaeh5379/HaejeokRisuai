@@ -83,7 +83,7 @@ function createPushNotificationManager({
 
   async function persist(): Promise<any> {
     const snapshot: any = JSON.stringify(
-      [...subscriptions.values()].map((sub?: any) => ({
+      Array.from(subscriptions.values(), (sub?: any) => ({
         endpoint: sub.endpoint,
         keys: sub.keys,
         chatIds: [...sub.chatIds],
@@ -222,11 +222,16 @@ function createPushNotificationManager({
       sentAt: Date.now(),
     };
     let sent: any = 0;
-    for (const subscription of [...subscriptions.values()]) {
+    let hasFailures = false;
+    for (const subscription of subscriptions.values()) {
       const delivered: any = await sendNotification(subscription, payload);
       if (delivered) sent += 1;
+
+      if (subscription.failures > 0 && subscriptions.has(subscription.endpoint)) {
+        hasFailures = true;
+      }
     }
-    if ([...subscriptions.values()].some((sub?: any) => sub.failures > 0)) {
+    if (hasFailures) {
       void persist().catch(() => {});
     }
     return { sent };

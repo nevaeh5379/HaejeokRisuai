@@ -246,7 +246,7 @@ export function createRealtimeEventHub(
     if (history.length > historyLimit) {
       history.splice(0, history.length - historyLimit);
     }
-    for (const client of [...clients]) {
+    for (const client of clients) {
       try {
         if (!sendToClient(client, record)) clients.delete(client);
       } catch {
@@ -261,7 +261,7 @@ export function createRealtimeEventHub(
     data: RealtimeEventMap[K],
   ): void {
     const record: RealtimeEventRecord = { event, data };
-    for (const client of [...clients]) {
+    for (const client of clients) {
       try {
         if (!sendToClient(client, record)) clients.delete(client);
       } catch {
