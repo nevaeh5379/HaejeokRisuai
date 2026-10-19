@@ -1475,6 +1475,15 @@ fn handle_file_associations(app: AppHandle, files: Vec<PathBuf>) {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::w;
+        use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+        unsafe {
+            let _ = SetCurrentProcessExplicitAppUserModelID(w!("com.github.nevaeh5379.haejeokrisuai"));
+        }
+    }
+
     #[cfg(target_os = "linux")]
     {
         linux_renderer::configure();

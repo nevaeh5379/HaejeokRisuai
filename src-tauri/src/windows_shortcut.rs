@@ -236,25 +236,74 @@ fn wide_null(value: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
+fn propvariant_from_bool(val: bool) -> windows::Win32::System::Com::StructuredStorage::PROPVARIANT {
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    let mut pv: PROPVARIANT = unsafe { std::mem::zeroed() };
+    unsafe {
+        let ptr = &mut pv as *mut PROPVARIANT as *mut u8;
+        *(ptr as *mut u16) = 11; // VT_BOOL
+        let bool_ptr = ptr.add(8) as *mut i16;
+        *bool_ptr = if val { -1 } else { 0 }; // VARIANT_TRUE = -1
+    }
+    pv
+}
+
+#[cfg(target_os = "windows")]
+fn propvariant_from_string(
+    value: &str,
+) -> Option<windows::Win32::System::Com::StructuredStorage::PROPVARIANT> {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    use windows::Win32::UI::Shell::SHStrDupW;
+
+    let wide = wide_null(value);
+    unsafe {
+        if let Ok(pwstr) = SHStrDupW(PCWSTR(wide.as_ptr())) {
+            let mut pv: PROPVARIANT = std::mem::zeroed();
+            let ptr = &mut pv as *mut PROPVARIANT as *mut u8;
+            *(ptr as *mut u16) = 31; // VT_LPWSTR
+            let str_ptr = ptr.add(8) as *mut windows::core::PWSTR;
+            *str_ptr = pwstr;
+            Some(pv)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 pub fn create_lnk_file(
     lnk_path: &Path,
     exe_path: &Path,
     arguments: &str,
     description: &str,
     icon_path: Option<&Path>,
+    app_user_model_id: Option<&str>,
 ) -> Result<(), String> {
     use windows::{
         core::{Interface, PCWSTR},
         Win32::{
-            Foundation::RPC_E_CHANGED_MODE,
+            Foundation::{PROPERTYKEY, RPC_E_CHANGED_MODE},
             System::Com::{
                 CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile,
                 CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
             },
+            System::Com::StructuredStorage::PropVariantClear,
             UI::Shell::{
-                IShellLinkW, SHChangeNotify, ShellLink, SHCNE_ASSOCCHANGED, SHCNF_IDLIST,
+                PropertiesSystem::IPropertyStore,
+                IShellLinkW, SHChangeNotify, ShellLink, SHCNE_CREATE, SHCNF_PATHW,
             },
         },
+    };
+
+    const PKEY_APP_USER_MODEL_PREVENT_PINNING: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 9,
+    };
+
+    const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 5,
     };
 
     struct ComGuard {
@@ -310,6 +359,21 @@ pub fn create_lnk_file(
             .SetIconLocation(PCWSTR(icon_wide.as_ptr()), 0)
             .map_err(|e| format!("Failed to set shortcut icon location: {e}"))?;
 
+        if let Ok(property_store) = shell_link.cast::<IPropertyStore>() {
+            let mut pv_pinning = propvariant_from_bool(true);
+            let _ = property_store.SetValue(&PKEY_APP_USER_MODEL_PREVENT_PINNING, &pv_pinning);
+            let _ = PropVariantClear(&mut pv_pinning);
+
+            if let Some(app_id) = app_user_model_id {
+                if let Some(mut pv_id) = propvariant_from_string(app_id) {
+                    let _ = property_store.SetValue(&PKEY_APP_USER_MODEL_ID, &pv_id);
+                    let _ = PropVariantClear(&mut pv_id);
+                }
+            }
+
+            let _ = property_store.Commit();
+        }
+
         let persist_file: IPersistFile = shell_link
             .cast()
             .map_err(|e| format!("Failed to cast IShellLinkW to IPersistFile: {e}"))?;
@@ -319,7 +383,12 @@ pub fn create_lnk_file(
             .Save(PCWSTR(lnk_wide.as_ptr()), true)
             .map_err(|e| format!("Failed to save .lnk file: {e}"))?;
 
-        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None);
+        SHChangeNotify(
+            SHCNE_CREATE,
+            SHCNF_PATHW,
+            Some(lnk_wide.as_ptr() as _),
+            None,
+        );
     }
 
     Ok(())
@@ -402,12 +471,19 @@ pub async fn create_windows_chat_shortcut(
             }
         );
 
+        let shortcut_app_id = format!(
+            "{}.shortcut.{}",
+            app.config().identifier,
+            sanitize_id_for_filename(&character_id)
+        );
+
         create_lnk_file(
             &lnk_path,
             &exe_path,
             &arguments,
             &description,
             icon_path.as_deref(),
+            Some(&shortcut_app_id),
         )?;
 
         Ok(lnk_path.to_string_lossy().to_string())
@@ -462,6 +538,7 @@ mod tests {
             "--open-chat \"char-1\" \"chat-2\"",
             "봇 이름 - 채팅 이름",
             None,
+            Some("test.shortcut.id"),
         )
         .unwrap();
 
