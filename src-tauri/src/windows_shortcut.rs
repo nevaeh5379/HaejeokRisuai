@@ -155,16 +155,92 @@ fn is_reserved_dos_name(name: &str) -> bool {
     )
 }
 
-pub fn format_shortcut_filename(bot_name: &str, chat_name: &str) -> String {
+pub fn format_shortcut_stem(bot_name: &str, chat_name: &str) -> String {
     let safe_bot = sanitize_windows_filename_component(bot_name, "Character");
     let safe_chat = sanitize_windows_filename_component(chat_name, "Chat");
     let combined = format!("{safe_bot} - {safe_chat}");
-    let safe_combined = if is_reserved_dos_name(&combined) {
+    if is_reserved_dos_name(&combined) {
         format!("_{combined}")
     } else {
         combined
+    }
+}
+
+#[allow(dead_code)]
+pub fn format_shortcut_filename(bot_name: &str, chat_name: &str) -> String {
+    let stem = format_shortcut_stem(bot_name, chat_name);
+    format!("{stem}.lnk")
+}
+
+pub fn split_command_line_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for ch in input.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+            }
+            ch if ch.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    args
+}
+
+pub fn resolve_shortcut_path<F>(
+    desktop_dir: &Path,
+    bot_name: &str,
+    chat_name: &str,
+    character_id: &str,
+    chat_id: &str,
+    get_target_fn: F,
+) -> PathBuf
+where
+    F: Fn(&Path) -> Option<ChatShortcutTarget>,
+{
+    let stem = format_shortcut_stem(bot_name, chat_name);
+    let target = ChatShortcutTarget {
+        character_id: character_id.to_string(),
+        chat_id: chat_id.to_string(),
     };
-    format!("{safe_combined}.lnk")
+
+    let mut first_free_path = None;
+
+    for i in 1..=100 {
+        let filename = if i == 1 {
+            format!("{stem}.lnk")
+        } else {
+            format!("{stem} ({i}).lnk")
+        };
+        let path = desktop_dir.join(&filename);
+        if path.is_file() {
+            if let Some(existing_target) = get_target_fn(&path) {
+                if existing_target == target {
+                    return path;
+                }
+            }
+        } else if first_free_path.is_none() {
+            first_free_path = Some(path);
+        }
+    }
+
+    if let Some(free_path) = first_free_path {
+        return free_path;
+    }
+
+    let safe_chat_id = sanitize_id_for_filename(chat_id);
+    desktop_dir.join(format!("{stem}_{safe_chat_id}.lnk"))
 }
 
 fn fnv1a_64(bytes: &[u8]) -> u64 {
@@ -266,6 +342,69 @@ fn find_lnk_files_in_dir(dir: &Path, max_depth: usize, out: &mut Vec<PathBuf>) {
         } else if path.is_dir() && max_depth > 1 {
             find_lnk_files_in_dir(&path, max_depth - 1, out);
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_shortcut_chat_target(lnk_path: &Path) -> Option<ChatShortcutTarget> {
+    use windows::{
+        core::{Interface, PCWSTR},
+        Win32::{
+            Foundation::RPC_E_CHANGED_MODE,
+            System::Com::{
+                CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile,
+                CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, STGM_READ,
+            },
+            UI::Shell::{IShellLinkW, ShellLink},
+        },
+    };
+
+    struct ComGuard {
+        should_uninit: bool,
+    }
+    impl Drop for ComGuard {
+        fn drop(&mut self) {
+            if self.should_uninit {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+        }
+    }
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let should_uninit = if hr.is_ok() {
+            true
+        } else if hr == RPC_E_CHANGED_MODE {
+            false
+        } else {
+            return None;
+        };
+        let _guard = ComGuard { should_uninit };
+
+        let shell_link: IShellLinkW =
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let persist_file: IPersistFile = shell_link.cast().ok()?;
+        let lnk_wide = wide_null(&lnk_path.to_string_lossy());
+        persist_file
+            .Load(PCWSTR(lnk_wide.as_ptr()), STGM_READ)
+            .ok()?;
+
+        let mut args_buf = [0u16; 1024];
+        shell_link.GetArguments(&mut args_buf).ok()?;
+
+        let len = args_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(args_buf.len());
+        if len == 0 {
+            return None;
+        }
+
+        let raw_args = String::from_utf16_lossy(&args_buf[..len]);
+        let tokens = split_command_line_args(&raw_args);
+        extract_args_and_chat_target(tokens).1
     }
 }
 
@@ -606,8 +745,14 @@ pub async fn create_windows_chat_shortcut(
             None
         };
 
-        let shortcut_filename = format_shortcut_filename(&bot_name, &chat_name);
-        let lnk_path = desktop_dir.join(&shortcut_filename);
+        let lnk_path = resolve_shortcut_path(
+            &desktop_dir,
+            &bot_name,
+            &chat_name,
+            &character_id,
+            &chat_id,
+            get_shortcut_chat_target,
+        );
         let arguments = format!(
             "{OPEN_CHAT_FLAG} \"{}\" \"{}\"",
             character_id.replace('"', ""),
@@ -724,6 +869,209 @@ mod tests {
 
         let icon_loc = get_shortcut_icon_location(&lnk_path);
         assert_eq!(icon_loc, Some(dummy_icon_path));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn reads_shortcut_chat_target_from_lnk_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let lnk_path = temp.path().join("타겟테스트.lnk");
+        let exe_path = std::env::current_exe().unwrap();
+
+        create_lnk_file(
+            &lnk_path,
+            &exe_path,
+            "--open-chat \"char-abc\" \"chat-xyz\"",
+            "desc",
+            None,
+            None,
+        )
+        .unwrap();
+
+        let target = get_shortcut_chat_target(&lnk_path);
+        assert_eq!(
+            target,
+            Some(ChatShortcutTarget {
+                character_id: "char-abc".to_string(),
+                chat_id: "chat-xyz".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn splits_command_line_args_correctly() {
+        let parsed = split_command_line_args(
+            r#"--open-chat "char 123" "chat 456" --other "quoted arg""#,
+        );
+        assert_eq!(
+            parsed,
+            vec![
+                "--open-chat".to_string(),
+                "char 123".to_string(),
+                "chat 456".to_string(),
+                "--other".to_string(),
+                "quoted arg".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolves_shortcut_path_without_collision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = resolve_shortcut_path(
+            temp.path(),
+            "Bot",
+            "Chat",
+            "char-1",
+            "chat-1",
+            |_| None,
+        );
+        assert_eq!(path, temp.path().join("Bot - Chat.lnk"));
+    }
+
+    #[test]
+    fn allows_replacing_existing_shortcut_for_same_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let primary_path = temp.path().join("Bot - Chat.lnk");
+        std::fs::write(&primary_path, b"dummy").unwrap();
+
+        // When existing shortcut points to same target (char-1, chat-1),
+        // it must resolve to primary_path so it can be replaced/updated.
+        let resolved = resolve_shortcut_path(
+            temp.path(),
+            "Bot",
+            "Chat",
+            "char-1",
+            "chat-1",
+            |p| {
+                if p == primary_path {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-1".to_string(),
+                        chat_id: "chat-1".to_string(),
+                    })
+                } else {
+                    None
+                }
+            },
+        );
+        assert_eq!(resolved, primary_path);
+    }
+
+    #[test]
+    fn disambiguates_shortcut_path_with_suffix_on_target_collision() {
+        let temp = tempfile::tempdir().unwrap();
+        let primary_path = temp.path().join("Bot - Chat.lnk");
+        std::fs::write(&primary_path, b"dummy").unwrap();
+
+        // Primary path points to chat-1. Now creating shortcut for chat-2!
+        let resolved = resolve_shortcut_path(
+            temp.path(),
+            "Bot",
+            "Chat",
+            "char-1",
+            "chat-2",
+            |p| {
+                if p == primary_path {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-1".to_string(),
+                        chat_id: "chat-1".to_string(),
+                    })
+                } else {
+                    None
+                }
+            },
+        );
+        // Must disambiguate with suffix (2), NOT overwrite chat-1!
+        assert_eq!(resolved, temp.path().join("Bot - Chat (2).lnk"));
+
+        // If chat-2 is already saved at (2), recreating chat-2 must update (2)!
+        let second_path = temp.path().join("Bot - Chat (2).lnk");
+        std::fs::write(&second_path, b"dummy2").unwrap();
+
+        let resolved_repeat = resolve_shortcut_path(
+            temp.path(),
+            "Bot",
+            "Chat",
+            "char-1",
+            "chat-2",
+            |p| {
+                if p == primary_path {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-1".to_string(),
+                        chat_id: "chat-1".to_string(),
+                    })
+                } else if p == second_path {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-1".to_string(),
+                        chat_id: "chat-2".to_string(),
+                    })
+                } else {
+                    None
+                }
+            },
+        );
+        assert_eq!(resolved_repeat, second_path);
+
+        // Third different chat target resolves to (3)
+        let resolved_third = resolve_shortcut_path(
+            temp.path(),
+            "Bot",
+            "Chat",
+            "char-1",
+            "chat-3",
+            |p| {
+                if p == primary_path {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-1".to_string(),
+                        chat_id: "chat-1".to_string(),
+                    })
+                } else if p == second_path {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-1".to_string(),
+                        chat_id: "chat-2".to_string(),
+                    })
+                } else {
+                    None
+                }
+            },
+        );
+        assert_eq!(resolved_third, temp.path().join("Bot - Chat (3).lnk"));
+    }
+
+    #[test]
+    fn disambiguates_when_sanitization_results_collide() {
+        let temp = tempfile::tempdir().unwrap();
+        // "A/B" and "A:B" both sanitize to "A_B - Chat"
+        let path_ab = resolve_shortcut_path(
+            temp.path(),
+            "A/B",
+            "Chat",
+            "char-slash",
+            "chat-1",
+            |_| None,
+        );
+        assert_eq!(path_ab, temp.path().join("A_B - Chat.lnk"));
+        std::fs::write(&path_ab, b"dummy").unwrap();
+
+        // Now creating for "A:B", which produces the same stem!
+        let path_colon = resolve_shortcut_path(
+            temp.path(),
+            "A:B",
+            "Chat",
+            "char-colon",
+            "chat-2",
+            |p| {
+                if p == path_ab {
+                    Some(ChatShortcutTarget {
+                        character_id: "char-slash".to_string(),
+                        chat_id: "chat-1".to_string(),
+                    })
+                } else {
+                    None
+                }
+            },
+        );
+        assert_eq!(path_colon, temp.path().join("A_B - Chat (2).lnk"));
     }
 
     #[test]
