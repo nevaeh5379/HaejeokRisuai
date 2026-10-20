@@ -5,7 +5,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from "@rollup/plugin-strip";
 import tailwindcss from "@tailwindcss/vite";
-import { resolveBuildVersion } from "./tooling/build-version.mjs";
+import { resolveBuildVersion } from "./tooling/build-version.ts";
 import { checkServerStorageMutations } from "./tooling/check-server-storage-mutations.ts";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { resolveLegalConfigured } from "./tooling/legal-config.js";
