@@ -16,6 +16,7 @@ mod macos_vibrancy;
 mod sqlite_transaction;
 #[cfg(target_os = "windows")]
 mod windows_installed_app;
+mod windows_shortcut;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
 
@@ -1474,6 +1475,15 @@ fn handle_file_associations(app: AppHandle, files: Vec<PathBuf>) {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::w;
+        use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+        unsafe {
+            let _ = SetCurrentProcessExplicitAppUserModelID(w!("com.github.nevaeh5379.haejeokrisuai"));
+        }
+    }
+
     #[cfg(target_os = "linux")]
     {
         linux_renderer::configure();
@@ -1497,30 +1507,50 @@ fn main() {
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
                 let _ = window.set_focus();
             }
 
+            let (remaining_args, shortcut_target) =
+                windows_shortcut::extract_args_and_chat_target(args.into_iter().skip(1));
+            if let Some(target) = shortcut_target {
+                windows_shortcut::handle_chat_shortcut_target(app, target);
+            }
+
             let base_dir = PathBuf::from(cwd);
-            let file_path = args.into_iter().skip(1).map(|arg| {
-                let path = PathBuf::from(arg);
+            let file_path: Vec<PathBuf> = remaining_args
+                .into_iter()
+                .filter(|arg| !arg.starts_with('-'))
+                .filter_map(|arg| {
+                    let path = PathBuf::from(arg);
 
-                let full_path = if path.is_relative() {
-                    base_dir.join(path)
-                } else {
-                    path
-                };
+                    let full_path = if path.is_relative() {
+                        base_dir.join(path)
+                    } else {
+                        path
+                    };
 
-                std::fs::canonicalize(full_path)
-            }).collect::<Result<Vec<PathBuf>, _>>().unwrap_or_default();
-            handle_file_associations(app.clone(), file_path);
+                    std::fs::canonicalize(full_path).ok()
+                })
+                .collect();
+            if !file_path.is_empty() {
+                handle_file_associations(app.clone(), file_path);
+            }
         }));
         builder = builder.setup(|app| {
             #[cfg(target_os = "windows")]
             windows_installed_app::sync_display_name();
             desktop_startup::start(app.handle());
+            let (remaining_args, shortcut_target) =
+                windows_shortcut::extract_args_and_chat_target(std::env::args().skip(1));
+            if let Some(target) = shortcut_target {
+                windows_shortcut::handle_chat_shortcut_target(app.handle(), target);
+            }
+
             let mut files = Vec::new();
 
-            for maybe_file in std::env::args().skip(1) {
+            for maybe_file in remaining_args {
                 if maybe_file.starts_with('-') {
                     continue;
                 }
@@ -1562,6 +1592,7 @@ fn main() {
 
     builder
         .manage(SidebarMenuWindowState::default())
+        .manage(windows_shortcut::PendingChatShortcutState::default())
         .manage(sqlite_transaction::SqliteStreamTransactionState::default())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
@@ -1602,7 +1633,9 @@ fn main() {
             is_sidebar_menu_window_ready,
             toggle_sidebar_menu_window,
             hide_sidebar_menu_window,
-            close_sidebar_menu_window
+            close_sidebar_menu_window,
+            windows_shortcut::take_pending_chat_shortcut,
+            windows_shortcut::create_windows_chat_shortcut
         ])
         .run(context)
         .expect("error while running tauri application")

@@ -1042,9 +1042,87 @@ fn install_custom_frame<R: Runtime>(window: &Window<R>) -> Result<(), String> {
         .map_err(|error| format!("SetWindowPos(frame changed) failed: {error}"))?;
 
         reposition_caption_buttons(hwnd);
+        ensure_taskbar_main_icon(window, hwnd);
     }
 
     Ok(())
+}
+
+fn ensure_taskbar_main_icon<R: Runtime>(window: &Window<R>, hwnd: HWND) {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT};
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
+    use windows::Win32::UI::Shell::{ExtractIconW, SHStrDupW};
+    use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, ICON_BIG, ICON_SMALL, WM_SETICON};
+
+    const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 5,
+    };
+    const PKEY_APP_USER_MODEL_RELAUNCH_ICON_RESOURCE: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 3,
+    };
+    const PKEY_APP_USER_MODEL_RELAUNCH_COMMAND: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 2,
+    };
+    const PKEY_APP_USER_MODEL_RELAUNCH_DISPLAY_NAME_RESOURCE: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
+        pid: 4,
+    };
+
+    let app_id = window.app_handle().config().identifier.clone();
+    let Ok(exe_path) = std::env::current_exe() else {
+        return;
+    };
+    let exe_str = exe_path.to_string_lossy().to_string();
+    let icon_res = format!("{exe_str},0");
+
+    unsafe {
+        // 1. Force window property store for Taskbar representation
+        if let Ok(store) = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd) {
+            let set_str_prop = |key: &PROPERTYKEY, text: &str| {
+                let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+                if let Ok(pwstr) = SHStrDupW(PCWSTR(wide.as_ptr())) {
+                    let mut pv: PROPVARIANT = std::mem::zeroed();
+                    let ptr = &mut pv as *mut PROPVARIANT as *mut u8;
+                    *(ptr as *mut u16) = 31; // VT_LPWSTR
+                    let str_ptr = ptr.add(8) as *mut windows::core::PWSTR;
+                    *str_ptr = pwstr;
+                    let _ = store.SetValue(key, &pv);
+                    let _ = PropVariantClear(&mut pv);
+                }
+            };
+
+            set_str_prop(&PKEY_APP_USER_MODEL_ID, &app_id);
+            set_str_prop(&PKEY_APP_USER_MODEL_RELAUNCH_COMMAND, &exe_str);
+            set_str_prop(&PKEY_APP_USER_MODEL_RELAUNCH_ICON_RESOURCE, &icon_res);
+            set_str_prop(&PKEY_APP_USER_MODEL_RELAUNCH_DISPLAY_NAME_RESOURCE, "해적리스");
+
+            let _ = store.Commit();
+        }
+
+        // 2. Force WM_SETICON with main executable icon
+        let exe_wide: Vec<u16> = exe_str.encode_utf16().chain(std::iter::once(0)).collect();
+        let hinstance = GetModuleHandleW(None).ok().map(|h| HINSTANCE(h.0));
+        let hicon = ExtractIconW(hinstance, PCWSTR(exe_wide.as_ptr()), 0);
+        if !hicon.is_invalid() {
+            let _ = SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(ICON_BIG as usize)),
+                Some(LPARAM(hicon.0 as isize)),
+            );
+            let _ = SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(ICON_SMALL as usize)),
+                Some(LPARAM(hicon.0 as isize)),
+            );
+        }
+    }
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {

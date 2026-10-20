@@ -335,6 +335,12 @@ export async function loadData() {
             await enqueueFiles(event.payload)
           })
         await initializeTauriChatWorkspaceRuntime();
+        if (!auxiliaryChatWindow) {
+          const { initializeWindowsChatShortcutRuntime } = await import(
+            "../windowsShortcut"
+          );
+          await initializeWindowsChatShortcutRuntime();
+        }
         const { initializeTauriAppMenu } = await import("../tauriAppMenu");
         await initializeTauriAppMenu();
       }

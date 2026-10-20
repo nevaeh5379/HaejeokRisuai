@@ -2899,4 +2899,6 @@ export const languageKorean = {
       : "모든 인레이 이미지가 이미 서버에 저장되어 있습니다.",
   inlayMigrationPartial: (migrated: number, failed: number) =>
     `인레이 이미지 ${migrated}개를 업로드했지만 ${failed}개는 실패했습니다. 콘솔을 확인하고 다시 시도해 주세요.`,
+  createDesktopShortcut: "바로가기 만들기",
+  desktopShortcutCreated: "바탕화면에 바로가기를 만들었습니다.",
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;

@@ -401,6 +401,13 @@
         void createMultiuserRoom();
         break;
       }
+      case 3: {
+        const { createWindowsChatShortcut } = await import(
+          "src/ts/windowsShortcut"
+        );
+        await createWindowsChatShortcut($selectedCharID, chatIdx);
+        break;
+      }
     }
   };
 

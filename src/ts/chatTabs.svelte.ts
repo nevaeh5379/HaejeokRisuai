@@ -616,7 +616,16 @@ export async function navigateToChatTab(tabId: string): Promise<boolean> {
     chatTabsStore.pruneCharacter(tab.characterId);
     return false;
   }
-  const character = characterStore.characters[characterIndex];
+  let character = characterStore.characters[characterIndex];
+  if (character?.detailsLoaded === false && character.chaId) {
+    try {
+      await characterStore.ensureCharacterDetails(character.chaId);
+    } catch (error) {
+      console.error("[ChatTabs] Failed to hydrate character details:", error);
+      return false;
+    }
+    character = characterStore.characters[characterIndex];
+  }
   const chatIndex =
     character?.chats?.findIndex((chat) => chat.id === tab.chatId) ?? -1;
   if (chatIndex < 0) {
@@ -630,7 +639,7 @@ export async function navigateToChatTab(tabId: string): Promise<boolean> {
     chatTabsStore.setActive(tabId);
     if (get(selectedCharID) !== characterIndex) {
       const { changeChar } = await import("./characters");
-      await changeChar(characterIndex);
+      await changeChar(characterIndex, { chatId: tab.chatId });
     }
     if (sequence !== navigationSequence || chatTabsStore.activeTabId !== tabId)
       return false;
