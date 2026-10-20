@@ -19,6 +19,8 @@
   let busy = $state(false);
   let selection = $state("local");
   let disposed = false;
+  const characterId = $derived(target.characterId);
+  const chatId = $derived(target.chatId);
   const chat = $derived(requireChatTarget(target).chat);
   const draft = $derived.by(() => { version; return editor?.draft ?? ""; });
   const saveError = $derived.by(() => { version; return editor?.error; });
@@ -48,7 +50,8 @@
     await NoteSource.set(target, id === "local" ? { mode: "local" } : { mode: "global", noteId: id });
     await load();
   }
-  $effect(() => { target.characterId; target.chatId; untrack(() => void load()); });
+  // Parent renders can replace target without changing the selected chat.
+  $effect(() => { characterId; chatId; untrack(() => void load()); });
   onDestroy(() => { disposed = true; if (editor) void editor.detach(); });
 </script>
 
