@@ -234,6 +234,7 @@ export async function runScripted(
         ScriptingEngineState.code = code;
         ScriptingEngineState.engine = await luaFactory.createEngine({
           injectObjects: true,
+          enableProxy: false,
         });
         const luaEngine = ScriptingEngineState.engine;
         declareAPI = (name: string, func: Function) => {

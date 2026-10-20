@@ -159,6 +159,23 @@ beforeAll(async () => {
   runLuaButtonTrigger = scriptings.runLuaButtonTrigger;
 });
 
+test("passes API results to Lua as plain tables without JS constructors", async () => {
+  const result = await runScripted(
+    `onStart = async(function(id)
+      local response = simpleLLM(id, "prompt"):await()
+      return { type = type(response), hasConstructor = response.constructor ~= nil }
+    end)`,
+    {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      lowLevelAccess: true,
+      mode: "start",
+    },
+  );
+
+  expect(result.res).toEqual({ type: "table", hasConstructor: false });
+});
+
 test("Lua auxiliary calls retain each invocation's source even when engines are reused", async () => {
   requestChatDataMock.mockClear();
   const code = `onStart = async(function(id)
