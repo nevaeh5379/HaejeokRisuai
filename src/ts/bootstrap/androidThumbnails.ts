@@ -27,11 +27,12 @@ export async function prepareAndroidCharacterThumbnails() {
     }
   };
 
-  const imageByCharacterId = new Map(
-    (characterStore.characters ?? []).map(
-      (character) => [character?.chaId, character?.image] as const,
-    ),
-  );
+  const imageByCharacterId = new Map<string, string>();
+  for (const character of characterStore.characters ?? []) {
+    if (character?.chaId && character.image) {
+      imageByCharacterId.set(character.chaId, character.image);
+    }
+  }
   for (const item of settingsStore.state.characterOrder ?? []) {
     if (typeof item === "string") {
       addImage(imageByCharacterId.get(item));
@@ -44,7 +45,7 @@ export async function prepareAndroidCharacterThumbnails() {
   for (const character of characterStore.characters ?? [])
     addImage(character?.image);
 
-  const images = [...keys];
+  const images = Array.from(keys);
   if (images.length === 0) return;
 
   const batchSize = 64;

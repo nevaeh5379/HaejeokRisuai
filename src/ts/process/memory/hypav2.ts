@@ -454,9 +454,9 @@ export async function hypaMemoryV2(
       idx = lastChatIndex + 1;
 
       // Subtract tokens of summarized chats
-      currentTokens -= chatTokenCounts
-        .slice(0, lastChatIndex + 1)
-        .reduce((total, tokens) => total + tokens, 0);
+      for (let i = 0; i <= lastChatIndex; i++) {
+        currentTokens -= chatTokenCounts[i] ?? 0;
+      }
     }
   }
   // Starting chat index of new mainChunk to be generated

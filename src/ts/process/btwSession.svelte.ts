@@ -123,9 +123,9 @@ function resolveBtwSpeaker(
   baseMessages: Message[],
 ): character {
   if (room.type === "character") return room;
-  const lastSpeaker = [...baseMessages]
-    .reverse()
-    .find((message) => message.role === "char" && message.saying)?.saying;
+  const lastSpeaker = baseMessages.findLast(
+    (message) => message.role === "char" && message.saying,
+  )?.saying;
   if (lastSpeaker) {
     const found = findCharacter(lastSpeaker);
     if (found) return found;

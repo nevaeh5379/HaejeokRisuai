@@ -78,10 +78,14 @@ export async function supaMemory(
     // per-message token costs once so Node deployments can batch the work and
     // every later prefix operation becomes simple arithmetic.
     let chatTokenCounts = await tokenizer.tokenizeChatsDetailed(chats);
-    const tokenPrefixSum = (count: number) =>
-      chatTokenCounts
-        .slice(0, Math.max(0, count))
-        .reduce((total, tokens) => total + tokens, 0);
+    const tokenPrefixSum = (count: number) => {
+      let sum = 0;
+      const limit = Math.min(count, chatTokenCounts.length);
+      for (let i = 0; i < limit; i++) {
+        sum += chatTokenCounts[i] ?? 0;
+      }
+      return sum;
+    };
     const discardPrefix = (count: number) => {
       if (count <= 0) return;
       currentTokens -= tokenPrefixSum(count);
