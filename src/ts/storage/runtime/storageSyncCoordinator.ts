@@ -166,7 +166,7 @@ function manifestFingerprint(
   entries: NodeStorageSyncAssetManifestEntry[],
 ): string {
   return JSON.stringify(
-    [...entries]
+    entries
       .map(({ key, size, sha256 }) => ({ key, size, sha256 }))
       .sort((left, right) => left.key.localeCompare(right.key)),
   );

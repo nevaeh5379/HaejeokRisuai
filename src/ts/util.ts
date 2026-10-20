@@ -1211,7 +1211,7 @@ export function simplifySchema(
     if (schema.type.includes("null")) {
       schema.nullable = true;
     }
-    schema.type = (schema.type as string[]).filter((v) => v !== "null")[0];
+    schema.type = (schema.type as string[]).find((v) => v !== "null");
   }
 
   console.log("schema", schema);
@@ -1354,9 +1354,9 @@ export {
 
 export function base64url(source: Uint8Array | ArrayBuffer): string {
   const bytes = source instanceof ArrayBuffer ? new Uint8Array(source) : source;
-  let encodedSource = btoa(String.fromCharCode.apply(null, [...bytes]))
+  return Buffer.from(bytes)
+    .toString("base64")
     .replace(/=+$/, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
-  return encodedSource;
 }
