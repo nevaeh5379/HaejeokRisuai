@@ -63,7 +63,14 @@ export class PluginCustomStorageSubsystem {
   }
 
   hydrateKeys(keys: readonly string[]): void {
-    this.keys = new Set([...keys, ...Object.keys(this.host.getRecord() ?? {})]);
+    const nextKeys = new Set(keys);
+    const record = this.host.getRecord();
+    if (record) {
+      for (const key of Object.keys(record)) {
+        nextKeys.add(key);
+      }
+    }
+    this.keys = nextKeys;
   }
 
   hydrateKey(key: string, value: PluginStorageValue): void {

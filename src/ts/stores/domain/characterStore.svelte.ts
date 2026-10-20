@@ -985,7 +985,14 @@ class CharacterStore
           owners.set(chat.id, character.chaId);
       }
     }
-    if ([...needed].some((id) => !owners.has(id))) {
+    let hasMissingOwner = false;
+    for (const id of needed) {
+      if (!owners.has(id)) {
+        hasMissingOwner = true;
+        break;
+      }
+    }
+    if (hasMissingOwner) {
       for (const character of this.characters) {
         if (character.detailsLoaded !== false) continue;
         const current = await storage.loadCharacter(character.chaId);
@@ -1544,9 +1551,20 @@ class CharacterStore
     );
     if (!refreshed) return false;
 
-    if (chat.message.some((message) => message.illustrations?.some((item) => item.executor === "server" && item.progress))) {
-      const { preserveIllustrationProgress } = await import("../../process/illustration/illustrationProgress");
-      preserveIllustrationProgress(chat.message, refreshed.message, refreshed.activeBranchId);
+    if (
+      chat.message.some((message) =>
+        message.illustrations?.some(
+          (item) => item.executor === "server" && item.progress,
+        ),
+      )
+    ) {
+      const { preserveIllustrationProgress } =
+        await import("../../process/illustration/illustrationProgress");
+      preserveIllustrationProgress(
+        chat.message,
+        refreshed.message,
+        refreshed.activeBranchId,
+      );
     }
 
     Object.assign(chat, refreshed, transient);

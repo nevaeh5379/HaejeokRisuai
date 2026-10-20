@@ -522,7 +522,7 @@ class ModuleStore
   }
 
   async setEnabledModules(ids: string[]): Promise<void> {
-    this.enabledModules = [...new Set(ids)];
+    this.enabledModules = Array.from(new Set(ids));
     this.dirtyEnabled = true;
     await this.flush();
   }
