@@ -3,7 +3,7 @@ import {
   encode as encodeMsgpack,
 } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
-import { decodeRPack, encodeRPack } from "src/ts/rpack/rpack_js.js";
+import { decodeRPack, encodeRPack } from "src/ts/rpack/rpack_js";
 
 export interface TranslatorPreset {
   name: string;
