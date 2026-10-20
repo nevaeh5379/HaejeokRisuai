@@ -171,7 +171,7 @@ valid_port "$PORT" || fail "Invalid saved PORT: $PORT"
 valid_port "$HAEJEOK_DB_PORT" || fail "Invalid saved HAEJEOK_DB_PORT: $HAEJEOK_DB_PORT"
 
 initialize_postgres() {
-  [ ! -f "$HAEJEOK_PGDATA/PG_VERSION" ] || return
+  [ ! -f "$HAEJEOK_PGDATA/PG_VERSION" ] || return 0
   info "Initializing private PostgreSQL cluster"
   mkdir -p "$HAEJEOK_PGDATA"
   chmod 700 "$HAEJEOK_PGDATA"
