@@ -24,163 +24,124 @@ import type { LocalNetworkRequestOptions } from "./shared";
 export function getTranStream(
   arg: RequestDataArgumentExtended,
 ): TransformStream<Uint8Array, StreamResponseChunk> {
-  let dataUint: Uint8Array | Buffer = new Uint8Array([]);
-  let reasoningContent = "";
+  const decoder = new TextDecoder("utf-8");
+  let lineBuffer = "";
+  const rawContent: Record<string, string> = {};
+  let structuredReasoning = "";
   let reasoningFromStructured = false;
-  const db = settingsStore.state;
+  let toolCallsMap: Record<string, any> = {};
+  let hasToolCalls = false;
+  let done = false;
 
   return new TransformStream<Uint8Array, StreamResponseChunk>({
     transform(chunk, control) {
-      const combined = new Uint8Array(dataUint.length + chunk.length);
-      combined.set(dataUint, 0);
-      combined.set(chunk, dataUint.length);
-      dataUint = Buffer.from(combined);
-      let JSONreaded: { [key: string]: string } = {};
-      reasoningContent = "";
-      try {
-        const datas = dataUint.toString().split("\n");
-        let readed: { [key: string]: string } = {};
-        for (const data of datas) {
-          if (data.startsWith("data: ")) {
-            try {
-              const rawChunk = data.replace("data: ", "");
-              if (rawChunk === "[DONE]") {
-                if (
-                  arg.modelInfo.flags.includes(
-                    LLMFlags.deepSeekThinkingOutput,
-                  ) &&
-                  !reasoningFromStructured
-                ) {
-                  readed["0"] = readed["0"].replace(
-                    /(.*)\<\/think\>/gms,
-                    (m, p1) => {
-                      reasoningContent = p1;
-                      return "";
-                    },
-                  );
+      lineBuffer += decoder.decode(chunk, { stream: true });
+      let newlineIndex: number;
+      let hasNewData = false;
 
-                  if (reasoningContent) {
-                    reasoningContent = reasoningContent.replace(
-                      /\<think\>/gm,
-                      "",
-                    );
-                  }
-                }
-                if (
-                  arg.extractJson &&
-                  (presetStore.state.jsonSchemaEnabled || arg.schema)
-                ) {
-                  for (const key in readed) {
-                    const extracted = extractJSON(
-                      readed[key],
-                      arg.extractJson,
-                      resolveRequestParserContext(arg),
-                    );
-                    JSONreaded[key] = extracted;
-                  }
-                  console.log(JSONreaded);
-                  control.enqueue(JSONreaded);
-                } else if (reasoningContent) {
-                  const chunk: Record<string, string> = {
-                    "0": `<Thoughts>\n${reasoningContent}\n</Thoughts>\n${readed["0"] ?? ""}`,
-                  };
-                  if (readed["__tool_calls"]) {
-                    chunk["__tool_calls"] = readed["__tool_calls"];
-                  }
-                  control.enqueue(chunk);
-                } else {
-                  control.enqueue(readed);
-                }
-                return;
+      while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
+        const line = lineBuffer.slice(0, newlineIndex).trimEnd();
+        lineBuffer = lineBuffer.slice(newlineIndex + 1);
+
+        if (!line.startsWith("data: ")) continue;
+        const rawChunk = line.slice(6).trim();
+        if (!rawChunk) continue;
+
+        hasNewData = true;
+        if (rawChunk === "[DONE]") {
+          done = true;
+          break;
+        }
+
+        try {
+          const parsed = JSON.parse(rawChunk);
+          const choices = parsed.choices;
+          if (Array.isArray(choices)) {
+            for (let c = 0; c < choices.length; c++) {
+              const choice = choices[c];
+              const textFragment = choice.delta?.content ?? choice.text;
+              if (textFragment) {
+                const key = arg.multiGen ? String(choice.index ?? 0) : "0";
+                rawContent[key] = appendOpenAIStreamingFragment(
+                  rawContent[key] ?? "",
+                  textFragment,
+                );
               }
-              const choices = JSON.parse(rawChunk).choices;
-              for (const choice of choices) {
-                const chunk = choice.delta.content ?? choice.text;
-                if (chunk) {
-                  if (arg.multiGen) {
-                    const ind = choice.index.toString();
-                    if (!readed[ind]) {
-                      readed[ind] = "";
-                    }
-                    readed[ind] = appendOpenAIStreamingFragment(
-                      readed[ind],
-                      chunk,
-                    );
-                  } else {
-                    if (!readed["0"]) {
-                      readed["0"] = "";
-                    }
-                    readed["0"] = appendOpenAIStreamingFragment(
-                      readed["0"],
-                      chunk,
-                    );
-                  }
-                }
-                // Check for tool calls in the delta
-                if (choice?.delta?.tool_calls) {
-                  const currentToolCalls = JSON.parse(
-                    readed["__tool_calls"] || "{}",
-                  );
-                  readed["__tool_calls"] = JSON.stringify(
-                    mergeOpenAIStreamingToolCallDeltas(
-                      currentToolCalls,
-                      choice.delta.tool_calls,
-                    ),
-                  );
-                }
-                const reasoningChunk =
-                  choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
-                if (reasoningChunk) {
-                  reasoningFromStructured = true;
-                  reasoningContent = appendOpenAIStreamingFragment(
-                    reasoningContent,
-                    reasoningChunk,
-                  );
-                }
+
+              if (choice?.delta?.tool_calls) {
+                hasToolCalls = true;
+                toolCallsMap = mergeOpenAIStreamingToolCallDeltas(
+                  toolCallsMap,
+                  choice.delta.tool_calls,
+                );
               }
-            } catch (error) {}
-          }
-        }
 
-        if (
-          arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) &&
-          !reasoningFromStructured
-        ) {
-          readed["0"] = readed["0"].replace(/(.*)\<\/think\>/gms, (m, p1) => {
-            reasoningContent = p1;
-            return "";
-          });
+              const reasoningChunk =
+                choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
+              if (reasoningChunk) {
+                reasoningFromStructured = true;
+                structuredReasoning = appendOpenAIStreamingFragment(
+                  structuredReasoning,
+                  reasoningChunk,
+                );
+              }
+            }
+          }
+        } catch {}
+      }
 
-          if (reasoningContent) {
-            reasoningContent = reasoningContent.replace(/\<think\>/gm, "");
-          }
+      if (!hasNewData) return;
+
+      let currentReasoning = structuredReasoning;
+      const readed: Record<string, string> = { ...rawContent };
+      if (!readed["0"]) readed["0"] = "";
+
+      if (
+        arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) &&
+        !reasoningFromStructured
+      ) {
+        readed["0"] = readed["0"].replace(/(.*)\<\/think\>/gms, (m, p1) => {
+          currentReasoning = p1;
+          return "";
+        });
+
+        if (currentReasoning) {
+          currentReasoning = currentReasoning.replace(/\<think\>/gm, "");
         }
-        if (
-          arg.extractJson &&
-          (presetStore.state.jsonSchemaEnabled || arg.schema)
-        ) {
-          for (const key in readed) {
-            const extracted = extractJSON(
-              readed[key],
-              arg.extractJson,
-              resolveRequestParserContext(arg),
-            );
-            JSONreaded[key] = extracted;
-          }
-          console.log(JSONreaded);
-          control.enqueue(JSONreaded);
-        } else if (reasoningContent) {
-          const chunk: Record<string, string> = {
-            "0": `<Thoughts>\n${reasoningContent}\n</Thoughts>\n${readed["0"] ?? ""}`,
-          };
-          if (readed["__tool_calls"]) {
-            chunk["__tool_calls"] = readed["__tool_calls"];
-          }
-          control.enqueue(chunk);
-        } else {
-          control.enqueue(readed);
+      }
+
+      if (hasToolCalls) {
+        readed["__tool_calls"] = JSON.stringify(toolCallsMap);
+      }
+
+      if (
+        arg.extractJson &&
+        (presetStore.state.jsonSchemaEnabled || arg.schema)
+      ) {
+        const JSONreaded: Record<string, string> = {};
+        for (const key in readed) {
+          if (key === "__tool_calls") continue;
+          JSONreaded[key] = extractJSON(
+            readed[key],
+            arg.extractJson,
+            resolveRequestParserContext(arg),
+          );
         }
-      } catch (error) {}
+        if (hasToolCalls) {
+          JSONreaded["__tool_calls"] = readed["__tool_calls"];
+        }
+        control.enqueue(JSONreaded);
+      } else if (currentReasoning) {
+        const chunkObj: Record<string, string> = {
+          "0": `<Thoughts>\n${currentReasoning}\n</Thoughts>\n${readed["0"] ?? ""}`,
+        };
+        if (hasToolCalls) {
+          chunkObj["__tool_calls"] = readed["__tool_calls"];
+        }
+        control.enqueue(chunkObj);
+      } else {
+        control.enqueue(readed);
+      }
     },
   });
 }
@@ -223,9 +184,22 @@ export function wrapToolStream(
           value = lastValue ?? { "0": "" };
           content = value?.["0"] || "";
 
-          const toolCalls = Object.values(
-            JSON.parse(value?.["__tool_calls"] || "{}") || {},
-          ) as ToolCall[];
+          const rawToolCalls =
+            JSON.parse(value?.["__tool_calls"] || "{}") || {};
+          const toolCalls: ToolCall[] = [];
+          if (Array.isArray(rawToolCalls)) {
+            for (let i = 0; i < rawToolCalls.length; i++) {
+              if (rawToolCalls[i]) toolCalls.push(rawToolCalls[i]);
+            }
+          } else if (
+            typeof rawToolCalls === "object" &&
+            rawToolCalls !== null
+          ) {
+            for (const key of Object.keys(rawToolCalls)) {
+              const item = rawToolCalls[key];
+              if (item) toolCalls.push(item);
+            }
+          }
           if (toolCalls && toolCalls.length > 0) {
             const messages = body.messages as OpenAIChatExtra[];
             let assistantContent = content;

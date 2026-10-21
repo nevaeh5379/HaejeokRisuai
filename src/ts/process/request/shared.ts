@@ -22,30 +22,34 @@ export type LLMParameter =
 export type ModelModeExtended =
   "model" | "submodel" | "memory" | "emotion" | "otherAx" | "translate";
 
-const reasoningCapabilityParameters: LLMParameter[] = [
+const REASONING_CAPABILITY_PARAMETERS_SET = new Set<LLMParameter>([
   "reasoning_effort_min_medium",
   "reasoning_effort_none",
   "reasoning_effort_xhigh",
-];
+]);
 
 export function isReasoningCapabilityParameter(
   parameter: LLMParameter,
 ): boolean {
-  return reasoningCapabilityParameters.includes(parameter);
+  return REASONING_CAPABILITY_PARAMETERS_SET.has(parameter);
 }
 
 export function setObjectValue<T>(obj: T, key: string, value: any): T {
-  const splitKey = key.split(".");
-  if (splitKey.length > 1) {
-    const firstKey = splitKey.shift();
-    if (!obj[firstKey]) {
-      obj[firstKey] = {};
-    }
-    obj[firstKey] = setObjectValue(obj[firstKey], splitKey.join("."), value);
+  if (!key.includes(".")) {
+    (obj as any)[key] = value;
     return obj;
   }
 
-  obj[key] = value;
+  const splitKey = key.split(".");
+  let cur: any = obj;
+  for (let i = 0; i < splitKey.length - 1; i++) {
+    const k = splitKey[i];
+    if (!cur[k] || typeof cur[k] !== "object") {
+      cur[k] = {};
+    }
+    cur = cur[k];
+  }
+  cur[splitKey[splitKey.length - 1]] = value;
   return obj;
 }
 
@@ -73,10 +77,12 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
   }
 
   const additionalParams: [string, string][] = [];
-  for (const line of params.split("\n")) {
-    const split = line.split("=");
-    if (split.length >= 2) {
-      additionalParams.push([split[0], split.slice(1).join("=")]);
+  const lines = params.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const eqIdx = line.indexOf("=");
+    if (eqIdx !== -1) {
+      additionalParams.push([line.slice(0, eqIdx), line.slice(eqIdx + 1)]);
     }
   }
 

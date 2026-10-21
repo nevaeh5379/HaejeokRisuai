@@ -64,3 +64,23 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-22 - Optimize Streaming Transformer, Partial Edit Text Normalization, and Client Iteration Allocations
+
+**Learning:**
+
+1. `getTranStream` in `streamingResponse.ts` concatenated all received stream chunks into a cumulative `dataUint` buffer, re-decoded the entire history to string, and split by `\n` on every chunk arrival, leading to O(N^2) buffer re-allocations and redundant JSON parses.
+2. `normalizeText` in `partialEdit.ts` used `out.shift()` and `map.shift()` in while loops to trim leading whitespace, which repeatedly shifted large arrays in O(N*K) time, and bigram similarity matching re-calculated the query's bigram profile on every slide step.
+3. `searchSettings` and `rankMatch` in `searchIndex.ts` split queries and allocated transient array wrappers on every single setting item, and `flattenVisible` generated intermediate arrays recursively on every keystroke.
+4. `remoteComputeClient.ts` used `counts.push(...data.counts)` which risked call-stack limits on large tokenization batches, and `storageSyncAssetReader.ts` and `remoteSyncAssetReader.ts` instantiated `TextEncoder` and allocated hex arrays via `Array.from` on every read.
+5. `runStorageAnalysis` and `generateKeyCandidates` in `StorageExplorer/utils.ts` executed regex matching, chained `.reduce()` sum passes, and `.split()` operations on asset keys across thousands of assets.
+6. `nodeSqlStorage.ts` calculated byte lengths using `new TextEncoder().encode(serialized).byteLength`, allocating large intermediate Uint8Array buffers.
+
+**Action:**
+
+1. Stream SSE line parsing incrementally in `getTranStream` using `TextDecoder({ stream: true })` and `indexOf("\n")` line buffer slicing, parsing each payload exactly once.
+2. Hoist typographic character mappings, trim leading and trailing spaces with slice index bounds in `normalizeText`, and precompute the query's bigram profile once in `findAllOriginalRangesFromText`.
+3. Precompute search terms once at the entry point of `searchSettings`, flatten visible setting items into a single reusable array, and eliminate transient 2-element tuples in `rankMatch`.
+4. Pre-allocate token count result arrays in `remoteComputeClient.ts`, and reuse static 256-hex tables and shared `TextEncoder` instances across asset readers.
+5. Optimize key candidate generation with prefix slicing, extract extensions using `indexOf` / `lastIndexOf`, and compute storage analysis statistics in single iterative passes.
+6. Use `Buffer.byteLength(serialized, "utf8")` where available in Node.js SQL storage to calculate serialized record sizes without heap buffer allocation.
