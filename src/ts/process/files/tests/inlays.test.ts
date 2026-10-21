@@ -400,6 +400,44 @@ describe("getInlayAssetBlob", () => {
     expect(updated.data).toBeInstanceOf(Blob);
   });
 
+  test("decodes a legacy data URI byte-exactly, including bytes above 0x7f", async () => {
+    const payload = new Uint8Array(512);
+    for (let i = 0; i < payload.length; i++) {
+      payload[i] = (i * 31 + 7) % 256;
+    }
+    const asset: InlayAsset = {
+      data: `data:image/jpeg;base64,${Buffer.from(payload).toString("base64")}`,
+      ext: "jpg",
+      height: 32,
+      width: 32,
+      name: "bytes.jpg",
+      type: "image",
+    };
+    store.set("bytes-id", asset);
+
+    const result = await getInlayAssetBlob("bytes-id");
+    const blob = result!.data as Blob;
+
+    expect(blob.type).toBe("image/jpeg");
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(payload);
+  });
+
+  test("does not leak data URI parameters into the blob type", async () => {
+    const asset: InlayAsset = {
+      data: "data:image/svg+xml;charset=utf-8;base64,PHN2Zy8+",
+      ext: "svg",
+      name: "params.svg",
+      type: "image",
+    };
+    store.set("params-id", asset);
+
+    const result = await getInlayAssetBlob("params-id");
+    const blob = result!.data as Blob;
+
+    expect(blob.type).toBe("image/svg+xml");
+    expect(new TextDecoder().decode(await blob.arrayBuffer())).toBe("<svg/>");
+  });
+
   test("preserves signature inlays stored as string without attempting data URI migration", async () => {
     const signatureJson = JSON.stringify({
       signatures: [{ type: "function", content: "test()" }],

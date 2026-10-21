@@ -88,3 +88,11 @@
 6. Convert `templateCheck` range overlap lookups to `Set.has()` checks in linear time.
 7. Replace chained `.split().filter().map()` in `parseChatML` with a single-pass loop and hoisted separator constants.
 8. Search character default variables prior to parsing preset template variables in `getChatVar`, avoiding array concatenations.
+
+## 2024-11-29 - Buffer Polyfill Slows Down Base64 Decoding On Web Targets
+
+**Learning:** Supersedes item 5 of the 2024-11-28 entry. Replacing `atob` with `Buffer.from(b64, "base64")` in `base64ToBlob` is a regression, not an optimization, on every target except the Node server: `vite.config.ts` enables `nodePolyfills({ globals: { Buffer: true } })`, so on web, Tauri and Android `Buffer` resolves to npm `buffer`, whose base64 path is pure JavaScript (`base64clean` regex copy of the whole string plus `base64-js.toByteArray`). Measured on a 1 MB base64 payload: `atob` + `charCodeAt` loop 0.66 ms, polyfilled `Buffer` 3.34 ms, native `Buffer` 0.08 ms. The polyfill is also more lenient than `atob` about padding and newlines, which hides malformed data URIs.
+
+**Action:** Decode base64 with `atob` + a `Uint8Array` fill loop whenever the code runs in a WebView; reserve `Buffer` for server-only modules. Hoisting constants and replacing `split(":")[1].split(";")[0]` with `indexOf` slicing remain valid.
+
+Also: micro-optimizations that change observable behavior need a pinning test first. The hoisted `TRIMMER_EXTENSIONS` loop must not exit on the first match — chained extensions (`"image.png.webp"` → `"image"`) were intentionally stripped by the original loop, and `trimLines` must not use the regex `m` flag, whose `^` also matches after a lone `\r`, U+2028 and U+2029 while `split("\n")` does not. Use `(^|\n)[^\S\r\n]+` to keep the exact previous semantics without the `split`/`map`/`join` allocations.

@@ -319,9 +319,16 @@ function base64ToBlob(b64: string): Blob {
         ? header.slice(colonIndex + 1)
         : header.slice(colonIndex + 1, semiIndex);
 
-  const rawBase64 = b64.slice(separatorIndex + 1);
-  const buffer = Buffer.from(rawBase64, "base64");
-  return new Blob([buffer], { type: mimeString });
+  // Decode with atob: Buffer is polyfilled (npm buffer -> base64-js) on web,
+  // Tauri and Android, where it measures ~5x slower than atob on multi-MB
+  // inlay payloads. Only the Node server has a native Buffer fast path.
+  const byteString = atob(b64.slice(separatorIndex + 1));
+  const bytes = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i++) {
+    bytes[i] = byteString.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mimeString });
 }
 
 function blobToBase64(blob: Blob): Promise<string> {

@@ -846,9 +846,11 @@ const TRIMMER_EXTENSIONS = [
 function trimmer(str: string) {
   for (let i = 0; i < TRIMMER_EXTENSIONS.length; i++) {
     const ext = TRIMMER_EXTENSIONS[i];
+    // No early exit: a later extension may match after one is stripped
+    // ("image.png.webp" -> "image"), which is the long-standing behaviour of
+    // this fuzzy asset-name trimmer.
     if (str.endsWith(ext)) {
       str = str.substring(0, str.length - ext.length);
-      break;
     }
   }
 
@@ -1784,7 +1786,10 @@ function blockStartMatcher(
 }
 
 function trimLines(p1: string) {
-  return p1.replace(/^[^\S\r\n]+/gm, "").trim();
+  // Only "\n" starts a line here. The regex "m" flag would also treat a lone
+  // "\r" / U+2028 / U+2029 as a line start and strip more indentation than the
+  // split("\n") based implementation this replaces.
+  return p1.replace(/(^|\n)[^\S\r\n]+/g, "$1").trim();
 }
 
 function blockEndMatcher(
