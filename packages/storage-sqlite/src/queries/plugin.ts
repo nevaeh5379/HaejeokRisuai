@@ -134,7 +134,11 @@ export async function loadScripts(
   const rows = await selectRows<{ plugin_id: string; script: string }>(
     "SELECT plugin_id, script FROM plugin_scripts ORDER BY plugin_id",
   );
-  return new Map(rows.map((row) => [row.plugin_id, row.script]));
+  const scripts = new Map<string, string>();
+  for (const row of rows) {
+    scripts.set(row.plugin_id, row.script);
+  }
+  return scripts;
 }
 
 // ── Plugin custom storage ────────────────────────────────────────────

@@ -2,6 +2,11 @@ import protocolSettings from "@risuai/protocol/settings.ts";
 import * as sqliteNodes from "./nodes";
 import type { SqliteSelectRows } from "../types";
 
+const PROMPT_SETTING_KEYS_LIST = [...protocolSettings.PROMPT_SETTING_KEYS];
+const PROMPT_SETTING_PLACEHOLDERS = protocolSettings.PROMPT_SETTING_KEYS.map(
+  () => "?",
+).join(",");
+
 export interface BotPresetSummary {
   id: string;
   position: number;
@@ -27,7 +32,11 @@ export async function loadSettingValues(
     [...keys],
   );
   const grouped = sqliteNodes.groupValues(rows, "setting_key");
-  return new Map(keys.map((key) => [key, grouped.get(key)]));
+  const result = new Map<string, unknown>();
+  for (const key of keys) {
+    result.set(key, grouped.get(key));
+  }
+  return result;
 }
 
 export async function listSettingKeys(
@@ -105,11 +114,9 @@ export async function loadModules<TModule extends object>(
 export async function loadPrompts(
   selectRows: SqliteSelectRows,
 ): Promise<Record<string, unknown>> {
-  const promptKeys = protocolSettings.PROMPT_SETTING_KEYS;
-  const placeholders = promptKeys.map(() => "?").join(",");
   const keys = await selectRows<{ key: string }>(
-    `SELECT key FROM system_settings WHERE key IN (${placeholders}) ORDER BY key`,
-    [...promptKeys],
+    `SELECT key FROM system_settings WHERE key IN (${PROMPT_SETTING_PLACEHOLDERS}) ORDER BY key`,
+    PROMPT_SETTING_KEYS_LIST,
   );
   if (keys.length === 0) return {};
   const nodeRows = await selectRows(
@@ -117,10 +124,14 @@ export async function loadPrompts(
             object_key_encoded, value_type, text_value, encoded_text_value,
             number_value, boolean_value
        FROM setting_extension_nodes
-      WHERE setting_key IN (${placeholders})
+      WHERE setting_key IN (${PROMPT_SETTING_PLACEHOLDERS})
       ORDER BY setting_key, node_id`,
-    [...promptKeys],
+    PROMPT_SETTING_KEYS_LIST,
   );
   const values = sqliteNodes.groupValues(nodeRows, "setting_key");
-  return Object.fromEntries(keys.map(({ key }) => [key, values.get(key)]));
+  const result: Record<string, unknown> = {};
+  for (const { key } of keys) {
+    result[key] = values.get(key);
+  }
+  return result;
 }

@@ -64,3 +64,22 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize CBS Highlighting Hotpaths, SQLite Statement Binds, and Preset Normalization
+
+**Learning:** Found transient string, array, and deep clone allocations across editor syntax highlighting, SQLite query builders, and prompt template normalization:
+
+1. `simpleCBSHighlightParser` ran linear scans over 100+ CBS keyword arrays and concatenated `arg + "::"` on every token check during real-time editor typing, creating quadratic allocations on mobile devices.
+2. `nodeInsertStatements` in `branch.ts` used `batch.flatMap((row) => [...ownerValues, ...nodeCodec.NODE_COLUMNS.map((column) => row[column])])`, allocating two temporary arrays and spreading per row.
+3. `loadPrompts`, `loadSettingValues`, and `loadScripts` in `storage-sqlite` queries allocated intermediate 2D `[key, value]` tuple arrays for `Object.fromEntries()` and `new Map(array.map())`, while repeatedly regenerating static `?` placeholders for invariant setting keys.
+4. `parsePresetRows` in `snapshot.ts` executed two passes over preset rows with an intermediate `ids` array, and `exportDatabase` converted `settings.values` map entries into 2D tuples for `Object.fromEntries()`.
+5. `normalizePromptTemplate` ran an unconditioned `safeStructuredClone()` over entire prompt templates even when all items were already normalized.
+6. `readLegacyPresetFields` and `writeLegacyPresetFields` called `Object.entries(legacyPresetKeys)` on every call.
+
+**Action:**
+
+1. In `highlight.ts`, convert keyword arrays to `Set` for O(1) lookup, inspect `indexOf("::")` once to check parameter prefixes with `Set.has()`, and freeze pre-computed `AllCBS`.
+2. In `branch.ts`, flatten `nodeInsertStatements` bind collection using iterative direct pushes instead of `batch.flatMap` and per-row array spreads.
+3. In `document.ts`, `entity.ts`, and `snapshot.ts`, hoist static placeholder strings and array constants, and populate `Map` and `database` objects directly in `for...of` loops without intermediate 2D tuple arrays.
+4. In `promptTemplateNormalization.ts`, check `isItemNormalized` before cloning; return the original array reference unchanged if no normalization is needed.
+5. In `legacyPresetCompatibility.ts`, hoist `LEGACY_PRESET_ENTRIES` to module scope.

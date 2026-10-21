@@ -197,6 +197,10 @@ export const CHARACTER_ASSET_FIELD_KEYS = [
   "vits",
 ] as const;
 
+const CHARACTER_ASSET_FIELD_PLACEHOLDERS = CHARACTER_ASSET_FIELD_KEYS.map(
+  () => "?",
+).join(",");
+
 /**
  * Builds a query that reads only the asset-bearing root subtrees of a
  * character's extension-node tree. Node ids are dense preorder indices, so
@@ -209,12 +213,11 @@ export function buildCharacterAssetFieldsQuery(characterId: string): {
   sql: string;
   bind: string[];
 } {
-  const placeholders = CHARACTER_ASSET_FIELD_KEYS.map(() => "?").join(",");
   return {
     sql: `WITH RECURSIVE asset_nodes(chat_id, node_id) AS (
        SELECT character_id, node_id FROM character_extension_nodes
         WHERE character_id = ? AND parent_node_id = 0
-          AND object_key IN (${placeholders})
+          AND object_key IN (${CHARACTER_ASSET_FIELD_PLACEHOLDERS})
        UNION ALL
        SELECT child.character_id, child.node_id
          FROM character_extension_nodes child
