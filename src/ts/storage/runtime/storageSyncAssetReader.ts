@@ -1,6 +1,7 @@
 import { Sha256 } from "@aws-crypto/sha256-js";
 
 import {
+  compareStorageSyncAssetKeys,
   STORAGE_SYNC_ASSET_CHUNK_BYTES,
   STORAGE_SYNC_ASSET_MAX_CONCURRENCY,
   StorageSyncAssetReadError,
@@ -95,7 +96,7 @@ function extractSortedUniquePrefixKeys(
       keySet.add(key);
     }
   }
-  return Array.from(keySet).sort();
+  return Array.from(keySet).sort(compareStorageSyncAssetKeys);
 }
 
 export async function summarizeStorageSyncAssets(

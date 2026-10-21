@@ -1,4 +1,5 @@
 import {
+  compareStorageSyncAssetKeys,
   StorageSyncAssetReadError,
   validateStorageSyncAssetChunkRange,
 } from "@risuai/storage-core/storageSyncAsset";
@@ -60,7 +61,7 @@ export class RemoteSyncAssetReader {
         result.push(key);
       }
     }
-    return result.sort();
+    return result.sort(compareStorageSyncAssetKeys);
   }
 
   async getSize(key: string): Promise<number> {
