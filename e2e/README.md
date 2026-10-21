@@ -16,17 +16,25 @@ system packages Playwright needs.
 
 ## Running tests
 
-| Command | What it does |
-|---------|--------------|
-| `pnpm test:e2e` | Run all tests headlessly: starts/upgrades the Vite dev server on port 5174 automatically, then opens Chromium. |
-| `pnpm test:e2e:headed` | Same, but with a visible browser window — great while writing a test. |
-| `pnpm test:e2e:ui` | Interactive UI mode: pick tests, watch them step-by-step, inspect DOM snapshots. Recommended for debugging. |
-| `pnpm test:e2e:codegen` | Open the **recorder**: a real browser where your clicks/typing are transcribed into test code live (see below). |
-| `pnpm test:e2e:report` | Open the HTML report of the last run (also contains traces for failing tests when `trace: "retain-on-failure"` is set). |
+| Command                 | What it does                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:e2e`         | Run all tests headlessly: starts/upgrades the Vite dev server on port 5174 automatically, then opens Chromium.          |
+| `pnpm test:e2e:headed`  | Same, but with a visible browser window — great while writing a test.                                                   |
+| `pnpm test:e2e:ui`      | Interactive UI mode: pick tests, watch them step-by-step, inspect DOM snapshots. Recommended for debugging.             |
+| `pnpm test:e2e:codegen` | Open the **recorder**: a real browser where your clicks/typing are transcribed into test code live (see below).         |
+| `pnpm test:e2e:report`  | Open the HTML report of the last run (also contains traces for failing tests when `trace: "retain-on-failure"` is set). |
 
 You do **not** need to run `pnpm dev` yourself: `webServer` in
 `playwright.config.ts` starts it for you and reuses an already-running
 instance (locally only; on CI it always starts a fresh one).
+
+## Memory checks (MemLab)
+
+`pnpm test:memory` runs a separate Chromium suite that captures three heap
+snapshots and checks for retained detached DOM using MemLab. To inspect a saved
+Chrome/Node snapshot, use `pnpm memory:analyze /path/to/Heap.heapsnapshot`.
+See [the MemLab guide](../tooling/memlab/README.md) for setup, reports, and the
+scope of these checks. Memory captures are not part of the normal E2E suite.
 
 ## Recording new tests (codegen)
 
@@ -79,8 +87,8 @@ Two app-specific notes while recording:
   `localStorage.setItem("haejeok_tos_2026_08_23", "true")` pattern from
   `e2e/fixtures.ts`.
 
-Tip for VS Code users: installing the official *Playwright Test for
-VS Code* extension adds **Record at cursor**, which does the same thing
+Tip for VS Code users: installing the official _Playwright Test for
+VS Code_ extension adds **Record at cursor**, which does the same thing
 directly inside the editor and writes code into the open spec file.
 
 ## Where things live
@@ -102,8 +110,8 @@ A test is a function that receives fixtures. The two you will use first:
 import { expect, test } from "./fixtures";
 
 test("my first e2e test", async ({ page }) => {
-  await page.goto("/");               // opens http://127.0.0.1:5174
-  await page.getByText("Quick AI Setup").click();  // auto-waits until clickable
+  await page.goto("/"); // opens http://127.0.0.1:5174
+  await page.getByText("Quick AI Setup").click(); // auto-waits until clickable
   await expect(page.getByPlaceholder(/Enter your nickname/i)).toBeVisible();
 });
 ```
