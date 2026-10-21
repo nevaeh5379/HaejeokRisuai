@@ -564,7 +564,9 @@
         if (selectedFileKeys.size === currentList.length && currentList.length > 0) {
             selectedFileKeys.clear()
         } else {
-            selectedFileKeys = new Set(currentList.map((f) => f.key))
+            const keys = new Set<string>()
+            for (const f of currentList) keys.add(f.key)
+            selectedFileKeys = keys
         }
     }
 

@@ -1,5 +1,8 @@
 import localforage from "localforage";
-import type { PluginMetadata, PluginScript } from "../../../plugins/pluginTypes";
+import type {
+  PluginMetadata,
+  PluginScript,
+} from "../../../plugins/pluginTypes";
 import type { ISqlStorage } from "../ISqlStorage";
 import type {
   IPluginScriptStorage,
@@ -112,7 +115,7 @@ export class NodePluginStorage implements IPluginStorage {
     );
     commit.plugins = {
       upserts: [],
-      deletes: [...pluginIds],
+      deletes: Array.from(pluginIds),
     };
     await commitSqlChanges(this.storage, commit);
   }
@@ -138,7 +141,7 @@ export class NodePluginStorage implements IPluginStorage {
     commit.plugins = {
       upserts: [],
       deletes: [],
-      order: [...pluginIds],
+      order: Array.from(pluginIds),
     };
     await commitSqlChanges(this.storage, commit);
   }
@@ -153,9 +156,7 @@ export class NodePluginStorage implements IPluginStorage {
     return script === null ? null : { pluginId, script };
   }
 
-  private async upsertScripts(
-    scripts: readonly PluginScript[],
-  ): Promise<void> {
+  private async upsertScripts(scripts: readonly PluginScript[]): Promise<void> {
     if (scripts.length === 0) return;
 
     const commit = createEmptySqlCommit(

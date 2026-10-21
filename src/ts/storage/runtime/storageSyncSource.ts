@@ -160,7 +160,11 @@ function requireBranchPageLoader(storage: ISqlStorage) {
 }
 
 function linkByMessageId(links: SqlChatBranchGraphLink[]) {
-  return new Map(links.map((link) => [link.messageId, link]));
+  const map = new Map<string, SqlChatBranchGraphLink>();
+  for (const link of links) {
+    map.set(link.messageId, link);
+  }
+  return map;
 }
 
 async function* iterateChatGraph(

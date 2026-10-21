@@ -6,10 +6,33 @@ export function buildModuleDelta(
   previous: RisuModule[],
   current: RisuModule[],
 ): NonNullable<SqlCommit["modules"]> {
-  const previousById = new Map(previous.map((module) => [module.id, module]));
-  const currentIds = new Set(current.map((module) => module.id));
-  const previousOrder = previous.map((module) => module.id);
-  const order = current.map((module) => module.id);
+  const previousById = new Map<string, RisuModule>();
+  for (const module of previous) {
+    previousById.set(module.id, module);
+  }
+  const currentIds = new Set<string>();
+  const order: string[] = [];
+  for (const module of current) {
+    currentIds.add(module.id);
+    order.push(module.id);
+  }
+
+  const deletes: string[] = [];
+  for (const module of previous) {
+    if (!currentIds.has(module.id)) {
+      deletes.push(module.id);
+    }
+  }
+
+  let orderChanged = previous.length !== current.length;
+  if (!orderChanged) {
+    for (let i = 0; i < previous.length; i++) {
+      if (previous[i].id !== current[i].id) {
+        orderChanged = true;
+        break;
+      }
+    }
+  }
 
   return {
     upserts: current.flatMap((module, position) => {
@@ -19,13 +42,7 @@ export function buildModuleDelta(
       }
       return [{ id: module.id, position, data: module }];
     }),
-    deletes: previous
-      .filter((module) => !currentIds.has(module.id))
-      .map((module) => module.id),
-    order:
-      previousOrder.length !== order.length ||
-      previousOrder.some((id, index) => id !== order[index])
-        ? order
-        : undefined,
+    deletes,
+    order: orderChanged ? order : undefined,
   };
 }

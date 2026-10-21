@@ -80,7 +80,10 @@ export class ChatTabsStore {
     const groups = snapshot.groups.length
       ? snapshot.groups.map((group) => ({ ...group }))
       : [{ id: createGroupId(), activeTabId: null }];
-    const groupIds = new Set(groups.map((group) => group.id));
+    const groupIds = new Set<string>();
+    for (const group of groups) {
+      groupIds.add(group.id);
+    }
     const fallbackGroupId = groups[0].id;
     const tabs = snapshot.tabs.map((tab) => ({
       ...tab,
@@ -89,9 +92,19 @@ export class ChatTabsStore {
     }));
 
     for (const group of groups) {
-      const groupTabs = tabs.filter((tab) => tab.groupId === group.id);
-      if (!groupTabs.some((tab) => tab.id === group.activeTabId)) {
-        group.activeTabId = groupTabs[0]?.id ?? null;
+      let hasActive = false;
+      let firstTabId: string | null = null;
+      for (const tab of tabs) {
+        if (tab.groupId === group.id) {
+          if (firstTabId === null) firstTabId = tab.id;
+          if (tab.id === group.activeTabId) {
+            hasActive = true;
+            break;
+          }
+        }
+      }
+      if (!hasActive) {
+        group.activeTabId = firstTabId;
       }
     }
 
@@ -299,9 +312,7 @@ export class ChatTabsStore {
     );
   }
 
-  private removeTabsMatching(
-    matches: (tab: ChatTab) => boolean,
-  ): {
+  private removeTabsMatching(matches: (tab: ChatTab) => boolean): {
     activeChanged: boolean;
     activeTab: ChatTab | null;
   } {
@@ -309,7 +320,12 @@ export class ChatTabsStore {
     if (removed.length === 0) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
-    const removedIds = new Set(removed.map((tab) => tab.id));
+    const removedIds = new Set<string>();
+    const removedGroupIds = new Set<string>();
+    for (const tab of removed) {
+      removedIds.add(tab.id);
+      removedGroupIds.add(tab.groupId);
+    }
     this.tabs = this.tabs.filter((tab) => !removedIds.has(tab.id));
 
     let focusedResult: {
@@ -317,10 +333,8 @@ export class ChatTabsStore {
       activeTab: ChatTab | null;
     } = { activeChanged: false, activeTab: this.activeTab ?? null };
 
-    for (const groupId of new Set(removed.map((tab) => tab.groupId))) {
-      const groupIndex = this.groups.findIndex(
-        (group) => group.id === groupId,
-      );
+    for (const groupId of removedGroupIds) {
+      const groupIndex = this.groups.findIndex((group) => group.id === groupId);
       if (groupIndex < 0) continue;
       const group = this.groups[groupIndex];
       const wasFocused = this.focusedGroupId === group.id;

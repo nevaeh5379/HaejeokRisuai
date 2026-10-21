@@ -288,8 +288,18 @@ class MessageStore implements FlushableStore {
       msgs.every(
         (message, index) => message.chatId === allMessages[index]?.chatId,
       );
-    const currentIds = new Set(messageUpserts.map((message) => message.id));
+    const currentIds = new Set<string>();
+    for (const message of messageUpserts) {
+      currentIds.add(message.id);
+    }
     const removedIds = previousMessageIds.filter((id) => !currentIds.has(id));
+
+    let completeManifestIds: string[] = [];
+    if (isCompleteSnapshot) {
+      for (const m of allMessages) {
+        if (m.chatId) completeManifestIds.push(m.chatId);
+      }
+    }
 
     try {
       await this.persist({
@@ -304,7 +314,7 @@ class MessageStore implements FlushableStore {
           ? [
               {
                 chatId,
-                ids: allMessages.map((m) => m.chatId!).filter(Boolean),
+                ids: completeManifestIds,
               },
             ]
           : [],
@@ -334,10 +344,16 @@ class MessageStore implements FlushableStore {
       chat.messagesFullyLoaded = true;
     }
 
-    const nextIds = new Set(nextMessages.map((message) => message.chatId!));
-    const removedIds = previous
-      .map((message) => message.chatId)
-      .filter((id): id is string => !!id && !nextIds.has(id));
+    const nextIds = new Set<string>();
+    for (const message of nextMessages) {
+      if (message.chatId) nextIds.add(message.chatId);
+    }
+    const removedIds: string[] = [];
+    for (const message of previous) {
+      if (message.chatId && !nextIds.has(message.chatId)) {
+        removedIds.push(message.chatId);
+      }
+    }
     const messageUpserts = nextMessages.map((message, position) => ({
       id: message.chatId!,
       chatId,

@@ -30,7 +30,9 @@
         const folders = moduleStore.folders
         if (!initializedFolderExpansion && folders.length > 0) {
             initializedFolderExpansion = true
-            openFolders = new Set(folders.map((f) => f.id))
+            const initialFolders = new Set<string>()
+            for (const f of folders) initialFolders.add(f.id)
+            openFolders = initialFolders
         }
     })
 

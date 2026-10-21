@@ -288,8 +288,11 @@ export async function processAssetUploads(
   files: (File | RawFilePayload)[],
   currentAssets: [string, string, string][] = [],
 ): Promise<[string, string, string][]> {
-  const result: [string, string, string][] = [...currentAssets];
-  const existingNames = new Set(result.map((a) => a[0]));
+  const result: [string, string, string][] = currentAssets.slice();
+  const existingNames = new Set<string>();
+  for (const a of currentAssets) {
+    existingNames.add(a[0]);
+  }
 
   for (const file of files) {
     let name = file.name;

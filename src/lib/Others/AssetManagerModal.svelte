@@ -100,7 +100,11 @@
     let rawAssets = $derived(currentChar?.additionalAssets ?? []);
     let assetFolders = $derived((currentChar?.additionalAssetFolders ?? []) as AssetFolder[]);
     let assetFolderAssignments = $derived(currentChar?.additionalAssetFolderAssignments ?? {});
-    let validFolderIds = $derived(new Set(assetFolders.map((folder) => folder.id)));
+    let validFolderIds = $derived.by(() => {
+        const set = new Set<string>();
+        for (const folder of assetFolders) set.add(folder.id);
+        return set;
+    });
     let visibleFolders = $derived.by(() => {
         const q = searchQuery.trim().toLowerCase();
         return assetFolders.filter((folder) =>
@@ -843,7 +847,9 @@
     }
 
     function selectAll() {
-        selectedIndices = new Set(processedAssets.map((item) => item.originalIndex));
+        const next = new Set<number>();
+        for (const item of processedAssets) next.add(item.originalIndex);
+        selectedIndices = next;
         selectionAnchor = processedAssets[0]?.originalIndex ?? null;
     }
 

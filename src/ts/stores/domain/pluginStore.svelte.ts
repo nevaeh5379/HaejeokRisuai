@@ -1,8 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import type {
-  PluginMetadata,
-  PluginScript,
-} from "../../plugins/pluginTypes";
+import type { PluginMetadata, PluginScript } from "../../plugins/pluginTypes";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
@@ -220,9 +217,9 @@ class PluginStore
   }
 
   async replaceCompatibilityPlugins(
-    plugins: readonly (
-      Omit<PluginMetadata, "id" | "position"> & { script: string }
-    )[],
+    plugins: readonly (Omit<PluginMetadata, "id" | "position"> & {
+      script: string;
+    })[],
   ): Promise<void> {
     const metadata = plugins.map((plugin, position) => {
       const { script: _script, ...data } = plugin;
@@ -247,14 +244,25 @@ class PluginStore
       throw new Error("Plugin store is not initialized");
     }
 
-    const scriptById = new Map(
-      scripts.map((script) => [script.pluginId, script] as const),
-    );
-    const ids = new Set(metadata.map((plugin) => plugin.id));
+    const scriptById = new Map<string, (typeof scripts)[number]>();
+    for (const script of scripts) {
+      scriptById.set(script.pluginId, script);
+    }
+    const ids = new Set<string>();
+    for (const plugin of metadata) {
+      ids.add(plugin.id);
+    }
 
     for (const plugin of metadata) {
       if (!scriptById.has(plugin.id)) {
         throw new Error(`Plugin script not found: ${plugin.id}`);
+      }
+    }
+
+    const deletes: string[] = [];
+    for (const plugin of this.plugins) {
+      if (!ids.has(plugin.id)) {
+        deletes.push(plugin.id);
       }
     }
 
@@ -268,9 +276,7 @@ class PluginStore
         position: plugin.position,
         data: this.metadataData(plugin),
       })),
-      deletes: this.plugins
-        .filter((plugin) => !ids.has(plugin.id))
-        .map((plugin) => plugin.id),
+      deletes,
       order: metadata.map((plugin) => plugin.id),
       scripts: scripts.map(({ pluginId, script }) => ({
         id: pluginId,
@@ -332,8 +338,7 @@ class PluginStore
     const currentIds = snapshot.map((plugin) => plugin.id);
     const currentIdSet = new Set(currentIds);
     const upserts = snapshot.filter(
-      (plugin) =>
-        this.committed.get(plugin.id) !== snapshotFingerprint(plugin),
+      (plugin) => this.committed.get(plugin.id) !== snapshotFingerprint(plugin),
     );
     const deletes: string[] = [];
     for (const id of this.committed.keys()) {

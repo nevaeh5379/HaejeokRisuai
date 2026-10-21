@@ -434,8 +434,12 @@ export async function loadLoreBookV3Prompt(
         username: userName,
         charName: char.name,
       });
+      const entries = new Map<number, (typeof prepared)[number]>();
+      for (const entry of prepared) {
+        entries.set(entry.index, entry);
+      }
       return {
-        entries: new Map(prepared.map((entry) => [entry.index, entry])),
+        entries,
         activatedIndexes: result.activatedIndexes,
         logs: result.logs,
       };

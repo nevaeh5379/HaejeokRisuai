@@ -191,12 +191,16 @@ class ModuleStore
   }
 
   sanitizeRootOrder(rawOrder: string[]): string[] {
-    const validFolders = new Set(this.moduleFolders.map((f) => f.id));
-    const validUngrouped = new Set(
-      this.modules
-        .filter((m) => !m.folderId || !validFolders.has(m.folderId))
-        .map((m) => m.id),
-    );
+    const validFolders = new Set<string>();
+    for (const f of this.moduleFolders) {
+      validFolders.add(f.id);
+    }
+    const validUngrouped = new Set<string>();
+    for (const m of this.modules) {
+      if (!m.folderId || !validFolders.has(m.folderId)) {
+        validUngrouped.add(m.id);
+      }
+    }
     const seen = new Set<string>();
     const result: string[] = [];
 
@@ -250,8 +254,14 @@ class ModuleStore
 
   getRootItems(): ModuleRootItem[] {
     const sanitized = this.sanitizeRootOrder(this.moduleOrder);
-    const folderMap = new Map(this.moduleFolders.map((f) => [f.id, f]));
-    const moduleMap = new Map(this.modules.map((m) => [m.id, m]));
+    const folderMap = new Map<string, ModuleFolder>();
+    for (const f of this.moduleFolders) {
+      folderMap.set(f.id, f);
+    }
+    const moduleMap = new Map<string, RisuModule>();
+    for (const m of this.modules) {
+      moduleMap.set(m.id, m);
+    }
 
     const items: ModuleRootItem[] = [];
     for (const key of sanitized) {
@@ -280,7 +290,10 @@ class ModuleStore
 
   private syncModulesOrderToRoot(): void {
     const nextModules: RisuModule[] = [];
-    const moduleMap = new Map(this.modules.map((m) => [m.id, m]));
+    const moduleMap = new Map<string, RisuModule>();
+    for (const m of this.modules) {
+      moduleMap.set(m.id, m);
+    }
     const addedIds = new Set<string>();
 
     for (const key of this.moduleOrder) {
@@ -390,9 +403,13 @@ class ModuleStore
     moduleIds: string[],
   ): Promise<void> {
     const folderModules = this.modulesInFolder(folderId);
-    const idSet = new Set(folderModules.map((m) => m.id));
+    const idSet = new Set<string>();
+    const moduleMap = new Map<string, RisuModule>();
+    for (const m of folderModules) {
+      idSet.add(m.id);
+      moduleMap.set(m.id, m);
+    }
     const orderedFolderModules: RisuModule[] = [];
-    const moduleMap = new Map(folderModules.map((m) => [m.id, m]));
 
     for (const id of moduleIds) {
       const mod = moduleMap.get(id);

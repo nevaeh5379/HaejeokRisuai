@@ -90,10 +90,15 @@
     const visibleMessages: LogMessageData[] = $derived(
         allMessages.filter((m) => !excludedParticipants.includes(m.name))
     )
+    const participants = $derived.by(() => {
+        const set = new Set<string>()
+        for (const m of visibleMessages) set.add(m.name)
+        return set
+    })
     const viewData: LogExportData = $derived({
         charInfo,
         messages: visibleMessages,
-        participants: new Set(visibleMessages.map((m) => m.name)),
+        participants,
         characterId: charId,
         character: currentChar,
     })
@@ -200,7 +205,12 @@
         lastSelectedIndex = index
     }
 
-    function selectAll() { selectedIndices = new Set(visibleMessages.map((_, i) => i)); moreMenuOpen = false }
+    function selectAll() {
+        const next = new Set<number>()
+        for (let i = 0; i < visibleMessages.length; i++) next.add(i)
+        selectedIndices = next
+        moreMenuOpen = false
+    }
     function deselectAll() { selectedIndices = new Set(); moreMenuOpen = false }
     function invertSelection() {
         const next = new Set<number>()
