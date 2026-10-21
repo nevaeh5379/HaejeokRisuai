@@ -37,7 +37,7 @@ async function initializeMCPsUnlocked(
   additionalMCPs?: string[],
   character?: character | groupChat,
 ) {
-  const mcpUrls = [...getModuleMcps(character)];
+  const mcpUrls = getModuleMcps(character);
   if (additionalMCPs && additionalMCPs.length > 0) {
     for (const mcp of additionalMCPs) {
       if (!mcpUrls.includes(mcp)) {

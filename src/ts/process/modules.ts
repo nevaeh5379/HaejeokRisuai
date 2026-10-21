@@ -490,21 +490,21 @@ function getModulesForCharacter(
   const persona = currentChat?.bindedPersona
     ? personaStore.list.find((item) => item.id === currentChat.bindedPersona)
     : null;
-  let ids = moduleStore.enabledModules ?? [];
-  if (currentChat) {
-    ids = ids.concat(currentChat.modules ?? []);
+  const ids: string[] = [...(moduleStore.enabledModules ?? [])];
+  if (currentChat?.modules) {
+    ids.push(...currentChat.modules);
   }
-  if (character && character.modules) {
-    ids = ids.concat(character.modules);
+  if (character?.modules) {
+    ids.push(...character.modules);
   }
-  if (persona && persona.embeddedModule) {
-    ids = ids.concat([persona.embeddedModule?.id]);
+  if (persona?.embeddedModule?.id) {
+    ids.push(persona.embeddedModule.id);
   }
   if (presetStore.state.moduleIntergration) {
-    const intList = presetStore.state.moduleIntergration
-      .split(",")
-      .map((s) => s.trim());
-    ids = ids.concat(intList);
+    for (const s of presetStore.state.moduleIntergration.split(",")) {
+      const trimmed = s.trim();
+      if (trimmed) ids.push(trimmed);
+    }
   }
   return getModuleByIds(ids);
 }
@@ -583,13 +583,10 @@ export function getModuleAssets(
   chat?: Chat,
 ) {
   const modules = getModules(character, overrideIds, chat);
-  let assets: [string, string, string][] = [];
+  const assets: [string, string, string][] = [];
   for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.assets) {
-      assets = assets.concat(module.assets);
+    if (module?.assets) {
+      assets.push(...module.assets);
     }
   }
   return assets;
@@ -632,10 +629,10 @@ export function getModuleTriggers(
           )
           .map((candidate) => candidate.id)
       : [];
-    triggers = triggers.concat(
-      module.trigger.flatMap((value) => {
+    if (module.trigger) {
+      for (const value of module.trigger) {
         const trigger = normalizeModuleTrigger(value);
-        if (!trigger) return [];
+        if (!trigger) continue;
         trigger.sourceModuleId = module.id;
         trigger.lowLevelAccess = module.lowLevelAccess;
         if (settingsStore.state.enableModuleSubModel && module.subModel) {
@@ -644,9 +641,9 @@ export function getModuleTriggers(
         if (sandboxOwnerModuleIds.length > 0) {
           trigger.sandboxOwnerModuleIds = sandboxOwnerModuleIds;
         }
-        return [trigger];
-      }),
-    );
+        triggers.push(trigger);
+      }
+    }
   }
 
   // First-class groups intentionally do not flatten into getModules(). A
@@ -656,24 +653,20 @@ export function getModuleTriggers(
       const sandboxModuleIds = group.members.map((member) => member.moduleId);
       for (const member of group.members) {
         if (!member.module.trigger) continue;
-        triggers = triggers.concat(
-          member.module.trigger.flatMap((value) => {
-            const trigger = normalizeModuleTrigger(value);
-            if (!trigger) return [];
-            return [
-              {
-                ...trigger,
-                sourceModuleId: member.module.id,
-                lowLevelAccess: member.module.lowLevelAccess,
-                subModel: group.subModel,
-                sandboxGroupId: group.id,
-                sandboxGroupName: group.name,
-                sandboxInstanceId: member.instanceId,
-                sandboxModuleIds,
-              },
-            ];
-          }),
-        );
+        for (const value of member.module.trigger) {
+          const trigger = normalizeModuleTrigger(value);
+          if (!trigger) continue;
+          triggers.push({
+            ...trigger,
+            sourceModuleId: member.module.id,
+            lowLevelAccess: member.module.lowLevelAccess,
+            subModel: group.subModel,
+            sandboxGroupId: group.id,
+            sandboxGroupName: group.name,
+            sandboxInstanceId: member.instanceId,
+            sandboxModuleIds,
+          });
+        }
       }
     }
   }
@@ -686,13 +679,10 @@ export function getModuleRegexScripts(
   chat?: Chat,
 ) {
   const modules = getModules(character, overrideIds, chat);
-  let customscripts: customscript[] = [];
+  const customscripts: customscript[] = [];
   for (const module of modules) {
-    if (!module) {
-      continue;
-    }
-    if (module.regex) {
-      customscripts = customscripts.concat(module.regex);
+    if (module?.regex) {
+      customscripts.push(...module.regex);
     }
   }
   return customscripts;
@@ -720,8 +710,13 @@ export function getModuleMcps(
   overrideIds?: string[],
 ) {
   const modules = getModules(character, overrideIds);
-
-  return modules.map((v) => v.mcp?.url).filter((v) => v);
+  const result: string[] = [];
+  for (const v of modules) {
+    if (v?.mcp?.url) {
+      result.push(v.mcp.url);
+    }
+  }
+  return result;
 }
 
 export async function applyModule() {

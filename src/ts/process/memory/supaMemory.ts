@@ -187,19 +187,26 @@ export async function supaMemory(
       hypa.oaikey = db.supaMemoryKey;
       hypaChunks = hypaChunks.filter((value) => value.length > 1);
       if (hypaChunks.length > 0) {
-        const retrievalTexts = hypaChunks
-          .filter((value, index, self) => self.indexOf(value) === index)
-          .map((value) => {
-            if (db.removePunctuationHypa) {
-              return value.replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
-            }
-            return value;
-          })
-          .filter((value) => {
-            return !supaMemory
-              .replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-              .includes(value.replace(/[\.,\/#!$%\^&\*;:{}=\-_`~()]/g, ""));
-          });
+        const punctuationRegex = /[\.,\/#!$%\^&\*;:{}=\-_`~()]/g;
+        const cleanSupaMemory = supaMemory.replace(punctuationRegex, "");
+        const seen = new Set<string>();
+        const retrievalTexts: string[] = [];
+        for (const rawChunk of hypaChunks) {
+          if (seen.has(rawChunk)) continue;
+          seen.add(rawChunk);
+
+          const value = db.removePunctuationHypa
+            ? rawChunk.replace(punctuationRegex, "")
+            : rawChunk;
+
+          const checkValue = db.removePunctuationHypa
+            ? value
+            : value.replace(punctuationRegex, "");
+
+          if (!cleanSupaMemory.includes(checkValue)) {
+            retrievalTexts.push(value);
+          }
+        }
         if (!(await hypa.prepareServerTextIndex(retrievalTexts))) {
           await hypa.addText(retrievalTexts);
         }

@@ -344,12 +344,7 @@ export async function sayTTS(character: character, text: string) {
         const audio: Uint8Array = await loadAsset(
           character.gptSoVitsConfig.ref_audio_data.assetId,
         );
-        const base64Audio = btoa(
-          new Uint8Array(audio).reduce(
-            (data, byte) => data + String.fromCharCode(byte),
-            "",
-          ),
-        );
+        const base64Audio = Buffer.from(audio).toString("base64");
 
         const body = {
           text: text,

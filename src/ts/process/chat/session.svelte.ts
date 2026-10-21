@@ -146,15 +146,18 @@ async function synchronizePeer(
 
 function buildPromptInfo(room: character | groupChat): MessagePresetInfo {
   if (!settingsStore.state.promptInfoInsideChat) return {};
-  const promptToggles = parseToggleSyntax(
+  const toggles = parseToggleSyntax(
     presetStore.state.customPromptTemplateToggle + getModuleToggles(room),
-  ).flatMap((toggle) => {
+  );
+  const promptToggles: { key: string; value: string }[] = [];
+  for (const toggle of toggles) {
     const raw = settingsStore.state.globalChatVariables[`toggle_${toggle.key}`];
     if (toggle.type === "select" || toggle.type === "text") {
-      return [{ key: toggle.value, value: toggle.options[raw] }];
+      promptToggles.push({ key: toggle.value, value: toggle.options[raw] });
+    } else if (raw === "1") {
+      promptToggles.push({ key: toggle.value, value: "ON" });
     }
-    return raw === "1" ? [{ key: toggle.value, value: "ON" }] : [];
-  });
+  }
   return {
     promptName: presetStore.activePreset?.name ?? "",
     promptToggles,

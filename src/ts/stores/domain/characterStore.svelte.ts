@@ -976,11 +976,12 @@ class CharacterStore
   ): Promise<void> {
     // Chat IDs are global. Warm parents already establish ownership; only
     // unknown IDs require inspecting cold parents, one metadata row at a time.
-    const needed = new Set(
-      values.flatMap((character) =>
-        (character.chats ?? []).map((chat) => chat.id!),
-      ),
-    );
+    const needed = new Set<string>();
+    for (const character of values) {
+      for (const chat of character.chats ?? []) {
+        if (chat.id) needed.add(chat.id);
+      }
+    }
     const owners = new Map<string, string>();
     for (const character of this.characters) {
       for (const chat of character.chats ?? []) {
@@ -988,7 +989,14 @@ class CharacterStore
           owners.set(chat.id, character.chaId);
       }
     }
-    if ([...needed].some((id) => !owners.has(id))) {
+    let hasMissing = false;
+    for (const id of needed) {
+      if (!owners.has(id)) {
+        hasMissing = true;
+        break;
+      }
+    }
+    if (hasMissing) {
       for (const character of this.characters) {
         if (character.detailsLoaded !== false) continue;
         const current = await storage.loadCharacter(character.chaId);

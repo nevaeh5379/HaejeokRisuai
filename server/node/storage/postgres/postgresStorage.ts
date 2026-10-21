@@ -5255,8 +5255,7 @@ class PostgresStorage extends SqlStorageBase {
                 .find((id?: any) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
-                .reverse()
-                .find((id?: any) => ids.has(id)) ||
+                .findLast((id?: any) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }

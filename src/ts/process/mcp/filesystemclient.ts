@@ -483,7 +483,7 @@ export class FileSystemClient extends MCPClientLike {
 
     // Convert to base64
     const uint8Array = new Uint8Array(arrayBuffer);
-    const base64 = btoa(String.fromCharCode(...uint8Array));
+    const base64 = Buffer.from(uint8Array).toString("base64");
 
     // Check if content was truncated
     const wasTruncated = offset + arrayBuffer.byteLength < file.size;
