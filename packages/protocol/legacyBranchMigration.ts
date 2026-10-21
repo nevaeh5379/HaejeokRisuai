@@ -35,11 +35,11 @@ function cloneValue(value?: any): any {
 }
 
 function messageSignature(message?: any): any {
-  const cloned: any = { ...(message || {}) };
-  delete cloned.chatId;
-  return JSON.stringify(cloned, (_key?: any, value?: any) =>
-    value === undefined ? "__RISU_UNDEFINED__" : value,
-  );
+  if (!message || typeof message !== "object") return "";
+  return JSON.stringify(message, (key?: any, value?: any) => {
+    if (key === "chatId") return undefined;
+    return value === undefined ? "__RISU_UNDEFINED__" : value;
+  });
 }
 
 function materializeLegacyTimeline(chat: any, branch: any): any[];
@@ -55,9 +55,12 @@ function materializeLegacyTimeline(chat?: any, branch?: any): any {
 }
 
 function orderLegacyBranches(branches?: any): any {
-  const byId: any = new Map(
-    branches.map((branch?: any) => [branch.id, branch]),
-  );
+  const byId = new Map<string, any>();
+  if (Array.isArray(branches)) {
+    for (const branch of branches) {
+      if (branch?.id) byId.set(branch.id, branch);
+    }
+  }
   const ordered: any = [];
   const visiting: any = new Set();
   const visited: any = new Set();
@@ -94,7 +97,10 @@ function buildLegacyBranchMigrationPlan(chat?: any, idFactory?: any): any {
     throw new TypeError("idFactory is required");
 
   const ordered: any = orderLegacyBranches(sourceBranches);
-  const branchIds: any = new Set(ordered.map((branch?: any) => branch.id));
+  const branchIds = new Set<string>();
+  for (const branch of ordered) {
+    if (branch?.id) branchIds.add(branch.id);
+  }
   const root: any =
     ordered.find((branch?: any) => branch.reason === "root") ||
     ordered.find(
@@ -216,8 +222,8 @@ function buildLegacyBranchMigrationPlan(chat?: any, idFactory?: any): any {
     chatId: chat.id,
     activeBranchId,
     branches: rows,
-    messages: [...messages.values()],
-    links: [...links.values()],
+    messages: Array.from(messages.values()),
+    links: Array.from(links.values()),
   };
 }
 

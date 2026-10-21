@@ -656,7 +656,9 @@ async function writeLocalBackupAssets(
       },
       request.options,
     );
-    missingAssets.push(...streamed.missingKeys);
+    for (const key of streamed.missingKeys) {
+      missingAssets.push(key);
+    }
     return { missingAssets, assetMap };
   }
 
@@ -672,19 +674,20 @@ async function writeLocalBackupAssets(
     !forageStorage.isAccount &&
     writer.supportsNativeAssetTransfer()
   ) {
-    missingAssets.push(
-      ...(await exportNativeBackupAssets({
-        keys,
-        writeBatch: async (batch: string[]): Promise<{ missing: string[] }> =>
-          await writer.writeNativeAssets(batch),
-        onProgress(progress: BackupAssetExportProgress): void {
-          reportBackupAssetProgress(progress.current, progress.total);
-        },
-        yieldControl: async (): Promise<void> => {
-          await sleep(0);
-        },
-      })),
-    );
+    const nativeMissing = await exportNativeBackupAssets({
+      keys,
+      writeBatch: async (batch: string[]): Promise<{ missing: string[] }> =>
+        await writer.writeNativeAssets(batch),
+      onProgress(progress: BackupAssetExportProgress): void {
+        reportBackupAssetProgress(progress.current, progress.total);
+      },
+      yieldControl: async (): Promise<void> => {
+        await sleep(0);
+      },
+    });
+    for (const key of nativeMissing) {
+      missingAssets.push(key);
+    }
     return { missingAssets, assetMap };
   }
 
@@ -694,38 +697,39 @@ async function writeLocalBackupAssets(
   ) {
     return { missingAssets, assetMap };
   }
-  missingAssets.push(
-    ...(await exportStoredBackupAssets({
-      keys,
-      async read(key: string): Promise<Uint8Array | undefined> {
-        const value: unknown = await forageStorage.getItem(key);
-        return value ? (value as Uint8Array) : undefined;
-      },
-      async write(key: string, data: Uint8Array): Promise<void> {
-        await writer.writeBackup(key, data);
-      },
-      readCached: forageStorage.isAccount
-        ? async (key: string): Promise<Uint8Array | undefined> => {
-            const cached: ArrayBuffer | null =
-              await localforage.getItem<ArrayBuffer>(key);
-            return cached ? new Uint8Array(cached) : undefined;
-          }
-        : undefined,
-      onProgress(progress: BackupAssetExportProgress): void {
-        reportBackupAssetProgress(progress.current, progress.total);
-      },
-      yieldControl: async (): Promise<void> => {
-        await sleep(0);
-      },
-      delay: async (milliseconds: number): Promise<void> => {
-        await sleep(milliseconds);
-      },
-      delayAfterUncachedMs: forageStorage.isAccount
-        ? options.accountReadDelayMs
-        : 0,
-      progressUpdateMs: updateInterval,
-    })),
-  );
+  const storedMissing = await exportStoredBackupAssets({
+    keys,
+    async read(key: string): Promise<Uint8Array | undefined> {
+      const value: unknown = await forageStorage.getItem(key);
+      return value ? (value as Uint8Array) : undefined;
+    },
+    async write(key: string, data: Uint8Array): Promise<void> {
+      await writer.writeBackup(key, data);
+    },
+    readCached: forageStorage.isAccount
+      ? async (key: string): Promise<Uint8Array | undefined> => {
+          const cached: ArrayBuffer | null =
+            await localforage.getItem<ArrayBuffer>(key);
+          return cached ? new Uint8Array(cached) : undefined;
+        }
+      : undefined,
+    onProgress(progress: BackupAssetExportProgress): void {
+      reportBackupAssetProgress(progress.current, progress.total);
+    },
+    yieldControl: async (): Promise<void> => {
+      await sleep(0);
+    },
+    delay: async (milliseconds: number): Promise<void> => {
+      await sleep(milliseconds);
+    },
+    delayAfterUncachedMs: forageStorage.isAccount
+      ? options.accountReadDelayMs
+      : 0,
+    progressUpdateMs: updateInterval,
+  });
+  for (const key of storedMissing) {
+    missingAssets.push(key);
+  }
   return { missingAssets, assetMap };
 }
 
@@ -1279,9 +1283,9 @@ async function restoreLocalBackupSourceUnlocked(
       if (
         !(await confirmIncompleteColdStorageOperation(
           {
-            characters: [
-              ...streamingColdStorage.coldStorageCharacters.values(),
-            ],
+            characters: Array.from(
+              streamingColdStorage.coldStorageCharacters.values(),
+            ),
           },
           missingColdStorageKeys,
           "restore",

@@ -39,15 +39,21 @@ export function createLocalBackupExportMetadata(
 export function createLocalBackupExportPlan(
   input: LocalBackupExportPlanInput,
 ): LocalBackupExportPlan {
-  let assetKeys = input.assetKeys.filter(
-    (key): key is string =>
-      typeof key === "string" && key.startsWith("assets/"),
-  );
-
-  if (input.mode === "partial") {
-    const essentialAssetKeys = input.essentialAssetKeys ?? new Set<string>();
-    assetKeys = assetKeys.filter((key) => essentialAssetKeys.has(key));
-  }
+  const assetKeys =
+    input.mode === "partial"
+      ? (() => {
+          const essential = input.essentialAssetKeys;
+          return input.assetKeys.filter(
+            (key): key is string =>
+              typeof key === "string" &&
+              key.startsWith("assets/") &&
+              Boolean(essential?.has(key)),
+          );
+        })()
+      : input.assetKeys.filter(
+          (key): key is string =>
+            typeof key === "string" && key.startsWith("assets/"),
+        );
 
   const inlayKeys =
     input.mode === "native"

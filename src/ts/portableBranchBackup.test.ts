@@ -184,6 +184,37 @@ describe("portable persistent branch backup", () => {
       expanded.chats.every((chat) => (chat as any).branchState === undefined),
     ).toBe(true);
   });
+
+  it("remaps bookmarks and bookmarkNames correctly during branch flattening", () => {
+    const chatWithBookmarks = {
+      id: "chat-1",
+      name: "Chat",
+      message: [message("m1", "shared"), message("alt", "active")],
+      bookmarks: ["m1", "alt", "non-existent"],
+      bookmarkNames: {
+        m1: "Bookmark 1",
+        alt: "Bookmark Alt",
+        "non-existent": "Gone",
+      },
+    };
+    let counter = 0;
+    const expanded = expandChatBranchGraphForCompatibility(
+      chatWithBookmarks,
+      graph,
+      () => `fresh-${++counter}`,
+    );
+    expect(expanded.chats).toHaveLength(2);
+    const rootChat = expanded.chats[0];
+    expect(rootChat.bookmarks).toHaveLength(1);
+    expect(Object.keys(rootChat.bookmarkNames)).toHaveLength(1);
+    expect(Object.values(rootChat.bookmarkNames)).toEqual(["Bookmark 1"]);
+
+    const rerollChat = expanded.chats[1];
+    expect(rerollChat.bookmarks).toHaveLength(2);
+    expect(Object.keys(rerollChat.bookmarkNames)).toHaveLength(2);
+    expect(Object.values(rerollChat.bookmarkNames)).toContain("Bookmark 1");
+    expect(Object.values(rerollChat.bookmarkNames)).toContain("Bookmark Alt");
+  });
   it("keeps legacy branchState only when it is needed as migration input", () => {
     const source = {
       characters: [

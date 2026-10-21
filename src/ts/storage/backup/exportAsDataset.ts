@@ -23,7 +23,7 @@ export async function exportAsDataset() {
 
   await downloadFile(
     "dataset.json",
-    Buffer.from(JSON.stringify(dataset, null, 4), "utf-8"),
+    Buffer.from(JSON.stringify(dataset, null, 4)),
   );
 
   alertNormal(language.successExport);

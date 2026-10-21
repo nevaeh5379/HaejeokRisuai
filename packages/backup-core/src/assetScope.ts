@@ -32,11 +32,12 @@ export function findBackupAssetInfo(
   assetMap: BackupAssetMap,
   key: string,
 ): BackupAssetInfo | undefined {
-  return (
-    assetMap.get(key) ??
-    assetMap.get(key.replace(/^assets\//, "")) ??
-    assetMap.get(`assets/${key}`)
-  );
+  const direct = assetMap.get(key);
+  if (direct) return direct;
+  if (key.startsWith("assets/")) {
+    return assetMap.get(key.slice(7));
+  }
+  return assetMap.get(`assets/${key}`);
 }
 
 /**

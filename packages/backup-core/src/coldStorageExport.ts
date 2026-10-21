@@ -35,10 +35,9 @@ export async function prepareColdStorageBackup<TDatabase, TPayload>(
     await options.collect((current: number, total: number): void => {
       options.onProgress?.(current, total);
     });
-  const unavailableKeys: string[] = [
-    ...collection.missingKeys,
-    ...collection.invalidKeys,
-  ];
+  const unavailableKeys: string[] = collection.missingKeys.concat(
+    collection.invalidKeys,
+  );
   const confirmed: boolean = await options.confirm(
     options.database,
     unavailableKeys,

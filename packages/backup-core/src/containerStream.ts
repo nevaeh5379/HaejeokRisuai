@@ -7,6 +7,8 @@ import {
 export const BACKUP_CONTAINER_MAX_NAME_BYTES = 1024 * 1024;
 export const BACKUP_CONTAINER_MAX_ENTRY_BYTES = 0xffffffff;
 
+const containerTextEncoder = new TextEncoder();
+
 export class BackupContainerEntryHeaderError extends Error {
   readonly code: "invalid_name" | "invalid_size";
   constructor(message: string, code: "invalid_name" | "invalid_size") {
@@ -28,7 +30,7 @@ export function createBackupContainerEntryHeader(
     );
   }
 
-  const encodedName = new TextEncoder().encode(normalizedName);
+  const encodedName = containerTextEncoder.encode(normalizedName);
   if (
     encodedName.byteLength === 0 ||
     encodedName.byteLength > BACKUP_CONTAINER_MAX_NAME_BYTES

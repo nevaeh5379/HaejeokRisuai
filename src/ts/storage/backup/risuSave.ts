@@ -47,6 +47,7 @@ const magicStreamCompressedHeader = new Uint8Array(
   LEGACY_STREAM_COMPRESSED_DATABASE_HEADER_BYTES,
 );
 const magicRisuSaveHeader = new Uint8Array(RISU_SAVE_BLOCK_HEADER_BYTES);
+const fallbackRisuSaveHeader = new Uint8Array([0, 0, 0x52, 0x49, 0x53, 0x55]);
 
 async function checkCompressionStreams() {
   if (typeof CompressionStream === "undefined") {
@@ -432,10 +433,7 @@ export async function decodeRisuSave(data: Uint8Array) {
     console.error("Error decoding RisuSave data:", error);
     try {
       console.log("risudecode");
-      const risuSaveHeader = new Uint8Array(
-        Buffer.from("\u0000\u0000RISU", "utf-8"),
-      );
-      const realData = data.subarray(risuSaveHeader.length);
+      const realData = data.subarray(fallbackRisuSaveHeader.length);
       const dec = unpackr.decode(realData);
       return dec;
     } catch (error) {
