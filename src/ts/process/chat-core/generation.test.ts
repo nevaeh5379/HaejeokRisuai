@@ -45,11 +45,13 @@ describe("createChatGenerationPlan", () => {
       generationId: "generation-id",
       generationModel: "default-model",
     });
-    if (plan.ok)
+    if (plan.ok) {
       expect(plan.formated.map((item) => item.content)).toEqual([
         "fixed",
         "keep",
       ]);
+      expect(plan.keptIndexes).toEqual([0, 2]);
+    }
   });
 
   it("reports overflow when non-removable prompts cannot fit", async () => {

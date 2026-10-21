@@ -180,10 +180,9 @@ function normalizeOpenAIProviderMessages(
     );
   }
   if (options.developerRole) {
-    normalized = normalized.map((message?: any) => {
+    for (const message of normalized) {
       if (message.role === "system") message.role = "developer";
-      return message;
-    });
+    }
   }
   return normalized;
 }

@@ -31,6 +31,7 @@ const defaultRandomSource: any = {
 };
 
 function words(data?: any): any {
+  if (!data) return [];
   return data.split(/\n| /g).map((word?: any) => word.toLocaleLowerCase());
 }
 
@@ -45,14 +46,18 @@ function orderGroupSpeakers(
   randomSource: any = defaultRandomSource,
 ): any {
   const order: any = [];
-  const ids: any = [];
+  const ids = new Set<string>();
 
   if (input) {
+    const candidateNameWords = candidates.map(
+      (candidate: any) => new Set(words(candidate.name)),
+    );
     for (const word of words(input)) {
-      for (const candidate of candidates) {
-        if (words(candidate.name).includes(word)) {
+      for (let i = 0; i < candidates.length; i++) {
+        if (candidateNameWords[i].has(word)) {
+          const candidate = candidates[i];
           order.push(candidate);
-          ids.push(candidate.id);
+          ids.add(candidate.id);
           break;
         }
       }
@@ -60,10 +65,10 @@ function orderGroupSpeakers(
   }
 
   for (const candidate of randomSource.shuffle(candidates)) {
-    if (ids.includes(candidate.id)) continue;
+    if (ids.has(candidate.id)) continue;
     if ((candidate.talkness ?? 0.5) >= randomSource.random()) {
       order.push(candidate);
-      ids.push(candidate.id);
+      ids.add(candidate.id);
     }
   }
 

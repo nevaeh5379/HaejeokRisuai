@@ -115,11 +115,15 @@ async function createChatGenerationPlan(
     }
   }
 
-  const compactedEntries: any = formated
-    .map((chat?: any, index?: any) => ({ chat, index }))
-    .filter(({ chat }: any) => hasRenderableContent(chat));
-  const compacted: any = compactedEntries.map(({ chat }: any) => chat);
-  const keptIndexes: any = compactedEntries.map(({ index }: any) => index);
+  const compacted: any = [];
+  const keptIndexes: number[] = [];
+  for (let index = 0; index < formated.length; index++) {
+    const chat = formated[index];
+    if (hasRenderableContent(chat)) {
+      compacted.push(chat);
+      keptIndexes.push(index);
+    }
+  }
   const settings: any = runtime.getGenerationSettings();
   const outputTokens: any = Math.min(
     settings.maxResponseTokens,

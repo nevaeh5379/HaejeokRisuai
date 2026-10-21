@@ -57,22 +57,20 @@ function prepareCohereConversation(messages?: any, modelId?: any): any {
     formated.shift();
   }
 
+  const chat_history: CohereChatHistoryItem[] = [];
+  for (const message of formated) {
+    if (message.role === "assistant" && message.content) {
+      chat_history.push({ role: "CHATBOT", message: message.content });
+    } else if (message.role === "system" && message.content) {
+      chat_history.push({ role: "SYSTEM", message: message.content });
+    } else if (message.role === "user" && message.content) {
+      chat_history.push({ role: "USER", message: message.content });
+    }
+  }
+
   const body: any = {
     message: lastChatPrompt,
-    chat_history: formated
-      .map((message?: any) => {
-        if (message.role === "assistant") {
-          return { role: "CHATBOT", message: message.content };
-        }
-        if (message.role === "system") {
-          return { role: "SYSTEM", message: message.content };
-        }
-        if (message.role === "user") {
-          return { role: "USER", message: message.content };
-        }
-        return null;
-      })
-      .filter((message?: any) => message?.message),
+    chat_history,
   };
 
   if (

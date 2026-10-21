@@ -242,7 +242,8 @@ export function rebuild(input: readonly Record<string, unknown>[]): unknown {
     throw new Error("Relational value has an invalid root node");
   }
   const children = new Map<number, Record<string, unknown>[]>();
-  for (const row of rows.slice(1)) {
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
     const parent = Number(row.parent_node_id);
     if (!Number.isSafeInteger(parent))
       throw new Error("Relational node has no parent");
