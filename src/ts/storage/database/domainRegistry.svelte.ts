@@ -63,9 +63,15 @@ export const CharacterDomainHandler: DomainHandler<(character | groupChat)[]> =
             addAsset(asset[1], charName, asset[0]);
           }
         }
-        for (const [name, key] of Object.entries(char.vits?.files ?? {})) {
-          if (typeof key === "string" && key.length > 0) {
-            addAsset(key, charName, name);
+        const vitsFiles = char.vits?.files;
+        if (vitsFiles) {
+          for (const name in vitsFiles) {
+            if (Object.hasOwn(vitsFiles, name)) {
+              const key = vitsFiles[name];
+              if (typeof key === "string" && key.length > 0) {
+                addAsset(key, charName, name);
+              }
+            }
           }
         }
         for (const asset of char.ccAssets ?? []) {
@@ -220,8 +226,17 @@ export const DOMAIN_REGISTRY: Record<CoreDomainKey, DomainHandler<any>> = {
   settings: SettingsDomainHandler,
 };
 
+const DOMAIN_HANDLERS: readonly DomainHandler<any>[] = [
+  CharacterDomainHandler,
+  PersonaDomainHandler,
+  ModuleDomainHandler,
+  PresetDomainHandler,
+  PluginStorageDomainHandler,
+  SettingsDomainHandler,
+];
+
 export function ensureAllDomains(db: DatabaseDraft): DatabaseDraft {
-  for (const handler of Object.values(DOMAIN_REGISTRY)) {
+  for (const handler of DOMAIN_HANDLERS) {
     handler.ensureDomain(db);
   }
   return db;
