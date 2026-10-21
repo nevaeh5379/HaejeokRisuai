@@ -33,7 +33,7 @@ command -v pkg >/dev/null 2>&1 || fail "The Termux pkg command is unavailable."
 export SVDIR="$PREFIX/var/service"
 export LOGDIR="$PREFIX/var/log"
 for service in haejeok-risuai haejeok-postgres; do
-  if [ -d "$SVDIR/$service/supervise" ]; then
+  if [ -d "$SVDIR/$service" ] && sv status "$service" >/dev/null 2>&1; then
     sv -w 30 down "$service" || fail "Could not stop $service before the Termux package upgrade."
   elif [ -d "$SVDIR/$service" ]; then
     touch "$SVDIR/$service/down"
@@ -311,6 +311,7 @@ install_cli
 POSTGRES_SERVICE="$PREFIX/var/service/haejeok-postgres"
 RISUAI_SERVICE="$PREFIX/var/service/haejeok-risuai"
 mkdir -p "$POSTGRES_SERVICE" "$RISUAI_SERVICE"
+touch "$POSTGRES_SERVICE/down" "$RISUAI_SERVICE/down"
 
 cat > "$POSTGRES_SERVICE/run" <<EOF
 #!$PREFIX/bin/sh
@@ -343,9 +344,22 @@ export LOGDIR="$PREFIX/var/log"
 
 SERVICE_PIDFILE="$PREFIX/var/run/service-daemon.pid"
 if [ ! -r "$SERVICE_PIDFILE" ] || ! kill -0 "$(cat "$SERVICE_PIDFILE" 2>/dev/null)" 2>/dev/null; then
-  service-daemon start >/dev/null 2>&1 || true
-  sleep 0.5
+  service-daemon start || fail "Could not start the Termux service daemon."
 fi
+
+# runsvdir can take several seconds to discover newly installed services.
+# Wait here too, since the release bundle may contain an older haejeok CLI.
+for service in haejeok-postgres haejeok-risuai; do
+  for ((attempt = 0; attempt < 60; attempt++)); do
+    if sv status "$service" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.25
+  done
+  if ! sv status "$service"; then
+    fail "Termux service supervision is not ready for $service after 15 seconds. Check service-daemon and $SVDIR/$service."
+  fi
+done
 
 info "Starting PostgreSQL and Haejeok RisuAI"
 if ! "$PREFIX/bin/haejeok" start; then
