@@ -32,7 +32,18 @@ function mergeStringArrays(
   right: readonly string[] | undefined,
 ): string[] | undefined {
   if (!left?.length && !right?.length) return undefined;
-  return [...new Set([...(left ?? []), ...(right ?? [])].filter(Boolean))];
+  const set = new Set<string>();
+  if (left) {
+    for (const item of left) {
+      if (item) set.add(item);
+    }
+  }
+  if (right) {
+    for (const item of right) {
+      if (item) set.add(item);
+    }
+  }
+  return Array.from(set);
 }
 
 /**

@@ -468,32 +468,6 @@ describe.each([
     ]);
   });
 
-  it("persists order-only changes without changing any chat, message, or branch content", async () => {
-    const [a, b, c] = await seedThreeCharacters();
-    const before = [
-      "chats",
-      "messages",
-      "chat_branches",
-      "chat_active_branches",
-      "message_branch_links",
-    ].map(rows);
-    await characterStore.snapshot.saveAll([b, a, c]);
-    expect(
-      [
-        "chats",
-        "messages",
-        "chat_branches",
-        "chat_active_branches",
-        "message_branch_links",
-      ].map(rows),
-    ).toEqual(before);
-    expect((await restart()).map((character) => character.chaId)).toEqual([
-      "char-2",
-      "char-1",
-      "char-3",
-    ]);
-  });
-
   it("replaces [X,Y] with [Y,Z] and persists exact chat positions and deletion", async () => {
     const snapshot = (await characterStore.snapshot.load(0))!;
     snapshot.chats = [

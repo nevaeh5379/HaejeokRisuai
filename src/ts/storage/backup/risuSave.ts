@@ -49,13 +49,13 @@ const magicStreamCompressedHeader = new Uint8Array(
 const magicRisuSaveHeader = new Uint8Array(RISU_SAVE_BLOCK_HEADER_BYTES);
 
 async function checkCompressionStreams() {
-  if (!CompressionStream) {
+  if (typeof CompressionStream === "undefined") {
     const { makeCompressionStream } =
       await import("compression-streams-polyfill/ponyfill");
     //@ts-expect-error polyfill CompressionStream type is incompatible with globalThis.CompressionStream
     globalThis.CompressionStream = makeCompressionStream(TransformStream);
   }
-  if (!DecompressionStream) {
+  if (typeof DecompressionStream === "undefined") {
     const { makeDecompressionStream } =
       await import("compression-streams-polyfill/ponyfill");
     //@ts-expect-error polyfill DecompressionStream type is incompatible with globalThis.DecompressionStream
@@ -449,50 +449,18 @@ export async function decodeRisuSave(data: Uint8Array) {
   }
 }
 
+function matchesPrefix(data: Uint8Array, prefix: Uint8Array): boolean {
+  if (data.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (data[i] !== prefix[i]) return false;
+  }
+  return true;
+}
+
 function checkHeader(data: Uint8Array) {
-  let header: "none" | "compressed" | "raw" | "stream" | "risusave" = "raw";
-
-  if (data.length < magicHeader.length) {
-    return false;
-  }
-
-  for (let i = 0; i < magicHeader.length; i++) {
-    if (data[i] !== magicHeader[i]) {
-      header = "none";
-      break;
-    }
-  }
-
-  if (header === "none") {
-    header = "compressed";
-    for (let i = 0; i < magicCompressedHeader.length; i++) {
-      if (data[i] !== magicCompressedHeader[i]) {
-        header = "none";
-        break;
-      }
-    }
-  }
-
-  if (header === "none") {
-    header = "stream";
-    for (let i = 0; i < magicStreamCompressedHeader.length; i++) {
-      if (data[i] !== magicStreamCompressedHeader[i]) {
-        header = "none";
-        break;
-      }
-    }
-  }
-
-  if (header === "none") {
-    header = "risusave";
-    for (let i = 0; i < magicRisuSaveHeader.length; i++) {
-      if (data[i] !== magicRisuSaveHeader[i]) {
-        header = "none";
-        break;
-      }
-    }
-  }
-
-  // All bytes matched
-  return header;
+  if (matchesPrefix(data, magicHeader)) return "raw";
+  if (matchesPrefix(data, magicCompressedHeader)) return "compressed";
+  if (matchesPrefix(data, magicStreamCompressedHeader)) return "stream";
+  if (matchesPrefix(data, magicRisuSaveHeader)) return "risusave";
+  return false;
 }

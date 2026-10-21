@@ -217,18 +217,13 @@ async function hypaMemoryV3MainExp(
   let startIdx = 0;
 
   if (data.summaries.length > 0) {
-    const lastSummary = data.summaries.at(-1);
-    const lastChatIndex = chats.findIndex(
-      (chat) => chat.memo === [...lastSummary.chatMemos].at(-1),
-    );
+    const lastChatIndex = lastSummarizedChatIndex(chats, data.summaries.at(-1));
 
     if (lastChatIndex !== -1) {
       startIdx = lastChatIndex + 1;
 
       // Exclude tokens from summarized chats
-      currentTokens -= chatTokenCounts
-        .slice(0, lastChatIndex + 1)
-        .reduce((total, tokens) => total + tokens, 0);
+      currentTokens -= sumTokenCounts(chatTokenCounts, lastChatIndex);
     }
   }
 
@@ -374,7 +369,7 @@ async function hypaMemoryV3MainExp(
         toSummarize,
       );
 
-      toSummarizeArray.push([...toSummarize]);
+      toSummarizeArray.push(toSummarize.slice());
     }
 
     currentTokens -= toSummarizeTokens;
@@ -997,18 +992,13 @@ async function hypaMemoryV3Main(
   let startIdx = 0;
 
   if (data.summaries.length > 0) {
-    const lastSummary = data.summaries.at(-1);
-    const lastChatIndex = chats.findIndex(
-      (chat) => chat.memo === [...lastSummary.chatMemos].at(-1),
-    );
+    const lastChatIndex = lastSummarizedChatIndex(chats, data.summaries.at(-1));
 
     if (lastChatIndex !== -1) {
       startIdx = lastChatIndex + 1;
 
       // Exclude tokens from summarized chats
-      currentTokens -= chatTokenCounts
-        .slice(0, lastChatIndex + 1)
-        .reduce((total, tokens) => total + tokens, 0);
+      currentTokens -= sumTokenCounts(chatTokenCounts, lastChatIndex);
     }
   }
 
@@ -1650,9 +1640,32 @@ function toSerializableHypaV3Data(data: HypaV3Data): SerializableHypaV3Data {
     ...data,
     summaries: data.summaries.map((summary) => ({
       ...summary,
-      chatMemos: [...summary.chatMemos],
+      chatMemos: Array.from(summary.chatMemos),
     })),
   };
+}
+
+/** Index of the chat a summary ended on, or -1 when it cannot be located. */
+function lastSummarizedChatIndex(
+  chats: OpenAIChat[],
+  lastSummary: Summary | undefined,
+): number {
+  let lastMemo: string | undefined;
+  // Read the last-inserted memo directly; copying the Set here is pure waste.
+  for (const memo of lastSummary?.chatMemos ?? []) {
+    lastMemo = memo;
+  }
+  if (lastMemo === undefined) return -1;
+  return chats.findIndex((chat) => chat.memo === lastMemo);
+}
+
+/** Sum of per-chat token costs up to and including `uptoInclusive`. */
+function sumTokenCounts(counts: number[], uptoInclusive: number): number {
+  let total = 0;
+  for (let i = 0; i <= uptoInclusive; i++) {
+    total += counts[i] ?? 0;
+  }
+  return total;
 }
 
 function cleanOrphanedSummary(chats: OpenAIChat[], data: HypaV3Data): void {

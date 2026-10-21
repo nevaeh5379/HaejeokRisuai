@@ -1208,7 +1208,7 @@ async function* runV2(request?: any, context?: any): AsyncGenerator<any> {
       ),
     ),
   );
-  const rankedIndexes: any = [...scoreMap.entries()]
+  const rankedIndexes: any = Array.from(scoreMap.entries())
     .sort((a?: any, b?: any) => b[1] - a[1])
     .map(([index]: any) => index);
   const candidateTexts: any = rankedIndexes.map((index?: any) =>
@@ -1275,7 +1275,7 @@ function weightedRank(lists?: any, weightFn?: any): any {
       ),
     ),
   );
-  return [...scores.entries()]
+  return Array.from(scores.entries())
     .sort((a?: any, b?: any) => b[1] - a[1])
     .map(([item]: any) => item);
 }
@@ -1286,7 +1286,7 @@ function childToParentRRF(children?: any, parentFor?: any, k: any = 60): any {
     const parent: any = parentFor(child);
     scores.set(parent, (scores.get(parent) || 0) + 1 / (k + index + 1));
   });
-  return [...scores.entries()]
+  return Array.from(scores.entries())
     .sort((a?: any, b?: any) => b[1] - a[1])
     .map(([parent]: any) => parent);
 }

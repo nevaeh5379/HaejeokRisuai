@@ -123,10 +123,16 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
   }
 }
 
-function uniqueStrings(values: readonly (string | undefined)[]): string[] {
-  return [
-    ...new Set(values.filter((value): value is string => Boolean(value))),
-  ];
+function uniqueStrings(
+  ...arrays: readonly (readonly (string | undefined)[])[]
+): string[] {
+  const set = new Set<string>();
+  for (const arr of arrays) {
+    for (const value of arr) {
+      if (value) set.add(value);
+    }
+  }
+  return Array.from(set);
 }
 
 async function loadSettingValues(
@@ -159,7 +165,7 @@ async function applyDatabaseChange(
   const chatIds = uniqueStrings(change.chatIds ?? []);
   const rootUpsertKeys = uniqueStrings(change.rootUpsertKeys ?? []);
   const rootDeleteKeys = uniqueStrings(change.rootDeleteKeys ?? []);
-  const rootKeys = uniqueStrings([...rootUpsertKeys, ...rootDeleteKeys]);
+  const rootKeys = uniqueStrings(rootUpsertKeys, rootDeleteKeys);
   const pluginStorageUpsertKeys = uniqueStrings(
     change.pluginStorageUpsertKeys ?? [],
   );

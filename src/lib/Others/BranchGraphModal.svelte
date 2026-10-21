@@ -49,7 +49,7 @@
         ? padding * 2 + radialRadius * 2 + cardHeight
         : padding * 2 + standardRows * cardHeight + Math.max(0, standardRows - 1) * gapY)
     const activeNode = $derived(graph.nodes.find((node) => node.activeTerminal)
-        ?? [...graph.nodes].reverse().find((node) => node.activePath))
+        ?? graph.nodes.findLast((node) => node.activePath))
     let viewport: HTMLDivElement | undefined = $state()
     let panX = $state(0)
     let panY = $state(0)
@@ -274,9 +274,26 @@
         })
     }
 
+    // Reused across pointermove frames so pinch handling allocates nothing per frame.
+    type TouchPoint = { x: number, y: number }
+    const pinchPoints: { first: TouchPoint | null, second: TouchPoint | null } = {
+        first: null,
+        second: null,
+    }
+
+    function readPinchPoints() {
+        const it = touchPointers.values()
+        pinchPoints.first = it.next().value ?? null
+        pinchPoints.second = it.next().value ?? null
+        return pinchPoints.first && pinchPoints.second ? pinchPoints : null
+    }
+
     function startPinch() {
         if(!viewport || touchPointers.size < 2) return
-        const [first, second] = [...touchPointers.values()]
+        const pinch = readPinchPoints()
+        if(!pinch) return
+        const first = pinch.first
+        const second = pinch.second
         const distance = Math.hypot(second.x - first.x, second.y - first.y)
         if(distance === 0) return
         lastPinchDistance = distance
@@ -354,7 +371,10 @@
                     startPinch()
                 }
                 if(!viewport || !lastPinchCenter || !lastPinchDistance) return
-                const [first, second] = [...touchPointers.values()]
+                const pinch = readPinchPoints()
+                if(!pinch) return
+                const first = pinch.first
+                const second = pinch.second
                 const distance = Math.hypot(second.x - first.x, second.y - first.y)
                 const currentCenter = {
                     x: (first.x + second.x) / 2,
