@@ -291,12 +291,12 @@ async function translateMain(
     return text;
   }
 
-  const result = (
-    res[0]
-      .map((s) => s[0])
-      .filter(Boolean)
-      .join("") as string
-  )
+  let joined = "";
+  for (const s of res[0]) {
+    if (s?.[0]) joined += s[0];
+  }
+
+  const result = joined
     .replace(/\* ([^*]+)\*/g, "*$1*")
     .replace(/\*([^*]+) \*/g, "*$1*");
   return result;
@@ -410,7 +410,11 @@ export async function translateHTML(
     const currentChunk = translationChunks;
     translationChunks = [];
     translationChunkLength = 0;
-    const text = currentChunk.map((chunk) => chunk.text).join("\n■\n");
+    let text = "";
+    for (let i = 0; i < currentChunk.length; i++) {
+      if (i > 0) text += "\n■\n";
+      text += currentChunk[i].text;
+    }
 
     const translated = await translate(text, reverse);
 
@@ -766,66 +770,72 @@ export function applyEdittransRegex(
   const moduleCharacter =
     resolvedTarget?.character ??
     (alwaysExistChar.type === "simple" ? undefined : alwaysExistChar);
-  let scripts: customscript[] = [];
-  scripts = (presetStore.state.regex ?? [])
-    .concat(
-      getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat) ??
-        [],
-    )
-    .concat(alwaysExistChar?.customscript ?? []);
-
   const parsedScripts: pEdittransScript[] = [];
   let orderChanged = false;
 
-  for (const script of scripts) {
-    if (script.type !== "edittrans") {
-      continue;
-    }
-    if (!script.in) {
-      continue;
-    }
+  const scriptSources: (readonly customscript[] | undefined)[] = [
+    presetStore.state.regex,
+    getModuleRegexScripts(moduleCharacter, undefined, resolvedTarget?.chat),
+    alwaysExistChar?.customscript,
+  ];
 
-    let flag = "g";
-    if (script.ableFlag) {
-      flag = script.flag || "g";
-    }
-
-    let order = 0;
-    const actions: string[] = [];
-
-    //parse custom flags, same as processScriptFull
-    flag = flag.replace(/<(.+?)>/g, (v: string, p1: string) => {
-      const meta = p1.split(",").map((v) => v.trim());
-      for (const m of meta) {
-        if (m.startsWith("order ")) {
-          order = parseInt(m.substring(6));
-          orderChanged = true;
-        } else {
-          actions.push(m);
-        }
+  for (const list of scriptSources) {
+    if (!list) continue;
+    for (const script of list) {
+      if (script.type !== "edittrans") {
+        continue;
+      }
+      if (!script.in) {
+        continue;
       }
 
-      return "";
-    });
+      let flag = "g";
+      if (script.ableFlag) {
+        flag = script.flag || "g";
+      }
 
-    if (actions.includes("move_top") || actions.includes("move_bottom")) {
-      flag = flag.replace("g", ""); //temperary fix
+      let order = 0;
+      const actions: string[] = [];
+
+      //parse custom flags, same as processScriptFull
+      flag = flag.replace(/<(.+?)>/g, (_: string, p1: string) => {
+        const parts = p1.split(",");
+        for (let i = 0; i < parts.length; i++) {
+          const m = parts[i].trim();
+          if (m.startsWith("order ")) {
+            order = parseInt(m.substring(6));
+            orderChanged = true;
+          } else {
+            actions.push(m);
+          }
+        }
+
+        return "";
+      });
+
+      if (actions.includes("move_top") || actions.includes("move_bottom")) {
+        flag = flag.replace("g", ""); //temperary fix
+      }
+
+      //remove unsupported flag
+      flag = flag.trim().replace(/[^dgimsuvy]/g, "");
+
+      //remove repeated flags
+      let dedupFlag = "";
+      for (let i = 0; i < flag.length; i++) {
+        const ch = flag[i];
+        if (!dedupFlag.includes(ch)) {
+          dedupFlag += ch;
+        }
+      }
+      flag = dedupFlag;
+
+      if (flag.length === 0) {
+        flag = "u";
+      }
+
+      parsedScripts.push({ script, flag, order, actions });
     }
-
-    //remove unsupported flag
-    flag = flag.trim().replace(/[^dgimsuvy]/g, "");
-
-    //remove repeated flags
-    flag = flag
-      .split("")
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .join("");
-
-    if (flag.length === 0) {
-      flag = "u";
-    }
-
-    parsedScripts.push({ script, flag, order, actions });
   }
 
   if (orderChanged) {

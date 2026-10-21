@@ -68,6 +68,8 @@ import {
   preloadCharacterImage,
 } from "./characterImage";
 import { getProtectedChatIds } from "./memory/chatWorkingSet";
+
+const textDecoder = new TextDecoder();
 import { getSqlBranchStorage } from "./storage/sql/sqlStorageFactory";
 import { buildChatJsonExportPayload } from "./chatExport";
 import {
@@ -603,7 +605,7 @@ export async function importChat() {
     const selectedID = get(selectedCharID);
 
     if (dat.name.endsWith("jsonl")) {
-      const lines = Buffer.from(dat.data).toString("utf-8").split("\n");
+      const lines = textDecoder.decode(dat.data).split("\n");
       let newChat: Chat = {
         message: [],
         note: "",
@@ -655,7 +657,7 @@ export async function importChat() {
       changeChatTo(0);
       alertNormal(language.successImport);
     } else if (dat.name.endsWith("json")) {
-      const json = JSON.parse(Buffer.from(dat.data).toString("utf-8"));
+      const json = JSON.parse(textDecoder.decode(dat.data));
       if (json.type === "haejeokChat" && json.ver === 1) {
         const sourceChat = json.data?.chat as Chat | undefined;
         const branchGraph = json.data?.branchGraph;
@@ -814,7 +816,7 @@ export async function importChat() {
       }
     } else if (dat.name.endsWith("html")) {
       const doc = new DOMParser().parseFromString(
-        Buffer.from(dat.data).toString("utf-8"),
+        textDecoder.decode(dat.data),
         "text/html",
       );
       const chat = doc.querySelector(".idat")?.textContent;

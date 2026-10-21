@@ -31,7 +31,7 @@ type LorePrompt = Awaited<
 >;
 type DepthPrompt = LorePrompt["actives"][number];
 
-function getActiveMessages(chat: Chat) {
+export function getActiveMessages(chat: Chat) {
   const messages: Message[] = [];
   let reset = false;
   for (let i = chat.message.length - 1; i >= 0; i--) {
@@ -41,8 +41,9 @@ function getActiveMessages(chat: Chat) {
       reset = true;
       break;
     }
-    messages.unshift(message);
+    messages.push(message);
   }
+  messages.reverse();
   return { messages, reset };
 }
 
@@ -110,15 +111,26 @@ function extractInlayReferences(content: string, role: Message["role"]) {
   return { content, inlays };
 }
 
+export function extractInlayName(inlay: string): string {
+  let name = inlay;
+  if (name.startsWith("{{inlayeddata::")) {
+    name = name.slice(15);
+  } else if (name.startsWith("{{inlayed::")) {
+    name = name.slice(11);
+  } else if (name.startsWith("{{inlay::")) {
+    name = name.slice(9);
+  }
+  if (name.endsWith("}}")) {
+    name = name.slice(0, -2);
+  }
+  return name;
+}
+
 async function resolveInlays(content: string, inlays: string[]) {
   const multimodals: MultiModal[] = [];
   const modelInfo = getModelInfo(presetStore.state.aiModel);
   for (const inlay of inlays) {
-    const name = inlay
-      .replace("{{inlayed::", "")
-      .replace("{{inlay::", "")
-      .replace("}}", "")
-      .replace("{{inlayeddata::", "");
+    const name = extractInlayName(inlay);
     const data = await getInlayAsset(name);
     if (data?.type === "image") {
       if (modelInfo.flags.includes(LLMFlags.hasImageInput)) {
@@ -453,21 +465,23 @@ async function collectDepthPrompts(
   options: BuildChatHistoryOptions,
   currentTokens: number,
 ) {
-  const depthPrompts = options.lorePrompt.actives.filter(
-    (prompt) =>
+  const depthPrompts: DepthPrompt[] = [];
+  for (const prompt of options.lorePrompt.actives) {
+    if (
       (prompt.pos === "depth" && prompt.depth > 0) ||
-      prompt.pos === "reverse_depth",
-  );
-  for (const depthPrompt of depthPrompts) {
-    currentTokens += await options.tokenizer.tokenizeChat({
-      role: depthPrompt.role,
-      content: risuChatParser(options.resolvePosition(depthPrompt.prompt), {
-        chara: options.currentChar,
-        chatTarget: options.chatTarget,
-      }),
-    });
+      prompt.pos === "reverse_depth"
+    ) {
+      depthPrompts.push(prompt as DepthPrompt);
+      currentTokens += await options.tokenizer.tokenizeChat({
+        role: prompt.role,
+        content: risuChatParser(options.resolvePosition(prompt.prompt), {
+          chara: options.currentChar,
+          chatTarget: options.chatTarget,
+        }),
+      });
+    }
   }
-  return { depthPrompts: depthPrompts as DepthPrompt[], currentTokens };
+  return { depthPrompts, currentTokens };
 }
 
 export async function buildChatHistory(options: BuildChatHistoryOptions) {

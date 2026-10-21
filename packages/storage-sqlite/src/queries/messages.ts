@@ -379,12 +379,17 @@ export function rebuildRows<TMessage extends object = HydratedMessage>(
       orderedIds.push(id);
     }
     if (row.node_id === null || row.node_id === undefined) continue;
-    const nodes = nodeGroups.get(id) ?? [];
+    let nodes = nodeGroups.get(id);
+    if (!nodes) {
+      nodes = [];
+      nodeGroups.set(id, nodes);
+    }
     nodes.push(row as nodeCodec.NodeRow);
-    nodeGroups.set(id, nodes);
   }
 
-  return orderedIds.map((id) => {
+  const result: TMessage[] = new Array(orderedIds.length);
+  for (let index = 0; index < orderedIds.length; index++) {
+    const id = orderedIds[index];
     const core = coreRows.get(id)!;
     const nodes = nodeGroups.get(id);
     const rebuilt = nodes?.length ? nodeCodec.rebuild(nodes) : {};
@@ -429,8 +434,9 @@ export function rebuildRows<TMessage extends object = HydratedMessage>(
         );
       }
     }
-    return message;
-  });
+    result[index] = message;
+  }
+  return result;
 }
 
 export function rebuildGraphMessages<TMessage extends object = HydratedMessage>(

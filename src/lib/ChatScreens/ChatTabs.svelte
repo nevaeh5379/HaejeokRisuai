@@ -384,11 +384,21 @@
         const list = pointed?.closest<HTMLElement>('[data-chat-tab-list]');
         const targetGroupId = list?.dataset.groupId;
         if (!list || !targetGroupId) return;
-        const tabs = Array.from(list.querySelectorAll<HTMLElement>('[data-chat-tab-id]'))
-            .filter((item) => item.dataset.chatTabId !== drag!.tabId);
-        let targetIndex = tabs.findIndex((item) => drag!.x < item.getBoundingClientRect().left + item.offsetWidth / 2);
-        if (targetIndex < 0) targetIndex = tabs.length;
-        const marker = tabs[targetIndex] ?? list.querySelector<HTMLElement>('[data-tab-add]');
+        const tabElements = list.querySelectorAll<HTMLElement>('[data-chat-tab-id]');
+        let targetIndex = 0;
+        let foundMarker: HTMLElement | undefined;
+        let effectiveCount = 0;
+        for (let i = 0; i < tabElements.length; i++) {
+            const item = tabElements[i];
+            if (item.dataset.chatTabId === drag!.tabId) continue;
+            if (foundMarker === undefined && drag!.x < item.getBoundingClientRect().left + item.offsetWidth / 2) {
+                foundMarker = item;
+                targetIndex = effectiveCount;
+            }
+            effectiveCount++;
+        }
+        if (foundMarker === undefined) targetIndex = effectiveCount;
+        const marker = foundMarker ?? list.querySelector<HTMLElement>('[data-tab-add]');
         marker?.classList.add('chat-tab-drop-before');
         drag.marker = marker ?? undefined;
         drag.targetGroupId = targetGroupId;
@@ -491,9 +501,9 @@
 
     function canAcceptWorkspaceDrag(dataTransfer: DataTransfer | null) {
         if (!isTauri || !dataTransfer) return false;
-        if (Array.from(dataTransfer.types).some(
-            (type) => type === TAURI_CHAT_DRAG_MIME || type === RISU_CHAT_TAB_DRAG_TYPE,
-        )) return true;
+        for (const type of dataTransfer.types) {
+            if (type === TAURI_CHAT_DRAG_MIME || type === RISU_CHAT_TAB_DRAG_TYPE) return true;
+        }
         const active = getActiveTauriChatDragPayload();
         return Boolean(active && active.sourceWindowId !== getCurrentChatWorkspaceWindowId());
     }
@@ -563,13 +573,21 @@
         sourceTabId?: string,
     ) {
         clearNativeTabDropMarker();
-        const tabs = Array.from(list.querySelectorAll<HTMLElement>('[data-chat-tab-id]'))
-            .filter((item) => item.dataset.chatTabId !== sourceTabId);
-        let targetIndex = tabs.findIndex(
-            (item) => clientX < item.getBoundingClientRect().left + item.offsetWidth / 2,
-        );
-        if (targetIndex < 0) targetIndex = tabs.length;
-        const marker = tabs[targetIndex] ?? list.querySelector<HTMLElement>('[data-tab-add]');
+        const tabElements = list.querySelectorAll<HTMLElement>('[data-chat-tab-id]');
+        let targetIndex = 0;
+        let foundMarker: HTMLElement | undefined;
+        let effectiveCount = 0;
+        for (let i = 0; i < tabElements.length; i++) {
+            const item = tabElements[i];
+            if (item.dataset.chatTabId === sourceTabId) continue;
+            if (foundMarker === undefined && clientX < item.getBoundingClientRect().left + item.offsetWidth / 2) {
+                foundMarker = item;
+                targetIndex = effectiveCount;
+            }
+            effectiveCount++;
+        }
+        if (foundMarker === undefined) targetIndex = effectiveCount;
+        const marker = foundMarker ?? list.querySelector<HTMLElement>('[data-tab-add]');
         marker?.classList.add('chat-tab-drop-before');
         nativeDragMarker = marker ?? undefined;
         return targetIndex;
