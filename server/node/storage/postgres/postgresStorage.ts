@@ -3260,7 +3260,7 @@ class PostgresStorage extends SqlStorageBase {
   }
 
   async ensureChatBranchGraphs(client?: any, chatIds?: any) {
-    const ids = [...new Set<any>((chatIds || []).filter(Boolean))];
+    const ids = Array.from(new Set<any>((chatIds || []).filter(Boolean)));
     if (ids.length === 0) return;
     await client.query(
       `INSERT INTO chat.branches
@@ -5255,8 +5255,7 @@ class PostgresStorage extends SqlStorageBase {
                 .find((id?: any) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
-                .reverse()
-                .find((id?: any) => ids.has(id)) ||
+                .findLast((id?: any) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }

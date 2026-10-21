@@ -776,7 +776,7 @@ export function createModelJobManager({
       clearInterval(cleanupTimer);
       for (const job of activeJobs.values()) job.controller.abort();
       await Promise.allSettled(
-        [...activeJobs.keys()].map(async (id) => {
+        Array.from(activeJobs.keys(), async (id) => {
           while (activeJobs.has(id)) {
             await new Promise((resolve) => setTimeout(resolve, 10));
           }

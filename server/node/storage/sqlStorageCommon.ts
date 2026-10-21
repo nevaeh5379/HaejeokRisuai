@@ -51,7 +51,7 @@ function mergeLegacyModulesIntoPayload(
       .map((entry?: any) => entry.id)
       .filter((id?: any) => !deleted.has(id)),
   ];
-  const order: any = payload.modules.order || [...new Set(inferredOrder)];
+  const order: any = payload.modules.order || Array.from(new Set(inferredOrder));
   const positions: any = new Map(
     order.map((id?: any, position?: any) => [id, position]),
   );

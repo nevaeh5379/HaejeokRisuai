@@ -188,7 +188,7 @@
       if (models) models.push(model);
       else groups.set(provider, [model]);
     }
-    return [...groups].map(([provider, models]) => ({ provider, models }));
+    return Array.from(groups, ([provider, models]) => ({ provider, models }));
   });
 </script>
 

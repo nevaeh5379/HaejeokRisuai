@@ -334,7 +334,7 @@ export function createRealtimeEventHub(
   /** Returns the current non-expired generation states. / 만료되지 않은 현재 생성 상태를 반환합니다. */
   function listActiveGenerations(): GenerationStateRecord[] {
     pruneGenerationStates();
-    return [...activeGenerations.values()];
+    return Array.from(activeGenerations.values());
   }
 
   /** Replays missed events or requests a full resynchronization. / 누락 이벤트를 재생하거나 전체 재동기화를 요청합니다. */

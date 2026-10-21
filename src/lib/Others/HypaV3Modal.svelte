@@ -239,7 +239,7 @@
         mergedChatMemos.push(...summary.chatMemos);
       }
 
-      const uniqueChatMemos = [...new Set(mergedChatMemos)];
+      const uniqueChatMemos = Array.from(new Set(mergedChatMemos));
 
       const resummary = await summarize(oaiMessages, true);
 

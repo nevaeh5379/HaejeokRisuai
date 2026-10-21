@@ -138,7 +138,7 @@ export function parseComfyWorkflowList(value: unknown, url: string): string[] {
     path = path.replace(/\\/g, "/");
     if (/\.json$/i.test(path)) files.push(path);
   }
-  return [...new Set(files)].sort();
+  return Array.from(new Set(files)).sort();
 }
 
 /** Bound the complete operation, even when a native transport ignores abort. */

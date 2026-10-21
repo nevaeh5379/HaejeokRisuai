@@ -28,7 +28,16 @@
     if (activeImageUrl) URL.revokeObjectURL(activeImageUrl);
     activeImageUrl = "";
   });
-  let images = $derived([...new Set([...(item?.imageIds ?? []), ...(item?.imageId ? [item.imageId] : [])])]);
+  let images = $derived.by(() => {
+    const ids = item?.imageIds;
+    const single = item?.imageId;
+    if (!ids?.length) {
+      return single ? [single] : [];
+    }
+    const set = new Set(ids);
+    if (single) set.add(single);
+    return Array.from(set);
+  });
   let imageIndex = $derived(Math.max(0, images.indexOf(selectedImageId ?? item?.imageId ?? "")));
   let displayedImageId = $derived(images[imageIndex]);
   let displayedTags = $derived(item ? illustrationImageTags(item, displayedImageId) : undefined);

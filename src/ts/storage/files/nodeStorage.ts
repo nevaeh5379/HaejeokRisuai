@@ -389,7 +389,11 @@ export class NodeStorage {
       onProgress,
       options,
     );
-    return new Map([...items].map(([key, value]) => [key, Buffer.from(value)]));
+    const result = new Map<string, Buffer>();
+    for (const [key, value] of items) {
+      result.set(key, Buffer.from(value));
+    }
+    return result;
   }
 
   async streamItems(

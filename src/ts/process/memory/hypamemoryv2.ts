@@ -74,7 +74,7 @@ export class HypaProcessorV2<TMetadata> {
     }
 
     // Remove duplicate queries
-    const uniqueQueries = [...new Set(queries)];
+    const uniqueQueries = Array.from(new Set(queries));
 
     // Convert queries to EmbeddingText array
     const ebdTexts: EmbeddingText<TMetadata>[] = uniqueQueries.map(
