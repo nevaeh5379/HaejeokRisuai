@@ -18,22 +18,19 @@ export async function additionalInformations(
     const infos = info.split("\n\n");
 
     await processer.addText(infos);
-    const filteredChat = chats.message
-      .slice(0, 4)
-      .map((chat) => {
-        let name = chat.saying ?? "";
-
-        if (!name) {
-          if (chat.role === "user") {
-            name = getUserName(chatTarget);
-          } else {
-            name = char.name;
-          }
-        }
-
-        return `${name}: ${chat.data}`;
-      })
-      .join("\n\n");
+    const userName = getUserName(chatTarget);
+    const charName = char.name;
+    const limit = Math.min(chats.message.length, 4);
+    let filteredChat = "";
+    for (let i = 0; i < limit; i++) {
+      const chat = chats.message[i];
+      let name = chat.saying;
+      if (!name) {
+        name = chat.role === "user" ? userName : charName;
+      }
+      if (filteredChat) filteredChat += "\n\n";
+      filteredChat += `${name}: ${chat.data}`;
+    }
     const searched = await processer.similaritySearch(filteredChat);
     const result = searched.slice(0, 3).join("\n\n");
     return result;

@@ -144,6 +144,23 @@ describe("#if", () => {
     expect(quickParse("#if 1", indentedBody)).toBe("0 C  \nB  \nS 9");
   });
 
+  test("strips any non-newline whitespace at the start of a line", () => {
+    expect(quickParse("#if 1", "\tx\n  y\n\u00a0z")).toBe("0 x\ny\nz 9");
+  });
+
+  test("treats only newlines as line starts", () => {
+    // A lone "\r", U+2028 or U+2029 is not a line separator for the parser,
+    // so the indentation that follows it must be kept. (Guard against the
+    // regex "m" flag, which treats all three as line starts.)
+    expect(quickParse("#if 1", "a\r   b")).toBe("0 a\r   b 9");
+    expect(quickParse("#if 1", "a\u2028   b")).toBe("0 a\u2028   b 9");
+    expect(quickParse("#if 1", "a\u2029   b")).toBe("0 a\u2029   b 9");
+  });
+
+  test("trims CRLF lines at the line start only", () => {
+    expect(quickParse("#if 1", "a\r\n   b\r\n")).toBe("0 a\r\nb 9");
+  });
+
   test("can be nested", () => {
     expect(quickParse("#if 1", template("#if 1", "CBS"))).toBe(`0 0 CBS 9 9`);
     expect(quickParse("#if 1", template("#if 0", "CBS"))).toBe(`0 0  9 9`);

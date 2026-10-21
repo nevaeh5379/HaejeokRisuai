@@ -64,3 +64,35 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Parser, Inlay Codec, and Template Range Allocations
+
+**Learning:** Found quadratic memory allocations and unnecessary intermediate arrays in hot text parsing and file decoding routines:
+
+1. `getDistance` (Levenshtein distance) in `parser.svelte.ts` allocated a full 2D matrix of `(a.length + 1) * (b.length + 1)` in `Int16Array`, which for string matching across asset lists repeatedly allocated thousands of integer elements.
+2. `trimmer` in `parser.svelte.ts` re-instantiated a 13-element string array and string-concatenated extensions on every call.
+3. `risuChatParser` in `parser.svelte.ts` performed single-character string appends in a loop for all plain text, and allocated unused `commentLatest`, `commentV`, and tracking structures on every invocation.
+4. `trimLines` repeatedly split, mapped, joined, and trimmed multiline strings, while `blockEndMatcher` split full texts on newline solely to check if `lines.length === 1`.
+5. `base64ToBlob` in `inlays.ts` used `atob` with an element-by-element `charCodeAt` copy loop and `ArrayBuffer` allocation instead of `Buffer.from(b64, 'base64')`, and split headers twice to find the MIME type.
+6. `templateCheck` in `templateCheck.ts` computed unresolved ranges via `startRanges.filter(...includes...).concat(endRanges.filter(...includes...))`, performing O(N^2) searches and allocating intermediate arrays.
+7. `parseChatML` in `chatML.ts` used `.split(starter).filter(...).map(...)`, allocating intermediate filtered arrays, and concatenated separator prefixes on every iteration.
+8. `getChatVar` in `chatVar.svelte.ts` concatenated character and template default variable lists instead of searching the character defaults first.
+
+**Action:**
+
+1. Implement Wagner-Fischer Levenshtein distance using a single 1D row vector of length `min(a.length, b.length) + 1` with short-circuiting for identity and empty strings.
+2. Hoist `TRIMMER_EXTENSIONS` to module constants and terminate extension inspection on the first match.
+3. Add a fast path to `risuChatParser` for plain text containing no tags, remove dead comment/thinking structures, and chunk non-special spans via `slice`.
+4. Replace `trimLines` with regex-based leading whitespace stripping, and check `!p1.includes('\n')` before line splitting in `blockEndMatcher`.
+5. Decode base64 to Blob directly via `Buffer.from` in `base64ToBlob` and parse MIME string with `indexOf`.
+6. Convert `templateCheck` range overlap lookups to `Set.has()` checks in linear time.
+7. Replace chained `.split().filter().map()` in `parseChatML` with a single-pass loop and hoisted separator constants.
+8. Search character default variables prior to parsing preset template variables in `getChatVar`, avoiding array concatenations.
+
+## 2024-11-29 - Buffer Polyfill Slows Down Base64 Decoding On Web Targets
+
+**Learning:** Supersedes item 5 of the 2024-11-28 entry. Replacing `atob` with `Buffer.from(b64, "base64")` in `base64ToBlob` is a regression, not an optimization, on every target except the Node server: `vite.config.ts` enables `nodePolyfills({ globals: { Buffer: true } })`, so on web, Tauri and Android `Buffer` resolves to npm `buffer`, whose base64 path is pure JavaScript (`base64clean` regex copy of the whole string plus `base64-js.toByteArray`). Measured on a 1 MB base64 payload: `atob` + `charCodeAt` loop 0.66 ms, polyfilled `Buffer` 3.34 ms, native `Buffer` 0.08 ms. The polyfill is also more lenient than `atob` about padding and newlines, which hides malformed data URIs.
+
+**Action:** Decode base64 with `atob` + a `Uint8Array` fill loop whenever the code runs in a WebView; reserve `Buffer` for server-only modules. Hoisting constants and replacing `split(":")[1].split(";")[0]` with `indexOf` slicing remain valid.
+
+Also: micro-optimizations that change observable behavior need a pinning test first. The hoisted `TRIMMER_EXTENSIONS` loop must not exit on the first match — chained extensions (`"image.png.webp"` → `"image"`) were intentionally stripped by the original loop, and `trimLines` must not use the regex `m` flag, whose `^` also matches after a lone `\r`, U+2028 and U+2029 while `split("\n")` does not. Use `(^|\n)[^\S\r\n]+` to keep the exact previous semantics without the `split`/`map`/`join` allocations.

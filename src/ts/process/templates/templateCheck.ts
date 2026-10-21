@@ -42,9 +42,21 @@ export function templateCheck(temp: PromptItem[] | undefined) {
 
   let warnings: string[] = [];
 
-  let unresolvedRanges = startRanges
-    .filter((x) => !endRanges.includes(x))
-    .concat(endRanges.filter((x) => !startRanges.includes(x)));
+  const endSet = new Set(endRanges);
+  const startSet = new Set(startRanges);
+  const unresolvedRanges: number[] = [];
+  for (let i = 0; i < startRanges.length; i++) {
+    const x = startRanges[i];
+    if (!endSet.has(x)) {
+      unresolvedRanges.push(x);
+    }
+  }
+  for (let i = 0; i < endRanges.length; i++) {
+    const x = endRanges[i];
+    if (!startSet.has(x)) {
+      unresolvedRanges.push(x);
+    }
+  }
 
   if (mainPrompts === 0) {
     warnings.push("No main prompt entry found");

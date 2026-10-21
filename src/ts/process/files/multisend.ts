@@ -266,7 +266,8 @@ export async function postChatFile(
   const results: postFileResult[] = [];
 
   for (const file of files) {
-    const extention = file.name.split(".").at(-1);
+    const lastDot = file.name.lastIndexOf(".");
+    const extention = lastDot !== -1 ? file.name.slice(lastDot + 1) : "";
     console.log(extention);
 
     switch (extention) {
