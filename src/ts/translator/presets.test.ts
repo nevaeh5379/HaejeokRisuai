@@ -7,7 +7,7 @@ vi.mock("src/ts/util", () => ({
     data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }));
 
-vi.mock("src/ts/rpack/rpack_js.js", () => ({
+vi.mock("src/ts/rpack/rpack_js", () => ({
   encodeRPack: async (data: Uint8Array) => data,
   decodeRPack: async (data: Uint8Array) => data,
 }));
