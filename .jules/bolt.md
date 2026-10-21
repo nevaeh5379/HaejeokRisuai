@@ -64,3 +64,30 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-21 - Optimize Pipeline Hotpaths, Collection Iterations, and Buffer Conversions
+
+**Learning:** Identified repeated intermediate array allocations, call-stack overflow hazards from `Math.max`/`Math.min` spreads, and redundant Buffer conversions across chat processing, backup streaming, and domain stores:
+
+1. `v2GetLastUserMessage` and `v2GetLastCharMessage` in `triggers.ts` used `chat.message.slice().reverse().find()`, copying and reversing the whole message array on trigger evaluations.
+2. `getChatHistory` in `mcp/risuaccess/chats.ts` spread and reversed the full chat history array before slicing windowed pages.
+3. `loreMatchCacheKey` invoked `JSON.stringify([arg.keys.map(...).filter(...), ...])` on every lore entry during chat processing, creating transient mapped arrays and stringifying JSON unnecessarily.
+4. `Math.max` and `Math.min` spreads over mapped arrays in `lorebook.svelte.ts` (scan depth), `moduleRequestRules.ts` (conflict scores), `branches.ts` (graph layout dimensions), and `DbStatsTab.svelte` risked call-stack overflow on large sets.
+5. In `util.ts`, `base64url` used `String.fromCharCode.apply(null, [...bytes])`, which overflows the JS call-stack on buffers larger than 65KB and spreads arrays unnecessarily. `BufferToText` recreated `new TextDecoder()` repeatedly.
+6. In `characterStore.svelte.ts` and `messageStore.svelte.ts`, duplicated `.map().filter(Boolean)` chains and `[...needed].some(...)` spreads created garbage collection pressure during reactive chat and character mutations.
+7. In `hypamemoryv2.ts`, `toEmbed.some(e => e.id === item.id)` inside `ebdTexts.filter(...)` caused an O(N*M) nested scan.
+8. In `backup-core/collector.ts`, `nativeBranchGraphs` construction spread `[...this.graphs]` and created intermediate 2-element tuples for `Object.fromEntries`.
+9. In `storage-sqlite/commit/prepare.ts`, preset fallback used `slice(0, index).reverse().find(...)`.
+
+**Action:**
+
+1. Use `chat.message.findLast()` in `triggers.ts` to search backwards with zero array copies or reversals.
+2. Index backwards directly in `mcp/risuaccess/chats.ts` to paginate chat history without spreading or reversing the full message list.
+3. Construct `loreMatchCacheKey` using single-pass delimiter-joined string concatenation.
+4. Replace `Math.max`/`Math.min` spreads with O(N) linear iterative scans.
+5. Update `base64url` to use `Buffer.from(bytes).toString("base64")` with URL-safe replacements, and reuse a shared `TextDecoder` instance in `BufferToText`.
+6. Consolidate reactive character and message ID extractions into single-pass loops (`extractMessageIds`), and replace `[...needed].some(...)` with an early-exit loop.
+7. Pre-index `toEmbedIds` in a `Set` to convert the O(N*M) lookup in `hypamemoryv2.ts` to O(1).
+8. Populate `nativeBranchGraphs` in `collector.ts` directly via `for...of` without spread or tuple conversions.
+9. Replace `slice(0, index).reverse().find(...)` in preset fallback with `findLast((id, i) => i < index && ids.has(id))`.
+

@@ -194,15 +194,18 @@ export class HypaProcessorV2<TMetadata> {
     await Promise.all(loadPromises);
 
     if (ctxProvider && toEmbed.length > 0 && saveToMemory) {
-      const missMetadatas = new Set(
-        toEmbed.map((item) => item.metadata).filter(Boolean),
-      );
+      const missMetadatas = new Set<TMetadata>();
+      const toEmbedIds = new Set<string>();
+      for (const item of toEmbed) {
+        toEmbedIds.add(item.id);
+        if (item.metadata) missMetadatas.add(item.metadata);
+      }
 
       const additionalItems = ebdTexts.filter(
         (item) =>
           item.metadata &&
           missMetadatas.has(item.metadata) &&
-          !toEmbed.some((e) => e.id === item.id),
+          !toEmbedIds.has(item.id),
       );
 
       for (const item of additionalItems) {

@@ -166,8 +166,16 @@ export function resolveModuleRequestRules(
   }
 
   // Conflict resolution: prefer more specific (longer) match
-  const maxScore = Math.max(...allMatches.map((m) => m.score));
-  const bestMatches = allMatches.filter((m) => m.score === maxScore);
+  let maxScore = -Infinity;
+  let bestMatches: typeof allMatches = [];
+  for (const m of allMatches) {
+    if (m.score > maxScore) {
+      maxScore = m.score;
+      bestMatches = [m];
+    } else if (m.score === maxScore) {
+      bestMatches.push(m);
+    }
+  }
 
   if (bestMatches.length === 1) {
     return {

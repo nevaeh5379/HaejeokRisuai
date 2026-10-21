@@ -111,13 +111,20 @@
     })
 
     const maxModelTokens = $derived.by(() => {
-        if (tokenUsage.length === 0) return 1
-        return Math.max(...tokenUsage.map((m) => m.totalInputTokens + m.totalOutputTokens), 1)
+        let max = 1;
+        for (const m of tokenUsage) {
+            const sum = m.totalInputTokens + m.totalOutputTokens;
+            if (sum > max) max = sum;
+        }
+        return max;
     })
 
     const maxBotMessages = $derived.by(() => {
-        if (botStats.length === 0) return 1
-        return Math.max(...botStats.map((b) => b.totalMessages), 1)
+        let max = 1;
+        for (const b of botStats) {
+            if (b.totalMessages > max) max = b.totalMessages;
+        }
+        return max;
     })
 
     $effect(() => {

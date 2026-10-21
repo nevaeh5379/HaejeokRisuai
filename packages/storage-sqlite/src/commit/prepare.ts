@@ -61,9 +61,6 @@ export async function validatePresets<TPreset extends object>(
   const index = originalIds.indexOf(current ?? "");
   commit.presets.activeId =
     originalIds.slice(index + 1).find((id) => ids.has(id)) ||
-    originalIds
-      .slice(0, Math.max(0, index))
-      .reverse()
-      .find((id) => ids.has(id)) ||
+    originalIds.findLast((id, i) => i < index && ids.has(id)) ||
     (commit.presets.order || Array.from(ids))[0];
 }

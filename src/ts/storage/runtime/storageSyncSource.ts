@@ -66,7 +66,7 @@ async function* iterateSettings(
       "This SQL backend cannot enumerate persisted setting keys.",
     );
   }
-  const keys = [...new Set(await storage.listSettingKeys())].sort();
+  const keys = Array.from(new Set(await storage.listSettingKeys())).sort();
   for (let offset = 0; offset < keys.length; offset += SETTING_BATCH_SIZE) {
     assertCachedRevision(storage, expectedRevision);
     const batch = keys.slice(offset, offset + SETTING_BATCH_SIZE);
@@ -86,7 +86,9 @@ async function* iterateSettings(
 async function* iteratePluginStorage(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const keys = [...new Set(await storage.listPluginCustomStorageKeys())].sort();
+  const keys = Array.from(
+    new Set(await storage.listPluginCustomStorageKeys()),
+  ).sort();
   for (const key of keys) {
     yield {
       type: "plugin-storage",
@@ -124,7 +126,7 @@ async function* iterateModules(
 async function* iteratePresets(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
-  const summaries = [...(await storage.listBotPresets())].sort(
+  const summaries = Array.from(await storage.listBotPresets()).sort(
     (left, right) =>
       left.position - right.position || left.id.localeCompare(right.id),
   );
@@ -141,7 +143,7 @@ async function* iterateColdStorage(
   storage: ISqlStorage,
 ): AsyncGenerator<StorageSyncSqlRecord> {
   const { items } = await storage.listColdStorageItems();
-  const keys = [...new Set(items)].sort();
+  const keys = Array.from(new Set(items)).sort();
   for (const key of keys) {
     yield {
       type: "cold-storage",

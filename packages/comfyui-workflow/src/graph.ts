@@ -211,11 +211,16 @@ export class WorkflowNode {
     const graph = this.subgraph;
     if (!graph) return;
     const outputId = graph.source.outputNode?.id ?? -20;
-    const link = [...graph.links.values()].find(
-      (item) =>
+    let link: (typeof graph.links extends Map<any, infer V> ? V : any) | undefined;
+    for (const item of graph.links.values()) {
+      if (
         String(item.target_id) === String(outputId) &&
-        item.target_slot === slot,
-    );
+        item.target_slot === slot
+      ) {
+        link = item;
+        break;
+      }
+    }
     return link?.resolve(graph);
   }
 
@@ -332,7 +337,7 @@ export class WorkflowGraph {
   serialize(_options?: { sortNodes?: boolean }): SerializedWorkflow {
     const snapshot = structuredClone(this.source) as SerializedWorkflow;
     // The root workflow format uses link tuples, unlike subgraph definitions.
-    snapshot.links = [...this.links.values()].map((link) => [
+    snapshot.links = Array.from(this.links.values(), (link) => [
       link.id,
       link.origin_id,
       link.origin_slot,

@@ -110,7 +110,7 @@ function getBranchMessages(chat, branch, cloneValue) {
     return cloneValue(chat.message || []);
   }
   const prefix = (chat.message || []).slice(0, state.baseMessageIndex + 1);
-  return [...cloneValue(prefix), ...cloneValue(branch.messages || [])];
+  return cloneValue(prefix).concat(cloneValue(branch.messages || []));
 }
 
 function remapBookmarks(chat, idMap) {
@@ -189,7 +189,7 @@ function expandChatBranchesForCompatibility(
     return { chats: [chat], activeIndex: 0 };
   }
 
-  const ordered = [...state.branches].sort((left, right) => {
+  const ordered = state.branches.slice().sort((left, right) => {
     if (left.reason === "root" && right.reason !== "root") return -1;
     if (right.reason === "root" && left.reason !== "root") return 1;
     return Number(left.createdAt || 0) - Number(right.createdAt || 0);

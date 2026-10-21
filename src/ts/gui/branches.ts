@@ -915,15 +915,17 @@ export function buildChatMessageGraph(
   }
   nodes.sort((a, b) => a.y - b.y || a.x - b.x);
 
-  const columns = Math.max(
-    1,
-    Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,
-  );
-  const rows = Math.max(1, Math.max(...nodes.map((node) => node.y), 0) + 1);
-  const collapsedMessageCount = nodes.reduce(
-    (total, node) => total + node.collapsedCount,
-    0,
-  );
+  let maxX = 0;
+  let maxY = 0;
+  let collapsedMessageCount = 0;
+  for (const node of nodes) {
+    if (node.x > maxX) maxX = node.x;
+    if (node.y > maxY) maxY = node.y;
+    collapsedMessageCount += node.collapsedCount;
+  }
+
+  const columns = Math.max(1, Math.ceil(maxX) + 1);
+  const rows = Math.max(1, maxY + 1);
 
   return {
     nodes,

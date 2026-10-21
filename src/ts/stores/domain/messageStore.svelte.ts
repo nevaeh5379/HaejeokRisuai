@@ -32,6 +32,14 @@ function findChatAcrossCharacters(chatId: string): Chat | undefined {
     : undefined;
 }
 
+function extractMessageIds(messages: readonly Message[]): string[] {
+  const ids: string[] = [];
+  for (const m of messages) {
+    if (m.chatId) ids.push(m.chatId);
+  }
+  return ids;
+}
+
 class MessageStore implements FlushableStore {
   private pendingCommits: SqlCommit[] = [];
   private queue = new StoreCommitQueue();
@@ -199,7 +207,7 @@ class MessageStore implements FlushableStore {
       messages: messageUpserts,
       messageManifests: nonEmptyChats.map(({ chatId, messages }) => ({
         chatId,
-        ids: messages.map((message) => message.chatId!).filter(Boolean),
+        ids: extractMessageIds(messages),
       })),
     });
   }
@@ -304,7 +312,7 @@ class MessageStore implements FlushableStore {
           ? [
               {
                 chatId,
-                ids: allMessages.map((m) => m.chatId!).filter(Boolean),
+                ids: extractMessageIds(allMessages),
               },
             ]
           : [],

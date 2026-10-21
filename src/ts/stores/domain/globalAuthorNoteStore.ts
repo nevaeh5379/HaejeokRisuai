@@ -199,7 +199,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     return note.save(content, { script: true });
   }
   async waitForPendingWrites(): Promise<void> {
-    await Promise.all([...this.writes]);
+    await Promise.all(this.writes);
   }
   async dispose(): Promise<void> {
     await this.waitForPendingWrites();

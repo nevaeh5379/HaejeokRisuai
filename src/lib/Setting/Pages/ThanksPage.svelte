@@ -21,13 +21,19 @@
         const supp = await fetch("https://sv.risuai.xyz/patreon/list")
 
         const list = await supp.json() as supporterL[]
-        const thanks:supporters = {
-            //random names
-            I: list.filter((v) => v.amount < 5).map((v) => v.name),
-            II: list.filter((v) => v.amount >= 5 && v.amount < 10).map((v) => v.name),
-            III: list.filter((v) => v.amount >= 10 && v.amount < 20).map((v) => v.name),
-            IV: list.filter((v) => v.amount >= 20 && v.amount < 50).map((v) => v.name),
-            V: list.filter((v) => v.amount >= 50).map((v) => v.name),
+        const thanks: supporters = {
+            I: [],
+            II: [],
+            III: [],
+            IV: [],
+            V: [],
+        }
+        for (const v of list) {
+            if (v.amount < 5) thanks.I.push(v.name)
+            else if (v.amount < 10) thanks.II.push(v.name)
+            else if (v.amount < 20) thanks.III.push(v.name)
+            else if (v.amount < 50) thanks.IV.push(v.name)
+            else thanks.V.push(v.name)
         }
         return thanks
     }

@@ -480,11 +480,14 @@ export function toState<T>(t: T): Writable<T> {
   return writable(t);
 }
 
+const sharedUtf8Decoder =
+  typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
+
 export function BufferToText(data: Uint8Array) {
-  if (!TextDecoder) {
-    return Buffer.from(data).toString("utf-8");
+  if (sharedUtf8Decoder) {
+    return sharedUtf8Decoder.decode(data);
   }
-  return new TextDecoder().decode(data);
+  return Buffer.from(data).toString("utf-8");
 }
 
 export function encodeMultilangString(data: { [code: string]: string }) {
@@ -1211,7 +1214,7 @@ export function simplifySchema(
     if (schema.type.includes("null")) {
       schema.nullable = true;
     }
-    schema.type = (schema.type as string[]).filter((v) => v !== "null")[0];
+    schema.type = (schema.type as string[]).find((v) => v !== "null");
   }
 
   console.log("schema", schema);
@@ -1354,9 +1357,9 @@ export {
 
 export function base64url(source: Uint8Array | ArrayBuffer): string {
   const bytes = source instanceof ArrayBuffer ? new Uint8Array(source) : source;
-  let encodedSource = btoa(String.fromCharCode.apply(null, [...bytes]))
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    .toString("base64")
     .replace(/=+$/, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
-  return encodedSource;
 }

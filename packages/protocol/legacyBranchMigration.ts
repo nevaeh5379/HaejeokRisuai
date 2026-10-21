@@ -51,7 +51,7 @@ function materializeLegacyTimeline(chat?: any, branch?: any): any {
     ? state.baseMessageIndex
     : -1;
   const prefix: any = (chat.message || []).slice(0, Math.max(0, base + 1));
-  return [...cloneValue(prefix), ...cloneValue(branch.messages || [])];
+  return cloneValue(prefix).concat(cloneValue(branch.messages || []));
 }
 
 function orderLegacyBranches(branches?: any): any {
@@ -61,7 +61,7 @@ function orderLegacyBranches(branches?: any): any {
   const ordered: any = [];
   const visiting: any = new Set();
   const visited: any = new Set();
-  const sorted: any = [...branches].sort((left?: any, right?: any) => {
+  const sorted: any = branches.slice().sort((left?: any, right?: any) => {
     if (left.reason === "root" && right.reason !== "root") return -1;
     if (right.reason === "root" && left.reason !== "root") return 1;
     return Number(left.createdAt || 0) - Number(right.createdAt || 0);
@@ -216,8 +216,8 @@ function buildLegacyBranchMigrationPlan(chat?: any, idFactory?: any): any {
     chatId: chat.id,
     activeBranchId,
     branches: rows,
-    messages: [...messages.values()],
-    links: [...links.values()],
+    messages: Array.from(messages.values()),
+    links: Array.from(links.values()),
   };
 }
 
