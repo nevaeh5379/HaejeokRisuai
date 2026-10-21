@@ -4,6 +4,12 @@ import {
   type IllustrationMessage,
 } from "@risuai/protocol/src/illustration.ts";
 
+function hasSingleTokenOccurrence(text: string, token: string): boolean {
+  const first = text.indexOf(token);
+  if (first === -1) return false;
+  return text.indexOf(token, first + token.length) === -1;
+}
+
 /** Merges one committed slot without fetching/replacing the whole chat or reverting a newer snapshot. */
 export function applyIllustrationProgress(
   message: IllustrationMessage,
@@ -18,22 +24,21 @@ export function applyIllustrationProgress(
     incoming.version < current.version ||
     incoming.branchId !== branchId ||
     incoming.sourceHash !== illustrationSourceHash(message) ||
-    message.data.split(current.token).length !== 2
+    !hasSingleTokenOccurrence(message.data, current.token)
   )
     return false;
   if (incoming.version === current.version) {
     if ((incoming.progress ?? 0) < (current.progress ?? 0)) return false;
-    const images = new Set([
-      ...(incoming.imageIds ?? []),
-      ...(incoming.imageId ? [incoming.imageId] : []),
-    ]);
-    if (
-      [
-        ...(current.imageIds ?? []),
-        ...(current.imageId ? [current.imageId] : []),
-      ].some((id) => !images.has(id))
-    )
+    const images = new Set(incoming.imageIds);
+    if (incoming.imageId) images.add(incoming.imageId);
+    if (current.imageIds) {
+      for (let i = 0; i < current.imageIds.length; i++) {
+        if (!images.has(current.imageIds[i])) return false;
+      }
+    }
+    if (current.imageId && !images.has(current.imageId)) {
       return false;
+    }
   }
   message.data = message.data.replace(current.token, incoming.token);
   message.illustrations![index] = incoming;
@@ -46,11 +51,13 @@ export function preserveIllustrationProgress(
   incoming: IllustrationMessage[],
   branchId?: string,
 ): void {
-  const resident = new Map(
-    current
-      .filter((message) => message.chatId && message.illustrations?.length)
-      .map((message) => [message.chatId, message]),
-  );
+  const resident = new Map<string, IllustrationMessage>();
+  for (let i = 0; i < current.length; i++) {
+    const message = current[i];
+    if (message.chatId && message.illustrations?.length) {
+      resident.set(message.chatId, message);
+    }
+  }
   for (const message of incoming) {
     const previous = resident.get(message.chatId);
     if (!previous) continue;
