@@ -40,16 +40,23 @@ for service in haejeok-risuai haejeok-postgres; do
   fi
 done
 
+# Keep existing config files without prompting, including when stdin is a pipe.
+export DEBIAN_FRONTEND=noninteractive
+APT_OPTIONS=(-y -o Dpkg::Options::=--force-confold)
+info "Finishing interrupted Termux package configuration"
+dpkg --force-confold --configure -a </dev/null || \
+  fail "Could not finish interrupted package configuration. Resolve the package errors above and rerun this installer."
+
 # Termux does not support partial upgrades: a new node with an old libc++ can fail to link.
 info "Updating Termux package lists and upgrading all installed packages"
 pkg update -y </dev/null || fail "Could not update Termux packages. Check your connection or run termux-change-repo, then rerun this installer."
-pkg upgrade -y </dev/null || fail "Termux package upgrade failed. Run dpkg --configure -a and apt --fix-broken install, then pkg upgrade before retrying."
+pkg upgrade "${APT_OPTIONS[@]}" </dev/null || fail "Termux package upgrade failed. Run dpkg --force-confold --configure -a and apt --fix-broken install, then pkg upgrade before retrying."
 
 info "Installing Termux runtime prerequisites"
-pkg install -y postgresql termux-services curl tar openssl-tool coreutils gawk </dev/null || \
+pkg install "${APT_OPTIONS[@]}" postgresql termux-services curl tar openssl-tool coreutils gawk </dev/null || \
   fail "Termux prerequisite installation failed. Resolve the package errors above and rerun this installer."
 if ! command -v node >/dev/null 2>&1; then
-  pkg install -y nodejs-lts </dev/null || fail "Could not install the Termux Node.js LTS package."
+  pkg install "${APT_OPTIONS[@]}" nodejs-lts </dev/null || fail "Could not install the Termux Node.js LTS package."
 fi
 
 node --version || fail "Node.js cannot run after pkg upgrade. Reinstall your Node package (nodejs or nodejs-lts) and libc++ with pkg reinstall, then retry."
@@ -67,7 +74,7 @@ check_postgres_commands() {
 }
 if ! check_postgres_commands; then
   info "Repairing the incomplete PostgreSQL package installation"
-  pkg reinstall -y postgresql </dev/null || fail "Could not reinstall PostgreSQL. Resolve the package errors above and retry."
+  pkg reinstall "${APT_OPTIONS[@]}" postgresql </dev/null || fail "Could not reinstall PostgreSQL. Resolve the package errors above and retry."
   check_postgres_commands || fail "PostgreSQL commands still cannot run. Run pkg upgrade and pkg reinstall postgresql, then retry."
 fi
 
