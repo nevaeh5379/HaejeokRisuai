@@ -150,7 +150,7 @@ export function getStopStrings(suggesting: boolean = false) {
       stopStrings.push(`### ${u}`);
     }
   }
-  return [...new Set(stopStrings)];
+  return Array.from(new Set(stopStrings));
 }
 
 export function unstringlizeChat(

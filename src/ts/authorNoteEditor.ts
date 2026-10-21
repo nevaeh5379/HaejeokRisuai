@@ -25,9 +25,11 @@ export class AuthorNoteEditor {
   }
   private notify() {
     this.changed();
-    failedAuthorNoteDrafts.set(
-      [...editors].filter((editor) => editor.detached && editor.error),
-    );
+    const failed: AuthorNoteEditor[] = [];
+    for (const editor of editors) {
+      if (editor.detached && editor.error) failed.push(editor);
+    }
+    failedAuthorNoteDrafts.set(failed);
   }
   load(): Promise<void> {
     const operation = this.note
@@ -130,9 +132,12 @@ export class AuthorNoteEditor {
 const editors = new Set<AuthorNoteEditor>();
 export const failedAuthorNoteDrafts = writable<AuthorNoteEditor[]>([]);
 export async function flushAuthorNoteEditors(): Promise<void> {
-  await Promise.all([...editors].map((editor) => editor.flush()));
+  await Promise.all(Array.from(editors, (editor) => editor.flush()));
 }
 
 export function hasUnsavedAuthorNoteDrafts(): boolean {
-  return [...editors].some((editor) => editor.hasUnsavedChanges);
+  for (const editor of editors) {
+    if (editor.hasUnsavedChanges) return true;
+  }
+  return false;
 }

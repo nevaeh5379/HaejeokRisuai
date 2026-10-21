@@ -218,17 +218,26 @@ async function hypaMemoryV3MainExp(
 
   if (data.summaries.length > 0) {
     const lastSummary = data.summaries.at(-1);
-    const lastChatIndex = chats.findIndex(
-      (chat) => chat.memo === [...lastSummary.chatMemos].at(-1),
-    );
+    let lastMemo: string | undefined;
+    if (lastSummary?.chatMemos) {
+      for (const memo of lastSummary.chatMemos) {
+        lastMemo = memo;
+      }
+    }
+    const lastChatIndex =
+      lastMemo !== undefined
+        ? chats.findIndex((chat) => chat.memo === lastMemo)
+        : -1;
 
     if (lastChatIndex !== -1) {
       startIdx = lastChatIndex + 1;
 
       // Exclude tokens from summarized chats
-      currentTokens -= chatTokenCounts
-        .slice(0, lastChatIndex + 1)
-        .reduce((total, tokens) => total + tokens, 0);
+      let subtractedTokens = 0;
+      for (let i = 0; i <= lastChatIndex; i++) {
+        subtractedTokens += chatTokenCounts[i];
+      }
+      currentTokens -= subtractedTokens;
     }
   }
 
@@ -374,7 +383,7 @@ async function hypaMemoryV3MainExp(
         toSummarize,
       );
 
-      toSummarizeArray.push([...toSummarize]);
+      toSummarizeArray.push(toSummarize.slice());
     }
 
     currentTokens -= toSummarizeTokens;
@@ -998,17 +1007,26 @@ async function hypaMemoryV3Main(
 
   if (data.summaries.length > 0) {
     const lastSummary = data.summaries.at(-1);
-    const lastChatIndex = chats.findIndex(
-      (chat) => chat.memo === [...lastSummary.chatMemos].at(-1),
-    );
+    let lastMemo: string | undefined;
+    if (lastSummary?.chatMemos) {
+      for (const memo of lastSummary.chatMemos) {
+        lastMemo = memo;
+      }
+    }
+    const lastChatIndex =
+      lastMemo !== undefined
+        ? chats.findIndex((chat) => chat.memo === lastMemo)
+        : -1;
 
     if (lastChatIndex !== -1) {
       startIdx = lastChatIndex + 1;
 
       // Exclude tokens from summarized chats
-      currentTokens -= chatTokenCounts
-        .slice(0, lastChatIndex + 1)
-        .reduce((total, tokens) => total + tokens, 0);
+      let subtractedTokens = 0;
+      for (let i = 0; i <= lastChatIndex; i++) {
+        subtractedTokens += chatTokenCounts[i];
+      }
+      currentTokens -= subtractedTokens;
     }
   }
 
@@ -1650,7 +1668,7 @@ function toSerializableHypaV3Data(data: HypaV3Data): SerializableHypaV3Data {
     ...data,
     summaries: data.summaries.map((summary) => ({
       ...summary,
-      chatMemos: [...summary.chatMemos],
+      chatMemos: Array.from(summary.chatMemos),
     })),
   };
 }

@@ -292,7 +292,8 @@ export async function callMCPTool(
   }
 
   const visibleMCPUrls = await initializeMCPs();
-  const candidateUrls = [...new Set([...visibleMCPUrls, ...callOnlyMCPUrls])];
+  const candidateUrls = new Set(visibleMCPUrls);
+  for (const url of callOnlyMCPUrls) candidateUrls.add(url);
   for (const key of candidateUrls) {
     const client = MCPs[key] ?? callOnlyMCPs[key];
     if (!client) continue;

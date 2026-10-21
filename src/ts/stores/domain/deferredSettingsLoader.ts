@@ -108,9 +108,12 @@ class DeferredSettingsLoader {
     for (const domain of domains) await this.ensureDomain(domain);
     for (const key of individualKeys) await this.ensureKey(key);
 
-    const unresolved = [...this.unloadedKeys].filter(
-      (key) => key !== "pluginCustomStorage",
-    );
+    const unresolved: string[] = [];
+    for (const key of this.unloadedKeys) {
+      if (key !== "pluginCustomStorage") {
+        unresolved.push(key);
+      }
+    }
     if (unresolved.length > 0) {
       throw new Error(
         `Cannot create a complete backup because deferred settings failed to load: ${unresolved.join(", ")}`,
@@ -124,7 +127,7 @@ class DeferredSettingsLoader {
    * allowed to finish before a post-notification refresh closes the race.
    */
   async refreshLoadedKeys(keys: Iterable<string>): Promise<void> {
-    const requested = [...new Set(keys)].filter(Boolean);
+    const requested = Array.from(new Set(keys)).filter(Boolean);
     if (requested.length === 0) return;
     const generation = this.generation;
     const domains = new Map<SqlDeferredDomain, Set<string>>();
@@ -146,7 +149,10 @@ class DeferredSettingsLoader {
       const activeLoad = this.domainLoads.get(domain);
       if (activeLoad) await activeLoad;
       if (generation !== this.generation) return;
-      const loadedKeys = [...domainKeys].filter((key) => this.isLoaded(key));
+      const loadedKeys: string[] = [];
+      for (const key of domainKeys) {
+        if (this.isLoaded(key)) loadedKeys.push(key);
+      }
       if (loadedKeys.length === 0) continue;
       const { storage, hydrateRemoteSettingKey } = this.requireInitialized();
 

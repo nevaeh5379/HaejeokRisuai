@@ -1,6 +1,6 @@
 import type { Response, NextFunction } from "express";
-import * as illusImages from "./executors/illustrationImages.ts"
-import * as illusExecutor from "./executors/illustrationExecutor.ts"
+import * as illusImages from "./executors/illustrationImages.ts";
+import * as illusExecutor from "./executors/illustrationExecutor.ts";
 import type {
   Request,
   LegacyObject,
@@ -5441,7 +5441,8 @@ app.post(
       await upsertAssetCatalogEntries(completedCatalogEntries);
       res.send({ success: true, written: fileCount });
     } catch (error) {
-      const inFlightFiles = [...receivingFiles.values()].map(
+      const inFlightFiles = Array.from(
+        receivingFiles.values(),
         (file) => file.name,
       );
       console.error(
@@ -5960,7 +5961,7 @@ nodeChatExecutor.registerRoutes(app, {
   auth: checkAuth,
   limiter: authenticatedRouteLimiter,
 });
-const illustrationImages =  illusImages.createIllustrationImages(
+const illustrationImages = illusImages.createIllustrationImages(
   () => assetStorageManager.getStorage(),
   upsertAssetCatalogEntries,
   removeAssetCatalogKeys,

@@ -761,7 +761,10 @@ class CharacterStore
             current,
           ),
         );
-        for (const chat of [...current.chats, ...incoming.chats]) {
+        for (const chat of current.chats) {
+          if (chat.id) this.generationOnlyMetadataChats.delete(chat.id);
+        }
+        for (const chat of incoming.chats) {
           if (chat.id) this.generationOnlyMetadataChats.delete(chat.id);
         }
         await this.refreshRemoteCharacters([id]);
@@ -1544,9 +1547,20 @@ class CharacterStore
     );
     if (!refreshed) return false;
 
-    if (chat.message.some((message) => message.illustrations?.some((item) => item.executor === "server" && item.progress))) {
-      const { preserveIllustrationProgress } = await import("../../process/illustration/illustrationProgress");
-      preserveIllustrationProgress(chat.message, refreshed.message, refreshed.activeBranchId);
+    if (
+      chat.message.some((message) =>
+        message.illustrations?.some(
+          (item) => item.executor === "server" && item.progress,
+        ),
+      )
+    ) {
+      const { preserveIllustrationProgress } =
+        await import("../../process/illustration/illustrationProgress");
+      preserveIllustrationProgress(
+        chat.message,
+        refreshed.message,
+        refreshed.activeBranchId,
+      );
     }
 
     Object.assign(chat, refreshed, transient);
