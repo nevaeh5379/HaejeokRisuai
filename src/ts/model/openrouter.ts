@@ -68,58 +68,56 @@ export async function getOpenRouterModels(): Promise<OpenRouterModelInfo[]> {
       headers,
     }).then((res) => res.json());
 
-    return aim.data
-      .map((model: any) => {
-        const price =
-          (Number(model.pricing.prompt) * 3 +
-            Number(model.pricing.completion)) /
-          4;
-        const priceDisplay =
-          price > 0 ? `$${(price * 1000).toFixed(5)}/1k` : "Free";
-        const legacyName =
-          price > 0
-            ? `${model.name} - $${(price * 1000).toFixed(5)}/1k`
-            : `${model.name} - Free`;
+    const result: OpenRouterModelInfo[] = [];
+    for (const model of aim.data ?? []) {
+      const price =
+        (Number(model.pricing?.prompt) * 3 +
+          Number(model.pricing?.completion)) /
+        4;
+      if (price < 0) continue;
 
-        const colonIdx = model.name.indexOf(":");
-        const provider =
-          colonIdx !== -1
-            ? model.name.slice(0, colonIdx).trim()
-            : model.id.split("/")[0];
-        const cleanName =
-          colonIdx !== -1 ? model.name.slice(colonIdx + 1).trim() : model.name;
+      const priceDisplay =
+        price > 0 ? `$${(price * 1000).toFixed(5)}/1k` : "Free";
+      const legacyName =
+        price > 0
+          ? `${model.name} - $${(price * 1000).toFixed(5)}/1k`
+          : `${model.name} - Free`;
 
-        const toPrice1M = (raw: any): PriceEntry => {
-          const n = Number(raw);
-          return raw !== undefined && raw !== null && raw !== "" && !isNaN(n)
-            ? n * 1_000_000
-            : undefined;
-        };
+      const colonIdx = model.name.indexOf(":");
+      const provider =
+        colonIdx !== -1
+          ? model.name.slice(0, colonIdx).trim()
+          : model.id.split("/")[0];
+      const cleanName =
+        colonIdx !== -1 ? model.name.slice(colonIdx + 1).trim() : model.name;
 
-        return {
-          id: model.id,
-          name: legacyName,
-          cleanName,
-          provider,
-          price,
-          priceDisplay,
-          context_length: model.context_length,
-          description: model.description ?? "",
-          promptPrice1M: toPrice1M(model.pricing?.prompt),
-          completionPrice1M: toPrice1M(model.pricing?.completion),
-          cacheReadPrice1M: toPrice1M(model.pricing?.input_cache_read),
-          cacheWritePrice1M: toPrice1M(model.pricing?.input_cache_write),
-          internalReasoningPrice1M: toPrice1M(
-            model.pricing?.internal_reasoning,
-          ),
-        };
-      })
-      .filter((model: OpenRouterModelInfo) => {
-        return model.price >= 0;
-      })
-      .sort((a: OpenRouterModelInfo, b: OpenRouterModelInfo) => {
-        return a.price - b.price;
+      const toPrice1M = (raw: any): PriceEntry => {
+        const n = Number(raw);
+        return raw !== undefined && raw !== null && raw !== "" && !isNaN(n)
+          ? n * 1_000_000
+          : undefined;
+      };
+
+      result.push({
+        id: model.id,
+        name: legacyName,
+        cleanName,
+        provider,
+        price,
+        priceDisplay,
+        context_length: model.context_length,
+        description: model.description ?? "",
+        promptPrice1M: toPrice1M(model.pricing?.prompt),
+        completionPrice1M: toPrice1M(model.pricing?.completion),
+        cacheReadPrice1M: toPrice1M(model.pricing?.input_cache_read),
+        cacheWritePrice1M: toPrice1M(model.pricing?.input_cache_write),
+        internalReasoningPrice1M: toPrice1M(model.pricing?.internal_reasoning),
       });
+    }
+
+    return result.sort(
+      (a: OpenRouterModelInfo, b: OpenRouterModelInfo) => a.price - b.price,
+    );
   } catch (error) {
     return [];
   }
@@ -158,13 +156,16 @@ export function toModelGridItem(m: OpenRouterModelInfo): ModelGridItem {
 
 export async function getFreeOpenRouterModels() {
   const models = await getOpenRouterModels();
-  return (
-    models
-      .filter((model: any) => {
-        return model.name.endsWith("Free");
-      })
-      .sort((a: any, b: any) => {
-        return b.context_length - a.context_length;
-      })[0].id ?? ""
-  );
+  let bestModelId = "";
+  let maxContext = -1;
+  for (const model of models) {
+    if (model.name.endsWith("Free")) {
+      const ctx = Number(model.context_length) || 0;
+      if (ctx > maxContext) {
+        maxContext = ctx;
+        bestModelId = model.id ?? "";
+      }
+    }
+  }
+  return bestModelId;
 }

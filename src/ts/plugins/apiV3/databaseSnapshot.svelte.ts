@@ -125,8 +125,9 @@ export function prepareDatabaseSnapshot(
   includeOnly: string[] | "all" = "all",
   loadCharacters?: () => Promise<unknown>,
 ): DatabaseSnapshotTransfer {
+  const includeOnlySet = includeOnly === "all" ? null : new Set(includeOnly);
   const keys = allowedKeys.filter(
-    (key) => includeOnly === "all" || includeOnly.includes(key),
+    (key) => includeOnlySet === null || includeOnlySet.has(key),
   );
   return new DatabaseSnapshotTransfer(function* () {
     for (const key of keys)

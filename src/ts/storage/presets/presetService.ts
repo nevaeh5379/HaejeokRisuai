@@ -136,7 +136,7 @@ export async function importPreset(
   } else {
     pre = {
       ...presetTemplate,
-      ...JSON.parse(Buffer.from(f.data).toString("utf-8")),
+      ...JSON.parse(new TextDecoder().decode(f.data)),
     };
   }
   if (pre?.promptTemplate !== undefined) {
@@ -178,8 +178,11 @@ export async function importPreset(
     const pr = safeStructuredClone(presetTemplate);
     pr.promptTemplate = [];
 
-    function findPrompt(identifier: number) {
-      return pre.prompts.find((p: any) => p.identifier === identifier);
+    const promptById = new Map<any, any>();
+    for (const p of pre.prompts) {
+      if (p && p.identifier !== undefined) {
+        promptById.set(p.identifier, p);
+      }
     }
     pr.temperature = (pre.temperature ?? 0.8) * 100;
     pr.frequencyPenalty = (pre.frequency_penalty ?? 0.7) * 100;
@@ -190,7 +193,7 @@ export async function importPreset(
       if (!prompt?.enabled) {
         continue;
       }
-      const p = findPrompt(prompt?.identifier ?? "");
+      const p = promptById.get(prompt?.identifier ?? "");
       if (p) {
         switch (p.identifier) {
           case "main": {

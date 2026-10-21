@@ -458,20 +458,24 @@ export async function loadPlugins() {
   const blocked = (await crashGuard?.getBlocked()) ?? [];
   const blockedSet = new Set(blocked);
   const enabled = pluginStore.enabled;
-  const enabledPlugins = safeStructuredClone(
-    enabled.filter((plugin) => !blockedSet.has(plugin.name)),
-  );
+  const enabledPlugins: PluginMetadata[] = [];
+  const blockedPresent: PluginMetadata[] = [];
+  for (const plugin of enabled) {
+    if (blockedSet.has(plugin.name)) {
+      blockedPresent.push(plugin);
+    } else {
+      enabledPlugins.push(plugin);
+    }
+  }
 
-  // Keep the blocklist entries that matched an enabled plugin so they can
-  // be persisted (enabled=false) once boot stabilizes.
-  const blockedPresent = enabled.filter((plugin) =>
-    blockedSet.has(plugin.name),
-  );
-  runtimePlugins = enabledPlugins;
-  const pluginV2 = enabledPlugins.filter(
-    (plugin) => plugin.version === 2 || plugin.version === "2.1",
-  );
-  const pluginV3 = enabledPlugins.filter((plugin) => plugin.version === "3.0");
+  const clonedEnabledPlugins = safeStructuredClone(enabledPlugins);
+  runtimePlugins = clonedEnabledPlugins;
+  const pluginV3: PluginMetadata[] = [];
+  for (const plugin of clonedEnabledPlugins) {
+    if (plugin.version === "3.0") {
+      pluginV3.push(plugin);
+    }
+  }
 
   // HaejeokRisuai does not support V2 Plugins.
   // await loadV2Plugin(pluginV2);
@@ -594,6 +598,8 @@ export const allowedDbKeys = [
   "selectedPersona",
   "characterOrder",
 ];
+
+export const allowedDbKeysSet = new Set(allowedDbKeys);
 
 const domainDbKeys = new Set([
   "characters",
@@ -858,7 +864,7 @@ export const getV2PluginAPIs = () => {
       return new Proxy({} as any, {
         get(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) {
+            if (allowedDbKeysSet.has(prop)) {
               return getAllowedDbValue(prop);
             }
             const custom = settingsStore.state.pluginCustomStorage;
@@ -870,7 +876,7 @@ export const getV2PluginAPIs = () => {
         },
         set(target, prop, value) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) {
+            if (allowedDbKeysSet.has(prop)) {
               const pending = setAllowedDbValue(prop, value);
               if (pending) {
                 void pending.catch((error) => {
@@ -889,13 +895,18 @@ export const getV2PluginAPIs = () => {
           return false;
         },
         ownKeys(target) {
-          const keys = allowedDbKeys.filter((key) => hasAllowedDbValue(key));
-          keys.push(...settingsStore.getPluginCustomStorageKeys());
-          return Array.from(new Set(keys));
+          const keysSet = new Set<string>();
+          for (const key of allowedDbKeys) {
+            if (hasAllowedDbValue(key)) keysSet.add(key);
+          }
+          for (const key of settingsStore.getPluginCustomStorageKeys()) {
+            keysSet.add(key);
+          }
+          return Array.from(keysSet);
         },
         has(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop))
+            if (allowedDbKeysSet.has(prop) && hasAllowedDbValue(prop))
               return true;
             if (settingsStore.hasPluginCustomStorageKey(prop)) return true;
           }
@@ -903,7 +914,7 @@ export const getV2PluginAPIs = () => {
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop) && hasAllowedDbValue(prop)) {
+            if (allowedDbKeysSet.has(prop) && hasAllowedDbValue(prop)) {
               return {
                 value: getAllowedDbValue(prop),
                 writable: true,
@@ -933,7 +944,7 @@ export const getV2PluginAPIs = () => {
         },
         deleteProperty(target, prop) {
           if (typeof prop === "string") {
-            if (allowedDbKeys.includes(prop)) {
+            if (allowedDbKeysSet.has(prop)) {
               console.log(
                 "Attempt to delete db." +
                   String(prop) +
@@ -987,7 +998,7 @@ export const getV2PluginAPIs = () => {
     setDatabaseLite: async (newDb: any) => {
       if (!newDb || typeof newDb !== "object") return;
       for (const key of Object.keys(newDb)) {
-        if (allowedDbKeys.includes(key)) {
+        if (allowedDbKeysSet.has(key)) {
           await setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
@@ -1004,7 +1015,7 @@ export const getV2PluginAPIs = () => {
           newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins);
         }
 
-        if (allowedDbKeys.includes(key)) {
+        if (allowedDbKeysSet.has(key)) {
           await setAllowedDbValue(key, newDb[key]);
         } else {
           settingsStore.setPluginCustomStorageKey(key, newDb[key]);
