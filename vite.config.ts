@@ -215,6 +215,14 @@ export default defineConfig(({ command, mode }) => {
                 priority: 100,
               },
               {
+                // Keep the generated WASM loader out of tiktoken's entry facade.
+                // Otherwise it imports the runtime that awaits this very loader,
+                // calling an uninitialized function during the first lazy import.
+                name: "wasm-helper",
+                test: /^\/__vite-plugin-wasm-helper$/,
+                priority: 100,
+              },
+              {
                 name: "onnxruntime",
                 test: /node_modules[\\/]onnxruntime(?:-web|-common)?(?=[\\/]|$)/,
                 priority: 100,
