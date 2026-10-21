@@ -64,3 +64,25 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Korean Search Matching, Media Compression, and Asset Resolution Allocations
+
+**Learning:** Found repeated regex compilation, heavy string decomposition, and memory allocations in frequent UI search and media processing paths:
+
+1. `matchCharacterKorean` repeatedly performed query NFC normalization, dynamic RegExp compilation, `disassemble()`, `romanize()`, `convertQwertyToHangul()`, and `normalizePhonetic()` for each candidate character and tag during character list filtering in `MainMenu.svelte`. For 500 characters and multiple tags, this created thousands of temporary regexes and strings per keystroke, degrading typing responsiveness on 4GB mobile devices.
+2. `charToPattern` performed linear searches with `CHOSEONG_LIST.indexOf(ch)` and allocated a new `batchimExpansions` object literal on every single character evaluation.
+3. `doLossyCompression` serialized full binary images to multi-megabyte `data:image/png;base64,...` data URLs before setting `image.src`, causing excessive heap spike and GC pressure. Additionally, quality `75` was passed to `toDataURL` instead of standard `0.75` (valid range: 0.0 - 1.0), and `base64.split(",")` created transient string arrays.
+4. `generateClientThumbnail` used `dataUrl.split(",")[1]`, allocating unnecessary intermediate string arrays.
+5. `hasher` allocated `Buffer` wrappers via `Buffer.from(...).toString("hex")` in web/mobile environments instead of fast byte-to-hex table conversions.
+6. `resolveCurrentChatAsset` created transient arrays via `getModuleAssets().concat(additionalAssets ?? [])` and used locale-dependent `toLocaleLowerCase()`.
+7. `requestOpenAI` logged `console.log(formatedChat)` in production requests, adding needless IO and object serialization.
+
+**Action:**
+
+1. Introduce `createKoreanMatcher(query)` which precomputes regex compilation, phonetic variants, and jamo decomposition once per query, and use `matcher.matchCharacter(item.char)` directly in `MainMenu.svelte`.
+2. Use a module-level `CHOSEONG_INDEX_MAP` for O(1) lookup and hoist `BATCHIM_EXPANSIONS` as a frozen module constant.
+3. Prefer `URL.createObjectURL(blob)` with cleanup via `URL.revokeObjectURL()` in `doLossyCompression`, correct quality parameter to `0.75`, and replace `split(",")` with `slice(indexOf(",") + 1)`.
+4. Replace `dataUrl.split(",")` with index-based slicing in `generateClientThumbnail`.
+5. Use a static 256-hex table for SHA-256 digest conversion in `hasher` without allocating `Buffer` objects.
+6. Allow `createChatAssetNameIndex` to ingest multiple asset collections in a single pass without array concatenation, and replace `toLocaleLowerCase()` with `toLowerCase()`.
+7. Remove leftover debug logging in `requestOpenAI`.

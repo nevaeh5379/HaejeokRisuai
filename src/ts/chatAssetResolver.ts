@@ -1,6 +1,7 @@
 import { getModuleAssets } from "./process/modules";
 
-export type ChatAssetTuple = [string, string, string];
+export type ChatAssetTuple =
+  [string, string, string] | readonly [string, string, string];
 
 type NormalizedAsset = {
   name: string;
@@ -27,17 +28,30 @@ const CACHE_TTL_MS = 1500;
 const resolverCache = new WeakMap<object, ResolverCacheEntry>();
 
 export function createChatAssetNameIndex(
-  assets: readonly ChatAssetTuple[],
+  assets: Iterable<ChatAssetTuple>,
+  extraAssets?: readonly ChatAssetTuple[],
 ): ChatAssetNameIndex {
   const normalized: NormalizedAsset[] = [];
   const exact = new Map<string, string>();
-  for (const asset of assets) {
-    const name = String(asset?.[0] ?? "").toLocaleLowerCase();
-    const path = asset?.[1];
-    if (!name || !path) continue;
+
+  const ingest = (item: ChatAssetTuple) => {
+    const rawName = item?.[0];
+    const path = item?.[1];
+    if (!rawName || !path) return;
+    const name = String(rawName).toLowerCase();
     normalized.push({ name, path });
     exact.set(name, path);
+  };
+
+  for (const asset of assets) {
+    ingest(asset);
   }
+  if (extraAssets) {
+    for (let i = 0; i < extraAssets.length; i++) {
+      ingest(extraAssets[i]);
+    }
+  }
+
   normalized.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return { exact, sorted: normalized };
 }
@@ -61,7 +75,7 @@ export function resolveChatAssetFromIndex(
   rawName: string,
   distance: (left: string, right: string) => number,
 ): string | undefined {
-  const name = rawName.toLocaleLowerCase();
+  const name = rawName.toLowerCase();
   const exact = index.exact.get(name);
   if (exact) return exact;
 
@@ -102,12 +116,11 @@ export function resolveCurrentChatAsset(
     cached.additionalAssetCount !== additionalAssetCount ||
     cached.expiresAt <= now
   ) {
-    const assets = getModuleAssets().concat(additionalAssets ?? []);
     cached = {
       additionalAssets,
       additionalAssetCount,
       expiresAt: now + CACHE_TTL_MS,
-      index: createChatAssetNameIndex(assets),
+      index: createChatAssetNameIndex(getModuleAssets(), additionalAssets),
     };
     resolverCache.set(character as object, cached);
   }

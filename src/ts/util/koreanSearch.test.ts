@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   matchKoreanText,
   matchCharacterKorean,
+  createKoreanMatcher,
   buildKoreanSearchRegex,
   normalizePhonetic,
 } from "./koreanSearch";
@@ -123,6 +124,44 @@ describe("koreanSearch unit tests", () => {
       expect(resName.matched).toBe(true);
       expect(resTag.matched).toBe(true);
       expect(resName.score).toBeGreaterThan(resTag.score);
+    });
+  });
+
+  describe("createKoreanMatcher", () => {
+    const chars = [
+      { name: "홍길동", creator: "허균", tags: ["조선", "의적"] },
+      { name: "이순신", creator: "작가", tags: ["조선", "장군"] },
+      { name: "Arona", creator: "ShittimChest", tags: ["Blue Archive", "AI"] },
+      { name: "Megumin", creator: "Akatsuki", tags: ["Konosuba", "Mage"] },
+    ];
+
+    it("precomputes query matcher and filters multiple characters identically", () => {
+      const query = "조선";
+      const matcher = createKoreanMatcher(query);
+      expect(matcher.isQueryEmpty).toBe(false);
+
+      const resultsWithMatcher = chars.map((c) => matcher.matchCharacter(c));
+      const resultsDirect = chars.map((c) => matchCharacterKorean(c, query));
+
+      expect(resultsWithMatcher).toEqual(resultsDirect);
+      expect(resultsWithMatcher[0].matched).toBe(true);
+      expect(resultsWithMatcher[1].matched).toBe(true);
+      expect(resultsWithMatcher[2].matched).toBe(false);
+    });
+
+    it("accepts a precompiled KoreanMatcher in matchCharacterKorean directly", () => {
+      const matcher = createKoreanMatcher("아로나");
+      const res = matchCharacterKorean(chars[2], matcher);
+      expect(res.matched).toBe(true);
+      expect(res.isRomanized).toBe(true);
+    });
+
+    it("handles empty and whitespace query gracefully", () => {
+      const matcher = createKoreanMatcher("   ");
+      expect(matcher.isQueryEmpty).toBe(true);
+      const res = matcher.matchCharacter(chars[0]);
+      expect(res.matched).toBe(true);
+      expect(res.score).toBe(0);
     });
   });
 });

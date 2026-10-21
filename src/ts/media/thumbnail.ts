@@ -66,7 +66,8 @@ export async function generateClientThumbnail(
           "image/webp",
           0.8,
         );
-        const b64 = dataUrl.split(",")[1];
+        const commaIndex = dataUrl.indexOf(",");
+        const b64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
         return Buffer.from(b64, "base64");
       }
     } else {
@@ -82,7 +83,9 @@ export async function generateClientThumbnail(
           if (ctx) {
             drawCoverTop(ctx, img, img.width, img.height);
             const dataUrl = canvas.toDataURL("image/webp", 0.8);
-            const b64 = dataUrl.split(",")[1];
+            const commaIndex = dataUrl.indexOf(",");
+            const b64 =
+              commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
             resolve(Buffer.from(b64, "base64"));
           } else {
             resolve(imageData);

@@ -12,7 +12,7 @@
         unpinCharacterImageCache
     } from "src/ts/characterImage";
     import { changeChar } from "src/ts/characters";
-    import { matchCharacterKorean } from "src/ts/util/koreanSearch";
+    import { createKoreanMatcher } from "src/ts/util/koreanSearch";
     import Title from "./Title.svelte";
     import LazyComponent from '../Others/LazyComponent.svelte'
     import { onDestroy } from "svelte";
@@ -133,9 +133,10 @@
 
         const q = searchQuery.trim()
         if (q) {
+            const matcher = createKoreanMatcher(q)
             const filtered: typeof list = []
             for (const item of list) {
-                const res = matchCharacterKorean(item.char, q)
+                const res = matcher.matchCharacter(item.char)
                 if (res.matched) {
                     filtered.push({ ...item, matchScore: res.score })
                 }
