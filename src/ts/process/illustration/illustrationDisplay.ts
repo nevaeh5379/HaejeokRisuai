@@ -3,15 +3,22 @@ import {
   type Illustration,
 } from "@risuai/protocol/src/illustration.ts";
 
+const MARKER_LEN = "<Illustration>".length;
+
 /** Keeps each narrative position stable from an unprepared marker through every generated image. */
 export function illustrationDisplayLayout(
   text = "",
   illustrations: Illustration[] = [],
 ) {
-  const slots: { position: number; length: number; id?: string }[] = (
-    text.includes("<Illustration>") ? findIllustrationMarkers(text) : []
-  ).map((position) => ({ position, length: "<Illustration>".length }));
-  for (const item of illustrations) {
+  const slots: { position: number; length: number; id?: string }[] = [];
+  if (text.includes("<Illustration>")) {
+    const markers = findIllustrationMarkers(text);
+    for (let i = 0; i < markers.length; i++) {
+      slots.push({ position: markers[i], length: MARKER_LEN });
+    }
+  }
+  for (let i = 0; i < illustrations.length; i++) {
+    const item = illustrations[i];
     if (!/^[\w-]+$/.test(item.id) || !item.token) continue;
     const position = text.indexOf(item.token);
     if (position >= 0)
@@ -26,10 +33,15 @@ export function illustrationDisplayLayout(
       `<span data-risu-illustration="${index}"></span>` +
       display.slice(slot.position + slot.length);
   }
+  const bindings: { id: string; index: number }[] = [];
+  for (let index = 0; index < slots.length; index++) {
+    const slot = slots[index];
+    if (slot.id) {
+      bindings.push({ id: slot.id, index });
+    }
+  }
   return {
     display,
-    bindings: JSON.stringify(
-      slots.flatMap((slot, index) => (slot.id ? [{ id: slot.id, index }] : [])),
-    ),
+    bindings: JSON.stringify(bindings),
   };
 }

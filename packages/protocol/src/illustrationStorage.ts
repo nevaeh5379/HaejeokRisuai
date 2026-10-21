@@ -89,17 +89,27 @@ export async function readIllustrationHistory(
   count: number,
 ): Promise<IllustrationMessage[]> {
   if (!position || !count) return [];
-  const messages: IllustrationMessage[] = [];
+  const pages: IllustrationMessage[][] = [];
+  let totalCollected = 0;
   let before = position;
-  while (messages.length < count && before > 0) {
+  while (totalCollected < count && before > 0) {
     const page = await storage.loadChatMessagePage(
       chatId,
       before,
-      Math.min(50, count - messages.length),
+      Math.min(50, count - totalCollected),
     );
-    messages.unshift(...page.messages);
+    if (!page.messages.length) break;
+    pages.push(page.messages);
+    totalCollected += page.messages.length;
     if (!page.hasMore || page.offset >= before) break;
     before = page.offset;
   }
-  return messages.slice(-count);
+  const messages: IllustrationMessage[] = [];
+  for (let i = pages.length - 1; i >= 0; i--) {
+    const batch = pages[i];
+    for (let j = 0; j < batch.length; j++) {
+      messages.push(batch[j]);
+    }
+  }
+  return messages.length > count ? messages.slice(-count) : messages;
 }

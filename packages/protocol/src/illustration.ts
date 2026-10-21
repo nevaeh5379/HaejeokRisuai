@@ -293,11 +293,13 @@ export function needsIllustrationTags(
   if (action === "rewrite") return true;
   const entries = item.batch?.entries ?? [{ tags: item.tags }];
   const size = action === "retry" && item.batch ? item.batch.count : count;
-  return Array.from(
-    { length: normalizeIllustrationGenerationCount(size) },
-    (_, index) =>
-      !entries[index]?.tags && !(action === "retry" && entries[index]?.imageId),
-  ).some(Boolean);
+  const total = normalizeIllustrationGenerationCount(size);
+  for (let index = 0; index < total; index++) {
+    if (!entries[index]?.tags && !(action === "retry" && entries[index]?.imageId)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -402,18 +404,20 @@ const append = (a: string, b: string) => [a, b].filter(Boolean).join("\n\n");
  * Scalar fields override inherited values; instruction and prompt fields append character text.
  * 한국어: 단일 값은 상속값을 덮어쓰고, 지침·그림 프롬프트는 범용 내용 뒤에 캐릭터 내용을 추가.
  */
+const INSTRUCTION_KEYS = [
+  "markerInstructions",
+  "tagInstructions",
+  "basePrompt",
+  "negativePrompt",
+] as const;
+
 export function resolveIllustrationSettings(
   global?: Partial<IllustrationSettings>,
   character?: IllustrationOverrides,
 ): IllustrationSettings {
   const base = { ...DEFAULT_ILLUSTRATION_SETTINGS, ...global };
   const result = { ...base, ...character };
-  for (const key of [
-    "markerInstructions",
-    "tagInstructions",
-    "basePrompt",
-    "negativePrompt",
-  ] as const) {
+  for (const key of INSTRUCTION_KEYS) {
     result[key] = append(base[key] ?? "", character?.[key] ?? "");
   }
   result.recentMessages = Number.isFinite(result.recentMessages)
@@ -454,6 +458,8 @@ export const illustrationToken = (id: string) => `{{illustration::${id}}}`;
 export const isIllustrationBusy = (status: IllustrationStatus) =>
   status === "queued" || status === "tagging" || status === "generating";
 
+const TAG_REGEX = /<(\/)?(thoughts?|think|analysis|reasoning|pre|code)\b[^>]*>/iy;
+
 /**
  * Finds eligible narrative markers in their order of appearance.
  *
@@ -472,10 +478,9 @@ export function findIllustrationMarkers(text: string): number[] {
   const thoughts: string[] = [];
   for (let i = 0; i < text.length;) {
     if (i === 0 || text[i - 1] === "\n") {
-      const line = text.slice(
-        i,
-        text.indexOf("\n", i) < 0 ? text.length : text.indexOf("\n", i),
-      );
+      const nextNewline = text.indexOf("\n", i);
+      const lineEnd = nextNewline < 0 ? text.length : nextNewline;
+      const line = text.slice(i, lineEnd);
       const fenced = /^( {0,3})(`{3,}|~{3,})/.exec(line);
       if (fenced) {
         const run = fenced[2];
@@ -495,7 +500,10 @@ export function findIllustrationMarkers(text: string): number[] {
       }
     }
     if (text[i] === "`" && (i === 0 || text[i - 1] !== "\\")) {
-      const run = /^`+/.exec(text.slice(i))![0].length;
+      let run = 0;
+      while (i + run < text.length && text[i + run] === "`") {
+        run++;
+      }
       if (inline === run) inline = 0;
       else if (!inline) {
         const closing = /`+/g;
@@ -512,10 +520,8 @@ export function findIllustrationMarkers(text: string): number[] {
       continue;
     }
     if (!inline) {
-      const tag =
-        /^<(\/)?(thoughts?|think|analysis|reasoning|pre|code)\b[^>]*>/i.exec(
-          text.slice(i),
-        );
+      TAG_REGEX.lastIndex = i;
+      const tag = TAG_REGEX.exec(text);
       if (tag) {
         const name = tag[2].toLowerCase();
         if (!tag[1]) thoughts.push(name);
@@ -620,6 +626,12 @@ export function prepareIllustrations(
   return items;
 }
 
+function hasSingleTokenOccurrence(text: string, token: string): boolean {
+  const first = text.indexOf(token);
+  if (first === -1) return false;
+  return text.indexOf(token, first + token.length) === -1;
+}
+
 /**
  * Rejects stale jobs after a message edit, token removal, version change or branch switch.
  *
@@ -636,7 +648,7 @@ export function validIllustration(
   return (
     item.version === version &&
     item.branchId === branchId &&
-    message.data.split(item.token).length === 2 &&
+    hasSingleTokenOccurrence(message.data, item.token) &&
     illustrationSourceHash(message) === item.sourceHash
   );
 }
@@ -736,15 +748,19 @@ export async function fitIllustrationPrompt(
   maxContext: number,
   outputTokens = 300,
 ): Promise<IllustrationPromptMessage[]> {
-  const history = [...prompt.history];
+  const history = prompt.history;
+  let startIndex = 0;
   while (true) {
-    const messages = [prompt.required[0], ...history, prompt.required[1]];
+    const messages =
+      startIndex === 0
+        ? [prompt.required[0], ...history, prompt.required[1]]
+        : [prompt.required[0], ...history.slice(startIndex), prompt.required[1]];
     if ((await count(messages)) + outputTokens <= maxContext) return messages;
-    if (!history.length)
+    if (startIndex >= history.length)
       throw new Error(
         "Illustration instructions and current scene exceed the submodel context limit",
       );
-    history.shift();
+    startIndex++;
   }
 }
 
