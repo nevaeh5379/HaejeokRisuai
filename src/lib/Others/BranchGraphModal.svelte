@@ -274,12 +274,26 @@
         })
     }
 
+    // Reused across pointermove frames so pinch handling allocates nothing per frame.
+    type TouchPoint = { x: number, y: number }
+    const pinchPoints: { first: TouchPoint | null, second: TouchPoint | null } = {
+        first: null,
+        second: null,
+    }
+
+    function readPinchPoints() {
+        const it = touchPointers.values()
+        pinchPoints.first = it.next().value ?? null
+        pinchPoints.second = it.next().value ?? null
+        return pinchPoints.first && pinchPoints.second ? pinchPoints : null
+    }
+
     function startPinch() {
         if(!viewport || touchPointers.size < 2) return
-        const it = touchPointers.values()
-        const first = it.next().value
-        const second = it.next().value
-        if(!first || !second) return
+        const pinch = readPinchPoints()
+        if(!pinch) return
+        const first = pinch.first
+        const second = pinch.second
         const distance = Math.hypot(second.x - first.x, second.y - first.y)
         if(distance === 0) return
         lastPinchDistance = distance
@@ -357,10 +371,10 @@
                     startPinch()
                 }
                 if(!viewport || !lastPinchCenter || !lastPinchDistance) return
-                const it = touchPointers.values()
-                const first = it.next().value
-                const second = it.next().value
-                if(!first || !second) return
+                const pinch = readPinchPoints()
+                if(!pinch) return
+                const first = pinch.first
+                const second = pinch.second
                 const distance = Math.hypot(second.x - first.x, second.y - first.y)
                 const currentCenter = {
                     x: (first.x + second.x) / 2,
