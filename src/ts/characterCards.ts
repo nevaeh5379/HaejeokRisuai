@@ -73,6 +73,9 @@ import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { NodeStorage } from "./storage/files/nodeStorage";
 import { hubURL } from "./hub";
 
+const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
+
 export { hubURL };
 
 export async function importCharacter() {
@@ -109,7 +112,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       f.data instanceof Uint8Array
         ? f.data
         : new Uint8Array(await f.data.arrayBuffer());
-    const da = JSON.parse(Buffer.from(data).toString("utf-8"));
+    const da = JSON.parse(textDecoder.decode(data));
     if (await importCharacterCardSpec(da)) {
       return (characterStore.characters.length - 1) as any;
     }
@@ -313,7 +316,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         return;
       }
       const metaData: RccCardMetaData = JSON.parse(
-        Buffer.from(parts[4], "base64").toString("utf-8"),
+        textDecoder.decode(Buffer.from(parts[4], "base64")),
       );
       if (metaData.usePassword) {
         const password = await alertInput(language.inputCardPassword);
@@ -323,7 +326,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
           try {
             const decrypted = await decryptBuffer(encrypted, password);
             const charaData: CharacterCardV2Risu = JSON.parse(
-              Buffer.from(decrypted).toString("utf-8"),
+              textDecoder.decode(decrypted),
             );
             if (
               await importCharacterCardSpec(charaData, img, "normal", assets)
@@ -341,7 +344,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         const decrypted = await decryptBuffer(encrypted, "RISU_NONE");
         try {
           const charaData: CharacterCardV2Risu = JSON.parse(
-            Buffer.from(decrypted).toString("utf-8"),
+            textDecoder.decode(decrypted),
           );
           if (await importCharacterCardSpec(charaData, img, "normal", assets)) {
             return characterStore.characters.length - 1;
@@ -354,7 +357,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
     }
   }
   const parsed = JSON.parse(
-    Buffer.from(readedChara, "base64").toString("utf-8"),
+    textDecoder.decode(Buffer.from(readedChara, "base64")),
   );
   //fix readedChara version pointing number instead of string because of previous version
   if (
@@ -367,7 +370,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
 
   if (parsed.spec !== "chara_card_v2" && parsed.spec !== "chara_card_v3") {
     const charaData: OldTavernChar = JSON.parse(
-      Buffer.from(readedChara, "base64").toString("utf-8"),
+      textDecoder.decode(Buffer.from(readedChara, "base64")),
     );
     const imgp = await saveAsset(img);
     characterStore.characters.push(convertOffSpecCards(charaData, imgp));
@@ -396,15 +399,15 @@ export { showRealmInfoStore };
 
 async function importFiles(paths: string[]) {
   const { convertFileSrc } = await import("@tauri-apps/api/core");
-   console.log(paths)
+  console.log(paths);
   for (const path of paths) {
-    console.log(path)
+    console.log(path);
     const name = path.split(/[\\/]/).pop() ?? "";
     const controller = new AbortController();
     if (name.toLowerCase().endsWith(".charx")) {
       try {
         const response = await fetch(convertFileSrc(path), {
-          signal: controller.signal
+          signal: controller.signal,
         });
 
         if (!response.ok || !response.body)
@@ -414,20 +417,21 @@ async function importFiles(paths: string[]) {
           name: name.toLowerCase(),
           data: response.body,
         });
+      } catch (error) {
+        alertError(String(error));
       }
-      catch (error) {
-      alertError(String(error));
     }
-    } 
   }
 }
 
 let importQueue = Promise.resolve();
 
 export async function enqueueFiles(paths: string[]) {
-  return importQueue.then(() => importFiles(paths)).catch((error) => {
-    alertError(String(error))
-  })
+  return importQueue
+    .then(() => importFiles(paths))
+    .catch((error) => {
+      alertError(String(error));
+    });
 }
 export async function characterURLImport() {
   const realmPath = new URLSearchParams(location.search).get("realm");
@@ -485,7 +489,7 @@ export async function characterURLImport() {
   if (hash.startsWith("#import_module=")) {
     const data = hash.replace("#import_module=", "");
     const importData = JSON.parse(
-      Buffer.from(decodeURIComponent(data), "base64").toString("utf-8"),
+      textDecoder.decode(Buffer.from(decodeURIComponent(data), "base64")),
     );
     importData.id = v4();
 
@@ -1713,7 +1717,7 @@ export async function exportCharacterCard(
       if (type === "json") {
         await downloadFile(
           `${char.name.replace(/[<>:"/\\|?*\.\,]/g, "")}_export.json`,
-          Buffer.from(JSON.stringify(card, null, 4), "utf-8"),
+          JSON.stringify(card, null, 4),
         );
         alertNormal(language.successExport);
         return;
@@ -1895,7 +1899,7 @@ export async function exportCharacterCard(
       if (type === "json") {
         await downloadFile(
           `${char.name.replace(/[<>:"/\\|?*\.\,]/g, "")}_export.json`,
-          Buffer.from(JSON.stringify(card, null, 4), "utf-8"),
+          JSON.stringify(card, null, 4),
         );
         alertNormal(language.successExport);
         return;
@@ -2244,7 +2248,7 @@ export async function getHubResources(id: string) {
   if (res.status !== 200) {
     throw await res.text();
   }
-  return Buffer.from(await res.arrayBuffer());
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 export function isCharacterHasAssets(char: character | groupChat) {

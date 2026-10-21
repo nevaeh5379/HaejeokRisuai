@@ -67,6 +67,18 @@ function createCacheControl(oneHourCaching?: any): any {
     : { type: "ephemeral" };
 }
 
+function parseDataUrl(dataurl: string): { mediaType: string; base64: string } {
+  const commaIdx = dataurl.indexOf(",");
+  const base64 = commaIdx >= 0 ? dataurl.slice(commaIdx + 1) : "";
+  const colonIdx = dataurl.indexOf(":");
+  const semiIdx = dataurl.indexOf(";");
+  const mediaType =
+    colonIdx >= 0 && semiIdx > colonIdx
+      ? dataurl.slice(colonIdx + 1, semiIdx)
+      : "";
+  return { mediaType, base64 };
+}
+
 function prepareAnthropicConversation(
   messages: readonly OpenAIChat[],
   options?: { oneHourCaching?: boolean },
@@ -94,9 +106,7 @@ ${chat.content}`;
       if (multimodals?.length) {
         for (const modal of multimodals) {
           if (modal.type !== "image") continue;
-          const dataurl: any = modal.base64;
-          const base64: any = dataurl.split(",")[1];
-          const mediaType: any = dataurl.split(";")[0].split(":")[1];
+          const { mediaType, base64 } = parseDataUrl(modal.base64);
           content.unshift({
             type: "image",
             source: { type: "base64", media_type: mediaType, data: base64 },
@@ -115,9 +125,7 @@ ${chat.content}`;
     if (multimodals?.length) {
       for (const modal of multimodals) {
         if (modal.type !== "image") continue;
-        const dataurl: any = modal.base64;
-        const base64: any = dataurl.split(",")[1];
-        const mediaType: any = dataurl.split(";")[0].split(":")[1];
+        const { mediaType, base64 } = parseDataUrl(modal.base64);
         content.unshift({
           type: "image",
           source: { type: "base64", media_type: mediaType, data: base64 },

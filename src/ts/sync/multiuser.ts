@@ -117,30 +117,27 @@ export async function createMultiuserRoom() {
         data: char,
       });
       if (excludeAssets !== null) {
+        const excludeSet = new Set(excludeAssets);
         if (char.additionalAssets) {
-          const ass = char.additionalAssets.filter((asset) => {
-            return !excludeAssets.includes(asset[1]);
-          });
-
-          for (const a of ass) {
-            conn.send({
-              type: "receive-asset",
-              id: a[1],
-              data: await readImage(a[1]),
-            });
+          for (const a of char.additionalAssets) {
+            if (!excludeSet.has(a[1])) {
+              conn.send({
+                type: "receive-asset",
+                id: a[1],
+                data: await readImage(a[1]),
+              });
+            }
           }
         }
         if (char.emotionImages) {
-          const ass = char.emotionImages.filter((asset) => {
-            return !excludeAssets.includes(asset[1]);
-          });
-
-          for (const a of ass) {
-            conn.send({
-              type: "receive-asset",
-              id: a[1],
-              data: await readImage(a[1]),
-            });
+          for (const a of char.emotionImages) {
+            if (!excludeSet.has(a[1])) {
+              conn.send({
+                type: "receive-asset",
+                id: a[1],
+                data: await readImage(a[1]),
+              });
+            }
           }
         }
       }

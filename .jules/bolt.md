@@ -64,3 +64,29 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-12-01 - Optimize Provider Data URL Extraction, SQLite Relational Codec, and Chat Hotpaths
+
+**Learning:** Found transient string/array micro-allocations and quadratic operations in core pipeline hotpaths:
+
+1. `prepareAnthropicConversation` in `anthropicProvider.ts` called `.split(",")` and `.split(";")` on `modal.base64` data URLs, copying potentially multi-megabyte base64 strings into intermediate arrays.
+2. `getActiveMessages` in `historyBuilder.ts` prepended active chat messages using `messages.unshift(message)` inside a reverse loop, causing O(N^2) array element shifts per message.
+3. `collectDepthPrompts` in `historyBuilder.ts` created an intermediate filter array before iterating to tokenize prompts.
+4. `rebuild` in relational `codec.ts` sliced `rows.slice(1)` on every decode and re-set Map keys on every node iteration.
+5. `flatten` in relational `codec.ts` allocated `[key, value]` entry tuples via `Object.entries(current)` on every object node during relational SQLite flattening.
+6. `rebuildRows` in storage-sqlite `messages.ts` repeatedly queried and re-set `nodeGroups` on every row and mapped over `orderedIds`.
+7. `applyEdittransRegex` in `translator.ts` chained `.concat()` across three arrays and deduplicated regex flags using O(N^2) `.split("").filter(...).join("")`.
+8. `updateTabDropTarget` and `updateNativeTabDropTarget` in `ChatTabs.svelte` allocated DOM element arrays and filtered them via `Array.from(...).filter(...)` on every mouse move / drag-over event.
+9. `multiuser.ts` executed quadratic `excludeAssets.includes()` lookups across intermediate filter arrays.
+
+**Action:**
+
+1. Use `indexOf()` and `.slice()` in `parseDataUrl` to extract base64 and media type without full string splitting.
+2. Replace `messages.unshift(message)` with `messages.push(message)` followed by a single `.reverse()` pass in `getActiveMessages`.
+3. Combine depth prompt filtering and token counting into a single pass in `collectDepthPrompts`.
+4. Replace `rows.slice(1)` with index-based loops in `rebuild` and avoid repeated Map sets.
+5. Iterate object keys directly via `Object.keys()` in `flatten` to eliminate entry tuple allocations.
+6. Rebuild SQLite message rows into a pre-allocated fixed-size array in `rebuildRows`.
+7. Iterate script sources directly in `applyEdittransRegex` without array concats and deduplicate flags linearly.
+8. Iterate tab elements directly in `ChatTabs.svelte` without `Array.from` or filter array allocations.
+9. Use `Set.has()` lookups in `multiuser.ts` without intermediate array allocation.
