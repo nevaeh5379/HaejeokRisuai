@@ -31,7 +31,8 @@ export async function restoreUpstreamPluginStorage(
   }
   const legacy = storage?._coldplugin;
   if (legacy && typeof legacy === "object") {
-    for (const [key, id] of Object.entries(legacy)) {
+    for (const key of Object.keys(legacy)) {
+      const id = (legacy as Record<string, unknown>)[key];
       if (
         typeof id === "string" &&
         !Object.hasOwn(result, key) &&
@@ -41,9 +42,11 @@ export async function restoreUpstreamPluginStorage(
       }
     }
   }
-  for (const [key, value] of Object.entries(storage ?? {})) {
-    if (key !== "_coldpluginIndex" && key !== "_coldplugin")
-      result[key] = value;
+  if (storage) {
+    for (const key of Object.keys(storage)) {
+      if (key !== "_coldpluginIndex" && key !== "_coldplugin")
+        result[key] = storage[key];
+    }
   }
   return result;
 }

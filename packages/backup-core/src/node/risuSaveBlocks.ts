@@ -1,10 +1,18 @@
 import { gunzipSync } from "node:zlib";
 import { RISU_SAVE_BLOCK_HEADER_BYTES } from "../legacyHeaders.ts";
 
+const SHARED_TEXT_DECODER = new TextDecoder();
+
 export function isRisuSaveBlocks(data: Uint8Array): boolean {
-  return RISU_SAVE_BLOCK_HEADER_BYTES.every(
-    (value, index) => data[index] === value,
-  );
+  if (data.byteLength < RISU_SAVE_BLOCK_HEADER_BYTES.length) {
+    return false;
+  }
+  for (let i = 0; i < RISU_SAVE_BLOCK_HEADER_BYTES.length; i++) {
+    if (data[i] !== RISU_SAVE_BLOCK_HEADER_BYTES[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Self-contained upstream backups; remote references require their original device. */
@@ -13,7 +21,6 @@ export function decodeRisuSaveBlocks(
   maxOutputBytes?: number,
 ): Record<string, unknown> {
   const database: Record<string, unknown> = Object.create(null);
-  const decoder = new TextDecoder();
   const directory = new Set<string>();
   const loadedBlocks = new Set<string>();
   let offset = RISU_SAVE_BLOCK_HEADER_BYTES.length;
@@ -26,13 +33,16 @@ export function decodeRisuSaveBlocks(
     const nameLength = data[offset++];
     if (offset + nameLength + 4 > data.byteLength)
       throw new Error("Truncated RisuSave block name");
-    const name = decoder.decode(data.subarray(offset, offset + nameLength));
+    const name = SHARED_TEXT_DECODER.decode(
+      data.subarray(offset, offset + nameLength),
+    );
     offset += nameLength;
-    const length = new DataView(
-      data.buffer,
-      data.byteOffset + offset,
-      4,
-    ).getUint32(0, true);
+    const length =
+      (data[offset] |
+        (data[offset + 1] << 8) |
+        (data[offset + 2] << 16) |
+        (data[offset + 3] << 24)) >>>
+      0;
     offset += 4;
     if (length > data.byteLength - offset)
       throw new Error("Truncated RisuSave block payload");
@@ -49,19 +59,23 @@ export function decodeRisuSaveBlocks(
     decodedBytes += bytes.byteLength;
     if (maxOutputBytes !== undefined && decodedBytes > maxOutputBytes)
       throw new Error("RisuSave exceeds decoded size limit");
-    const value = JSON.parse(decoder.decode(bytes));
+    const value = JSON.parse(SHARED_TEXT_DECODER.decode(bytes));
     switch (type) {
       case 1: {
-        const { __directory: entries, ...root } = value;
+        const entries = value.__directory;
         if (entries !== undefined) {
-          if (
-            !Array.isArray(entries) ||
-            entries.some((entry) => typeof entry !== "string")
-          )
+          if (!Array.isArray(entries)) {
             throw new Error("Invalid RisuSave block directory");
-          for (const entry of entries) directory.add(entry);
+          }
+          for (let i = 0; i < entries.length; i++) {
+            if (typeof entries[i] !== "string") {
+              throw new Error("Invalid RisuSave block directory");
+            }
+            directory.add(entries[i]);
+          }
+          delete value.__directory;
         }
-        Object.assign(database, root);
+        Object.assign(database, value);
         break;
       }
       case 2:

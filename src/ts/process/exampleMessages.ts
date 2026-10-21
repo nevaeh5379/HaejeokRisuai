@@ -40,9 +40,11 @@ export function exampleMessage(
       lowered.startsWith(`${char.name}:`)
     ) {
       add();
+      const colonIndex = trimed.indexOf(":");
       currentMessage = {
         role: "assistant",
-        content: trimed.split(":", 2)[1].trimStart(),
+        content:
+          colonIndex !== -1 ? trimed.slice(colonIndex + 1).trimStart() : "",
         name: "example_assistant",
       };
     } else if (
@@ -50,9 +52,11 @@ export function exampleMessage(
       lowered.startsWith("<user>:")
     ) {
       add();
+      const colonIndex = trimed.indexOf(":");
       currentMessage = {
         role: "user",
-        content: trimed.split(":", 2)[1].trimStart(),
+        content:
+          colonIndex !== -1 ? trimed.slice(colonIndex + 1).trimStart() : "",
         name: "example_user",
       };
     } else {
@@ -63,14 +67,12 @@ export function exampleMessage(
   }
   add();
 
-  result = result.map((r) => {
-    return {
-      role: r.role,
-      content: risuChatParser(r.content, { chara: char, chatTarget }),
-      name: r.name,
-      memo: r.memo,
-    };
-  });
+  for (let i = 0; i < result.length; i++) {
+    result[i].content = risuChatParser(result[i].content, {
+      chara: char,
+      chatTarget,
+    });
+  }
 
   return result;
 }

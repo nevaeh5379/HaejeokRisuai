@@ -32,10 +32,8 @@ export async function processMultiCommand(
     }
   }
   splited.push(command.slice(lastIndex));
-  console.log(splited);
   for (let i = 0; i < splited.length; i++) {
     const result = await processCommand(splited[i].trim(), pipe, target);
-    console.log(pipe);
     if (result === false) {
       return false;
     } else {
@@ -70,7 +68,8 @@ async function processCommand(
   });
 
   const namedArgKeys = Object.keys(namedArg);
-  for (const key of namedArgKeys) {
+  for (let i = 0; i < namedArgKeys.length; i++) {
+    const key = namedArgKeys[i];
     namedArg[key] = risuChatParser(namedArg[key], {
       chara: currentChar.type === "character" ? currentChar : null,
       chatTarget,
@@ -201,13 +200,11 @@ async function processCommand(
       return "";
     }
     case "setvar": {
-      console.log(namedArg, arg);
       const selectedChar = get(selectedCharID);
       const char = characterStore.characters[selectedChar];
       const chat = char.chats[char.chatPage];
       chat.scriptstate = chat.scriptstate ?? {};
       chat.scriptstate["$" + namedArg["key"]] = arg;
-      console.log(chat.scriptstate);
 
       char.chats[char.chatPage] = chat;
       characterStore.characters[selectedChar] = char;
@@ -236,8 +233,11 @@ async function processCommand(
     }
     case "test_lorebook": {
       const p = await loadLoreBookV3Prompt();
-      console.log(p);
-      alertNormal(p.actives.map((e) => e.prompt).join("§"));
+      let promptText = "";
+      for (let i = 0; i < p.actives.length; i++) {
+        promptText += (i === 0 ? "" : "§") + p.actives[i].prompt;
+      }
+      alertNormal(promptText);
       return JSON.stringify(p);
     }
     case "trigger": {
@@ -321,16 +321,23 @@ function commandParser(command: string, pipe: string) {
   if (command.startsWith("/")) {
     command = command.slice(1);
   }
-  const sliced = command.split(" ").filter((e) => e != "");
-  const commandName = sliced[0];
+  const rawParts = command.split(" ");
+  const sliced: string[] = [];
+  for (let i = 0; i < rawParts.length; i++) {
+    if (rawParts[i] !== "") {
+      sliced.push(rawParts[i]);
+    }
+  }
+  const commandName = sliced[0] ?? "";
   let argArray: string[] = [];
   let namedArg: { [key: string]: string } = {};
   for (let i = 1; i < sliced.length; i++) {
-    if (sliced[i].includes("=")) {
-      const [key, value] = sliced[i].split("=");
-      namedArg[key] = value;
+    const part = sliced[i];
+    const eqIdx = part.indexOf("=");
+    if (eqIdx !== -1) {
+      namedArg[part.slice(0, eqIdx)] = part.slice(eqIdx + 1);
     } else {
-      argArray.push(sliced[i]);
+      argArray.push(part);
     }
   }
   const arg = argArray

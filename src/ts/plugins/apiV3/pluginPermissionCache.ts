@@ -9,6 +9,8 @@ export type PluginPermission =
 
 type PluginScriptHasher = (data: Uint8Array) => Promise<string>;
 
+const SHARED_TEXT_ENCODER = new TextEncoder();
+
 export async function runWithPluginPermission<T>(
   requestPermission: () => Promise<boolean>,
   onAllowed: () => Promise<T>,
@@ -28,7 +30,7 @@ export function createPluginScriptHashGetter(
   let scriptHash: Promise<string> | undefined;
 
   return () => {
-    scriptHash ??= hasher(new TextEncoder().encode(script));
+    scriptHash ??= hasher(SHARED_TEXT_ENCODER.encode(script));
     return scriptHash;
   };
 }
