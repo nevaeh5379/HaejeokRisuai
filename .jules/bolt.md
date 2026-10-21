@@ -64,3 +64,24 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-22 - Optimize Model Registry, Chat Generation, and Streaming Allocations
+
+**Learning:** Found transient object and array allocations across model registry queries, chat-core generation planning, group speaker ordering, and provider streaming responses:
+
+1. `getModelInfo` in `src/ts/model/modellist.ts` performed an `O(N)` linear search over `LLMModels` and deep-cloned every found model with `safeStructuredClone` on every query, generating high GC pressure across frequent prompt and UI checks.
+2. `getModelList` used `[...LLMModels]` redundant clones and evaluated `group.findIndex()` inside the provider iteration loop, resulting in `O(N^2)` lookups.
+3. `createChatGenerationPlan` in `packages/chat-core/generation.ts` chained 4-stage map/filter operations (`formated.map(...).filter(...).map(...).map(...)`) creating intermediate `{ chat, index }` wrapper objects to compact renderable messages, and used `tokenCounts.reduce(...)` with closure allocations.
+4. `orderGroupSpeakers` in `packages/chat-core/group.ts` repeatedly executed regex-based `words(candidate.name)` for every candidate against every input word (`O(M * N)` split/toLowerCase allocations), used `Array.includes` for ID checks, and allocated arrays on destructuring swaps in `shuffle`.
+5. `containsBannedCharacterSet` in `packages/chat-core/requestPolicy.ts` dynamically compiled `new RegExp(\`\\p{Script=${set}}\`, "gu")` on every check without caching.
+6. `hanuraiMemory.ts` used `chats.map` as a side-effect loop, allocated 2-tuple arrays from `similaritySearchScored`, created intermediate mapped arrays for `existingContents`, and chained 3 map/filter passes for `candidateTexts`/`candidateChats`.
+7. `normalizeOllamaStreamResponse` in `ollama.ts` performed character-by-character string accumulation (`out += char`) across incoming streaming chunks, causing quadratic string copying.
+
+**Action:**
+
+1. Index `LLMModels` into a module-scoped `LLMModelsMap` for `O(1)` model resolution, replace `safeStructuredClone` with shallow copy when custom flags are enabled, and optimize `getModelList` with single-pass `Map<string, GetModelListGroup>` grouping.
+2. Compact renderable messages in `createChatGenerationPlan` within a single indexed loop directly collecting `compacted` and `keptIndexes`, and accumulate `tokenCounts` via a loop without reducer closures.
+3. Precompute candidate name word Sets in `orderGroupSpeakers`, track selected IDs using a `Set<string>` for `O(1)` membership, and use temporary variables for in-place array shuffling.
+4. Cache compiled script regexes in a module-scoped `Map<string, RegExp>` with `regex.lastIndex = 0` safety in `containsBannedCharacterSet`.
+5. Eliminate transient array allocations in `hanuraiMemory.ts` with direct loops, single-pass score aggregation, and unified candidate collection.
+6. Slice and batch flushes in `normalizeOllamaStreamResponse` to avoid per-character string re-allocations during streaming.
