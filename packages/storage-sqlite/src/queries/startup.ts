@@ -247,9 +247,9 @@ export async function loadProjection(
   deferredSettingKeys: readonly string[],
   excludedSettingKeys: readonly string[],
 ): Promise<Projection> {
-  const excludedKeys = [
-    ...new Set([...deferredSettingKeys, ...excludedSettingKeys]),
-  ];
+  const excludedKeySet = new Set(deferredSettingKeys);
+  for (const key of excludedSettingKeys) excludedKeySet.add(key);
+  const excludedKeys = Array.from(excludedKeySet);
   const queries: SqliteStatement[] = [
     buildSettingRowsQuery(excludedKeys, true),
     {
@@ -264,9 +264,12 @@ export async function loadProjection(
   const [settingRows, characterRows, metaRows] = await selectRowSets(queries);
   const rebuilt = rebuildSettingRows(settingRows, excludedKeys);
   const excluded = new Set(excludedSettingKeys);
-  const settings = new Map(
-    [...rebuilt.values].filter(([key]) => !excluded.has(key)),
-  );
+  const settings = new Map<string, unknown>();
+  for (const [key, value] of rebuilt.values) {
+    if (!excluded.has(key)) {
+      settings.set(key, value);
+    }
+  }
   const characters = characterRows.map((row) => ({
     id: String(row.id ?? ""),
     kind: row.kind === "group" ? ("group" as const) : ("character" as const),
@@ -291,7 +294,7 @@ export async function loadProjection(
     revision,
     settings,
     characters,
-    deferredSettingKeys: [...rebuilt.deferredKeys].filter(
+    deferredSettingKeys: Array.from(rebuilt.deferredKeys).filter(
       (key) => !excluded.has(key),
     ),
   };

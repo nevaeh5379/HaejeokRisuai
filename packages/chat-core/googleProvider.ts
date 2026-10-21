@@ -327,9 +327,13 @@ function mergeGoogleConsecutiveChats(chats?: any): any {
     const currentFirstPart: any = current.parts[0];
     if (previousLastPart?.text && currentFirstPart?.text) {
       previousLastPart.text += `\n\n${currentFirstPart.text}`;
-      previous.parts.push(...current.parts.slice(1));
+      for (let p = 1; p < current.parts.length; p++) {
+        previous.parts.push(current.parts[p]);
+      }
     } else {
-      previous.parts.push(...current.parts);
+      for (let p = 0; p < current.parts.length; p++) {
+        previous.parts.push(current.parts[p]);
+      }
     }
     chats.splice(index, 1);
   }

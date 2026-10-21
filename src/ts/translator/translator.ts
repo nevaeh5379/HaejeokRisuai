@@ -291,12 +291,14 @@ async function translateMain(
     return text;
   }
 
-  const result = (
-    res[0]
-      .map((s) => s[0])
-      .filter(Boolean)
-      .join("") as string
-  )
+  let accumulated = "";
+  for (const s of res[0]) {
+    if (s && s[0]) {
+      accumulated += s[0];
+    }
+  }
+
+  const result = accumulated
     .replace(/\* ([^*]+)\*/g, "*$1*")
     .replace(/\*([^*]+) \*/g, "*$1*");
   return result;
@@ -816,10 +818,7 @@ export function applyEdittransRegex(
     flag = flag.trim().replace(/[^dgimsuvy]/g, "");
 
     //remove repeated flags
-    flag = flag
-      .split("")
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .join("");
+    flag = Array.from(new Set(flag)).join("");
 
     if (flag.length === 0) {
       flag = "u";

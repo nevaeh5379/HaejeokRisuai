@@ -102,11 +102,13 @@ export class WorkflowNode {
       this.isVirtualNode = true;
       if (ancestors.has(source.type))
         throw new Error(`Recursive subgraph: ${source.type}`);
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(source.type);
       this.subgraph = new WorkflowGraph(
         definition,
         info,
         graph.rootGraph,
-        new Set([...ancestors, source.type]),
+        nextAncestors,
       );
       this.restoreSubgraphWidgets();
       return;
@@ -210,13 +212,12 @@ export class WorkflowNode {
   resolveSubgraphOutputLink(slot: number) {
     const graph = this.subgraph;
     if (!graph) return;
-    const outputId = graph.source.outputNode?.id ?? -20;
-    const link = [...graph.links.values()].find(
-      (item) =>
-        String(item.target_id) === String(outputId) &&
-        item.target_slot === slot,
-    );
-    return link?.resolve(graph);
+    const outputId = String(graph.source.outputNode?.id ?? -20);
+    for (const item of graph.links.values()) {
+      if (String(item.target_id) === outputId && item.target_slot === slot) {
+        return item.resolve(graph);
+      }
+    }
   }
 
   private propagatePrimitive(
@@ -332,7 +333,7 @@ export class WorkflowGraph {
   serialize(_options?: { sortNodes?: boolean }): SerializedWorkflow {
     const snapshot = structuredClone(this.source) as SerializedWorkflow;
     // The root workflow format uses link tuples, unlike subgraph definitions.
-    snapshot.links = [...this.links.values()].map((link) => [
+    snapshot.links = Array.from(this.links.values(), (link) => [
       link.id,
       link.origin_id,
       link.origin_slot,

@@ -333,19 +333,28 @@ export async function getCharImagesBatch(
   };
 
   const remoteNativeNodeStorage =
-    forageStorage.realStorage instanceof NodeStorage && (isTauri || isCapacitor);
+    forageStorage.realStorage instanceof NodeStorage &&
+    (isTauri || isCapacitor);
 
   // Browser/Node-hosted NodeStorage can use the streaming bulk endpoint. Native
   // remote profiles intentionally avoid it: Tauri/Capacitor HTTP transports do
   // not share the WebView's streaming/CORS semantics, so getFileSrc() fetches
   // bounded native HTTP responses and returns Blob URLs instead.
-  if (forageStorage.realStorage instanceof NodeStorage && !remoteNativeNodeStorage) {
+  if (
+    forageStorage.realStorage instanceof NodeStorage &&
+    !remoteNativeNodeStorage
+  ) {
     const nodeStorage = forageStorage.realStorage as NodeStorage;
     try {
-      const directLocs = uncachedLocs.filter((loc) =>
-        /^(https?:|data:|blob:|\/)/i.test(loc),
-      );
-      const assetLocs = uncachedLocs.filter((loc) => !directLocs.includes(loc));
+      const directLocs: string[] = [];
+      const assetLocs: string[] = [];
+      for (const loc of uncachedLocs) {
+        if (/^(https?:|data:|blob:|\/)/i.test(loc)) {
+          directLocs.push(loc);
+        } else {
+          assetLocs.push(loc);
+        }
+      }
 
       if (assetLocs.length > 0) {
         const bulkOpts = {

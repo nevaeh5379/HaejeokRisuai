@@ -34,22 +34,21 @@ function applyMemoryPromptPolicy(
     chats.splice(chats.length - 1, 1);
   }
 
-  sections.chats = chats
-    .map((chat?: any) => {
-      if (chat.memo !== "supaMemory" && chat.memo !== "hypaMemory") {
-        chat.removable = true;
-      } else if (memoryCardUsed) {
-        memories.push(chat);
-        return { role: "system", content: "" };
-      } else {
-        chat.content = `<Previous Conversation>${chat.content}</Previous Conversation>`;
-      }
-      return chat;
-    })
-    .filter(
-      (chat?: any) =>
-        chat.content.trim() !== "" || Boolean(chat.multimodals?.length),
-    );
+  const filteredChats: any = [];
+  for (const chat of chats) {
+    if (chat.memo !== "supaMemory" && chat.memo !== "hypaMemory") {
+      chat.removable = true;
+    } else if (memoryCardUsed) {
+      memories.push(chat);
+      continue;
+    } else {
+      chat.content = `<Previous Conversation>${chat.content}</Previous Conversation>`;
+    }
+    if (chat.content.trim() !== "" || Boolean(chat.multimodals?.length)) {
+      filteredChats.push(chat);
+    }
+  }
+  sections.chats = filteredChats;
 
   return memories;
 }

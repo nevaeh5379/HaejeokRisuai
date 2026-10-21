@@ -304,10 +304,16 @@ export class ExecutableNodeDTO implements ExecutableLGraphNode {
       // Cross-graph virtual nodes (e.g. Set/Get) resolve their source directly.
       const virtualSource = this.node.resolveVirtualOutput?.(slot);
       if (virtualSource) {
-        const inputNodeDto = [...this.nodesByExecutionId.values()].find(
-          (dto) =>
-            dto instanceof ExecutableNodeDTO && dto.node === virtualSource.node,
-        );
+        let inputNodeDto: ExecutableNodeDTO | undefined;
+        for (const dto of this.nodesByExecutionId.values()) {
+          if (
+            dto instanceof ExecutableNodeDTO &&
+            dto.node === virtualSource.node
+          ) {
+            inputNodeDto = dto;
+            break;
+          }
+        }
         if (!inputNodeDto)
           throw new Error(
             `No DTO found for virtual source node [${virtualSource.node.id}]`,

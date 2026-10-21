@@ -30,7 +30,8 @@ export async function processStreamingRerollValues(
   currentProcessedValue: string,
 ) {
   const processedValues = [currentProcessedValue];
-  for (const value of values.slice(1)) {
+  for (let i = 1; i < values.length; i++) {
+    const value = values[i];
     let result = value;
     if (settingsStore.state.removeIncompleteResponse) {
       result = trimUntilPunctuation(result);
