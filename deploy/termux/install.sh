@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+d#!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
 REPO="nevaeh5379/HaejeokRisuAI"
@@ -24,9 +24,9 @@ trap cleanup EXIT INT TERM
 [ -n "${PREFIX:-}" ] || fail "This installer must run inside Termux."
 command -v pkg >/dev/null 2>&1 || fail "The Termux pkg command is unavailable."
 info "Installing Termux runtime prerequisites"
-pkg install -y postgresql termux-services curl tar openssl-tool coreutils gawk >/dev/null
+pkg install -y postgresql termux-services curl tar openssl-tool coreutils gawk </dev/null >/dev/null
 if ! command -v node >/dev/null 2>&1; then
-  pkg install -y nodejs-lts >/dev/null
+  pkg install -y nodejs-lts </dev/null >/dev/null
 fi
 
 node -e '
