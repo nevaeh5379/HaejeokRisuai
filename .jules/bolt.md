@@ -64,3 +64,25 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-22 - Optimize Tokenizer, Workspace Tabs, Realtime Sync, and Android Native Surface Allocations
+
+**Learning:** Found micro-allocations and redundant clone/filter operations in tokenization, multi-window chat workspace management, node realtime sync, and Android surfaces:
+
+1. `getCharToken` in `tokenizer.ts` sliced `counts` twice (`counts.slice(0, persistentTexts.length).reduce(...)` and `counts.slice(persistentTexts.length).reduce(...)`), spread `[...persistentTexts, ...dynamicTexts]`, and chained `.split("\n").filter(...).join("\n")` on lore comments. `ChatTokenizer.tokenizeChats` used `.reduce()` closure, and `strongBan` did `O(N)` `.includes()` scans on an unban array.
+2. `ChatWindowManager` in `chatWorkspace.ts` cloned windows twice during `setWindow` and repeatedly used `.filter()` on tabs and groups in `moveTab`, causing multiple full array allocations on every tab migration between windows.
+3. `appendChatSnapshotChanges` in `characterSnapshot.ts` allocated `[index, message]` 2-element tuples via `next.message.entries()` and subsequently iterated over all messages again with `next.message.map(...)`. `diffSnapshotIds` invoked `lodash/isEqual` deep comparison on string ID arrays.
+4. `createDeferredTokenCalculator` in `deferredTokenCalculator.ts` allocated `Object.keys()` and ran `.filter()` on every `update()` call even when no keys were modified.
+5. `BoundedCache.clear` in `boundedCache.ts` allocated `[key, item]` 2-element entry tuples for every cached entry during eviction.
+6. `uniqueStrings` and `loadSettingValues` in `nodeRealtimeSync.ts` created `Set` and `Array.from` allocations even for empty arrays, and allocated 2-element `[key, value] as const` tuples during batch setting and plugin storage loads.
+7. `loadWidgetArtwork` and `refreshAndroidNativeSurfaces` in `androidNativeSurfaces.ts` performed double lookups (`has()` + `get()`) and allocated intermediate sliced arrays for shortcuts.
+
+**Action:**
+
+1. Streamline `getCharToken` and `tokenizeChats` to sum directly without slicing or closure allocations, pre-allocate text arrays, use `Set<number>` for `O(1)` unban checks in `strongBan`, and eliminate double lookups in `tokenizeGoogleCloud`.
+2. Avoid double cloning in `ChatWindowManager.restore`, and manipulate `sourceTabs` in-place with `splice` and direct scans during `moveTab`.
+3. Eliminate tuple allocations in `appendChatSnapshotChanges` with a single indexed loop that simultaneously creates commits and gathers message IDs, and replace `lodash/isEqual` in `diffSnapshotIds` with a fast index comparison.
+4. Use early-exit `for...in` key checking in `createDeferredTokenCalculator.update` to return `[]` without allocating key or filter arrays when unchanged.
+5. Use `this.values.forEach()` in `BoundedCache.clear` to avoid entry tuple allocations.
+6. Check array lengths before Set creation in `uniqueStrings`, and apply loaded setting/plugin keys directly in `Promise.all` without allocating intermediate `[key, value]` tuples.
+7. Eliminate double cache lookups in `loadWidgetArtwork`, replace `.at(-1)` with direct indexing in `localRecentChats`, and pre-allocate shortcut arrays.
