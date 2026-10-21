@@ -188,8 +188,9 @@ export async function cleanChunks(): Promise<void> {
     ? createTauriStartupFs()
     : createForageStartupFs();
   await sweepUncleanableAssets(fs, "assets", uncleanable);
-  await cleanupRemoteSaves(
-    fs,
-    new Set(characterStore.characters.map((v) => v.chaId)),
-  );
+  const activeCharIds = new Set<string>();
+  for (const v of characterStore.characters) {
+    activeCharIds.add(v.chaId);
+  }
+  await cleanupRemoteSaves(fs, activeCharIds);
 }

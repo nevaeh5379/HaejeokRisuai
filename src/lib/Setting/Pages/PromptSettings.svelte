@@ -110,12 +110,20 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
     dragOverIndex = -1
   }
 
+  function allPromptItemIndices(): Set<number> {
+    const indices = new Set<number>()
+    for (let i = 0; i < presetStore.state.promptTemplate.length; i++) {
+      indices.add(i)
+    }
+    return indices
+  }
+
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey && e.altKey && e.key === 'o') {
       if (openedItemIndices.size === presetStore.state.promptTemplate.length) {
         openedItemIndices = new Set<number>()
       } else {
-        openedItemIndices = new Set(presetStore.state.promptTemplate.map((_: any, i: number) => i))
+        openedItemIndices = allPromptItemIndices()
       }
     }
   }
@@ -193,7 +201,7 @@ import { ArrowLeft, PlusIcon, TrashIcon, ChevronsUpDown, ChevronDown } from "@lu
                 if (openedItemIndices.size === presetStore.state.promptTemplate.length) {
                     openedItemIndices = new Set<number>()
                 } else {
-                    openedItemIndices = new Set(presetStore.state.promptTemplate.map((_: any, i: number) => i))
+                    openedItemIndices = allPromptItemIndices()
                 }
             }}
         >

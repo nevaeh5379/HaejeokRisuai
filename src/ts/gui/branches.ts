@@ -87,7 +87,10 @@ export function buildChatGraphPackedLanes(
   const laneByNodeId = new Map<string, number>();
   if (graph.nodes.length === 0) return { laneByNodeId, columns: 1 };
 
-  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const nodeById = new Map<string, RenderedChatNode>();
+  for (const node of graph.nodes) {
+    nodeById.set(node.id, node);
+  }
   const children = new Map<string, Array<{ id: string; active: boolean }>>();
   const incoming = new Set<string>();
   for (const edge of graph.edges) {
@@ -116,8 +119,7 @@ export function buildChatGraphPackedLanes(
       chain.start = Math.min(chain.start, flow);
       chain.end = Math.max(chain.end, flow);
       const childEdges = children.get(currentId) ?? [];
-      const primary =
-        childEdges.find((child) => child.active) ?? childEdges[0];
+      const primary = childEdges.find((child) => child.active) ?? childEdges[0];
       for (const child of childEdges) {
         if (child.id === primary?.id) continue;
         if (!chainIdByNodeId.has(child.id)) chain.forkChildren.push(child.id);
@@ -220,12 +222,16 @@ export function buildChatGraphGitRows(
   const rowByNodeId = new Map<string, number>();
   if (nodes.length === 0) return { rowByNodeId, rows: 0 };
 
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const orderById = new Map(nodes.map((node, index) => [node.id, index]));
+  const nodeById = new Map<string, RenderedChatNode>();
+  const orderById = new Map<string, number>();
   const children = new Map<string, string[]>();
-  const indegree = new Map<string, number>(
-    nodes.map((node) => [node.id, 0]),
-  );
+  const indegree = new Map<string, number>();
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    nodeById.set(node.id, node);
+    orderById.set(node.id, i);
+    indegree.set(node.id, 0);
+  }
   const parentOf = new Map<string, string>();
   for (const edge of graph.edges) {
     if (!indegree.has(edge.from) || !indegree.has(edge.to)) continue;
@@ -605,7 +611,8 @@ export function buildChatMessageGraph(
         visitedOriginalIds.add(targetId);
         ensureMessage(targetId);
 
-        const collapseThreshold = density === "branches" ? 1 : MIN_COLLAPSED_RUN;
+        const collapseThreshold =
+          density === "branches" ? 1 : MIN_COLLAPSED_RUN;
         if (hiddenIds.length >= collapseThreshold) {
           const first = mutableNodes.get(hiddenIds[0])!;
           const last = mutableNodes.get(hiddenIds[hiddenIds.length - 1])!;
@@ -672,7 +679,6 @@ export function buildChatMessageGraph(
     displayRootIds.push(nodeId);
     renderFromMessage(nodeId);
   }
-
 
   // Hierarchical compact tree layout using depth contours (Reingold-Tilford variant).
   // Single-child chain nodes store only a compact {tailId, length} record instead
@@ -844,8 +850,7 @@ export function buildChatMessageGraph(
         contourLength(rootId),
       );
       for (let d = 0; d < overlap; d++) {
-        const gap =
-          (globalRightContour[d] ?? 0) - (leftAt(rootId, d) ?? 0) + 1;
+        const gap = (globalRightContour[d] ?? 0) - (leftAt(rootId, d) ?? 0) + 1;
         if (gap > shift) shift = gap;
       }
       rootPositions.set(rootId, shift);
@@ -867,7 +872,11 @@ export function buildChatMessageGraph(
 
   // Assign absolute coordinates (iterative DFS: safe for long linear chains)
   const positions = new Map<string, { x: number; y: number }>();
-  const assignPositions = (startNodeId: string, absX: number, depth: number) => {
+  const assignPositions = (
+    startNodeId: string,
+    absX: number,
+    depth: number,
+  ) => {
     const stack: { nodeId: string; absX: number; depth: number }[] = [
       { nodeId: startNodeId, absX, depth },
     ];
@@ -915,15 +924,17 @@ export function buildChatMessageGraph(
   }
   nodes.sort((a, b) => a.y - b.y || a.x - b.x);
 
-  const columns = Math.max(
-    1,
-    Math.ceil(Math.max(...nodes.map((node) => node.x), 0)) + 1,
-  );
-  const rows = Math.max(1, Math.max(...nodes.map((node) => node.y), 0) + 1);
-  const collapsedMessageCount = nodes.reduce(
-    (total, node) => total + node.collapsedCount,
-    0,
-  );
+  let maxX = 0;
+  let maxY = 0;
+  let collapsedMessageCount = 0;
+  for (const node of nodes) {
+    if (node.x > maxX) maxX = node.x;
+    if (node.y > maxY) maxY = node.y;
+    collapsedMessageCount += node.collapsedCount;
+  }
+
+  const columns = Math.max(1, Math.ceil(maxX) + 1);
+  const rows = Math.max(1, maxY + 1);
 
   return {
     nodes,
@@ -940,14 +951,16 @@ export function getChatBranchesFromPersistentGraph(
   snapshot: SqlChatBranchGraphData,
   options: ChatGraphBuildOptions = {},
 ): ChatBranchGraph {
-  const messageById = new Map(
-    snapshot.messages
-      .filter((message) => Boolean(message.chatId))
-      .map((message) => [message.chatId!, message]),
-  );
-  const parentById = new Map(
-    snapshot.links.map((link) => [link.messageId, link.parentMessageId]),
-  );
+  const messageById = new Map<string, Message>();
+  for (const message of snapshot.messages) {
+    if (message.chatId) {
+      messageById.set(message.chatId, message);
+    }
+  }
+  const parentById = new Map<string, string | undefined>();
+  for (const link of snapshot.links) {
+    parentById.set(link.messageId, link.parentMessageId);
+  }
   const timelineForHead = (headMessageId?: string) => {
     const reversed: Message[] = [];
     const seen = new Set<string>();

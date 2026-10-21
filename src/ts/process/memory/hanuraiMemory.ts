@@ -91,10 +91,17 @@ export async function hanuraiMemory(
 
   tokens -= db.hanuraiTokens;
 
-  const existingContents = new Set(chats.map((chat) => chat.content));
-  const candidateTexts = vectorResult
-    .map((vector) => vector[0].substring(16))
-    .filter((content) => !existingContents.has(content));
+  const existingContents = new Set<string>();
+  for (const chat of chats) {
+    existingContents.add(chat.content);
+  }
+  const candidateTexts: string[] = [];
+  for (const vector of vectorResult) {
+    const content = vector[0].substring(16);
+    if (!existingContents.has(content)) {
+      candidateTexts.push(content);
+    }
+  }
   const candidateChats = candidateTexts.map((content) => ({
     role: "system" as const,
     memo: "supaMemory",

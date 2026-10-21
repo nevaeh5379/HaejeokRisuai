@@ -150,7 +150,8 @@
         } else if (fileFilter === 'audio') {
             list = list.filter((f) => isAudioFile(f.key))
         } else if (fileFilter === 'orphan') {
-            const orphanSet = new Set(orphanAssets.map((o) => o.key))
+            const orphanSet = new Set<string>()
+            for (const o of orphanAssets) orphanSet.add(o.key)
             list = list.filter((f) => orphanSet.has(f.key))
         }
 

@@ -8,7 +8,10 @@ import { createEmptySqlCommit, sqlMessageData } from "./sqlCommit";
 import type { SqlBranchStorage } from "./sqlStorageFactory";
 
 function sourceRoot(graph: PortableBranchGraph) {
-  const ids = new Set(graph.branches.map((branch) => branch.id));
+  const ids = new Set<string>();
+  for (const branch of graph.branches) {
+    ids.add(branch.id);
+  }
   return (
     graph.branches.find((branch) => branch.reason === "root") ??
     graph.branches.find(
@@ -19,7 +22,10 @@ function sourceRoot(graph: PortableBranchGraph) {
 }
 
 function parentFirstBranches(graph: PortableBranchGraph) {
-  const byId = new Map(graph.branches.map((branch) => [branch.id, branch]));
+  const byId = new Map<string, PortableBranchGraph["branches"][number]>();
+  for (const branch of graph.branches) {
+    byId.set(branch.id, branch);
+  }
   const ordered: PortableBranchGraph["branches"] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
@@ -34,7 +40,8 @@ function parentFirstBranches(graph: PortableBranchGraph) {
     visited.add(branch.id);
     ordered.push(branch);
   };
-  [...graph.branches]
+  graph.branches
+    .slice()
     .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
     .forEach(visit);
   return ordered;
@@ -56,12 +63,14 @@ export async function restorePortableChatBranchGraph(
     throw new Error(`Restored chat has no SQL root branch: ${chatId}`);
 
   const idMap = new Map<string, string>([[root.id, targetRoot.id]]);
-  const existingIds = new Set(existing.map((branch) => branch.id));
-  const storedMessageIds = new Set(
-    portableBranchPath(graph, root.id)
-      .map((message) => message.chatId)
-      .filter((id): id is string => Boolean(id)),
-  );
+  const existingIds = new Set<string>();
+  for (const branch of existing) {
+    existingIds.add(branch.id);
+  }
+  const storedMessageIds = new Set<string>();
+  for (const message of portableBranchPath(graph, root.id)) {
+    if (message.chatId) storedMessageIds.add(message.chatId);
+  }
 
   for (const branch of parentFirstBranches(graph)) {
     if (branch.id === root.id) continue;

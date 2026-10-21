@@ -67,7 +67,7 @@ export class SqlitePluginStorage implements IPluginStorage {
     );
     commit.plugins = {
       upserts: [],
-      deletes: [...pluginIds],
+      deletes: Array.from(pluginIds),
     };
     await commitSqlChanges(this.storage, commit);
   }
@@ -93,7 +93,7 @@ export class SqlitePluginStorage implements IPluginStorage {
     commit.plugins = {
       upserts: [],
       deletes: [],
-      order: [...pluginIds],
+      order: Array.from(pluginIds),
     };
     await commitSqlChanges(this.storage, commit);
   }

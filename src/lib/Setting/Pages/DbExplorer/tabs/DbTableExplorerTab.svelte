@@ -114,7 +114,8 @@
     )
 
     const availableSchemas = $derived.by(() => {
-        const set = new Set(parsedTables.map((t) => t.schema))
+        const set = new Set<string>()
+        for (const t of parsedTables) set.add(t.schema)
         const ordered: string[] = []
         for (const s of SCHEMA_ORDER) {
             if (set.has(s)) {

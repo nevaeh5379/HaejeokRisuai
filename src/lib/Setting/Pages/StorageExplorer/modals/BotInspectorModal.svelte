@@ -55,7 +55,8 @@
     })
 
     const categories = $derived.by(() => {
-        const types = new Set(bot.assets.map((a) => a.type))
+        const types = new Set<string>()
+        for (const a of bot.assets) types.add(a.type)
         return Array.from(types)
     })
 
