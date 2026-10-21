@@ -1,5 +1,6 @@
-d#!/data/data/com.termux/files/usr/bin/bash
+#!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
+umask 077
 
 REPO="nevaeh5379/HaejeokRisuAI"
 APP_ROOT="${HAEJEOK_TERMUX_HOME:-$HOME/.local/share/haejeok-risuai}"
@@ -8,6 +9,7 @@ SAVE_DIR="$APP_ROOT/save"
 PGDATA="$APP_ROOT/postgres"
 CONFIG="$APP_ROOT/config.env"
 TMP_DIR=""
+PG_INIT_DIR=""
 POSTGRES_STARTED_BY_INSTALLER=0
 
 info() { printf '\n==> %s\n' "$*"; }
@@ -15,24 +17,59 @@ fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
   if [ "$POSTGRES_STARTED_BY_INSTALLER" = 1 ] && [ -n "${HAEJEOK_DB_PORT:-}" ]; then
-    pg_ctl -D "$PGDATA" -m fast -w stop >/dev/null 2>&1 || true
+    pg_ctl -D "$HAEJEOK_PGDATA" -m fast -w stop >/dev/null 2>&1 || true
   fi
+  [ -z "$PG_INIT_DIR" ] || rm -rf "$PG_INIT_DIR"
   [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 [ -n "${PREFIX:-}" ] || fail "This installer must run inside Termux."
 command -v pkg >/dev/null 2>&1 || fail "The Termux pkg command is unavailable."
+
+# Stop our services with the old binaries before upgrading shared libraries or PostgreSQL.
+export SVDIR="$PREFIX/var/service"
+export LOGDIR="$PREFIX/var/log"
+for service in haejeok-risuai haejeok-postgres; do
+  if [ -d "$SVDIR/$service/supervise" ]; then
+    sv -w 30 down "$service" || fail "Could not stop $service before the Termux package upgrade."
+  elif [ -d "$SVDIR/$service" ]; then
+    touch "$SVDIR/$service/down"
+  fi
+done
+
+# Termux does not support partial upgrades: a new node with an old libc++ can fail to link.
+info "Updating Termux package lists and upgrading all installed packages"
+pkg update -y </dev/null || fail "Could not update Termux packages. Check your connection or run termux-change-repo, then rerun this installer."
+pkg upgrade -y </dev/null || fail "Termux package upgrade failed. Run dpkg --configure -a and apt --fix-broken install, then pkg upgrade before retrying."
+
 info "Installing Termux runtime prerequisites"
-pkg install -y postgresql termux-services curl tar openssl-tool coreutils gawk </dev/null >/dev/null
+pkg install -y postgresql termux-services curl tar openssl-tool coreutils gawk </dev/null || \
+  fail "Termux prerequisite installation failed. Resolve the package errors above and rerun this installer."
 if ! command -v node >/dev/null 2>&1; then
-  pkg install -y nodejs-lts </dev/null >/dev/null
+  pkg install -y nodejs-lts </dev/null || fail "Could not install the Termux Node.js LTS package."
 fi
 
+node --version || fail "Node.js cannot run after pkg upgrade. Reinstall your Node package (nodejs or nodejs-lts) and libc++ with pkg reinstall, then retry."
 node -e '
   const [major, minor] = process.versions.node.split(".").map(Number);
   process.exit((major === 24 && minor >= 12) || major > 24 ? 0 : 1);
 ' || fail "Node.js 24.12+ is required. Upgrade the Termux Node package first."
+npm --version || fail "npm cannot run. Reinstall your Termux Node package and retry."
+
+check_postgres_commands() {
+  local cmd
+  for cmd in postgres initdb pg_ctl psql createdb pg_isready; do
+    command -v "$cmd" >/dev/null 2>&1 && "$cmd" --version >/dev/null || return 1
+  done
+}
+if ! check_postgres_commands; then
+  info "Repairing the incomplete PostgreSQL package installation"
+  pkg reinstall -y postgresql </dev/null || fail "Could not reinstall PostgreSQL. Resolve the package errors above and retry."
+  check_postgres_commands || fail "PostgreSQL commands still cannot run. Run pkg upgrade and pkg reinstall postgresql, then retry."
+fi
 
 for cmd in node npm postgres initdb pg_ctl psql createdb pg_isready curl tar sha256sum sv service-daemon awk; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Required command is missing after package install: $cmd"
@@ -171,47 +208,74 @@ valid_port "$PORT" || fail "Invalid saved PORT: $PORT"
 valid_port "$HAEJEOK_DB_PORT" || fail "Invalid saved HAEJEOK_DB_PORT: $HAEJEOK_DB_PORT"
 
 initialize_postgres() {
-  [ ! -f "$HAEJEOK_PGDATA/PG_VERSION" ] || return 0
+  local installed_major cluster_major
+  installed_major=$(postgres --version)
+  installed_major=${installed_major##* }
+  installed_major=${installed_major%%.*}
+  if [ -f "$HAEJEOK_PGDATA/PG_VERSION" ]; then
+    cluster_major=$(cat "$HAEJEOK_PGDATA/PG_VERSION")
+    [ "$cluster_major" = "$installed_major" ] || \
+      fail "Existing PostgreSQL data uses version $cluster_major, but the installed server is $installed_major. Migrate with pg_upgrade or dump/restore before retrying. Data was preserved at $HAEJEOK_PGDATA."
+    return 0
+  fi
+
+  # Never mistake a partial initdb for a usable cluster, or delete unknown existing data.
+  if [ -e "$HAEJEOK_PGDATA" ]; then
+    rmdir "$HAEJEOK_PGDATA" 2>/dev/null || \
+      fail "PostgreSQL directory has data but no PG_VERSION: $HAEJEOK_PGDATA. Inspect and move it aside before retrying; it was not deleted."
+  fi
   info "Initializing private PostgreSQL cluster"
-  mkdir -p "$HAEJEOK_PGDATA"
-  chmod 700 "$HAEJEOK_PGDATA"
+  mkdir -p "$(dirname "$HAEJEOK_PGDATA")"
+  PG_INIT_DIR=$(mktemp -d "${HAEJEOK_PGDATA}.init.XXXXXX")
 
   local pwfile="$TMP_DIR/postgres-admin-password"
   printf '%s\n' "$HAEJEOK_PG_ADMIN_PASSWORD" > "$pwfile"
   chmod 600 "$pwfile"
-  initdb -D "$HAEJEOK_PGDATA" --username=postgres --pwfile="$pwfile" \
-    --auth-local=trust --auth-host=scram-sha-256 --encoding=UTF8 --no-locale >/dev/null
-
-  pg_ctl -D "$HAEJEOK_PGDATA" -l "$APP_ROOT/logs/postgres-bootstrap.log" \
-    -o "-h 127.0.0.1 -p $HAEJEOK_DB_PORT" -w start >/dev/null
-  POSTGRES_STARTED_BY_INSTALLER=1
+  if ! initdb -D "$PG_INIT_DIR" --username=postgres --pwfile="$pwfile" \
+    --auth-local=trust --auth-host=scram-sha-256 --encoding=UTF8 --no-locale \
+    > "$APP_ROOT/logs/postgres-initdb.log" 2>&1; then
+    tail -n 40 "$APP_ROOT/logs/postgres-initdb.log" >&2
+    fail "PostgreSQL initialization failed. See $APP_ROOT/logs/postgres-initdb.log, resolve the error, and rerun this installer."
+  fi
+  mv "$PG_INIT_DIR" "$HAEJEOK_PGDATA"
+  PG_INIT_DIR=""
 }
-NEEDS_POSTGRES_INIT=0
-[ -f "$HAEJEOK_PGDATA/PG_VERSION" ] || NEEDS_POSTGRES_INIT=1
 initialize_postgres
 
-if [ "$NEEDS_POSTGRES_INIT" = 1 ]; then
-  info "Creating the Haejeok RisuAI database"
-  PGPASSWORD="$HAEJEOK_PG_ADMIN_PASSWORD" psql \
-    -h 127.0.0.1 -p "$HAEJEOK_DB_PORT" -U postgres -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c "CREATE ROLE haejeok WITH LOGIN PASSWORD '$HAEJEOK_DB_PASSWORD';" >/dev/null
-  PGPASSWORD="$HAEJEOK_PG_ADMIN_PASSWORD" createdb \
-    -h 127.0.0.1 -p "$HAEJEOK_DB_PORT" -U postgres \
-    -O "$HAEJEOK_DB_USER" "$HAEJEOK_DB_NAME"
+# Check the actual role/database on every run, including retries after interrupted setup.
+if ! pg_ctl -D "$HAEJEOK_PGDATA" status >/dev/null 2>&1; then
+  POSTGRES_STARTED_BY_INSTALLER=1
+  if ! pg_ctl -D "$HAEJEOK_PGDATA" -l "$APP_ROOT/logs/postgres-bootstrap.log" \
+    -o "-h 127.0.0.1 -p $HAEJEOK_DB_PORT" -t 60 -w start; then
+    tail -n 40 "$APP_ROOT/logs/postgres-bootstrap.log" >&2 || true
+    fail "PostgreSQL could not start. See $APP_ROOT/logs/postgres-bootstrap.log."
+  fi
+fi
+
+info "Ensuring the Haejeok RisuAI database and login are ready"
+if ! PGPASSWORD="$HAEJEOK_PG_ADMIN_PASSWORD" PGCONNECT_TIMEOUT=10 psql -X --no-password \
+  -h 127.0.0.1 -p "$HAEJEOK_DB_PORT" -U postgres -d postgres \
+  -v ON_ERROR_STOP=1 -v db_user="$HAEJEOK_DB_USER" -v db_password="$HAEJEOK_DB_PASSWORD" \
+  -v db_name="$HAEJEOK_DB_NAME" > "$APP_ROOT/logs/postgres-setup.log" 2>&1 <<'SQL'
+SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'db_user', :'db_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'db_user')
+\gexec
+SELECT format('CREATE DATABASE %I OWNER %I', :'db_name', :'db_user')
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db_name')
+\gexec
+SQL
+then
+  fail "PostgreSQL database setup failed. See $APP_ROOT/logs/postgres-setup.log, resolve the error, and rerun this installer."
+fi
+PGPASSWORD="$HAEJEOK_DB_PASSWORD" PGCONNECT_TIMEOUT=10 psql -X --no-password \
+  -h 127.0.0.1 -p "$HAEJEOK_DB_PORT" -U "$HAEJEOK_DB_USER" -d "$HAEJEOK_DB_NAME" \
+  -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null || \
+  fail "Cannot connect to the app database with the saved credentials. Check $CONFIG and rerun this installer."
+if [ "$POSTGRES_STARTED_BY_INSTALLER" = 1 ]; then
   pg_ctl -D "$HAEJEOK_PGDATA" -m fast -w stop >/dev/null
   POSTGRES_STARTED_BY_INSTALLER=0
 fi
 
-stop_existing_app() {
-  export SVDIR="$PREFIX/var/service"
-  export LOGDIR="$PREFIX/var/log"
-  if [ -d "$SVDIR/haejeok-risuai" ]; then
-    sv down haejeok-risuai >/dev/null 2>&1 || true
-  fi
-}
-
-stop_existing_app
 PREVIOUS_APP="$APP_ROOT/app.previous"
 rm -rf "$PREVIOUS_APP"
 if [ -d "$HAEJEOK_APP_DIR" ]; then
