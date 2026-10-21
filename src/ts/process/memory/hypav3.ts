@@ -445,10 +445,14 @@ async function hypaMemoryV3MainExp(
       }
 
       const summaryText = result.data;
+      const chatMemos = new Set<string>();
+      for (const chat of toSummarizeArray[i]) {
+        chatMemos.add(chat.memo);
+      }
 
       data.summaries.push({
         text: summaryText,
-        chatMemos: new Set(toSummarizeArray[i].map((chat) => chat.memo)),
+        chatMemos,
         isImportant: false,
         categoryId: undefined,
         tags: [],
@@ -503,6 +507,7 @@ async function hypaMemoryV3MainExp(
   );
 
   const selectedSummaries: Summary[] = [];
+  const selectedSummariesSet = new Set<Summary>();
   const randomMemoryRatio =
     1 - settings.recentMemoryRatio - settings.similarMemoryRatio;
   const selectedImportantSummaries: Summary[] = [];
@@ -523,7 +528,10 @@ async function hypaMemoryV3MainExp(
       }
     }
 
-    selectedSummaries.push(...selectedImportantSummaries);
+    for (const s of selectedImportantSummaries) {
+      selectedSummaries.push(s);
+      selectedSummariesSet.add(s);
+    }
 
     console.log(
       logPrefix,
@@ -547,7 +555,7 @@ async function hypaMemoryV3MainExp(
   if (settings.recentMemoryRatio > 0) {
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Add one by one from the end
@@ -566,7 +574,10 @@ async function hypaMemoryV3MainExp(
       consumedRecentMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRecentSummaries);
+    for (const s of selectedRecentSummaries) {
+      selectedSummaries.push(s);
+      selectedSummariesSet.add(s);
+    }
 
     console.log(
       logPrefix,
@@ -606,24 +617,33 @@ async function hypaMemoryV3MainExp(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Dynamically generate embedding texts
-    const ebdTexts: EmbeddingText<Summary>[] = unusedSummaries.flatMap(
-      (summary, summaryIndex) => {
-        const splitted = splitBySeparator(
-          summary.text,
-          settings.summaryChunkSeparator,
-        ).filter((e) => e.trim().length > 0);
-
-        return splitted.map((chunk, chunkIndex) => ({
-          id: `${summaryIndex}-${chunkIndex}`,
-          content: chunk.trim(),
-          metadata: summary,
-        }));
-      },
-    );
+    const ebdTexts: EmbeddingText<Summary>[] = [];
+    for (
+      let summaryIndex = 0;
+      summaryIndex < unusedSummaries.length;
+      summaryIndex++
+    ) {
+      const summary = unusedSummaries[summaryIndex];
+      const splitted = splitBySeparator(
+        summary.text,
+        settings.summaryChunkSeparator,
+      );
+      let chunkIndex = 0;
+      for (const chunk of splitted) {
+        const trimmed = chunk.trim();
+        if (trimmed.length > 0) {
+          ebdTexts.push({
+            id: `${summaryIndex}-${chunkIndex++}`,
+            content: trimmed,
+            metadata: summary,
+          });
+        }
+      }
+    }
 
     // Initialize embedding processor
     const processor = new HypaProcessorV2<Summary>({
@@ -674,26 +694,32 @@ async function hypaMemoryV3MainExp(
       });
     }
 
-    const recentChats = chats
-      .slice(-settings.queryChatCount)
-      .filter((chat) => chat.content.trim().length > 0);
+    const recentChats: OpenAIChat[] = [];
+    const chatCandidates = chats.slice(-settings.queryChatCount);
+    for (const chat of chatCandidates) {
+      if (chat.content.trim().length > 0) {
+        recentChats.push(chat);
+      }
+    }
 
-    const queries = recentChats
-      .map((chat, index) => {
-        const subQueries = chat.content
-          .split("\n\n")
-          .filter((e) => e.trim().length > 0);
-        const weight =
-          (index + 1) /
-          ((recentChats.length * (recentChats.length + 1)) / 2) /
-          subQueries.length;
-
-        return subQueries.map((content) => ({
-          content,
-          weight,
-        }));
-      })
-      .flat();
+    const queries: { content: string; weight: number }[] = [];
+    const recentDenominator =
+      (recentChats.length * (recentChats.length + 1)) / 2;
+    for (let index = 0; index < recentChats.length; index++) {
+      const chat = recentChats[index];
+      const subQueries: string[] = [];
+      for (const e of chat.content.split("\n\n")) {
+        if (e.trim().length > 0) {
+          subQueries.push(e);
+        }
+      }
+      if (subQueries.length > 0) {
+        const weight = (index + 1) / recentDenominator / subQueries.length;
+        for (const content of subQueries) {
+          queries.push({ content, weight });
+        }
+      }
+    }
 
     if (queries.length > 0) {
       try {
@@ -770,7 +796,10 @@ async function hypaMemoryV3MainExp(
           consumedSimilarMemoryTokens += summaryTokens;
         }
 
-        selectedSummaries.push(...selectedSimilarSummaries);
+        for (const s of selectedSimilarSummaries) {
+          selectedSummaries.push(s);
+          selectedSummariesSet.add(s);
+        }
       } catch (error) {
         return {
           currentTokens,
@@ -830,7 +859,7 @@ async function hypaMemoryV3MainExp(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries
-      .filter((e) => !selectedSummaries.includes(e))
+      .filter((e) => !selectedSummariesSet.has(e))
       .sort(() => Math.random() - 0.5); // Random shuffle
 
     for (const summary of unusedSummaries) {
@@ -848,7 +877,10 @@ async function hypaMemoryV3MainExp(
       consumedRandomMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRandomSummaries);
+    for (const s of selectedRandomSummaries) {
+      selectedSummaries.push(s);
+      selectedSummariesSet.add(s);
+    }
 
     console.log(
       logPrefix,
@@ -1225,6 +1257,7 @@ async function hypaMemoryV3Main(
   );
 
   const selectedSummaries: Summary[] = [];
+  const selectedSummariesSet = new Set<Summary>();
   const randomMemoryRatio =
     1 - settings.recentMemoryRatio - settings.similarMemoryRatio;
   const selectedImportantSummaries: Summary[] = [];
@@ -1245,7 +1278,10 @@ async function hypaMemoryV3Main(
       }
     }
 
-    selectedSummaries.push(...selectedImportantSummaries);
+    for (const s of selectedImportantSummaries) {
+      selectedSummaries.push(s);
+      selectedSummariesSet.add(s);
+    }
 
     console.log(
       logPrefix,
@@ -1269,7 +1305,7 @@ async function hypaMemoryV3Main(
   if (settings.recentMemoryRatio > 0) {
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Add one by one from the end
@@ -1288,7 +1324,10 @@ async function hypaMemoryV3Main(
       consumedRecentMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRecentSummaries);
+    for (const s of selectedRecentSummaries) {
+      selectedSummaries.push(s);
+      selectedSummariesSet.add(s);
+    }
 
     console.log(
       logPrefix,
@@ -1328,25 +1367,27 @@ async function hypaMemoryV3Main(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Dynamically generate summary chunks
     const summaryChunks: SummaryChunk[] = [];
 
-    unusedSummaries.forEach((summary) => {
+    for (const summary of unusedSummaries) {
       const splitted = splitBySeparator(
         summary.text,
         settings.summaryChunkSeparator,
-      ).filter((e) => e.trim().length > 0);
-
-      summaryChunks.push(
-        ...splitted.map((e) => ({
-          text: e.trim(),
-          summary,
-        })),
       );
-    });
+      for (const chunk of splitted) {
+        const trimmed = chunk.trim();
+        if (trimmed.length > 0) {
+          summaryChunks.push({
+            text: trimmed,
+            summary,
+          });
+        }
+      }
+    }
 
     // Initialize embedding processor
     const processor = new HypaProcesserEx(
@@ -1368,9 +1409,13 @@ async function hypaMemoryV3Main(
       };
     }
 
-    const recentChats = chats
-      .slice(-settings.queryChatCount)
-      .filter((chat) => chat.content.trim().length > 0);
+    const recentChats: OpenAIChat[] = [];
+    const chatCandidates = chats.slice(-settings.queryChatCount);
+    for (const chat of chatCandidates) {
+      if (chat.content.trim().length > 0) {
+        recentChats.push(chat);
+      }
+    }
 
     if (recentChats.length > 0) {
       // Raw recent chat search
@@ -1446,7 +1491,10 @@ async function hypaMemoryV3Main(
           consumedSimilarMemoryTokens += summaryTokens;
         }
 
-        selectedSummaries.push(...selectedSimilarSummaries);
+        for (const s of selectedSimilarSummaries) {
+          selectedSummaries.push(s);
+          selectedSummariesSet.add(s);
+        }
       } catch (error) {
         return {
           currentTokens,
@@ -1499,7 +1547,7 @@ async function hypaMemoryV3Main(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries
-      .filter((e) => !selectedSummaries.includes(e))
+      .filter((e) => !selectedSummariesSet.has(e))
       .sort(() => Math.random() - 0.5); // Random shuffle
 
     for (const summary of unusedSummaries) {
@@ -1517,7 +1565,10 @@ async function hypaMemoryV3Main(
       consumedRandomMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRandomSummaries);
+    for (const s of selectedRandomSummaries) {
+      selectedSummaries.push(s);
+      selectedSummariesSet.add(s);
+    }
 
     console.log(
       logPrefix,
@@ -1670,7 +1721,10 @@ function sumTokenCounts(counts: number[], uptoInclusive: number): number {
 
 function cleanOrphanedSummary(chats: OpenAIChat[], data: HypaV3Data): void {
   // Collect all memos from current chats
-  const currentChatMemos = new Set(chats.map((chat) => chat.memo));
+  const currentChatMemos = new Set<string>();
+  for (const chat of chats) {
+    currentChatMemos.add(chat.memo);
+  }
   const originalLength = data.summaries.length;
 
   // Filter summaries - keep only those whose chatMemos are subset of current chat memos

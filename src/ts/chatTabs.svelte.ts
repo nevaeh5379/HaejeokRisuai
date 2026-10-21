@@ -77,10 +77,18 @@ export class ChatTabsStore {
   }
 
   restoreSnapshot(snapshot: ChatTabsSnapshot): void {
-    const groups = snapshot.groups.length
-      ? snapshot.groups.map((group) => ({ ...group }))
-      : [{ id: createGroupId(), activeTabId: null }];
-    const groupIds = new Set(groups.map((group) => group.id));
+    const groups: ChatTabGroup[] = [];
+    const groupIds = new Set<string>();
+    if (snapshot.groups.length) {
+      for (const group of snapshot.groups) {
+        groups.push({ ...group });
+        groupIds.add(group.id);
+      }
+    } else {
+      const defaultGroup = { id: createGroupId(), activeTabId: null };
+      groups.push(defaultGroup);
+      groupIds.add(defaultGroup.id);
+    }
     const fallbackGroupId = groups[0].id;
     const tabs = snapshot.tabs.map((tab) => ({
       ...tab,
@@ -299,9 +307,7 @@ export class ChatTabsStore {
     );
   }
 
-  private removeTabsMatching(
-    matches: (tab: ChatTab) => boolean,
-  ): {
+  private removeTabsMatching(matches: (tab: ChatTab) => boolean): {
     activeChanged: boolean;
     activeTab: ChatTab | null;
   } {
@@ -309,7 +315,12 @@ export class ChatTabsStore {
     if (removed.length === 0) {
       return { activeChanged: false, activeTab: this.activeTab ?? null };
     }
-    const removedIds = new Set(removed.map((tab) => tab.id));
+    const removedIds = new Set<string>();
+    const removedGroupIds = new Set<string>();
+    for (const tab of removed) {
+      removedIds.add(tab.id);
+      removedGroupIds.add(tab.groupId);
+    }
     this.tabs = this.tabs.filter((tab) => !removedIds.has(tab.id));
 
     let focusedResult: {
@@ -317,10 +328,8 @@ export class ChatTabsStore {
       activeTab: ChatTab | null;
     } = { activeChanged: false, activeTab: this.activeTab ?? null };
 
-    for (const groupId of new Set(removed.map((tab) => tab.groupId))) {
-      const groupIndex = this.groups.findIndex(
-        (group) => group.id === groupId,
-      );
+    for (const groupId of removedGroupIds) {
+      const groupIndex = this.groups.findIndex((group) => group.id === groupId);
       if (groupIndex < 0) continue;
       const group = this.groups[groupIndex];
       const wasFocused = this.focusedGroupId === group.id;
