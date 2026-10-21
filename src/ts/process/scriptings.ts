@@ -336,13 +336,16 @@ export async function runScripted(
         const chats = ScriptingEngineState.chat.message;
         const safeCount = Math.max(0, Math.floor(count || 0));
         const start = Math.max(0, chats.length - safeCount);
-        return JSON.stringify(
-          chats.slice(start).map((v) => ({
+        const result: { role: string; data: string; time: number }[] = [];
+        for (let i = start; i < chats.length; i++) {
+          const v = chats[i];
+          result.push({
             role: v.role,
             data: v.data,
             time: v.time ?? 0,
-          })),
-        );
+          });
+        }
+        return JSON.stringify(result);
       });
 
       declareAPI("setChat", (id: string, index: number, value: string) => {

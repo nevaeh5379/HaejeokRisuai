@@ -319,12 +319,16 @@ export async function buildGenerationPrompt(
                   .join("\n\n")
               : undefined,
             memory: illustration.includeMemory
-              ? formated
-                  .filter(
-                    (m) => m.memo === "supaMemory" || m.memo === "hypaMemory",
-                  )
-                  .map((m) => m.content)
-                  .join("\n\n")
+              ? (() => {
+                  let text = "";
+                  for (const m of formated) {
+                    if (m.memo === "supaMemory" || m.memo === "hypaMemory") {
+                      if (text) text += "\n\n";
+                      text += m.content;
+                    }
+                  }
+                  return text;
+                })()
               : undefined,
           }
         : undefined,

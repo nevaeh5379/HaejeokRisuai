@@ -656,24 +656,20 @@ export function getModuleTriggers(
       const sandboxModuleIds = group.members.map((member) => member.moduleId);
       for (const member of group.members) {
         if (!member.module.trigger) continue;
-        triggers = triggers.concat(
-          member.module.trigger.flatMap((value) => {
-            const trigger = normalizeModuleTrigger(value);
-            if (!trigger) return [];
-            return [
-              {
-                ...trigger,
-                sourceModuleId: member.module.id,
-                lowLevelAccess: member.module.lowLevelAccess,
-                subModel: group.subModel,
-                sandboxGroupId: group.id,
-                sandboxGroupName: group.name,
-                sandboxInstanceId: member.instanceId,
-                sandboxModuleIds,
-              },
-            ];
-          }),
-        );
+        for (const value of member.module.trigger) {
+          const trigger = normalizeModuleTrigger(value);
+          if (!trigger) continue;
+          triggers.push({
+            ...trigger,
+            sourceModuleId: member.module.id,
+            lowLevelAccess: member.module.lowLevelAccess,
+            subModel: group.subModel,
+            sandboxGroupId: group.id,
+            sandboxGroupName: group.name,
+            sandboxInstanceId: member.instanceId,
+            sandboxModuleIds,
+          });
+        }
       }
     }
   }
@@ -692,7 +688,7 @@ export function getModuleRegexScripts(
       continue;
     }
     if (module.regex) {
-      customscripts = customscripts.concat(module.regex);
+      customscripts.push(...module.regex);
     }
   }
   return customscripts;
@@ -720,8 +716,11 @@ export function getModuleMcps(
   overrideIds?: string[],
 ) {
   const modules = getModules(character, overrideIds);
-
-  return modules.map((v) => v.mcp?.url).filter((v) => v);
+  const result: string[] = [];
+  for (const v of modules) {
+    if (v.mcp?.url) result.push(v.mcp.url);
+  }
+  return result;
 }
 
 export async function applyModule() {

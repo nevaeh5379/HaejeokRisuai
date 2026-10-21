@@ -149,15 +149,17 @@ export async function loadLoreBookV3Prompt(
     logs: { prompt: string; source: string; activated: string }[];
   };
   let precomputedMatchResults: Map<string, LoreMatchResult> | null = null;
-  const loreMatchCacheKey = (arg: LoreMatchRequest) =>
-    JSON.stringify([
-      arg.keys.map((key) => key.trim()).filter(Boolean),
-      arg.searchDepth,
-      arg.regex,
-      arg.fullWordMatching,
-      arg.all ?? false,
-      arg.dontSearchWhenRecursive,
-    ]);
+  const loreMatchCacheKey = (arg: LoreMatchRequest) => {
+    let keyStr = "";
+    for (let i = 0; i < arg.keys.length; i++) {
+      const trimmed = arg.keys[i].trim();
+      if (trimmed) {
+        if (keyStr) keyStr += ",";
+        keyStr += trimmed;
+      }
+    }
+    return `${keyStr}|${arg.searchDepth}|${arg.regex ? 1 : 0}|${arg.fullWordMatching ? 1 : 0}|${arg.all ? 1 : 0}|${arg.dontSearchWhenRecursive ? 1 : 0}`;
+  };
 
   const searchMatch = (messages: Message[], arg: LoreMatchRequest) => {
     const precomputed = precomputedMatchResults?.get(loreMatchCacheKey(arg));
@@ -931,13 +933,16 @@ export async function loadLoreBookV3Prompt(
     return b.order - a.order;
   });
 
-  const loreinjectionLores = activesResorted.filter((act) => {
-    return act?.inject?.lore;
-  });
-
-  activesResorted = activesResorted.filter((act) => {
-    return !act?.inject?.lore;
-  });
+  const loreinjectionLores: typeof activesResorted = [];
+  const nonInjectionLores: typeof activesResorted = [];
+  for (const act of activesResorted) {
+    if (act?.inject?.lore) {
+      loreinjectionLores.push(act);
+    } else {
+      nonInjectionLores.push(act);
+    }
+  }
+  activesResorted = nonInjectionLores;
 
   //I know this will make token count wrong, but performance is more important here
 

@@ -304,9 +304,12 @@ function createNodeProviderExecutor({
     ...extraFormats,
   ]);
   const supportedFormats: any = new Set(formats);
-  const routes: any = Object.freeze([
-    ...new Set(formats.map(resolveProviderRoute).filter(Boolean)),
-  ]);
+  const routeSet = new Set<string>();
+  for (const format of formats) {
+    const route = resolveProviderRoute(format);
+    if (route) routeSet.add(route);
+  }
+  const routes: any = Object.freeze(Array.from(routeSet));
   const transportFormats: any = Object.freeze([
     LLM_FORMATS.OpenAICompatible,
     LLM_FORMATS.OpenAIResponseAPI,
