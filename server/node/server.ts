@@ -5441,7 +5441,8 @@ app.post(
       await upsertAssetCatalogEntries(completedCatalogEntries);
       res.send({ success: true, written: fileCount });
     } catch (error) {
-      const inFlightFiles = [...receivingFiles.values()].map(
+      const inFlightFiles = Array.from(
+        receivingFiles.values(),
         (file) => file.name,
       );
       console.error(

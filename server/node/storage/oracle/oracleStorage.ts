@@ -2786,7 +2786,7 @@ class OracleStorage extends SqlStorageBase {
   }
 
   async ensureChatBranchGraphs(conn?: any, chatIds?: any) {
-    const ids = [...new Set<any>((chatIds || []).filter(Boolean))];
+    const ids = Array.from(new Set<any>((chatIds || []).filter(Boolean)));
     if (ids.length === 0) return;
     const idsJson = JSON.stringify(ids);
     await conn.execute(
@@ -4499,8 +4499,7 @@ class OracleStorage extends SqlStorageBase {
                 .find((id?: any) => ids.has(id)) ||
               originalIds
                 .slice(0, Math.max(0, deletedIndex))
-                .reverse()
-                .find((id?: any) => ids.has(id)) ||
+                .findLast((id?: any) => ids.has(id)) ||
               (payload.presets.order || Array.from(ids))[0];
           }
         }
