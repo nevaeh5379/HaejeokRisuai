@@ -327,6 +327,9 @@ export async function translateHTML(
   regenerate = false,
   chatTarget?: ChatExecutionTarget,
 ): Promise<string> {
+  if (!html) {
+    return html;
+  }
   const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
   let alwaysExistChar: character | groupChat | simpleCharacterArgument;
   if (charArg !== "") {
@@ -613,8 +616,8 @@ async function translateLLM(
 ): Promise<string> {
   if (!arg.regenerate) {
     const cacheMatch = await LLMCacheStorage.getItem<string>(text);
-    if (cacheMatch) {
-      return cacheMatch;
+    if (cacheMatch !== null) {
+      return cacheMatch as string;
     }
   }
 

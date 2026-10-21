@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WelcomeBackground from "./WelcomeBackground.svelte";
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { onMount } from 'svelte';
@@ -71,7 +72,7 @@ import { onMount } from 'svelte';
   // Form State
   let username = $state(personaStore.activePersona?.name ?? 'User');
   let selectedProvider = $state('claude');
-  let modelName = $state('claude-3-7-sonnet-20250219');
+  let modelName = $state('claude-sonnet-4-6');
   let customURL = $state('');
   let apiKey = $state('');
   let maxContext = $state<number>(presetStore.state.maxContext || 16000);
@@ -130,13 +131,13 @@ import { onMount } from 'svelte';
     {
       id: 'claude',
       name: 'Anthropic Claude',
-      sub: 'Claude 3.7 Sonnet, 3.5 Sonnet',
-      defaultModel: 'claude-3-7-sonnet-20250219',
+      sub: 'Claude Sonnet 4.6, Opus 5',
+      defaultModel: 'claude-sonnet-4-6',
       models: [
-        'claude-3-7-sonnet-20250219',
-        'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022',
-        'claude-3-opus-20240229',
+        'claude-sonnet-4-6',
+        'claude-sonnet-4-5-20250929',
+        'claude-haiku-4-5-20251001',
+        'claude-opus-5',
       ],
       keyLink: 'https://console.anthropic.com/settings/keys',
       keyPlaceholder: 'sk-ant-api03-...',
@@ -163,9 +164,9 @@ import { onMount } from 'svelte';
       id: 'openrouter',
       name: 'OpenRouter',
       sub: 'Multi-Model Hub',
-      defaultModel: 'anthropic/claude-3.7-sonnet',
+      defaultModel: 'anthropic/claude-sonnet-4.6',
       models: [
-        'anthropic/claude-3.7-sonnet',
+        'anthropic/claude-sonnet-4.6',
         'deepseek/deepseek-r1',
         'meta-llama/llama-3.3-70b-instruct',
         'google/gemini-2.5-flash',
@@ -387,7 +388,7 @@ import { onMount } from 'svelte';
 
     // Provider & model setup. aiModel stores Risu's registry ID, not always the API model slug.
     if (selectedProvider === 'claude') {
-      const targetModel = trimmedModel || 'claude-3-7-sonnet-20250219';
+      const targetModel = trimmedModel || 'claude-sonnet-4-6';
       presetStore.state.aiModel = targetModel;
       presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.claudeAPIKey = trimmedApiKey;
@@ -404,7 +405,7 @@ import { onMount } from 'svelte';
       presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.google.accessToken = trimmedApiKey;
     } else if (selectedProvider === 'openrouter') {
-      const targetModel = trimmedModel || 'anthropic/claude-3.7-sonnet';
+      const targetModel = trimmedModel || 'anthropic/claude-sonnet-4.6';
       presetStore.state.aiModel = 'openrouter';
       presetStore.state.subModel = 'openrouter';
       presetStore.state.openrouterRequestModel = targetModel;
@@ -460,7 +461,9 @@ import { onMount } from 'svelte';
 {#if isMobile}
   <WelcomeRisuMobile />
 {:else}
-<div class="relative w-full h-full min-h-screen bg-bgcolor text-textcolor flex flex-col items-center justify-center p-3 md:p-6 overflow-y-auto selection:bg-blue-600 selection:text-white">
+<div class="isolate relative w-full h-full min-h-screen bg-bgcolor text-textcolor flex flex-col items-center justify-center p-3 md:p-6 overflow-y-auto selection:bg-blue-600 selection:text-white">
+  <div class="absolute inset-0 -z-10 pointer-events-none opacity-40" aria-hidden="true"><WelcomeBackground /></div>
+
   {#if isTauriMacOS}
     <div
       class="absolute top-0 left-0 right-1 h-10 z-[1]"

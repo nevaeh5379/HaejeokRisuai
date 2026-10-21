@@ -47,6 +47,8 @@ export interface BackupImportEntryWriter {
 }
 
 export interface BackupImportStreamHandlers {
+  /** Resolve references between entries before scratch files are removed. */
+  onBeforeFinish?(): Promise<void>;
   onBufferedEntry(entry: BufferedBackupEntry): Promise<void>;
   openAssetEntry(entry: StreamedBackupEntry): Promise<BackupImportEntryWriter>;
   onProgress?(progress: {
@@ -297,6 +299,7 @@ export class BackupImportStreamSession {
       throw new BackupImportStagingError("Backup parser is already finished");
     }
     this.parser.finish();
+    await this.handlers.onBeforeFinish?.();
     this.finished = true;
     await this.disposeDirectory();
     return {

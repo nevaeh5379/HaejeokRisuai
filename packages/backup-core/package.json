@@ -31,6 +31,7 @@
     "./legacyRecords": "./src/legacyRecords.ts",
     "./legacyHeaders": "./src/legacyHeaders.ts",
     "./stream/encryption": "./src/stream/encryption.ts",
+    "./upstreamPluginStorage": "./src/upstreamPluginStorage.ts",
     "./coldStorage": "./src/coldStorage.ts",
     "./inlayCodec": "./src/inlayCodec.ts",
     "./inlayRestore": "./src/inlayRestore.ts",

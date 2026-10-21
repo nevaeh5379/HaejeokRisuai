@@ -1,7 +1,7 @@
 <script lang="ts">
     import { flushDurableStores } from "./ts/stores/domain/flushDurableStores";
     import AuthorNoteDraftRecovery from "./lib/Others/AuthorNoteDraftRecovery.svelte";
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, MobileGUIStack, MobileSideBar, SettingsMenuIndex, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore, popUpEditorStore, loadoutModalStore, onboardingModalStore, irisStore, customSideBarConfigDialogStore, assetManagerModalStore, messageSearchOpen, sqlConfiguredStore, pluginAlertModalStore, selectedCharID, PlaygroundStore, mobileSettingsReturnChar } from './ts/stores.svelte';
     import { settingsStore, moduleStore, characterStore, messageStore } from './ts/stores/domain';
     import { showRealmInfoStore } from './ts/realmStore';
     import { isCapacitor, isCapacitorAndroid, isNodeServer, isTauri, isTauriLinux, isTauriMacOS, isTauriWindows } from './ts/platform';
@@ -10,7 +10,7 @@
     import { onMount } from 'svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
-    import sendSound from './etc/send.mp3'
+    import { createKeepAliveAudio } from './ts/keepAliveAudio';
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_TAB_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import AirisuMascot from './lib/UI/AirisuMascot.svelte';
     import NativeWindowResizeHandles from './lib/UI/NativeWindowResizeHandles.svelte';
@@ -34,6 +34,7 @@
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
     let keepingSessionAlive = $state(false)
+    let keepAliveAudio: HTMLAudioElement | null = null
     let RealmPopUp = $state<typeof RealmPopUpType | null>(null)
     let exitConfirmationOpen = false
 
@@ -190,6 +191,7 @@
     const popupListLoader = () => import('./lib/UI/PopupList.svelte')
     const easyPanelLoader = () => import('./lib/Others/ProTools/EasyPanel.svelte')
     const popupEditorLoader = () => import('./lib/Others/PopupEditor.svelte')
+    const onboardingLoader = () => import('./lib/Others/OnboardingModal.svelte')
     const loadoutLoader = () => import('./lib/Others/LoadoutModal.svelte')
     const irisLoader = () => import('./lib/Others/IrisModal.svelte')
     const sidebarConfigLoader = () => import('./lib/Others/CustomSidebarConfig.svelte')
@@ -296,11 +298,15 @@
         }
         case 'sound':{
             console.log("Starting silent audio to keep session alive")
-            const silentAudio = new Audio(sendSound);
-            silentAudio.loop = true;
-            silentAudio.volume = 0.000001;
-            silentAudio.play();
-            keepingSessionAlive = true;
+            if(!keepAliveAudio){
+                keepAliveAudio = createKeepAliveAudio()
+                keepAliveAudio.addEventListener('pause', () => { keepingSessionAlive = false })
+            }
+            keepingSessionAlive = true
+            keepAliveAudio.play().catch(() => { keepingSessionAlive = false })
+            if('mediaSession' in navigator){
+                navigator.mediaSession.metadata = new MediaMetadata({ title: 'HaejeokRisuAI' })
+            }
             break
         }
     }
@@ -499,6 +505,9 @@
     {/if}
     {#if popUpEditorStore.open}
         <LazyComponent loader={popupEditorLoader} />
+    {/if}
+    {#if onboardingModalStore.open}
+        <LazyComponent loader={onboardingLoader} />
     {/if}
     {#if loadoutModalStore.open}
         <LazyComponent loader={loadoutLoader} />

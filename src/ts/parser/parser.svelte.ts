@@ -1022,8 +1022,9 @@ const trimPurifyConfig = {
     "allowfullscreen",
     "frameborder",
     "scrolling",
-    "risu-ctrl",
     "risu-btn",
+    "risu-ctrl",
+    "risu-form",
     "risu-trigger",
     "risu-mark",
     "risu-id",
@@ -1032,13 +1033,45 @@ const trimPurifyConfig = {
   ],
 };
 
-export function trimMarkdown(data: string) {
+// Onboarding HTML can bind clicks/inputs to chat variables, so it gets the
+// regular message config plus the two binding attributes. Messages never do.
+const onboardingPurifyConfig = {
+  ...trimPurifyConfig,
+  ADD_ATTR: [
+    ...trimPurifyConfig.ADD_ATTR,
+    "risu-change-var-name",
+    "risu-change-var-value",
+  ],
+};
+
+/**
+ * Renders a character's onboarding HTML: assets and CBS are resolved, then it
+ * goes through the same DOMPurify + <style> scoping as chat messages.
+ * Scoped styles are prefixed with `.chattext`, so the caller must render the
+ * result inside a `.chattext` element.
+ */
+export async function parseOnboardingHTML(
+  data: string,
+  char: character,
+  chatTarget?: ChatExecutionTarget,
+) {
+  data = await parseAdditionalAssets(data ?? "", char, "normal", { ch: -1 });
+  data = risuChatParser(data, { chara: char, chatTarget });
+  data = await parseInlayAssets(data);
+  data = encodeStyle(data);
+  return trimMarkdown(data, onboardingPurifyConfig);
+}
+
+export function trimMarkdown(
+  data: string,
+  purifyConfig: typeof trimPurifyConfig = trimPurifyConfig,
+) {
   if (!data.includes("<risu-style")) {
-    return DOMPurify.sanitize(data, trimPurifyConfig);
+    return DOMPurify.sanitize(data, purifyConfig);
   }
 
   const root = DOMPurify.sanitize(data, {
-    ...trimPurifyConfig,
+    ...purifyConfig,
     RETURN_DOM: true,
   }) as HTMLElement | null;
   if (!root) {

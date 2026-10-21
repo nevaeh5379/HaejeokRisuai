@@ -10,6 +10,7 @@ import {
   textifyReadableStream,
 } from "src/ts/globalApi.svelte";
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist";
+import { resolveClaudeThinkingType } from "src/ts/model/types";
 import { registerClaudeObserver } from "src/ts/observer.svelte";
 import { isNodeServer, isTauri } from "src/ts/platform";
 
@@ -188,10 +189,19 @@ export async function requestClaude(
   );
 
   // Handle thinking mode: off, adaptive, or budget
-  if (presetStore.state.thinkingType === "off") {
-    delete body.thinking;
+  const thinkingType = resolveClaudeThinkingType(
+    arg.modelInfo.flags,
+    presetStore.state.thinkingType,
+  );
+
+  if (thinkingType === "off") {
+    if (arg.modelInfo.flags.includes(LLMFlags.claudeThinkingOnByDefault)) {
+      body.thinking = { type: "disabled" };
+    } else {
+      delete body.thinking;
+    }
   } else if (
-    presetStore.state.thinkingType === "adaptive" &&
+    thinkingType === "adaptive" &&
     arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)
   ) {
     // Adaptive thinking mode

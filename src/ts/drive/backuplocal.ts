@@ -1,3 +1,4 @@
+import { restoreUpstreamPluginStorage } from "@risuai/backup-core/upstreamPluginStorage";
 import type { ColdStorageCharacterReference } from "../process/coldstorageData";
 import {
   BaseDirectory,
@@ -565,9 +566,7 @@ import {
   type InlayRestoreWrite,
 } from "@risuai/backup-core/inlayRestore";
 import { streamBackupInlays } from "@risuai/backup-core/inlayExport";
-import {
-  BoundedAssetBatchWriter,
-} from "@risuai/backup-core/restoreBatch";
+import { BoundedAssetBatchWriter } from "@risuai/backup-core/restoreBatch";
 import {
   restoreBackupArchive,
   type BackupArchiveEncryptionState,
@@ -1135,6 +1134,7 @@ async function restoreLocalBackupSourceUnlocked(
   try {
     restoredArchive = await restoreBackupArchive({
       source: file,
+      restorePluginColdStorage: setColdStorageItem,
       async createStreamSink(): Promise<PortableDatabaseStreamRestoreSession | null> {
         const storage: Awaited<ReturnType<typeof getSqlStorage>> =
           await getSqlStorage();
@@ -1367,7 +1367,15 @@ async function restoreLocalBackupSourceUnlocked(
           : null,
       });
       normalizeDatabaseDefaults(dbData);
-      dbData.pluginCustomStorage ??= {};
+      dbData.pluginCustomStorage = await restoreUpstreamPluginStorage(
+        dbData.pluginCustomStorage,
+        async (key) => {
+          const value = await getColdStorageItem(key);
+          return value === null && !restoredColdStorageKeys.has(key)
+            ? undefined
+            : value;
+        },
+      );
       const missingColdStorageKeys: string[] = [];
       for (const key of await listColdDataKeys(dbData)) {
         if (restoredColdStorageKeys.has(key)) continue;

@@ -13,6 +13,7 @@ import type { Database, StreamingDisplayOptimizationMode } from "../schema";
 import {
   defaultArray,
   defaultBoolean,
+  defaultLooseObject,
   defaultNumber,
   defaultPicklist,
   defaultString,
@@ -23,6 +24,12 @@ import {
 import { applyLocalBackupPerformanceDefaults } from "../../backup/localBackupPerformance";
 
 const runtimeScalarDefaults = {
+  loadoutApplyOptions: defaultLooseObject({
+    modules: defaultBoolean(true),
+    globalVariables: defaultBoolean(true),
+    preset: defaultBoolean(true),
+    persona: defaultBoolean(true),
+  }),
   openAIFlexProcessing: defaultBoolean(false),
   enableModuleSubModel: defaultBoolean(false),
   rememberToolUsage: defaultBoolean(true),

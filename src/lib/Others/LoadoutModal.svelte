@@ -16,12 +16,7 @@ import {
 
     type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona';
 
-    let loadOptions: Record<LoadoutApplyOption, boolean> = $state({
-        modules: true,
-        globalVariables: true,
-        preset: true,
-        persona: true,
-    });
+    let loadOptions = $derived(settingsStore.state.loadoutApplyOptions);
 
     const loadOptionLabels: Record<LoadoutApplyOption, string> = {
         modules: 'Modules',

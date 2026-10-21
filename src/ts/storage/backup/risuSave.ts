@@ -136,6 +136,7 @@ enum RisuSaveType {
   PLUGINS = 9,
   LOADOUTS = 10,
   PLUGIN_STORAGE = 11,
+  KV = 12,
 }
 
 const risuSaveCacheForage = localforage.createInstance({
@@ -315,6 +316,14 @@ export class RisuSaveDecoder {
           }
           case RisuSaveType.PLUGIN_STORAGE: {
             db.pluginCustomStorage = parsed;
+            releaseBlock(key);
+            break;
+          }
+          case RisuSaveType.KV: {
+            if (block.name.startsWith("kv:")) {
+              db.upstreamSaveKV ??= Object.create(null);
+              db.upstreamSaveKV[block.name.slice(3)] = parsed;
+            }
             releaseBlock(key);
             break;
           }

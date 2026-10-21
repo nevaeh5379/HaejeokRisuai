@@ -967,3 +967,51 @@ test("author note triggers read raw text and gate shared writes, including previ
     write.mockRestore();
   }
 });
+
+test("passes submitted form fields to Lua without changing the selected chat target", async () => {
+  setChatVarMock.mockClear();
+  const chat = { id: "form-chat", message: [] } as never;
+  const target = { characterId: "form-room", chatId: "form-chat" };
+  await runScripted(
+    `
+    function onFormSubmit(id, key, meta)
+      local form = json.decode(meta)
+      setChatVar(id, "submitted", key .. ":" .. form.data.route)
+    end
+  `,
+    {
+      char: { type: "character", chaId: "form-room" } as never,
+      chat,
+      chatTarget: target,
+      mode: "onFormSubmit",
+      data: "choose",
+      meta: { data: { route: "north" } },
+    },
+  );
+  expect(setChatVarMock).toHaveBeenCalledWith(
+    "submitted",
+    "choose:north",
+    target,
+  );
+});
+
+test("routes Lua axLLM through the requested auxiliary mode", async () => {
+  requestChatDataMock.mockClear();
+  await runScripted(
+    `onStart = async(function(id)
+    local result = axLLM(id, {{ role = "user", content = "translate this" }}, false, { mode = "translate" })
+  end)`,
+    {
+      char: { type: "character" } as never,
+      chat: { message: [] } as never,
+      mode: "start",
+      lowLevelAccess: true,
+    },
+  );
+  expect(requestChatDataMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      formated: [{ role: "user", content: "translate this" }],
+    }),
+    "translate",
+  );
+});

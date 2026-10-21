@@ -39,7 +39,7 @@ export interface GeminiPart {
 }
 
 export interface GeminiChat {
-  role: "user" | "model" | "function";
+  role?: "user" | "model";
   parts: GeminiPart[];
 }
 
@@ -121,7 +121,7 @@ function selectGoogleVertexRegion(modelId?: any, configuredRegion?: any): any {
   // from the regions exposed by the browser settings.
   if (
     /^gemini-3-.*-preview$/.test(modelId) ||
-    /^gemini-3\.[567]-flash/.test(modelId)
+    /^gemini-3\.[5678]-flash/.test(modelId)
   ) {
     return "global";
   }

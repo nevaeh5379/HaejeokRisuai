@@ -4,7 +4,7 @@ import { safeStructuredClone } from "../../../polyfill";
 import { defaultHotkeys } from "../../../defaulthotkeys";
 import { LLMFormat } from "../../../model/types";
 import type { Database } from "../schema";
-import { object } from "valibot";
+import { object, string } from "valibot";
 import {
   defaultBoolean,
   defaultArray,
@@ -89,6 +89,7 @@ const featureScalarDefaults = {
   showDeprecatedTriggerV2: defaultBoolean(false),
   returnCSSError: defaultBoolean(true),
   realmDirectOpen: defaultBoolean(false),
+  blockedRealmCreators: defaultArray(object({ id: string(), name: string() })),
   checkCorruption: defaultBoolean(false),
   toggleConfirmRecommendedPreset: defaultBoolean(false),
   useExperimentalGoogleTranslator: defaultBoolean(false),

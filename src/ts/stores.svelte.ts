@@ -347,3 +347,8 @@ $effect.root(() => {
     }
   });
 });
+
+export const onboardingModalStore = $state({
+  open: false,
+  target: null as import("./chatTarget").ChatTarget | null,
+});

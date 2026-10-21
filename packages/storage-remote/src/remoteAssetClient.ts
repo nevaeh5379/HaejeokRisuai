@@ -34,6 +34,91 @@ function readParams(options?: RemoteAssetReadOptions): URLSearchParams {
   return params;
 }
 
+const MAX_STORAGE_ERROR_DETAIL_LENGTH = 2000;
+
+function formatStorageValueSize(byteLength: number) {
+  if (byteLength < 1024) {
+    return `${byteLength} bytes`;
+  }
+
+  const units = ["KiB", "MiB", "GiB"];
+  let size = byteLength;
+  let unitIndex = -1;
+  do {
+    size /= 1024;
+    unitIndex += 1;
+  } while (size >= 1024 && unitIndex < units.length - 1);
+
+  return `${byteLength} bytes (${size.toFixed(2)} ${units[unitIndex]})`;
+}
+
+function formatUnknownError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error) ?? `${error}`;
+  } catch {
+    return `${error}`;
+  }
+}
+
+function normalizeStorageErrorDetail(detail: string) {
+  const normalized = detail
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .trim();
+
+  if (normalized.length <= MAX_STORAGE_ERROR_DETAIL_LENGTH) {
+    return normalized;
+  }
+  return normalized.slice(0, MAX_STORAGE_ERROR_DETAIL_LENGTH) + "...";
+}
+
+async function getStorageResponseErrorDetail(response: Response) {
+  let responseText = "";
+  try {
+    responseText = await response.text();
+  } catch (error) {
+    return `Could not read the server response: ${formatUnknownError(error)}`;
+  }
+
+  if (!responseText.trim()) {
+    return "";
+  }
+
+  try {
+    const body = JSON.parse(responseText);
+    if (body && typeof body === "object") {
+      const details = [body.error, body.code, body.message, body.details]
+        .filter(
+          (value, index, values) =>
+            value != null && value !== "" && values.indexOf(value) === index,
+        )
+        .map((value) => formatUnknownError(value));
+      if (details.length > 0) {
+        return normalizeStorageErrorDetail(details.join(" | "));
+      }
+    }
+  } catch {}
+
+  return normalizeStorageErrorDetail(responseText);
+}
+
+function getSetItemContext(key: string, byteLength: number) {
+  return `Key: ${key}\nSize: ${formatStorageValueSize(byteLength)}`;
+}
+
 export class RemoteAssetClient {
   constructor(
     readonly apiClient: NodeApiClient,
@@ -51,22 +136,42 @@ export class RemoteAssetClient {
   }
 
   async setItem(key: string, value: Uint8Array): Promise<void> {
-    const response = await this.apiClient.request("/api/write", {
-      method: "POST",
-      body: value as BodyInit,
-      headers: {
-        "content-type": "application/octet-stream",
-        "file-path": utf8ToHex(key),
-        "risu-auth": await this.getAuth(),
-      },
-    });
-    const body = (await response.json().catch(() => ({}))) as {
-      error?: string;
-    };
-    if (!response.ok) {
-      throw new Error(body.error ?? `setItem Error: ${response.status}`);
+    const context = getSetItemContext(key, value.byteLength);
+    let response: Response;
+    try {
+      response = await this.apiClient.request("/api/write", {
+        method: "POST",
+        body: value as BodyInit,
+        headers: {
+          "content-type": "application/octet-stream",
+          "file-path": utf8ToHex(key),
+          "risu-auth": await this.getAuth(),
+        },
+      });
+    } catch (error) {
+      throw new Error(
+        `Node storage setItem request failed.\n${context}\nCause: ${formatUnknownError(error)}`,
+      );
     }
-    if (body.error) throw new Error(body.error);
+    if (!response.ok) {
+      const detail = await getStorageResponseErrorDetail(response);
+      throw new Error(
+        `Node storage setItem failed.\n${context}\nHTTP: ${response.status} ${response.statusText}` +
+          (detail ? `\nServer: ${detail}` : ""),
+      );
+    }
+    let body: { error?: unknown };
+    try {
+      body = await response.json();
+    } catch (error) {
+      throw new Error(
+        `Node storage setItem received an invalid response.\n${context}\nCause: ${formatUnknownError(error)}`,
+      );
+    }
+    if (body?.error)
+      throw new Error(
+        `Node storage setItem failed.\n${context}\nServer: ${formatUnknownError(body.error)}`,
+      );
   }
 
   async getItemWithMetadata(

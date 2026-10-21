@@ -569,19 +569,14 @@
                     bind:check={currentChar.prebuiltAssetCommand}
                     name={language.insertAssetPrompt}
                 />
-                {#if currentChar.prebuiltAssetCommand}
-                    <div class="flex flex-col gap-1">
-                        <span class="text-xs text-textcolor2">{language.assetStyle}</span>
-                        <SelectInput
-                            className="mb-1"
-                            bind:value={currentChar.prebuiltAssetStyle}
-                        >
-                            <OptionInput value="">{language.static}</OptionInput>
-                            <OptionInput value="dynamic">{language.dynamic}</OptionInput>
-                        </SelectInput>
-                    </div>
-                {/if}
             </div>
         {/if}
+        <div class="flex flex-col gap-1">
+            <span class="text-xs text-textcolor2">{language.assetStyle}</span>
+            <SelectInput className="mb-1" bind:value={currentChar.prebuiltAssetStyle}>
+                <OptionInput value="">{language.static}</OptionInput>
+                <OptionInput value="dynamic">{language.dynamic}</OptionInput>
+            </SelectInput>
+        </div>
     </div>
 {/if}

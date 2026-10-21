@@ -90,14 +90,26 @@ export async function generateAIImage(
   currentChar: character,
   neg: string,
   returnSdData: string,
+  options?: ImageGenerationOptions,
 ): Promise<string | false> {
   try {
     const { executeImageGeneration } =
       await import("@risuai/protocol/src/imageGeneration.ts");
     const { browserImageRuntime, getImageGenerationSettings } =
       await import("./imageGenerationBrowser");
+    const settings = getImageGenerationSettings();
+    if (settings.sdProvider === "novelai" && options?.orientation) {
+      settings.NAIImgConfig = {
+        ...settings.NAIImgConfig,
+        ...applyImageOrientation(
+          settings.NAIImgConfig.width,
+          settings.NAIImgConfig.height,
+          options.orientation,
+        ),
+      };
+    }
     const image = await executeImageGeneration(
-      getImageGenerationSettings(),
+      settings,
       browserImageRuntime,
       genPrompt,
       currentChar,
@@ -113,4 +125,38 @@ export async function generateAIImage(
     alertError(error);
     return false;
   }
+}
+
+export type ImageOrientation = "landscape" | "portrait";
+
+export interface ImageGenerationOptions {
+  orientation?: ImageOrientation;
+}
+
+/**
+ * Places the longer edge on the width for landscape and on the height for portrait.
+ */
+export function applyImageOrientation(
+  width: number,
+  height: number,
+  orientation?: ImageOrientation,
+) {
+  if (!orientation) {
+    return { height, width };
+  }
+
+  const longerEdge = Math.max(height, width);
+  const shorterEdge = Math.min(height, width);
+
+  if (orientation === "landscape") {
+    return {
+      height: shorterEdge,
+      width: longerEdge,
+    };
+  }
+
+  return {
+    height: longerEdge,
+    width: shorterEdge,
+  };
 }

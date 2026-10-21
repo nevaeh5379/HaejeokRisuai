@@ -38,6 +38,7 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
     import { getMimeType } from "src/ts/media";
     import { createDeferredTokenCalculator } from "src/ts/deferredTokenCalculator";
     import AdditionalAssetsSection from "./Character/AdditionalAssetsSection.svelte";
+    import OnboardingEditor from "./OnboardingEditor.svelte";
 
     let iconRemoveMode = $state(false)
     let viewSubMenu = $state(0)
@@ -638,6 +639,8 @@ import type { character, groupChat } from "../../ts/storage/database/schema";
 
         <span class="text-textcolor mt-4">{language.triggerScript} <Help key="triggerScript"/></span>
         <TriggerList bind:value={(characterStore.characters[$selectedCharID] as character).triggerscript} lowLevelAble={characterStore.characters[$selectedCharID].lowLevelAccess} />
+
+        <OnboardingEditor />
 
 
         {#if characterStore.characters[$selectedCharID].virtualscript || settingsStore.state.showUnrecommended}

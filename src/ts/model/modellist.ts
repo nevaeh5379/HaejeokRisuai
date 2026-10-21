@@ -875,7 +875,7 @@ export async function registerModelDynamic() {
             name: model.displayName || id,
             shortName: model.displayName || id,
             fullName: model.displayName || id,
-            internalID: model.name,
+            internalID: id,
             provider: LLMProvider.GoogleCloud,
             format: LLMFormat.GoogleCloud,
             flags: [
