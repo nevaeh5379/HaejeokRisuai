@@ -50,6 +50,7 @@ export interface RestoreBackupArchiveOptions<
   ): Promise<unknown>;
   decodeRawDatabase(data: Uint8Array): Promise<unknown>;
   restoreInlay(key: string, data: Uint8Array): Promise<InlayRestoreResult>;
+  restorePluginColdStorage?(key: string, value: unknown): Promise<boolean>;
   restoreColdStorage(key: string, value: unknown): Promise<boolean>;
   restoreAsset(path: string, data: Uint8Array): Promise<void>;
   flushAssets(): Promise<void>;
@@ -149,6 +150,12 @@ export async function restoreBackupArchive<
           restoredColdStorageKeys.add(key);
         }
       },
+      onPluginColdStorage: options.restorePluginColdStorage
+        ? async (key, value) => {
+            if (await options.restorePluginColdStorage!(key, value))
+              restoredColdStorageKeys.add(key);
+          }
+        : undefined,
       onInvalidColdStorage: options.onInvalidColdStorage,
       onColdStorageParseError: options.onColdStorageParseError,
       onAsset: options.restoreAsset,

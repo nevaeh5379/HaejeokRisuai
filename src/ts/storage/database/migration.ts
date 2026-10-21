@@ -1,5 +1,7 @@
 import type { Database } from "./schema";
 import { normalizeDatabaseDefaults } from "./databaseDefaults";
+import { restoreUpstreamPluginStorage } from "@risuai/backup-core/upstreamPluginStorage";
+import { getColdStorageItem } from "../../process/coldstorage.svelte";
 import { decodeRisuSave } from "../backup/risuSave";
 import type { ISqlStorage } from "../sql/ISqlStorage";
 import { isTauri } from "../../platform";
@@ -114,6 +116,10 @@ export async function parseLegacyDatabaseBytes(
 ): Promise<LegacyDatabaseInfo | null> {
   try {
     const legacyDb: Database = await decodeRisuSave(bytes);
+    legacyDb.pluginCustomStorage = await restoreUpstreamPluginStorage(
+      legacyDb.pluginCustomStorage,
+      getColdStorageItem,
+    );
     if (!legacyDb) return null;
 
     const stats = extractDatabaseStats(legacyDb);

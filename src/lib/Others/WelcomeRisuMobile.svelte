@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WelcomeBackground from "./WelcomeBackground.svelte";
 
   import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { onMount } from 'svelte';
@@ -73,7 +74,7 @@ import { onMount } from 'svelte';
   // Form State
   let username = $state(personaStore.activePersona?.name ?? 'User');
   let selectedProvider = $state('claude');
-  let modelName = $state('claude-3-7-sonnet-20250219');
+  let modelName = $state('claude-sonnet-4-6');
   let customURL = $state('');
   let apiKey = $state('');
   let maxContext = $state<number>(presetStore.state.maxContext || 16000);
@@ -135,9 +136,9 @@ import { onMount } from 'svelte';
     {
       id: 'claude',
       name: 'Anthropic Claude',
-      badge: 'Claude 3.7',
-      sub: 'Claude 3.7 Sonnet, 3.5 Sonnet',
-      defaultModel: 'claude-3-7-sonnet-20250219',
+      badge: 'Claude 4.6 / 5',
+      sub: 'Claude Sonnet 4.6, Opus 5',
+      defaultModel: 'claude-sonnet-4-6',
       keyLink: 'https://console.anthropic.com/settings/keys',
       keyPlaceholder: 'sk-ant-api03-...',
     },
@@ -164,7 +165,7 @@ import { onMount } from 'svelte';
       name: 'OpenRouter',
       badge: '다양한 모델',
       sub: 'Claude, DeepSeek, Llama 등',
-      defaultModel: 'anthropic/claude-3.7-sonnet',
+      defaultModel: 'anthropic/claude-sonnet-4.6',
       keyLink: 'https://openrouter.ai/keys',
       keyPlaceholder: 'sk-or-v1-...',
     },
@@ -375,7 +376,7 @@ import { onMount } from 'svelte';
       : 1_000;
 
     if (selectedProvider === 'claude') {
-      const targetModel = trimmedModel || 'claude-3-7-sonnet-20250219';
+      const targetModel = trimmedModel || 'claude-sonnet-4-6';
       presetStore.state.aiModel = targetModel;
       presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.claudeAPIKey = trimmedApiKey;
@@ -392,7 +393,7 @@ import { onMount } from 'svelte';
       presetStore.state.subModel = targetModel;
       if (trimmedApiKey) settingsStore.state.google.accessToken = trimmedApiKey;
     } else if (selectedProvider === 'openrouter') {
-      const targetModel = trimmedModel || 'anthropic/claude-3.7-sonnet';
+      const targetModel = trimmedModel || 'anthropic/claude-sonnet-4.6';
       presetStore.state.aiModel = 'openrouter';
       presetStore.state.subModel = 'openrouter';
       presetStore.state.openrouterRequestModel = targetModel;
@@ -442,7 +443,9 @@ import { onMount } from 'svelte';
   }
 </script>
 
-<div class="relative w-full h-full min-h-[100dvh] bg-bgcolor text-textcolor flex flex-col justify-between p-3.5 selection:bg-blue-600 selection:text-white overflow-x-hidden overflow-y-auto">
+<div class="isolate relative w-full h-full min-h-[100dvh] bg-bgcolor text-textcolor flex flex-col justify-between p-3.5 selection:bg-blue-600 selection:text-white overflow-x-hidden overflow-y-auto">
+  <div class="absolute inset-0 -z-10 pointer-events-none opacity-40" aria-hidden="true"><WelcomeBackground /></div>
+
   {#if isTauriMacOS}
     <div
       class="absolute top-0 left-0 right-1 h-10 z-[1]"
@@ -909,8 +912,8 @@ import { onMount } from 'svelte';
                 <div class="grid grid-cols-4 gap-1.5">
                   <button
                     type="button"
-                    onclick={() => selectModelQuick('claude-3-7-sonnet-20250219')}
-                    class="py-2 px-1 rounded-xl text-xs text-center border transition-all {modelName === 'claude-3-7-sonnet-20250219' ? 'bg-selected text-textcolor border-borderc font-bold shadow-xs' : 'bg-darkbutton/40 border-borderc/60 text-textcolor2'}"
+                    onclick={() => selectModelQuick('claude-sonnet-4-6')}
+                    class="py-2 px-1 rounded-xl text-xs text-center border transition-all {modelName === 'claude-sonnet-4-6' ? 'bg-selected text-textcolor border-borderc font-bold shadow-xs' : 'bg-darkbutton/40 border-borderc/60 text-textcolor2'}"
                   >
                     Claude
                   </button>

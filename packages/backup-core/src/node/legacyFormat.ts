@@ -1,3 +1,4 @@
+import { isRisuSaveBlocks, decodeRisuSaveBlocks } from "./risuSaveBlocks.ts";
 import { promisify } from "node:util";
 import { gzip, gunzipSync, inflateSync } from "node:zlib";
 import { Packr, Unpackr } from "msgpackr";
@@ -79,6 +80,8 @@ export function decodeLegacyBackupDatabase(
   data: Uint8Array,
   options: { maxOutputBytes?: number } = {},
 ): unknown {
+  if (isRisuSaveBlocks(data))
+    return decodeRisuSaveBlocks(data, options.maxOutputBytes);
   const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
   if (buffer.subarray(0, COMPRESSED_HEADER.length).equals(COMPRESSED_HEADER)) {
     return unpackr.decode(

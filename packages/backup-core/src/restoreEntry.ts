@@ -25,6 +25,11 @@ export interface BackupRestoreEntryHandlers {
     value: unknown,
     entryName: string,
   ): Promise<void> | void;
+  onPluginColdStorage?(
+    key: string,
+    value: unknown,
+    name: string,
+  ): Promise<void> | void;
   onInvalidColdStorage?(
     coldStorageKey: string,
     entryName: string,
@@ -86,7 +91,9 @@ async function dispatchColdStorageEntry(
   try {
     const value: unknown = JSON.parse(textDecoder.decode(data)) as unknown;
     if (!isColdStorageBackupData(value)) {
-      await handlers.onInvalidColdStorage?.(coldStorageKey, name);
+      if (handlers.onPluginColdStorage)
+        await handlers.onPluginColdStorage(coldStorageKey, value, name);
+      else await handlers.onInvalidColdStorage?.(coldStorageKey, name);
       return;
     }
     await handlers.onColdStorage(coldStorageKey, value, name);

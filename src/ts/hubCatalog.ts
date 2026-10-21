@@ -1,3 +1,5 @@
+import { filterBlockedRealmCards } from "./realmBlocking";
+import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { appVer } from "./appVersion";
 import { hubURL } from "./hub";
 import { isNodeServer, isTauri } from "./platform";
@@ -45,9 +47,16 @@ export async function getRisuHub(arg: {
     );
     if (!response.ok) return [];
     const result = await response.json();
-    if (Array.isArray(result)) return result;
+    if (Array.isArray(result))
+      return filterBlockedRealmCards(
+        result,
+        settingsStore.state.blockedRealmCreators,
+      );
     hubAdditionalHTML = result.additionalHTML || hubAdditionalHTML;
-    return result.cards;
+    return filterBlockedRealmCards(
+      result.cards,
+      settingsStore.state.blockedRealmCreators,
+    );
   } catch {
     return [];
   }

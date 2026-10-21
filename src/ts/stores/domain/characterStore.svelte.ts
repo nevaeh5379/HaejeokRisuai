@@ -166,6 +166,7 @@ function toChatSummary(chat: Chat): Chat {
     note: chat.note ?? "",
     folderId: chat.folderId ?? undefined,
     lastDate: chat.lastDate ?? undefined,
+    onboardingDone: chat.onboardingDone,
     message: [],
     messagesLoaded: false,
     messagesFullyLoaded: false,

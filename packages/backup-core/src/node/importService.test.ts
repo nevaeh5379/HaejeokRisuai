@@ -197,6 +197,61 @@ afterEach(async () => {
 });
 
 describe("LocalBackupImportService streaming restore", () => {
+  it.each([true, false])(
+    "imports upstream cold plugin storage with database first=%s",
+    async (databaseFirst) => {
+      const state = restoreState();
+      const { service } = await makeService(
+        "upstream_plugins",
+        transactionalAdapter(state),
+      );
+      const job = service.createJob();
+      const database = framed(
+        "database.risudat",
+        await encodeLegacyBackupDatabase({
+          characters: [],
+          pluginCustomStorage: {
+            _coldpluginIndex: "00000000-0000-0000-0000-000000000001",
+          },
+        }),
+      );
+      const index = framed(
+        "coldstorage_00000000-0000-0000-0000-000000000001.json",
+        Buffer.from(
+          JSON.stringify({
+            type: "risu-plugin-storage-index",
+            version: 1,
+            entries: [
+              { k: "small", s: "false" },
+              { k: "large", l: "00000000-0000-0000-0000-000000000002" },
+            ],
+            trash: [],
+          }),
+        ),
+      );
+      const payload = framed(
+        "coldstorage_00000000-0000-0000-0000-000000000002.json",
+        Buffer.from("null"),
+      );
+      await service.importStream(
+        job.id,
+        chunked(
+          databaseFirst
+            ? [database, index, payload]
+            : [index, payload, database],
+        ),
+      );
+      expect(
+        state.activeRecords.filter(
+          (record) => record.type === "plugin-storage",
+        ),
+      ).toEqual([
+        { type: "plugin-storage", key: "small", value: false },
+        { type: "plugin-storage", key: "large", value: null },
+      ]);
+    },
+  );
+
   it("preserves plugin definitions and custom storage as separate records", async () => {
     const state = restoreState();
     const { service } = await makeService(

@@ -1,3 +1,5 @@
+import { restoreUpstreamPluginStorage } from "../upstreamPluginStorage.ts";
+import { getColdStorageBackupKey } from "../coldStorage.ts";
 import { once } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
 import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore.ts";
@@ -131,6 +133,26 @@ async function prepareLegacyDatabase(
   );
   if (!database || typeof database !== "object" || Array.isArray(database)) {
     throw new Error("Legacy backup database payload is invalid");
+  }
+
+  const root = database as Record<string, unknown>;
+  if (
+    root.pluginCustomStorage &&
+    typeof root.pluginCustomStorage === "object"
+  ) {
+    const paths = new Map(
+      plan.coldStorage.map((entry) => [
+        getColdStorageBackupKey(entry.name),
+        entry.filePath,
+      ]),
+    );
+    root.pluginCustomStorage = await restoreUpstreamPluginStorage(
+      root.pluginCustomStorage as Record<string, unknown>,
+      async (key) => {
+        const path = paths.get(key);
+        return path ? JSON.parse(await fs.readFile(path, "utf8")) : undefined;
+      },
+    );
   }
 
   const output = createWriteStream(outputPath, {

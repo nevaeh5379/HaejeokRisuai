@@ -36,7 +36,7 @@ import {
   alertConfirm,
 } from "../alert";
 import { HypaProcesser } from "./memory/hypamemory";
-import { generateAIImage } from "./stableDiff";
+import { generateAIImage, type ImageGenerationOptions } from "./stableDiff";
 import {
   writeInlayImage,
   writeInlayImageFromBytes,
@@ -574,10 +574,27 @@ export async function runScripted(
 
       declareAPI(
         "generateImage",
-        async (id: string, value: string, negValue: string = "") => {
+        async (
+          id: string,
+          value: string,
+          negValue: string = "",
+          options?: ImageGenerationOptions,
+        ) => {
           if (!ScriptingLowLevelIds.has(id)) {
             return;
           }
+          const orientation = options?.orientation;
+          if (
+            orientation !== undefined &&
+            orientation !== "landscape" &&
+            orientation !== "portrait"
+          ) {
+            return (
+              "Error: Image orientation must be landscape or portrait, received " +
+              orientation
+            );
+          }
+
           const scriptingChar = getScriptingCharacter();
           if (!scriptingChar || scriptingChar.type === "group") {
             return "Error: Image generation requires a character";
@@ -587,6 +604,7 @@ export async function runScripted(
             scriptingChar,
             negValue,
             "inlay",
+            options,
           );
           if (!gen) {
             return "Error: Image generation failed";
@@ -1214,8 +1232,23 @@ export async function runScripted(
           }
 
           const options = parseLuaOptions(optionsStr) as {
+            mode?: string;
             streaming?: boolean;
           };
+          const modes = new Set([
+            "emotion",
+            "memory",
+            "otherAx",
+            "submodel",
+            "translate",
+          ]);
+          const mode = options.mode ?? "otherAx";
+          if (!modes.has(mode)) {
+            return JSON.stringify({
+              result: "Error: Invalid axLLM mode: " + mode,
+              success: false,
+            });
+          }
           const sandboxOwner = ScriptingEngineState.sandboxOwnerModuleId
             ? getModules(
                 getScriptingRequestCharacter(),
@@ -1238,7 +1271,7 @@ export async function runScripted(
               moduleSandboxOwnerId: sandboxOwner?.id,
               moduleSandboxGroupId: ScriptingEngineState.sandboxGroupId,
             },
-            "otherAx",
+            mode as "emotion" | "memory" | "otherAx" | "submodel" | "translate",
           );
 
           if (result.type === "fail") {
@@ -1403,19 +1436,28 @@ export async function runScripted(
             }
             break;
           }
+          case "onFormSubmit": {
+            const func = luaEngine.global.get("onFormSubmit");
+            if (func) {
+              res = await func(accessKey, data, JSON.stringify(meta));
+            }
+            break;
+          }
           case "editRequest":
           case "editDisplay":
           case "editInput":
           case "editOutput": {
             const func = luaEngine.global.get("callListenMain");
             if (func) {
-              res = await func(
-                mode,
-                accessKey,
-                JSON.stringify(data),
-                JSON.stringify(meta),
-              );
-              res = JSON.parse(res);
+              // editDisplay takes a raw string, and must output a raw string
+              const directString = mode === "editDisplay";
+              const value = directString ? data : JSON.stringify(data);
+              const serializedMeta = JSON.stringify(meta);
+
+              res = await func(mode, accessKey, value, serializedMeta);
+              if (!directString) {
+                res = JSON.parse(res);
+              }
             }
             break;
           }
@@ -1763,29 +1805,39 @@ function async(callback)
     end
 end
 
-callListenMain = async(function(type, id, value, meta)
-    local realValue = json.decode(value)
+callListenMain = async(function(eventType, id, value, meta)
+    local realValue = value
     local realMeta = json.decode(meta)
 
-    if type == 'editRequest' then
+    if eventType == 'editDisplay' then
+        local realValue = value
+        for _, func in ipairs(editDisplayFuncs) do
+            local output = func(id, realValue, realMeta)
+            local outputType = type(output)
+            if outputType == 'string' then
+                realValue = output
+            else
+                print('Error: Lua editDisplay must return a string, received ' .. outputType)
+            end
+        end
+        return realValue
+    end
+
+    realValue = json.decode(value)
+
+    if eventType == 'editRequest' then
         for _, func in ipairs(editRequestFuncs) do
             realValue = func(id, realValue, realMeta)
         end
     end
 
-    if type == 'editDisplay' then
-        for _, func in ipairs(editDisplayFuncs) do
-            realValue = func(id, realValue, realMeta)
-        end
-    end
-
-    if type == 'editInput' then
+    if eventType == 'editInput' then
         for _, func in ipairs(editInputFuncs) do
             realValue = func(id, realValue, realMeta)
         end
     end
 
-    if type == 'editOutput' then
+    if eventType == 'editOutput' then
         for _, func in ipairs(editOutputFuncs) do
             realValue = func(id, realValue, realMeta)
         end
@@ -1881,11 +1933,15 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   }
 }
 
-export async function runLuaButtonTrigger(
+export async function runLuaInteractionTrigger(
+  type: "button" | "form",
   char: character | groupChat | simpleCharacterArgument,
-  data: string,
+  triggerKey: string,
+  meta?: object,
   chatTarget?: ChatExecutionTarget,
 ): Promise<any> {
+  const mode = type === "button" ? "onButtonClick" : "onFormSubmit";
+
   let runResult;
   try {
     const resolvedTarget = chatTarget ? resolveChatTarget(chatTarget) : null;
@@ -1932,8 +1988,9 @@ export async function runLuaButtonTrigger(
             chat: targetChat,
             chatTarget,
             lowLevelAccess: trigger.lowLevelAccess,
-            mode: "onButtonClick",
-            data: data,
+            mode,
+            data: triggerKey,
+            meta,
             subModel: trigger.subModel,
             sourceModuleId: trigger.sourceModuleId,
             sandboxOwnerModuleId,
@@ -2040,4 +2097,12 @@ class PyodideContext {
   close() {
     this.worker.terminate();
   }
+}
+
+export function runLuaButtonTrigger(
+  char: character | groupChat | simpleCharacterArgument,
+  data: string,
+  chatTarget?: ChatExecutionTarget,
+) {
+  return runLuaInteractionTrigger("button", char, data, undefined, chatTarget);
 }

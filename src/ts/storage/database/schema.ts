@@ -357,6 +357,8 @@ export interface DatabaseSettings extends PresetSettings {
   hypaV3Presets: HypaV3Preset[];
   hypaV3PresetId: number;
   realmDirectOpen: boolean;
+  blockedRealmCreators: BlockedRealmCreator[];
+  upstreamSaveKV?: Record<string, unknown>;
   OaiCompAPIKeys: { [key: string]: string };
   inlayErrorResponse: boolean;
   bulkEnabling: boolean;
@@ -478,6 +480,12 @@ export interface DatabaseSettings extends PresetSettings {
   keepSessionAlive: "off" | "pip" | "sound";
   longPressToPopupEditor?: boolean;
   loadouts: Loadout[];
+  loadoutApplyOptions: {
+    modules: boolean;
+    globalVariables: boolean;
+    preset: boolean;
+    persona: boolean;
+  };
   disableAprilFools?: boolean;
   customSidebarItems: CustomSideBarItem[];
   lastLoadedLoadoutName: string;
@@ -797,6 +805,7 @@ export interface character {
     ext: string;
   }>;
   defaultVariables?: string;
+  onboarding?: CharacterOnboarding;
   lowLevelAccess?: boolean;
   hideChatIcon?: boolean;
   lastInteraction?: number;
@@ -1129,6 +1138,7 @@ export interface Chat {
   bookmarkNames?: { [chatId: string]: string };
   useLocallySetGlobalVariables?: boolean;
   GLGlobalVariables?: { [key: string]: string };
+  onboardingDone?: boolean;
   messagesLoaded?: boolean;
   /** Absolute index of message[0] when only a recent SQL page is hydrated. */
   messageOffset?: number;
@@ -1238,3 +1248,33 @@ export interface OobaSettings {
     useName: boolean;
   };
 }
+
+export interface OnboardingOption {
+  label: string;
+  value: string;
+}
+
+export interface OnboardingQuestion {
+  id: string;
+  title: string;
+  description?: string;
+  type: "single" | "multiple" | "text";
+  varName: string;
+  required?: boolean;
+  options: OnboardingOption[];
+  placeholder?: string;
+}
+
+/** A creator-defined set of choices shown before a chat starts. Each answer is written to a chat variable. */
+export interface CharacterOnboarding {
+  enabled: boolean;
+  mode: "form" | "html";
+  title?: string;
+  description?: string;
+  questions: OnboardingQuestion[];
+  html?: string;
+  /** Also shows a floating button on the chat screen that opens the onboarding. */
+  floatingButton?: boolean;
+}
+
+export type BlockedRealmCreator = { id: string; name: string };

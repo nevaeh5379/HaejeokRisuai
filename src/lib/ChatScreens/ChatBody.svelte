@@ -26,6 +26,7 @@ import isEqual from "lodash/isEqual"
         translated: boolean
         translating: boolean
         retranslate: boolean
+        renderRevision?: number
         bodyRoot?: HTMLElement|null
         modelShortName: string
         renderRawStreaming?: boolean
@@ -43,6 +44,7 @@ import isEqual from "lodash/isEqual"
         translated = $bindable(false),
         translating = $bindable(false),
         retranslate = $bindable(false),
+        renderRevision = 0,
         bodyRoot,
         modelShortName = '',
         renderRawStreaming = false,
@@ -58,6 +60,7 @@ import isEqual from "lodash/isEqual"
     // cache eviction, so the memoized HTML must be rebuilt. Without this,
     // low-spec eviction makes images vanish until a manual reload.
     let assetRev = $state(0)
+    let lastRenderedRevision: number | null = null
 
     function getCbsCondition(){
         try{
@@ -81,11 +84,12 @@ import isEqual from "lodash/isEqual"
     let parsingTargetKey = $derived(JSON.stringify(chatTarget ?? null))
     let parsingTarget: ChatExecutionTarget | undefined = $derived(JSON.parse(parsingTargetKey) ?? undefined)
 
-    const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, tries?:number) => {
+    const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, requestedRevision: number, tries?:number) => {
         // track 'translated' and 'retranslate' state
         translated;
         retranslate;
         //TODO rafactory
+        const preservePendingContent = lastRenderedRevision !== null && requestedRevision !== lastRenderedRevision
         let mode = 'notrim' as const
         try {
             if((!isEqual(lastCharArg, charArg)) || (chatID !== lastChatId)){
@@ -124,7 +128,7 @@ import isEqual from "lodash/isEqual"
                 }
             }
             if(retranslate || translated){
-                if (settingsStore.state.showTranslationLoading) {
+                if (settingsStore.state.showTranslationLoading && !preservePendingContent) {
                     translationLoadingHtml = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
                 }
 
@@ -170,14 +174,19 @@ import isEqual from "lodash/isEqual"
         } catch (error) {
             //retry
             if(tries > 2){
-
-                alertError(`Error while parsing chat message: ${translated}, ${error.message}, ${error.stack}`)
+                const wrapped = new Error(`Error while parsing chat message: ${error?.message ?? error}`)
+                if(error instanceof Error){
+                    wrapped.stack = error.stack
+                }
+                alertError(wrapped)
                 return data
             }
-            return await markParsing(data, charArg, chatID, (tries ?? 0) + 1)
+            const retried = await markParsing(data, charArg, chatID, requestedRevision, (tries ?? 0) + 1)
+            return retried
         }
         finally{
             translationLoadingHtml = ''
+            lastRenderedRevision = requestedRevision
         }
     }
 
@@ -263,7 +272,7 @@ import isEqual from "lodash/isEqual"
             lastRetryKey = retryKey
             assetRetries = 0
         }
-        return markParsing(illustrationDisplay, character, idx)
+        return markParsing(illustrationDisplay, character, idx, renderRevision)
     })
     // Keep one HTML block alive. An await block can switch through its pending
     // branch when upstream props are refreshed, replacing otherwise identical DOM.

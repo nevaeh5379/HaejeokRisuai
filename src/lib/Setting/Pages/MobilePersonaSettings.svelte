@@ -424,7 +424,7 @@
                             />
                         </div>
 
-                        {#if settingsStore.state.personaNote}
+
                             <div>
                                 <span class="block text-[11px] font-semibold text-textcolor2 mb-0.5">{language.note}</span>
                                 <TextInput 
@@ -432,11 +432,11 @@
                                 size="sm" 
                                 bind:value={selectedPersona.note}
 
-                                placeholder="식별용 메모 (예: 현대물 전용 등)" 
+                                placeholder={language.personaNotePlaceholder}
                                 fullwidth
                             />
                             </div>
-                        {/if}
+
 
                         <!-- Large Portrait Checkbox -->
                         {#if selectedPersona}

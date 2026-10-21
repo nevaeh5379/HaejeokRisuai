@@ -6,7 +6,7 @@
  */
 
 import type { SettingItem } from "./types";
-import { LLMFlags } from "../model/types";
+import { LLMFlags, resolveClaudeThinkingType } from "../model/types";
 import { presetStore } from "../stores/domain/presetStore.svelte";
 
 /**
@@ -173,7 +173,10 @@ export const modelSpecificParameterItems: SettingItem[] = [
     bindKey: "thinkingTokens",
     condition: (ctx) =>
       ctx.modelInfo.parameters.includes("thinking_tokens") &&
-      presetStore.state.thinkingType === "budget",
+      resolveClaudeThinkingType(
+        ctx.modelInfo.flags,
+        presetStore.state.thinkingType,
+      ) === "budget",
     options: {
       min: -1,
       max: 64000,
@@ -189,7 +192,10 @@ export const modelSpecificParameterItems: SettingItem[] = [
     bindKey: "adaptiveThinkingEffort",
     condition: (ctx) =>
       ctx.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking) &&
-      presetStore.state.thinkingType === "adaptive",
+      resolveClaudeThinkingType(
+        ctx.modelInfo.flags,
+        presetStore.state.thinkingType,
+      ) === "adaptive",
     options: {
       segmentOptions: [
         { value: "low", label: "Low" },

@@ -38,6 +38,7 @@
     import { openPresetList } from "src/ts/stores.svelte";
     import { selectSingleFile } from "src/ts/util";
     import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
+    import { resolveClaudeThinkingType } from "src/ts/model/types";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
@@ -326,6 +327,13 @@
         }
         return '';
     });
+    $effect(() => {
+        const resolved = resolveClaudeThinkingType(modelInfo.flags, presetStore.state.thinkingType)
+        if (resolved !== presetStore.state.thinkingType) {
+            presetStore.state.thinkingType = resolved
+        }
+    });
+
 </script>
 
 {#snippet providerRoleSelector(providerName: string)}

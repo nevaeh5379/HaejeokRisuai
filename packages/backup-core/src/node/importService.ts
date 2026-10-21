@@ -1,3 +1,4 @@
+import { restoreUpstreamPluginStorage } from "../upstreamPluginStorage.ts";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import type {
@@ -97,6 +98,8 @@ interface ActiveImport {
   database: DatabaseImportState;
   sourceKind: "direct" | "chunked";
   finalizing: boolean;
+  coldEntries: Map<string, string>;
+  deferredLegacy?: BufferedBackupEntry;
 }
 
 function requireDatabaseObject(
@@ -434,7 +437,7 @@ export class LocalBackupImportService {
     active: ActiveImport,
     entry: BufferedBackupEntry,
   ): Promise<void> {
-    if (active.database.mode !== "unknown") {
+    if (active.database.mode !== "unknown" && active.deferredLegacy !== entry) {
       throw new Error("Backup mixes or duplicates database formats");
     }
     active.database.mode = "legacy";
@@ -447,6 +450,26 @@ export class LocalBackupImportService {
       ),
       "Legacy backup database",
     );
+    const pluginStorage = decoded.pluginCustomStorage as
+      Record<string, unknown> | undefined;
+    if (
+      pluginStorage &&
+      (pluginStorage._coldpluginIndex || pluginStorage._coldplugin)
+    ) {
+      if (!active.finalizing) {
+        const retained = `${entry.filePath}.${entry.index}.upstream`;
+        await fs.rename(entry.filePath, retained);
+        active.deferredLegacy = { ...entry, filePath: retained };
+        return;
+      }
+      decoded.pluginCustomStorage = await restoreUpstreamPluginStorage(
+        pluginStorage,
+        async (key) => {
+          const path = active.coldEntries.get(key);
+          return path ? JSON.parse(await fs.readFile(path, "utf8")) : undefined;
+        },
+      );
+    }
     const batch: LegacyBackupSqlRecord[] = [];
     for (const record of iterateLegacyBackupSqlRecords(decoded, {
       sourceRevision: 0,
@@ -544,10 +567,11 @@ export class LocalBackupImportService {
         const value: unknown = JSON.parse(
           await fs.readFile(entry.filePath, "utf8"),
         );
-        if (!isColdStorageBackupData(value)) {
-          throw new Error(`Invalid cold storage backup payload: ${entry.name}`);
-        }
-        await active.restore.stageColdStorage(key, value);
+        const retained = `${entry.filePath}.${entry.index}.upstream`;
+        await fs.rename(entry.filePath, retained);
+        active.coldEntries.set(key, retained);
+        if (isColdStorageBackupData(value))
+          await active.restore.stageColdStorage(key, value);
         this.update(id, "coldStorage", 1, 0, entry.name);
         return;
       }
@@ -622,14 +646,22 @@ export class LocalBackupImportService {
       sourceRevision: null,
       manifest: null,
     };
-    const shell = { restore, database, sourceKind, finalizing: false } as Omit<
-      ActiveImport,
-      "parser"
-    >;
+    const shell = {
+      restore,
+      database,
+      sourceKind,
+      finalizing: false,
+      coldEntries: new Map<string, string>(),
+    } as Omit<ActiveImport, "parser">;
     try {
       const parser = await this.staging.createSession(
         id,
         {
+          onBeforeFinish: async () => {
+            const active = shell as ActiveImport;
+            if (active.deferredLegacy)
+              await this.stageLegacyDatabase(id, active, active.deferredLegacy);
+          },
           onBufferedEntry: async (entry: BufferedBackupEntry): Promise<void> =>
             await this.handleBufferedEntry(id, shell as ActiveImport, entry),
           openAssetEntry: async (
@@ -661,7 +693,7 @@ export class LocalBackupImportService {
         },
         { totalBytes },
       );
-      return { ...shell, parser };
+      return Object.assign(shell, { parser });
     } catch (error) {
       await restore.abort().catch(() => {});
       throw error;

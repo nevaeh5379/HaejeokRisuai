@@ -1652,28 +1652,28 @@ export function replaceDbResources(
  */
 export function checkCharOrder() {
   settingsStore.state.characterOrder = settingsStore.state.characterOrder ?? [];
-  let ordered = [];
+  const ordered = new Set<string>();
   for (let i = 0; i < settingsStore.state.characterOrder.length; i++) {
     const folder = settingsStore.state.characterOrder[i];
     if (typeof folder !== "string" && folder) {
       for (const f of folder.data) {
-        ordered.push(f);
+        ordered.add(f);
       }
     }
     if (typeof folder === "string") {
-      ordered.push(folder);
+      ordered.add(folder);
     }
   }
 
-  let charIdList: string[] = [];
+  const charIdList = new Set<string>();
 
   for (let i = 0; i < characterStore.characters.length; i++) {
     const char = characterStore.characters[i];
     const charId = char.chaId;
     if (!char.trashTime) {
-      charIdList.push(charId);
+      charIdList.add(charId);
     }
-    if (!ordered.includes(charId)) {
+    if (!ordered.has(charId)) {
       if (charId !== "§temp" && charId !== "§playground" && !char.trashTime) {
         settingsStore.state.characterOrder.push(charId);
       }
@@ -1695,14 +1695,14 @@ export function checkCharOrder() {
       }
       for (let i2 = 0; i2 < data.data.length; i2++) {
         const data2 = data.data[i2];
-        if (!charIdList.includes(data2)) {
+        if (!charIdList.has(data2)) {
           data.data.splice(i2, 1);
           i2--;
         }
       }
       settingsStore.state.characterOrder[i] = data;
     } else {
-      if (!charIdList.includes(data)) {
+      if (!charIdList.has(data)) {
         settingsStore.state.characterOrder.splice(i, 1);
         i--;
       }
@@ -3060,6 +3060,13 @@ export async function loadInternalBackup() {
   );
   const { getSqlStorage } = await import("./storage/sql/sqlStorageFactory");
   const storage = await getSqlStorage();
+  const { restoreUpstreamPluginStorage } =
+    await import("@risuai/backup-core/upstreamPluginStorage");
+  const { getColdStorageItem } = await import("./process/coldstorage.svelte");
+  decoded.pluginCustomStorage = await restoreUpstreamPluginStorage(
+    decoded.pluginCustomStorage,
+    getColdStorageItem,
+  );
   await storage.replaceDatabase(decoded);
   const startup = await storage.loadStartupData();
   if (!startup) {

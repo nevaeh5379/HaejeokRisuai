@@ -535,14 +535,6 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: "mt-4",
   },
   {
-    id: "adv.personaNote",
-    type: "check",
-    labelKey: "personaNote",
-    bindKey: "personaNote",
-    showExperimental: true,
-    classes: "mt-4",
-  },
-  {
     id: "adv.toolUsage",
     type: "check",
     labelKey: "rememberToolUsage",

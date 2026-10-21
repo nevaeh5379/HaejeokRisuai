@@ -201,7 +201,7 @@
                         rerollIcon,
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
-                        get messageGenerationInfo() { return messageState.value.generationInfo; },
+                        messageGenerationInfo: message.generationInfo,
                         role: message.role,
                         name: signature.name,
                         isComment: signature.isComment,

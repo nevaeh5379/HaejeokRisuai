@@ -1,9 +1,9 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, DatabaseIcon, DicesIcon, ExternalLinkIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon } from "@lucide/svelte";
+    import { CameraIcon, DatabaseIcon, DicesIcon, ExternalLinkIcon, FileText, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowUp, SparkleIcon, CompassIcon, ChevronRightIcon } from "@lucide/svelte";
     import { isTauriWindows } from "src/ts/platform";
-    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase } from "../../ts/stores.svelte";
+    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, easyPanelStore, chatPanelStore, startupPhase, onboardingModalStore } from "../../ts/stores.svelte";
     import { tick, untrack } from 'svelte';
     import { get } from 'svelte/store';
     import Chat from "./Chat.svelte";
@@ -46,6 +46,15 @@
         getSelectedFirstMessage,
         normalizeFirstMessageIndex,
     } from 'src/ts/firstMessageSelection';
+
+    async function openOnboarding() {
+        const target = requireChatTargetFromIndexes(selectedCharacterIndex, selectedChatIndex)
+        await preLoadChat(selectedCharacterIndex, selectedChatIndex)
+        onboardingModalStore.target = target
+        onboardingModalStore.open = true
+    }
+
+    import { getActiveOnboarding, isOnboardingPending } from 'src/ts/onboarding';
 
     let lowSpecMode = $derived(settingsStore.state.lowSpecMode === true)
 
@@ -1314,6 +1323,22 @@
                 </div>
             {/if}
 
+            {#if isOnboardingPending(currentCharacter, currentChatSession)}
+                <div class="mx-4 my-2 flex justify-center">
+                    <button
+                        class="w-full max-w-xl flex items-center gap-3 px-4 py-3 rounded-md border border-darkborderc bg-darkbg text-left text-textcolor hover:bg-selected transition-colors"
+                        onclick={() => { openOnboarding() }}
+                    >
+                        <CompassIcon size={20} class="shrink-0 text-textcolor2" />
+                        <span class="flex flex-col min-w-0 flex-1">
+                            <span class="text-sm font-semibold">{language.onboardingAvailable}</span>
+                            <span class="text-xs text-textcolor2">{language.onboardingAvailableDesc}</span>
+                        </span>
+                        <ChevronRightIcon size={18} class="shrink-0 text-textcolor2" />
+                    </button>
+                </div>
+            {/if}
+
             {#if characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].message?.[0]?.data?.startsWith(coldStorageHeader) || characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].messagesLoaded === false || characterStore.characters[selectedCharacterIndex].chats[selectedChatIndex].detailsLoaded === false }
                 {#await preLoadChat(selectedCharacterIndex, selectedChatIndex)}
                     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
@@ -1591,6 +1616,16 @@
                         <span class="ml-2">{language.modules}</span>
                     </div>
 
+                    {#if getActiveOnboarding(currentCharacter)}
+                        <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => {
+                            openOnboarding()
+                            openMenu = false
+                        }}>
+                            <CompassIcon />
+                            <span class="ml-2">{language.onboarding}</span>
+                        </div>
+                    {/if}
+
                     {#if settingsStore.state.sideMenuRerollButton}
                         <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={() => reroll()}>
                             <RefreshCcwIcon />
@@ -1610,8 +1645,15 @@
 </div>
 
 {#if isFocusedPane}
-    {#if additionalFloatingActionButtons.length > 0}
+    {#if additionalFloatingActionButtons.length > 0 || getActiveOnboarding(currentCharacter)?.floatingButton}
         <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
+            {#if getActiveOnboarding(currentCharacter)?.floatingButton}
+                <button class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors" title={language.onboarding} aria-label={language.onboarding} onclick={() => {
+                    openOnboarding()
+                }}>
+                    <CompassIcon size={20} />
+                </button>
+            {/if}
             {#each additionalFloatingActionButtons as button}
                 <button class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={() => {
                     button.callback()

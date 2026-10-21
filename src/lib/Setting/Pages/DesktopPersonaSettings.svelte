@@ -367,7 +367,7 @@
               />
             </div>
 
-            {#if settingsStore.state.personaNote}
+
               <div>
                 <span
                   class="block text-[11px] font-semibold text-textcolor2 mb-0.5"
@@ -377,11 +377,11 @@
                   marginBottom={false}
                   size="sm"
                   bind:value={selectedPersona.note}
-                  placeholder={`Put a unique identifier for this persona here. Example: [Alternate Hunters persona]`}
+                  placeholder={language.personaNotePlaceholder}
                   fullwidth
                 />
               </div>
-            {/if}
+
           </div>
         </div>
 
