@@ -112,27 +112,31 @@ function requireDatabaseObject(
   return value as Record<string, unknown>;
 }
 
+const SUPPORTED_DATABASE_RECORD_TYPES = new Set<string>([
+  "meta",
+  "author-note",
+  "author-note-settings",
+  "setting",
+  "plugin-storage",
+  "plugin",
+  "module",
+  "preset",
+  "character",
+  "chat",
+  "branch",
+  "active-branch",
+  "message",
+]);
+
 function supportedDatabaseRecord(
   record: unknown,
 ): record is LegacyBackupSqlRecord {
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     return false;
   }
-  return [
-    "meta",
-    "author-note",
-    "author-note-settings",
-    "setting",
-    "plugin-storage",
-    "plugin",
-    "module",
-    "preset",
-    "character",
-    "chat",
-    "branch",
-    "active-branch",
-    "message",
-  ].includes(String((record as { type?: unknown }).type));
+  return SUPPORTED_DATABASE_RECORD_TYPES.has(
+    String((record as { type?: unknown }).type),
+  );
 }
 
 function validatingInlayWriter(
@@ -147,10 +151,7 @@ function validatingInlayWriter(
 
   const inspect = (): void => {
     if (validated || prefixBytes < 4) return;
-    const prefix = Buffer.concat(
-      prefixChunks.map((chunk) => Buffer.from(chunk)),
-      prefixBytes,
-    );
+    const prefix = Buffer.concat(prefixChunks, prefixBytes);
     if (requiredPrefixBytes === null) {
       const metadataBytes = prefix.readUInt32LE(0);
       if (
@@ -610,17 +611,19 @@ export class LocalBackupImportService {
         "Portable database stream manifest does not match its fragments",
       );
     }
-    for (const [type, count] of Object.entries(manifest.counts)) {
-      if ((state.counts[type] ?? 0) !== Number(count ?? 0)) {
+    const manifestCounts = manifest.counts as Record<
+      string,
+      number | undefined
+    >;
+    for (const type of Object.keys(manifestCounts)) {
+      if ((state.counts[type] ?? 0) !== Number(manifestCounts[type] ?? 0)) {
         throw new Error(
           `Portable database stream ${type} count does not match`,
         );
       }
     }
-    for (const [type, count] of Object.entries(state.counts)) {
-      if (
-        (manifest.counts as Record<string, number | undefined>)[type] !== count
-      ) {
+    for (const type of Object.keys(state.counts)) {
+      if (manifestCounts[type] !== state.counts[type]) {
         throw new Error(
           `Portable database stream ${type} count does not match`,
         );

@@ -29,16 +29,15 @@ const INLAY_RE =
   /^inlay_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.risuinlay$/;
 
 function normalizeBackupEntryName(name: string): string | null {
-  if (typeof name !== "string") return null;
-  const normalized = name.replaceAll("\\", "/");
+  if (typeof name !== "string" || name.length === 0) return null;
+  const normalized = name.includes("\\") ? name.replaceAll("\\", "/") : name;
   const segments = normalized.split("/");
-  if (
-    segments.length === 0 ||
-    segments.some(
-      (segment) => segment === "" || segment === "." || segment === "..",
-    )
-  ) {
-    return null;
+  if (segments.length === 0) return null;
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment === "" || segment === "." || segment === "..") {
+      return null;
+    }
   }
   return normalized;
 }
@@ -81,23 +80,28 @@ export function classifyBackupEntry(name: string): BackupEntryClassification {
 }
 
 function normalizeBackupAssetPath(name: string): string {
-  const normalizedName = name.replace(/\\/g, "/");
+  const normalizedName = name.includes("\\") ? name.replace(/\\/g, "/") : name;
   const segments = normalizedName.split("/");
 
-  while (segments[0] === "assets") {
-    segments.shift();
+  let startIndex = 0;
+  while (startIndex < segments.length && segments[startIndex] === "assets") {
+    startIndex++;
   }
 
-  if (
-    segments.length === 0 ||
-    segments.some(
-      (segment) => segment === "" || segment === "." || segment === "..",
-    )
-  ) {
+  if (startIndex >= segments.length) {
     throw new Error(`Invalid backup asset path: ${name}`);
   }
 
-  return `assets/${segments.join("/")}`;
+  for (let i = startIndex; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment === "" || segment === "." || segment === "..") {
+      throw new Error(`Invalid backup asset path: ${name}`);
+    }
+  }
+
+  return startIndex === 0
+    ? `assets/${segments.join("/")}`
+    : `assets/${segments.slice(startIndex).join("/")}`;
 }
 
 function getInlayBackupName(id: string): string {

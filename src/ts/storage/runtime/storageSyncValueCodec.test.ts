@@ -59,4 +59,27 @@ describe("storage sync value codec", () => {
     expect(decoded.__proto__).toEqual({ polluted: true });
     expect(({} as any).polluted).toBeUndefined();
   });
+
+  it("returns original reference when no encoding or decoding transformations are needed", () => {
+    const ordinary = { a: 1, b: "hello", c: true, d: null };
+    expect(encodeStorageSyncValue(ordinary)).toBe(ordinary);
+    expect(decodeStorageSyncValue(ordinary)).toBe(ordinary);
+  });
+
+  it("roundtrips complex nested objects containing mixed normal and special values", () => {
+    const complex = {
+      user: { name: "Risu", score: 100, active: true },
+      data: [1, 2, NaN, { flag: undefined, inf: Infinity }],
+      empty: {},
+    };
+    const decoded = roundTrip(complex);
+    expect(decoded.user).toEqual({ name: "Risu", score: 100, active: true });
+    expect(decoded.data[0]).toBe(1);
+    expect(decoded.data[1]).toBe(2);
+    expect(Number.isNaN(decoded.data[2] as number)).toBe(true);
+    const innerObj = decoded.data[3] as { flag: unknown; inf: number };
+    expect(innerObj.flag).toBeUndefined();
+    expect(innerObj.inf).toBe(Infinity);
+    expect(decoded.empty).toEqual({});
+  });
 });
