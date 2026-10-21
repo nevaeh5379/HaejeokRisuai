@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveBuildVersion } from "./build-version.mjs";
+import { resolveBuildVersion } from "./build-version.ts";
 
 const require = createRequire(import.meta.url);
 const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
@@ -18,10 +18,16 @@ const toolingDirectory = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(toolingDirectory, "..");
 const tauriConfigPath = join(projectRoot, "src-tauri", "tauri.conf.json");
 
-function ensureLinuxDevDesktopEntry() {
+function ensureLinuxDevDesktopEntry(): void {
   const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
   const identifier = tauriConfig.identifier;
-  const binaryPath = join(projectRoot, "src-tauri", "target", "debug", "risuai");
+  const binaryPath = join(
+    projectRoot,
+    "src-tauri",
+    "target",
+    "debug",
+    "risuai",
+  );
   const waylandAppId = basename(binaryPath);
 
   const dataHome =
@@ -52,7 +58,7 @@ function ensureLinuxDevDesktopEntry() {
   }
 
   const iconPath = join(projectRoot, "src-tauri", "icons", "icon.png");
-  const desktopEntry = `[Desktop Entry]\nType=Application\nName=RisuAI\nExec=\"${binaryPath}\"\nIcon=${iconPath}\nTerminal=false\nNoDisplay=true\nStartupWMClass=${waylandAppId}\nX-HaejeokRisuAI-Dev=true\n`;
+  const desktopEntry = `[Desktop Entry]\nType=Application\nName=RisuAI\nExec="${binaryPath}"\nIcon=${iconPath}\nTerminal=false\nNoDisplay=true\nStartupWMClass=${waylandAppId}\nX-HaejeokRisuAI-Dev=true\n`;
 
   if (existing !== desktopEntry) {
     mkdirSync(applicationsDirectory, { recursive: true });
@@ -74,7 +80,7 @@ const args = process.argv.slice(2);
 const command = args[0];
 const needsVersionConfig = command === "build" || command === "dev";
 const hasUpdaterSigningKey = Boolean(process.env.TAURI_SIGNING_PRIVATE_KEY);
-const tauriEnvironment = {
+const tauriEnvironment: NodeJS.ProcessEnv = {
   ...process.env,
   ...(version.buildNumber === null
     ? {}
@@ -103,10 +109,7 @@ if (needsVersionConfig) {
       : {}),
   };
 
-  args.push(
-    "--config",
-    JSON.stringify(config),
-  );
+  args.push("--config", JSON.stringify(config));
 }
 
 console.log(

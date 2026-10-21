@@ -1,13 +1,27 @@
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const defaultRepoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 
-function parseBuildNumber(value, source) {
+export type BuildVersionSource = "fallback" | "git" | "environment";
+
+export interface BuildVersionResult {
+  buildNumber: number | null;
+  buildTag: string;
+  tauriVersion: string;
+  source: BuildVersionSource;
+}
+
+export interface ResolveBuildVersionOptions {
+  cwd?: string;
+  env?: Record<string, string | undefined> | NodeJS.ProcessEnv;
+}
+
+function parseBuildNumber(value: unknown, source: string): number | null {
   if (value === undefined || value === null || value === "") return null;
   const normalized = String(value).trim();
   if (!/^\d+$/.test(normalized)) {
@@ -16,7 +30,7 @@ function parseBuildNumber(value, source) {
   return Number.parseInt(normalized, 10);
 }
 
-function readGitBuildNumber(cwd) {
+function readGitBuildNumber(cwd: string): number | null {
   try {
     const output = execFileSync("git", ["rev-list", "--count", "HEAD"], {
       cwd,
@@ -28,10 +42,11 @@ function readGitBuildNumber(cwd) {
     return null;
   }
 }
+
 export function resolveBuildVersion({
   cwd = defaultRepoRoot,
   env = process.env,
-} = {}) {
+}: ResolveBuildVersionOptions = {}): BuildVersionResult {
   const explicitBuildNumber = parseBuildNumber(
     env.HAEJEOK_BUILD_NUMBER,
     "HAEJEOK_BUILD_NUMBER",
