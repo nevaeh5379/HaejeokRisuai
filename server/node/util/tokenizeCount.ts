@@ -21,27 +21,36 @@ async function getEncoder(encoding?: any): Promise<any> {
   return encoder;
 }
 
-async function countTokensBatch(texts?: any, encoding?: any): Promise<any> {
+async function countTokensBatch(
+  texts?: any,
+  encoding?: any,
+): Promise<number[]> {
   if (!Array.isArray(texts)) {
     throw new TypeError("texts must be an array");
   }
-  if (texts.length > 4096) {
+  const count = texts.length;
+  if (count > 4096) {
     throw new RangeError("A tokenize batch may contain at most 4096 texts");
   }
 
-  let totalChars: any = 0;
-  const normalized: any = texts.map((text?: any) => {
-    if (typeof text !== "string")
+  let totalChars = 0;
+  for (let i = 0; i < count; i++) {
+    const text = texts[i];
+    if (typeof text !== "string") {
       throw new TypeError("Every tokenize input must be a string");
+    }
     totalChars += text.length;
-    return text;
-  });
+  }
   if (totalChars > 32 * 1024 * 1024) {
     throw new RangeError("A tokenize batch may contain at most 32 MiB of text");
   }
 
   const encoder: any = await getEncoder(encoding);
-  return normalized.map((text?: any) => encoder.encode(text).length);
+  const result = new Array<number>(count);
+  for (let i = 0; i < count; i++) {
+    result[i] = encoder.encode(texts[i]).length;
+  }
+  return result;
 }
 
 function disposeEncoders(): any {

@@ -99,13 +99,30 @@ export class CapacitorStorage {
       path: ROOT,
       directory: Directory.Data,
     });
-    return result.files
-      .map((entry) => filenameToKey(entry.name))
-      .filter((key): key is string => key !== null);
+    const keys: string[] = [];
+    for (let i = 0; i < result.files.length; i++) {
+      const key = filenameToKey(result.files[i].name);
+      if (key !== null) {
+        keys.push(key);
+      }
+    }
+    return keys;
   }
 
   async listSyncAssetKeys(prefix = "assets/"): Promise<string[]> {
-    return (await this.keys()).filter((key) => key.startsWith(prefix)).sort();
+    await this.init();
+    const result = await Filesystem.readdir({
+      path: ROOT,
+      directory: Directory.Data,
+    });
+    const keys: string[] = [];
+    for (let i = 0; i < result.files.length; i++) {
+      const key = filenameToKey(result.files[i].name);
+      if (key !== null && key.startsWith(prefix)) {
+        keys.push(key);
+      }
+    }
+    return keys.sort();
   }
 
   async getSyncAssetSize(key: string): Promise<number> {

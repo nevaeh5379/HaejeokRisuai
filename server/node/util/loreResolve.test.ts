@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { resolveLoreEntries } from "./loreResolve.ts";
+import { matchLoreRequest, matchLoreBatch } from "./loreMatch.ts";
 
 const message = { role: "user", data: "The moon is bright" };
 
@@ -49,5 +50,28 @@ describe("resolveLoreEntries", () => {
       charName: "Bot",
     });
     expect(result.activatedIndexes).toEqual([0]);
+  });
+
+  it("handles empty or whitespace keys without unnecessary allocations", () => {
+    const result = matchLoreRequest(
+      [message],
+      { keys: ["", "  ", null, undefined, "moon"], searchDepth: 5 },
+      { username: "User", charName: "Bot" },
+    );
+    expect(result.matched).toBe(true);
+    expect(result.logs[0].activated).toBe("moon");
+  });
+
+  it("handles deep messages beyond searchDepth correctly", () => {
+    const messages = [
+      { role: "user", data: "far ancient message with sun" },
+      { role: "char", data: "recent message with moon" },
+    ];
+    const result = matchLoreRequest(
+      messages,
+      { keys: ["sun"], searchDepth: 1 },
+      { username: "User", charName: "Bot" },
+    );
+    expect(result.matched).toBe(false);
   });
 });

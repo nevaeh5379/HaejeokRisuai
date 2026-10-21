@@ -19,4 +19,14 @@ describe("server token counting", async () => {
       "Unsupported tokenizer encoding",
     );
   });
+
+  it("handles empty array without allocation", async () => {
+    expect(await countTokensBatch([], "cl100k_base")).toEqual([]);
+  });
+
+  it("rejects non-string elements inside batch", async () => {
+    await expect(
+      countTokensBatch(["valid", 123 as any], "cl100k_base"),
+    ).rejects.toThrow("Every tokenize input must be a string");
+  });
 });

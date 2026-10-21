@@ -1,8 +1,13 @@
-function normalizeKeys(keys?: any): any {
+function normalizeKeys(keys?: any): string[] {
   if (!Array.isArray(keys)) return [];
-  return keys
-    .map((key?: any) => String(key ?? "").trim())
-    .filter((key?: any) => key.length > 0);
+  const result: string[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    const trimmed = String(keys[i] ?? "").trim();
+    if (trimmed.length > 0) {
+      result.push(trimmed);
+    }
+  }
+  return result;
 }
 
 const MAX_LORE_SEARCH_DEPTH: any = 10000;
@@ -25,21 +30,27 @@ function buildMessageList(
   request?: any,
   username?: any,
   charName?: any,
-): any {
+): any[] {
+  if (!Array.isArray(messages)) return [];
   const depth: any = Math.min(
     MAX_LORE_SEARCH_DEPTH,
     Math.max(0, Math.floor(Number(request.searchDepth) || 0)),
   );
-  const sliced: any = messages.slice(messages.length - depth, messages.length);
-  return sliced.map((msg?: any, index?: any) => {
+  const start = Math.max(0, messages.length - depth);
+  const count = messages.length - start;
+  const result = new Array(count);
+  for (let i = start; i < messages.length; i++) {
+    const msg: any = messages[i];
     const isUser: any = msg?.role === "user";
     const displayName: any = isUser ? username : msg?.displayName || charName;
-    return {
-      source: `message ${index} by ${isUser ? "user" : "char"}`,
-      prompt: `\x01{{${displayName}}}:${String(msg?.data ?? "")}\x01`,
-      data: String(msg?.data ?? ""),
+    const dataStr = String(msg?.data ?? "");
+    result[i - start] = {
+      source: `message ${i - start} by ${isUser ? "user" : "char"}`,
+      prompt: `\x01{{${displayName}}}:${dataStr}\x01`,
+      data: dataStr,
     };
-  });
+  }
+  return result;
 }
 
 function matchLoreRequest(
@@ -59,13 +70,14 @@ function matchLoreRequest(
     !request.dontSearchWhenRecursive &&
     Array.isArray(options.recursivePrompts)
   ) {
-    messageList = messageList.concat(
-      options.recursivePrompts.map((item?: any) => ({
+    for (let i = 0; i < options.recursivePrompts.length; i++) {
+      const item: any = options.recursivePrompts[i];
+      messageList.push({
         source: "lorebook " + String(item?.source ?? ""),
         prompt: String(item?.prompt ?? ""),
         data: String(item?.data ?? ""),
-      })),
-    );
+      });
+    }
   }
   if (request.regex) {
     for (const message of messageList) {
@@ -92,17 +104,17 @@ function matchLoreRequest(
     return { matched: false, logs };
   }
 
-  messageList = messageList.map((message?: any) => ({
-    source: message.source,
-    prompt: message.prompt
+  for (let i = 0; i < messageList.length; i++) {
+    const message = messageList[i];
+    message.prompt = message.prompt
       .toLocaleLowerCase()
       .replace(/\{\{\/\/(.+?)\}\}/g, "")
-      .replace(/\{\{comment:(.+?)\}\}/g, ""),
-    data: message.data
+      .replace(/\{\{comment:(.+?)\}\}/g, "");
+    message.data = message.data
       .toLocaleLowerCase()
       .replace(/\{\{\/\/(.+?)\}\}/g, "")
-      .replace(/\{\{comment:(.+?)\}\}/g, ""),
-  }));
+      .replace(/\{\{comment:(.+?)\}\}/g, "");
+  }
   const allMode: any = request.all === true;
   let allModeMatched: any = true;
   for (const message of messageList) {

@@ -232,14 +232,15 @@ function normalizeHotkeys(data: Database): void {
   if (!data.hotkeys) {
     data.hotkeys = safeStructuredClone(defaultHotkeys);
   } else {
-    const existingActions = new Set(
-      data.hotkeys.map((hotkey) => hotkey.action),
-    );
-    const newHotkeys = defaultHotkeys.filter(
-      (hotkey) => !existingActions.has(hotkey.action),
-    );
-    if (newHotkeys.length > 0) {
-      data.hotkeys.push(...safeStructuredClone(newHotkeys));
+    const existingActions = new Set<string>();
+    for (let i = 0; i < data.hotkeys.length; i++) {
+      existingActions.add(data.hotkeys[i].action);
+    }
+    for (let i = 0; i < defaultHotkeys.length; i++) {
+      const hotkey = defaultHotkeys[i];
+      if (!existingActions.has(hotkey.action)) {
+        data.hotkeys.push(safeStructuredClone(hotkey));
+      }
     }
   }
 

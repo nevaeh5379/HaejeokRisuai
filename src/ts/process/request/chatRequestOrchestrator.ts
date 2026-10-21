@@ -58,10 +58,10 @@ export async function requestChatData(
     console.warn("Escape is enabled, disabling streaming");
   }
 
-  const originalFormated = safeStructuredClone(arg.formated).map((message) => {
-    message.content = risuUnescape(message.content);
-    return message;
-  });
+  const originalFormated = safeStructuredClone(arg.formated);
+  for (let i = 0; i < originalFormated.length; i++) {
+    originalFormated[i].content = risuUnescape(originalFormated[i].content);
+  }
 
   return executeChatRequestFallbacks(
     {

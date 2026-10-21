@@ -64,3 +64,23 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-29 - Optimize Tokenize Batching, Lore Matching, Memory Vectors, and Mobile Asset Filtering
+
+**Learning:** Found transient array allocations and quadratic lookups in tokenize batch validation, lore matching, Hypa V2 vector similarity, file storage asset listing, and request preparation:
+
+1. `countTokensBatch` in `server/node/util/tokenizeCount.ts` mapped up to 4096 texts into an identical intermediate array solely to calculate `totalChars` and type-check, followed by a second `.map()` to encode lengths.
+2. `normalizeKeys` and `buildMessageList` in `server/node/util/loreMatch.ts` performed `.map().filter()` chains and `messages.slice(...).map(...)`, allocating intermediate slice and mapping arrays per lore match. Lowering and comment stripping mapped over the newly created `messageList` instead of mutating in place.
+3. `HypaProcessorV2` in `hypamemoryv2.ts` performed `Array.from(this.vectors.values()).map(...)` allocating vector arrays and tuples per query, evaluated an O(N*M) `.some()` scan in `additionalItems` collection, and chained `.filter().map()` during vector upsert and ranked result decoding.
+4. `CapacitorStorage.listSyncAssetKeys` in `capacitorStorage.ts` and `OpfsStorage.listSyncAssetKeys` in `opfsStorage.ts` materialized every single file key before applying prefix filters, creating multiple transient string arrays on Android and Web OPFS storage.
+5. `chatRequestOrchestrator.ts` called `.map()` immediately after `safeStructuredClone(arg.formated)` solely to perform in-place unescaping, allocating an extra message array per chat request.
+6. `normalizeHotkeys` in `features.ts` spread `defaultHotkeys.filter(...)` and mapped `existingActions` into an intermediate array.
+
+**Action:**
+
+1. Use a single linear pass in `countTokensBatch` to validate texts and accumulate `totalChars`, pre-allocating the token count result array directly with `new Array<number>(count)`.
+2. Extract lore keys and build formatted message lists in `loreMatch.ts` via direct indexing and single-pass loops without `slice()` or mapped array chaining, and clean comment syntax in place on unshared message objects.
+3. Pre-allocate scored vector arrays with `new Array(this.vectors.size)` in `HypaProcessorV2`, use a Set for O(1) membership checks in missing metadata resolution, and streamline ranked row mapping into a single pass.
+4. Stream and filter asset keys directly during directory traversal in `CapacitorStorage` and `OpfsStorage` without intermediate all-key array materialization.
+5. Mutate the freshly deep-cloned message list in place in `chatRequestOrchestrator.ts` to avoid extra array allocations.
+6. Populate `existingActions` and append default hotkeys iteratively without spread or filter allocations in `normalizeHotkeys`.
