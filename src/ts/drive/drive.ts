@@ -145,9 +145,7 @@ async function backupDrive(ACCESS_TOKEN: string) {
 
   const files: DriveFile[] = await getFilesInFolder(ACCESS_TOKEN);
 
-  const fileNames = files.map((d) => {
-    return d.name;
-  });
+  const fileNameSet = new Set(files.map((d) => d.name));
 
   const databaseSnapshot = createDatabaseSnapshot();
   const coldStoragePayloads =
@@ -182,7 +180,7 @@ async function backupDrive(ACCESS_TOKEN: string) {
         continue;
       }
       const formatedKey = newFormatKeys(key);
-      if (!fileNames.includes(formatedKey)) {
+      if (!fileNameSet.has(formatedKey)) {
         await createFileInFolder(
           ACCESS_TOKEN,
           formatedKey,
@@ -207,7 +205,7 @@ async function backupDrive(ACCESS_TOKEN: string) {
         continue;
       }
       const formatedKey = newFormatKeys(key);
-      if (!fileNames.includes(formatedKey)) {
+      if (!fileNameSet.has(formatedKey)) {
         await createFileInFolder(
           ACCESS_TOKEN,
           formatedKey,
@@ -225,7 +223,7 @@ async function backupDrive(ACCESS_TOKEN: string) {
       `Uploading Cold Storage... (${i + 1} / ${totalCold})`,
       percent,
     );
-    if (fileNames.includes(payload.backupName)) {
+    if (fileNameSet.has(payload.backupName)) {
       continue;
     }
     await createFileInFolder(ACCESS_TOKEN, payload.backupName, payload.encoded);
@@ -275,8 +273,7 @@ async function loadDrive(
     });
   }
   const files: DriveFile[] = await getFilesInFolder(ACCESS_TOKEN);
-  let foragekeys: string[] = [];
-  let loadedForageKeys = false;
+  let forageKeySet: Set<string> | null = null;
   let db = settingsStore.state;
 
   async function checkImageExists(images: string) {
@@ -288,16 +285,16 @@ async function loadDrive(
         baseDir: BaseDirectory.AppData,
       });
     } else {
-      if (!loadedForageKeys) {
-        foragekeys = await forageStorage.keys();
-        loadedForageKeys = true;
+      if (!forageKeySet) {
+        forageKeySet = new Set(await forageStorage.keys());
       }
-      return foragekeys.includes("assets/" + images);
+      return forageKeySet.has("assets/" + images);
     }
   }
-  const fileNames = files.map((d) => {
-    return d.name;
-  });
+  const fileByName = new Map<string, DriveFile>();
+  for (const f of files) {
+    fileByName.set(f.name, f);
+  }
 
   let dbs: [DriveFile, number][] = [];
   let noSyncData = true;
@@ -421,20 +418,17 @@ async function loadDrive(
           //skip process
         } else {
           if (formatedImage.length >= 7) {
-            if (fileNames.includes(formatedImage)) {
-              for (const file of files) {
-                if (file.name === formatedImage) {
-                  const fData = await getFileData(ACCESS_TOKEN, file.id);
-                  if (isTauri) {
-                    await writeFile(`assets/` + images, fData, {
-                      baseDir: BaseDirectory.AppData,
-                    });
-                  } else {
-                    await forageStorage.setItem("assets/" + images, fData);
-                  }
-                  tries = 3;
-                }
+            const file = fileByName.get(formatedImage);
+            if (file) {
+              const fData = await getFileData(ACCESS_TOKEN, file.id);
+              if (isTauri) {
+                await writeFile(`assets/` + images, fData, {
+                  baseDir: BaseDirectory.AppData,
+                });
+              } else {
+                await forageStorage.setItem("assets/" + images, fData);
               }
+              tries = 3;
             } else {
               alertStore.set({
                 type: "wait",

@@ -64,3 +64,21 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Drive Backup/Restore, SQLite Stream Restore, and Plugin Proxy Hotpaths
+
+**Learning:** Found quadratic array scans and micro-allocations in cloud backup/sync, SQLite streaming restore, and plugin proxy interactions:
+
+1. `drive.ts` mapped drive files to an array and repeatedly executed `.includes()` in loops over assets and emotion images, while restore nested `for (const file of files)` searches inside `fileNames.includes()`. Local asset existence checks also called `forageStorage.keys()` repeatedly or did linear scans over the array.
+2. `portableDatabaseStreamSqliteRestore.ts` called `asRecords(records, type)` multiple times per batch in `flush()` and `buildCommit()`, allocating redundant filtered arrays, mapped arrays, and spreading arguments into `push(...)`.
+3. `checkCharOrder` in `globalApi.svelte.ts` repeatedly invoked `.includes()` on arrays of character IDs inside folder and character loops, causing O(N^2) quadratic checks on every startup or order verification.
+4. `plugins.svelte.ts` filtered plugin lists 4 separate times on load and scanned `allowedDbKeys` on every property access on the compatibility database proxy.
+5. SillyTavern preset import in `presetService.ts` called `.find()` over all prompts for every entry in the order array, creating an O(N*M) quadratic scan.
+
+**Action:**
+
+1. Use `Set<string>` for drive file names and a `Map<string, DriveFile>` for O(1) file lookups during restore, eliminating nested loops. Cache forage keys in a `Set<string>`.
+2. Replace `asRecords().map()` and array spreads in SQLite streaming restore with direct single-pass loops and item pushes, eliminating intermediate array allocations and call-stack limits.
+3. Use `Set<string>` for `orderedSet` and `charIdSet` in `checkCharOrder`, reducing quadratic ID checks to O(N).
+4. Partition enabled and blocked plugins in a single pass in `loadPlugins`, and pre-construct `allowedDbKeysSet` for O(1) proxy trap checks.
+5. Pre-index SillyTavern prompts into a `Map` before iterating order entries to ensure constant-time prompt lookups.

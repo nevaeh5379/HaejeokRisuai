@@ -26,15 +26,16 @@ function saveToStorage(key: string, data: string[]) {
 class ModelFavoritesStore {
   favorites = $state<string[]>(loadFromStorage(FAVORITES_STORAGE_KEY));
   recent = $state<string[]>(loadFromStorage(RECENT_STORAGE_KEY));
+  favoritesSet = $derived(new Set(this.favorites));
 
   isFavorite(modelId: string): boolean {
     if (!modelId) return false;
-    return this.favorites.includes(modelId);
+    return this.favoritesSet.has(modelId);
   }
 
   toggleFavorite(modelId: string) {
     if (!modelId) return;
-    if (this.favorites.includes(modelId)) {
+    if (this.favoritesSet.has(modelId)) {
       this.favorites = this.favorites.filter((id) => id !== modelId);
     } else {
       this.favorites = [...this.favorites, modelId];
@@ -44,12 +45,19 @@ class ModelFavoritesStore {
 
   addRecent(modelId: string) {
     if (!modelId) return;
-    const filtered = this.recent.filter((id) => id !== modelId);
-    this.recent = [modelId, ...filtered].slice(0, MAX_RECENT_MODELS);
+    const next: string[] = [modelId];
+    for (const id of this.recent) {
+      if (id !== modelId) {
+        next.push(id);
+        if (next.length >= MAX_RECENT_MODELS) break;
+      }
+    }
+    this.recent = next;
     saveToStorage(RECENT_STORAGE_KEY, $state.snapshot(this.recent));
   }
 
   removeRecent(modelId: string) {
+    if (!modelId) return;
     this.recent = this.recent.filter((id) => id !== modelId);
     saveToStorage(RECENT_STORAGE_KEY, $state.snapshot(this.recent));
   }

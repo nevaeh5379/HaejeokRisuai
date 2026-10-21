@@ -21,15 +21,6 @@ const TEMP_LINKS = "risu_restore_message_links";
 type PersistedRecord = PortableDatabaseStreamPersistedRecord;
 type PersistedType = PersistedRecord["type"];
 
-function asRecords<T extends PersistedType>(
-  records: PersistedRecord[],
-  type: T,
-) {
-  return records.filter(
-    (record): record is Extract<PersistedRecord, { type: T }> =>
-      record.type === type,
-  );
-}
 function buildCommit(
   baseRevision: number,
   type: PersistedType,
@@ -40,120 +31,173 @@ function buildCommit(
     "local-backup-stream-restore",
   );
   switch (type) {
-    case "author-note":
+    case "author-note": {
+      const rows: any[] = [];
+      for (const record of records) {
+        if (record.type === "author-note") {
+          rows.push(record.data);
+        }
+      }
       commit.authorNotes = [
         {
           type: "restore",
           clear: false,
-          rows: asRecords(records, type).map((record) => record.data),
+          rows,
           allowScriptWrite: false,
         },
       ];
       break;
-    case "author-note-settings":
-      commit.authorNotes = asRecords(records, type).map((record) => ({
-        type: "settings",
-        allowScriptWrite: record.allowScriptWrite,
-      }));
-      break;
-    case "setting":
-      for (const { key, value } of asRecords(records, type)) {
-        if (key !== "plugins") {
-          commit.root.upserts.push({ key, value });
-          continue;
-        }
-        if (!Array.isArray(value))
-          throw new Error("Backup plugins must be an array");
-        const plugins: Extract<PersistedRecord, { type: "plugin" }>[] =
-          value.map((plugin, position) => {
-            if (
-              !plugin ||
-              typeof plugin !== "object" ||
-              Array.isArray(plugin) ||
-              typeof plugin.script !== "string"
-            ) {
-              throw new Error(`Invalid backup plugin at position ${position}`);
-            }
-            const { script, ...data } = plugin;
-            return { type: "plugin", id: uuidv4(), position, data, script };
+    }
+    case "author-note-settings": {
+      const authorNotes: any[] = [];
+      for (const record of records) {
+        if (record.type === "author-note-settings") {
+          authorNotes.push({
+            type: "settings",
+            allowScriptWrite: record.allowScriptWrite,
           });
-        commit.plugins = buildCommit(baseRevision, "plugin", plugins).plugins;
+        }
+      }
+      commit.authorNotes = authorNotes;
+      break;
+    }
+    case "setting":
+      for (const record of records) {
+        if (record.type === "setting") {
+          const { key, value } = record;
+          if (key !== "plugins") {
+            commit.root.upserts.push({ key, value });
+            continue;
+          }
+          if (!Array.isArray(value))
+            throw new Error("Backup plugins must be an array");
+          const plugins: Extract<PersistedRecord, { type: "plugin" }>[] =
+            value.map((plugin, position) => {
+              if (
+                !plugin ||
+                typeof plugin !== "object" ||
+                Array.isArray(plugin) ||
+                typeof plugin.script !== "string"
+              ) {
+                throw new Error(
+                  `Invalid backup plugin at position ${position}`,
+                );
+              }
+              const { script, ...data } = plugin;
+              return { type: "plugin", id: uuidv4(), position, data, script };
+            });
+          commit.plugins = buildCommit(baseRevision, "plugin", plugins).plugins;
+        }
       }
       break;
-    case "plugin":
+    case "plugin": {
+      const upserts: any[] = [];
+      const scripts: any[] = [];
+      for (const record of records) {
+        if (record.type === "plugin") {
+          upserts.push({
+            id: record.id,
+            position: record.position,
+            data: record.data as any,
+          });
+          scripts.push({
+            id: record.id,
+            script: record.script,
+          });
+        }
+      }
       commit.plugins = {
-        upserts: asRecords(records, type).map(({ id, position, data }) => ({
-          id,
-          position,
-          data: data as any,
-        })),
-        scripts: asRecords(records, type).map(({ id, script }) => ({
-          id,
-          script,
-        })),
+        upserts,
+        scripts,
         deletes: [],
       };
       break;
-    case "plugin-storage":
+    }
+    case "plugin-storage": {
+      const upserts: any[] = [];
+      for (const record of records) {
+        if (record.type === "plugin-storage") {
+          upserts.push({
+            key: record.key,
+            value: record.value,
+          });
+        }
+      }
       commit.pluginStorage = {
-        upserts: asRecords(records, type).map(({ key, value }) => ({
-          key,
-          value,
-        })),
+        upserts,
         deletes: [],
         clear: false,
       };
       break;
-    case "module":
+    }
+    case "module": {
+      const upserts: any[] = [];
+      for (const record of records) {
+        if (record.type === "module") {
+          upserts.push({
+            id: record.id,
+            position: record.position,
+            data: record.data as any,
+          });
+        }
+      }
       commit.modules = {
-        upserts: asRecords(records, type).map(({ id, position, data }) => ({
-          id,
-          position,
-          data: data as any,
-        })),
+        upserts,
         deletes: [],
       };
       break;
-    case "preset":
+    }
+    case "preset": {
+      const upserts: any[] = [];
+      for (const record of records) {
+        if (record.type === "preset") {
+          upserts.push({
+            id: record.id,
+            position: record.position,
+            data: record.data as any,
+          });
+        }
+      }
       commit.presets = {
-        upserts: asRecords(records, type).map(({ id, position, data }) => ({
-          id,
-          position,
-          data: data as any,
-        })),
+        upserts,
         deletes: [],
       };
       break;
+    }
     case "character":
-      commit.characters.push(
-        ...asRecords(records, type).map(({ id, position, data }) => ({
-          id,
-          position,
-          data,
-        })),
-      );
+      for (const record of records) {
+        if (record.type === "character") {
+          commit.characters.push({
+            id: record.id,
+            position: record.position,
+            data: record.data,
+          });
+        }
+      }
       break;
     case "chat":
-      commit.chats.push(
-        ...asRecords(records, type).map(
-          ({ id, characterId, position, data }) => ({
-            id,
-            characterId,
-            position,
-            data,
-          }),
-        ),
-      );
+      for (const record of records) {
+        if (record.type === "chat") {
+          commit.chats.push({
+            id: record.id,
+            characterId: record.characterId,
+            position: record.position,
+            data: record.data,
+          });
+        }
+      }
       break;
     case "message":
-      commit.messages.push(
-        ...asRecords(records, type).map(({ id, chatId, position, data }) => ({
-          id,
-          chatId,
-          position,
-          data,
-        })),
-      );
+      for (const record of records) {
+        if (record.type === "message") {
+          commit.messages.push({
+            id: record.id,
+            chatId: record.chatId,
+            position: record.position,
+            data: record.data,
+          });
+        }
+      }
       break;
   }
   return commit;
@@ -236,29 +280,33 @@ export class PortableDatabaseStreamSqliteApplier {
     this.pending = [];
 
     if (type === "branch") {
-      for (const record of asRecords(records, type)) {
-        const data = record.data as any;
-        await this.execute(
-          `INSERT OR REPLACE INTO ${TEMP_BRANCHES}
-            (chat_id,id,parent_branch_id,fork_message_id,head_message_id,reason,created_at)
-            VALUES (?,?,?,?,?,?,?)`,
-          [
-            record.chatId,
-            data.id,
-            data.parentBranchId ?? null,
-            data.forkMessageId ?? null,
-            data.headMessageId ?? null,
-            data.reason,
-            Number(data.createdAt) || 0,
-          ],
-        );
+      for (const record of records) {
+        if (record.type === "branch") {
+          const data = record.data as any;
+          await this.execute(
+            `INSERT OR REPLACE INTO ${TEMP_BRANCHES}
+              (chat_id,id,parent_branch_id,fork_message_id,head_message_id,reason,created_at)
+              VALUES (?,?,?,?,?,?,?)`,
+            [
+              record.chatId,
+              data.id,
+              data.parentBranchId ?? null,
+              data.forkMessageId ?? null,
+              data.headMessageId ?? null,
+              data.reason,
+              Number(data.createdAt) || 0,
+            ],
+          );
+        }
       }
     } else if (type === "active-branch") {
-      for (const record of asRecords(records, type)) {
-        await this.execute(
-          `INSERT OR REPLACE INTO ${TEMP_ACTIVE} (chat_id,branch_id) VALUES (?,?)`,
-          [record.chatId, record.branchId],
-        );
+      for (const record of records) {
+        if (record.type === "active-branch") {
+          await this.execute(
+            `INSERT OR REPLACE INTO ${TEMP_ACTIVE} (chat_id,branch_id) VALUES (?,?)`,
+            [record.chatId, record.branchId],
+          );
+        }
       }
     } else {
       const commit = buildCommit(this.baseRevision, type, records);
@@ -274,18 +322,20 @@ export class PortableDatabaseStreamSqliteApplier {
       );
       await sqliteCommit.apply(commit as any, this.execute);
       if (type === "message") {
-        for (const record of asRecords(records, type)) {
-          await this.execute(
-            `INSERT OR REPLACE INTO ${TEMP_LINKS}
-              (chat_id,message_id,parent_message_id,origin_branch_id)
-              VALUES (?,?,?,?)`,
-            [
-              record.chatId,
-              record.id,
-              record.parentMessageId ?? null,
-              record.originBranchId,
-            ],
-          );
+        for (const record of records) {
+          if (record.type === "message") {
+            await this.execute(
+              `INSERT OR REPLACE INTO ${TEMP_LINKS}
+                (chat_id,message_id,parent_message_id,origin_branch_id)
+                VALUES (?,?,?,?)`,
+              [
+                record.chatId,
+                record.id,
+                record.parentMessageId ?? null,
+                record.originBranchId,
+              ],
+            );
+          }
         }
       }
     }

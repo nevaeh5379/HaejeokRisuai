@@ -77,12 +77,17 @@ export const SafeIdbFactory = {
   databases: async (): Promise<{ name: string; version: number }[]> => {
     if ("databases" in indexedDB) {
       const r = await indexedDB.databases();
-      return r
-        .filter((db) => db.name && db.name.startsWith("safe_plugin_"))
-        .map((db) => ({
-          name: db.name!.substring("safe_plugin_".length),
-          version: db.version,
-        }));
+      const prefix = "safe_plugin_";
+      const out: { name: string; version: number }[] = [];
+      for (const db of r) {
+        if (db.name && db.name.startsWith(prefix)) {
+          out.push({
+            name: db.name.substring(prefix.length),
+            version: db.version,
+          });
+        }
+      }
+      return out;
     } else {
       return [];
     }
