@@ -53,7 +53,9 @@
     const fieldDiffs = $derived.by<FieldDiff[]>(() => {
         const before = beforeRow || {}
         const after = afterRow || {}
-        const allKeys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+        const allKeysSet = new Set(Object.keys(before))
+        for (const k of Object.keys(after)) allKeysSet.add(k)
+        const allKeys = Array.from(allKeysSet)
 
         return allKeys.map((key) => {
             const hasBefore = key in before && before[key] !== undefined

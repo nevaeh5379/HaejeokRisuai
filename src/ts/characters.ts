@@ -603,7 +603,7 @@ export async function importChat() {
     const selectedID = get(selectedCharID);
 
     if (dat.name.endsWith("jsonl")) {
-      const lines = Buffer.from(dat.data).toString("utf-8").split("\n");
+      const lines = new TextDecoder().decode(dat.data).split("\n");
       let newChat: Chat = {
         message: [],
         note: "",
@@ -637,9 +637,9 @@ export async function importChat() {
       }
 
       if (
-        characterStore.characters[selectedID].chatFolders.filter(
+        !characterStore.characters[selectedID].chatFolders?.some(
           (folder) => folder.id === newChat.folderId,
-        ).length === 0
+        )
       ) {
         newChat.folderId = null;
       }
@@ -655,7 +655,7 @@ export async function importChat() {
       changeChatTo(0);
       alertNormal(language.successImport);
     } else if (dat.name.endsWith("json")) {
-      const json = JSON.parse(Buffer.from(dat.data).toString("utf-8"));
+      const json = JSON.parse(new TextDecoder().decode(dat.data));
       if (json.type === "haejeokChat" && json.ver === 1) {
         const sourceChat = json.data?.chat as Chat | undefined;
         const branchGraph = json.data?.branchGraph;
@@ -742,14 +742,13 @@ export async function importChat() {
           chat.id = v4();
         });
         characterStore.characters[selectedID].chats.unshift(...chats);
+        const newChats = chats.map((chat) => ({
+          chatId: chat.id,
+          messages: chat.message ?? [],
+        }));
         await messageStore.persistNewChats(
           characterStore.characters[selectedID].chaId,
-          chats
-            .filter((chat) => chat.id)
-            .map((chat) => ({
-              chatId: chat.id!,
-              messages: chat.message ?? [],
-            })),
+          newChats,
         );
         alertNormal(language.successImport);
         return;
@@ -768,14 +767,13 @@ export async function importChat() {
             return v;
           });
           characterStore.characters[selectedID].chats.unshift(...mappedChats);
+          const newMappedChats = mappedChats.map((chat) => ({
+            chatId: chat.id,
+            messages: chat.message ?? [],
+          }));
           await messageStore.persistNewChats(
             characterStore.characters[selectedID].chaId,
-            mappedChats
-              .filter((chat) => chat.id)
-              .map((chat) => ({
-                chatId: chat.id!,
-                messages: chat.message ?? [],
-              })),
+            newMappedChats,
           );
           alertNormal(language.successImport);
           return;
@@ -814,7 +812,7 @@ export async function importChat() {
       }
     } else if (dat.name.endsWith("html")) {
       const doc = new DOMParser().parseFromString(
-        Buffer.from(dat.data).toString("utf-8"),
+        new TextDecoder().decode(dat.data),
         "text/html",
       );
       const chat = doc.querySelector(".idat")?.textContent;
@@ -1244,11 +1242,8 @@ export async function makeGroupImage() {
 }
 
 function dataURLtoBuffer(string: string) {
-  const regex = /^data:.+\/(.+);base64,(.*)$/;
-
-  const matches = string.match(regex);
-  const ext = matches[1];
-  const data = matches[2];
+  const commaIndex = string.indexOf(",");
+  const data = commaIndex >= 0 ? string.slice(commaIndex + 1) : string;
   return Buffer.from(data, "base64");
 }
 
