@@ -134,16 +134,16 @@ export async function writeItemsConcurrently<T>(
   }
   let cursor: number = 0;
   const workerCount: number = Math.min(concurrency, items.length);
-  const workers: Promise<void>[] = Array.from(
-    { length: workerCount },
-    async (): Promise<void> => {
+  const workers: Promise<void>[] = new Array(workerCount);
+  for (let w = 0; w < workerCount; w++) {
+    workers[w] = (async (): Promise<void> => {
       while (cursor < items.length) {
         const index: number = cursor;
         cursor += 1;
         const item: T = items[index];
         await writeItem(item, index);
       }
-    },
-  );
+    })();
+  }
   await Promise.all(workers);
 }

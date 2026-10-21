@@ -64,3 +64,24 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Storage Sync Codec, Backup Streams, and Native Query Processing
+
+**Learning:** Found micro-allocation hotspots and unnecessary linear scans across storage synchronization, portable backup validation, and native SQLite streaming:
+
+1. `encodeStorageSyncValue` and `decodeStorageSyncObject` allocated 2-element `[key, value]` tuples and intermediate array spreads across `Object.entries()`, even when no special transformations (undefined, non-finite numbers, reserved tags) were required. `decodeSpecial` and `decodeStorageSyncValue` also allocated full `Object.keys()` arrays purely to test whether the key count equaled 1.
+2. `isPortableDatabaseRecord` in `packages/backup-core/src/node/importService.ts` instantiated a new 13-element array on every single streamed record to call `.includes()`. `validatingInlayWriter` redundantly re-wrapped `Uint8Array` prefix chunks with `Buffer.from()` before `Buffer.concat()`, and `validateDatabase` allocated tuples via `Object.entries(manifest.counts)`.
+3. `normalizeBackupEntryName` in `packages/backup-core/src/entryPolicy.ts` allocated closure callbacks on every path segment check via `segments.some()`, while `normalizeBackupAssetPath` performed repeated `segments.shift()` operations with O(N) element shifts.
+4. `writeItemsConcurrently` in `packages/backup-core/src/restoreBatch.ts` allocated an intermediate array-like wrapper via `Array.from({ length })`.
+5. `requiresEncoding` and `decodePluginStorageRecord` in `src/ts/storage/sql/pluginStorageValueCodec.ts` allocated 2-element tuples via `Object.entries()`, and `decodePluginStorageRecord` chained `Object.fromEntries(Object.entries.map)`.
+6. `PortableDatabaseStreamValidator.acceptRecord` in `src/ts/storage/backup/portableDatabaseStreamRestore.ts` performed linear array `.includes()` scans on every record.
+7. `CapacitorSqliteRestoreStream.writeStatement` allocated closure callbacks per statement via `bind.reduce()`, and `readSqliteQueryStream` spread fragments into `[...fragments, tail].join("")` and reallocated empty arrays.
+
+**Action:**
+
+1. In `storageSyncValueCodec.ts`, iterate over `Object.keys()` directly without creating `[key, value]` tuples, fast-path ordinary objects to avoid copying, and test for single-property keys via direct early-return property loops.
+2. Hoist `SUPPORTED_DATABASE_RECORD_TYPES` and `RECORD_TYPES_SET` to module-level `Set<string>` collections for O(1) membership checks without per-record array allocations.
+3. Replace `segments.some()` with direct index loops in `normalizeBackupEntryName`, and replace `segments.shift()` with an index cursor in `normalizeBackupAssetPath`.
+4. Pre-allocate workers via `new Array(workerCount)` in `writeItemsConcurrently`.
+5. Reconstruct plugin storage records directly via `for (const key of Object.keys(record))` without intermediate tuple or mapping arrays.
+6. Replace `bind.reduce()` with an iterative loop in `CapacitorSqliteRestoreStream`, and reuse the fragment buffer in `readSqliteQueryStream`.

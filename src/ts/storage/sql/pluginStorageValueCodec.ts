@@ -32,10 +32,20 @@ function requiresEncoding(
   if (visited.has(value)) return false;
   visited.add(value);
 
-  for (const [key, child] of Object.entries(value)) {
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) {
+      if (requiresEncoding(value[index], visited)) return true;
+    }
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
     if (
       containsUnsupportedSqlUnicode(key) ||
-      requiresEncoding(child, visited)
+      requiresEncoding(record[key], visited)
     ) {
       return true;
     }
@@ -84,10 +94,11 @@ export function decodePluginStorageValue(value: unknown): unknown {
 export function decodePluginStorageRecord(
   record: Record<string, unknown>,
 ): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(record).map(([key, value]) => [
-      key,
-      decodePluginStorageValue(value),
-    ]),
-  );
+  const result: Record<string, unknown> = {};
+  const keys = Object.keys(record);
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+    result[key] = decodePluginStorageValue(record[key]);
+  }
+  return result;
 }

@@ -151,14 +151,15 @@ export class CapacitorSqliteRestoreStream {
   ) {
     if (!this.sink || !this.id)
       throw new Error("Native SQLite restore stream is not open");
+    let bindCharacters = 0;
+    for (let index = 0; index < bind.length; index++) {
+      const value = bind[index];
+      bindCharacters +=
+        typeof value === "string" ? Math.max(1, value.length) : 1;
+    }
     const totalSourceCharacters = Math.max(
       1,
-      Math.max(1, sql.length) +
-        bind.reduce<number>(
-          (total, value) =>
-            total + (typeof value === "string" ? Math.max(1, value.length) : 1),
-          0,
-        ),
+      Math.max(1, sql.length) + bindCharacters,
     );
     let processedSourceCharacters = 0;
     const advance = (count: number) => {

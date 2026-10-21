@@ -14,7 +14,7 @@ export async function readSqliteQueryStream(
   const results: Record<string, unknown>[][] = queries.map(() => []);
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let queryIndex = 0;
-  let fragments: string[] = [];
+  const fragments: string[] = [];
   let succeeded = false;
 
   const consume = (text: string) => {
@@ -23,8 +23,14 @@ export async function readSqliteQueryStream(
       const end = text.indexOf("\n", start);
       if (end < 0) break;
       const tail = text.slice(start, end);
-      const line = fragments.length ? [...fragments, tail].join("") : tail;
-      fragments = [];
+      let line: string;
+      if (fragments.length > 0) {
+        fragments.push(tail);
+        line = fragments.join("");
+        fragments.length = 0;
+      } else {
+        line = tail;
+      }
       const record = JSON.parse(line) as Record<string, unknown>;
       if (
         !record ||
@@ -62,7 +68,7 @@ export async function readSqliteQueryStream(
       if (chunk.done) break;
     }
     consume(decoder.decode());
-    if (fragments.length || queryIndex !== queries.length) {
+    if (fragments.length > 0 || queryIndex !== queries.length) {
       throw new Error("Incomplete SQLite query stream");
     }
     succeeded = true;

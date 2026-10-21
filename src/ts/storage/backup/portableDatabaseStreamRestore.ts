@@ -47,6 +47,7 @@ const RECORD_TYPES: PortableDatabaseStreamPersistedRecord["type"][] = [
   "active-branch",
   "message",
 ];
+const RECORD_TYPES_SET = new Set<string>(RECORD_TYPES);
 
 function increment(
   counts: Partial<
@@ -82,7 +83,7 @@ export class PortableDatabaseStreamValidator {
     if (
       !record ||
       typeof record !== "object" ||
-      !RECORD_TYPES.includes(record.type)
+      !RECORD_TYPES_SET.has(record.type)
     ) {
       throw new Error("Invalid streaming database record");
     }
