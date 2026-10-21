@@ -17,12 +17,22 @@ import { tokenizeGGUFModel } from "./process/models/local";
 import { forageStorage, globalFetch } from "./globalApi.svelte";
 import { getModelInfo, LLMTokenizer, type LLMModel } from "./model/modellist";
 import { pluginV2 } from "./plugins/plugins.svelte";
-import type { GemmaTokenizer } from "@huggingface/transformers";
 import { LRUMap } from "mnemonist";
 import { isNodeServer } from "./platform";
 import { NodeStorage } from "./storage/files/nodeStorage";
 import type { TokenizerEncoding } from "../../packages/protocol/compute.ts";
 import { createTokenizerQueue } from "./tokenizerQueue.ts";
+import {
+  type TokenizeRoute,
+  type WebTokenizerTarget,
+  DEFAULT_TIKTOKEN_ROUTE,
+  FALLBACK_TIKTOKEN_ROUTE,
+  PLUGIN_TOKENIZER_ROUTE,
+  nonTiktokenNamedRoutes,
+  resolveModelTokenizerRoute,
+  resolveNamedTokenizerRoute,
+  webTokenizerSources,
+} from "./tokenizerRoutes.ts";
 
 const MAX_CACHE_SIZE = 128;
 
@@ -64,36 +74,10 @@ export async function encodeWithTokenizer(
   data: string,
   tokenizerType: string,
 ): Promise<number[] | Uint32Array | Int32Array> {
-  switch (tokenizerType) {
-    case "tik":
-      return await tikJS(data, "cl100k_base");
-    case "mistral":
-      return await tokenizeWebTokenizers(data, "mistral");
-    case "novelai":
-      return await tokenizeWebTokenizers(data, "novelai");
-    case "claude":
-      return await tokenizeWebTokenizers(data, "claude");
-    case "llama":
-      return await tokenizeWebTokenizers(data, "llama");
-    case "llama3":
-      return await tokenizeWebTokenizers(data, "llama3");
-    case "novellist":
-      return await tokenizeWebTokenizers(data, "novellist");
-    case "gemma":
-      return await gemmaTokenize(data);
-    case "cohere":
-      return await tokenizeWebTokenizers(data, "cohere");
-    case "deepseek":
-      return await tokenizeWebTokenizers(data, "DeepSeek");
-    case "deepseek-v4":
-      return await tokenizeWebTokenizers(data, "DeepSeekV4");
-    case "glm4":
-      return await tokenizeWebTokenizers(data, "GLM4");
-    case "glm5":
-      return await tokenizeWebTokenizers(data, "GLM5");
-    default:
-      return await tikJS(data, "cl100k_base");
-  }
+  return await tokenizeWithRoute(
+    data,
+    resolveNamedTokenizerRoute(tokenizerType, FALLBACK_TIKTOKEN_ROUTE),
+  );
 }
 
 function resolveServerTiktokenEncoding(
@@ -101,32 +85,18 @@ function resolveServerTiktokenEncoding(
   pluginTokenizer: string,
 ): TokenizerEncoding | null {
   const db = settingsStore.state;
-  const nonTiktoken = new Set([
-    "mistral",
-    "llama",
-    "novelai",
-    "claude",
-    "novellist",
-    "llama3",
-    "gemma",
-    "cohere",
-    "deepseek",
-    "deepseek-v4",
-    "glm4",
-    "glm5",
-  ]);
 
   if (
     presetStore.state.aiModel === "openrouter" ||
     presetStore.state.aiModel === "reverse_proxy"
   ) {
-    return nonTiktoken.has(db.customTokenizer) ? null : "o200k_base";
+    return nonTiktokenNamedRoutes.has(db.customTokenizer) ? null : "o200k_base";
   }
   if (presetStore.state.aiModel === "custom" && pluginTokenizer) {
     if (pluginTokenizer === "custom") return null;
     if (pluginTokenizer === "cl100k_base") return "cl100k_base";
     if (pluginTokenizer === "o200k_base") return "o200k_base";
-    return nonTiktoken.has(pluginTokenizer) ? null : "o200k_base";
+    return nonTiktokenNamedRoutes.has(pluginTokenizer) ? null : "o200k_base";
   }
   if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base)
     return "o200k_base";
@@ -265,141 +235,28 @@ export async function encode(
     presetStore.state.aiModel === "openrouter" ||
     presetStore.state.aiModel === "reverse_proxy"
   ) {
-    switch (db.customTokenizer) {
-      case "mistral":
-        result = await tokenizeWebTokenizers(data, "mistral");
-        break;
-      case "llama":
-        result = await tokenizeWebTokenizers(data, "llama");
-        break;
-      case "novelai":
-        result = await tokenizeWebTokenizers(data, "novelai");
-        break;
-      case "claude":
-        result = await tokenizeWebTokenizers(data, "claude");
-        break;
-      case "novellist":
-        result = await tokenizeWebTokenizers(data, "novellist");
-        break;
-      case "llama3":
-        result = await tokenizeWebTokenizers(data, "llama");
-        break;
-      case "gemma":
-        result = await gemmaTokenize(data);
-        break;
-      case "cohere":
-        result = await tokenizeWebTokenizers(data, "cohere");
-        break;
-      case "deepseek":
-        result = await tokenizeWebTokenizers(data, "DeepSeek");
-        break;
-      case "deepseek-v4":
-        result = await tokenizeWebTokenizers(data, "DeepSeekV4");
-        break;
-      case "glm4":
-        result = await tokenizeWebTokenizers(data, "GLM4");
-        break;
-      case "glm5":
-        result = await tokenizeWebTokenizers(data, "GLM5");
-        break;
-      default:
-        result = await tikJS(data, "o200k_base");
-        break;
-    }
+    result = await tokenizeWithRoute(
+      data,
+      resolveNamedTokenizerRoute(db.customTokenizer, DEFAULT_TIKTOKEN_ROUTE),
+    );
   } else if (presetStore.state.aiModel === "custom" && pluginTokenizer) {
-    switch (pluginTokenizer) {
-      case "mistral":
-        result = await tokenizeWebTokenizers(data, "mistral");
-        break;
-      case "llama":
-        result = await tokenizeWebTokenizers(data, "llama");
-        break;
-      case "novelai":
-        result = await tokenizeWebTokenizers(data, "novelai");
-        break;
-      case "claude":
-        result = await tokenizeWebTokenizers(data, "claude");
-        break;
-      case "novellist":
-        result = await tokenizeWebTokenizers(data, "novellist");
-        break;
-      case "llama3":
-        result = await tokenizeWebTokenizers(data, "llama");
-        break;
-      case "gemma":
-        result = await gemmaTokenize(data);
-        break;
-      case "cohere":
-        result = await tokenizeWebTokenizers(data, "cohere");
-        break;
-      case "deepseek":
-        result = await tokenizeWebTokenizers(data, "DeepSeek");
-        break;
-      case "deepseek-v4":
-        result = await tokenizeWebTokenizers(data, "DeepSeekV4");
-        break;
-      case "glm4":
-        result = await tokenizeWebTokenizers(data, "GLM4");
-        break;
-      case "glm5":
-        result = await tokenizeWebTokenizers(data, "GLM5");
-        break;
-      case "o200k_base":
-        result = await tikJS(data, "o200k_base");
-        break;
-      case "cl100k_base":
-        result = await tikJS(data, "cl100k_base");
-        break;
-      case "custom":
-        result = (await pluginV2.providerOptions
-          .get(presetStore.state.currentPluginProvider)
-          ?.tokenizerFunc?.(data)) ?? [0];
-        break;
-      default:
-        result = await tikJS(data, "o200k_base");
-        break;
-    }
+    result = await tokenizeWithRoute(
+      data,
+      pluginTokenizer === "custom"
+        ? PLUGIN_TOKENIZER_ROUTE
+        : resolveNamedTokenizerRoute(pluginTokenizer, DEFAULT_TIKTOKEN_ROUTE),
+    );
   }
 
-  // Fallback
+  // Fallback to whatever the selected model declares.
   if (result === undefined) {
-    if (modelInfo.tokenizer === LLMTokenizer.NovelList) {
-      result = await tokenizeWebTokenizers(data, "novellist");
-    } else if (modelInfo.tokenizer === LLMTokenizer.Claude) {
-      result = await tokenizeWebTokenizers(data, "claude");
-    } else if (modelInfo.tokenizer === LLMTokenizer.NovelAI) {
-      result = await tokenizeWebTokenizers(data, "novelai");
-    } else if (modelInfo.tokenizer === LLMTokenizer.Mistral) {
-      result = await tokenizeWebTokenizers(data, "mistral");
-    } else if (modelInfo.tokenizer === LLMTokenizer.Llama) {
-      result = await tokenizeWebTokenizers(data, "llama");
-    } else if (modelInfo.tokenizer === LLMTokenizer.Local) {
-      result = await tokenizeGGUFModel(data);
-    } else if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) {
-      result = await tikJS(data, "o200k_base");
-    } else if (
-      modelInfo.tokenizer === LLMTokenizer.GoogleCloud &&
-      db.googleClaudeTokenizing
-    ) {
-      result = await tokenizeGoogleCloud(data);
-    } else if (
-      modelInfo.tokenizer === LLMTokenizer.Gemma ||
-      modelInfo.tokenizer === LLMTokenizer.GoogleCloud
-    ) {
-      result = await gemmaTokenize(data);
-    } else if (modelInfo.tokenizer === LLMTokenizer.DeepSeek) {
-      result = await tokenizeWebTokenizers(data, "DeepSeek");
-    } else if (modelInfo.tokenizer === LLMTokenizer.DeepSeekV4) {
-      result = await tokenizeWebTokenizers(data, "DeepSeekV4");
-    } else if (modelInfo.tokenizer === LLMTokenizer.GLM4) {
-      result = await tokenizeWebTokenizers(data, "GLM4");
-    } else if (modelInfo.tokenizer === LLMTokenizer.GLM5) {
-      result = await tokenizeWebTokenizers(data, "GLM5");
-    } else if (modelInfo.tokenizer === LLMTokenizer.Cohere) {
-      result = await tokenizeWebTokenizers(data, "cohere");
-    } else {
-      result = await tikJS(data);
-    }
+    result = await tokenizeWithRoute(
+      data,
+      resolveModelTokenizerRoute(
+        modelInfo.tokenizer,
+        db.googleClaudeTokenizing,
+      ),
+    );
   }
   if (db.useTokenizerCaching) {
     encodeCache.set(cacheKey, result);
@@ -408,24 +265,9 @@ export async function encode(
   return result;
 }
 
-type tokenizerType =
-  | "novellist"
-  | "claude"
-  | "novelai"
-  | "llama"
-  | "mistral"
-  | "llama3"
-  | "gemma"
-  | "cohere"
-  | "googleCloud"
-  | "DeepSeek"
-  | "DeepSeekV4"
-  | "GLM4"
-  | "GLM5";
-
 let tikParser: Tiktoken = null;
 let tokenizersTokenizer: Tokenizer = null;
-let tokenizersType: tokenizerType = null;
+let tokenizersTarget: WebTokenizerTarget = null;
 let lastTikModel = "cl100k_base";
 const queueTiktoken = createTokenizerQueue();
 const queueWebTokenizer = createTokenizerQueue();
@@ -474,16 +316,26 @@ async function tokenizeGoogleCloud(text: string) {
   return new Uint32Array(count);
 }
 
-let gemmaTokenizer: GemmaTokenizer = null;
-async function gemmaTokenize(text: string) {
-  if (!gemmaTokenizer) {
-    const { GemmaTokenizer } = await import("@huggingface/transformers");
-    gemmaTokenizer = new GemmaTokenizer(
-      await (await fetch("/token/llama/llama3.json")).json(),
-      {},
-    );
+async function tokenizeWithRoute(
+  data: string,
+  route: TokenizeRoute,
+): Promise<number[] | Uint32Array | Int32Array> {
+  switch (route.kind) {
+    case "web":
+      return await tokenizeWebTokenizers(data, route.target);
+    case "tiktoken":
+      return await tikJS(data, route.encoding);
+    case "gguf":
+      return await tokenizeGGUFModel(data);
+    case "googleCloud":
+      return await tokenizeGoogleCloud(data);
+    case "plugin":
+      return (
+        (await pluginV2.providerOptions
+          .get(presetStore.state.currentPluginProvider)
+          ?.tokenizerFunc?.(data)) ?? [0]
+      );
   }
-  return gemmaTokenizer.encode(text);
 }
 
 async function tikJS(text: string, model = "cl100k_base") {
@@ -546,78 +398,19 @@ async function geminiTokenizer(text: string) {
   return result.tokenCount ?? 0;
 }
 
-async function tokenizeWebTokenizers(text: string, type: tokenizerType) {
+async function tokenizeWebTokenizers(text: string, target: WebTokenizerTarget) {
   return queueWebTokenizer(async () => {
-    if (type !== tokenizersType || !tokenizersTokenizer) {
+    if (target !== tokenizersTarget || !tokenizersTokenizer) {
       tokenizersTokenizer?.dispose();
       tokenizersTokenizer = null;
       const webTokenizer = await import("@mlc-ai/web-tokenizers");
-      switch (type) {
-        case "novellist":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-            await (await fetch("/token/trin/spiece.model")).arrayBuffer(),
-          );
-          break;
-        case "claude":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (await fetch("/token/claude/claude.json")).arrayBuffer(),
-          );
-          break;
-        case "llama3":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (await fetch("/token/llama/llama3.json")).arrayBuffer(),
-          );
-          break;
-        case "cohere":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (await fetch("/token/cohere/tokenizer.json")).arrayBuffer(),
-          );
-          break;
-        case "novelai":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-            await (await fetch("/token/nai/nerdstash_v2.model")).arrayBuffer(),
-          );
-
-          break;
-        case "llama":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-            await (await fetch("/token/llama/llama.model")).arrayBuffer(),
-          );
-          break;
-        case "mistral":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-            await (await fetch("/token/mistral/tokenizer.model")).arrayBuffer(),
-          );
-          break;
-        case "gemma":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromSentencePiece(
-            await (await fetch("/token/gemma/tokenizer.model")).arrayBuffer(),
-          );
-          break;
-        case "DeepSeek":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (await fetch("/token/deepseek/tokenizer.json")).arrayBuffer(),
-          );
-          break;
-        case "DeepSeekV4":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (
-              await fetch("/token/deepseek/v4/tokenizer.json")
-            ).arrayBuffer(),
-          );
-          break;
-        case "GLM4":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (await fetch("/token/glm4/tokenizer.json")).arrayBuffer(),
-          );
-          break;
-        case "GLM5":
-          tokenizersTokenizer = await webTokenizer.Tokenizer.fromJSON(
-            await (await fetch("/token/glm5/tokenizer.json")).arrayBuffer(),
-          );
-          break;
-      }
-      tokenizersType = type;
+      const source = webTokenizerSources[target];
+      const buffer = await (await fetch(source.path)).arrayBuffer();
+      tokenizersTokenizer =
+        source.loader === "json"
+          ? await webTokenizer.Tokenizer.fromJSON(buffer)
+          : await webTokenizer.Tokenizer.fromSentencePiece(buffer);
+      tokenizersTarget = target;
     }
     return tokenizersTokenizer.encode(text);
   });
