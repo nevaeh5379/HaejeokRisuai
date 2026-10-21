@@ -7,9 +7,12 @@ import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import { createEmptySqlCommit } from "../../storage/sql/sqlCommit";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
 import { snapshotFingerprint, trackDeep } from "./reactiveUtils";
-import { buildModuleDelta } from "./moduleCommit";
+import {
+  buildModuleDelta,
+  fingerprintModule,
+  sameModuleBaseline,
+} from "./moduleCommit";
 import { StoreCommitQueue } from "./storeCommitQueue";
-import isEqual from "lodash/isEqual";
 import type { FlushableStore, InitializableStore } from "./storeContracts";
 
 function fingerprintOf(value: unknown): string {
@@ -38,7 +41,11 @@ class ModuleStore
   private dirtyFolders = false;
   private dirtyOrder = false;
   private dirtySandboxGroups = false;
-  private committedModules: RisuModule[] = [];
+  private committedModules = new Map<string, string>();
+  private moduleFingerprints = new Map<
+    RisuModule,
+    { read: () => string; dispose: () => void }
+  >();
   // Fingerprint baselines, taken once at init/commit — never on reactive runs.
   private committedEnabledFingerprint = "";
   private committedFoldersFingerprint = "";
@@ -97,7 +104,7 @@ class ModuleStore
         )
       : [];
     this.loaded = true;
-    this.committedModules = $state.snapshot(this.modules);
+    this.committedModules = this.captureModuleBaseline();
     this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
     this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
@@ -113,7 +120,9 @@ class ModuleStore
     let initial = true;
     this.observeDispose = $effect.root(() => {
       $effect(() => {
-        trackDeep(this.modules);
+        // Each digest tracks only its module. Unchanged bodies are not
+        // rehashed when an unrelated module or root setting is edited.
+        this.captureModuleBaseline();
         trackDeep(this.enabledModules);
         trackDeep(this.moduleFolders);
         trackDeep(this.moduleOrder);
@@ -667,6 +676,7 @@ class ModuleStore
 
   async flush(): Promise<void> {
     this.queue.cancel();
+    const moduleBaseline = this.captureModuleBaseline();
     // Verify dirty flags against content once at commit time — mutating and
     // awaiting flush() synchronously can beat effect-based detection.
     if (
@@ -675,13 +685,13 @@ class ModuleStore
       !this.dirtyFolders &&
       !this.dirtyOrder &&
       !this.dirtySandboxGroups &&
-      !this.hasPendingContentChange()
+      !this.hasPendingContentChange(moduleBaseline)
     )
       return;
 
     const storage = this.storage;
     if (!storage) {
-      this.committedModules = $state.snapshot(this.modules);
+      this.committedModules = moduleBaseline;
       this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
       this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
       this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
@@ -692,22 +702,21 @@ class ModuleStore
       return;
     }
     const commit = createEmptySqlCommit(0, "modules");
-    let moduleSnapshot: RisuModule[] | undefined;
-    // Only serialise domains known (or verified) to be dirty — a no-op flush
-    // on a large library must not clone and stringify the whole domain.
-    if (this.dirtyModules || !isEqual(this.modules, this.committedModules)) {
-      // Reuse unchanged snapshots: editing one module must not clone every
-      // installed lorebook. Never retain live proxies in the commit baseline.
-      const previousById = new Map(
-        this.committedModules.map((module) => [module.id, module]),
+    // Hash modules individually and detach only changed write payloads.
+    if (
+      this.dirtyModules ||
+      !sameModuleBaseline(this.committedModules, moduleBaseline)
+    ) {
+      commit.modules = buildModuleDelta(
+        this.committedModules,
+        this.modules,
+        moduleBaseline,
       );
-      moduleSnapshot = this.modules.map((module) => {
-        const previous = previousById.get(module.id);
-        return previous && isEqual(previous, module)
-          ? previous
-          : $state.snapshot(module);
-      });
-      commit.modules = buildModuleDelta(this.committedModules, moduleSnapshot);
+      // Only changed modules need detached payloads while storage is writing.
+      // Unchanged modules never become a resident snapshot baseline.
+      for (const upsert of commit.modules.upserts) {
+        upsert.data = $state.snapshot(upsert.data);
+      }
     }
     if (
       this.dirtyEnabled ||
@@ -750,7 +759,7 @@ class ModuleStore
       commitSqlChanges(storage, commit),
     );
     await operation;
-    if (moduleSnapshot) this.committedModules = moduleSnapshot;
+    this.committedModules = moduleBaseline;
     this.committedEnabledFingerprint = fingerprintOf(this.enabledModules);
     this.committedFoldersFingerprint = fingerprintOf(this.moduleFolders);
     this.committedOrderFingerprint = fingerprintOf(this.moduleOrder);
@@ -758,7 +767,9 @@ class ModuleStore
     this.clearDirty();
     // An edit can arrive while storage is writing. The baseline above is the
     // persisted snapshot, so keep such edits pending for the next commit.
-    if (!isEqual(this.modules, this.committedModules)) {
+    if (
+      !sameModuleBaseline(this.committedModules, this.captureModuleBaseline())
+    ) {
       this.markModulesDirty();
     }
   }
@@ -774,15 +785,45 @@ class ModuleStore
     );
   }
 
-  /** Compare module content without allocating a library-sized JSON string. */
-  private hasPendingContentChange(): boolean {
+  /** Hash one module at a time; retain only fixed-size digests between saves. */
+  private hasPendingContentChange(
+    moduleBaseline = this.captureModuleBaseline(),
+  ): boolean {
     return (
-      !isEqual(this.modules, this.committedModules) ||
+      !sameModuleBaseline(this.committedModules, moduleBaseline) ||
       fingerprintOf(this.enabledModules) !== this.committedEnabledFingerprint ||
       fingerprintOf(this.moduleFolders) !== this.committedFoldersFingerprint ||
       fingerprintOf(this.moduleOrder) !== this.committedOrderFingerprint ||
       fingerprintOf(this.sandboxGroups) !==
         this.committedSandboxGroupsFingerprint
+    );
+  }
+
+  private captureModuleBaseline(): Map<string, string> {
+    const current = new Set(this.modules);
+    for (const [module, cached] of this.moduleFingerprints) {
+      if (!current.has(module)) {
+        cached.dispose();
+        this.moduleFingerprints.delete(module);
+      }
+    }
+    return new Map(
+      this.modules.map((module) => {
+        let cached = this.moduleFingerprints.get(module);
+        if (!cached) {
+          // A module added inside the save observer needs its own lifetime;
+          // its digest must survive that observer's next run. Reading it is
+          // still synchronous, so flush() also sees edits before effects run.
+          let read!: () => string;
+          const dispose = $effect.root(() => {
+            const fingerprint = $derived(fingerprintModule(module));
+            read = () => fingerprint;
+          });
+          cached = { read, dispose };
+          this.moduleFingerprints.set(module, cached);
+        }
+        return [module.id, cached.read()];
+      }),
     );
   }
 
@@ -817,6 +858,8 @@ class ModuleStore
     this.observeDispose?.();
     this.observeDispose = null;
     this.queue.cancel();
+    for (const cached of this.moduleFingerprints.values()) cached.dispose();
+    this.moduleFingerprints.clear();
   }
 
   resetForTesting(): void {
@@ -828,7 +871,7 @@ class ModuleStore
     this.moduleOrder = [];
     this.sandboxGroups = [];
     this.loaded = false;
-    this.committedModules = [];
+    this.committedModules.clear();
     this.committedEnabledFingerprint = "";
     this.committedFoldersFingerprint = "";
     this.committedOrderFingerprint = "";
