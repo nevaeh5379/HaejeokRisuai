@@ -68,7 +68,10 @@ export class TaskRateLimiter {
     const taskResults = await Promise.all(
       tasks.map((task) => this.executeTask(task)),
     );
-    const successCount = taskResults.filter((r) => r.success).length;
+    let successCount = 0;
+    for (const r of taskResults) {
+      if (r.success) successCount++;
+    }
     const failureCount = taskResults.length - successCount;
 
     return {

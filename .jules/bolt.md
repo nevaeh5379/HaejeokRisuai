@@ -64,3 +64,21 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Memory Systems, Branch Traversal, and Domain Store Collections
+
+**Learning:** Found transient array allocations, quadratic scans, and stack overflow spread risks across memory management, graph BFS traversal, and domain store sync:
+
+1. `HypaV2` and `HypaV3` frequently mapped chat/summary arrays directly into `new Set(arr.map(...))`, performed chained `.split().filter().map()` operations, and used quadratic `selectedSummaries.includes(e)` filtering across recent, similar, and random memory selection passes.
+2. `SupaMemory` performed repeated regex replacements of `supaMemory` inside `.filter()` for every single chunk, and used O(N^2) `self.indexOf(value) === index` deduplication over `hypaChunks`.
+3. `HypaProcessorV2` vector search chained `.map().filter(Boolean)` allocating null tuples and intermediate arrays, while missing metadata resolution performed quadratic `!toEmbed.some((e) => e.id === item.id)` scans.
+4. `pruneGraphNodes` in branch graphs allocated `[node.parentId, ...node.children].filter(Boolean)` on every BFS queue node, while graph boundary calculations spread coordinate maps into `Math.max(...nodes.map(...))` risking stack overflow.
+5. `PluginStore.replaceAll`, `ChatTabsStore`, `PortableBranchRestore`, and `AssetCleanup` created intermediate mapped arrays when constructing sets and commit payloads.
+
+**Action:**
+
+1. Maintain `selectedSummariesSet` in HypaV3 for O(1) unused summary checks, build chunk arrays via single-pass loops without intermediate mapped/flattened arrays, and compute token subtractions iteratively.
+2. Precompute cleaned punctuation strings once in SupaMemory, deduplicate via `Set`, and construct retrieval texts in a single pass.
+3. Avoid null tuple allocations in HypaProcessorV2 vector results, and use `Set.has()` for missing metadata and ID lookups.
+4. Push branch graph BFS neighbors directly without spread/filter arrays, and compute graph width/height in a single O(N) loop without `Math.max` spreads.
+5. Construct domain sets and commit payloads using single-pass `for...of` loops without intermediate `.map()` and `.filter()` arrays.

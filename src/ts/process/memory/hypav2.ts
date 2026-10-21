@@ -212,7 +212,7 @@ function convertOldToNewHypaV2Data(
   chats: OpenAIChat[],
 ): HypaV2Data {
   const oldMainChunks = oldData.mainChunks.slice().reverse(); // Inversed order, old mainchunk is done by unshift instead of push
-  const oldChunks = oldData.chunks.slice();
+  const oldChunks = oldData.chunks;
   const newData: HypaV2Data = {
     lastMainChunkID: 0,
     mainChunks: [],
@@ -302,7 +302,10 @@ function convertOldToNewHypaV2Data(
 }
 
 function cleanInvalidChunks(chats: OpenAIChat[], data: HypaV2Data): void {
-  const currentChatMemos = new Set(chats.map((chat) => chat.memo));
+  const currentChatMemos = new Set<string>();
+  for (const chat of chats) {
+    currentChatMemos.add(chat.memo);
+  }
 
   // mainChunks filtering
   data.mainChunks = data.mainChunks.filter((mainChunk) => {
@@ -310,9 +313,10 @@ function cleanInvalidChunks(chats: OpenAIChat[], data: HypaV2Data): void {
   });
 
   // chunk filtering based on mainChunk's id
-  const validMainChunkIds = new Set(
-    data.mainChunks.map((mainChunk) => mainChunk.id),
-  );
+  const validMainChunkIds = new Set<number>();
+  for (const mainChunk of data.mainChunks) {
+    validMainChunkIds.add(mainChunk.id);
+  }
   data.chunks = data.chunks.filter((chunk) =>
     validMainChunkIds.has(chunk.mainChunkID),
   );
@@ -454,9 +458,11 @@ export async function hypaMemoryV2(
       idx = lastChatIndex + 1;
 
       // Subtract tokens of summarized chats
-      currentTokens -= chatTokenCounts
-        .slice(0, lastChatIndex + 1)
-        .reduce((total, tokens) => total + tokens, 0);
+      let summarizedTokens = 0;
+      for (let i = 0; i <= lastChatIndex; i++) {
+        summarizedTokens += chatTokenCounts[i] ?? 0;
+      }
+      currentTokens -= summarizedTokens;
     }
   }
   // Starting chat index of new mainChunk to be generated
@@ -610,7 +616,10 @@ export async function hypaMemoryV2(
     data.lastMainChunkID++;
     const newMainChunkId = data.lastMainChunkID;
 
-    const chatMemos = new Set(halfData.map((chat) => chat.memo));
+    const chatMemos = new Set<string>();
+    for (const chat of halfData) {
+      chatMemos.add(chat.memo);
+    }
     const lastChatMemo = halfData[halfData.length - 1].memo;
 
     data.mainChunks.push({
@@ -621,21 +630,21 @@ export async function hypaMemoryV2(
     });
 
     // Split the summary into chunks
-    const splitted = summaryData.data
-      .split("\n\n")
-      .map((e) => e.trim())
-      .filter((e) => e.length > 0);
-
-    data.chunks.push(
-      ...splitted.map((e) => ({
-        mainChunkID: newMainChunkId,
-        text: e,
-      })),
-    );
+    const chunksAdded: string[] = [];
+    for (const raw of summaryData.data.split("\n\n")) {
+      const trimmed = raw.trim();
+      if (trimmed.length > 0) {
+        chunksAdded.push(trimmed);
+        data.chunks.push({
+          mainChunkID: newMainChunkId,
+          text: trimmed,
+        });
+      }
+    }
 
     console.log(
       "[HypaV2] Chunks added:",
-      splitted,
+      chunksAdded,
       "\nUpdated mainChunks count:",
       data.mainChunks.length,
       "\nUpdated chunks count:",
@@ -672,9 +681,13 @@ export async function hypaMemoryV2(
 
   const searchDocumentPrefix = "search_document: ";
   const prefixLength = searchDocumentPrefix.length;
-  const retrievalTexts = data.chunks
-    .filter((v) => v.text.trim().length > 0)
-    .map((v) => searchDocumentPrefix + v.text.trim());
+  const retrievalTexts: string[] = [];
+  for (const v of data.chunks) {
+    const trimmed = v.text.trim();
+    if (trimmed.length > 0) {
+      retrievalTexts.push(searchDocumentPrefix + trimmed);
+    }
+  }
 
   // Add chunks to processor for similarity search. Node deployments can keep
   // the full retrieval vectors server-side and load only missing embeddings.

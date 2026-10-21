@@ -8,7 +8,10 @@ import { createEmptySqlCommit, sqlMessageData } from "./sqlCommit";
 import type { SqlBranchStorage } from "./sqlStorageFactory";
 
 function sourceRoot(graph: PortableBranchGraph) {
-  const ids = new Set(graph.branches.map((branch) => branch.id));
+  const ids = new Set<string>();
+  for (const branch of graph.branches) {
+    ids.add(branch.id);
+  }
   return (
     graph.branches.find((branch) => branch.reason === "root") ??
     graph.branches.find(
@@ -19,7 +22,10 @@ function sourceRoot(graph: PortableBranchGraph) {
 }
 
 function parentFirstBranches(graph: PortableBranchGraph) {
-  const byId = new Map(graph.branches.map((branch) => [branch.id, branch]));
+  const byId = new Map<string, PortableBranchGraph["branches"][number]>();
+  for (const branch of graph.branches) {
+    byId.set(branch.id, branch);
+  }
   const ordered: PortableBranchGraph["branches"] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
@@ -34,7 +40,8 @@ function parentFirstBranches(graph: PortableBranchGraph) {
     visited.add(branch.id);
     ordered.push(branch);
   };
-  [...graph.branches]
+  graph.branches
+    .slice()
     .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
     .forEach(visit);
   return ordered;
@@ -56,12 +63,16 @@ export async function restorePortableChatBranchGraph(
     throw new Error(`Restored chat has no SQL root branch: ${chatId}`);
 
   const idMap = new Map<string, string>([[root.id, targetRoot.id]]);
-  const existingIds = new Set(existing.map((branch) => branch.id));
-  const storedMessageIds = new Set(
-    portableBranchPath(graph, root.id)
-      .map((message) => message.chatId)
-      .filter((id): id is string => Boolean(id)),
-  );
+  const existingIds = new Set<string>();
+  for (const branch of existing) {
+    existingIds.add(branch.id);
+  }
+  const storedMessageIds = new Set<string>();
+  for (const message of portableBranchPath(graph, root.id)) {
+    if (message.chatId) {
+      storedMessageIds.add(message.chatId);
+    }
+  }
 
   for (const branch of parentFirstBranches(graph)) {
     if (branch.id === root.id) continue;
@@ -89,25 +100,29 @@ export async function restorePortableChatBranchGraph(
     const forkIndex = branch.forkMessageId
       ? path.findIndex((message) => message.chatId === branch.forkMessageId)
       : -1;
-    const suffix = path.slice(forkIndex + 1).filter((message) => {
-      const id = message.chatId;
-      return Boolean(id && !storedMessageIds.has(id));
-    });
+    const suffix: Message[] = [];
+    for (let i = forkIndex + 1; i < path.length; i++) {
+      const message = path[i];
+      if (message.chatId && !storedMessageIds.has(message.chatId)) {
+        suffix.push(message);
+      }
+    }
     if (suffix.length > 0) {
       const commit = createEmptySqlCommit(
         storage.getRevision(),
         "restore-branch-graph",
       );
-      commit.messages.push(
-        ...suffix.map((message, index) => ({
+      for (let index = 0; index < suffix.length; index++) {
+        const message = suffix[index];
+        commit.messages.push({
           id: message.chatId!,
           chatId,
           position: forkIndex + 1 + index,
           data: sqlMessageData(message),
-        })),
-      );
+        });
+        storedMessageIds.add(message.chatId!);
+      }
       await storage.commit(commit);
-      for (const message of suffix) storedMessageIds.add(message.chatId!);
     }
   }
 

@@ -194,15 +194,20 @@ export class HypaProcessorV2<TMetadata> {
     await Promise.all(loadPromises);
 
     if (ctxProvider && toEmbed.length > 0 && saveToMemory) {
-      const missMetadatas = new Set(
-        toEmbed.map((item) => item.metadata).filter(Boolean),
-      );
+      const missMetadatas = new Set<TMetadata>();
+      const toEmbedIds = new Set<string>();
+      for (const item of toEmbed) {
+        toEmbedIds.add(item.id);
+        if (item.metadata) {
+          missMetadatas.add(item.metadata);
+        }
+      }
 
       const additionalItems = ebdTexts.filter(
         (item) =>
           item.metadata &&
           missMetadatas.has(item.metadata) &&
-          !toEmbed.some((e) => e.id === item.id),
+          !toEmbedIds.has(item.id),
       );
 
       for (const item of additionalItems) {
@@ -399,16 +404,16 @@ export class HypaProcessorV2<TMetadata> {
         indexId,
         queryResults.map((result) => Array.from(result.embedding)),
       );
-      return ranked.map((rows) =>
-        rows
-          .map(([id, score]): [EmbeddingResult<TMetadata>, number] | null => {
-            const vector = this.vectors.get(id);
-            return vector ? [vector, score] : null;
-          })
-          .filter(
-            (row): row is [EmbeddingResult<TMetadata>, number] => row !== null,
-          ),
-      );
+      return ranked.map((rows) => {
+        const result: [EmbeddingResult<TMetadata>, number][] = [];
+        for (const [id, score] of rows) {
+          const vector = this.vectors.get(id);
+          if (vector) {
+            result.push([vector, score]);
+          }
+        }
+        return result;
+      });
     } catch (error) {
       console.warn(
         `${HypaProcessorV2.LOG_PREFIX} Server vector search failed; using browser fallback`,
