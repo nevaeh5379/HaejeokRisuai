@@ -1,29 +1,33 @@
 import { getChatVar, getGlobalChatVar } from "../parser/chatVar.svelte";
 
+const OPERATORS: Record<
+  string,
+  { precedence: number; associativity: "Left" | "Right" }
+> = {
+  "+": { precedence: 2, associativity: "Left" },
+  "-": { precedence: 2, associativity: "Left" },
+  "*": { precedence: 3, associativity: "Left" },
+  "/": { precedence: 3, associativity: "Left" },
+  "^": { precedence: 4, associativity: "Left" },
+  "%": { precedence: 3, associativity: "Left" },
+  "<": { precedence: 1, associativity: "Left" },
+  ">": { precedence: 1, associativity: "Left" },
+  "|": { precedence: 1, associativity: "Left" },
+  "&": { precedence: 1, associativity: "Left" },
+  "≤": { precedence: 1, associativity: "Left" },
+  "≥": { precedence: 1, associativity: "Left" },
+  "=": { precedence: 1, associativity: "Left" },
+  "≠": { precedence: 1, associativity: "Left" },
+  "!": { precedence: 5, associativity: "Right" },
+};
+const OPERATOR_KEYS = new Set(Object.keys(OPERATORS));
+
 function toRPN(expression: string) {
   let outputQueue = "";
-  let operatorStack = [];
-  let operators = {
-    "+": { precedence: 2, associativity: "Left" },
-    "-": { precedence: 2, associativity: "Left" },
-    "*": { precedence: 3, associativity: "Left" },
-    "/": { precedence: 3, associativity: "Left" },
-    "^": { precedence: 4, associativity: "Left" },
-    "%": { precedence: 3, associativity: "Left" },
-    "<": { precedence: 1, associativity: "Left" },
-    ">": { precedence: 1, associativity: "Left" },
-    "|": { precedence: 1, associativity: "Left" },
-    "&": { precedence: 1, associativity: "Left" },
-    "≤": { precedence: 1, associativity: "Left" },
-    "≥": { precedence: 1, associativity: "Left" },
-    "=": { precedence: 1, associativity: "Left" },
-    "≠": { precedence: 1, associativity: "Left" },
-    "!": { precedence: 5, associativity: "Right" },
-  };
-  const operatorsKeys = Object.keys(operators);
+  let operatorStack: string[] = [];
 
   expression = expression.replace(/\s+/g, "");
-  let expression2 = [];
+  let expression2: string[] = [];
 
   let lastToken = "";
 
@@ -32,11 +36,11 @@ function toRPN(expression: string) {
     if (
       char === "-" &&
       (i === 0 ||
-        operatorsKeys.includes(expression[i - 1]) ||
+        OPERATOR_KEYS.has(expression[i - 1]) ||
         expression[i - 1] === "(")
     ) {
       lastToken += char;
-    } else if (operatorsKeys.includes(char)) {
+    } else if (OPERATOR_KEYS.has(char)) {
       if (lastToken !== "") {
         expression2.push(lastToken);
       } else {
@@ -55,25 +59,26 @@ function toRPN(expression: string) {
     expression2.push("0");
   }
 
-  expression2.forEach((token) => {
+  for (let i = 0; i < expression2.length; i++) {
+    const token = expression2[i];
     if (parseFloat(token) || token === "0") {
       outputQueue += token + " ";
-    } else if (operatorsKeys.includes(token)) {
+    } else if (OPERATOR_KEYS.has(token)) {
       while (
         operatorStack.length > 0 &&
-        ((operators[token].associativity === "Left" &&
-          operators[token].precedence <=
-            operators[operatorStack[operatorStack.length - 1]].precedence) ||
-          (operators[token].associativity === "Right" &&
-            operators[token].precedence <
-              operators[operatorStack[operatorStack.length - 1]].precedence))
+        ((OPERATORS[token].associativity === "Left" &&
+          OPERATORS[token].precedence <=
+            OPERATORS[operatorStack[operatorStack.length - 1]].precedence) ||
+          (OPERATORS[token].associativity === "Right" &&
+            OPERATORS[token].precedence <
+              OPERATORS[operatorStack[operatorStack.length - 1]].precedence))
       ) {
         outputQueue += operatorStack.pop() + " ";
       }
 
       operatorStack.push(token);
     }
-  });
+  }
 
   while (operatorStack.length > 0) {
     outputQueue += operatorStack.pop() + " ";
@@ -85,7 +90,10 @@ function toRPN(expression: string) {
 function calculateRPN(expression: string) {
   let stack: number[] = [];
 
-  expression.split(" ").forEach((token) => {
+  const tokens = expression.split(" ");
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token) continue;
     if (parseFloat(token) || token === "0") {
       stack.push(parseFloat(token));
     } else {
@@ -138,7 +146,7 @@ function calculateRPN(expression: string) {
           break;
       }
     }
-  });
+  }
 
   if (stack.length === 0) {
     return 0;

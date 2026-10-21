@@ -86,7 +86,11 @@ export async function currentIllustrationContext(
       ),
       readOnly: true,
     });
-    context.lorebook = lore.actives.map((l) => parse(l.prompt)).join("\n\n");
+    const loreParts: string[] = [];
+    for (let i = 0; i < lore.actives.length; i++) {
+      loreParts.push(parse(lore.actives[i].prompt));
+    }
+    context.lorebook = loreParts.join("\n\n");
   }
   if (settings.includeMemory) {
     const metadata = await storage.loadChat(target.chatId, { messageLimit: 1 });
@@ -94,7 +98,7 @@ export async function currentIllustrationContext(
       ...(metadata?.hypaV3Data?.summaries ?? []),
       ...(metadata?.hypaV2Data?.mainChunks ?? []),
     ];
-    const needed = new Set(candidates.flatMap((c) => c.chatMemos));
+    const needed = new Set<string>();
     const supa = metadata?.supaMemoryData?.split("\n") ?? [];
     // Older HypaMemory keeps cumulative summaries keyed by their last message.
     if (supa[0]?.startsWith("hypa:")) {
@@ -115,8 +119,12 @@ export async function currentIllustrationContext(
         /* A malformed old cache must not trigger memory regeneration. */
       }
     }
-    for (const candidate of candidates)
-      for (const id of candidate.chatMemos) needed.add(id);
+    for (let i = 0; i < candidates.length; i++) {
+      const memos = candidates[i].chatMemos;
+      for (let j = 0; j < memos.length; j++) {
+        needed.add(memos[j]);
+      }
+    }
     if (supa[0] && !supa[0].startsWith("hypa:")) needed.add(supa[0]);
     const preceding = new Set<string>();
     let before = position;
@@ -127,13 +135,17 @@ export async function currentIllustrationContext(
       if (!page.hasMore || page.offset >= before) break;
       before = page.offset;
     }
-    context.memory = candidates
-      .filter(
-        (c) =>
-          c.chatMemos.length && c.chatMemos.every((id) => preceding.has(id)),
-      )
-      .map((c) => c.text)
-      .join("\n\n");
+    const memoryParts: string[] = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (
+        c.chatMemos.length > 0 &&
+        c.chatMemos.every((id) => preceding.has(id))
+      ) {
+        memoryParts.push(c.text);
+      }
+    }
+    context.memory = memoryParts.join("\n\n");
     if (!context.memory && preceding.has(supa[0]))
       context.memory = supa.slice(1).join("\n");
   }

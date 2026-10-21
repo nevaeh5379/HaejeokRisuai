@@ -64,3 +64,27 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-21 - Optimize Runtime Storage Clients, Audio Buffers, and Expression Evaluation
+
+**Learning:** Found micro-allocations and quadratic iterations across remote asset transfer, audio keep-alive, backup block decoders, and expression parser engines:
+
+1. `utf8ToHex` in `remoteAssetClient.ts` allocated a new `TextEncoder`, a Uint8Array, and an array of individual 2-character hex strings with per-byte closures and `padStart()` calls on every remote asset read/write/delete.
+2. `createKeepAliveAudio` re-allocated a 160KB buffer and computed 80,000 sine values on every call rather than caching the static audio buffer.
+3. `filterBlockedRealmCards` performed an $O(N \times M)$ search by calling `blockedCreators.some(...)` inside `cards.filter(...)`.
+4. `decodeRisuSaveBlocks` instantiated `new DataView(...)` on every single block in backup files, and `isRisuSaveBlocks` allocated closures via `every(...)`.
+5. `toRPN` in `infunctions.ts` instantiated an operators dictionary and called `Object.keys()` on every single calculation, performing $O(K)$ array `.includes()` searches per token.
+6. `stChatConvert` in `prompt.ts` called `prompts.find(...)` inside the prompt order loop, resulting in $O(N \times M)$ linear searches.
+7. `exampleMessages.ts` split lines on `:` and created duplicate arrays via `map()` post-processing.
+8. `normalizeOnboarding` chained `.filter().map()` multiple times for questions and options, allocating intermediate arrays.
+
+**Action:**
+
+1. Use a static 256-entry lookup table and shared `TextEncoder` for `utf8ToHex`, accumulating directly into a string.
+2. Cache the static keep-alive WAV Blob URL so repeated calls reuse the existing object URL without recomputing 80,000 trigonometric samples.
+3. Use a precomputed `Set<string>` in `filterBlockedRealmCards` for $O(N + M)$ single-pass card filtering.
+4. Read 4-byte uint32 block lengths directly via bitwise operations in `decodeRisuSaveBlocks` to eliminate thousands of `DataView` allocations.
+5. Hoist operator dictionaries and key `Set`s in `infunctions.ts` to module constants, and evaluate RPN tokens with a direct loop.
+6. Pre-index prompts into a `Map` in `stChatConvert` for constant-time $O(1)$ lookups.
+7. Mutate parsed example messages directly in place without secondary array cloning.
+8. Convert onboarding question and option normalization into single-pass iterative loops.

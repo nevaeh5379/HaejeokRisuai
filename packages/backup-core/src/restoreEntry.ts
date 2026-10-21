@@ -102,6 +102,8 @@ async function dispatchColdStorageEntry(
   }
 }
 
+const SHARED_TEXT_DECODER = new TextDecoder();
+
 /**
  * Dispatches a classified backup entry to host-provided persistence hooks.
  * Format validation and logical target derivation stay in backup-core while
@@ -112,7 +114,7 @@ export async function dispatchBackupRestoreEntry(
   data: Uint8Array,
   classification: BackupEntryClassification,
   handlers: BackupRestoreEntryHandlers,
-  textDecoder: TextDecoder = new TextDecoder(),
+  textDecoder: TextDecoder = SHARED_TEXT_DECODER,
 ): Promise<void> {
   switch (classification.kind) {
     case "encryption":

@@ -8,10 +8,15 @@ export function isRealmCreatorBlocked(
   blockedCreators: BlockedRealmCreator[],
   creator?: string,
 ): boolean {
-  return (
-    !!creator &&
-    blockedCreators.some((blockedCreator) => blockedCreator.id === creator)
-  );
+  if (!creator || blockedCreators.length === 0) {
+    return false;
+  }
+  for (let i = 0; i < blockedCreators.length; i++) {
+    if (blockedCreators[i].id === creator) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function addBlockedRealmCreator(
@@ -38,7 +43,26 @@ export function filterBlockedRealmCards<T extends RealmCreatorData>(
   cards: T[],
   blockedCreators: BlockedRealmCreator[],
 ): T[] {
-  return cards.filter(
-    (card) => !isRealmCreatorBlocked(blockedCreators, card.creator),
-  );
+  if (cards.length === 0 || blockedCreators.length === 0) {
+    return cards;
+  }
+
+  const blockedSet = new Set<string>();
+  for (let i = 0; i < blockedCreators.length; i++) {
+    const id = blockedCreators[i].id;
+    if (id) blockedSet.add(id);
+  }
+
+  if (blockedSet.size === 0) {
+    return cards;
+  }
+
+  const result: T[] = [];
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    if (!card.creator || !blockedSet.has(card.creator)) {
+      result.push(card);
+    }
+  }
+  return result;
 }

@@ -81,7 +81,11 @@ export function parseMultipleValue(value: string | undefined): string[] {
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
-      return parsed.map((v) => String(v));
+      const result: string[] = [];
+      for (let i = 0; i < parsed.length; i++) {
+        result.push(String(parsed[i]));
+      }
+      return result;
     }
   } catch {}
   return [value];
@@ -132,9 +136,9 @@ export function applyOnboardingAnswers(
   answers: Record<string, string>,
   target?: ChatExecutionTarget,
 ) {
-  for (const [varName, value] of Object.entries(answers)) {
+  for (const varName of Object.keys(answers)) {
     if (varName) {
-      setChatVar(varName, value, target);
+      setChatVar(varName, answers[varName], target);
     }
   }
   chat.onboardingDone = true;
@@ -149,7 +153,31 @@ export function normalizeOnboarding(
   }
   const data = raw as Partial<CharacterOnboarding>;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
-  const questions = Array.isArray(data.questions) ? data.questions : [];
+  const rawQuestions = Array.isArray(data.questions) ? data.questions : [];
+  const questions: OnboardingQuestion[] = [];
+  for (let i = 0; i < rawQuestions.length; i++) {
+    const q = rawQuestions[i];
+    if (!q || typeof q !== "object") continue;
+    const rawOptions = Array.isArray(q.options) ? q.options : [];
+    const options: { label: string; value: string }[] = [];
+    for (let j = 0; j < rawOptions.length; j++) {
+      const o = rawOptions[j];
+      if (o && typeof o === "object") {
+        options.push({ label: str(o.label), value: str(o.value) });
+      }
+    }
+    questions.push({
+      id: str(q.id) || v4(),
+      title: str(q.title),
+      description: str(q.description),
+      type: q.type === "multiple" || q.type === "text" ? q.type : "single",
+      varName: str(q.varName),
+      required: q.required === true,
+      placeholder: str(q.placeholder),
+      options,
+    });
+  }
+
   return {
     enabled: data.enabled === true,
     mode: data.mode === "html" ? "html" : "form",
@@ -157,19 +185,6 @@ export function normalizeOnboarding(
     description: str(data.description),
     html: str(data.html),
     floatingButton: data.floatingButton === true,
-    questions: questions
-      .filter((q) => q && typeof q === "object")
-      .map((q) => ({
-        id: str(q.id) || v4(),
-        title: str(q.title),
-        description: str(q.description),
-        type: q.type === "multiple" || q.type === "text" ? q.type : "single",
-        varName: str(q.varName),
-        required: q.required === true,
-        placeholder: str(q.placeholder),
-        options: (Array.isArray(q.options) ? q.options : [])
-          .filter((o) => o && typeof o === "object")
-          .map((o) => ({ label: str(o.label), value: str(o.value) })),
-      })),
+    questions,
   };
 }

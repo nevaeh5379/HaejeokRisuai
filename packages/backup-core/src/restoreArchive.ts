@@ -101,9 +101,12 @@ export async function restoreBackupArchive<
     new PortableDatabaseStreamRestoreCoordinator<TSink>({
       createSink: options.createStreamSink,
       onSinkFragment(fragment: Fragment): void {
-        fragment.records.forEach((record: BackupRecord): void => {
-          collectStreamingInventoryRecord(streamingColdStorage, record);
-        });
+        for (let i = 0; i < fragment.records.length; i++) {
+          collectStreamingInventoryRecord(
+            streamingColdStorage,
+            fragment.records[i],
+          );
+        }
       },
     });
 

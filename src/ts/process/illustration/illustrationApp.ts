@@ -528,7 +528,7 @@ export async function enqueueAnswerIllustrations(
   context: IllustrationContext,
 ) {
   if (!settingsStore.state.useChatIllustrations) return;
-  const answerKey = JSON.stringify(target);
+  const answerKey = `${target.characterId}:${target.chatId}:${target.messageId}`;
   if (scheduling.has(answerKey)) return;
   scheduling.add(answerKey);
   try {
@@ -788,11 +788,7 @@ export async function recoverIllustration(target: IllustrationTarget) {
     !item ||
     !isIllustrationBusy(item.status) ||
     scheduling.has(
-      JSON.stringify({
-        characterId: target.characterId,
-        chatId: target.chatId,
-        messageId: target.messageId,
-      }),
+      `${target.characterId}:${target.chatId}:${target.messageId}`,
     ) ||
     submissions.has(illustrationJobKey(target)) ||
     runner.has(target)

@@ -167,8 +167,18 @@ export function stChatConvert(pre: any) {
   //ST preset
   let promptTemplate = [];
 
-  function findPrompt(identifier: number) {
-    return pre.prompts.find((p: any) => p.identifier === identifier);
+  const promptById = new Map<any, any>();
+  if (Array.isArray(pre?.prompts)) {
+    for (let i = 0; i < pre.prompts.length; i++) {
+      const p = pre.prompts[i];
+      if (p && p.identifier !== undefined) {
+        promptById.set(p.identifier, p);
+      }
+    }
+  }
+
+  function findPrompt(identifier: any) {
+    return promptById.get(identifier);
   }
 
   for (const prompt of pre?.prompt_order?.[0]?.order ?? []) {
@@ -295,6 +305,7 @@ export const OobaParams = [
   "skip_special_tokens",
   "grammar_string",
 ];
+export const OobaParamsSet = new Set(OobaParams);
 
 export async function promptConvertion(
   files: { name: string; content: string; type: string }[],
@@ -332,10 +343,10 @@ export async function promptConvertion(
       return typePriority.indexOf(a.type) - typePriority.indexOf(b.type);
     });
 
-  if (files.findIndex((x) => x.type === "STINST") !== -1) {
+  if (files.some((x) => x.type === "STINST")) {
     type = "STINST";
   }
-  if (files.findIndex((x) => x.type === "STCHAT") !== -1) {
+  if (files.some((x) => x.type === "STCHAT")) {
     if (type !== "") {
       alertError(`Both ${type} and STCHAT are not supported together.`);
       return;
@@ -344,6 +355,7 @@ export async function promptConvertion(
   }
 
   let samplers: string[] = [];
+  let samplersSet = new Set<string>();
 
   let oobaData: OobaChatCompletionRequestParams = {
     mode: "instruct",
@@ -364,7 +376,7 @@ export async function promptConvertion(
         getname = setname;
       }
       let multiplier = arg.multiplier ?? 1;
-      if (samplers.includes(getname)) {
+      if (samplersSet.has(getname)) {
         //@ts-expect-error dynamic key access on preset with value from parsed JSON
         preset[setname] = data[getname] * multiplier;
       } else {
@@ -372,7 +384,7 @@ export async function promptConvertion(
         preset[setname] = -1000;
       }
 
-      if (OobaParams.includes(getname)) {
+      if (OobaParamsSet.has(getname)) {
         oobaData[getname] = data[getname];
       }
     };
@@ -389,7 +401,8 @@ export async function promptConvertion(
         break;
       }
       case "PARAMETERS": {
-        samplers = data.samplers;
+        samplers = data.samplers ?? [];
+        samplersSet = new Set(samplers);
         getParam("temperature", "temp", { multiplier: 100 });
         getParam("top_p");
         getParam("top_k");
@@ -398,9 +411,10 @@ export async function promptConvertion(
         getParam("repetition_penalty", "rep_pen");
         getParam("frequencyPenalty", "freq_pen", { multiplier: 100 });
         getParam("PresensePenalty", "presence_penalty", { multiplier: 100 });
-        for (const key of OobaParams) {
+        for (let j = 0; j < OobaParams.length; j++) {
+          const key = OobaParams[j];
           if (
-            samplers.includes(key) &&
+            samplersSet.has(key) &&
             data[key] !== undefined &&
             data[key] !== null
           ) {
@@ -416,6 +430,7 @@ export async function promptConvertion(
       }
       case "STCHAT": {
         samplers = [];
+        samplersSet = new Set();
         getParam("temperature", "temperature", { multiplier: 100 });
         getParam("top_p");
         getParam("top_k");

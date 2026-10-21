@@ -16,10 +16,19 @@ export interface RemoteAssetReadResult {
 
 export type RemoteAssetAuthProvider = () => Promise<string>;
 
+const HEX_TABLE: string[] = [];
+for (let i = 0; i < 256; i++) {
+  HEX_TABLE[i] = i.toString(16).padStart(2, "0");
+}
+const SHARED_TEXT_ENCODER = new TextEncoder();
+
 function utf8ToHex(value: string): string {
-  return Array.from(new TextEncoder().encode(value), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const bytes = SHARED_TEXT_ENCODER.encode(value);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += HEX_TABLE[bytes[i]];
+  }
+  return hex;
 }
 
 function readParams(options?: RemoteAssetReadOptions): URLSearchParams {
@@ -100,12 +109,16 @@ async function getStorageResponseErrorDetail(response: Response) {
   try {
     const body = JSON.parse(responseText);
     if (body && typeof body === "object") {
-      const details = [body.error, body.code, body.message, body.details]
-        .filter(
-          (value, index, values) =>
-            value != null && value !== "" && values.indexOf(value) === index,
-        )
-        .map((value) => formatUnknownError(value));
+      const candidates = [body.error, body.code, body.message, body.details];
+      const seen = new Set<unknown>();
+      const details: string[] = [];
+      for (let i = 0; i < candidates.length; i++) {
+        const val = candidates[i];
+        if (val != null && val !== "" && !seen.has(val)) {
+          seen.add(val);
+          details.push(formatUnknownError(val));
+        }
+      }
       if (details.length > 0) {
         return normalizeStorageErrorDetail(details.join(" | "));
       }
