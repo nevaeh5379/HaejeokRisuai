@@ -94,15 +94,15 @@ async function createChatGenerationPlan(
   runtime?: any,
   input?: any,
 ): Promise<any> {
-  const formated: any = input.formated.map((chat?: any) => ({ ...chat }));
-  const tokenCounts: any = await runtime.tokenizeChatsDetailed(formated);
-  let inputTokens: any = tokenCounts.reduce(
-    (total?: any, count?: any) => total + count,
-    0,
-  );
+  const formated: any[] = input.formated.map((chat?: any) => ({ ...chat }));
+  const tokenCounts: number[] = await runtime.tokenizeChatsDetailed(formated);
+  let inputTokens = 0;
+  for (let i = 0; i < tokenCounts.length; i++) {
+    inputTokens += tokenCounts[i];
+  }
 
   if (inputTokens > input.maxContextTokens) {
-    let pointer: any = 0;
+    let pointer = 0;
     while (inputTokens > input.maxContextTokens && pointer < formated.length) {
       if (formated[pointer].removable) {
         inputTokens -= tokenCounts[pointer];
@@ -115,13 +115,17 @@ async function createChatGenerationPlan(
     }
   }
 
-  const compactedEntries: any = formated
-    .map((chat?: any, index?: any) => ({ chat, index }))
-    .filter(({ chat }: any) => hasRenderableContent(chat));
-  const compacted: any = compactedEntries.map(({ chat }: any) => chat);
-  const keptIndexes: any = compactedEntries.map(({ index }: any) => index);
+  const compacted: any[] = [];
+  const keptIndexes: number[] = [];
+  for (let index = 0; index < formated.length; index++) {
+    const chat = formated[index];
+    if (hasRenderableContent(chat)) {
+      compacted.push(chat);
+      keptIndexes.push(index);
+    }
+  }
   const settings: any = runtime.getGenerationSettings();
-  const outputTokens: any = Math.min(
+  const outputTokens: number = Math.min(
     settings.maxResponseTokens,
     Math.max(0, input.maxContextTokens - inputTokens),
   );

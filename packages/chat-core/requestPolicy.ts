@@ -16,6 +16,18 @@ export interface FailedRequestRetryDecision {
 }
 ("use strict");
 
+const bannedScriptRegexCache = new Map<string, RegExp>();
+
+function getBannedScriptRegex(set: string): RegExp {
+  let regex = bannedScriptRegexCache.get(set);
+  if (!regex) {
+    regex = new RegExp(`\\p{Script=${set}}`, "gu");
+    bannedScriptRegexCache.set(set, regex);
+  }
+  regex.lastIndex = 0;
+  return regex;
+}
+
 function containsBannedCharacterSet(
   text: string,
   bannedCharacterSets: readonly string[] | undefined,
@@ -24,9 +36,9 @@ function containsBannedCharacterSet(
   text?: any,
   bannedCharacterSets?: any,
 ): any {
-  if (!bannedCharacterSets?.length) return false;
+  if (!bannedCharacterSets?.length || !text) return false;
   for (const set of bannedCharacterSets) {
-    const checkRegex: any = new RegExp(`\\p{Script=${set}}`, "gu");
+    const checkRegex = getBannedScriptRegex(set);
     if (checkRegex.test(text)) return true;
   }
   return false;
