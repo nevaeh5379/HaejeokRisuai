@@ -9,7 +9,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
-  outputDir: resolve(root, "memlab-results"),
+  outputDir: resolve(root, "memlab-results/browser"),
   fullyParallel: false,
   workers: 1,
   retries: 0,

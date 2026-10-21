@@ -1,0 +1,51 @@
+name: MemLab Memory Checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tooling/memlab/**"
+      - "src/lib/Setting/**"
+      - "src/ts/stores/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "vite.config.*"
+      - ".github/workflows/memory-profile.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: memlab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  memory:
+    name: MemLab / Module Settings
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install pnpm
+        run: npm install --global pnpm@12.3.4
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Check detector controls and module settings
+        run: pnpm test:memory
+      - name: Upload synthetic memory reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memlab-reports
+          path: |
+            memlab-results/**/summary.json
+            memlab-results/**/analysis/data/out/leaks.txt
+          if-no-files-found: ignore
+          retention-days: 7
