@@ -40,8 +40,9 @@ export type TokenizeRoute =
 /**
  * Vocabulary files and the loader each one needs.
  *
- * `gemma` must point at a Gemma vocabulary; the Llama 3 BPE file that used to be
- * handed to it is not Gemma at all.
+ * `gemma` points at the Gemma 3 SentencePiece model: Gemini reports the same token
+ * counts with that vocabulary, while the Gemma 1/2 file over-counts Korean by ~14%
+ * and under-counts Chinese/Japanese, and the Llama 3 BPE file is not Gemma at all.
  */
 export const webTokenizerSources: Record<
   WebTokenizerTarget,
@@ -53,7 +54,7 @@ export const webTokenizerSources: Record<
   DeepSeekV4: { loader: "json", path: "/token/deepseek/v4/tokenizer.json" },
   GLM4: { loader: "json", path: "/token/glm4/tokenizer.json" },
   GLM5: { loader: "json", path: "/token/glm5/tokenizer.json" },
-  gemma: { loader: "sentencePiece", path: "/token/gemma/tokenizer.model" },
+  gemma: { loader: "sentencePiece", path: "/token/gemma3/tokenizer.model" },
   llama: { loader: "sentencePiece", path: "/token/llama/llama.model" },
   llama3: { loader: "json", path: "/token/llama/llama3.json" },
   mistral: { loader: "sentencePiece", path: "/token/mistral/tokenizer.model" },
