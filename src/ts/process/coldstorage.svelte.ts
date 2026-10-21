@@ -239,7 +239,8 @@ export async function cleanColdStorage() {
     return;
   }
   const allKeys = (await listColdStorageItems()).items;
-  const unusedKeys = allKeys.filter((k) => !actualUsedKeys.includes(k));
+  const usedKeysSet = new Set(actualUsedKeys);
+  const unusedKeys = allKeys.filter((k) => !usedKeysSet.has(k));
   console.log(
     "Cleaning cold storage, actual used keys:",
     actualUsedKeys,
@@ -325,6 +326,7 @@ export async function collectColdStorageBackupPayloads(
   const payloads: ColdStorageBackupPayload[] = [];
   const missingKeys: string[] = [];
   const invalidKeys: string[] = [];
+  const encoder = new TextEncoder();
 
   onProgress?.(0, coldKeys.length);
   for (let index = 0; index < coldKeys.length; index++) {
@@ -346,7 +348,7 @@ export async function collectColdStorageBackupPayloads(
         key,
         backupName: getColdStorageBackupName(key),
         value,
-        encoded: new TextEncoder().encode(JSON.stringify(value)),
+        encoded: encoder.encode(JSON.stringify(value)),
       });
     } catch (error) {
       console.error(`Failed to read cold storage item ${key}:`, error);

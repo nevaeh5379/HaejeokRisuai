@@ -84,14 +84,29 @@ export interface StorageSyncAssetSummary {
   sizeBytes: number;
 }
 
+function extractSortedUniquePrefixKeys(
+  rawKeys: string[],
+  prefix: string,
+): string[] {
+  const keySet = new Set<string>();
+  for (let i = 0; i < rawKeys.length; i++) {
+    const key = rawKeys[i];
+    if (key.startsWith(prefix)) {
+      keySet.add(key);
+    }
+  }
+  return Array.from(keySet).sort();
+}
+
 export async function summarizeStorageSyncAssets(
   reader: StorageSyncAssetReader,
   prefix = "assets/",
   concurrency = 8,
 ): Promise<StorageSyncAssetSummary> {
-  const keys = [...new Set(await reader.listKeys(prefix))]
-    .filter((key) => key.startsWith(prefix))
-    .sort();
+  const keys = extractSortedUniquePrefixKeys(
+    await reader.listKeys(prefix),
+    prefix,
+  );
   const workerCount = Math.max(
     1,
     Math.min(Math.floor(concurrency) || 1, keys.length || 1),
@@ -115,9 +130,10 @@ export async function buildStorageSyncAssetManifest(
   reader: StorageSyncAssetReader,
   prefix = "assets/",
 ): Promise<StorageSyncAssetManifestEntry[]> {
-  const keys = [...new Set(await reader.listKeys(prefix))]
-    .filter((key) => key.startsWith(prefix))
-    .sort();
+  const keys = extractSortedUniquePrefixKeys(
+    await reader.listKeys(prefix),
+    prefix,
+  );
   const manifest = new Array<StorageSyncAssetManifestEntry>(keys.length);
   let nextIndex = 0;
 

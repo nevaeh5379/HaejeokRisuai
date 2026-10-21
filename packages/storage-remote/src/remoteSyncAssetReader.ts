@@ -54,7 +54,13 @@ export class RemoteSyncAssetReader {
 
   async listKeys(prefix = "assets/"): Promise<string[]> {
     const sizes = await this.loadSizes();
-    return [...sizes.keys()].filter((key) => key.startsWith(prefix)).sort();
+    const result: string[] = [];
+    for (const key of sizes.keys()) {
+      if (key.startsWith(prefix)) {
+        result.push(key);
+      }
+    }
+    return result.sort();
   }
 
   async getSize(key: string): Promise<number> {

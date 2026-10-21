@@ -1849,27 +1849,26 @@ function childToParentRRF<C, P>(
     .map(([parent]) => parent);
 }
 
-function normalizeScores<T>(scoredList: [T, number][]): [T, number][] {
+export function normalizeScores<T>(scoredList: [T, number][]): [T, number][] {
   if (scoredList.length === 0) {
     return [];
   }
 
-  const scores = scoredList.map(([, score]) => score);
-  const minScore = Math.min(...scores);
-  const maxScore = Math.max(...scores);
-
-  if (minScore === maxScore) {
-    if (minScore === 0) {
-      return scoredList.map(([item]) => [item, 0]);
-    }
-
-    return scoredList.map(([item]) => [item, 1]);
+  let minScore = scoredList[0][1];
+  let maxScore = minScore;
+  for (let i = 1; i < scoredList.length; i++) {
+    const score = scoredList[i][1];
+    if (score < minScore) minScore = score;
+    if (score > maxScore) maxScore = score;
   }
 
-  return scoredList.map(([item, score]) => {
-    const normalizedScore = (score - minScore) / (maxScore - minScore);
-    return [item, normalizedScore];
-  });
+  const range = maxScore - minScore;
+  if (range === 0) {
+    const fallback = minScore === 0 ? 0 : 1;
+    return scoredList.map(([item]) => [item, fallback]);
+  }
+
+  return scoredList.map(([item, score]) => [item, (score - minScore) / range]);
 }
 
 interface SummaryChunkVector {
@@ -2016,12 +2015,13 @@ class HypaProcesserEx extends HypaProcesser {
       });
     }
 
-    return this.summaryChunkVectors
-      .map((scv) => ({
-        chunk: scv.chunk,
-        similarity: similarity(queryVector, scv.vector.embedding),
-      }))
-      .sort((a, b) => b.similarity - a.similarity)
-      .map((result) => [result.chunk, result.similarity]);
+    const vectors = this.summaryChunkVectors;
+    const results: [SummaryChunk, number][] = new Array(vectors.length);
+    for (let i = 0; i < vectors.length; i++) {
+      const scv = vectors[i];
+      results[i] = [scv.chunk, similarity(queryVector, scv.vector.embedding)];
+    }
+    results.sort((a, b) => b[1] - a[1]);
+    return results;
   }
 }

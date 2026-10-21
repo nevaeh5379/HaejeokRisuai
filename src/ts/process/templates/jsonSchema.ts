@@ -1,5 +1,4 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
-import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { risuChatParser } from "src/ts/parser/parser.svelte";
 import type { ChatExecutionTarget } from "src/ts/chatTarget";
 import type { character, groupChat } from "../../storage/database/schema";
@@ -141,7 +140,6 @@ export function getOpenAIJSONSchema(
   schema?: string,
   context: JSONSchemaParserContext = {},
 ) {
-  const db = settingsStore.state;
   return {
     name: "format",
     strict: presetStore.state.strictJsonSchema,
@@ -157,15 +155,15 @@ export function getGeneralJSONSchema(
   excludes: string[] = [],
   context: JSONSchemaParserContext = {},
 ) {
-  const db = settingsStore.state;
+  const excludeSet = excludes.length > 0 ? new Set(excludes) : null;
 
   function process(data: any) {
+    if (!data || typeof data !== "object") return data;
     const keys = Object.keys(data);
     for (const key of keys) {
-      if (excludes.includes(key)) {
+      if (excludeSet?.has(key)) {
         delete data[key];
-      }
-      if (typeof data[key] === "object") {
+      } else if (typeof data[key] === "object") {
         data[key] = process(data[key]);
       }
     }
@@ -184,15 +182,6 @@ export function extractJSON(
   format: string,
   context: JSONSchemaParserContext = {},
 ): string {
-  const extract = (value: any, path: string): string => {
-    if (value === undefined || value === null) return "";
-    const [head, ...tail] = path.split(".");
-    const current = value[head];
-    if (current === undefined) return "";
-    if (tail.length === 0) return `${current ?? ""}`;
-    return extract(current, tail.join("."));
-  };
-
   try {
     format = risuChatParser(format, {
       chara: context.chara,
@@ -203,7 +192,14 @@ export function extractJSON(
       if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return data;
       data = JSON.parse(jsonOutputTrimmer(trimmed));
     }
-    return extract(data, format);
+    if (data === undefined || data === null) return "";
+    const segments = format.split(".");
+    let current: any = data;
+    for (let i = 0; i < segments.length; i++) {
+      if (current === undefined || current === null) return "";
+      current = current[segments[i]];
+    }
+    return current !== undefined && current !== null ? `${current}` : "";
   } catch (error) {
     return typeof data === "string" ? data : "";
   }

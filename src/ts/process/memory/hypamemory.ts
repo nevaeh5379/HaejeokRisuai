@@ -372,21 +372,13 @@ export class HypaProcesser {
 
     const memoryVectors = this.vectors;
     const sim = similarity;
-    const searches = memoryVectors
-      .map((vector, index) => ({
-        similarity: sim(query, vector.embedding),
-        index,
-      }))
-      .sort((a, b) => b.similarity - a.similarity);
-
-    const ranked = searches.map(
-      (search) =>
-        [memoryVectors[search.index].content, search.similarity] as [
-          string,
-          number,
-        ],
-    );
-    return topK ? ranked.slice(0, topK) : ranked;
+    const ranked: [string, number][] = new Array(memoryVectors.length);
+    for (let i = 0; i < memoryVectors.length; i++) {
+      const vector = memoryVectors[i];
+      ranked[i] = [vector.content, sim(query, vector.embedding)];
+    }
+    ranked.sort((a, b) => b[1] - a[1]);
+    return topK && topK < ranked.length ? ranked.slice(0, topK) : ranked;
   }
 
   private async tryServerSimilaritySearch(
@@ -507,10 +499,11 @@ export type memoryVector = {
   alreadySaved?: boolean;
 };
 
-const chunkArray = <T>(arr: T[], chunkSize: number) =>
-  arr.reduce((chunks, elem, index) => {
-    const chunkIndex = Math.floor(index / chunkSize);
-    const chunk = chunks[chunkIndex] || [];
-    chunks[chunkIndex] = chunk.concat([elem]);
-    return chunks;
-  }, [] as T[][]);
+export const chunkArray = <T>(arr: T[], chunkSize: number): T[][] => {
+  if (chunkSize <= 0) return [arr.slice()];
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += chunkSize) {
+    chunks.push(arr.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
