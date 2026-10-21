@@ -14,6 +14,8 @@ export function decodeRisuSaveBlocks(
 ): Record<string, unknown> {
   const database: Record<string, unknown> = Object.create(null);
   const decoder = new TextDecoder();
+  const directory = new Set<string>();
+  const loadedBlocks = new Set<string>();
   let offset = RISU_SAVE_BLOCK_HEADER_BYTES.length;
   let decodedBytes = 0;
   while (offset < data.byteLength) {
@@ -50,7 +52,15 @@ export function decodeRisuSaveBlocks(
     const value = JSON.parse(decoder.decode(bytes));
     switch (type) {
       case 1: {
-        const { __directory: _directory, ...root } = value;
+        const { __directory: entries, ...root } = value;
+        if (entries !== undefined) {
+          if (
+            !Array.isArray(entries) ||
+            entries.some((entry) => typeof entry !== "string")
+          )
+            throw new Error("Invalid RisuSave block directory");
+          for (const entry of entries) directory.add(entry);
+        }
         Object.assign(database, root);
         break;
       }
@@ -96,6 +106,13 @@ export function decodeRisuSaveBlocks(
       default:
         throw new Error(`Unsupported RisuSave block type: ${type}`);
     }
+    loadedBlocks.add(name);
+  }
+  for (const name of directory) {
+    if (!loadedBlocks.has(name))
+      throw new Error(
+        `RisuSave is missing directory block "${name}"; export a local backup from the original device`,
+      );
   }
   return database;
 }

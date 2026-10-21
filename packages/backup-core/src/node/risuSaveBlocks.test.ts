@@ -76,4 +76,67 @@ describe("upstream v2026.10.210 block backups", () => {
       decodeLegacyBackupDatabase(save, { maxOutputBytes: 100 }),
     ).toThrow();
   });
+
+  it.each([false, true])(
+    "resolves directory references regardless of root order (root last: %s)",
+    (rootLast) => {
+      const root = {
+        type: 1,
+        name: "root",
+        value: { __directory: ["char", "char"], language: "ko" },
+      };
+      const character = { type: 2, name: "char", value: { chaId: "char" } };
+      const save = upstreamBlockSave(
+        rootLast ? [character, root] : [root, character],
+      );
+      expect(decodeLegacyBackupDatabase(save)).toMatchObject({
+        language: "ko",
+        characters: [{ chaId: "char" }],
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "rejects missing directory records regardless of root order (root last: %s)",
+    (rootLast) => {
+      const root = {
+        type: 1,
+        name: "root",
+        value: { __directory: ["present", "missing"] },
+      };
+      const character = {
+        type: 2,
+        name: "present",
+        value: { chaId: "present" },
+      };
+      const save = upstreamBlockSave(
+        rootLast ? [character, root] : [root, character],
+      );
+      expect(() => decodeLegacyBackupDatabase(save)).toThrow(
+        'missing directory block "missing"',
+      );
+    },
+  );
+
+  it("does not treat an ignored configuration block as a restored directory entry", () => {
+    const save = upstreamBlockSave([
+      { type: 1, name: "root", value: { __directory: ["missing"] } },
+      { type: 0, name: "missing", value: {} },
+    ]);
+    expect(() => decodeLegacyBackupDatabase(save)).toThrow(
+      'missing directory block "missing"',
+    );
+  });
+
+  it.each([null, "char", [false]])(
+    "rejects an invalid block directory: %j",
+    (directory) => {
+      const save = upstreamBlockSave([
+        { type: 1, name: "root", value: { __directory: directory } },
+      ]);
+      expect(() => decodeLegacyBackupDatabase(save)).toThrow(
+        "Invalid RisuSave block directory",
+      );
+    },
+  );
 });

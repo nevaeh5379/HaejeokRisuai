@@ -15,6 +15,81 @@ async function start(page: import("@playwright/test").Page) {
   );
 }
 
+test("rendered chat forms invoke Lua and prevent default submission with or without risu-form", async ({
+  page,
+}) => {
+  await start(page);
+  await page.evaluate(async () => {
+    const chars = "/src/ts/characters.ts";
+    const domain = "/src/ts/stores/domain/index.ts";
+    const { createNewCharacter, changeChar } = (await import(
+      /* @vite-ignore */ chars
+    )) as typeof import("../src/ts/characters");
+    const { characterStore } = (await import(
+      /* @vite-ignore */ domain
+    )) as typeof import("../src/ts/stores/domain");
+    const index = createNewCharacter();
+    const char = characterStore.characters[index];
+    if (char.type === "group") throw new Error("Expected a character");
+    char.triggerscript = [
+      {
+        comment: "Submitted chat form",
+        type: "manual",
+        conditions: [],
+        effect: [
+          {
+            type: "triggerlua",
+            code: `
+          function onFormSubmit(id, key, meta)
+            local form = json.decode(meta)
+            setChatVar(id, "submitted", key .. ":" .. form.data.route .. ":" .. form.data.choice)
+          end
+        `,
+          },
+        ],
+      },
+    ];
+    char.chats[0].message = [
+      {
+        role: "char",
+        chatId: crypto.randomUUID(),
+        data: '<form risu-form="choose" action="?unexpected-submit=1"><input name="route" value="north"><button type="submit" name="choice" value="save">Submit route</button></form><form action="?unexpected-submit=1"><button type="submit">Submit plain form</button></form>',
+      },
+    ];
+    await changeChar(index);
+    document.addEventListener("submit", (event) => {
+      document.body.dataset.submitPrevented = String(event.defaultPrevented);
+    });
+  });
+  await page.getByRole("button", { name: "Submit route", exact: true }).click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-submit-prevented",
+    "true",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const domain = "/src/ts/stores/domain/index.ts";
+        const { characterStore } = (await import(
+          /* @vite-ignore */ domain
+        )) as typeof import("../src/ts/stores/domain");
+        return characterStore.currentChat?.scriptstate?.$submitted;
+      }),
+    )
+    .toBe("choose:north:save");
+  await page.locator("body").evaluate((body) => {
+    delete body.dataset.submitPrevented;
+  });
+  await page
+    .getByRole("button", { name: "Submit plain form", exact: true })
+    .click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-submit-prevented",
+    "true",
+  );
+  expect(page.url()).not.toContain("unexpected-submit");
+});
+
 for (const mode of ["form", "html"] as const) {
   test(`${mode} onboarding answers persist to the opened SQL chat after active-chat changes`, async ({
     page,

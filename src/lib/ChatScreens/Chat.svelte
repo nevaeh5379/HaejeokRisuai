@@ -1404,7 +1404,8 @@
      data-chat-index={idx}
      data-chat-id={renderedSourceMessage?.chatId ?? ''}
      style:border-top={isLastMemory ? `${settingsStore.state.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7)` : ''}
-     onclickcapture={handleButtonTriggerWithin}>
+     onclickcapture={handleButtonTriggerWithin}
+     onsubmitcapture={handleFormTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start" style:max-width={getMaxWidth()}>
         {#if settingsStore.state.theme === 'mobilechat' && !blankMessage}
             <div class={role === 'user' ? "flex items-start w-full justify-end" : "flex items-start w-full justify-start"}>

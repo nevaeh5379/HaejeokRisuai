@@ -1648,7 +1648,7 @@
     {#if additionalFloatingActionButtons.length > 0 || getActiveOnboarding(currentCharacter)?.floatingButton}
         <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
             {#if getActiveOnboarding(currentCharacter)?.floatingButton}
-                <button class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors" title={language.onboarding} aria-label={language.onboarding} onclick={() => {
+                <button class="bg-darkbutton text-textcolor px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-selected transition-colors" title={language.onboarding} aria-label={language.onboarding} onclick={() => {
                     openOnboarding()
                 }}>
                     <CompassIcon size={20} />
