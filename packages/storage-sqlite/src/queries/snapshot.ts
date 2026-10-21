@@ -128,9 +128,10 @@ function parsePresetRows(rows: Array<{ preset_id: string; data: string }>): {
   ids: string[];
   presets: Record<string, unknown>[];
 } {
-  const ids = rows.map((row) => row.preset_id);
+  const ids: string[] = [];
   const presets: Record<string, unknown>[] = [];
   for (const row of rows) {
+    ids.push(row.preset_id);
     try {
       const preset = JSON.parse(row.data) as Record<string, unknown>;
       presets.push(preset);
@@ -167,10 +168,10 @@ export async function exportDatabase(options: Options): Promise<Result> {
     settingRows,
     legacyPersonaMirrorKeys,
   );
-  const database = Object.fromEntries(settings.values) as Record<
-    string,
-    unknown
-  >;
+  const database: Record<string, unknown> = {};
+  for (const [key, value] of settings.values) {
+    database[key] = value;
+  }
 
   database.pluginCustomStorage =
     (await sqlitePlugin.loadCustomStorage(selectRows)) ?? {};

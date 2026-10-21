@@ -99,6 +99,7 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
 
       for (const syntax of highlighterSyntax) {
         const regex = syntax.regex;
+        regex.lastIndex = 0;
         let match: RegExpExecArray | null;
         while ((match = regex.exec(fullText)) !== null) {
           const length = match[0].length;
@@ -322,6 +323,12 @@ const deprecatedCBS = [
 
 const deprecatedCBSwithParams = ["remaind", "pow"];
 
+const NORMAL_CBS_SET = new Set(normalCBS);
+const DEPRECATED_CBS_SET = new Set(deprecatedCBS);
+const NORMAL_CBS_WITH_PARAMS_SET = new Set(normalCBSwithParams);
+const DEPRECATED_CBS_WITH_PARAMS_SET = new Set(deprecatedCBSwithParams);
+const DISPLAY_RELATED_CBS_SET = new Set(displayRelatedCBS);
+
 export const decorators = [
   "activate_only_after",
   "activate_only_every",
@@ -351,13 +358,12 @@ export const decorators = [
 
 const deprecatedDecorators = ["end", "assistant", "user", "system"];
 
-export const AllCBS = [
+export const AllCBS = Object.freeze([
   ...normalCBS,
-  ...normalCBSwithParams.concat(displayRelatedCBS).map((v) => {
-    return v + ":";
-  }),
+  ...normalCBSwithParams.map((v) => v + ":"),
+  ...displayRelatedCBS.map((v) => v + ":"),
   ...nestedCBS,
-];
+]);
 
 const highlighterSyntax = [
   {
@@ -374,7 +380,7 @@ const highlighterSyntax = [
   },
 ] as const;
 
-function simpleCBSHighlightParser(text: string) {
+export function simpleCBSHighlightParser(text: string) {
   let depth = 0;
   let pointer = 0;
   let depthStarts = new Uint8Array(100);
@@ -390,47 +396,20 @@ function simpleCBSHighlightParser(text: string) {
       highlightMode[depth] = 10;
       const upString = text.slice(depthStarts[depth], pointer);
 
-      if (highlightMode[depth] === 10) {
-        for (const arg of normalCBS) {
-          if (upString === arg) {
+      if (NORMAL_CBS_SET.has(upString)) {
+        highlightMode[depth] = 1;
+      } else if (DEPRECATED_CBS_SET.has(upString)) {
+        highlightMode[depth] = 3;
+      } else {
+        const colonIndex = upString.indexOf("::");
+        if (colonIndex !== -1) {
+          const prefix = upString.slice(0, colonIndex);
+          if (NORMAL_CBS_WITH_PARAMS_SET.has(prefix)) {
             highlightMode[depth] = 1;
-            break;
-          }
-        }
-      }
-
-      if (highlightMode[depth] === 10) {
-        for (const arg of deprecatedCBS) {
-          if (upString === arg) {
+          } else if (DEPRECATED_CBS_WITH_PARAMS_SET.has(prefix)) {
             highlightMode[depth] = 3;
-            break;
-          }
-        }
-      }
-
-      if (highlightMode[depth] === 10) {
-        for (const arg of normalCBSwithParams) {
-          if (upString.startsWith(arg + "::")) {
-            highlightMode[depth] = 1;
-            break;
-          }
-        }
-      }
-
-      if (highlightMode[depth] === 10) {
-        for (const arg of deprecatedCBSwithParams) {
-          if (upString.startsWith(arg + "::")) {
-            highlightMode[depth] = 3;
-            break;
-          }
-        }
-      }
-
-      if (highlightMode[depth] === 10) {
-        for (const arg of displayRelatedCBS) {
-          if (upString.startsWith(arg + "::")) {
+          } else if (DISPLAY_RELATED_CBS_SET.has(prefix)) {
             highlightMode[depth] = 2;
-            break;
           }
         }
       }

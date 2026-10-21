@@ -253,12 +253,18 @@ function nodeInsertStatements(
     offset += LEGACY_MIGRATION_NODE_BATCH_SIZE
   ) {
     const batch = rows.slice(offset, offset + LEGACY_MIGRATION_NODE_BATCH_SIZE);
+    const bind: unknown[] = [];
+    for (const row of batch) {
+      for (const val of ownerValues) {
+        bind.push(val);
+      }
+      for (const column of nodeCodec.NODE_COLUMNS) {
+        bind.push(row[column]);
+      }
+    }
     statements.push({
       sql: `INSERT INTO ${table} (${columns.join(",")}) VALUES ${batch.map(() => placeholders).join(",")}`,
-      bind: batch.flatMap((row) => [
-        ...ownerValues,
-        ...nodeCodec.NODE_COLUMNS.map((column) => row[column]),
-      ]),
+      bind,
     });
   }
   return statements;

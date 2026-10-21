@@ -28,12 +28,54 @@ function normalizeCacheRole(
   return "all";
 }
 
+function isItemNormalized(item: unknown): boolean {
+  if (!item || typeof item !== "object") {
+    return true;
+  }
+  const typed = item as any;
+  switch (typed.type) {
+    case "plain":
+    case "jailbreak":
+    case "cot": {
+      const normalized = normalizePromptRole(typed.role) ?? "system";
+      return typed.role === normalized;
+    }
+    case "persona":
+    case "description":
+    case "authornote":
+    case "memory": {
+      if (typed.role2 !== undefined && typed.role2 !== null) {
+        const normalized = normalizePromptRole(typed.role2) ?? "system";
+        return typed.role2 === normalized;
+      }
+      return true;
+    }
+    case "cache": {
+      const normalized = normalizeCacheRole(typed.role);
+      return typed.role === normalized;
+    }
+    default:
+      return true;
+  }
+}
+
 export function normalizePromptTemplate(
   template: PromptItem[] | null | undefined,
 ): PromptItem[] | null {
   if (!Array.isArray(template)) {
     return null;
   }
+  let needsChange = false;
+  for (let i = 0; i < template.length; i++) {
+    if (!isItemNormalized(template[i])) {
+      needsChange = true;
+      break;
+    }
+  }
+  if (!needsChange) {
+    return template;
+  }
+
   const normalized = safeStructuredClone(template) as any[];
   for (const item of normalized) {
     if (!item || typeof item !== "object") {
