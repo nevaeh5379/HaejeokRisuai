@@ -19,14 +19,22 @@ export function getChatVar(key: string, target?: ChatExecutionTarget): string {
   const { character: char, chat } = resolved;
   const state = chat.scriptstate?.["$" + key];
   if (state === undefined || state === null) {
-    const defaultVariables = parseKeyValue(char.defaultVariables).concat(
-      parseKeyValue(presetStore.state.templateDefaultVariables),
-    );
-    const findResult = defaultVariables.find((f) => {
-      return f[0] === key;
-    });
-    if (findResult) {
-      return findResult[1];
+    if (char.defaultVariables) {
+      const charDefaults = parseKeyValue(char.defaultVariables);
+      for (let i = 0; i < charDefaults.length; i++) {
+        if (charDefaults[i][0] === key) {
+          return charDefaults[i][1];
+        }
+      }
+    }
+    const templateDefaults = presetStore.state.templateDefaultVariables;
+    if (templateDefaults) {
+      const presetDefaults = parseKeyValue(templateDefaults);
+      for (let i = 0; i < presetDefaults.length; i++) {
+        if (presetDefaults[i][0] === key) {
+          return presetDefaults[i][1];
+        }
+      }
     }
     return "null";
   }

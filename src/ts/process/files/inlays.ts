@@ -93,9 +93,11 @@ export async function migrateLocalInlaysToServer(): Promise<{
   const remoteIds = new Set(await listRemoteInlayIds());
   let migrated = 0;
   let failed = 0;
-  const total = stored.length;
-  const pending = stored.filter(([id]) => !remoteIds.has(id));
-  for (const [id, asset] of pending) {
+  let pendingCount = 0;
+  for (let i = 0; i < stored.length; i++) {
+    const [id, asset] = stored[i];
+    if (remoteIds.has(id)) continue;
+    pendingCount++;
     try {
       await putRemoteInlayAsset(id, asset);
       migrated++;
@@ -107,7 +109,7 @@ export async function migrateLocalInlaysToServer(): Promise<{
   if (migrated > 0 && failed === 0) {
     resetInlayRemoteWriteState();
   }
-  return { migrated, total: pending.length, failed };
+  return { migrated, total: pendingCount, failed };
 }
 
 async function readAllCachedInlays(): Promise<[string, InlayAsset][]> {
@@ -308,16 +310,18 @@ function base64ToBlob(b64: string): Blob {
     throw new Error("Invalid base64 data URI");
   }
   const header = b64.slice(0, separatorIndex);
-  const byteString = atob(b64.slice(separatorIndex + 1));
-  const mimeString = header.split(":")[1]?.split(";")[0] ?? "";
+  const colonIndex = header.indexOf(":");
+  const semiIndex = header.indexOf(";", colonIndex + 1);
+  const mimeString =
+    colonIndex === -1
+      ? ""
+      : semiIndex === -1
+        ? header.slice(colonIndex + 1)
+        : header.slice(colonIndex + 1, semiIndex);
 
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
-
-  return new Blob([ab], { type: mimeString });
+  const rawBase64 = b64.slice(separatorIndex + 1);
+  const buffer = Buffer.from(rawBase64, "base64");
+  return new Blob([buffer], { type: mimeString });
 }
 
 function blobToBase64(blob: Blob): Promise<string> {

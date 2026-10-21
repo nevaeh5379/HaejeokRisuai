@@ -64,3 +64,27 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Parser, Inlay Codec, and Template Range Allocations
+
+**Learning:** Found quadratic memory allocations and unnecessary intermediate arrays in hot text parsing and file decoding routines:
+
+1. `getDistance` (Levenshtein distance) in `parser.svelte.ts` allocated a full 2D matrix of `(a.length + 1) * (b.length + 1)` in `Int16Array`, which for string matching across asset lists repeatedly allocated thousands of integer elements.
+2. `trimmer` in `parser.svelte.ts` re-instantiated a 13-element string array and string-concatenated extensions on every call.
+3. `risuChatParser` in `parser.svelte.ts` performed single-character string appends in a loop for all plain text, and allocated unused `commentLatest`, `commentV`, and tracking structures on every invocation.
+4. `trimLines` repeatedly split, mapped, joined, and trimmed multiline strings, while `blockEndMatcher` split full texts on newline solely to check if `lines.length === 1`.
+5. `base64ToBlob` in `inlays.ts` used `atob` with an element-by-element `charCodeAt` copy loop and `ArrayBuffer` allocation instead of `Buffer.from(b64, 'base64')`, and split headers twice to find the MIME type.
+6. `templateCheck` in `templateCheck.ts` computed unresolved ranges via `startRanges.filter(...includes...).concat(endRanges.filter(...includes...))`, performing O(N^2) searches and allocating intermediate arrays.
+7. `parseChatML` in `chatML.ts` used `.split(starter).filter(...).map(...)`, allocating intermediate filtered arrays, and concatenated separator prefixes on every iteration.
+8. `getChatVar` in `chatVar.svelte.ts` concatenated character and template default variable lists instead of searching the character defaults first.
+
+**Action:**
+
+1. Implement Wagner-Fischer Levenshtein distance using a single 1D row vector of length `min(a.length, b.length) + 1` with short-circuiting for identity and empty strings.
+2. Hoist `TRIMMER_EXTENSIONS` to module constants and terminate extension inspection on the first match.
+3. Add a fast path to `risuChatParser` for plain text containing no tags, remove dead comment/thinking structures, and chunk non-special spans via `slice`.
+4. Replace `trimLines` with regex-based leading whitespace stripping, and check `!p1.includes('\n')` before line splitting in `blockEndMatcher`.
+5. Decode base64 to Blob directly via `Buffer.from` in `base64ToBlob` and parse MIME string with `indexOf`.
+6. Convert `templateCheck` range overlap lookups to `Set.has()` checks in linear time.
+7. Replace chained `.split().filter().map()` in `parseChatML` with a single-pass loop and hoisted separator constants.
+8. Search character default variables prior to parsing preset template variables in `getChatVar`, avoiding array concatenations.

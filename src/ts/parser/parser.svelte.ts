@@ -790,48 +790,65 @@ function getClosestMatch(
   return assetPaths[closest];
 }
 
-//Levenshtein distance, new with 1d array
-export function getDistance(a: string, b: string) {
-  const h = a.length + 1;
-  const w = b.length + 1;
-  let d = new Int16Array(h * w);
-  for (let i = 0; i < h; i++) {
-    d[i * w] = i;
+// Levenshtein distance optimized with single 1D row vector O(min(N, M))
+export function getDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  if (a.length < b.length) {
+    const tmp = a;
+    a = b;
+    b = tmp;
   }
-  for (let i = 0; i < w; i++) {
-    d[i] = i;
+
+  const aLen = a.length;
+  const bLen = b.length;
+  const row = new Int32Array(bLen + 1);
+
+  for (let j = 0; j <= bLen; j++) {
+    row[j] = j;
   }
-  for (let i = 1; i < h; i++) {
-    for (let j = 1; j < w; j++) {
-      d[i * w + j] = Math.min(
-        d[(i - 1) * w + j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1),
-        d[(i - 1) * w + j] + 1,
-        d[i * w + j - 1] + 1,
-      );
+
+  for (let i = 1; i <= aLen; i++) {
+    let prevDiagonal = row[0];
+    row[0] = i;
+    const aChar = a.charCodeAt(i - 1);
+
+    for (let j = 1; j <= bLen; j++) {
+      const temp = row[j];
+      const cost = aChar === b.charCodeAt(j - 1) ? 0 : 1;
+      const minVal = Math.min(prevDiagonal + cost, row[j] + 1, row[j - 1] + 1);
+      row[j] = minVal;
+      prevDiagonal = temp;
     }
   }
-  return d[h * w - 1];
+
+  return row[bLen];
 }
 
+const TRIMMER_EXTENSIONS = [
+  ".webp",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".mp4",
+  ".webm",
+  ".avi",
+  ".m4p",
+  ".m4v",
+  ".mp3",
+  ".wav",
+  ".ogg",
+] as const;
+
 function trimmer(str: string) {
-  const ext = [
-    "webp",
-    "png",
-    "jpg",
-    "jpeg",
-    "gif",
-    "mp4",
-    "webm",
-    "avi",
-    "m4p",
-    "m4v",
-    "mp3",
-    "wav",
-    "ogg",
-  ];
-  for (const e of ext) {
-    if (str.endsWith("." + e)) {
-      str = str.substring(0, str.length - e.length - 1);
+  for (let i = 0; i < TRIMMER_EXTENSIONS.length; i++) {
+    const ext = TRIMMER_EXTENSIONS[i];
+    if (str.endsWith(ext)) {
+      str = str.substring(0, str.length - ext.length);
+      break;
     }
   }
 
@@ -1071,12 +1088,7 @@ const metaCodes = [
 const encodedMetadataCache = new Map<string, string>();
 
 function encodeMetadata(modelShortName: string) {
-  const metadata =
-    "{" +
-    ["risuai", modelShortName.toLocaleLowerCase().replace(/[^a-z]/g, "")].join(
-      "|",
-    ) +
-    "}";
+  const metadata = `{"risuai|${modelShortName.toLocaleLowerCase().replace(/[^a-z]/g, "")}}"`;
 
   const cached = encodedMetadataCache.get(metadata);
   if (cached !== undefined) {
@@ -1144,6 +1156,9 @@ export function addMetadataToElement(data: string, modelShortName: string) {
 }
 
 export async function postTranslationParse(data: string) {
+  if (!data.includes("<")) {
+    return await renderHighlightableMarkdown(data);
+  }
   let lines = data.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
@@ -1769,13 +1784,7 @@ function blockStartMatcher(
 }
 
 function trimLines(p1: string) {
-  return p1
-    .split("\n")
-    .map((v) => {
-      return v.trimStart();
-    })
-    .join("\n")
-    .trim();
+  return p1.replace(/^[^\S\r\n]+/gm, "").trim();
 }
 
 function blockEndMatcher(
@@ -1804,9 +1813,7 @@ function blockEndMatcher(
     }
     case "newif":
     case "newif-falsy": {
-      const lines = p1.split("\n");
-
-      if (lines.length === 1) {
+      if (!p1.includes("\n")) {
         const elseIndex = p1.indexOf("{{:else}}");
         if (elseIndex !== -1) {
           if (type.type === "newif") {
@@ -1824,6 +1831,8 @@ function blockEndMatcher(
           }
         }
       }
+
+      const lines = p1.split("\n");
 
       const elseLine = lines.findIndex((v) => {
         return v.trim() === "{{:else}}";
@@ -1911,6 +1920,10 @@ export function risuChatParser(
     triggerId?: string;
   } = {},
 ): string {
+  if (!da.includes("{") && !da.includes("#") && !da.includes("<")) {
+    return da;
+  }
+
   const chatID = arg.chatID ?? -1;
   const db = arg.db ?? settingsStore.state;
   const aChara = arg.chara;
@@ -1954,10 +1967,6 @@ export function risuChatParser(
       mode?: string;
     }
   > = new Map();
-  let commentMode = false;
-  let commentLatest: string[] = [""];
-  let commentV = new Uint8Array(512);
-  let thinkingMode = false;
   let tempVar: { [key: string]: string } = {};
   let functions: Map<
     string,
@@ -2179,19 +2188,20 @@ export function risuChatParser(
         break;
       }
       default: {
-        nested[0] += da[pointer];
+        let next = pointer + 1;
+        while (next < da.length) {
+          const c = da[next];
+          if (c === "{" || c === "}" || c === "#") {
+            break;
+          }
+          next++;
+        }
+        nested[0] += da.slice(pointer, next);
+        pointer = next - 1;
         break;
       }
     }
     pointer++;
-  }
-  if (commentMode) {
-    nested = commentLatest;
-    stackType = commentV;
-    if (thinkingMode) {
-      nested[0] += `<div>Thinking...</div>`;
-    }
-    commentMode = false;
   }
   if (nested.length === 1) {
     return nested[0];

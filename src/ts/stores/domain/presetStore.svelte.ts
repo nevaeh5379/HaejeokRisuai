@@ -191,12 +191,18 @@ class PresetStore
     state: PresetState,
     policy: PresetApplyPolicy,
   ): SqlSettingUpsert[] {
-    return policy.doNotChangeSeperateModels
-      ? Object.entries(getSeparateModelSettings(state)).map(([key, value]) => ({
-          key,
-          value: safeStructuredClone(value),
-        }))
-      : [];
+    if (!policy.doNotChangeSeperateModels) return [];
+    const separate = getSeparateModelSettings(state);
+    const keys = Object.keys(separate) as (keyof typeof separate)[];
+    const upserts: SqlSettingUpsert[] = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      upserts[i] = {
+        key,
+        value: safeStructuredClone(separate[key]),
+      };
+    }
+    return upserts;
   }
 
   /** Restore SQL's split document/root representation; no transition policy. */
