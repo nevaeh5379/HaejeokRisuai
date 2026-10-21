@@ -71,10 +71,8 @@ const MODULE_ROOT_KEYS = new Set([
   "moduleOrder",
   "moduleSandboxGroups",
 ]);
-const PRESET_ROOT_KEYS = new Set<string>([
-  "activeBotPresetId",
-  ...PRESET_STORE_SETTING_KEYS,
-]);
+const PRESET_ROOT_KEYS = new Set<string>(PRESET_STORE_SETTING_KEYS);
+PRESET_ROOT_KEYS.add("activeBotPresetId");
 const EXCLUDED_SETTINGS_KEYS = new Set<string>(SETTINGS_STORE_EXCLUDED_KEYS);
 
 function pruneInvalidChatTabs(): void {
@@ -126,9 +124,17 @@ async function applyFullResync(storage: NodeSqlStorage): Promise<void> {
 function uniqueStrings(
   ...arrays: readonly (readonly (string | undefined)[])[]
 ): string[] {
+  let totalLength = 0;
+  for (let i = 0; i < arrays.length; i++) {
+    totalLength += arrays[i].length;
+  }
+  if (totalLength === 0) return [];
+
   const set = new Set<string>();
-  for (const arr of arrays) {
-    for (const value of arr) {
+  for (let i = 0; i < arrays.length; i++) {
+    const arr = arrays[i];
+    for (let j = 0; j < arr.length; j++) {
+      const value = arr[j];
       if (value) set.add(value);
     }
   }
@@ -141,13 +147,17 @@ async function loadSettingValues(
 ): Promise<Map<string, unknown>> {
   const values = new Map<string, unknown>();
   for (let offset = 0; offset < keys.length; offset += 4) {
-    const batch = keys.slice(offset, offset + 4);
-    const loaded = await Promise.all(
-      batch.map(
-        async (key) => [key, await storage.loadSettingKey(key)] as const,
-      ),
-    );
-    for (const [key, value] of loaded) values.set(key, value);
+    const end = Math.min(keys.length, offset + 4);
+    const promises: Promise<void>[] = [];
+    for (let i = offset; i < end; i++) {
+      const key = keys[i];
+      promises.push(
+        storage.loadSettingKey(key).then((value) => {
+          values.set(key, value);
+        }),
+      );
+    }
+    await Promise.all(promises);
   }
   return values;
 }
@@ -223,18 +233,19 @@ async function applyDatabaseChange(
     settingsStore.hydrateRemotePluginCustomStorageDelete(key);
   }
   for (let offset = 0; offset < pluginStorageUpsertKeys.length; offset += 4) {
-    const keys = pluginStorageUpsertKeys.slice(offset, offset + 4);
-    const pluginStorageValues = await Promise.all(
-      keys.map(
-        async (key) =>
-          [key, await storage.loadPluginCustomStorageKey(key)] as const,
-      ),
-    );
-    for (const [key, value] of pluginStorageValues) {
-      if (value === undefined)
-        settingsStore.hydrateRemotePluginCustomStorageDelete(key);
-      else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
+    const end = Math.min(pluginStorageUpsertKeys.length, offset + 4);
+    const promises: Promise<void>[] = [];
+    for (let i = offset; i < end; i++) {
+      const key = pluginStorageUpsertKeys[i];
+      promises.push(
+        storage.loadPluginCustomStorageKey(key).then((value) => {
+          if (value === undefined)
+            settingsStore.hydrateRemotePluginCustomStorageDelete(key);
+          else settingsStore.hydrateRemotePluginCustomStorageKey(key, value);
+        }),
+      );
     }
+    await Promise.all(promises);
   }
 
   // Domain refreshes stay sequential so large persona/module/preset documents

@@ -95,10 +95,14 @@ export function createDeferredTokenCalculator<T extends TokenSource>({
   return {
     update(source) {
       if (disposed) return [];
-      const changedKeys = (Object.keys(source) as (keyof T)[]).filter(
-        (key) => !desired || desired[key] !== source[key],
-      );
-      if (changedKeys.length === 0) return [];
+      let changedKeys: (keyof T)[] | null = null;
+      for (const key in source) {
+        if (!desired || desired[key] !== source[key]) {
+          if (!changedKeys) changedKeys = [];
+          changedKeys.push(key as keyof T);
+        }
+      }
+      if (!changedKeys) return [];
 
       desired = { ...source };
       generation += 1;
