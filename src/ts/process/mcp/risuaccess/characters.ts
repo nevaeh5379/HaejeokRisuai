@@ -614,7 +614,8 @@ export class CharacterHandler extends MCPToolHandler {
       backgroundEmbedding: "backgroundHTML",
     } as const;
 
-    for (const [field, value] of Object.entries(data)) {
+    for (const field of Object.keys(data)) {
+      const value = (data as Record<string, unknown>)[field];
       if (fieldRemap[field as keyof typeof fieldRemap]) {
         const realField = fieldRemap[field as keyof typeof fieldRemap];
         // @ts-ignore

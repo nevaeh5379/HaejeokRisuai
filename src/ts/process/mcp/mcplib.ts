@@ -2,6 +2,9 @@ import { v4 } from "uuid";
 import { fetchNative, openURL } from "../../globalApi.svelte";
 import { alertInput } from "../../alert";
 
+const SHARED_TEXT_ENCODER = new TextEncoder();
+const SHARED_TEXT_DECODER = new TextDecoder("utf-8");
+
 export type MCPPrompt = {
   name: string; // Unique identifier for the prompt
   description?: string; // Human-readable description
@@ -159,7 +162,6 @@ export class MCPClient {
 
   async connectSSE(stream: ReadableStream, abortController?: AbortController) {
     const reader = stream.getReader();
-    const decoder = new TextDecoder("utf-8");
     let buffer = "";
     this.sses.push({
       stream: stream,
@@ -170,12 +172,13 @@ export class MCPClient {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer += SHARED_TEXT_DECODER.decode(value, { stream: true });
 
-      let parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
+      let delimiterIndex: number;
+      while ((delimiterIndex = buffer.indexOf("\n\n")) !== -1) {
+        const part = buffer.slice(0, delimiterIndex);
+        buffer = buffer.slice(delimiterIndex + 2);
 
-      for (const part of parts) {
         let lines = part.split("\n");
         let data = "";
         let eventName = "";
@@ -724,7 +727,7 @@ export class MCPClient {
     const code_verifier = (v4() + v4()).replace(/-/g, "");
     const sha256 = await crypto.subtle.digest(
       "SHA-256",
-      new TextEncoder().encode(code_verifier),
+      SHARED_TEXT_ENCODER.encode(code_verifier),
     );
     const code_challenge = Buffer.from(sha256)
       .toString("base64")

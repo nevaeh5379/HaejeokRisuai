@@ -5,6 +5,8 @@ import {
 } from "../coldStorage.ts";
 import type { BackupEntrySource } from "./exportStream.ts";
 
+const SHARED_TEXT_ENCODER = new TextEncoder();
+
 export interface LoadColdStorageExportValueResult {
   exists: boolean;
   value?: unknown;
@@ -54,7 +56,6 @@ export async function streamColdStorageExportEntries(
 ): Promise<void> {
   const { keys, load, writeEntry, onProgress } = options;
   onProgress?.({ stage: "coldStorage", current: 0, total: keys.length });
-  const encoder = new TextEncoder();
 
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index];
@@ -66,7 +67,7 @@ export async function streamColdStorageExportEntries(
         `Cold storage backup payload is not serializable: ${key}`,
       );
     }
-    const data = encoder.encode(serialized);
+    const data = SHARED_TEXT_ENCODER.encode(serialized);
     await writeEntry(coldStorageExportEntryName(key), data, data.byteLength);
     onProgress?.({
       stage: "coldStorage",

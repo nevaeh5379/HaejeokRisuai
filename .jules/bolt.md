@@ -64,3 +64,19 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-22 - Optimize Storage Sync Staging, Database Codecs, and Stream Parsing Allocations
+
+**Learning:**
+1. `serializeAssetPlan` in `storageSyncStaging.ts` executed 5 separate iterations (`every`, `filter`, `filter`, `reduce`, `reduce`) over `session.assets`, generating multiple intermediate arrays per poll/progress event.
+2. `postgresJsonCodec.ts` and `postgresSettingsCodec.ts` evaluated `canUsePostgresText` using `Buffer.from(value, "utf8").toString("utf8") === value`, allocating heap buffers on every string property, while `Object.entries(value)` created thousands of transient 2-element tuples during database serialization.
+3. `nodeS3Storage.ts`, `remoteDatabaseBackupClient.ts`, and `mcplib.ts` re-instantiated `TextDecoder` and `TextEncoder` repeatedly and used `buffer.split("\n")` or `buffer.split("\n\n")` on every streaming network chunk, allocating array wrappers for partial chunks.
+4. `imageGenerationBrowser.ts` allocated `PRESET_STORE_SETTING_KEYS` Set repeatedly and converted settings via `Object.fromEntries(map)` with 2-element tuples, and `toDataURL` base64 extraction used `split(",")[1]` allocating intermediate string arrays.
+5. `createDatabaseSnapshot()` already yields detached snapshot copies, making wrapping `safeStructuredClone(createDatabaseSnapshot())` in export/realm boundaries redundant double deep-cloning.
+
+**Action:**
+1. Combine `serializeAssetPlan` into a single-pass index loop accumulating stats and pre-allocating the output asset array.
+2. Prefer native `isWellFormed()` where available to validate UTF-8 compatibility with zero buffer allocations, and replace `Object.entries` with `Object.keys` direct traversals and copy-on-write mechanisms in JSON codecs.
+3. Reuse module-scoped `TextEncoder` and `TextDecoder` instances, and parse streaming line/event delimiters with index-based `indexOf` slicing instead of full-string splits.
+4. Hoist configuration key sets to module constants, build settings records directly with iterative loops, and extract base64 data payloads using `indexOf(",")` slicing.
+5. Avoid double deep-cloning already detached database snapshot objects.

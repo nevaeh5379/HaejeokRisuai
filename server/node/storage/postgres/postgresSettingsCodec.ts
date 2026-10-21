@@ -1,8 +1,11 @@
 function canUsePostgresText(value?: any): any {
-  return (
-    !value.includes("\0") &&
-    Buffer.from(value, "utf8").toString("utf8") === value
-  );
+  if (typeof value !== "string" || value.includes("\0")) {
+    return false;
+  }
+  if (typeof (value as any).isWellFormed === "function") {
+    return (value as any).isWellFormed();
+  }
+  return Buffer.from(value, "utf8").toString("utf8") === value;
 }
 
 function encodeUtf16(value?: any): any {
@@ -115,8 +118,10 @@ function splitSetting(key?: any, value?: any, options: any = {}): any {
       return;
     }
     if (current && typeof current === "object") {
-      for (const [childKey, childValue] of Object.entries(current)) {
-        visit(childValue, nodeId, childKey, null, depth + 1);
+      const currentKeys = Object.keys(current);
+      for (let i = 0; i < currentKeys.length; i++) {
+        const childKey = currentKeys[i];
+        visit(current[childKey], nodeId, childKey, null, depth + 1);
       }
     }
   };
@@ -153,9 +158,12 @@ function decodeValue(row?: any): any {
 function rebuildSettings(settingRows?: any, valueRows?: any): any {
   const rowsBySetting: any = new Map();
   for (const row of valueRows) {
-    const rows: any = rowsBySetting.get(row.setting_key) || [];
+    let rows = rowsBySetting.get(row.setting_key);
+    if (!rows) {
+      rows = [];
+      rowsBySetting.set(row.setting_key, rows);
+    }
     rows.push(row);
-    rowsBySetting.set(row.setting_key, rows);
   }
 
   const database: any = {};

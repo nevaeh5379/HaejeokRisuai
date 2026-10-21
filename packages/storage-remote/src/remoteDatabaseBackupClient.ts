@@ -7,6 +7,8 @@ import type {
 } from "@risuai/protocol/databaseApi.ts";
 import type { NodeApiClient } from "./nodeApiClient";
 
+const SHARED_TEXT_DECODER = new TextDecoder();
+
 export class RemoteDatabaseBackupClient {
   constructor(
     private readonly apiClient: NodeApiClient,
@@ -118,16 +120,16 @@ export class RemoteDatabaseBackupClient {
     const reader = response.body?.getReader();
     if (!reader) return await response.json();
 
-    const decoder = new TextDecoder();
     let buffer = "";
     let finalResult: NodeBackupFullSyncResult = { success: true };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
+      buffer += SHARED_TEXT_DECODER.decode(value, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);

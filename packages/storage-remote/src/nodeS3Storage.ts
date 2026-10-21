@@ -38,6 +38,8 @@ async function responseError(response: Response, fallback: string) {
   return new Error(body?.error || `${fallback} (${response.status})`);
 }
 
+const SHARED_TEXT_DECODER = new TextDecoder();
+
 export class NodeS3Storage {
   constructor(
     private readonly getAuth: () => Promise<string>,
@@ -139,7 +141,6 @@ export class NodeS3Storage {
       return await response.json();
     }
 
-    const decoder = new TextDecoder();
     let buffer = "";
     let finalResult: NodeS3MigrationResult = {
       total: 0,
@@ -151,11 +152,11 @@ export class NodeS3Storage {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
+      buffer += SHARED_TEXT_DECODER.decode(value, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
@@ -198,7 +199,6 @@ export class NodeS3Storage {
       return await response.json();
     }
 
-    const decoder = new TextDecoder();
     let buffer = "";
     let finalResult: NodeS3RollbackResult = {
       total: 0,
@@ -209,11 +209,11 @@ export class NodeS3Storage {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
+      buffer += SHARED_TEXT_DECODER.decode(value, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
@@ -258,7 +258,6 @@ export class NodeS3Storage {
       return await response.json();
     }
 
-    const decoder = new TextDecoder();
     let buffer = "";
     let finalResult: NodeS3ThumbnailsResult = {
       total: 0,
@@ -270,11 +269,11 @@ export class NodeS3Storage {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
+      buffer += SHARED_TEXT_DECODER.decode(value, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
