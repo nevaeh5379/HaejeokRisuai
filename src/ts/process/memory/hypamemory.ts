@@ -231,9 +231,10 @@ export class HypaProcesser {
       this.vectors.push(item);
     }
 
-    const existingContents = new Set(
-      this.vectors.map((vector) => vector.content),
-    );
+    const existingContents = new Set<string>();
+    for (const vector of this.vectors) {
+      existingContents.add(vector.content);
+    }
     texts = texts.filter((text) => !existingContents.has(text));
     if (texts.length === 0) return;
 
@@ -281,17 +282,20 @@ export class HypaProcesser {
         revision,
       );
       if (status.missingIds.length > 0) {
-        const missing = status.missingIds
-          .map((id) => ({ id, index: Number(id) }))
-          .filter(
-            (entry) =>
-              Number.isSafeInteger(entry.index) &&
-              entry.index >= 0 &&
-              entry.index < texts.length,
-          );
-        const uniqueTexts = [
-          ...new Set(missing.map((entry) => texts[entry.index])),
-        ];
+        const missing: { id: string; index: number }[] = [];
+        const uniqueTextSet = new Set<string>();
+        for (const id of status.missingIds) {
+          const index = Number(id);
+          if (
+            Number.isSafeInteger(index) &&
+            index >= 0 &&
+            index < texts.length
+          ) {
+            missing.push({ id, index });
+            uniqueTextSet.add(texts[index]);
+          }
+        }
+        const uniqueTexts = Array.from(uniqueTextSet);
         const cached = await this.loadCachedVectors(uniqueTexts);
         const embeddingByText = new Map<string, VectorArray>();
         const uncachedTexts: string[] = [];

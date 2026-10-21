@@ -64,3 +64,30 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Chat Generation, Domain Stores, Memory Hotpaths, and Tool Execution
+
+**Learning:** Found redundant intermediate arrays, double-mapping, and regex match allocations across prompt generation, character/message domain store effects, memory vector queries, and MCP tool execution:
+1. `triggers.ts` used `slice().reverse().find()` on chat messages and spread string characters into an array in `v2SetCharString`.
+2. MCP `getChatHistory` in `chats.ts` spread and reversed the entire chat history array `[...targetChat.message].reverse().slice()` on every tool call.
+3. `lorebook.svelte.ts` generated cache keys via `JSON.stringify(keys.map(...).filter(...))` and filtered active lores twice.
+4. `modules.ts` concatenated arrays via `customscripts.concat(module.regex)` and chained `.map().filter()` for MCP URLs.
+5. `characterStore.svelte.ts` and `messageStore.svelte.ts` mapped and filtered chats/messages twice inside reactive `$effect` and manifest commits.
+6. `promptSections.ts` and `promptPipeline.ts` filtered and mapped active lores and memory messages on every prompt section replacement.
+7. `hanuraiMemory.ts` used `.map()` as a forEach and chained `.map().filter().map()` for candidate vectors.
+8. `hypamemory.ts` mapped vector content into intermediate arrays before `new Set()` and chained `.map().filter()` on missing vector descriptors.
+9. `providerExecutor.ts` spread filtered mapped formats into a new Set and array.
+10. `scriptings.ts` sliced and mapped chats in `getRecentChatsMain`.
+11. `google.ts` spread `matchAll` results into an array.
+
+**Action:**
+1. Replace `slice().reverse().find()` with `findLast()`, and replace character array spreads with direct string slicing.
+2. In MCP `getChatHistory`, index backwards directly within the requested slice window without allocating full reversed arrays.
+3. Build lore match cache keys via delimiter templates in a single pass without JSON serialization or transient arrays, and partition active injection lores in one loop.
+4. Use in-place `.push(...module.regex)` and single-pass loops for module triggers and MCP URLs.
+5. Compute manifest keys and ID sets in a single pass across `characterStore` and `messageStore`.
+6. Replace chained `.filter().map().join()` with iterative string accumulation in prompt sections and prompt pipeline.
+7. Eliminate forEach `.map()` and chained mapping in `hanuraiMemory.ts`.
+8. Populate Set directly via `for...of` loops in `hypamemory.ts` and `providerExecutor.ts`.
+9. Replace `slice().map()` in `getRecentChatsMain` with a bounded index loop.
+10. Stream regex matches in `google.ts` with `RegExp.exec()` instead of spreading `matchAll`.

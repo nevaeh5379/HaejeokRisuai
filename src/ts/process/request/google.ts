@@ -88,18 +88,16 @@ export async function requestGoogleCloudVertex(
       const part = chat.parts[j];
       if (part.text && part.text.includes("<tool_call>")) {
         // Analyze the entire text to sequentially process multiple tool_calls
-        const toolCallMatches = [
-          ...part.text.matchAll(/<tool_call>(.*?)<\/tool_call>/g),
-        ];
-        if (toolCallMatches.length > 0) {
+        const toolCallRegex = /<tool_call>(.*?)<\/tool_call>/g;
+        let match = toolCallRegex.exec(part.text);
+        if (match !== null) {
           // Split the text by tool_call and reconstruct in order
           const segments = [];
           let lastIndex = 0;
 
-          for (let k = 0; k < toolCallMatches.length; k++) {
-            const match = toolCallMatches[k];
+          while (match !== null) {
             // Text before tool_call
-            if (match.index! > lastIndex) {
+            if (match.index > lastIndex) {
               segments.push({
                 type: "text",
                 content: part.text.substring(lastIndex, match.index).trim(),
@@ -120,7 +118,8 @@ export async function requestGoogleCloudVertex(
               }
             }
 
-            lastIndex = match.index! + match[0].length;
+            lastIndex = match.index + match[0].length;
+            match = toolCallRegex.exec(part.text);
           }
           // Last text after the last tool_call
           if (lastIndex < part.text.length) {

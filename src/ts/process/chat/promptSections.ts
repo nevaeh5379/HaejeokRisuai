@@ -318,10 +318,15 @@ function createPositionResolver(lorePrompt: LorePrompt) {
       let replaced = false;
       result = result.replace(positionRegex, (_match, position) => {
         replaced = true;
-        return lorePrompt.actives
-          .filter((active) => active.pos === `pt_${position}`)
-          .map((active) => active.prompt)
-          .join("\n");
+        const targetPos = `pt_${position}`;
+        let matched = "";
+        for (const active of lorePrompt.actives) {
+          if (active.pos === targetPos) {
+            if (matched) matched += "\n";
+            matched += active.prompt;
+          }
+        }
+        return matched;
       });
       if (!replaced) break;
     }
@@ -431,15 +436,17 @@ function createPositionParser(
   lorePrompt: LorePrompt,
   resolvePosition: (text: string, maxDepth?: number) => string,
 ) {
-  const injections = lorePrompt.actives.filter(
-    (active) => active.inject && !active.inject.lore,
-  );
-  const byLocation = new Map<string, typeof injections>();
-  for (const injection of injections) {
-    const location = injection.inject.location;
-    const entries = byLocation.get(location) ?? [];
-    entries.push(injection);
-    byLocation.set(location, entries);
+  const byLocation = new Map<string, typeof lorePrompt.actives>();
+  for (const active of lorePrompt.actives) {
+    if (active.inject && !active.inject.lore) {
+      const location = active.inject.location;
+      const entries = byLocation.get(location);
+      if (entries) {
+        entries.push(active);
+      } else {
+        byLocation.set(location, [active]);
+      }
+    }
   }
 
   return (text: string, location: string) => {

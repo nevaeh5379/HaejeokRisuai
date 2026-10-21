@@ -197,10 +197,13 @@ class MessageStore implements FlushableStore {
       chats: [],
       chatManifests: [],
       messages: messageUpserts,
-      messageManifests: nonEmptyChats.map(({ chatId, messages }) => ({
-        chatId,
-        ids: messages.map((message) => message.chatId!).filter(Boolean),
-      })),
+      messageManifests: nonEmptyChats.map(({ chatId, messages }) => {
+        const ids: string[] = [];
+        for (const message of messages) {
+          if (message.chatId) ids.push(message.chatId);
+        }
+        return { chatId, ids };
+      }),
     });
   }
 
@@ -301,12 +304,13 @@ class MessageStore implements FlushableStore {
         chatManifests: [],
         messages: messageUpserts,
         messageManifests: isCompleteSnapshot
-          ? [
-              {
-                chatId,
-                ids: allMessages.map((m) => m.chatId!).filter(Boolean),
-              },
-            ]
+          ? (() => {
+              const ids: string[] = [];
+              for (const m of allMessages) {
+                if (m.chatId) ids.push(m.chatId);
+              }
+              return [{ chatId, ids }];
+            })()
           : [],
         messageDeletes:
           removedIds.length > 0 ? [{ chatId, ids: removedIds }] : [],

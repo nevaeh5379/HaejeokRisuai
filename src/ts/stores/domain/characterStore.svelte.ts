@@ -109,9 +109,10 @@ function mergeLoadedChatVariables(
 function mergeLoadedChats(loaded: Chat[], current: Chat[]): Chat[] {
   if (current.length === 0) return loaded;
 
-  const loadedById = new Map(
-    loaded.filter((chat) => chat.id).map((chat) => [chat.id!, chat]),
-  );
+  const loadedById = new Map<string, Chat>();
+  for (const chat of loaded) {
+    if (chat.id) loadedById.set(chat.id, chat);
+  }
   const currentIds = new Set<string>();
   const merged = current.map((chat) => {
     if (!chat.id) return chat;
@@ -302,9 +303,10 @@ class CharacterStore
     this.arrayDispose?.();
     this.arrayDispose = null;
 
-    const knownCharIds = new Set<string>(
-      this.characters.map((c) => c.chaId).filter(Boolean),
-    );
+    const knownCharIds = new Set<string>();
+    for (const c of this.characters) {
+      if (c.chaId) knownCharIds.add(c.chaId);
+    }
     let previousCharIds = new Set(knownCharIds);
 
     this.arrayDispose = $effect.root(() => {
@@ -366,13 +368,15 @@ class CharacterStore
           CHAT_RUNTIME_KEYS,
         )
       : "";
-    let lastManifestKey = (char.chats ?? [])
-      .map((c) => c?.id)
-      .filter(Boolean)
-      .join(",");
-    const knownChatIds = new Set<string>(
-      (char.chats ?? []).map((c) => c?.id).filter(Boolean) as string[],
-    );
+    const knownChatIds = new Set<string>();
+    const manifestIds: string[] = [];
+    for (const c of char.chats ?? []) {
+      if (c?.id) {
+        knownChatIds.add(c.id);
+        manifestIds.push(c.id);
+      }
+    }
+    let lastManifestKey = manifestIds.join(",");
     let previousChatIds = new Set(knownChatIds);
 
     this.activeDispose = $effect.root(() => {
@@ -437,13 +441,15 @@ class CharacterStore
             added = true;
           }
         }
-        const manifestKey = chats
-          .map((c) => c?.id)
-          .filter(Boolean)
-          .join(",");
-        const currentChatIds = new Set(
-          chats.map((c) => c?.id).filter(Boolean) as string[],
-        );
+        const currentChatIds = new Set<string>();
+        const manifestIds: string[] = [];
+        for (const c of chats) {
+          if (c?.id) {
+            currentChatIds.add(c.id);
+            manifestIds.push(c.id);
+          }
+        }
+        const manifestKey = manifestIds.join(",");
         for (const id of previousChatIds) {
           if (!currentChatIds.has(id)) this.dirtyChatDeletes.add(id);
         }
@@ -620,9 +626,13 @@ class CharacterStore
     for (const chaId of this.dirtyChatManifests) {
       const char = this.characters.find((c) => c?.chaId === chaId);
       if (char?.chats) {
+        const ids: string[] = [];
+        for (const c of char.chats) {
+          if (c?.id) ids.push(c.id);
+        }
         chatManifests.push({
           characterId: chaId,
-          ids: char.chats.map((c) => c?.id).filter(Boolean) as string[],
+          ids,
         });
       }
     }
@@ -1689,7 +1699,10 @@ class CharacterStore
 
       const before = chat.messageOffset;
       const page = await storage.loadChatMessagePage(chatId, before, limit);
-      const known = new Set(chat.message.map((m) => m.chatId).filter(Boolean));
+      const known = new Set<string>();
+      for (const m of chat.message) {
+        if (m.chatId) known.add(m.chatId);
+      }
       const older = page.messages.filter(
         (m) => !m.chatId || !known.has(m.chatId),
       );

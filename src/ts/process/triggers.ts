@@ -2532,11 +2532,18 @@ export async function runTrigger(
             effect.valueType === "value"
               ? parseTriggerText(effect.value, { chara: char })
               : getVar(parseTriggerText(effect.value, { chara: char }));
-          const source2 = [...source];
-          source2[index] = value;
+          let updated = source;
+          if (Number.isInteger(index) && index >= 0) {
+            if (index < source.length) {
+              updated =
+                source.slice(0, index) + value + source.slice(index + 1);
+            } else {
+              updated = source + value;
+            }
+          }
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
-            source2.join(""),
+            updated,
           );
           break;
         }
@@ -2861,10 +2868,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetLastUserMessage": {
-          let lastUserMessage = chat.message
-            .slice()
-            .reverse()
-            .find((v) => v.role === "user");
+          let lastUserMessage = chat.message.findLast((v) => v.role === "user");
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             lastUserMessage?.data ?? "null",
@@ -2872,10 +2876,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetLastCharMessage": {
-          let lastCharMessage = chat.message
-            .slice()
-            .reverse()
-            .find((v) => v.role === "char");
+          let lastCharMessage = chat.message.findLast((v) => v.role === "char");
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             lastCharMessage?.data ?? "null",

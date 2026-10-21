@@ -25,25 +25,28 @@ export async function hanuraiMemory(
   let addTexts: string[] = [];
   const queryStartIndex = chats.length - maxRecentChatQuery;
   console.log(chats.length, maxRecentChatQuery, queryStartIndex);
-  chats.map((chat, index) => {
-    if (queryStartIndex < index) {
-      return;
-    }
+  for (
+    let index = 0;
+    index <= queryStartIndex && index < chats.length;
+    index++
+  ) {
+    const chat = chats[index];
     if (!chat?.content?.trim()) {
-      return;
+      continue;
     }
     if (db.hanuraiSplit) {
       const splited = chat.content.split("\n\n");
       for (const split of splited) {
-        if (!split.trim()) {
+        const trimmed = split.trim();
+        if (!trimmed) {
           continue;
         }
-        addTexts.push(`search_document: ${split.trim()}`);
+        addTexts.push(`search_document: ${trimmed}`);
       }
     } else {
-      addTexts.push(`search_document: ${chat.content?.trim()}`);
+      addTexts.push(`search_document: ${chat.content.trim()}`);
     }
-  });
+  }
   if (!(await processer.prepareServerTextIndex(addTexts))) {
     await processer.addText(addTexts);
   }
@@ -54,16 +57,15 @@ export async function hanuraiMemory(
     if (!chat?.content) {
       continue;
     }
-    const scoredArray = (
-      await processer.similaritySearchScored("search_query: " + chat.content)
-    ).map((result) => {
-      return [result[0], result[1] / i] as [string, number];
-    });
-    for (const scored of scoredArray) {
-      if (scoredResults[scored[0]]) {
-        scoredResults[scored[0]] += scored[1];
+    const searchResults = await processer.similaritySearchScored(
+      "search_query: " + chat.content,
+    );
+    for (const [key, score] of searchResults) {
+      const discounted = score / i;
+      if (scoredResults[key]) {
+        scoredResults[key] += discounted;
       } else {
-        scoredResults[scored[0]] = scored[1];
+        scoredResults[key] = discounted;
       }
     }
   }
@@ -91,15 +93,23 @@ export async function hanuraiMemory(
 
   tokens -= db.hanuraiTokens;
 
-  const existingContents = new Set(chats.map((chat) => chat.content));
-  const candidateTexts = vectorResult
-    .map((vector) => vector[0].substring(16))
-    .filter((content) => !existingContents.has(content));
-  const candidateChats = candidateTexts.map((content) => ({
-    role: "system" as const,
-    memo: "supaMemory",
-    content,
-  }));
+  const existingContents = new Set<string>();
+  for (const chat of chats) {
+    if (chat.content) existingContents.add(chat.content);
+  }
+  const candidateTexts: string[] = [];
+  const candidateChats: OpenAIChat[] = [];
+  for (const [vectorKey] of vectorResult) {
+    const content = vectorKey.substring(16);
+    if (!existingContents.has(content)) {
+      candidateTexts.push(content);
+      candidateChats.push({
+        role: "system" as const,
+        memo: "supaMemory",
+        content,
+      });
+    }
+  }
   const candidateTokenCounts =
     await tokenizer.tokenizeChatsDetailed(candidateChats);
   let resultTexts: string[] = [];
