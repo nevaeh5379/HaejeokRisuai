@@ -1035,11 +1035,11 @@ function normalizeV2Data(raw?: any, chats?: any): any {
     Array.isArray(raw.mainChunks) &&
     raw.mainChunks.every((chunk?: any) => typeof chunk?.targetId === "string")
   ) {
-    const oldMainChunks: any = raw.mainChunks.slice().reverse();
     const oldChunks: any = Array.isArray(raw.chunks) ? raw.chunks : [];
     const data: any = { lastMainChunkID: 0, mainChunks: [], chunks: [] };
     let previousTarget: any = null;
-    for (const old of oldMainChunks) {
+    for (let i = raw.mainChunks.length - 1; i >= 0; i--) {
+      const old = raw.mainChunks[i];
       const end: any = chats.findIndex(
         (chat?: any) => chat.memo === old.targetId,
       );
@@ -1056,10 +1056,11 @@ function normalizeV2Data(raw?: any, chats?: any): any {
         chatMemos: chats.slice(lo, hi + 1).map((chat?: any) => chat.memo),
         lastChatMemo: old.targetId,
       });
-      for (const chunk of oldChunks.filter(
-        (chunk?: any) => chunk.targetId === old.targetId,
-      ))
-        data.chunks.push({ mainChunkID: id, text: chunk.text });
+      for (const chunk of oldChunks) {
+        if (chunk?.targetId === old.targetId) {
+          data.chunks.push({ mainChunkID: id, text: chunk.text });
+        }
+      }
       previousTarget = old.targetId;
     }
     return data;

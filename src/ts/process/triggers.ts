@@ -2861,10 +2861,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetLastUserMessage": {
-          let lastUserMessage = chat.message
-            .slice()
-            .reverse()
-            .find((v) => v.role === "user");
+          let lastUserMessage = chat.message.findLast((v) => v.role === "user");
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             lastUserMessage?.data ?? "null",
@@ -2872,10 +2869,7 @@ export async function runTrigger(
           break;
         }
         case "v2GetLastCharMessage": {
-          let lastCharMessage = chat.message
-            .slice()
-            .reverse()
-            .find((v) => v.role === "char");
+          let lastCharMessage = chat.message.findLast((v) => v.role === "char");
           setVar(
             parseTriggerText(effect.outputVar, { chara: char }),
             lastCharMessage?.data ?? "null",

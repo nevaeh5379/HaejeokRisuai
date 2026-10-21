@@ -318,10 +318,14 @@ function createPositionResolver(lorePrompt: LorePrompt) {
       let replaced = false;
       result = result.replace(positionRegex, (_match, position) => {
         replaced = true;
-        return lorePrompt.actives
-          .filter((active) => active.pos === `pt_${position}`)
-          .map((active) => active.prompt)
-          .join("\n");
+        const targetPos = `pt_${position}`;
+        let matchedPrompt = "";
+        for (const active of lorePrompt.actives) {
+          if (active.pos === targetPos) {
+            matchedPrompt += (matchedPrompt ? "\n" : "") + active.prompt;
+          }
+        }
+        return matchedPrompt;
       });
       if (!replaced) break;
     }

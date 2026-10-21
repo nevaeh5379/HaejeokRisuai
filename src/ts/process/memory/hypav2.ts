@@ -219,22 +219,24 @@ function convertOldToNewHypaV2Data(
     chunks: [],
   };
 
-  const mainChunkTargetIds = new Set<string>();
-  for (const mc of oldMainChunks) {
-    if (mc.targetId) {
-      mainChunkTargetIds.add(mc.targetId);
+  // Map chat memo to index in a single O(N) pass
+  const chatMemoToIndex = new Map<string, number>();
+  for (let c = 0; c < chats.length; c++) {
+    const memo = chats[c].memo;
+    if (memo && !chatMemoToIndex.has(memo)) {
+      chatMemoToIndex.set(memo, c);
     }
   }
 
-  // map chat memo to index, efficiency issues
-  const chatMemoToIndex = new Map<string, number>();
-  for (const tid of mainChunkTargetIds) {
-    const idx = chats.findIndex((c) => c.memo === tid);
-    if (idx !== -1) {
-      chatMemoToIndex.set(tid, idx);
-    } else {
-      chatMemoToIndex.set(tid, -1);
+  // Pre-group chunks by targetId to avoid repeated O(N) filtering per mainChunk
+  const oldChunksByTarget = new Map<string, typeof oldChunks>();
+  for (const oldChunk of oldChunks) {
+    let group = oldChunksByTarget.get(oldChunk.targetId);
+    if (!group) {
+      group = [];
+      oldChunksByTarget.set(oldChunk.targetId, group);
     }
+    group.push(oldChunk);
   }
 
   for (let i = 0; i < oldMainChunks.length; i++) {
@@ -287,14 +289,14 @@ function convertOldToNewHypaV2Data(
     newData.mainChunks.push(newMainChunk);
     newData.lastMainChunkID++;
     // Adding chunks accordingly, matching MainChunkID by leveraging same targetId
-    const matchingOldChunks = oldChunks.filter(
-      (oldChunk) => oldChunk.targetId === targetId,
-    );
-    for (const oldChunk of matchingOldChunks) {
-      newData.chunks.push({
-        mainChunkID: newMainChunk.id,
-        text: oldChunk.text,
-      });
+    const matchingOldChunks = oldChunksByTarget.get(targetId);
+    if (matchingOldChunks) {
+      for (const oldChunk of matchingOldChunks) {
+        newData.chunks.push({
+          mainChunkID: newMainChunk.id,
+          text: oldChunk.text,
+        });
+      }
     }
   }
 
@@ -302,7 +304,10 @@ function convertOldToNewHypaV2Data(
 }
 
 function cleanInvalidChunks(chats: OpenAIChat[], data: HypaV2Data): void {
-  const currentChatMemos = new Set(chats.map((chat) => chat.memo));
+  const currentChatMemos = new Set<string>();
+  for (const chat of chats) {
+    if (chat.memo) currentChatMemos.add(chat.memo);
+  }
 
   // mainChunks filtering
   data.mainChunks = data.mainChunks.filter((mainChunk) => {
@@ -310,9 +315,10 @@ function cleanInvalidChunks(chats: OpenAIChat[], data: HypaV2Data): void {
   });
 
   // chunk filtering based on mainChunk's id
-  const validMainChunkIds = new Set(
-    data.mainChunks.map((mainChunk) => mainChunk.id),
-  );
+  const validMainChunkIds = new Set<number>();
+  for (const mainChunk of data.mainChunks) {
+    validMainChunkIds.add(mainChunk.id);
+  }
   data.chunks = data.chunks.filter((chunk) =>
     validMainChunkIds.has(chunk.mainChunkID),
   );

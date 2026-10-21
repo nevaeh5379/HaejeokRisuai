@@ -503,6 +503,13 @@ async function hypaMemoryV3MainExp(
   );
 
   const selectedSummaries: Summary[] = [];
+  const selectedSummariesSet = new Set<Summary>();
+  const appendSelectedSummaries = (items: Summary[]) => {
+    for (const item of items) {
+      selectedSummaries.push(item);
+      selectedSummariesSet.add(item);
+    }
+  };
   const randomMemoryRatio =
     1 - settings.recentMemoryRatio - settings.similarMemoryRatio;
   const selectedImportantSummaries: Summary[] = [];
@@ -523,7 +530,7 @@ async function hypaMemoryV3MainExp(
       }
     }
 
-    selectedSummaries.push(...selectedImportantSummaries);
+    appendSelectedSummaries(selectedImportantSummaries);
 
     console.log(
       logPrefix,
@@ -547,7 +554,7 @@ async function hypaMemoryV3MainExp(
   if (settings.recentMemoryRatio > 0) {
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Add one by one from the end
@@ -566,7 +573,7 @@ async function hypaMemoryV3MainExp(
       consumedRecentMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRecentSummaries);
+    appendSelectedSummaries(selectedRecentSummaries);
 
     console.log(
       logPrefix,
@@ -606,7 +613,7 @@ async function hypaMemoryV3MainExp(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Dynamically generate embedding texts
@@ -770,7 +777,7 @@ async function hypaMemoryV3MainExp(
           consumedSimilarMemoryTokens += summaryTokens;
         }
 
-        selectedSummaries.push(...selectedSimilarSummaries);
+        appendSelectedSummaries(selectedSimilarSummaries);
       } catch (error) {
         return {
           currentTokens,
@@ -830,7 +837,7 @@ async function hypaMemoryV3MainExp(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries
-      .filter((e) => !selectedSummaries.includes(e))
+      .filter((e) => !selectedSummariesSet.has(e))
       .sort(() => Math.random() - 0.5); // Random shuffle
 
     for (const summary of unusedSummaries) {
@@ -848,7 +855,7 @@ async function hypaMemoryV3MainExp(
       consumedRandomMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRandomSummaries);
+    appendSelectedSummaries(selectedRandomSummaries);
 
     console.log(
       logPrefix,
@@ -1225,6 +1232,13 @@ async function hypaMemoryV3Main(
   );
 
   const selectedSummaries: Summary[] = [];
+  const selectedSummariesSet = new Set<Summary>();
+  const appendSelectedSummaries = (items: Summary[]) => {
+    for (const item of items) {
+      selectedSummaries.push(item);
+      selectedSummariesSet.add(item);
+    }
+  };
   const randomMemoryRatio =
     1 - settings.recentMemoryRatio - settings.similarMemoryRatio;
   const selectedImportantSummaries: Summary[] = [];
@@ -1245,7 +1259,7 @@ async function hypaMemoryV3Main(
       }
     }
 
-    selectedSummaries.push(...selectedImportantSummaries);
+    appendSelectedSummaries(selectedImportantSummaries);
 
     console.log(
       logPrefix,
@@ -1269,7 +1283,7 @@ async function hypaMemoryV3Main(
   if (settings.recentMemoryRatio > 0) {
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Add one by one from the end
@@ -1288,7 +1302,7 @@ async function hypaMemoryV3Main(
       consumedRecentMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRecentSummaries);
+    appendSelectedSummaries(selectedRecentSummaries);
 
     console.log(
       logPrefix,
@@ -1328,7 +1342,7 @@ async function hypaMemoryV3Main(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries.filter(
-      (e) => !selectedSummaries.includes(e),
+      (e) => !selectedSummariesSet.has(e),
     );
 
     // Dynamically generate summary chunks
@@ -1446,7 +1460,7 @@ async function hypaMemoryV3Main(
           consumedSimilarMemoryTokens += summaryTokens;
         }
 
-        selectedSummaries.push(...selectedSimilarSummaries);
+        appendSelectedSummaries(selectedSimilarSummaries);
       } catch (error) {
         return {
           currentTokens,
@@ -1499,7 +1513,7 @@ async function hypaMemoryV3Main(
 
     // Target only summaries that haven't been selected yet
     const unusedSummaries = data.summaries
-      .filter((e) => !selectedSummaries.includes(e))
+      .filter((e) => !selectedSummariesSet.has(e))
       .sort(() => Math.random() - 0.5); // Random shuffle
 
     for (const summary of unusedSummaries) {
@@ -1517,7 +1531,7 @@ async function hypaMemoryV3Main(
       consumedRandomMemoryTokens += summaryTokens;
     }
 
-    selectedSummaries.push(...selectedRandomSummaries);
+    appendSelectedSummaries(selectedRandomSummaries);
 
     console.log(
       logPrefix,
@@ -1670,7 +1684,10 @@ function sumTokenCounts(counts: number[], uptoInclusive: number): number {
 
 function cleanOrphanedSummary(chats: OpenAIChat[], data: HypaV3Data): void {
   // Collect all memos from current chats
-  const currentChatMemos = new Set(chats.map((chat) => chat.memo));
+  const currentChatMemos = new Set<string>();
+  for (const chat of chats) {
+    if (chat.memo) currentChatMemos.add(chat.memo);
+  }
   const originalLength = data.summaries.length;
 
   // Filter summaries - keep only those whose chatMemos are subset of current chat memos

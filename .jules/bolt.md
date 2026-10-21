@@ -64,3 +64,29 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-11-28 - Optimize Hot Pipeline Iterations, Micro-Allocations, and Memory Searches
+
+**Learning:** Found transient array allocations, stack-overflow risks, and quadratic traversals across prompt preparation, memory engines, and data layers:
+1. `chat.message.slice().reverse().find(...)` and `originalIds.slice(0, deletedIndex).reverse().find(...)` allocated and reversed full message/ID arrays where native `findLast` or reverse indexing avoids allocations entirely.
+2. `chats.ts` sliced newest chat messages by cloning and reversing the entire chat history array `[...targetChat.message].reverse().slice(offset, count)`.
+3. `loreMatchCacheKey` evaluated `JSON.stringify` and intermediate mapped/filtered arrays on every match check in tight loops, while `prepared.map` and `allMatches.map` were spread across `Math.max`.
+4. `hypav3.ts` searched `data.summaries` using `!selectedSummaries.includes(e)` in 6 distinct filtering stages, resulting in repeated O(N * M) quadratic array scans.
+5. `supaMemory.ts` executed quadratic `indexOf` deduplication and ran repeated regex punctuation replacements on `supaMemory` inside the per-chunk filter callback.
+6. `hypamemoryv2.ts` executed quadratic `toEmbed.some()` in `ebdTexts.filter()`, and allocated null-tuple wrapper rows during vector search result formatting.
+7. `tts.ts` built base64 audio via `audio.reduce((data, byte) => data + String.fromCharCode(byte), "")`, causing O(N^2) string allocations that freeze low-memory devices on audio processing.
+8. `base64url` and `filesystemclient.ts` used `String.fromCharCode(...uint8Array)` or `String.fromCharCode.apply`, risking call-stack limits.
+9. `characterStore` and `messageStore` used chained `flatMap`/`map`/`filter` operations and `[...needed].some()`.
+10. `modules.ts` chained array `.concat(...)` and `.flatMap(...)` across character module, asset, trigger, script, and MCP collections.
+11. `responses.ts` and `anthropic.ts` allocated intermediate `split().filter().map()` arrays in high-frequency SSE and batch JSONL parsers.
+
+**Action:**
+1. Replace `slice().reverse().find()` and `[...arr].reverse()` with `findLast()` or backward iteration loops without array cloning.
+2. Replace MCP chat history reversal with direct backward window indexing.
+3. Pre-serialize lorebook cache keys with delimiter-joined strings without `JSON.stringify`, and compute max depth/score via linear scans.
+4. Maintain a companion `Set<Summary>` alongside `selectedSummaries` in HypaMemory V3 for constant-time O(1) membership checks.
+5. Use a `Set` for deduplication and precompute stripped punctuation once outside the loop in SupaMemory.
+6. Use Set-based IDs for O(1) embedding lookups and pre-allocated result rows in HypaMemory V2.
+7. Use `Buffer.from(data).toString("base64")` / `toString("base64url")` with chunked fallback to eliminate O(N^2) string accumulation and prevent call-stack overflows.
+8. Replace chained `map().filter()` and array spreads in domain stores and modules with single-pass accumulation loops and in-place pushes.
+9. Parse SSE streaming data lines and batch JSONL directly in single-pass line loops without intermediate array allocations.

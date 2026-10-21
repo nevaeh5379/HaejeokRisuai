@@ -118,7 +118,12 @@ export class TaskRateLimiter {
     );
 
     if (this.timestamps.length >= this.options.tasksPerMinute) {
-      const oldestTimestamp = Math.min(...this.timestamps);
+      let oldestTimestamp = this.timestamps[0] ?? Date.now();
+      for (let i = 1; i < this.timestamps.length; i++) {
+        if (this.timestamps[i] < oldestTimestamp) {
+          oldestTimestamp = this.timestamps[i];
+        }
+      }
       const timeUntilExpiry = Math.max(
         100,
         60 * 1000 - (Date.now() - oldestTimestamp),

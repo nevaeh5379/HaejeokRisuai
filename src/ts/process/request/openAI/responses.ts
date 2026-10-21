@@ -954,14 +954,18 @@ function getResponsesTranStream(
 
     let emitted = false;
     for (const rawEvent of events) {
-      const dataLines = rawEvent
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.replace(/^data:\s?/, ""));
-      if (dataLines.length === 0) {
+      let data = "";
+      for (const line of rawEvent.split(/\r?\n/)) {
+        if (line.startsWith("data:")) {
+          const content = line.startsWith("data: ")
+            ? line.slice(6)
+            : line.slice(5);
+          data += (data ? "\n" : "") + content;
+        }
+      }
+      if (!data) {
         continue;
       }
-      const data = dataLines.join("\n");
       if (data === "[DONE]") {
         emit(controller);
         emitted = true;

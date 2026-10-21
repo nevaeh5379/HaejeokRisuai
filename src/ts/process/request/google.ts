@@ -738,7 +738,7 @@ async function requestGoogle(
     }
   } else {
     const p = await processDataItem(resData);
-    parts = parts.concat(p);
+    parts.push(...p);
   }
   parts = parts.filter((p) => p);
 
@@ -771,9 +771,7 @@ async function requestGoogle(
     }
     // If the last part is a model response, merge it with the previous model response
     if (chat[chat.length - 2]?.role === "model") {
-      chat[chat.length - 2].parts = chat[chat.length - 2].parts.concat(
-        chat[chat.length - 1].parts,
-      );
+      chat[chat.length - 2].parts.push(...chat[chat.length - 1].parts);
       chat.pop();
     }
 
@@ -1119,9 +1117,7 @@ function wrapToolStream(
             }
             // If the last part is a model response, merge it with the previous model response
             if (chat[chat.length - 2]?.role === "model") {
-              chat[chat.length - 2].parts = chat[chat.length - 2].parts.concat(
-                chat[chat.length - 1].parts,
-              );
+              chat[chat.length - 2].parts.push(...chat[chat.length - 1].parts);
               chat.pop();
             }
             const parts: GeminiPart[] = [];

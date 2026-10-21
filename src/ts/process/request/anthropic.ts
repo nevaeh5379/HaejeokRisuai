@@ -619,19 +619,16 @@ export async function requestClaude(
 
             //since jsonl
             const batchResultRawText = await batchRes.text();
-            const batchTextData = batchResultRawText
-              .split("\n")
-              .filter((v) => v.trim() !== "")
-              .map((v) => {
-                try {
-                  return JSON.parse(v);
-                } catch (error) {
-                  return null;
-                }
-              })
-              .filter((v) => v !== null);
-
-            for (const batchData of batchTextData) {
+            for (const line of batchResultRawText.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              let batchData: any;
+              try {
+                batchData = JSON.parse(trimmed);
+              } catch {
+                continue;
+              }
+              if (!batchData) continue;
               const type = batchData?.result?.type;
               console.log("Claude batch result type:", type);
               if (batchData?.result?.type === "succeeded") {

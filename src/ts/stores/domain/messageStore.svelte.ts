@@ -197,10 +197,13 @@ class MessageStore implements FlushableStore {
       chats: [],
       chatManifests: [],
       messages: messageUpserts,
-      messageManifests: nonEmptyChats.map(({ chatId, messages }) => ({
-        chatId,
-        ids: messages.map((message) => message.chatId!).filter(Boolean),
-      })),
+      messageManifests: nonEmptyChats.map(({ chatId, messages }) => {
+        const ids: string[] = [];
+        for (const message of messages) {
+          if (message.chatId) ids.push(message.chatId);
+        }
+        return { chatId, ids };
+      }),
     });
   }
 
@@ -304,7 +307,13 @@ class MessageStore implements FlushableStore {
           ? [
               {
                 chatId,
-                ids: allMessages.map((m) => m.chatId!).filter(Boolean),
+                ids: (() => {
+                  const ids: string[] = [];
+                  for (const m of allMessages) {
+                    if (m.chatId) ids.push(m.chatId);
+                  }
+                  return ids;
+                })(),
               },
             ]
           : [],
@@ -334,10 +343,16 @@ class MessageStore implements FlushableStore {
       chat.messagesFullyLoaded = true;
     }
 
-    const nextIds = new Set(nextMessages.map((message) => message.chatId!));
-    const removedIds = previous
-      .map((message) => message.chatId)
-      .filter((id): id is string => !!id && !nextIds.has(id));
+    const nextIds = new Set<string>();
+    for (const message of nextMessages) {
+      if (message.chatId) nextIds.add(message.chatId);
+    }
+    const removedIds: string[] = [];
+    for (const message of previous) {
+      if (message.chatId && !nextIds.has(message.chatId)) {
+        removedIds.push(message.chatId);
+      }
+    }
     const messageUpserts = nextMessages.map((message, position) => ({
       id: message.chatId!,
       chatId,

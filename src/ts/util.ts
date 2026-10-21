@@ -480,11 +480,14 @@ export function toState<T>(t: T): Writable<T> {
   return writable(t);
 }
 
+const sharedUtf8Decoder =
+  typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
+
 export function BufferToText(data: Uint8Array) {
-  if (!TextDecoder) {
-    return Buffer.from(data).toString("utf-8");
+  if (sharedUtf8Decoder) {
+    return sharedUtf8Decoder.decode(data);
   }
-  return new TextDecoder().decode(data);
+  return Buffer.from(data).toString("utf-8");
 }
 
 export function encodeMultilangString(data: { [code: string]: string }) {
@@ -1354,9 +1357,18 @@ export {
 
 export function base64url(source: Uint8Array | ArrayBuffer): string {
   const bytes = source instanceof ArrayBuffer ? new Uint8Array(source) : source;
-  let encodedSource = btoa(String.fromCharCode.apply(null, [...bytes]))
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64url");
+  }
+  let binary = "";
+  const len = bytes.length;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary)
     .replace(/=+$/, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
-  return encodedSource;
 }
