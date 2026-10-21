@@ -4,16 +4,14 @@ export interface MistralMessage {
   role: string;
   content: unknown;
 }
-("use strict");
 
 const DEFAULT_MISTRAL_API_URL: string =
   "https://api.mistral.ai/v1/chat/completions";
 
 function formatMistralMessages<T extends MistralMessage>(
   messages: readonly T[],
-): Array<{ role: string; content: any }>;
-function formatMistralMessages(messages?: any): any {
-  const result: any = [];
+): Array<{ role: string; content: unknown }> {
+  const result: Array<{ role: string; content: unknown }> = [];
   for (const chat of messages) {
     if (result.length === 0) {
       if (chat.role === "user" || chat.role === "system") {
@@ -27,15 +25,15 @@ function formatMistralMessages(messages?: any): any {
       continue;
     }
 
-    const previous: any = result[result.length - 1];
+    const previous = result[result.length - 1];
     if (previous?.role === chat.role) {
-      previous.content += `\n${chat.content}`;
+      previous.content = `${previous.content}\n${chat.content}`;
       continue;
     }
 
     if (chat.role === "system") {
       if (previous?.role === "user") {
-        previous.content += `\nSystem:${chat.content}`;
+        previous.content = `${previous.content}\nSystem:${chat.content}`;
       } else {
         result.push({ role: "user", content: `System:${chat.content}` });
       }
@@ -54,13 +52,8 @@ function formatMistralMessages(messages?: any): any {
 function decodeMistralResponse(
   ok: boolean,
   data: any,
-  httpErrorPrefix?: string,
-): ChatSuccessResponse | ChatFailureResponse;
-function decodeMistralResponse(
-  ok?: any,
-  data?: any,
-  httpErrorPrefix: any = "",
-): any {
+  httpErrorPrefix = "",
+): ChatSuccessResponse | ChatFailureResponse {
   if (ok) {
     try {
       return {
@@ -75,7 +68,7 @@ function decodeMistralResponse(
     }
   }
 
-  const errorMessage: any = data?.error?.message;
+  const errorMessage: string | undefined = data?.error?.message;
   return {
     type: "fail",
     result: `${httpErrorPrefix}${errorMessage ?? JSON.stringify(data)}`,

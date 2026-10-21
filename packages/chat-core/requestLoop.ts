@@ -1,4 +1,9 @@
 import type { ChatModelResponse } from "./types.ts";
+import {
+  containsBannedCharacterSet,
+  decideFailedRequestRetry,
+  shouldFallbackOnBlankResponse,
+} from "./requestPolicy.ts";
 
 export interface ChatRequestFallbackOptions {
   fallbackModels: readonly string[];
@@ -25,29 +30,20 @@ export interface ChatRequestFallbackRuntime {
   isAborted?(): boolean;
   sleep?(delayMs: number): Promise<void>;
 }
-("use strict");
-
-import {
-  containsBannedCharacterSet,
-  decideFailedRequestRetry,
-  shouldFallbackOnBlankResponse,
-} from "./requestPolicy.ts";
 
 function hasUsableFallbackAfter(
-  fallbackModels?: any,
-  fallbackIndex?: any,
-): any {
-  for (
-    let index: any = fallbackIndex + 1;
-    index < fallbackModels.length;
-    index++
-  ) {
+  fallbackModels: readonly string[],
+  fallbackIndex: number,
+): boolean {
+  for (let index = fallbackIndex + 1; index < fallbackModels.length; index++) {
     if (fallbackModels[index]) return true;
   }
   return false;
 }
 
-function rejectedBannedResponse(response?: any): any {
+function rejectedBannedResponse(
+  response: ChatModelResponse,
+): ChatModelResponse {
   return {
     type: "fail",
     result:
@@ -57,28 +53,24 @@ function rejectedBannedResponse(response?: any): any {
   };
 }
 
-function executeChatRequestFallbacks(
+async function executeChatRequestFallbacks(
   options: ChatRequestFallbackOptions,
   runtime: ChatRequestFallbackRuntime,
-): Promise<ChatModelResponse>;
-async function executeChatRequestFallbacks(
-  options?: any,
-  runtime?: any,
-): Promise<any> {
-  const fallbackModels: any = Array.isArray(options.fallbackModels)
+): Promise<ChatModelResponse> {
+  const fallbackModels = Array.isArray(options.fallbackModels)
     ? options.fallbackModels
     : [];
-  let lastResponse: any;
+  let lastResponse: ChatModelResponse | undefined;
 
   for (
-    let fallbackIndex: any = 0;
+    let fallbackIndex = 0;
     fallbackIndex < fallbackModels.length;
     fallbackIndex++
   ) {
-    const fallbackModel: any = fallbackModels[fallbackIndex];
+    const fallbackModel = fallbackModels[fallbackIndex];
     if (fallbackIndex !== 0 && !fallbackModel) continue;
 
-    let retryCount: any = 0;
+    let retryCount = 0;
     await runtime.beginFallback?.({
       fallbackIndex,
       fallbackCount: fallbackModels.length,
@@ -90,13 +82,13 @@ async function executeChatRequestFallbacks(
         return { type: "fail", result: "Aborted" };
       }
 
-      const context: any = {
+      const context: ChatRequestAttemptContext = {
         fallbackIndex,
         fallbackCount: fallbackModels.length,
         fallbackModel,
         retryCount,
       };
-      const response: any = await runtime.executeAttempt(context);
+      const response = await runtime.executeAttempt(context);
       lastResponse = response;
 
       if (runtime.isAborted?.()) {
@@ -125,11 +117,11 @@ async function executeChatRequestFallbacks(
       }
 
       if (response.type !== "fail" || response.noRetry) {
-        const usedModel: any = fallbackModel || response.model;
+        const usedModel = fallbackModel || response.model;
         return usedModel ? { ...response, model: usedModel } : response;
       }
 
-      const retryDecision: any = decideFailedRequestRetry({
+      const retryDecision = decideFailedRequestRetry({
         response,
         retryCount,
         requestRetries: options.requestRetries,
@@ -149,8 +141,8 @@ async function executeChatRequestFallbacks(
   return lastResponse ?? { type: "fail", result: "All models failed" };
 }
 
-function defaultSleep(delayMs?: any): any {
-  return new Promise((resolve?: any) => setTimeout(resolve, delayMs));
+function defaultSleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 export { executeChatRequestFallbacks };

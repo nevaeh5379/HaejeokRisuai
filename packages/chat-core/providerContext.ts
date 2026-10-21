@@ -60,18 +60,16 @@ export interface PreparedProviderExecutionContext<
   key?: string;
   pluginBlocked: boolean;
 }
-("use strict");
 
 function resolveRequestModel(
   request: ProviderRequestContextInput,
   settings: ProviderExecutionSettings,
-): string;
-function resolveRequestModel(request?: any, settings?: any): any {
-  let aiModel: any =
+): string {
+  let aiModel =
     request.staticModel ||
     (request.mode === "model" ? settings.primaryModel : settings.subModel);
   if (settings.separateModelsForAxModels && !request.staticModel) {
-    const separateModel: any = settings.separateModels?.[request.mode];
+    const separateModel = settings.separateModels?.[request.mode];
     if (separateModel) aiModel = separateModel;
   }
   return aiModel;
@@ -83,16 +81,11 @@ function prepareProviderExecutionContext<
   request: ProviderRequestContextInput,
   settings: ProviderExecutionSettings,
   resolveModelInfo: (id: string) => TModel,
-): PreparedProviderExecutionContext<TModel>;
-function prepareProviderExecutionContext(
-  request?: any,
-  settings?: any,
-  resolveModelInfo?: any,
-): any {
-  const aiModel: any = resolveRequestModel(request, settings);
-  const modelInfo: any = { ...resolveModelInfo(aiModel) };
-  let customURL: any;
-  let key: any;
+): PreparedProviderExecutionContext<TModel> {
+  const aiModel = resolveRequestModel(request, settings);
+  const modelInfo: TModel = { ...resolveModelInfo(aiModel) };
+  let customURL: string | undefined;
+  let key: string | undefined;
 
   if (aiModel === "reverse_proxy") {
     modelInfo.internalID = settings.reverseProxy?.requestModel || "";
@@ -100,8 +93,8 @@ function prepareProviderExecutionContext(
     customURL = settings.reverseProxy?.url;
     key = settings.reverseProxy?.key;
   } else if (aiModel.startsWith("xcustom:::")) {
-    const customModel: any = settings.customModels?.find(
-      (item?: any) => item.id === aiModel,
+    const customModel = settings.customModels?.find(
+      (item) => item.id === aiModel,
     );
     customURL = customModel?.url;
     key = customModel?.key;

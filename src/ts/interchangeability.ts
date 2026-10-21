@@ -12,13 +12,12 @@ export function convertModuleToCharacter(m: RisuModule): character {
 
   char.name = m.name;
   char.creatorNotes = m.description;
-  char.globalLore = safeStructuredClone(m.lorebook || []);
-  char.customscript = m.regex || [];
-  char.triggerscript = m.trigger || [];
+  char.customscript = m.regex ? [...m.regex] : [];
+  char.triggerscript = m.trigger ? [...m.trigger] : [];
   char.lowLevelAccess = m.lowLevelAccess || false;
   char.hideChatIcon = m.hideIcon || false;
   char.backgroundHTML = m.backgroundEmbedding || "";
-  char.additionalAssets = m.assets || [];
+  char.additionalAssets = m.assets ? [...m.assets] : [];
   char.moduleNamespace = m.namespace;
   char.customModuleToggle = m.customModuleToggle || "";
   char.image = m.icon || "";
@@ -28,60 +27,65 @@ export function convertModuleToCharacter(m: RisuModule): character {
   }
   if (m.subModelRequestRules?.length) {
     char.extentions ??= {};
-    char.extentions["moduleSubModelRequestRules"] = safeStructuredClone(
-      m.subModelRequestRules,
-    );
+    char.extentions["moduleSubModelRequestRules"] = [...m.subModelRequestRules];
   }
 
-  for (let i = 0; i < char.globalLore.length; i++) {
-    const lore = safeStructuredClone(char.globalLore[i]);
+  const rawLores = m.lorebook || [];
+  const retainedLore: typeof char.globalLore = [];
+  const altFmRegex = /<FM_alt>([\s\S]*?)<\/FM_alt>/g;
+
+  for (let i = 0; i < rawLores.length; i++) {
+    const lore = rawLores[i];
+    const content = lore.content || "";
     if (
-      lore.content.startsWith("@@indicator replace_global_note") ||
-      lore.content.startsWith("@@indicator phi")
+      content.startsWith("@@indicator replace_global_note") ||
+      content.startsWith("@@indicator phi")
     ) {
       // Backward compat: pre-rename modules stored global notes under the '@@indicator phi' marker
-      char.replaceGlobalNote = lore.content
+      char.replaceGlobalNote = content
         .replace(/^@@indicator\s+(?:replace_global_note|phi)/, "")
         .trim();
-      char.globalLore.splice(i, 1);
-      i--;
+      continue;
     }
-    if (lore.content.startsWith("@@indicator character_desc")) {
-      char.desc = lore.content.replace("@@indicator character_desc", "").trim();
-      char.globalLore.splice(i, 1);
-      i--;
+    if (content.startsWith("@@indicator character_desc")) {
+      char.desc = content.replace("@@indicator character_desc", "").trim();
+      continue;
     }
-    if (lore.content.startsWith("@@indicator character_first_message")) {
-      const firstMsgContent = lore.content
+    if (content.startsWith("@@indicator character_first_message")) {
+      const firstMsgContent = content
         .replace("@@indicator character_first_message", "")
         .trim();
       const fmMatch = firstMsgContent.match(/<FM>([\s\S]*?)<\/FM>/);
       if (fmMatch) {
         char.firstMessage = fmMatch[1].trim();
       }
-      const altFmMatches = [
-        ...firstMsgContent.matchAll(/<FM_alt>([\s\S]*?)<\/FM_alt>/g),
-      ];
-      char.alternateGreetings = altFmMatches.map((m) => m[1].trim());
-      char.globalLore.splice(i, 1);
-      i--;
+      altFmRegex.lastIndex = 0;
+      let altMatch: RegExpExecArray | null;
+      const alternateGreetings: string[] = [];
+      while ((altMatch = altFmRegex.exec(firstMsgContent)) !== null) {
+        alternateGreetings.push(altMatch[1].trim());
+      }
+      char.alternateGreetings = alternateGreetings;
+      continue;
     }
+    retainedLore.push(lore);
   }
+  char.globalLore = retainedLore;
 
-  return safeStructuredClone(char);
+  return char;
 }
 
 export function convertCharacterToModule(c: character): RisuModule {
   const mod: RisuModule = {
     name: c.name,
     description: c.creatorNotes,
-    lorebook: c.globalLore,
-    regex: c.customscript,
-    trigger: c.triggerscript,
+    lorebook: c.globalLore ? [...c.globalLore] : [],
+    regex: c.customscript ? [...c.customscript] : [],
+    trigger: c.triggerscript ? [...c.triggerscript] : [],
     lowLevelAccess: c.lowLevelAccess,
     hideIcon: c.hideChatIcon,
     backgroundEmbedding: c.backgroundHTML,
-    assets: c.additionalAssets,
+    assets: c.additionalAssets ? [...c.additionalAssets] : [],
     namespace: c.moduleNamespace,
     customModuleToggle: c.customModuleToggle,
     id: v4(),
@@ -90,12 +94,11 @@ export function convertCharacterToModule(c: character): RisuModule {
     subModelRequestRules: Array.isArray(
       c.extentions?.["moduleSubModelRequestRules"],
     )
-      ? (safeStructuredClone(
-          c.extentions["moduleSubModelRequestRules"],
-        ) as RisuModule["subModelRequestRules"])
+      ? ([
+          ...c.extentions["moduleSubModelRequestRules"],
+        ] as RisuModule["subModelRequestRules"])
       : undefined,
   };
-  mod.lorebook = safeStructuredClone(mod.lorebook || []);
 
   if (c.desc) {
     mod.lorebook.push({
@@ -145,7 +148,7 @@ export function convertCharacterToModule(c: character): RisuModule {
     });
   }
 
-  return safeStructuredClone(mod);
+  return mod;
 }
 
 export function convertPersonaToCharacter(p: RisuPersona): character {
@@ -159,7 +162,7 @@ export function convertPersonaToCharacter(p: RisuPersona): character {
   char.largePortrait = p.largePortrait || false;
   char.creatorNotes = p.note || "";
   char.desc = p.personaPrompt;
-  return safeStructuredClone(char);
+  return char;
 }
 
 export function convertCharacterToPersona(c: character): RisuPersona {
@@ -170,19 +173,17 @@ export function convertCharacterToPersona(c: character): RisuPersona {
     note: c.creatorNotes,
     embeddedModule: convertCharacterToModule(c),
   };
-  return safeStructuredClone(p);
+  return p;
 }
 
 export function convertPersonaToModule(p: RisuPersona): RisuModule {
-  let baseModule: RisuModule = {
-    name: "",
-    description: "",
-    id: v4(),
-  };
-
-  if (p.embeddedModule) {
-    baseModule = safeStructuredClone(p.embeddedModule);
-  }
+  const baseModule: RisuModule = p.embeddedModule
+    ? { ...p.embeddedModule, id: v4() }
+    : {
+        name: "",
+        description: "",
+        id: v4(),
+      };
 
   baseModule.name = p.name;
   baseModule.description = p.note || "";
@@ -203,25 +204,26 @@ export function convertPersonaToModule(p: RisuPersona): RisuModule {
 }
 
 export function convertModuleToPersona(m: RisuModule): RisuPersona {
-  let basePersona: RisuPersona = {
-    name: "",
+  let personaPrompt = "";
+  const remainingLores = [];
+  for (const lore of m.lorebook || []) {
+    if (lore.content?.startsWith("@@indicator persona")) {
+      personaPrompt = lore.content.replace("@@indicator persona", "").trim();
+    } else {
+      remainingLores.push(lore);
+    }
+  }
+
+  const basePersona: RisuPersona = {
+    name: m.name,
     icon: "",
-    personaPrompt: "",
-    embeddedModule: safeStructuredClone(m),
+    personaPrompt,
+    embeddedModule: {
+      ...m,
+      lorebook: remainingLores,
+      id: "$embedded",
+    },
   };
 
-  basePersona.name = m.name;
-  basePersona.embeddedModule.lorebook ??= [];
-  basePersona.embeddedModule.lorebook =
-    basePersona?.embeddedModule?.lorebook?.filter((a) => {
-      if (a.content.startsWith("@@indicator persona")) {
-        basePersona.personaPrompt = a.content
-          .replace("@@indicator persona", "")
-          .trim();
-        return false;
-      }
-      return true;
-    });
-  basePersona.embeddedModule.id = "$embedded";
-  return safeStructuredClone(basePersona);
+  return basePersona;
 }

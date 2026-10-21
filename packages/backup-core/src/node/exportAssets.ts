@@ -71,7 +71,7 @@ export async function streamNodeBackupAssets(
   onProgress?: (progress: NodeBackupAssetStreamProgress) => void,
   options?: NodeBackupAssetStreamOptions,
 ): Promise<NodeBackupAssetStreamResult> {
-  const writtenKeys: Set<string> = new Set<string>();
+  const writtenKeys = new Set<string>();
   await storage.streamItems(
     keys,
     {
@@ -86,8 +86,15 @@ export async function streamNodeBackupAssets(
     onProgress,
     options,
   );
+  const missingKeys: string[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (!writtenKeys.has(key)) {
+      missingKeys.push(key);
+    }
+  }
   return {
     writtenKeys: Array.from(writtenKeys),
-    missingKeys: keys.filter((key: string): boolean => !writtenKeys.has(key)),
+    missingKeys,
   };
 }

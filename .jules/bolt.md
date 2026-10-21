@@ -64,3 +64,26 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-22 - Optimize Core Providers, Export Payloads, and Interchange Conversions
+
+**Learning:** Found transient object and array allocations across chat export, interchangeability conversion, voice recording, chat-core provider dispatch, and backup import planning:
+
+1. `buildChatJsonExportPayload` / `cleanChatForExport` performed a full `safeStructuredClone(chat)` on large chat hierarchies before deleting root export keys and before serializing to JSON.
+2. `interchangeability.ts` performed repeated `safeStructuredClone` calls on every lorebook entry inside loops, spliced in-place causing O(N^2) array re-indexing, and double-cloned character/module/persona return values.
+3. `voiceDetector.init()` allocated a new `new Uint8Array(2048)` and ran `reduce()` every 100ms during audio recording.
+4. `generationStats.ts` created new object wrappers `{ ...stats }` on every streaming token chunk.
+5. `finalization.ts` performed `text.trim().at(-1)` allocating full-size copies of large generated response strings to check ending punctuation, and had legacy untyped `any` overload signatures.
+6. `providerRouting`, `providerExecutor`, `requestLoop`, `novelAIProvider`, `novelListProvider`, `nanoGPTProvider`, `ollamaProvider`, and `hordeProvider` in `packages/chat-core` retained untyped `any` overloads and dynamic array allocations.
+7. `importPlan.ts` mapped sorted stream fragments with an extra array pass, and `exportAssets.ts` filtered missing keys with extra array allocations.
+8. `hydrateDocument` in SQLite chat queries used `delete chat.branchState`, de-optimizing V8 object hidden classes.
+
+**Action:**
+
+1. Use non-mutating object destructuring in `cleanChatForExport` and avoid redundant cloning prior to JSON serialization in `buildChatJsonExportPayload`.
+2. Partition module lorebook entries in a single pass without per-entry cloning, use sticky/exec regex iteration, and return constructed objects directly without redundant deep-clones in `interchangeability.ts`.
+3. Pre-allocate the audio analysis `Uint8Array` once in `voiceDetector` and sum samples with an indexed loop.
+4. Update stats in place before publishing in `generationStats.ts` to avoid object churn during streaming.
+5. Scan backwards from the end of the string past whitespace characters in `endsWithCompletionPunctuation` to eliminate string allocations, and modernize `chat-core` provider modules with clean, strongly typed TypeScript.
+6. Pre-allocate verified stream fragment arrays in `importPlan.ts` and missing keys in `exportAssets.ts`.
+7. Omit `branchState` via destructuring instead of `delete` in `hydrateDocument`.

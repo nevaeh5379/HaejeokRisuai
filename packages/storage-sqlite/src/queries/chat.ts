@@ -80,14 +80,14 @@ export function hydrateDocument(
   total: number,
   activeBranchId: string,
 ): ChatDocument {
-  const chat = { ...extension } as ChatDocument;
+  const { branchState: _branchState, ...rest } = extension;
+  const chat = rest as unknown as ChatDocument;
   chat.id = row.id;
   chat.name = row.name ?? "";
   chat.note = row.note ?? "";
   chat.folderId = row.folder_id ?? undefined;
   chat.lastDate = row.last_message_time ?? undefined;
   chat.activeBranchId = activeBranchId;
-  delete chat.branchState;
   chat.message = messages;
   chat.messageOffset = Math.max(0, total - messages.length);
   chat.messageTotal = total;
