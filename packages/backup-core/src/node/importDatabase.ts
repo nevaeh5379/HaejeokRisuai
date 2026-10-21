@@ -1,6 +1,10 @@
 import { once } from "node:events";
 import { createWriteStream, promises as fs } from "node:fs";
 import { LOCAL_BACKUP_DATABASE_RECORD_TYPES } from "./databaseStreamStore.ts";
+
+const LOCAL_BACKUP_DATABASE_RECORD_TYPES_SET = new Set<string>(
+  LOCAL_BACKUP_DATABASE_RECORD_TYPES,
+);
 import { decodeLegacyBackupDatabase } from "./legacyFormat.ts";
 import {
   LegacyBackupStreamingUnsupportedError,
@@ -240,9 +244,7 @@ async function prepareStreamDatabase(
           !record ||
           typeof record !== "object" ||
           typeof record.type !== "string" ||
-          !(LOCAL_BACKUP_DATABASE_RECORD_TYPES as readonly string[]).includes(
-            record.type,
-          )
+          !LOCAL_BACKUP_DATABASE_RECORD_TYPES_SET.has(record.type)
         ) {
           throw new Error(
             `Portable database fragment ${entry.name} contains an unsupported record`,
@@ -274,9 +276,7 @@ async function prepareStreamDatabase(
     }
     for (const [type, count] of Object.entries(manifest.counts)) {
       if (
-        !(LOCAL_BACKUP_DATABASE_RECORD_TYPES as readonly string[]).includes(
-          type,
-        ) &&
+        !LOCAL_BACKUP_DATABASE_RECORD_TYPES_SET.has(type) &&
         Number(count) !== 0
       ) {
         throw new Error(

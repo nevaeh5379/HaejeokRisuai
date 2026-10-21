@@ -14,23 +14,24 @@ async function writeTauriAssetBatch(
   createdDirectories: Set<string>,
 ): Promise<void> {
   const entries: Array<[string, Uint8Array]> = Array.from(batch);
-  const directories: Set<string> = new Set<string>(
-    entries.map(([assetPath]: [string, Uint8Array]): string =>
-      assetPath.slice(0, assetPath.lastIndexOf("/")),
-    ),
-  );
+  const directories = new Set<string>();
+  for (const [assetPath] of entries) {
+    const slashIndex = assetPath.lastIndexOf("/");
+    if (slashIndex > 0) {
+      const dir = assetPath.slice(0, slashIndex);
+      if (!createdDirectories.has(dir)) {
+        directories.add(dir);
+      }
+    }
+  }
   await Promise.all(
-    Array.from(directories)
-      .filter(
-        (directory: string): boolean => !createdDirectories.has(directory),
-      )
-      .map(async (directory: string): Promise<void> => {
-        await mkdir(directory, {
-          baseDir: BaseDirectory.AppData,
-          recursive: true,
-        });
-        createdDirectories.add(directory);
-      }),
+    Array.from(directories, async (directory: string): Promise<void> => {
+      await mkdir(directory, {
+        baseDir: BaseDirectory.AppData,
+        recursive: true,
+      });
+      createdDirectories.add(directory);
+    }),
   );
   await writeItemsConcurrently(
     entries,

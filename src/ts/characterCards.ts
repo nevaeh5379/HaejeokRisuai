@@ -109,7 +109,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       f.data instanceof Uint8Array
         ? f.data
         : new Uint8Array(await f.data.arrayBuffer());
-    const da = JSON.parse(Buffer.from(data).toString("utf-8"));
+    const da = JSON.parse(new TextDecoder().decode(data));
     if (await importCharacterCardSpec(da)) {
       return (characterStore.characters.length - 1) as any;
     }
@@ -323,7 +323,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
           try {
             const decrypted = await decryptBuffer(encrypted, password);
             const charaData: CharacterCardV2Risu = JSON.parse(
-              Buffer.from(decrypted).toString("utf-8"),
+              new TextDecoder().decode(decrypted),
             );
             if (
               await importCharacterCardSpec(charaData, img, "normal", assets)
@@ -341,7 +341,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         const decrypted = await decryptBuffer(encrypted, "RISU_NONE");
         try {
           const charaData: CharacterCardV2Risu = JSON.parse(
-            Buffer.from(decrypted).toString("utf-8"),
+            new TextDecoder().decode(decrypted),
           );
           if (await importCharacterCardSpec(charaData, img, "normal", assets)) {
             return characterStore.characters.length - 1;
@@ -2009,25 +2009,23 @@ export function createBaseV3(char: character) {
     ext.risu_loreCache = lore.loreCache;
 
     charBook.push({
-      ...({
-        keys: lore.key.split(",").map((r) => r.trim()),
-        secondary_keys: lore.selective
-          ? lore.secondkey.split(",").map((r) => r.trim())
-          : undefined,
-        content: lore.content,
-        extensions: ext,
-        enabled: true,
-        insertion_order: lore.insertorder,
-        constant: lore.alwaysActive,
-        selective: lore.selective,
-        name: lore.comment,
-        comment: lore.comment,
-        case_sensitive: caseSensitive,
-        use_regex: lore.useRegex ?? false,
-      } as LorebookEntry),
+      keys: lore.key.split(",").map((r) => r.trim()),
+      secondary_keys: lore.selective
+        ? lore.secondkey.split(",").map((r) => r.trim())
+        : undefined,
+      content: lore.content,
+      extensions: ext,
+      enabled: true,
+      insertion_order: lore.insertorder,
+      constant: lore.alwaysActive,
+      selective: lore.selective,
+      name: lore.comment,
+      comment: lore.comment,
+      case_sensitive: caseSensitive,
+      use_regex: lore.useRegex ?? false,
       mode: lore.mode ?? "normal",
       folder: lore.folder,
-    });
+    } as LorebookEntry);
   }
   char.loreExt ??= {};
 

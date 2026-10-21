@@ -1,4 +1,5 @@
-const STREAMING_BACKUP_ENCRYPTION_MAGIC = new TextEncoder().encode("RISUDBE1");
+const textEncoder = new TextEncoder();
+const STREAMING_BACKUP_ENCRYPTION_MAGIC = textEncoder.encode("RISUDBE1");
 const STREAMING_BACKUP_ENCRYPTION_IV_LENGTH = 12;
 
 export const STREAMING_BACKUP_ENCRYPTION_FORMAT =
@@ -16,7 +17,7 @@ async function deriveStreamingBackupKey(
 ): Promise<CryptoKey> {
   const keyBytes = await cryptoImpl.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(secret),
+    textEncoder.encode(secret),
   );
   return await cryptoImpl.subtle.importKey("raw", keyBytes, "AES-GCM", false, [
     "encrypt",
@@ -25,12 +26,16 @@ async function deriveStreamingBackupKey(
 }
 
 function hasMagic(data: Uint8Array): boolean {
-  if (data.byteLength < STREAMING_BACKUP_ENCRYPTION_MAGIC.byteLength) {
+  const magicLen = STREAMING_BACKUP_ENCRYPTION_MAGIC.byteLength;
+  if (data.byteLength < magicLen) {
     return false;
   }
-  return STREAMING_BACKUP_ENCRYPTION_MAGIC.every(
-    (byte, index) => data[index] === byte,
-  );
+  for (let i = 0; i < magicLen; i++) {
+    if (data[i] !== STREAMING_BACKUP_ENCRYPTION_MAGIC[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function isStreamingBackupEncryptedEntry(data: Uint8Array): boolean {
@@ -52,7 +57,7 @@ export async function encryptStreamingBackupEntry(
       {
         name: "AES-GCM",
         iv: asWebCryptoBuffer(iv),
-        additionalData: asWebCryptoBuffer(new TextEncoder().encode(entryName)),
+        additionalData: asWebCryptoBuffer(textEncoder.encode(entryName)),
       },
       key,
       asWebCryptoBuffer(data),
@@ -95,7 +100,7 @@ export async function decryptStreamingBackupEntry(
       {
         name: "AES-GCM",
         iv: asWebCryptoBuffer(iv),
-        additionalData: asWebCryptoBuffer(new TextEncoder().encode(entryName)),
+        additionalData: asWebCryptoBuffer(textEncoder.encode(entryName)),
       },
       key,
       asWebCryptoBuffer(encrypted),

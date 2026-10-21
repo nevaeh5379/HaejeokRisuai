@@ -82,7 +82,9 @@ export async function exportNativeBackupAssets(
     const batch: string[] = options.keys.slice(offset, offset + batchSize);
     const result: NativeBackupAssetBatchResult =
       await options.writeBatch(batch);
-    missing.push(...result.missing);
+    for (const key of result.missing) {
+      missing.push(key);
+    }
     await options.onProgress?.({
       current: Math.min(offset + batch.length, total),
       total,

@@ -115,14 +115,22 @@ function getBranchMessages(chat, branch, cloneValue) {
 
 function remapBookmarks(chat, idMap) {
   if (Array.isArray(chat.bookmarks)) {
-    chat.bookmarks = chat.bookmarks.map((id) => idMap.get(id)).filter(Boolean);
+    const nextBookmarks = [];
+    for (const id of chat.bookmarks) {
+      const mapped = idMap.get(id);
+      if (mapped) nextBookmarks.push(mapped);
+    }
+    chat.bookmarks = nextBookmarks;
   }
   if (chat.bookmarkNames && typeof chat.bookmarkNames === "object") {
-    chat.bookmarkNames = Object.fromEntries(
-      Object.entries(chat.bookmarkNames)
-        .map(([id, value]) => [idMap.get(id), value])
-        .filter(([id]) => Boolean(id)),
-    );
+    const nextNames: Record<string, any> = {};
+    for (const [id, value] of Object.entries(chat.bookmarkNames)) {
+      const mapped = idMap.get(id);
+      if (mapped) {
+        nextNames[mapped] = value;
+      }
+    }
+    chat.bookmarkNames = nextNames;
   }
 }
 
@@ -264,14 +272,19 @@ function expandCharactersForCompatibility(
   coldStorageValues,
   options = {},
 ) {
-  return characters.map((character) =>
-    expandCharacterBranchesForCompatibility(
+  return characters.map((character) => {
+    const expanded = expandCharacterBranchesForCompatibility(
       character,
       idFactory,
       coldStorageValues,
       options,
-    ),
-  );
+    );
+    if (expanded && typeof expanded === "object") {
+      delete expanded.additionalAssetFolders;
+      delete expanded.additionalAssetFolderAssignments;
+    }
+    return expanded;
+  });
 }
 
 function makeLegacyCompatibleDatabase(
@@ -287,12 +300,7 @@ function makeLegacyCompatibleDatabase(
       options.idFactory || randomUUID,
       coldStorageValues,
       options,
-    ).map((character) => {
-      if (!character || typeof character !== "object") return character;
-      delete character.additionalAssetFolders;
-      delete character.additionalAssetFolderAssignments;
-      return character;
-    });
+    );
   }
   delete portable.moduleFolders;
   return portable;

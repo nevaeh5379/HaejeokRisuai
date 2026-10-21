@@ -40,7 +40,10 @@ function stripLegacyBranchFields(chat) {
 
 function branchRoot(graph) {
   const branches = Array.isArray(graph?.branches) ? graph.branches : [];
-  const ids = new Set(branches.map((branch) => branch?.id).filter(Boolean));
+  const ids = new Set<string>();
+  for (const branch of branches) {
+    if (branch?.id) ids.add(branch.id);
+  }
   return (
     branches.find((branch) => branch?.reason === "root") ||
     branches.find(
@@ -55,14 +58,18 @@ function branchRoot(graph) {
 function portableBranchPath(graph, branchId) {
   const branch = (graph?.branches || []).find((item) => item?.id === branchId);
   if (!branch) return [];
-  const messageById = new Map(
-    (graph.messages || [])
-      .filter((message) => message?.chatId)
-      .map((message) => [message.chatId, message]),
-  );
-  const parentById = new Map(
-    (graph.links || []).map((link) => [link.messageId, link.parentMessageId]),
-  );
+  const messageById = new Map<string, any>();
+  if (Array.isArray(graph?.messages)) {
+    for (const message of graph.messages) {
+      if (message?.chatId) messageById.set(message.chatId, message);
+    }
+  }
+  const parentById = new Map<string, string | undefined>();
+  if (Array.isArray(graph?.links)) {
+    for (const link of graph.links) {
+      if (link?.messageId) parentById.set(link.messageId, link.parentMessageId);
+    }
+  }
   const reversed = [];
   const seen = new Set();
   let current = branch.headMessageId || branch.forkMessageId;
@@ -73,7 +80,12 @@ function portableBranchPath(graph, branchId) {
     reversed.push(message);
     current = parentById.get(current);
   }
-  return reversed.reverse().map(cloneValue);
+  const len = reversed.length;
+  const result = new Array(len);
+  for (let i = 0; i < len; i++) {
+    result[i] = cloneValue(reversed[len - 1 - i]);
+  }
+  return result;
 }
 
 function preparePortableChatForBranchRestore(sourceChat, graph) {
@@ -197,14 +209,22 @@ function cloneMessagesWithFreshIds(messages, idFactory) {
 
 function remapBookmarks(chat, idMap) {
   if (Array.isArray(chat.bookmarks)) {
-    chat.bookmarks = chat.bookmarks.map((id) => idMap.get(id)).filter(Boolean);
+    const nextBookmarks = [];
+    for (const id of chat.bookmarks) {
+      const mapped = idMap.get(id);
+      if (mapped) nextBookmarks.push(mapped);
+    }
+    chat.bookmarks = nextBookmarks;
   }
   if (chat.bookmarkNames && typeof chat.bookmarkNames === "object") {
-    chat.bookmarkNames = Object.fromEntries(
-      Object.entries(chat.bookmarkNames)
-        .map(([id, value]) => [idMap.get(id), value])
-        .filter(([id]) => Boolean(id)),
-    );
+    const nextNames: Record<string, any> = {};
+    for (const [id, value] of Object.entries(chat.bookmarkNames)) {
+      const mapped = idMap.get(id);
+      if (mapped) {
+        nextNames[mapped] = value;
+      }
+    }
+    chat.bookmarkNames = nextNames;
   }
 }
 
