@@ -207,12 +207,53 @@ export default defineConfig(({ command, mode }) => {
                 priority: 100,
               },
               {
-                // Heavy runtimes used only by optional/lazy features. Keeping
-                // them in the catch-all vendor chunk makes Rolldown preload
-                // Lua, browser inference, transpilation, audio and tokenizer
-                // code on the initial screen even when those features are idle.
+                // Loading a small optional feature must not evaluate every
+                // runtime in the shared optional chunk, especially tiktoken's
+                // eager WASM initialization and embedded encoder tables.
+                name: "tiktoken",
+                test: /node_modules[\\/]@dqbd[\\/]tiktoken(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "onnxruntime",
+                test: /node_modules[\\/]onnxruntime(?:-web|-common)?(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "lua-runtime",
+                test: /node_modules[\\/]wasmoon(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "script-transpiler",
+                test: /node_modules[\\/](?:sucrase|ts-interface-checker|source-map|@jridgewell[\\/](?:trace-mapping|sourcemap-codec|resolve-uri|gen-mapping))(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "script-parser",
+                test: /node_modules[\\/](?:acorn(?:-walk)?|astring)(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "peer-runtime",
+                test: /node_modules[\\/](?:peerjs|peerjs-js-binarypack|webrtc-adapter|sdp)(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "audio-runtime",
+                test: /node_modules[\\/](?:@breezystack[\\/]lamejs|wavefile)(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                name: "jinja",
+                test: /node_modules[\\/]@huggingface[\\/]jinja(?=[\\/]|$)/,
+                priority: 100,
+              },
+              {
+                // Keep optional UI and export helpers out of the catch-all
+                // vendor chunk. Heavy runtimes have independent groups above.
                 name: "optional-runtime",
-                test: /node_modules[\/](?:@dqbd[\/]tiktoken|sucrase|onnxruntime(?:-web|-common)?|@breezystack[\/]lamejs|sortablejs|wavefile|wasmoon|acorn(?:-walk)?|astring|peerjs|peerjs-js-binarypack|webrtc-adapter|sdp|diff|source-map|html-to-image|@huggingface[\/]jinja|@risuai[\/]ccardlib|svelte-awesome-color-picker|ts-interface-checker|svelte-awesome-slider|colord|@jridgewell[\/](?:trace-mapping|sourcemap-codec|resolve-uri|gen-mapping)|ollama)(?=[\/]|$)/,
+                test: /node_modules[\\/](?:sortablejs|diff|html-to-image|@risuai[\\/]ccardlib|svelte-awesome-color-picker|svelte-awesome-slider|colord|ollama)(?=[\\/]|$)/,
                 priority: 95,
               },
               {
