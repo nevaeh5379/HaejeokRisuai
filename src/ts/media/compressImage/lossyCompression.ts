@@ -1,11 +1,37 @@
 export async function doLossyCompression(
   imageData: Uint8Array,
 ): Promise<Buffer> {
-  return new Promise((resolve) => {
-    const base64Image =
-      "data:image/png;base64," + Buffer.from(imageData).toString("base64");
+  return new Promise((resolve, reject) => {
+    let objectUrl: string | null = null;
+    let sourceSrc: string;
+
+    if (
+      typeof URL !== "undefined" &&
+      typeof URL.createObjectURL === "function"
+    ) {
+      try {
+        const blob = new Blob([imageData as any]);
+        objectUrl = URL.createObjectURL(blob);
+        sourceSrc = objectUrl;
+      } catch {
+        sourceSrc =
+          "data:image/png;base64," + Buffer.from(imageData).toString("base64");
+      }
+    } else {
+      sourceSrc =
+        "data:image/png;base64," + Buffer.from(imageData).toString("base64");
+    }
+
+    const cleanup = () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
+    };
+
     const image = new Image();
     image.onload = () => {
+      cleanup();
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
       if (!context) {
@@ -30,17 +56,25 @@ export async function doLossyCompression(
       canvas.height = height;
       context.drawImage(image, 0, 0, width, height);
 
-      // Try to convert to WebP
-      let base64 = canvas.toDataURL("image/webp", 75);
+      // Try to convert to WebP (0.0 to 1.0 quality)
+      let base64 = canvas.toDataURL("image/webp", 0.75);
 
       // If WebP is not supported, convert to JPEG
-      if (base64.indexOf("data:image/webp") != 0) {
-        base64 = canvas.toDataURL("image/jpeg", 75);
+      if (base64.indexOf("data:image/webp") !== 0) {
+        base64 = canvas.toDataURL("image/jpeg", 0.75);
       }
 
-      const array = Buffer.from(base64.split(",")[1], "base64");
+      const commaIndex = base64.indexOf(",");
+      const b64Data = commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
+      const array = Buffer.from(b64Data, "base64");
       resolve(array);
     };
-    image.src = base64Image;
+
+    image.onerror = (err) => {
+      cleanup();
+      reject(err);
+    };
+
+    image.src = sourceSrc;
   });
 }

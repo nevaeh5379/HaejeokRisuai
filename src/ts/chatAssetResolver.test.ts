@@ -41,4 +41,17 @@ describe("chat asset resolver", () => {
     expect(result).toBe("alice-png");
     expect(seen.sort()).toEqual(["alice.png", "alice.webp"]);
   });
+
+  it("merges extra assets without array concatenation", () => {
+    const baseAssets = [["base.png", "base-path", "png"]] as const;
+    const extraAssets = [["extra.png", "extra-path", "png"]] as const;
+
+    const index = createChatAssetNameIndex(baseAssets, extraAssets);
+    expect(resolveChatAssetFromIndex(index, "base.png", distance)).toBe(
+      "base-path",
+    );
+    expect(resolveChatAssetFromIndex(index, "extra.png", distance)).toBe(
+      "extra-path",
+    );
+  });
 });

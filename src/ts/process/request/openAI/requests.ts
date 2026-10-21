@@ -40,7 +40,6 @@ export async function requestOpenAI(
 
   arg.bias = await prepareOpenAILogitBias(arg.biasString, arg.bias);
 
-  console.log(formatedChat);
   if (arg.modelInfo.format === LLMFormat.Mistral) {
     return requestMistral(arg, formatedChat);
   }
