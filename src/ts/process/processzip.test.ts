@@ -133,7 +133,7 @@ vi.mock(
     }) as any,
 );
 
-import { CharXImporter } from "./processzip";
+import { CharXImporter, processZip } from "./processzip";
 
 describe("CharXImporter", () => {
   beforeEach(() => {
@@ -271,4 +271,21 @@ describe("CharXImporter", () => {
       ),
     );
   }, 2_000);
+
+  it("throws when processZip cannot find an image", async () => {
+    const archive = zipSync({
+      "text.txt": new TextEncoder().encode("hello"),
+      "data.json": new TextEncoder().encode("{}"),
+    });
+    await expect(processZip(archive)).rejects.toThrow("No image found in ZIP file");
+  });
+
+  it("extracts and base64 encodes the first matching image in processZip", async () => {
+    const archive = zipSync({
+      "data.json": new TextEncoder().encode("{}"),
+      "avatar.png": new Uint8Array([1, 2, 3, 4]),
+    });
+    const result = await processZip(archive);
+    expect(result).toMatch(/^data:image\/png;base64,/);
+  });
 });

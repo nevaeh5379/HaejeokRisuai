@@ -35,11 +35,16 @@ export function groupValues(
   for (const row of rows) {
     const owner = String(row[ownerKey] ?? "");
     if (!owner) continue;
-    const list = grouped.get(owner) ?? [];
+    let list = grouped.get(owner);
+    if (!list) {
+      list = [];
+      grouped.set(owner, list);
+    }
     list.push(row);
-    grouped.set(owner, list);
   }
-  return new Map(
-    Array.from(grouped, ([owner, nodes]) => [owner, nodeCodec.rebuild(nodes)]),
-  );
+  const result = new Map<string, unknown>();
+  for (const [owner, nodes] of grouped) {
+    result.set(owner, nodeCodec.rebuild(nodes));
+  }
+  return result;
 }

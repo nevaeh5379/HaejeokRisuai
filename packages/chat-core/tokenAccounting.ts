@@ -54,8 +54,11 @@ async function countChatTokensDetailed(
   for (const chat of chats) {
     texts.push(chat.content);
     if (chat.name && options.useName) texts.push(chat.name);
-    if (options.countThoughts && chat.thoughts?.length)
-      texts.push(...chat.thoughts);
+    if (options.countThoughts && chat.thoughts?.length) {
+      for (const thought of chat.thoughts) {
+        texts.push(thought);
+      }
+    }
   }
 
   const counts: any = await countTexts(texts);
@@ -64,18 +67,21 @@ async function countChatTokensDetailed(
   }
 
   let countIndex: any = 0;
-  const detailed: any = [];
-  for (const chat of chats) {
+  const detailed: any = new Array(chats.length);
+  for (let i = 0; i < chats.length; i++) {
+    const chat = chats[i];
     let encoded: any = counts[countIndex++] + options.chatAdditionalTokens;
     if (chat.name && options.useName) encoded += counts[countIndex++] + 1;
     if (options.countThoughts && chat.thoughts?.length) {
-      for (let i: any = 0; i < chat.thoughts.length; i++)
+      const thoughtCount = chat.thoughts.length;
+      for (let t = 0; t < thoughtCount; t++) {
         encoded += counts[countIndex++] + 1;
+      }
     }
     for (const multimodal of chat.multimodals ?? []) {
       encoded += calculateMultimodalTokenCost(multimodal, options);
     }
-    detailed.push(encoded);
+    detailed[i] = encoded;
   }
   return detailed;
 }

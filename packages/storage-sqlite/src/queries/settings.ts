@@ -33,7 +33,7 @@ export function buildDeferredQuery(deferredKeyList: readonly string[]): {
             number_value, boolean_value
      FROM setting_extension_nodes${deferredWhere}
      ORDER BY setting_key, node_id`,
-    bind: [...deferredKeyList],
+    bind: deferredKeyList.slice(),
   };
 }
 
@@ -42,11 +42,16 @@ export function groupNodeRows(rows: NodeRow[]): Map<string, unknown> {
   for (const row of rows) {
     const owner = String(row.setting_key ?? "");
     if (!owner) continue;
-    const list = grouped.get(owner) ?? [];
+    let list = grouped.get(owner);
+    if (!list) {
+      list = [];
+      grouped.set(owner, list);
+    }
     list.push(row as nodeCodec.NodeRow);
-    grouped.set(owner, list);
   }
-  return new Map(
-    Array.from(grouped, ([owner, nodes]) => [owner, nodeCodec.rebuild(nodes)]),
-  );
+  const result = new Map<string, unknown>();
+  for (const [owner, nodes] of grouped) {
+    result.set(owner, nodeCodec.rebuild(nodes));
+  }
+  return result;
 }
