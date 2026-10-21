@@ -30,6 +30,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
+    "test:memory": "playwright test --config tooling/memlab/playwright.config.ts",
+    "memory:analyze": "node tooling/memlab/analyze.ts",
     "test:e2e:codegen": "node tooling/e2e-codegen.ts",
     "test:e2e:android": "tsx tooling/android-e2e.ts",
     "test:e2e:android:doctor": "tsx tooling/android-e2e.ts --doctor",
@@ -147,6 +149,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.0",
+    "@memlab/api": "2.0.5",
     "@playwright/test": "^1.64.0",
     "@rollup/plugin-strip": "^3.0.4",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

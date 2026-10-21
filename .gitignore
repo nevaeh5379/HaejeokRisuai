@@ -53,6 +53,8 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+/memlab-results/
+*.heapsnapshot
 android-e2e/artifacts/
 
 /.worktree/
