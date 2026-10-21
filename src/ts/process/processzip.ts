@@ -26,6 +26,14 @@ const NODE_ASSET_BATCH_MAX_BYTES = 64 * 1024 * 1024;
 const HTTP_STATUS_OK_MIN = 200;
 const HTTP_STATUS_OK_MAX = 300;
 
+const IMAGE_FILE_REGEX = /\.(jpe?g|png)$/i;
+const textDecoder = new TextDecoder();
+
+function extractFileExtension(fileName: string, fallback = "png"): string {
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex >= 0 ? fileName.slice(dotIndex + 1) : fallback;
+}
+
 export async function processZip(dataArray: Uint8Array): Promise<string> {
   const unzipped = await new Promise<fflate.Unzipped>((resolve, reject) => {
     fflate.unzip(dataArray, (err, data) => {
@@ -34,9 +42,13 @@ export async function processZip(dataArray: Uint8Array): Promise<string> {
     });
   });
 
-  const imageFile = Object.keys(unzipped).find((fileName) =>
-    /\.(jpg|jpeg|png)$/i.test(fileName),
-  );
+  let imageFile: string | undefined;
+  for (const fileName in unzipped) {
+    if (IMAGE_FILE_REGEX.test(fileName)) {
+      imageFile = fileName;
+      break;
+    }
+  }
   if (imageFile) {
     const imageData = unzipped[imageFile];
     const blob = new Blob([asBuffer(imageData)], { type: "image/png" });
@@ -415,7 +427,7 @@ export class CharXImporter {
       this.#handleFileData(assetIndex, dat, final);
 
     // Only process files smaller than MAX_ASSET_SIZE_BYTES (50MB)
-    if (file.originalSize ?? 0 < MAX_ASSET_SIZE_BYTES) {
+    if ((file.originalSize ?? 0) < MAX_ASSET_SIZE_BYTES) {
       file.start();
     }
   }
@@ -441,7 +453,7 @@ export class CharXImporter {
     if (assetData.byteLength > MAX_ASSET_SIZE_BYTES) {
       this.excludedFiles.push(fileName);
     } else if (fileName === "card.json") {
-      this.cardData = new TextDecoder().decode(assetData);
+      this.cardData = textDecoder.decode(assetData);
     } else if (fileName === "module.risum") {
       this.moduleData = assetData;
     } else if (fileName.endsWith(".json")) {
@@ -472,7 +484,7 @@ export class CharXImporter {
     try {
       await this.semaphore.acquire();
       acquired = true;
-      const ext = asset.id.split(".").pop() || "png";
+      const ext = extractFileExtension(asset.id, "png");
       const assetSaveId = this.skipSaving
         ? `assets/${await hasher(asset.data)}.${ext}`
         : await saveAsset(asset.data, "", asset.id);
@@ -531,9 +543,10 @@ export class CharXImporter {
         throw new Error("Node asset storage changed while importing CharX");
       }
 
-      const prepared = await Promise.all(
+      const items = new Map<string, Uint8Array>();
+      await Promise.all(
         batch.map(async (asset) => {
-          const ext = asset.id.split(".").pop() || "png";
+          const ext = extractFileExtension(asset.id, "png");
           let id = "";
           try {
             id = await hasher(asset.data);
@@ -541,19 +554,12 @@ export class CharXImporter {
             id = uuidv4();
           }
           const assetSaveId = `assets/${id}.${ext}`;
-          return { asset, assetSaveId };
+          items.set(assetSaveId, asset.data);
+          this.assets[asset.id] = assetSaveId;
         }),
       );
-      const items = new Map<string, Uint8Array>();
-      for (const { asset, assetSaveId } of prepared) {
-        items.set(assetSaveId, asset.data);
-      }
 
       await storage.setItems(items);
-
-      for (const { asset, assetSaveId } of prepared) {
-        this.assets[asset.id] = assetSaveId;
-      }
     } catch (error) {
       this.errors.push(
         error instanceof Error ? error : new Error(String(error)),

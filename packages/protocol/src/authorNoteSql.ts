@@ -40,23 +40,24 @@ function metadata(row: Record<string, unknown>): AuthorNoteMetadata {
 export async function listAuthorNotes(
   db: AuthorNoteSql,
 ): Promise<AuthorNoteMetadata[]> {
-  return (
-    await db.query(
-      `SELECT id, name, updated_at FROM ${authorNoteTables(db).notes} ORDER BY ${db.dialect === "oracle" ? "id" : "name, id"}`,
-    )
-  )
-    .map(metadata)
-    .sort((a, b) =>
-      a.name < b.name
-        ? -1
-        : a.name > b.name
-          ? 1
-          : a.id < b.id
-            ? -1
-            : a.id > b.id
-              ? 1
-              : 0,
-    );
+  const rows = await db.query(
+    `SELECT id, name, updated_at FROM ${authorNoteTables(db).notes} ORDER BY ${db.dialect === "oracle" ? "id" : "name, id"}`,
+  );
+  const result: AuthorNoteMetadata[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    result[i] = metadata(rows[i]);
+  }
+  return result.sort((a, b) =>
+    a.name < b.name
+      ? -1
+      : a.name > b.name
+        ? 1
+        : a.id < b.id
+          ? -1
+          : a.id > b.id
+            ? 1
+            : 0,
+  );
 }
 export async function getAuthorNote(
   db: AuthorNoteSql,
@@ -101,12 +102,29 @@ export async function allowAuthorNoteScriptWrite(
   );
 }
 export async function exportAuthorNotes(db: AuthorNoteSql) {
-  const notes: AuthorNoteRow[] = [];
-  for (const entry of await listAuthorNotes(db)) {
-    const row = await readAuthorNote(db, entry.id);
-    if (!row) throw new AuthorNoteError("missing", entry.id);
-    notes.push(row);
+  const rows = await db.query(
+    `SELECT id, name, content, content_hash, updated_at FROM ${authorNoteTables(db).notes} ORDER BY ${db.dialect === "oracle" ? "id" : "name, id"}`,
+  );
+  const notes: AuthorNoteRow[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    notes[i] = {
+      ...metadata(row),
+      content: String(row.content ?? ""),
+      contentHash: String(row.content_hash),
+    };
   }
+  notes.sort((a, b) =>
+    a.name < b.name
+      ? -1
+      : a.name > b.name
+        ? 1
+        : a.id < b.id
+          ? -1
+          : a.id > b.id
+            ? 1
+            : 0,
+  );
   return {
     globalAuthorNotes: notes,
     globalAuthorNoteSettings: {
@@ -290,12 +308,13 @@ export async function ensureAuthorNoteReceipts(
   const table = revisionTable(db);
   if (db.dialect === "sqlite") {
     const columns = await db.query(`PRAGMA table_info(${table})`);
+    const existing = new Set(columns.map((column) => column.name));
     for (const name of [
       "note_commit_key",
       "note_commit_hash",
       "note_commit_result",
     ]) {
-      if (!columns.some((column) => column.name === name))
+      if (!existing.has(name))
         await db.execute(`ALTER TABLE ${table} ADD COLUMN ${name} TEXT`);
     }
   } else if (db.dialect === "postgres") {

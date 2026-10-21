@@ -43,5 +43,11 @@ export async function findPruneKeys(
   const rows = await selectRows<{ archive_id: string }>(
     "SELECT archive_id FROM cold_archives",
   );
-  return rows.map((row) => row.archive_id).filter((key) => !retained.has(key));
+  const pruneKeys: string[] = [];
+  for (const row of rows) {
+    if (!retained.has(row.archive_id)) {
+      pruneKeys.push(row.archive_id);
+    }
+  }
+  return pruneKeys;
 }

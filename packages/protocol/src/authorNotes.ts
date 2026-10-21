@@ -56,32 +56,48 @@ export class AuthorNoteError extends Error {
     this.name = "AuthorNoteError";
   }
 }
+const textEncoder = new TextEncoder();
+const BYTE_TO_HEX: readonly string[] = Array.from({ length: 256 }, (_, i) =>
+  i.toString(16).padStart(2, "0"),
+);
+
 export async function hashAuthorNote(content: string): Promise<string> {
   const hash = new Sha256();
-  hash.update(new TextEncoder().encode(content));
-  return Array.from(await hash.digest(), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  hash.update(textEncoder.encode(content));
+  const digest = await hash.digest();
+  let hex = "";
+  for (let i = 0; i < digest.length; i++) {
+    hex += BYTE_TO_HEX[digest[i]];
+  }
+  return hex;
 }
 export function parseAuthorNoteOperations(
   value: unknown,
 ): AuthorNoteOperation[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new Error("authorNotes must be an array");
-  return value.map((raw): AuthorNoteOperation => {
+  const operations = new Array<AuthorNoteOperation>(value.length);
+  for (let opIdx = 0; opIdx < value.length; opIdx++) {
+    const raw = value[opIdx];
     if (!raw || typeof raw !== "object")
       throw new Error("Invalid author note operation");
     const row = raw as Record<string, unknown>;
     if (row.type === "settings") {
       if (typeof row.allowScriptWrite !== "boolean")
         throw new Error("Invalid author note setting");
-      return { type: "settings", allowScriptWrite: row.allowScriptWrite };
+      operations[opIdx] = {
+        type: "settings",
+        allowScriptWrite: row.allowScriptWrite,
+      };
+      continue;
     }
     if (row.type === "restore") {
       if (!Array.isArray(row.rows) || typeof row.allowScriptWrite !== "boolean")
         throw new Error("Invalid author note restore");
       const ids = new Set<string>();
-      const rows = row.rows.map((entry): AuthorNoteRow => {
+      const rows = new Array<AuthorNoteRow>(row.rows.length);
+      for (let i = 0; i < row.rows.length; i++) {
+        const entry = row.rows[i] as AuthorNoteRow;
         if (
           !entry ||
           typeof entry.id !== "string" ||
@@ -95,20 +111,21 @@ export function parseAuthorNoteOperations(
         )
           throw new Error("Invalid author note restore row");
         ids.add(entry.id);
-        return {
+        rows[i] = {
           id: entry.id,
           name: entry.name,
           content: entry.content,
           contentHash: entry.contentHash,
           updatedAt: entry.updatedAt,
         };
-      });
-      return {
+      }
+      operations[opIdx] = {
         type: "restore",
         rows,
         allowScriptWrite: row.allowScriptWrite,
         clear: row.clear === false ? false : true,
       };
+      continue;
     }
     if (typeof row.id !== "string" || !row.id || row.id.length > 128)
       throw new Error("Invalid author note id");
@@ -116,20 +133,23 @@ export function parseAuthorNoteOperations(
       throw new AuthorNoteError("protected", row.id);
     switch (row.type) {
       case "remove":
-        return { type: "remove", id: row.id };
+        operations[opIdx] = { type: "remove", id: row.id };
+        break;
       case "create":
         if (typeof row.content !== "string" || typeof row.name !== "string")
           throw new Error("Invalid author note create");
-        return {
+        operations[opIdx] = {
           type: "create",
           id: row.id,
           name: row.name,
           content: row.content,
         };
+        break;
       case "rename":
         if (typeof row.name !== "string")
           throw new Error("Invalid author note name");
-        return { type: "rename", id: row.id, name: row.name };
+        operations[opIdx] = { type: "rename", id: row.id, name: row.name };
+        break;
       case "content":
         if (
           typeof row.content !== "string" ||
@@ -140,7 +160,7 @@ export function parseAuthorNoteOperations(
           (row.script !== undefined && typeof row.script !== "boolean")
         )
           throw new Error("Invalid author note content");
-        return {
+        operations[opIdx] = {
           type: "content",
           id: row.id,
           content: row.content,
@@ -148,8 +168,10 @@ export function parseAuthorNoteOperations(
           force: row.force as boolean | undefined,
           script: row.script as boolean | undefined,
         };
+        break;
       default:
         throw new Error("Unknown author note operation");
     }
-  });
+  }
+  return operations;
 }

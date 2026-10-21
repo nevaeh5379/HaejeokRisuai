@@ -44,12 +44,23 @@ function formatProviderMessages(
   let messages: any = formated.map(cloneMessage);
   let systemPrompt: any = null;
 
-  if (!flags.includes(LLM_FLAGS.hasFullSystemPrompt)) {
-    if (flags.includes(LLM_FLAGS.hasFirstSystemPrompt)) {
-      while (messages.length > 0 && messages[0].role === "system") {
-        const current: any = messages.shift();
-        if (systemPrompt) systemPrompt.content += `\n\n${current.content}`;
-        else systemPrompt = current;
+  const flagSet = new Set(flags);
+
+  if (!flagSet.has(LLM_FLAGS.hasFullSystemPrompt)) {
+    if (flagSet.has(LLM_FLAGS.hasFirstSystemPrompt)) {
+      let firstNonSystemIndex = 0;
+      while (
+        firstNonSystemIndex < messages.length &&
+        messages[firstNonSystemIndex].role === "system"
+      ) {
+        firstNonSystemIndex++;
+      }
+      if (firstNonSystemIndex > 0) {
+        systemPrompt = messages[0];
+        for (let i = 1; i < firstNonSystemIndex; i++) {
+          systemPrompt.content += `\n\n${messages[i].content}`;
+        }
+        messages = messages.slice(firstNonSystemIndex);
       }
     }
 
@@ -62,7 +73,7 @@ function formatProviderMessages(
     }
   }
 
-  if (flags.includes(LLM_FLAGS.requiresAlternateRole)) {
+  if (flagSet.has(LLM_FLAGS.requiresAlternateRole)) {
     const alternated: any = [];
     for (const message of messages) {
       const previous: any = alternated.at(-1);
@@ -73,7 +84,7 @@ function formatProviderMessages(
     messages = alternated;
   }
 
-  if (flags.includes(LLM_FLAGS.mustStartWithUserInput)) {
+  if (flagSet.has(LLM_FLAGS.mustStartWithUserInput)) {
     if (messages.length === 0 || messages[0].role !== "user") {
       messages.unshift({ role: "user", content: " " });
     }

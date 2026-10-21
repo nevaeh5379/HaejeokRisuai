@@ -64,3 +64,21 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-21 - Optimize Author Notes, Realtime Events, SQLite Queries, and Zip Processing Allocations
+
+**Learning:** Found micro-allocations and avoidable quadratic iterations across author notes hashing/queries, realtime event decoding, SQLite query result grouping, and zip archive processing:
+
+1. `hashAuthorNote` instantiated `new TextEncoder()` on every call and mapped 32 hex byte conversions through intermediate arrays and string paddings. `exportAuthorNotes` performed N+1 serial queries (`listAuthorNotes` followed by individual `readAuthorNote` calls) when all notes could be retrieved and sorted in a single database pass.
+2. `parseRealtimeEvent` performed `[characterId, chatId, messageId, illustrationId].every(...)` array and regex allocations on every `illustration-progress` event, and checked event lifecycle/stage arrays using `.includes()` linear scans. `parseDatabaseChangeEvent` allocated an array of boolean field names on every database change event.
+3. `groupValues` and `groupNodeRows` in `storage-sqlite` built intermediate 2D `Array.from` tuple arrays before constructing `new Map()`, and repeatedly called `grouped.set` inside loops even when lists existed. `findPruneKeys` in `coldStorage.ts` allocated an intermediate mapped array before filtering.
+4. `formatProviderMessages` in `chat-core` repeatedly shifted from `messages` in a `while` loop to merge leading system prompts, causing O(K*N) array shifts. `countChatTokensDetailed` spread thoughts arrays and iteratively pushed into `detailed`.
+5. `processZip` allocated `Object.keys(unzipped)` array to find image files and evaluated `file.originalSize ?? 0 < MAX_ASSET_SIZE_BYTES` with flawed operator precedence. `#saveNodeAssetBatch` allocated intermediate `{ asset, assetSaveId }` objects and repeatedly split filenames on `.` instead of finding the last dot index.
+
+**Action:**
+
+1. Reuse a module-level `TextEncoder` and a static 256-entry hex lookup table in `hashAuthorNote` to eliminate byte string/array allocations. In `exportAuthorNotes`, fetch all notes in a single query pass.
+2. Hoist module constants (`CONTROL_CHAR_REGEX`, `DATABASE_CHANGE_BOOLEAN_FIELDS`) and use `Set.has()` for constant-time state/stage validation in `realtimeEvents.ts`.
+3. Directly populate `new Map()` via `for (const [owner, nodes] of grouped)` in SQLite queries and filter prune keys in a single pass.
+4. Scan `firstNonSystemIndex` once in `formatProviderMessages` and slice once. Pre-allocate the `detailed` array in `countChatTokensDetailed`.
+5. Scan zip entries directly with for...in and hoisted image regex. Fix operator precedence in `#handleFile`, use shared `TextDecoder`, and extract extensions using `lastIndexOf(".")`.

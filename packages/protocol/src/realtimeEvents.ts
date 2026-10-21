@@ -287,11 +287,14 @@ const GENERATION_LIFECYCLE_STATES: readonly GenerationLifecycleState[] = [
   "failed",
   "aborted",
 ];
+const GENERATION_LIFECYCLE_SET: ReadonlySet<string> = new Set(
+  GENERATION_LIFECYCLE_STATES,
+);
 
 function isGenerationLifecycleState(
   value: unknown,
 ): value is GenerationLifecycleState {
-  return (GENERATION_LIFECYCLE_STATES as readonly unknown[]).includes(value);
+  return typeof value === "string" && GENERATION_LIFECYCLE_SET.has(value);
 }
 
 const MODEL_JOB_STATUS_VALUES: readonly ModelJobStatus[] = [
@@ -300,9 +303,16 @@ const MODEL_JOB_STATUS_VALUES: readonly ModelJobStatus[] = [
   "failed",
   "aborted",
 ];
+const MODEL_JOB_STATUS_SET: ReadonlySet<string> = new Set(
+  MODEL_JOB_STATUS_VALUES,
+);
 
 const LOCAL_BACKUP_IMPORT_STATUSES: readonly RealtimeLocalBackupImportStatus[] =
   ["pending", "uploading", "restoring", "complete", "error"];
+const LOCAL_BACKUP_IMPORT_STATUS_SET: ReadonlySet<string> = new Set(
+  LOCAL_BACKUP_IMPORT_STATUSES,
+);
+
 const LOCAL_BACKUP_IMPORT_STAGES: readonly RealtimeLocalBackupImportStage[] = [
   "uploading",
   "reading",
@@ -312,9 +322,12 @@ const LOCAL_BACKUP_IMPORT_STAGES: readonly RealtimeLocalBackupImportStage[] = [
   "inlays",
   "finalizing",
 ];
+const LOCAL_BACKUP_IMPORT_STAGE_SET: ReadonlySet<string> = new Set(
+  LOCAL_BACKUP_IMPORT_STAGES,
+);
 
 function isModelJobStatus(value: unknown): value is ModelJobStatus {
-  return (MODEL_JOB_STATUS_VALUES as readonly unknown[]).includes(value);
+  return typeof value === "string" && MODEL_JOB_STATUS_SET.has(value);
 }
 
 // Length budgets mirror the server-side hub validation, so a malformed or
@@ -327,6 +340,15 @@ const MAX_EVENT_CHAT_ID_LENGTH: number = 256;
 const MAX_EVENT_LIFECYCLE_ID_LENGTH: number = 128;
 const MAX_EVENT_CLIENT_ID_LENGTH: number = 128;
 const MAX_EVENT_ERROR_LENGTH: number = 8000;
+
+const DATABASE_CHANGE_BOOLEAN_FIELDS = [
+  "charactersChanged",
+  "rootChanged",
+  "pluginStorageCleared",
+  "presetsChanged",
+  "modulesChanged",
+  "pluginsChanged",
+] as const;
 
 /**
  * Parses the compact database-change event summary. Valid ID arrays are reused
@@ -387,14 +409,7 @@ function parseDatabaseChangeEvent(
   if (pluginStorageDeleteKeys !== undefined) {
     event.pluginStorageDeleteKeys = pluginStorageDeleteKeys;
   }
-  for (const field of [
-    "charactersChanged",
-    "rootChanged",
-    "pluginStorageCleared",
-    "presetsChanged",
-    "modulesChanged",
-    "pluginsChanged",
-  ] as const) {
+  for (const field of DATABASE_CHANGE_BOOLEAN_FIELDS) {
     const flag: boolean | undefined = readBoolean(value[field]);
     if (flag !== undefined) event[field] = flag;
   }
@@ -504,9 +519,8 @@ function parseLocalBackupImportProgress(
   const jobId = readString(value.jobId, 256);
   if (
     jobId === undefined ||
-    !LOCAL_BACKUP_IMPORT_STATUSES.includes(
-      value.status as RealtimeLocalBackupImportStatus,
-    )
+    typeof value.status !== "string" ||
+    !LOCAL_BACKUP_IMPORT_STATUS_SET.has(value.status)
   ) {
     return null;
   }
@@ -517,9 +531,8 @@ function parseLocalBackupImportProgress(
   if (value.progress !== undefined) {
     if (!isRecord(value.progress)) return null;
     if (
-      !LOCAL_BACKUP_IMPORT_STAGES.includes(
-        value.progress.stage as RealtimeLocalBackupImportStage,
-      )
+      typeof value.progress.stage !== "string" ||
+      !LOCAL_BACKUP_IMPORT_STAGE_SET.has(value.progress.stage)
     ) {
       return null;
     }
@@ -598,6 +611,8 @@ function parseResyncRequiredEvent(
   return event;
 }
 
+const CONTROL_CHAR_REGEX = /[\x00-\x1f]/;
+
 /**
  * Narrows an untrusted SSE/WebSocket JSON value into one of the canonical
  * realtime events. Unknown event names and malformed payloads yield null so
@@ -621,18 +636,24 @@ export function parseRealtimeEvent(
     const messageId = readString(data.messageId, 256);
     const illustrationId = readString(data.illustrationId, 256);
     if (
-      ![characterId, chatId, messageId, illustrationId].every(
-        (id) => id && !/[\x00-\x1f]/.test(id),
-      )
-    )
+      !characterId ||
+      CONTROL_CHAR_REGEX.test(characterId) ||
+      !chatId ||
+      CONTROL_CHAR_REGEX.test(chatId) ||
+      !messageId ||
+      CONTROL_CHAR_REGEX.test(messageId) ||
+      !illustrationId ||
+      CONTROL_CHAR_REGEX.test(illustrationId)
+    ) {
       return null;
+    }
     return {
       event: "illustration-progress",
       data: {
-        characterId: characterId!,
-        chatId: chatId!,
-        messageId: messageId!,
-        illustrationId: illustrationId!,
+        characterId,
+        chatId,
+        messageId,
+        illustrationId,
       },
     };
   }
