@@ -111,7 +111,10 @@ export function getRuleMatchScore(
   for (const message of candidateMessages) {
     if (typeof message.content !== "string") continue;
     for (const phrase of phrases) {
-      if (message.content.includes(phrase) && phrase.length > maxMatchedLength) {
+      if (
+        message.content.includes(phrase) &&
+        phrase.length > maxMatchedLength
+      ) {
         maxMatchedLength = phrase.length;
       }
     }
@@ -126,10 +129,7 @@ export function resolveModuleRequestRules(
 ): ModuleRuleDecision {
   const matched = new Map<string, { module: RuleModule; score: number }>();
   for (const module of modules) {
-    if (
-      module.subModel &&
-      Array.isArray(module.subModelRequestRules)
-    ) {
+    if (module.subModel && Array.isArray(module.subModelRequestRules)) {
       let maxScore = -1;
       for (const rule of module.subModelRequestRules) {
         // If user mistakenly configured the module itself as source, treat as any caller
@@ -160,26 +160,36 @@ export function resolveModuleRequestRules(
   if (allMatches.length === 1) {
     return {
       status: "matched",
-      modules: [{ id: allMatches[0].module.id, name: allMatches[0].module.name }],
+      modules: [
+        { id: allMatches[0].module.id, name: allMatches[0].module.name },
+      ],
       model: allMatches[0].module.subModel,
     };
   }
 
   // Conflict resolution: prefer more specific (longer) match
-  const maxScore = Math.max(...allMatches.map((m) => m.score));
+  let maxScore = -Infinity;
+  for (const m of allMatches) {
+    if (m.score > maxScore) maxScore = m.score;
+  }
   const bestMatches = allMatches.filter((m) => m.score === maxScore);
 
   if (bestMatches.length === 1) {
     return {
       status: "matched",
-      modules: [{ id: bestMatches[0].module.id, name: bestMatches[0].module.name }],
+      modules: [
+        { id: bestMatches[0].module.id, name: bestMatches[0].module.name },
+      ],
       model: bestMatches[0].module.subModel,
     };
   }
 
   return {
     status: "conflict",
-    modules: allMatches.map(({ module }) => ({ id: module.id, name: module.name })),
+    modules: allMatches.map(({ module }) => ({
+      id: module.id,
+      name: module.name,
+    })),
     model: undefined,
   };
 }

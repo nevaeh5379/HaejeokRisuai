@@ -110,7 +110,7 @@ export async function importUserPersona() {
       return;
     }
     const data: PersonaCard = JSON.parse(
-      Buffer.from(decoded, "base64").toString("utf-8"),
+      new TextDecoder().decode(Buffer.from(decoded, "base64")),
     );
     if (data.name && data.personaPrompt) {
       await personaStore.ensureLoaded();

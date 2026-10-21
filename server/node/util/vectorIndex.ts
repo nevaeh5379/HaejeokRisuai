@@ -377,24 +377,35 @@ function loadPersistedIndex(indexId?: any): any {
 }
 
 function evictMemoryIndexes(excludeId: any = null): any {
-  const oldestCandidates: any = () =>
-    (Array.from(indexes.entries()) as [string, any][])
-      .filter(([key]: any) => key !== excludeId)
-      .sort((a?: any, b?: any) => a[1].lastAccess - b[1].lastAccess);
   while (indexes.size > MAX_INDEXES) {
-    const candidate: any = oldestCandidates()[0];
-    if (!candidate) break;
-    indexes.delete(candidate[0]);
+    let oldestKey: string | null = null;
+    let oldestAccess = Infinity;
+    for (const [key, value] of indexes) {
+      if (key !== excludeId && value.lastAccess < oldestAccess) {
+        oldestAccess = value.lastAccess;
+        oldestKey = key;
+      }
+    }
+    if (!oldestKey) break;
+    indexes.delete(oldestKey);
   }
-  let totalFloats: any = Array.from(indexes.values()).reduce(
-    (sum?: any, value?: any) => sum + value.floatCount,
-    0,
-  );
-  const candidates: any = oldestCandidates();
-  while (totalFloats > MAX_TOTAL_FLOATS && candidates.length > 0) {
-    const [key, value] = candidates.shift();
-    totalFloats -= value.floatCount;
-    indexes.delete(key);
+  let totalFloats = 0;
+  for (const value of indexes.values()) {
+    totalFloats += value.floatCount;
+  }
+  if (totalFloats > MAX_TOTAL_FLOATS) {
+    const candidates: [string, any][] = [];
+    for (const entry of indexes.entries()) {
+      if (entry[0] !== excludeId) {
+        candidates.push(entry);
+      }
+    }
+    candidates.sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+    while (totalFloats > MAX_TOTAL_FLOATS && candidates.length > 0) {
+      const [key, value] = candidates.shift()!;
+      totalFloats -= value.floatCount;
+      indexes.delete(key);
+    }
   }
 }
 
@@ -589,8 +600,13 @@ function rankVectors(
       ? dotProduct(query, embedding)
       : cosineSimilarity(query, embedding);
 
-  if (topK === null || topK >= vectors.length || topK > 64) {
-    const ranked: any = vectors
+  const total = vectors.length ?? vectors.size ?? 0;
+
+  if (topK === null || topK >= total || topK > 64) {
+    const vectorList = Array.isArray(vectors)
+      ? vectors
+      : Array.from(vectors.entries());
+    const ranked: any = vectorList
       .map(([id, value]: any) => [id, score(value.embedding)])
       .sort((a?: any, b?: any) => b[1] - a[1]);
     return topK === null ? ranked : ranked.slice(0, topK);
@@ -599,7 +615,8 @@ function rankVectors(
   // Retrieval callers usually need only 1-3 hits. Keep a tiny sorted window
   // instead of allocating and sorting a result for every vector in the index.
   const best: any = [];
-  for (const [id, value] of vectors) {
+  const entries = vectors.entries ? vectors.entries() : vectors;
+  for (const [id, value] of entries) {
     const candidate: any = [id, score(value.embedding)];
     let insertAt: any = best.length;
     while (insertAt > 0 && candidate[1] > best[insertAt - 1][1]) insertAt--;
@@ -628,7 +645,7 @@ function searchVectorIndex(
   const index: any = touchIndex(indexId, false);
   if (!index) return null;
 
-  const vectors: any = Array.from(index.vectors.entries());
+  const vectors: any = index.vectors;
   return queries.map((rawQuery?: any) => {
     if (
       !Array.isArray(rawQuery) ||
