@@ -31,12 +31,16 @@ async function expandRememberedToolCalls(
         },
       ],
     });
-    const textContents = call.response
-      .filter((item) => item.type === "text")
-      .map((item) => item.text);
+    const textParts: string[] = [];
+    for (let i = 0; i < call.response.length; i++) {
+      const item = call.response[i];
+      if (item.type === "text") {
+        textParts.push(item.text);
+      }
+    }
     processedMessages.push({
       role: "tool",
-      content: textContents.join("\n"),
+      content: textParts.join("\n"),
       tool_call_id: call.call.id,
       cachePoint: true,
     });

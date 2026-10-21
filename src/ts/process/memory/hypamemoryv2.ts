@@ -109,12 +109,17 @@ export class HypaProcessorV2<TMetadata> {
     for (let i = 0; i < uniqueQueries.length; i++) {
       const ebdResult = ebdResults[i];
 
-      const scoredVectors = Array.from(this.vectors.values())
-        .map((vector): [EmbeddingResult<TMetadata>, number] => [
+      const scoredVectors: [EmbeddingResult<TMetadata>, number][] = new Array(
+        this.vectors.size,
+      );
+      let idx = 0;
+      for (const vector of this.vectors.values()) {
+        scoredVectors[idx++] = [
           vector,
           this.similarity(ebdResult.embedding, vector.embedding),
-        ])
-        .sort((a, b) => b[1] - a[1]);
+        ];
+      }
+      scoredVectors.sort((a, b) => b[1] - a[1]);
 
       scoredResultsMap.set(uniqueQueries[i], scoredVectors);
     }
@@ -194,25 +199,36 @@ export class HypaProcessorV2<TMetadata> {
     await Promise.all(loadPromises);
 
     if (ctxProvider && toEmbed.length > 0 && saveToMemory) {
-      const missMetadatas = new Set(
-        toEmbed.map((item) => item.metadata).filter(Boolean),
-      );
+      const missMetadatas = new Set<TMetadata>();
+      const toEmbedIds = new Set<string>();
+      for (let i = 0; i < toEmbed.length; i++) {
+        const item = toEmbed[i];
+        toEmbedIds.add(item.id);
+        if (item.metadata) {
+          missMetadatas.add(item.metadata);
+        }
+      }
 
-      const additionalItems = ebdTexts.filter(
-        (item) =>
+      const additionalItems: EmbeddingText<TMetadata>[] = [];
+      for (let i = 0; i < ebdTexts.length; i++) {
+        const item = ebdTexts[i];
+        if (
           item.metadata &&
           missMetadatas.has(item.metadata) &&
-          !toEmbed.some((e) => e.id === item.id),
-      );
+          !toEmbedIds.has(item.id)
+        ) {
+          additionalItems.push(item);
+        }
+      }
 
-      for (const item of additionalItems) {
+      for (let i = 0; i < additionalItems.length; i++) {
+        const item = additionalItems[i];
         resultMap.delete(item.id);
         if (this.vectors.has(item.id)) {
           this.vectors.delete(item.id);
         }
+        toEmbed.push(item);
       }
-
-      toEmbed.push(...additionalItems);
     }
 
     if (toEmbed.length === 0) {
@@ -383,32 +399,39 @@ export class HypaProcessorV2<TMetadata> {
         : await storage.vectorIndexStatus(indexId, descriptors, revision);
       if (status.missingIds.length > 0) {
         const missing = new Set(status.missingIds);
-        await storage.vectorIndexUpsert(
-          indexId,
-          vectors
-            .filter((vector) => missing.has(vector.id))
-            .map((vector) => ({
+        const toUpsert: Array<{
+          id: string;
+          signature: string;
+          embedding: number[];
+        }> = [];
+        for (let i = 0; i < vectors.length; i++) {
+          const vector = vectors[i];
+          if (missing.has(vector.id)) {
+            toUpsert.push({
               id: vector.id,
               signature: vectorContentSignature(vector.content),
               embedding: Array.from(vector.embedding),
-            })),
-        );
+            });
+          }
+        }
+        await storage.vectorIndexUpsert(indexId, toUpsert);
       }
 
       const ranked = await storage.vectorIndexSearch(
         indexId,
         queryResults.map((result) => Array.from(result.embedding)),
       );
-      return ranked.map((rows) =>
-        rows
-          .map(([id, score]): [EmbeddingResult<TMetadata>, number] | null => {
-            const vector = this.vectors.get(id);
-            return vector ? [vector, score] : null;
-          })
-          .filter(
-            (row): row is [EmbeddingResult<TMetadata>, number] => row !== null,
-          ),
-      );
+      return ranked.map((rows) => {
+        const out: [EmbeddingResult<TMetadata>, number][] = [];
+        for (let i = 0; i < rows.length; i++) {
+          const [id, score] = rows[i];
+          const vector = this.vectors.get(id);
+          if (vector) {
+            out.push([vector, score]);
+          }
+        }
+        return out;
+      });
     } catch (error) {
       console.warn(
         `${HypaProcessorV2.LOG_PREFIX} Server vector search failed; using browser fallback`,

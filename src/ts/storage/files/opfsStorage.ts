@@ -46,7 +46,15 @@ export class OpfsStorage {
   }
 
   async listSyncAssetKeys(prefix = "assets/"): Promise<string[]> {
-    return (await this.keys()).filter((key) => key.startsWith(prefix)).sort();
+    await this.Init();
+    const entries: string[] = [];
+    for await (const entry of this.opfs.values()) {
+      const key = Buffer.from(entry.name, "hex").toString("utf-8");
+      if (key.startsWith(prefix)) {
+        entries.push(key);
+      }
+    }
+    return entries.sort();
   }
 
   private async getFile(key: string): Promise<File> {

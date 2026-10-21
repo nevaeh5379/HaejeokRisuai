@@ -629,17 +629,19 @@ export async function requestClaude(
 
             //since jsonl
             const batchResultRawText = await batchRes.text();
-            const batchTextData = batchResultRawText
-              .split("\n")
-              .filter((v) => v.trim() !== "")
-              .map((v) => {
+            const rawLines = batchResultRawText.split("\n");
+            const batchTextData: any[] = [];
+            for (let i = 0; i < rawLines.length; i++) {
+              const line = rawLines[i].trim();
+              if (line !== "") {
                 try {
-                  return JSON.parse(v);
-                } catch (error) {
-                  return null;
-                }
-              })
-              .filter((v) => v !== null);
+                  const parsed = JSON.parse(line);
+                  if (parsed !== null) {
+                    batchTextData.push(parsed);
+                  }
+                } catch {}
+              }
+            }
 
             for (const batchData of batchTextData) {
               const type = batchData?.result?.type;
