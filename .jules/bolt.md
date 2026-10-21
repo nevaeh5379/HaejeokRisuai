@@ -64,3 +64,27 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2026-10-21 - Eliminate Micro-Allocations in Remote Auth, Backup Streams, Codecs, and Scripting Functions
+
+**Learning:** Found transient object and array allocations across remote storage identity, backup stream collection, SQL commit compatibility, SQLite query building, CBS functions, and cold storage tracking:
+
+1. `base64UrlEncode` in `remoteAuthIdentity.ts` called `String.fromCharCode(...bytes)`, risking call-stack overflow (`RangeError`) on inputs larger than 65,536 bytes, and created `new TextEncoder()` instances on every call.
+2. `mergeLegacyModulesIntoCommit` in `sqlCommitCompatibility.ts` chained 8 intermediate array allocations (`filter().map().filter()`, `flatMap()`, and tuple mapping) during module commit reconciliation.
+3. `legacyRecords.ts` and `databasePreparation.ts` allocated hundreds of `[key, value]` tuples via `Object.entries(database)` when preparing database backup snapshots, and created intermediate arrays during branch root resolution and link mapping.
+4. `databaseBackup.ts` evaluated manifest counts with `Object.entries()` and repeated array `.includes()` on `supportedRecordTypes`.
+5. `inventory.ts` allocated intermediate `Array.from()` arrays during cold storage finalization and redundant `.filter()` arrays during character cold chat collection.
+6. `admin.ts` and `apply.ts` in `storage-sqlite` created intermediate mapped arrays and executed linear array scans (`includes`) during column and statement counting.
+7. `min` and `max` in `cbs.ts` spread mapped arrays across `Math.min(...val.map(...))` and `Math.max(...val.map(...))`, risking RangeError on large CBS datasets and allocating unnecessary mapped arrays.
+8. `coldstorageData.ts` created double array allocations with `Array.from(targetKeys).filter(...)` and array spreads on cold chat keys.
+9. `postgresRelationalCodec.ts` allocated `[key, value]` entry tuples across `containsNul`, `remainingAttributes`, and `flattenChat`.
+
+**Action:**
+
+1. Use native `Buffer.toString("base64url")` with chunked fallback in `base64UrlEncode` to eliminate stack overflow risk, and share a module-scoped `TextEncoder` instance.
+2. Streamline `mergeLegacyModulesIntoCommit` into single-pass loops without intermediate arrays or closures.
+3. Replace `Object.entries(db)` with `Object.keys(db)` and pre-allocated/iterative collections in backup record generators and inventory collectors.
+4. Replace `supportedRecordTypes.includes()` with `supportedRecordTypesSet.has()` $O(1)$ set lookup.
+5. Compute `min` and `max` iteratively in `cbs.ts` in a single pass without array mapping or stack-spread arguments.
+6. Collect unresolved cold keys and character chat keys with direct iterative loops.
+7. Iterate object keys directly in `postgresRelationalCodec.ts` without entry tuple allocations.

@@ -71,9 +71,7 @@ export class StreamingBackupExportInventory implements StreamingColdStorageInven
   }
 
   finalizeUnavailableColdStorageKeys(): ReadonlySet<string> {
-    const referencedKeys: string[] = Array.from(this.referencedColdStorageKeys);
-    for (let index: number = 0; index < referencedKeys.length; index += 1) {
-      const key: string = referencedKeys[index];
+    for (const key of this.referencedColdStorageKeys) {
       if (!this.exportedColdStorageKeys.has(key)) {
         this.unavailableColdStorageKeys.add(key);
       }
@@ -110,14 +108,16 @@ export function collectStreamingInventoryRecord(
     const data = record.data as Record<string, any> | undefined;
     const coldstorage =
       typeof data?.coldstorage === "string" ? data.coldstorage : undefined;
-    const coldStoragedChats = Array.isArray(data?.coldStoragedChats)
-      ? data.coldStoragedChats.filter(
-          (key: unknown): key is string => typeof key === "string",
-        )
-      : [];
     if (coldstorage) inventory.referencedColdStorageKeys.add(coldstorage);
-    for (const key of coldStoragedChats) {
-      inventory.referencedColdStorageKeys.add(key);
+    const coldStoragedChats: string[] = [];
+    if (Array.isArray(data?.coldStoragedChats)) {
+      for (let i = 0; i < data.coldStoragedChats.length; i++) {
+        const key = data.coldStoragedChats[i];
+        if (typeof key === "string") {
+          coldStoragedChats.push(key);
+          inventory.referencedColdStorageKeys.add(key);
+        }
+      }
     }
     inventory.coldStorageCharacters.set(record.id, {
       chaId: record.id,
@@ -239,8 +239,11 @@ function collectAssetRecord(
     for (const asset of data?.additionalAssets ?? []) {
       addAsset(asset?.[1], characterName, asset?.[0] ?? "Asset");
     }
-    for (const [name, key] of Object.entries(data?.vits?.files ?? {})) {
-      addAsset(key, characterName, name);
+    const vitsFiles = data?.vits?.files;
+    if (vitsFiles && typeof vitsFiles === "object") {
+      for (const name of Object.keys(vitsFiles)) {
+        addAsset(vitsFiles[name], characterName, name);
+      }
     }
     for (const asset of data?.ccAssets ?? []) {
       addAsset(asset?.uri, characterName, asset?.name ?? "Asset");
