@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { flushSync } from "svelte";
 import type { ISqlStorage } from "../../storage/sql/ISqlStorage";
 import type { SqlCommit } from "../../storage/sql/sqlCommit";
 import type { ModuleFolder, RisuModule } from "../../process/modules";
@@ -123,6 +124,93 @@ describe("moduleStore ordering and folder positions", () => {
     await moduleStore.flush();
     expect(committed.at(-1)?.modules?.upserts[0].data).toMatchObject({
       name: "Second edit",
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("persists same-length nested edits through the automatic save observer", async () => {
+    mockStorage.loadModules = vi.fn(
+      async () =>
+        [
+          {
+            id: "m1",
+            name: "First",
+            description: "",
+            lorebook: [{ content: "before", key: "key" }],
+          },
+        ] as RisuModule[],
+    );
+    await moduleStore.init(mockStorage);
+    flushSync();
+
+    moduleStore.getById("m1")!.lorebook![0].content = "after!";
+    flushSync();
+
+    await vi.waitFor(() => expect(committed).toHaveLength(1));
+    expect(committed[0].modules?.upserts[0].data).toMatchObject({
+      lorebook: [{ content: "after!" }],
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("saves direct array reordering and deletion without rewriting unchanged bodies", async () => {
+    mockStorage.loadModules = vi.fn(async () => [
+      { id: "m1", name: "First", description: "" },
+      { id: "m2", name: "Second", description: "" },
+      { id: "m3", name: "Third", description: "" },
+    ]);
+    await moduleStore.init(mockStorage);
+
+    moduleStore.modules.reverse();
+    moduleStore.modules.splice(1, 1);
+    await moduleStore.flush();
+
+    expect(committed[0].modules).toEqual({
+      upserts: [],
+      deletes: ["m2"],
+      order: ["m3", "m1"],
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("deletes the old module ID when a compatibility caller renames it directly", async () => {
+    mockStorage.loadModules = vi.fn(async () => [
+      { id: "old-id", name: "Module", description: "" },
+    ]);
+    await moduleStore.init(mockStorage);
+
+    moduleStore.modules[0].id = "new-id";
+    await moduleStore.flush();
+
+    expect(committed[0].modules).toMatchObject({
+      upserts: [{ id: "new-id", position: 0, data: { id: "new-id" } }],
+      deletes: ["old-id"],
+      order: ["new-id"],
+    });
+    expect(moduleStore.hasPendingWrites()).toBe(false);
+  });
+
+  it("continues observing modules added after startup across successive saves", async () => {
+    await moduleStore.init(mockStorage);
+    flushSync();
+    moduleStore.modules.push({
+      id: "late-module",
+      name: "Added after startup",
+      description: "",
+      assets: [["icon", "assets/before.png", "png"]],
+    });
+    flushSync();
+    await vi.waitFor(() => expect(committed).toHaveLength(1));
+
+    moduleStore.modules[0].assets![0][1] = "assets/second.png";
+    flushSync();
+    await vi.waitFor(() => expect(committed).toHaveLength(2));
+    moduleStore.modules[0].assets![0][1] = "assets/third.png";
+    flushSync();
+    await vi.waitFor(() => expect(committed).toHaveLength(3));
+
+    expect(committed[2].modules?.upserts[0].data).toMatchObject({
+      assets: [["icon", "assets/third.png", "png"]],
     });
     expect(moduleStore.hasPendingWrites()).toBe(false);
   });
