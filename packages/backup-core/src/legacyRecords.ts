@@ -97,20 +97,28 @@ function uniqueMessageIds(
   idFactory: () => string,
 ): string[] {
   const seen = new Set<string>();
-  return messages.map((message) => {
+  const ids = new Array<string>(messages.length);
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
     let id =
       typeof message?.chatId === "string" && message.chatId.length > 0
         ? message.chatId
         : idFactory();
     while (seen.has(id)) id = idFactory();
     seen.add(id);
-    message.chatId = id;
-    return id;
-  });
+    if (message && typeof message === "object") {
+      message.chatId = id;
+    }
+    ids[index] = id;
+  }
+  return ids;
 }
 
 function sourceRoot(graph: PortableBranchGraph) {
-  const ids = new Set(graph.branches.map((branch) => branch.id));
+  const ids = new Set<string>();
+  for (const branch of graph.branches) {
+    ids.add(branch.id);
+  }
   return (
     graph.branches.find((branch) => branch.reason === "root") ??
     graph.branches.find(
@@ -147,9 +155,18 @@ function* graphRecords(
       : root.id;
   yield { type: "active-branch", chatId, branchId: activeBranchId };
 
-  const links = new Map(
-    (graph.links ?? []).map((link: any) => [link.messageId, link]),
-  );
+  const links = new Map<string, any>();
+  if (Array.isArray(graph.links)) {
+    for (const link of graph.links) {
+      if (
+        link &&
+        typeof link === "object" &&
+        typeof link.messageId === "string"
+      ) {
+        links.set(link.messageId, link);
+      }
+    }
+  }
   const messages = Array.isArray(graph.messages)
     ? (graph.messages as Array<Record<string, any>>)
     : [];
@@ -260,13 +277,12 @@ export function* iterateLegacyBackupSqlRecords(
     "pluginCustomStorage",
     "isSql",
   ]);
-  for (const [key, value] of Object.entries(database)) {
-    if (
-      excludedSettings.has(key) ||
-      LEGACY_PERSONA_MIRROR_KEYS.has(key) ||
-      value === undefined ||
-      typeof value === "function"
-    ) {
+  for (const key of Object.keys(database)) {
+    if (excludedSettings.has(key) || LEGACY_PERSONA_MIRROR_KEYS.has(key)) {
+      continue;
+    }
+    const value = database[key];
+    if (value === undefined || typeof value === "function") {
       continue;
     }
     if (key === "activeBotPresetId" && presets.length > 0) continue;
@@ -294,8 +310,8 @@ export function* iterateLegacyBackupSqlRecords(
     !Array.isArray(database.pluginCustomStorage)
       ? database.pluginCustomStorage
       : {};
-  for (const [key, value] of Object.entries(pluginStorage)) {
-    yield { type: "plugin-storage", key, value };
+  for (const key of Object.keys(pluginStorage)) {
+    yield { type: "plugin-storage", key, value: pluginStorage[key] };
   }
 
   const modules = Array.isArray(database.modules) ? database.modules : [];

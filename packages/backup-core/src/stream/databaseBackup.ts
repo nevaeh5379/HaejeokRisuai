@@ -57,7 +57,7 @@ function nonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
-const supportedRecordTypes: readonly BackupRecord["type"][] = [
+const supportedRecordTypesSet: ReadonlySet<string> = new Set<string>([
   "meta",
   "author-note",
   "author-note-settings",
@@ -71,17 +71,16 @@ const supportedRecordTypes: readonly BackupRecord["type"][] = [
   "branch",
   "active-branch",
   "message",
-];
+]);
 
 function validCounts(value: unknown): value is Manifest["counts"] {
   if (!object(value)) return false;
-  for (const [type, count] of Object.entries(value)) {
+  for (const type of Object.keys(value)) {
+    const count = (value as Record<string, unknown>)[type];
     if (!nonNegativeInteger(count)) return false;
-    if (
-      !supportedRecordTypes.includes(type as BackupRecord["type"]) &&
-      count !== 0
-    )
+    if (!supportedRecordTypesSet.has(type) && count !== 0) {
       return false;
+    }
   }
   return true;
 }

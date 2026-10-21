@@ -79,9 +79,18 @@ function containsNul(value?: any, seen: any = new Set()): any {
   if (typeof value === "string") return value.includes("\0");
   if (!value || typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
-  return (Object.entries(value) as [string, any][]).some(
-    ([key, item]: any) => key.includes("\0") || containsNul(item, seen),
-  );
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      if (containsNul(value[i], seen)) return true;
+    }
+    return false;
+  }
+  const keys = Object.keys(value);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (key.includes("\0") || containsNul(value[key], seen)) return true;
+  }
+  return false;
 }
 
 function relationalArray(source?: any, property?: any, attributes?: any): any {
@@ -117,12 +126,17 @@ function extractScalarProperties(
 }
 
 function remainingAttributes(source?: any): any {
-  return (Object.entries(source) as [string, any][]).map(
-    ([key, value]: any) => ({
+  if (!source || typeof source !== "object") return [];
+  const keys = Object.keys(source);
+  const result: any[] = new Array(keys.length);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    result[i] = {
       key,
-      value: encodeJson(value),
-    }),
-  );
+      value: encodeJson(source[key]),
+    };
+  }
+  return result;
 }
 
 function encodeSetting(key?: any, value?: any): any {
@@ -463,10 +477,8 @@ function splitChat(row?: any): any {
       value: encodeJson(source.scriptstate),
     });
   } else if (source.scriptstate && typeof source.scriptstate === "object") {
-    for (const [key, value] of Object.entries(source.scriptstate) as [
-      string,
-      any,
-    ][]) {
+    for (const key of Object.keys(source.scriptstate)) {
+      const value: any = source.scriptstate[key];
       if (typeof value === "string" && !value.includes("\0")) {
         scriptState.push({
           chat_id: row.id,

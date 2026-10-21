@@ -14,9 +14,24 @@ export type RemoteKeyPairSaver = (
   keyPair: RemoteAuthKeyPair,
 ) => Promise<unknown>;
 
+const sharedTextEncoder = new TextEncoder();
+
 export function base64UrlEncode(source: Uint8Array | ArrayBuffer): string {
   const bytes = source instanceof ArrayBuffer ? new Uint8Array(source) : source;
-  return btoa(String.fromCharCode(...bytes))
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(
+      bytes.buffer,
+      bytes.byteOffset,
+      bytes.byteLength,
+    ).toString("base64url");
+  }
+  let binary = "";
+  const chunkSize = 4096;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary)
     .replace(/=+$/, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
@@ -25,11 +40,11 @@ export function base64UrlEncode(source: Uint8Array | ArrayBuffer): string {
 export function remoteAuthKeyStoreName(origin: string): string {
   // Invalidate the former non-extractable CryptoKey cache. The next login
   // registers a new key; no conversion of old keys is needed.
-  return `node:noble-p256-v1:${base64UrlEncode(new TextEncoder().encode(origin))}`;
+  return `node:noble-p256-v1:${base64UrlEncode(sharedTextEncoder.encode(origin))}`;
 }
 
 function encodeJson(value: unknown): string {
-  return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value)));
+  return base64UrlEncode(sharedTextEncoder.encode(JSON.stringify(value)));
 }
 
 export class RemoteAuthIdentity {
@@ -88,7 +103,7 @@ export class RemoteAuthIdentity {
     const unsigned = `${encodeJson(header)}.${encodeJson(payload)}`;
     const { p256 } = await import("./remoteAuthCrypto");
     const signature = p256.sign(
-      new TextEncoder().encode(unsigned),
+      sharedTextEncoder.encode(unsigned),
       keyPair.privateKey,
       { prehash: true, format: "compact" },
     );

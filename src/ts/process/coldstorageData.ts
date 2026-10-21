@@ -87,7 +87,11 @@ function listColdDataKeysFromCharacter(
   const keys: string[] = [];
   if (character.coldstorage) {
     keys.push(character.coldstorage);
-    keys.push(...(character.coldStoragedChats ?? []));
+    if (character.coldStoragedChats) {
+      for (let i = 0; i < character.coldStoragedChats.length; i++) {
+        keys.push(character.coldStoragedChats[i]);
+      }
+    }
   }
   for (const chat of character.chats ?? []) {
     const firstMessage = chat.message?.[0];
@@ -144,10 +148,15 @@ export function getColdStorageAffectedCharacters(
     }
   }
 
+  const unresolvedKeys: string[] = [];
+  for (const key of targetKeys) {
+    if (!resolvedKeys.has(key)) {
+      unresolvedKeys.push(key);
+    }
+  }
+
   return {
     characterNames,
-    unresolvedKeys: Array.from(targetKeys).filter(
-      (key) => !resolvedKeys.has(key),
-    ),
+    unresolvedKeys,
   };
 }

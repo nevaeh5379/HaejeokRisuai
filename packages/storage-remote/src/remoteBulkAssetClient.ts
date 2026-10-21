@@ -116,9 +116,11 @@ export class RemoteBulkAssetClient {
       const requests = await cache.keys();
       const excess = requests.length - BULK_IMAGE_CACHE_MAX_ENTRIES;
       if (excess <= 0) return;
-      await Promise.all(
-        requests.slice(0, excess).map((request) => cache.delete(request)),
-      );
+      const deletions: Promise<boolean>[] = [];
+      for (let i = 0; i < excess; i++) {
+        deletions.push(cache.delete(requests[i]));
+      }
+      await Promise.all(deletions);
     } catch {
       // CacheStorage is only an optimization.
     }
@@ -134,19 +136,20 @@ export class RemoteBulkAssetClient {
     if (encodedKeys.size === 0) return;
     try {
       const requests = await cache.keys();
-      await Promise.all(
-        requests
-          .filter((request) => {
-            try {
-              return encodedKeys.has(
-                new URL(request.url).searchParams.get("path") ?? "",
-              );
-            } catch {
-              return false;
-            }
-          })
-          .map((request) => cache.delete(request)),
-      );
+      const deletions: Promise<boolean>[] = [];
+      for (let i = 0; i < requests.length; i++) {
+        const request = requests[i];
+        try {
+          if (
+            encodedKeys.has(new URL(request.url).searchParams.get("path") ?? "")
+          ) {
+            deletions.push(cache.delete(request));
+          }
+        } catch {
+          // ignore malformed url
+        }
+      }
+      await Promise.all(deletions);
     } catch {
       // A stale cache entry is preferable to failing a completed write.
     }

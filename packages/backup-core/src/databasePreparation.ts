@@ -34,13 +34,11 @@ export function buildPortableLocalBackupDatabase(
   options: PortableBackupDatabaseOptions = {},
 ): Record<string, any> {
   const cleanDb: Record<string, any> = {};
-  for (const [key, value] of Object.entries(db)) {
-    if (
-      key === "account" ||
-      typeof value === "function" ||
-      (mode === "compatible" && key === "moduleFolders")
-    )
+  for (const key of Object.keys(db)) {
+    if (key === "account" || (mode === "compatible" && key === "moduleFolders"))
       continue;
+    const value = db[key];
+    if (typeof value === "function") continue;
     cleanDb[key] = value;
   }
   cleanDb.pluginCustomStorage ??= {};

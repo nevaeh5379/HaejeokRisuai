@@ -157,4 +157,24 @@ describe("RemoteAuthIdentity without crypto.subtle", () => {
       request.mock.calls.filter(([path]) => path === "/api/login"),
     ).toHaveLength(1);
   });
+
+  it("encodes large byte arrays (> 65536 bytes) without call stack overflow", () => {
+    const largeData = new Uint8Array(100_000);
+    for (let i = 0; i < largeData.length; i++) {
+      largeData[i] = i % 256;
+    }
+    const encoded = base64UrlEncode(largeData);
+    expect(encoded).toBeTypeOf("string");
+    expect(encoded.length).toBeGreaterThan(0);
+    expect(encoded).not.toContain("+");
+    expect(encoded).not.toContain("/");
+    expect(encoded).not.toContain("=");
+
+    // Verify round-trip via Buffer base64url decode
+    const decoded = Buffer.from(encoded, "base64url");
+    expect(decoded.length).toBe(100_000);
+    expect(decoded[0]).toBe(0);
+    expect(decoded[255]).toBe(255);
+    expect(decoded[1000]).toBe(1000 % 256);
+  });
 });

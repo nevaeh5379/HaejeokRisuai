@@ -241,11 +241,23 @@ export async function getTableData(
   } = {},
 ): Promise<NodePostgresTableData> {
   const allColumns = await getColumns(selectRows, table);
-  const columnNames = new Set(allColumns.map((column) => column.name));
-  const requested = options.columns?.filter((name) => columnNames.has(name));
-  const columns = requested?.length
-    ? allColumns.filter((column) => requested.includes(column.name))
-    : allColumns;
+  const columnNames = new Set<string>();
+  for (let i = 0; i < allColumns.length; i++) {
+    columnNames.add(allColumns[i].name);
+  }
+  let columns = allColumns;
+  if (options.columns && options.columns.length > 0) {
+    const requestedSet = new Set<string>();
+    for (let i = 0; i < options.columns.length; i++) {
+      const name = options.columns[i];
+      if (columnNames.has(name)) {
+        requestedSet.add(name);
+      }
+    }
+    if (requestedSet.size > 0) {
+      columns = allColumns.filter((column) => requestedSet.has(column.name));
+    }
+  }
   if (columns.length === 0)
     throw new Error(`SQLite table has no columns: ${table}`);
   const offset = Math.max(0, Math.floor(options.offset ?? 0));

@@ -387,10 +387,11 @@ export function countStatements(commit: StorageSqlCommit): number {
   for (const deletion of commit.messageDeletes ?? []) {
     if (deletion.ids.length > 0) total += deletion.ids.length * 4 + 1;
   }
-  const affectedMessageChatIds = new Set([
-    ...commit.messages.map((entry) => entry.chatId),
-    ...(commit.messageDeletes ?? []).map((entry) => entry.chatId),
-  ]);
+  const affectedMessageChatIds = new Set<string>();
+  for (const entry of commit.messages) affectedMessageChatIds.add(entry.chatId);
+  for (const deletion of commit.messageDeletes ?? []) {
+    affectedMessageChatIds.add(deletion.chatId);
+  }
   if (affectedMessageChatIds.size > 0) total += affectedMessageChatIds.size + 2;
 
   return total;

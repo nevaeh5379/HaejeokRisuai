@@ -1108,7 +1108,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (matcherArg.displaying) {
         return `<br><div class="risu-file">${args[0]}</div><br>`;
       }
-      return Buffer.from(args[1], "base64").toString("utf-8");
+      return new TextDecoder().decode(Buffer.from(args[1], "base64"));
     },
     alias: [],
     description:
@@ -1907,15 +1907,18 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "min",
     callback: (str, matcherArg, args, vars) => {
       const val = args.length > 1 ? args : parseArray(args[0]);
-      return Math.min(
-        ...val.map((f) => {
-          const num = Number(f);
-          if (isNaN(num)) {
-            return 0;
-          }
-          return num;
-        }),
-      ).toString();
+      if (!Array.isArray(val) || val.length === 0) {
+        return "Infinity";
+      }
+      let minVal = Infinity;
+      for (let i = 0; i < val.length; i++) {
+        const num = Number(val[i]);
+        const clean = isNaN(num) ? 0 : num;
+        if (clean < minVal) {
+          minVal = clean;
+        }
+      }
+      return minVal.toString();
     },
     alias: [],
     description:
@@ -1926,15 +1929,18 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: "max",
     callback: (str, matcherArg, args, vars) => {
       const val = args.length > 1 ? args : parseArray(args[0]);
-      return Math.max(
-        ...val.map((f) => {
-          const num = Number(f);
-          if (isNaN(num)) {
-            return 0;
-          }
-          return num;
-        }),
-      ).toString();
+      if (!Array.isArray(val) || val.length === 0) {
+        return "-Infinity";
+      }
+      let maxVal = -Infinity;
+      for (let i = 0; i < val.length; i++) {
+        const num = Number(val[i]);
+        const clean = isNaN(num) ? 0 : num;
+        if (clean > maxVal) {
+          maxVal = clean;
+        }
+      }
+      return maxVal.toString();
     },
     alias: [],
     description:

@@ -7,36 +7,62 @@ export function mergeLegacyModulesIntoCommit<TPreset extends object>(
   if (!commit.modules || !Array.isArray(legacyModules)) return;
 
   const deleted = new Set(commit.modules.deletes);
-  const changed = new Set(commit.modules.upserts.map((entry) => entry.id));
-  const inferredOrder = [
-    ...legacyModules
-      .filter((module): module is { id: string } & Record<string, unknown> =>
-        Boolean(
-          module &&
-          typeof module === "object" &&
-          typeof (module as { id?: unknown }).id === "string",
-        ),
-      )
-      .map((module) => module.id)
-      .filter((id) => !deleted.has(id)),
-    ...commit.modules.upserts
-      .map((entry) => entry.id)
-      .filter((id) => !deleted.has(id)),
-  ];
-  const order = commit.modules.order ?? [...new Set(inferredOrder)];
-  const positions = new Map(order.map((id, position) => [id, position]));
-  const migrated = legacyModules.flatMap((module) => {
-    if (
-      !module ||
-      typeof module !== "object" ||
-      typeof (module as { id?: unknown }).id !== "string"
-    ) {
-      return [];
+  const changed = new Set<string>();
+  for (const entry of commit.modules.upserts) {
+    changed.add(entry.id);
+  }
+
+  let order = commit.modules.order;
+  if (!order) {
+    const orderSet = new Set<string>();
+    for (const module of legacyModules) {
+      if (
+        module &&
+        typeof module === "object" &&
+        typeof (module as { id?: unknown }).id === "string"
+      ) {
+        const id = (module as { id: string }).id;
+        if (!deleted.has(id)) {
+          orderSet.add(id);
+        }
+      }
     }
-    const data = module as { id: string } & Record<string, unknown>;
-    if (deleted.has(data.id) || changed.has(data.id)) return [];
-    return [{ id: data.id, position: positions.get(data.id) ?? 0, data }];
-  });
+    for (const entry of commit.modules.upserts) {
+      if (!deleted.has(entry.id)) {
+        orderSet.add(entry.id);
+      }
+    }
+    order = Array.from(orderSet);
+  }
+
+  const positions = new Map<string, number>();
+  for (let position = 0; position < order.length; position++) {
+    positions.set(order[position], position);
+  }
+
+  const migrated: Array<{
+    id: string;
+    position: number;
+    data: { id: string } & Record<string, unknown>;
+  }> = [];
+
+  for (const module of legacyModules) {
+    if (
+      module &&
+      typeof module === "object" &&
+      typeof (module as { id?: unknown }).id === "string"
+    ) {
+      const data = module as { id: string } & Record<string, unknown>;
+      if (!deleted.has(data.id) && !changed.has(data.id)) {
+        migrated.push({
+          id: data.id,
+          position: positions.get(data.id) ?? 0,
+          data,
+        });
+      }
+    }
+  }
+
   commit.modules.upserts = [...migrated, ...commit.modules.upserts];
   commit.modules.order = order;
   if (!commit.root.deletes.includes("modules")) {
