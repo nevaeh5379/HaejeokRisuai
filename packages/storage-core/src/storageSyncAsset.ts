@@ -7,6 +7,20 @@ export interface StorageSyncAssetManifestEntry {
   sha256: string;
 }
 
+/**
+ * Compare asset keys by UTF-16 code units, which is exactly what the bare
+ * `Array.prototype.sort()` used across every asset listing backend does.
+ * Passing an explicit comparator keeps that byte order instead of falling back
+ * to the engine's locale-sensitive default ordering.
+ */
+export function compareStorageSyncAssetKeys(
+  left: string,
+  right: string,
+): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
 export interface StorageSyncAssetReader {
   listKeys(prefix: string): Promise<string[]>;
   getSize(key: string): Promise<number>;

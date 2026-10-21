@@ -127,9 +127,10 @@ export class RemoteBulkAssetClient {
   async invalidateCache(keys: Iterable<string>): Promise<void> {
     const cache = await this.openBulkImageCache();
     if (!cache) return;
-    const encodedKeys = new Set(
-      [...keys].map((key) => Buffer.from(key, "utf8").toString("hex")),
-    );
+    const encodedKeys = new Set<string>();
+    for (const key of keys) {
+      encodedKeys.add(Buffer.from(key, "utf8").toString("hex"));
+    }
     if (encodedKeys.size === 0) return;
     try {
       const requests = await cache.keys();

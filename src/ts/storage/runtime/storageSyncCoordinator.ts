@@ -165,11 +165,15 @@ function throwIfAborted(signal?: AbortSignal): void {
 function manifestFingerprint(
   entries: NodeStorageSyncAssetManifestEntry[],
 ): string {
-  return JSON.stringify(
-    [...entries]
-      .map(({ key, size, sha256 }) => ({ key, size, sha256 }))
-      .sort((left, right) => left.key.localeCompare(right.key)),
-  );
+  const sorted = entries
+    .slice()
+    .sort((left, right) => left.key.localeCompare(right.key));
+  let fingerprint = "";
+  for (let i = 0; i < sorted.length; i++) {
+    const entry = sorted[i];
+    fingerprint += `${entry.key}:${entry.size}:${entry.sha256}\n`;
+  }
+  return fingerprint;
 }
 
 function assertAssetPlanMatchesSource(

@@ -42,3 +42,25 @@
 
 **Learning:** Found nested spread operations and array conversions inside hot iteration paths, such as `[...lastSummary.chatMemos].at(-1)` evaluated inside `chats.findIndex()`, `[...touchPointers.values()]` inside pinch zoom pointer move handlers, and `[...baseMessages].reverse().find()` in speaker resolution. These create O(N*M) GC pressure and micro-stutters on low-memory mobile devices.
 **Action:** Extract loop-invariant lookups before iteration loops (retrieving the last Set item in a single pass outside `findIndex`), use iterator `next()` instead of array spread when only leading values are needed, replace `[...arr].reverse().find()` with `arr.findLast()`, and replace transient filter arrays with early-return loop checks or single-pass `Array.from()` conversions. When the same block already exists in twin functions (`hypaMemoryV3MainExp`/`hypaMemoryV3Main`, or `startPinch` and the pinch pointermove branch), extract one shared helper instead of copying the optimized block twice; a reusable output holder (`pinchPoints`) keeps the shared helper allocation-free.
+
+## 2024-11-27 - Optimize Template Compilation, Vector Ranking, and Storage Asset Traversal
+
+**Learning:** Found transient object and array allocations across hot prompt templating, memory vector search, and asset synchronization paths:
+
+1. `applyChatTemplate` performed a full `safeStructuredClone(messages)` deep copy of the message list on every generation solely to update system roles in place, and re-instantiated/re-compiled Jinja templates from scratch.
+2. `extractJSON` performed recursive string `.split(".")` and `.join(".")` at every level of nested path traversal, generating quadratic string and array allocations.
+3. `HypaProcesser.similaritySearchVectorWithScore` and `HypaV3.similaritySearchSummaryChunkWithScore` allocated intermediate `{ similarity, index }` or `{ chunk, similarity }` objects and double-mapped arrays before sorting.
+4. `chunkArray` in `hypamemory.ts` used `arr.reduce()` with `chunk.concat([elem])`, creating quadratic intermediate array copies per chunk.
+5. `normalizeScores` in `hypav3.ts` allocated mapped score arrays and spread them across `Math.min(...scores)` and `Math.max(...scores)`, risking call-stack overflow on large candidate sets.
+6. `manifestFingerprint` in `storageSyncCoordinator.ts` mapped new objects and JSON-stringified full arrays, while asset reader listing operations (`remoteSyncAssetReader`, `storageSyncAssetReader`, and `remoteBulkAssetClient`) used intermediate spreads and chained filters over large asset key sets.
+7. `cleanColdStorage` evaluated `allKeys.filter((k) => !actualUsedKeys.includes(k))` with O(N*M) quadratic lookups, and `collectColdStorageBackupPayloads` instantiated `new TextEncoder()` on every single backup item.
+
+**Action:**
+
+1. Avoid deep-cloning prompt messages in `applyChatTemplate` by reading roles/contents immutably and cache compiled Jinja templates in a bounded LRU map.
+2. Replace recursive path extraction in `extractJSON` with an iterative single-pass segment traversal, and use `Set.has()` in schema exclude filters.
+3. Pre-allocate tuple result arrays directly in vector similarity searches, eliminating wrapper object allocations and redundant intermediate mapping passes.
+4. Replace quadratic `chunk.concat([elem])` with linear `arr.slice()` chunks in `chunkArray`.
+5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
+6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
+7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.

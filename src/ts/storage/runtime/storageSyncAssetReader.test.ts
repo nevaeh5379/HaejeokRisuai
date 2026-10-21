@@ -53,6 +53,28 @@ describe("storage sync asset reader", () => {
     );
     expect(storage.maxActive).toBeLessThanOrEqual(2);
   });
+  it("orders keys by UTF-16 code units, never by locale collation", async () => {
+    const reader = {
+      listKeys: async () => [
+        "assets/a.bin",
+        "assets/aA.bin",
+        "assets/B.bin",
+        "assets/-x.bin",
+        "assets/a.bin",
+      ],
+      getSize: async () => 1,
+      readChunk: async () => new Uint8Array(1),
+    };
+
+    const manifest = await buildStorageSyncAssetManifest(reader, "assets/");
+
+    expect(manifest.map((entry) => entry.key)).toEqual([
+      "assets/-x.bin",
+      "assets/B.bin",
+      "assets/a.bin",
+      "assets/aA.bin",
+    ]);
+  });
   it("rejects unsupported legacy browser storage explicitly", () => {
     expect(() =>
       createStorageSyncAssetReader({ keys: async () => [] }),

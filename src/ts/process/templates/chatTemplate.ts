@@ -1,6 +1,5 @@
 import { presetStore } from "src/ts/stores/domain/presetStore.svelte";
 import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
-import { settingsStore } from "src/ts/stores/domain/settingsStore.svelte";
 import { Template } from "@huggingface/jinja";
 import type { OpenAIChat } from "@risuai/chat-core/types.ts";
 import type { character, groupChat } from "../../storage/database/schema";
@@ -29,6 +28,24 @@ export const templateEffect = {
   mistral: ["no_system_messages", "alter_user_assistant_roles"],
 } as { [key: string]: TemplateEffect[] };
 
+const templateCache = new Map<string, Template>();
+const MAX_TEMPLATE_CACHE_SIZE = 50;
+
+function getOrCompileTemplate(key: string, source: string): Template {
+  let template = templateCache.get(key);
+  if (!template) {
+    template = new Template(source);
+    if (templateCache.size >= MAX_TEMPLATE_CACHE_SIZE) {
+      const oldestKey = templateCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        templateCache.delete(oldestKey);
+      }
+    }
+    templateCache.set(key, template);
+  }
+  return template;
+}
+
 export const applyChatTemplate = (
   messages: OpenAIChat[],
   arg: {
@@ -38,17 +55,21 @@ export const applyChatTemplate = (
     chatTarget?: ChatExecutionTarget;
   } = {},
 ) => {
-  const db = settingsStore.state;
   const currentChar = arg.currentChar ?? characterStore.currentCharacter;
   const type = arg.type ?? presetStore.state.instructChatTemplate;
   if (!type) {
     throw new Error("Template type is not set");
   }
-  let clonedMessages = safeStructuredClone(messages);
-  const template =
+  const templateSource =
     type === "jinja"
-      ? new Template(arg.custom ?? presetStore.state.JinjaTemplate)
-      : new Template(chatTemplates[type]);
+      ? (arg.custom ?? presetStore.state.JinjaTemplate)
+      : chatTemplates[type as keyof typeof chatTemplates];
+  if (!templateSource) {
+    throw new Error(`Template not found for type: ${type}`);
+  }
+  const cacheKey =
+    type === "jinja" ? `custom:${templateSource}` : `prebuilt:${type}`;
+  const template = getOrCompileTemplate(cacheKey, templateSource);
   let formatedMessages: {
     role: "user" | "assistant" | "system";
     content: string;
@@ -59,29 +80,27 @@ export const applyChatTemplate = (
   const alterUserAssistantRoles = effects.includes(
     "alter_user_assistant_roles",
   );
-  for (let i = 0; i < clonedMessages.length; i++) {
-    const message = clonedMessages[i];
-    if (
-      message.role !== "user" &&
-      message.role !== "assistant" &&
-      message.role !== "system"
-    ) {
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    let role = message.role;
+    let content = message.content;
+    if (role !== "user" && role !== "assistant" && role !== "system") {
       continue;
     }
-    if (noSystemMessages && message.role === "system") {
-      message.role = "user";
-      message.content = "System: " + message.content;
+    if (noSystemMessages && role === "system") {
+      role = "user";
+      content = "System: " + content;
     }
     if (alterUserAssistantRoles) {
-      if (message.role === "user") {
+      if (role === "user") {
         if (formatedMessages.length % 2 === 0) {
           formatedMessages.push({
             role: "user",
-            content: message.content,
+            content,
           });
         } else {
           formatedMessages[formatedMessages.length - 1].content +=
-            "\n" + message.content;
+            "\n" + content;
         }
       } else {
         if (
@@ -96,17 +115,17 @@ export const applyChatTemplate = (
           }
           formatedMessages.push({
             role: "assistant",
-            content: message.content,
+            content,
           });
         } else {
           formatedMessages[formatedMessages.length - 1].content +=
-            "\n" + message.content;
+            "\n" + content;
         }
       }
     } else {
       formatedMessages.push({
-        role: message.role,
-        content: message.content,
+        role,
+        content,
       });
     }
   }
