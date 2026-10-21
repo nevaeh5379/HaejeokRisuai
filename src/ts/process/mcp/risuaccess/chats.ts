@@ -106,16 +106,22 @@ export class ChatHandler extends MCPToolHandler {
       ];
     }
 
-    // To get "newest first", we must reverse the array.
-    const reversedMessages = [...targetChat.message].reverse();
+    const totalMessages = targetChat.message.length;
+    const startIndex = totalMessages - 1 - offset;
+    const endIndex = Math.max(0, totalMessages - offset - count);
+    const ordered: { type: "text"; text: string }[] = [];
 
-    // Now that the array is sorted from newest to oldest, we can slice it
-    const history = reversedMessages.slice(offset, offset + count);
-
-    const ordered = history.map((entry) => ({
-      type: "text",
-      text: `${entry.role === "char" ? char.name : "User"}: ${entry.data}`,
-    }));
+    if (startIndex >= 0 && count > 0) {
+      for (let i = startIndex; i >= endIndex; i--) {
+        const entry = targetChat.message[i];
+        if (entry) {
+          ordered.push({
+            type: "text",
+            text: `${entry.role === "char" ? char.name : "User"}: ${entry.data}`,
+          });
+        }
+      }
+    }
 
     return [
       {

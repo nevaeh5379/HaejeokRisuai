@@ -121,7 +121,14 @@ async function processEmbeddingEmotion(
     }
   }
 
-  const best = searched.sort((a, b) => b[1] - a[1])[0]?.[0];
+  let best: string | undefined;
+  let bestScore = -Infinity;
+  for (const entry of searched) {
+    if (entry[1] > bestScore) {
+      bestScore = entry[1];
+      best = entry[0];
+    }
+  }
   if (best) commitNamedEmotion(currentChar, state, best);
 }
 

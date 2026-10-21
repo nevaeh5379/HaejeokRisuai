@@ -833,7 +833,7 @@ export class SandboxHost {
   }
 
   private closeActiveStreams() {
-    for (const cleanup of [...this.activeStreamCleanups]) {
+    for (const cleanup of this.activeStreamCleanups) {
       try {
         cleanup();
       } catch (_) {}

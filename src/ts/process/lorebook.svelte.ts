@@ -149,15 +149,16 @@ export async function loadLoreBookV3Prompt(
     logs: { prompt: string; source: string; activated: string }[];
   };
   let precomputedMatchResults: Map<string, LoreMatchResult> | null = null;
-  const loreMatchCacheKey = (arg: LoreMatchRequest) =>
-    JSON.stringify([
-      arg.keys.map((key) => key.trim()).filter(Boolean),
-      arg.searchDepth,
-      arg.regex,
-      arg.fullWordMatching,
-      arg.all ?? false,
-      arg.dontSearchWhenRecursive,
-    ]);
+  const loreMatchCacheKey = (arg: LoreMatchRequest) => {
+    let keyStr = "";
+    for (const key of arg.keys) {
+      const trimmed = key.trim();
+      if (trimmed) {
+        keyStr += (keyStr ? "," : "") + trimmed;
+      }
+    }
+    return `${keyStr}|${arg.searchDepth}|${arg.regex ? 1 : 0}|${arg.fullWordMatching ? 1 : 0}|${arg.all ? 1 : 0}|${arg.dontSearchWhenRecursive ? 1 : 0}`;
+  };
 
   const searchMatch = (messages: Message[], arg: LoreMatchRequest) => {
     const precomputed = precomputedMatchResults?.get(loreMatchCacheKey(arg));
@@ -420,7 +421,12 @@ export async function loadLoreBookV3Prompt(
     });
     if (!prepared) return null;
 
-    const maxDepth = Math.max(...prepared.map((entry) => entry.scanDepth), 0);
+    let maxDepth = 0;
+    for (const entry of prepared) {
+      if (entry.scanDepth > maxDepth) {
+        maxDepth = entry.scanDepth;
+      }
+    }
     const messages = (maxDepth > 0 ? currentChat.slice(-maxDepth) : []).map(
       (msg) => ({
         role: msg.role,
@@ -993,7 +999,7 @@ export async function importLoreBook(mode: "global" | "local" | "sglobal") {
   }
 
   try {
-    const importedlore = JSON.parse(Buffer.from(lorebook).toString("utf-8"));
+    const importedlore = JSON.parse(new TextDecoder().decode(lorebook));
     if (importedlore.type === "risu" && importedlore.data) {
       const datas: loreBook[] = importedlore.data;
       for (const data of datas) {

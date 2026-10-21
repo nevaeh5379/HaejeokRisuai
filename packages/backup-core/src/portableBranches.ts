@@ -73,7 +73,11 @@ function portableBranchPath(graph, branchId) {
     reversed.push(message);
     current = parentById.get(current);
   }
-  return reversed.reverse().map(cloneValue);
+  const result = new Array(reversed.length);
+  for (let i = 0; i < reversed.length; i++) {
+    result[reversed.length - 1 - i] = cloneValue(reversed[i]);
+  }
+  return result;
 }
 
 function preparePortableChatForBranchRestore(sourceChat, graph) {
@@ -231,7 +235,7 @@ function expandChatBranchGraphForCompatibility(
   graph,
   idFactory = randomUUID,
 ) {
-  const branches = Array.isArray(graph?.branches) ? [...graph.branches] : [];
+  const branches = Array.isArray(graph?.branches) ? graph.branches.slice() : [];
   if (branches.length <= 1) {
     return {
       chats: [stripLegacyBranchFields(cloneValue(source))],

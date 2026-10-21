@@ -246,7 +246,7 @@ export async function readModule(buf: Buffer): Promise<RisuModule> {
   const main: {
     type: "risuModule";
     module: RisuModule;
-  } = JSON.parse(Buffer.from(await decodeRPack(mainData)).toString());
+  } = JSON.parse(new TextDecoder().decode(await decodeRPack(mainData)));
 
   if (main.type !== "risuModule") {
     console.error("Invalid module type");
@@ -381,7 +381,7 @@ export async function importModule() {
     return;
   }
   try {
-    const importData = JSON.parse(Buffer.from(fileData).toString());
+    const importData = JSON.parse(new TextDecoder().decode(fileData));
     if (importData.type === "risuModule") {
       if (!importData.name || !importData.id) {
         alertError(language.errors.noData);
@@ -720,8 +720,11 @@ export function getModuleMcps(
   overrideIds?: string[],
 ) {
   const modules = getModules(character, overrideIds);
-
-  return modules.map((v) => v.mcp?.url).filter((v) => v);
+  const urls: string[] = [];
+  for (const v of modules) {
+    if (v.mcp?.url) urls.push(v.mcp.url);
+  }
+  return urls;
 }
 
 export async function applyModule() {

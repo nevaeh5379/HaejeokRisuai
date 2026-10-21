@@ -97,7 +97,9 @@ export function buildBatchRenamePreview(
     finalNameOwners.set(finalName, owners);
   }
   let conflictCount = 0;
+  let changedCount = 0;
   for (const item of items) {
+    if (item.changed) changedCount++;
     if (!item.newName) {
       item.error = "Name cannot be empty";
       conflictCount++;
@@ -113,7 +115,7 @@ export function buildBatchRenamePreview(
   return {
     items,
     error: "",
-    changedCount: items.filter((item) => item.changed).length,
+    changedCount,
     conflictCount,
   };
 }
@@ -123,11 +125,12 @@ export function applyBatchRenamePreview(
   preview: BatchRenamePreview,
 ): AssetTuple[] {
   if (preview.error || preview.conflictCount > 0) return assets;
-  const names = new Map(
-    preview.items
-      .filter((item) => item.changed)
-      .map((item) => [item.originalIndex, item.newName]),
-  );
+  const names = new Map<number, string>();
+  for (const item of preview.items) {
+    if (item.changed) {
+      names.set(item.originalIndex, item.newName);
+    }
+  }
   return assets.map((asset, index) => {
     const nextName = names.get(index);
     return nextName === undefined ? asset : [nextName, asset[1], asset[2]];

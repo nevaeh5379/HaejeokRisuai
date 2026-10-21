@@ -78,7 +78,7 @@ export async function importRegex(o?: customscript[]): Promise<customscript[]> {
   }
   let db = settingsStore.state;
   try {
-    const imported = JSON.parse(Buffer.from(filedata).toString("utf-8"));
+    const imported = JSON.parse(new TextDecoder().decode(filedata));
     if (imported.type === "regex" && imported.data) {
       const datas: customscript[] = imported.data;
       const script = o;

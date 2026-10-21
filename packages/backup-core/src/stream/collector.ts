@@ -284,7 +284,7 @@ export class PortableDatabaseStreamCollector {
       }
     }
 
-    this.database.characters = [...this.characters.values()]
+    this.database.characters = Array.from(this.characters.values())
       .sort((left, right) => left.position - right.position)
       .map((entry) => {
         entry.value.chats = entry.chats
@@ -321,21 +321,20 @@ export class PortableDatabaseStreamCollector {
         ? Math.max(0, this.presetIds.indexOf(activePresetId))
         : 0;
     this.database.pluginCustomStorage ??= {};
-    this.database[NATIVE_BRANCH_GRAPHS_KEY] = Object.fromEntries(
-      [...this.graphs].map(([chatId, graph]) => [
-        chatId,
-        {
-          branches: graph.branches,
-          activeBranchId: graph.activeBranchId,
-          messages: graph.messages
-            .sort((left, right) => left.position - right.position)
-            .map((entry) => entry.value),
-          links: graph.links
-            .sort((left, right) => left.position - right.position)
-            .map((entry) => entry.value),
-        },
-      ]),
-    );
+    const nativeBranchGraphs: Record<string, unknown> = {};
+    for (const [chatId, graph] of this.graphs) {
+      nativeBranchGraphs[chatId] = {
+        branches: graph.branches,
+        activeBranchId: graph.activeBranchId,
+        messages: graph.messages
+          .sort((left, right) => left.position - right.position)
+          .map((entry) => entry.value),
+        links: graph.links
+          .sort((left, right) => left.position - right.position)
+          .map((entry) => entry.value),
+      };
+    }
+    this.database[NATIVE_BRANCH_GRAPHS_KEY] = nativeBranchGraphs;
     return this.database;
   }
 }

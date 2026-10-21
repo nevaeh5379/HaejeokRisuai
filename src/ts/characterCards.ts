@@ -115,7 +115,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
       f.data instanceof Uint8Array
         ? f.data
         : new Uint8Array(await f.data.arrayBuffer());
-    const da = JSON.parse(Buffer.from(data).toString("utf-8"));
+    const da = JSON.parse(new TextDecoder().decode(data));
     if (await importCharacterCardSpec(da)) {
       return (characterStore.characters.length - 1) as any;
     }
@@ -329,7 +329,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
           try {
             const decrypted = await decryptBuffer(encrypted, password);
             const charaData: CharacterCardV2Risu = JSON.parse(
-              Buffer.from(decrypted).toString("utf-8"),
+              new TextDecoder().decode(decrypted),
             );
             if (
               await importCharacterCardSpec(charaData, img, "normal", assets)
@@ -347,7 +347,7 @@ export async function importCharacterProcess<T extends boolean = false>(f: {
         const decrypted = await decryptBuffer(encrypted, "RISU_NONE");
         try {
           const charaData: CharacterCardV2Risu = JSON.parse(
-            Buffer.from(decrypted).toString("utf-8"),
+            new TextDecoder().decode(decrypted),
           );
           if (await importCharacterCardSpec(charaData, img, "normal", assets)) {
             return characterStore.characters.length - 1;

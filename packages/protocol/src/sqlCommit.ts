@@ -297,7 +297,7 @@ export function deriveSqlCommitImpact(
   }
   for (const chat of commit.chats) chatIdSet.add(chat.id);
   for (const chatId of commit.chatDeletes ?? []) chatIdSet.add(chatId);
-  const chatIds: string[] = [...chatIdSet];
+  const chatIds: string[] = Array.from(chatIdSet);
 
   const characterIdSet: Set<string> = new Set<string>();
   for (const chat of commit.chats) characterIdSet.add(chat.characterId);
@@ -310,21 +310,23 @@ export function deriveSqlCommitImpact(
   for (const manifest of commit.chatManifests) {
     characterIdSet.add(manifest.characterId);
   }
-  const characterIds: string[] = [...characterIdSet];
+  const characterIds: string[] = Array.from(characterIdSet);
 
   const rootUpsertKeySet: Set<string> = new Set<string>();
   for (const upsert of commit.rootUpserts) rootUpsertKeySet.add(upsert.key);
-  const rootUpsertKeys: string[] = [...rootUpsertKeySet];
-  const rootDeleteKeys: string[] = [...new Set<string>(commit.rootDeletes)];
+  const rootUpsertKeys: string[] = Array.from(rootUpsertKeySet);
+  const rootDeleteKeys: string[] = Array.from(new Set<string>(commit.rootDeletes));
 
   const pluginStorageUpsertKeySet: Set<string> = new Set<string>();
   for (const upsert of commit.pluginStorageUpserts) {
     pluginStorageUpsertKeySet.add(upsert.key);
   }
-  const pluginStorageUpsertKeys: string[] = [...pluginStorageUpsertKeySet];
-  const pluginStorageDeleteKeys: string[] = [
-    ...new Set<string>(commit.pluginStorageDeletes),
-  ];
+  const pluginStorageUpsertKeys: string[] = Array.from(
+    pluginStorageUpsertKeySet,
+  );
+  const pluginStorageDeleteKeys: string[] = Array.from(
+    new Set<string>(commit.pluginStorageDeletes),
+  );
 
   return {
     action: commit.action ?? "sync",
