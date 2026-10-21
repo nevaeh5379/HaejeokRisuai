@@ -37,6 +37,12 @@ describe("Domain Registry and Contract", () => {
           image: "assets/alice.png",
           emotionImages: [["joy", "assets/alice-joy.png"]],
           additionalAssets: [["weapon", "assets/sword.png"]],
+          vits: {
+            files: {
+              model: "assets/alice.onnx",
+              config: "assets/alice.json",
+            },
+          },
           chats: [],
         },
       ],
@@ -60,6 +66,9 @@ describe("Domain Registry and Contract", () => {
     expect(allAssets.get("assets/spell-icon.png")?.charName).toBe("Module");
     expect(allAssets.has("assets/fire.mp3")).toBe(true);
     expect(allAssets.has("assets/alice-joy.png")).toBe(true);
+    expect(allAssets.has("assets/alice.onnx")).toBe(true);
+    expect(allAssets.get("assets/alice.onnx")?.assetName).toBe("model");
+    expect(allAssets.has("assets/alice.json")).toBe(true);
     expect(allAssets.has("assets/hero.png")).toBe(true);
     expect(allAssets.has("assets/user.png")).toBe(true);
 

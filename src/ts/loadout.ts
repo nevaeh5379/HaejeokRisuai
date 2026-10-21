@@ -2,7 +2,6 @@ import { characterStore } from "src/ts/stores/domain/characterStore.svelte";
 import { changeUserPersona } from "./persona";
 import { changeToPreset } from "./storage/presets/presetService";
 
-import { safeStructuredClone } from "./polyfill";
 import { settingsStore } from "./stores/domain/settingsStore.svelte";
 import { presetStore } from "./stores/domain/presetStore.svelte";
 import { personaStore } from "./stores/domain/personaStore.svelte";
@@ -25,24 +24,24 @@ export function makeLoadout(options: { name: string }): Loadout {
   const character = characterStore.currentCharacter;
   const id = crypto.randomUUID();
   const preset = presetStore.activePreset;
-  const icons = [];
+  const icons: string[] = [];
 
   if (character?.image) {
     icons.push(character.image);
   }
 
-  return safeStructuredClone({
+  return {
     name: options.name,
     id: id,
     lastUsed: Date.now(),
     favorite: false,
     characterIds: character ? [character.chaId] : [],
-    modules: moduleStore.enabledModules,
-    globalVariables: settingsStore.state.globalChatVariables,
+    modules: [...moduleStore.enabledModules],
+    globalVariables: { ...settingsStore.state.globalChatVariables },
     presetName: preset?.name ?? "",
-    personaId: personaStore.activePersona?.id,
+    personaId: personaStore.activePersona?.id ?? "",
     icons: icons,
-  });
+  };
 }
 
 type LoadoutApplyOption = "modules" | "globalVariables" | "preset" | "persona";
@@ -61,7 +60,8 @@ export function applyLoadout(
   if (char) {
     loadout.characterIds.push(char.chaId);
   }
-  if (apply.includes("persona")) {
+  const applySet = new Set(apply);
+  if (applySet.has("persona")) {
     let personaIndex = personaStore.list.findIndex(
       (p) => p.id === loadout.personaId,
     );
@@ -69,7 +69,7 @@ export function applyLoadout(
       changeUserPersona(personaIndex);
     }
   }
-  if (apply.includes("preset")) {
+  if (applySet.has("preset")) {
     let presetIndex = presetStore.list.findIndex(
       (p) => p.name === loadout.presetName,
     );
@@ -77,10 +77,10 @@ export function applyLoadout(
       changeToPreset(presetIndex);
     }
   }
-  if (apply.includes("modules")) {
+  if (applySet.has("modules")) {
     moduleStore.enabledModules = loadout.modules;
   }
-  if (apply.includes("globalVariables")) {
+  if (applySet.has("globalVariables")) {
     settingsStore.state.globalChatVariables = loadout.globalVariables;
   }
   settingsStore.state.lastLoadedLoadoutName = loadout.name;

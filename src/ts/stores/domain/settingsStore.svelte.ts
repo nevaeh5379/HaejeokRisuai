@@ -144,9 +144,10 @@ class SettingsStore
     for (const key of Object.keys(initialSettings)) assertSettingsKey(key);
     const settingsCopy = normalizeSettingsDefaults({ ...initialSettings });
     settingsCopy.pluginCustomStorage ??= {};
-    this.pluginStorage.reset(storage, [
-      ...Object.keys(settingsCopy.pluginCustomStorage),
-    ]);
+    this.pluginStorage.reset(
+      storage,
+      Object.keys(settingsCopy.pluginCustomStorage),
+    );
 
     this.stateData = settingsCopy;
     this.observe();

@@ -369,16 +369,19 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
       "INSERT INTO system_revisions (storage_revision, database_initialized, scope, action, created_at) VALUES (?, 1, 'database', ?, datetime('now'))",
       [revision, action],
     );
+    const receiptAuthorNotes = authorNotes.map(
+      ({ id, contentHash, updatedAt }) => ({
+        id,
+        contentHash,
+        updatedAt,
+      }),
+    );
     await authorNoteSql.writeAuthorNoteReceipt(
       { ...this.authorNoteDatabase(), execute: append },
       commit,
       {
         revision,
-        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-          id,
-          contentHash,
-          updatedAt,
-        })),
+        authorNotes: receiptAuthorNotes,
       },
     );
     await this.executeNativeTransaction(
@@ -389,15 +392,7 @@ export abstract class NativeSqliteStorageBase implements ISqlStorage {
     this.revision = revision;
     return {
       revision,
-      ...(authorNotes.length
-        ? {
-            authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-              id,
-              contentHash,
-              updatedAt,
-            })),
-          }
-        : {}),
+      ...(receiptAuthorNotes.length ? { authorNotes: receiptAuthorNotes } : {}),
     };
   }
 

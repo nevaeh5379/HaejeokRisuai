@@ -52,58 +52,65 @@ export async function translateStackTrace(
   }
 
   // Step 2: Fetch all sourcemaps in parallel
-  await Promise.all(
-    Array.from(urlsToFetch).map(async (mapUrl) => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(
-          () => controller.abort(),
-          FETCH_TIMEOUT_MS,
-        );
-
+  const fetchPromises: Promise<void>[] = [];
+  for (const mapUrl of urlsToFetch) {
+    fetchPromises.push(
+      (async () => {
         try {
-          const mapRes = await fetch(mapUrl, {
-            method: "GET",
-            signal: controller.signal,
-          });
+          const controller = new AbortController();
+          const timeoutId = setTimeout(
+            () => controller.abort(),
+            FETCH_TIMEOUT_MS,
+          );
 
-          clearTimeout(timeoutId);
+          try {
+            const mapRes = await fetch(mapUrl, {
+              method: "GET",
+              signal: controller.signal,
+            });
 
-          if (mapRes.ok) {
-            try {
-              const mapContent = await mapRes.json();
-              const consumer = await new SourceMapConsumer(mapContent);
-              consumerCache.set(mapUrl, consumer);
-            } catch (parseError) {
-              const errorMsg = `Failed to parse sourcemap: ${getFileName(mapUrl)}`;
+            clearTimeout(timeoutId);
+
+            if (mapRes.ok) {
+              try {
+                const mapContent = await mapRes.json();
+                const consumer = await new SourceMapConsumer(mapContent);
+                consumerCache.set(mapUrl, consumer);
+              } catch (parseError) {
+                const errorMsg = `Failed to parse sourcemap: ${getFileName(mapUrl)}`;
+                failedUrls.set(mapUrl, errorMsg);
+                console.error(errorMsg, parseError);
+              }
+            } else {
+              const errorMsg = `Sourcemap not found: ${getFileName(mapUrl)} (${mapRes.status} ${mapRes.statusText})`;
               failedUrls.set(mapUrl, errorMsg);
-              console.error(errorMsg, parseError);
+              console.error(errorMsg);
             }
-          } else {
-            const errorMsg = `Sourcemap not found: ${getFileName(mapUrl)} (${mapRes.status} ${mapRes.statusText})`;
-            failedUrls.set(mapUrl, errorMsg);
-            console.error(errorMsg);
-          }
-        } catch (fetchError) {
-          clearTimeout(timeoutId);
+          } catch (fetchError) {
+            clearTimeout(timeoutId);
 
-          if (fetchError instanceof Error && fetchError.name === "AbortError") {
-            const errorMsg = `Sourcemap fetch timed out: ${getFileName(mapUrl)}`;
-            failedUrls.set(mapUrl, errorMsg);
-            console.error(errorMsg);
-          } else {
-            const errorMsg = `Failed to fetch sourcemap: ${getFileName(mapUrl)}`;
-            failedUrls.set(mapUrl, errorMsg);
-            console.error(errorMsg, fetchError);
+            if (
+              fetchError instanceof Error &&
+              fetchError.name === "AbortError"
+            ) {
+              const errorMsg = `Sourcemap fetch timed out: ${getFileName(mapUrl)}`;
+              failedUrls.set(mapUrl, errorMsg);
+              console.error(errorMsg);
+            } else {
+              const errorMsg = `Failed to fetch sourcemap: ${getFileName(mapUrl)}`;
+              failedUrls.set(mapUrl, errorMsg);
+              console.error(errorMsg, fetchError);
+            }
           }
+        } catch (e) {
+          const errorMsg = `Failed to fetch sourcemap: ${getFileName(mapUrl)}`;
+          failedUrls.set(mapUrl, errorMsg);
+          console.error(errorMsg, e);
         }
-      } catch (e) {
-        const errorMsg = `Failed to fetch sourcemap: ${getFileName(mapUrl)}`;
-        failedUrls.set(mapUrl, errorMsg);
-        console.error(errorMsg, e);
-      }
-    }),
-  );
+      })(),
+    );
+  }
+  await Promise.all(fetchPromises);
 
   // Step 3: Process all stack lines in parallel while maintaining order
   let translatedFrameCount = 0;
@@ -158,7 +165,10 @@ export async function translateStackTrace(
 function getFileName(url: string): string {
   try {
     const urlObj = new URL(url);
-    return urlObj.pathname.split("/").pop() || url;
+    const slash = urlObj.pathname.lastIndexOf("/");
+    return slash === -1
+      ? urlObj.pathname
+      : urlObj.pathname.slice(slash + 1) || url;
   } catch {
     return url;
   }

@@ -64,3 +64,27 @@
 5. Compute min/max scores in `normalizeScores` via a single O(N) iterative pass without stack-spread operations.
 6. Replace full JSON serialization in `manifestFingerprint` with key-sorted delimiter joins, and build unique prefix asset sets directly via `for...of` loops without intermediate spreads.
 7. Use constant-time `Set.has()` for cold storage key pruning, and reuse a single `TextEncoder` instance across cold storage backup payload serialization.
+
+## 2024-12-05 - Optimize Domain Registry, Workflow Graphs, Prompt Templates, and Image Generation Allocations
+
+**Learning:** Found micro-allocations and redundant array/object copies across domain asset collection, ComfyUI workflow parsing, prompt template compilation, image generation error reporting, and settings synchronization:
+
+1. `domainRegistry.collectAssets` evaluated `Object.entries(char.vits?.files ?? {})`, creating transient objects and 2-element tuples for every character, and `ensureAllDomains` allocated a fresh array via `Object.values(DOMAIN_REGISTRY)` on each call.
+2. `comfyWorkflow` used `Object.entries(api)` and `Object.values(prompt).every(...)` which created tuple and node arrays for graph validation, along with `Object.keys(node._meta).some(...)`.
+3. `promptTemplate.ts` performed `safeStructuredClone()` on `formatingOrder` before pushing `"postEverything"`, creating heavy serialization overhead during every prompt preparation, and traversed `Object.values(options.context.unformated)` during token estimation.
+4. `imageGeneration.ts` sliced `Object.entries(response.node_errors)` and `.flatMap((output: any) => output.images)[0]`, allocating nested error tuples and flattening arrays for a single image reference, and repeatedly split content-type strings via `.split(";")`.
+5. `sqlCommit.ts` used `Object.entries(pluginCustomStorage).map(...)` and redundant loops over character chats during `buildSqlReplaceCommit`.
+6. `loadout.ts` called `safeStructuredClone` on newly initialized loadout payloads and used linear array `.includes()` for option filtering.
+7. `reactiveUtils.trackDeep` allocated `Object.keys(value)` arrays for every single object traversed during deep reactivity registration.
+8. `sourcemap.ts` allocated full path segment arrays via `.split("/").pop()` in `getFileName` and `Array.from(urlsToFetch).map(...)`.
+
+**Action:**
+
+1. Traverse `char.vits.files` directly with `for...in` and hoist `DOMAIN_HANDLERS` into a static array to eliminate `Object.values` allocations.
+2. Validate workflow graph nodes and titles with direct `for...in` / `hasOwn` loops and short-circuit validation without allocating node value arrays.
+3. Replace `safeStructuredClone` on `formatingOrder` with `Array.prototype.slice()` and iterate `options.context.unformated` keys directly.
+4. Early-exit error node iteration with a counter over `response.node_errors`, search output images with an early-breaking loop, and extract MIME types using `indexOf(";")`.
+5. Convert `pluginCustomStorage` upserts in `sqlCommit` to single-pass key traversal, and unify character/chat validation and manifest collection into single loops.
+6. Return direct object copies in `makeLoadout` and use `Set.has()` for loadout options.
+7. Use `for...in` with `Object.hasOwn()` in `trackDeep` to avoid array allocations during deep reactivity tracking.
+8. Use `lastIndexOf("/")` with `slice()` in `getFileName` and iterate `urlsToFetch` with direct loop accumulation.

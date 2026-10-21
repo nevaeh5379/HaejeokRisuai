@@ -343,10 +343,12 @@ export const languageSettingsItems: SettingItem[] = [
             alertError("Invalid JSON format");
             return;
           }
-          for (const [key, value] of Object.entries(data)) {
-            if (typeof key !== "string" || typeof value !== "string") {
-              alertError("Invalid JSON format");
-              return;
+          for (const key in data) {
+            if (Object.hasOwn(data, key)) {
+              if (typeof key !== "string" || typeof data[key] !== "string") {
+                alertError("Invalid JSON format");
+                return;
+              }
             }
           }
           const confirmed = await alertConfirm(
