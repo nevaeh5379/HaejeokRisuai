@@ -103,17 +103,25 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
   private storage: ISqlStorage | null = null;
   private generation = 0;
   private readonly writes = new Set<Promise<unknown>>();
-  private cache = new LRUCache<string, GlobalAuthorNote>({
+  // private cache = new LRUCache<string, GlobalAuthorNote>({
+  //   ttl: 1000 * 60 * 5,
+  //   ttlAutopurge: false,
+  //   fetchMethod: async (key) => {
+  //     const storage = this.requireStorage();
+  //     const generation = this.generation;
+  //     const row = await storage.getGlobalAuthorNote(key);
+  //     this.assertCurrent(storage, generation);
+  //     return row ? new NoteObject(this, storage, generation, row) : null;
+  //   },
+
+  // });
+
+  private cache = new LRUCache<string, AuthorNoteMetadata>({
     ttl: 1000 * 60 * 5,
     ttlAutopurge: false,
     fetchMethod: async (key) => {
-      const storage = this.requireStorage();
-      const generation = this.generation;
-      const row = await storage.getGlobalAuthorNote(key);
-      this.assertCurrent(storage, generation);
-      return row ? new NoteObject(this, storage, generation, row) : null;
+      return (await this.storage.getGlobalAuthorNote(key)) ?? undefined;
     },
-    
   });
 
   async init(storage: ISqlStorage): Promise<void> {
@@ -155,7 +163,9 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     return rows.map((row) => new NoteObject(this, storage, generation, row));
   }
   async get(id: string): Promise<GlobalAuthorNote | null> {
-    return this.cache.fetch(id)
+    const metadata = await this.cache.fetch(id);
+    if (!metadata) return null;
+    return new NoteObject(this, this.storage, this.generation, metadata);
   }
   create(name: string, content = ""): Promise<GlobalAuthorNote> {
     const storage = this.requireStorage();
