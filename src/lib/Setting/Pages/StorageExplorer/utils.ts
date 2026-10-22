@@ -84,16 +84,18 @@ export function getNodeStorage(): NodeStorage {
 
 export function generateKeyCandidates(key: string): string[] {
   if (!key || typeof key !== "string") return [];
-  const stripped = key.replace(/^assets\//, "");
-  const candidates: string[] = [];
-  const pushCandidate = (candidate: string) => {
-    if (candidate && !candidates.includes(candidate))
-      candidates.push(candidate);
-  };
-  pushCandidate(key);
-  pushCandidate(`assets/${stripped}`);
-  if (stripped !== key) pushCandidate(stripped);
-  return candidates;
+  if (key.startsWith("assets/")) {
+    const stripped = key.slice(7);
+    return stripped.length > 0 ? [key, stripped] : [key];
+  }
+  return [key, `assets/${key}`];
+}
+
+function extractExtension(name: string): string | undefined {
+  const queryIdx = name.indexOf("?");
+  const clean = queryIdx >= 0 ? name.slice(0, queryIdx) : name;
+  const dotIdx = clean.lastIndexOf(".");
+  return dotIdx >= 0 ? clean.slice(dotIdx + 1) : undefined;
 }
 
 export async function readImageFromTarget(
@@ -276,11 +278,7 @@ export async function runStorageAnalysis(
       for (const add of addAssets) {
         if (Array.isArray(add) && add[1]) {
           const origName = add[0] || add[2] || "Extra Asset";
-          const ext =
-            add[2] ||
-            (add[0] && add[0].includes(".")
-              ? add[0].split(".").pop()
-              : undefined);
+          const ext = add[2] || (add[0] ? extractExtension(add[0]) : undefined);
           addAsset(add[1], "additional", origName, origName, ext);
           additionalCount++;
         }
@@ -331,8 +329,13 @@ export async function runStorageAnalysis(
       }
     }
 
-    const totalSize = botAssets.reduce((sum, a) => sum + a.size, 0);
-    const missingCount = botAssets.filter((a) => a.missing).length;
+    let totalSize = 0;
+    let missingCount = 0;
+    for (let i = 0; i < botAssets.length; i++) {
+      const a = botAssets[i];
+      totalSize += a.size;
+      if (a.missing) missingCount++;
+    }
 
     bots.push({
       id: charOwnerId,
@@ -357,7 +360,9 @@ export async function runStorageAnalysis(
       displayName: module.name,
     }),
   );
-  for (const [index, persona] of personaStore.list.entries()) {
+  const personaList = personaStore.list;
+  for (let index = 0; index < personaList.length; index++) {
+    const persona = personaList[index];
     if (!persona?.embeddedModule) continue;
     moduleEntries.push({
       module: persona.embeddedModule,
@@ -384,14 +389,11 @@ export async function runStorageAnalysis(
       if (!resolved) return undefined;
 
       const effectiveOriginalName = originalName || label;
-      let effectiveExt = extension;
-      if (
-        !effectiveExt &&
-        effectiveOriginalName &&
-        effectiveOriginalName.includes(".")
-      ) {
-        effectiveExt = effectiveOriginalName.split("?")[0].split(".").pop();
-      }
+      const effectiveExt =
+        extension ||
+        (effectiveOriginalName
+          ? extractExtension(effectiveOriginalName)
+          : undefined);
 
       if (!seenKeys.has(resolved.matchedKey)) {
         seenKeys.add(resolved.matchedKey);
@@ -429,29 +431,33 @@ export async function runStorageAnalysis(
       if (Array.isArray(asset) && asset[1]) {
         const origName = asset[0] || asset[2] || language.storageModuleAsset;
         const ext =
-          asset[2] ||
-          (asset[0] && asset[0].includes(".")
-            ? asset[0].split(".").pop()
-            : undefined);
+          asset[2] || (asset[0] ? extractExtension(asset[0]) : undefined);
         addModuleAsset(asset[1], "moduleAsset", origName, origName, ext);
       }
     }
 
-    const missingCount = moduleAssets.filter((a) => a.missing).length;
+    let totalModuleSize = 0;
+    let missingModuleCount = 0;
+    for (let i = 0; i < moduleAssets.length; i++) {
+      const a = moduleAssets[i];
+      totalModuleSize += a.size;
+      if (a.missing) missingModuleCount++;
+    }
 
     modules.push({
       id: storageId,
       name: modDisplayName,
       iconKey: iconKey || module.icon,
       totalAssets: moduleAssets.length,
-      totalSizeBytes: moduleAssets.reduce((sum, asset) => sum + asset.size, 0),
+      totalSizeBytes: totalModuleSize,
       assets: moduleAssets,
-      missingAssetsCount: missingCount,
+      missingAssetsCount: missingModuleCount,
     });
   }
 
   // Include persona icons
-  for (const [index, persona] of personaStore.list.entries()) {
+  for (let index = 0; index < personaList.length; index++) {
+    const persona = personaList[index];
     if (persona?.icon) {
       resolveAsset(persona.icon);
       recordUsage(persona.icon, {
@@ -477,8 +483,10 @@ export async function runStorageAnalysis(
   }
 
   // Include character order folder icons
-  if (Array.isArray(settingsStore.state.characterOrder)) {
-    for (const [index, item] of settingsStore.state.characterOrder.entries()) {
+  const charOrder = settingsStore.state.characterOrder;
+  if (Array.isArray(charOrder)) {
+    for (let index = 0; index < charOrder.length; index++) {
+      const item = charOrder[index];
       if (
         typeof item === "object" &&
         item &&
@@ -525,9 +533,13 @@ export async function runStorageAnalysis(
     }
   }
 
-  const totalMissingAssets =
-    bots.reduce((sum, b) => sum + b.missingAssetsCount, 0) +
-    modules.reduce((sum, m) => sum + m.missingAssetsCount, 0);
+  let totalMissingAssets = 0;
+  for (let i = 0; i < bots.length; i++) {
+    totalMissingAssets += bots[i].missingAssetsCount;
+  }
+  for (let i = 0; i < modules.length; i++) {
+    totalMissingAssets += modules[i].missingAssetsCount;
+  }
 
   return {
     bots,
