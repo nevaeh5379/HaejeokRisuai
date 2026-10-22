@@ -7,6 +7,7 @@ import {
   type AuthorNoteMetadata,
   type AuthorNoteOperation,
 } from "@risuai/protocol/src/authorNotes.ts";
+import { LRUCache } from "lru-cache";
 
 export interface GlobalAuthorNote {
   readonly id: string;
@@ -102,6 +103,19 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
   private storage: ISqlStorage | null = null;
   private generation = 0;
   private readonly writes = new Set<Promise<unknown>>();
+  private cache = new LRUCache<string, GlobalAuthorNote>({
+    ttl: 1000 * 60 * 5,
+    ttlAutopurge: false,
+    fetchMethod: async (key) => {
+      const storage = this.requireStorage();
+      const generation = this.generation;
+      const row = await storage.getGlobalAuthorNote(key);
+      this.assertCurrent(storage, generation);
+      return row ? new NoteObject(this, storage, generation, row) : null;
+    },
+    
+  });
+
   async init(storage: ISqlStorage): Promise<void> {
     if (this.storage === storage) return;
     await this.waitForPendingWrites();
@@ -141,11 +155,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     return rows.map((row) => new NoteObject(this, storage, generation, row));
   }
   async get(id: string): Promise<GlobalAuthorNote | null> {
-    const storage = this.requireStorage();
-    const generation = this.generation;
-    const row = await storage.getGlobalAuthorNote(id);
-    this.assertCurrent(storage, generation);
-    return row ? new NoteObject(this, storage, generation, row) : null;
+    return this.cache.fetch(id)
   }
   create(name: string, content = ""): Promise<GlobalAuthorNote> {
     const storage = this.requireStorage();
@@ -199,7 +209,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     return note.save(content, { script: true });
   }
   async waitForPendingWrites(): Promise<void> {
-    await Promise.all([...this.writes]);
+    await Promise.all(this.writes);
   }
   async dispose(): Promise<void> {
     await this.waitForPendingWrites();
