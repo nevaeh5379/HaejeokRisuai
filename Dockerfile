@@ -9,7 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY server/node/package.json server/node/package.json
 
 RUN corepack enable \
-    && corepack install --global pnpm@12.3.4
+    && corepack install --global pnpm@12.14.0
 
 # ------------------------------------------------------------------------------------------
 
