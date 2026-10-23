@@ -112,13 +112,12 @@ export class TauriSqliteStorage
     try {
       const revision = await task(async (sql, bind = []) => {
         pending.push({ sql, bind });
-        pendingChars +=
-          sql.length +
-          bind.reduce<number>(
-            (sum, value) =>
-              sum + (typeof value === "string" ? value.length : 0),
-            0,
-          );
+        let bindChars = 0;
+        for (let i = 0; i < bind.length; i++) {
+          const value = bind[i];
+          if (typeof value === "string") bindChars += value.length;
+        }
+        pendingChars += sql.length + bindChars;
         if (pending.length >= 64 || pendingChars >= 256 * 1024) {
           await flush();
         }

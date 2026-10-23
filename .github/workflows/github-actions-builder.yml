@@ -156,7 +156,7 @@ jobs:
       - name: install pnpm
         shell: bash
         run: |
-          npm install --global pnpm@12.3.4
+          npm install --global pnpm@12.14.0
           pnpm --version
 
       - name: Get pnpm store directory
@@ -370,7 +370,7 @@ jobs:
       - name: Install pnpm
         shell: bash
         run: |
-          npm install --global pnpm@12.3.4
+          npm install --global pnpm@12.14.0
           pnpm --version
 
       - name: Get pnpm store directory
@@ -494,7 +494,7 @@ jobs:
 
       - name: Install pnpm
         shell: bash
-        run: npm install --global pnpm@12.3.4
+        run: npm install --global pnpm@12.14.0
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile

@@ -837,6 +837,13 @@ function validateStorageSyncSqlPlan(value: unknown): NodeStorageSyncSqlPlan {
   return plan as NodeStorageSyncSqlPlan;
 }
 
+function hasInvalidStorageSyncCounts(counts: Record<string, unknown>): boolean {
+  for (const key in counts) {
+    if (!isNonNegativeSafeInteger(counts[key])) return true;
+  }
+  return false;
+}
+
 function validateStorageSyncSqlValidation(
   value: unknown,
 ): NodeStorageSyncSqlValidation {
@@ -848,9 +855,7 @@ function validateStorageSyncSqlValidation(
     !result.counts ||
     typeof result.counts !== "object" ||
     Array.isArray(result.counts) ||
-    Object.values(result.counts).some(
-      (count) => !isNonNegativeSafeInteger(count),
-    )
+    hasInvalidStorageSyncCounts(result.counts as Record<string, unknown>)
   ) {
     throw new NodeApiCompatibilityError(
       "The storage server returned an invalid storage sync SQL validation result.",
