@@ -101,7 +101,7 @@
                     {#if bot.avatarKey}
                         {@const _ = onLoadThumbnail(bot.avatarKey)}
                         {#if thumbnailUrls.has(bot.avatarKey)}
-                            <img src={thumbnailUrls.get(bot.avatarKey)} alt="" class="h-full w-full object-cover" />
+                            <img loading="lazy" decoding="async" src={thumbnailUrls.get(bot.avatarKey)} alt="" class="h-full w-full object-cover" />
                         {:else}
                             <div class="flex h-full w-full items-center justify-center text-xs text-textcolor2">...</div>
                         {/if}
@@ -222,7 +222,7 @@
                                     {#if isImageFile(asset.key)}
                                         {@const _ = onLoadThumbnail(asset.key)}
                                         {#if thumbnailUrls.has(asset.key)}
-                                            <img src={thumbnailUrls.get(asset.key)} alt="" class="h-full w-full object-cover" />
+                                            <img loading="lazy" decoding="async" src={thumbnailUrls.get(asset.key)} alt="" class="h-full w-full object-cover" />
                                         {:else}
                                             <div class="flex h-full w-full items-center justify-center text-xs text-textcolor2">img</div>
                                         {/if}
