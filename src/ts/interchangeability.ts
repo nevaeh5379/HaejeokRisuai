@@ -12,12 +12,12 @@ export function convertModuleToCharacter(m: RisuModule): character {
 
   char.name = m.name;
   char.creatorNotes = m.description;
-  char.customscript = m.regex ? [...m.regex] : [];
-  char.triggerscript = m.trigger ? [...m.trigger] : [];
+  char.customscript = m.regex || [];
+  char.triggerscript = m.trigger || [];
   char.lowLevelAccess = m.lowLevelAccess || false;
   char.hideChatIcon = m.hideIcon || false;
   char.backgroundHTML = m.backgroundEmbedding || "";
-  char.additionalAssets = m.assets ? [...m.assets] : [];
+  char.additionalAssets = m.assets || [];
   char.moduleNamespace = m.namespace;
   char.customModuleToggle = m.customModuleToggle || "";
   char.image = m.icon || "";
@@ -27,7 +27,7 @@ export function convertModuleToCharacter(m: RisuModule): character {
   }
   if (m.subModelRequestRules?.length) {
     char.extentions ??= {};
-    char.extentions["moduleSubModelRequestRules"] = [...m.subModelRequestRules];
+    char.extentions["moduleSubModelRequestRules"] = m.subModelRequestRules;
   }
 
   const rawLores = m.lorebook || [];
@@ -72,7 +72,7 @@ export function convertModuleToCharacter(m: RisuModule): character {
   }
   char.globalLore = retainedLore;
 
-  return char;
+  return safeStructuredClone(char);
 }
 
 export function convertCharacterToModule(c: character): RisuModule {
@@ -80,12 +80,12 @@ export function convertCharacterToModule(c: character): RisuModule {
     name: c.name,
     description: c.creatorNotes,
     lorebook: c.globalLore ? [...c.globalLore] : [],
-    regex: c.customscript ? [...c.customscript] : [],
-    trigger: c.triggerscript ? [...c.triggerscript] : [],
+    regex: c.customscript || [],
+    trigger: c.triggerscript || [],
     lowLevelAccess: c.lowLevelAccess,
     hideIcon: c.hideChatIcon,
     backgroundEmbedding: c.backgroundHTML,
-    assets: c.additionalAssets ? [...c.additionalAssets] : [],
+    assets: c.additionalAssets || [],
     namespace: c.moduleNamespace,
     customModuleToggle: c.customModuleToggle,
     id: v4(),
@@ -94,8 +94,8 @@ export function convertCharacterToModule(c: character): RisuModule {
     subModelRequestRules: Array.isArray(
       c.extentions?.["moduleSubModelRequestRules"],
     )
-      ? ([
-          ...c.extentions["moduleSubModelRequestRules"],
+      ? (c.extentions[
+          "moduleSubModelRequestRules"
         ] as RisuModule["subModelRequestRules"])
       : undefined,
   };
@@ -148,7 +148,7 @@ export function convertCharacterToModule(c: character): RisuModule {
     });
   }
 
-  return mod;
+  return safeStructuredClone(mod);
 }
 
 export function convertPersonaToCharacter(p: RisuPersona): character {
@@ -200,7 +200,7 @@ export function convertPersonaToModule(p: RisuPersona): RisuModule {
     },
   ];
 
-  return baseModule;
+  return safeStructuredClone(baseModule);
 }
 
 export function convertModuleToPersona(m: RisuModule): RisuPersona {
@@ -225,5 +225,5 @@ export function convertModuleToPersona(m: RisuModule): RisuPersona {
     },
   };
 
-  return basePersona;
+  return safeStructuredClone(basePersona);
 }

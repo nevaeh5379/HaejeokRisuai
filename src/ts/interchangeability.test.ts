@@ -9,9 +9,117 @@ import {
 } from "./interchangeability";
 import { createBlankChar } from "./characterDefaults";
 import type { RisuModule } from "./process/modules";
-import type { character, RisuPersona } from "./storage/database/schema";
+import type { RisuPersona } from "./storage/database/schema";
+
+function editableModule(): RisuModule {
+  return {
+    id: "original-module",
+    name: "Original",
+    description: "",
+    lorebook: [
+      {
+        key: "key",
+        secondkey: "",
+        content: "original",
+        comment: "",
+        insertorder: 0,
+        mode: "constant",
+        alwaysActive: true,
+        selective: false,
+      },
+    ],
+    regex: [
+      {
+        comment: "",
+        in: "original",
+        out: "replacement",
+        type: "editdisplay",
+        ableFlag: false,
+      },
+    ],
+    trigger: [
+      {
+        comment: "original",
+        type: "manual",
+        conditions: [],
+        effect: [{ type: "v2Header", code: "original", indent: 0 }],
+      },
+    ],
+    assets: [["asset", "original.png", "png"]],
+    subModelRequestRules: [{ enabled: true, phrases: ["original"] }],
+  };
+}
+
+function editModule(module: RisuModule) {
+  module.lorebook[0].content = "edited";
+  module.regex[0].in = "edited";
+  module.trigger[0].effect[0] = { type: "v2Header", code: "edited", indent: 0 };
+  module.assets[0][1] = "edited.png";
+  module.subModelRequestRules[0].phrases.push("edited");
+}
 
 describe("interchangeability conversion optimizations", () => {
+  it("isolates converted characters from their source module", () => {
+    const source = editableModule();
+    const before = structuredClone(source);
+    const char = convertModuleToCharacter(source);
+    char.globalLore[0].content = "edited";
+    char.customscript[0].in = "edited";
+    char.triggerscript[0].effect[0] = {
+      type: "v2Header",
+      code: "edited",
+      indent: 0,
+    };
+    char.additionalAssets[0][1] = "edited.png";
+    (
+      char.extentions
+        .moduleSubModelRequestRules as RisuModule["subModelRequestRules"]
+    )[0].phrases.push("edited");
+    expect(source).toEqual(before);
+  });
+
+  it.each(["module", "persona"] as const)(
+    "isolates a converted %s from its source character",
+    (target) => {
+      const source = convertModuleToCharacter(editableModule());
+      const before = structuredClone(source);
+      const result =
+        target === "module"
+          ? convertCharacterToModule(source)
+          : convertCharacterToPersona(source).embeddedModule;
+      editModule(result);
+      expect(source).toEqual(before);
+    },
+  );
+
+  it.each(["module", "character"] as const)(
+    "isolates a converted %s from its source persona",
+    (target) => {
+      const source: RisuPersona = {
+        name: "Persona",
+        icon: "",
+        personaPrompt: "Prompt",
+        embeddedModule: editableModule(),
+      };
+      const before = structuredClone(source);
+      if (target === "module") {
+        editModule(convertPersonaToModule(source));
+      } else {
+        const result = convertPersonaToCharacter(source);
+        result.globalLore[0].content = "edited";
+        result.triggerscript[0].effect.length = 0;
+      }
+      expect(source).toEqual(before);
+    },
+  );
+
+  it("isolates an embedded persona module from the original module", () => {
+    const source = editableModule();
+    const before = structuredClone(source);
+    editModule(convertModuleToPersona(source).embeddedModule);
+    expect(source).toEqual(before);
+  });
+
   it("converts module with indicators into character correctly", () => {
     const mod: RisuModule = {
       id: "mod-1",

@@ -64,10 +64,7 @@ export function startChatGenerationStats(options: {
 }
 
 export function updateChatGenerationModel(generationId: string, model: string) {
-  const current = statsByGeneration.get(generationId);
-  if (!current) return;
-  current.model = model;
-  publish();
+  replaceStats(generationId, (stats) => ({ ...stats, model }));
 }
 
 export function recordChatGenerationText(
@@ -76,17 +73,17 @@ export function recordChatGenerationText(
   observedAt = Date.now(),
   firstTokenAt?: number,
 ) {
-  const current = statsByGeneration.get(generationId);
-  if (!current) return;
-  const hasOutput = outputText.length > 0;
-  current.outputText = outputText;
-  if (current.firstTokenAt === undefined && hasOutput) {
-    current.firstTokenAt = firstTokenAt ?? observedAt;
-  }
-  if (hasOutput) {
-    current.lastTokenAt = observedAt;
-  }
-  publish();
+  replaceStats(generationId, (stats) => {
+    const hasOutput = outputText.length > 0;
+    return {
+      ...stats,
+      outputText,
+      firstTokenAt:
+        stats.firstTokenAt ??
+        (hasOutput ? (firstTokenAt ?? observedAt) : undefined),
+      lastTokenAt: hasOutput ? observedAt : stats.lastTokenAt,
+    };
+  });
 }
 export function completeChatGenerationStats(
   generationId: string,
