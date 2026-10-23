@@ -36,22 +36,27 @@ export interface NovelListRequestBody {
   logit_bias?: string;
   logit_bias_values?: string;
 }
-("use strict");
 
 const DEFAULT_NOVELLIST_API_URL: "https://api.tringpt.com//api" =
   "https://api.tringpt.com//api";
 
 function buildNovelListRequestBody(
   options: NovelListRequestBodyOptions,
-): NovelListRequestBody;
-function buildNovelListRequestBody(options?: any): any {
-  const biasString: any = options.biasString ?? [];
-  const logitBias: any = [];
-  const logitBiasValues: any = [];
+): NovelListRequestBody {
+  const biasString = options.biasString;
+  let logitBias: string | undefined;
+  let logitBiasValues: string | undefined;
 
-  for (const bias of biasString) {
-    logitBias.push(bias[0]);
-    logitBiasValues.push(String(bias[1]));
+  if (biasString && biasString.length > 0) {
+    const len = biasString.length;
+    const biases: string[] = new Array(len);
+    const values: string[] = new Array(len);
+    for (let i = 0; i < len; i++) {
+      biases[i] = biasString[i][0];
+      values[i] = String(biasString[i][1]);
+    }
+    logitBias = biases.join("<<|>>");
+    logitBiasValues = values.join("|");
   }
 
   return {
@@ -68,9 +73,8 @@ function buildNovelListRequestBody(options?: any): any {
     badwords: options.sampler.badwords,
     model: options.modelId === "novellist_damsel" ? "damsel" : "supertrin",
     stoptokens: `「${options.sampler.stoptokens}`,
-    logit_bias: logitBias.length > 0 ? logitBias.join("<<|>>") : undefined,
-    logit_bias_values:
-      logitBiasValues.length > 0 ? logitBiasValues.join("|") : undefined,
+    logit_bias: logitBias,
+    logit_bias_values: logitBiasValues,
   };
 }
 

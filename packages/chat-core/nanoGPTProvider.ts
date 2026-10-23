@@ -1,5 +1,4 @@
 export type NanoGPTTransportApi = "chat" | "responses" | "messages" | "legacy";
-("use strict");
 
 const NANOGPT_TRANSPORT_URLS: Readonly<{
   chat: Readonly<{ standard: string; subscription: string }>;
@@ -25,12 +24,13 @@ const NANOGPT_TRANSPORT_URLS: Readonly<{
 
 function resolveNanoGPTTransportUrl(
   api: NanoGPTTransportApi,
-  subscription?: boolean,
-): string | null;
-function resolveNanoGPTTransportUrl(api?: any, subscription: any = false): any {
-  const endpoints: any = NANOGPT_TRANSPORT_URLS[api];
+  subscription = false,
+): string | null {
+  const endpoints = NANOGPT_TRANSPORT_URLS[api];
   if (!endpoints) return null;
-  return subscription ? (endpoints.subscription ?? null) : endpoints.standard;
+  return subscription
+    ? (("subscription" in endpoints ? endpoints.subscription : null) ?? null)
+    : endpoints.standard;
 }
 
 export { NANOGPT_TRANSPORT_URLS, resolveNanoGPTTransportUrl };

@@ -151,7 +151,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     const generation = this.generation;
     while (true) {
       const revision = storage.getRevision();
-      if (!this.metadataCache || this.metadataCache.revision !== revision) {
+      if (this.metadataCache?.revision !== revision) {
         // Local commits and server change events both advance the revision.
         // Replace the cache so old in-flight reads cannot refill the new one.
         this.metadataCache = {

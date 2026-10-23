@@ -1,6 +1,6 @@
 import type { ChatModelResponse } from "./types.ts";
-
 import type { ProviderRoute } from "./providerRouting.ts";
+import { resolveProviderRoute } from "./providerRouting.ts";
 
 export type ProviderHandler<TRequest, TContext = unknown> = (
   request: TRequest,
@@ -20,32 +20,22 @@ export interface ExecuteProviderRouteOptions<TContext = unknown> {
   unsupportedRouteMessage?: (route: ProviderRoute) => string;
   context?: TContext;
 }
-("use strict");
-
-import { resolveProviderRoute } from "./providerRouting.ts";
 
 function canExecuteProviderRoute<TRequest, TContext = unknown>(
   format: number,
   handlers: ProviderHandlers<TRequest, TContext>,
-): boolean;
-function canExecuteProviderRoute(format?: any, handlers?: any): any {
-  const route: any = resolveProviderRoute(format);
+): boolean {
+  const route = resolveProviderRoute(format);
   return Boolean(route && typeof handlers?.[route] === "function");
 }
 
-function executeProviderRoute<TRequest, TContext = unknown>(
+async function executeProviderRoute<TRequest, TContext = unknown>(
   format: number,
   request: TRequest,
   handlers: ProviderHandlers<TRequest, TContext>,
-  options?: ExecuteProviderRouteOptions<TContext>,
-): Promise<ChatModelResponse>;
-async function executeProviderRoute(
-  format?: any,
-  request?: any,
-  handlers?: any,
-  options: any = {},
-): Promise<any> {
-  const route: any = resolveProviderRoute(format);
+  options: ExecuteProviderRouteOptions<TContext> = {},
+): Promise<ChatModelResponse> {
+  const route = resolveProviderRoute(format);
   if (!route) {
     return {
       type: "fail",
@@ -54,7 +44,7 @@ async function executeProviderRoute(
     };
   }
 
-  const handler: any = handlers?.[route];
+  const handler = handlers?.[route];
   if (typeof handler !== "function") {
     return {
       type: "fail",

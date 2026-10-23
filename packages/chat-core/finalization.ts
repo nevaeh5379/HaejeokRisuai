@@ -10,9 +10,8 @@ export interface AutoContinuationDecision {
   resultTokens: number;
   reason: "minimum-tokens" | "incomplete" | null;
 }
-("use strict");
 
-const COMPLETION_PUNCTUATION: any = new Set([
+const COMPLETION_PUNCTUATION: ReadonlySet<string> = new Set([
   ".",
   "!",
   "?",
@@ -56,25 +55,28 @@ const COMPLETION_PUNCTUATION: any = new Set([
   '"',
 ]);
 
-function endsWithCompletionPunctuation(text: string): boolean;
-function endsWithCompletionPunctuation(text?: any): any {
-  const lastChar: any = text.trim().at(-1);
-  if (!lastChar) return true;
-  const code: any = lastChar.charCodeAt(0);
-  return Boolean(
+function endsWithCompletionPunctuation(text: string): boolean {
+  if (!text) return true;
+  let idx = text.length - 1;
+  while (idx >= 0 && /\s/.test(text[idx])) {
+    idx--;
+  }
+  if (idx < 0) return true;
+  const lastChar = text[idx];
+  const code = text.charCodeAt(idx);
+  return (
     COMPLETION_PUNCTUATION.has(lastChar) ||
     (code >= 0x02b0 && code <= 0x02ff) ||
     (code >= 0x0300 && code <= 0x036f) ||
     (code >= 0x0590 && code <= 0x05cf) ||
-    (code >= 0x3000 && code <= 0x303f),
+    (code >= 0x3000 && code <= 0x303f)
   );
 }
 
 function decideAutoContinuation(
   input: AutoContinuationPolicyInput,
-): AutoContinuationDecision;
-function decideAutoContinuation(input?: any): any {
-  const belowMinimum: any =
+): AutoContinuationDecision {
+  const belowMinimum =
     input.minimumTokens > 0 && input.resultTokens < input.minimumTokens;
   if (belowMinimum) {
     return {

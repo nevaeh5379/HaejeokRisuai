@@ -1,6 +1,5 @@
 export type OllamaCloudTransportApi =
   "native" | "openai-chat" | "responses" | "anthropic";
-("use strict");
 
 const OLLAMA_CLOUD_TRANSPORT_URLS = Object.freeze({
   native: "https://ollama.com/api/chat",
@@ -14,8 +13,7 @@ const DEFAULT_OLLAMA_CLOUD_CHAT_URL: "https://ollama.com/api/chat" =
 
 function resolveOllamaCloudTransportUrl(
   api: OllamaCloudTransportApi,
-): string | null;
-function resolveOllamaCloudTransportUrl(api?: any): any {
+): string | null {
   return OLLAMA_CLOUD_TRANSPORT_URLS[api] ?? null;
 }
 
