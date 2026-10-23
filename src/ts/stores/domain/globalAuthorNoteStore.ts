@@ -98,37 +98,21 @@ class NoteObject implements GlobalAuthorNote {
     );
   }
 }
-/** No content, metadata, setting cache or automatic save timer lives here. */
+/** Only metadata is cached; content and permissions always come from SQL. */
 export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
   private storage: ISqlStorage | null = null;
   private generation = 0;
   private readonly writes = new Set<Promise<unknown>>();
-  // private cache = new LRUCache<string, GlobalAuthorNote>({
-  //   ttl: 1000 * 60 * 5,
-  //   ttlAutopurge: false,
-  //   fetchMethod: async (key) => {
-  //     const storage = this.requireStorage();
-  //     const generation = this.generation;
-  //     const row = await storage.getGlobalAuthorNote(key);
-  //     this.assertCurrent(storage, generation);
-  //     return row ? new NoteObject(this, storage, generation, row) : null;
-  //   },
-
-  // });
-
-  private cache = new LRUCache<string, AuthorNoteMetadata>({
-    ttl: 1000 * 60 * 5,
-    ttlAutopurge: false,
-    fetchMethod: async (key) => {
-      return (await this.storage.getGlobalAuthorNote(key)) ?? undefined;
-    },
-  });
-
+  private metadataCache: {
+    revision: number;
+    entries: LRUCache<string, AuthorNoteMetadata>;
+  } | null = null;
   async init(storage: ISqlStorage): Promise<void> {
     if (this.storage === storage) return;
     await this.waitForPendingWrites();
     this.storage = storage;
     this.generation++;
+    this.metadataCache = null;
   }
   assertCurrent(storage: ISqlStorage, generation: number) {
     if (storage !== this.storage || generation !== this.generation)
@@ -163,9 +147,35 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     return rows.map((row) => new NoteObject(this, storage, generation, row));
   }
   async get(id: string): Promise<GlobalAuthorNote | null> {
-    const metadata = await this.cache.fetch(id);
-    if (!metadata) return null;
-    return new NoteObject(this, this.storage, this.generation, metadata);
+    const storage = this.requireStorage();
+    const generation = this.generation;
+    while (true) {
+      const revision = storage.getRevision();
+      if (!this.metadataCache || this.metadataCache.revision !== revision) {
+        // Local commits and server change events both advance the revision.
+        // Replace the cache so old in-flight reads cannot refill the new one.
+        this.metadataCache = {
+          revision,
+          entries: new LRUCache<string, AuthorNoteMetadata>({
+            max: 256,
+            ttl: 1000 * 60 * 5,
+            // Capacity eviction must not fail an already requested SQL read.
+            ignoreFetchAbort: true,
+            fetchMethod: async (key) => {
+              const metadata = await storage.getGlobalAuthorNote(key);
+              this.assertCurrent(storage, generation);
+              return metadata ?? undefined;
+            },
+          }),
+        };
+      }
+      const metadata = await this.metadataCache.entries.fetch(id);
+      this.assertCurrent(storage, generation);
+      if (revision !== storage.getRevision()) continue;
+      return metadata
+        ? new NoteObject(this, storage, generation, metadata)
+        : null;
+    }
   }
   create(name: string, content = ""): Promise<GlobalAuthorNote> {
     const storage = this.requireStorage();
@@ -225,6 +235,7 @@ export class SqlGlobalAuthorNoteStore implements GlobalAuthorNoteStore {
     await this.waitForPendingWrites();
     this.storage = null;
     this.generation++;
+    this.metadataCache = null;
   }
 }
 export const globalAuthorNoteStore = new SqlGlobalAuthorNoteStore();
