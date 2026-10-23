@@ -3,7 +3,6 @@ import { fetchNative, openURL } from "../../globalApi.svelte";
 import { alertInput } from "../../alert";
 
 const SHARED_TEXT_ENCODER = new TextEncoder();
-const SHARED_TEXT_DECODER = new TextDecoder("utf-8");
 
 export type MCPPrompt = {
   name: string; // Unique identifier for the prompt
@@ -162,6 +161,7 @@ export class MCPClient {
 
   async connectSSE(stream: ReadableStream, abortController?: AbortController) {
     const reader = stream.getReader();
+    const decoder = new TextDecoder("utf-8");
     let buffer = "";
     this.sses.push({
       stream: stream,
@@ -172,7 +172,7 @@ export class MCPClient {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += SHARED_TEXT_DECODER.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: true });
 
       let delimiterIndex: number;
       while ((delimiterIndex = buffer.indexOf("\n\n")) !== -1) {
