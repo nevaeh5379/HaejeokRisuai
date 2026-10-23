@@ -9,6 +9,14 @@
     import { isCapacitorAndroid, isNodeServer, isTauri } from "src/ts/platform";
     import { shareAndroidDiagnostics } from "src/ts/android/androidCrashDiagnostics";
 
+    const SHARED_TEXT_ENCODER = new TextEncoder();
+    const KEYS_TO_REMOVE = new Set([
+        'characters', 'loreBook', 'plugins', 'account', 'personas', 'username', 'userIcon', 'userNote',
+        'modules', 'enabledModules', 'botPresets', 'characterOrder', 'webUiUrl',
+        'hordeConfig', 'novelai', 'koboldURL', 'ooba', 'ainconfig', 'personaPrompt', 'promptTemplate',
+        'deeplOptions', 'google', 'customPromptTemplateToggle', 'globalChatVariables', 'comfyConfig',
+        'comfyUiUrl', 'translatorPrompt', 'translatorPresets', 'translatorPresetId', 'customModels', 'mcpURLs', 'authRefreshes'
+    ]);
 </script>
 
 {#if isCapacitorAndroid}
@@ -53,26 +61,19 @@ Show Statistics
 <Button
     className="mt-4"
     onclick={async () => {
-        const db = safeStructuredClone(createDatabaseSnapshot())
+        const db = createDatabaseSnapshot() as unknown as Record<string, unknown>
 
-        const keyToRemove = [
-            'characters', 'loreBook', 'plugins', 'account', 'personas', 'username', 'userIcon', 'userNote',
-            'modules', 'enabledModules', 'botPresets', 'characterOrder', 'webUiUrl', 'characterOrder',
-            'hordeConfig', 'novelai', 'koboldURL', 'ooba', 'ainconfig', 'personaPrompt', 'promptTemplate',
-            'deeplOptions', 'google', 'customPromptTemplateToggle', 'globalChatVariables', 'comfyConfig',
-            'comfyUiUrl', 'translatorPrompt', 'translatorPresets', 'translatorPresetId', 'customModels', 'mcpURLs', 'authRefreshes'
-        ]
-        for(const key in db) {
-            if(
-                keyToRemove.includes(key) ||
-                key.toLowerCase().includes('key') || key.toLowerCase().includes('proxy')
-                || key.toLowerCase().includes('hypa')
+        for (const key in db) {
+            const lower = key.toLowerCase()
+            if (
+                KEYS_TO_REMOVE.has(key) ||
+                lower.includes('key') || lower.includes('proxy') ||
+                lower.includes('hypa')
             ) {
                 delete db[key]
             }
         }
 
-        //@ts-expect-error meta is not defined in Database type, added for settings export report
         db.meta = {
             isTauri: isTauri,
             isNodeServer: isNodeServer,
@@ -80,11 +81,9 @@ Show Statistics
         }
 
         const json = JSON.stringify(db, null, 2)
-        await downloadFile('risuai-settings-report.json', new TextEncoder().encode(json))
+        await downloadFile('risuai-settings-report.json', SHARED_TEXT_ENCODER.encode(json))
         await navigator.clipboard.writeText(json)
         alertNormal(language.settingsExported)
-        
-
     }}
 >
 Export Settings for Bug Report

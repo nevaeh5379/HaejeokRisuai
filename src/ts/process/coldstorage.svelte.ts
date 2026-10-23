@@ -17,6 +17,9 @@ import {
 import { alertClear, alertConfirm, alertError, alertWait } from "../alert";
 import { language } from "src/lang";
 import type { Database } from "../storage/database/schema";
+
+const SHARED_TEXT_ENCODER = new TextEncoder();
+const SHARED_TEXT_DECODER = new TextDecoder();
 import {
   coldStorageHeader,
   getColdStorageAffectedCharacters,
@@ -62,7 +65,7 @@ export async function getColdStorageItem(key: string) {
       if (!f) {
         return null;
       }
-      const text = new TextDecoder().decode(
+      const text = SHARED_TEXT_DECODER.decode(
         await decompress(new Uint8Array(f)),
       );
       return JSON.parse(text);
@@ -74,7 +77,7 @@ export async function getColdStorageItem(key: string) {
       const f = await readFile("./coldstorage/" + key + ".json", {
         baseDir: BaseDirectory.AppData,
       });
-      const text = new TextDecoder().decode(
+      const text = SHARED_TEXT_DECODER.decode(
         await decompress(new Uint8Array(f)),
       );
       return JSON.parse(text);
@@ -94,7 +97,7 @@ export async function getColdStorageItem(key: string) {
         return null;
       }
       const buf = await d.arrayBuffer();
-      const text = new TextDecoder().decode(
+      const text = SHARED_TEXT_DECODER.decode(
         await decompress(new Uint8Array(buf)),
       );
       return JSON.parse(text);
@@ -110,7 +113,7 @@ async function compressColdStorageValue(
   try {
     const json = JSON.stringify(value);
     return await new Promise<Uint8Array>((resolve, reject) => {
-      fflateCompress(new TextEncoder().encode(json), (err, result) => {
+      fflateCompress(SHARED_TEXT_ENCODER.encode(json), (err, result) => {
         if (err) {
           return reject(err);
         }
@@ -326,7 +329,6 @@ export async function collectColdStorageBackupPayloads(
   const payloads: ColdStorageBackupPayload[] = [];
   const missingKeys: string[] = [];
   const invalidKeys: string[] = [];
-  const encoder = new TextEncoder();
 
   onProgress?.(0, coldKeys.length);
   for (let index = 0; index < coldKeys.length; index++) {
@@ -348,7 +350,7 @@ export async function collectColdStorageBackupPayloads(
         key,
         backupName: getColdStorageBackupName(key),
         value,
-        encoded: encoder.encode(JSON.stringify(value)),
+        encoded: SHARED_TEXT_ENCODER.encode(JSON.stringify(value)),
       });
     } catch (error) {
       console.error(`Failed to read cold storage item ${key}:`, error);

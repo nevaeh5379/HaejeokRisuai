@@ -1,9 +1,9 @@
-const POSTGRES_TEXT_TAG: any = "__risu_pg_text_utf16le_v1_8e81b0b9__";
-const POSTGRES_OBJECT_ENTRIES_TAG: any =
-  "__risu_pg_object_entries_v1_8e81b0b9__";
-const POSTGRES_SCRIPT_TAG: any = "__risu_pg_script_utf16le_v1_8e81b0b9__:";
+const POSTGRES_TEXT_TAG = "__risu_pg_text_utf16le_v1_8e81b0b9__";
+const POSTGRES_OBJECT_ENTRIES_TAG = "__risu_pg_object_entries_v1_8e81b0b9__";
+const POSTGRES_SCRIPT_TAG = "__risu_pg_script_utf16le_v1_8e81b0b9__:";
 
-function encodePostgresScript(script?: any): any {
+function encodePostgresScript(script?: unknown): unknown {
+  if (typeof script !== "string") return script;
   if (canUsePostgresText(script) && !script.startsWith(POSTGRES_SCRIPT_TAG)) {
     return script;
   }
@@ -12,19 +12,23 @@ function encodePostgresScript(script?: any): any {
   );
 }
 
-function decodePostgresScript(script?: any): any {
+function decodePostgresScript(script?: unknown): unknown {
   if (typeof script !== "string" || !script.startsWith(POSTGRES_SCRIPT_TAG)) {
     return script;
   }
-  const encoded: any = script.slice(POSTGRES_SCRIPT_TAG.length);
-  const buffer: any = Buffer.from(encoded, "base64");
+  const encoded = script.slice(POSTGRES_SCRIPT_TAG.length);
+  const buffer = Buffer.from(encoded, "base64");
   if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded) {
     return script;
   }
   return buffer.toString("utf16le");
 }
 
-function defineJsonProperty(target?: any, key?: any, value?: any): any {
+function defineJsonProperty(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
   Object.defineProperty(target, key, {
     value,
     enumerable: true,
@@ -33,11 +37,14 @@ function defineJsonProperty(target?: any, key?: any, value?: any): any {
   });
 }
 
-function mapJsonArrayCopyOnWrite(values?: any, mapper?: any): any {
-  let mapped: any = null;
-  for (let index: any = 0; index < values.length; index++) {
-    const original: any = values[index];
-    const next: any = mapper(original);
+function mapJsonArrayCopyOnWrite(
+  values: unknown[],
+  mapper: (val: unknown) => unknown,
+): unknown[] {
+  let mapped: unknown[] | null = null;
+  for (let index = 0; index < values.length; index++) {
+    const original = values[index];
+    const next = mapper(original);
     if (next !== original && mapped === null) {
       mapped = values.slice(0, index);
     }
@@ -48,7 +55,7 @@ function mapJsonArrayCopyOnWrite(values?: any, mapper?: any): any {
   return mapped || values;
 }
 
-function encodePostgresJsonValue(value?: any): any {
+function encodePostgresJsonValue(value?: unknown): unknown {
   if (typeof value === "string") {
     if (!value.includes("\0")) {
       return value;
@@ -64,30 +71,46 @@ function encodePostgresJsonValue(value?: any): any {
     return value;
   }
 
-  const entries: any = Object.entries(value);
-  const requiresEntriesWrapper: any = entries.some(
-    ([key]: any) =>
+  const rec = value as Record<string, unknown>;
+  const keys = Object.keys(rec);
+
+  let requiresEntriesWrapper = false;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (
       key.includes("\0") ||
       key === POSTGRES_TEXT_TAG ||
-      key === POSTGRES_OBJECT_ENTRIES_TAG,
-  );
+      key === POSTGRES_OBJECT_ENTRIES_TAG
+    ) {
+      requiresEntriesWrapper = true;
+      break;
+    }
+  }
+
   if (requiresEntriesWrapper) {
-    return {
-      [POSTGRES_OBJECT_ENTRIES_TAG]: entries.map(([key, item]: any) => [
+    const entries: Array<[unknown, unknown]> = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      entries[i] = [
         encodePostgresJsonValue(key),
-        encodePostgresJsonValue(item),
-      ]),
+        encodePostgresJsonValue(rec[key]),
+      ];
+    }
+    return {
+      [POSTGRES_OBJECT_ENTRIES_TAG]: entries,
     };
   }
 
-  let encoded: any = null;
-  for (let index: any = 0; index < entries.length; index++) {
-    const [key, item] = entries[index];
-    const next: any = encodePostgresJsonValue(item);
+  let encoded: Record<string, unknown> | null = null;
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+    const item = rec[key];
+    const next = encodePostgresJsonValue(item);
     if (next !== item && encoded === null) {
       encoded = {};
-      for (let previous: any = 0; previous < index; previous++) {
-        defineJsonProperty(encoded, entries[previous][0], entries[previous][1]);
+      for (let previous = 0; previous < index; previous++) {
+        const prevKey = keys[previous];
+        defineJsonProperty(encoded, prevKey, rec[prevKey]);
       }
     }
     if (encoded !== null) {
@@ -97,24 +120,28 @@ function encodePostgresJsonValue(value?: any): any {
   return encoded || value;
 }
 
-function decodePostgresTextWrapper(value?: any): any {
+function decodePostgresTextWrapper(
+  value: Record<string, unknown>,
+): string | null {
   if (
-    Object.keys(value).length !== 1 ||
     !Object.prototype.hasOwnProperty.call(value, POSTGRES_TEXT_TAG) ||
     typeof value[POSTGRES_TEXT_TAG] !== "string"
   ) {
     return null;
   }
-  const encoded: any = value[POSTGRES_TEXT_TAG];
-  const buffer: any = Buffer.from(encoded, "base64");
+  for (const k in value) {
+    if (k !== POSTGRES_TEXT_TAG) return null;
+  }
+  const encoded = value[POSTGRES_TEXT_TAG] as string;
+  const buffer = Buffer.from(encoded, "base64");
   if (buffer.length % 2 !== 0 || buffer.toString("base64") !== encoded) {
     return null;
   }
-  const decoded: any = buffer.toString("utf16le");
+  const decoded = buffer.toString("utf16le");
   return decoded.includes("\0") ? decoded : null;
 }
 
-function decodePostgresJsonValue(value?: any): any {
+function decodePostgresJsonValue(value?: unknown): any {
   if (Array.isArray(value)) {
     return mapJsonArrayCopyOnWrite(value, decodePostgresJsonValue);
   }
@@ -122,42 +149,61 @@ function decodePostgresJsonValue(value?: any): any {
     return value;
   }
 
-  const decodedText: any = decodePostgresTextWrapper(value);
+  const rec = value as Record<string, unknown>;
+  const decodedText = decodePostgresTextWrapper(rec);
   if (decodedText !== null) {
     return decodedText;
   }
 
   if (
-    Object.keys(value).length === 1 &&
-    Object.prototype.hasOwnProperty.call(value, POSTGRES_OBJECT_ENTRIES_TAG) &&
-    Array.isArray(value[POSTGRES_OBJECT_ENTRIES_TAG])
+    Object.prototype.hasOwnProperty.call(rec, POSTGRES_OBJECT_ENTRIES_TAG) &&
+    Array.isArray(rec[POSTGRES_OBJECT_ENTRIES_TAG])
   ) {
-    const decodedObject: any = {};
-    for (const entry of value[POSTGRES_OBJECT_ENTRIES_TAG]) {
-      if (!Array.isArray(entry) || entry.length !== 2) {
-        return decodePostgresJsonObject(value);
+    let onlyEntriesTag = true;
+    for (const k in rec) {
+      if (k !== POSTGRES_OBJECT_ENTRIES_TAG) {
+        onlyEntriesTag = false;
+        break;
       }
-      const key: any = decodePostgresJsonValue(entry[0]);
-      if (typeof key !== "string") {
-        return decodePostgresJsonObject(value);
-      }
-      defineJsonProperty(decodedObject, key, decodePostgresJsonValue(entry[1]));
     }
-    return decodedObject;
+    if (onlyEntriesTag) {
+      const entries = rec[POSTGRES_OBJECT_ENTRIES_TAG] as unknown[];
+      const decodedObject: Record<string, unknown> = {};
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (!Array.isArray(entry) || entry.length !== 2) {
+          return decodePostgresJsonObject(rec);
+        }
+        const key = decodePostgresJsonValue(entry[0]);
+        if (typeof key !== "string") {
+          return decodePostgresJsonObject(rec);
+        }
+        defineJsonProperty(
+          decodedObject,
+          key,
+          decodePostgresJsonValue(entry[1]),
+        );
+      }
+      return decodedObject;
+    }
   }
-  return decodePostgresJsonObject(value);
+  return decodePostgresJsonObject(rec);
 }
 
-function decodePostgresJsonObject(value?: any): any {
-  const entries: any = Object.entries(value);
-  let decoded: any = null;
-  for (let index: any = 0; index < entries.length; index++) {
-    const [key, item] = entries[index];
-    const next: any = decodePostgresJsonValue(item);
+function decodePostgresJsonObject(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const keys = Object.keys(value);
+  let decoded: Record<string, unknown> | null = null;
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+    const item = value[key];
+    const next = decodePostgresJsonValue(item);
     if (next !== item && decoded === null) {
       decoded = {};
-      for (let previous: any = 0; previous < index; previous++) {
-        defineJsonProperty(decoded, entries[previous][0], entries[previous][1]);
+      for (let previous = 0; previous < index; previous++) {
+        const prevKey = keys[previous];
+        defineJsonProperty(decoded, prevKey, value[prevKey]);
       }
     }
     if (decoded !== null) {
@@ -167,12 +213,14 @@ function decodePostgresJsonObject(value?: any): any {
   return decoded || value;
 }
 
-function canUsePostgresText(value?: any): any {
-  return (
-    typeof value === "string" &&
-    !value.includes("\0") &&
-    Buffer.from(value, "utf8").toString("utf8") === value
-  );
+function canUsePostgresText(value?: unknown): boolean {
+  if (typeof value !== "string" || value.includes("\0")) {
+    return false;
+  }
+  if (typeof (value as any).isWellFormed === "function") {
+    return (value as any).isWellFormed();
+  }
+  return Buffer.from(value, "utf8").toString("utf8") === value;
 }
 
 export {
