@@ -1,3 +1,4 @@
+import { readStreamLines } from "./readStreamLines";
 import type { DbVendor } from "@risuai/protocol/storageConfig.ts";
 import type {
   NodeBackupConfig,
@@ -118,39 +119,29 @@ export class RemoteDatabaseBackupClient {
     const reader = response.body?.getReader();
     if (!reader) return await response.json();
 
-    const decoder = new TextDecoder();
-    let buffer = "";
     let finalResult: NodeBackupFullSyncResult = { success: true };
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "progress") {
-            onProgress?.(parsed);
-          } else if (parsed.type === "done") {
-            finalResult = {
-              success: parsed.success !== false,
-              lastFullSyncAt: parsed.lastFullSyncAt,
-              settingsCount: parsed.settingsCount,
-              charactersCount: parsed.charactersCount,
-              chatsCount: parsed.chatsCount,
-              messagesCount: parsed.messagesCount,
-              revision: parsed.revision,
-              changed: parsed.changed,
-            };
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.error || fallback);
-          }
-        } catch (error: any) {
-          if (error?.message && !error.message.includes("JSON")) throw error;
+    for await (const line of readStreamLines(reader)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === "progress") {
+          onProgress?.(parsed);
+        } else if (parsed.type === "done") {
+          finalResult = {
+            success: parsed.success !== false,
+            lastFullSyncAt: parsed.lastFullSyncAt,
+            settingsCount: parsed.settingsCount,
+            charactersCount: parsed.charactersCount,
+            chatsCount: parsed.chatsCount,
+            messagesCount: parsed.messagesCount,
+            revision: parsed.revision,
+            changed: parsed.changed,
+          };
+        } else if (parsed.type === "error") {
+          throw new Error(parsed.error || fallback);
         }
+      } catch (error: any) {
+        if (error?.message && !error.message.includes("JSON")) throw error;
       }
     }
     return finalResult;

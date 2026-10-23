@@ -1,3 +1,4 @@
+import { readStreamLines } from "./readStreamLines";
 import type {
   AssetStorageTarget,
   AssetStorageType,
@@ -139,8 +140,6 @@ export class NodeS3Storage {
       return await response.json();
     }
 
-    const decoder = new TextDecoder();
-    let buffer = "";
     let finalResult: NodeS3MigrationResult = {
       total: 0,
       migrated: 0,
@@ -148,33 +147,25 @@ export class NodeS3Storage {
       errors: [],
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "progress") {
-            onProgress?.(parsed);
-          } else if (parsed.type === "done") {
-            finalResult = {
-              total: parsed.total,
-              migrated: parsed.migrated,
-              skipped: parsed.skipped,
-              errors: parsed.errors || [],
-            };
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.error);
-          }
-        } catch (err: any) {
-          if (err?.message && !err.message.includes("JSON")) {
-            throw err;
-          }
+    for await (const line of readStreamLines(reader)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === "progress") {
+          onProgress?.(parsed);
+        } else if (parsed.type === "done") {
+          finalResult = {
+            total: parsed.total,
+            migrated: parsed.migrated,
+            skipped: parsed.skipped,
+            errors: parsed.errors || [],
+          };
+        } else if (parsed.type === "error") {
+          throw new Error(parsed.error);
+        }
+      } catch (err: any) {
+        if (err?.message && !err.message.includes("JSON")) {
+          throw err;
         }
       }
     }
@@ -198,40 +189,30 @@ export class NodeS3Storage {
       return await response.json();
     }
 
-    const decoder = new TextDecoder();
-    let buffer = "";
     let finalResult: NodeS3RollbackResult = {
       total: 0,
       downloaded: 0,
       errors: [],
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "progress") {
-            onProgress?.(parsed);
-          } else if (parsed.type === "done") {
-            finalResult = {
-              total: parsed.total,
-              downloaded: parsed.downloaded,
-              errors: parsed.errors || [],
-            };
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.error);
-          }
-        } catch (err: any) {
-          if (err?.message && !err.message.includes("JSON")) {
-            throw err;
-          }
+    for await (const line of readStreamLines(reader)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === "progress") {
+          onProgress?.(parsed);
+        } else if (parsed.type === "done") {
+          finalResult = {
+            total: parsed.total,
+            downloaded: parsed.downloaded,
+            errors: parsed.errors || [],
+          };
+        } else if (parsed.type === "error") {
+          throw new Error(parsed.error);
+        }
+      } catch (err: any) {
+        if (err?.message && !err.message.includes("JSON")) {
+          throw err;
         }
       }
     }
@@ -258,8 +239,6 @@ export class NodeS3Storage {
       return await response.json();
     }
 
-    const decoder = new TextDecoder();
-    let buffer = "";
     let finalResult: NodeS3ThumbnailsResult = {
       total: 0,
       created: 0,
@@ -267,33 +246,25 @@ export class NodeS3Storage {
       errors: [],
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "progress") {
-            onProgress?.(parsed);
-          } else if (parsed.type === "done") {
-            finalResult = {
-              total: parsed.total,
-              created: parsed.created,
-              skipped: parsed.skipped,
-              errors: parsed.errors || [],
-            };
-          } else if (parsed.type === "error") {
-            throw new Error(parsed.error);
-          }
-        } catch (err: any) {
-          if (err?.message && !err.message.includes("JSON")) {
-            throw err;
-          }
+    for await (const line of readStreamLines(reader)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === "progress") {
+          onProgress?.(parsed);
+        } else if (parsed.type === "done") {
+          finalResult = {
+            total: parsed.total,
+            created: parsed.created,
+            skipped: parsed.skipped,
+            errors: parsed.errors || [],
+          };
+        } else if (parsed.type === "error") {
+          throw new Error(parsed.error);
+        }
+      } catch (err: any) {
+        if (err?.message && !err.message.includes("JSON")) {
+          throw err;
         }
       }
     }
