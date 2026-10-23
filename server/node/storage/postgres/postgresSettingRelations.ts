@@ -355,7 +355,9 @@ function projectSettings(upserts?: any): any {
   );
   for (const { key, value } of upserts) {
     if (key === "personas") {
-      for (const [position, rawPersona] of array(value).entries()) {
+      const personasArr = array(value);
+      for (let position = 0; position < personasArr.length; position++) {
+        const rawPersona = personasArr[position];
         const persona: any = record(rawPersona);
         const embeddedModule: any = record(persona.embeddedModule);
         rows["system.personas"].push({
@@ -373,7 +375,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "modules") {
-      for (const [position, rawModule] of array(value).entries()) {
+      const modulesArr = array(value);
+      for (let position = 0; position < modulesArr.length; position++) {
+        const rawModule = modulesArr[position];
         const module: any = record(rawModule);
         const mcp: any = record(module.mcp);
         rows["system.modules"].push({
@@ -395,7 +399,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "plugins" || key === "pluginV2") {
-      for (const [position, rawPlugin] of array(value).entries()) {
+      const pluginsArr = array(value);
+      for (let position = 0; position < pluginsArr.length; position++) {
+        const rawPlugin = pluginsArr[position];
         const plugin: any = record(rawPlugin);
         rows["system.plugins"].push({
           setting_key: key,
@@ -412,14 +418,26 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "loreBook") {
-      for (const [bookPosition, rawBook] of array(value).entries()) {
+      const booksArr = array(value);
+      for (
+        let bookPosition = 0;
+        bookPosition < booksArr.length;
+        bookPosition++
+      ) {
+        const rawBook = booksArr[bookPosition];
         const book: any = record(rawBook);
         rows["system.global_lorebooks"].push({
           setting_key: key,
           position: bookPosition,
           name: text(book.name),
         });
-        for (const [lorePosition, rawLore] of array(book.data).entries()) {
+        const loreArr = array(book.data);
+        for (
+          let lorePosition = 0;
+          lorePosition < loreArr.length;
+          lorePosition++
+        ) {
+          const rawLore = loreArr[lorePosition];
           const lore: any = record(rawLore);
           const extensions: any = record(lore.extentions);
           const cache: any = record(lore.loreCache);
@@ -443,9 +461,13 @@ function projectSettings(upserts?: any): any {
             folder: text(lore.folder),
             cache_key: text(cache.key),
           });
-          for (const [cachePosition, cacheValue] of array(
-            cache.data,
-          ).entries()) {
+          const cacheArr = array(cache.data);
+          for (
+            let cachePosition = 0;
+            cachePosition < cacheArr.length;
+            cachePosition++
+          ) {
+            const cacheValue = cacheArr[cachePosition];
             const projected: any = text(cacheValue);
             if (projected === null) continue;
             rows["system.global_lore_cache_items"].push({
@@ -461,7 +483,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "translatorPresets") {
-      for (const [position, rawPreset] of array(value).entries()) {
+      const presetsArr = array(value);
+      for (let position = 0; position < presetsArr.length; position++) {
+        const rawPreset = presetsArr[position];
         const preset: any = record(rawPreset);
         rows["system.translator_presets"].push({
           setting_key: key,
@@ -474,7 +498,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "hotkeys") {
-      for (const [position, rawHotkey] of array(value).entries()) {
+      const hotkeysArr = array(value);
+      for (let position = 0; position < hotkeysArr.length; position++) {
+        const rawHotkey = hotkeysArr[position];
         const hotkey: any = record(rawHotkey);
         rows["system.hotkeys"].push({
           setting_key: key,
@@ -489,7 +515,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "customModels") {
-      for (const [position, rawModel] of array(value).entries()) {
+      const modelsArr = array(value);
+      for (let position = 0; position < modelsArr.length; position++) {
+        const rawModel = modelsArr[position];
         const model: any = record(rawModel);
         rows["system.custom_models"].push({
           setting_key: key,
@@ -503,7 +531,13 @@ function projectSettings(upserts?: any): any {
           name: text(model.name),
           params: text(model.params),
         });
-        for (const [flagPosition, flag] of array(model.flags).entries()) {
+        const flagsArr = array(model.flags);
+        for (
+          let flagPosition = 0;
+          flagPosition < flagsArr.length;
+          flagPosition++
+        ) {
+          const flag = flagsArr[flagPosition];
           const projected: any = number(flag);
           if (projected === null) continue;
           rows["system.custom_model_flags"].push({
@@ -517,7 +551,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "loadouts") {
-      for (const [position, rawLoadout] of array(value).entries()) {
+      const loadoutsArr = array(value);
+      for (let position = 0; position < loadoutsArr.length; position++) {
+        const rawLoadout = loadoutsArr[position];
         const loadout: any = record(rawLoadout);
         rows["system.loadouts"].push({
           setting_key: key,
@@ -530,9 +566,13 @@ function projectSettings(upserts?: any): any {
           persona_id: text(loadout.personaId),
           icons_present: Object.prototype.hasOwnProperty.call(loadout, "icons"),
         });
-        for (const [refPosition, characterId] of array(
-          loadout.characterIds,
-        ).entries()) {
+        const charIdsArr = array(loadout.characterIds);
+        for (
+          let refPosition = 0;
+          refPosition < charIdsArr.length;
+          refPosition++
+        ) {
+          const characterId = charIdsArr[refPosition];
           const projected: any = text(characterId);
           if (projected !== null)
             rows["system.loadout_character_refs"].push({
@@ -542,9 +582,13 @@ function projectSettings(upserts?: any): any {
               character_id: projected,
             });
         }
-        for (const [refPosition, moduleId] of array(
-          loadout.modules,
-        ).entries()) {
+        const modulesArr = array(loadout.modules);
+        for (
+          let refPosition = 0;
+          refPosition < modulesArr.length;
+          refPosition++
+        ) {
+          const moduleId = modulesArr[refPosition];
           const projected: any = text(moduleId);
           if (projected !== null)
             rows["system.loadout_module_refs"].push({
@@ -554,9 +598,11 @@ function projectSettings(upserts?: any): any {
               module_id: projected,
             });
         }
-        for (const [variableKey, variableValue] of Object.entries(
-          record(loadout.globalVariables),
-        )) {
+        const globalVars = record(loadout.globalVariables);
+        const varKeys = Object.keys(globalVars);
+        for (let i = 0; i < varKeys.length; i++) {
+          const variableKey = varKeys[i];
+          const variableValue = globalVars[variableKey];
           const projectedKey: any = text(variableKey);
           const projectedValue: any = text(variableValue);
           if (projectedKey !== null && projectedValue !== null)
@@ -567,7 +613,13 @@ function projectSettings(upserts?: any): any {
               value: projectedValue,
             });
         }
-        for (const [iconPosition, assetId] of array(loadout.icons).entries()) {
+        const iconsArr = array(loadout.icons);
+        for (
+          let iconPosition = 0;
+          iconPosition < iconsArr.length;
+          iconPosition++
+        ) {
+          const assetId = iconsArr[iconPosition];
           const projected: any = text(assetId);
           if (projected !== null)
             rows["system.loadout_icons"].push({
@@ -581,7 +633,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "customSidebarItems") {
-      for (const [position, rawItem] of array(value).entries()) {
+      const itemsArr = array(value);
+      for (let position = 0; position < itemsArr.length; position++) {
+        const rawItem = itemsArr[position];
         const item: any = record(rawItem);
         rows["system.custom_sidebar_items"].push({
           setting_key: key,
@@ -595,7 +649,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (ORDERED_TEXT_KEYS.has(key)) {
-      for (const [position, item] of array(value).entries()) {
+      const textArr = array(value);
+      for (let position = 0; position < textArr.length; position++) {
+        const item = textArr[position];
         const projected: any = text(item);
         if (projected !== null)
           rows["system.ordered_text_settings"].push({
@@ -607,7 +663,9 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "customFlags") {
-      for (const [position, item] of array(value).entries()) {
+      const flagsArr = array(value);
+      for (let position = 0; position < flagsArr.length; position++) {
+        const item = flagsArr[position];
         const projected: any = number(item);
         if (projected !== null)
           rows["system.ordered_number_settings"].push({
@@ -619,7 +677,11 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (STRING_MAP_KEYS.has(key)) {
-      for (const [mapKey, mapValue] of Object.entries(record(value))) {
+      const mapRec = record(value);
+      const mapKeys = Object.keys(mapRec);
+      for (let i = 0; i < mapKeys.length; i++) {
+        const mapKey = mapKeys[i];
+        const mapValue = mapRec[mapKey];
         const projectedKey: any = text(mapKey);
         const projectedValue: any = text(mapValue);
         if (projectedKey !== null && projectedValue !== null)
@@ -632,9 +694,12 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "bias") {
-      for (const [position, item] of array(value).entries()) {
-        const phrase: any = text(array(item)[0]);
-        const bias: any = number(array(item)[1]);
+      const biasArr = array(value);
+      for (let position = 0; position < biasArr.length; position++) {
+        const item = biasArr[position];
+        const itemArr = array(item);
+        const phrase: any = text(itemArr[0]);
+        const bias: any = number(itemArr[1]);
         if (phrase !== null && bias !== null)
           rows["system.bias_entries"].push({
             setting_key: key,
@@ -646,9 +711,12 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "additionalParams") {
-      for (const [position, item] of array(value).entries()) {
-        const parameterKey: any = text(array(item)[0]);
-        const parameterValue: any = text(array(item)[1]);
+      const paramsArr = array(value);
+      for (let position = 0; position < paramsArr.length; position++) {
+        const item = paramsArr[position];
+        const itemArr = array(item);
+        const parameterKey: any = text(itemArr[0]);
+        const parameterValue: any = text(itemArr[1]);
         if (parameterKey !== null && parameterValue !== null)
           rows["system.additional_parameters"].push({
             setting_key: key,
@@ -660,10 +728,16 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "fallbackModels") {
-      for (const [category, models] of Object.entries(record(value))) {
+      const catRec = record(value);
+      const catKeys = Object.keys(catRec);
+      for (let i = 0; i < catKeys.length; i++) {
+        const category = catKeys[i];
+        const models = catRec[category];
         const projectedCategory: any = text(category);
         if (projectedCategory === null) continue;
-        for (const [position, model] of array(models).entries()) {
+        const modelsArr = array(models);
+        for (let position = 0; position < modelsArr.length; position++) {
+          const model = modelsArr[position];
           const projectedModel: any = text(model);
           if (projectedModel !== null)
             rows["system.fallback_models"].push({
@@ -677,11 +751,17 @@ function projectSettings(upserts?: any): any {
       continue;
     }
     if (key === "openrouterProvider") {
-      for (const [ruleType, providers] of Object.entries(record(value))) {
+      const ruleRec = record(value);
+      const ruleKeys = Object.keys(ruleRec);
+      for (let i = 0; i < ruleKeys.length; i++) {
+        const ruleType = ruleKeys[i];
+        const providers = ruleRec[ruleType];
         if (!["order", "only", "ignore"].includes(ruleType)) continue;
         const projectedType: any = text(ruleType);
         if (projectedType === null) continue;
-        for (const [position, provider] of array(providers).entries()) {
+        const provArr = array(providers);
+        for (let position = 0; position < provArr.length; position++) {
+          const provider = provArr[position];
           const projectedProvider: any = text(provider);
           if (projectedProvider !== null)
             rows["system.openrouter_provider_rules"].push({

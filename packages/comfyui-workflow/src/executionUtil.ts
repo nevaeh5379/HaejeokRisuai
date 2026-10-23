@@ -123,7 +123,8 @@ export const graphToPrompt = async (
     // Note: widget.options.serialize controls prompt inclusion (checked here).
     // widget.serialize controls workflow persistence (checked by LGraphNode).
     if (widgets) {
-      for (const [i, widget] of widgets.entries()) {
+      for (let i = 0; i < widgets.length; i++) {
+        const widget = widgets[i];
         if (!widget.name || widget.options.serialize === false) continue;
 
         const widgetValue = widget.serializeValue
@@ -144,7 +145,8 @@ export const graphToPrompt = async (
     }
 
     // Store all node links
-    for (const [i, input] of node.inputs.entries()) {
+    for (let i = 0; i < node.inputs.length; i++) {
+      const input = node.inputs[i];
       const resolvedInput = node.resolveInput(i);
       if (!resolvedInput) continue;
 
@@ -186,8 +188,10 @@ export const graphToPrompt = async (
   }
 
   // Remove inputs connected to removed nodes
-  for (const { inputs } of Object.values(output)) {
-    for (const [i, input] of Object.entries(inputs)) {
+  for (const nodeId of Object.keys(output)) {
+    const { inputs } = output[nodeId];
+    for (const i of Object.keys(inputs)) {
+      const input = inputs[i];
       if (
         Array.isArray(input) &&
         input.length === 2 &&
