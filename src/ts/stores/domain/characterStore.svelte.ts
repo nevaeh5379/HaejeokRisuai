@@ -10,6 +10,7 @@ import {
   sqlChatData,
 } from "../../storage/sql/sqlCommit";
 import { settingsStore } from "./settingsStore.svelte";
+import { globalAuthorNoteStore } from "./globalAuthorNoteStore";
 import { getInitialChatLoadPages } from "../../chatLoadPages";
 import { trackDeep, snapshotFingerprint } from "./reactiveUtils";
 import { commitSqlChanges } from "../../storage/sql/sqlCommitCoordinator";
@@ -594,7 +595,7 @@ class CharacterStore
           const chat = char.chats[chatIdx];
           if (
             chat.globalAuthorNoteId !== undefined &&
-            !(await storage.getGlobalAuthorNote(chat.globalAuthorNoteId))
+            !(await globalAuthorNoteStore.get(chat.globalAuthorNoteId))
           )
             chat.globalAuthorNoteId = "__none__";
           chats.push({
