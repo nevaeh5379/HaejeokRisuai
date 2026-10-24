@@ -11,6 +11,15 @@ import type {
   SqlSettingUpsert,
 } from "../../../packages/protocol/src/sqlCommit.ts";
 import type { PluginMetadata } from "../../../src/ts/plugins/pluginTypes.ts";
+import type {
+  ExternalSyncTransaction,
+  PluginRecordRow,
+  SettingValueRow,
+  SyncOptions,
+  SyncProgressCallback,
+} from "./relationalRows.ts";
+import { pluginApiVersion } from "./relationalRows.ts";
+import { rebuildSettings } from "./postgres/postgresSettingsCodec.ts";
 
 const DEFAULT_MAX_COLD_STORAGE_KEYS = 250000;
 const MAX_COLD_STORAGE_CHATS_PER_CHARACTER = 100000;
@@ -874,6 +883,325 @@ function rebuildDatabaseGraph({
   return database;
 }
 
+// ---------------------------------------------------------------------------
+// Vendor-neutral row mappers
+//
+// Every SQL vendor stores the same logical row, so anything that is not a
+// dialect decision belongs here instead of in three near-identical copies.
+// 벤더마다 같은 논리적 행을 저장하므로, 방언 판단이 아닌 변환은 여기서 한 번만
+// 구현합니다.
+// ---------------------------------------------------------------------------
+
+/** Extension columns of one `system.plugin_values`-backed plugin record. */
+function pluginExtensionData(data: unknown): SqlRow {
+  const source = isRecord(data) ? data : {};
+  return {
+    arguments: source.arguments || {},
+    realArg: source.realArg || {},
+    customLink: source.customLink || [],
+    argMeta: source.argMeta || {},
+    allowedIPC: source.allowedIPC || [],
+  };
+}
+
+/** Rebuilds plugin metadata from its record rows and extension values. */
+function rebuildPluginRecords(
+  records: readonly PluginRecordRow[],
+  valueRows: readonly SettingValueRow[],
+): PluginMetadata[] {
+  const extension: SqlRow = rebuildSettings(
+    records.map((row) => ({ key: row.plugin_id })),
+    valueRows,
+  );
+  return records.map((row) => {
+    const stored = extension[row.plugin_id] as
+      Partial<PluginMetadata> | undefined;
+    return {
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+      ...(stored ?? {}),
+      id: row.plugin_id,
+      position: Number(row.position),
+      name: row.name,
+      displayName: row.display_name ?? undefined,
+      version: pluginApiVersion(row.api_version),
+      versionOfPlugin: row.plugin_version ?? undefined,
+      updateURL: row.update_url ?? undefined,
+      enabled: Boolean(row.enabled),
+    };
+  });
+}
+
+/** Pattern the database explorer accepts for table and column names. */
+const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Builds the database-explorer identifier validator around a vendor's payload
+ * error type and wording.
+ * 벤더마다 에러 타입과 문구만 다르므로 검증 규칙은 공용으로 둡니다.
+ */
+function createDbExplorerIdentifierValidator(options: {
+  PayloadError: new (message?: string) => Error;
+  tooLong: (field: string) => string;
+  invalid: (field: string) => string;
+}): (value: unknown, field: string) => string {
+  return (value, field) => {
+    if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+      throw new options.PayloadError(options.tooLong(field));
+    }
+    const parts = value.split(".");
+    if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
+      return value;
+    }
+    if (
+      parts.length === 2 &&
+      DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
+      DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])
+    ) {
+      return value;
+    }
+    throw new options.PayloadError(options.invalid(field));
+  };
+}
+
+/** Scalar columns shared by every vendor's settings row. */
+type ScalarSettingColumns<TBoolean> = {
+  text_val: string | null;
+  num_val: number | null;
+  bool_val: TBoolean | null;
+};
+
+/** Scalar settings row shared by every vendor, with a vendor boolean column. */
+type ScalarSettingRow<TBoolean> = ScalarSettingColumns<TBoolean> & {
+  key: string;
+};
+
+/**
+ * Builds the scalar setting column mappers around a vendor's boolean encoding.
+ * Vendors only differ in how `bool_val` is stored, so the decoding rules —
+ * including the legacy JSON text form — live here.
+ * 벤더는 `bool_val` 저장 방식만 다르므로, 레거시 JSON 텍스트 형식 해석을 포함한
+ * 나머지 규칙은 공용으로 둡니다.
+ */
+function createSettingColumnMappers<TBoolean>(options: {
+  encodeBool: (value: boolean) => TBoolean;
+  decodeBool: (value: TBoolean) => unknown;
+  /** Drivers that hand `num_val` back as a string need `Number`. */
+  decodeNumber?: (value: number) => unknown;
+}) {
+  function mapSettingValueToColumns(
+    value: unknown,
+  ): ScalarSettingColumns<TBoolean> {
+    if (typeof value === "boolean") {
+      return {
+        text_val: null,
+        num_val: null,
+        bool_val: options.encodeBool(value),
+      };
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return { text_val: null, num_val: value, bool_val: null };
+    }
+    if (typeof value === "string") {
+      return { text_val: value, num_val: null, bool_val: null };
+    }
+    return { text_val: null, num_val: null, bool_val: null };
+  }
+
+  function mapColumnsToSettingValue(
+    row: Omit<ScalarSettingRow<TBoolean>, "key">,
+  ): unknown {
+    if (row.bool_val !== null) return options.decodeBool(row.bool_val);
+    if (row.num_val !== null) {
+      return options.decodeNumber
+        ? options.decodeNumber(row.num_val)
+        : row.num_val;
+    }
+    if (row.text_val === null) return null;
+    const text = row.text_val;
+    if (text.startsWith("{") || text.startsWith("[") || text === "null") {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    }
+    return text;
+  }
+
+  return { mapSettingValueToColumns, mapColumnsToSettingValue };
+}
+
+// ---------------------------------------------------------------------------
+// Vendor-neutral sync helpers
+//
+// `sync()` differs between vendors only in SQL dialect. Option parsing, cache
+// invalidation and the result shape are the same everywhere, so they live here.
+// 세 벤더의 `sync()`는 SQL 방언만 다르므로, 방언과 무관한 처리는 여기서 한 번만
+// 구현합니다.
+// ---------------------------------------------------------------------------
+
+/** Progress sink of `sync`, accepting both the legacy and current option form. */
+function readSyncProgress(
+  options: SyncOptions | SyncProgressCallback,
+): SyncProgressCallback | null {
+  const candidate =
+    typeof options === "function"
+      ? options
+      : isRecord(options)
+        ? options.onProgress
+        : null;
+  return typeof candidate === "function"
+    ? (candidate as SyncProgressCallback)
+    : null;
+}
+
+/** Reused transaction context supplied by the storage-sync importer. */
+function readExternalTransaction<TClient>(
+  options: SyncOptions | SyncProgressCallback,
+): ExternalSyncTransaction<TClient> | null {
+  if (typeof options !== "object" || options === null) return null;
+  const candidate = (options as Record<string, unknown>).externalTransaction;
+  return isRecord(candidate)
+    ? (candidate as ExternalSyncTransaction<TClient>)
+    : null;
+}
+
+/** Chats whose message rows changed in this sync, for `last_message_time`. */
+function collectAffectedMessageChatIds(payload: {
+  messages?: readonly { chatId: string }[];
+  messageDeletes?: readonly { chatId: string }[];
+}): Set<string> {
+  return new Set<string>([
+    ...(payload.messages || []).map((item) => item.chatId),
+    ...(payload.messageDeletes || []).map((item) => item.chatId),
+  ]);
+}
+
+/** Author-note summary carried by the sync result and the stored receipt. */
+function summarizeAuthorNotes<
+  TNote extends { id: string; contentHash: string; updatedAt: unknown },
+>(
+  authorNotes: readonly TNote[],
+): { id: string; contentHash: string; updatedAt: TNote["updatedAt"] }[] {
+  return authorNotes.map(({ id, contentHash, updatedAt }) => ({
+    id,
+    contentHash,
+    updatedAt,
+  }));
+}
+
+/** Cache invalidations implied by an already committed sync payload. */
+function resolveSyncCacheInvalidation(payload: {
+  plugins?: unknown;
+  rootUpserts?: readonly { key: string }[];
+  rootDeletes?: readonly string[];
+}): {
+  plugins: boolean;
+  pluginCustomStorage: boolean;
+  bootstrapKeys: string[];
+} {
+  const changedKeys = (payload.rootUpserts || []).map((row) => row.key);
+  const rootDeletes = payload.rootDeletes || [];
+  return {
+    plugins:
+      Boolean(payload.plugins) ||
+      changedKeys.includes("plugins") ||
+      rootDeletes.includes("plugins"),
+    pluginCustomStorage:
+      changedKeys.includes("pluginCustomStorage") ||
+      rootDeletes.includes("pluginCustomStorage"),
+    bootstrapKeys: [...changedKeys, ...rootDeletes],
+  };
+}
+
+/** Drops the caches a committed sync payload invalidated. */
+function invalidateSyncCaches(
+  storage: SqlStorageBase,
+  payload: Parameters<typeof resolveSyncCacheInvalidation>[0],
+): void {
+  const invalidation = resolveSyncCacheInvalidation(payload);
+  if (invalidation.plugins) storage.invalidatePluginsCache();
+  if (invalidation.pluginCustomStorage) {
+    storage.invalidatePluginCustomStorageCache();
+  }
+  storage.invalidateBootstrapCache(invalidation.bootstrapKeys);
+}
+
+/** Compact change counts reported by `sync`. */
+type SyncChangeCounts = {
+  root: number;
+  characters: number;
+  chats: number;
+  messages: number;
+};
+
+/** Author-note summary carried by the sync result and the stored receipt. */
+type AuthorNoteSummary<TNote extends { updatedAt: unknown }> = {
+  id: string;
+  contentHash: string;
+  updatedAt: TNote["updatedAt"];
+};
+
+/** Standard `sync` result: revision, author-note summary, change counts. */
+type SyncResult<TNote extends { updatedAt: unknown }> = {
+  revision: number;
+  authorNotes: AuthorNoteSummary<TNote>[];
+  changed: SyncChangeCounts;
+} & Record<string, unknown>;
+
+/** Standard `sync` result with the compact change counts clients read. */
+function buildSyncResult<
+  TNote extends { id: string; contentHash: string; updatedAt: unknown },
+>(options: {
+  payload: {
+    rootUpserts: readonly unknown[];
+    rootDeletes: readonly unknown[];
+    characters?: readonly unknown[];
+    chats?: readonly unknown[];
+    messages?: readonly unknown[];
+  };
+  revision: number;
+  authorNotes: readonly TNote[];
+  extra?: Record<string, unknown>;
+}): SyncResult<TNote> {
+  const { payload } = options;
+  return {
+    revision: options.revision,
+    authorNotes: summarizeAuthorNotes(options.authorNotes),
+    changed: {
+      root: payload.rootUpserts.length + payload.rootDeletes.length,
+      characters: (payload.characters || []).length,
+      chats: (payload.chats || []).length,
+      messages: (payload.messages || []).length,
+    },
+    ...(options.extra ?? {}),
+  };
+}
+
+/**
+ * Standard `sync` result for vendors that do not report change counts.
+ * 변경 카운트를 보고하지 않는 벤더용 변형입니다.
+ */
+function buildRevisionResult<
+  TNote extends { id: string; contentHash: string; updatedAt: unknown },
+>(options: {
+  revision: number;
+  authorNotes: readonly TNote[];
+  extra?: Record<string, unknown>;
+}): { revision: number; authorNotes: AuthorNoteSummary<TNote>[] } & Record<
+  string,
+  unknown
+> {
+  return {
+    revision: options.revision,
+    authorNotes: summarizeAuthorNotes(options.authorNotes),
+    ...(options.extra ?? {}),
+  };
+}
+
 export {
   DEFERRED_SETTING_KEYS,
   DEFERRED_STARTUP_SETTING_KEYS,
@@ -892,6 +1220,24 @@ export {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  pluginExtensionData,
+  rebuildPluginRecords,
+  createSettingColumnMappers,
+  createDbExplorerIdentifierValidator,
+  readSyncProgress,
+  readExternalTransaction,
+  collectAffectedMessageChatIds,
+  summarizeAuthorNotes,
+  resolveSyncCacheInvalidation,
+  invalidateSyncCaches,
+  buildSyncResult,
+  buildRevisionResult,
 };
 
-export type { SqlStorageHelpers };
+export type {
+  SqlStorageHelpers,
+  ScalarSettingColumns,
+  ScalarSettingRow,
+  SyncChangeCounts,
+  SyncResult,
+};

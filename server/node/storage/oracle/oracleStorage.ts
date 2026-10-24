@@ -21,13 +21,13 @@ import {
   withAuthorNoteDatabase,
   notes as authorNoteSql,
 } from "../authorNotes.ts";
-import type { PluginMetadata } from "../../../../src/ts/plugins/pluginTypes.ts";
 import {
   asRows,
   asUnknownArray,
   decodePresetData,
   isSqlRow,
   mapBranchRow,
+  type ExternalSyncTransaction as ExternalSyncTransactionOf,
   type AssetCatalogEntry,
   type AssetCatalogRow,
   type AttributeRow,
@@ -100,8 +100,11 @@ import {
   type SettingValueRow,
   type SqlStorageRow,
   type StorageMetaRow,
+  type StorageSyncFinalizeContext,
   type StorageSyncSummaryRow,
   type SyncOptions,
+  type SyncProgressCallback,
+  type SyncProgressEvent,
   type TokenUsageRow,
 } from "../relationalRows.ts";
 
@@ -214,63 +217,12 @@ type BranchHead = {
 };
 /** One `chat_active_branches` row. */
 type OracleActiveBranchRow = { chat_id: string; branch_id: string };
-/** Progress event posted by `sync`. */
-type SyncProgressEvent = {
-  stage: string;
-  message: string;
-  percentage?: number;
-  percent?: number;
-  count?: number;
-  current?: number;
-  total?: number;
-  /** Table being written by the bulk-insert helper. */
-  table?: string;
-};
-type SyncProgressCallback = (event: SyncProgressEvent) => void;
 /** Transaction handed to `sync` when the storage-sync importer reuses one. */
-type ExternalSyncTransaction = {
-  client: OracleConnection;
-  currentRevision: number;
-  nextRevision: number;
-  revisionId: number;
-  storageSyncImport?: boolean;
-};
-/** Context handed to the finalize callback of a storage-sync replacement. */
-type StorageSyncFinalizeContext = {
-  currentRevision: number;
-  nextRevision: number;
-  revisionId: number;
-  previousRevisionId: number | null;
-  databaseInitialized: boolean;
-};
+type ExternalSyncTransaction = ExternalSyncTransactionOf<OracleConnection>;
 type StorageSyncFinalizeCallback = (
   client: OracleConnection,
   context: StorageSyncFinalizeContext,
 ) => Promise<unknown>;
-
-/** Progress sink of `sync`, accepting both the legacy and current form. */
-function readSyncProgress(
-  options: SyncOptions | SyncProgressCallback,
-): SyncProgressCallback | null {
-  const candidate =
-    typeof options === "function"
-      ? options
-      : isSqlRow(options)
-        ? options.onProgress
-        : null;
-  return typeof candidate === "function"
-    ? (candidate as SyncProgressCallback)
-    : null;
-}
-
-/** Reused transaction context, when the storage-sync importer supplies one. */
-function readExternalTransaction(
-  options: SyncOptions | SyncProgressCallback,
-): ExternalSyncTransaction | null {
-  if (typeof options !== "object" || options === null) return null;
-  const candidate = options.externalTransaction;
-  return isSqlRow(candidate) ? (candidate as ExternalSyncTransaction) : null;
-}
 
 /** Cold-storage value shape produced by the shared splitter. */
 type SplitColdStorageRows = ReturnType<typeof splitColdStorageValue>;
@@ -337,6 +289,18 @@ import {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  pluginExtensionData,
+  rebuildPluginRecords,
+  createSettingColumnMappers,
+  createDbExplorerIdentifierValidator,
+  readSyncProgress,
+  readExternalTransaction,
+  collectAffectedMessageChatIds,
+  summarizeAuthorNotes,
+  buildSyncResult,
+  invalidateSyncCaches,
+  type ScalarSettingColumns,
+  type ScalarSettingRow,
   type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
 
@@ -392,101 +356,17 @@ function mapTableName(qualifiedName: string): string {
 }
 
 /** Column values of one `system_settings` row; Oracle stores booleans as 1/0. */
-type OracleSettingColumns = {
-  text_val: string | null;
-  num_val: number | null;
-  bool_val: number | null;
-};
+type OracleSettingColumns = ScalarSettingColumns<number>;
 
-function mapSettingValueToColumns(value: unknown): OracleSettingColumns {
-  if (typeof value === "boolean") {
-    return { text_val: null, num_val: null, bool_val: value ? 1 : 0 };
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { text_val: null, num_val: value, bool_val: null };
-  }
-  if (typeof value === "string") {
-    return { text_val: value, num_val: null, bool_val: null };
-  }
-  if (value === null || value === undefined) {
-    return { text_val: null, num_val: null, bool_val: null };
-  }
-  return { text_val: null, num_val: null, bool_val: null };
-}
+const { mapSettingValueToColumns, mapColumnsToSettingValue } =
+  createSettingColumnMappers<number>({
+    encodeBool: (value) => (value ? 1 : 0),
+    decodeBool: (value) => Boolean(value),
+    decodeNumber: (value) => Number(value),
+  });
 
 /** Row of `system_settings`; Oracle stores booleans as NUMBER(1). */
-type OracleSettingScalarRow = {
-  key: string;
-  text_val: string | null;
-  num_val: number | null;
-  bool_val: number | null;
-};
-
-/** Decode one scalar setting column back into an app value. */
-function mapColumnsToSettingValue(row: OracleSettingScalarRow): unknown {
-  if (row.bool_val !== null) return Boolean(row.bool_val);
-  if (row.num_val !== null) return Number(row.num_val);
-  if (row.text_val === null) return null;
-  const text = row.text_val;
-  if (text.startsWith("{") || text.startsWith("[") || text === "null") {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
-  }
-  return text;
-}
-
-function pluginExtensionData(data: unknown): SqlStorageRow {
-  const source = isSqlRow(data) ? data : {};
-  return {
-    arguments: source.arguments || {},
-    realArg: source.realArg || {},
-    customLink: source.customLink || [],
-    argMeta: source.argMeta || {},
-    allowedIPC: source.allowedIPC || [],
-  };
-}
-
-/** Plugin API version stored as text; narrowed to the metadata union. */
-function pluginApiVersion(raw: string | null): PluginMetadata["version"] {
-  if (raw === "1") return 1;
-  if (raw === "2") return 2;
-  if (raw === "2.1") return "2.1";
-  if (raw === "3.0") return "3.0";
-  if (raw) return raw as PluginMetadata["version"];
-  return undefined;
-}
-
-function rebuildPluginRecords(
-  records: readonly PluginRecordRow[],
-  valueRows: readonly SettingValueRow[],
-): PluginMetadata[] {
-  const extension: Record<string, unknown> = rebuildSettings(
-    records.map((row) => ({ key: row.plugin_id })),
-    valueRows,
-  );
-  return records.map((row) => {
-    const stored = extension[row.plugin_id] as
-      Partial<PluginMetadata> | undefined;
-    return {
-      arguments: {},
-      realArg: {},
-      customLink: [],
-      argMeta: {},
-      ...(stored ?? {}),
-      id: row.plugin_id,
-      position: Number(row.position),
-      name: row.name,
-      displayName: row.display_name ?? undefined,
-      version: pluginApiVersion(row.api_version),
-      versionOfPlugin: row.plugin_version ?? undefined,
-      updateURL: row.update_url ?? undefined,
-      enabled: Boolean(row.enabled),
-    };
-  });
-}
+type OracleSettingScalarRow = ScalarSettingRow<number>;
 
 // 감사 대상 테이블 목록 (PostgreSQL AUDITED_TABLES와 동일, 접두어 변환)
 const AUDITED_TABLES_QUALIFIED = [
@@ -562,7 +442,6 @@ const AUDITED_TABLES_QUALIFIED = [
 ];
 const AUDITED_TABLES = AUDITED_TABLES_QUALIFIED.map(mapTableName);
 
-const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
@@ -1039,25 +918,11 @@ function prepareBindValue(value: unknown, _oracleType?: number): unknown {
   return value;
 }
 
-function assertDbExplorerIdentifier(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 128) {
-    throw new StoragePayloadError(
-      `${field} must be a valid table or column name`,
-    );
-  }
-  const parts = value.split(".");
-  if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]))
-    return value;
-  if (
-    parts.length === 2 &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])
-  )
-    return value;
-  throw new StoragePayloadError(
-    `${field} must be a valid table or column name`,
-  );
-}
+const assertDbExplorerIdentifier = createDbExplorerIdentifierValidator({
+  PayloadError: StoragePayloadError,
+  tooLong: (field) => `${field} must be a valid table or column name`,
+  invalid: (field) => `${field} must be a valid table or column name`,
+});
 
 function dbExplorerSelectExpression(
   columnName: string,
@@ -4476,7 +4341,7 @@ class OracleStorage extends SqlStorageBase {
   async sync(rawPayload: unknown, options: SyncOptions = {}) {
     this.assertEnabled();
     const onProgress = readSyncProgress(options);
-    const external = readExternalTransaction(options);
+    const external = readExternalTransaction<OracleConnection>(options);
     const payload = validateSyncPayload(rawPayload);
     // Report the compact commit impact to the internal realtime channel right
     // after validation; it is never serialized into the sync result.
@@ -4529,10 +4394,7 @@ class OracleStorage extends SqlStorageBase {
           `Oracle data changed in another session (server revision ${currentRevision}). Reload before saving again.`,
         );
       }
-      const affectedMessageChatIds = new Set<string>([
-        ...(payload.messages || []).map((item) => item.chatId),
-        ...(payload.messageDeletes || []).map((item) => item.chatId),
-      ]);
+      const affectedMessageChatIds = collectAffectedMessageChatIds(payload);
       if (!external) {
         await beginAuditRevision(conn, {
           storageRevision: nextRevision,
@@ -5609,49 +5471,21 @@ class OracleStorage extends SqlStorageBase {
         );
         await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
           revision: nextRevision,
-          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-            id,
-            contentHash,
-            updatedAt,
-          })),
+          authorNotes: summarizeAuthorNotes(authorNotes),
         });
         await conn.commit();
       }
-      const changedKeys = payload.rootUpserts.map((row) => row.key);
-      const rootDeletes = payload.rootDeletes || [];
-      if (
-        payload.plugins ||
-        changedKeys.includes("plugins") ||
-        rootDeletes.includes("plugins")
-      ) {
-        this.pluginsCache = null;
-      }
-      if (
-        changedKeys.includes("pluginCustomStorage") ||
-        rootDeletes.includes("pluginCustomStorage")
-      ) {
-        this.pluginCustomStorageCache = null;
-      }
-      this.invalidateBootstrapCache([...changedKeys, ...rootDeletes]);
+      invalidateSyncCaches(this, payload);
       onProgress?.({
         stage: "done",
         message: `동기화 완료 (Revision: ${nextRevision})`,
         percent: 100,
       });
-      return {
+      return buildSyncResult({
+        payload,
         revision: nextRevision,
-        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-          id,
-          contentHash,
-          updatedAt,
-        })),
-        changed: {
-          root: payload.rootUpserts.length + payload.rootDeletes.length,
-          characters: payload.characters.length,
-          chats: payload.chats.length,
-          messages: payload.messages.length,
-        },
-      };
+        authorNotes,
+      });
     } catch (error) {
       if (ownsTransaction) {
         try {

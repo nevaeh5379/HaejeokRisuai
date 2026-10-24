@@ -684,20 +684,36 @@ export type ModuleEntry = { id: string; position: number; data: unknown };
 /** `system.module_records` listing row. */
 export type ModuleRecordRow = { module_id: string; position: number | string };
 
-/** Progress event posted by `sync`. */
+/** Progress event posted by `sync`; vendors fill in the fields they report. */
 export type SyncProgressEvent = {
   stage: string;
   message: string;
   percentage?: number;
+  /** Legacy alias of {@link percentage} still emitted by the Oracle vendor. */
+  percent?: number;
   count?: number;
   current?: number;
   total?: number;
+  /** Table being written by the bulk-insert helper. */
+  table?: string;
 };
 
 export type SyncProgressCallback = (event: SyncProgressEvent) => void;
 
 /** Options of `sync`; the legacy form passes the progress callback directly. */
 export type SyncOptions = Record<string, unknown>;
+
+/**
+ * Transaction context reused when the storage-sync importer already owns the
+ * transaction. `client` is the vendor connection type, so this stays generic.
+ */
+export type ExternalSyncTransaction<TClient = unknown> = {
+  client: TClient;
+  currentRevision: number;
+  nextRevision: number;
+  revisionId: number;
+  storageSyncImport?: boolean;
+};
 
 /** Context handed to the finalize callback of a storage-sync replacement. */
 export type StorageSyncFinalizeContext = {

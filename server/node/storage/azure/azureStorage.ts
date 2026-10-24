@@ -11,8 +11,6 @@ import {
   notes as authorNoteSql,
 } from "../authorNotes.ts";
 
-import type { PluginMetadata } from "../../../../src/ts/plugins/pluginTypes.ts";
-
 const sql: typeof import("mssql") = await loadMssql();
 import * as crypto from "crypto";
 import { buildLegacyBranchMigrationPlan } from "../../../../packages/protocol/legacyBranchMigration.ts";
@@ -52,7 +50,7 @@ import {
   decodePresetData,
   isSqlRow,
   mapBranchRow,
-  pluginApiVersion,
+  type ExternalSyncTransaction as ExternalSyncTransactionOf,
   type AssetCatalogEntry,
   type AttributeRow,
   type AuditLogEntryRow,
@@ -102,6 +100,7 @@ import {
   type SettingValueRow,
   type SqlStorageRow,
   type StorageMetaRow,
+  type StorageSyncFinalizeContext,
   type StorageSyncSummaryRow,
   type SyncOptions,
 } from "../relationalRows.ts";
@@ -119,6 +118,18 @@ import {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  pluginExtensionData,
+  rebuildPluginRecords,
+  createSettingColumnMappers,
+  createDbExplorerIdentifierValidator,
+  readSyncProgress,
+  readExternalTransaction,
+  collectAffectedMessageChatIds,
+  summarizeAuthorNotes,
+  buildRevisionResult,
+  invalidateSyncCaches,
+  type ScalarSettingColumns,
+  type ScalarSettingRow,
   type SqlStorageHelpers,
 } from "../sqlStorageCommon.ts";
 
@@ -146,91 +157,17 @@ const assertPosition: SqlStorageHelpers["assertPosition"] =
 const assertData: SqlStorageHelpers["assertData"] = helpers.assertData;
 
 /** Column values of one `system.settings` row; SQL Server stores bits as 1/0. */
-type AzureSettingColumns = {
-  text_val: string | null;
-  num_val: number | null;
-  bool_val: number | null;
-};
+type AzureSettingColumns = ScalarSettingColumns<number>;
 
-function mapSettingValueToColumns(value: unknown): AzureSettingColumns {
-  if (typeof value === "boolean") {
-    return { text_val: null, num_val: null, bool_val: value ? 1 : 0 };
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { text_val: null, num_val: value, bool_val: null };
-  }
-  if (typeof value === "string") {
-    return { text_val: value, num_val: null, bool_val: null };
-  }
-  if (value === null || value === undefined) {
-    return { text_val: null, num_val: null, bool_val: null };
-  }
-  return { text_val: null, num_val: null, bool_val: null };
-}
+const { mapSettingValueToColumns, mapColumnsToSettingValue } =
+  createSettingColumnMappers<number>({
+    encodeBool: (value) => (value ? 1 : 0),
+    decodeBool: (value) => Boolean(value),
+    decodeNumber: (value) => Number(value),
+  });
 
 /** Row of `system.settings`; SQL Server stores booleans as BIT. */
-type AzureSettingScalarRow = {
-  key: string;
-  text_val: string | null;
-  num_val: number | null;
-  bool_val: number | boolean | null;
-};
-
-/** Decode one scalar setting column back into an app value. */
-function mapColumnsToSettingValue(row: AzureSettingScalarRow): unknown {
-  if (row.bool_val !== null) return Boolean(row.bool_val);
-  if (row.num_val !== null) return Number(row.num_val);
-  if (row.text_val === null) return null;
-  const text = row.text_val;
-  if (text.startsWith("{") || text.startsWith("[") || text === "null") {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
-  }
-  return text;
-}
-
-function pluginExtensionData(data: unknown): SqlStorageRow {
-  const source = isSqlRow(data) ? data : {};
-  return {
-    arguments: source.arguments || {},
-    realArg: source.realArg || {},
-    customLink: source.customLink || [],
-    argMeta: source.argMeta || {},
-    allowedIPC: source.allowedIPC || [],
-  };
-}
-
-function rebuildPluginRecords(
-  records: readonly PluginRecordRow[],
-  valueRows: readonly SettingValueRow[],
-): PluginMetadata[] {
-  const extension: Record<string, unknown> = rebuildSettings(
-    records.map((row) => ({ key: row.plugin_id })),
-    valueRows,
-  );
-  return records.map((row) => {
-    const stored = extension[row.plugin_id] as
-      Partial<PluginMetadata> | undefined;
-    return {
-      arguments: {},
-      realArg: {},
-      customLink: [],
-      argMeta: {},
-      ...(stored ?? {}),
-      id: row.plugin_id,
-      position: Number(row.position),
-      name: row.name,
-      displayName: row.display_name ?? undefined,
-      version: pluginApiVersion(row.api_version),
-      versionOfPlugin: row.plugin_version ?? undefined,
-      updateURL: row.update_url ?? undefined,
-      enabled: Boolean(row.enabled),
-    };
-  });
-}
+type AzureSettingScalarRow = ScalarSettingRow<number>;
 
 const AZURE_SCHEMA_VERSION = 4;
 const RELATIONAL_SCHEMA_LAYOUT = "relational-schema-v3";
@@ -371,25 +308,12 @@ function assertSqlIdentifier(value: unknown): string {
   throw new Error(`Unsafe SQL identifier: ${value}`);
 }
 
-function assertDbExplorerIdentifier(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 128) {
-    throw new StoragePayloadError(
-      `${field} must be a non-empty string of at most 128 characters`,
-    );
-  }
-  const parts = value.split(".");
-  if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
-    return value;
-  }
-  if (
-    parts.length === 2 &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])
-  ) {
-    return value;
-  }
-  throw new StoragePayloadError(`${field} contains invalid characters`);
-}
+const assertDbExplorerIdentifier = createDbExplorerIdentifierValidator({
+  PayloadError: StoragePayloadError,
+  tooLong: (field) =>
+    `${field} must be a non-empty string of at most 128 characters`,
+  invalid: (field) => `${field} contains invalid characters`,
+});
 
 /** Group cold message relations by archive, chat position and message position. */
 function groupColdMessageRows<
@@ -577,55 +501,12 @@ type AzureColdStorageArchive = {
     }
 );
 
-/** Progress event posted by `sync`. */
-type SyncProgressEvent = {
-  stage: string;
-  message: string;
-  percentage?: number;
-  percent?: number;
-  count?: number;
-  current?: number;
-  total?: number;
-  /** Table being written by the bulk-insert helper. */
-  table?: string;
-};
-type SyncProgressCallback = (event: SyncProgressEvent) => void;
 /** Transaction handed to `sync` when the storage-sync importer reuses one. */
-type ExternalSyncTransaction = {
-  client: AzureRequestTarget;
-  currentRevision: number;
-  nextRevision: number;
-  revisionId: number;
-  storageSyncImport?: boolean;
-};
-/** Context handed to the finalize callback of a storage-sync replacement. */
-type StorageSyncFinalizeContext = {
-  currentRevision: number;
-  nextRevision: number;
-  revisionId: number;
-  previousRevisionId: number | null;
-  databaseInitialized: boolean;
-};
+type ExternalSyncTransaction = ExternalSyncTransactionOf<AzureRequestTarget>;
 type StorageSyncFinalizeCallback = (
   client: import("mssql").Transaction,
   context: StorageSyncFinalizeContext,
 ) => Promise<unknown>;
-
-/** Progress sink of `sync`, accepting the current object form only. */
-function readSyncProgress(options: SyncOptions): SyncProgressCallback | null {
-  const candidate = isSqlRow(options) ? options.onProgress : null;
-  return typeof candidate === "function"
-    ? (candidate as SyncProgressCallback)
-    : null;
-}
-
-/** Reused transaction context, when the storage-sync importer supplies one. */
-function readExternalTransaction(
-  options: SyncOptions,
-): ExternalSyncTransaction | null {
-  const candidate = options.externalTransaction;
-  return isSqlRow(candidate) ? (candidate as ExternalSyncTransaction) : null;
-}
 
 /** Cold-storage value shape produced by the shared splitter. */
 type SplitColdStorageRows = ReturnType<typeof splitColdStorageValue>;
@@ -3195,7 +3076,7 @@ class AzureStorage extends SqlStorageBase {
     // 절대 직렬화되지 않습니다.
     captureSyncCommitImpact(options, payload);
     const onProgress = readSyncProgress(options);
-    const external = readExternalTransaction(options);
+    const external = readExternalTransaction<AzureRequestTarget>(options);
 
     const runSync = async (tx: AzureRequestTarget) => {
       let currentRevision: number;
@@ -3235,10 +3116,7 @@ class AzureStorage extends SqlStorageBase {
         throw new StorageRevisionConflictError(currentRevision);
       }
 
-      const affectedMessageChatIds = new Set<string>([
-        ...(payload.messages || []).map((item) => item.chatId),
-        ...(payload.messageDeletes || []).map((item) => item.chatId),
-      ]);
+      const affectedMessageChatIds = collectAffectedMessageChatIds(payload);
 
       // 2. Create revision row
       if (!external) {
@@ -4792,45 +4670,22 @@ class AzureStorage extends SqlStorageBase {
       if (!external)
         await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
           revision: nextRevision,
-          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-            id,
-            contentHash,
-            updatedAt,
-          })),
+          authorNotes: summarizeAuthorNotes(authorNotes),
         });
       if (onProgress) onProgress({ stage: "finish", message: "Sync complete" });
 
-      return {
+      return buildRevisionResult({
         revision: nextRevision,
-        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-          id,
-          contentHash,
-          updatedAt,
-        })),
-        ...(revisionId == null ? {} : { revisionId: String(revisionId) }),
-      };
+        authorNotes,
+        extra: revisionId == null ? {} : { revisionId: String(revisionId) },
+      });
     };
 
     const syncResult = external
       ? await runSync(external.client)
       : await this.withTransaction(runSync);
 
-    const changedSettingKeys = payload.rootUpserts?.map((row) => row.key) || [];
-    const rootDeletes = payload.rootDeletes || [];
-    if (
-      payload.plugins ||
-      changedSettingKeys.includes("plugins") ||
-      rootDeletes.includes("plugins")
-    ) {
-      this.pluginsCache = null;
-    }
-    if (
-      changedSettingKeys.includes("pluginCustomStorage") ||
-      rootDeletes.includes("pluginCustomStorage")
-    ) {
-      this.pluginCustomStorageCache = null;
-    }
-    this.invalidateBootstrapCache([...changedSettingKeys, ...rootDeletes]);
+    invalidateSyncCaches(this, payload);
 
     return syncResult;
   }

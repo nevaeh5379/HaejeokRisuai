@@ -9,7 +9,6 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { loadPostgres } from "../../util/runtimeModules.ts";
 import { buildLegacyBranchMigrationPlan } from "../../../../packages/protocol/legacyBranchMigration.ts";
-import type { PluginMetadata } from "../../../../src/ts/plugins/pluginTypes.ts";
 import type {
   SqlModuleUpsert,
   SqlPluginUpsert,
@@ -27,9 +26,9 @@ import {
   isSqlRow,
   legacyModuleId,
   mapBranchRow,
-  pluginApiVersion,
   type AssetCatalogEntry,
   type AssetCatalogEntryRow,
+  type ExternalSyncTransaction as ExternalSyncTransactionOf,
   type AssetCatalogKeyRow,
   type AssetCatalogRow,
   type AttributeRow,
@@ -116,8 +115,6 @@ import {
   type StorageSyncFinalizeContext,
   type StorageSyncSummaryRow,
   type SyncOptions,
-  type SyncProgressCallback,
-  type SyncProgressEvent,
   type TokenUsageRow,
 } from "../relationalRows.ts";
 import { promisify } from "util";
@@ -158,7 +155,18 @@ import {
   createMessageRelations,
   rebuildDatabaseGraph,
   mergeLegacyModulesIntoPayload,
+  pluginExtensionData,
+  rebuildPluginRecords,
+  createSettingColumnMappers,
+  createDbExplorerIdentifierValidator,
+  readSyncProgress,
+  readExternalTransaction,
+  collectAffectedMessageChatIds,
+  summarizeAuthorNotes,
+  buildSyncResult,
+  invalidateSyncCaches,
   type SqlStorageHelpers,
+  type ScalarSettingColumns,
 } from "../sqlStorageCommon.ts";
 
 /** One column value accepted by a PostgreSQL query parameter list. */
@@ -219,41 +227,12 @@ type RevisionCallback = (
   revisionId: number,
 ) => Promise<unknown>;
 /** Transaction handed to `sync` when the storage-sync importer reuses one. */
-type ExternalSyncTransaction = {
-  client: PgClient;
-  currentRevision: number;
-  nextRevision: number;
-  revisionId: number;
-  storageSyncImport?: boolean;
-};
+type ExternalSyncTransaction = ExternalSyncTransactionOf<PgClient>;
 type StorageSyncFinalizeCallback = (
   client: PgClient,
   context: StorageSyncFinalizeContext,
 ) => Promise<unknown>;
 
-/** Progress sink of `sync`, accepting both the legacy and current form. */
-function readSyncProgress(
-  options: SyncOptions | SyncProgressCallback,
-): SyncProgressCallback | null {
-  const candidate =
-    typeof options === "function"
-      ? options
-      : isSqlRow(options)
-        ? options.onProgress
-        : null;
-  return typeof candidate === "function"
-    ? (candidate as SyncProgressCallback)
-    : null;
-}
-
-/** Reused transaction context, when the storage-sync importer supplies one. */
-function readExternalTransaction(
-  options: SyncOptions | SyncProgressCallback,
-): ExternalSyncTransaction | null {
-  if (typeof options !== "object" || options === null) return null;
-  const candidate = options.externalTransaction;
-  return isSqlRow(candidate) ? (candidate as ExternalSyncTransaction) : null;
-}
 /** Branch head bookkeeping while linking incoming messages. */
 type BranchHead = {
   chatId: string;
@@ -345,7 +324,6 @@ const AUDITED_TABLES = [
   "cold.message_prompt_toggles",
   "cold.message_prompt_items",
 ];
-const DB_EXPLORER_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DB_EXPLORER_MAX_ROWS = 200;
 const deflateAsync = promisify(deflate);
 const unzipAsync = promisify(unzip);
@@ -363,27 +341,13 @@ const LEGACY_PERSONA_MIRROR_KEYS_SQL_LITERAL = LEGACY_PERSONA_MIRROR_KEYS.map(
   (key: string) => `'${key}'`,
 ).join(", ");
 
-type SettingColumns = {
-  text_val: string | null;
-  num_val: number | null;
-  bool_val: boolean | null;
-};
+type SettingColumns = ScalarSettingColumns<boolean>;
 
-function mapSettingValueToColumns(value: unknown): SettingColumns {
-  if (typeof value === "boolean") {
-    return { text_val: null, num_val: null, bool_val: value };
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { text_val: null, num_val: value, bool_val: null };
-  }
-  if (typeof value === "string") {
-    return { text_val: value, num_val: null, bool_val: null };
-  }
-  if (value === null || value === undefined) {
-    return { text_val: null, num_val: null, bool_val: null };
-  }
-  return { text_val: null, num_val: null, bool_val: null };
-}
+const { mapSettingValueToColumns, mapColumnsToSettingValue } =
+  createSettingColumnMappers<boolean>({
+    encodeBool: (value) => value,
+    decodeBool: (value) => value,
+  });
 
 /**
  * `pg` resolves a multi-statement text query to one result per statement.
@@ -492,17 +456,6 @@ async function replaceModuleValueRows(
   );
 }
 
-function pluginExtensionData(data: unknown): SqlStorageRow {
-  const source = isSqlRow(data) ? data : {};
-  return {
-    arguments: source.arguments || {},
-    realArg: source.realArg || {},
-    customLink: source.customLink || [],
-    argMeta: source.argMeta || {},
-    allowedIPC: source.allowedIPC || [],
-  };
-}
-
 async function replacePluginValueRows(
   client: PgClient,
   upserts: readonly SqlPluginUpsert[],
@@ -554,35 +507,6 @@ async function replacePluginValueRows(
   );
 }
 
-function rebuildPluginRecords(
-  records: readonly PluginRecordRow[],
-  valueRows: readonly SettingValueRow[],
-): PluginMetadata[] {
-  const extension: Record<string, unknown> = rebuildSettings(
-    records.map((row) => ({ key: row.plugin_id })),
-    valueRows,
-  );
-  return records.map((row) => {
-    const stored = extension[row.plugin_id] as
-      Partial<PluginMetadata> | undefined;
-    return {
-      arguments: {},
-      realArg: {},
-      customLink: [],
-      argMeta: {},
-      ...(stored ?? {}),
-      id: row.plugin_id,
-      position: Number(row.position),
-      name: row.name,
-      displayName: row.display_name ?? undefined,
-      version: pluginApiVersion(row.api_version),
-      versionOfPlugin: row.plugin_version ?? undefined,
-      updateURL: row.update_url ?? undefined,
-      enabled: Boolean(row.enabled),
-    };
-  });
-}
-
 function rebuildSettingRows(
   settings: readonly SettingScalarRow[],
   valueRows: readonly SettingValueRow[],
@@ -594,22 +518,6 @@ function rebuildSettingRows(
     }
   }
   return rebuilt;
-}
-
-/** Value of a scalar setting column, decoding the legacy JSON text form. */
-function mapColumnsToSettingValue(row: SettingScalarRow): unknown {
-  if (row.bool_val !== null) return row.bool_val;
-  if (row.num_val !== null) return row.num_val;
-  if (row.text_val === null) return null;
-  const text = row.text_val;
-  if (text.startsWith("{") || text.startsWith("[") || text === "null") {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
-  }
-  return text;
 }
 
 import {
@@ -640,27 +548,11 @@ const assertPosition: SqlStorageHelpers["assertPosition"] =
   helpers.assertPosition;
 const assertData: SqlStorageHelpers["assertData"] = helpers.assertData;
 
-function assertDbExplorerIdentifier(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 128) {
-    throw new PostgresPayloadError(
-      `${field} must be a valid table or column name`,
-    );
-  }
-  const parts = value.split(".");
-  if (parts.length === 1 && DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0])) {
-    return value;
-  }
-  if (
-    parts.length === 2 &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[0]) &&
-    DB_EXPLORER_IDENTIFIER_PATTERN.test(parts[1])
-  ) {
-    return value;
-  }
-  throw new PostgresPayloadError(
-    `${field} must be a valid table or column name`,
-  );
-}
+const assertDbExplorerIdentifier = createDbExplorerIdentifierValidator({
+  PayloadError: PostgresPayloadError,
+  tooLong: (field) => `${field} must be a valid table or column name`,
+  invalid: (field) => `${field} must be a valid table or column name`,
+});
 
 function dbExplorerSelectExpression(
   columnName: string,
@@ -5336,7 +5228,7 @@ class PostgresStorage extends SqlStorageBase {
     // 검증 직후 압축 커밋 영향을 내부 실시간 채널로 보고하며, sync 결과에는
     // 절대 직렬화되지 않습니다.
     captureSyncCommitImpact(options, payload);
-    const external = readExternalTransaction(options);
+    const external = readExternalTransaction<PgClient>(options);
     const ownedClient = external ? null : await this.pool.connect();
     const client: PgClient = external?.client ?? ownedClient!;
     const ownsTransaction = !external;
@@ -6535,10 +6427,7 @@ class PostgresStorage extends SqlStorageBase {
         count: payload.messages.length,
       });
       const splitMessages: MessageSplit[] = payload.messages.map(splitMessage);
-      const affectedMessageChatIds = new Set<string>([
-        ...splitMessages.map((item) => item.core.chat_id),
-        ...(payload.messageDeletes || []).map((item) => item.chatId),
-      ]);
+      const affectedMessageChatIds = collectAffectedMessageChatIds(payload);
       await this.ensureChatBranchGraphs(
         client,
         splitMessages.map((item) => item.core.chat_id),
@@ -6827,45 +6716,16 @@ class PostgresStorage extends SqlStorageBase {
         );
         await authorNoteSql.writeAuthorNoteReceipt(noteDb, payload, {
           revision: nextRevision,
-          authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-            id,
-            contentHash,
-            updatedAt,
-          })),
+          authorNotes: summarizeAuthorNotes(authorNotes),
         });
         await client.query("COMMIT");
       }
-      if (
-        payload.plugins ||
-        changedSettingKeys.includes("plugins") ||
-        payload.rootDeletes.includes("plugins")
-      ) {
-        this.pluginsCache = null;
-      }
-      if (
-        changedSettingKeys.includes("pluginCustomStorage") ||
-        payload.rootDeletes.includes("pluginCustomStorage")
-      ) {
-        this.pluginCustomStorageCache = null;
-      }
-      this.invalidateBootstrapCache([
-        ...changedSettingKeys,
-        ...payload.rootDeletes,
-      ]);
-      return {
+      invalidateSyncCaches(this, payload);
+      return buildSyncResult({
+        payload,
         revision: nextRevision,
-        authorNotes: authorNotes.map(({ id, contentHash, updatedAt }) => ({
-          id,
-          contentHash,
-          updatedAt,
-        })),
-        changed: {
-          root: payload.rootUpserts.length + payload.rootDeletes.length,
-          characters: payload.characters.length,
-          chats: payload.chats.length,
-          messages: payload.messages.length,
-        },
-      };
+        authorNotes,
+      });
     } catch (error) {
       if (ownsTransaction) await client.query("ROLLBACK").catch(() => {});
       throw error;
