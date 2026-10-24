@@ -73,6 +73,16 @@ the database transaction commits they are normally unreferenced and can be
 removed by ordinary orphan cleanup. Inlay metadata validation retains at most
 1 MiB while its payload streams to the destination.
 
+Completed asset/inlay keys and sizes are collected in per-restore catalog
+batches (`HAEJEOK_BACKUP_ASSET_CATALOG_BATCH_SIZE`, default 256). Each full batch
+is awaited before parsing continues, and the final partial batch is written
+before the database replacement transaction. Cancellation and failure flush
+metadata for previously completed files before removing vendor restore records.
+A catalog write error stops the restore and is not retried during abort; it
+does not delete completed files. Late file completions after cancellation record
+their metadata immediately. A process crash can leave the unflushed batch
+absent from the catalog until explicit resynchronization.
+
 ## Safety invariants
 
 1. Prepared SQL records never mutate active application tables before the
@@ -94,7 +104,8 @@ current database/cold-storage entry. Asset and inlay bodies are never staged
 locally by the importer. Memory is bounded by the upload/parser buffers, one
 decoded native database fragment (at most 256 records and 128 MiB decoded),
 the 1 MiB inlay metadata limit, compact SHA-256 duplicate-name digests (up to
-the one-million-entry container limit), and SQL apply batches. The legacy aggregate
+the one-million-entry container limit), one configured batch of asset catalog
+metadata, and SQL apply batches. The legacy aggregate
 database compatibility path may use up to its explicit 256 MiB entry / 512 MiB
 decoded limits because its gzip/MessagePack representation has no independently
 resumable record framing.

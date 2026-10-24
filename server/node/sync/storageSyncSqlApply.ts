@@ -486,6 +486,7 @@ async function applyBatch(
   context: any,
   type: string,
   records: any[],
+  onProgress?: (progress: { current?: number; total?: number }) => void,
 ) {
   if (records.length === 0) return;
   const external = externalTransaction(client, context);
@@ -504,12 +505,14 @@ async function applyBatch(
   ) {
     await sqlStorage.sync(recordPayload(type, records, context), {
       externalTransaction: external,
+      onProgress,
     });
     return;
   }
   if (type === "message") {
     await sqlStorage.sync(recordPayload(type, records, context), {
       externalTransaction: external,
+      onProgress,
     });
     await applyVendorMessageLinks(vendor, sqlStorage, client, records);
     return;
@@ -595,6 +598,20 @@ async function applyStorageSyncSqlRecords(options) {
       transactionContext,
       type,
       batch,
+      onProgress
+        ? (progress) => {
+            if (
+              progress.current !== undefined &&
+              progress.total !== undefined
+            ) {
+              onProgress({
+                applied,
+                type,
+                detail: `${type}: ${progress.current} / ${progress.total} rows`,
+              });
+            }
+          }
+        : undefined,
     );
     if (sourceRecords > 0) {
       applied += sourceRecords;
