@@ -1447,8 +1447,10 @@ class OracleStorage extends SqlStorageBase {
     if (!Array.isArray(entries) || entries.length === 0) return 0;
     const conn = await this.pool.getConnection();
     try {
+      // Each executeMany iteration merges one key. Avoid parallel catalog scans
+      // and their temporary-space overhead on storage-limited Oracle instances.
       await conn.executeMany(
-        `MERGE INTO system_asset_catalog target
+        `MERGE /*+ NO_PARALLEL INDEX(target) */ INTO system_asset_catalog target
                  USING (SELECT :1 AS asset_key, :2 AS size_bytes, :3 AS etag FROM dual) src
                  ON (target.asset_key = src.asset_key)
                  WHEN MATCHED THEN UPDATE SET

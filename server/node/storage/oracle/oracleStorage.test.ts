@@ -473,6 +473,64 @@ describe("OracleStorage persistent branch API", () => {
   });
 });
 
+describe("Oracle asset catalog uploads", () => {
+  it("uses a serial indexed merge for uploaded asset metadata", async () => {
+    const connection = {
+      executeMany: vi.fn(
+        async (_sql: string, _binds: unknown[][], _options: any) => ({
+          rowsAffected: 2,
+        }),
+      ),
+      close: vi.fn(async () => undefined),
+    };
+    const storage = new OracleStorage({
+      user: "u",
+      password: "p",
+      tnsAlias: "db",
+    });
+    storage.pool = { getConnection: vi.fn(async () => connection) };
+
+    await expect(
+      storage.upsertAssetCatalog([
+        { key: "assets/a.png", size: 0 },
+        { key: "assets/b.png", etag: "etag-b" },
+      ]),
+    ).resolves.toBe(2);
+
+    const [sql, binds, options] = connection.executeMany.mock.calls[0];
+    expect(sql).toMatch(
+      /MERGE\s+\/\*\+\s*NO_PARALLEL\s+INDEX\(target\)\s*\*\//i,
+    );
+    expect(binds).toEqual([
+      ["assets/a.png", 0, null],
+      ["assets/b.png", null, "etag-b"],
+    ]);
+    expect(options.autoCommit).toBe(true);
+    expect(connection.close).toHaveBeenCalledOnce();
+  });
+
+  it("propagates persistent container capacity errors and releases the connection", async () => {
+    const error = new Error("ORA-65114: space usage in container is too high");
+    const connection = {
+      executeMany: vi.fn(async () => {
+        throw error;
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    const storage = new OracleStorage({
+      user: "u",
+      password: "p",
+      tnsAlias: "db",
+    });
+    storage.pool = { getConnection: vi.fn(async () => connection) };
+
+    await expect(
+      storage.upsertAssetCatalog([{ key: "assets/a.png", size: 10 }]),
+    ).rejects.toBe(error);
+    expect(connection.close).toHaveBeenCalledOnce();
+  });
+});
+
 describe("Oracle storage sync finalize concurrency", () => {
   function storageAtRevision(revision: number) {
     const queries: string[] = [];

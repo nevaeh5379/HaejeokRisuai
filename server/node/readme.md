@@ -58,6 +58,25 @@ persist in browser IndexedDB as private-key bytes and a public JWK, rather than
 non-extractable `CryptoKey` objects. Other browser features that require a secure
 context still need HTTPS.
 
+## Oracle asset catalog space errors
+
+`[asset-catalog] Failed to record uploaded assets` with `ORA-12801` followed by
+`ORA-65114` means a parallel worker hit the container's `MAX_PDB_STORAGE` limit.
+The upload catalog uses a serial, indexed `MERGE` to avoid parallel scans for
+individual asset keys. This reduces query overhead; it does not increase the
+database quota or reclaim allocated storage.
+
+If `ORA-65114` persists after upgrading, the database administrator must inspect
+the PDB's data and temporary space usage, reclaim space where appropriate, or
+increase its storage limit (managed Autonomous Database deployments use their
+service's storage controls). See [Oracle's ORA-65114 guidance](https://docs.oracle.com/en/error-help/db/ora-65114/).
+
+The warning is logged after the asset write; it does not undo an uploaded S3
+object. Catalog entries can therefore be missing even when an upload succeeds.
+After capacity is restored, use the storage explorer's catalog resynchronization
+action to rebuild metadata from S3. Repeated uploads or catalog resynchronization
+cannot fix an exhausted database quota.
+
 ## PostgreSQL storage
 
 PostgreSQL can be configured from **Advanced Settings → PostgreSQL Storage** when using the Node server. Configuration changes are accepted only over HTTPS or a localhost connection. The authenticated settings page stores the connection string only on the server in `save/__postgres_config.json` with owner-only file permissions; it is never written into the Risuai application database.
