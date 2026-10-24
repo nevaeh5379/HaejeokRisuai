@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 type SqlVendor = "postgres" | "oracle" | "azure";
 
-type StorageSyncBranchRecord = {
+export type StorageSyncBranchRecord = {
   chatId: string;
   data: {
     id: string;
@@ -16,12 +16,12 @@ type StorageSyncBranchRecord = {
   };
 };
 
-type StorageSyncActiveBranchRecord = {
+export type StorageSyncActiveBranchRecord = {
   chatId: string;
   branchId: string;
 };
 
-type StorageSyncMessageRecord = {
+export type StorageSyncMessageRecord = {
   chatId: string;
   id: string;
   parentMessageId?: string;
