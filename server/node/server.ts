@@ -105,6 +105,11 @@ import {
 } from "./http/realtimeEvents.ts";
 import { createDatabaseMutations } from "./sync/databaseMutations.ts";
 import { LocalBackupImportRecordStore } from "./sync/localBackupImportRecords.ts";
+import {
+  createAssetCatalogBatch,
+  readAssetCatalogBatchSize,
+} from "./storage/assetCatalogBatch.ts";
+import { openDirectRestoreAsset } from "./storage/localBackupAssetRestore.ts";
 import type { LocalBackupImportJobProgress } from "../../packages/backup-core/src/api.ts";
 import { Packet } from "./http/packet.ts";
 import { registerBackupRoutes } from "./api/db/backup/routes.ts";
@@ -1512,7 +1517,10 @@ function deriveCatalogDeleteKeys(keys: unknown[]) {
   return result;
 }
 
-async function upsertAssetCatalogEntries(entries: AssetEntry[]) {
+async function upsertAssetCatalogEntries(
+  entries: AssetEntry[],
+  options: { throwOnError?: boolean } = {},
+) {
   const assetEntries = (Array.isArray(entries) ? entries : []).filter(
     (entry) => typeof entry?.key === "string" && entry.key.length > 0,
   );
@@ -1529,6 +1537,7 @@ async function upsertAssetCatalogEntries(entries: AssetEntry[]) {
       "[asset-catalog] Failed to record uploaded assets:",
       error?.message || error,
     );
+    if (options.throwOnError) throw error;
   }
 }
 
@@ -4802,55 +4811,6 @@ function sendLocalBackupImportError(res: Response, error: ServerError) {
   return sendLocalBackupDatabaseStreamError(res, error);
 }
 
-async function openDirectRestoreAsset(key: string, expectedSize: number) {
-  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
-    throw new Error("Asset restore entry size is invalid");
-  }
-  const storage = assetStorageManager.getStorage();
-  const writer = storage.createWriteStream(keyToHex(key), {
-    generateThumbnail: false,
-  });
-  let written = 0;
-  let finished = false;
-
-  return {
-    async write(chunk: Uint8Array): Promise<void> {
-      if (finished) throw new Error("Asset restore writer is already closed");
-      written += chunk.byteLength;
-      if (written > expectedSize) {
-        throw new Error(`Asset restore entry exceeded ${expectedSize} bytes`);
-      }
-      if (!writer.stream.write(chunk)) await once(writer.stream, "drain");
-    },
-    async close(): Promise<void> {
-      if (finished) return;
-      if (written !== expectedSize) {
-        await writer.abort?.().catch(() => {});
-        finished = true;
-        throw new Error(
-          `Asset restore entry size mismatch: expected ${expectedSize}, got ${written}`,
-        );
-      }
-      writer.stream.end();
-      try {
-        await writer.done();
-        finished = true;
-        await upsertAssetCatalogKey(key, expectedSize);
-      } catch (error) {
-        await writer.abort?.().catch(() => {});
-        finished = true;
-        throw error;
-      }
-    },
-    async abort(): Promise<void> {
-      if (finished) return;
-      finished = true;
-      writer.stream.destroy();
-      await writer.abort?.().catch(() => {});
-    },
-  };
-}
-
 interface PendingLocalBackupProgress {
   state: LocalBackupImportJobProgress;
   timer: ReturnType<typeof setTimeout>;
@@ -4904,6 +4864,10 @@ function broadcastLocalBackupProgress(
   localBackupProgressPending.set(jobId, pending);
 }
 
+const backupAssetCatalogBatchSize = readAssetCatalogBatchSize(
+  process.env.HAEJEOK_BACKUP_ASSET_CATALOG_BATCH_SIZE,
+);
+
 const localBackupImportService = new LocalBackupImportService(
   localBackupImportJobs,
   localBackupImportStaging,
@@ -4912,6 +4876,10 @@ const localBackupImportService = new LocalBackupImportService(
       await localBackupImportRecords.cleanup(id);
       let sequence = 0;
       let completed = false;
+      const catalog = createAssetCatalogBatch(
+        backupAssetCatalogBatchSize,
+        (entries) => upsertAssetCatalogEntries(entries, { throwOnError: true }),
+      );
 
       return {
         async stageDatabaseRecords(
@@ -4929,7 +4897,12 @@ const localBackupImportService = new LocalBackupImportService(
           ]);
         },
         async openAsset(key: string, size: number) {
-          return await openDirectRestoreAsset(key, size);
+          return await openDirectRestoreAsset(
+            assetStorageManager.getStorage(),
+            key,
+            size,
+            catalog.add,
+          );
         },
         async complete(
           prepared: { sourceRevision: number; databaseRecordCount: number },
@@ -4941,6 +4914,7 @@ const localBackupImportService = new LocalBackupImportService(
             detail?: string;
           }) => void,
         ) {
+          await catalog.finish();
           const stagedRecordCount = sequence;
           const appliedRecordCount = Math.max(1, stagedRecordCount - 1);
           const staged = {
@@ -4960,15 +4934,17 @@ const localBackupImportService = new LocalBackupImportService(
             onProgress: ({
               applied,
               type,
+              detail,
             }: {
               applied: number;
               type: string;
+              detail?: string;
             }) =>
               onProgress?.({
                 phase: "applying",
                 current: Math.min(appliedRecordCount, applied),
                 total: appliedRecordCount,
-                detail: type,
+                detail: detail ?? type,
               }),
             beforeCommit: async () => {
               onProgress?.({
@@ -5000,7 +4976,11 @@ const localBackupImportService = new LocalBackupImportService(
         },
         async abort() {
           if (completed) return;
-          await localBackupImportRecords.cleanup(id);
+          try {
+            await catalog.finish();
+          } finally {
+            await localBackupImportRecords.cleanup(id);
+          }
         },
       };
     },

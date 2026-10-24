@@ -387,6 +387,13 @@ function normalizeEmptyStringBind(value?: any) {
     : value;
 }
 
+function clobBind(value: string | null | undefined) {
+  return {
+    val: normalizeEmptyStringBind(value ?? null),
+    type: oracledb.DB_TYPE_CLOB,
+  };
+}
+
 // execute 바인드(플랫 배열/스칼라/객체)와 executeMany 바인드(배열의 배열/객체의 배열) 모두 처리
 function normalizeEmptyStringBinds(binds?: any) {
   if (binds === undefined || binds === null) return binds;
@@ -1448,7 +1455,7 @@ class OracleStorage extends SqlStorageBase {
     const conn = await this.pool.getConnection();
     try {
       await conn.executeMany(
-        `MERGE INTO system_asset_catalog target
+        `MERGE /*+ DISABLE_PARALLEL_DML NO_PARALLEL INDEX(target) */ INTO system_asset_catalog target
                  USING (SELECT :1 AS asset_key, :2 AS size_bytes, :3 AS etag FROM dual) src
                  ON (target.asset_key = src.asset_key)
                  WHEN MATCHED THEN UPDATE SET
@@ -2617,11 +2624,11 @@ class OracleStorage extends SqlStorageBase {
       conn,
       `
             SELECT
-                (SELECT COUNT(*) FROM chat_branches WHERE chat_id = :1) AS branch_count,
-                (SELECT value FROM chat_attributes WHERE chat_id = :1 AND key_value = 'branchState') AS branch_state
+                (SELECT COUNT(*) FROM chat_branches WHERE chat_id = :chatId) AS branch_count,
+                (SELECT value FROM chat_attributes WHERE chat_id = :chatId AND key_value = 'branchState') AS branch_state
               FROM dual
         `,
-      [chatId],
+      { chatId },
     );
     if (
       !legacyRow ||
@@ -2811,7 +2818,7 @@ class OracleStorage extends SqlStorageBase {
             VALUES
                 (source.chat_id, source.id, NULL, NULL, source.head_message_id, 'root', 0)
         `,
-      { idsJson },
+      { idsJson: clobBind(idsJson) },
     );
     await conn.execute(
       `
@@ -2843,7 +2850,7 @@ class OracleStorage extends SqlStorageBase {
             VALUES
                 (source.chat_id, source.message_id, source.parent_message_id, source.origin_branch_id)
         `,
-      { idsJson },
+      { idsJson: clobBind(idsJson) },
     );
     await conn.execute(
       `
@@ -2863,7 +2870,7 @@ class OracleStorage extends SqlStorageBase {
             WHEN NOT MATCHED THEN INSERT (chat_id, branch_id)
             VALUES (source.chat_id, source.branch_id)
         `,
-      { idsJson },
+      { idsJson: clobBind(idsJson) },
     );
   }
 
@@ -2953,8 +2960,12 @@ class OracleStorage extends SqlStorageBase {
     }
     for (const head of heads.values()) {
       await conn.execute(
-        `UPDATE chat_branches SET head_message_id = :3 WHERE chat_id = :1 AND id = :2`,
-        [head.chatId, head.branchId, head.messageId],
+        `UPDATE chat_branches SET head_message_id = :messageId WHERE chat_id = :chatId AND id = :branchId`,
+        {
+          chatId: head.chatId,
+          branchId: head.branchId,
+          messageId: head.messageId,
+        },
       );
     }
   }
@@ -2968,11 +2979,11 @@ class OracleStorage extends SqlStorageBase {
                        SET parent_message_id = (
                            SELECT removed.parent_message_id
                              FROM chat_message_branch_links removed
-                            WHERE removed.chat_id = :1 AND removed.message_id = :2
+                            WHERE removed.chat_id = :chatId AND removed.message_id = :messageId
                        )
-                     WHERE child.chat_id = :1 AND child.parent_message_id = :2
+                     WHERE child.chat_id = :chatId AND child.parent_message_id = :messageId
                 `,
-          [deletion.chatId, messageId],
+          { chatId: deletion.chatId, messageId },
         );
         await conn.execute(
           `
@@ -2980,11 +2991,11 @@ class OracleStorage extends SqlStorageBase {
                        SET head_message_id = (
                            SELECT removed.parent_message_id
                              FROM chat_message_branch_links removed
-                            WHERE removed.chat_id = :1 AND removed.message_id = :2
+                            WHERE removed.chat_id = :chatId AND removed.message_id = :messageId
                        )
-                     WHERE branch.chat_id = :1 AND branch.head_message_id = :2
+                     WHERE branch.chat_id = :chatId AND branch.head_message_id = :messageId
                 `,
-          [deletion.chatId, messageId],
+          { chatId: deletion.chatId, messageId },
         );
         await conn.execute(
           `UPDATE chat_branches SET fork_message_id = NULL WHERE chat_id = :1 AND fork_message_id = :2`,
@@ -3620,13 +3631,13 @@ class OracleStorage extends SqlStorageBase {
         `
                 INSERT INTO chat_branches
                     (chat_id, id, parent_branch_id, fork_message_id, head_message_id, reason, created_at)
-                VALUES (:1, :2, :3, :4, :4, :5, :6)
+                VALUES (:chatId, :branchId, :parentBranchId, :forkMessageId, :forkMessageId, :reason, :createdAt)
             `,
-        [chatId, branchId, parentBranchId, forkMessageId, reason, createdAt],
+        { chatId, branchId, parentBranchId, forkMessageId, reason, createdAt },
       );
       await conn.execute(
-        `UPDATE chat_active_branches SET branch_id = :2 WHERE chat_id = :1`,
-        [chatId, branchId],
+        `UPDATE chat_active_branches SET branch_id = :branchId WHERE chat_id = :chatId`,
+        { chatId, branchId },
       );
       await conn.commit();
       return {
@@ -3664,8 +3675,8 @@ class OracleStorage extends SqlStorageBase {
       );
       if (!exists) throw new StoragePayloadError("Chat branch does not exist");
       await conn.execute(
-        `UPDATE chat_active_branches SET branch_id = :2 WHERE chat_id = :1`,
-        [chatId, branchId],
+        `UPDATE chat_active_branches SET branch_id = :branchId WHERE chat_id = :chatId`,
+        { chatId, branchId },
       );
       await conn.commit();
     } catch (error) {
@@ -4390,7 +4401,7 @@ class OracleStorage extends SqlStorageBase {
         for (const script of payload.plugins.scripts || []) {
           await conn.execute(mergeScript, {
             plugin_id: script.id,
-            script: script.script,
+            script: clobBind(script.script),
           });
         }
 
@@ -4469,10 +4480,10 @@ class OracleStorage extends SqlStorageBase {
             position:
               entry.position ?? positions.get(entry.id) ?? nextPosition++,
             name: data.name || "",
-            image: data.image || "",
+            image: clobBind(data.image || ""),
             api_type: data.apiType || "",
             ai_model: data.aiModel || "",
-            data: serialized,
+            data: clobBind(serialized),
             content_hash: crypto
               .createHash("sha256")
               .update(serialized)
@@ -4536,7 +4547,14 @@ class OracleStorage extends SqlStorageBase {
           const mapped = mapSettingValueToColumns(row.value);
           return { key: row.key, ...mapped };
         });
-        await conn.executeMany(mergeSql, settingBinds);
+        await conn.executeMany(mergeSql, settingBinds, {
+          bindDefs: {
+            key: { type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
+            text_val: { type: oracledb.DB_TYPE_CLOB },
+            num_val: { type: oracledb.DB_TYPE_NUMBER },
+            bool_val: { type: oracledb.DB_TYPE_NUMBER },
+          },
+        });
         await conn.executeMany(
           `DELETE FROM system_setting_values WHERE setting_key = :1`,
           rootSettingUpserts.map((row?: any) => [row.key]),
@@ -4622,6 +4640,12 @@ class OracleStorage extends SqlStorageBase {
             item.key,
             JSON.stringify(item.value),
           ]),
+          {
+            bindDefs: [
+              { type: oracledb.DB_TYPE_VARCHAR, maxSize: 4000 },
+              { type: oracledb.DB_TYPE_CLOB },
+            ],
+          },
         );
       }
 
@@ -4863,12 +4887,12 @@ class OracleStorage extends SqlStorageBase {
       if (payload.characterTouches.length > 0) {
         await conn.executeMany(
           `UPDATE character_characters
-                     SET last_interaction_time = :2, updated_at = SYSTIMESTAMP
-                     WHERE id = :1`,
-          payload.characterTouches.map((touch?: any) => [
-            touch.id,
-            touch.lastInteraction,
-          ]),
+                     SET last_interaction_time = :lastInteraction, updated_at = SYSTIMESTAMP
+                     WHERE id = :id`,
+          payload.characterTouches.map((touch?: any) => ({
+            id: touch.id,
+            lastInteraction: touch.lastInteraction,
+          })),
         );
       }
 
@@ -5190,12 +5214,14 @@ class OracleStorage extends SqlStorageBase {
                         SET last_message_time = (
                             SELECT m.sent_time
                               FROM chat_messages m
-                             WHERE m.chat_id = :1
+                             WHERE m.chat_id = :chatId
                              ORDER BY m.position DESC, m.sent_time DESC NULLS LAST, m.id DESC
                              FETCH FIRST 1 ROW ONLY
                         ), updated_at = SYSTIMESTAMP
-                      WHERE ch.id = :1`,
-          Array.from(affectedMessageChatIds).map((id?: any) => [id]),
+                      WHERE ch.id = :chatId`,
+          Array.from(affectedMessageChatIds).map((chatId?: any) => ({
+            chatId,
+          })),
         );
       }
 
@@ -5454,39 +5480,78 @@ class OracleStorage extends SqlStorageBase {
     const bindTypes = orderedColumns.map((c?: any) =>
       this._getColumnBindType(table, c),
     );
-    const bindDefs = bindTypes.map((t?: any) => {
-      if (t === oracledb.DB_TYPE_VARCHAR) {
-        return { type: t, maxSize: 4000 };
-      }
-      return { type: t };
-    });
+    // Thin-mode CLOB binds create and write a temporary LOB for every value.
+    // Short strings can bind directly to CLOB columns instead. Keeping them
+    // at <= 4000 bytes also avoids ORA-24816 after any real LOB bind.
+    const STRING_BIND_MAX_BYTES = 4000;
+    const CHUNK_SIZE = 500;
+    let chunkBinds: unknown[][] = [];
+    let chunkTypes: any[] = [];
+    let chunkSizes: number[] = [];
+    let written = 0;
 
-    const binds = rows.map((row?: any) =>
-      orderedColumns.map((c?: any, i?: any) => {
+    const flush = async () => {
+      if (chunkBinds.length === 0) return;
+      const bindDefs = chunkTypes.map((type, index) =>
+        type === oracledb.DB_TYPE_VARCHAR
+          ? {
+              type,
+              maxSize:
+                bindTypes[index] === oracledb.DB_TYPE_CLOB
+                  ? chunkSizes[index]
+                  : STRING_BIND_MAX_BYTES,
+            }
+          : { type },
+      );
+      await connection.executeMany(insertSql, chunkBinds, { bindDefs });
+      written += chunkBinds.length;
+      chunkBinds = [];
+      onProgress?.({
+        stage: "bulk_insert",
+        table,
+        current: written,
+        total: rows.length,
+        message: `${table}: ${written} / ${rows.length} 저장 중...`,
+      });
+    };
+
+    for (const row of rows) {
+      if (chunkBinds.length >= CHUNK_SIZE) await flush();
+      const binds = orderedColumns.map((c?: any, i?: any) => {
         // 행 객체는 공용 codec의 컬럼명 프로퍼티를 쓸 수 있음
         const codecColumn = COLUMN_NAME_MAP[c.toLowerCase()] || c;
         const v0 = row[c];
         const v = v0 !== undefined ? v0 : row[codecColumn];
         const isJson = jsonColumns.has(c.toLowerCase());
         return this._formatBindValue(v, bindTypes[i], isJson);
-      }),
-    );
-
-    // 500개씩 청킹하여 오라클 소켓 버퍼 및 메모리 과부하 방지
-    const CHUNK_SIZE = 500;
-    for (let i = 0; i < binds.length; i += CHUNK_SIZE) {
-      const chunkBinds = binds.slice(i, i + CHUNK_SIZE);
-      await connection.executeMany(insertSql, chunkBinds, { bindDefs });
-      if (onProgress && binds.length > CHUNK_SIZE) {
-        onProgress({
-          stage: "bulk_insert",
-          table,
-          current: Math.min(i + chunkBinds.length, binds.length),
-          total: binds.length,
-          message: `${table}: ${Math.min(i + chunkBinds.length, binds.length)} / ${binds.length} 저장 중...`,
-        });
+      });
+      const sizes = binds.map((value: unknown) =>
+        typeof value === "string" ? Buffer.byteLength(value, "utf8") : 0,
+      );
+      const types = bindTypes.map((type, index) =>
+        type === oracledb.DB_TYPE_CLOB && sizes[index] <= STRING_BIND_MAX_BYTES
+          ? oracledb.DB_TYPE_VARCHAR
+          : type,
+      );
+      // Preserve row order while keeping long values from forcing short
+      // values in neighbouring rows through the temporary-LOB path.
+      if (
+        chunkBinds.length > 0 &&
+        types.some((type, index) => type !== chunkTypes[index])
+      ) {
+        await flush();
       }
+      if (chunkBinds.length === 0) {
+        chunkTypes = types;
+        chunkSizes = sizes.map((size) => Math.max(1, size));
+      } else {
+        for (let index = 0; index < sizes.length; index++) {
+          chunkSizes[index] = Math.max(chunkSizes[index], sizes[index]);
+        }
+      }
+      chunkBinds.push(binds);
     }
+    await flush();
   }
 
   // 테이블별 LOB (CLOB/BLOB) 컬럼 목록 (스키마 기반)
@@ -6354,7 +6419,15 @@ class OracleStorage extends SqlStorageBase {
     for (const c of archiveColumns) {
       const v = archive[c];
       if (typeof v === "boolean") archiveBinds[c] = v ? 1 : 0;
-      else archiveBinds[c] = v ?? null;
+      else if (
+        c.startsWith("character_") &&
+        this._getColumnBindType(
+          "character_characters",
+          c.slice("character_".length),
+        ) === oracledb.DB_TYPE_CLOB
+      ) {
+        archiveBinds[c] = clobBind(v ?? null);
+      } else archiveBinds[c] = v ?? null;
     }
     await conn.execute(upsertSql, archiveBinds);
 
