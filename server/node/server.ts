@@ -9054,6 +9054,9 @@ async function startServer() {
     const server = httpsOptions
       ? https.createServer(httpsOptions, app)
       : http.createServer(app);
+    // Large backup uploads on slow connections must outlive Node's default
+    // five-minute request deadline. Keep the separate header timeout intact.
+    server.requestTimeout = 0;
     activeHttpServer = server;
     setupProxyStreamWebSocket(server);
 
